@@ -2150,6 +2150,7 @@ template <class SharkFloatParams>
 void
 PrintMaxActiveBlocks(const SharkLaunchParams &launchParams, void *kernelFn, int sharedAmountBytes)
 {
+
     std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
 
     int numBlocks;

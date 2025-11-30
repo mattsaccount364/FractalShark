@@ -1,10 +1,13 @@
-#include "HpSharkFloat.cuh"
 #include "TestTracker.h"
+#include "HpSharkFloat.cuh"
 
 #include <assert.h>
 #include <iostream>
 
-TestTracker::PerTest::PerTest() : DescToFailure{}, TestMs{}, RelativeError{}, AcceptableError{} {}
+TestTracker::PerTest::PerTest()
+    : DescToFailure{}, TestMs{}, RelativeError{}, AcceptableError{}, NumBlocks{}, ThreadsPerBlock{}
+{
+}
 
 TestTracker::TestTracker() : m_Tests(NumTests) {}
 
@@ -14,6 +17,18 @@ TestTracker::CheckAllTestsPassed() const
     std::map<std::string, size_t> DescToFailureCount;
 
     size_t totalTests = 0;
+    for (int i = 0; i < m_Tests.size(); ++i) {
+        if (m_Tests[i].NumBlocks != 0 || m_Tests[i].ThreadsPerBlock != 0) {
+            for (const auto &kv : m_Tests[i].DescToFailure) {
+                std::cout << "Variant: " << kv.first << " - " << (kv.second ? "Failed" : "Passed");
+            }
+
+            std::cout << " Test " << std::dec << i << " launched with "
+                      << m_Tests[i].NumBlocks << " blocks and " << m_Tests[i].ThreadsPerBlock << " threads per block."
+                      << " Time: " << m_Tests[i].TestMs
+                      << std::endl;
+        }
+    }
 
     for (int i = 0; i < m_Tests.size(); ++i) {
         bool anyFailed = false;
@@ -82,7 +97,9 @@ TestTracker::AddTime(size_t testIndex, uint64_t ms)
 }
 
 void
-TestTracker::MarkSuccess(size_t testIndex, const std::string &description)
+TestTracker::MarkSuccess(const SharkLaunchParams *launchParams,
+                         size_t testIndex,
+                         const std::string &description)
 {
 
     if (testIndex >= NumTests) {
@@ -91,10 +108,16 @@ TestTracker::MarkSuccess(size_t testIndex, const std::string &description)
     }
 
     m_Tests[testIndex].DescToFailure[description] = false;
+
+    if (launchParams) {
+        m_Tests[testIndex].NumBlocks = launchParams->NumBlocks;
+        m_Tests[testIndex].ThreadsPerBlock = launchParams->ThreadsPerBlock;
+    }
 }
 
 void
-TestTracker::MarkFailed(size_t testIndex,
+TestTracker::MarkFailed(const SharkLaunchParams *launchParams,
+                        size_t testIndex,
                         const std::string &description,
                         const std::string &relativeError,
                         const std::string &acceptableError)
@@ -108,4 +131,8 @@ TestTracker::MarkFailed(size_t testIndex,
     m_Tests[testIndex].DescToFailure[description] = true;
     m_Tests[testIndex].RelativeError = relativeError;
     m_Tests[testIndex].AcceptableError = acceptableError;
+    if (launchParams) {
+        m_Tests[testIndex].NumBlocks = launchParams->NumBlocks;
+        m_Tests[testIndex].ThreadsPerBlock = launchParams->ThreadsPerBlock;
+    }
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+class TestTracker;
+
 enum class Operator {
     Add,
     MultiplyNTT,
@@ -30,8 +32,17 @@ template <Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase, int numIters, int internalTestLoopCount);
 
 template <Operator sharkOperator>
-bool TestFullReferencePerfView5(int numBlocks, int numThreads, int testBase, int numIters, int internalTestLoopCount);
+bool TestFullReferencePerfView5(TestTracker &Tests,
+                                int numBlocks,
+                                int numThreads,
+                                int testBase,
+                                int numIters,
+                                int internalTestLoopCount);
 
 template <Operator sharkOperator>
-bool TestFullReferencePerfView30(
-    int numBlocks, int numThreads, int testBase, int numIters, int internalTestLoopCount);
+bool TestFullReferencePerfView30(TestTracker &Tests,
+                                 int numBlocks,
+                                 int numThreads,
+                                 int testBase,
+                                 int numIters,
+                                 int internalTestLoopCount);

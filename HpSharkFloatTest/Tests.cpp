@@ -54,7 +54,7 @@ struct IntSignCombo {
 
 template <class SharkFloatParams, Operator sharkOperator>
 bool
-DiffAgainstHostNonZero(const SharkLaunchParams & /*launchParams*/,
+DiffAgainstHostNonZero(const SharkLaunchParams &launchParams,
                        TestTracker &Tests,
                        int testNum,
                        int /*numTerms*/,
@@ -148,7 +148,7 @@ DiffAgainstHostNonZero(const SharkLaunchParams & /*launchParams*/,
                           << "\n  |host - gpu| = " << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec)
                           << "  Bits of error = " << bitsErrA << std::endl;
             }
-            Tests.MarkSuccess(testNum, hostCustomOrGpu);
+            Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nFAIL (|host| <= epsilon but absolute error > epsilon):\n"
                       << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, LowPrec) << std::endl
@@ -157,7 +157,8 @@ DiffAgainstHostNonZero(const SharkLaunchParams & /*launchParams*/,
                       << "  |host - gpu| = " << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec)
                       << std::endl
                       << "  Bits of error = " << bitsErrA << std::endl;
-            Tests.MarkFailed(testNum,
+            Tests.MarkFailed(&launchParams,
+                             testNum,
                              hostCustomOrGpu,
                              MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec),
                              MpfToString<SharkFloatParams>(epsilon, LowPrec));
@@ -189,7 +190,7 @@ DiffAgainstHostNonZero(const SharkLaunchParams & /*launchParams*/,
                           << std::endl
                           << "  Bits of error: " << bitsErrB << std::endl;
             }
-            Tests.MarkSuccess(testNum, hostCustomOrGpu);
+            Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nFAIL (relative-error exceeds epsilon):\n"
                       << "  relativeError = " << MpfToString<SharkFloatParams>(relativeError, LowPrec)
@@ -197,7 +198,8 @@ DiffAgainstHostNonZero(const SharkLaunchParams & /*launchParams*/,
                       << "  epsilon             = " << MpfToString<SharkFloatParams>(epsilon, LowPrec)
                       << std::endl
                       << "  Bits of error: " << bitsErrB << std::endl;
-            Tests.MarkFailed(testNum,
+            Tests.MarkFailed(&launchParams,
+                             testNum,
                              hostCustomOrGpu,
                              MpfToString<SharkFloatParams>(relativeError, LowPrec),
                              MpfToString<SharkFloatParams>(epsilon, LowPrec));
@@ -309,13 +311,13 @@ DiffAgainstHost(const SharkLaunchParams &launchParams,
         bool ok = (mpf_cmp(mpfDiffAbs, eps) <= 0);
 
         if (ok) {
-            Tests.MarkSuccess(testNum, hostCustomOrGpu);
+            Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::string diffStr = MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec);
             std::string threshStr = MpfToString<SharkFloatParams>(eps, LowPrec);
             std::cerr << "\nError: absolute error \"" << diffStr << "\" > allowed \"" << threshStr
                       << "\"\n";
-            Tests.MarkFailed(testNum, hostCustomOrGpu, diffStr, threshStr);
+            Tests.MarkFailed(&launchParams, testNum, hostCustomOrGpu, diffStr, threshStr);
         }
 
         mpf_clear(eps);
@@ -642,6 +644,7 @@ TestPerf(const SharkLaunchParams &launchParams,
                 BenchmarkTimer timer;
                 InvokeAddKernelPerf<SharkFloatParams>(launchParams, timer, *combo, numIters);
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
+                Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
 
                 if (timer.GetDeltaInMs() != 0) {
@@ -681,6 +684,7 @@ TestPerf(const SharkLaunchParams &launchParams,
                 }
 
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
+                Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
 
                 if (timer.GetDeltaInMs() != 0) {
@@ -723,6 +727,7 @@ TestPerf(const SharkLaunchParams &launchParams,
                     launchParams, &timer, *combo, numIters, debugGpuCombo.get());
 
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
+                Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
 
                 if (timer.GetDeltaInMs() != 0) {
@@ -2777,21 +2782,20 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerfView5(int numBlocks, int numThreads,
-    [[maybe_unused]] int testBase,
+TestFullReferencePerfView5(TestTracker &Tests,
+                           int numBlocks,
+                           int numThreads,
+                           [[maybe_unused]] int testBase,
                            [[maybe_unused]] int numIters,
                            [[maybe_unused]] int internalTestLoopCount)
 {
 #if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
-    TestTracker Tests;
     SharkLaunchParams launchParams{numBlocks, numThreads};
 
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
         HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits); // Set precision for MPIR floating point
-
-    int testNum = testBase + 1;
 
     const char *num1 = "-5."
                        "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
@@ -2855,7 +2859,9 @@ TestFullReferencePerfView5(int numBlocks, int numThreads,
     const HdrType hdrRadiusY{mpfRadiusY};
 
     // TODO: TestPerSharkParams2 is more precision than we need
-    for (size_t i = 0; i < numIters; i++) {
+    for (int i = 0; i < numIters; i++) {
+        int testNum = testBase + i;
+
         TestPerf<TestPerSharkParams2, sharkOperator>(launchParams,
                                                      Tests,
                                                      testNum,
@@ -2882,7 +2888,8 @@ TestFullReferencePerfView5(int numBlocks, int numThreads,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerfView30(int numBlocks,
+TestFullReferencePerfView30(TestTracker &Tests,
+                            int numBlocks,
                             int numThreads,
                             [[maybe_unused]] int testBase,
                             [[maybe_unused]] int numIters,
@@ -2895,13 +2902,10 @@ TestFullReferencePerfView30(int numBlocks,
 #include "..\FractalSharkLib\LargeCoords.h"
 
     SharkLaunchParams launchParams{numBlocks, numThreads};
-    TestTracker Tests;
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
         HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits); // Set precision for MPIR floating point
-
-    int testNum = testBase + 1;
 
     const char *num1 = strX; //.c_str();
     const char *num2 = strY; //.c_str();
@@ -2965,7 +2969,8 @@ TestFullReferencePerfView30(int numBlocks,
     HdrType hdrRadiusY{mpfRadiusY};
     HdrReduce(hdrRadiusY);
 
-    for (size_t i = 0; i < numIters; i++) {
+    for (int i = 0; i < numIters; i++) {
+        int testNum = testBase + i;
         TestPerf<TestPerSharkParams2, sharkOperator>(launchParams,
                                                      Tests,
                                                      testNum,
@@ -3295,9 +3300,14 @@ TestAllBinaryOp(int testBase)
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
         int testBase, int numIters, int internalTestLoopCount);                                         \
     template bool TestFullReferencePerfView5<Operator::ReferenceOrbit>(                                 \
-        int numBlocks, int numThreads, int testBase, int numIters, int internalTestLoopCount);         \
+        TestTracker &, int numBlocks, int numThreads, int testBase, int numIters, int internalTestLoopCount);          \
     template bool TestFullReferencePerfView30<Operator::ReferenceOrbit>(                                \
-        int numBlocks, int numThreads, int testBase, int numIters, int internalTestLoopCount);
+        TestTracker &,                  \
+                                                                        int numBlocks,                  \
+                                                                        int numThreads,                 \
+                                                                        int testBase,                   \
+                                                                        int numIters,                   \
+                                                                        int internalTestLoopCount);
 #else
 #define REFERENCE_KERNEL(SharkFloatParams) ;
 #endif

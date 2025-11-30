@@ -1,4 +1,5 @@
 #include "MultiplyNTT.cu"
+#include "TestVerbose.h"
 
 template <class SharkFloatParams>
 __maxnreg__(HpShark::RegisterLimit) __global__
@@ -54,9 +55,11 @@ ComputeMultiplyNTTGpu(const SharkLaunchParams &launchParams, void *kernelArgs[])
         cudaFuncSetAttribute(MultiplyKernelNTT<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);
-
-        PrintMaxActiveBlocks<SharkFloatParams>(launchParams, MultiplyKernelNTT<SharkFloatParams>,
-                                               sharedAmountBytes);
+        
+        if (SharkVerbose == VerboseMode::Debug) {
+            PrintMaxActiveBlocks<SharkFloatParams>(
+                launchParams, MultiplyKernelNTT<SharkFloatParams>, sharedAmountBytes);
+        }
     }
 
     err = cudaLaunchCooperativeKernel((void*)MultiplyKernelNTT<SharkFloatParams>,
@@ -92,8 +95,10 @@ ComputeMultiplyNTTGpuTestLoop(const SharkLaunchParams &launchParams, cudaStream_
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);
 
-        PrintMaxActiveBlocks<SharkFloatParams>(launchParams, MultiplyKernelNTTTestLoop<SharkFloatParams>,
-                                               sharedAmountBytes);
+        if (SharkVerbose == VerboseMode::Debug) {
+            PrintMaxActiveBlocks<SharkFloatParams>(
+                launchParams, MultiplyKernelNTTTestLoop<SharkFloatParams>, sharedAmountBytes);
+        }
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void*)MultiplyKernelNTTTestLoop<SharkFloatParams>,

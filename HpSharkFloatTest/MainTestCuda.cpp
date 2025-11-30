@@ -3,6 +3,7 @@
 #include "HpSharkFloat.cuh"
 #include "TestVerbose.h"
 #include "Tests.h"
+#include "TestTracker.h"
 
 #include <cuda_runtime.h>
 
@@ -285,15 +286,27 @@ main(int /*argc*/, char * /*argv*/[])
 
 #if (ENABLE_BASIC_CORRECTNESS == 1)
     if constexpr (HpShark::EnableFullKernel) {
-        for (int numBlocks = 16; numBlocks <= 256; numBlocks *= 2) {
-            for (int numThreads = 64; numThreads <= 512; numThreads *= 2) {
+        TestTracker Tests;
+
+        testBase = 1000;
+
+        const int startBlock = 16;
+        const int endBlock = 256;
+        const int startThreads = 64;
+        const int endThreads = 256;
+        //const int startBlock = 65;
+        //const int endBlock = 65;
+        //const int startThreads = 256;
+        //const int endThreads = 256;
+
+        for (int numBlocks = startBlock; numBlocks <= endBlock; numBlocks *= 2) {
+            for (int numThreads = startThreads; numThreads <= endThreads; numThreads *= 2) {
                 std::cout << "Testing Full Reference Orbit with "
                           << numBlocks << " blocks and "
                           << numThreads << " threads per block." << std::endl;
-
-                testBase = 16020;
+                
                 res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-                    numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+                    Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
                 if (!res) {
                     auto q = PressKey();
                     if (q == 'q') {
@@ -301,24 +314,22 @@ main(int /*argc*/, char * /*argv*/[])
                     }
                 }
 
-                {
-                    auto q = PressKey();
-                    if (q == 'q') {
-                        return 0;
-                    }
-                }
+                testBase += 100;
 
-                testBase = 16010;
                 res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-                    numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+                    Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
                 if (!res) {
                     auto q = PressKey();
                     if (q == 'q') {
                         return 0;
                     }
                 }
+
+                testBase += 100;
             }
         }
+
+        Tests.CheckAllTestsPassed();
     }
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
     if constexpr (HpShark::EnableFullKernel) {

@@ -1,6 +1,7 @@
 #include "Add.cu"
 #include "MultiplyNTT.cu"
 #include "PeriodicityChecker.cuh"
+#include "TestVerbose.h"
 
 //
 // Returns true if we should continue iterating, false if we should stop (period found).
@@ -160,8 +161,10 @@ ComputeHpSharkReferenceGpu(const SharkLaunchParams &launchParams, void *kernelAr
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);
 
-        PrintMaxActiveBlocks<SharkFloatParams>(
-            launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, sharedAmountBytes);
+        if (SharkVerbose == VerboseMode::Debug) {
+            PrintMaxActiveBlocks<SharkFloatParams>(
+                launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, sharedAmountBytes);
+        }
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuKernel<SharkFloatParams>,
@@ -199,8 +202,10 @@ ComputeHpSharkReferenceGpuLoop(const SharkLaunchParams &launchParams,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);
 
-        PrintMaxActiveBlocks<SharkFloatParams>(launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>,
-                                               sharedAmountBytes);
+        if (SharkVerbose == VerboseMode::Debug) {
+            PrintMaxActiveBlocks<SharkFloatParams>(
+                launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, sharedAmountBytes);
+        }
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuLoop<SharkFloatParams>,

@@ -168,35 +168,38 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
     // ---------------- Mark results ----------------
     if (!ok_full) {
         Tests.MarkFailed(
+            nullptr,
             testNum,
             "conversion/full",
             "abs error exceeded eps",
             MpfToString<SharkFloatParams>(eps_full, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
         assert(false);
     } else {
-        Tests.MarkSuccess(testNum, "conversion/full");
+        Tests.MarkSuccess(nullptr, testNum, "conversion/full");
     }
 
     if (!ok_hdr_f) {
         Tests.MarkFailed(
+            nullptr,
             testNum,
             "conversion/hdr_float",
             "abs error exceeded eps",
             MpfToString<SharkFloatParams>(eps_hdrf, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
         assert(false);
     } else {
-        Tests.MarkSuccess(testNum, "conversion/hdr_float");
+        Tests.MarkSuccess(nullptr, testNum, "conversion/hdr_float");
     }
 
     if (!ok_hdr_d) {
         Tests.MarkFailed(
+            nullptr,
             testNum,
             "conversion/hdr_double",
             "abs error exceeded eps",
             MpfToString<SharkFloatParams>(eps_hdrd, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
         assert(false);
     } else {
-        Tests.MarkSuccess(testNum, "conversion/hdr_double");
+        Tests.MarkSuccess(nullptr, testNum, "conversion/hdr_double");
     }
 
     // Now we'll convert the number to a hex string and back
@@ -217,14 +220,15 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
 
         const bool ok_hex = compare_within_eps(mpf_x, outX, eps_full, "conversion/full");
         if (!ok_hex) {
-            Tests.MarkFailed(testNum,
+            Tests.MarkFailed(nullptr,
+                             testNum,
                              "conversion/hex_string_roundtrip",
                              "abs error exceeded eps",
                              MpfToString<SharkFloatParams>(
                                  eps_full, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
             assert(false);
         } else {
-            Tests.MarkSuccess(testNum, "conversion/hex_string_roundtrip");
+            Tests.MarkSuccess(nullptr, testNum, "conversion/hex_string_roundtrip");
         }
     }
 
@@ -248,14 +252,15 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
         }
 
         if (!ok_normalize) {
-            Tests.MarkFailed(testNum,
+            Tests.MarkFailed(nullptr,
+                             testNum,
                              "conversion/normalize",
                              "abs error exceeded eps",
                              MpfToString<SharkFloatParams>(
                                  eps_full, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
             assert(false);
         } else {
-            Tests.MarkSuccess(testNum, "conversion/normalize");
+            Tests.MarkSuccess(nullptr, testNum, "conversion/normalize");
         }
 
         mpf_clear(mpf_x_normalized);

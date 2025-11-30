@@ -335,8 +335,8 @@ main(int /*argc*/, char * /*argv*/[])
     if constexpr (HpShark::EnableFullKernel) {
         TestTracker Tests;
 
-        int numBlocks = 65;
-        int numThreads = 256;
+        int numBlocks = PromptIntWithTimeout("NumBlocks? Default 65", /*default=*/65, timeoutInSec);
+        int numThreads = PromptIntWithTimeout("NumThreads? Default 256", /*default=*/256, timeoutInSec);
 
         testBase = 16020;
         res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(

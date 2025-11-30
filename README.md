@@ -1,44 +1,33 @@
 # Introduction
 
-## 2025-9-1 News
+## 2025-11-30 News
 
-The full reference orbit works with CUDA, though without periodicity detection or high precision to "float exp" conversion.  That's future work but I'm not worried about it.  To be clear, this is not hooked up end-to-end with FractalShark itself, it's only working in a standalone test environment.  But the results are promising and prove it works.
+The neat thing about this GPU approach is that it still has low-hanging fruit related to optimization, unlike MPIR.  I've been wasting a bunch of time on the (Thanksgiving in USA) holiday weekend working on it.  I'll keep fussing with it and will probably not post again until I put out a version of FractalShark with it hooked up, which I expect to happen later in December when I have time off.  All code is on github, just no new version yet since it remains rather experimental and hacked up.
 
-This initial implementation relies on Karatsuba for the multiplies/squaring and then follows those with the high-precision adds/subtracts.  Initial results suggest a ~12x perf improvement relative to single-threaded CPU only, when comparing an overclocked 5950X vs an RTX 4090 with CUDA.  I'm happy with that, but not completely.
+Example times in ms of updated implementation, comparing against serial host-based approach (1 thread MPIR AVX2 for experiments).  This is the first 20000 iterations of View 30 in FractalShark, which is a depth ~1e100000 point.  This uses 16384 limbs on the GPU.  The CPU/MPIR uses the minimum bits required for that point, which is less, because the GPU implementation requires a power of 2.
 
-The main performance problem is this Karatsuba implementation.  Getting decent performance out of Karatsuba obviously requires recursion, and that gets costly on the GPU.  This implementation recurses several levels, which avoids costly local memory spill, but bites us because of register pressure.  The high register pressure limits the parallelism we can achieve.  The nice thing about Karatsuba for me is that it's not that hard to understand conceptually, so it was a great initial target for someone who doesn't know what they're doing.
+```
+Host (ms)    GPU(ms)    Ratio
+57990        2055    28.2189781
+58227        2022    28.79673591
+57478        2041    28.16168545
+57538        2014    28.56901688
+55997        2015    27.79007444
 
-Now that it's working, and I have a better sense of what's going on, I'm going to try a full NTT-based high-precision multiply approach.  The idea here is to rely on the number theoretic transform, similar to FFT, and parallelize the high precision multiply that way.
+Averages:
+57446        2029.4    28.30729816
+```
 
-With this commit, we have a working host-based (CPU-only) approach to NTT high-precision multiply that supports power-of-2 mantissa sizes and should scale effectively to CUDA but that's TBD.  It will be at least several months more work at my current rate (a few hours on the weekends) to achieve a first-cut CUDA implementation.
+Here's a summary of what I want to get done before FractalShark 0.5 happens:
+- Perform code cleanup, better comments etc.  It's a mess right now, this is just a weekend hobby after all and because it was unclear this would even work it's a real hack job.
 
-### NTT-based high-precision multiply (magic prime 2^64 - 2^32 + 1)
+- Improve integration with FractalShark, it's really just hacked in there currently since I've mostly used a standalone test program
 
-AI-generated slop follows in this subsection.  It looks accurate.
+- Improve reference orbit memory usage - I would like to be able to allocate a fixed amount of memory to store the orbit and expand as needed.  Right now it pessimistically allocates a lot, and it may be the wrong amount because it does periodicity detection on the GPU.  This is just engineering work and nothing fundamental, but will take time and without it the current implementation is rather impractical.
 
-I'm experimenting with an NTT implementation over the 64-bit "magic" prime p = 2^64 - 2^32 + 1. This prime is NTT-friendly: it admits 2^32-th roots of unity, so power-of-two transform sizes are straightforward, and it enables fast modular reduction on 128-bit products using the identity 2^64 ≡ 2^32 - 1 (mod p).
+- Automatically choose kernel launch parameters, right now it's manual.  More engineering.  This is required to support other cards than mine.  In any case this implementation requires a feature call cooperative groups, which I believe implies Nvidia RTX 2XXX series or newer.
 
-High-level plan
-- Represent big mantissas as base-2 limbs (currently 32-bit limbs are convenient on GPU/CPU). Choose N = next power of two ≥ 2·L (L = limb count) for the convolution length.
-- Forward NTT(A), NTT(B) mod p, pointwise multiply, inverse NTT, multiply by N^{-1} mod p, then perform carry propagation back to the chosen limb base.
-- Use iterative radix-2 Cooley–Tukey with an explicit bit-reversal permutation (DIT). Twiddles (powers of a primitive root) are precomputed and cached.
-- Butterflies and pointwise products operate in Montgomery form; 128-bit products are reduced via Montgomery multiplication (R = 2^64). A direct pseudo-Mersenne fold (lo + (hi << 32) − hi) exists but isn’t used on the hot path.
-
-Notes and guardrails
-- Single-prime NTT is attractive here because p fits in 64 bits and gives ample dynamic range; if/when larger bases or tighter bounds are desired, a multi-prime CRT variant is the next step.
-- Power-of-two sizes only: that matches the current host prototype and simplifies CUDA mapping.
-- GPU mapping: TBD.
-- Carry fix-up remains outside the NTT and is done in base-2^k with linear-time passes; lazy (deferred) carries may help throughput.
-
-Why this might beat Karatsuba on GPU
-- Avoids deep recursion and its register pressure; most work is regular butterflies, which parallelize and schedule well.
-- Pointwise multiplies dominate cost but are simple 64×64→128 with fast reduction; memory access is structured and coalesced.
-
-If the CUDA path pans out, the NTT route should scale better across precisions while keeping occupancy higher than the recursive Karatsuba path.
-
-References (NTT / GPU big-int)
-- CGBN: CUDA Big-Num with Cooperative Groups — https://github.com/NVlabs/CGBN
-- Number-theoretic transform — https://en.wikipedia.org/wiki/Number-theoretic_transform
+Those are the main things offhand, and I'm hoping with time off in December I can clean these up.
 
 ## What is FractalShark?
 
@@ -153,6 +142,46 @@ Many.
 - FractalShark's reference orbit compression is novel code, but based on the approach Zhuoran described here: [Reference Compression](https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142). Claude posted a simple easy-to-understand sample here, which FractalShark's implementation is loosely based on: [Fractal Bits](https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression)
 
 - This implementation would probably not have happened without the work of these folks so thank you!
+
+## 2025-9-1 News
+
+The full reference orbit works with CUDA, though without periodicity detection or high precision to "float exp" conversion.  That's future work but I'm not worried about it.  To be clear, this is not hooked up end-to-end with FractalShark itself, it's only working in a standalone test environment.  But the results are promising and prove it works.
+
+This initial implementation relies on Karatsuba for the multiplies/squaring and then follows those with the high-precision adds/subtracts.  Initial results suggest a ~12x perf improvement relative to single-threaded CPU only, when comparing an overclocked 5950X vs an RTX 4090 with CUDA.  I'm happy with that, but not completely.
+
+The main performance problem is this Karatsuba implementation.  Getting decent performance out of Karatsuba obviously requires recursion, and that gets costly on the GPU.  This implementation recurses several levels, which avoids costly local memory spill, but bites us because of register pressure.  The high register pressure limits the parallelism we can achieve.  The nice thing about Karatsuba for me is that it's not that hard to understand conceptually, so it was a great initial target for someone who doesn't know what they're doing.
+
+Now that it's working, and I have a better sense of what's going on, I'm going to try a full NTT-based high-precision multiply approach.  The idea here is to rely on the number theoretic transform, similar to FFT, and parallelize the high precision multiply that way.
+
+With this commit, we have a working host-based (CPU-only) approach to NTT high-precision multiply that supports power-of-2 mantissa sizes and should scale effectively to CUDA but that's TBD.  It will be at least several months more work at my current rate (a few hours on the weekends) to achieve a first-cut CUDA implementation.
+
+### NTT-based high-precision multiply (magic prime 2^64 - 2^32 + 1)
+
+AI-generated slop follows in this subsection.  It looks accurate.
+
+I'm experimenting with an NTT implementation over the 64-bit "magic" prime p = 2^64 - 2^32 + 1. This prime is NTT-friendly: it admits 2^32-th roots of unity, so power-of-two transform sizes are straightforward, and it enables fast modular reduction on 128-bit products using the identity 2^64 ≡ 2^32 - 1 (mod p).
+
+High-level plan
+- Represent big mantissas as base-2 limbs (currently 32-bit limbs are convenient on GPU/CPU). Choose N = next power of two ≥ 2·L (L = limb count) for the convolution length.
+- Forward NTT(A), NTT(B) mod p, pointwise multiply, inverse NTT, multiply by N^{-1} mod p, then perform carry propagation back to the chosen limb base.
+- Use iterative radix-2 Cooley–Tukey with an explicit bit-reversal permutation (DIT). Twiddles (powers of a primitive root) are precomputed and cached.
+- Butterflies and pointwise products operate in Montgomery form; 128-bit products are reduced via Montgomery multiplication (R = 2^64). A direct pseudo-Mersenne fold (lo + (hi << 32) − hi) exists but isn’t used on the hot path.
+
+Notes and guardrails
+- Single-prime NTT is attractive here because p fits in 64 bits and gives ample dynamic range; if/when larger bases or tighter bounds are desired, a multi-prime CRT variant is the next step.
+- Power-of-two sizes only: that matches the current host prototype and simplifies CUDA mapping.
+- GPU mapping: TBD.
+- Carry fix-up remains outside the NTT and is done in base-2^k with linear-time passes; lazy (deferred) carries may help throughput.
+
+Why this might beat Karatsuba on GPU
+- Avoids deep recursion and its register pressure; most work is regular butterflies, which parallelize and schedule well.
+- Pointwise multiplies dominate cost but are simple 64×64→128 with fast reduction; memory access is structured and coalesced.
+
+If the CUDA path pans out, the NTT route should scale better across precisions while keeping occupancy higher than the recursive Karatsuba path.
+
+References (NTT / GPU big-int)
+- CGBN: CUDA Big-Num with Cooperative Groups — https://github.com/NVlabs/CGBN
+- Number-theoretic transform — https://en.wikipedia.org/wiki/Number-theoretic_transform
 
 ## 2025-6-15 News
 

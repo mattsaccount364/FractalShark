@@ -952,12 +952,323 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     return S1;
 }
 
+// -----------------------------------------------------------------------------
+// Per-warp, per-stage micro-tile processor.
+// Handles:
+//   - Mode = OneWay / TwoWay / ThreeWay
+//   - UseMontPow = true/false (recurrence vs precomputed twiddles)
+//   - microTileWidth = 4 (OneWay) or 2 (Two/ThreeWay)
+// Updates jChunkIndex, tasksRemaining, blockIndex, blockDataBaseIndex,
+// and (when UseMontPow) currentTwiddle.
+// -----------------------------------------------------------------------------
+template <class SharkFloatParams, Multiway Mode, bool UseMontPow, int microTileWidth>
+static __device__ SharkForceInlineReleaseOnly void
+ProcessTile(cooperative_groups::grid_group &grid,
+            cooperative_groups::thread_block &block,
+            DebugGlobalCount<SharkFloatParams> *debugCombo,
+            uint64_t *SharkRestrict A,
+            uint64_t *SharkRestrict B,
+            uint64_t *SharkRestrict C,
+            const uint64_t *SharkRestrict stageTwiddlesForStage,
+            const uint32_t halfSpan,
+            const uint32_t warpSize,
+            const uint32_t numJChunks,
+            const uint32_t laneIndex,
+            const uint32_t butterflySpan,
+            // mutable state for this warp-range:
+            uint32_t &blockIndex,
+            uint32_t &jChunkIndex,
+            size_t &tasksRemaining,
+            uint32_t &blockDataBaseIndex,
+            // twiddle state (for UseMontPow == true):
+            uint64_t &currentTwiddle,
+            const uint64_t twiddleStrideWarp,
+            const uint64_t laneTwiddleBase)
+{
+    // Tile cannot cross block boundary or our assigned range
+    const uint32_t roomInBlock = numJChunks - jChunkIndex;
+    const uint32_t span = static_cast<uint32_t>(min(tasksRemaining, static_cast<size_t>(roomInBlock)));
 
+    const uint32_t tileWidth =
+        (microTileWidth == 4) ? std::min<uint32_t>(4u, span) : std::min<uint32_t>(2u, span);
 
+    // Helper: load A/B/C for a given jIndex
+    auto loadABC = [&] (uint32_t jIndex,
+                        bool &inRange,
+                        uint32_t &idxUpper,
+                        uint32_t &idxLower,
+                        uint64_t &aUpper,
+                        uint64_t &aLower,
+                        uint64_t &bUpper,
+                        uint64_t &bLower,
+                        uint64_t &cUpper,
+                        uint64_t &cLower) {
+        inRange = (jIndex < halfSpan);
+        if (!inRange)
+            return;
+
+        idxUpper = blockDataBaseIndex + jIndex;
+        idxLower = idxUpper + halfSpan;
+
+        aUpper = A[idxUpper];
+        aLower = A[idxLower];
+
+        if constexpr (Mode != Multiway::OneWay) {
+            bUpper = B[idxUpper];
+            bLower = B[idxLower];
+            if constexpr (Mode == Multiway::ThreeWay) {
+                cUpper = C[idxUpper];
+                cLower = C[idxLower];
+            }
+        }
+    };
+
+    // Helper: apply Cooley–Tukey butterfly:
+    //   u' = u + t
+    //   v' = u - t
+    // with t = v * twiddle, where u = upper, v = lower.
+    auto applyButterfly = [&] (uint32_t idxUpper,
+                               uint32_t idxLower,
+                               uint64_t aUpper,
+                               uint64_t aLower,
+                               uint64_t bUpper,
+                               uint64_t bLower,
+                               uint64_t cUpper,
+                               uint64_t cLower,
+                               uint64_t twiddle) {
+        if constexpr (Mode == Multiway::OneWay) {
+            const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
+            A[idxUpper] = AddP(aUpper, tA);
+            A[idxLower] = SubP(aUpper, tA);
+        } else if constexpr (Mode == Multiway::TwoWay) {
+            const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
+            const uint64_t tB = MontgomeryMul(grid, block, debugCombo, bLower, twiddle);
+            A[idxUpper] = AddP(aUpper, tA);
+            A[idxLower] = SubP(aUpper, tA);
+            B[idxUpper] = AddP(bUpper, tB);
+            B[idxLower] = SubP(bUpper, tB); // subtract from *upper* (Bu), not Bl
+        } else {                            // ThreeWay
+            const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
+            const uint64_t tB = MontgomeryMul(grid, block, debugCombo, bLower, twiddle);
+            const uint64_t tC = MontgomeryMul(grid, block, debugCombo, cLower, twiddle);
+            A[idxUpper] = AddP(aUpper, tA);
+            A[idxLower] = SubP(aUpper, tA);
+            B[idxUpper] = AddP(bUpper, tB);
+            B[idxLower] = SubP(bUpper, tB); // same pattern
+            C[idxUpper] = AddP(cUpper, tC);
+            C[idxLower] = SubP(cUpper, tC); // same pattern
+        }
+    };
+
+    auto loadTwiddlePrecomputed = [&] (uint32_t jIndex, bool inRange) -> uint64_t {
+        if (!inRange)
+            return 0;
+        return stageTwiddlesForStage[jIndex];
+    };
+
+    // ===== position 0 =====
+    const uint32_t jIndex0 = laneIndex + jChunkIndex * warpSize;
+
+    bool inRange0 = false;
+    uint32_t indexUpper0 = 0, indexLower0 = 0;
+    uint64_t aUpper0 = 0, aLower0 = 0;
+    uint64_t bUpper0 = 0, bLower0 = 0;
+    uint64_t cUpper0 = 0, cLower0 = 0;
+
+    loadABC(jIndex0,
+            inRange0,
+            indexUpper0,
+            indexLower0,
+            aUpper0,
+            aLower0,
+            bUpper0,
+            bLower0,
+            cUpper0,
+            cLower0);
+
+    uint64_t twiddle0 = 0;
+    if (inRange0) {
+        if constexpr (UseMontPow) {
+            twiddle0 = currentTwiddle;
+        } else {
+            twiddle0 = loadTwiddlePrecomputed(jIndex0, /*inRange=*/true);
+        }
+    }
+
+    // ===== position 1 (if any) =====
+    bool inRange1 = false;
+    uint32_t indexUpper1 = 0, indexLower1 = 0;
+    uint64_t aUpper1 = 0, aLower1 = 0;
+    uint64_t bUpper1 = 0, bLower1 = 0;
+    uint64_t cUpper1 = 0, cLower1 = 0;
+    uint64_t twiddle1 = 0;
+
+    if (tileWidth >= 2) {
+        const uint32_t jIndex1 = jIndex0 + warpSize;
+
+        loadABC(jIndex1,
+                inRange1,
+                indexUpper1,
+                indexLower1,
+                aUpper1,
+                aLower1,
+                bUpper1,
+                bLower1,
+                cUpper1,
+                cLower1);
+
+        if constexpr (UseMontPow) {
+            twiddle1 = MontgomeryMul(grid, block, debugCombo, twiddle0, twiddleStrideWarp);
+        } else if (inRange1) {
+            twiddle1 = loadTwiddlePrecomputed(jIndex1, /*inRange=*/true);
+        }
+    }
+
+    // ===== position 2/3 (OneWay only) =====
+    bool inRange2 = false, inRange3 = false;
+    uint32_t indexUpper2 = 0, indexLower2 = 0;
+    uint64_t aUpper2 = 0, aLower2 = 0;
+    uint64_t bUpper2 = 0, bLower2 = 0;
+    uint64_t cUpper2 = 0, cLower2 = 0;
+    uint32_t indexUpper3 = 0, indexLower3 = 0;
+    uint64_t aUpper3 = 0, aLower3 = 0;
+    uint64_t bUpper3 = 0, bLower3 = 0;
+    uint64_t cUpper3 = 0, cLower3 = 0;
+    uint64_t twiddle2 = 0, twiddle3 = 0;
+
+    if constexpr (microTileWidth == 4) {
+        if (tileWidth >= 3) {
+            const uint32_t jIndex2 = jIndex0 + 2u * warpSize;
+            loadABC(jIndex2,
+                    inRange2,
+                    indexUpper2,
+                    indexLower2,
+                    aUpper2,
+                    aLower2,
+                    bUpper2,
+                    bLower2,
+                    cUpper2,
+                    cLower2);
+
+            if constexpr (!UseMontPow) {
+                if (inRange2) {
+                    twiddle2 = loadTwiddlePrecomputed(jIndex2, /*inRange=*/true);
+                }
+            }
+        }
+        if (tileWidth >= 4) {
+            const uint32_t jIndex3 = jIndex0 + 3u * warpSize;
+            loadABC(jIndex3,
+                    inRange3,
+                    indexUpper3,
+                    indexLower3,
+                    aUpper3,
+                    aLower3,
+                    bUpper3,
+                    bLower3,
+                    cUpper3,
+                    cLower3);
+
+            if constexpr (!UseMontPow) {
+                if (inRange3) {
+                    twiddle3 = loadTwiddlePrecomputed(jIndex3, /*inRange=*/true);
+                }
+            }
+        }
+
+        if constexpr (UseMontPow) {
+            if (tileWidth >= 3) {
+                twiddle2 = MontgomeryMul(grid, block, debugCombo, twiddle1, twiddleStrideWarp);
+                if (tileWidth >= 4) {
+                    twiddle3 = MontgomeryMul(grid, block, debugCombo, twiddle2, twiddleStrideWarp);
+                }
+            }
+        }
+    }
+
+    // ---- compute/store: position 0 ----
+    if (inRange0) {
+        applyButterfly(
+            indexUpper0, indexLower0, aUpper0, aLower0, bUpper0, bLower0, cUpper0, cLower0, twiddle0);
+    }
+
+    // ---- compute/store: position 1 ----
+    if (tileWidth >= 2 && inRange1) {
+        applyButterfly(
+            indexUpper1, indexLower1, aUpper1, aLower1, bUpper1, bLower1, cUpper1, cLower1, twiddle1);
+    }
+
+    // ---- compute/store: positions 2 & 3 (OneWay only) ----
+    if constexpr (microTileWidth == 4) {
+        if (tileWidth >= 3 && inRange2) {
+            applyButterfly(indexUpper2,
+                           indexLower2,
+                           aUpper2,
+                           aLower2,
+                           bUpper2,
+                           bLower2,
+                           cUpper2,
+                           cLower2,
+                           twiddle2);
+        }
+        if (tileWidth >= 4 && inRange3) {
+            applyButterfly(indexUpper3,
+                           indexLower3,
+                           aUpper3,
+                           aLower3,
+                           bUpper3,
+                           bLower3,
+                           cUpper3,
+                           cLower3,
+                           twiddle3);
+        }
+    }
+
+    // ---- advance within block by 'tileWidth' and update state ----
+    if constexpr (UseMontPow) {
+        jChunkIndex += tileWidth;
+        tasksRemaining -= tileWidth;
+
+        if (jChunkIndex == numJChunks) {
+            // wrap to next block
+            jChunkIndex = 0;
+            blockIndex += 1;
+            blockDataBaseIndex += butterflySpan;
+            currentTwiddle = laneTwiddleBase;
+        } else {
+            // seed twiddle for next tile start
+            if (tileWidth == 1) {
+                currentTwiddle = twiddle1;
+            } else if (tileWidth == 2) {
+                currentTwiddle = MontgomeryMul(grid, block, debugCombo, twiddle1, twiddleStrideWarp);
+            } else if (tileWidth == 3) {
+                currentTwiddle = twiddle3; // built above when microTileWidth == 4
+            } else {                       // tileWidth == 4
+                currentTwiddle = MontgomeryMul(grid, block, debugCombo, twiddle3, twiddleStrideWarp);
+            }
+        }
+    } else {
+        jChunkIndex += tileWidth;
+        tasksRemaining -= tileWidth;
+
+        if (jChunkIndex == numJChunks) {
+            // wrap to next block
+            jChunkIndex = 0;
+            blockIndex += 1;
+            blockDataBaseIndex += butterflySpan;
+        }
+        // No twiddle recurrence needed here; next call
+        // will reload twiddles from stageTwiddlesForStage.
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Unified 1-way / 3-way radix-2 NTT with warp-strided twiddles,
-// early shared-memory microkernel, and Phase-2 persistent task queue.
-// ThreeWay=false: operates on A only (matches 1-way behavior)
-// ThreeWay=true : operates on A, B, C in lockstep
+// early shared-memory microkernel, and Phase-2 static contiguous striping.
+// Multiway::OneWay  : operates on A only (matches 1-way behavior)
+// Multiway::TwoWay  : operates on A, B
+// Multiway::ThreeWay: operates on A, B, C in lockstep
+// -----------------------------------------------------------------------------
 template <class SharkFloatParams, Multiway OneTwoThree, bool Inverse>
 static __device__ SharkForceInlineReleaseOnly void
 NTTRadix2_GridStride(uint64_t *shared_data,
@@ -970,18 +1281,18 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                      uint64_t *SharkRestrict C,
                      const RootTables &rootTables)
 {
-    uint32_t N = rootTables.N;
-    uint32_t stages = rootTables.stages;
+    uint32_t transformSize = rootTables.N;
+    uint32_t numStages = rootTables.stages;
 
-    const uint64_t *SharkRestrict stage_base;
-    const uint64_t *SharkRestrict stage_twiddles;
+    const uint64_t *SharkRestrict stageRootBase;     // per-stage base ω_m
+    const uint64_t *SharkRestrict stageTwiddleTable; // flattened twiddle table
 
     if constexpr (!Inverse) {
-        stage_base = rootTables.stage_omegas;
-        stage_twiddles = rootTables.stage_twiddles_fwd;
+        stageRootBase = rootTables.stage_omegas;
+        stageTwiddleTable = rootTables.stage_twiddles_fwd;
     } else {
-        stage_base = rootTables.stage_omegas_inv;
-        stage_twiddles = rootTables.stage_twiddles_inv;
+        stageRootBase = rootTables.stage_omegas_inv;
+        stageTwiddleTable = rootTables.stage_twiddles_inv;
     }
 
     // Toggle this to select implementation:
@@ -989,349 +1300,155 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     //   false -> use precomputed flattened twiddle tables
     constexpr bool UseMontPow = false;
 
-    constexpr auto TS_log = 9u;
+    constexpr auto TileSizeLog2 = 9u;
+    constexpr uint32_t warpSize = 32u;
 
-    const size_t gsize = grid.size();
-    const auto grank = block.thread_index().x + block.group_index().x * blockDim.x;
+    const size_t gridSize = grid.size();
+    const auto globalThreadIndex = block.thread_index().x + block.group_index().x * blockDim.x;
 
-    uint32_t S0 = 0;
+    const uint32_t laneIndex = static_cast<uint32_t>(globalThreadIndex & (warpSize - 1u));
+    const uint32_t warpIndex = static_cast<uint32_t>(globalThreadIndex / warpSize);
+    const uint32_t numWarpsGrid = static_cast<uint32_t>(gridSize / warpSize);
 
-    auto *s_stages = shared_data;
+    uint32_t firstLargeStage = 0;
 
-    cg::memcpy_async(block, s_stages, stage_base, stages * sizeof(uint64_t));
+    // Cache stageRootBase into shared memory
+    auto *sharedStageRoots = shared_data;
+
+    cg::memcpy_async(block, sharedStageRoots, stageRootBase, numStages * sizeof(uint64_t));
     cg::wait(block);
 
+    // Phase 1: small-radix microkernel
     if constexpr (OneTwoThree == Multiway::OneWay) {
-        S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::OneWay, TS_log>(shared_data,
-                                                                             grid,
-                                                                             block,
-                                                                             debugCombo,
-                                                                             A,
-                                                                             nullptr,
-                                                                             nullptr,
-                                                                             N,
-                                                                             stages,
-                                                                             s_stages,
-                                                                             stage_twiddles);
+        firstLargeStage =
+            SmallRadixPhase1_SM<SharkFloatParams, Multiway::OneWay, TileSizeLog2>(shared_data,
+                                                                                  grid,
+                                                                                  block,
+                                                                                  debugCombo,
+                                                                                  A,
+                                                                                  nullptr,
+                                                                                  nullptr,
+                                                                                  transformSize,
+                                                                                  numStages,
+                                                                                  sharedStageRoots,
+                                                                                  stageTwiddleTable);
     } else if constexpr (OneTwoThree == Multiway::TwoWay) {
-        S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::TwoWay, TS_log>(shared_data,
-                                                                             grid,
-                                                                             block,
-                                                                             debugCombo,
-                                                                             A,
-                                                                             B,
-                                                                             nullptr,
-                                                                             N,
-                                                                             stages,
-                                                                             s_stages,
-                                                                             stage_twiddles);
+        firstLargeStage =
+            SmallRadixPhase1_SM<SharkFloatParams, Multiway::TwoWay, TileSizeLog2>(shared_data,
+                                                                                  grid,
+                                                                                  block,
+                                                                                  debugCombo,
+                                                                                  A,
+                                                                                  B,
+                                                                                  nullptr,
+                                                                                  transformSize,
+                                                                                  numStages,
+                                                                                  sharedStageRoots,
+                                                                                  stageTwiddleTable);
     } else if constexpr (OneTwoThree == Multiway::ThreeWay) {
-        S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::ThreeWay, TS_log>(shared_data,
-                                                                               grid,
-                                                                               block,
-                                                                               debugCombo,
-                                                                               A,
-                                                                               B,
-                                                                               C,
-                                                                               N,
-                                                                               stages,
-                                                                               s_stages,
-                                                                               stage_twiddles);
+        firstLargeStage =
+            SmallRadixPhase1_SM<SharkFloatParams, Multiway::ThreeWay, TileSizeLog2>(shared_data,
+                                                                                    grid,
+                                                                                    block,
+                                                                                    debugCombo,
+                                                                                    A,
+                                                                                    B,
+                                                                                    C,
+                                                                                    transformSize,
+                                                                                    numStages,
+                                                                                    sharedStageRoots,
+                                                                                    stageTwiddleTable);
     }
 
     // =========================
     // Phase 2: static contiguous striping by warp (no atomics)
     //          + scalarized micro-tiling (register-only, U=4/2)
     // =========================
-    for (uint32_t s = S0 + 1; s <= stages; ++s) {
-        const uint32_t m = 1u << s;
-        const uint32_t half = m >> 1;
+    for (uint32_t stageIndex = firstLargeStage + 1; stageIndex <= numStages; ++stageIndex) {
+        const uint32_t butterflySpan = 1u << stageIndex; // m
+        const uint32_t halfSpan = butterflySpan >> 1;    // m/2
 
-        [[maybe_unused]] const uint64_t w_m = s_stages[s - 1];
+        [[maybe_unused]] const uint64_t stageRoot = sharedStageRoots[stageIndex - 1];
 
-        // base into flattened stage_twiddles for this stage:
-        // stage s has 'half' twiddles; they live at indices [tw_base .. tw_base + half-1]
-        // with tw_base = sum_{t=1}^{s-1} 2^(t-1) = 2^(s-1) - 1 = half - 1
-        const uint32_t tw_base = half - 1u;
+        // base into flattened stageTwiddleTable for this stage:
+        // stage s has 'halfSpan' twiddles; they live at indices
+        // [twiddleStageOffset .. twiddleStageOffset + halfSpan-1]
+        // with twiddleStageOffset = 2^(s-1) - 1 = halfSpan - 1
+        const uint32_t twiddleStageOffset = halfSpan - 1u;
+        const uint64_t *SharkRestrict stageTwiddlesForStage = stageTwiddleTable + twiddleStageOffset;
 
-        // Per-stage tiling in j: J_total = ceil(half / W)
-        constexpr uint32_t W = 32u;
-        const uint32_t J_total = (half + (W - 1u)) / W; // ceil(half/W)
-        const uint32_t nblocks = N / m;
-        const size_t total_tasks =
-            static_cast<size_t>(nblocks) * static_cast<size_t>(J_total); // == N/64, invariant in s
+        const uint32_t numJChunks = (halfSpan + (warpSize - 1u)) / warpSize; // ceil(halfSpan/warpSize)
 
-        // Per-warp/per-lane constants (re-use outer gsize/grank)
-        const uint32_t lane = static_cast<uint32_t>(grank % W);
-        const uint32_t warp_id = static_cast<uint32_t>(grank / W);
-        const uint32_t warp_count = static_cast<uint32_t>(gsize / W);
+        const uint32_t numBlocksPerStage = transformSize / butterflySpan;
+        const size_t totalTasks = static_cast<size_t>(numBlocksPerStage) *
+                                  static_cast<size_t>(numJChunks); // == N/64, invariant in s
 
-        uint64_t w_strideW = 0;
-        uint64_t w_lane_base = 0;
+        uint64_t twiddleStrideWarp = 0; // w_m^W
+        uint64_t laneTwiddleBase = 0;   // w_m^lane
+        uint64_t currentTwiddle = 0;
 
         if constexpr (UseMontPow) {
-            w_strideW = MontgomeryPow(grid, block, debugCombo, w_m, W);      // w_m^W
-            w_lane_base = MontgomeryPow(grid, block, debugCombo, w_m, lane); // w_m^lane
+            twiddleStrideWarp = MontgomeryPow(grid, block, debugCombo, stageRoot, warpSize);
+            laneTwiddleBase = MontgomeryPow(grid, block, debugCombo, stageRoot, laneIndex);
         }
 
         // -------- Static contiguous partition: each warp gets one equal-sized range --------
-        const size_t tasks_per_warp = (total_tasks + warp_count - 1ull) / warp_count; // ceil
-        size_t T0 = static_cast<size_t>(warp_id) * tasks_per_warp;
-        size_t Tend = min(total_tasks, T0 + tasks_per_warp);
+        const size_t tasksPerWarp = (totalTasks + numWarpsGrid - 1ull) / numWarpsGrid; // ceil
+        size_t warpTaskBegin = static_cast<size_t>(warpIndex) * tasksPerWarp;
+        size_t warpTaskEnd = min(totalTasks, warpTaskBegin + tasksPerWarp);
 
-        if (T0 < Tend) {
+        if (warpTaskBegin < warpTaskEnd) {
             // Decode the first ticket in our contiguous range
-            uint32_t blk_id = static_cast<uint32_t>(T0 / J_total);
-            uint32_t j_chunk =
-                static_cast<uint32_t>(T0 - static_cast<size_t>(blk_id) * J_total); // faster than %
+            uint32_t blockIndex = static_cast<uint32_t>(warpTaskBegin / numJChunks);
+            uint32_t jChunkIndex =
+                static_cast<uint32_t>(warpTaskBegin - static_cast<size_t>(blockIndex) * numJChunks);
 
-            [[maybe_unused]] uint64_t w = 0;
             if constexpr (UseMontPow) {
-                // Twiddle at start of our range: w = w_lane_base * (w_strideW ^ j_chunk)
-                w = (j_chunk == 0)
-                        ? w_lane_base
-                        : MontgomeryMul(grid,
-                                        block,
-                                        debugCombo,
-                                        w_lane_base,
-                                        MontgomeryPow(grid, block, debugCombo, w_strideW, j_chunk));
+                currentTwiddle =
+                    (jChunkIndex == 0)
+                        ? laneTwiddleBase
+                        : MontgomeryMul(
+                              grid,
+                              block,
+                              debugCombo,
+                              laneTwiddleBase,
+                              MontgomeryPow(grid, block, debugCombo, twiddleStrideWarp, jChunkIndex));
             }
 
-            uint32_t k_base = blk_id * m;
-            size_t remaining = Tend - T0;
+            uint32_t blockDataBaseIndex = blockIndex * butterflySpan;
+            size_t tasksRemaining = warpTaskEnd - warpTaskBegin;
 
-            // Micro-tiling width: 4 for OneWay, 2 for Two/ThreeWay (keeps regs in check)
-            constexpr int U = (OneTwoThree == Multiway::OneWay ? 4 : 2);
+            constexpr int microTileWidth = (OneTwoThree == Multiway::OneWay ? 4 : 2);
 
             // ------------- process our contiguous slice -------------
-            while (remaining) {
-                // Tile cannot cross block boundary or our assigned range
-                const uint32_t room_in_block = J_total - j_chunk;
-                const uint32_t span = static_cast<uint32_t>(std::min<size_t>(remaining, room_in_block));
-                const uint32_t tile =
-                    (U == 4) ? std::min<uint32_t>(4u, span) : std::min<uint32_t>(2u, span);
-
-                // ===== position 0 =====
-                uint32_t j0_0 = lane + j_chunk * W;
-                bool a0 = (j0_0 < half);
-
-                uint64_t Au0 = 0, Av0 = 0, Bu0 = 0, Bv0 = 0, Cu0 = 0, Cv0 = 0;
-                uint32_t i0_0 = 0, i1_0 = 0;
-
-                uint64_t tw0 = 0;
-
-                if (a0) {
-                    i0_0 = k_base + j0_0;
-                    i1_0 = i0_0 + half;
-                    Au0 = A[i0_0];
-                    Av0 = A[i1_0];
-                    if constexpr (OneTwoThree != Multiway::OneWay) {
-                        Bu0 = B[i0_0];
-                        Bv0 = B[i1_0];
-                        if constexpr (OneTwoThree == Multiway::ThreeWay) {
-                            Cu0 = C[i0_0];
-                            Cv0 = C[i1_0];
-                        }
-                    }
-                    if constexpr (UseMontPow) {
-                        tw0 = w;
-                    } else {
-                        // precomputed w_m^{j0_0}
-                        tw0 = stage_twiddles[tw_base + j0_0];
-                    }
-                }
-
-                // ===== position 1 (if any) =====
-                uint64_t tw1 = 0;
-                bool a1 = false;
-                uint32_t i0_1 = 0, i1_1 = 0;
-                uint64_t Au1 = 0, Av1 = 0, Bu1 = 0, Bv1 = 0, Cu1 = 0, Cv1 = 0;
-
-                if (tile >= 2) {
-                    const uint32_t j0_1 = j0_0 + W;
-                    a1 = (j0_1 < half);
-                    if (a1) {
-                        i0_1 = k_base + j0_1;
-                        i1_1 = i0_1 + half;
-                        Au1 = A[i0_1];
-                        Av1 = A[i1_1];
-                        if constexpr (OneTwoThree != Multiway::OneWay) {
-                            Bu1 = B[i0_1];
-                            Bv1 = B[i1_1];
-                            if constexpr (OneTwoThree == Multiway::ThreeWay) {
-                                Cu1 = C[i0_1];
-                                Cv1 = C[i1_1];
-                            }
-                        }
-                    }
-
-                    if constexpr (UseMontPow) {
-                        tw1 = MontgomeryMul(grid, block, debugCombo, tw0, w_strideW);
-                    } else if (a1) {
-                        // precomputed w_m^{j0_1}
-                        tw1 = stage_twiddles[tw_base + j0_1];
-                    }
-                }
-
-                // ===== position 2/3 (OneWay only) =====
-                uint64_t Au2 = 0, Av2 = 0, Au3 = 0, Av3 = 0;
-                uint32_t i0_2 = 0, i1_2 = 0, i0_3 = 0, i1_3 = 0;
-                uint64_t tw2 = 0, tw3 = 0;
-                bool a2 = false, a3 = false;
-
-                if constexpr (U == 4) {
-                    if (tile >= 3) {
-                        const uint32_t j0_2 = j0_0 + 2u * W;
-                        a2 = (j0_2 < half);
-                        if (a2) {
-                            i0_2 = k_base + j0_2;
-                            i1_2 = i0_2 + half;
-                            Au2 = A[i0_2];
-                            Av2 = A[i1_2];
-
-                            if constexpr (!UseMontPow) {
-                                // precomputed w_m^{j0_2}
-                                tw2 = stage_twiddles[tw_base + j0_2];
-                            }
-                        }
-                    }
-                    if (tile >= 4) {
-                        const uint32_t j0_3 = j0_0 + 3u * W;
-                        a3 = (j0_3 < half);
-                        if (a3) {
-                            i0_3 = k_base + j0_3;
-                            i1_3 = i0_3 + half;
-                            Au3 = A[i0_3];
-                            Av3 = A[i1_3];
-
-                            if constexpr (!UseMontPow) {
-                                // precomputed w_m^{j0_3}
-                                tw3 = stage_twiddles[tw_base + j0_3];
-                            }
-                        }
-                    }
-
-                    if constexpr (UseMontPow) {
-                        if (tile >= 3) {
-                            tw2 = MontgomeryMul(grid, block, debugCombo, tw1, w_strideW);
-                            if (tile >= 4) {
-                                tw3 = MontgomeryMul(grid, block, debugCombo, tw2, w_strideW);
-                            }
-                        }
-                    }
-                }
-
-                // ---- compute/store: position 0 ----
-                if (a0) {
-                    if constexpr (OneTwoThree == Multiway::OneWay) {
-                        const uint64_t t0 = MontgomeryMul(grid, block, debugCombo, Av0, tw0);
-                        A[i0_0] = AddP(Au0, t0);
-                        A[i1_0] = SubP(Au0, t0);
-                    } else if constexpr (OneTwoThree == Multiway::TwoWay) {
-                        const uint64_t tA0 = MontgomeryMul(grid, block, debugCombo, Av0, tw0);
-                        const uint64_t tB0 = MontgomeryMul(grid, block, debugCombo, Bv0, tw0);
-                        A[i0_0] = AddP(Au0, tA0);
-                        A[i1_0] = SubP(Au0, tA0);
-                        B[i0_0] = AddP(Bu0, tB0);
-                        B[i1_0] = SubP(Bu0, tB0);
-                    } else {
-                        const uint64_t tA0 = MontgomeryMul(grid, block, debugCombo, Av0, tw0);
-                        const uint64_t tB0 = MontgomeryMul(grid, block, debugCombo, Bv0, tw0);
-                        const uint64_t tC0 = MontgomeryMul(grid, block, debugCombo, Cv0, tw0);
-                        A[i0_0] = AddP(Au0, tA0);
-                        A[i1_0] = SubP(Au0, tA0);
-                        B[i0_0] = AddP(Bu0, tB0);
-                        B[i1_0] = SubP(Bu0, tB0);
-                        C[i0_0] = AddP(Cu0, tC0);
-                        C[i1_0] = SubP(Cu0, tC0);
-                    }
-                }
-
-                // ---- compute/store: position 1 ----
-                if (tile >= 2 && a1) {
-                    if constexpr (OneTwoThree == Multiway::OneWay) {
-                        const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
-                        A[i0_1] = AddP(Au1, t1);
-                        A[i1_1] = SubP(Au1, t1);
-                    } else if constexpr (OneTwoThree == Multiway::TwoWay) {
-                        const uint64_t tA1 = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
-                        const uint64_t tB1 = MontgomeryMul(grid, block, debugCombo, Bv1, tw1);
-                        A[i0_1] = AddP(Au1, tA1);
-                        A[i1_1] = SubP(Au1, tA1);
-                        B[i0_1] = AddP(Bu1, tB1);
-                        B[i1_1] = SubP(Bu1, tB1);
-                    } else {
-                        const uint64_t tA1 = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
-                        const uint64_t tB1 = MontgomeryMul(grid, block, debugCombo, Bv1, tw1);
-                        const uint64_t tC1 = MontgomeryMul(grid, block, debugCombo, Cv1, tw1);
-                        A[i0_1] = AddP(Au1, tA1);
-                        A[i1_1] = SubP(Au1, tA1);
-                        B[i0_1] = AddP(Bu1, tB1);
-                        B[i1_1] = SubP(Bu1, tB1);
-                        C[i0_1] = AddP(Cu1, tC1);
-                        C[i1_1] = SubP(Cu1, tC1);
-                    }
-                }
-
-                // ---- compute/store: positions 2 & 3 (OneWay only) ----
-                if constexpr (U == 4) {
-                    if (tile >= 3 && a2) {
-                        const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, Av2, tw2);
-                        A[i0_2] = AddP(Au2, t2);
-                        A[i1_2] = SubP(Au2, t2);
-                    }
-                    if (tile >= 4 && a3) {
-                        const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, Av3, tw3);
-                        A[i0_3] = AddP(Au3, t3);
-                        A[i1_3] = SubP(Au3, t3);
-                    }
-                }
-
-                if constexpr (UseMontPow) {
-                    // ---- advance within block by 'tile' ----
-                    j_chunk += tile;
-                    remaining -= tile;
-
-                    if (j_chunk == J_total) {
-                        // wrap to next block
-                        j_chunk = 0;
-                        blk_id += 1;
-                        k_base += m;
-                        w = w_lane_base;
-                    } else {
-                        // seed twiddle for next tile start
-                        if (tile == 1)
-                            w = tw1;
-                        else if (tile == 2)
-                            w = MontgomeryMul(grid, block, debugCombo, tw1, w_strideW);
-                        else if (tile == 3)
-                            w = tw3; // built above when U==4
-                        else         /*tile==4*/
-                            w = MontgomeryMul(grid, block, debugCombo, tw3, w_strideW);
-                    }
-                } else {
-                    // ---- advance within block by 'tile' ----
-                    j_chunk += tile;
-                    remaining -= tile;
-
-                    if (j_chunk == J_total) {
-                        // wrap to next block
-                        j_chunk = 0;
-                        blk_id += 1;
-                        k_base += m;
-                    }
-                    // No twiddle recurrence needed here; next loop iteration
-                    // will reload tw0/tw1/tw2/tw3 from stage_twiddles.
-                }
-            } // while (remaining)
-        } // if (T0<Tend)
+            while (tasksRemaining) {
+                ProcessTile<SharkFloatParams, OneTwoThree, UseMontPow, microTileWidth>(
+                    grid,
+                    block,
+                    debugCombo,
+                    A,
+                    B,
+                    C,
+                    stageTwiddlesForStage,
+                    halfSpan,
+                    warpSize,
+                    numJChunks,
+                    laneIndex,
+                    butterflySpan,
+                    blockIndex,
+                    jChunkIndex,
+                    tasksRemaining,
+                    blockDataBaseIndex,
+                    currentTwiddle,
+                    twiddleStrideWarp,
+                    laneTwiddleBase);
+            }
+        }
 
         // One grid-wide barrier per stage (still required for correctness)
         grid.sync();
     }
 }
-
-
 //==================================================================================================
 //                       Pack (base-2^b) and Unpack (to Final128)
 //==================================================================================================

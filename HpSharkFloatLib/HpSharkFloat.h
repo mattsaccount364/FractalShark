@@ -52,9 +52,10 @@
 // #define ENABLE_REFERENCE_KERNEL // Kind of useless now, consider removing
 #define ENABLE_FULL_KERNEL
 
+// TODO: can't we automate this
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
-#define HP_SHARK_FLOAT_TEST
+//#define HP_SHARK_FLOAT_TEST
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests

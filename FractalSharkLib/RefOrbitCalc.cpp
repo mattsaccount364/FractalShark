@@ -14,7 +14,7 @@
 #include "ScopedMpir.h"
 
 #include "HpSharkFloat.h"
-#include "KernelInvoke.cuh"
+#include "KernelInvoke.h"
 
 #include <fstream>
 #include <math.h>
@@ -2174,6 +2174,9 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision c
     const auto NumIters = m_Fractal.GetNumIterations<IterType>();
     const auto PrecInBits = HighPrecision::defaultPrecisionInBits();
     const auto PrecInLimbs = (PrecInBits + 31) / 32;
+
+    // TODO: hardcoded is not realistic
+    HpShark::LaunchParams launchParams{128, 256};
 
     auto lamb = [&]<class P>(HpSharkReferenceResults<P> &combo) {
         combo.RadiusY = results->GetMaxRadius();

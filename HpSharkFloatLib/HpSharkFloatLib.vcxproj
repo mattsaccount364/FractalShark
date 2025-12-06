@@ -23,9 +23,9 @@
     <ClInclude Include="LAInfoI.h" />
     <ClInclude Include="LAParameters.h" />
     <ClInclude Include="LAstep.h" />
-    <ClInclude Include="MultiplyNTT_NormalizeV1.cuh" />
-    <ClInclude Include="MultiplyNTT_NormalizePPv3.cuh" />
-    <ClInclude Include="MultiplyNTT_NormalizeWarpTiledV2.cuh" />
+    <ClInclude Include="MultiplyNTT_NormalizeV1.h" />
+    <ClInclude Include="MultiplyNTT_NormalizePPv3.h" />
+    <ClInclude Include="MultiplyNTT_NormalizeWarpTiledV2.h" />
     <ClInclude Include="Vectors.h" />
     <CudaCompile Include="AddTestKernels.cu" />
     <ClCompile Include="BenchmarkTimer.cpp">
@@ -39,8 +39,8 @@
     <ClInclude Include="heap_allocator\include\heap.h" />
     <ClInclude Include="heap_allocator\include\HeapCpp.h" />
     <ClInclude Include="heap_allocator\include\llist.h" />
-    <ClInclude Include="KernelInvoke.cuh" />
-    <ClInclude Include="KernelInvokeInternal.cuh" />
+    <ClInclude Include="KernelInvoke.h" />
+    <ClInclude Include="KernelInvokeInternal.h" />
     <ClInclude Include="MultiplyNTT.cu">
       <FileType>Document</FileType>
     </ClInclude>
@@ -49,30 +49,30 @@
     <CudaCompile Include="MultiplyNTTTestKernels.cu" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Add.cuh" />
-    <ClInclude Include="Add_ABC.cuh" />
-    <ClInclude Include="Add_DE.cuh" />
+    <ClInclude Include="Add.h" />
+    <ClInclude Include="Add_ABC.h" />
+    <ClInclude Include="Add_DE.h" />
     <ClInclude Include="CudaCrap.h" />
     <ClInclude Include="CudaDblflt.h" />
     <ClInclude Include="dbldbl.cuh" />
     <ClInclude Include="dblflt.cuh" />
     <ClInclude Include="dblflt.h" />
-    <ClInclude Include="DebugChecksum.cuh" />
+    <ClInclude Include="DebugChecksum.h" />
     <ClInclude Include="DebugChecksumHost.h" />
     <ClInclude Include="DebugStateRaw.h" />
     <ClInclude Include="ExplicitInstantiate.h" />
     <ClInclude Include="HDRFloat.h" />
     <ClInclude Include="HDRFloatComplex.h" />
     <ClInclude Include="HighPrecision.h" />
-    <ClInclude Include="HpSharkFloat.cuh" />
-    <ClInclude Include="HpSharkReferenceOrbit.cuh" />
-    <ClInclude Include="MontgomeryCoreConstexpr.cuh" />
+    <ClInclude Include="HpSharkFloat.h" />
+    <ClInclude Include="HpSharkReferenceOrbit.h" />
+    <ClInclude Include="MontgomeryCoreConstexpr.h" />
     <ClInclude Include="MpirSerialization.h" />
-    <ClInclude Include="MultiplyNTT.cuh" />
+    <ClInclude Include="MultiplyNTT.h" />
     <ClInclude Include="MultiplyNTTCudaSetup.h" />
-    <ClInclude Include="MultiplyNTTPlanBuilder.cuh" />
+    <ClInclude Include="MultiplyNTTPlanBuilder.h" />
     <ClInclude Include="NTTConstexprGenerator.h" />
-    <ClInclude Include="PeriodicityChecker.cuh" />
+    <ClInclude Include="PeriodicityChecker.h" />
     <ClInclude Include="TestVerbose.h" />
     <ClInclude Include="ThreeWayMagnitude.h" />
   </ItemGroup>

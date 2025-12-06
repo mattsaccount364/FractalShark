@@ -103,5 +103,4 @@ static_assert(MagicPrimeInv == 0xFFFF'FFFE'FFFF'FFFFull, "-p^{-1} mod 2^64 misma
 static_assert(R2 == 0xFFFF'FFFE'0000'0001ull, "(2^64)^2 mod p mismatch");
 static_assert(OneMont == 0x0000'0000'FFFF'FFFFull, "1 (Montgomery) mismatch");
 
-
 } // namespace SharkNTT

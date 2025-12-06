@@ -1,6 +1,6 @@
 #include "DbgHeap.h"
-#include "KernelInvoke.cuh"
-#include "KernelInvokeInternal.cuh"
+#include "KernelInvoke.h"
+#include "KernelInvokeInternal.h"
 
 template <class SharkFloatParams>
 void
@@ -42,7 +42,10 @@ InvokeAddKernelPerf(const HpShark::LaunchParams &launchParams,
 #ifdef ENABLE_ADD_KERNEL
 #define ExplicitlyInstantiateAdd(SharkFloatParams)                                                      \
     template void InvokeAddKernelPerf<SharkFloatParams>(                                                \
-        const HpShark::LaunchParams &launchParams, BenchmarkTimer & timer, HpSharkAddComboResults<SharkFloatParams> & combo, uint64_t numIters);
+        const HpShark::LaunchParams &launchParams,                                                      \
+        BenchmarkTimer &timer,                                                                          \
+        HpSharkAddComboResults<SharkFloatParams> &combo,                                                \
+        uint64_t numIters);
 #else
 #define ExplicitlyInstantiateAdd(SharkFloatParams) ;
 #endif

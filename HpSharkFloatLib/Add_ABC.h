@@ -65,20 +65,19 @@ cmp_magnitude_warp(const uint32_t *SharkRestrict e1,
 }
 
 static __device__ SharkForceInlineReleaseOnly ThreeWayLargestOrdering
-CompareMagnitudes3Way (
-    const int32_t effExpA,
-    const int32_t effExpB,
-    const int32_t effExpC,
-    const int32_t actualDigits,
-    const int32_t numActualDigitsPlusGuard,
-    const int32_t shiftA,
-    const int32_t shiftB,
-    const int32_t shiftC,
-    const uint32_t *SharkRestrict extA,
-    const uint32_t *SharkRestrict extB,
-    const uint32_t *SharkRestrict extC,
-    int32_t &outExp
-) {
+CompareMagnitudes3Way(const int32_t effExpA,
+                      const int32_t effExpB,
+                      const int32_t effExpC,
+                      const int32_t actualDigits,
+                      const int32_t numActualDigitsPlusGuard,
+                      const int32_t shiftA,
+                      const int32_t shiftB,
+                      const int32_t shiftC,
+                      const uint32_t *SharkRestrict extA,
+                      const uint32_t *SharkRestrict extB,
+                      const uint32_t *SharkRestrict extC,
+                      int32_t &outExp)
+{
 #ifdef TEST_SMALL_NORMALIZE_WARP
     static constexpr bool OriginalImpl = true;
 #else
@@ -152,16 +151,11 @@ CompareMagnitudes3Way (
 
 // 5) helper to do |±X ±Y ±Z| in one pass, given a fixed X_gtY
 static uint64_t __device__ SharkForceInlineReleaseOnly
-CoreThreeWayAdd(
-    uint64_t X, bool sX,
-    uint64_t Y, bool sY,
-    uint64_t Z, bool sZ,
-    bool     X_gtY,
-    bool &outSign
-) {
+CoreThreeWayAdd(uint64_t X, bool sX, uint64_t Y, bool sY, uint64_t Z, bool sZ, bool X_gtY, bool &outSign)
+{
     // (X vs Y)
     uint64_t magXY;
-    bool     sXY;
+    bool sXY;
     if (sX == sY) {
         magXY = X + Y;
         sXY = sX;
@@ -188,37 +182,36 @@ CoreThreeWayAdd(
     return mag;
 }
 
-template<class SharkFloatParams, int32_t CallIndex>
-static __device__ SharkForceInlineReleaseOnly
-void Phase1_ABC (
-    cg::thread_block &block,
-    cg::grid_group &grid,
-    const int32_t idx,
-    const ThreeWayLargestOrdering ordering,
-    const bool IsNegativeA,
-    const bool IsNegativeB,
-    const bool IsNegativeC,
-    const int32_t  numActualDigitsPlusGuard,
-    const int32_t  actualDigits,
-    const uint32_t *SharkRestrict extA,
-    const uint32_t *SharkRestrict extB,
-    const uint32_t *SharkRestrict extC,
-    const int32_t  shiftA,
-    const int32_t  shiftB,
-    const int32_t  shiftC,
-    const int32_t  effExpA,
-    const int32_t  effExpB,
-    const int32_t  effExpC,
-    const int32_t  bias,
+template <class SharkFloatParams, int32_t CallIndex>
+static __device__ SharkForceInlineReleaseOnly void
+Phase1_ABC(cg::thread_block &block,
+           cg::grid_group &grid,
+           const int32_t idx,
+           const ThreeWayLargestOrdering ordering,
+           const bool IsNegativeA,
+           const bool IsNegativeB,
+           const bool IsNegativeC,
+           const int32_t numActualDigitsPlusGuard,
+           const int32_t actualDigits,
+           const uint32_t *SharkRestrict extA,
+           const uint32_t *SharkRestrict extB,
+           const uint32_t *SharkRestrict extC,
+           const int32_t shiftA,
+           const int32_t shiftB,
+           const int32_t shiftC,
+           const int32_t effExpA,
+           const int32_t effExpB,
+           const int32_t effExpC,
+           const int32_t bias,
 
-    bool &outSignTrue,      // sign when X_gtY == true
-    bool &outSignFalse,     // sign when X_gtY == false
-    int32_t &outExpTrue_Orig,  // exponent before bias for true-branch
-    int32_t &outExpFalse_Orig, // exponent before bias for false-branch
-    uint64_t *SharkRestrict extResultTrue,   // result limbs for X_gtY == true
-    uint64_t *SharkRestrict extResultFalse,   // result limbs for X_gtY == false
+           bool &outSignTrue,                      // sign when X_gtY == true
+           bool &outSignFalse,                     // sign when X_gtY == false
+           int32_t &outExpTrue_Orig,               // exponent before bias for true-branch
+           int32_t &outExpFalse_Orig,              // exponent before bias for false-branch
+           uint64_t *SharkRestrict extResultTrue,  // result limbs for X_gtY == true
+           uint64_t *SharkRestrict extResultFalse, // result limbs for X_gtY == false
 
-    DebugState<SharkFloatParams> *SharkRestrict debugStates)
+           DebugState<SharkFloatParams> *SharkRestrict debugStates)
 {
     outSignTrue = false;
     outSignFalse = false;
@@ -226,18 +219,19 @@ void Phase1_ABC (
     // 2) pick the “base” exponent from the largest input
     int32_t baseExp;
     switch (ordering) {
-    case ThreeWayLargestOrdering::A_GT_AllOthers:
-        baseExp = effExpA;
-        break;
-    case ThreeWayLargestOrdering::B_GT_AllOthers:
-        baseExp = effExpB;
-        break;
-    case ThreeWayLargestOrdering::C_GT_AllOthers:
-        baseExp = effExpC;
-        break;
-    default:
-        assert(false);
-        for (;;);
+        case ThreeWayLargestOrdering::A_GT_AllOthers:
+            baseExp = effExpA;
+            break;
+        case ThreeWayLargestOrdering::B_GT_AllOthers:
+            baseExp = effExpB;
+            break;
+        case ThreeWayLargestOrdering::C_GT_AllOthers:
+            baseExp = effExpC;
+            break;
+        default:
+            assert(false);
+            for (;;)
+                ;
     }
 
     // 3) single diff per input to align to baseExp
@@ -249,69 +243,69 @@ void Phase1_ABC (
     const uint32_t *SharkRestrict extX;
     const uint32_t *SharkRestrict extY;
     const uint32_t *SharkRestrict extZ;
-    bool  sX, sY, sZ;
+    bool sX, sY, sZ;
     int32_t shX, shY, shZ, diffY, diffZ;
 
     switch (ordering) {
-    case ThreeWayLargestOrdering::A_GT_AllOthers:
-        extX = extA;
-        sX = IsNegativeA;
-        shX = shiftA;
+        case ThreeWayLargestOrdering::A_GT_AllOthers:
+            extX = extA;
+            sX = IsNegativeA;
+            shX = shiftA;
 
-        extY = extB;
-        sY = IsNegativeB;
-        shY = shiftB;
-        diffY = diffB;
+            extY = extB;
+            sY = IsNegativeB;
+            shY = shiftB;
+            diffY = diffB;
 
-        extZ = extC;
-        sZ = IsNegativeC;
-        shZ = shiftC;
-        diffZ = diffC;
-        break;
+            extZ = extC;
+            sZ = IsNegativeC;
+            shZ = shiftC;
+            diffZ = diffC;
+            break;
 
-    case ThreeWayLargestOrdering::B_GT_AllOthers:
-        extX = extB;
-        sX = IsNegativeB;
-        shX = shiftB;
+        case ThreeWayLargestOrdering::B_GT_AllOthers:
+            extX = extB;
+            sX = IsNegativeB;
+            shX = shiftB;
 
-        extY = extA;
-        sY = IsNegativeA;
-        shY = shiftA;
-        diffY = diffA;
+            extY = extA;
+            sY = IsNegativeA;
+            shY = shiftA;
+            diffY = diffA;
 
-        extZ = extC;
-        sZ = IsNegativeC;
-        shZ = shiftC;
-        diffZ = diffC;
-        break;
+            extZ = extC;
+            sZ = IsNegativeC;
+            shZ = shiftC;
+            diffZ = diffC;
+            break;
 
-    case ThreeWayLargestOrdering::C_GT_AllOthers:
-        extX = extC;
-        sX = IsNegativeC;
-        shX = shiftC;
+        case ThreeWayLargestOrdering::C_GT_AllOthers:
+            extX = extC;
+            sX = IsNegativeC;
+            shX = shiftC;
 
-        extY = extA;
-        sY = IsNegativeA;
-        shY = shiftA;
-        diffY = diffA;
+            extY = extA;
+            sY = IsNegativeA;
+            shY = shiftA;
+            diffY = diffA;
 
-        extZ = extB;
-        sZ = IsNegativeB;
-        shZ = shiftB;
-        diffZ = diffB;
-        break;
+            extZ = extB;
+            sZ = IsNegativeB;
+            shZ = shiftB;
+            diffZ = diffB;
+            break;
 
-    default:
-        assert(false);
-        for (;;);
+        default:
+            assert(false);
+            for (;;)
+                ;
     }
 
     // 6) single pass: two calls per digit, grid-stride version
     {
         int32_t stride = grid.size();
         for (int32_t i = idx; i < numActualDigitsPlusGuard; i += stride) {
-            uint64_t Xi = GetNormalizedDigit(
-                extX, actualDigits, numActualDigitsPlusGuard, shX, i);
+            uint64_t Xi = GetNormalizedDigit(extX, actualDigits, numActualDigitsPlusGuard, shX, i);
             uint64_t Yi = GetShiftedNormalizedDigit<SharkFloatParams>(
                 extY, actualDigits, numActualDigitsPlusGuard, shY, diffY, i);
             uint64_t Zi = GetShiftedNormalizedDigit<SharkFloatParams>(
@@ -341,23 +335,23 @@ void Phase1_ABC (
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 CarryPropagationSmall_ABC(uint32_t *SharkRestrict globalSync1,    // [0] holds convergence counter
-                     const int32_t idx,                      // this thread’s global index
-                     const int32_t numActualDigitsPlusGuard, // N
-                     uint64_t *SharkRestrict extResultTrue,                // Phase1_ABC “true” limbs
-                     uint64_t *SharkRestrict extResultFalse,               // Phase1_ABC “false” limbs
-                     uint64_t *SharkRestrict final128_DE,                  // Phase1_DE limbs
-                     uint32_t *SharkRestrict carry1,                       // length N+1
-                     uint32_t *SharkRestrict carry2,                       // length N+1
-                     uint32_t *SharkRestrict carry3,                       // length N+1
-                     uint32_t *SharkRestrict carry4,                       // length N+1
-                     uint32_t *SharkRestrict carry5,                       // length N+1
-                     uint32_t *SharkRestrict carry6,                       // length N+1
-                     int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
-                     int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
-                     int32_t &carryAcc_DE,                   // out: final unsigned carry
-                     cg::thread_block &block,
-                     cg::grid_group &grid,
-                     DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
+                          const int32_t idx,                      // this thread’s global index
+                          const int32_t numActualDigitsPlusGuard, // N
+                          uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
+                          uint64_t *SharkRestrict extResultFalse, // Phase1_ABC “false” limbs
+                          uint64_t *SharkRestrict final128_DE,    // Phase1_DE limbs
+                          uint32_t *SharkRestrict carry1,         // length N+1
+                          uint32_t *SharkRestrict carry2,         // length N+1
+                          uint32_t *SharkRestrict carry3,         // length N+1
+                          uint32_t *SharkRestrict carry4,         // length N+1
+                          uint32_t *SharkRestrict carry5,         // length N+1
+                          uint32_t *SharkRestrict carry6,         // length N+1
+                          int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
+                          int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
+                          int32_t &carryAcc_DE,                   // out: final unsigned carry
+                          cg::thread_block &block,
+                          cg::grid_group &grid,
+                          DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
 {
     constexpr uint64_t SHIFT1 = 21;
     constexpr uint64_t SHIFT2 = 42;
@@ -513,20 +507,18 @@ struct WarpProcessTriple {
 };
 
 template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly
-WarpProcessTriple
-WarpProcessTileCarry(
-    const int32_t iteration,
-    unsigned fullMask,
-    const int32_t numActualDigitsPlusGuard,
-    const int lane,
-    const int tileIndex,
-    const uint32_t in1,
-    const uint32_t in2,
-    const uint32_t in3,
-    int64_t &limb1,
-    int64_t &limb2,
-    int64_t &limb3)
+static __device__ SharkForceInlineReleaseOnly WarpProcessTriple
+WarpProcessTileCarry(const int32_t iteration,
+                     unsigned fullMask,
+                     const int32_t numActualDigitsPlusGuard,
+                     const int lane,
+                     const int tileIndex,
+                     const uint32_t in1,
+                     const uint32_t in2,
+                     const uint32_t in3,
+                     int64_t &limb1,
+                     int64_t &limb2,
+                     int64_t &limb3)
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
     // untested
@@ -538,8 +530,8 @@ WarpProcessTileCarry(
     const int base = tileIndex * warpSz;
     const auto basePlusLane = base + lane;
 
-    int32_t r1 = 0, r2 = 0, r3 = 0;        // 010101b : initial carry-in = 0 for all three streams
-    uint32_t changedMask = 0u; // bit0=True, bit1=False, bit2=DE
+    int32_t r1 = 0, r2 = 0, r3 = 0; // 010101b : initial carry-in = 0 for all three streams
+    uint32_t changedMask = 0u;      // bit0=True, bit1=False, bit2=DE
 
     const bool isLastLaneInTile = (lane == warpSz - 1);
     const bool isLastDigit = (basePlusLane == numActualDigitsPlusGuard - 1);
@@ -576,7 +568,7 @@ WarpProcessTileCarry(
         const uint32_t lo1 = static_cast<uint32_t>(sum1);
         c_out1 = static_cast<int32_t>(sum1 >> 32);
 
-        const int64_t sum2 = static_cast<int64_t>(limb2) + inStep2; 
+        const int64_t sum2 = static_cast<int64_t>(limb2) + inStep2;
         const uint32_t lo2 = static_cast<uint32_t>(sum2);
         c_out2 = static_cast<int32_t>(sum2 >> 32);
 
@@ -772,29 +764,28 @@ make_PPIdentity()
     return PPTransfer3{bits};
 }
 
-
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC_TiledV2(uint32_t *globalSync1, // [0] holds convergence counter
-                     uint32_t *globalSync2,
-                     uint64_t *SharkRestrict shared_data,
-                     const int32_t idx,                      // this thread’s global index
-                     const int32_t numActualDigitsPlusGuard, // N
-                     uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
-                     uint64_t *SharkRestrict extResultFalse, // Phase1_ABC “false” limbs
-                     uint64_t *SharkRestrict final128_DE,    // Phase1_DE limbs
-                     uint32_t *SharkRestrict cur1,           // length N+1
-                     uint32_t *SharkRestrict next1,          // length N+1
-                     uint32_t *SharkRestrict cur2,           // length N+1
-                     uint32_t *SharkRestrict next2,          // length N+1
-                     uint32_t *SharkRestrict cur3,           // length N+1
-                     uint32_t *SharkRestrict next3,          // length N+1
-                     int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
-                     int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
-                     int32_t &carryAcc_DE,                   // out: final unsigned carry
-                     cg::thread_block &block,
-                     cg::grid_group &grid,
-                     DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
+                             uint32_t *globalSync2,
+                             uint64_t *SharkRestrict shared_data,
+                             const int32_t idx,                      // this thread’s global index
+                             const int32_t numActualDigitsPlusGuard, // N
+                             uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
+                             uint64_t *SharkRestrict extResultFalse, // Phase1_ABC “false” limbs
+                             uint64_t *SharkRestrict final128_DE,    // Phase1_DE limbs
+                             uint32_t *SharkRestrict cur1,           // length N+1
+                             uint32_t *SharkRestrict next1,          // length N+1
+                             uint32_t *SharkRestrict cur2,           // length N+1
+                             uint32_t *SharkRestrict next2,          // length N+1
+                             uint32_t *SharkRestrict cur3,           // length N+1
+                             uint32_t *SharkRestrict next3,          // length N+1
+                             int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
+                             int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
+                             int32_t &carryAcc_DE,                   // out: final unsigned carry
+                             cg::thread_block &block,
+                             cg::grid_group &grid,
+                             DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
 {
 
     if (grid.size() % 32 != 0) {
@@ -1010,51 +1001,49 @@ CarryPropagation_ABC_TiledV2(uint32_t *globalSync1, // [0] holds convergence cou
     carryAcc_DE = next3[numActualDigitsPlusGuard];
 }
 
-
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
-CarryPropagation_ABC_PPv3(
-    uint32_t *globalSync1, // [0] holds convergence counter
-    uint32_t *globalSync2,
-    uint64_t *SharkRestrict shared_data,
-    const int32_t    idx,                       // this thread’s global index
-    const int32_t    numActualDigitsPlusGuard,  // N
-    uint64_t *SharkRestrict extResultTrue,         // Phase1_ABC “true” limbs
-    uint64_t *SharkRestrict extResultFalse,        // Phase1_ABC “false” limbs
-    uint64_t *SharkRestrict final128_DE,               // Phase1_DE limbs
-    uint32_t *SharkRestrict cur1,                    // length N+1
-    uint32_t *SharkRestrict next1,                    // length N+1
-    uint32_t *SharkRestrict cur2,                    // length N+1
-    uint32_t *SharkRestrict next2,                    // length N+1
-    uint32_t *SharkRestrict cur3,                    // length N+1
-    uint32_t *SharkRestrict next3,                    // length N+1
-    int32_t &carryAcc_ABC_True,         // out: final signed carry/borrow
-    int32_t &carryAcc_ABC_False,        // out: final signed carry/borrow
-    int32_t &carryAcc_DE,               // out: final unsigned carry
-    cg::thread_block &block,
-    cg::grid_group &grid,
-    DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState
-) {
+CarryPropagation_ABC_PPv3(uint32_t *globalSync1, // [0] holds convergence counter
+                          uint32_t *globalSync2,
+                          uint64_t *SharkRestrict shared_data,
+                          const int32_t idx,                      // this thread’s global index
+                          const int32_t numActualDigitsPlusGuard, // N
+                          uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
+                          uint64_t *SharkRestrict extResultFalse, // Phase1_ABC “false” limbs
+                          uint64_t *SharkRestrict final128_DE,    // Phase1_DE limbs
+                          uint32_t *SharkRestrict cur1,           // length N+1
+                          uint32_t *SharkRestrict next1,          // length N+1
+                          uint32_t *SharkRestrict cur2,           // length N+1
+                          uint32_t *SharkRestrict next2,          // length N+1
+                          uint32_t *SharkRestrict cur3,           // length N+1
+                          uint32_t *SharkRestrict next3,          // length N+1
+                          int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
+                          int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
+                          int32_t &carryAcc_DE,                   // out: final unsigned carry
+                          cg::thread_block &block,
+                          cg::grid_group &grid,
+                          DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
+{
 
     if (grid.size() % 32 != 0) {
-        CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1,                   // [0] holds convergence counter
-                                  idx,                      // this thread’s global index
-                                  numActualDigitsPlusGuard, // N
-                                  extResultTrue,                // Phase1_ABC “true” limbs
-                                  extResultFalse,               // Phase1_ABC “false” limbs
-                                  final128_DE,                  // Phase1_DE limbs
-                                  cur1,                       // length N+1
-                                  next1,                       // length N+1
-                                  cur2,                       // length N+1
-                                  next2,                       // length N+1
-                                  cur3,                       // length N+1
-                                  next3,                       // length N+1
-                                  carryAcc_ABC_True,             // out: final signed carry/borrow
-                                  carryAcc_ABC_False,            // out: final signed carry/borrow
-                                  carryAcc_DE,                   // out: final unsigned carry
-                                  block,
-                                  grid,
-                                  debugGlobalState);
+        CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1, // [0] holds convergence counter
+                                                    idx,         // this thread’s global index
+                                                    numActualDigitsPlusGuard, // N
+                                                    extResultTrue,            // Phase1_ABC “true” limbs
+                                                    extResultFalse,           // Phase1_ABC “false” limbs
+                                                    final128_DE,              // Phase1_DE limbs
+                                                    cur1,                     // length N+1
+                                                    next1,                    // length N+1
+                                                    cur2,                     // length N+1
+                                                    next2,                    // length N+1
+                                                    cur3,                     // length N+1
+                                                    next3,                    // length N+1
+                                                    carryAcc_ABC_True,  // out: final signed carry/borrow
+                                                    carryAcc_ABC_False, // out: final signed carry/borrow
+                                                    carryAcc_DE,        // out: final unsigned carry
+                                                    block,
+                                                    grid,
+                                                    debugGlobalState);
         return;
     }
 
@@ -1104,7 +1093,11 @@ CarryPropagation_ABC_PPv3(
     // grid‐stride per‐digit work
     for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
         // ABC_True
-        auto AddPhase = [](int32_t numActualDigitsPlusGuard, uint64_t *extResult, uint32_t *next, uint32_t *cur, int32_t i) {
+        auto AddPhase = [](int32_t numActualDigitsPlusGuard,
+                           uint64_t *extResult,
+                           uint32_t *next,
+                           uint32_t *cur,
+                           int32_t i) {
             const int64_t limb = static_cast<int64_t>(extResult[i]) + static_cast<int32_t>(next[i]);
             next[i] = 0;
 
@@ -1160,7 +1153,7 @@ CarryPropagation_ABC_PPv3(
 
     grid.sync();
 
-// ----------------------------
+    // ----------------------------
     // Step 2: hierarchical scan over tfBlock (block-level transfers)
     //         using shared_data for all shared memory.
     // ----------------------------
@@ -1280,7 +1273,6 @@ CarryPropagation_ABC_PPv3(
         grid.sync(); // 3rd global barrier: tfBlock[k] is now full prefix F_block_prefix[k]
     }
 
-
     // ----------------------------
     // Step 3: use block prefix functions to compute per-digit incoming carries
     //         and apply them to digits.
@@ -1368,7 +1360,7 @@ CarryPropagation_ABC_PPv3(
 
     grid.sync();
 
-    carryAcc_ABC_True  = static_cast<int32_t>(cur1[numDigits]);
+    carryAcc_ABC_True = static_cast<int32_t>(cur1[numDigits]);
     carryAcc_ABC_False = static_cast<int32_t>(cur2[numDigits]);
-    carryAcc_DE        = static_cast<int32_t>(cur3[numDigits]);
+    carryAcc_DE = static_cast<int32_t>(cur3[numDigits]);
 }

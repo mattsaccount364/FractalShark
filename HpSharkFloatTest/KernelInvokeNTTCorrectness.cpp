@@ -1,6 +1,6 @@
 #include "DbgHeap.h"
-#include "KernelInvoke.cuh"
-#include "KernelInvokeInternal.cuh"
+#include "KernelInvoke.h"
+#include "KernelInvokeInternal.h"
 #include "TestVerbose.h"
 
 template <class SharkFloatParams>
@@ -89,10 +89,10 @@ InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
 #ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(                                 \
-        const HpShark::LaunchParams &launchParams,                                                         \
-        BenchmarkTimer & timer,                                                                         \
-        HpSharkComboResults<SharkFloatParams> & combo,                                                  \
-        DebugGpuCombo * debugCombo);
+        const HpShark::LaunchParams &launchParams,                                                      \
+        BenchmarkTimer &timer,                                                                          \
+        HpSharkComboResults<SharkFloatParams> &combo,                                                   \
+        DebugGpuCombo *debugCombo);
 #else
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams) ;
 #endif

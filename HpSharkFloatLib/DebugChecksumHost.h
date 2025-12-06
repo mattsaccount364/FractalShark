@@ -1,27 +1,26 @@
 #pragma once
 
-#include <vector>
 #include <cstdint>
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
-#include "HpSharkFloat.cuh"
-#include "DebugChecksum.cuh"
+#include "DebugChecksum.h"
+#include "HpSharkFloat.h"
 
-template <class SharkFloatParams>
-struct DebugMultiplyCountHost {
+template <class SharkFloatParams> struct DebugMultiplyCountHost {
     DebugMultiplyCountHost() : multiplyCount{} {}
 
-    void DebugMultiplyIncrement(int incomingCount) {
+    void
+    DebugMultiplyIncrement(int incomingCount)
+    {
         this->multiplyCount += incomingCount;
     }
 
     uint64_t multiplyCount;
 };
 
-
-template <class SharkFloatParams>
-struct DebugStateHost {
+template <class SharkFloatParams> struct DebugStateHost {
 
     // CRC64 polynomial (ISO 3309 standard)
     static constexpr uint64_t CRC64_POLY = 0x42F0E1EBA9EA3693ULL;
@@ -36,19 +35,15 @@ struct DebugStateHost {
      * @param arrayToChecksum The source data as a std::vector<uint64_t>.
      * @param purpose         The intended purpose (for debugging context).
      */
-    DebugStateHost(
-        const std::vector<uint32_t> &arrayToChecksum,
-        DebugStatePurpose purpose,
-        int recursionDepth,
-        int callIndex
-    );
+    DebugStateHost(const std::vector<uint32_t> &arrayToChecksum,
+                   DebugStatePurpose purpose,
+                   int recursionDepth,
+                   int callIndex);
 
-    DebugStateHost(
-        const std::vector<uint64_t> &arrayToChecksum,
-        DebugStatePurpose purpose,
-        int recursionDepth,
-        int callIndex
-    );
+    DebugStateHost(const std::vector<uint64_t> &arrayToChecksum,
+                   DebugStatePurpose purpose,
+                   int recursionDepth,
+                   int callIndex);
 
     /**
      * @brief Constructs a DebugStateHost by copying the data from
@@ -59,41 +54,33 @@ struct DebugStateHost {
      * @param size     Number of 64-bit elements.
      * @param purpose  The intended purpose (for debugging context).
      */
-    DebugStateHost(
-        const uint32_t *data,
-        size_t size,
-        DebugStatePurpose purpose,
-        int recursionDepth,
-        int callIndex,
-        UseConvolution useConvolution
-    );
+    DebugStateHost(const uint32_t *data,
+                   size_t size,
+                   DebugStatePurpose purpose,
+                   int recursionDepth,
+                   int callIndex,
+                   UseConvolution useConvolution);
 
-    DebugStateHost(
-        const uint64_t *data,
-        size_t size,
-        DebugStatePurpose purpose,
-        int recursionDepth,
-        int callIndex,
-        UseConvolution useConvolution
-    );
+    DebugStateHost(const uint64_t *data,
+                   size_t size,
+                   DebugStatePurpose purpose,
+                   int recursionDepth,
+                   int callIndex,
+                   UseConvolution useConvolution);
 
-    void Reset(
-        const uint32_t *arrayToChecksum,
-        size_t arraySize,
-        DebugStatePurpose purpose,
-        int recursionDepth,
-        int callIndex,
-        UseConvolution useConvolution
-    );
+    void Reset(const uint32_t *arrayToChecksum,
+               size_t arraySize,
+               DebugStatePurpose purpose,
+               int recursionDepth,
+               int callIndex,
+               UseConvolution useConvolution);
 
-    void Reset(
-        const uint64_t *arrayToChecksum,
-        size_t arraySize,
-        DebugStatePurpose purpose,
-        int recursionDepth,
-        int callIndex,
-        UseConvolution useConvolution
-    );
+    void Reset(const uint64_t *arrayToChecksum,
+               size_t arraySize,
+               DebugStatePurpose purpose,
+               int recursionDepth,
+               int callIndex,
+               UseConvolution useConvolution);
 
     std::string GetStr() const;
 
@@ -104,24 +91,18 @@ struct DebugStateHost {
      * @param initialCrc      Starting CRC value (commonly 0).
      * @return                64-bit CRC of the vector content.
      */
-    static uint64_t ComputeCRC64(
-        const std::vector<uint64_t> &arrayToChecksum,
-        uint64_t initialCrc
-    );
+    static uint64_t ComputeCRC64(const std::vector<uint64_t> &arrayToChecksum, uint64_t initialCrc);
 
-    static uint64_t ComputeCRC64(
-        const std::vector<uint32_t> &arrayToChecksum,
-        uint64_t initialCrc
-    );
+    static uint64_t ComputeCRC64(const std::vector<uint32_t> &arrayToChecksum, uint64_t initialCrc);
 
-    bool Initialized; // Indicates if the debug state has been initialized
-    std::vector<uint32_t> ArrayToChecksum32;  ///< Stores a copy of the data
-    std::vector<uint64_t> ArrayToChecksum64;  ///< Stores a copy of the data
-    uint64_t Checksum;         ///< Stores the computed CRC64 (if computed)
-    DebugStatePurpose               ChecksumPurpose;          ///< Enum describing the purpose of this debug state
-    int                   RecursionDepth;          ///< Recursion depth of the call that generated this debug state
-    int                   CallIndex;                ///< Index of the call that generated this debug state
-    UseConvolution  Convolution;
+    bool Initialized;                        // Indicates if the debug state has been initialized
+    std::vector<uint32_t> ArrayToChecksum32; ///< Stores a copy of the data
+    std::vector<uint64_t> ArrayToChecksum64; ///< Stores a copy of the data
+    uint64_t Checksum;                       ///< Stores the computed CRC64 (if computed)
+    DebugStatePurpose ChecksumPurpose;       ///< Enum describing the purpose of this debug state
+    int RecursionDepth; ///< Recursion depth of the call that generated this debug state
+    int CallIndex;      ///< Index of the call that generated this debug state
+    UseConvolution Convolution;
 };
 
 //
@@ -130,15 +111,9 @@ struct DebugStateHost {
 
 template <class SharkFloatParams>
 DebugStateHost<SharkFloatParams>::DebugStateHost()
-    :
-    Initialized{}
-    , ArrayToChecksum32{}
-    , ArrayToChecksum64{}
-    , Checksum{}
-    , ChecksumPurpose{}
-    , RecursionDepth{}
-    , CallIndex{}
-    , Convolution{} {
+    : Initialized{}, ArrayToChecksum32{}, ArrayToChecksum64{}, Checksum{}, ChecksumPurpose{},
+      RecursionDepth{}, CallIndex{}, Convolution{}
+{
     // No additional logic needed here since we rely on the other constructor
 }
 
@@ -199,51 +174,37 @@ DebugStateHost<SharkFloatParams>::ComputeCRC64(const std::vector<uint64_t> &arra
     return (uint64_t(s2) << 32) | uint64_t(s1);
 }
 
-
 template <class SharkFloatParams>
-DebugStateHost<SharkFloatParams>::DebugStateHost(
-    const std::vector<uint32_t> &arrayToChecksum,
-    DebugStatePurpose purpose,
-    int recursionDepth,
-    int callIndex
-)
-// Forward to pointer+length constructor:
+DebugStateHost<SharkFloatParams>::DebugStateHost(const std::vector<uint32_t> &arrayToChecksum,
+                                                 DebugStatePurpose purpose,
+                                                 int recursionDepth,
+                                                 int callIndex)
+    // Forward to pointer+length constructor:
     : DebugStateHost(arrayToChecksum.data(), arrayToChecksum.size(), purpose, recursionDepth, callIndex)
 {
     // No additional logic needed here since we rely on the other constructor
 }
 
 template <class SharkFloatParams>
-DebugStateHost<SharkFloatParams>::DebugStateHost(
-    const std::vector<uint64_t> &arrayToChecksum,
-    DebugStatePurpose purpose,
-    int recursionDepth,
-    int callIndex
-)
-// Forward to pointer+length constructor:
+DebugStateHost<SharkFloatParams>::DebugStateHost(const std::vector<uint64_t> &arrayToChecksum,
+                                                 DebugStatePurpose purpose,
+                                                 int recursionDepth,
+                                                 int callIndex)
+    // Forward to pointer+length constructor:
     : DebugStateHost(arrayToChecksum.data(), arrayToChecksum.size(), purpose, recursionDepth, callIndex)
 {
     // No additional logic needed here since we rely on the other constructor
 }
 
 template <class SharkFloatParams>
-DebugStateHost<SharkFloatParams>::DebugStateHost(
-    const uint32_t *data,
-    size_t size,
-    DebugStatePurpose purpose,
-    int recursionDepth,
-    int callIndex,
-    UseConvolution useConvolution
-)
-    :
-    Initialized{ true }
-    , ArrayToChecksum32{}
-    , ArrayToChecksum64{}
-    , Checksum(0)
-    , ChecksumPurpose(purpose)
-    , RecursionDepth(recursionDepth)
-    , CallIndex(callIndex)
-    , Convolution(useConvolution)
+DebugStateHost<SharkFloatParams>::DebugStateHost(const uint32_t *data,
+                                                 size_t size,
+                                                 DebugStatePurpose purpose,
+                                                 int recursionDepth,
+                                                 int callIndex,
+                                                 UseConvolution useConvolution)
+    : Initialized{true}, ArrayToChecksum32{}, ArrayToChecksum64{}, Checksum(0), ChecksumPurpose(purpose),
+      RecursionDepth(recursionDepth), CallIndex(callIndex), Convolution(useConvolution)
 {
     if constexpr (HpShark::DebugChecksums) {
         // Copy data if valid
@@ -255,22 +216,14 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
 }
 
 template <class SharkFloatParams>
-DebugStateHost<SharkFloatParams>::DebugStateHost(
-    const uint64_t *data,
-    size_t size,
-    DebugStatePurpose purpose,
-    int recursionDepth,
-    int callIndex,
-    UseConvolution useConvolution
-)
-    : Initialized{ true }
-    , ArrayToChecksum32{}
-    , ArrayToChecksum64{}
-    , Checksum(0)
-    , ChecksumPurpose(purpose)
-    , RecursionDepth(recursionDepth)
-    , CallIndex(callIndex)
-    , Convolution(useConvolution)
+DebugStateHost<SharkFloatParams>::DebugStateHost(const uint64_t *data,
+                                                 size_t size,
+                                                 DebugStatePurpose purpose,
+                                                 int recursionDepth,
+                                                 int callIndex,
+                                                 UseConvolution useConvolution)
+    : Initialized{true}, ArrayToChecksum32{}, ArrayToChecksum64{}, Checksum(0), ChecksumPurpose(purpose),
+      RecursionDepth(recursionDepth), CallIndex(callIndex), Convolution(useConvolution)
 {
     if constexpr (HpShark::DebugChecksums) {
         // Copy data if valid
@@ -282,14 +235,14 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
 }
 
 template <class SharkFloatParams>
-void DebugStateHost<SharkFloatParams>::Reset(
-    const uint32_t *arrayToChecksum,
-    size_t arraySize,
-    DebugStatePurpose purpose,
-    int recursionDepth,
-    int callIndex,
-    UseConvolution useConvolution
-) {
+void
+DebugStateHost<SharkFloatParams>::Reset(const uint32_t *arrayToChecksum,
+                                        size_t arraySize,
+                                        DebugStatePurpose purpose,
+                                        int recursionDepth,
+                                        int callIndex,
+                                        UseConvolution useConvolution)
+{
     if constexpr (HpShark::DebugChecksums) {
         Initialized = true;
         ArrayToChecksum32.assign(arrayToChecksum, arrayToChecksum + arraySize);
@@ -304,14 +257,14 @@ void DebugStateHost<SharkFloatParams>::Reset(
 }
 
 template <class SharkFloatParams>
-void DebugStateHost<SharkFloatParams>::Reset(
-    const uint64_t *arrayToChecksum,
-    size_t arraySize,
-    DebugStatePurpose purpose,
-    int recursionDepth,
-    int callIndex,
-    UseConvolution useConvolution
-) {
+void
+DebugStateHost<SharkFloatParams>::Reset(const uint64_t *arrayToChecksum,
+                                        size_t arraySize,
+                                        DebugStatePurpose purpose,
+                                        int recursionDepth,
+                                        int callIndex,
+                                        UseConvolution useConvolution)
+{
     if constexpr (HpShark::DebugChecksums) {
         Initialized = true;
         ArrayToChecksum64.assign(arrayToChecksum, arrayToChecksum + arraySize);
@@ -326,10 +279,11 @@ void DebugStateHost<SharkFloatParams>::Reset(
 }
 
 template <class SharkFloatParams>
-std::string DebugStateHost<SharkFloatParams>::GetStr() const
+std::string
+DebugStateHost<SharkFloatParams>::GetStr() const
 {
     std::stringstream ss;
-    
+
     ss << "Initialized: " << Initialized;
     ss << ", Checksum: 0x" << std::hex << Checksum;
     ss << ", DebugStatePurpose: " << std::dec << static_cast<int>(ChecksumPurpose);
@@ -347,8 +301,7 @@ std::string DebugStateHost<SharkFloatParams>::GetStr() const
     return ss.str();
 }
 
-template <class SharkFloatParams>
-struct DebugHostCombo {
+template <class SharkFloatParams> struct DebugHostCombo {
     std::vector<DebugStateHost<SharkFloatParams>> States;
     DebugMultiplyCountHost<SharkFloatParams> MultiplyCounts;
 };

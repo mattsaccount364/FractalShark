@@ -13,7 +13,7 @@
 #include "RecommendedSettings.h"
 #include "ScopedMpir.h"
 
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 #include "KernelInvoke.cuh"
 
 #include <fstream>

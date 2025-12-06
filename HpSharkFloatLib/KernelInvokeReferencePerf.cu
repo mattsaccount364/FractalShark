@@ -1,6 +1,6 @@
 #include "GPU_ReferenceIter.h"
-//#include "KernelInvoke.cuh"
-#include "KernelInvokeInternal.cuh"
+// #include "KernelInvoke.h"
+#include "KernelInvokeInternal.h"
 
 //
 // The "production" path
@@ -30,8 +30,10 @@ InvokeHpSharkReferenceKernelProd(const HpShark::LaunchParams &launchParams,
     auto inputY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     // Convert srcX and srcY to HpSharkFloat
-    inputX->MpfToHpGpu(srcX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
-    inputY->MpfToHpGpu(srcY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
+    inputX->MpfToHpGpu(
+        srcX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
+    inputY->MpfToHpGpu(
+        srcY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
 
     combo.Add.C_A = *inputX;
     combo.Add.E_B = *inputY;
@@ -204,15 +206,15 @@ InvokeHpSharkReferenceKernelPerf(const HpShark::LaunchParams &launchParams,
 #if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelProd<SharkFloatParams>(                                   \
-        const HpShark::LaunchParams &launchParams,                                                          \
+        const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &,                                                    \
         mpf_t,                                                                                          \
         mpf_t,                                                                                          \
-        uint64_t);                           \
+        uint64_t);                                                                                      \
     template void InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(                                   \
-        const HpShark::LaunchParams &launchParams,                                                          \
-        BenchmarkTimer *timer,                                                                         \
-        HpSharkReferenceResults<SharkFloatParams> & combo,                                              \
+        const HpShark::LaunchParams &launchParams,                                                      \
+        BenchmarkTimer *timer,                                                                          \
+        HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
         uint64_t numIters,                                                                              \
         DebugGpuCombo *debugCombo);
 #else

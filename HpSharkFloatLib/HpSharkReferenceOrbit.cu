@@ -1,6 +1,6 @@
 #include "Add.cu"
 #include "MultiplyNTT.cu"
-#include "PeriodicityChecker.cuh"
+#include "PeriodicityChecker.h"
 #include "TestVerbose.h"
 
 //
@@ -230,8 +230,8 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void ComputeHpSharkReferenceGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,   \
-                                                               void *kernelArgs[]);                     \
+    template void ComputeHpSharkReferenceGpu<SharkFloatParams>(                                         \
+        const HpShark::LaunchParams &launchParams, void *kernelArgs[]);                                 \
     template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
         const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 

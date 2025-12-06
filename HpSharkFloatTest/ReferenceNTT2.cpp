@@ -20,7 +20,7 @@
 #endif
 
 #include "DebugChecksumHost.h"
-#include "HpSharkFloat.cuh" // your header (provides HpSharkFloat<>, DebugStateHost<>)
+#include "HpSharkFloat.h" // your header (provides HpSharkFloat<>, DebugStateHost<>)
 #include "MultiplyNTTCudaSetup.h"
 #include "NTTConstexprGenerator.h"
 #include "ReferenceNTT2.h"
@@ -48,7 +48,6 @@ ReverseBits32(uint32_t value, int bit_count)
 //--------------------------------------------------------------------------------------------------
 // Normalization (final carry propagation and windowing into HpSharkFloat<SharkFloatParams>)
 //--------------------------------------------------------------------------------------------------
-
 
 template <class SharkFloatParams>
 static void
@@ -140,7 +139,6 @@ Normalize(HpSharkFloat<SharkFloatParams> &out,
         out.Digits[i] = (src_idx < total) ? digits[src_idx] : u32{0};
     }
 }
-
 
 //--------------------------------------------------------------------------------------------------
 // 64-bit Goldilocks prime, helpers, and Montgomery arithmetic
@@ -256,8 +254,7 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
                         for (uint32_t jj = 0; jj < half; ++jj) {
                             const uint64_t w_tab = stage_twiddles[tw_base + jj];
                             if (w_tab != w_inc) {
-                                std::cerr << (inverse ? "Inv" : "Fwd")
-                                          << " twiddle mismatch at stage "
+                                std::cerr << (inverse ? "Inv" : "Fwd") << " twiddle mismatch at stage "
                                           << s << " j=" << jj << std::endl;
                                 break;
                             }
@@ -274,7 +271,6 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
         }
     }
 }
-
 
 //==================================================================================================
 //                       Pack (base-2^b) and Unpack (to Final128)
@@ -551,7 +547,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         }
     }
 
-     // x must be a positive constant expression
+    // x must be a positive constant expression
 
     // Verify power of 2
     static_assert(SharkFloatParams::GlobalNumUint32 > 0 &&
@@ -591,10 +587,10 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                         DebugStatePurpose step3,
                         DebugStatePurpose step4,
                         DebugStatePurpose step5>(HpSharkFloat<SharkFloatParams> *out,
-                                                  const HpSharkFloat<SharkFloatParams> &inA,
-                                                  const HpSharkFloat<SharkFloatParams> &inB,
-                                                  int addFactorOfTwo,
-                                                  bool isNegative) {
+                                                 const HpSharkFloat<SharkFloatParams> &inA,
+                                                 const HpSharkFloat<SharkFloatParams> &inB,
+                                                 int addFactorOfTwo,
+                                                 bool isNegative) {
         // ============================
         // HOT PATH (single allocation)
         // ============================
@@ -628,8 +624,10 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
         BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
 
-        NTTRadix2<SharkFloatParams, false>(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
-        NTTRadix2<SharkFloatParams, false>(debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
+        NTTRadix2<SharkFloatParams, false>(
+            debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
+        NTTRadix2<SharkFloatParams, false>(
+            debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
 
         if constexpr (HpShark::DebugChecksums) {
             const auto &debugXState =
@@ -659,7 +657,8 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
             }
         }
 
-        NTTRadix2<SharkFloatParams, true>(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
+        NTTRadix2<SharkFloatParams, true>(
+            debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
 
         // 6) Untwist + scale by N^{-1} (write back into X)
         for (int i = 0; i < plan.N; ++i) {
@@ -688,8 +687,8 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
             std::cout << std::endl;
             std::cout << "=== Final128 Dump ===" << std::endl;
             for (size_t i = 0; i < Ddigits; ++i) {
-                std::cout << " 0x" << std::hex << Final128[2 * i + 0] << " 0x"
-                          << Final128[2 * i + 1] << " " << std::dec;
+                std::cout << " 0x" << std::hex << Final128[2 * i + 0] << " 0x" << Final128[2 * i + 1]
+                          << " " << std::dec;
             }
 
             std::cout << std::endl;

@@ -6,7 +6,7 @@
 #include <cooperative_groups/memcpy_async.h>
 #include <cuda/barrier>
 
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 
 template<class SharkFloatParams>
 CUDA_CRAP void MultiplyHelperKaratsubaV2(

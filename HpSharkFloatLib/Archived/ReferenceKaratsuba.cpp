@@ -1,7 +1,7 @@
 ﻿#include "DbgHeap.h"
 #include "ReferenceKaratsuba.h"
 #include "DebugChecksumHost.h"
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 #include "TestVerbose.h"
 
 #include "DebugChecksum.cuh"

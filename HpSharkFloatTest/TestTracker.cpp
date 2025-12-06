@@ -1,5 +1,5 @@
 #include "TestTracker.h"
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 
 #include <assert.h>
 #include <iostream>
@@ -23,10 +23,9 @@ TestTracker::CheckAllTestsPassed() const
                 std::cout << "Variant: " << kv.first << " - " << (kv.second ? "Failed" : "Passed");
             }
 
-            std::cout << " Test " << std::dec << i << " launched with "
-                      << m_Tests[i].NumBlocks << " blocks and " << m_Tests[i].ThreadsPerBlock << " threads per block."
-                      << " Time: " << m_Tests[i].TestMs
-                      << std::endl;
+            std::cout << " Test " << std::dec << i << " launched with " << m_Tests[i].NumBlocks
+                      << " blocks and " << m_Tests[i].ThreadsPerBlock << " threads per block."
+                      << " Time: " << m_Tests[i].TestMs << std::endl;
         }
     }
 

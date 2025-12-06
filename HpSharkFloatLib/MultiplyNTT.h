@@ -12,7 +12,7 @@ template <class SharkFloatParams> struct HpSharkFloat;
 
 template <class SharkFloatParams> struct HpSharkComboResults;
 
-//#include "KernelInvoke.cuh"
+// #include "KernelInvoke.h"
 
 template <class SharkFloatParams>
 void ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[]);
@@ -23,10 +23,9 @@ void ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
                                    void *kernelArgs[]);
 
 template <class SharkFloatParams>
-CUDA_GLOBAL void MultiplyKernelNTT(HpSharkComboResults<SharkFloatParams> *combo,
-                                    uint64_t* tempProducts);
+CUDA_GLOBAL void MultiplyKernelNTT(HpSharkComboResults<SharkFloatParams> *combo, uint64_t *tempProducts);
 
 template <class SharkFloatParams>
 CUDA_GLOBAL void MultiplyKernelNTTTestLoop(HpSharkComboResults<SharkFloatParams> *combo,
-                                                   uint64_t numIters,
-                                                   uint64_t* tempProducts);
+                                           uint64_t numIters,
+                                           uint64_t *tempProducts);

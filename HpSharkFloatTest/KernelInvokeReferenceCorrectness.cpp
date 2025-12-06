@@ -1,6 +1,6 @@
 #include "DbgHeap.h"
-#include "KernelInvoke.cuh"
-#include "KernelInvokeInternal.cuh"
+#include "KernelInvoke.h"
+#include "KernelInvokeInternal.h"
 
 //
 // Note: This test ignores the period because it executes only one iteration.
@@ -104,10 +104,10 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
 #if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(                            \
-        const HpShark::LaunchParams &launchParams,                                                        \
-        BenchmarkTimer & timer,                                                                         \
-        HpSharkReferenceResults<SharkFloatParams> & combo,                                              \
-        DebugGpuCombo * debugCombo);
+        const HpShark::LaunchParams &launchParams,                                                      \
+        BenchmarkTimer &timer,                                                                          \
+        HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
+        DebugGpuCombo *debugCombo);
 #else
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams) ;
 #endif

@@ -1,7 +1,7 @@
 #include "HighPrecision.h"
 
-#include <string>
 #include <sstream>
+#include <string>
 
 // typedef struct
 // {

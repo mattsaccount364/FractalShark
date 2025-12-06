@@ -1,6 +1,6 @@
 #include <cuda_runtime.h>
 
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 #include "BenchmarkTimer.h"
 #include "TestTracker.h"
 #include "KernelInvoke.cuh"

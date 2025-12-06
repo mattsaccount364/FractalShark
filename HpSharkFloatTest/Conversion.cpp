@@ -4,7 +4,7 @@
 #include <cuda_runtime.h>
 
 #include "BenchmarkTimer.h"
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 #include "TestTracker.h"
 
 #include <algorithm>
@@ -248,7 +248,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
             std::cout << "Normalized str: "
                       << MpfToString<SharkFloatParams>(mpf_x_normalized,
                                                        HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
-                      << "\n"; 
+                      << "\n";
         }
 
         if (!ok_normalize) {
@@ -328,8 +328,8 @@ TestConvertNumber(
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Original input values:\n";
-        std::cout << "  numberStr: " << UintArrayToHexString(limbs.data(), limbs.size())
-                  << " * 2^" << exponent << (isNegative ? " (negative)" : " (positive)") << "\n";
+        std::cout << "  numberStr: " << UintArrayToHexString(limbs.data(), limbs.size()) << " * 2^"
+                  << exponent << (isNegative ? " (negative)" : " (positive)") << "\n";
         std::cout << "  X (mpf): "
                   << MpfToString<SharkFloatParams>(mpf_x,
                                                    HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
@@ -395,22 +395,24 @@ TestConversion(int testBase)
     TestConvertNumber<SharkFloatParams>(Tests, set5 + 9, "-0.9");
     TestConvertNumber<SharkFloatParams>(Tests, set5 + 10, "1.999999999");
     TestConvertNumber<SharkFloatParams>(Tests, set5 + 11, "1.99999999999999999999999999999");
-    TestConvertNumber<SharkFloatParams>(Tests, set5 + 12, "1.9999999999999999999999999999999999999999999999");
+    TestConvertNumber<SharkFloatParams>(
+        Tests, set5 + 12, "1.9999999999999999999999999999999999999999999999");
 
     TestConvertNumber<SharkFloatParams>(Tests, set5 + 13, "0.00000000000000000000000000000000000001");
     TestConvertNumber<SharkFloatParams>(Tests, set5 + 14, "0.000000000000000000000000000000000000001");
     TestConvertNumber<SharkFloatParams>(Tests, set5 + 15, "0.0000000000000000000000000000000000000001");
     TestConvertNumber<SharkFloatParams>(Tests, set5 + 16, "0.00000000000000000000000000000000000000001");
-    TestConvertNumber<SharkFloatParams>(Tests, set5 + 17,
-                                        "-0.000000000000000000000000000000000000000000000000000000002");
-    TestConvertNumber<SharkFloatParams>(Tests, set5 + 18,
+    TestConvertNumber<SharkFloatParams>(
+        Tests, set5 + 17, "-0.000000000000000000000000000000000000000000000000000000002");
+    TestConvertNumber<SharkFloatParams>(Tests,
+                                        set5 + 18,
                                         "0."
                                         "000000000000000000000000000000000000000000000000000000000000000"
                                         "000000000000000200000000000000000");
-    TestConvertNumber<SharkFloatParams>(Tests, 
-        set5 + 19, "-0.000000000000000000000000000000000000000000000000000000000000000002e100");
-    TestConvertNumber<SharkFloatParams>(Tests, 
-        set5 + 20, "-0.000000000000000000000000000000000000000000000000000000000000000002e-100");
+    TestConvertNumber<SharkFloatParams>(
+        Tests, set5 + 19, "-0.000000000000000000000000000000000000000000000000000000000000000002e100");
+    TestConvertNumber<SharkFloatParams>(
+        Tests, set5 + 20, "-0.000000000000000000000000000000000000000000000000000000000000000002e-100");
 
     if constexpr (SharkFloatParams::GlobalNumUint32 == 8) {
         const auto set6 = testBase + 90;
@@ -430,7 +432,8 @@ TestConversion(int testBase)
     TestConvertNumber<SharkFloatParams>(Tests, set7 + 7, "18446744073709551615");
 
     const auto set8 = testBase + 110;
-    TestConvertNumber<SharkFloatParams>(Tests, set8 + 1, "4294967297.0000152587890625"); // 2^32 + 1 + 1/2^16
+    TestConvertNumber<SharkFloatParams>(
+        Tests, set8 + 1, "4294967297.0000152587890625"); // 2^32 + 1 + 1/2^16
     TestConvertNumber<SharkFloatParams>(Tests, set8 + 2, "18446744073709551617.0000152587890625");
     TestConvertNumber<SharkFloatParams>(Tests, set8 + 3, "55340232221128654849.0000152587890625");
 

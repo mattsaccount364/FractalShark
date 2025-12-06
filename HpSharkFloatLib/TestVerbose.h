@@ -1,10 +1,7 @@
 #pragma once
 
-enum class VerboseMode {
-    None = 0,
-    Debug = 1
-};
+enum class VerboseMode { None = 0, Debug = 1 };
 
 extern VerboseMode SharkVerbose;
 
-void SetVerboseMode (VerboseMode mode);
+void SetVerboseMode(VerboseMode mode);

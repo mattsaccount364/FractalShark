@@ -9,11 +9,9 @@ enum class AddPointOptions {
     OpenExistingWithSave,
 };
 
-template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
-class LAInfoDeep;
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras> class LAInfoDeep;
 
-template<typename IterType>
-class LAStageInfo;
+template <typename IterType> class LAStageInfo;
 
 enum class GrowableVectorTypes {
     Metadata,
@@ -35,8 +33,7 @@ void VectorStaticInit();
 // If no filename is provided, it's anonymous memory.
 // The vector is growable, and if it is backed by a file to hold the data,
 // it uses memory mapping. The vector is resizable and is not thread safe.
-template<class EltT>
-class GrowableVector {
+template <class EltT> class GrowableVector {
 private:
     using Handle = void *;
 
@@ -62,16 +59,11 @@ public:
     // The default constructor creates an empty vector.
     GrowableVector();
 
-    GrowableVector(
-        AddPointOptions addPointOptions,
-        const wchar_t *filename,
-        size_t overrideViewSize);
+    GrowableVector(AddPointOptions addPointOptions, const wchar_t *filename, size_t overrideViewSize);
 
     // The constructor takes the file to open or create
     // It maps enough memory to accomodate the provided orbit size.
-    GrowableVector(
-        AddPointOptions addPointOptions,
-        const wchar_t *filename);
+    GrowableVector(AddPointOptions addPointOptions, const wchar_t *filename);
 
     // The destructor closes the file and cleans up the memory.
     ~GrowableVector();

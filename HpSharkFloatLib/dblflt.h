@@ -8,14 +8,14 @@ struct MattDblflt {
     MattDblflt() = default;
 
     CUDA_CRAP
-        MattDblflt(const MattDblflt &other) :
-        head{ other.head },
-        tail{ other.tail } {
+    MattDblflt(const MattDblflt &other) : head{other.head}, tail{other.tail}
+    {
         static_assert(sizeof(*this) == 8, "!");
     }
 
     CUDA_CRAP
-        MattDblflt(float a, float b) {
+    MattDblflt(float a, float b)
+    {
         float t1, t2;
         head = a + b;
         t1 = head - a;
@@ -26,14 +26,15 @@ struct MattDblflt {
     }
 
 #if !defined(__CUDA_ARCH__)
-    //CUDA_CRAP
-    //explicit MattDblflt(double other) :
-    //    head{ (float)other },
-    //    tail{ (float)(other - (double)(float)other) } {
-    //}
+    // CUDA_CRAP
+    // explicit MattDblflt(double other) :
+    //     head{ (float)other },
+    //     tail{ (float)(other - (double)(float)other) } {
+    // }
 
     CUDA_CRAP
-        explicit MattDblflt(double other) {
+    explicit MattDblflt(double other)
+    {
 
         float a = (float)other;
         float b = (float)(other - (double)a);
@@ -49,8 +50,7 @@ struct MattDblflt {
 #endif
 
     CUDA_CRAP
-        explicit MattDblflt(float other) : MattDblflt{ other, 0.0f } {
-    }
+    explicit MattDblflt(float other) : MattDblflt{other, 0.0f} {}
 
     float head; // head / most significant bits
     float tail; // tail / least significant bits
@@ -59,10 +59,9 @@ struct MattDblflt {
 using dblflt = MattDblflt;
 #pragma pack(pop)
 
-
-//#ifndef __CUDACC__
-//using dblflt = MattDblflt;
-//#endif
+// #ifndef __CUDACC__
+// using dblflt = MattDblflt;
+// #endif
 
 struct MattQFltflt {
     float x; // MSB

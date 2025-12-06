@@ -9,4 +9,3 @@
 #define CUDA_CRAP_BOTH
 #define CUDA_GLOBAL
 #endif
-

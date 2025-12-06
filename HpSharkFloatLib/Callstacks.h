@@ -1,9 +1,9 @@
 #pragma once
 
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <vector>
-#include <fstream>
 
 struct CallstackDetails {
     std::string m_Callstack;
@@ -25,7 +25,7 @@ struct CallStacks {
     void LogAllocCallstack(size_t bytes, const void *ptr);
 
     // Releases memory.  Doesn't log a callstack - it simply removes
-    // the callstack from the list of allocated callstacks. 
+    // the callstack from the list of allocated callstacks.
     void LogDeallocCallstack(const void *ptr);
 
     // Log all callstacks to a file.
@@ -35,7 +35,6 @@ struct CallStacks {
     void FreeCallstacks();
 
 private:
-
 #ifdef NDEBUG
     constexpr static bool Debug = false;
     constexpr static size_t MaxCallstacks = 1000;

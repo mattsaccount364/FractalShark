@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#include "MultiplyNTTPlanBuilder.cuh"
+#include "MultiplyNTTPlanBuilder.h"
 
 template <class SharkFloatParams> struct DebugGlobalCount;
 
@@ -29,7 +29,6 @@ struct RootTables {
     // Total number of twiddle entries, for convenience
     uint32_t total_twiddles;
 };
-
 
 template <class SharkFloatParams> uint64_t MontgomeryMul(uint64_t a, uint64_t b);
 

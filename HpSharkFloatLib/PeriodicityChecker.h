@@ -6,14 +6,14 @@
 template <class SharkFloatParams>
 static __device__ bool
 PeriodicityChecker(cg::grid_group &grid,
-    cg::thread_block &block,
-    uint64_t currentIteration,
-    const typename SharkFloatParams::Float *SharkRestrict cx_cast,
-    const typename SharkFloatParams::Float *SharkRestrict cy_cast,
-    typename SharkFloatParams::Float *SharkRestrict dzdcX,
-    typename SharkFloatParams::Float *SharkRestrict dzdcY,
-    HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
-    typename SharkFloatParams::ReferenceIterT *SharkRestrict gpuReferenceIters)
+                   cg::thread_block &block,
+                   uint64_t currentIteration,
+                   const typename SharkFloatParams::Float *SharkRestrict cx_cast,
+                   const typename SharkFloatParams::Float *SharkRestrict cy_cast,
+                   typename SharkFloatParams::Float *SharkRestrict dzdcX,
+                   typename SharkFloatParams::Float *SharkRestrict dzdcY,
+                   HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
+                   typename SharkFloatParams::ReferenceIterT *SharkRestrict gpuReferenceIters)
 {
     const auto *ConstantReal = &reference->Add.C_A;
     const auto *ConstantImaginary = &reference->Add.E_B;

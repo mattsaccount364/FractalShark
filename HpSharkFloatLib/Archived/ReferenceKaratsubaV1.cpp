@@ -1,6 +1,6 @@
 
 #include "ReferenceKaratsuba.h"
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 #include "DebugChecksumHost.h"
 
 #include "DebugChecksum.cuh"

@@ -20,7 +20,7 @@
 #endif
 
 #include "DebugChecksumHost.h"
-#include "HpSharkFloat.cuh" // your header (provides HpSharkFloat<>, DebugStateHost<>)
+#include "HpSharkFloat.h" // your header (provides HpSharkFloat<>, DebugStateHost<>)
 #include "ReferenceFFT.h"
 #include "TestVerbose.h"
 

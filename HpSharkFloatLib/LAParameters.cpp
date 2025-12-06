@@ -2,19 +2,22 @@
 
 #include <fstream>
 
-LAParameters::LAParameters() :
-    m_DetectionMethod{ DefaultDetectionMethod },
-    m_LAThresholdScaleExponent{ DefaultLAThresholdScaleExponent },
-    m_LAThresholdCScaleExponent{ DefaultLAThresholdCScaleExponent },
-    m_Stage0PeriodDetectionThreshold2Exponent{ DefaultStage0PeriodDetectionThreshold2Exponent },
-    m_PeriodDetectionThreshold2Exponent{ DefaultPeriodDetectionThreshold2Exponent },
-    m_Stage0PeriodDetectionThresholdExponent{ DefaultStage0PeriodDetectionThresholdExponent },
-    m_PeriodDetectionThresholdExponent{ DefaultPeriodDetectionThresholdExponent },
-    m_ThreadingAlgorithm{ DefaultThreadingAlgorithm } {
+LAParameters::LAParameters()
+    : m_DetectionMethod{DefaultDetectionMethod},
+      m_LAThresholdScaleExponent{DefaultLAThresholdScaleExponent},
+      m_LAThresholdCScaleExponent{DefaultLAThresholdCScaleExponent},
+      m_Stage0PeriodDetectionThreshold2Exponent{DefaultStage0PeriodDetectionThreshold2Exponent},
+      m_PeriodDetectionThreshold2Exponent{DefaultPeriodDetectionThreshold2Exponent},
+      m_Stage0PeriodDetectionThresholdExponent{DefaultStage0PeriodDetectionThresholdExponent},
+      m_PeriodDetectionThresholdExponent{DefaultPeriodDetectionThresholdExponent},
+      m_ThreadingAlgorithm{DefaultThreadingAlgorithm}
+{
     PopulateFloatsFromExponents();
 }
 
-bool LAParameters::ReadLine(std::ifstream &metafile, int32_t &value, const char *name) {
+bool
+LAParameters::ReadLine(std::ifstream &metafile, int32_t &value, const char *name)
+{
     std::string line;
     metafile >> line;
     if (line != name) {
@@ -26,16 +29,22 @@ bool LAParameters::ReadLine(std::ifstream &metafile, int32_t &value, const char 
     return true;
 }
 
-void LAParameters::PopulateFloatsFromExponents() {
+void
+LAParameters::PopulateFloatsFromExponents()
+{
     m_LAThresholdScale = static_cast<float>(std::exp2(m_LAThresholdScaleExponent));
-    m_Stage0PeriodDetectionThreshold2 = static_cast<float>(std::exp2(m_Stage0PeriodDetectionThreshold2Exponent));
+    m_Stage0PeriodDetectionThreshold2 =
+        static_cast<float>(std::exp2(m_Stage0PeriodDetectionThreshold2Exponent));
     m_PeriodDetectionThreshold = static_cast<float>(std::exp2(m_PeriodDetectionThresholdExponent));
     m_PeriodDetectionThreshold2 = static_cast<float>(std::exp2(m_PeriodDetectionThreshold2Exponent));
     m_LAThresholdCScale = static_cast<float>(std::exp2(m_LAThresholdCScaleExponent));
-    m_Stage0PeriodDetectionThreshold = static_cast<float>(std::exp2(m_Stage0PeriodDetectionThresholdExponent));
+    m_Stage0PeriodDetectionThreshold =
+        static_cast<float>(std::exp2(m_Stage0PeriodDetectionThresholdExponent));
 }
 
-bool LAParameters::ReadMetadata(std::ifstream &metafile) {
+bool
+LAParameters::ReadMetadata(std::ifstream &metafile)
+{
     std::string line;
     metafile >> line;
     if (line != "LAParameters:") {
@@ -47,9 +56,11 @@ bool LAParameters::ReadMetadata(std::ifstream &metafile) {
     ret &= ReadLine(metafile, m_DetectionMethod, "DetectionMethod:");
     ret &= ReadLine(metafile, m_LAThresholdScaleExponent, "LAThresholdScale:");
     ret &= ReadLine(metafile, m_LAThresholdCScaleExponent, "LAThresholdCScale:");
-    ret &= ReadLine(metafile, m_Stage0PeriodDetectionThreshold2Exponent, "Stage0PeriodDetectionThreshold2:");
+    ret &= ReadLine(
+        metafile, m_Stage0PeriodDetectionThreshold2Exponent, "Stage0PeriodDetectionThreshold2:");
     ret &= ReadLine(metafile, m_PeriodDetectionThreshold2Exponent, "PeriodDetectionThreshold2:");
-    ret &= ReadLine(metafile, m_Stage0PeriodDetectionThresholdExponent, "Stage0PeriodDetectionThreshold:");
+    ret &=
+        ReadLine(metafile, m_Stage0PeriodDetectionThresholdExponent, "Stage0PeriodDetectionThreshold:");
     ret &= ReadLine(metafile, m_PeriodDetectionThresholdExponent, "PeriodDetectionThreshold:");
     if (!ret) {
         return false;
@@ -59,143 +70,192 @@ bool LAParameters::ReadMetadata(std::ifstream &metafile) {
     return true;
 }
 
-bool LAParameters::WriteMetadata(std::ofstream &metafile) const {
+bool
+LAParameters::WriteMetadata(std::ofstream &metafile) const
+{
     metafile << std::dec;
     metafile << "LAParameters:" << std::endl;
     metafile << "DetectionMethod: " << m_DetectionMethod << std::endl;
     metafile << "LAThresholdScale: " << m_LAThresholdScaleExponent << std::endl;
     metafile << "LAThresholdCScale: " << m_LAThresholdCScaleExponent << std::endl;
-    metafile << "Stage0PeriodDetectionThreshold2: " << m_Stage0PeriodDetectionThreshold2Exponent << std::endl;
+    metafile << "Stage0PeriodDetectionThreshold2: " << m_Stage0PeriodDetectionThreshold2Exponent
+             << std::endl;
     metafile << "PeriodDetectionThreshold2: " << m_PeriodDetectionThreshold2Exponent << std::endl;
-    metafile << "Stage0PeriodDetectionThreshold: " << m_Stage0PeriodDetectionThresholdExponent << std::endl;
+    metafile << "Stage0PeriodDetectionThreshold: " << m_Stage0PeriodDetectionThresholdExponent
+             << std::endl;
     metafile << "PeriodDetectionThreshold: " << m_PeriodDetectionThresholdExponent << std::endl;
     return true;
 }
 
-int LAParameters::GetDetectionMethod() const {
+int
+LAParameters::GetDetectionMethod() const
+{
     return m_DetectionMethod;
 }
 
-float LAParameters::GetLAThresholdScale() const {
+float
+LAParameters::GetLAThresholdScale() const
+{
     return m_LAThresholdScale;
 }
 
-float LAParameters::GetLAThresholdCScale() const {
+float
+LAParameters::GetLAThresholdCScale() const
+{
     return m_LAThresholdCScale;
 }
 
-float LAParameters::GetStage0PeriodDetectionThreshold2() const {
+float
+LAParameters::GetStage0PeriodDetectionThreshold2() const
+{
     return m_Stage0PeriodDetectionThreshold2;
 }
 
-float LAParameters::GetPeriodDetectionThreshold2() const {
+float
+LAParameters::GetPeriodDetectionThreshold2() const
+{
     return m_PeriodDetectionThreshold2;
 }
 
-float LAParameters::GetStage0PeriodDetectionThreshold() const {
+float
+LAParameters::GetStage0PeriodDetectionThreshold() const
+{
     return m_Stage0PeriodDetectionThreshold;
 }
 
-float LAParameters::GetPeriodDetectionThreshold() const {
+float
+LAParameters::GetPeriodDetectionThreshold() const
+{
     return m_PeriodDetectionThreshold;
 }
 
-int32_t LAParameters::GetLAThresholdScaleExp() const {
+int32_t
+LAParameters::GetLAThresholdScaleExp() const
+{
     return m_LAThresholdScaleExponent;
 }
 
-int32_t LAParameters::GetLAThresholdCScaleExp() const {
+int32_t
+LAParameters::GetLAThresholdCScaleExp() const
+{
     return m_LAThresholdCScaleExponent;
 }
 
-int32_t LAParameters::GetStage0PeriodDetectionThreshold2Exp() const {
+int32_t
+LAParameters::GetStage0PeriodDetectionThreshold2Exp() const
+{
     return m_Stage0PeriodDetectionThreshold2Exponent;
 }
 
-int32_t LAParameters::GetPeriodDetectionThreshold2Exp() const {
+int32_t
+LAParameters::GetPeriodDetectionThreshold2Exp() const
+{
     return m_PeriodDetectionThreshold2Exponent;
 }
 
-int32_t LAParameters::GetStage0PeriodDetectionThresholdExp() const {
+int32_t
+LAParameters::GetStage0PeriodDetectionThresholdExp() const
+{
     return m_Stage0PeriodDetectionThresholdExponent;
 }
 
-int32_t LAParameters::GetPeriodDetectionThresholdExp() const {
+int32_t
+LAParameters::GetPeriodDetectionThresholdExp() const
+{
     return m_PeriodDetectionThresholdExponent;
 }
 
-void LAParameters::AdjustLAThresholdScaleExponent(int32_t delta_exponent) {
+void
+LAParameters::AdjustLAThresholdScaleExponent(int32_t delta_exponent)
+{
     m_LAThresholdScaleExponent += delta_exponent;
     PopulateFloatsFromExponents();
 }
 
-void LAParameters::AdjustLAThresholdCScaleExponent(int32_t delta_exponent) {
+void
+LAParameters::AdjustLAThresholdCScaleExponent(int32_t delta_exponent)
+{
     m_LAThresholdCScaleExponent += delta_exponent;
     PopulateFloatsFromExponents();
 }
 
-void LAParameters::AdjustStage0PeriodDetectionThreshold2Exponent(int32_t delta_exponent) {
+void
+LAParameters::AdjustStage0PeriodDetectionThreshold2Exponent(int32_t delta_exponent)
+{
     m_Stage0PeriodDetectionThreshold2Exponent += delta_exponent;
     PopulateFloatsFromExponents();
 }
 
-void LAParameters::AdjustPeriodDetectionThreshold2Exponent(int32_t delta_exponent) {
+void
+LAParameters::AdjustPeriodDetectionThreshold2Exponent(int32_t delta_exponent)
+{
     m_PeriodDetectionThreshold2Exponent += delta_exponent;
     PopulateFloatsFromExponents();
 }
 
-void LAParameters::AdjustStage0PeriodDetectionThresholdExponent(int32_t delta_exponent) {
+void
+LAParameters::AdjustStage0PeriodDetectionThresholdExponent(int32_t delta_exponent)
+{
     m_Stage0PeriodDetectionThresholdExponent += delta_exponent;
     PopulateFloatsFromExponents();
 }
 
-void LAParameters::AdjustPeriodDetectionThresholdExponent(int32_t delta_exponent) {
+void
+LAParameters::AdjustPeriodDetectionThresholdExponent(int32_t delta_exponent)
+{
     m_PeriodDetectionThresholdExponent += delta_exponent;
     PopulateFloatsFromExponents();
 }
 
-void LAParameters::SetThreading(LAThreadingAlgorithm threading) {
+void
+LAParameters::SetThreading(LAThreadingAlgorithm threading)
+{
     m_ThreadingAlgorithm = threading;
 }
 
-LAParameters::LAThreadingAlgorithm LAParameters::GetThreading() const {
+LAParameters::LAThreadingAlgorithm
+LAParameters::GetThreading() const
+{
     return m_ThreadingAlgorithm;
 }
 
-void LAParameters::SetDefaults(LADefaults defaults) {
+void
+LAParameters::SetDefaults(LADefaults defaults)
+{
     switch (defaults) {
-    case LADefaults::MaxAccuracy:
-        m_DetectionMethod = DefaultDetectionMethod;
-        m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
-        m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
-        m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
-        m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
-        m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
-        m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
-        break;
+        case LADefaults::MaxAccuracy:
+            m_DetectionMethod = DefaultDetectionMethod;
+            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
+            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
+            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
+            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
+            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
+            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+            break;
 
-    case LADefaults::MaxPerf:
-        m_DetectionMethod = DefaultDetectionMethod;
-        m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent + 12;
-        m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent + 12;
-        m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
-        m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
-        m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
-        m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
-        break;
+        case LADefaults::MaxPerf:
+            m_DetectionMethod = DefaultDetectionMethod;
+            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent + 12;
+            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent + 12;
+            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
+            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
+            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
+            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+            break;
 
-    case LADefaults::MinMemory:
-        m_DetectionMethod = DefaultDetectionMethod;
-        m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
-        m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
-        m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent + 3;
-        m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent + 3;
-        m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
-        m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
-        break;
+        case LADefaults::MinMemory:
+            m_DetectionMethod = DefaultDetectionMethod;
+            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
+            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
+            m_Stage0PeriodDetectionThreshold2Exponent =
+                DefaultStage0PeriodDetectionThreshold2Exponent + 3;
+            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent + 3;
+            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
+            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+            break;
 
-    default:
-        break;
+        default:
+            break;
     }
 
     PopulateFloatsFromExponents();

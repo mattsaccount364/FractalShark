@@ -7,8 +7,7 @@ namespace SharkNTT {
 // Goldilocks prime p = 2^64 - 2^32 + 1
 static constexpr uint64_t MagicPrime = 0xFFFF'FFFF'0000'0001ull;
 static constexpr uint64_t MagicPrimeInv = 0xFFFF'FFFE'FFFF'FFFFull; // -p^{-1} mod 2^64
-static constexpr uint64_t R2 = 0xFFFF'FFFE'0000'0001ull;   // (2^64)^2 mod p
-
+static constexpr uint64_t R2 = 0xFFFF'FFFE'0000'0001ull;            // (2^64)^2 mod p
 
 struct U128 {
     uint64_t lo, hi;

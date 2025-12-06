@@ -1,8 +1,8 @@
-﻿#include "DbgHeap.h"
-#include "ReferenceAdd.h"
-#include "DebugChecksum.cuh"
+﻿#include "ReferenceAdd.h"
+#include "DbgHeap.h"
+#include "DebugChecksum.h"
 #include "DebugChecksumHost.h"
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 #include "TestVerbose.h"
 #include "ThreeWayMagnitude.h"
 
@@ -324,12 +324,11 @@ CompareMagnitudes3Way(const int32_t effExpA,
     }
 }
 
-
 // Propagates raw 64-bit extended results into 32-bit digits with signed carry support.
 template <class SharkFloatParams>
 void
 CarryPropagation_ABC(const int32_t numActualDigitsPlusGuard,
-                     const std::vector<uint64_t> &extResult,       // raw signed limbs from Phase1_ABC
+                     const std::vector<uint64_t> &extResult, // raw signed limbs from Phase1_ABC
                      int32_t &carryAcc,                      // signed carry-in/out (init to 0)
                      std::vector<uint64_t> &propagatedResult // size numActualDigitsPlusGuard
 )
@@ -445,7 +444,7 @@ CarryPropagationPP_ABC(const int32_t n,
         }
     }
 
-// emit results (use carry-in = scan[i].c, not low32(P_i))
+    // emit results (use carry-in = scan[i].c, not low32(P_i))
     for (int i = 0; i < n; ++i) {
         const int64_t limb_i = toSigned64(extResultVector[i]);
         const int64_t carry_in = scan[i].c;    // = floor(P_{i-1}/2^32)
@@ -473,8 +472,6 @@ CarryPropagationPP_ABC(const int32_t n,
         assert(tempFinalCarryOut == finalCarryOut);
     }
 }
-
-
 
 // Applies straightforward carry or borrow propagation across multi-word signed results.
 template <class SharkFloatParams>
@@ -1234,7 +1231,7 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
 
         CarryPropagationPP_ABC<SharkFloatParams>(
             numActualDigitsPlusGuard, extResultTrue, carryTrue, propagatedResultTrue);
-        
+
         CarryPropagationPP_ABC<SharkFloatParams>(
             numActualDigitsPlusGuard, extResultFalse, carryFalse, propagatedResultFalse);
 

@@ -2,10 +2,10 @@
 
 #include "BenchmarkTimer.h"
 
-#include "Add.cuh"
-#include "HpSharkFloat.cuh"
-#include "HpSharkReferenceOrbit.cuh"
-#include "MultiplyNTT.cuh"
+#include "Add.h"
+#include "HpSharkFloat.h"
+#include "HpSharkReferenceOrbit.h"
+#include "MultiplyNTT.h"
 
 #include <algorithm>
 #include <assert.h>

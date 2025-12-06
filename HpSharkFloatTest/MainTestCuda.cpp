@@ -1,10 +1,10 @@
-﻿#include "DbgHeap.h"
-#include "Conversion.h"
-#include "HpSharkFloat.cuh"
+﻿#include "Conversion.h"
+#include "DbgHeap.h"
+#include "HpSharkFloat.h"
+#include "ShowMostEfficientSizes.h"
+#include "TestTracker.h"
 #include "TestVerbose.h"
 #include "Tests.h"
-#include "TestTracker.h"
-#include "ShowMostEfficientSizes.h"
 
 #include <cuda_runtime.h>
 
@@ -215,7 +215,8 @@ main(int /*argc*/, char * /*argv*/[])
     GlobalCallstacks->InitCallstacks();
 
     {
-        auto plateaus = SharkNTT::BuildPrecisionPlateaus(1048576, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
+        auto plateaus =
+            SharkNTT::BuildPrecisionPlateaus(1048576, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
         SharkNTT::PrintPlateauTable(plateaus);
         SharkNTT::PrintPrecisionTiers(plateaus);
     }
@@ -290,7 +291,6 @@ main(int /*argc*/, char * /*argv*/[])
         }
     }
 
-
 #if (ENABLE_BASIC_CORRECTNESS == 1)
     if constexpr (HpShark::EnableFullKernel) {
         TestTracker Tests;
@@ -301,17 +301,16 @@ main(int /*argc*/, char * /*argv*/[])
         const int endBlock = 256;
         const int startThreads = 64;
         const int endThreads = 256;
-        //const int startBlock = 65;
-        //const int endBlock = 65;
-        //const int startThreads = 256;
-        //const int endThreads = 256;
+        // const int startBlock = 65;
+        // const int endBlock = 65;
+        // const int startThreads = 256;
+        // const int endThreads = 256;
 
         for (int numBlocks = startBlock; numBlocks <= endBlock; numBlocks *= 2) {
             for (int numThreads = startThreads; numThreads <= endThreads; numThreads *= 2) {
-                std::cout << "Testing Full Reference Orbit with "
-                          << numBlocks << " blocks and "
+                std::cout << "Testing Full Reference Orbit with " << numBlocks << " blocks and "
                           << numThreads << " threads per block." << std::endl;
-                
+
                 res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
                     Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
                 if (!res) {

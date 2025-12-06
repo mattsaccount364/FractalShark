@@ -4,10 +4,10 @@
 #include <array>
 #include <iostream>
 
-#include "NTTConstexprGenerator.h"
-#include "HpSharkFloat.cuh"
-#include "TestVerbose.h"
 #include "DebugChecksumHost.h"
+#include "HpSharkFloat.h"
+#include "NTTConstexprGenerator.h"
+#include "TestVerbose.h"
 
 namespace SharkNTT {
 
@@ -21,7 +21,7 @@ PlanPrime::Print()
 }
 
 void
-Mul64Wide(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi)
+Mul64Wide(uint64_t a, uint64_t b, uint64_t &lo, uint64_t &hi)
 {
 #if defined(_MSC_VER) && defined(_M_X64)
     lo = _umul128(a, b, &hi);
@@ -33,7 +33,7 @@ Mul64Wide(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi)
 }
 
 uint64_t
-Add64WithCarry(uint64_t a, uint64_t b, uint64_t& carry)
+Add64WithCarry(uint64_t a, uint64_t b, uint64_t &carry)
 {
     uint64_t s = a + b;
     uint64_t c = (s < a);
@@ -66,10 +66,10 @@ MontgomeryMul(uint64_t a, uint64_t b)
     uint64_t carry1 = carry0;
     uint64_t u_hi = Add64WithCarry(t_hi, mp_hi, carry1); // returns sum, updates carry1
 
-    //if (carry1) {
-    //    for (;;)
-    //        ;
-    //}
+    // if (carry1) {
+    //     for (;;)
+    //         ;
+    // }
 
     // r = u / 2^64; ensure r < SharkNTT::MagicPrime (include the high-limb carry-out)
     uint64_t r = u_hi;
@@ -81,7 +81,7 @@ MontgomeryMul(uint64_t a, uint64_t b)
 
 template <class SharkFloatParams>
 uint64_t
-MontgomeryMul(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a, uint64_t b)
+MontgomeryMul(DebugHostCombo<SharkFloatParams> &debugCombo, uint64_t a, uint64_t b)
 {
     // We'll count 128-bit multiplications here as 3x64  (so 3 + 3 + 1)
     debugCombo.MultiplyCounts.DebugMultiplyIncrement(7);
@@ -89,10 +89,9 @@ MontgomeryMul(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a, uint64_t
     return MontgomeryMul<SharkFloatParams>(a, b);
 }
 
-
 template <class SharkFloatParams>
 uint64_t
-ToMontgomery(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t x)
+ToMontgomery(DebugHostCombo<SharkFloatParams> &debugCombo, uint64_t x)
 {
     return MontgomeryMul<SharkFloatParams>(debugCombo, x, R2);
 }
@@ -106,7 +105,7 @@ ToMontgomery(uint64_t x)
 
 template <class SharkFloatParams>
 uint64_t
-FromMontgomery(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t x)
+FromMontgomery(DebugHostCombo<SharkFloatParams> &debugCombo, uint64_t x)
 {
     return MontgomeryMul<SharkFloatParams>(debugCombo, x, 1);
 }
@@ -120,7 +119,7 @@ FromMontgomery(uint64_t x)
 
 template <class SharkFloatParams>
 uint64_t
-MontgomeryPow(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a_mont, uint64_t e)
+MontgomeryPow(DebugHostCombo<SharkFloatParams> &debugCombo, uint64_t a_mont, uint64_t e)
 {
     uint64_t x = ToMontgomery(debugCombo, 1);
     uint64_t y = a_mont;
@@ -224,7 +223,7 @@ BuildRoots(uint32_t N, uint32_t stages, RootTables &roots)
     uint32_t offset = 0;
 
     for (uint32_t s = 1; s <= stages; ++s) {
-        const uint32_t half = (1u << (s - 1)); // twiddles j = 0..half-1
+        const uint32_t half = (1u << (s - 1));    // twiddles j = 0..half-1
         uint64_t w_m = roots.stage_omegas[s - 1]; // base for this stage (Montgomery)
         uint64_t w = one_mont;
 
@@ -340,7 +339,7 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
 
 template <class SharkFloatParams>
 void
-DestroyRoots(bool cuda, RootTables& roots)
+DestroyRoots(bool cuda, RootTables &roots)
 {
     if (cuda == false) {
         delete[] roots.stage_omegas;
@@ -379,21 +378,21 @@ DestroyRoots(bool cuda, RootTables& roots)
 } // namespace SharkNTT
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void SharkNTT::BuildRoots<SharkFloatParams>(uint32_t, uint32_t, SharkNTT::RootTables&);             \
-    template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(uint64_t a, uint64_t b); \
+    template void SharkNTT::BuildRoots<SharkFloatParams>(uint32_t, uint32_t, SharkNTT::RootTables &);   \
+    template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(uint64_t a, uint64_t b);                \
     template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(                                        \
-        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a, uint64_t b); \
-    template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(uint64_t x);   \
-    template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(                                        \
-        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x); \
-    template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(uint64_t x); \
-    template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(                                      \
-        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x); \
-    template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(uint64_t a_mont, uint64_t e); \
-    template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(                                      \
-        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a_mont, uint64_t e); \
+        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a, uint64_t b);                         \
+    template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(uint64_t x);                             \
+    template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(                                         \
+        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x);                                     \
+    template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(uint64_t x);                           \
+    template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(                                       \
+        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x);                                     \
+    template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(uint64_t a_mont, uint64_t e);           \
+    template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(                                        \
+        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a_mont, uint64_t e);                    \
     template void SharkNTT::CopyRootsToCuda<SharkFloatParams>(SharkNTT::RootTables & outT,              \
-                                                              const SharkNTT::RootTables& inT); \
-    template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables& T);
+                                                              const SharkNTT::RootTables &inT);         \
+    template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables &T);
 
 ExplicitInstantiateAll();

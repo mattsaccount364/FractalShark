@@ -1,9 +1,9 @@
 #pragma once
 
-#include <stdint.h>
-#include "HighPrecision.h"
 #include "HDRFloat.h"
+#include "HighPrecision.h"
 #include "dblflt.h"
+#include <stdint.h>
 
 struct Empty {};
 

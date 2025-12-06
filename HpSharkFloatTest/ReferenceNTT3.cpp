@@ -31,8 +31,8 @@
 #include <type_traits>
 
 #include "DebugChecksumHost.h"
-#include "HpSharkFloat.cuh"
-#include "MultiplyNTTPlanBuilder.cuh"
+#include "HpSharkFloat.h"
+#include "MultiplyNTTPlanBuilder.h"
 #include "NTTConstexprGenerator.h"
 #include "TestVerbose.h"
 
@@ -892,5 +892,4 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
 
 ExplicitInstantiateAll();
 
-
-#endif 
+#endif

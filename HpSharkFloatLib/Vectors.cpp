@@ -1,59 +1,67 @@
-#include "DbgHeap.h"
 #include "Vectors.h"
+#include "DbgHeap.h"
 
-//#include "Fractal.h"
-//#include "GPU_Render.h"
+// #include "Fractal.h"
+// #include "GPU_Render.h"
+#include "GPU_ReferenceIter.h"
 #include "HDRFloat.h"
 #include "LAInfoDeep.h"
-#include "GPU_ReferenceIter.h"
 
-#include "Exceptions.h"
 #include "Callstacks.h"
+#include "Exceptions.h"
 
 #include <assert.h>
 #include <combaseapi.h>
 
-
 #pragma comment(lib, "ntdll")
 
-//typedef uint32_t NTSTATUS;
+// typedef uint32_t NTSTATUS;
 
-typedef enum _SECTION_INHERIT {
-    ViewShare = 1,
-    ViewUnmap = 2
-} SECTION_INHERIT;
+typedef enum _SECTION_INHERIT { ViewShare = 1, ViewUnmap = 2 } SECTION_INHERIT;
 
-typedef struct _LSA_UNICODE_STRING { USHORT Length;	USHORT MaximumLength; PWSTR  Buffer; } UNICODE_STRING, *PUNICODE_STRING;
-typedef struct _OBJECT_ATTRIBUTES { ULONG Length; HANDLE RootDirectory; PUNICODE_STRING ObjectName; ULONG Attributes; PVOID SecurityDescriptor;	PVOID SecurityQualityOfService; } OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
-typedef struct _CLIENT_ID { PVOID UniqueProcess; PVOID UniqueThread; } CLIENT_ID, *PCLIENT_ID;
-using myNtCreateSection = NTSTATUS(NTAPI *)(
-    OUT PHANDLE SectionHandle,
-    IN ULONG DesiredAccess,
-    IN POBJECT_ATTRIBUTES ObjectAttributes OPTIONAL,
-    IN PLARGE_INTEGER MaximumSize OPTIONAL,
-    IN ULONG PageAttributess,
-    IN ULONG SectionAttributes,
-    IN HANDLE FileHandle OPTIONAL);
-using myNtMapViewOfSection = NTSTATUS(NTAPI *)(
-    HANDLE SectionHandle,
-    HANDLE ProcessHandle,
-    PVOID *BaseAddress,
-    ULONG_PTR ZeroBits,
-    SIZE_T CommitSize,
-    PLARGE_INTEGER SectionOffset,
-    PSIZE_T ViewSize,
-    DWORD InheritDisposition,
-    ULONG AllocationType,
-    ULONG Win32Protect);
-using myNtExtendSection = NTSTATUS(NTAPI *)(
-    IN HANDLE               SectionHandle,
-    IN PLARGE_INTEGER       NewSectionSize);
+typedef struct _LSA_UNICODE_STRING {
+    USHORT Length;
+    USHORT MaximumLength;
+    PWSTR Buffer;
+} UNICODE_STRING, *PUNICODE_STRING;
+typedef struct _OBJECT_ATTRIBUTES {
+    ULONG Length;
+    HANDLE RootDirectory;
+    PUNICODE_STRING ObjectName;
+    ULONG Attributes;
+    PVOID SecurityDescriptor;
+    PVOID SecurityQualityOfService;
+} OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
+typedef struct _CLIENT_ID {
+    PVOID UniqueProcess;
+    PVOID UniqueThread;
+} CLIENT_ID, *PCLIENT_ID;
+using myNtCreateSection = NTSTATUS(NTAPI *)(OUT PHANDLE SectionHandle,
+                                            IN ULONG DesiredAccess,
+                                            IN POBJECT_ATTRIBUTES ObjectAttributes OPTIONAL,
+                                            IN PLARGE_INTEGER MaximumSize OPTIONAL,
+                                            IN ULONG PageAttributess,
+                                            IN ULONG SectionAttributes,
+                                            IN HANDLE FileHandle OPTIONAL);
+using myNtMapViewOfSection = NTSTATUS(NTAPI *)(HANDLE SectionHandle,
+                                               HANDLE ProcessHandle,
+                                               PVOID *BaseAddress,
+                                               ULONG_PTR ZeroBits,
+                                               SIZE_T CommitSize,
+                                               PLARGE_INTEGER SectionOffset,
+                                               PSIZE_T ViewSize,
+                                               DWORD InheritDisposition,
+                                               ULONG AllocationType,
+                                               ULONG Win32Protect);
+using myNtExtendSection = NTSTATUS(NTAPI *)(IN HANDLE SectionHandle, IN PLARGE_INTEGER NewSectionSize);
 
 static myNtCreateSection fNtCreateSection;
 static myNtMapViewOfSection fNtMapViewOfSection;
 static myNtExtendSection fNtExtendSection;
 
-void VectorStaticInit() {
+void
+VectorStaticInit()
+{
     HMODULE hNtDll = GetModuleHandle(L"ntdll.dll");
 
     if (hNtDll == nullptr) {
@@ -65,65 +73,73 @@ void VectorStaticInit() {
     fNtExtendSection = (myNtExtendSection)GetProcAddress(hNtDll, "NtExtendSection");
 }
 
-
-std::wstring GetFileExtension(GrowableVectorTypes Type) {
+std::wstring
+GetFileExtension(GrowableVectorTypes Type)
+{
     switch (Type) {
-    case GrowableVectorTypes::Metadata:
-        return L".met";
-    case GrowableVectorTypes::GPUReferenceIter:
-        return L".FullOrbit";
-    case GrowableVectorTypes::LAStageInfo:
-        return L".LAStages";
-    case GrowableVectorTypes::LAInfoDeep:
-        return L".LAs";
-    case GrowableVectorTypes::ImaginaFile:
-        return L".im";
-    case GrowableVectorTypes::DebugOutput:
-        return L".debug.txt";
-    case GrowableVectorTypes::ItersMemoryContainer:
-        return L".iters";
-    default:
-        assert(false);
-        return L".error";
+        case GrowableVectorTypes::Metadata:
+            return L".met";
+        case GrowableVectorTypes::GPUReferenceIter:
+            return L".FullOrbit";
+        case GrowableVectorTypes::LAStageInfo:
+            return L".LAStages";
+        case GrowableVectorTypes::LAInfoDeep:
+            return L".LAs";
+        case GrowableVectorTypes::ImaginaFile:
+            return L".im";
+        case GrowableVectorTypes::DebugOutput:
+            return L".debug.txt";
+        case GrowableVectorTypes::ItersMemoryContainer:
+            return L".iters";
+        default:
+            assert(false);
+            return L".error";
     }
 }
 
-template<class EltT>
-EltT *GrowableVector<EltT>::GetData() const {
+template <class EltT>
+EltT *
+GrowableVector<EltT>::GetData() const
+{
     return m_Data;
 }
 
-template<class EltT>
-std::wstring GrowableVector<EltT>::GetFilename() const {
+template <class EltT>
+std::wstring
+GrowableVector<EltT>::GetFilename() const
+{
     return m_Filename;
 }
 
-template<class EltT>
-size_t GrowableVector<EltT>::GetCapacity() const {
+template <class EltT>
+size_t
+GrowableVector<EltT>::GetCapacity() const
+{
     return m_CapacityInElts;
 }
 
-template<class EltT>
-size_t GrowableVector<EltT>::GetSize() const {
+template <class EltT>
+size_t
+GrowableVector<EltT>::GetSize() const
+{
     return m_UsedSizeInElts;
 }
 
-template<class EltT>
-bool GrowableVector<EltT>::ValidFile() const {
+template <class EltT>
+bool
+GrowableVector<EltT>::ValidFile() const
+{
     return m_Data != nullptr;
 }
 
-template<class EltT>
-GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
-    m_FileHandle{ other.m_FileHandle },
-    m_MappedFile{ other.m_MappedFile },
-    m_UsedSizeInElts{ other.m_UsedSizeInElts },
-    m_CapacityInElts{ other.m_CapacityInElts },
-    m_Data{ other.m_Data },
-    m_AddPointOptions{ other.m_AddPointOptions },
-    m_Filename{},
-    m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB },
-    m_OverrideViewSizeBytes{ other.m_OverrideViewSizeBytes } {
+template <class EltT>
+GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept
+    : m_FileHandle{other.m_FileHandle}, m_MappedFile{other.m_MappedFile},
+      m_UsedSizeInElts{other.m_UsedSizeInElts}, m_CapacityInElts{other.m_CapacityInElts},
+      m_Data{other.m_Data}, m_AddPointOptions{other.m_AddPointOptions}, m_Filename{},
+      m_PhysicalMemoryCapacityKB{other.m_PhysicalMemoryCapacityKB},
+      m_OverrideViewSizeBytes{other.m_OverrideViewSizeBytes}
+{
 
     wcscpy_s(m_Filename, other.m_Filename);
 
@@ -138,8 +154,10 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
     other.m_OverrideViewSizeBytes = 0;
 }
 
-template<class EltT>
-GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&other) noexcept {
+template <class EltT>
+GrowableVector<EltT> &
+GrowableVector<EltT>::operator=(GrowableVector<EltT> &&other) noexcept
+{
     if (this == &other) {
         return *this;
     }
@@ -169,26 +187,20 @@ GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&oth
     return *this;
 }
 
-template<class EltT>
-GrowableVector<EltT>::GrowableVector()
-    : GrowableVector(AddPointOptions::DontSave, L"") {
+template <class EltT>
+GrowableVector<EltT>::GrowableVector() : GrowableVector(AddPointOptions::DontSave, L"")
+{
     // Default to anonymous memory.
 }
 
-template<class EltT>
-GrowableVector<EltT>::GrowableVector(
-    AddPointOptions addPointOptions,
-    const wchar_t *filename,
-    size_t overrideViewSize)
-    : m_FileHandle{},
-    m_MappedFile{},
-    m_UsedSizeInElts{},
-    m_CapacityInElts{},
-    m_Data{},
-    m_AddPointOptions{ addPointOptions },
-    m_Filename{},
-    m_PhysicalMemoryCapacityKB{},
-    m_OverrideViewSizeBytes{ overrideViewSize } {
+template <class EltT>
+GrowableVector<EltT>::GrowableVector(AddPointOptions addPointOptions,
+                                     const wchar_t *filename,
+                                     size_t overrideViewSize)
+    : m_FileHandle{}, m_MappedFile{}, m_UsedSizeInElts{}, m_CapacityInElts{}, m_Data{},
+      m_AddPointOptions{addPointOptions}, m_Filename{}, m_PhysicalMemoryCapacityKB{},
+      m_OverrideViewSizeBytes{overrideViewSize}
+{
 
     wcscpy_s(m_Filename, filename);
 
@@ -208,73 +220,92 @@ GrowableVector<EltT>::GrowableVector(
 // to back the vector.
 // The constructor takes the file to open or create
 // It maps enough memory to accomodate the provided orbit size.
-template<class EltT>
-GrowableVector<EltT>::GrowableVector(
-    AddPointOptions addPointOptions,
-    const wchar_t *filename)
-    : GrowableVector{ addPointOptions, filename, 0 } {
+template <class EltT>
+GrowableVector<EltT>::GrowableVector(AddPointOptions addPointOptions, const wchar_t *filename)
+    : GrowableVector{addPointOptions, filename, 0}
+{
 }
 
-template<class EltT>
-GrowableVector<EltT>::~GrowableVector() {
+template <class EltT> GrowableVector<EltT>::~GrowableVector()
+{
     // File is also deleted via FILE_FLAG_DELETE_ON_CLOSE if needed
     CloseMapping();
 }
 
-template<class EltT>
-EltT &GrowableVector<EltT>::operator[](size_t index) {
+template <class EltT>
+EltT &
+GrowableVector<EltT>::operator[](size_t index)
+{
     return m_Data[index];
 }
 
-template<class EltT>
-const EltT &GrowableVector<EltT>::operator[](size_t index) const {
+template <class EltT>
+const EltT &
+GrowableVector<EltT>::operator[](size_t index) const
+{
     return m_Data[index];
 }
 
-template<class EltT>
-void GrowableVector<EltT>::GrowVectorIfNeeded() {
+template <class EltT>
+void
+GrowableVector<EltT>::GrowVectorIfNeeded()
+{
     if (m_UsedSizeInElts == m_CapacityInElts) {
         static constexpr size_t GrowByAmount = 256 * 1024 * 1024 / sizeof(EltT);
         MutableReserveKeepFileSize(m_CapacityInElts + GrowByAmount);
     }
 }
 
-template<class EltT>
-void GrowableVector<EltT>::GrowVectorByAmount(size_t amount) {
+template <class EltT>
+void
+GrowableVector<EltT>::GrowVectorByAmount(size_t amount)
+{
     MutableResize(m_CapacityInElts + amount);
 }
 
-template<class EltT>
-void GrowableVector<EltT>::PushBack(const EltT &val) {
+template <class EltT>
+void
+GrowableVector<EltT>::PushBack(const EltT &val)
+{
     GrowVectorIfNeeded();
     m_Data[m_UsedSizeInElts] = val;
     m_UsedSizeInElts++;
 }
 
-template<class EltT>
-void GrowableVector<EltT>::PopBack() {
+template <class EltT>
+void
+GrowableVector<EltT>::PopBack()
+{
     if (m_UsedSizeInElts > 0) {
         m_UsedSizeInElts--;
     }
 }
 
-template<class EltT>
-EltT &GrowableVector<EltT>::Back() {
+template <class EltT>
+EltT &
+GrowableVector<EltT>::Back()
+{
     return m_Data[m_UsedSizeInElts - 1];
 }
 
-template<class EltT>
-const EltT &GrowableVector<EltT>::Back() const {
+template <class EltT>
+const EltT &
+GrowableVector<EltT>::Back() const
+{
     return m_Data[m_UsedSizeInElts - 1];
 }
 
-template<class EltT>
-void GrowableVector<EltT>::Clear() {
+template <class EltT>
+void
+GrowableVector<EltT>::Clear()
+{
     m_UsedSizeInElts = 0;
 }
 
-template<class EltT>
-void GrowableVector<EltT>::CloseMapping() {
+template <class EltT>
+void
+GrowableVector<EltT>::CloseMapping()
+{
     if (UsingAnonymous()) {
         if (m_Data != nullptr) {
             GlobalCallstacks->LogDeallocCallstack(m_Data);
@@ -314,8 +345,10 @@ void GrowableVector<EltT>::CloseMapping() {
     m_CapacityInElts = 0;
 }
 
-template<class EltT>
-void GrowableVector<EltT>::TrimEnableWithoutSave() {
+template <class EltT>
+void
+GrowableVector<EltT>::TrimEnableWithoutSave()
+{
     if (m_AddPointOptions != AddPointOptions::EnableWithoutSave) {
         return;
     }
@@ -330,17 +363,16 @@ void GrowableVector<EltT>::TrimEnableWithoutSave() {
 
     // Don't set m_Data to null so we reuse the same address
     SIZE_T viewSize = m_UsedSizeInElts * sizeof(EltT);
-    auto status2 = fNtMapViewOfSection(
-        m_MappedFile,
-        GetCurrentProcess(),
-        (PVOID *)&m_Data,
-        0,
-        0,
-        0,
-        &viewSize,
-        ViewUnmap,
-        MEM_RESERVE,
-        PAGE_READWRITE);
+    auto status2 = fNtMapViewOfSection(m_MappedFile,
+                                       GetCurrentProcess(),
+                                       (PVOID *)&m_Data,
+                                       0,
+                                       0,
+                                       0,
+                                       &viewSize,
+                                       ViewUnmap,
+                                       MEM_RESERVE,
+                                       PAGE_READWRITE);
     if (status2 > 0) {
         std::string err_str = "Failed to map view of section: " + std::to_string(status2);
         throw FractalSharkSeriousException(err_str);
@@ -356,8 +388,10 @@ void GrowableVector<EltT>::TrimEnableWithoutSave() {
     }
 }
 
-template<class EltT>
-void GrowableVector<EltT>::TrimEnableWithSave() {
+template <class EltT>
+void
+GrowableVector<EltT>::TrimEnableWithSave()
+{
     if (m_AddPointOptions != AddPointOptions::EnableWithSave) {
         return;
     }
@@ -374,19 +408,25 @@ void GrowableVector<EltT>::TrimEnableWithSave() {
     }
 }
 
-template<class EltT>
-void GrowableVector<EltT>::Trim() {
+template <class EltT>
+void
+GrowableVector<EltT>::Trim()
+{
     TrimEnableWithoutSave();
     TrimEnableWithSave();
 }
 
-template<class EltT>
-AddPointOptions GrowableVector<EltT>::GetAddPointOptions() const {
+template <class EltT>
+AddPointOptions
+GrowableVector<EltT>::GetAddPointOptions() const
+{
     return m_AddPointOptions;
 }
 
-template<class EltT>
-void GrowableVector<EltT>::MutableReserveKeepFileSize(size_t capacity) {
+template <class EltT>
+void
+GrowableVector<EltT>::MutableReserveKeepFileSize(size_t capacity)
+{
     if (!UsingAnonymous()) {
         MutableFileCommit(capacity);
     } else {
@@ -394,25 +434,32 @@ void GrowableVector<EltT>::MutableReserveKeepFileSize(size_t capacity) {
     }
 }
 
-template<class EltT>
-void GrowableVector<EltT>::MutableResize(size_t capacity, size_t size) {
+template <class EltT>
+void
+GrowableVector<EltT>::MutableResize(size_t capacity, size_t size)
+{
     MutableReserveKeepFileSize(capacity);
     m_UsedSizeInElts = size;
 }
 
-
-template<class EltT>
-void GrowableVector<EltT>::MutableResize(size_t size) {
+template <class EltT>
+void
+GrowableVector<EltT>::MutableResize(size_t size)
+{
     MutableResize(size, size);
 }
 
-template<class EltT>
-bool GrowableVector<EltT>::UsingAnonymous() const {
+template <class EltT>
+bool
+GrowableVector<EltT>::UsingAnonymous() const
+{
     return m_AddPointOptions == AddPointOptions::DontSave;
 }
 
-template<class EltT>
-uint32_t GrowableVector<EltT>::InternalOpenFile() {
+template <class EltT>
+uint32_t
+GrowableVector<EltT>::InternalOpenFile()
+{
     DWORD lastError = 0;
 
     if (m_FileHandle == nullptr) {
@@ -424,7 +471,7 @@ uint32_t GrowableVector<EltT>::InternalOpenFile() {
 
         DWORD desired_access = GENERIC_READ | GENERIC_WRITE;
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-            //desired_access = GENERIC_READ; // TODO
+            // desired_access = GENERIC_READ; // TODO
         }
 
         DWORD open_mode = OPEN_ALWAYS;
@@ -455,13 +502,8 @@ uint32_t GrowableVector<EltT>::InternalOpenFile() {
             wcscpy_s(m_Filename, guid_str);
         }
 
-        m_FileHandle = CreateFile(m_Filename,
-            desired_access,
-            FILE_SHARE_READ,
-            nullptr,
-            open_mode,
-            attributes,
-            nullptr);
+        m_FileHandle = CreateFile(
+            m_Filename, desired_access, FILE_SHARE_READ, nullptr, open_mode, attributes, nullptr);
         if (m_FileHandle == INVALID_HANDLE_VALUE) {
             m_FileHandle = nullptr;
             auto err = GetLastError();
@@ -486,8 +528,10 @@ uint32_t GrowableVector<EltT>::InternalOpenFile() {
     return lastError;
 }
 
-template<class EltT>
-void GrowableVector<EltT>::MutableFileResizeOpen(size_t capacity) {
+template <class EltT>
+void
+GrowableVector<EltT>::MutableFileResizeOpen(size_t capacity)
+{
     m_CapacityInElts = capacity;
 
     // Convert m_CapacityInElts to LARGE_INTEGER NewSize:
@@ -502,8 +546,10 @@ void GrowableVector<EltT>::MutableFileResizeOpen(size_t capacity) {
     }
 }
 
-template<class EltT>
-void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
+template <class EltT>
+void
+GrowableVector<EltT>::MutableFileCommit(size_t capacity)
+{
     if (capacity <= m_CapacityInElts) {
         return;
     }
@@ -516,8 +562,7 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
     DWORD lastError = InternalOpenFile();
 
     // Check all the things that could have gone wrong
-    if (m_FileHandle == nullptr ||
-        m_FileHandle == INVALID_HANDLE_VALUE ||
+    if (m_FileHandle == nullptr || m_FileHandle == INVALID_HANDLE_VALUE ||
         (lastError != 0 && lastError != ERROR_ALREADY_EXISTS)) {
 
         auto ret = GetLastError();
@@ -559,7 +604,7 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
 
     DWORD sectionPageProtection = PAGE_READWRITE;
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-        //sectionPageProtection = PAGE_READONLY; // TODO
+        // sectionPageProtection = PAGE_READONLY; // TODO
     }
 
     /*
@@ -592,18 +637,17 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
     DWORD desired_access = SECTION_ALL_ACCESS;
     //  DWORD desired_access = SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_EXTEND_SIZE;
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-        //desired_access = SECTION_MAP_READ | SECTION_EXTEND_SIZE; // TODO
+        // desired_access = SECTION_MAP_READ | SECTION_EXTEND_SIZE; // TODO
     }
 
     // set for demo intial size of section to 2 byte
-    // NtCreateSection rounds this value up to the nearest multiple of PAGE_SIZE. 
+    // NtCreateSection rounds this value up to the nearest multiple of PAGE_SIZE.
     // however this will be have effect for file size exactly, if current file size less than this value
     LARGE_INTEGER initialSize;
     ULONG allocationAttributes;
     ULONG allocationType;
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
-        initialSize.QuadPart =
-            m_CapacityInElts * sizeof(EltT);
+        initialSize.QuadPart = m_CapacityInElts * sizeof(EltT);
         allocationAttributes = SEC_RESERVE;
         allocationType = MEM_RESERVE;
     } else {
@@ -612,17 +656,16 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
         allocationType = MEM_RESERVE;
     }
 
-    DWORD status = fNtCreateSection(
-        &m_MappedFile,
-        desired_access,
-        0,
-        &initialSize,
-        sectionPageProtection,
-        allocationAttributes,
-        m_FileHandle);
+    DWORD status = fNtCreateSection(&m_MappedFile,
+                                    desired_access,
+                                    0,
+                                    &initialSize,
+                                    sectionPageProtection,
+                                    allocationAttributes,
+                                    m_FileHandle);
 
-    //we can close file handle now
-    //CloseHandle(hFile);
+    // we can close file handle now
+    // CloseHandle(hFile);
 
     if (status > 0) {
         std::string err_str = "Failed to create section: " + std::to_string(status);
@@ -640,20 +683,19 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
         viewSize = existing_file_size.QuadPart;
     }
 
-    // m_Data = MapViewOfFile(m_MappedFile, FILE_MAP_RESERVE|FILE_MAP_READ|FILE_MAP_WRITE, 0, 0, ViewSize);
-    // note MEM_RESERVE
+    // m_Data = MapViewOfFile(m_MappedFile, FILE_MAP_RESERVE|FILE_MAP_READ|FILE_MAP_WRITE, 0, 0,
+    // ViewSize); note MEM_RESERVE
     const void *OriginalData = m_Data;
-    status = fNtMapViewOfSection(
-        m_MappedFile,
-        GetCurrentProcess(),
-        (PVOID *)&m_Data,
-        0,
-        0,
-        0,
-        &viewSize,
-        ViewUnmap,
-        allocationType,
-        sectionPageProtection);
+    status = fNtMapViewOfSection(m_MappedFile,
+                                 GetCurrentProcess(),
+                                 (PVOID *)&m_Data,
+                                 0,
+                                 0,
+                                 0,
+                                 &viewSize,
+                                 ViewUnmap,
+                                 allocationType,
+                                 sectionPageProtection);
     if (status > 0) {
         std::string err_str = "Failed to map view of section: " + std::to_string(status);
         throw FractalSharkSeriousException(err_str);
@@ -662,8 +704,7 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
 
         // Debug check:
-        if (OriginalData != nullptr &&
-            OriginalData != m_Data) {
+        if (OriginalData != nullptr && OriginalData != m_Data) {
 
             std::string err = "NtMapViewOfSection returned a different pointer :(";
             err += std::to_string(reinterpret_cast<uint64_t>(m_Data));
@@ -686,8 +727,10 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
     }
 }
 
-template<class EltT>
-void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
+template <class EltT>
+void
+GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity)
+{
     // Returned value is in KB so convert to bytes.
     if (m_Data == nullptr) {
         assert(UsingAnonymous());
@@ -704,12 +747,7 @@ void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
         // The returned pointer should be the same as the original pointer.
 
         const auto bytesCount = capacity * sizeof(EltT);
-        auto res = VirtualAlloc(
-            m_Data,
-            bytesCount,
-            MEM_COMMIT,
-            PAGE_READWRITE
-        );
+        auto res = VirtualAlloc(m_Data, bytesCount, MEM_COMMIT, PAGE_READWRITE);
 
         GlobalCallstacks->LogAllocCallstack(bytesCount, res);
 
@@ -734,16 +772,13 @@ void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
     }
 }
 
-template<class EltT>
-void GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes) {
-    assert(UsingAnonymous());  // This function is only for anonymous memory.
+template <class EltT>
+void
+GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes)
+{
+    assert(UsingAnonymous()); // This function is only for anonymous memory.
 
-    auto res = VirtualAlloc(
-        m_Data,
-        new_reserved_bytes,
-        MEM_RESERVE,
-        PAGE_READWRITE
-    );
+    auto res = VirtualAlloc(m_Data, new_reserved_bytes, MEM_RESERVE, PAGE_READWRITE);
 
     GlobalCallstacks->LogReserveCallstack(new_reserved_bytes, res);
 
@@ -758,52 +793,92 @@ void GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes) {
     m_Data = static_cast<EltT *>(res);
 }
 
-
-#define InstantiateLAInfoDeepGrowableVector(IterType, T, SubType, PExtras) \
+#define InstantiateLAInfoDeepGrowableVector(IterType, T, SubType, PExtras)                              \
     template class GrowableVector<LAInfoDeep<IterType, T, SubType, PExtras>>
 
 InstantiateLAInfoDeepGrowableVector(uint32_t, float, float, PerturbExtras::Disable);
 InstantiateLAInfoDeepGrowableVector(uint32_t, double, double, PerturbExtras::Disable);
-InstantiateLAInfoDeepGrowableVector(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiateLAInfoDeepGrowableVector(uint32_t,
+                                    CudaDblflt<MattDblflt>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::Disable);
 InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<float>, float, PerturbExtras::Disable);
 InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<double>, double, PerturbExtras::Disable);
-InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiateLAInfoDeepGrowableVector(uint32_t,
+                                    HDRFloat<CudaDblflt<MattDblflt>>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::Disable);
 
 InstantiateLAInfoDeepGrowableVector(uint32_t, float, float, PerturbExtras::Bad);
 InstantiateLAInfoDeepGrowableVector(uint32_t, double, double, PerturbExtras::Bad);
-InstantiateLAInfoDeepGrowableVector(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiateLAInfoDeepGrowableVector(uint32_t,
+                                    CudaDblflt<MattDblflt>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::Bad);
 InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<float>, float, PerturbExtras::Bad);
 InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<double>, double, PerturbExtras::Bad);
-InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiateLAInfoDeepGrowableVector(uint32_t,
+                                    HDRFloat<CudaDblflt<MattDblflt>>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::Bad);
 
 InstantiateLAInfoDeepGrowableVector(uint32_t, float, float, PerturbExtras::SimpleCompression);
 InstantiateLAInfoDeepGrowableVector(uint32_t, double, double, PerturbExtras::SimpleCompression);
-InstantiateLAInfoDeepGrowableVector(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t,
+                                    CudaDblflt<MattDblflt>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::SimpleCompression);
 InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression);
-InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression);
-InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t,
+                                    HDRFloat<double>,
+                                    double,
+                                    PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t,
+                                    HDRFloat<CudaDblflt<MattDblflt>>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::SimpleCompression);
 
 InstantiateLAInfoDeepGrowableVector(uint64_t, float, float, PerturbExtras::Disable);
 InstantiateLAInfoDeepGrowableVector(uint64_t, double, double, PerturbExtras::Disable);
-InstantiateLAInfoDeepGrowableVector(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiateLAInfoDeepGrowableVector(uint64_t,
+                                    CudaDblflt<MattDblflt>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::Disable);
 InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<float>, float, PerturbExtras::Disable);
 InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<double>, double, PerturbExtras::Disable);
-InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiateLAInfoDeepGrowableVector(uint64_t,
+                                    HDRFloat<CudaDblflt<MattDblflt>>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::Disable);
 
 InstantiateLAInfoDeepGrowableVector(uint64_t, float, float, PerturbExtras::Bad);
 InstantiateLAInfoDeepGrowableVector(uint64_t, double, double, PerturbExtras::Bad);
-InstantiateLAInfoDeepGrowableVector(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiateLAInfoDeepGrowableVector(uint64_t,
+                                    CudaDblflt<MattDblflt>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::Bad);
 InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<float>, float, PerturbExtras::Bad);
 InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<double>, double, PerturbExtras::Bad);
-InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiateLAInfoDeepGrowableVector(uint64_t,
+                                    HDRFloat<CudaDblflt<MattDblflt>>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::Bad);
 
 InstantiateLAInfoDeepGrowableVector(uint64_t, float, float, PerturbExtras::SimpleCompression);
 InstantiateLAInfoDeepGrowableVector(uint64_t, double, double, PerturbExtras::SimpleCompression);
-InstantiateLAInfoDeepGrowableVector(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint64_t,
+                                    CudaDblflt<MattDblflt>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::SimpleCompression);
 InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression);
-InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression);
-InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
-
+InstantiateLAInfoDeepGrowableVector(uint64_t,
+                                    HDRFloat<double>,
+                                    double,
+                                    PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint64_t,
+                                    HDRFloat<CudaDblflt<MattDblflt>>,
+                                    CudaDblflt<MattDblflt>,
+                                    PerturbExtras::SimpleCompression);
 
 #define InstantiateGrowableVector(EltT) template class GrowableVector<EltT>
 
@@ -814,7 +889,8 @@ InstantiateGrowableVector(uint16_t);
 InstantiateGrowableVector(uint32_t);
 InstantiateGrowableVector(uint64_t);
 
-#define InstantiateGPUReferenceIterGrowableVector(T, PExtras) template class GrowableVector<GPUReferenceIter<T, PExtras>>
+#define InstantiateGPUReferenceIterGrowableVector(T, PExtras)                                           \
+    template class GrowableVector<GPUReferenceIter<T, PExtras>>
 
 InstantiateGPUReferenceIterGrowableVector(float, PerturbExtras::Disable);
 InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::Disable);
@@ -828,14 +904,16 @@ InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::SimpleCompressi
 InstantiateGPUReferenceIterGrowableVector(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<float>, PerturbExtras::SimpleCompression);
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<double>, PerturbExtras::SimpleCompression);
-InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
+InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>,
+                                          PerturbExtras::SimpleCompression);
 
 InstantiateGPUReferenceIterGrowableVector(float, PerturbExtras::MaxCompression);
 InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::MaxCompression);
 InstantiateGPUReferenceIterGrowableVector(CudaDblflt<MattDblflt>, PerturbExtras::MaxCompression);
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<float>, PerturbExtras::MaxCompression);
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<double>, PerturbExtras::MaxCompression);
-InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::MaxCompression);
+InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>,
+                                          PerturbExtras::MaxCompression);
 
 InstantiateGPUReferenceIterGrowableVector(float, PerturbExtras::Bad);
 InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::Bad);

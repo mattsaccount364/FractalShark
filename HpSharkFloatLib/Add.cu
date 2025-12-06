@@ -1,5 +1,5 @@
-﻿#include "HpSharkFloat.cuh"
-#include "DebugChecksum.cuh"
+﻿#include "HpSharkFloat.h"
+#include "DebugChecksum.h"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -393,8 +393,8 @@ StoreCurrentDebugStateAdd (
         UseConvolutionHere, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
-#include "Add_ABC.cuh"
-#include "Add_DE.cuh"
+#include "Add_ABC.h"
+#include "Add_DE.h"
 
 static __device__ inline void
 find_msd_warp_ABC_DE(const uint64_t *extABC,

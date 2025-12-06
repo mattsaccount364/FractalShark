@@ -1,6 +1,6 @@
 ﻿#include "TestVerbose.h"
 
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 
 #include <gmp.h>
 #include <iostream>

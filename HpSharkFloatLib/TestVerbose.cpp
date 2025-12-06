@@ -1,7 +1,9 @@
 #include "TestVerbose.h"
 
-VerboseMode SharkVerbose{ VerboseMode::None };
+VerboseMode SharkVerbose{VerboseMode::None};
 
-void SetVerboseMode(VerboseMode mode) {
+void
+SetVerboseMode(VerboseMode mode)
+{
     SharkVerbose = mode;
 }

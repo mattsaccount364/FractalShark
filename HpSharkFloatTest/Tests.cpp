@@ -1,6 +1,6 @@
 ﻿#include "BenchmarkTimer.h"
 #include "DbgHeap.h"
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 #include "TestTracker.h"
 #include "TestVerbose.h"
 
@@ -19,10 +19,10 @@
 #include <sstream>
 #include <vector>
 
-#include "KernelInvoke.cuh"
+#include "KernelInvoke.h"
 
-#include "Add.cuh"
-#include "MultiplyNTT.cuh"
+#include "Add.h"
+#include "MultiplyNTT.h"
 
 #define NOMINMAX
 #include <windows.h>
@@ -145,17 +145,19 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
                 std::cout << "\nPASS (|host| <= epsilon):\n"
                           << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, HpShark::LowPrec)
                           << "  epsilon = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
-                          << "\n  |host - gpu| = " << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
+                          << "\n  |host - gpu| = "
+                          << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
                           << "  Bits of error = " << bitsErrA << std::endl;
             }
             Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nFAIL (|host| <= epsilon but absolute error > epsilon):\n"
-                      << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, HpShark::LowPrec) << std::endl
+                      << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, HpShark::LowPrec)
+                      << std::endl
                       << "  epsilon      = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
                       << std::endl
-                      << "  |host - gpu| = " << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
-                      << std::endl
+                      << "  |host - gpu| = "
+                      << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec) << std::endl
                       << "  Bits of error = " << bitsErrA << std::endl;
             Tests.MarkFailed(&launchParams,
                              testNum,
@@ -186,17 +188,17 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
                 std::cout << "\nPASS (relative-error check):\n"
                           << "  relativeError = "
                           << MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec) << std::endl
-                          << "  epsilon            = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
-                          << std::endl
+                          << "  epsilon            = "
+                          << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec) << std::endl
                           << "  Bits of error: " << bitsErrB << std::endl;
             }
             Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nFAIL (relative-error exceeds epsilon):\n"
-                      << "  relativeError = " << MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec)
-                      << std::endl
-                      << "  epsilon             = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
-                      << std::endl
+                      << "  relativeError = "
+                      << MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec) << std::endl
+                      << "  epsilon             = "
+                      << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec) << std::endl
                       << "  Bits of error: " << bitsErrB << std::endl;
             Tests.MarkFailed(&launchParams,
                              testNum,
@@ -283,8 +285,8 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "\nBefore fallback absolute-error threshold : "
                       << MpfToString<SharkFloatParams>(eps, HpShark::LowPrec) << std::endl;
-            std::cout << "Absolute difference: " << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
-                      << std::endl;
+            std::cout << "Absolute difference: "
+                      << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec) << std::endl;
         }
 
         // 2) compute trueExponent = expGpu + (M*32 - 1)
@@ -304,8 +306,8 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "\nFallback absolute-error threshold : "
                       << MpfToString<SharkFloatParams>(eps, HpShark::LowPrec) << std::endl;
-            std::cout << "Absolute difference: " << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
-                      << std::endl;
+            std::cout << "Absolute difference: "
+                      << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec) << std::endl;
         }
 
         bool ok = (mpf_cmp(mpfDiffAbs, eps) <= 0);
@@ -821,7 +823,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestPerfRandom(const HpShark::LaunchParams &launchParams, TestTracker &Tests, int testNum, uint64_t numIters)
+TestPerfRandom(const HpShark::LaunchParams &launchParams,
+               TestTracker &Tests,
+               int testNum,
+               uint64_t numIters)
 {
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -3301,10 +3306,13 @@ TestAllBinaryOp(int testBase)
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
         int testBase, int numIters, int internalTestLoopCount);                                         \
-    template bool TestFullReferencePerfView5<Operator::ReferenceOrbit>(                                 \
-        TestTracker &, int numBlocks, int numThreads, int testBase, int numIters, int internalTestLoopCount);          \
-    template bool TestFullReferencePerfView30<Operator::ReferenceOrbit>(                                \
-        TestTracker &,                  \
+    template bool TestFullReferencePerfView5<Operator::ReferenceOrbit>(TestTracker &,                   \
+                                                                       int numBlocks,                   \
+                                                                       int numThreads,                  \
+                                                                       int testBase,                    \
+                                                                       int numIters,                    \
+                                                                       int internalTestLoopCount);      \
+    template bool TestFullReferencePerfView30<Operator::ReferenceOrbit>(TestTracker &,                  \
                                                                         int numBlocks,                  \
                                                                         int numThreads,                 \
                                                                         int testBase,                   \

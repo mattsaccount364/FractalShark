@@ -2,26 +2,26 @@
 
 #include "CudaCrap.h"
 #include "DebugStateRaw.h"
-#include "MultiplyNTTCudaSetup.h"
-#include "MultiplyNTTPlanBuilder.cuh"
-#include "HDRFloat.h"
 #include "GPU_ReferenceIter.h"
+#include "HDRFloat.h"
+#include "MultiplyNTTCudaSetup.h"
+#include "MultiplyNTTPlanBuilder.h"
 
-#include <string>
-#include <gmp.h>
-#include <vector>
 #include <bit>
+#include <gmp.h>
+#include <string>
+#include <vector>
 
 #if defined(__CUDACC__)
+#include <cooperative_groups.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <cooperative_groups.h>
 #endif // __CUDACC__
 
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 #define SharkRestrict __restrict__
-//#define SharkRestrict
+// #define SharkRestrict
 
 // Suggested combinations.
 // For testing, define:
@@ -40,16 +40,16 @@
 // For FractalShark, define:
 //  - ENABLE_FULL_KERNEL
 //  - Ensure ENABLE_BASIC_CORRECTNESS == 4
-// 
+//
 // TODO:
 //  - ENABLE_REFERENCE_KERNEL is slightly busted on profiling and will say there's an error
-// 
+//
 
 // Comment out to disable specific kernels
-//#define ENABLE_CONVERSION_TESTS
-//#define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_NTT_KERNEL
-//#define ENABLE_REFERENCE_KERNEL // Kind of useless now, consider removing
+// #define ENABLE_CONVERSION_TESTS
+// #define ENABLE_ADD_KERNEL
+// #define ENABLE_MULTIPLY_NTT_KERNEL
+// #define ENABLE_REFERENCE_KERNEL // Kind of useless now, consider removing
 #define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
@@ -81,267 +81,261 @@
 
 namespace HpShark {
 
-    #ifdef _DEBUG
-    static constexpr bool Debug = true;
-    #else
-    static constexpr bool Debug = false;
-    #endif
+#ifdef _DEBUG
+static constexpr bool Debug = true;
+#else
+static constexpr bool Debug = false;
+#endif
 
-    static constexpr auto BasicCorrectness = ENABLE_BASIC_CORRECTNESS;
+static constexpr auto BasicCorrectness = ENABLE_BASIC_CORRECTNESS;
 
-    #ifdef ENABLE_CONVERSION_TESTS
-    static constexpr auto EnableConversionTests = true;
-    #else
-    static constexpr auto EnableConversionTests = false;
-    #endif
+#ifdef ENABLE_CONVERSION_TESTS
+static constexpr auto EnableConversionTests = true;
+#else
+static constexpr auto EnableConversionTests = false;
+#endif
 
-    #ifdef ENABLE_ADD_KERNEL
-    static constexpr auto EnableAddKernel = true;
-    #else
-    static constexpr auto EnableAddKernel = false;
-    #endif
+#ifdef ENABLE_ADD_KERNEL
+static constexpr auto EnableAddKernel = true;
+#else
+static constexpr auto EnableAddKernel = false;
+#endif
 
-    #ifdef ENABLE_MULTIPLY_NTT_KERNEL
-    static constexpr auto EnableMultiplyNTTKernel = true;
-    #else
-    static constexpr auto EnableMultiplyNTTKernel = false;
-    #endif
+#ifdef ENABLE_MULTIPLY_NTT_KERNEL
+static constexpr auto EnableMultiplyNTTKernel = true;
+#else
+static constexpr auto EnableMultiplyNTTKernel = false;
+#endif
 
-    #ifdef ENABLE_REFERENCE_KERNEL
-    static constexpr auto EnableReferenceKernel = true;
-    #else
-    static constexpr auto EnableReferenceKernel = false;
-    #endif
+#ifdef ENABLE_REFERENCE_KERNEL
+static constexpr auto EnableReferenceKernel = true;
+#else
+static constexpr auto EnableReferenceKernel = false;
+#endif
 
-    #ifdef ENABLE_FULL_KERNEL
-    static constexpr auto EnableFullKernel = true;
-    #else
-    static constexpr auto EnableFullKernel = false;
-    #endif
+#ifdef ENABLE_FULL_KERNEL
+static constexpr auto EnableFullKernel = true;
+#else
+static constexpr auto EnableFullKernel = false;
+#endif
 
-    static constexpr auto EnablePeriodicity = EnableFullKernel;
+static constexpr auto EnablePeriodicity = EnableFullKernel;
 
-    #ifdef _DEBUG
-    #define SharkForceInlineReleaseOnly
-    #else
-    #define SharkForceInlineReleaseOnly __forceinline__
-    #endif
+#ifdef _DEBUG
+#define SharkForceInlineReleaseOnly
+#else
+#define SharkForceInlineReleaseOnly __forceinline__
+#endif
 
-    static constexpr auto NTTBHint = 32; // 26?
-    static constexpr auto NTTNumBitsMargin = 0; // 2?
+static constexpr auto NTTBHint = 32;        // 26?
+static constexpr auto NTTNumBitsMargin = 0; // 2?
 
-    // Uncomment to test small warp on multiply normalize path for easier debugging
-    // Assumes number of threads is a power of 2 and <= 32, with one block.
-    // #define TEST_SMALL_NORMALIZE_WARP
+// Uncomment to test small warp on multiply normalize path for easier debugging
+// Assumes number of threads is a power of 2 and <= 32, with one block.
+// #define TEST_SMALL_NORMALIZE_WARP
 
-    static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel ||
-                                          EnableReferenceKernel || EnableFullKernel);
-    //static constexpr bool TestGpu = false;
+static constexpr bool TestGpu =
+    (EnableAddKernel || EnableMultiplyNTTKernel || EnableReferenceKernel || EnableFullKernel);
+// static constexpr bool TestGpu = false;
 
-    static constexpr auto TestComicalThreadCount = 13;
+static constexpr auto TestComicalThreadCount = 13;
 
-    // Set to true to use a custom stream for the kernel launch
-    static constexpr auto CustomStream = true;
+// Set to true to use a custom stream for the kernel launch
+static constexpr auto CustomStream = true;
 
-    enum class InnerLoopOption {
-        BasicGlobal,
-        BasicAllInShared,
-        TryVectorLoads,
-        TryUnalignedLoads,
-        TryUnalignedLoads2,
-        TryUnalignedLoads2Shared
-    };
+enum class InnerLoopOption {
+    BasicGlobal,
+    BasicAllInShared,
+    TryVectorLoads,
+    TryUnalignedLoads,
+    TryUnalignedLoads2,
+    TryUnalignedLoads2Shared
+};
 
-    static constexpr InnerLoopOption SharkInnerLoopOption =
-        InnerLoopOption::TryUnalignedLoads2;
+static constexpr InnerLoopOption SharkInnerLoopOption = InnerLoopOption::TryUnalignedLoads2;
 
-    static constexpr auto LoadAllInShared =
-        (SharkInnerLoopOption == InnerLoopOption::BasicAllInShared) ||
-        (SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared);
+static constexpr auto LoadAllInShared =
+    (SharkInnerLoopOption == InnerLoopOption::BasicAllInShared) ||
+    (SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared);
 
+// Set to true to use shared memory for the incoming numbers
+static constexpr auto RegisterLimit = 127;
 
-    // Set to true to use shared memory for the incoming numbers
-    static constexpr auto RegisterLimit = 127;
+static constexpr auto ConstantSharedRequiredBytes = 0;
 
-    static constexpr auto ConstantSharedRequiredBytes = 0;
+static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
+// static constexpr bool DebugChecksums = true;
+static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
+static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
+static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
+static constexpr auto TestForceSameSign = false;
+static constexpr bool TestBenchmarkAgainstHost = false;
+static constexpr bool TestInitCudaMemory = true;
 
-    static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
-    //static constexpr bool DebugChecksums = true;
-    static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
-    static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
-    static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
-    static constexpr auto TestForceSameSign = false;
-    static constexpr bool TestBenchmarkAgainstHost = false;
-    static constexpr bool TestInitCudaMemory = true;
+// True to compare against the full host-side reference implementation, false is MPIR only
+// False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
+static constexpr bool TestReferenceImpl = true;
 
-    // True to compare against the full host-side reference implementation, false is MPIR only
-    // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-    static constexpr bool TestReferenceImpl = true;
+constexpr uint32_t
+ceil_pow2_u32(uint32_t v)
+{
+    // returns 1 for v==0; otherwise rounds up to the next power of two (ceil)
+    if (v <= 1)
+        return 1u;
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+    return v;
+}
+constexpr bool
+is_pow2_u32(uint32_t v)
+{
+    return v && ((v & (v - 1u)) == 0u);
+}
 
-    constexpr uint32_t
-    ceil_pow2_u32(uint32_t v)
+struct LaunchParams {
+    LaunchParams(int32_t numBlocksIn, int32_t threadsPerBlockIn)
+        : NumBlocks{numBlocksIn}, ThreadsPerBlock{threadsPerBlockIn},
+          TotalThreads{numBlocksIn * threadsPerBlockIn}
     {
-        // returns 1 for v==0; otherwise rounds up to the next power of two (ceil)
-        if (v <= 1)
-            return 1u;
-        v--;
-        v |= v >> 1;
-        v |= v >> 2;
-        v |= v >> 4;
-        v |= v >> 8;
-        v |= v >> 16;
-        v++;
-        return v;
     }
-    constexpr bool
-    is_pow2_u32(uint32_t v)
+
+    LaunchParams()
+        : NumBlocks{rand() % 128 + 1}, ThreadsPerBlock{32 * (rand() % 8 + 1)},
+          TotalThreads{NumBlocks * ThreadsPerBlock}
     {
-        return v && ((v & (v - 1u)) == 0u);
     }
 
-    struct LaunchParams {
-        LaunchParams(int32_t numBlocksIn, int32_t threadsPerBlockIn)
-            : NumBlocks{numBlocksIn}, ThreadsPerBlock{threadsPerBlockIn},
-              TotalThreads{numBlocksIn * threadsPerBlockIn}
-        {
-        }
+    const int32_t NumBlocks;
+    const int32_t ThreadsPerBlock;
+    const int32_t TotalThreads;
+};
 
-        LaunchParams() : NumBlocks{rand() % 128 + 1},
-                         ThreadsPerBlock{32 * (rand() % 8 + 1)},
-                         TotalThreads{NumBlocks * ThreadsPerBlock}
-        {
-        }
+template <int32_t pNumDigits> struct GenericSharkFloatParams {
+    using Float = HDRFloat<float>; // TODO hardcoded
+    using SubType = float;         // TODO hardcoded
 
-        const int32_t NumBlocks;
-        const int32_t ThreadsPerBlock;
-        const int32_t TotalThreads;
-    };
+    // TODO: this is fucked up, fix it so we don't round to next power of two
+    static constexpr bool SharkUsePow2SizesOnly = false; // HpShark::EnableMultiplyNTTKernel;
 
-    template <int32_t pNumDigits> struct GenericSharkFloatParams {
-        using Float = HDRFloat<float>;
-        using SubType = float;
+    // Fixed number of uint32_t values
+    static constexpr int32_t Guard = 4;
 
-        // TODO: this is fucked up, fix it so we don't round to next power of two
-        static constexpr bool SharkUsePow2SizesOnly = false; // HpShark::EnableMultiplyNTTKernel;
+    static constexpr int32_t GlobalNumUint32 =
+        SharkUsePow2SizesOnly
+            ? static_cast<int32_t>(HpShark::ceil_pow2_u32(static_cast<uint32_t>(pNumDigits)))
+            : pNumDigits;
 
-        // Fixed number of uint32_t values
-        static constexpr int32_t Guard = 4;
+    constexpr static int32_t
+    NumberOfBits(int32_t x)
+    {
+        return x < 2 ? x : 1 + NumberOfBits(x >> 1);
+    }
+    constexpr static auto LogNumUint32 = NumberOfBits(GlobalNumUint32);
 
-        static constexpr int32_t GlobalNumUint32 =
-            SharkUsePow2SizesOnly
-                ? static_cast<int32_t>(HpShark::ceil_pow2_u32(static_cast<uint32_t>(pNumDigits)))
-                : pNumDigits;
+    static constexpr int32_t HalfLimbsRoundedUp = (GlobalNumUint32 + 1) / 2;
 
-        constexpr static int32_t
-        NumberOfBits(int32_t x)
-        {
-            return x < 2 ? x : 1 + NumberOfBits(x >> 1);
-        }
-        constexpr static auto LogNumUint32 = NumberOfBits(GlobalNumUint32);
+    // If these are set to false they produce wrong answers but can be useful
+    // to confirm source of performance issues.
+    static constexpr bool DisableAllAdditions = false;
+    static constexpr bool DisableSubtraction = false;
+    static constexpr bool DisableCarryPropagation = false;
+    static constexpr bool DisableFinalConstruction = false;
+    static constexpr bool ForceNoOp = false;
 
-        static constexpr int32_t HalfLimbsRoundedUp = (GlobalNumUint32 + 1) / 2;
+    static constexpr auto NumDebugStates = (3 * static_cast<int>(DebugStatePurpose::NumPurposes));
 
-        // If these are set to false they produce wrong answers but can be useful
-        // to confirm source of performance issues.
-        static constexpr bool DisableAllAdditions = false;
-        static constexpr bool DisableSubtraction = false;
-        static constexpr bool DisableCarryPropagation = false;
-        static constexpr bool DisableFinalConstruction = false;
-        static constexpr bool ForceNoOp = false;
-
-        static constexpr auto NumDebugStates = (3 * static_cast<int>(DebugStatePurpose::NumPurposes));
-
-        static constexpr auto MaxBlocks = 256;
-        static constexpr auto MaxThreads = 256;
-        static constexpr auto NumDebugMultiplyCounts = MaxThreads * MaxBlocks;
-
-        static std::string
-        GetDescription()
-        {
-            return std::string("Number of digits: ") + std::to_string(GlobalNumUint32);
-        }
-
-        static constexpr SharkNTT::PlanPrime NTTPlan =
-            SharkNTT::BuildPlanPrime(GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
-        static constexpr bool Periodicity = HpShark::EnablePeriodicity;
-
-        using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
-    };
-
-
-    // This one should account for maximum call index, e.g. if we generate 500 calls
-    // recursively then we need this to be at 500.
-    static constexpr auto ScratchMemoryCopies = 256llu;
-
-    
-// Number of arrays of digits on each frame
-    static constexpr auto ScratchMemoryArraysForMultiply = 96;
-    static constexpr auto ScratchMemoryArraysForAdd = 64;
-
-    // Additional space per frame:
-    static constexpr auto AdditionalUInt64PerFrame = 256;
-
-    // Additional space up front, globally-shared:
-    // Units are uint64_t
     static constexpr auto MaxBlocks = 256;
+    static constexpr auto MaxThreads = 256;
+    static constexpr auto NumDebugMultiplyCounts = MaxThreads * MaxBlocks;
 
-    static constexpr auto AdditionalGlobalSyncSpace = 128 * (MaxBlocks + 1);
-    static constexpr auto AdditionalGlobalDebugPerThread = HpShark::DebugGlobalState ? 1024 * 1024 : 0;
-    static constexpr auto AdditionalGlobalChecksumSpace = HpShark::DebugChecksums ? 1024 * 1024 : 0;
-
-    static constexpr auto AdditionalGlobalSyncSpaceOffset = 0;
-    static constexpr auto AdditionalMultipliesOffset =
-        AdditionalGlobalSyncSpaceOffset + AdditionalGlobalSyncSpace;
-    static constexpr auto AdditionalChecksumsOffset =
-        AdditionalMultipliesOffset + AdditionalGlobalDebugPerThread;
-
-    // Use the order of these three variables being added as the
-    // definition of how they are laid out in memory.
-    static constexpr auto AdditionalUInt64Global =
-        AdditionalGlobalSyncSpace + AdditionalGlobalDebugPerThread + AdditionalGlobalChecksumSpace;
-
-    template <class SharkFloatParams>
-    static constexpr auto
-    CalculateKaratsubaFrameSize()
+    static std::string
+    GetDescription()
     {
-        constexpr auto retval = ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 +
-                                AdditionalUInt64PerFrame;
-        constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
-        return retval + alignAt16BytesConstant;
+        return std::string("Number of digits: ") + std::to_string(GlobalNumUint32);
     }
 
-    template <class SharkFloatParams>
-    static constexpr auto
-    CalculateNTTFrameSize()
-    {
-        constexpr auto retval = ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 +
-                                AdditionalUInt64PerFrame;
-        constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
-        return retval + alignAt16BytesConstant;
-    }
+    static constexpr SharkNTT::PlanPrime NTTPlan =
+        SharkNTT::BuildPlanPrime(GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
+    static constexpr bool Periodicity = HpShark::EnablePeriodicity;
 
-    template <class SharkFloatParams>
-    constexpr int32_t
-    CalculateNTTSharedMemorySize()
-    {
-        // HpShark::ConstantSharedRequiredBytes
-        constexpr auto sharedAmountBytes = 3 * 2048 * sizeof(uint64_t);
-        return sharedAmountBytes;
-    }
+    using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
+};
 
-    template <class SharkFloatParams>
-    static constexpr auto
-    CalculateAddFrameSize()
-    {
-        return ScratchMemoryArraysForAdd * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
-    }
+// This one should account for maximum call index, e.g. if we generate 500 calls
+// recursively then we need this to be at 500.
+static constexpr auto ScratchMemoryCopies = 256llu;
 
-    static constexpr auto LowPrec = 32;
+// Number of arrays of digits on each frame
+static constexpr auto ScratchMemoryArraysForMultiply = 96;
+static constexpr auto ScratchMemoryArraysForAdd = 64;
+
+// Additional space per frame:
+static constexpr auto AdditionalUInt64PerFrame = 256;
+
+// Additional space up front, globally-shared:
+// Units are uint64_t
+static constexpr auto MaxBlocks = 256;
+
+static constexpr auto AdditionalGlobalSyncSpace = 128 * (MaxBlocks + 1);
+static constexpr auto AdditionalGlobalDebugPerThread = HpShark::DebugGlobalState ? 1024 * 1024 : 0;
+static constexpr auto AdditionalGlobalChecksumSpace = HpShark::DebugChecksums ? 1024 * 1024 : 0;
+
+static constexpr auto AdditionalGlobalSyncSpaceOffset = 0;
+static constexpr auto AdditionalMultipliesOffset =
+    AdditionalGlobalSyncSpaceOffset + AdditionalGlobalSyncSpace;
+static constexpr auto AdditionalChecksumsOffset =
+    AdditionalMultipliesOffset + AdditionalGlobalDebugPerThread;
+
+// Use the order of these three variables being added as the
+// definition of how they are laid out in memory.
+static constexpr auto AdditionalUInt64Global =
+    AdditionalGlobalSyncSpace + AdditionalGlobalDebugPerThread + AdditionalGlobalChecksumSpace;
+
+template <class SharkFloatParams>
+static constexpr auto
+CalculateKaratsubaFrameSize()
+{
+    constexpr auto retval =
+        ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
+    return retval + alignAt16BytesConstant;
+}
+
+template <class SharkFloatParams>
+static constexpr auto
+CalculateNTTFrameSize()
+{
+    constexpr auto retval =
+        ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
+    return retval + alignAt16BytesConstant;
+}
+
+template <class SharkFloatParams>
+constexpr int32_t
+CalculateNTTSharedMemorySize()
+{
+    // HpShark::ConstantSharedRequiredBytes
+    constexpr auto sharedAmountBytes = 3 * 2048 * sizeof(uint64_t);
+    return sharedAmountBytes;
+}
+
+template <class SharkFloatParams>
+static constexpr auto
+CalculateAddFrameSize()
+{
+    return ScratchMemoryArraysForAdd * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+}
+
+static constexpr auto LowPrec = 32;
 } // namespace HpShark
 
-
 #include "ExplicitInstantiate.h"
-
 
 // If you add a new one, search for one of the other types and copy/paste
 using Test8x1SharkParams = HpShark::GenericSharkFloatParams<8>;
@@ -358,14 +352,14 @@ using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<131072>;
 using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<262144>;
 using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<524288>;
 
-//using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6144>;
-//using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<11776>;
-//using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<23552>;
-//using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<45056>;
-//using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<90112>;
-//using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<172032>;
-//using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<344064>;
-//using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<1048576>;
+// using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6144>;
+// using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<11776>;
+// using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<23552>;
+// using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<45056>;
+// using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<90112>;
+// using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<172032>;
+// using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<344064>;
+// using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<1048576>;
 
 // using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6400>;
 // using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<12288>;
@@ -376,7 +370,6 @@ using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<524288>;
 // using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<360448>;
 // using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<688128>;
 // using TestPerSharkParams9 = HpShark::GenericSharkFloatParams<1048576>;
-
 
 // Correctness test sizes
 using TestCorrectnessSharkParams1 = Test8x1SharkParams;
@@ -399,16 +392,12 @@ using ProdSharkParams10 = HpShark::GenericSharkFloatParams<131072>;
 using ProdSharkParams11 = HpShark::GenericSharkFloatParams<262144>;
 using ProdSharkParams12 = HpShark::GenericSharkFloatParams<524288>;
 
-enum class InjectNoiseInLowOrder {
-    Disable,
-    Enable
-};
+enum class InjectNoiseInLowOrder { Disable, Enable };
 
 // Struct to hold both integer and fractional parts of the high-precision number
-template<class SharkFloatParams>
-struct HpSharkFloat {
+template <class SharkFloatParams> struct HpSharkFloat {
     HpSharkFloat();
-    //HpSharkFloat(uint32_t numDigits);
+    // HpSharkFloat(uint32_t numDigits);
     HpSharkFloat(const uint32_t *digitsIn, int32_t expIn, bool isNegative);
     ~HpSharkFloat() = default;
     HpSharkFloat &operator=(const HpSharkFloat<SharkFloatParams> &);
@@ -416,10 +405,10 @@ struct HpSharkFloat {
     CUDA_CRAP void DeepCopySameDevice(const HpSharkFloat<SharkFloatParams> &other);
 
 #if defined(__CUDA_ARCH__)
-    CUDA_CRAP void DeepCopyGPU(
-        cooperative_groups::grid_group &grid,
-        cooperative_groups::thread_block &block,
-        const HpSharkFloat<SharkFloatParams> &other)
+    CUDA_CRAP void
+    DeepCopyGPU(cooperative_groups::grid_group &grid,
+                cooperative_groups::thread_block &block,
+                const HpSharkFloat<SharkFloatParams> &other)
     {
         // compute a global thread index
         int idx = block.group_index().x * block.dim_threads().x + block.thread_index().x;
@@ -468,11 +457,9 @@ struct HpSharkFloat {
     // - Uses top two 32-bit limbs to build a 64-bit window for accurate mantissa.
     // - Exponent is unbiased binary exponent: value = mantissa * 2^exp, mantissa ∈ [1,2) or [-2,-1].
     // - 'extraExp' lets callers add any external binary scaling they track separately.
-    template <class SubType> CUDA_CRAP_BOTH
-    HDRFloat<SubType> ToHDRFloat(int32_t extraExp = 0) const;
+    template <class SubType> CUDA_CRAP_BOTH HDRFloat<SubType> ToHDRFloat(int32_t extraExp = 0) const;
 
-    template <class SubType> CUDA_CRAP_BOTH
-    void FromHDRFloat(const HDRFloat<SubType> &h);
+    template <class SubType> CUDA_CRAP_BOTH void FromHDRFloat(const HDRFloat<SubType> &h);
 
     // Digits in base 2^32
     DigitType Digits[NumUint32];
@@ -488,22 +475,24 @@ private:
     mp_exp_t HpGpuExponentToMpfExponent(size_t numBytesToCopy) const;
 };
 
-template<class SharkFloatParams>
-CUDA_CRAP_BOTH
-void HpSharkFloat<SharkFloatParams>::SetNegative(bool isNegative) {
+template <class SharkFloatParams>
+CUDA_CRAP_BOTH void
+HpSharkFloat<SharkFloatParams>::SetNegative(bool isNegative)
+{
     IsNegative = isNegative;
 }
 
-template<class SharkFloatParams>
-CUDA_CRAP_BOTH
-bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
+template <class SharkFloatParams>
+CUDA_CRAP_BOTH bool
+HpSharkFloat<SharkFloatParams>::GetNegative() const
+{
     return IsNegative;
 }
 
 template <class SharkFloatParams>
 template <class SubType>
-CUDA_CRAP_BOTH
-HDRFloat<SubType> HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp) const
+CUDA_CRAP_BOTH HDRFloat<SubType>
+HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp) const
 {
     static_assert(std::is_same<SubType, float>::value || std::is_same<SubType, double>::value,
                   "ToHDRFloat: SubType must be float or double");
@@ -581,13 +570,11 @@ HpSharkFloat<SharkFloatParams>::FromHDRFloat(const HDRFloat<SubType> &h)
     static_assert(std::is_same<SubType, double>::value || std::is_same<SubType, float>::value,
                   "FromHDRFloat: SubType must be double or float");
 
-    using HpT = HpSharkFloat<SharkFloatParams>;
-    using DT = typename HpT::DigitType;
-    constexpr int N = HpT::NumUint32;
+    constexpr int N = HpSharkFloat<SharkFloatParams>::NumUint32;
 
     // Zero digits
     for (int i = 0; i < N; ++i)
-        Digits[i] = DT{0};
+        Digits[i] = HpSharkFloat<SharkFloatParams>::DigitType{0};
 
     // Zero fast-path
     const bool isZero = (h.mantissa == SubType(0));
@@ -625,9 +612,9 @@ HpSharkFloat<SharkFloatParams>::FromHDRFloat(const HDRFloat<SubType> &h)
     const uint32_t lo32 = static_cast<uint32_t>(window64 & 0xFFFF'FFFFu);
 
     // Write high-order digits
-    Digits[N - 1] = static_cast<DT>(hi32);
+    Digits[N - 1] = static_cast<HpSharkFloat<SharkFloatParams>::DigitType>(hi32);
     if constexpr (N >= 2) {
-        Digits[N - 2] = static_cast<DT>(lo32);
+        Digits[N - 2] = static_cast<HpSharkFloat<SharkFloatParams>::DigitType>(lo32);
     }
 
     // Choose Hp exponent so overall value equals mantissa * 2^exp:
@@ -639,11 +626,9 @@ HpSharkFloat<SharkFloatParams>::FromHDRFloat(const HDRFloat<SubType> &h)
     SetNegative(neg);
 }
 
-
 #pragma warning(push)
-#pragma warning(disable:4324)
-template<class SharkFloatParams>
-struct alignas(16) HpSharkComboResults{
+#pragma warning(disable : 4324)
+template <class SharkFloatParams> struct alignas(16) HpSharkComboResults {
     SharkNTT::RootTables Roots;
     alignas(16) HpSharkFloat<SharkFloatParams> A;
     alignas(16) HpSharkFloat<SharkFloatParams> B;
@@ -652,8 +637,7 @@ struct alignas(16) HpSharkComboResults{
     alignas(16) HpSharkFloat<SharkFloatParams> ResultY2;
 };
 
-template<class SharkFloatParams>
-struct HpSharkAddComboResults {
+template <class SharkFloatParams> struct HpSharkAddComboResults {
     alignas(16) HpSharkFloat<SharkFloatParams> A_X2;
     alignas(16) HpSharkFloat<SharkFloatParams> B_Y2;
     alignas(16) HpSharkFloat<SharkFloatParams> C_A;
@@ -663,8 +647,7 @@ struct HpSharkAddComboResults {
     alignas(16) HpSharkFloat<SharkFloatParams> Result2_D_E;
 };
 
-template<class SharkFloatParams>
-struct HpSharkReferenceResults {
+template <class SharkFloatParams> struct HpSharkReferenceResults {
     alignas(16) HDRFloat<typename SharkFloatParams::SubType> RadiusY;
     alignas(16) HpSharkComboResults<SharkFloatParams> Multiply;
     alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
@@ -676,24 +659,16 @@ struct HpSharkReferenceResults {
 
 template <class SharkFloatParams> std::string MpfToString(const mpf_t mpf_val, size_t precInBits);
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 std::string Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
 
 void Uint64ToMpf(
     const uint64_t *array, size_t numElts, int32_t pow64Exponent, mpf_t &mpf_val, bool isNegative);
 
-template<class IntT>
-std::string
-UintArrayToHexString(const IntT *array, size_t numElements);
+template <class IntT> std::string UintArrayToHexString(const IntT *array, size_t numElements);
 
-template<class IntT>
-std::string
-UintToHexString(IntT val);
+template <class IntT> std::string UintToHexString(IntT val);
 
-template<class IntT>
-std::string
-VectorUintToHexString(const std::vector<IntT> &arr);
+template <class IntT> std::string VectorUintToHexString(const std::vector<IntT> &arr);
 
-template<class IntT>
-std::string
-VectorUintToHexString(const IntT *arr, size_t numElements);
+template <class IntT> std::string VectorUintToHexString(const IntT *arr, size_t numElements);

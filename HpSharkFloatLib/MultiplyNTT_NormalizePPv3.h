@@ -50,7 +50,6 @@ apply_transfer(const DigitTransfer3 &t, uint32_t inMask)
     return out;
 }
 
-
 template <class SharkFloatParams>
 static __device__ inline void
 ParallelPrefixNormalize3WayV3(cooperative_groups::grid_group &grid,
@@ -97,7 +96,7 @@ ParallelPrefixNormalize3WayV3(cooperative_groups::grid_group &grid,
         uint8_t gMask = 0u;
         uint8_t pMask = 0u;
 
-        auto computeGP = [] (uint32_t d, uint8_t B) -> DigitTransfer3 {
+        auto computeGP = [](uint32_t d, uint8_t B) -> DigitTransfer3 {
             const uint64_t sum0 = static_cast<uint64_t>(d) + static_cast<uint64_t>(B) + 0u;
             const uint64_t sum1 = static_cast<uint64_t>(d) + static_cast<uint64_t>(B) + 1u;
 

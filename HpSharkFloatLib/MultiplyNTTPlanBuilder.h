@@ -1,8 +1,8 @@
 #pragma once
 
-#include <stdint.h>
-#include <algorithm>
 #include "NTTConstexprGenerator.h"
+#include <algorithm>
+#include <stdint.h>
 
 namespace SharkNTT {
 
@@ -110,6 +110,5 @@ BuildPlanPrime(int n32, int b_hint, int margin)
     plan.stages = static_cast<int>(lgN);
     return plan;
 }
-
 
 } // namespace SharkNTT

@@ -1,4 +1,5 @@
-int ThisIsAPointlessFunctionToMakeVCCudaIntegrationHappy()
+int
+ThisIsAPointlessFunctionToMakeVCCudaIntegrationHappy()
 {
     return 0;
 }

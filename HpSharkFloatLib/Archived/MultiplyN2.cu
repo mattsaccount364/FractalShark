@@ -5,7 +5,7 @@
 #include <cooperative_groups/memcpy_async.h>
 #include <cuda/barrier>
 
-#include "HpSharkFloat.cuh"
+#include "HpSharkFloat.h"
 
 #include <iostream>
 

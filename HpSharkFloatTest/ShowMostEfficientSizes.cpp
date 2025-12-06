@@ -1,5 +1,5 @@
-﻿#include "HpSharkFloat.cuh"
-#include "MultiplyNTTPlanBuilder.cuh"
+﻿#include "HpSharkFloat.h"
+#include "MultiplyNTTPlanBuilder.h"
 
 #include <cstdint>
 #include <iomanip>

@@ -1,11 +1,11 @@
-﻿#include "MultiplyNTT.cuh"
+﻿#include "MultiplyNTT.h"
 
 #include <cuda_runtime.h>
 #include <curand.h>
 #include <curand_kernel.h>
 
-#include "DebugChecksum.cuh"
-#include "HpSharkFloat.cuh"
+#include "DebugChecksum.h"
+#include "HpSharkFloat.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,7 +21,7 @@
 #include <cooperative_groups/memcpy_async.h>
 #include <cuda/barrier>
 
-#include "MontgomeryCoreConstexpr.cuh"
+#include "MontgomeryCoreConstexpr.h"
 #include "NTTConstexprGenerator.h"
 
 namespace cg = cooperative_groups;
@@ -147,9 +147,9 @@ FinalizeNormalize(cooperative_groups::grid_group &grid,
     }
 }
 
-#include "MultiplyNTT_NormalizePPv3.cuh"
-#include "MultiplyNTT_NormalizeV1.cuh"
-#include "MultiplyNTT_NormalizeWarpTiledV2.cuh"
+#include "MultiplyNTT_NormalizePPv3.h"
+#include "MultiplyNTT_NormalizeV1.h"
+#include "MultiplyNTT_NormalizeWarpTiledV2.h"
 
 template <class SharkFloatParams>
 static __device__ inline void
@@ -723,7 +723,6 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
 
     return r; // Fully normalized Montgomery product mod p
 }
-
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly uint64_t
@@ -2009,10 +2008,10 @@ static_assert(HpShark::AdditionalUInt64PerFrame == 256, "See below");
     const int threadIdxGlobal = block.group_index().x * block.dim_threads().x + block.thread_index().x; \
     constexpr auto NewN = SharkFloatParams::GlobalNumUint32;                                            \
     constexpr int TestMultiplier = 1;                                                                   \
-    constexpr auto DebugGlobals_offset = HpShark::AdditionalGlobalSyncSpace;                                     \
+    constexpr auto DebugGlobals_offset = HpShark::AdditionalGlobalSyncSpace;                            \
     constexpr auto DebugChecksum_offset =                                                               \
-        DebugGlobals_offset + HpShark::AdditionalGlobalDebugPerThread;         \
-    constexpr auto GlobalsDoneOffset = DebugChecksum_offset + HpShark::AdditionalGlobalChecksumSpace;            \
+        DebugGlobals_offset + HpShark::AdditionalGlobalDebugPerThread;                                  \
+    constexpr auto GlobalsDoneOffset = DebugChecksum_offset + HpShark::AdditionalGlobalChecksumSpace;   \
     constexpr auto Z0_offsetXX = GlobalsDoneOffset;                                                     \
     constexpr auto Z0_offsetXY = Z0_offsetXX + 4 * NewN * TestMultiplier +                              \
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 4 */         \

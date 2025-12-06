@@ -6,16 +6,9 @@ class LAParameters {
 public:
     LAParameters();
 
-    enum class LAThreadingAlgorithm {
-        SingleThreaded,
-        MultiThreaded
-    };
+    enum class LAThreadingAlgorithm { SingleThreaded, MultiThreaded };
 
-    enum class LADefaults {
-        MaxAccuracy,
-        MaxPerf,
-        MinMemory
-    };
+    enum class LADefaults { MaxAccuracy, MaxPerf, MinMemory };
 
     CUDA_CRAP int GetDetectionMethod() const;
     CUDA_CRAP float GetLAThresholdScale() const;
@@ -77,6 +70,6 @@ private:
     static constexpr int32_t DefaultStage0PeriodDetectionThresholdExponent = -10;
     static constexpr int32_t DefaultPeriodDetectionThresholdExponent = -10;
 
-    static constexpr LAThreadingAlgorithm DefaultThreadingAlgorithm = LAThreadingAlgorithm::MultiThreaded;
+    static constexpr LAThreadingAlgorithm DefaultThreadingAlgorithm =
+        LAThreadingAlgorithm::MultiThreaded;
 };
-

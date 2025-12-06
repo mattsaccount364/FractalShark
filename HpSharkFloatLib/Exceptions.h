@@ -1,7 +1,6 @@
 #pragma once
 
 #include <exception>
-#include <string>
 #include <stacktrace>
 #include <stdexcept>
 #include <string>
@@ -20,10 +19,7 @@ struct Cpp23ExceptionWithCallstack : std::runtime_error {
 };
 
 struct FractalSharkSeriousException : public Cpp23ExceptionWithCallstack {
-    FractalSharkSeriousException(std::string ss) : Cpp23ExceptionWithCallstack{ ss.c_str() } {
-    }
+    FractalSharkSeriousException(std::string ss) : Cpp23ExceptionWithCallstack{ss.c_str()} {}
 
-    ~FractalSharkSeriousException() throw () {
-    }
+    ~FractalSharkSeriousException() throw() {}
 };
-

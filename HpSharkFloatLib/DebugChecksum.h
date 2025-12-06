@@ -1,19 +1,18 @@
 ﻿#pragma once
 
-#include "HpSharkFloat.cuh"
 #include "DebugStateRaw.h"
+#include "HpSharkFloat.h"
 
 #define USE_PARALLEL_FLETCHER64
 
 #ifdef __CUDACC__
 
-#include <cstdint>
 #include <cooperative_groups.h>
+#include <cstdint>
 
-template <class SharkFloatParams>
-struct DebugGlobalCount {
-    __device__ 
-    void DebugMultiplyErase ()
+template <class SharkFloatParams> struct DebugGlobalCount {
+    __device__ void
+    DebugMultiplyErase()
     {
         if constexpr (HpShark::DebugGlobalState) {
             Data = {};
@@ -24,11 +23,11 @@ struct DebugGlobalCount {
 };
 
 template <class SharkFloatParams>
-__device__ void DebugMultiplyIncrement (
-    DebugGlobalCount<SharkFloatParams> *array,
-    cooperative_groups::grid_group &grid,
-    cooperative_groups::thread_block &block,
-    uint32_t count)
+__device__ void
+DebugMultiplyIncrement(DebugGlobalCount<SharkFloatParams> *array,
+                       cooperative_groups::grid_group &grid,
+                       cooperative_groups::thread_block &block,
+                       uint32_t count)
 {
     if constexpr (HpShark::DebugGlobalState) {
         auto &index = array[block.group_index().x * block.dim_threads().x + block.thread_index().x];
@@ -46,8 +45,7 @@ DebugCarryIncrement(DebugGlobalCount<SharkFloatParams> *array,
                     uint32_t count)
 {
     if constexpr (HpShark::DebugGlobalState) {
-        auto &index = array[block.group_index().x * block.dim_threads().x +
-                            block.thread_index().x];
+        auto &index = array[block.group_index().x * block.dim_threads().x + block.thread_index().x];
         index.Data.carryCount += count;
         index.Data.blockIdx = block.group_index().x;
         index.Data.threadIdx = block.thread_index().x;
@@ -62,8 +60,7 @@ DebugNormalizeIncrement(DebugGlobalCount<SharkFloatParams> *array,
                         uint32_t count)
 {
     if constexpr (HpShark::DebugGlobalState) {
-        auto &index = array[block.group_index().x * block.dim_threads().x +
-                            block.thread_index().x];
+        auto &index = array[block.group_index().x * block.dim_threads().x + block.thread_index().x];
         index.Data.normalizeCount += count;
         index.Data.blockIdx = block.group_index().x;
         index.Data.threadIdx = block.thread_index().x;
@@ -87,7 +84,7 @@ static __device__ uint32_t d_block_lm[kMaxBlocks];
 
 static __device__ uint32_t d_final_s1;
 static __device__ uint32_t d_final_s2;
-}
+} // namespace DebugChecksumGlobals
 
 template <class SharkFloatParams> struct DebugState {
 
@@ -154,7 +151,7 @@ template <class SharkFloatParams> struct DebugState {
         return {s1, static_cast<uint32_t>(s2_wide)};
     }
 
-// Compute Fletcher-64 over [lo, hi) 32-bit words with seed (s1,s2).
+    // Compute Fletcher-64 over [lo, hi) 32-bit words with seed (s1,s2).
     static __device__ __forceinline__ F64Pair
     fletcher64_chunk_words(const uint32_t *w32, uint64_t lo, uint64_t hi, F64Pair seed)
     {
@@ -176,7 +173,6 @@ template <class SharkFloatParams> struct DebugState {
 
         return {static_cast<uint32_t>(s1), static_cast<uint32_t>(s2)};
     }
-
 
     // Pack/unpack Fletcher state to/from uint64 (s2<<32 | s1)
     static __device__ __forceinline__ F64Pair
@@ -284,10 +280,10 @@ template <class SharkFloatParams> struct DebugState {
 #ifdef USE_PARALLEL_FLETCHER64
     __device__ uint64_t
     ComputeCRC64(cooperative_groups::grid_group &grid,
-                                               cooperative_groups::thread_block &block,
-                                               const uint32_t *data,
-                                               size_t size,
-                                               uint64_t initialCrc)
+                 cooperative_groups::thread_block &block,
+                 const uint32_t *data,
+                 size_t size,
+                 uint64_t initialCrc)
     {
         using namespace DebugChecksumGlobals;
 
@@ -373,7 +369,7 @@ template <class SharkFloatParams> struct DebugState {
 
         grid.sync();
 
-// ---- Parallel grid reduction over per-block tuples (no shared mem) ----
+        // ---- Parallel grid reduction over per-block tuples (no shared mem) ----
         // Each round halves the number of “live” blocks by combining A=even, B=even+offset into A.
         // Only threadIdx.x == 0 in participating blocks touches the tuples.
         {
@@ -432,17 +428,16 @@ template <class SharkFloatParams> struct DebugState {
             }
         }
 
-
         grid.sync();
         return (uint64_t(d_final_s2) << 32) | uint64_t(d_final_s1);
     }
 
     __device__ uint64_t
     ComputeCRC64(cooperative_groups::grid_group &grid,
-                                               cooperative_groups::thread_block &block,
-                                               const uint64_t *data,
-                                               size_t size,
-                                               uint64_t initialCrc)
+                 cooperative_groups::thread_block &block,
+                 const uint64_t *data,
+                 size_t size,
+                 uint64_t initialCrc)
     {
         using namespace DebugChecksumGlobals;
 
@@ -523,7 +518,7 @@ template <class SharkFloatParams> struct DebugState {
 
         grid.sync();
 
-// ---- Parallel grid reduction over per-block tuples (no shared mem) ----
+        // ---- Parallel grid reduction over per-block tuples (no shared mem) ----
         // Each round halves the number of “live” blocks by combining A=even, B=even+offset into A.
         // Only threadIdx.x == 0 in participating blocks touches the tuples.
         {
@@ -580,24 +575,20 @@ template <class SharkFloatParams> struct DebugState {
                 DebugChecksumGlobals::d_final_s1 = final.s1;
                 DebugChecksumGlobals::d_final_s2 = final.s2;
             }
-
         }
-
 
         grid.sync();
         return (uint64_t(d_final_s2) << 32) | uint64_t(d_final_s1);
     }
 
-
-
 #else
     // ---------- uint32_t* overload: single-thread (rank 0) Fletcher-64 ----------
     __device__ uint64_t
     ComputeCRC64(cooperative_groups::grid_group &grid,
-                                               cooperative_groups::thread_block &block,
-                                               const uint32_t *data,
-                                               size_t size,
-                                               uint64_t initialCrc)
+                 cooperative_groups::thread_block &block,
+                 const uint32_t *data,
+                 size_t size,
+                 uint64_t initialCrc)
     {
         using namespace DebugChecksumGlobals;
 
@@ -634,10 +625,10 @@ template <class SharkFloatParams> struct DebugState {
     // ----------
     __device__ uint64_t
     ComputeCRC64(cooperative_groups::grid_group &grid,
-                                               cooperative_groups::thread_block & /*block*/,
-                                               const uint64_t *data,
-                                               size_t size,
-                                               uint64_t initialCrc)
+                 cooperative_groups::thread_block & /*block*/,
+                 const uint64_t *data,
+                 size_t size,
+                 uint64_t initialCrc)
     {
         using namespace DebugChecksumGlobals;
 
@@ -677,11 +668,9 @@ template <class SharkFloatParams> struct DebugState {
         return ret;
     }
 
-
 #endif
 
     DebugStateRaw Data;
 };
-
 
 #endif // __CUDACC__

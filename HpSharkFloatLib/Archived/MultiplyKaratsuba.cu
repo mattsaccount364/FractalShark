@@ -2991,7 +2991,7 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
 
 template<class SharkFloatParams>
 void
-PrintMaxActiveBlocks(const SharkLaunchParams &launchParams, void *kernelFn, int sharedAmountBytes)
+PrintMaxActiveBlocks(const HpShark::LaunchParams &launchParams, void *kernelFn, int sharedAmountBytes)
 {
     std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
 

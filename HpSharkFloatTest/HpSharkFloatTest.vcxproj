@@ -155,6 +155,7 @@
     <ClCompile Include="Conversion.cpp">
       <FileType>Document</FileType>
     </ClCompile>
+    <ClCompile Include="ReferenceNTT3.cpp" />
     <ClCompile Include="ShowMostEfficientSizes.cpp" />
     <ClCompile Include="Tests.cpp">
       <FileType>Document</FileType>

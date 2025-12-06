@@ -20,7 +20,7 @@
 
 template <class SharkFloatParams>
 void
-InvokeHpSharkReferenceKernelProd(const SharkLaunchParams &launchParams,
+InvokeHpSharkReferenceKernelProd(const HpShark::LaunchParams &launchParams,
                                  HpSharkReferenceResults<SharkFloatParams> &combo,
                                  mpf_t srcX,
                                  mpf_t srcY,
@@ -54,7 +54,7 @@ InvokeHpSharkReferenceKernelProd(const SharkLaunchParams &launchParams,
 //
 template <class SharkFloatParams>
 void
-InvokeHpSharkReferenceKernelPerf(const SharkLaunchParams &launchParams,
+InvokeHpSharkReferenceKernelPerf(const HpShark::LaunchParams &launchParams,
                                  BenchmarkTimer *timer,
                                  HpSharkReferenceResults<SharkFloatParams> &combo,
                                  uint64_t numIters,
@@ -203,13 +203,13 @@ InvokeHpSharkReferenceKernelPerf(const SharkLaunchParams &launchParams,
 #if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelProd<SharkFloatParams>(                                   \
-        const SharkLaunchParams &launchParams,                                                          \
+        const HpShark::LaunchParams &launchParams,                                                          \
         HpSharkReferenceResults<SharkFloatParams> &,                                                    \
         mpf_t,                                                                                          \
         mpf_t,                                                                                          \
         uint64_t);                           \
     template void InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(                                   \
-        const SharkLaunchParams &launchParams,                                                          \
+        const HpShark::LaunchParams &launchParams,                                                          \
         BenchmarkTimer *timer,                                                                         \
         HpSharkReferenceResults<SharkFloatParams> & combo,                                              \
         uint64_t numIters,                                                                              \

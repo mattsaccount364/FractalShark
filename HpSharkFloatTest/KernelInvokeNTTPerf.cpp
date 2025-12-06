@@ -5,7 +5,7 @@
 
 template <class SharkFloatParams>
 void
-InvokeMultiplyNTTKernelPerf(const SharkLaunchParams &launchParams,
+InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,
     BenchmarkTimer &timer,
                             HpSharkComboResults<SharkFloatParams> &combo,
                             uint64_t numIters)
@@ -112,7 +112,7 @@ InvokeMultiplyNTTKernelPerf(const SharkLaunchParams &launchParams,
 #ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelPerf<SharkFloatParams>(                                        \
-        const SharkLaunchParams &launchParams,                                                         \
+        const HpShark::LaunchParams &launchParams,                                                         \
         BenchmarkTimer & timer,                                                                         \
         HpSharkComboResults<SharkFloatParams> & combo,                                                  \
         uint64_t numIters);

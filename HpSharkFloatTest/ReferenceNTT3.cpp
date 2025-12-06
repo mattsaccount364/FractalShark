@@ -651,7 +651,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
     }
 
     // --------- Plan and tables ---------
-    PlanPrime plan = BuildPlanPrime(SharkFloatParams::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
+    PlanPrime plan = BuildPlanPrime(SharkFloatParams::GlobalNumUint32, NTTBHint, NTTNumBitsMargin);
     plan.Print();
 
     assert(plan.ok && "Prime plan build failed (check b/N headroom constraints)");

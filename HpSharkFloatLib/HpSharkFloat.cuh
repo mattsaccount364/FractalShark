@@ -48,9 +48,9 @@
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
-#define ENABLE_MULTIPLY_NTT_KERNEL
-//#define ENABLE_REFERENCE_KERNEL
-//#define ENABLE_FULL_KERNEL
+//#define ENABLE_MULTIPLY_NTT_KERNEL
+//#define ENABLE_REFERENCE_KERNEL // Kind of useless now, consider removing
+#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
@@ -127,15 +127,16 @@ namespace HpShark {
     #define SharkForceInlineReleaseOnly __forceinline__
     #endif
 
-    static constexpr auto NumBitsMargin = 2;
+    static constexpr auto NTTBHint = 32; // 26?
+    static constexpr auto NTTNumBitsMargin = 0; // 2?
 
     // Uncomment to test small warp on multiply normalize path for easier debugging
     // Assumes number of threads is a power of 2 and <= 32, with one block.
     // #define TEST_SMALL_NORMALIZE_WARP
 
-    //static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel ||
-    //                                      EnableReferenceKernel || EnableFullKernel);
-    static constexpr bool TestGpu = false;
+    static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel ||
+                                          EnableReferenceKernel || EnableFullKernel);
+    //static constexpr bool TestGpu = false;
 
     static constexpr auto TestComicalThreadCount = 13;
 
@@ -197,19 +198,25 @@ namespace HpShark {
     {
         return v && ((v & (v - 1u)) == 0u);
     }
+
+    struct LaunchParams {
+        LaunchParams(int32_t numBlocksIn, int32_t threadsPerBlockIn)
+            : NumBlocks{numBlocksIn}, ThreadsPerBlock{threadsPerBlockIn},
+              TotalThreads{numBlocksIn * threadsPerBlockIn}
+        {
+        }
+
+        LaunchParams() : NumBlocks{rand() % 128 + 1},
+                         ThreadsPerBlock{32 * (rand() % 8 + 1)},
+                         TotalThreads{NumBlocks * ThreadsPerBlock}
+        {
+        }
+
+        const int32_t NumBlocks;
+        const int32_t ThreadsPerBlock;
+        const int32_t TotalThreads;
+    };
 }
-
-struct SharkLaunchParams {
-    SharkLaunchParams(int32_t numBlocksIn, int32_t threadsPerBlockIn)
-        : NumBlocks{numBlocksIn}, ThreadsPerBlock{threadsPerBlockIn},
-          TotalThreads{numBlocksIn * threadsPerBlockIn}
-    {
-    }
-
-    const int32_t NumBlocks;
-    const int32_t ThreadsPerBlock;
-    const int32_t TotalThreads;
-};
 
 template<int32_t pNumDigits>
 struct GenericSharkFloatParams {
@@ -258,7 +265,7 @@ struct GenericSharkFloatParams {
     }
 
     static constexpr SharkNTT::PlanPrime NTTPlan =
-        SharkNTT::BuildPlanPrime(GlobalNumUint32, 32, HpShark::NumBitsMargin);
+        SharkNTT::BuildPlanPrime(GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
     static constexpr bool Periodicity = HpShark::EnablePeriodicity;
 
     using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;

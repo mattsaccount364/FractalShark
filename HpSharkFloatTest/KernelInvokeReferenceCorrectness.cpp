@@ -8,7 +8,7 @@
 
 template <class SharkFloatParams>
 void
-InvokeHpSharkReferenceKernelCorrectness(const SharkLaunchParams &launchParams,
+InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                         BenchmarkTimer &timer,
                                         HpSharkReferenceResults<SharkFloatParams> &combo,
                                         DebugGpuCombo *debugCombo)
@@ -104,7 +104,7 @@ InvokeHpSharkReferenceKernelCorrectness(const SharkLaunchParams &launchParams,
 #if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(                            \
-        const SharkLaunchParams &launchParams,                                                        \
+        const HpShark::LaunchParams &launchParams,                                                        \
         BenchmarkTimer & timer,                                                                         \
         HpSharkReferenceResults<SharkFloatParams> & combo,                                              \
         DebugGpuCombo * debugCombo);

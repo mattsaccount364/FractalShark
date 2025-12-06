@@ -44,7 +44,7 @@ __maxnreg__(HpShark::RegisterLimit)
 
 template <class SharkFloatParams>
 void
-ComputeMultiplyNTTGpu(const SharkLaunchParams &launchParams, void *kernelArgs[])
+ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
 {
 
     cudaError_t err;
@@ -85,7 +85,7 @@ ComputeMultiplyNTTGpu(const SharkLaunchParams &launchParams, void *kernelArgs[])
 
 template <class SharkFloatParams>
 void
-ComputeMultiplyNTTGpuTestLoop(const SharkLaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[])
+ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[])
 {
 
     constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
@@ -117,8 +117,8 @@ ComputeMultiplyNTTGpuTestLoop(const SharkLaunchParams &launchParams, cudaStream_
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void ComputeMultiplyNTTGpu<SharkFloatParams>(const SharkLaunchParams &launchParams, void* kernelArgs[]);                          \
-    template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(const SharkLaunchParams &launchParams, cudaStream_t & stream,                \
+    template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams, void* kernelArgs[]);                          \
+    template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams, cudaStream_t & stream,                \
                                                                   void* kernelArgs[]);
 
 #if defined(ENABLE_MULTIPLY_NTT_KERNEL)

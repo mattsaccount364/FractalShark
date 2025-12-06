@@ -4,7 +4,7 @@
 
 template <class SharkFloatParams>
 void
-InvokeAddKernelPerf(const SharkLaunchParams &launchParams,
+InvokeAddKernelPerf(const HpShark::LaunchParams &launchParams,
                     BenchmarkTimer &timer,
                     HpSharkAddComboResults<SharkFloatParams> &combo,
                     uint64_t numIters)
@@ -41,7 +41,7 @@ InvokeAddKernelPerf(const SharkLaunchParams &launchParams,
 #ifdef ENABLE_ADD_KERNEL
 #define ExplicitlyInstantiateAdd(SharkFloatParams)                                                      \
     template void InvokeAddKernelPerf<SharkFloatParams>(                                                \
-        const SharkLaunchParams &launchParams, BenchmarkTimer & timer, HpSharkAddComboResults<SharkFloatParams> & combo, uint64_t numIters);
+        const HpShark::LaunchParams &launchParams, BenchmarkTimer & timer, HpSharkAddComboResults<SharkFloatParams> & combo, uint64_t numIters);
 #else
 #define ExplicitlyInstantiateAdd(SharkFloatParams) ;
 #endif

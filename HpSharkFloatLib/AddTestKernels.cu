@@ -34,7 +34,7 @@ AddKernelTestLoop(
 }
 
 template<class SharkFloatParams>
-void ComputeAddGpu(const SharkLaunchParams &launchParams, void *kernelArgs[]) {
+void ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = 0;
@@ -56,7 +56,7 @@ void ComputeAddGpu(const SharkLaunchParams &launchParams, void *kernelArgs[]) {
 }
 
 template<class SharkFloatParams>
-void ComputeAddGpuTestLoop(const SharkLaunchParams &launchParams, void *kernelArgs[]) {
+void ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = 0;
@@ -79,9 +79,9 @@ void ComputeAddGpuTestLoop(const SharkLaunchParams &launchParams, void *kernelAr
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
-    template void ComputeAddGpu<SharkFloatParams>(const SharkLaunchParams &launchParams,                \
+    template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,                \
                                                   void *kernelArgs[]); \
-    template void ComputeAddGpuTestLoop<SharkFloatParams>(const SharkLaunchParams &launchParams,        \
+    template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,        \
                                                           void *kernelArgs[]);
 
 #ifdef ENABLE_ADD_KERNEL

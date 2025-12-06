@@ -4,7 +4,9 @@
 #include <cuda_runtime.h>
 #include <stdint.h>
 
-struct SharkLaunchParams;
+namespace HpShark {
+struct LaunchParams;
+}
 
 template <class SharkFloatParams> struct HpSharkFloat;
 
@@ -13,10 +15,10 @@ template <class SharkFloatParams> struct HpSharkComboResults;
 //#include "KernelInvoke.cuh"
 
 template <class SharkFloatParams>
-void ComputeMultiplyNTTGpu(const SharkLaunchParams &launchParams, void *kernelArgs[]);
+void ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[]);
 
 template <class SharkFloatParams>
-void ComputeMultiplyNTTGpuTestLoop(const SharkLaunchParams &launchParams,
+void ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
                                    cudaStream_t &stream,
                                    void *kernelArgs[]);
 

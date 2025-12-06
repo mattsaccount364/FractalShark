@@ -5,7 +5,7 @@
 
 template <class SharkFloatParams>
 void
-InvokeMultiplyNTTKernelCorrectness(const SharkLaunchParams &launchParams,
+InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                    BenchmarkTimer &timer,
                                    HpSharkComboResults<SharkFloatParams> &combo,
                                    DebugGpuCombo *debugCombo)
@@ -88,7 +88,7 @@ InvokeMultiplyNTTKernelCorrectness(const SharkLaunchParams &launchParams,
 #ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(                                 \
-        const SharkLaunchParams &launchParams,                                                         \
+        const HpShark::LaunchParams &launchParams,                                                         \
         BenchmarkTimer & timer,                                                                         \
         HpSharkComboResults<SharkFloatParams> & combo,                                                  \
         DebugGpuCombo * debugCombo);

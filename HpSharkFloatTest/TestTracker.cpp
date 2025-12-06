@@ -97,7 +97,7 @@ TestTracker::AddTime(size_t testIndex, uint64_t ms)
 }
 
 void
-TestTracker::MarkSuccess(const SharkLaunchParams *launchParams,
+TestTracker::MarkSuccess(const HpShark::LaunchParams *launchParams,
                          size_t testIndex,
                          const std::string &description)
 {
@@ -116,7 +116,7 @@ TestTracker::MarkSuccess(const SharkLaunchParams *launchParams,
 }
 
 void
-TestTracker::MarkFailed(const SharkLaunchParams *launchParams,
+TestTracker::MarkFailed(const HpShark::LaunchParams *launchParams,
                         size_t testIndex,
                         const std::string &description,
                         const std::string &relativeError,

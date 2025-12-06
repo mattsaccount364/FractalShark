@@ -151,7 +151,7 @@ __maxnreg__(HpShark::RegisterLimit)
 
 template <class SharkFloatParams>
 void
-ComputeHpSharkReferenceGpu(const SharkLaunchParams &launchParams, void *kernelArgs[])
+ComputeHpSharkReferenceGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
 {
 
     constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
@@ -190,7 +190,7 @@ ComputeHpSharkReferenceGpu(const SharkLaunchParams &launchParams, void *kernelAr
 
 template <class SharkFloatParams>
 void
-ComputeHpSharkReferenceGpuLoop(const SharkLaunchParams &launchParams,
+ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                                cudaStream_t &stream,
                                void *kernelArgs[])
 {
@@ -230,10 +230,10 @@ ComputeHpSharkReferenceGpuLoop(const SharkLaunchParams &launchParams,
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void ComputeHpSharkReferenceGpu<SharkFloatParams>(const SharkLaunchParams &launchParams,   \
+    template void ComputeHpSharkReferenceGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,   \
                                                                void *kernelArgs[]);                     \
     template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
-        const SharkLaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
+        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 
 #if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 ExplicitInstantiateAll();

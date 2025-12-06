@@ -3,7 +3,9 @@
 #include <mpir.h>
 #include <functional>
 
-struct SharkLaunchParams;
+namespace HpShark {
+struct LaunchParams;
+}
 
 template<class SharkFloatParams>
 struct HpSharkFloat;
@@ -26,47 +28,47 @@ class DebugGpuCombo;
 enum class Operator;
 
 template<class SharkFloatParams>
-void InvokeHpSharkReferenceKernelPerf(const SharkLaunchParams &launchParams,
+void InvokeHpSharkReferenceKernelPerf(const HpShark::LaunchParams &launchParams,
     BenchmarkTimer *timer,
     HpSharkReferenceResults<SharkFloatParams> &combo,
     uint64_t numIters,
     DebugGpuCombo *debugCombo);
 
 template <class SharkFloatParams>
-void InvokeHpSharkReferenceKernelProd(const SharkLaunchParams &launchParams,
+void InvokeHpSharkReferenceKernelProd(const HpShark::LaunchParams &launchParams,
                                       HpSharkReferenceResults<SharkFloatParams> &combo,
                                       mpf_t srcX,
                                       mpf_t srcY,
                                       uint64_t numIters);
 
 template <class SharkFloatParams>
-void InvokeMultiplyNTTKernelPerf(const SharkLaunchParams &launchParams,
+void InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,
                                  BenchmarkTimer &timer,
                               HpSharkComboResults<SharkFloatParams>& combo,
                               uint64_t numIters);
 
 
 template<class SharkFloatParams>
-void InvokeAddKernelPerf(const SharkLaunchParams &launchParams,
+void InvokeAddKernelPerf(const HpShark::LaunchParams &launchParams,
                          BenchmarkTimer &timer,
     HpSharkAddComboResults<SharkFloatParams> &combo,
     uint64_t numIters);
 
 template<class SharkFloatParams>
-void InvokeHpSharkReferenceKernelCorrectness(const SharkLaunchParams &launchParams,
+void InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParams,
     BenchmarkTimer &timer,
     HpSharkReferenceResults<SharkFloatParams> &combo,
     DebugGpuCombo *debugCombo);
 
 
 template <class SharkFloatParams>
-void InvokeMultiplyNTTKernelCorrectness(const SharkLaunchParams &launchParams,
+void InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                         BenchmarkTimer &timer,
                                               HpSharkComboResults<SharkFloatParams>& combo,
                                               DebugGpuCombo* debugCombo);
 
 template<class SharkFloatParams>
-void InvokeAddKernelCorrectness(const SharkLaunchParams &launchParams,
+void InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                 BenchmarkTimer &timer,
     HpSharkAddComboResults<SharkFloatParams> &combo,
     DebugGpuCombo *debugCombo);

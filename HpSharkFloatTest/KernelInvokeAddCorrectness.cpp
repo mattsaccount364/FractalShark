@@ -4,7 +4,7 @@
 
 template <class SharkFloatParams>
 void
-InvokeAddKernelCorrectness(const SharkLaunchParams &launchParams,
+InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
                            BenchmarkTimer &timer,
                            HpSharkAddComboResults<SharkFloatParams> &combo,
                            DebugGpuCombo *debugCombo)
@@ -65,7 +65,7 @@ InvokeAddKernelCorrectness(const SharkLaunchParams &launchParams,
 #ifdef ENABLE_ADD_KERNEL
 #define ExplicitlyInstantiateAdd(SharkFloatParams)                                                      \
     template void InvokeAddKernelCorrectness<SharkFloatParams>(                                         \
-        const SharkLaunchParams &launchParams,                                                       \
+        const HpShark::LaunchParams &launchParams,                                                       \
         BenchmarkTimer & timer,                                                                         \
         HpSharkAddComboResults<SharkFloatParams> & combo,                                               \
         DebugGpuCombo * debugCombo);

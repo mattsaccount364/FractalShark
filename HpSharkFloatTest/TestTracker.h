@@ -6,8 +6,9 @@
 #include <string>
 #include <vector>
 
-struct SharkLaunchParams;
-
+namespace HpShark {
+struct LaunchParams;
+}
 class TestTracker {
 public:
     struct PerTest {
@@ -28,11 +29,11 @@ public:
     bool CheckAllTestsPassed() const;
     void AddTime(size_t testIndex, uint64_t ms);
 
-    void MarkSuccess(const SharkLaunchParams *launchParams,
+    void MarkSuccess(const HpShark::LaunchParams *launchParams,
                      size_t testIndex,
                      const std::string &description);
 
-    void MarkFailed(const SharkLaunchParams *launchParams,
+    void MarkFailed(const HpShark::LaunchParams *launchParams,
                     size_t testIndex,
                     const std::string &description,
                     const std::string &relativeError,

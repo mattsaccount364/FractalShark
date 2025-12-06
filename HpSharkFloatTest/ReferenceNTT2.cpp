@@ -531,7 +531,8 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                   "GlobalNumUint32 must be a power of 2");
 
     // --------- Plan and tables ---------
-    PlanPrime plan = BuildPlanPrime(SharkFloatParams::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
+    PlanPrime plan =
+        BuildPlanPrime(SharkFloatParams::GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
     plan.Print();
 
     assert(plan.ok && "Prime plan build failed (check b/N headroom constraints)");
@@ -549,6 +550,13 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
             std::cout << "debugBState checksum: " << debugBState.GetStr() << "\n";
         }
     }
+
+     // x must be a positive constant expression
+
+    // Verify power of 2
+    static_assert(SharkFloatParams::GlobalNumUint32 > 0 &&
+                      (SharkFloatParams::GlobalNumUint32 & (SharkFloatParams::GlobalNumUint32 - 1)) == 0,
+                  "GlobalNumUint32 must be a power of 2");
 
     // Compute Final128 digit budget once
     const uint32_t Ddigits = ((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u;

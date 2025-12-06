@@ -215,7 +215,7 @@ main(int /*argc*/, char * /*argv*/[])
     GlobalCallstacks->InitCallstacks();
 
     {
-        auto plateaus = SharkNTT::BuildPrecisionPlateaus(1048576, 32, HpShark::NumBitsMargin);
+        auto plateaus = SharkNTT::BuildPrecisionPlateaus(1048576, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
         SharkNTT::PrintPlateauTable(plateaus);
         SharkNTT::PrintPrecisionTiers(plateaus);
     }

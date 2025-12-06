@@ -25,7 +25,8 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
     }
 
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + CalculateAddFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (HpShark::AdditionalUInt64Global + HpShark::CalculateAddFrameSize<SharkFloatParams>()) *
+        sizeof(uint64_t);
     uint64_t *g_extResult;
     cudaMalloc(&g_extResult, BytesToAllocate);
 
@@ -44,7 +45,7 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
         if constexpr (HpShark::DebugChecksums) {
             debugCombo->States.resize(SharkFloatParams::NumDebugStates);
             cudaMemcpy(debugCombo->States.data(),
-                       &g_extResult[AdditionalChecksumsOffset],
+                       &g_extResult[HpShark::AdditionalChecksumsOffset],
                        SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
                        cudaMemcpyDeviceToHost);
         }
@@ -52,7 +53,7 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
         if constexpr (HpShark::DebugGlobalState) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(debugCombo->MultiplyCounts.data(),
-                       &g_extResult[AdditionalMultipliesOffset],
+                       &g_extResult[HpShark::AdditionalMultipliesOffset],
                        SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
                        cudaMemcpyDeviceToHost);
         }

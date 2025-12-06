@@ -616,19 +616,19 @@ struct PPTransfer3 {
     uint64_t bits;
 };
 
-__device__ SharkForceInlineReleaseOnly uint32_t
+__device__ SharkForceInlineReleaseOnly static uint32_t
 PPencode_carry(int32_t c) // c ∈ {-1,0,1} -> {0,1,2}
 {
     return static_cast<uint32_t>(c + 1);
 }
 
-__device__ SharkForceInlineReleaseOnly int32_t
+__device__ SharkForceInlineReleaseOnly static int32_t
 PPdecode_carry(uint32_t enc) // enc ∈ {0,1,2} -> {-1,0,1}
 {
     return static_cast<int32_t>(enc) - 1;
 }
 
-__device__ SharkForceInlineReleaseOnly int
+__device__ SharkForceInlineReleaseOnly static int
 PPstate_index_for_carry(int32_t c)
 {
     // c ∈ {-1,0,1} -> 0,1,2
@@ -643,7 +643,7 @@ PPstate_index_for_carry(int32_t c)
 // fieldIdx = streamIdx * 3 + stateIdx (stateIdx = c_in + 1)
 // bit range: [2*fieldIdx + 1 : 2*fieldIdx]
 //
-__device__ SharkForceInlineReleaseOnly uint32_t
+__device__ SharkForceInlineReleaseOnly static uint32_t
 PPget_field(uint64_t bits, int streamIdx, int32_t c_in)
 {
     const int stateIdx = PPstate_index_for_carry(c_in); // 0..2
@@ -652,7 +652,7 @@ PPget_field(uint64_t bits, int streamIdx, int32_t c_in)
     return static_cast<uint32_t>((bits >> shift) & 0x3ull);
 }
 
-__device__ SharkForceInlineReleaseOnly void
+__device__ SharkForceInlineReleaseOnly static void
 PPset_field(uint64_t &bits, int streamIdx, int32_t c_in, int32_t c_out)
 {
     const int stateIdx = PPstate_index_for_carry(c_in); // 0..2
@@ -664,7 +664,7 @@ PPset_field(uint64_t &bits, int streamIdx, int32_t c_in, int32_t c_out)
 }
 
 // Evaluate transfer on a carry in {-1,0,1} for a given stream
-__device__ SharkForceInlineReleaseOnly int32_t
+__device__ SharkForceInlineReleaseOnly static int32_t
 PPeval_transfer(const PPTransfer3 &t, int streamIdx, int32_t c_in)
 {
     const uint32_t enc = PPget_field(t.bits, streamIdx, c_in);
@@ -676,7 +676,7 @@ PPeval_transfer(const PPTransfer3 &t, int streamIdx, int32_t c_in)
 //    c_mid = a(stream, c_in)
 //    c_out = b(stream, c_mid)
 // r is their composition.
-__device__ SharkForceInlineReleaseOnly PPTransfer3
+__device__ SharkForceInlineReleaseOnly static PPTransfer3
 PPcompose_transfer(const PPTransfer3 &a, const PPTransfer3 &b)
 {
     PPTransfer3 r;
@@ -699,7 +699,7 @@ constexpr int DIGITS_PER_BLOCK = 3;
 
 // Build block-level transfer for a block of up to 3 digits:
 // for each stream and c_in ∈ {-1,0,1}, simulate 3 digits in sequence.
-__device__ SharkForceInlineReleaseOnly PPTransfer3
+__device__ SharkForceInlineReleaseOnly static PPTransfer3
 PPbuild_block_transfer_3digits(const uint64_t *extResultTrue,
                                const uint64_t *extResultFalse,
                                const uint64_t *final128_DE,

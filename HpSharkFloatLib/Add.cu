@@ -622,9 +622,9 @@ static __device__ void AddHelperSeparates(
     constexpr auto GlobalSync1_offset = 0;
     constexpr auto GlobalSync2_offset = 128 / sizeof(uint64_t);
     //constexpr auto GlobalSync3_offset = GlobalSync2_offset + 128 / sizeof(uint64_t);
-    constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;
-    constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
-    constexpr auto Final128Offset_ABC_True = AdditionalUInt64Global;
+    constexpr auto DebugGlobals_offset = HpShark::AdditionalGlobalSyncSpace;
+    constexpr auto DebugChecksum_offset = DebugGlobals_offset + HpShark::AdditionalGlobalDebugPerThread;
+    constexpr auto Final128Offset_ABC_True = HpShark::AdditionalUInt64Global;
     constexpr auto Final128Offset_ABC_False = Final128Offset_ABC_True + 2 * SharkFloatParams::GlobalNumUint32;
     constexpr auto Final128Offset_DE = Final128Offset_ABC_False + 2 * SharkFloatParams::GlobalNumUint32;
     constexpr auto PropagatedFinal128Offset_ABC_True = Final128Offset_DE + 2 * SharkFloatParams::GlobalNumUint32;

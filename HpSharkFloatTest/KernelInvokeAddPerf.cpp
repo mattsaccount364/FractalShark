@@ -17,7 +17,8 @@ InvokeAddKernelPerf(const HpShark::LaunchParams &launchParams,
         comboResults, &combo, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + CalculateAddFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (HpShark::AdditionalUInt64Global + HpShark::CalculateAddFrameSize<SharkFloatParams>()) *
+        sizeof(uint64_t);
     uint64_t *g_extResult;
     cudaMalloc(&g_extResult, BytesToAllocate);
 

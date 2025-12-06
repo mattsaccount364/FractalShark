@@ -15,7 +15,8 @@ InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + CalculateNTTFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>()) *
+        sizeof(uint64_t);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts " << std::endl;
@@ -65,7 +66,7 @@ InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
         if constexpr (HpShark::DebugChecksums) {
             debugCombo->States.resize(SharkFloatParams::NumDebugStates);
             cudaMemcpy(debugCombo->States.data(),
-                       &d_tempProducts[AdditionalChecksumsOffset],
+                       &d_tempProducts[HpShark::AdditionalChecksumsOffset],
                        SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
                        cudaMemcpyDeviceToHost);
         }
@@ -73,7 +74,7 @@ InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
         if constexpr (HpShark::DebugGlobalState) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(debugCombo->MultiplyCounts.data(),
-                       &d_tempProducts[AdditionalMultipliesOffset],
+                       &d_tempProducts[HpShark::AdditionalMultipliesOffset],
                        SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
                        cudaMemcpyDeviceToHost);
         }

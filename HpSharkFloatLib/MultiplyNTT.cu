@@ -2004,14 +2004,15 @@ StoreCurrentDebugState(DebugState<SharkFloatParams> *SharkRestrict debugStates,
 // Look for CalculateNTTFrameSize
 // and make sure the number of NewN arrays we're using here fits within that limit.
 // The list here should go up to ScratchMemoryArraysForMultiply.
-static_assert(AdditionalUInt64PerFrame == 256, "See below");
+static_assert(HpShark::AdditionalUInt64PerFrame == 256, "See below");
 #define DefineTempProductsOffsets()                                                                     \
     const int threadIdxGlobal = block.group_index().x * block.dim_threads().x + block.thread_index().x; \
     constexpr auto NewN = SharkFloatParams::GlobalNumUint32;                                            \
     constexpr int TestMultiplier = 1;                                                                   \
-    constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;                                     \
-    constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;         \
-    constexpr auto GlobalsDoneOffset = DebugChecksum_offset + AdditionalGlobalChecksumSpace;            \
+    constexpr auto DebugGlobals_offset = HpShark::AdditionalGlobalSyncSpace;                                     \
+    constexpr auto DebugChecksum_offset =                                                               \
+        DebugGlobals_offset + HpShark::AdditionalGlobalDebugPerThread;         \
+    constexpr auto GlobalsDoneOffset = DebugChecksum_offset + HpShark::AdditionalGlobalChecksumSpace;            \
     constexpr auto Z0_offsetXX = GlobalsDoneOffset;                                                     \
     constexpr auto Z0_offsetXY = Z0_offsetXX + 4 * NewN * TestMultiplier +                              \
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 4 */         \

@@ -73,7 +73,8 @@ InvokeHpSharkReferenceKernelPerf(const HpShark::LaunchParams &launchParams,
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr size_t BytesToAllocate =
-        (AdditionalUInt64Global + CalculateNTTFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>()) *
+        sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     if constexpr (!HpShark::TestInitCudaMemory) {
@@ -178,7 +179,7 @@ InvokeHpSharkReferenceKernelPerf(const HpShark::LaunchParams &launchParams,
         if constexpr (HpShark::DebugGlobalState) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(debugCombo->MultiplyCounts.data(),
-                       &d_tempProducts[AdditionalMultipliesOffset],
+                       &d_tempProducts[HpShark::AdditionalMultipliesOffset],
                        SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
                        cudaMemcpyDeviceToHost);
         }

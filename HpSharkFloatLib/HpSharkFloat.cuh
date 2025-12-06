@@ -216,163 +216,166 @@ namespace HpShark {
         const int32_t ThreadsPerBlock;
         const int32_t TotalThreads;
     };
-}
 
-template<int32_t pNumDigits>
-struct GenericSharkFloatParams {
-    using Float = HDRFloat<float>;
-    using SubType = float;
+    template <int32_t pNumDigits> struct GenericSharkFloatParams {
+        using Float = HDRFloat<float>;
+        using SubType = float;
 
-    // TODO: this is fucked up, fix it so we don't round to next power of two
-    static constexpr bool SharkUsePow2SizesOnly = false;  // HpShark::EnableMultiplyNTTKernel;
+        // TODO: this is fucked up, fix it so we don't round to next power of two
+        static constexpr bool SharkUsePow2SizesOnly = false; // HpShark::EnableMultiplyNTTKernel;
 
-    // Fixed number of uint32_t values
-    static constexpr int32_t Guard = 4;
+        // Fixed number of uint32_t values
+        static constexpr int32_t Guard = 4;
 
-    static constexpr int32_t GlobalNumUint32 =
-        SharkUsePow2SizesOnly ?
-            static_cast<int32_t>(
-                HpShark::ceil_pow2_u32(static_cast<uint32_t>(pNumDigits)))
-            : pNumDigits;
+        static constexpr int32_t GlobalNumUint32 =
+            SharkUsePow2SizesOnly
+                ? static_cast<int32_t>(HpShark::ceil_pow2_u32(static_cast<uint32_t>(pNumDigits)))
+                : pNumDigits;
 
-    constexpr static int32_t
-    NumberOfBits(int32_t x) {
-        return x < 2 ? x : 1 + NumberOfBits(x >> 1);
-    }
-    constexpr static auto LogNumUint32 = NumberOfBits(GlobalNumUint32);
+        constexpr static int32_t
+        NumberOfBits(int32_t x)
+        {
+            return x < 2 ? x : 1 + NumberOfBits(x >> 1);
+        }
+        constexpr static auto LogNumUint32 = NumberOfBits(GlobalNumUint32);
+
+        static constexpr int32_t HalfLimbsRoundedUp = (GlobalNumUint32 + 1) / 2;
+
+        // If these are set to false they produce wrong answers but can be useful
+        // to confirm source of performance issues.
+        static constexpr bool DisableAllAdditions = false;
+        static constexpr bool DisableSubtraction = false;
+        static constexpr bool DisableCarryPropagation = false;
+        static constexpr bool DisableFinalConstruction = false;
+        static constexpr bool ForceNoOp = false;
+
+        static constexpr auto NumDebugStates = (3 * static_cast<int>(DebugStatePurpose::NumPurposes));
+
+        static constexpr auto MaxBlocks = 256;
+        static constexpr auto MaxThreads = 256;
+        static constexpr auto NumDebugMultiplyCounts = MaxThreads * MaxBlocks;
+
+        static std::string
+        GetDescription()
+        {
+            return std::string("Number of digits: ") + std::to_string(GlobalNumUint32);
+        }
+
+        static constexpr SharkNTT::PlanPrime NTTPlan =
+            SharkNTT::BuildPlanPrime(GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
+        static constexpr bool Periodicity = HpShark::EnablePeriodicity;
+
+        using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
+    };
 
 
-    static constexpr int32_t HalfLimbsRoundedUp = (GlobalNumUint32 + 1) / 2;
+    // This one should account for maximum call index, e.g. if we generate 500 calls
+    // recursively then we need this to be at 500.
+    static constexpr auto ScratchMemoryCopies = 256llu;
 
-    // If these are set to false they produce wrong answers but can be useful
-    // to confirm source of performance issues.
-    static constexpr bool DisableAllAdditions = false;
-    static constexpr bool DisableSubtraction = false;
-    static constexpr bool DisableCarryPropagation = false;
-    static constexpr bool DisableFinalConstruction = false;
-    static constexpr bool ForceNoOp = false;
-
-    static constexpr auto NumDebugStates = (3 * static_cast<int>(DebugStatePurpose::NumPurposes));
-
-    static constexpr auto MaxBlocks = 256;
-    static constexpr auto MaxThreads = 256;
-    static constexpr auto NumDebugMultiplyCounts = MaxThreads * MaxBlocks;
-
-    static std::string
-    GetDescription()
-    {
-        return std::string("Number of digits: ") + std::to_string(GlobalNumUint32);
-    }
-
-    static constexpr SharkNTT::PlanPrime NTTPlan =
-        SharkNTT::BuildPlanPrime(GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
-    static constexpr bool Periodicity = HpShark::EnablePeriodicity;
-
-    using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
-};
-
-// This one should account for maximum call index, e.g. if we generate 500 calls
-// recursively then we need this to be at 500.
-static constexpr auto ScratchMemoryCopies = 256llu;
-
+    
 // Number of arrays of digits on each frame
-static constexpr auto ScratchMemoryArraysForMultiply = 96;
-static constexpr auto ScratchMemoryArraysForAdd = 64;
+    static constexpr auto ScratchMemoryArraysForMultiply = 96;
+    static constexpr auto ScratchMemoryArraysForAdd = 64;
 
+    // Additional space per frame:
+    static constexpr auto AdditionalUInt64PerFrame = 256;
 
-// Additional space per frame:
-static constexpr auto AdditionalUInt64PerFrame = 256;
+    // Additional space up front, globally-shared:
+    // Units are uint64_t
+    static constexpr auto MaxBlocks = 256;
 
-// Additional space up front, globally-shared:
-// Units are uint64_t
-static constexpr auto MaxBlocks = 256;
+    static constexpr auto AdditionalGlobalSyncSpace = 128 * (MaxBlocks + 1);
+    static constexpr auto AdditionalGlobalDebugPerThread = HpShark::DebugGlobalState ? 1024 * 1024 : 0;
+    static constexpr auto AdditionalGlobalChecksumSpace = HpShark::DebugChecksums ? 1024 * 1024 : 0;
 
-static constexpr auto AdditionalGlobalSyncSpace = 128 * (MaxBlocks + 1);
-static constexpr auto AdditionalGlobalDebugPerThread = HpShark::DebugGlobalState ? 1024 * 1024 : 0;
-static constexpr auto AdditionalGlobalChecksumSpace = HpShark::DebugChecksums ? 1024 * 1024 : 0;
+    static constexpr auto AdditionalGlobalSyncSpaceOffset = 0;
+    static constexpr auto AdditionalMultipliesOffset =
+        AdditionalGlobalSyncSpaceOffset + AdditionalGlobalSyncSpace;
+    static constexpr auto AdditionalChecksumsOffset =
+        AdditionalMultipliesOffset + AdditionalGlobalDebugPerThread;
 
-static constexpr auto AdditionalGlobalSyncSpaceOffset = 0;
-static constexpr auto AdditionalMultipliesOffset = AdditionalGlobalSyncSpaceOffset + AdditionalGlobalSyncSpace;
-static constexpr auto AdditionalChecksumsOffset = AdditionalMultipliesOffset + AdditionalGlobalDebugPerThread;
+    // Use the order of these three variables being added as the
+    // definition of how they are laid out in memory.
+    static constexpr auto AdditionalUInt64Global =
+        AdditionalGlobalSyncSpace + AdditionalGlobalDebugPerThread + AdditionalGlobalChecksumSpace;
 
-// Use the order of these three variables being added as the
-// definition of how they are laid out in memory.
-static constexpr auto AdditionalUInt64Global =
-    AdditionalGlobalSyncSpace +
-    AdditionalGlobalDebugPerThread +
-    AdditionalGlobalChecksumSpace;
+    template <class SharkFloatParams>
+    static constexpr auto
+    CalculateKaratsubaFrameSize()
+    {
+        constexpr auto retval = ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 +
+                                AdditionalUInt64PerFrame;
+        constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
+        return retval + alignAt16BytesConstant;
+    }
 
-template<class SharkFloatParams>
-static constexpr auto CalculateKaratsubaFrameSize() {
-    constexpr auto retval =
-        ScratchMemoryArraysForMultiply *
-        SharkFloatParams::GlobalNumUint32 +
-        AdditionalUInt64PerFrame;
-    constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
-    return retval + alignAt16BytesConstant;
-}
+    template <class SharkFloatParams>
+    static constexpr auto
+    CalculateNTTFrameSize()
+    {
+        constexpr auto retval = ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 +
+                                AdditionalUInt64PerFrame;
+        constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
+        return retval + alignAt16BytesConstant;
+    }
 
-template <class SharkFloatParams>
-static constexpr auto CalculateNTTFrameSize()
-{
-    constexpr auto retval =
-        ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
-    constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
-    return retval + alignAt16BytesConstant;
-}
+    template <class SharkFloatParams>
+    constexpr int32_t
+    CalculateNTTSharedMemorySize()
+    {
+        // HpShark::ConstantSharedRequiredBytes
+        constexpr auto sharedAmountBytes = 3 * 2048 * sizeof(uint64_t);
+        return sharedAmountBytes;
+    }
 
-template <class SharkFloatParams>
-constexpr int32_t
-CalculateNTTSharedMemorySize()
-{
-    // HpShark::ConstantSharedRequiredBytes
-    constexpr auto sharedAmountBytes = 3 * 2048 * sizeof(uint64_t);
-    return sharedAmountBytes;
-}
+    template <class SharkFloatParams>
+    static constexpr auto
+    CalculateAddFrameSize()
+    {
+        return ScratchMemoryArraysForAdd * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    }
 
-template<class SharkFloatParams>
-static constexpr auto CalculateAddFrameSize() {
-    return ScratchMemoryArraysForAdd * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
-}
+    static constexpr auto LowPrec = 32;
+} // namespace HpShark
 
-static constexpr auto LowPrec = 32;
 
 #include "ExplicitInstantiate.h"
 
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test8x1SharkParams = GenericSharkFloatParams<8>;
-using Test4x36SharkParams = GenericSharkFloatParams<16>;
-using Test4x12SharkParams = GenericSharkFloatParams<32>;
-using Test4x9SharkParams = GenericSharkFloatParams<64>;
-using Test4x6SharkParams = GenericSharkFloatParams<128>;
+using Test8x1SharkParams = HpShark::GenericSharkFloatParams<8>;
+using Test4x36SharkParams = HpShark::GenericSharkFloatParams<16>;
+using Test4x12SharkParams = HpShark::GenericSharkFloatParams<32>;
+using Test4x9SharkParams = HpShark::GenericSharkFloatParams<64>;
+using Test4x6SharkParams = HpShark::GenericSharkFloatParams<128>;
 
-using TestPerSharkParams1 = GenericSharkFloatParams<8192>;
-using TestPerSharkParams2 = GenericSharkFloatParams<16384>;
-using TestPerSharkParams3 = GenericSharkFloatParams<32768>;
-using TestPerSharkParams4 = GenericSharkFloatParams<65536>;
-using TestPerSharkParams5 = GenericSharkFloatParams<131072>;
-using TestPerSharkParams6 = GenericSharkFloatParams<262144>;
-using TestPerSharkParams7 = GenericSharkFloatParams<524288>;
+using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<8192>;
+using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<16384>;
+using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<32768>;
+using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<65536>;
+using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<131072>;
+using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<262144>;
+using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<524288>;
 
-//using TestPerSharkParams1 = GenericSharkFloatParams<6144>;
-//using TestPerSharkParams2 = GenericSharkFloatParams<11776>;
-//using TestPerSharkParams3 = GenericSharkFloatParams<23552>;
-//using TestPerSharkParams4 = GenericSharkFloatParams<45056>;
-//using TestPerSharkParams5 = GenericSharkFloatParams<90112>;
-//using TestPerSharkParams6 = GenericSharkFloatParams<172032>;
-//using TestPerSharkParams7 = GenericSharkFloatParams<344064>;
-//using TestPerSharkParams8 = GenericSharkFloatParams<1048576>;
+//using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6144>;
+//using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<11776>;
+//using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<23552>;
+//using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<45056>;
+//using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<90112>;
+//using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<172032>;
+//using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<344064>;
+//using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<1048576>;
 
-// using TestPerSharkParams1 = GenericSharkFloatParams<6400>;
-// using TestPerSharkParams2 = GenericSharkFloatParams<12288>;
-// using TestPerSharkParams3 = GenericSharkFloatParams<24576>;
-// using TestPerSharkParams4 = GenericSharkFloatParams<47104>;
-// using TestPerSharkParams5 = GenericSharkFloatParams<94208>;
-// using TestPerSharkParams6 = GenericSharkFloatParams<180224>;
-// using TestPerSharkParams7 = GenericSharkFloatParams<360448>;
-// using TestPerSharkParams8 = GenericSharkFloatParams<688128>;
-// using TestPerSharkParams9 = GenericSharkFloatParams<1048576>;
+// using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6400>;
+// using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<12288>;
+// using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<24576>;
+// using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<47104>;
+// using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<94208>;
+// using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<180224>;
+// using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<360448>;
+// using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<688128>;
+// using TestPerSharkParams9 = HpShark::GenericSharkFloatParams<1048576>;
 
 
 // Correctness test sizes
@@ -383,18 +386,18 @@ using TestCorrectnessSharkParams4 = Test4x12SharkParams;
 using TestCorrectnessSharkParams5 = Test4x6SharkParams;
 
 // FractalShark production sizes
-using ProdSharkParams1 = GenericSharkFloatParams<256>;
-using ProdSharkParams2 = GenericSharkFloatParams<512>;
-using ProdSharkParams3 = GenericSharkFloatParams<1024>;
-using ProdSharkParams4 = GenericSharkFloatParams<2048>;
-using ProdSharkParams5 = GenericSharkFloatParams<4096>;
-using ProdSharkParams6 = GenericSharkFloatParams<8192>;
-using ProdSharkParams7 = GenericSharkFloatParams<16384>;
-using ProdSharkParams8 = GenericSharkFloatParams<32768>;
-using ProdSharkParams9 = GenericSharkFloatParams<65536>;
-using ProdSharkParams10 = GenericSharkFloatParams<131072>;
-using ProdSharkParams11 = GenericSharkFloatParams<262144>;
-using ProdSharkParams12 = GenericSharkFloatParams<524288>;
+using ProdSharkParams1 = HpShark::GenericSharkFloatParams<256>;
+using ProdSharkParams2 = HpShark::GenericSharkFloatParams<512>;
+using ProdSharkParams3 = HpShark::GenericSharkFloatParams<1024>;
+using ProdSharkParams4 = HpShark::GenericSharkFloatParams<2048>;
+using ProdSharkParams5 = HpShark::GenericSharkFloatParams<4096>;
+using ProdSharkParams6 = HpShark::GenericSharkFloatParams<8192>;
+using ProdSharkParams7 = HpShark::GenericSharkFloatParams<16384>;
+using ProdSharkParams8 = HpShark::GenericSharkFloatParams<32768>;
+using ProdSharkParams9 = HpShark::GenericSharkFloatParams<65536>;
+using ProdSharkParams10 = HpShark::GenericSharkFloatParams<131072>;
+using ProdSharkParams11 = HpShark::GenericSharkFloatParams<262144>;
+using ProdSharkParams12 = HpShark::GenericSharkFloatParams<524288>;
 
 enum class InjectNoiseInLowOrder {
     Disable,

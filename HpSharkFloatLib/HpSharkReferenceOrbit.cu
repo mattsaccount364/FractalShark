@@ -119,7 +119,7 @@ __maxnreg__(HpShark::RegisterLimit)
 #ifdef ENABLE_FULL_KERNEL
     // Erase this global debug state if needed.
     if constexpr (HpShark::DebugGlobalState) {
-        constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;
+        constexpr auto DebugGlobals_offset = HpShark::AdditionalGlobalSyncSpace;
         // constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
 
         // auto *SharkRestrict debugStates =
@@ -154,7 +154,7 @@ void
 ComputeHpSharkReferenceGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
 {
 
-    constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
+    constexpr auto sharedAmountBytes = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
@@ -195,7 +195,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                                void *kernelArgs[])
 {
 
-    constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
+    constexpr auto sharedAmountBytes = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,

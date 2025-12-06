@@ -13,7 +13,8 @@ InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,
     // --- 0) Scratch arena (global) ---------------------------------------------------------
     uint64_t *d_tempProducts = nullptr;
     constexpr size_t BytesToAllocate =
-        (AdditionalUInt64Global + CalculateNTTFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>()) *
+        sizeof(uint64_t);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts " << std::endl;

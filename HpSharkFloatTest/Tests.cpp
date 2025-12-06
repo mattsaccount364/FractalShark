@@ -97,7 +97,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
 
         // Print the differences
         std::cout << "\nDifference between host and " << hostCustomOrGpu << " results:" << std::endl;
-        std::cout << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec) << std::endl;
+        std::cout << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec) << std::endl;
     }
 
     // Retrieve total precision bits:
@@ -143,25 +143,25 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
         if (mpf_cmp(mpfDiffAbs, epsilon) <= 0) {
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "\nPASS (|host| <= epsilon):\n"
-                          << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, LowPrec)
-                          << "  epsilon = " << MpfToString<SharkFloatParams>(epsilon, LowPrec)
-                          << "\n  |host - gpu| = " << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec)
+                          << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, HpShark::LowPrec)
+                          << "  epsilon = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
+                          << "\n  |host - gpu| = " << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
                           << "  Bits of error = " << bitsErrA << std::endl;
             }
             Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nFAIL (|host| <= epsilon but absolute error > epsilon):\n"
-                      << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, LowPrec) << std::endl
-                      << "  epsilon      = " << MpfToString<SharkFloatParams>(epsilon, LowPrec)
+                      << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, HpShark::LowPrec) << std::endl
+                      << "  epsilon      = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
                       << std::endl
-                      << "  |host - gpu| = " << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec)
+                      << "  |host - gpu| = " << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
                       << std::endl
                       << "  Bits of error = " << bitsErrA << std::endl;
             Tests.MarkFailed(&launchParams,
                              testNum,
                              hostCustomOrGpu,
-                             MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec),
-                             MpfToString<SharkFloatParams>(epsilon, LowPrec));
+                             MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec),
+                             MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec));
             testSucceeded = false;
         }
     }
@@ -185,24 +185,24 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "\nPASS (relative-error check):\n"
                           << "  relativeError = "
-                          << MpfToString<SharkFloatParams>(relativeError, LowPrec) << std::endl
-                          << "  epsilon            = " << MpfToString<SharkFloatParams>(epsilon, LowPrec)
+                          << MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec) << std::endl
+                          << "  epsilon            = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
                           << std::endl
                           << "  Bits of error: " << bitsErrB << std::endl;
             }
             Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nFAIL (relative-error exceeds epsilon):\n"
-                      << "  relativeError = " << MpfToString<SharkFloatParams>(relativeError, LowPrec)
+                      << "  relativeError = " << MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec)
                       << std::endl
-                      << "  epsilon             = " << MpfToString<SharkFloatParams>(epsilon, LowPrec)
+                      << "  epsilon             = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
                       << std::endl
                       << "  Bits of error: " << bitsErrB << std::endl;
             Tests.MarkFailed(&launchParams,
                              testNum,
                              hostCustomOrGpu,
-                             MpfToString<SharkFloatParams>(relativeError, LowPrec),
-                             MpfToString<SharkFloatParams>(epsilon, LowPrec));
+                             MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec),
+                             MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec));
             testSucceeded = false;
         }
         mpf_clear(relativeError);
@@ -282,8 +282,8 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "\nBefore fallback absolute-error threshold : "
-                      << MpfToString<SharkFloatParams>(eps, LowPrec) << std::endl;
-            std::cout << "Absolute difference: " << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec)
+                      << MpfToString<SharkFloatParams>(eps, HpShark::LowPrec) << std::endl;
+            std::cout << "Absolute difference: " << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
                       << std::endl;
         }
 
@@ -303,8 +303,8 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "\nFallback absolute-error threshold : "
-                      << MpfToString<SharkFloatParams>(eps, LowPrec) << std::endl;
-            std::cout << "Absolute difference: " << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec)
+                      << MpfToString<SharkFloatParams>(eps, HpShark::LowPrec) << std::endl;
+            std::cout << "Absolute difference: " << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
                       << std::endl;
         }
 
@@ -313,8 +313,8 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
         if (ok) {
             Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
-            std::string diffStr = MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec);
-            std::string threshStr = MpfToString<SharkFloatParams>(eps, LowPrec);
+            std::string diffStr = MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec);
+            std::string threshStr = MpfToString<SharkFloatParams>(eps, HpShark::LowPrec);
             std::cerr << "\nError: absolute error \"" << diffStr << "\" > allowed \"" << threshStr
                       << "\"\n";
             Tests.MarkFailed(&launchParams, testNum, hostCustomOrGpu, diffStr, threshStr);
@@ -2782,9 +2782,9 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerfView5(TestTracker &Tests,
-                           int numBlocks,
-                           int numThreads,
+TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
+                           [[maybe_unused]] int numBlocks,
+                           [[maybe_unused]] int numThreads,
                            [[maybe_unused]] int testBase,
                            [[maybe_unused]] int numIters,
                            [[maybe_unused]] int internalTestLoopCount)
@@ -2888,9 +2888,9 @@ TestFullReferencePerfView5(TestTracker &Tests,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerfView30(TestTracker &Tests,
-                            int numBlocks,
-                            int numThreads,
+TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
+                            [[maybe_unused]] int numBlocks,
+                            [[maybe_unused]] int numThreads,
                             [[maybe_unused]] int testBase,
                             [[maybe_unused]] int numIters,
                             [[maybe_unused]] int internalTestLoopCount)

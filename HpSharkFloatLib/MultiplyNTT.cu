@@ -2390,13 +2390,6 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
             debugStates, grid, block, B->Digits, NewN);
     }
 
-    // x must be a positive constant expression
-
-    // Verify power of 2
-    static_assert(SharkFloatParams::GlobalNumUint32 > 0 &&
-                      (SharkFloatParams::GlobalNumUint32 & (SharkFloatParams::GlobalNumUint32 - 1)) == 0,
-                  "GlobalNumUint32 must be a power of 2");
-
     // Compute Final128 digit budget once
     const auto Ddigits =
         (((2 * SharkFloatParams::NTTPlan.L - 2) * SharkFloatParams::NTTPlan.b + 64) + 31) / 32 + 2;

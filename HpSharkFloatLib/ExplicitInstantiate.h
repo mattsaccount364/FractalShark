@@ -180,7 +180,8 @@
 #elif ENABLE_BASIC_CORRECTNESS == 2
 #define ExplicitInstantiateAll()                                                                        \
     ExplicitlyInstantiate(TestPerSharkParams1);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams2);
+    ExplicitlyInstantiate(TestPerSharkParams2);                                                         \
+    ExplicitlyInstantiate(TestPerSharkParams3);
 #elif ENABLE_BASIC_CORRECTNESS == 3
 #define ExplicitInstantiateAll() \
     ExplicitlyInstantiate(Test4x9SharkParams); \

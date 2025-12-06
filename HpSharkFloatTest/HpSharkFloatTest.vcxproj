@@ -147,6 +147,7 @@
     <ClInclude Include="Conversion.h" />
     <ClInclude Include="MainTestCuda.h" />
     <ClInclude Include="ReferenceAdd.h" />
+    <ClInclude Include="ShowMostEfficientSizes.h" />
     <ClInclude Include="Tests.h" />
     <ClInclude Include="TestTracker.h" />
   </ItemGroup>
@@ -154,6 +155,7 @@
     <ClCompile Include="Conversion.cpp">
       <FileType>Document</FileType>
     </ClCompile>
+    <ClCompile Include="ShowMostEfficientSizes.cpp" />
     <ClCompile Include="Tests.cpp">
       <FileType>Document</FileType>
     </ClCompile>

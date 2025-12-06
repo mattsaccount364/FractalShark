@@ -4,6 +4,7 @@
 #include "TestVerbose.h"
 #include "Tests.h"
 #include "TestTracker.h"
+#include "ShowMostEfficientSizes.h"
 
 #include <cuda_runtime.h>
 
@@ -212,6 +213,12 @@ main(int /*argc*/, char * /*argv*/[])
     bool res = false;
 
     GlobalCallstacks->InitCallstacks();
+
+    {
+        auto plateaus = SharkNTT::BuildPrecisionPlateaus(1048576, 32, HpShark::NumBitsMargin);
+        SharkNTT::PrintPlateauTable(plateaus);
+        SharkNTT::PrintPrecisionTiers(plateaus);
+    }
 
     constexpr auto timeoutInSec = 3;
     int verboseInput =

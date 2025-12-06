@@ -48,9 +48,9 @@
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_NTT_KERNEL
+#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
-#define ENABLE_FULL_KERNEL
+//#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
@@ -127,13 +127,15 @@ namespace HpShark {
     #define SharkForceInlineReleaseOnly __forceinline__
     #endif
 
+    static constexpr auto NumBitsMargin = 2;
+
     // Uncomment to test small warp on multiply normalize path for easier debugging
     // Assumes number of threads is a power of 2 and <= 32, with one block.
     // #define TEST_SMALL_NORMALIZE_WARP
 
-    static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel ||
-                                          EnableReferenceKernel || EnableFullKernel);
-    //static constexpr bool TestGpu = false;
+    //static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel ||
+    //                                      EnableReferenceKernel || EnableFullKernel);
+    static constexpr bool TestGpu = false;
 
     static constexpr auto TestComicalThreadCount = 13;
 
@@ -255,7 +257,8 @@ struct GenericSharkFloatParams {
         return std::string("Number of digits: ") + std::to_string(GlobalNumUint32);
     }
 
-    static constexpr SharkNTT::PlanPrime NTTPlan = SharkNTT::BuildPlanPrime(GlobalNumUint32, 26, 2);
+    static constexpr SharkNTT::PlanPrime NTTPlan =
+        SharkNTT::BuildPlanPrime(GlobalNumUint32, 32, HpShark::NumBitsMargin);
     static constexpr bool Periodicity = HpShark::EnablePeriodicity;
 
     using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
@@ -344,7 +347,26 @@ using TestPerSharkParams4 = GenericSharkFloatParams<65536>;
 using TestPerSharkParams5 = GenericSharkFloatParams<131072>;
 using TestPerSharkParams6 = GenericSharkFloatParams<262144>;
 using TestPerSharkParams7 = GenericSharkFloatParams<524288>;
-using TestPerSharkParams8 = GenericSharkFloatParams<1048576>;
+
+//using TestPerSharkParams1 = GenericSharkFloatParams<6144>;
+//using TestPerSharkParams2 = GenericSharkFloatParams<11776>;
+//using TestPerSharkParams3 = GenericSharkFloatParams<23552>;
+//using TestPerSharkParams4 = GenericSharkFloatParams<45056>;
+//using TestPerSharkParams5 = GenericSharkFloatParams<90112>;
+//using TestPerSharkParams6 = GenericSharkFloatParams<172032>;
+//using TestPerSharkParams7 = GenericSharkFloatParams<344064>;
+//using TestPerSharkParams8 = GenericSharkFloatParams<1048576>;
+
+// using TestPerSharkParams1 = GenericSharkFloatParams<6400>;
+// using TestPerSharkParams2 = GenericSharkFloatParams<12288>;
+// using TestPerSharkParams3 = GenericSharkFloatParams<24576>;
+// using TestPerSharkParams4 = GenericSharkFloatParams<47104>;
+// using TestPerSharkParams5 = GenericSharkFloatParams<94208>;
+// using TestPerSharkParams6 = GenericSharkFloatParams<180224>;
+// using TestPerSharkParams7 = GenericSharkFloatParams<360448>;
+// using TestPerSharkParams8 = GenericSharkFloatParams<688128>;
+// using TestPerSharkParams9 = GenericSharkFloatParams<1048576>;
+
 
 // Correctness test sizes
 using TestCorrectnessSharkParams1 = Test8x1SharkParams;

@@ -66,6 +66,11 @@ MontgomeryMul(uint64_t a, uint64_t b)
     uint64_t carry1 = carry0;
     uint64_t u_hi = Add64WithCarry(t_hi, mp_hi, carry1); // returns sum, updates carry1
 
+    //if (carry1) {
+    //    for (;;)
+    //        ;
+    //}
+
     // r = u / 2^64; ensure r < SharkNTT::MagicPrime (include the high-limb carry-out)
     uint64_t r = u_hi;
     if (carry1 || r >= SharkNTT::MagicPrime)

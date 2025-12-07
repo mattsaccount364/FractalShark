@@ -3,6 +3,8 @@
 #include "KernelInvokeInternal.h"
 #include "TestVerbose.h"
 
+namespace HpShark {
+
 template <class SharkFloatParams>
 void
 InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
@@ -100,3 +102,5 @@ InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)
 
 ExplicitInstantiateAll();
+
+} // namespace HpShark

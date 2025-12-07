@@ -2,6 +2,8 @@
 #include "KernelInvoke.h"
 #include "KernelInvokeInternal.h"
 
+namespace HpShark {
+
 template <class SharkFloatParams>
 void
 InvokeAddKernelPerf(const HpShark::LaunchParams &launchParams,
@@ -53,3 +55,5 @@ InvokeAddKernelPerf(const HpShark::LaunchParams &launchParams,
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateAdd(SharkFloatParams)
 
 ExplicitInstantiateAll();
+
+} // namespace HpShark

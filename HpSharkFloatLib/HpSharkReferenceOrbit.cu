@@ -8,17 +8,16 @@
 //
 
 template <class SharkFloatParams>
-__device__ [[nodiscard]] bool
+__device__ [[nodiscard]] HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult
 ReferenceHelper(cg::grid_group &grid,
                 cg::thread_block &block,
-                uint64_t currentIteration,
+                uint64_t currentLocalIteration,
                 typename SharkFloatParams::Float *SharkRestrict cx_cast,
                 typename SharkFloatParams::Float *SharkRestrict cy_cast,
                 typename SharkFloatParams::Float *SharkRestrict dzdcX,
                 typename SharkFloatParams::Float *SharkRestrict dzdcY,
                 HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
-                uint64_t *tempData,
-                typename SharkFloatParams::ReferenceIterT *gpuReferenceIters)
+                uint64_t *tempData)
 {
     //
     // All threads do periodicity checking and update the period if found.
@@ -26,10 +25,10 @@ ReferenceHelper(cg::grid_group &grid,
 
     if constexpr (SharkFloatParams::Periodicity) {
         const auto shouldContinue = PeriodicityChecker(
-            grid, block, currentIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference, gpuReferenceIters);
+            grid, block, currentLocalIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference);
 
-        if (!shouldContinue) {
-            return false;
+        if (shouldContinue != HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Continue) {
+            return shouldContinue;
         }
     }
 
@@ -70,7 +69,7 @@ ReferenceHelper(cg::grid_group &grid,
         &reference->Multiply.B,         // Imaginary result = Z_imaginary
         tempData);
 
-    return true;
+    return HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Continue;
 }
 
 template <class SharkFloatParams>
@@ -93,7 +92,7 @@ __maxnreg__(HpShark::RegisterLimit)
         return;
     } else {
         const auto [[maybe_unused]] shouldContinue = ReferenceHelper<SharkFloatParams>(
-            grid, block, currentIteration, nullptr, nullptr, nullptr, nullptr, combo, tempData, nullptr);
+            grid, block, currentIteration, nullptr, nullptr, nullptr, nullptr, combo, tempData);
     }
 }
 
@@ -102,8 +101,7 @@ __global__ void
 __maxnreg__(HpShark::RegisterLimit)
     HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
                             uint64_t numIters,
-                            uint64_t *tempData,
-                            typename SharkFloatParams::ReferenceIterT *gpuReferenceIters)
+                            uint64_t *tempData)
 {
 
     // Initialize cooperative grid group
@@ -112,7 +110,7 @@ __maxnreg__(HpShark::RegisterLimit)
 
     typename SharkFloatParams::Float dzdcX{1};
     typename SharkFloatParams::Float dzdcY{0};
-
+    this is wrong if we re-start the kernel
     typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);
     typename SharkFloatParams::Float cy_cast = combo->Add.E_B.ToHDRFloat<SharkFloatParams::SubType>(0);
 
@@ -133,19 +131,21 @@ __maxnreg__(HpShark::RegisterLimit)
     }
 #endif
 
-    for (uint64_t i = 0; i < numIters; ++i) {
-        const auto shouldContinue = ReferenceHelper(
-            grid, block, i, &cx_cast, &cy_cast, &dzdcX, &dzdcY, combo, tempData, gpuReferenceIters);
-        if (!shouldContinue) {
+    using PeriodicityResult = HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult;
+
+    // MaxRuntimeIters had better be <= HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters
+    for (uint64_t i = 0; i < combo->MaxRuntimeIters; ++i) {
+        const auto shouldContinue =
+            ReferenceHelper(grid, block, i, &cx_cast, &cy_cast, &dzdcX, &dzdcY, combo, tempData);
+
+        if (shouldContinue != PeriodicityResult::Continue) {
             break;
         }
     }
 
     // Store the escaped iteration if we didn't find it yet
     if (block.thread_index().x == 0 && block.group_index().x == 0) {
-        if (combo->EscapedIteration == 0) {
-            combo->EscapedIteration = numIters;
-        }
+        combo->OutputIterCount = numIters;
     }
 }
 

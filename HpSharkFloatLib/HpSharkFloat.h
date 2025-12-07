@@ -55,7 +55,7 @@
 // TODO: can't we automate this
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
-//#define HP_SHARK_FLOAT_TEST
+#define HP_SHARK_FLOAT_TEST
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
@@ -67,7 +67,7 @@
 #ifdef _DEBUG
 #ifdef HP_SHARK_FLOAT_TEST
 // Test path - this is what we use with HpSharkFloatTest
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 #else
 // Production path - this is what we use in FractalShark
 #define ENABLE_BASIC_CORRECTNESS 4
@@ -649,12 +649,41 @@ template <class SharkFloatParams> struct HpSharkAddComboResults {
 };
 
 template <class SharkFloatParams> struct HpSharkReferenceResults {
+
+    enum class PeriodicityResult { Unknown, Continue, PeriodFound, Escaped };
+
     alignas(16) HDRFloat<typename SharkFloatParams::SubType> RadiusY;
     alignas(16) HpSharkComboResults<SharkFloatParams> Multiply;
     alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
-    alignas(16) uint64_t Period;
-    alignas(16) uint64_t EscapedIteration;
-    alignas(16) typename SharkFloatParams::ReferenceIterT *OutputIters;
+    alignas(16) PeriodicityResult PeriodicityStatus;
+    alignas(16) uint64_t OutputIterCount;
+    alignas(16) uint64_t MaxRuntimeIters;
+
+    static constexpr auto MaxOutputIters = 1024;
+    alignas(16) typename SharkFloatParams::ReferenceIterT OutputIters[MaxOutputIters];
+
+    // Host only
+    alignas(16) HpSharkReferenceResults<SharkFloatParams> *comboGpu;
+    alignas(16) uint64_t *d_tempProducts;
+    alignas(16) uintptr_t stream; // cudaStream_t
+    alignas(16) void *kernelArgs[3];
+
+#if !defined(__CUDA_ARCH__)
+    std::string
+    PeriodicityStrResult() const
+    {
+        switch (PeriodicityStatus) {
+            case PeriodicityResult::Continue:
+                return "Continue";
+            case PeriodicityResult::PeriodFound:
+                return "PeriodFound";
+            case PeriodicityResult::Escaped:
+                return "Escaped";
+            default:
+                return "Unknown";
+        }
+    }
+#endif // !__CUDA_ARCH__
 };
 #pragma warning(pop)
 

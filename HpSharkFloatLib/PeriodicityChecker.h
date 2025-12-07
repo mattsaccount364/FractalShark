@@ -4,16 +4,15 @@
 //
 
 template <class SharkFloatParams>
-static __device__ bool
+static __device__ HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult
 PeriodicityChecker(cg::grid_group &grid,
                    cg::thread_block &block,
-                   uint64_t currentIteration,
+                   uint64_t currentLocalIteration,
                    const typename SharkFloatParams::Float *SharkRestrict cx_cast,
                    const typename SharkFloatParams::Float *SharkRestrict cy_cast,
                    typename SharkFloatParams::Float *SharkRestrict dzdcX,
                    typename SharkFloatParams::Float *SharkRestrict dzdcY,
-                   HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
-                   typename SharkFloatParams::ReferenceIterT *SharkRestrict gpuReferenceIters)
+                   HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference)
 {
     const auto *ConstantReal = &reference->Add.C_A;
     const auto *ConstantImaginary = &reference->Add.E_B;
@@ -21,16 +20,20 @@ PeriodicityChecker(cg::grid_group &grid,
     const auto *Out_D_E = &reference->Multiply.B;
     const auto radiusY = reference->RadiusY;
 
+    auto *gpuReferenceIters = reference->OutputIters;
+    constexpr auto MaxOutputIters = HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
+
     using HdrType = typename SharkFloatParams::Float;
+    using PeriodicityResult = typename HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult;
 
     // Now lets do periodicity checking and store the results
-    // Note: first iteration (currentIteration==0) requires Out_A_B_C
+    // Note: first iteration (current overall iteration == 0) requires Out_A_B_C
     // and Out_D_E to be initialized to 0.
     HdrType double_zx = Out_A_B_C->ToHDRFloat<SharkFloatParams::SubType>(0);
     HdrType double_zy = Out_D_E->ToHDRFloat<SharkFloatParams::SubType>(0);
 
-    gpuReferenceIters[currentIteration].x = double_zx;
-    gpuReferenceIters[currentIteration].y = double_zy;
+    gpuReferenceIters[currentLocalIteration].x = double_zx;
+    gpuReferenceIters[currentLocalIteration].y = double_zy;
 
     // x^2+2*I*x*y-y^2
     // dzdc = 2.0 * z * dzdc + real(1.0);
@@ -66,9 +69,9 @@ PeriodicityChecker(cg::grid_group &grid,
     HdrReduce(n3);
 
     if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-        reference->Period = currentIteration + 1;
-        reference->EscapedIteration = currentIteration + 1;
-        return false;
+        reference->OutputIterCount = currentLocalIteration + 1;
+        reference->PeriodicityStatus = PeriodicityResult::PeriodFound;
+        return PeriodicityResult::PeriodFound;
     } else {
         auto dzdcXOrig = *dzdcX;
         *dzdcX = HighTwo * (double_zx * *dzdcX - double_zy * *dzdcY) + HighOne;
@@ -85,10 +88,12 @@ PeriodicityChecker(cg::grid_group &grid,
         // Escaped
         //
 
-        reference->Period = 0;
-        reference->EscapedIteration = currentIteration + 1;
-        return false;
+        reference->PeriodicityStatus = PeriodicityResult::Escaped;
+        reference->OutputIterCount = currentLocalIteration + 1;
+        return PeriodicityResult::Escaped;
     }
 
-    return true;
+    reference->PeriodicityStatus = PeriodicityResult::Continue;
+    reference->OutputIterCount = currentLocalIteration + 1;
+    return PeriodicityResult::Continue;
 }

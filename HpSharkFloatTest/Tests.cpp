@@ -358,8 +358,8 @@ HpSharkReferenceResultsToFile(const std::string &filename,
     std::string add_Result1ABCStr = "Add.Result1_A_B_C: " + results.Add.Result1_A_B_C.ToHexString();
     std::string add_Result2DEStr = "Add.Result2_D_E: " + results.Add.Result2_D_E.ToHexString();
 
-    std::string periodStr = "Period: " + std::to_string(results.Period);
-    std::string escapedIterationStr = "EscapedIteration: " + std::to_string(results.EscapedIteration);
+    std::string periodicityStatusStr = "PeriodicityStatus: " + results.PeriodicityStrResult();
+    std::string outputIterationStr = "OutputIterCount: " + std::to_string(results.OutputIterCount);
 
     // Open file in text mode
     std::ofstream outFile(filename, std::ios::out);
@@ -385,8 +385,8 @@ HpSharkReferenceResultsToFile(const std::string &filename,
     outFile << "Next: " << add_Result1ABCStr << std::endl;
     outFile << "Next: " << add_Result2DEStr << std::endl;
 
-    outFile << "Next: " << periodStr << std::endl;
-    outFile << "Next: " << escapedIterationStr << std::endl;
+    outFile << "Next: " << periodicityStatusStr << std::endl;
+    outFile << "Next: " << outputIterationStr << std::endl;
 
     outFile.close();
 }
@@ -406,7 +406,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
          const typename SharkFloatParams::Float &hdrRadiusY,
          uint64_t numIters,
          int64_t expectedPeriod,
-         int64_t expectedEscape)
+         typename HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult expectedResult)
 {
 
     // Print the original input values
@@ -644,7 +644,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
             {
                 BenchmarkTimer timer;
-                InvokeAddKernelPerf<SharkFloatParams>(launchParams, timer, *combo, numIters);
+                HpShark::InvokeAddKernelPerf<SharkFloatParams>(launchParams, timer, *combo, numIters);
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
@@ -680,7 +680,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 BenchmarkTimer timer;
 
                 if constexpr (sharkOperator == Operator::MultiplyNTT) {
-                    InvokeMultiplyNTTKernelPerf<SharkFloatParams>(launchParams, timer, *combo, numIters);
+                    HpShark::InvokeMultiplyNTTKernelPerf<SharkFloatParams>(
+                        launchParams, timer, *combo, numIters);
                 } else {
                     DebugBreak();
                 }
@@ -716,17 +717,49 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             combo->Add.E_B = *yNum;
             combo->Multiply.A = *xNum;
             combo->Multiply.B = *yNum;
-            combo->Period = 0;
-            combo->EscapedIteration = 0;
-            combo->OutputIters = nullptr;
+            combo->PeriodicityStatus =
+                HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Unknown;
+            combo->OutputIterCount = 0;
+            combo->MaxRuntimeIters = 0; // Set below
 
             const auto &gpuResultX = combo->Multiply.A;
             const auto &gpuResultY = combo->Multiply.B;
 
+            uint64_t totalExecutedIters = 0;
             {
+                InitHpSharkKernelTest<SharkFloatParams>(
+                    launchParams, *combo, numIters, debugGpuCombo.get());
                 BenchmarkTimer timer;
-                InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(
-                    launchParams, &timer, *combo, numIters, debugGpuCombo.get());
+
+                {
+                    ScopedBenchmarkStopper stopper{timer};
+                    for (;;) {
+                        // Bound the number of iterations per kernel launch.  Do not exceed the
+                        // MaxOutputIters limit.
+                        constexpr auto MaxOutputIters =
+                            HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
+                        const uint64_t itersToRun = (numIters - totalExecutedIters > MaxOutputIters)
+                                                        ? MaxOutputIters
+                                                        : (numIters - totalExecutedIters);
+                        assert(itersToRun > 0);
+                        assert(itersToRun <= MaxOutputIters);
+
+                        HpShark::InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(
+                            launchParams, *combo, itersToRun, debugGpuCombo.get());
+
+                        totalExecutedIters += combo->OutputIterCount;
+
+                        using PeriodicityResult =
+                            typename HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult;
+                        if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound ||
+                            combo->PeriodicityStatus == PeriodicityResult::Escaped ||
+                            totalExecutedIters >= numIters) {
+                            break;
+                        }
+                    }
+                }
+
+                ShutdownHpSharkKernel<SharkFloatParams>(launchParams, *combo, debugGpuCombo.get());
 
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
@@ -750,42 +783,47 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 testSucceeded &= CheckDiff(
                     launchParams, Tests, testNum, numTerms, "GPU_B", mpfHostResultYY, gpuResultY);
 
-                if (combo->EscapedIteration != discoveredEscapeIterationHost) {
+                using PeriodicityResult = HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult;
+
+                if ((combo->PeriodicityStatus != PeriodicityResult::Escaped) ||
+                    (totalExecutedIters != discoveredEscapeIterationHost)) {
+
+                    std::cout << "Periodicity status: " << combo->PeriodicityStrResult() << std::endl;
                     std::cout << "Escape iteration mismatch: host=" << discoveredEscapeIterationHost
-                              << " gpu=" << combo->EscapedIteration << std::endl;
+                              << " gpu=" << totalExecutedIters << std::endl;
                     DebugBreak();
                 } else {
                     std::cout << "Escape iteration match: "
                               << " host=" << discoveredEscapeIterationHost
-                              << " gpu=" << combo->EscapedIteration << std::endl;
+                              << " gpu=" << totalExecutedIters << std::endl;
                 }
 
-                if (combo->Period != discoveredPeriodHost) {
+                if ((combo->PeriodicityStatus != PeriodicityResult::PeriodFound) ||
+                    (totalExecutedIters != discoveredPeriodHost)) {
+
+                    std::cout << "Periodicity status: " << combo->PeriodicityStrResult() << std::endl;
                     std::cout << "Periodicity mismatch: host=" << discoveredPeriodHost
-                              << " gpu=" << combo->Period << std::endl;
+                              << " gpu=" << totalExecutedIters << std::endl;
                     DebugBreak();
                 } else {
+
+                    std::cout << "Periodicity status: " << combo->PeriodicityStrResult() << std::endl;
                     std::cout << "Periodicity match : "
-                              << " host=" << discoveredPeriodHost << " gpu=" << combo->Period
+                              << " host=" << discoveredPeriodHost << " gpu=" << totalExecutedIters
                               << std::endl;
                 }
             } else {
-                std::cout << "Escape iteration: " << combo->EscapedIteration << std::endl;
-                std::cout << "Periodicity: " << combo->Period << std::endl;
+                std::cout << "Periodicity status: " << combo->PeriodicityStrResult() << std::endl;
+                std::cout << "Output iteration: " << totalExecutedIters << std::endl;
             }
+
+            using PeriodicityResult = HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult;
 
             if (expectedPeriod != -1 && static_cast<uint64_t>(expectedPeriod) <= numIters) {
-                if (combo->Period != static_cast<uint64_t>(expectedPeriod)) {
-                    std::cout << "Error: Expected period " << expectedPeriod << " but got "
-                              << combo->Period << std::endl;
-                    DebugBreak();
-                }
-            }
-
-            if (expectedEscape != -1 && static_cast<uint64_t>(expectedEscape) <= numIters) {
-                if (combo->EscapedIteration != static_cast<uint64_t>(expectedEscape)) {
-                    std::cout << "Error: Expected escape iteration " << expectedEscape << " but got "
-                              << combo->EscapedIteration << std::endl;
+                if ((combo->PeriodicityStatus != expectedResult) ||
+                    (totalExecutedIters != static_cast<uint64_t>(expectedPeriod))) {
+                    std::cout << "Error: Expected result iters " << expectedPeriod << " but got "
+                              << totalExecutedIters << std::endl;
                     DebugBreak();
                 }
             }
@@ -794,10 +832,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 DebugHostCombo<SharkFloatParams> debugHostCombo;
                 ChecksumsCheck<SharkFloatParams>(debugHostCombo, *debugGpuCombo);
             }
-
-            assert(combo->OutputIters != nullptr);
-            delete[] combo->OutputIters;
-            combo->OutputIters = nullptr;
         }
     }
 
@@ -856,7 +890,7 @@ TestPerfRandom(const HpShark::LaunchParams &launchParams,
     auto num3 = zNum->ToString();
 
     const auto unknownPeriod = -1;
-    const auto unknownEscape = -1;
+    const auto expectedResult = HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Continue;
 
     using HdrType = typename SharkFloatParams::Float;
     TestPerf<SharkFloatParams, sharkOperator>(launchParams,
@@ -872,7 +906,7 @@ TestPerfRandom(const HpShark::LaunchParams &launchParams,
                                               HdrType{},
                                               numIters,
                                               unknownPeriod,
-                                              unknownEscape);
+                                              expectedResult);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -1214,7 +1248,8 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
         combo.D_2X = dNum;
         combo.E_B = eNum;
 
-        InvokeAddKernelCorrectness<SharkFloatParams>(launchParams, timer, combo, &debugGpuCombo);
+        HpShark::InvokeAddKernelCorrectness<SharkFloatParams>(
+            launchParams, timer, combo, &debugGpuCombo);
 
         gpuResultXY1 = combo.Result1_A_B_C;
         gpuResultXY2 = combo.Result2_D_E;
@@ -1419,7 +1454,7 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
         combo->B = bNum;
 
         if constexpr (HpShark::EnableMultiplyNTTKernel) {
-            InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(
+            HpShark::InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(
                 launchParams, timer, *combo, &debugGpuCombo);
         }
 
@@ -1575,7 +1610,7 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         combo->Multiply.B = bNum;
         combo->RadiusY = {};
 
-        InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(
+        HpShark::InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(
             launchParams, timer, *combo, &debugGpuCombo);
 
         // *gpuResultXX = combo.Add.Result1_A_B_C;
@@ -2815,7 +2850,8 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
         "870110653199358192656";
     const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 20000;
     constexpr auto expectedPeriod = 16045;
-    const auto expectedEscape = (maxIters > expectedPeriod) ? expectedPeriod : maxIters;
+    const auto expectedResult =
+        HpSharkReferenceResults<TestPerSharkParams2>::PeriodicityResult::PeriodFound;
 
     mpf_t mpfX;
     mpf_t mpfY;
@@ -2880,7 +2916,7 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
                                                      hdrRadiusY,
                                                      maxIters,
                                                      expectedPeriod,
-                                                     expectedEscape);
+                                                     expectedResult);
     }
 
     mpf_clear(mpfX);
@@ -2918,7 +2954,8 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     const char *radiusYStr = "1.46269686645751934186e-114514";
     const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 700'000;
     const auto expectedPeriod = 669772;
-    const auto expectedEscape = (maxIters > expectedPeriod) ? expectedPeriod : maxIters;
+    const auto expectedResult =
+        HpSharkReferenceResults<TestPerSharkParams2>::PeriodicityResult::PeriodFound;
 
     mpf_t mpfX;
     mpf_t mpfY;
@@ -2989,7 +3026,7 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
                                                      hdrRadiusY,
                                                      maxIters,
                                                      expectedPeriod,
-                                                     expectedEscape);
+                                                     expectedResult);
     }
 
     mpf_clear(mpfX);

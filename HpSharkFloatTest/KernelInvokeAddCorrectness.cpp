@@ -2,6 +2,8 @@
 #include "KernelInvoke.h"
 #include "KernelInvokeInternal.h"
 
+namespace HpShark {
+
 template <class SharkFloatParams>
 void
 InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
@@ -77,3 +79,5 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateAdd(SharkFloatParams)
 
 ExplicitInstantiateAll();
+
+} // namespace HpShark

@@ -2,6 +2,8 @@
 #include "KernelInvoke.h"
 #include "KernelInvokeInternal.h"
 
+namespace HpShark {
+
 //
 // Note: This test ignores the period because it executes only one iteration.
 //
@@ -53,8 +55,7 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
     cudaMemset(&comboGpu->Multiply.ResultX2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(&comboGpu->Multiply.Result2XY, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(&comboGpu->Multiply.ResultY2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(&comboGpu->Period, byteToSet, sizeof(uint64_t));
-    cudaMemset(&comboGpu->EscapedIteration, byteToSet, sizeof(uint64_t));
+    cudaMemset(&comboGpu->OutputIterCount, byteToSet, sizeof(uint64_t));
 
     // Build NTT plan + roots exactly like correctness path
     {
@@ -115,3 +116,5 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
 
 ExplicitInstantiateAll();
+
+} // namespace HpShark

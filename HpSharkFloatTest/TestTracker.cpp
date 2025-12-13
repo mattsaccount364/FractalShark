@@ -1,5 +1,6 @@
 #include "TestTracker.h"
 #include "HpSharkFloat.h"
+#include "TestVerbose.h"
 
 #include <assert.h>
 #include <iostream>
@@ -20,12 +21,18 @@ TestTracker::CheckAllTestsPassed() const
     for (int i = 0; i < m_Tests.size(); ++i) {
         if (m_Tests[i].NumBlocks != 0 || m_Tests[i].ThreadsPerBlock != 0) {
             for (const auto &kv : m_Tests[i].DescToFailure) {
-                std::cout << "Variant: " << kv.first << " - " << (kv.second ? "Failed" : "Passed");
+                if (kv.second) {
+                    if (SharkVerbose == VerboseMode::Debug) {
+                        std::cout << "Variant: " << kv.first << " - " << (kv.second ? "Failed" : "Passed");
+                    }
+                }
             }
 
-            std::cout << " Test " << std::dec << i << " launched with " << m_Tests[i].NumBlocks
-                      << " blocks and " << m_Tests[i].ThreadsPerBlock << " threads per block."
-                      << " Time: " << m_Tests[i].TestMs << std::endl;
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << " Test " << std::dec << i << " launched with " << m_Tests[i].NumBlocks
+                          << " blocks and " << m_Tests[i].ThreadsPerBlock << " threads per block."
+                          << " Time: " << m_Tests[i].TestMs << std::endl;
+            }
         }
     }
 

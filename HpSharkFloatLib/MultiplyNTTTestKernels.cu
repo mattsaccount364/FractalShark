@@ -48,7 +48,7 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
 
     cudaError_t err;
 
-    constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
+    constexpr auto sharedAmountBytes = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(MultiplyKernelNTT<SharkFloatParams>,
@@ -89,7 +89,7 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
                               void *kernelArgs[])
 {
 
-    constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
+    constexpr auto sharedAmountBytes = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(MultiplyKernelNTTTestLoop<SharkFloatParams>,

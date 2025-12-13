@@ -4,14 +4,14 @@
 //
 
 template <class SharkFloatParams>
-static __device__ HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult
+static __device__ void
 PeriodicityChecker(cg::grid_group &grid,
                    cg::thread_block &block,
                    uint64_t currentLocalIteration,
                    const typename SharkFloatParams::Float *SharkRestrict cx_cast,
                    const typename SharkFloatParams::Float *SharkRestrict cy_cast,
-                   typename SharkFloatParams::Float *SharkRestrict dzdcX,
-                   typename SharkFloatParams::Float *SharkRestrict dzdcY,
+                   typename SharkFloatParams::Float *dzdcX,
+                   typename SharkFloatParams::Float *dzdcY,
                    HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference)
 {
     const auto *ConstantReal = &reference->Add.C_A;
@@ -71,7 +71,7 @@ PeriodicityChecker(cg::grid_group &grid,
     if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
         reference->OutputIterCount = currentLocalIteration + 1;
         reference->PeriodicityStatus = PeriodicityResult::PeriodFound;
-        return PeriodicityResult::PeriodFound;
+        return;
     } else {
         auto dzdcXOrig = *dzdcX;
         *dzdcX = HighTwo * (double_zx * *dzdcX - double_zy * *dzdcY) + HighOne;
@@ -90,10 +90,10 @@ PeriodicityChecker(cg::grid_group &grid,
 
         reference->PeriodicityStatus = PeriodicityResult::Escaped;
         reference->OutputIterCount = currentLocalIteration + 1;
-        return PeriodicityResult::Escaped;
+        return;
     }
 
     reference->PeriodicityStatus = PeriodicityResult::Continue;
     reference->OutputIterCount = currentLocalIteration + 1;
-    return PeriodicityResult::Continue;
+    return;
 }

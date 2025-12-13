@@ -47,10 +47,10 @@
 
 // Comment out to disable specific kernels
 // #define ENABLE_CONVERSION_TESTS
-// #define ENABLE_ADD_KERNEL
-// #define ENABLE_MULTIPLY_NTT_KERNEL
+#define ENABLE_ADD_KERNEL
+//#define ENABLE_MULTIPLY_NTT_KERNEL
 // #define ENABLE_REFERENCE_KERNEL // Kind of useless now, consider removing
-#define ENABLE_FULL_KERNEL
+//#define ENABLE_FULL_KERNEL
 
 // TODO: can't we automate this
 // Uncomment this to enable the HpSharkFloat test program.
@@ -67,7 +67,7 @@
 #ifdef _DEBUG
 #ifdef HP_SHARK_FLOAT_TEST
 // Test path - this is what we use with HpSharkFloatTest
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 // Production path - this is what we use in FractalShark
 #define ENABLE_BASIC_CORRECTNESS 4
@@ -339,11 +339,16 @@ static constexpr auto LowPrec = 32;
 #include "ExplicitInstantiate.h"
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test8x1SharkParams = HpShark::GenericSharkFloatParams<8>;
-using Test4x36SharkParams = HpShark::GenericSharkFloatParams<16>;
-using Test4x12SharkParams = HpShark::GenericSharkFloatParams<32>;
-using Test4x9SharkParams = HpShark::GenericSharkFloatParams<64>;
-using Test4x6SharkParams = HpShark::GenericSharkFloatParams<128>;
+//using Test8x1SharkParams = HpShark::GenericSharkFloatParams<8>;
+//using Test4x36SharkParams = HpShark::GenericSharkFloatParams<16>;
+//using Test4x12SharkParams = HpShark::GenericSharkFloatParams<32>;
+//using Test4x9SharkParams = HpShark::GenericSharkFloatParams<64>;
+//using Test4x6SharkParams = HpShark::GenericSharkFloatParams<128>;
+using Test8x1SharkParams = HpShark::GenericSharkFloatParams<64>;
+using Test4x36SharkParams = HpShark::GenericSharkFloatParams<128>;
+using Test4x12SharkParams = HpShark::GenericSharkFloatParams<256>;
+using Test4x9SharkParams = HpShark::GenericSharkFloatParams<512>;
+using Test4x6SharkParams = HpShark::GenericSharkFloatParams<1024>;
 
 using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<8192>;
 using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<16384>;
@@ -656,6 +661,8 @@ template <class SharkFloatParams> struct HpSharkReferenceResults {
     alignas(16) HpSharkComboResults<SharkFloatParams> Multiply;
     alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
     alignas(16) PeriodicityResult PeriodicityStatus;
+    alignas(16) typename SharkFloatParams::Float dzdcX;
+    alignas(16) typename SharkFloatParams::Float dzdcY;
     alignas(16) uint64_t OutputIterCount;
     alignas(16) uint64_t MaxRuntimeIters;
 

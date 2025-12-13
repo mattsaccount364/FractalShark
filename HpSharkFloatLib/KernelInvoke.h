@@ -28,7 +28,6 @@ namespace HpShark {
 template <class SharkFloatParams>
 void InitHpSharkKernelTest(const HpShark::LaunchParams &launchParams,
                            HpSharkReferenceResults<SharkFloatParams> &combo,
-                           uint64_t numIters,
                            DebugGpuCombo *debugCombo);
 
 template <class SharkFloatParams>

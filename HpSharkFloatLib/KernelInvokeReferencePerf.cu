@@ -43,6 +43,7 @@ InvokeHpSharkReferenceKernelProd(const HpShark::LaunchParams &launchParams,
     combo.Add.E_B = *inputY;
     combo.Multiply.A = *inputX;
     combo.Multiply.B = *inputY;
+    // Note: leave combo.dzdcX and combo.dzdcY unchanged
     combo.OutputIterCount = 0;
     assert(memcmp(&combo.Add.C_A, &combo.Multiply.A, sizeof(HpSharkFloat<SharkFloatParams>)) == 0);
     assert(memcmp(&combo.Add.E_B, &combo.Multiply.B, sizeof(HpSharkFloat<SharkFloatParams>)) == 0);
@@ -55,7 +56,6 @@ template <class SharkFloatParams>
 void
 InitHpSharkKernelTest(const HpShark::LaunchParams &launchParams,
                       HpSharkReferenceResults<SharkFloatParams> &combo,
-                      uint64_t numIters,
                       DebugGpuCombo *debugCombo)
 {
     // Prepare kernel arguments
@@ -73,8 +73,7 @@ InitHpSharkKernelTest(const HpShark::LaunchParams &launchParams,
 
     // Host only
     combo.kernelArgs[0] = (void *)&combo.comboGpu;
-    combo.kernelArgs[1] = (void *)&numIters;
-    combo.kernelArgs[2] = (void *)&combo.d_tempProducts;
+    combo.kernelArgs[1] = (void *)&combo.d_tempProducts;
     combo.stream = 0;
 
     static_assert(sizeof(cudaStream_t) == sizeof(combo.stream),
@@ -226,7 +225,6 @@ ShutdownHpSharkKernel(const HpShark::LaunchParams &launchParams,
     template void InitHpSharkKernelTest<SharkFloatParams>(                                              \
         const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
-        uint64_t numIters,                                                                              \
         DebugGpuCombo *debugCombo);                                                                     \
     template void ShutdownHpSharkKernel<SharkFloatParams>(                                              \
         const HpShark::LaunchParams &launchParams,                                                      \

@@ -719,6 +719,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             combo->Multiply.B = *yNum;
             combo->PeriodicityStatus =
                 HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Unknown;
+            combo->dzdcX = typename SharkFloatParams::Float{1};
+            combo->dzdcY = typename SharkFloatParams::Float{0};
             combo->OutputIterCount = 0;
             combo->MaxRuntimeIters = 0; // Set below
 
@@ -728,7 +730,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             uint64_t totalExecutedIters = 0;
             {
                 InitHpSharkKernelTest<SharkFloatParams>(
-                    launchParams, *combo, numIters, debugGpuCombo.get());
+                    launchParams, *combo, debugGpuCombo.get());
                 BenchmarkTimer timer;
 
                 {
@@ -1948,8 +1950,11 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
     };
 
     auto printTest = [&](int curTest) {
-        std::cout << std::endl;
-        std::cout << std::endl;
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << std::endl;
+            std::cout << std::endl;
+        }
+        
         std::cout << "Test " << std::dec << curTest << std::endl;
     };
 
@@ -2041,8 +2046,11 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
                               const char *num3)
 {
 
-    std::cout << std::endl;
-    std::cout << std::endl;
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << std::endl;
+        std::cout << std::endl;
+    }
+
     std::cout << "Test " << std::dec << testNum << std::endl;
 
     mpf_set_default_prec(
@@ -2144,8 +2152,11 @@ TestTernarySpecialHelper(const HpShark::LaunchParams &launchParams,
                          const IntSignCombo &testData4,
                          const IntSignCombo &testData5)
 {
-    std::cout << std::endl;
-    std::cout << std::endl;
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << std::endl;
+        std::cout << std::endl;
+    }
+
     std::cout << "Test " << std::dec << testNum << std::endl;
 
     auto testData1Copy = testData1;
@@ -2662,8 +2673,11 @@ TestTernarySpecial21(const HpShark::LaunchParams &launchParams,
     justOne.push_back(1);
     justOne.resize(SharkFloatParams::GlobalNumUint32);
 
-    std::cout << std::endl;
-    std::cout << std::endl;
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << std::endl;
+        std::cout << std::endl;
+    }
+
     std::cout << "Test " << std::dec << testNum << ", exponentOverride2: " << exponentOverride2
               << std::endl;
 

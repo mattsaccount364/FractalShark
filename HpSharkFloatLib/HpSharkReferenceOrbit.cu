@@ -14,8 +14,8 @@ ReferenceHelper(cg::grid_group &grid,
                 uint64_t currentLocalIteration,
                 typename SharkFloatParams::Float *SharkRestrict cx_cast,
                 typename SharkFloatParams::Float *SharkRestrict cy_cast,
-                typename SharkFloatParams::Float *SharkRestrict dzdcX,
-                typename SharkFloatParams::Float *SharkRestrict dzdcY,
+                typename SharkFloatParams::Float *dzdcX,
+                typename SharkFloatParams::Float *dzdcY,
                 HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
                 uint64_t *tempData)
 {
@@ -24,11 +24,22 @@ ReferenceHelper(cg::grid_group &grid,
     //
 
     if constexpr (SharkFloatParams::Periodicity) {
-        const auto shouldContinue = PeriodicityChecker(
-            grid, block, currentLocalIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference);
+        if (block.group_index().x == 0 && block.thread_index().x == 0) {
+            PeriodicityChecker(
+                grid, block, currentLocalIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference);
+        }
+    
+        //
+        // Note: we can get rid of this if we move this check into multiply after the first sync of if we
+        // do the same calculation on every thread.  But if we do that then we need to reconcile the fact
+        // that there's only one copy of dzdcX/Y currently.
+        //
 
-        if (shouldContinue != HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Continue) {
-            return shouldContinue;
+        grid.sync();
+
+        if (reference->PeriodicityStatus !=
+                HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Continue) {
+            return reference->PeriodicityStatus;
         }
     }
 
@@ -99,8 +110,7 @@ __maxnreg__(HpShark::RegisterLimit)
 template <class SharkFloatParams>
 __global__ void
 __maxnreg__(HpShark::RegisterLimit)
-    HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
-                            uint64_t numIters,
+    HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *combo,
                             uint64_t *tempData)
 {
 
@@ -108,9 +118,11 @@ __maxnreg__(HpShark::RegisterLimit)
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
 
-    typename SharkFloatParams::Float dzdcX{1};
-    typename SharkFloatParams::Float dzdcY{0};
-    this is wrong if we re-start the kernel
+    //typename SharkFloatParams::Float dzdcX{1};
+    //typename SharkFloatParams::Float dzdcY{0};
+    auto *dzdcX = &combo->dzdcX;
+    auto *dzdcY = &combo->dzdcY;
+
     typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);
     typename SharkFloatParams::Float cy_cast = combo->Add.E_B.ToHDRFloat<SharkFloatParams::SubType>(0);
 
@@ -136,16 +148,11 @@ __maxnreg__(HpShark::RegisterLimit)
     // MaxRuntimeIters had better be <= HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters
     for (uint64_t i = 0; i < combo->MaxRuntimeIters; ++i) {
         const auto shouldContinue =
-            ReferenceHelper(grid, block, i, &cx_cast, &cy_cast, &dzdcX, &dzdcY, combo, tempData);
+            ReferenceHelper(grid, block, i, &cx_cast, &cy_cast, dzdcX, dzdcY, combo, tempData);
 
         if (shouldContinue != PeriodicityResult::Continue) {
             break;
         }
-    }
-
-    // Store the escaped iteration if we didn't find it yet
-    if (block.thread_index().x == 0 && block.group_index().x == 0) {
-        combo->OutputIterCount = numIters;
     }
 }
 

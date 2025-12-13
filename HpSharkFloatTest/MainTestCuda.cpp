@@ -344,22 +344,22 @@ main(int /*argc*/, char * /*argv*/[])
         int numBlocks = PromptIntWithTimeout("NumBlocks? Default 65", /*default=*/65, timeoutInSec);
         int numThreads = PromptIntWithTimeout("NumThreads? Default 256", /*default=*/256, timeoutInSec);
 
-        //testBase = 16020;
-        //res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-        //    Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
-        //if (!res) {
-        //    auto q = PressKey();
-        //    if (q == 'q') {
-        //        return 0;
-        //    }
-        //}
+        testBase = 16020;
+        res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
+            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
 
-        //{
-        //    auto q = PressKey();
-        //    if (q == 'q') {
-        //        return 0;
-        //    }
-        //}
+        {
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
 
         testBase = 16010;
         res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(

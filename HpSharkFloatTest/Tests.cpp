@@ -519,7 +519,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 HdrType double_zx;
                 HdrType double_zy;
 
-                if constexpr (SharkFloatParams::Periodicity) {
+                if constexpr (SharkFloatParams::EnablePeriodicity) {
                     double_zx = HdrType{recurrenceX};
                     double_zy = HdrType{recurrenceY};
                 }
@@ -527,7 +527,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 // Increment before periodicity
                 keptIterationCounter++;
 
-                if constexpr (SharkFloatParams::Periodicity) {
+                if constexpr (SharkFloatParams::EnablePeriodicity) {
                     // x^2+2*I*x*y-y^2
                     // dzdc = 2.0 * z * dzdc + real(1.0);
                     // dzdc = 2.0 * (zx + zy * i) * (dzdcX + dzdcY * i) + HighPrecision(1.0);
@@ -746,7 +746,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         assert(itersToRun > 0);
                         assert(itersToRun <= MaxOutputIters);
 
-                        HpShark::InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(
+                        HpShark::InvokeHpSharkReferenceKernelTestPerf<SharkFloatParams>(
                             launchParams, *combo, itersToRun, debugGpuCombo.get());
 
                         totalExecutedIters += combo->OutputIterCount;
@@ -3352,7 +3352,7 @@ TestAllBinaryOp(int testBase)
 #define MULTIPLY_KERNEL_NTT(SharkFloatParams) ;
 #endif
 
-#if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
+#if defined(ENABLE_FULL_KERNEL)
 #define REFERENCE_KERNEL(SharkFloatParams)                                                              \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \

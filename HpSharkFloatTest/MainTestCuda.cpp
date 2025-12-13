@@ -110,7 +110,7 @@ CorrectnessTests()
         }
     }
 
-    if constexpr (HpShark::EnableReferenceKernel) {
+    if constexpr (HpShark::EnableFullKernel) {
         testBase = 2000;
         res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(testBase);
         if (!res) {
@@ -129,47 +129,41 @@ RunCorrectnessTest()
 {
     std::atomic<uint64_t> testCount = 0;
 
-    // This kernel has periodicity checking and is incompatible with existing tests.
-    if constexpr (HpShark::EnableFullKernel) {
-        return 1;
-    } else {
-
 #if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 3)
-        do {
-            if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
-                return 0;
-            }
+    do {
+        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
+            return 0;
+        }
 
 #if (ENABLE_BASIC_CORRECTNESS == 3)
-            if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
-                return 0;
-            }
+        if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
+            return 0;
+        }
 
-            if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
-                return 0;
-            }
+        if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
+            return 0;
+        }
 
-            if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
-                return 0;
-            }
+        if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
+            return 0;
+        }
 
-            if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
-                return 0;
-            }
-#endif
-
-            ComicalCorrectness();
-
-            testCount++;
-        } while (HpShark::TestInfiniteCorrectness);
-
-        if (PressKey() == 'q') {
+        if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
             return 0;
         }
 #endif
 
-        return 1;
+        ComicalCorrectness();
+
+        testCount++;
+    } while (HpShark::TestInfiniteCorrectness);
+
+    if (PressKey() == 'q') {
+        return 0;
     }
+#endif
+
+    return 1;
 }
 
 /// Prompts the user with `promptText`, waits up to `timeoutSec` seconds for a line
@@ -279,7 +273,7 @@ main(int /*argc*/, char * /*argv*/[])
         }
     }
 
-    if constexpr (HpShark::EnableReferenceKernel) {
+    if constexpr (HpShark::EnableFullKernel) {
         testBase = 14000;
         res =
             TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase, numIters, internalTestLoopCount);

@@ -4,7 +4,7 @@
 
 #include "Add.h"
 #include "HpSharkFloat.h"
-#include "HpSharkReferenceOrbit.h"
+#include "KernelHpSharkReferenceOrbit.h"
 #include "MultiplyNTT.h"
 
 #include <algorithm>

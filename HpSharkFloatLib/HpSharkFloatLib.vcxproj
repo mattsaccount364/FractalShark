@@ -27,12 +27,12 @@
     <ClInclude Include="MultiplyNTT_NormalizePPv3.h" />
     <ClInclude Include="MultiplyNTT_NormalizeWarpTiledV2.h" />
     <ClInclude Include="Vectors.h" />
-    <CudaCompile Include="AddTestKernels.cu" />
+    <CudaCompile Include="KernelTestAdd.cu" />
     <ClCompile Include="BenchmarkTimer.cpp">
       <FileType>Document</FileType>
     </ClCompile>
     <CudaCompile Include="HpSharkFloat.cu" />
-    <CudaCompile Include="HpSharkReferenceOrbit.cu" />
+    <CudaCompile Include="KernelHpSharkReferenceOrbit.cu" />
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="DbgHeap.h" />
     <ClInclude Include="GPU_ReferenceIter.h" />
@@ -46,7 +46,7 @@
     </ClInclude>
     <CudaCompile Include="KernelInvokeReferencePerf.cu" />
     <CudaCompile Include="MultiplyNTTCudaSetup.cu" />
-    <CudaCompile Include="MultiplyNTTTestKernels.cu" />
+    <CudaCompile Include="KernelTestMultiplyNTT.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Add.h" />
@@ -65,7 +65,7 @@
     <ClInclude Include="HDRFloatComplex.h" />
     <ClInclude Include="HighPrecision.h" />
     <ClInclude Include="HpSharkFloat.h" />
-    <ClInclude Include="HpSharkReferenceOrbit.h" />
+    <ClInclude Include="KernelHpSharkReferenceOrbit.h" />
     <ClInclude Include="MontgomeryCoreConstexpr.h" />
     <ClInclude Include="MpirSerialization.h" />
     <ClInclude Include="MultiplyNTT.h" />

@@ -31,7 +31,7 @@ void InitHpSharkKernelTest(const HpShark::LaunchParams &launchParams,
                            DebugGpuCombo *debugCombo);
 
 template <class SharkFloatParams>
-void InvokeHpSharkReferenceKernelPerf(const HpShark::LaunchParams &launchParams,
+void InvokeHpSharkReferenceKernelTestPerf(const HpShark::LaunchParams &launchParams,
                                       HpSharkReferenceResults<SharkFloatParams> &combo,
                                       uint64_t numIters,
                                       DebugGpuCombo *debugCombo);

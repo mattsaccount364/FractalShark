@@ -15,6 +15,8 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
                                         HpSharkReferenceResults<SharkFloatParams> &combo,
                                         DebugGpuCombo *debugCombo)
 {
+    // TODO: This code is all screwed up but it still works.  Clean it up sometime - sure.
+    // Compare against the real reference path.
 
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
@@ -102,7 +104,7 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
     cudaFree(d_tempProducts);
 }
 
-#if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
+#if defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(                            \
         const HpShark::LaunchParams &launchParams,                                                      \

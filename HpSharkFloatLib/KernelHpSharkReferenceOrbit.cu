@@ -23,7 +23,7 @@ ReferenceHelper(cg::grid_group &grid,
     // All threads do periodicity checking and update the period if found.
     //
 
-    if constexpr (SharkFloatParams::Periodicity) {
+    if constexpr (SharkFloatParams::EnablePeriodicity) {
         if (block.group_index().x == 0 && block.thread_index().x == 0) {
             PeriodicityChecker(
                 grid, block, currentLocalIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference);
@@ -97,7 +97,7 @@ __maxnreg__(HpShark::RegisterLimit)
     // Call the AddHelper function
     constexpr auto currentIteration = 0;
 
-    if constexpr (SharkFloatParams::Periodicity) {
+    if constexpr (SharkFloatParams::EnablePeriodicity) {
         // This path is not supported: running one iteration with periodicity checking is pointless.
         // Correctness checking of all this should take place via the integrated loop version just below.
         return;
@@ -242,6 +242,6 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
     template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
         const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 
-#if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
+#if defined(ENABLE_FULL_KERNEL)
 ExplicitInstantiateAll();
 #endif

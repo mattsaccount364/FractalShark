@@ -25,11 +25,11 @@
 
 // Suggested combinations.
 // For testing, define:
-//  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_REFERENCE_KERNEL
+//  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_FULL_KERNEL
 //  - _DEBUG
 //  - Ensure ENABLE_BASIC_CORRECTNESS == 0
 // For profiling, define:
-//  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_REFERENCE_KERNEL
+//  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_FULL_KERNEL
 //  - Release
 //  - Ensure ENABLE_BASIC_CORRECTNESS == 2
 // For E2E test:
@@ -41,16 +41,12 @@
 //  - ENABLE_FULL_KERNEL
 //  - Ensure ENABLE_BASIC_CORRECTNESS == 4
 //
-// TODO:
-//  - ENABLE_REFERENCE_KERNEL is slightly busted on profiling and will say there's an error
-//
 
 // Comment out to disable specific kernels
-// #define ENABLE_CONVERSION_TESTS
+#define ENABLE_CONVERSION_TESTS
 #define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_NTT_KERNEL
-// #define ENABLE_REFERENCE_KERNEL // Kind of useless now, consider removing
-//#define ENABLE_FULL_KERNEL
+#define ENABLE_MULTIPLY_NTT_KERNEL
+#define ENABLE_FULL_KERNEL
 
 // TODO: can't we automate this
 // Uncomment this to enable the HpSharkFloat test program.
@@ -108,19 +104,11 @@ static constexpr auto EnableMultiplyNTTKernel = true;
 static constexpr auto EnableMultiplyNTTKernel = false;
 #endif
 
-#ifdef ENABLE_REFERENCE_KERNEL
-static constexpr auto EnableReferenceKernel = true;
-#else
-static constexpr auto EnableReferenceKernel = false;
-#endif
-
 #ifdef ENABLE_FULL_KERNEL
 static constexpr auto EnableFullKernel = true;
 #else
 static constexpr auto EnableFullKernel = false;
 #endif
-
-static constexpr auto EnablePeriodicity = EnableFullKernel;
 
 #ifdef _DEBUG
 #define SharkForceInlineReleaseOnly
@@ -135,8 +123,7 @@ static constexpr auto NTTNumBitsMargin = 0; // 2?
 // Assumes number of threads is a power of 2 and <= 32, with one block.
 // #define TEST_SMALL_NORMALIZE_WARP
 
-static constexpr bool TestGpu =
-    (EnableAddKernel || EnableMultiplyNTTKernel || EnableReferenceKernel || EnableFullKernel);
+static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel || EnableFullKernel);
 // static constexpr bool TestGpu = false;
 
 static constexpr auto TestComicalThreadCount = 13;
@@ -216,7 +203,7 @@ struct LaunchParams {
     const int32_t TotalThreads;
 };
 
-template <int32_t pNumDigits> struct GenericSharkFloatParams {
+template <int32_t pNumDigits, bool Periodicity> struct GenericSharkFloatParams {
     using Float = HDRFloat<float>; // TODO hardcoded
     using SubType = float;         // TODO hardcoded
 
@@ -242,6 +229,7 @@ template <int32_t pNumDigits> struct GenericSharkFloatParams {
 
     // If these are set to false they produce wrong answers but can be useful
     // to confirm source of performance issues.
+    static constexpr auto EnablePeriodicity = Periodicity;
     static constexpr bool DisableAllAdditions = false;
     static constexpr bool DisableSubtraction = false;
     static constexpr bool DisableCarryPropagation = false;
@@ -262,7 +250,6 @@ template <int32_t pNumDigits> struct GenericSharkFloatParams {
 
     static constexpr SharkNTT::PlanPrime NTTPlan =
         SharkNTT::BuildPlanPrime(GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
-    static constexpr bool Periodicity = HpShark::EnablePeriodicity;
 
     using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
 };
@@ -339,24 +326,24 @@ static constexpr auto LowPrec = 32;
 #include "ExplicitInstantiate.h"
 
 // If you add a new one, search for one of the other types and copy/paste
-//using Test8x1SharkParams = HpShark::GenericSharkFloatParams<8>;
-//using Test4x36SharkParams = HpShark::GenericSharkFloatParams<16>;
-//using Test4x12SharkParams = HpShark::GenericSharkFloatParams<32>;
-//using Test4x9SharkParams = HpShark::GenericSharkFloatParams<64>;
-//using Test4x6SharkParams = HpShark::GenericSharkFloatParams<128>;
-using Test8x1SharkParams = HpShark::GenericSharkFloatParams<64>;
-using Test4x36SharkParams = HpShark::GenericSharkFloatParams<128>;
-using Test4x12SharkParams = HpShark::GenericSharkFloatParams<256>;
-using Test4x9SharkParams = HpShark::GenericSharkFloatParams<512>;
-using Test4x6SharkParams = HpShark::GenericSharkFloatParams<1024>;
+// using Test8x1SharkParams = HpShark::GenericSharkFloatParams<8>;
+// using Test4x36SharkParams = HpShark::GenericSharkFloatParams<16>;
+// using Test4x12SharkParams = HpShark::GenericSharkFloatParams<32>;
+// using Test4x9SharkParams = HpShark::GenericSharkFloatParams<64>;
+// using Test4x6SharkParams = HpShark::GenericSharkFloatParams<128>;
+using Test8x1SharkParams = HpShark::GenericSharkFloatParams<64, false>;
+using Test4x36SharkParams = HpShark::GenericSharkFloatParams<128, false>;
+using Test4x12SharkParams = HpShark::GenericSharkFloatParams<256, false>;
+using Test4x9SharkParams = HpShark::GenericSharkFloatParams<512, false>;
+using Test4x6SharkParams = HpShark::GenericSharkFloatParams<1024, false>;
 
-using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<8192>;
-using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<16384>;
-using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<32768>;
-using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<65536>;
-using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<131072>;
-using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<262144>;
-using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<524288>;
+using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<8192, true>;
+using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<16384, true>;
+using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<32768, true>;
+using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<65536, true>;
+using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<131072, true>;
+using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<262144, true>;
+using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<524288, true>;
 
 // using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6144>;
 // using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<11776>;
@@ -385,18 +372,18 @@ using TestCorrectnessSharkParams4 = Test4x12SharkParams;
 using TestCorrectnessSharkParams5 = Test4x6SharkParams;
 
 // FractalShark production sizes
-using ProdSharkParams1 = HpShark::GenericSharkFloatParams<256>;
-using ProdSharkParams2 = HpShark::GenericSharkFloatParams<512>;
-using ProdSharkParams3 = HpShark::GenericSharkFloatParams<1024>;
-using ProdSharkParams4 = HpShark::GenericSharkFloatParams<2048>;
-using ProdSharkParams5 = HpShark::GenericSharkFloatParams<4096>;
-using ProdSharkParams6 = HpShark::GenericSharkFloatParams<8192>;
-using ProdSharkParams7 = HpShark::GenericSharkFloatParams<16384>;
-using ProdSharkParams8 = HpShark::GenericSharkFloatParams<32768>;
-using ProdSharkParams9 = HpShark::GenericSharkFloatParams<65536>;
-using ProdSharkParams10 = HpShark::GenericSharkFloatParams<131072>;
-using ProdSharkParams11 = HpShark::GenericSharkFloatParams<262144>;
-using ProdSharkParams12 = HpShark::GenericSharkFloatParams<524288>;
+using ProdSharkParams1 = HpShark::GenericSharkFloatParams<256, true>;
+using ProdSharkParams2 = HpShark::GenericSharkFloatParams<512, true>;
+using ProdSharkParams3 = HpShark::GenericSharkFloatParams<1024, true>;
+using ProdSharkParams4 = HpShark::GenericSharkFloatParams<2048, true>;
+using ProdSharkParams5 = HpShark::GenericSharkFloatParams<4096, true>;
+using ProdSharkParams6 = HpShark::GenericSharkFloatParams<8192, true>;
+using ProdSharkParams7 = HpShark::GenericSharkFloatParams<16384, true>;
+using ProdSharkParams8 = HpShark::GenericSharkFloatParams<32768, true>;
+using ProdSharkParams9 = HpShark::GenericSharkFloatParams<65536, true>;
+using ProdSharkParams10 = HpShark::GenericSharkFloatParams<131072, true>;
+using ProdSharkParams11 = HpShark::GenericSharkFloatParams<262144, true>;
+using ProdSharkParams12 = HpShark::GenericSharkFloatParams<524288, true>;
 
 enum class InjectNoiseInLowOrder { Disable, Enable };
 

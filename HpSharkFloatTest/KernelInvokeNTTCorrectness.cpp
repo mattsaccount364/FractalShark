@@ -12,7 +12,6 @@ InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                    HpSharkComboResults<SharkFloatParams> &combo,
                                    DebugGpuCombo *debugCombo)
 {
-
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;

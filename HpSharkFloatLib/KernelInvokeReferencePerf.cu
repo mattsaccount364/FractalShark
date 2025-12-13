@@ -49,7 +49,7 @@ InvokeHpSharkReferenceKernelProd(const HpShark::LaunchParams &launchParams,
     assert(memcmp(&combo.Add.E_B, &combo.Multiply.B, sizeof(HpSharkFloat<SharkFloatParams>)) == 0);
     assert(combo.RadiusY.mantissa != 0); // RadiusY must be set.  Does 0 have any useful meaning here?
     assert(false);
-    InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(launchParams, combo, numIters, nullptr);
+    InvokeHpSharkReferenceKernelTestPerf<SharkFloatParams>(launchParams, combo, numIters, nullptr);
 }
 
 template <class SharkFloatParams>
@@ -91,8 +91,10 @@ InitHpSharkKernelTest(const HpShark::LaunchParams &launchParams,
     cudaMalloc(&combo.comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>));
 
     // Note; shallow copy; we will memset specific members below
-    cudaMemcpy(
-        combo.comboGpu, &combo, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+    cudaMemcpy(combo.comboGpu,
+               &combo,
+               sizeof(HpSharkReferenceResults<SharkFloatParams>),
+               cudaMemcpyHostToDevice);
 
     uint8_t byteToSet = HpShark::TestInitCudaMemory ? 0xCD : 0;
 
@@ -141,8 +143,8 @@ InitHpSharkKernelTest(const HpShark::LaunchParams &launchParams,
 
             // Set the attributes to a CUDA stream of type cudaStream_t
             auto &stream = *reinterpret_cast<cudaStream_t *>(&combo.stream);
-            cudaError_t err = cudaStreamSetAttribute(
-                stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
+            cudaError_t err =
+                cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
             if (err != cudaSuccess) {
                 std::cerr << "CUDA error in setting stream attribute: " << cudaGetErrorString(err)
                           << std::endl;
@@ -160,10 +162,10 @@ InitHpSharkKernelTest(const HpShark::LaunchParams &launchParams,
 //
 template <class SharkFloatParams>
 void
-InvokeHpSharkReferenceKernelPerf(const HpShark::LaunchParams &launchParams,
-                                 HpSharkReferenceResults<SharkFloatParams> &combo,
-                                 uint64_t numIters,
-                                 DebugGpuCombo *debugCombo)
+InvokeHpSharkReferenceKernelTestPerf(const HpShark::LaunchParams &launchParams,
+                                     HpSharkReferenceResults<SharkFloatParams> &combo,
+                                     uint64_t numIters,
+                                     DebugGpuCombo *debugCombo)
 {
     auto *comboGpu = combo.comboGpu;
     cudaMemcpy(&comboGpu->MaxRuntimeIters, &numIters, sizeof(uint64_t), cudaMemcpyHostToDevice);
@@ -209,7 +211,7 @@ ShutdownHpSharkKernel(const HpShark::LaunchParams &launchParams,
     }
 }
 
-#if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
+#if defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelProd<SharkFloatParams>(                                   \
         const HpShark::LaunchParams &launchParams,                                                      \
@@ -217,7 +219,7 @@ ShutdownHpSharkKernel(const HpShark::LaunchParams &launchParams,
         mpf_t,                                                                                          \
         mpf_t,                                                                                          \
         uint64_t);                                                                                      \
-    template void InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(                                   \
+    template void InvokeHpSharkReferenceKernelTestPerf<SharkFloatParams>(                               \
         const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
         uint64_t numIters,                                                                              \

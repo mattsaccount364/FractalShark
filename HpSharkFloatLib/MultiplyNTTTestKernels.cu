@@ -48,16 +48,16 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
 
     cudaError_t err;
 
-    constexpr auto sharedAmountBytes = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
+    constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(MultiplyKernelNTT<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
-                             sharedAmountBytes);
+                             SharedMemSize);
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
-                launchParams, MultiplyKernelNTT<SharkFloatParams>, sharedAmountBytes);
+                launchParams, MultiplyKernelNTT<SharkFloatParams>, SharedMemSize);
         }
     }
 
@@ -65,7 +65,7 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
                                       dim3(launchParams.NumBlocks),
                                       dim3(launchParams.ThreadsPerBlock),
                                       kernelArgs,
-                                      sharedAmountBytes, // Shared memory size
+                                      SharedMemSize, // Shared memory size
                                       0                  // Stream
     );
 
@@ -89,16 +89,16 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
                               void *kernelArgs[])
 {
 
-    constexpr auto sharedAmountBytes = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
+    constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(MultiplyKernelNTTTestLoop<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
-                             sharedAmountBytes);
+                             SharedMemSize);
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
-                launchParams, MultiplyKernelNTTTestLoop<SharkFloatParams>, sharedAmountBytes);
+                launchParams, MultiplyKernelNTTTestLoop<SharkFloatParams>, SharedMemSize);
         }
     }
 
@@ -106,7 +106,7 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
                                                   dim3(launchParams.NumBlocks),
                                                   dim3(launchParams.ThreadsPerBlock),
                                                   kernelArgs,
-                                                  sharedAmountBytes, // Shared memory size
+                                                  SharedMemSize, // Shared memory size
                                                   stream             // Stream
     );
 

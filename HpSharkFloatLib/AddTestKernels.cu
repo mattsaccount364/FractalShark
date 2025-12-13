@@ -1,12 +1,10 @@
 #include "Add.cu"
 
-
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 __global__ void
 __maxnreg__(HpShark::RegisterLimit)
-AddKernel(
-    HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
-    uint64_t *tempData) {
+    AddKernel(HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo, uint64_t *tempData)
+{
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
@@ -16,13 +14,13 @@ AddKernel(
     AddHelper(grid, block, combo, tempData);
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 __global__ void
 __maxnreg__(HpShark::RegisterLimit)
-AddKernelTestLoop(
-    HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
-    uint64_t numIters,
-    uint64_t *tempData) {
+    AddKernelTestLoop(HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
+                      uint64_t numIters,
+                      uint64_t *tempData)
+{
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
@@ -33,18 +31,19 @@ AddKernelTestLoop(
     }
 }
 
-template<class SharkFloatParams>
-void ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[]) {
+template <class SharkFloatParams>
+void
+ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
+{
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
-    constexpr size_t SharedMemSize = 0;
-    cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)AddKernel<SharkFloatParams>,
-        dim3(launchParams.NumBlocks),
-        dim3(launchParams.ThreadsPerBlock),
-        kernelArgs,
-        SharedMemSize, // Shared memory size
-        0 // Stream
+    constexpr size_t SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
+    cudaError_t err = cudaLaunchCooperativeKernel((void *)AddKernel<SharkFloatParams>,
+                                                  dim3(launchParams.NumBlocks),
+                                                  dim3(launchParams.ThreadsPerBlock),
+                                                  kernelArgs,
+                                                  SharedMemSize, // Shared memory size
+                                                  0              // Stream
     );
 
     cudaDeviceSynchronize();
@@ -55,19 +54,20 @@ void ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[]
     }
 }
 
-template<class SharkFloatParams>
-void ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArgs[]) {
+template <class SharkFloatParams>
+void
+ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
+{
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
-    constexpr size_t SharedMemSize = 0;
+    constexpr size_t SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
-    cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)AddKernelTestLoop<SharkFloatParams>,
-        dim3(launchParams.NumBlocks),
-        dim3(launchParams.ThreadsPerBlock),
-        kernelArgs,
-        SharedMemSize, // Shared memory size
-        0 // Stream
+    cudaError_t err = cudaLaunchCooperativeKernel((void *)AddKernelTestLoop<SharkFloatParams>,
+                                                  dim3(launchParams.NumBlocks),
+                                                  dim3(launchParams.ThreadsPerBlock),
+                                                  kernelArgs,
+                                                  SharedMemSize, // Shared memory size
+                                                  0              // Stream
     );
 
     cudaDeviceSynchronize();
@@ -78,10 +78,10 @@ void ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kern
     }
 }
 
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,                \
-                                                  void *kernelArgs[]); \
-    template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,        \
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+    template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,            \
+                                                  void *kernelArgs[]);                                  \
+    template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
                                                           void *kernelArgs[]);
 
 #ifdef ENABLE_ADD_KERNEL

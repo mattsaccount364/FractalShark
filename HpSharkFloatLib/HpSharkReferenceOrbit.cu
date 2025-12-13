@@ -161,16 +161,16 @@ void
 ComputeHpSharkReferenceGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
 {
 
-    constexpr auto sharedAmountBytes = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
+    constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
-                             sharedAmountBytes);
+                             SharedMemSize);
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
-                launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, sharedAmountBytes);
+                launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize);
         }
     }
 
@@ -178,7 +178,7 @@ ComputeHpSharkReferenceGpu(const HpShark::LaunchParams &launchParams, void *kern
                                                   dim3(launchParams.NumBlocks),
                                                   dim3(launchParams.ThreadsPerBlock),
                                                   kernelArgs,
-                                                  sharedAmountBytes,
+                                                  SharedMemSize,
                                                   0 // Stream
     );
 
@@ -202,16 +202,16 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                                void *kernelArgs[])
 {
 
-    constexpr auto sharedAmountBytes = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
+    constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
-                             sharedAmountBytes);
+                             SharedMemSize);
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
-                launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, sharedAmountBytes);
+                launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize);
         }
     }
 
@@ -219,7 +219,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                                                   dim3(launchParams.NumBlocks),
                                                   dim3(launchParams.ThreadsPerBlock),
                                                   kernelArgs,
-                                                  sharedAmountBytes,
+                                                  SharedMemSize,
                                                   stream // Stream
     );
 

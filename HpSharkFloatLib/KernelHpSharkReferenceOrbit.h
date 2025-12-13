@@ -13,9 +13,6 @@ void ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                                     void *kernelArgs[]);
 
 template <class SharkFloatParams>
-void ComputeHpSharkReferenceGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[]);
-
-template <class SharkFloatParams>
 CUDA_GLOBAL void HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *combo,
                                            uint64_t *tempData);
 

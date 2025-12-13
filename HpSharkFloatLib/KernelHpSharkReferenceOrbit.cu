@@ -158,45 +158,6 @@ __maxnreg__(HpShark::RegisterLimit)
 
 template <class SharkFloatParams>
 void
-ComputeHpSharkReferenceGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
-{
-
-    constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
-
-    if constexpr (HpShark::CustomStream) {
-        cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
-                             cudaFuncAttributeMaxDynamicSharedMemorySize,
-                             SharedMemSize);
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            PrintMaxActiveBlocks<SharkFloatParams>(
-                launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize);
-        }
-    }
-
-    cudaError_t err = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuKernel<SharkFloatParams>,
-                                                  dim3(launchParams.NumBlocks),
-                                                  dim3(launchParams.ThreadsPerBlock),
-                                                  kernelArgs,
-                                                  SharedMemSize,
-                                                  0 // Stream
-    );
-
-    auto err2 = cudaGetLastError();
-    if (err != cudaSuccess || err2 != cudaSuccess) {
-        std::cerr << "CUDA error in cudaLaunchCooperativeKernel: " << cudaGetErrorString(err2)
-                  << "err: " << err << std::endl;
-    }
-
-    cudaDeviceSynchronize();
-
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error in MultiplyKernelKaratsubaV2: " << cudaGetErrorString(err) << std::endl;
-    }
-}
-
-template <class SharkFloatParams>
-void
 ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                                cudaStream_t &stream,
                                void *kernelArgs[])
@@ -237,8 +198,6 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void ComputeHpSharkReferenceGpu<SharkFloatParams>(                                         \
-        const HpShark::LaunchParams &launchParams, void *kernelArgs[]);                                 \
     template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
         const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 

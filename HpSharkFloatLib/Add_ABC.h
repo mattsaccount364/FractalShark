@@ -627,14 +627,6 @@ PPstate_index_for_carry(int32_t c)
     return c + 1;
 }
 
-// Layout for the *block-level* transfer (not per-digit):
-// We store, for each stream and each incoming carry c_in,
-//     c_out = f_block(stream, c_in)
-// in 2 bits, exactly like your original per-digit mapping:
-//
-// fieldIdx = streamIdx * 3 + stateIdx (stateIdx = c_in + 1)
-// bit range: [2*fieldIdx + 1 : 2*fieldIdx]
-//
 __device__ SharkForceInlineReleaseOnly static uint32_t
 PPget_field(uint64_t bits, int streamIdx, int32_t c_in)
 {

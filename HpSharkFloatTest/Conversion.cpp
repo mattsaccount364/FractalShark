@@ -127,7 +127,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
 
     // ---------------- Epsilons based on magnitude (ULP-scaled) ----------------
     constexpr long P_full =
-        static_cast<long>(HpSharkFloat<SharkFloatParams>::DefaultMpirBits - 1); // your working precision
+        static_cast<long>(HpSharkFloat<SharkFloatParams>::DefaultMpirBits - 1); // working precision
     constexpr long P_f = 23;                                                    // float fraction bits
     constexpr long P_d = 52;                                                    // double fraction bits
 

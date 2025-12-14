@@ -157,7 +157,7 @@ Hex64StringToMpf_Exact(const std::string &s, mpf_t out)
     long actualLimbsUsed = 0; // signed; may be negative
     expect(static_cast<bool>(iss >> actualLimbsUsed), "Failed to read actualLimbsUsed");
 
-    // Collect exactly numLimbs limb tokens (as your dumper wrote all allocated limbs incl. guard).
+    // Collect exactly numLimbs limb tokens
     std::vector<mp_limb_t> limbs;
     limbs.reserve(numLimbs);
     for (std::size_t i = 0; i < numLimbs; ++i) {
@@ -182,7 +182,6 @@ Hex64StringToMpf_Exact(const std::string &s, mpf_t out)
     }
 
     // --- rehydrate mpf internals (DANGEROUS/UNSUPPORTED, but byte-identical) ---
-    // Your dumper used: numLimbs = _mp_prec + 1
     const mp_bitcnt_t bits = static_cast<mp_bitcnt_t>(numLimbs) * 64;
     mpf_init2(out, bits);
 

@@ -331,8 +331,7 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
                    cudaMemcpyHostToDevice);
     }
 
-    // 5) Scalars that might be handy to explicitly refresh (already copied in step 1,
-    //    but this keeps your original pattern)
+    // 5) Scalars that might be handy to explicitly refresh (already copied in step 1)
     cudaMemcpy(&outT.Ninvm_mont, &inT.Ninvm_mont, sizeof(uint64_t), cudaMemcpyHostToDevice);
     // N, stages, total_twiddles, etc. are already copied by the struct memcpy.
 }

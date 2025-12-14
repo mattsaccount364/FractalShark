@@ -8,7 +8,7 @@
 //
 
 template <class SharkFloatParams>
-__device__ [[nodiscard]] HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult
+__device__ [[nodiscard]] PeriodicityResult
 ReferenceHelper(cg::grid_group &grid,
                 cg::thread_block &block,
                 uint64_t currentLocalIteration,
@@ -38,7 +38,7 @@ ReferenceHelper(cg::grid_group &grid,
         grid.sync();
 
         if (reference->PeriodicityStatus !=
-                HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Continue) {
+                PeriodicityResult::Continue) {
             return reference->PeriodicityStatus;
         }
     }
@@ -80,7 +80,7 @@ ReferenceHelper(cg::grid_group &grid,
         &reference->Multiply.B,         // Imaginary result = Z_imaginary
         tempData);
 
-    return HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult::Continue;
+    return PeriodicityResult::Continue;
 }
 
 template <class SharkFloatParams>
@@ -142,8 +142,6 @@ __maxnreg__(HpShark::RegisterLimit)
         debugGlobalState[CurBlock * block.dim_threads().x + CurThread].DebugMultiplyErase();
     }
 #endif
-
-    using PeriodicityResult = HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult;
 
     // MaxRuntimeIters had better be <= HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters
     for (uint64_t i = 0; i < combo->MaxRuntimeIters; ++i) {

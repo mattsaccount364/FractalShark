@@ -437,10 +437,6 @@ find_msd_warp_ABC_DE(const uint64_t *extABC,
             msdD = N - (tile * 32 + lsbLaneD);
         }
     }
-
-    // Optional clean-up if you want a different sentinel:
-    // if (msdA == 0) msdA = -1;
-    // if (msdD == 0) msdD = -1;
 }
 
 

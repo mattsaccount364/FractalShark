@@ -20,7 +20,7 @@
 #endif
 
 #include "DebugChecksumHost.h"
-#include "HpSharkFloat.h" // your header (provides HpSharkFloat<>, DebugStateHost<>)
+#include "HpSharkFloat.h"
 #include "MultiplyNTTCudaSetup.h"
 #include "NTTConstexprGenerator.h"
 #include "ReferenceNTT2.h"
@@ -56,7 +56,7 @@ Normalize(HpSharkFloat<SharkFloatParams> &out,
           const HpSharkFloat<SharkFloatParams> &b,
           const uint64_t *final128,     // len = 2*Ddigits
           size_t Ddigits,               // number of 32-bit positions represented in final128
-          int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
+          int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY because it's the Mandelbrot (2XY term)
 )
 {
     using u32 = uint32_t;

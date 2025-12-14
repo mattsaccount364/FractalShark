@@ -9,13 +9,12 @@ SerialCarryPropagation(
     const int32_t numActualDigitsPlusGuard,
     uint32_t *carry, // global memory array for intermediate carries (length numActualDigitsPlusGuard+1)
     int32_t
-        &outExponent, // note: if you need the updated exponent outside, you might pass this by reference
+        &outExponent,
     bool sameSign,
     cg::thread_block &block,
     cg::grid_group &grid)
 {
-    // (For brevity, we perform a sequential prefix scan in thread 0.
-    // In a production code you would replace this with a parallel prefix-sum algorithm.)
+    // Simple serial carry/borrow propagation.
     if (block.thread_index().x == 0 && block.group_index().x == 0) {
         if (sameSign) {
             // Addition: propagate carry.
@@ -203,7 +202,6 @@ CarryPropagationPP3_DE(
     cg::thread_block &block,
     cg::grid_group &grid)
 {
-    // ==== boilerplate from your original ====
     const int32_t globalIdx = block.thread_index().x + block.group_index().x * block.dim_threads().x;
     const int32_t stride = grid.size();
     constexpr int32_t maxIter = 1000;
@@ -313,12 +311,6 @@ CarryPropagationPP3_DE(
             }
         }
     };
-
-    //
-    // ==== BELOW: your original grid-wide iterative converge, but it only
-    //     has to handle *inter-warp* carries now.  We restrict updates
-    //     to positions where i % 32 == 0 (the warp boundaries).
-    //
 
     // Set an initial nonzero carry flag.
     auto *carries_remaining_global = &globalSync1[0];

@@ -59,7 +59,6 @@ ParallelPrefixNormalize3WayV3(cooperative_groups::grid_group &grid,
                               uint64_t *SharkRestrict resultXX,
                               uint64_t *SharkRestrict resultYY,
                               uint64_t *SharkRestrict resultXY,
-                              // scratch: reinterpretation of your existing buffers
                               DigitTransfer3 *SharkRestrict digitXfer, // size >= Ddigits
                               DigitTransfer3 *SharkRestrict scanTemp,  // size >= Ddigits
                               uint32_t *SharkRestrict carryInMask)     // size >= Ddigits
@@ -194,9 +193,6 @@ ParallelPrefixNormalize3WayV3(cooperative_groups::grid_group &grid,
         cur[i * 3 + 0] = 0;
         cur[i * 3 + 1] = 0;
         cur[i * 3 + 2] = 0;
-
-        // If you need to track overflow beyond Ddigits, you can accumulate
-        // (fullXX >> 32), etc., into separate global accumulators here.
     }
 
     grid.sync();

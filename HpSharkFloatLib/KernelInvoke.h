@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <mpir.h>
 
 namespace HpShark {
@@ -26,15 +27,23 @@ enum class Operator;
 namespace HpShark {
 
 template <class SharkFloatParams>
-void InitHpSharkKernelTest(const HpShark::LaunchParams &launchParams,
-                           HpSharkReferenceResults<SharkFloatParams> &combo,
-                           DebugGpuCombo *debugCombo);
+std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReferenceKernel(
+    const HpShark::LaunchParams &launchParams,
+    const typename SharkFloatParams::Float hdrRadiusY,
+    const mpf_t srcX,
+    const mpf_t srcY);
 
 template <class SharkFloatParams>
-void InvokeHpSharkReferenceKernelTestPerf(const HpShark::LaunchParams &launchParams,
-                                      HpSharkReferenceResults<SharkFloatParams> &combo,
-                                      uint64_t numIters,
-                                      DebugGpuCombo *debugCombo);
+std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReferenceKernel(
+    const HpShark::LaunchParams &launchParams,
+    const typename SharkFloatParams::Float hdrRadiusY,
+    const HpSharkFloat<SharkFloatParams> &xNum,
+    const HpSharkFloat<SharkFloatParams> &yNum);
+
+template <class SharkFloatParams>
+void InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
+                                  HpSharkReferenceResults<SharkFloatParams> &combo,
+                                  uint64_t numIters);
 
 template <class SharkFloatParams>
 void InitHpSharkKernelProd(const HpShark::LaunchParams &launchParams,
@@ -45,13 +54,9 @@ void InitHpSharkKernelProd(const HpShark::LaunchParams &launchParams,
                            DebugGpuCombo *debugCombo);
 
 template <class SharkFloatParams>
-void InvokeHpSharkReferenceKernelProd(const HpShark::LaunchParams &launchParams,
-                                      HpSharkReferenceResults<SharkFloatParams> &combo);
-
-template <class SharkFloatParams>
-void ShutdownHpSharkKernel(const HpShark::LaunchParams &launchParams,
-                           HpSharkReferenceResults<SharkFloatParams> &combo,
-                           DebugGpuCombo *debugCombo);
+void ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
+                                    HpSharkReferenceResults<SharkFloatParams> &combo,
+                                    DebugGpuCombo *debugCombo);
 
 template <class SharkFloatParams>
 void InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,

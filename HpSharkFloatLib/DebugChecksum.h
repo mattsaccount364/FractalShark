@@ -68,7 +68,6 @@ DebugNormalizeIncrement(DebugGlobalCount<SharkFloatParams> *array,
 }
 
 namespace DebugChecksumGlobals {
-// Limits (bump if you launch bigger blocks/grids)
 static constexpr int kMaxBlocks = 4096;
 static constexpr int kMaxThreadsPerBlock = 1024;
 static constexpr int kWarpSize = 32;
@@ -650,7 +649,6 @@ template <class SharkFloatParams> struct DebugState {
                 const uint32_t lo = static_cast<uint32_t>(w & 0xFFFFFFFFull);
                 const uint32_t hi = static_cast<uint32_t>(w >> 32);
 
-                // low 32, then high 32 (matches host split and your device little-endian view)
                 s1 = foldM(uint64_t(s1) + uint64_t(lo));
                 s2 = foldM(uint64_t(s2) + uint64_t(s1));
 

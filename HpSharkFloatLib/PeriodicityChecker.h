@@ -24,7 +24,6 @@ PeriodicityChecker(cg::grid_group &grid,
     constexpr auto MaxOutputIters = HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
 
     using HdrType = typename SharkFloatParams::Float;
-    using PeriodicityResult = typename HpSharkReferenceResults<SharkFloatParams>::PeriodicityResult;
 
     // Now lets do periodicity checking and store the results
     // Note: first iteration (current overall iteration == 0) requires Out_A_B_C

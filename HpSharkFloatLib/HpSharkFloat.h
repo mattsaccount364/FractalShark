@@ -43,9 +43,9 @@
 //
 
 // Comment out to disable specific kernels
-#define ENABLE_CONVERSION_TESTS
-#define ENABLE_ADD_KERNEL
-#define ENABLE_MULTIPLY_NTT_KERNEL
+// #define ENABLE_CONVERSION_TESTS
+// #define ENABLE_ADD_KERNEL
+// #define ENABLE_MULTIPLY_NTT_KERNEL
 #define ENABLE_FULL_KERNEL
 
 // TODO: can't we automate this
@@ -157,7 +157,7 @@ static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
 static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
 static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
 static constexpr auto TestForceSameSign = false;
-static constexpr bool TestBenchmarkAgainstHost = false;
+static constexpr bool TestBenchmarkAgainstHost = true;
 static constexpr bool TestInitCudaMemory = true;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
@@ -326,6 +326,7 @@ static constexpr auto LowPrec = 32;
 #include "ExplicitInstantiate.h"
 
 // If you add a new one, search for one of the other types and copy/paste
+// TODO Add tests fail with non-mult-32 sizes.
 // using Test8x1SharkParams = HpShark::GenericSharkFloatParams<8>;
 // using Test4x36SharkParams = HpShark::GenericSharkFloatParams<16>;
 // using Test4x12SharkParams = HpShark::GenericSharkFloatParams<32>;
@@ -619,6 +620,12 @@ HpSharkFloat<SharkFloatParams>::FromHDRFloat(const HDRFloat<SubType> &h)
     SetNegative(neg);
 }
 
+enum class PeriodicityResult { Unknown, Continue, PeriodFound, Escaped };
+
+#if !defined(__CUDA_ARCH__)
+std::string PeriodicityStrResult(PeriodicityResult periodicityStatus);
+#endif // !__CUDA_ARCH__
+
 #pragma warning(push)
 #pragma warning(disable : 4324)
 template <class SharkFloatParams> struct alignas(16) HpSharkComboResults {
@@ -642,9 +649,7 @@ template <class SharkFloatParams> struct HpSharkAddComboResults {
 
 template <class SharkFloatParams> struct HpSharkReferenceResults {
 
-    enum class PeriodicityResult { Unknown, Continue, PeriodFound, Escaped };
-
-    alignas(16) HDRFloat<typename SharkFloatParams::SubType> RadiusY;
+    alignas(16) typename SharkFloatParams::Float RadiusY;
     alignas(16) HpSharkComboResults<SharkFloatParams> Multiply;
     alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
     alignas(16) PeriodicityResult PeriodicityStatus;
@@ -661,23 +666,6 @@ template <class SharkFloatParams> struct HpSharkReferenceResults {
     alignas(16) uint64_t *d_tempProducts;
     alignas(16) uintptr_t stream; // cudaStream_t
     alignas(16) void *kernelArgs[3];
-
-#if !defined(__CUDA_ARCH__)
-    std::string
-    PeriodicityStrResult() const
-    {
-        switch (PeriodicityStatus) {
-            case PeriodicityResult::Continue:
-                return "Continue";
-            case PeriodicityResult::PeriodFound:
-                return "PeriodFound";
-            case PeriodicityResult::Escaped:
-                return "Escaped";
-            default:
-                return "Unknown";
-        }
-    }
-#endif // !__CUDA_ARCH__
 };
 #pragma warning(pop)
 

@@ -110,7 +110,7 @@ HeapCpp::~HeapCpp()
 //
 // NOTE: this function uses HEAP_INIT_SIZE to determine
 // how large the heap is so make sure the same constant
-// is used when allocating memory for your heap!
+// is used when allocating memory for the heap!
 // ========================================================
 void
 HeapCpp::Init()
@@ -175,8 +175,7 @@ void *
 HeapCpp::Allocate(size_t size)
 {
     // We'll assume single-threaded initialization and that no races
-    // occur here.  If you want to use this in a multi-threaded environment,
-    // you'll need to add a mutex here.
+    // occur here.
     if (!Initialized) {
         VectorStaticInit();
         InitGlobalHeap();

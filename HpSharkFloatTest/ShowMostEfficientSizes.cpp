@@ -6,10 +6,6 @@
 #include <iostream>
 #include <vector>
 
-// -----------------------------------------------------------------------------
-// Your existing PlanPrime + BuildPlanPrime
-// (use your real definitions; trimmed here just for context)
-// -----------------------------------------------------------------------------
 namespace SharkNTT {
 
 // -----------------------------------------------------------------------------

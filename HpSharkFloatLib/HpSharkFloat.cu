@@ -283,12 +283,12 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
         // if toCopy < blockBytes, destOffset > 0 --> move data into the high-order end
         size_t destOffset = (countInBytes > blockBytes) ? 0 : (blockBytes - toCopy);
 
-        //if (injectNoise == InjectNoiseInLowOrder::Enable && toCopy != 0) {
-        //    // Use a random device to seed the random number generator
-        //    std::random_device rd;
-        //    std::mt19937 generator(rd()); // Mersenne Twister for high-quality randomness
-        //    std::uniform_int_distribution<uint32_t> distributionRand(
-        //        0, std::numeric_limits<uint8_t>::max());
+        // if (injectNoise == InjectNoiseInLowOrder::Enable && toCopy != 0) {
+        //     // Use a random device to seed the random number generator
+        //     std::random_device rd;
+        //     std::mt19937 generator(rd()); // Mersenne Twister for high-quality randomness
+        //     std::uniform_int_distribution<uint32_t> distributionRand(
+        //         0, std::numeric_limits<uint8_t>::max());
 
         //    auto modifiedOffset = destOffset;
         //    constexpr auto extraZeros = 4 * sizeof(uint32_t);
@@ -696,11 +696,11 @@ Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val)
     return MpfToString<SharkFloatParams>(mpf_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 }
 
-
 // Function to convert uint64_t array to mpf_t
 // pow2Exponent is the exponent in base 2
 void
-Uint64ToMpf(const uint64_t *array, size_t numElts, int32_t pow64Exponent, mpf_t &mpf_val, bool isNegative)
+Uint64ToMpf(
+    const uint64_t *array, size_t numElts, int32_t pow64Exponent, mpf_t &mpf_val, bool isNegative)
 {
     const size_t spaceAvailable = mpf_val[0]._mp_prec + 1;
     const auto entriesToCopy = std::min(numElts, spaceAvailable);
@@ -718,6 +718,21 @@ Uint64ToMpf(const uint64_t *array, size_t numElts, int32_t pow64Exponent, mpf_t 
 
     if (isNegative) {
         mpf_val[0]._mp_size = -mpf_val[0]._mp_size;
+    }
+}
+
+std::string
+PeriodicityStrResult(PeriodicityResult periodicityStatus)
+{
+    switch (periodicityStatus) {
+        case PeriodicityResult::Continue:
+            return "Continue";
+        case PeriodicityResult::PeriodFound:
+            return "PeriodFound";
+        case PeriodicityResult::Escaped:
+            return "Escaped";
+        default:
+            return "Unknown";
     }
 }
 

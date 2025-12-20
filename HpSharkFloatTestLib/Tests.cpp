@@ -2844,26 +2844,26 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
 
         case BasicCorrectnessMode::PerfSingle:
             for (int i = 0; i < numIters; ++i) {
-                TestPerfRandom<TestPerSharkParams1, sharkOperator>(
+                TestPerfRandom<SharkParamsNP6, sharkOperator>(
                     launchParams, Tests, testBase + 1, internalTestLoopCount);
             }
             break;
 
         case BasicCorrectnessMode::PerfSweep:
-            TestPerfRandom<TestPerSharkParams1, sharkOperator>(
+            TestPerfRandom<SharkParamsNP6, sharkOperator>(
                 launchParams, Tests, testBase + 1, internalTestLoopCount);
-            TestPerfRandom<TestPerSharkParams2, sharkOperator>(
+            TestPerfRandom<SharkParamsNP7, sharkOperator>(
                 launchParams, Tests, testBase + 2, internalTestLoopCount);
-            TestPerfRandom<TestPerSharkParams3, sharkOperator>(
+            TestPerfRandom<SharkParamsNP8, sharkOperator>(
                 launchParams, Tests, testBase + 3, internalTestLoopCount);
-            TestPerfRandom<TestPerSharkParams4, sharkOperator>(
+            TestPerfRandom<SharkParamsNP9, sharkOperator>(
                 launchParams, Tests, testBase + 4, internalTestLoopCount);
 
-            TestPerfRandom<TestPerSharkParams5, sharkOperator>(
+            TestPerfRandom<SharkParamsNP10, sharkOperator>(
                 launchParams, Tests, testBase + 5, internalTestLoopCount);
-            TestPerfRandom<TestPerSharkParams6, sharkOperator>(
+            TestPerfRandom<SharkParamsNP11, sharkOperator>(
                 launchParams, Tests, testBase + 6, internalTestLoopCount);
-            TestPerfRandom<TestPerSharkParams7, sharkOperator>(
+            TestPerfRandom<SharkParamsNP12, sharkOperator>(
                 launchParams, Tests, testBase + 7, internalTestLoopCount);
             break;
 
@@ -2889,7 +2889,7 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
-        HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits); // Set precision for MPIR floating point
+        HpSharkFloat<SharkParamsNP7>::DefaultMpirBits); // Set precision for MPIR floating point
 
     const char *num1 = "-5."
                        "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
@@ -2943,20 +2943,20 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
 
     // Convert mpfX/mpfY/mpfZ back to strings
     auto convertedMpfX =
-        MpfToString<TestPerSharkParams2>(mpfX, HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits);
+        MpfToString<SharkParamsNP7>(mpfX, HpSharkFloat<SharkParamsNP7>::DefaultMpirBits);
     auto convertedMpfY =
-        MpfToString<TestPerSharkParams2>(mpfY, HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits);
+        MpfToString<SharkParamsNP7>(mpfY, HpSharkFloat<SharkParamsNP7>::DefaultMpirBits);
     auto convertedMpfZ =
-        MpfToString<TestPerSharkParams2>(mpfZ, HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits);
+        MpfToString<SharkParamsNP7>(mpfZ, HpSharkFloat<SharkParamsNP7>::DefaultMpirBits);
 
-    using HdrType = typename TestPerSharkParams2::Float;
+    using HdrType = typename SharkParamsNP7::Float;
     const HdrType hdrRadiusY{mpfRadiusY};
 
-    // TODO: TestPerSharkParams2 is more precision than we need
+    // TODO: SharkParamsNP7 is more precision than we need
     for (int i = 0; i < numIters; i++) {
         int testNum = testBase + i;
 
-        TestPerf<TestPerSharkParams2, sharkOperator>(launchParams,
+        TestPerf<SharkParamsNP7, sharkOperator>(launchParams,
                                                      Tests,
                                                      testNum,
                                                      convertedMpfX.c_str(),
@@ -2996,7 +2996,7 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
-        HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits); // Set precision for MPIR floating point
+        HpSharkFloat<SharkParamsNP7>::DefaultMpirBits); // Set precision for MPIR floating point
 
     const char *num1 = strX; //.c_str();
     const char *num2 = strY; //.c_str();
@@ -3056,13 +3056,13 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     MpfNormalize(mpfZ);
     MpfNormalize(mpfRadiusY);
 
-    using HdrType = typename TestPerSharkParams2::Float;
+    using HdrType = typename SharkParamsNP7::Float;
     HdrType hdrRadiusY{mpfRadiusY};
     HdrReduce(hdrRadiusY);
 
     for (int i = 0; i < numIters; i++) {
         int testNum = testBase + i;
-        TestPerf<TestPerSharkParams2, sharkOperator>(launchParams,
+        TestPerf<SharkParamsNP7, sharkOperator>(launchParams,
                                                      Tests,
                                                      testNum,
                                                      num1,

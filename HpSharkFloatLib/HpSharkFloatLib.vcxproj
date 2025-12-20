@@ -27,12 +27,24 @@
     <ClInclude Include="MultiplyNTT_NormalizePPv3.h" />
     <ClInclude Include="MultiplyNTT_NormalizeWarpTiledV2.h" />
     <ClInclude Include="Vectors.h" />
-    <CudaCompile Include="KernelTestAdd.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_P.cu" />
+    <CudaCompile Include="KernelTestAdd_cu.h" />
     <ClCompile Include="BenchmarkTimer.cpp">
       <FileType>Document</FileType>
     </ClCompile>
-    <CudaCompile Include="HpSharkFloat.cu" />
-    <CudaCompile Include="KernelHpSharkReferenceOrbit.cu" />
+    <CudaCompile Include="HpSharkFloat_cu.h" />
+    <CudaCompile Include="KernelHpSharkReferenceOrbit_cu.h" />
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="DbgHeap.h" />
     <ClInclude Include="GPU_ReferenceIter.h" />
@@ -44,9 +56,9 @@
     <ClInclude Include="MultiplyNTT.cu">
       <FileType>Document</FileType>
     </ClInclude>
-    <CudaCompile Include="KernelInvokeReferencePerf.cu" />
-    <CudaCompile Include="MultiplyNTTCudaSetup.cu" />
-    <CudaCompile Include="KernelTestMultiplyNTT.cu" />
+    <CudaCompile Include="KernelInvokeReferencePerf_cu.h" />
+    <CudaCompile Include="MultiplyNTTCudaSetup_cu.h" />
+    <CudaCompile Include="KernelTestMultiplyNTT_cu.h" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Add.h" />

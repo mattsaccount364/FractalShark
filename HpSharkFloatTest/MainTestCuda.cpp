@@ -29,8 +29,23 @@
 // Assumed defined elsewhere
 // -----------------------------------------------------------------------------
 enum class BasicCorrectnessMode : int;
-// Must exist elsewhere per your note
-const char *BasicCorrectnessModeToString(BasicCorrectnessMode);
+
+const char *
+BasicCorrectnessModeToString(BasicCorrectnessMode mode)
+{
+    switch (mode) {
+        case BasicCorrectnessMode::Correctness_P1:
+            return "Correctness (Params1)";
+        case BasicCorrectnessMode::PerfSweep:
+            return "Performance Sweep";
+        case BasicCorrectnessMode::PerfSingle:
+            return "Performance Single";
+        case BasicCorrectnessMode::Correctness_P1_to_P5:
+            return "Correctness (Params1..5)";
+        default:
+            return "Unknown";
+    }
+}
 
 // -----------------------------------------------------------------------------
 // Test base IDs (remove magic numbers)

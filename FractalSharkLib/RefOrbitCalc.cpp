@@ -2118,29 +2118,29 @@ DispatchByPrecision(uint64_t prec, F &&f)
 
     switch (precRounded) {
         case 256:
-            return DispatchOne<ProdSharkParams1>(std::forward<F>(f));
+            return DispatchOne<SharkParams1>(std::forward<F>(f));
         case 512:
-            return DispatchOne<ProdSharkParams2>(std::forward<F>(f));
+            return DispatchOne<SharkParams2>(std::forward<F>(f));
         case 1024:
-            return DispatchOne<ProdSharkParams3>(std::forward<F>(f));
+            return DispatchOne<SharkParams3>(std::forward<F>(f));
         case 2048:
-            return DispatchOne<ProdSharkParams4>(std::forward<F>(f));
+            return DispatchOne<SharkParams4>(std::forward<F>(f));
         case 4096:
-            return DispatchOne<ProdSharkParams5>(std::forward<F>(f));
+            return DispatchOne<SharkParams5>(std::forward<F>(f));
         case 8192:
-            return DispatchOne<ProdSharkParams6>(std::forward<F>(f));
+            return DispatchOne<SharkParams6>(std::forward<F>(f));
         case 16384:
-            return DispatchOne<ProdSharkParams7>(std::forward<F>(f));
+            return DispatchOne<SharkParams7>(std::forward<F>(f));
         case 32768:
-            return DispatchOne<ProdSharkParams8>(std::forward<F>(f));
+            return DispatchOne<SharkParams8>(std::forward<F>(f));
         case 65536:
-            return DispatchOne<ProdSharkParams9>(std::forward<F>(f));
+            return DispatchOne<SharkParams9>(std::forward<F>(f));
         case 131072:
-            return DispatchOne<ProdSharkParams10>(std::forward<F>(f));
+            return DispatchOne<SharkParams10>(std::forward<F>(f));
         case 262144:
-            return DispatchOne<ProdSharkParams11>(std::forward<F>(f));
+            return DispatchOne<SharkParams11>(std::forward<F>(f));
         case 524288:
-            return DispatchOne<ProdSharkParams12>(std::forward<F>(f));
+            return DispatchOne<SharkParams12>(std::forward<F>(f));
         default:
             throw std::invalid_argument("Unsupported NumIters");
     }

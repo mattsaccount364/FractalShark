@@ -194,8 +194,8 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
     }
 }
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
-        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
-
-ExplicitInstantiateAll();
+//#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+//    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
+//        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
+//
+//ExplicitInstantiateAll();

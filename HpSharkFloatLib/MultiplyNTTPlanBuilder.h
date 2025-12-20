@@ -13,8 +13,6 @@ struct PlanPrime {
     int N = 0;      // transform size
     int stages = 0; // log2(N)
     bool ok = false;
-
-    void Print();
 };
 
 constexpr uint32_t

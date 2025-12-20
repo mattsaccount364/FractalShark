@@ -3,6 +3,8 @@
 #include "KernelInvokeInternal.h"
 #include "Vectors.h"
 
+#include <memory>
+
 namespace HpShark {
 
 //
@@ -235,8 +237,8 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
         DebugGpuCombo *debugCombo);
 
-#define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
-
-ExplicitInstantiateAll();
+//#define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
+//
+//ExplicitInstantiateAll();
 
 } // namespace HpShark

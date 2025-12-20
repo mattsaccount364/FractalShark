@@ -31,8 +31,6 @@ enum class BasicCorrectnessMode : int {
     Correctness_P1_to_P5 = 4 // Params1..5
 };
 
-const char *BasicCorrectnessModeToString(BasicCorrectnessMode mode);
-
 namespace HpShark {
 
 #ifdef _DEBUG
@@ -265,65 +263,45 @@ static constexpr auto LowPrec = 32;
 
 // If you add a new one, search for one of the other types and copy/paste
 // TODO Add tests fail with non-mult-32 sizes.
-// using TestSmallSharkParams1 = HpShark::GenericSharkFloatParams<8>;
-// using TestSmallSharkParams2 = HpShark::GenericSharkFloatParams<16>;
-// using TestSmallSharkParams3 = HpShark::GenericSharkFloatParams<32>;
-// using TestSmallSharkParams4 = HpShark::GenericSharkFloatParams<64>;
-// using TestSmallSharkParams5 = HpShark::GenericSharkFloatParams<128>;
-using TestSmallSharkParams1 = HpShark::GenericSharkFloatParams<64, false>;
-using TestSmallSharkParams2 = HpShark::GenericSharkFloatParams<128, false>;
-using TestSmallSharkParams3 = HpShark::GenericSharkFloatParams<256, false>;
-using TestSmallSharkParams4 = HpShark::GenericSharkFloatParams<512, false>;
-using TestSmallSharkParams5 = HpShark::GenericSharkFloatParams<1024, false>;
+// using SharkParamsNP1 = HpShark::GenericSharkFloatParams<8>;
+// using SharkParamsNP2 = HpShark::GenericSharkFloatParams<16>;
+// using SharkParamsNP3 = HpShark::GenericSharkFloatParams<32>;
+// using SharkParamsNP4 = HpShark::GenericSharkFloatParams<64>;
+// using SharkParamsNP5 = HpShark::GenericSharkFloatParams<128>;
+using SharkParamsNP1 = HpShark::GenericSharkFloatParams<64, false>;
+using SharkParamsNP2 = HpShark::GenericSharkFloatParams<128, false>;
+using SharkParamsNP3 = HpShark::GenericSharkFloatParams<256, false>;
+using SharkParamsNP4 = HpShark::GenericSharkFloatParams<512, false>;
+using SharkParamsNP5 = HpShark::GenericSharkFloatParams<1024, false>;
 
-using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<8192, true>;
-using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<16384, true>;
-using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<32768, true>;
-using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<65536, true>;
-using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<131072, true>;
-using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<262144, true>;
-using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<524288, true>;
-using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<1048576, true>;
-
-// using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6144>;
-// using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<11776>;
-// using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<23552>;
-// using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<45056>;
-// using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<90112>;
-// using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<172032>;
-// using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<344064>;
-// using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<1048576>;
-
-// using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6400>;
-// using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<12288>;
-// using TestPerSharkParams3 = HpShark::GenericSharkFloatParams<24576>;
-// using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<47104>;
-// using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<94208>;
-// using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<180224>;
-// using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<360448>;
-// using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<688128>;
-// using TestPerSharkParams9 = HpShark::GenericSharkFloatParams<1048576>;
+using SharkParamsNP6 = HpShark::GenericSharkFloatParams<8192, false>;
+using SharkParamsNP7 = HpShark::GenericSharkFloatParams<16384, false>;
+using SharkParamsNP8 = HpShark::GenericSharkFloatParams<32768, false>;
+using SharkParamsNP9 = HpShark::GenericSharkFloatParams<65536, false>;
+using SharkParamsNP10 = HpShark::GenericSharkFloatParams<131072, false>;
+using SharkParamsNP11 = HpShark::GenericSharkFloatParams<262144, false>;
+using SharkParamsNP12 = HpShark::GenericSharkFloatParams<524288, false>;
 
 // Correctness test sizes
-using TestCorrectnessSharkParams1 = TestSmallSharkParams1;
-using TestCorrectnessSharkParams2 = TestSmallSharkParams2;
-using TestCorrectnessSharkParams3 = TestSmallSharkParams4;
-using TestCorrectnessSharkParams4 = TestSmallSharkParams3;
-using TestCorrectnessSharkParams5 = TestSmallSharkParams5;
+using TestCorrectnessSharkParams1 = SharkParamsNP1;
+using TestCorrectnessSharkParams2 = SharkParamsNP2;
+using TestCorrectnessSharkParams3 = SharkParamsNP4;
+using TestCorrectnessSharkParams4 = SharkParamsNP3;
+using TestCorrectnessSharkParams5 = SharkParamsNP5;
 
 // FractalShark production sizes
-using ProdSharkParams1 = HpShark::GenericSharkFloatParams<256, true>;
-using ProdSharkParams2 = HpShark::GenericSharkFloatParams<512, true>;
-using ProdSharkParams3 = HpShark::GenericSharkFloatParams<1024, true>;
-using ProdSharkParams4 = HpShark::GenericSharkFloatParams<2048, true>;
-using ProdSharkParams5 = HpShark::GenericSharkFloatParams<4096, true>;
-using ProdSharkParams6 = HpShark::GenericSharkFloatParams<8192, true>;
-using ProdSharkParams7 = HpShark::GenericSharkFloatParams<16384, true>;
-using ProdSharkParams8 = HpShark::GenericSharkFloatParams<32768, true>;
-using ProdSharkParams9 = HpShark::GenericSharkFloatParams<65536, true>;
-using ProdSharkParams10 = HpShark::GenericSharkFloatParams<131072, true>;
-using ProdSharkParams11 = HpShark::GenericSharkFloatParams<262144, true>;
-using ProdSharkParams12 = HpShark::GenericSharkFloatParams<524288, true>;
+using SharkParams1 = HpShark::GenericSharkFloatParams<256, true>;
+using SharkParams2 = HpShark::GenericSharkFloatParams<512, true>;
+using SharkParams3 = HpShark::GenericSharkFloatParams<1024, true>;
+using SharkParams4 = HpShark::GenericSharkFloatParams<2048, true>;
+using SharkParams5 = HpShark::GenericSharkFloatParams<4096, true>;
+using SharkParams6 = HpShark::GenericSharkFloatParams<8192, true>;
+using SharkParams7 = HpShark::GenericSharkFloatParams<16384, true>;
+using SharkParams8 = HpShark::GenericSharkFloatParams<32768, true>;
+using SharkParams9 = HpShark::GenericSharkFloatParams<65536, true>;
+using SharkParams10 = HpShark::GenericSharkFloatParams<131072, true>;
+using SharkParams11 = HpShark::GenericSharkFloatParams<262144, true>;
+using SharkParams12 = HpShark::GenericSharkFloatParams<524288, true>;
 
 enum class InjectNoiseInLowOrder { Disable, Enable };
 
@@ -562,7 +540,20 @@ HpSharkFloat<SharkFloatParams>::FromHDRFloat(const HDRFloat<SubType> &h)
 enum class PeriodicityResult { Unknown, Continue, PeriodFound, Escaped };
 
 #if !defined(__CUDA_ARCH__)
-std::string PeriodicityStrResult(PeriodicityResult periodicityStatus);
+[[maybe_unused]] static std::string
+PeriodicityStrResult(PeriodicityResult periodicityStatus)
+{
+    switch (periodicityStatus) {
+        case PeriodicityResult::Continue:
+            return "Continue";
+        case PeriodicityResult::PeriodFound:
+            return "PeriodFound";
+        case PeriodicityResult::Escaped:
+            return "Escaped";
+        default:
+            return "Unknown";
+    }
+}
 #endif // !__CUDA_ARCH__
 
 #pragma warning(push)
@@ -612,9 +603,6 @@ template <class SharkFloatParams> std::string MpfToString(const mpf_t mpf_val, s
 
 template <class SharkFloatParams>
 std::string Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
-
-void Uint64ToMpf(
-    const uint64_t *array, size_t numElts, int32_t pow64Exponent, mpf_t &mpf_val, bool isNegative);
 
 template <class IntT> std::string UintArrayToHexString(const IntT *array, size_t numElements);
 

@@ -11,15 +11,7 @@
 
 namespace SharkNTT {
 
-void
-PlanPrime::Print()
-{
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "PlanPrime: n32=" << n32 << " b=" << b << " L=" << L << " N=" << N
-                  << " stages=" << stages << " ok=" << ok << std::endl;
-    }
-}
-
+static
 void
 Mul64Wide(uint64_t a, uint64_t b, uint64_t &lo, uint64_t &hi)
 {
@@ -32,6 +24,7 @@ Mul64Wide(uint64_t a, uint64_t b, uint64_t &lo, uint64_t &hi)
 #endif
 }
 
+static
 uint64_t
 Add64WithCarry(uint64_t a, uint64_t b, uint64_t &carry)
 {
@@ -376,22 +369,22 @@ DestroyRoots(bool cuda, RootTables &roots)
 
 } // namespace SharkNTT
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void SharkNTT::BuildRoots<SharkFloatParams>(uint32_t, uint32_t, SharkNTT::RootTables &);   \
-    template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(uint64_t a, uint64_t b);                \
-    template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(                                        \
-        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a, uint64_t b);                         \
-    template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(uint64_t x);                             \
-    template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(                                         \
-        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x);                                     \
-    template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(uint64_t x);                           \
-    template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(                                       \
-        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x);                                     \
-    template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(uint64_t a_mont, uint64_t e);           \
-    template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(                                        \
-        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a_mont, uint64_t e);                    \
-    template void SharkNTT::CopyRootsToCuda<SharkFloatParams>(SharkNTT::RootTables & outT,              \
-                                                              const SharkNTT::RootTables &inT);         \
-    template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables &T);
-
-ExplicitInstantiateAll();
+//#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+//    template void SharkNTT::BuildRoots<SharkFloatParams>(uint32_t, uint32_t, SharkNTT::RootTables &);   \
+//    template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(uint64_t a, uint64_t b);                \
+//    template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(                                        \
+//        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a, uint64_t b);                         \
+//    template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(uint64_t x);                             \
+//    template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(                                         \
+//        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x);                                     \
+//    template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(uint64_t x);                           \
+//    template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(                                       \
+//        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x);                                     \
+//    template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(uint64_t a_mont, uint64_t e);           \
+//    template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(                                        \
+//        DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a_mont, uint64_t e);                    \
+//    template void SharkNTT::CopyRootsToCuda<SharkFloatParams>(SharkNTT::RootTables & outT,              \
+//                                                              const SharkNTT::RootTables &inT);         \
+//    template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables &T);
+//
+//ExplicitInstantiateAll();

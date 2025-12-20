@@ -78,10 +78,10 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
     }
 }
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,            \
-                                                  void *kernelArgs[]);                                  \
-    template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
-                                                          void *kernelArgs[]);
-
-ExplicitInstantiateAll();
+//#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+//    template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,            \
+//                                                  void *kernelArgs[]);                                  \
+//    template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
+//                                                          void *kernelArgs[]);
+//
+//ExplicitInstantiateAll();

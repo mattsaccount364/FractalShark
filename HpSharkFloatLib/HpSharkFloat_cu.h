@@ -9,23 +9,6 @@
 #include <cstdint>
 #include <random>
 
-const char *
-BasicCorrectnessModeToString(BasicCorrectnessMode mode)
-{
-    switch (mode) {
-        case BasicCorrectnessMode::Correctness_P1:
-            return "Correctness (Params1)";
-        case BasicCorrectnessMode::PerfSweep:
-            return "Performance Sweep";
-        case BasicCorrectnessMode::PerfSingle:
-            return "Performance Single";
-        case BasicCorrectnessMode::Correctness_P1_to_P5:
-            return "Correctness (Params1..5)";
-        default:
-            return "Unknown";
-    }
-}
-
 // static_assert(sizeof(HpSharkFloat<SharkFloatParams>) == 4096, "HpSharkFloat<SharkFloatParams> size is
 // not 4096 bytes");
 
@@ -713,51 +696,11 @@ Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val)
     return MpfToString<SharkFloatParams>(mpf_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 }
 
-// Function to convert uint64_t array to mpf_t
-// pow2Exponent is the exponent in base 2
-void
-Uint64ToMpf(
-    const uint64_t *array, size_t numElts, int32_t pow64Exponent, mpf_t &mpf_val, bool isNegative)
-{
-    const size_t spaceAvailable = mpf_val[0]._mp_prec + 1;
-    const auto entriesToCopy = std::min(numElts, spaceAvailable);
-
-    // Copy the data into mpf_value[0]._mp_d
-    for (size_t i = 0; i < entriesToCopy; ++i) {
-        mpf_val[0]._mp_d[i] = array[i];
-    }
-
-    // Set the exponent
-    mpf_val[0]._mp_exp = pow64Exponent;
-
-    // Set the size accoring to the number of entries copied
-    mpf_val[0]._mp_size = static_cast<int>(entriesToCopy);
-
-    if (isNegative) {
-        mpf_val[0]._mp_size = -mpf_val[0]._mp_size;
-    }
-}
-
-std::string
-PeriodicityStrResult(PeriodicityResult periodicityStatus)
-{
-    switch (periodicityStatus) {
-        case PeriodicityResult::Continue:
-            return "Continue";
-        case PeriodicityResult::PeriodFound:
-            return "PeriodFound";
-        case PeriodicityResult::Escaped:
-            return "Escaped";
-        default:
-            return "Unknown";
-    }
-}
-
 // Explicit instantiation
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template class HpSharkFloat<SharkFloatParams>;                                                      \
-    template std::string Uint32ToMpf<SharkFloatParams>(                                                 \
-        const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);                                  \
-    template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);
-
-ExplicitInstantiateAll();
+//#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+//    template class HpSharkFloat<SharkFloatParams>;                                                      \
+//    template std::string Uint32ToMpf<SharkFloatParams>(                                                 \
+//        const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);                                  \
+//    template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);
+//
+//ExplicitInstantiateAll();

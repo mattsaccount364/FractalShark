@@ -117,10 +117,10 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
     }
 }
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
-                                                          void *kernelArgs[]);                          \
-    template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(                                      \
-        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
-
-ExplicitInstantiateAll();
+//#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+//    template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
+//                                                          void *kernelArgs[]);                          \
+//    template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(                                      \
+//        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
+//
+//ExplicitInstantiateAll();

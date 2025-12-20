@@ -139,32 +139,30 @@
 #endif
 
 #define ExplicitInstantiateAll()                                                                        \
-    ExplicitlyInstantiate(TestSmallSharkParams1);                                                       \
-    ExplicitlyInstantiate(TestSmallSharkParams2);                                                       \
-    ExplicitlyInstantiate(TestSmallSharkParams3);                                                       \
-    ExplicitlyInstantiate(TestSmallSharkParams4);                                                       \
-    ExplicitlyInstantiate(TestSmallSharkParams5);                                                       \
-    ExplicitlyInstantiate(TestPerSharkParams1);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams2);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams3);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams4);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams5);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams6);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams7);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams8);                                                         \
-    ExplicitlyInstantiate(ProdSharkParams1);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams2);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams3);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams4);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams5); /*                                                            \
-    ExplicitlyInstantiate(ProdSharkParams6);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams7);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams8);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams9);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams10);                                                           \
-    ExplicitlyInstantiate(ProdSharkParams11);                                                           \
-    ExplicitlyInstantiate(ProdSharkParams12);
-*/
+    ExplicitlyInstantiate(SharkParamsNP1);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP2);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP3);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP4);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP5);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP6);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP7);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP8);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP9);                                                              \
+    ExplicitlyInstantiate(SharkParamsNP10);                                                             \
+    ExplicitlyInstantiate(SharkParamsNP11);                                                             \
+    ExplicitlyInstantiate(SharkParamsNP12);                                                             \
+    ExplicitlyInstantiate(SharkParams1);                                                                \
+    ExplicitlyInstantiate(SharkParams2);                                                                \
+    ExplicitlyInstantiate(SharkParams3);                                                                \
+    ExplicitlyInstantiate(SharkParams4);                                                                \
+    ExplicitlyInstantiate(SharkParams5);                                                                \
+    ExplicitlyInstantiate(SharkParams6);                                                                \
+    ExplicitlyInstantiate(SharkParams7);                                                                \
+    ExplicitlyInstantiate(SharkParams8);                                                                \
+    ExplicitlyInstantiate(SharkParams9);                                                                \
+    ExplicitlyInstantiate(SharkParams10);                                                               \
+    ExplicitlyInstantiate(SharkParams11);                                                               \
+    ExplicitlyInstantiate(SharkParams12);
 
 #ifdef ENABLE_BASIC_CORRECTNESS
 #define ComicalCorrectness()                                                                            \

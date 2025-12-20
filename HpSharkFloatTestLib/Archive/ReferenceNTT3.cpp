@@ -12,7 +12,6 @@
     changes there.
   */
 
-#if 0
 #include "DbgHeap.h"
 
 #include <algorithm>
@@ -891,5 +890,3 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                                        DebugHostCombo<SharkFloatParams> &);
 
 ExplicitInstantiateAll();
-
-#endif

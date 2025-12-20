@@ -28,6 +28,16 @@
 
 namespace SharkNTT {
 
+static void
+PrintPlan(const PlanPrime &plan)
+{
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "PlanPrime: n32=" << plan.n32 << " b=" << plan.b << " L=" << plan.L
+                  << " N=" << plan.N << " stages=" << plan.stages << " ok=" << plan.ok
+                  << std::endl;
+    }
+}
+
 //--------------------------------------------------------------------------------------------------
 // Bit utilities
 //--------------------------------------------------------------------------------------------------
@@ -529,7 +539,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
     // --------- Plan and tables ---------
     PlanPrime plan =
         BuildPlanPrime(SharkFloatParams::GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
-    plan.Print();
+    PrintPlan(plan);
 
     assert(plan.ok && "Prime plan build failed (check b/N headroom constraints)");
     assert(plan.N >= 2 * plan.L && "No-wrap condition violated: need N >= 2*L");

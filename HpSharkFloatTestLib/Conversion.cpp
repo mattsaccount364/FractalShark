@@ -1,7 +1,7 @@
 ﻿#include "DbgHeap.h"
 #include "TestVerbose.h"
 
-#include <cuda_runtime.h>
+//#include <cuda_runtime.h>
 
 #include "BenchmarkTimer.h"
 #include "HpSharkFloat.h"

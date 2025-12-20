@@ -53,7 +53,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\HpSharkFloatTestLib;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -84,16 +84,18 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
-      <Optimization>Disabled</Optimization>
+      <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\HpSharkFloatTestLib;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <ConformanceMode>true</ConformanceMode>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -104,6 +106,7 @@
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Release;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
       <StackCommitSize>4194304</StackCommitSize>
       <AdditionalOptions>/force:multiple %(AdditionalOptions)</AdditionalOptions>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
@@ -117,19 +120,9 @@
       <GenerateLineInfo>true</GenerateLineInfo>
       <SplitCompile>MaxThreads</SplitCompile>
     </CudaCompile>
-    <CudaLink>
-      <PerformDeviceLinkTimeOptimization>false</PerformDeviceLinkTimeOptimization>
-    </CudaLink>
+    <CudaLink />
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="KernelInvokeAddCorrectness.cpp" />
-    <ClCompile Include="KernelInvokeAddPerf.cpp" />
-    <ClCompile Include="KernelInvokeNTTCorrectness.cpp" />
-    <ClCompile Include="KernelInvokeNTTPerf.cpp" />
-    <ClCompile Include="KernelInvokeReferenceCorrectness.cpp" />
-    <ClCompile Include="ReferenceAdd.cpp" />
-    <ClCompile Include="ReferenceNTT2.cpp" />
-    <ClInclude Include="ReferenceNTT2.h" />
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -142,25 +135,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Archived\ScaledKernels.cuh" />
-    <ClInclude Include="Conversion.h" />
     <ClInclude Include="MainTestCuda.h" />
-    <ClInclude Include="ReferenceAdd.h" />
-    <ClInclude Include="ShowMostEfficientSizes.h" />
-    <ClInclude Include="Tests.h" />
-    <ClInclude Include="TestTracker.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="Conversion.cpp">
-      <FileType>Document</FileType>
-    </ClCompile>
-    <ClCompile Include="ReferenceNTT3.cpp" />
-    <ClCompile Include="ShowMostEfficientSizes.cpp" />
-    <ClCompile Include="Tests.cpp">
-      <FileType>Document</FileType>
-    </ClCompile>
-    <ClCompile Include="TestTracker.cpp">
-      <FileType>Document</FileType>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\.clang-format" />
@@ -168,6 +143,9 @@
   <ItemGroup>
     <ProjectReference Include="..\HpSharkFloatLib\HpSharkFloatLib.vcxproj">
       <Project>{e46d1897-0f30-3518-ed23-26ed5ff35747}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\HpSharkFloatTestLib\HpSharkFloatTestLib.vcxproj">
+      <Project>{106e4540-2cc3-4079-9188-89d67b2fe9e7}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

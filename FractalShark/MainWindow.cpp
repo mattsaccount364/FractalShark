@@ -93,10 +93,13 @@ void MainWindow::MainWindow::DrawFractalSharkGdi(int nCmdShow) {
     // Get a pointer to the binary data in the IDB_PNG1 resource
 
     LPCWSTR resStr;
-    if (__rdtsc() % 2 == 0) {
+    const auto curRdtsc = __rdtsc();
+    if (curRdtsc % 3 == 0) {
         resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH1);
-    } else {
+    } else if (curRdtsc % 3 == 1) {
         resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH2);
+    } else {
+        resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH3);
     }
 
     HRSRC hRes = FindResource(hInst, resStr, L"PNG");

@@ -1,24 +1,28 @@
-cximage599a_full/*
-boost_1_81_0/*
-boost_1_78_0/*
-boost_1_58_0/*
-Release/*
-Debug/*
-*/Release/*
-*/Debug/*
-ipch
-FFFF312_src/*
-FFFF312_exe_and_GLUT/*
-MNG/*
-OpenGL Example/*
-GPU-mandelbrot/*
-*/x64/*
-*/x86/*
-_UpgradeReport_Files
+###############################################################################
+# Build Artifacts (Visual Studio / General)
+###############################################################################
 
-Thumbs.db
+Release/
+Debug/
+*/Release/
+*/Debug/
+*/x64/
+*/x86/
 
+ipch/
+.vs/
+_UpgradeReport_Files/
+UpgradeLog*
+
+
+###############################################################################
+# Visual Studio Project / User Files
+###############################################################################
+
+# User / machine-specific
 *.vcxproj.user
+
+# Generated / legacy VS files
 *.vcxproj.filters
 *.vcproj*
 *.dsw
@@ -29,14 +33,71 @@ Thumbs.db
 *.suo
 *.suo.old
 *.sln.old
-.vs/
-UpgradeLog*
+
+
+###############################################################################
+# Third-Party Libraries / Dependencies
+###############################################################################
+
+# Boost (multiple local versions)
+boost_1_81_0/
+boost_1_78_0/
+boost_1_58_0/
+
+# Other external libraries
+mpir/
+
+
+###############################################################################
+# CUDA / GPU / Profiling Artifacts
+###############################################################################
+
+FractalShark/GPUCache/
+*.ncu-rep
+
+
+###############################################################################
+# Graphics / Image / OpenGL Example Projects
+###############################################################################
+
+cximage599a_full/
+FFFF312_src/
+FFFF312_exe_and_GLUT/
+MNG/
+OpenGL Example/
+GPU-mandelbrot/
+
+
+###############################################################################
+# Benchmarks & Generated Spreadsheets
+###############################################################################
 
 Benchmarks.xlsx
+CudaHighPrecisionBenchmarks.xlsx
+~$CudaHighPrecisionBenchmarks.xlsx
 
-# Cuda crap
-FractalShark/GPUCache
 
-# Other projects
+###############################################################################
+# Papers, Notes, LaTeX Artifacts
+###############################################################################
+
+Papers/
+
+# LaTeX build products
+Notes/*.pdf
+Notes/*.log
+Notes/*.aux
+Notes/DeepResearch.md
+
+###############################################################################
+# Other Projects / Scratch Space
+###############################################################################
+
 Others/
-mpir/
+
+
+###############################################################################
+# OS / Explorer Junk
+###############################################################################
+
+Thumbs.db

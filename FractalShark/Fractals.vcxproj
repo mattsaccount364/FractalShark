@@ -49,11 +49,13 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\Debug\</OutDir>
+    <OutDir>..\$(Configuration)\</OutDir>
+    <IntDir>$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\Release\</OutDir>
+    <OutDir>..\$(Configuration)\</OutDir>
+    <IntDir>$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Midl>
@@ -222,6 +224,7 @@
     <Image Include="..\Pics\Bing generated Fractal Shark.jpg" />
     <Image Include="..\Pics\Chatgpt Fractal Shark.png" />
     <Image Include="..\Pics\FractalShark.png" />
+    <Image Include="..\Pics\PrecisionShark.png" />
     <Image Include="FractalShark.ico" />
     <Image Include="small.ico" />
   </ItemGroup>

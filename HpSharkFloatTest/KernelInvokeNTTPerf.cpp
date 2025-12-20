@@ -112,16 +112,12 @@ InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,
     cudaFree(d_tempProducts);
 }
 
-#ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelPerf<SharkFloatParams>(                                        \
         const HpShark::LaunchParams &launchParams,                                                      \
         BenchmarkTimer &timer,                                                                          \
         HpSharkComboResults<SharkFloatParams> &combo,                                                   \
         uint64_t numIters);
-#else
-#define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams) ;
-#endif
 
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)
 

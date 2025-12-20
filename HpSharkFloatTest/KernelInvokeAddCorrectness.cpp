@@ -65,16 +65,12 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
     cudaFree(comboResults);
 }
 
-#ifdef ENABLE_ADD_KERNEL
 #define ExplicitlyInstantiateAdd(SharkFloatParams)                                                      \
     template void InvokeAddKernelCorrectness<SharkFloatParams>(                                         \
         const HpShark::LaunchParams &launchParams,                                                      \
         BenchmarkTimer &timer,                                                                          \
         HpSharkAddComboResults<SharkFloatParams> &combo,                                                \
         DebugGpuCombo *debugCombo);
-#else
-#define ExplicitlyInstantiateAdd(SharkFloatParams) ;
-#endif
 
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateAdd(SharkFloatParams)
 

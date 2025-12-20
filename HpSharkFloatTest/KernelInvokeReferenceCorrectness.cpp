@@ -134,16 +134,12 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
 }
 
 
-#if defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(                            \
         const HpShark::LaunchParams &launchParams,                                                      \
         BenchmarkTimer &timer,                                                                          \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
         DebugGpuCombo *debugCombo);
-#else
-#define ExplicitlyInstantiateHpSharkReference(SharkFloatParams) ;
-#endif
 
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
 

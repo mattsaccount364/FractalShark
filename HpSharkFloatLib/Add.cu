@@ -671,7 +671,7 @@ static __device__ void AddHelperSeparates(
         reinterpret_cast<uint32_t *>(&tempData[Carry6_offset]);
 
     static constexpr auto CallIndex = 0;
-#ifdef ENABLE_ADD_KERNEL
+
     if constexpr (HpShark::DebugGlobalState) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
@@ -679,7 +679,6 @@ static __device__ void AddHelperSeparates(
         debugGlobalState[CurBlock * ThreadsPerBlock + CurThread]
             .DebugMultiplyErase();
     }
-#endif
 
     if constexpr (HpShark::DebugChecksums) {
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Invalid>(debugStates, grid, block);

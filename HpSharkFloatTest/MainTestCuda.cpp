@@ -28,160 +28,30 @@
 
 #include "heap_allocator\include\HeapCpp.h"
 
-// Function to perform the calculation on the host using MPIR
-void
-computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter)
-{
-    mpf_t x_squared, y_squared, two_xy, temp_x, temp_y;
-    mpf_init(x_squared);
-    mpf_init(y_squared);
-    mpf_init(two_xy);
-    mpf_init(temp_x);
-    mpf_init(temp_y);
-
-    for (int iter = 0; iter < num_iter; ++iter) {
-        mpf_mul(x_squared, x, x);      // x^2
-        mpf_mul(y_squared, y, y);      // y^2
-        mpf_mul(temp_y, x, y);         // xy
-        mpf_mul_ui(two_xy, temp_y, 2); // 2xy
-
-        mpf_sub(temp_x, x_squared, y_squared); // x^2 - y^2
-        mpf_add(temp_x, temp_x, a);            // x^2 - y^2 + a
-        mpf_add(temp_y, two_xy, b);            // 2xy + b
-
-        mpf_set(x, temp_x);
-        mpf_set(y, temp_y);
-    }
-
-    mpf_clear(x_squared);
-    mpf_clear(y_squared);
-    mpf_clear(two_xy);
-    mpf_clear(temp_x);
-    mpf_clear(temp_y);
-}
-
+// -----------------------------------------------------------------------------
+// Utilities
+// -----------------------------------------------------------------------------
 char
 PressKey()
 {
-    // Press any key to continue (win32)
-    // on console, don't require a newline
     std::cout << "Press any key to continue...";
-    // Get the character pressed and return it
     return (char)_getch();
 }
 
-template <typename TestSharkParams>
-bool
-CorrectnessTests()
-{
-    int testBase = 0;
-
-    bool res;
-
-    if constexpr (HpShark::EnableConversionTests) {
-        res = TestConversion<TestSharkParams>(0);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return false;
-            }
-        }
-    }
-
-    if constexpr (HpShark::EnableAddKernel) {
-        testBase = 4000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return false;
-            }
-        }
-    }
-
-    if constexpr (HpShark::EnableMultiplyNTTKernel) {
-        testBase = 6000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return false;
-            }
-        }
-    }
-
-    if constexpr (HpShark::EnableFullKernel) {
-        testBase = 2000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
-int
-RunCorrectnessTest()
-{
-    std::atomic<uint64_t> testCount = 0;
-
-#if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 3)
-    do {
-        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
-            return 0;
-        }
-
-#if (ENABLE_BASIC_CORRECTNESS == 3)
-        if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
-            return 0;
-        }
-
-        if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
-            return 0;
-        }
-
-        if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
-            return 0;
-        }
-
-        if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
-            return 0;
-        }
-#endif
-
-        ComicalCorrectness();
-
-        testCount++;
-    } while (HpShark::TestInfiniteCorrectness);
-
-    if (PressKey() == 'q') {
-        return 0;
-    }
-#endif
-
-    return 1;
-}
-
-/// Prompts the user with `promptText`, waits up to `timeoutSec` seconds for a line
-/// on stdin, and returns the parsed integer. If the user types nothing within the
-/// timeout, returns `defaultValue`.
 int
 PromptIntWithTimeout(const std::string &promptText,
-                     int defaultValue = 1,
-                     int timeoutSec = 3,
+                     int defaultValue,
+                     int timeoutSec,
                      int sleepIntervalMs = 50)
 {
     std::cout << promptText << " " << std::flush;
+
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSec);
+
     std::string line;
 
     while (std::chrono::steady_clock::now() < deadline) {
         if (_kbhit()) {
-            // read the rest of the line
             std::getline(std::cin, line);
             break;
         }
@@ -189,23 +59,173 @@ PromptIntWithTimeout(const std::string &promptText,
     }
 
     if (line.empty()) {
-        std::cout << "\n( no input in " << timeoutSec << "s, defaulting to " << defaultValue << " )\n";
+        std::cout << "\n(no input in " << timeoutSec << "s, defaulting to " << defaultValue << ")\n";
         return defaultValue;
     }
 
     try {
         return std::stoi(line);
     } catch (...) {
-        std::cout << "( couldn’t parse “" << line << "”, defaulting to " << defaultValue << " )\n";
+        std::cout << "(could not parse input, defaulting to " << defaultValue << ")\n";
         return defaultValue;
     }
 }
 
-int
-main(int /*argc*/, char * /*argv*/[])
+// -----------------------------------------------------------------------------
+// Correctness tests
+// -----------------------------------------------------------------------------
+template <typename TestSharkParams>
+bool
+CorrectnessTests()
 {
-    bool res = false;
+    int testBase = 0;
+    bool res;
 
+    res = TestConversion<TestSharkParams>(0);
+    if (!res && PressKey() == 'q')
+        return false;
+
+    testBase = 4000;
+    res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
+    if (!res && PressKey() == 'q')
+        return false;
+
+    testBase = 6000;
+    res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(testBase);
+    if (!res && PressKey() == 'q')
+        return false;
+
+    testBase = 2000;
+    res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(testBase);
+    if (!res && PressKey() == 'q')
+        return false;
+
+    return true;
+}
+
+int
+RunCorrectnessTest(BasicCorrectnessMode mode)
+{
+    if (mode != BasicCorrectnessMode::Correctness_P1 &&
+        mode != BasicCorrectnessMode::Correctness_P1_to_P5) {
+        return 1;
+    }
+
+    do {
+        if (!CorrectnessTests<TestCorrectnessSharkParams1>())
+            return 0;
+
+        if (mode == BasicCorrectnessMode::Correctness_P1_to_P5) {
+            if (!CorrectnessTests<TestCorrectnessSharkParams2>())
+                return 0;
+            if (!CorrectnessTests<TestCorrectnessSharkParams3>())
+                return 0;
+            if (!CorrectnessTests<TestCorrectnessSharkParams4>())
+                return 0;
+            if (!CorrectnessTests<TestCorrectnessSharkParams5>())
+                return 0;
+        }
+
+        ComicalCorrectness();
+
+    } while (HpShark::TestInfiniteCorrectness);
+
+    return PressKey() != 'q';
+}
+
+// -----------------------------------------------------------------------------
+// Performance modes
+// -----------------------------------------------------------------------------
+int
+RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec)
+{
+    if (mode != BasicCorrectnessMode::PerfSub &&
+        mode != BasicCorrectnessMode::PerfSweep &&
+        mode != BasicCorrectnessMode::PerfSingle) {
+        return 1;
+    }
+
+    bool res;
+
+    int numIters = PromptIntWithTimeout("NumIters? Default 5", 5, timeoutInSec);
+    int internalTestLoopCount =
+        PromptIntWithTimeout("CUDA iteration count? Default 1000", 1000, timeoutInSec);
+
+    int testBase = 0;
+
+    if (mode == BasicCorrectnessMode::PerfSub) {
+        testBase = 10000;
+        res = TestBinaryOperatorPerf<Operator::Add>(testBase, numIters, internalTestLoopCount, mode);
+        if (!res && PressKey() == 'q')
+            return 0;
+
+        testBase = 13000;
+        res = TestBinaryOperatorPerf<Operator::MultiplyNTT>(
+            testBase, numIters, internalTestLoopCount, mode);
+        if (!res && PressKey() == 'q')
+            return 0;
+
+        testBase = 14000;
+        res = TestBinaryOperatorPerf<Operator::ReferenceOrbit>(
+            testBase, numIters, internalTestLoopCount, mode);
+        if (!res && PressKey() == 'q')
+            return 0;
+    }
+
+    if (mode == BasicCorrectnessMode::PerfSingle) {
+        TestTracker Tests;
+
+        int numBlocks = PromptIntWithTimeout("NumBlocks? Default 65", 65, timeoutInSec);
+        int numThreads = PromptIntWithTimeout("NumThreads? Default 256", 256, timeoutInSec);
+
+        testBase = 16020;
+        res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
+            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+        if (!res && PressKey() == 'q')
+            return 0;
+
+        PressKey();
+
+        testBase = 16010;
+        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+        if (!res && PressKey() == 'q')
+            return 0;
+    }
+
+    if (mode == BasicCorrectnessMode::PerfSweep) {
+        TestTracker Tests;
+
+        int testBaseLocal = 1000;
+
+        for (int numBlocks = 16; numBlocks <= 256; numBlocks *= 2) {
+            for (int numThreads = 64; numThreads <= 256; numThreads *= 2) {
+                res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
+                    Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
+                if (!res && PressKey() == 'q')
+                    return 0;
+                testBaseLocal += 100;
+
+                res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+                    Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
+                if (!res && PressKey() == 'q')
+                    return 0;
+                testBaseLocal += 100;
+            }
+        }
+
+        Tests.CheckAllTestsPassed();
+    }
+
+    return 1;
+}
+
+// -----------------------------------------------------------------------------
+// main
+// -----------------------------------------------------------------------------
+int
+main(int, char **)
+{
     GlobalCallstacks->InitCallstacks();
 
     {
@@ -215,172 +235,49 @@ main(int /*argc*/, char * /*argv*/[])
         SharkNTT::PrintPrecisionTiers(plateaus);
     }
 
-    constexpr auto timeoutInSec = 3;
-    int verboseInput =
-        PromptIntWithTimeout("Verbose? Default=0. (0 = No, 1 = Yes):", /*default=*/0, timeoutInSec);
-    if (verboseInput == 1) {
-        SetVerboseMode(VerboseMode::Debug);
-    } else {
-        SetVerboseMode(VerboseMode::None);
+    constexpr int timeoutInSec = 3;
+
+    int verboseInput = PromptIntWithTimeout("Verbose? Default=0 (0=No, 1=Yes):", 0, timeoutInSec);
+    SetVerboseMode(verboseInput ? VerboseMode::Debug : VerboseMode::None);
+
+    int rawMode =
+        PromptIntWithTimeout("Mode? Default=2 "
+                             "(0=Correctness(P1), 1=PerfSub, 2=PerfSweep, 3=PerfSingle, 4=Correctness(P1..P5)):",
+                             static_cast<int>(BasicCorrectnessMode::PerfSingle),
+                             timeoutInSec);
+
+    BasicCorrectnessMode mode = BasicCorrectnessMode::PerfSingle;
+    switch (rawMode) {
+        case 0:
+            mode = BasicCorrectnessMode::Correctness_P1;
+            break;
+        case 1:
+            mode = BasicCorrectnessMode::PerfSub;
+            break;
+        case 2:
+            mode = BasicCorrectnessMode::PerfSweep;
+            break;
+        case 3:
+            mode = BasicCorrectnessMode::PerfSingle;
+            break;
+        case 4:
+            mode = BasicCorrectnessMode::Correctness_P1_to_P5;
+            break;
+        default:
+            std::cout << "Invalid mode, defaulting to PerfSingle\n";
+            break;
     }
 
-    int deviceCount;
-    cudaGetDeviceCount(&deviceCount);
+    std::cout << "Selected mode: " << BasicCorrectnessModeToString(mode) << "\n";
 
-    for (int i = 0; i < deviceCount; ++i) {
-        cudaDeviceProp prop;
-        cudaGetDeviceProperties(&prop, i);
-        std::cout << "Device " << i << ": " << prop.sharedMemPerMultiprocessor
-                  << " bytes of shared memory per block." << std::endl;
-
-        // persistingL2CacheMaxSize
-        std::cout << "Device " << i << ": " << prop.persistingL2CacheMaxSize << " bytes of L2 cache."
-                  << std::endl;
+    if (!RunCorrectnessTest(mode)) {
+        return 0;
     }
 
-    if constexpr (HpShark::TestCorrectness) {
-        res = RunCorrectnessTest();
-        if (!res) {
-            return 0;
-        }
-    }
-
-#if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
-    int numIters = PromptIntWithTimeout("NumIters? Default 5", /*default=*/5, timeoutInSec);
-    int internalTestLoopCount =
-        PromptIntWithTimeout("CUDA iteration count? Default 1000", /*default=*/1000, timeoutInSec);
-
-    int testBase = 0;
-    if constexpr (HpShark::EnableAddKernel) {
-        testBase = 10000;
-        res = TestBinaryOperatorPerf<Operator::Add>(testBase, numIters, internalTestLoopCount);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
-    }
-
-    if constexpr (HpShark::EnableMultiplyNTTKernel) {
-        testBase = 13000;
-        res = TestBinaryOperatorPerf<Operator::MultiplyNTT>(testBase, numIters, internalTestLoopCount);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
-    }
-
-    if constexpr (HpShark::EnableFullKernel) {
-        testBase = 14000;
-        res =
-            TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase, numIters, internalTestLoopCount);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
-    }
-
-#if (ENABLE_BASIC_CORRECTNESS == 1)
-    if constexpr (HpShark::EnableFullKernel) {
-        TestTracker Tests;
-
-        testBase = 1000;
-
-        const int startBlock = 16;
-        const int endBlock = 256;
-        const int startThreads = 64;
-        const int endThreads = 256;
-        // const int startBlock = 65;
-        // const int endBlock = 65;
-        // const int startThreads = 256;
-        // const int endThreads = 256;
-
-        for (int numBlocks = startBlock; numBlocks <= endBlock; numBlocks *= 2) {
-            for (int numThreads = startThreads; numThreads <= endThreads; numThreads *= 2) {
-                std::cout << "Testing Full Reference Orbit with " << numBlocks << " blocks and "
-                          << numThreads << " threads per block." << std::endl;
-
-                res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-                    Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
-                if (!res) {
-                    auto q = PressKey();
-                    if (q == 'q') {
-                        return 0;
-                    }
-                }
-
-                testBase += 100;
-
-                res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-                    Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
-                if (!res) {
-                    auto q = PressKey();
-                    if (q == 'q') {
-                        return 0;
-                    }
-                }
-
-                testBase += 100;
-            }
-        }
-
-        Tests.CheckAllTestsPassed();
-    }
-#elif (ENABLE_BASIC_CORRECTNESS == 2)
-    if constexpr (HpShark::EnableFullKernel) {
-        TestTracker Tests;
-
-        int numBlocks = PromptIntWithTimeout("NumBlocks? Default 65", /*default=*/65, timeoutInSec);
-        int numThreads = PromptIntWithTimeout("NumThreads? Default 256", /*default=*/256, timeoutInSec);
-
-        testBase = 16020;
-        res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
-
-        {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
-
-        testBase = 16010;
-        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
-    }
-#endif
-#endif
-
-    if constexpr (!HpShark::TestCorrectness) {
-        auto q = PressKey();
-        if (q == 'q') {
-            return 0;
-        }
-
-        res = RunCorrectnessTest();
-        if (!res) {
-            return 0;
-        }
+    if (!RunPerfModes(mode, timeoutInSec)) {
+        return 0;
     }
 
     GlobalCallstacks->FreeCallstacks();
-
     return 0;
 }

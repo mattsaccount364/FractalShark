@@ -123,6 +123,4 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
     template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(                                      \
         const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 
-#if defined(ENABLE_MULTIPLY_NTT_KERNEL)
 ExplicitInstantiateAll();
-#endif

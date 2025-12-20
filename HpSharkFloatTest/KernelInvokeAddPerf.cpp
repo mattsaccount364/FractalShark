@@ -41,16 +41,12 @@ InvokeAddKernelPerf(const HpShark::LaunchParams &launchParams,
     cudaFree(comboResults);
 }
 
-#ifdef ENABLE_ADD_KERNEL
 #define ExplicitlyInstantiateAdd(SharkFloatParams)                                                      \
     template void InvokeAddKernelPerf<SharkFloatParams>(                                                \
         const HpShark::LaunchParams &launchParams,                                                      \
         BenchmarkTimer &timer,                                                                          \
         HpSharkAddComboResults<SharkFloatParams> &combo,                                                \
         uint64_t numIters);
-#else
-#define ExplicitlyInstantiateAdd(SharkFloatParams) ;
-#endif
 
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateAdd(SharkFloatParams)
 

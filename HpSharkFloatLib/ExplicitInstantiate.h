@@ -82,7 +82,7 @@
 #define ComicalTest80 HpShark::GenericSharkFloatParams<HpShark::TestComicalThreadCount, 80>
 #define ComicalTest81 HpShark::GenericSharkFloatParams<HpShark::TestComicalThreadCount, 81>
 
-#if ENABLE_BASIC_CORRECTNESS == 3
+#ifdef ENABLE_BASIC_CORRECTNESS
 #define InstantiateComicalCorrectness()                                                                                                \
     ExplicitlyInstantiate(ComicalTest1) ExplicitlyInstantiate(ComicalTest2) ExplicitlyInstantiate(ComicalTest3) ExplicitlyInstantiate( \
         ComicalTest4) ExplicitlyInstantiate(ComicalTest5) ExplicitlyInstantiate(ComicalTest6) ExplicitlyInstantiate(ComicalTest7)      \
@@ -138,43 +138,25 @@
 #define InstantiateComicalCorrectness()
 #endif
 
-#if ENABLE_BASIC_CORRECTNESS == 0
-#define ExplicitInstantiateAll() ExplicitlyInstantiate(Test8x1SharkParams);
-#elif ENABLE_BASIC_CORRECTNESS == 1
 #define ExplicitInstantiateAll()                                                                        \
-    ExplicitlyInstantiate(TestPerSharkParams1);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams2);
-#elif ENABLE_BASIC_CORRECTNESS == 2
-#define ExplicitInstantiateAll()                                                                        \
-    ExplicitlyInstantiate(TestPerSharkParams1);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams2);                                                         \
-    ExplicitlyInstantiate(TestPerSharkParams3);
-#elif ENABLE_BASIC_CORRECTNESS == 3
-#define ExplicitInstantiateAll()                                                                        \
-    ExplicitlyInstantiate(Test4x9SharkParams);                                                          \
-    ExplicitlyInstantiate(Test4x12SharkParams);                                                         \
-    ExplicitlyInstantiate(Test8x1SharkParams);                                                          \
-    ExplicitlyInstantiate(Test4x36SharkParams);                                                         \
-    ExplicitlyInstantiate(Test4x6SharkParams);                                                          \
-                                                                                                        \
+    ExplicitlyInstantiate(TestSmallSharkParams1);                                                       \
+    ExplicitlyInstantiate(TestSmallSharkParams2);                                                       \
+    ExplicitlyInstantiate(TestSmallSharkParams3);                                                       \
+    ExplicitlyInstantiate(TestSmallSharkParams4);                                                       \
+    ExplicitlyInstantiate(TestSmallSharkParams5);                                                       \
     ExplicitlyInstantiate(TestPerSharkParams1);                                                         \
     ExplicitlyInstantiate(TestPerSharkParams2);                                                         \
     ExplicitlyInstantiate(TestPerSharkParams3);                                                         \
     ExplicitlyInstantiate(TestPerSharkParams4);                                                         \
-                                                                                                        \
     ExplicitlyInstantiate(TestPerSharkParams5);                                                         \
     ExplicitlyInstantiate(TestPerSharkParams6);                                                         \
     ExplicitlyInstantiate(TestPerSharkParams7);                                                         \
     ExplicitlyInstantiate(TestPerSharkParams8);                                                         \
-                                                                                                        \
-    InstantiateComicalCorrectness();
-#elif ENABLE_BASIC_CORRECTNESS == 4
-#define ExplicitInstantiateAll()                                                                        \
     ExplicitlyInstantiate(ProdSharkParams1);                                                            \
     ExplicitlyInstantiate(ProdSharkParams2);                                                            \
     ExplicitlyInstantiate(ProdSharkParams3);                                                            \
     ExplicitlyInstantiate(ProdSharkParams4);                                                            \
-    ExplicitlyInstantiate(ProdSharkParams5);                                                            \
+    ExplicitlyInstantiate(ProdSharkParams5); /*                                                            \
     ExplicitlyInstantiate(ProdSharkParams6);                                                            \
     ExplicitlyInstantiate(ProdSharkParams7);                                                            \
     ExplicitlyInstantiate(ProdSharkParams8);                                                            \
@@ -182,9 +164,9 @@
     ExplicitlyInstantiate(ProdSharkParams10);                                                           \
     ExplicitlyInstantiate(ProdSharkParams11);                                                           \
     ExplicitlyInstantiate(ProdSharkParams12);
-#endif
+*/
 
-#if ENABLE_BASIC_CORRECTNESS == 3
+#ifdef ENABLE_BASIC_CORRECTNESS
 #define ComicalCorrectness()                                                                            \
     if (!CorrectnessTests<ComicalTest1>()) {                                                            \
         return 0;                                                                                       \

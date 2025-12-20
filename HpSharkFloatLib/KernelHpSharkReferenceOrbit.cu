@@ -126,11 +126,11 @@ __maxnreg__(HpShark::RegisterLimit)
     typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);
     typename SharkFloatParams::Float cy_cast = combo->Add.E_B.ToHDRFloat<SharkFloatParams::SubType>(0);
 
-#ifdef ENABLE_FULL_KERNEL
     // Erase this global debug state if needed.
     if constexpr (HpShark::DebugGlobalState) {
         constexpr auto DebugGlobals_offset = HpShark::AdditionalGlobalSyncSpace;
-        // constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
+        // constexpr auto DebugChecksum_offset = DebugGlobals_offset +
+        // AdditionalGlobalDebugPerThread;
 
         // auto *SharkRestrict debugStates =
         //     reinterpret_cast<DebugState<SharkFloatParams> *>(&tempData[DebugChecksum_offset]);
@@ -141,7 +141,6 @@ __maxnreg__(HpShark::RegisterLimit)
         const auto CurThread = block.thread_index().x;
         debugGlobalState[CurBlock * block.dim_threads().x + CurThread].DebugMultiplyErase();
     }
-#endif
 
     // MaxRuntimeIters had better be <= HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters
     for (uint64_t i = 0; i < combo->MaxRuntimeIters; ++i) {
@@ -199,6 +198,4 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
     template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
         const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 
-#if defined(ENABLE_FULL_KERNEL)
 ExplicitInstantiateAll();
-#endif

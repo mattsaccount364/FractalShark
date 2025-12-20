@@ -29,7 +29,10 @@ void TestBinOperatorTwoNumbers(int testNum, const char *num1, const char *num2);
 template <class SharkFloatParams, Operator sharkOperator> bool TestAllBinaryOp(int testBase);
 
 template <Operator sharkOperator>
-bool TestBinaryOperatorPerf(int testBase, int numIters, int internalTestLoopCount);
+bool TestBinaryOperatorPerf(int testBase,
+                            int numIters,
+                            int internalTestLoopCount,
+                            BasicCorrectnessMode mode);
 
 template <Operator sharkOperator>
 bool TestFullReferencePerfView5(TestTracker &Tests,

@@ -215,7 +215,6 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     }
 }
 
-#if defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>                                 \
     InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,             \
@@ -235,9 +234,6 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
         const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
         DebugGpuCombo *debugCombo);
-#else
-#define ExplicitlyInstantiateHpSharkReference(SharkFloatParams) ;
-#endif
 
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
 

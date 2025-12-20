@@ -9,6 +9,23 @@
 #include <cstdint>
 #include <random>
 
+const char *
+BasicCorrectnessModeToString(BasicCorrectnessMode mode)
+{
+    switch (mode) {
+        case BasicCorrectnessMode::Correctness_P1:
+            return "Correctness (Params1)";
+        case BasicCorrectnessMode::PerfSweep:
+            return "Performance Sweep";
+        case BasicCorrectnessMode::PerfSingle:
+            return "Performance Single";
+        case BasicCorrectnessMode::Correctness_P1_to_P5:
+            return "Correctness (Params1..5)";
+        default:
+            return "Unknown";
+    }
+}
+
 // static_assert(sizeof(HpSharkFloat<SharkFloatParams>) == 4096, "HpSharkFloat<SharkFloatParams> size is
 // not 4096 bytes");
 

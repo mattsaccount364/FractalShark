@@ -2312,13 +2312,11 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     auto *SharkRestrict debugStates =
         reinterpret_cast<DebugState<SharkFloatParams> *>(&tempProducts[DebugChecksum_offset]);
 
-#ifdef ENABLE_MULTIPLY_NTT_KERNEL
     if constexpr (HpShark::DebugGlobalState) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
         debugGlobalState[CurBlock * block.dim_threads().x + CurThread].DebugMultiplyErase();
     }
-#endif
 
     if constexpr (HpShark::DebugChecksums) {
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Invalid>(debugStates, grid, block);

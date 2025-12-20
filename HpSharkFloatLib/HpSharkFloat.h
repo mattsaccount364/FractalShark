@@ -23,58 +23,15 @@
 #define SharkRestrict __restrict__
 // #define SharkRestrict
 
-// Suggested combinations.
-// For testing, define:
-//  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_FULL_KERNEL
-//  - _DEBUG
-//  - Ensure ENABLE_BASIC_CORRECTNESS == 0
-// For profiling, define:
-//  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_FULL_KERNEL
-//  - Release
-//  - Ensure ENABLE_BASIC_CORRECTNESS == 2
-// For E2E test:
-//  - ENABLE_FULL_KERNEL
-//  - Debug or release
-//  - Ensure ENABLE_BASIC_CORRECTNESS == 2
-//      When it runs, it'll take a minute, verify iteration count matches reference CPU kernel.
-// For FractalShark, define:
-//  - ENABLE_FULL_KERNEL
-//  - Ensure ENABLE_BASIC_CORRECTNESS == 4
-//
+enum class BasicCorrectnessMode : int {
+    Correctness_P1 = 0,      // Params1 only
+    PerfSub = 1,             // Individual add/multiply kernels, not the full one
+    PerfSweep = 2,           // Sweep blocks/threads
+    PerfSingle = 3,          // Single block/thread config (DEFAULT)
+    Correctness_P1_to_P5 = 4 // Params1..5
+};
 
-// Comment out to disable specific kernels
-// #define ENABLE_CONVERSION_TESTS
-// #define ENABLE_ADD_KERNEL
-// #define ENABLE_MULTIPLY_NTT_KERNEL
-#define ENABLE_FULL_KERNEL
-
-// TODO: can't we automate this
-// Uncomment this to enable the HpSharkFloat test program.
-// Comment for use in FractalShark
-#define HP_SHARK_FLOAT_TEST
-
-// 0 = just one correctness test, intended for fast re-compile of a specific failure
-// 1 = all basic correctness tests/all basic perf tests
-// 2 = setup for profiling only, one kernel
-// 3 = all basic correctness tests + comical tests
-// 4 = "production" kernels, include periodicity. This is what we use in FractalShark.
-// See ExplicitInstantiate.h for more information
-
-#ifdef _DEBUG
-#ifdef HP_SHARK_FLOAT_TEST
-// Test path - this is what we use with HpSharkFloatTest
-#define ENABLE_BASIC_CORRECTNESS 0
-#else
-// Production path - this is what we use in FractalShark
-#define ENABLE_BASIC_CORRECTNESS 4
-#endif
-#else // not debug
-#ifdef HP_SHARK_FLOAT_TEST
-#define ENABLE_BASIC_CORRECTNESS 2
-#else
-#define ENABLE_BASIC_CORRECTNESS 4
-#endif
-#endif
+const char *BasicCorrectnessModeToString(BasicCorrectnessMode mode);
 
 namespace HpShark {
 
@@ -82,32 +39,6 @@ namespace HpShark {
 static constexpr bool Debug = true;
 #else
 static constexpr bool Debug = false;
-#endif
-
-static constexpr auto BasicCorrectness = ENABLE_BASIC_CORRECTNESS;
-
-#ifdef ENABLE_CONVERSION_TESTS
-static constexpr auto EnableConversionTests = true;
-#else
-static constexpr auto EnableConversionTests = false;
-#endif
-
-#ifdef ENABLE_ADD_KERNEL
-static constexpr auto EnableAddKernel = true;
-#else
-static constexpr auto EnableAddKernel = false;
-#endif
-
-#ifdef ENABLE_MULTIPLY_NTT_KERNEL
-static constexpr auto EnableMultiplyNTTKernel = true;
-#else
-static constexpr auto EnableMultiplyNTTKernel = false;
-#endif
-
-#ifdef ENABLE_FULL_KERNEL
-static constexpr auto EnableFullKernel = true;
-#else
-static constexpr auto EnableFullKernel = false;
 #endif
 
 #ifdef _DEBUG
@@ -123,7 +54,7 @@ static constexpr auto NTTNumBitsMargin = 0; // 2?
 // Assumes number of threads is a power of 2 and <= 32, with one block.
 // #define TEST_SMALL_NORMALIZE_WARP
 
-static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel || EnableFullKernel);
+static constexpr bool TestGpu = true;
 // static constexpr bool TestGpu = false;
 
 static constexpr auto TestComicalThreadCount = 13;
@@ -151,13 +82,13 @@ static constexpr auto RegisterLimit = 127;
 
 static constexpr auto ConstantSharedRequiredBytes = 0;
 
-static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
+static constexpr bool DebugChecksums = Debug;
 // static constexpr bool DebugChecksums = true;
 static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
-static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
-static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
+static constexpr bool TestCorrectness = Debug;
+static constexpr bool TestInfiniteCorrectness = true;
 static constexpr auto TestForceSameSign = false;
-static constexpr bool TestBenchmarkAgainstHost = true;
+static constexpr bool TestBenchmarkAgainstHost = false;
 static constexpr bool TestInitCudaMemory = true;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
@@ -208,7 +139,7 @@ template <int32_t pNumDigits, bool Periodicity> struct GenericSharkFloatParams {
     using SubType = float;         // TODO hardcoded
 
     // TODO: this is fucked up, fix it so we don't round to next power of two
-    static constexpr bool SharkUsePow2SizesOnly = false; // HpShark::EnableMultiplyNTTKernel;
+    static constexpr bool SharkUsePow2SizesOnly = false;
 
     // Fixed number of uint32_t values
     static constexpr int32_t Guard = 4;
@@ -327,16 +258,16 @@ static constexpr auto LowPrec = 32;
 
 // If you add a new one, search for one of the other types and copy/paste
 // TODO Add tests fail with non-mult-32 sizes.
-// using Test8x1SharkParams = HpShark::GenericSharkFloatParams<8>;
-// using Test4x36SharkParams = HpShark::GenericSharkFloatParams<16>;
-// using Test4x12SharkParams = HpShark::GenericSharkFloatParams<32>;
-// using Test4x9SharkParams = HpShark::GenericSharkFloatParams<64>;
-// using Test4x6SharkParams = HpShark::GenericSharkFloatParams<128>;
-using Test8x1SharkParams = HpShark::GenericSharkFloatParams<64, false>;
-using Test4x36SharkParams = HpShark::GenericSharkFloatParams<128, false>;
-using Test4x12SharkParams = HpShark::GenericSharkFloatParams<256, false>;
-using Test4x9SharkParams = HpShark::GenericSharkFloatParams<512, false>;
-using Test4x6SharkParams = HpShark::GenericSharkFloatParams<1024, false>;
+// using TestSmallSharkParams1 = HpShark::GenericSharkFloatParams<8>;
+// using TestSmallSharkParams2 = HpShark::GenericSharkFloatParams<16>;
+// using TestSmallSharkParams3 = HpShark::GenericSharkFloatParams<32>;
+// using TestSmallSharkParams4 = HpShark::GenericSharkFloatParams<64>;
+// using TestSmallSharkParams5 = HpShark::GenericSharkFloatParams<128>;
+using TestSmallSharkParams1 = HpShark::GenericSharkFloatParams<64, false>;
+using TestSmallSharkParams2 = HpShark::GenericSharkFloatParams<128, false>;
+using TestSmallSharkParams3 = HpShark::GenericSharkFloatParams<256, false>;
+using TestSmallSharkParams4 = HpShark::GenericSharkFloatParams<512, false>;
+using TestSmallSharkParams5 = HpShark::GenericSharkFloatParams<1024, false>;
 
 using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<8192, true>;
 using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<16384, true>;
@@ -345,6 +276,7 @@ using TestPerSharkParams4 = HpShark::GenericSharkFloatParams<65536, true>;
 using TestPerSharkParams5 = HpShark::GenericSharkFloatParams<131072, true>;
 using TestPerSharkParams6 = HpShark::GenericSharkFloatParams<262144, true>;
 using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<524288, true>;
+using TestPerSharkParams8 = HpShark::GenericSharkFloatParams<1048576, true>;
 
 // using TestPerSharkParams1 = HpShark::GenericSharkFloatParams<6144>;
 // using TestPerSharkParams2 = HpShark::GenericSharkFloatParams<11776>;
@@ -366,11 +298,11 @@ using TestPerSharkParams7 = HpShark::GenericSharkFloatParams<524288, true>;
 // using TestPerSharkParams9 = HpShark::GenericSharkFloatParams<1048576>;
 
 // Correctness test sizes
-using TestCorrectnessSharkParams1 = Test8x1SharkParams;
-using TestCorrectnessSharkParams2 = Test4x36SharkParams;
-using TestCorrectnessSharkParams3 = Test4x9SharkParams;
-using TestCorrectnessSharkParams4 = Test4x12SharkParams;
-using TestCorrectnessSharkParams5 = Test4x6SharkParams;
+using TestCorrectnessSharkParams1 = TestSmallSharkParams1;
+using TestCorrectnessSharkParams2 = TestSmallSharkParams2;
+using TestCorrectnessSharkParams3 = TestSmallSharkParams4;
+using TestCorrectnessSharkParams4 = TestSmallSharkParams3;
+using TestCorrectnessSharkParams5 = TestSmallSharkParams5;
 
 // FractalShark production sizes
 using ProdSharkParams1 = HpShark::GenericSharkFloatParams<256, true>;

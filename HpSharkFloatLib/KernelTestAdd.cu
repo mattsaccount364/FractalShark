@@ -84,6 +84,4 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
     template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
                                                           void *kernelArgs[]);
 
-#ifdef ENABLE_ADD_KERNEL
 ExplicitInstantiateAll();
-#endif

@@ -1482,10 +1482,8 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
         combo->A = aNum;
         combo->B = bNum;
 
-        if constexpr (HpShark::EnableMultiplyNTTKernel) {
-            HpShark::InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(
-                launchParams, timer, *combo, &debugGpuCombo);
-        }
+        HpShark::InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(
+            launchParams, timer, *combo, &debugGpuCombo);
 
         *gpuResultXX = combo->ResultX2;
         *gpuResultXY1 = combo->Result2XY;
@@ -2829,35 +2827,48 @@ template <Operator sharkOperator>
 bool
 TestBinaryOperatorPerf([[maybe_unused]] int testBase,
                        [[maybe_unused]] int numIters,
-                       [[maybe_unused]] int internalTestLoopCount)
+                       [[maybe_unused]] int internalTestLoopCount,
+                       [[maybe_unused]] BasicCorrectnessMode mode)
 {
     TestTracker Tests;
     HpShark::LaunchParams launchParams{128, 256};
 
-#if (ENABLE_BASIC_CORRECTNESS == 3)
-    TestPerfRandom<TestPerSharkParams1, sharkOperator>(
-        launchParams, Tests, testBase + 1, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams2, sharkOperator>(
-        launchParams, Tests, testBase + 2, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams3, sharkOperator>(
-        launchParams, Tests, testBase + 3, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams4, sharkOperator>(
-        launchParams, Tests, testBase + 4, internalTestLoopCount);
+    switch (mode) {
+        case BasicCorrectnessMode::Correctness_P1:
+        case BasicCorrectnessMode::Correctness_P1_to_P5:
+            // Not a perf mode; historically this function wouldn't run in those modes.
+            break;
 
-    TestPerfRandom<TestPerSharkParams5, sharkOperator>(
-        launchParams, Tests, testBase + 5, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams6, sharkOperator>(
-        launchParams, Tests, testBase + 6, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams7, sharkOperator>(
-        launchParams, Tests, testBase + 7, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams8, sharkOperator>(
-        launchParams, Tests, testBase + 8, internalTestLoopCount);
-#elif (ENABLE_BASIC_CORRECTNESS == 2)
-    for (size_t i = 0; i < numIters; i++) {
-        TestPerfRandom<TestPerSharkParams1, sharkOperator>(
-            launchParams, Tests, testBase + 1, internalTestLoopCount);
+        case BasicCorrectnessMode::PerfSingle:
+            for (int i = 0; i < numIters; ++i) {
+                TestPerfRandom<TestPerSharkParams1, sharkOperator>(
+                    launchParams, Tests, testBase + 1, internalTestLoopCount);
+            }
+            break;
+
+        case BasicCorrectnessMode::PerfSweep:
+            TestPerfRandom<TestPerSharkParams1, sharkOperator>(
+                launchParams, Tests, testBase + 1, internalTestLoopCount);
+            TestPerfRandom<TestPerSharkParams2, sharkOperator>(
+                launchParams, Tests, testBase + 2, internalTestLoopCount);
+            TestPerfRandom<TestPerSharkParams3, sharkOperator>(
+                launchParams, Tests, testBase + 3, internalTestLoopCount);
+            TestPerfRandom<TestPerSharkParams4, sharkOperator>(
+                launchParams, Tests, testBase + 4, internalTestLoopCount);
+
+            TestPerfRandom<TestPerSharkParams5, sharkOperator>(
+                launchParams, Tests, testBase + 5, internalTestLoopCount);
+            TestPerfRandom<TestPerSharkParams6, sharkOperator>(
+                launchParams, Tests, testBase + 6, internalTestLoopCount);
+            TestPerfRandom<TestPerSharkParams7, sharkOperator>(
+                launchParams, Tests, testBase + 7, internalTestLoopCount);
+            break;
+
+        default:
+            // Defensive: if enum grows and caller passes unknown value.
+            break;
     }
-#endif
+
     return Tests.CheckAllTestsPassed();
 }
 
@@ -2870,7 +2881,6 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
                            [[maybe_unused]] int numIters,
                            [[maybe_unused]] int internalTestLoopCount)
 {
-#if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
     HpShark::LaunchParams launchParams{numBlocks, numThreads};
 
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
@@ -2963,7 +2973,6 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
     mpf_clear(mpfY);
     mpf_clear(mpfZ);
     mpf_clear(mpfRadiusY);
-#endif
     return true;
 }
 
@@ -2976,8 +2985,6 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
                             [[maybe_unused]] int numIters,
                             [[maybe_unused]] int internalTestLoopCount)
 {
-#if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
-
 // TODO: this is kind of cheesy, it'd be nice to share the test
 // view parameters in FractalShark with the test in some reasonable way
 #include "..\FractalSharkLib\LargeCoords.h"
@@ -3073,7 +3080,6 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     mpf_clear(mpfZ);
     mpf_clear(mpfRadiusY);
     mpf_clear(mpfTwo);
-#endif
 
     return true;
 }
@@ -3359,29 +3365,20 @@ TestAllBinaryOp(int testBase)
 }
 
 // Explicitly instantiate TestAllBinaryOp
-#ifdef ENABLE_ADD_KERNEL
 #define ADD_KERNEL(SharkFloatParams)                                                                    \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);                       \
     template bool TestBinaryOperatorPerf<Operator::Add>(                                                \
-        int testBase, int numIters, int internalTestLoopCount);
-#else
-#define ADD_KERNEL(SharkFloatParams) ;
-#endif
+        int testBase, int numIters, int internalTestLoopCount, BasicCorrectnessMode mode);
 
-#ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                           \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);               \
     template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(                                        \
-        int testBase, int numIters, int internalTestLoopCount);
-#else
-#define MULTIPLY_KERNEL_NTT(SharkFloatParams) ;
-#endif
+        int testBase, int numIters, int internalTestLoopCount, BasicCorrectnessMode mode);
 
-#if defined(ENABLE_FULL_KERNEL)
 #define REFERENCE_KERNEL(SharkFloatParams)                                                              \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
-        int testBase, int numIters, int internalTestLoopCount);                                         \
+        int testBase, int numIters, int internalTestLoopCount, BasicCorrectnessMode mode);                     \
     template bool TestFullReferencePerfView5<Operator::ReferenceOrbit>(TestTracker &,                   \
                                                                        int numBlocks,                   \
                                                                        int numThreads,                  \
@@ -3394,9 +3391,6 @@ TestAllBinaryOp(int testBase)
                                                                         int testBase,                   \
                                                                         int numIters,                   \
                                                                         int internalTestLoopCount);
-#else
-#define REFERENCE_KERNEL(SharkFloatParams) ;
-#endif
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
     ADD_KERNEL(SharkFloatParams)                                                                        \

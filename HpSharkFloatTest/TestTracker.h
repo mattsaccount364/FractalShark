@@ -1,32 +1,46 @@
 #pragma once
 
 #include <cstdint>
-#include <gmp.h>
-#include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace HpShark {
 struct LaunchParams;
 }
+
 class TestTracker {
 public:
+    static constexpr size_t NumTests = 20000; // keep your existing value if different
+
+    enum class VariantStatus : uint8_t { NotRun, Passed, Failed };
+
+    struct VariantResult {
+        VariantStatus status = VariantStatus::NotRun;
+        std::string relativeError;
+        std::string acceptableError;
+    };
+
     struct PerTest {
         PerTest();
 
-        std::map<std::string, bool> DescToFailure;
-        uint64_t TestMs;
-        std::string RelativeError;
-        std::string AcceptableError;
-        int NumBlocks;
-        int ThreadsPerBlock;
-    };
+        // Per-variant results for this test index
+        std::unordered_map<std::string, VariantResult> Variants;
 
-    constexpr static auto NumTests = 20000;
+        uint64_t TestMs = 0;
+
+        // Launch config (optional, but useful for reporting)
+        int NumBlocks = 0;
+        int ThreadsPerBlock = 0;
+
+        // Explicit “ran” bit; avoids inferring from map emptiness / launch params
+        bool RanAnyVariant = false;
+    };
 
     TestTracker();
 
     bool CheckAllTestsPassed() const;
+
     void AddTime(size_t testIndex, uint64_t ms);
 
     void MarkSuccess(const HpShark::LaunchParams *launchParams,

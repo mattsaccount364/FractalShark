@@ -132,6 +132,13 @@ struct LaunchParams {
     const int32_t NumBlocks;
     const int32_t ThreadsPerBlock;
     const int32_t TotalThreads;
+
+    std::string
+    ToString() const
+    {
+        return std::string("Blocks: ") + std::to_string(NumBlocks) + ", ThreadsPerBlock: " + std::to_string(ThreadsPerBlock) +
+               ", TotalThreads: " + std::to_string(TotalThreads);
+    }
 };
 
 template <int32_t pNumDigits, bool Periodicity> struct GenericSharkFloatParams {

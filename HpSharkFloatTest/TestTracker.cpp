@@ -2,11 +2,30 @@
 #include "HpSharkFloat.h"
 #include "TestVerbose.h"
 
-#include <assert.h>
+#include <algorithm>
 #include <iostream>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+static const char *
+StatusToString(TestTracker::VariantStatus s)
+{
+    switch (s) {
+        case TestTracker::VariantStatus::NotRun:
+            return "NotRun";
+        case TestTracker::VariantStatus::Passed:
+            return "Passed";
+        case TestTracker::VariantStatus::Failed:
+            return "Failed";
+        default:
+            return "Unknown";
+    }
+}
 
 TestTracker::PerTest::PerTest()
-    : DescToFailure{}, TestMs{}, RelativeError{}, AcceptableError{}, NumBlocks{}, ThreadsPerBlock{}
+    : Variants(), TestMs(0), NumBlocks(0), ThreadsPerBlock(0), RanAnyVariant(false)
 {
 }
 
@@ -15,90 +34,117 @@ TestTracker::TestTracker() : m_Tests(NumTests) {}
 bool
 TestTracker::CheckAllTestsPassed() const
 {
-    std::map<std::string, size_t> DescToFailureCount;
+    // Per-variant stats (correct denominators)
+    std::unordered_map<std::string, size_t> ranByVariant;
+    std::unordered_map<std::string, size_t> failedByVariant;
 
-    size_t totalTests = 0;
-    for (int i = 0; i < m_Tests.size(); ++i) {
-        if (m_Tests[i].NumBlocks != 0 || m_Tests[i].ThreadsPerBlock != 0) {
-            for (const auto &kv : m_Tests[i].DescToFailure) {
-                if (kv.second) {
-                    if (SharkVerbose == VerboseMode::Debug) {
-                        std::cout << "Variant: " << kv.first << " - " << (kv.second ? "Failed" : "Passed");
-                    }
-                }
-            }
+    size_t ranTests = 0;
+    size_t failedTests = 0;
 
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << " Test " << std::dec << i << " launched with " << m_Tests[i].NumBlocks
-                          << " blocks and " << m_Tests[i].ThreadsPerBlock << " threads per block."
-                          << " Time: " << m_Tests[i].TestMs << std::endl;
-            }
-        }
-    }
+    // Track slow tests for summary
+    std::vector<std::pair<uint64_t, size_t>> slow; // (ms, testIndex)
+    slow.reserve(m_Tests.size());
 
-    for (int i = 0; i < m_Tests.size(); ++i) {
-        bool anyFailed = false;
-        std::string combinedDesc;
-        if (m_Tests[i].DescToFailure.empty()) {
+    for (size_t i = 0; i < m_Tests.size(); ++i) {
+        const auto &t = m_Tests[i];
+
+        if (!t.RanAnyVariant) {
             continue;
         }
+        ranTests++;
 
-        // Only count tests with some entry, success or failed.
-        // This is to avoid counting tests that were not run.
-        totalTests++;
+        if (t.TestMs != 0) {
+            slow.emplace_back(t.TestMs, i);
+        }
 
-        for (const auto &kv : m_Tests[i].DescToFailure) {
-            if (kv.second == false) {
-                // This variant passed.
+        bool anyFailed = false;
+        std::string failedVariants;
+
+        for (const auto &kv : t.Variants) {
+            const std::string &desc = kv.first;
+            const VariantResult &vr = kv.second;
+
+            if (vr.status == VariantStatus::NotRun) {
                 continue;
             }
 
-            if (combinedDesc == "") {
-                combinedDesc = kv.first;
-            } else {
-                // Append
-                combinedDesc += ", " + kv.first;
+            ranByVariant[desc]++;
+
+            if (vr.status == VariantStatus::Failed) {
+                failedByVariant[desc]++;
+                anyFailed = true;
+                if (!failedVariants.empty())
+                    failedVariants += ", ";
+                failedVariants += desc;
             }
 
-            DescToFailureCount[kv.first]++;
-            anyFailed = true;
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "Test " << i << " [" << t.NumBlocks << "x" << t.ThreadsPerBlock << "] "
+                          << "Variant: " << desc << " -> " << StatusToString(vr.status) << "\n";
+                if (vr.status == VariantStatus::Failed) {
+                    std::cout << "  Error: " << vr.relativeError
+                              << "  Acceptable: " << vr.acceptableError << "\n";
+                }
+            }
         }
 
         if (anyFailed) {
-            std::cout << "Test " << std::dec << i << " failed!  " << combinedDesc << ", "
-                      << "Error: " << m_Tests[i].RelativeError << " "
-                      << "Acceptable error: " << m_Tests[i].AcceptableError << std::endl;
+            failedTests++;
+            std::cout << "Test " << i << " FAILED"
+                      << " [" << t.NumBlocks << "x" << t.ThreadsPerBlock << "] " << failedVariants
+                      << "\n";
+        } else if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Test " << i << " PASSED"
+                      << " [" << t.NumBlocks << "x" << t.ThreadsPerBlock << "] "
+                      << "Time: " << t.TestMs << " ms\n";
         }
     }
 
-    // Print out times for those that are non-zero
-    for (int i = 0; i < m_Tests.size(); ++i) {
-        if (m_Tests[i].TestMs > 10) {
-            std::cout << "Test " << std::dec << i << " took " << m_Tests[i].TestMs << " ms" << std::endl;
+    // Slow test summary: top 10
+    if (!slow.empty()) {
+        std::sort(
+            slow.begin(), slow.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+
+        const size_t topN = (slow.size() < 10) ? slow.size() : 10;
+        std::cout << "Top " << topN << " slowest tests:\n";
+        for (size_t k = 0; k < topN; ++k) {
+            auto ms = slow[k].first;
+            auto idx = slow[k].second;
+            std::cout << "  Test " << idx << ": " << ms << " ms"
+                      << " [" << m_Tests[idx].NumBlocks << "x" << m_Tests[idx].ThreadsPerBlock << "]\n";
         }
     }
 
-    // Print failure rate for each desc in DescToFailureCount:
-    if (!DescToFailureCount.empty()) {
-        std::cout << "Some tests failed!" << std::endl;
+    if (ranTests == 0) {
+        std::cout << "No tests were run.\n";
+        return true;
+    }
 
-        for (const auto &kv : DescToFailureCount) {
-            auto numFailed = kv.second;
-            double failurePercent = (numFailed * 100.0) / totalTests;
-            std::cout << "numFailed: " << numFailed << std::endl;
-            std::cout << "totalTests: " << totalTests << std::endl;
-            std::cout << "Failure rate " << kv.first << ": " << failurePercent << "%" << std::endl;
+    if (!failedByVariant.empty()) {
+        std::cout << "Some tests failed! (" << failedTests << "/" << ranTests << " tests)\n";
+        for (const auto &kv : failedByVariant) {
+            const std::string &desc = kv.first;
+            const size_t failed = kv.second;
+            const size_t ran = ranByVariant[desc];
+            const double pct = ran ? (failed * 100.0) / double(ran) : 0.0;
+
+            std::cout << "  Variant \"" << desc << "\": " << failed << "/" << ran << " failed (" << pct
+                      << "%)\n";
         }
         return false;
     }
 
-    std::cout << "All tests passed!" << std::endl;
+    std::cout << "All tests passed! (" << ranTests << " tests)\n";
     return true;
 }
 
 void
 TestTracker::AddTime(size_t testIndex, uint64_t ms)
 {
+    if (testIndex >= m_Tests.size()) {
+        std::cerr << "AddTime: test index out of range: " << testIndex << "\n";
+        std::terminate();
+    }
     m_Tests[testIndex].TestMs = ms;
 }
 
@@ -107,17 +153,22 @@ TestTracker::MarkSuccess(const HpShark::LaunchParams *launchParams,
                          size_t testIndex,
                          const std::string &description)
 {
-
-    if (testIndex >= NumTests) {
-        std::cout << "Test index out of range!" << std::endl;
-        assert(false);
+    if (testIndex >= m_Tests.size()) {
+        std::cerr << "MarkSuccess: test index out of range: " << testIndex << "\n";
+        std::terminate();
     }
 
-    m_Tests[testIndex].DescToFailure[description] = false;
+    auto &t = m_Tests[testIndex];
+    t.RanAnyVariant = true;
+
+    auto &vr = t.Variants[description];
+    vr.status = VariantStatus::Passed;
+    vr.relativeError.clear();
+    vr.acceptableError.clear();
 
     if (launchParams) {
-        m_Tests[testIndex].NumBlocks = launchParams->NumBlocks;
-        m_Tests[testIndex].ThreadsPerBlock = launchParams->ThreadsPerBlock;
+        t.NumBlocks = launchParams->NumBlocks;
+        t.ThreadsPerBlock = launchParams->ThreadsPerBlock;
     }
 }
 
@@ -128,17 +179,21 @@ TestTracker::MarkFailed(const HpShark::LaunchParams *launchParams,
                         const std::string &relativeError,
                         const std::string &acceptableError)
 {
-
-    if (testIndex >= NumTests) {
-        std::cout << "Test index out of range!" << std::endl;
-        assert(false);
+    if (testIndex >= m_Tests.size()) {
+        std::cerr << "MarkFailed: test index out of range: " << testIndex << "\n";
+        std::terminate();
     }
 
-    m_Tests[testIndex].DescToFailure[description] = true;
-    m_Tests[testIndex].RelativeError = relativeError;
-    m_Tests[testIndex].AcceptableError = acceptableError;
+    auto &t = m_Tests[testIndex];
+    t.RanAnyVariant = true;
+
+    auto &vr = t.Variants[description];
+    vr.status = VariantStatus::Failed;
+    vr.relativeError = relativeError;
+    vr.acceptableError = acceptableError;
+
     if (launchParams) {
-        m_Tests[testIndex].NumBlocks = launchParams->NumBlocks;
-        m_Tests[testIndex].ThreadsPerBlock = launchParams->ThreadsPerBlock;
+        t.NumBlocks = launchParams->NumBlocks;
+        t.ThreadsPerBlock = launchParams->ThreadsPerBlock;
     }
 }

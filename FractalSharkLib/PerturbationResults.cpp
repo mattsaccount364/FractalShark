@@ -1,39 +1,51 @@
 #include "stdafx.h"
 
+#include "Exceptions.h"
 #include "Fractal.h"
-#include "PerturbationResults.h"
+#include "ImaginaOrbit.h"
 #include "LAReference.h"
 #include "MPIRSerialization.h"
-#include "Exceptions.h"
+#include "PerturbationResults.h"
 #include "PrecisionCalculator.h"
-#include "ImaginaOrbit.h"
 
-#include <map>
 #include <chrono>
+#include <map>
 
-const HighPrecision &PerturbationResultsBase::GetHiX() const {
+const HighPrecision &
+PerturbationResultsBase::GetHiX() const
+{
     return this->m_OrbitX;
 }
 
-const HighPrecision &PerturbationResultsBase::GetHiY() const {
+const HighPrecision &
+PerturbationResultsBase::GetHiY() const
+{
     return this->m_OrbitY;
 }
 
-const HighPrecision &PerturbationResultsBase::GetHiZoomFactor() const {
+const HighPrecision &
+PerturbationResultsBase::GetHiZoomFactor() const
+{
     return this->m_ZoomFactor;
 }
 
-IterTypeFull PerturbationResultsBase::GetMaxIterations() const {
+IterTypeFull
+PerturbationResultsBase::GetMaxIterations() const
+{
     return this->m_FullMaxIterations;
 }
 
-template<typename IterType>
-void PerturbationResultsBase::SetMaxIterations(IterType numIterations) {
+template <typename IterType>
+void
+PerturbationResultsBase::SetMaxIterations(IterType numIterations)
+{
     this->m_FullMaxIterations = static_cast<IterType>(numIterations);
 }
 
-template<typename IterType>
-void PerturbationResultsBase::SetMaxIterationsSaturate(IterTypeFull numIterations) {
+template <typename IterType>
+void
+PerturbationResultsBase::SetMaxIterationsSaturate(IterTypeFull numIterations)
+{
     if (numIterations > std::numeric_limits<IterType>::max()) {
         this->m_FullMaxIterations = std::numeric_limits<IterType>::max();
     } else {
@@ -44,7 +56,9 @@ void PerturbationResultsBase::SetMaxIterationsSaturate(IterTypeFull numIteration
 // ============================================================================
 
 // Returns the current time as a string
-std::wstring GetTimeAsString(size_t generation_number) {
+std::wstring
+GetTimeAsString(size_t generation_number)
+{
     using namespace std::chrono;
 
     // get current time
@@ -69,24 +83,26 @@ std::wstring GetTimeAsString(size_t generation_number) {
         temp = buffer;
     }
 
-    std::transform(temp.begin(), temp.end(), std::back_inserter(wide), [](char c) {
-        return (wchar_t)c;
-        });
+    std::transform(
+        temp.begin(), temp.end(), std::back_inserter(wide), [](char c) { return (wchar_t)c; });
 
     wide += L"-" + std::to_wstring(generation_number);
 
     return wide;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-std::wstring PerturbationResults<IterType, T, PExtras>::GenBaseFilename(size_t generation_number) const {
+template <typename IterType, class T, PerturbExtras PExtras>
+std::wstring
+PerturbationResults<IterType, T, PExtras>::GenBaseFilename(size_t generation_number) const
+{
     return GenBaseFilename(GetRefOrbitOptions(), generation_number);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-std::wstring PerturbationResults<IterType, T, PExtras>::GenBaseFilename(
-    AddPointOptions addPointOptions,
-    size_t generation_number) const {
+template <typename IterType, class T, PerturbExtras PExtras>
+std::wstring
+PerturbationResults<IterType, T, PExtras>::GenBaseFilename(AddPointOptions addPointOptions,
+                                                           size_t generation_number) const
+{
 
     if (addPointOptions == AddPointOptions::DontSave) {
         return L"";
@@ -95,11 +111,12 @@ std::wstring PerturbationResults<IterType, T, PExtras>::GenBaseFilename(
     return GetTimeAsString(generation_number);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-std::wstring PerturbationResults<IterType, T, PExtras>::GenFilename(
-    GrowableVectorTypes Type,
-    std::wstring optional_suffix,
-    bool add_additional_suffix) const {
+template <typename IterType, class T, PerturbExtras PExtras>
+std::wstring
+PerturbationResults<IterType, T, PExtras>::GenFilename(GrowableVectorTypes Type,
+                                                       std::wstring optional_suffix,
+                                                       bool add_additional_suffix) const
+{
 
     if (GetRefOrbitOptions() == AddPointOptions::DontSave) {
         return L"";
@@ -123,38 +140,20 @@ std::wstring PerturbationResults<IterType, T, PExtras>::GenFilename(
     return result;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-PerturbationResults<IterType, T, PExtras>::PerturbationResults(
-    std::wstring base_filename,
-    AddPointOptions addPointOptions,
-    size_t Generation) :
+template <typename IterType, class T, PerturbExtras PExtras>
+PerturbationResults<IterType, T, PExtras>::PerturbationResults(std::wstring base_filename,
+                                                               AddPointOptions addPointOptions,
+                                                               size_t Generation)
+    :
 
-    PerturbationResultsBase{ },
-    m_OrbitXStr{},
-    m_OrbitYStr{},
-    m_ZoomFactorStr{},
-    m_OrbitXLow{},
-    m_OrbitYLow{},
-    m_ZoomFactorLow{},
-    m_MaxRadius{},
-    m_PeriodMaybeZero{},
-    m_CompressionErrorExp{},
-    m_IntermediateCompressionErrorExp{},
-    m_RefOrbitOptions{ addPointOptions },
-    m_BaseFilename{ base_filename },
-    m_MetaFileHandle{ INVALID_HANDLE_VALUE },
-    m_FullOrbit{ },
-    m_UncompressedItersInOrbit{},
-    m_GenerationNumber{ Generation },
-    m_LaReference{},
-    m_AuthoritativePrecisionInBits{},
-    m_ReuseX{},
-    m_ReuseY{},
-    m_ReuseIndices{},
-    m_ReuseAllocations{},
-    m_BenchmarkOrbit{},
-    m_DeltaPrecisionCached{},
-    m_ExtraPrecisionCached{} {
+      PerturbationResultsBase{}, m_OrbitXStr{}, m_OrbitYStr{}, m_ZoomFactorStr{}, m_OrbitXLow{},
+      m_OrbitYLow{}, m_ZoomFactorLow{}, m_MaxRadius{}, m_PeriodMaybeZero{}, m_CompressionErrorExp{},
+      m_IntermediateCompressionErrorExp{}, m_RefOrbitOptions{addPointOptions},
+      m_BaseFilename{base_filename}, m_MetaFileHandle{INVALID_HANDLE_VALUE}, m_FullOrbit{},
+      m_UncompressedItersInOrbit{}, m_GenerationNumber{Generation}, m_LaReference{},
+      m_AuthoritativePrecisionInBits{}, m_ReuseX{}, m_ReuseY{}, m_ReuseIndices{}, m_ReuseAllocations{},
+      m_BenchmarkOrbit{}, m_DeltaPrecisionCached{}, m_ExtraPrecisionCached{}
+{
 
     if (addPointOptions == AddPointOptions::OpenExistingWithSave) {
         return;
@@ -165,19 +164,17 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-PerturbationResults<IterType, T, PExtras>::PerturbationResults(
-    AddPointOptions addPointOptions,
-    size_t Generation)
-    : PerturbationResults{
-        GenBaseFilename(addPointOptions, Generation),
-        addPointOptions,
-        Generation } {
+template <typename IterType, class T, PerturbExtras PExtras>
+PerturbationResults<IterType, T, PExtras>::PerturbationResults(AddPointOptions addPointOptions,
+                                                               size_t Generation)
+    : PerturbationResults{GenBaseFilename(addPointOptions, Generation), addPointOptions, Generation}
+{
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-PerturbationResults<IterType, T, PExtras>::~PerturbationResults() {
-    // Clear these first to ensure the memory is freed before the 
+template <typename IterType, class T, PerturbExtras PExtras>
+PerturbationResults<IterType, T, PExtras>::~PerturbationResults()
+{
+    // Clear these first to ensure the memory is freed before the
     // bump allocator is destroyed.
     m_ReuseX.clear();
     m_ReuseY.clear();
@@ -186,58 +183,66 @@ PerturbationResults<IterType, T, PExtras>::~PerturbationResults() {
     CloseMetaFileIfOpen();
 }
 
-//template<typename IterType, class T, PerturbExtras PExtras>
-//PerturbationResults<IterType, T, PExtras>::PerturbationResults(PerturbationResults&& other)
-//    : m_GenerationNumber{ other.m_GenerationNumber } {
-//    *this = std::move(other);
+// template<typename IterType, class T, PerturbExtras PExtras>
+// PerturbationResults<IterType, T, PExtras>::PerturbationResults(PerturbationResults&& other)
+//     : m_GenerationNumber{ other.m_GenerationNumber } {
+//     *this = std::move(other);
 //
-//    other.m_MetaFileHandle = INVALID_HANDLE_VALUE;
-//}
+//     other.m_MetaFileHandle = INVALID_HANDLE_VALUE;
+// }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-size_t PerturbationResults<IterType, T, PExtras>::GetGenerationNumber() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+size_t
+PerturbationResults<IterType, T, PExtras>::GetGenerationNumber() const
+{
     return m_GenerationNumber;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::ClearLaReference() {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::ClearLaReference()
+{
     m_LaReference = nullptr;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SetLaReference(
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::SetLaReference(
     std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference)
-    requires Introspection::TestPExtras<PExtras>::value {
+requires Introspection::TestPExtras<PExtras>::value
+{
 
     m_LaReference = std::move(laReference);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 LAReference<IterType, T, typename PerturbationResults<IterType, T, PExtras>::SubType, PExtras> *
 PerturbationResults<IterType, T, PExtras>::GetLaReference() const
-    requires Introspection::TestPExtras<PExtras>::value {
+requires Introspection::TestPExtras<PExtras>::value
+{
 
     return m_LaReference.get();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PExtras>>
-PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
-    AddPointOptions addPointOptions,
-    size_t new_generation_number)
-    requires Introspection::TestPExtras<PExtras>::value {
+PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(AddPointOptions addPointOptions,
+                                                                   size_t new_generation_number)
+requires Introspection::TestPExtras<PExtras>::value
+{
 
-    auto new_ptr = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
-        addPointOptions,
-        new_generation_number);
+    auto new_ptr = std::make_unique<PerturbationResults<IterType, T, PExtras>>(addPointOptions,
+                                                                               new_generation_number);
     new_ptr->CopyPerturbationResults<true, T, PExtras>(*this);
     return new_ptr;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-template<bool IncludeLA, class Other, PerturbExtras PExtrasOther>
-void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
-    const PerturbationResults<IterType, Other, PExtrasOther> &other) {
+template <typename IterType, class T, PerturbExtras PExtras>
+template <bool IncludeLA, class Other, PerturbExtras PExtrasOther>
+void
+PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
+    const PerturbationResults<IterType, Other, PExtrasOther> &other)
+{
 
     m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize());
 
@@ -256,24 +261,17 @@ void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
         for (size_t i = start; i < end; i++) {
             if constexpr (PExtras == PerturbExtras::Bad) {
                 m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
-                    (T)other.m_FullOrbit[i].x,
-                    (T)other.m_FullOrbit[i].y,
-                    other.m_FullOrbit[i].bad != 0
-                };
+                    (T)other.m_FullOrbit[i].x, (T)other.m_FullOrbit[i].y, other.m_FullOrbit[i].bad != 0};
             } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-                m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
-                    (T)other.m_FullOrbit[i].x,
-                    (T)other.m_FullOrbit[i].y,
-                    other.m_FullOrbit[i].u.f.CompressionIndex
-                };
+                m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{(T)other.m_FullOrbit[i].x,
+                                                              (T)other.m_FullOrbit[i].y,
+                                                              other.m_FullOrbit[i].u.f.CompressionIndex};
             } else {
-                m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
-                    (T)other.m_FullOrbit[i].x,
-                    (T)other.m_FullOrbit[i].y
-                };
+                m_FullOrbit[i] =
+                    GPUReferenceIter<T, PExtras>{(T)other.m_FullOrbit[i].x, (T)other.m_FullOrbit[i].y};
             }
         }
-        };
+    };
 
     std::vector<std::thread> threads;
     for (size_t i = 0; i < numThreads; i++) {
@@ -292,11 +290,13 @@ void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-template<bool IncludeLA, class Other, PerturbExtras PExtrasOther>
-void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
+template <typename IterType, class T, PerturbExtras PExtras>
+template <bool IncludeLA, class Other, PerturbExtras PExtrasOther>
+void
+PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
     const PerturbationResults<IterType, Other, PExtrasOther> &other)
-    requires Introspection::TestPExtras<PExtras>::value {
+requires Introspection::TestPExtras<PExtras>::value
+{
 
     this->m_OrbitX = other.GetHiX();
     this->m_OrbitY = other.GetHiY();
@@ -317,7 +317,7 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
     m_BaseFilename = GenBaseFilename(m_GenerationNumber);
     m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
-    m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str()};
+    m_FullOrbit = {GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str()};
     m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize(), 0);
     m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
 
@@ -349,49 +349,90 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
 }
 
 // Explicitly instantiate CopyPerturbationResults for all types
-#define InstantiateCopyPerturbationResultsLA(T, OtherT, PExtras, PExtrasOther) \
-    template void PerturbationResults<uint32_t, T, PExtras>::CopyPerturbationResults<true, OtherT, PExtrasOther>( \
-        const PerturbationResults<uint32_t, OtherT, PExtrasOther>& other); \
-    template void PerturbationResults<uint64_t, T, PExtras>::CopyPerturbationResults<true, OtherT, PExtrasOther>( \
-        const PerturbationResults<uint64_t, OtherT, PExtrasOther>& other);
+#define InstantiateCopyPerturbationResultsLA(T, OtherT, PExtras, PExtrasOther)                          \
+    template void                                                                                       \
+    PerturbationResults<uint32_t, T, PExtras>::CopyPerturbationResults<true, OtherT, PExtrasOther>(     \
+        const PerturbationResults<uint32_t, OtherT, PExtrasOther> &other);                              \
+    template void                                                                                       \
+    PerturbationResults<uint64_t, T, PExtras>::CopyPerturbationResults<true, OtherT, PExtrasOther>(     \
+        const PerturbationResults<uint64_t, OtherT, PExtrasOther> &other);
 
-#define InstantiateCopyPerturbationResultsNoLA(T, OtherT, PExtras, PExtrasOther) \
-    template void PerturbationResults<uint32_t, T, PExtras>::CopyPerturbationResults<false, OtherT, PExtrasOther>(\
-        const PerturbationResults<uint32_t, OtherT, PExtrasOther>& other); \
-    template void PerturbationResults<uint64_t, T, PExtras>::CopyPerturbationResults<false, OtherT, PExtrasOther>(\
-        const PerturbationResults<uint64_t, OtherT, PExtrasOther>& other)
+#define InstantiateCopyPerturbationResultsNoLA(T, OtherT, PExtras, PExtrasOther)                        \
+    template void                                                                                       \
+    PerturbationResults<uint32_t, T, PExtras>::CopyPerturbationResults<false, OtherT, PExtrasOther>(    \
+        const PerturbationResults<uint32_t, OtherT, PExtrasOther> &other);                              \
+    template void                                                                                       \
+    PerturbationResults<uint64_t, T, PExtras>::CopyPerturbationResults<false, OtherT, PExtrasOther>(    \
+        const PerturbationResults<uint64_t, OtherT, PExtrasOther> &other)
 
-#define InstantiateCopyPerturbationResults(T, OtherT, PExtras, PExtrasOther) \
-    InstantiateCopyPerturbationResultsLA(T, OtherT, PExtras, PExtrasOther); \
+#define InstantiateCopyPerturbationResults(T, OtherT, PExtras, PExtrasOther)                            \
+    InstantiateCopyPerturbationResultsLA(T, OtherT, PExtras, PExtrasOther);                             \
     InstantiateCopyPerturbationResultsNoLA(T, OtherT, PExtras, PExtrasOther)
 
-InstantiateCopyPerturbationResults(CudaDblflt<MattDblflt>, double, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResults(HDRFloat<CudaDblflt<MattDblflt>>, HDRFloat<double>, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResults(CudaDblflt<MattDblflt>, double, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression);
-InstantiateCopyPerturbationResults(HDRFloat<CudaDblflt<MattDblflt>>, HDRFloat<double>, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression);
-InstantiateCopyPerturbationResultsLA(HDRFloat<float>, HDRFloat<double>, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResultsLA(HDRFloat<float>, HDRFloat<double>, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression);
+InstantiateCopyPerturbationResults(CudaDblflt<MattDblflt>,
+                                   double,
+                                   PerturbExtras::Disable,
+                                   PerturbExtras::Disable);
+InstantiateCopyPerturbationResults(HDRFloat<CudaDblflt<MattDblflt>>,
+                                   HDRFloat<double>,
+                                   PerturbExtras::Disable,
+                                   PerturbExtras::Disable);
+InstantiateCopyPerturbationResults(CudaDblflt<MattDblflt>,
+                                   double,
+                                   PerturbExtras::SimpleCompression,
+                                   PerturbExtras::SimpleCompression);
+InstantiateCopyPerturbationResults(HDRFloat<CudaDblflt<MattDblflt>>,
+                                   HDRFloat<double>,
+                                   PerturbExtras::SimpleCompression,
+                                   PerturbExtras::SimpleCompression);
+InstantiateCopyPerturbationResultsLA(HDRFloat<float>,
+                                     HDRFloat<double>,
+                                     PerturbExtras::Disable,
+                                     PerturbExtras::Disable);
+InstantiateCopyPerturbationResultsLA(HDRFloat<float>,
+                                     HDRFloat<double>,
+                                     PerturbExtras::SimpleCompression,
+                                     PerturbExtras::SimpleCompression);
 InstantiateCopyPerturbationResults(float, double, PerturbExtras::Disable, PerturbExtras::Disable);
 InstantiateCopyPerturbationResults(float, double, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResults(HDRFloat<float>, HDRFloat<double>, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResults(HDRFloat<float>, HDRFloat<double>, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResultsNoLA(float, HDRFloat<float>, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResultsNoLA(float, HDRFloat<float>, PerturbExtras::Disable, PerturbExtras::Disable);
+InstantiateCopyPerturbationResults(HDRFloat<float>,
+                                   HDRFloat<double>,
+                                   PerturbExtras::Disable,
+                                   PerturbExtras::Disable);
+InstantiateCopyPerturbationResults(HDRFloat<float>,
+                                   HDRFloat<double>,
+                                   PerturbExtras::Disable,
+                                   PerturbExtras::Disable);
+InstantiateCopyPerturbationResultsNoLA(float,
+                                       HDRFloat<float>,
+                                       PerturbExtras::Disable,
+                                       PerturbExtras::Disable);
+InstantiateCopyPerturbationResultsNoLA(float,
+                                       HDRFloat<float>,
+                                       PerturbExtras::Disable,
+                                       PerturbExtras::Disable);
 
 InstantiateCopyPerturbationResultsNoLA(float, double, PerturbExtras::Bad, PerturbExtras::Bad);
 InstantiateCopyPerturbationResultsNoLA(float, double, PerturbExtras::Bad, PerturbExtras::Bad);
 InstantiateCopyPerturbationResultsNoLA(float, HDRFloat<float>, PerturbExtras::Bad, PerturbExtras::Bad);
 InstantiateCopyPerturbationResultsNoLA(float, HDRFloat<float>, PerturbExtras::Bad, PerturbExtras::Bad);
-InstantiateCopyPerturbationResultsNoLA(HDRFloat<float>, HDRFloat<double>, PerturbExtras::Bad, PerturbExtras::Bad);
-InstantiateCopyPerturbationResultsNoLA(HDRFloat<float>, HDRFloat<double>, PerturbExtras::Bad, PerturbExtras::Bad);
+InstantiateCopyPerturbationResultsNoLA(HDRFloat<float>,
+                                       HDRFloat<double>,
+                                       PerturbExtras::Bad,
+                                       PerturbExtras::Bad);
+InstantiateCopyPerturbationResultsNoLA(HDRFloat<float>,
+                                       HDRFloat<double>,
+                                       PerturbExtras::Bad,
+                                       PerturbExtras::Bad);
 InstantiateCopyPerturbationResultsNoLA(double, HDRFloat<double>, PerturbExtras::Bad, PerturbExtras::Bad);
 InstantiateCopyPerturbationResultsNoLA(double, HDRFloat<double>, PerturbExtras::Bad, PerturbExtras::Bad);
 
-
-template<typename IterType, class T, PerturbExtras PExtras>
-template<PerturbExtras OtherBad>
-void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(
-    const PerturbationResults<IterType, T, OtherBad> &other) {
+template <typename IterType, class T, PerturbExtras PExtras>
+template <PerturbExtras OtherBad>
+void
+PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(
+    const PerturbationResults<IterType, T, OtherBad> &other)
+{
 
     this->m_OrbitX = other.GetHiX();
     this->m_OrbitY = other.GetHiY();
@@ -411,7 +452,7 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(
     m_BaseFilename = GenBaseFilename(m_GenerationNumber);
     m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
-    m_FullOrbit = { }; // Note: not copied
+    m_FullOrbit = {};                // Note: not copied
     m_UncompressedItersInOrbit = {}; // Note: not copied
 
     // compression - don't copy LA data.  Regenerate if needed.
@@ -430,21 +471,23 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(
     m_ExtraPrecisionCached = other.m_ExtraPrecisionCached;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::RecreateFullOrbitVector(
-    size_t overrideViewsize) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::RecreateFullOrbitVector(size_t overrideViewsize)
+{
 
     // This is a specific scenario: we support a very large temp file for Imagina orbit
     // decompression.
-    m_FullOrbit = {
-        AddPointOptions::EnableWithoutSave,
-        GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str(),
-        overrideViewsize };
+    m_FullOrbit = {AddPointOptions::EnableWithoutSave,
+                   GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str(),
+                   overrideViewsize};
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const
-    requires (PExtras != PerturbExtras::MaxCompression) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::WriteMetadata() const
+requires(PExtras != PerturbExtras::MaxCompression)
+{
 
     // In this case, we want to close and delete the file if it's open.
     // The code after this function will open the new file for delete.
@@ -512,12 +555,12 @@ void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const
     metafile << "MaxIterationsPerPixel: " << this->GetMaxIterations() << std::endl;
     metafile << "Period: " << m_PeriodMaybeZero << std::endl;
     metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
-    metafile << "IntermediateCompressionErrorExponent: " << m_IntermediateCompressionErrorExp << std::endl;
+    metafile << "IntermediateCompressionErrorExponent: " << m_IntermediateCompressionErrorExp
+             << std::endl;
     metafile << "UncompressedIterationsInOrbit: " << GetCountOrbitEntries() << std::endl;
 
     if constexpr (Introspection::TestPExtras<PExtras>::value) {
-        if (m_LaReference != nullptr &&
-            m_LaReference->IsValid()) {
+        if (m_LaReference != nullptr && m_LaReference->IsValid()) {
             bool ret = m_LaReference->WriteMetadata(metafile);
             if (!ret) {
                 ::MessageBox(nullptr, L"Failed to write LA metadata.", L"", MB_OK | MB_APPLMODAL);
@@ -531,27 +574,30 @@ void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const
     MaybeOpenMetaFileForDelete();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::MaybeOpenMetaFileForDelete() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::MaybeOpenMetaFileForDelete() const
+{
     // This call can fail but that should be OK
     if (GetRefOrbitOptions() == AddPointOptions::EnableWithoutSave &&
         m_MetaFileHandle == INVALID_HANDLE_VALUE) {
 
         const auto attributes = FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE;
-        m_MetaFileHandle = CreateFile(
-            GenFilename(GrowableVectorTypes::Metadata).c_str(),
-            0, // no read or write
-            FILE_SHARE_DELETE,
-            nullptr,
-            OPEN_EXISTING,
-            attributes,
-            nullptr);
+        m_MetaFileHandle = CreateFile(GenFilename(GrowableVectorTypes::Metadata).c_str(),
+                                      0, // no read or write
+                                      FILE_SHARE_DELETE,
+                                      nullptr,
+                                      OPEN_EXISTING,
+                                      attributes,
+                                      nullptr);
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-bool PerturbationResults<IterType, T, PExtras>::ReadMetadata()
-    requires Introspection::TestPExtras<PExtras>::value {
+template <typename IterType, class T, PerturbExtras PExtras>
+bool
+PerturbationResults<IterType, T, PExtras>::ReadMetadata()
+requires Introspection::TestPExtras<PExtras>::value
+{
 
     std::ifstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
     if (!metafile.is_open()) {
@@ -663,14 +709,14 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata()
         metafile >> descriptor_string_junk;
         metafile >> prec;
 
-        MPIRPrecision p{ prec };
+        MPIRPrecision p{prec};
 
         std::string shiX;
         metafile >> descriptor_string_junk;
         metafile >> shiX;
 
         this->m_OrbitX.precisionInBits(prec);
-        this->m_OrbitX = HighPrecision{ shiX };
+        this->m_OrbitX = HighPrecision{shiX};
         m_OrbitXStr = shiX;
     }
 
@@ -679,14 +725,14 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata()
         metafile >> descriptor_string_junk;
         metafile >> prec;
 
-        MPIRPrecision p{ prec };
+        MPIRPrecision p{prec};
 
         std::string shiY;
         metafile >> descriptor_string_junk;
         metafile >> shiY;
 
         this->m_OrbitY.precisionInBits(prec);
-        this->m_OrbitY = HighPrecision{ shiY };
+        this->m_OrbitY = HighPrecision{shiY};
         m_OrbitYStr = shiY;
     }
 
@@ -695,14 +741,14 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata()
         metafile >> descriptor_string_junk;
         metafile >> prec;
 
-        MPIRPrecision p{ prec };
+        MPIRPrecision p{prec};
 
         std::string shiZ;
         metafile >> descriptor_string_junk;
         metafile >> shiZ;
 
         this->m_ZoomFactor.precisionInBits(prec);
-        this->m_ZoomFactor = HighPrecision{ shiZ };
+        this->m_ZoomFactor = HighPrecision{shiZ};
         m_ZoomFactorStr = shiZ;
     }
 
@@ -739,7 +785,8 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata()
         std::string intermediateCompressionErrorStr;
         metafile >> descriptor_string_junk;
         metafile >> intermediateCompressionErrorStr;
-        m_IntermediateCompressionErrorExp = static_cast<int32_t>(std::stoll(intermediateCompressionErrorStr));
+        m_IntermediateCompressionErrorExp =
+            static_cast<int32_t>(std::stoll(intermediateCompressionErrorStr));
     }
 
     {
@@ -767,11 +814,13 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata()
     return true;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::InitReused() {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::InitReused()
+{
     HighPrecision Zero{};
 
-    //assert(RequiresReuse());
+    // assert(RequiresReuse());
     Zero.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
 
     m_ReuseX.push_back(Zero);
@@ -779,37 +828,39 @@ void PerturbationResults<IterType, T, PExtras>::InitReused() {
     m_ReuseIndices.push_back(0);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::InitResults(
-    RefOrbitCalc::ReuseMode Reuse,
-    const HighPrecision &cx,
-    const HighPrecision &cy,
-    const HighPrecision &/*minX*/, // TODO
-    const HighPrecision &minY,
-    const HighPrecision &/*maxX*/,
-    const HighPrecision &maxY,
-    IterType NumIterations,
-    size_t GuessReserveSize) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::InitResults(RefOrbitCalc::ReuseMode Reuse,
+                                                       const HighPrecision &cx,
+                                                       const HighPrecision &cy,
+                                                       const HighPrecision & /*minX*/, // TODO
+                                                       const HighPrecision &minY,
+                                                       const HighPrecision & /*maxX*/,
+                                                       const HighPrecision &maxY,
+                                                       IterType NumIterations,
+                                                       size_t GuessReserveSize)
+{
 
-    const T radiusY{ T{ maxY - minY } / T{ 2.0f } };
+    const T radiusY{T{maxY - minY} / T{2.0f}};
 
     InitResults(Reuse, cx, cy, radiusY, NumIterations, GuessReserveSize);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::InitResults(
-    RefOrbitCalc::ReuseMode Reuse,
-    const HighPrecision &cx,
-    const HighPrecision &cy,
-    const T &radiusY,
-    IterType NumIterations,
-    size_t GuessReserveSize) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::InitResults(RefOrbitCalc::ReuseMode Reuse,
+                                                       const HighPrecision &cx,
+                                                       const HighPrecision &cy,
+                                                       const T &radiusY,
+                                                       IterType NumIterations,
+                                                       size_t GuessReserveSize)
+{
 
     // Note: not using ScopedBenchmarkStopper
     m_BenchmarkOrbit.StartTimer();
 
-    HighPrecision zoomFactor{ radiusY };
-    zoomFactor = HighPrecision{ 2 } / zoomFactor;
+    HighPrecision zoomFactor{radiusY};
+    zoomFactor = HighPrecision{2} / zoomFactor;
     std::string zoomFactorStr = zoomFactor.str();
 
     this->m_OrbitX = cx;
@@ -818,9 +869,9 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     m_OrbitXStr = HdrToString<false>(cx);
     m_OrbitYStr = HdrToString<false>(cy);
     m_ZoomFactorStr = zoomFactorStr;
-    m_OrbitXLow = T{ cx };
-    m_OrbitYLow = T{ cy };
-    m_ZoomFactorLow = T{ zoomFactor };
+    m_OrbitXLow = T{cx};
+    m_OrbitYLow = T{cy};
+    m_ZoomFactorLow = T{zoomFactor};
     m_MaxRadius = radiusY;
 
     HdrReduce(m_MaxRadius);
@@ -841,8 +892,7 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
 
-        m_AuthoritativePrecisionInBits =
-            PrecisionCalculator::GetPrecision(radiusY, radiusY, true);
+        m_AuthoritativePrecisionInBits = PrecisionCalculator::GetPrecision(radiusY, radiusY, true);
         m_ReuseX.reserve(ReserveSize);
         m_ReuseY.reserve(ReserveSize);
         m_ReuseAllocations = nullptr;
@@ -853,23 +903,26 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     m_LaReference = nullptr;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-uint64_t PerturbationResults<IterType, T, PExtras>::GetBenchmarkOrbit() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+uint64_t
+PerturbationResults<IterType, T, PExtras>::GetBenchmarkOrbit() const
+{
     return m_BenchmarkOrbit.GetDeltaInMs();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-template<RefOrbitCalc::ReuseMode Reuse>
-void PerturbationResults<IterType, T, PExtras>::CompleteResults(std::unique_ptr<ThreadMemory> allocatorIfAny) {
+template <typename IterType, class T, PerturbExtras PExtras>
+template <RefOrbitCalc::ReuseMode Reuse>
+void
+PerturbationResults<IterType, T, PExtras>::CompleteResults(std::unique_ptr<ThreadMemory> allocatorIfAny)
+{
     m_FullOrbit.Trim();
 
-    if constexpr (
-        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
-        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
-        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
-        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-        //m_ReuseX.shrink_to_fit();
-        //m_ReuseY.shrink_to_fit();
+    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
+                  Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+                  Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
+                  Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+        // m_ReuseX.shrink_to_fit();
+        // m_ReuseY.shrink_to_fit();
         m_ReuseAllocations = std::move(allocatorIfAny);
     }
 
@@ -877,17 +930,27 @@ void PerturbationResults<IterType, T, PExtras>::CompleteResults(std::unique_ptr<
 }
 
 // Instantiate CompleteResults for all types
-#define InstantiateCompleteResults(T, PExtras) \
-    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse1>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse2>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse3>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse4>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::DontSaveForReuse>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse1>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse2>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse3>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse4>(std::unique_ptr<ThreadMemory>); \
-    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::DontSaveForReuse>(std::unique_ptr<ThreadMemory>)
+#define InstantiateCompleteResults(T, PExtras)                                                          \
+    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::SaveForReuse1>(std::unique_ptr<ThreadMemory>);                         \
+    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::SaveForReuse2>(std::unique_ptr<ThreadMemory>);                         \
+    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::SaveForReuse3>(std::unique_ptr<ThreadMemory>);                         \
+    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::SaveForReuse4>(std::unique_ptr<ThreadMemory>);                         \
+    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::DontSaveForReuse>(std::unique_ptr<ThreadMemory>);                      \
+    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::SaveForReuse1>(std::unique_ptr<ThreadMemory>);                         \
+    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::SaveForReuse2>(std::unique_ptr<ThreadMemory>);                         \
+    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::SaveForReuse3>(std::unique_ptr<ThreadMemory>);                         \
+    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::SaveForReuse4>(std::unique_ptr<ThreadMemory>);                         \
+    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<                           \
+        RefOrbitCalc::ReuseMode::DontSaveForReuse>(std::unique_ptr<ThreadMemory>)
 
 InstantiateCompleteResults(float, PerturbExtras::Disable);
 InstantiateCompleteResults(float, PerturbExtras::Bad);
@@ -917,9 +980,10 @@ InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::Bad);
 InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::SimpleCompression);
 InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::MaxCompression);
 
-
-template<typename IterType, class T, PerturbExtras PExtras>
-size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrUncompressedOrbitSize() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+size_t
+PerturbationResults<IterType, T, PExtras>::GetCompressedOrUncompressedOrbitSize() const
+{
 
     if constexpr (PExtras == PerturbExtras::SimpleCompression) {
         assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
@@ -930,17 +994,22 @@ size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrUncompressedOrb
     return m_FullOrbit.GetSize();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrbitSize() const
-    requires (PExtras == PerturbExtras::SimpleCompression || PExtras == PerturbExtras::MaxCompression) {
+template <typename IterType, class T, PerturbExtras PExtras>
+size_t
+PerturbationResults<IterType, T, PExtras>::GetCompressedOrbitSize() const
+requires(PExtras == PerturbExtras::SimpleCompression || PExtras == PerturbExtras::MaxCompression)
+{
 
     assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
     return m_FullOrbit.GetSize();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-IterType PerturbationResults<IterType, T, PExtras>::GetCountOrbitEntries() const {
-    if constexpr (PExtras == PerturbExtras::SimpleCompression || PExtras == PerturbExtras::MaxCompression) {
+template <typename IterType, class T, PerturbExtras PExtras>
+IterType
+PerturbationResults<IterType, T, PExtras>::GetCountOrbitEntries() const
+{
+    if constexpr (PExtras == PerturbExtras::SimpleCompression ||
+                  PExtras == PerturbExtras::MaxCompression) {
         assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
     } else {
         assert(m_FullOrbit.GetSize() == m_UncompressedItersInOrbit);
@@ -949,9 +1018,11 @@ IterType PerturbationResults<IterType, T, PExtras>::GetCountOrbitEntries() const
     return m_UncompressedItersInOrbit;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::AddUncompressedIteration(GPUReferenceIter<T, PExtras> result)
-    requires (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::AddUncompressedIteration(GPUReferenceIter<T, PExtras> result)
+requires(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad)
+{
 
     static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad, "!");
 
@@ -959,119 +1030,184 @@ void PerturbationResults<IterType, T, PExtras>::AddUncompressedIteration(GPURefe
     m_UncompressedItersInOrbit++;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-const GPUReferenceIter<T, PExtras> *PerturbationResults<IterType, T, PExtras>::GetOrbitData() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::AddUncompressedIterationsBulk(
+    const GPUReferenceIter<T, PExtras> *iters, IterType count)
+requires(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad)
+{
+    static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad, "!");
+
+    if (count == 0)
+        return;
+
+    // If your container supports reserving, do it once.
+    // If not, delete this block.
+    if constexpr (requires {
+                      m_FullOrbit.Reserve(size_t{});
+                      m_FullOrbit.Size();
+                  }) {
+        m_FullOrbit.Reserve(m_FullOrbit.Size() + count);
+    }
+
+    // Best case: your container has an AppendRange(ptr, count).
+    if constexpr (requires { m_FullOrbit.AppendRange(iters, count); }) {
+        m_FullOrbit.AppendRange(iters, count);
+    } else {
+        // Fallback: still "bulk" from the callsite, and only increments the counter once.
+        for (size_t i = 0; i < count; ++i) {
+            m_FullOrbit.PushBack(iters[i]);
+        }
+    }
+
+    m_UncompressedItersInOrbit += count;
+}
+
+template <typename IterType, class T, PerturbExtras PExtras>
+const GPUReferenceIter<T, PExtras> *
+PerturbationResults<IterType, T, PExtras>::GetOrbitData() const
+{
     return m_FullOrbit.GetData();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-const std::string &PerturbationResults<IterType, T, PExtras>::GetHiXStr() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+const std::string &
+PerturbationResults<IterType, T, PExtras>::GetHiXStr() const
+{
     return m_OrbitXStr;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-const std::string &PerturbationResults<IterType, T, PExtras>::GetHiYStr() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+const std::string &
+PerturbationResults<IterType, T, PExtras>::GetHiYStr() const
+{
     return m_OrbitYStr;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-const std::string &PerturbationResults<IterType, T, PExtras>::GetZoomFactorStr() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+const std::string &
+PerturbationResults<IterType, T, PExtras>::GetZoomFactorStr() const
+{
     return m_ZoomFactorStr;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-T PerturbationResults<IterType, T, PExtras>::GetOrbitXLow() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+T
+PerturbationResults<IterType, T, PExtras>::GetOrbitXLow() const
+{
     return m_OrbitXLow;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-T PerturbationResults<IterType, T, PExtras>::GetOrbitYLow() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+T
+PerturbationResults<IterType, T, PExtras>::GetOrbitYLow() const
+{
     return m_OrbitYLow;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-T PerturbationResults<IterType, T, PExtras>::GetZoomFactorLow() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+T
+PerturbationResults<IterType, T, PExtras>::GetZoomFactorLow() const
+{
     return m_ZoomFactorLow;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-T PerturbationResults<IterType, T, PExtras>::GetMaxRadius() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+T
+PerturbationResults<IterType, T, PExtras>::GetMaxRadius() const
+{
     return m_MaxRadius;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SetBad(bool bad)
-    requires (PExtras == PerturbExtras::Bad) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::SetBad(bool bad)
+requires(PExtras == PerturbExtras::Bad)
+{
 
     m_FullOrbit.Back().bad = bad;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-uint64_t PerturbationResults<IterType, T, PExtras>::GetAuthoritativePrecisionInBits() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+uint64_t
+PerturbationResults<IterType, T, PExtras>::GetAuthoritativePrecisionInBits() const
+{
     return m_AuthoritativePrecisionInBits;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-IterType PerturbationResults<IterType, T, PExtras>::GetPeriodMaybeZero() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+IterType
+PerturbationResults<IterType, T, PExtras>::GetPeriodMaybeZero() const
+{
     return m_PeriodMaybeZero;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SetPeriodMaybeZero(IterType period) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::SetPeriodMaybeZero(IterType period)
+{
     m_PeriodMaybeZero = period;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-int32_t PerturbationResults<IterType, T, PExtras>::GetCompressionErrorExp() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+int32_t
+PerturbationResults<IterType, T, PExtras>::GetCompressionErrorExp() const
+{
     return m_CompressionErrorExp;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-int32_t PerturbationResults<IterType, T, PExtras>::GetIntermediateCompressionErrorExp() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+int32_t
+PerturbationResults<IterType, T, PExtras>::GetIntermediateCompressionErrorExp() const
+{
     return m_IntermediateCompressionErrorExp;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-AddPointOptions PerturbationResults<IterType, T, PExtras>::GetRefOrbitOptions() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+AddPointOptions
+PerturbationResults<IterType, T, PExtras>::GetRefOrbitOptions() const
+{
     return m_RefOrbitOptions;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-size_t PerturbationResults<IterType, T, PExtras>::GetReuseSize() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+size_t
+PerturbationResults<IterType, T, PExtras>::GetReuseSize() const
+{
     assert(m_ReuseX.size() == m_ReuseY.size());
     return m_ReuseX.size();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::AddUncompressedReusedEntry(
-    HighPrecision x,
-    HighPrecision y,
-    IterTypeFull index) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::AddUncompressedReusedEntry(HighPrecision x,
+                                                                      HighPrecision y,
+                                                                      IterTypeFull index)
+{
 
     m_ReuseX.push_back(std::move(x));
     m_ReuseY.push_back(std::move(y));
     m_ReuseIndices.push_back(index);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::AddUncompressedReusedEntry(
-    const mpf_t x,
-    const mpf_t y,
-    IterTypeFull index) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::AddUncompressedReusedEntry(const mpf_t x,
+                                                                      const mpf_t y,
+                                                                      IterTypeFull index)
+{
 
     // This may be a perf problem if we have a lot of calls here.
     // This is a full copy.
-    AddUncompressedReusedEntry(HighPrecision{ x }, HighPrecision{ y }, index);
+    AddUncompressedReusedEntry(HighPrecision{x}, HighPrecision{y}, index);
 }
 
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::AddUncompressedRebase(IterTypeFull i, IterTypeFull index)
+{
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::AddUncompressedRebase(
-    IterTypeFull i,
-    IterTypeFull index) {
-
-    if (!m_Rebases.empty() &&
-        m_Rebases[m_Rebases.size() - 1] > index) {
+    if (!m_Rebases.empty() && m_Rebases[m_Rebases.size() - 1] > index) {
         m_Rebases[m_Rebases.size() - 1] = i;
     } else {
         m_Rebases.push_back(i);
@@ -1080,37 +1216,36 @@ void PerturbationResults<IterType, T, PExtras>::AddUncompressedRebase(
 
 // Take references to pointers to avoid copying.
 // Set the pointers to point at the specified index.
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::GetCompressedReuseEntries(
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::GetCompressedReuseEntries(
     IntermediateRuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
     size_t uncompressed_index,
     const mpf_t *&x,
-    const mpf_t *&y) const {
+    const mpf_t *&y) const
+{
 
-    PerThreadCompressionHelper.GetReuseEntries(
-        uncompressed_index,
-        x,
-        y);
+    PerThreadCompressionHelper.GetReuseEntries(uncompressed_index, x, y);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::GetMaxCompressedReuseEntries(
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::GetMaxCompressedReuseEntries(
     IntermediateMaxRuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
     size_t uncompressed_index,
     const mpf_t *&x,
-    const mpf_t *&y) const {
+    const mpf_t *&y) const
+{
 
-    PerThreadCompressionHelper.GetReuseEntries(
-        uncompressed_index,
-        x,
-        y);
+    PerThreadCompressionHelper.GetReuseEntries(uncompressed_index, x, y);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::GetUncompressedReuseEntries(
-    size_t uncompressed_index,
-    const mpf_t *&x,
-    const mpf_t *&y) const {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::GetUncompressedReuseEntries(size_t uncompressed_index,
+                                                                       const mpf_t *&x,
+                                                                       const mpf_t *&y) const
+{
 
     x = m_ReuseX[uncompressed_index].backendRaw();
     y = m_ReuseY[uncompressed_index].backendRaw();
@@ -1121,15 +1256,15 @@ void PerturbationResults<IterType, T, PExtras>::GetUncompressedReuseEntries(
 //   https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
 //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
 // as a reference for the compression algorithm.
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
-PerturbationResults<IterType, T, PExtras>::Compress(
-    int32_t compressionErrorExpParam,
-    size_t new_generation_number) const
-    requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>()) {
+PerturbationResults<IterType, T, PExtras>::Compress(int32_t compressionErrorExpParam,
+                                                    size_t new_generation_number) const
+requires(PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>())
+{
 
     constexpr bool DisableCompression = false;
-    const auto Two = T{ 2.0f };
+    const auto Two = T{2.0f};
 
     // Note: the compression error used here is 10^compressionErrorExpParam.
     // We're using a regular norm rather than Chebyshev.
@@ -1147,7 +1282,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
 
     if constexpr (DisableCompression) {
         for (size_t i = 0; i < GetCountOrbitEntries(); i++) {
-            compressed->FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
+            compressed->FullOrbit.PushBack({m_FullOrbit[i].x, m_FullOrbit[i].y, i});
         }
 
         return compressed;
@@ -1169,7 +1304,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
                 zx = m_FullOrbit[i].x;
                 zy = m_FullOrbit[i].y;
 
-                compressed->m_FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
+                compressed->m_FullOrbit.PushBack({m_FullOrbit[i].x, m_FullOrbit[i].y, i});
             }
 
             auto zx_old = zx;
@@ -1183,11 +1318,11 @@ PerturbationResults<IterType, T, PExtras>::Compress(
     return compressed;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
-PerturbationResults<IterType, T, PExtras>::Decompress(size_t newGenerationNumber)
-const
-    requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
+PerturbationResults<IterType, T, PExtras>::Decompress(size_t newGenerationNumber) const
+requires(PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>())
+{
 
     const auto &compressed_orb = m_FullOrbit;
     auto decompressed = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
@@ -1211,11 +1346,11 @@ const
             auto zx_old = zx;
             zx = zx * zx - zy * zy + m_OrbitXLow;
             HdrReduce(zx);
-            zy = T{ 2.0f } *zx_old * zy + m_OrbitYLow;
+            zy = T{2.0f} * zx_old * zy + m_OrbitYLow;
             HdrReduce(zy);
         }
 
-        decompressed->AddUncompressedIteration({ zx, zy });
+        decompressed->AddUncompressedIteration({zx, zy});
     }
 
     return decompressed;
@@ -1226,14 +1361,13 @@ const
 //   https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
 //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
 // as a reference for the compression algorithm.
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
-PerturbationResults<IterType, T, PExtras>::CompressMax(
-    int32_t compressionErrorExpParam,
-    size_t new_generation_number,
-    bool includeDummy)
-    const
-    requires (!Introspection::IsTDblFlt<T>()) {
+PerturbationResults<IterType, T, PExtras>::CompressMax(int32_t compressionErrorExpParam,
+                                                       size_t new_generation_number,
+                                                       bool includeDummy) const
+requires(!Introspection::IsTDblFlt<T>())
+{
 
     // Testing
     static constexpr bool DisableCompression = false;
@@ -1250,7 +1384,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     static constexpr bool TrackPathsTaken = false;
 
-    const auto Two = T{ 2.0f };
+    const auto Two = T{2.0f};
 
     // Here we take the square root of the provided compression error.
     // We're using Chebyshev norm instead of regular Euclidean as with simple compression.
@@ -1268,38 +1402,38 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     if constexpr (DisableCompression) {
         for (size_t i = 0; i < GetCompressedOrbitSize(); i++) {
-            compressed->FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
+            compressed->FullOrbit.PushBack({m_FullOrbit[i].x, m_FullOrbit[i].y, i});
         }
 
         return compressed;
     }
 
     auto normZ = [](T x, T y) -> T {
-        //auto norm_z = x * x + y * y;
+        // auto norm_z = x * x + y * y;
         auto norm_z = HdrMaxReduced(HdrAbs(x), HdrAbs(y));
         HdrReduce(norm_z);
         return norm_z;
-        };
+    };
 
     auto normZTimesT = [](T x, T y, T t) -> T {
-        //auto norm_z = (x * x + y * y) * t;
+        // auto norm_z = (x * x + y * y) * t;
         auto norm_z = (HdrMaxReduced(HdrAbs(x), HdrAbs(y))) * t;
         HdrReduce(norm_z);
         return norm_z;
-        };
+    };
 
     const auto threshold2 = CompressionError;
-    T constant1{ 0x1.0p-4 };
+    T constant1{0x1.0p-4};
     HdrReduce(constant1);
-    T constant2{ (T)0x1.000001p0 };
+    T constant2{(T)0x1.000001p0};
     HdrReduce(constant2);
 
-    T zx{ m_OrbitXLow };
-    T zy{ m_OrbitYLow };
+    T zx{m_OrbitXLow};
+    T zy{m_OrbitYLow};
 
     // Having two of these is critical for perf unless we make the cache in each bigger.
-    RuntimeDecompressor<IterType, T, PExtras> PerThreadCompressionHelperI{ *this };
-    RuntimeDecompressor<IterType, T, PExtras> PerThreadCompressionHelperJ{ *this };
+    RuntimeDecompressor<IterType, T, PExtras> PerThreadCompressionHelperI{*this};
+    RuntimeDecompressor<IterType, T, PExtras> PerThreadCompressionHelperJ{*this};
 
     std::map<uint64_t, uint64_t> PathCounts;
 
@@ -1314,7 +1448,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
             zx = outX;
             zy = outY;
 
-            compressed->m_FullOrbit.PushBack({ outX, outY, i, true });
+            compressed->m_FullOrbit.PushBack({outX, outY, i, true});
 
             if constexpr (TrackPathsTaken) {
                 PathCounts[__LINE__]++;
@@ -1332,7 +1466,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
                 zx = outX;
                 zy = outY;
 
-                compressed->m_FullOrbit.PushBack({ outX, outY, i, false });
+                compressed->m_FullOrbit.PushBack({outX, outY, i, false});
 
                 if constexpr (TrackPathsTaken) {
                     PathCounts[__LINE__]++;
@@ -1340,7 +1474,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
             }
         }
 
-        //z = z * z + c;
+        // z = z * z + c;
         const auto zx_old = zx;
         zx = zx * zx - zy * zy + m_OrbitXLow;
         HdrReduce(zx);
@@ -1352,8 +1486,8 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         }
     }
 
-    T dzX{ zx };
-    T dzY{ zy };
+    T dzX{zx};
+    T dzY{zy};
     IterTypeFull PrevWayPointIteration = i;
 
     // dz = (Z[0] * 2 + dz) * dz;
@@ -1364,8 +1498,8 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     // dzX = [2*outXi*dzX+dzX*dzX?2*outYi*dzY-dzY*dzY]
     // dzY = [2*outXi*dzY+dzX*dzY+2*outYi*dzX+dzY*dzX]*i
 
-    //dzX = Two * m_FullOrbit[0].x * dzX + dzX * dzX;
-    //dzY = MinusTwo * m_FullOrbit[0].y * dzY - dzY * dzY;
+    // dzX = Two * m_FullOrbit[0].x * dzX + dzX * dzX;
+    // dzY = MinusTwo * m_FullOrbit[0].y * dzY - dzY * dzY;
 
     T outXi, outYi;
     T outXj, outYj;
@@ -1427,13 +1561,13 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
                 dzX = zx;
                 dzY = zy;
                 j = 0;
-                compressed->m_FullOrbit.PushBack({ dzX, dzY, i, true });
+                compressed->m_FullOrbit.PushBack({dzX, dzY, i, true});
 
                 if constexpr (TrackPathsTaken) {
                     PathCounts[__LINE__]++;
                 }
             } else {
-                compressed->m_FullOrbit.PushBack({ dzX, dzY, i, false });
+                compressed->m_FullOrbit.PushBack({dzX, dzY, i, false});
 
                 if constexpr (TrackPathsTaken) {
                     PathCounts[__LINE__]++;
@@ -1450,8 +1584,8 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
             const auto rebaseSize = compressed->m_Rebases.size();
             const auto fullOrbitSize = compressed->GetCompressedOrbitSize();
-            if (rebaseSize != 0 &&
-                compressed->m_Rebases[rebaseSize - 1] > compressed->m_FullOrbit[fullOrbitSize - 1].u.f.CompressionIndex) {
+            if (rebaseSize != 0 && compressed->m_Rebases[rebaseSize - 1] >
+                                       compressed->m_FullOrbit[fullOrbitSize - 1].u.f.CompressionIndex) {
                 compressed->m_Rebases[rebaseSize - 1] = i;
 
                 if constexpr (TrackPathsTaken) {
@@ -1471,26 +1605,26 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         // (dzX + dzY * i) = ((zx + zy * i) * 2 + (dzX + dzY * i)) * (dzX + dzY * i)
         // (dzX + dzY * i) = ((2 * zx + 2 * zy * i) + (dzX + dzY * i)) * (dzX + dzY * i)
         // (dzX + dzY * i) = (2 * zx + dzX + 2 * zy * i + dzY * i) * (dzX + dzY * i)
-        // 
+        //
         // dzX = (2 * zx + dzX) * dzX
         // dzX = 2 * zx * dzX + dzX * dzX
-        // 
+        //
         // dzY = (2 * zy * i + dzY * i) * dzY * i
         // dzY = -2 * zy * dzY - dzY * dzY
 
-        //dzX = Two * m_FullOrbit[j].x * dzX + dzX * dzX;
-        //HdrReduce(dzX);
-        //dzY = MinusTwo * m_FullOrbit[j].y * dzY - dzY * dzY;
-        //HdrReduce(dzY);
+        // dzX = Two * m_FullOrbit[j].x * dzX + dzX * dzX;
+        // HdrReduce(dzX);
+        // dzY = MinusTwo * m_FullOrbit[j].y * dzY - dzY * dzY;
+        // HdrReduce(dzY);
 
         // Reacquire index j because j changes above
         GetComplex(PerThreadCompressionHelperJ, j, outXj, outYj);
 
-        //const auto dzX_old = dzX;
-        //dzX = Two * outXi * dzX - Two * outYi * dzY + dzX * dzX - dzY * dzY;
-        //HdrReduce(dzX);
-        //dzY = Two * outXi * dzY + Two * outYi * dzX_old + Two * dzX_old * dzY;
-        //HdrReduce(dzY);
+        // const auto dzX_old = dzX;
+        // dzX = Two * outXi * dzX - Two * outYi * dzY + dzX * dzX - dzY * dzY;
+        // HdrReduce(dzX);
+        // dzY = Two * outXi * dzY + Two * outYi * dzX_old + Two * dzX_old * dzY;
+        // HdrReduce(dzY);
 
         const auto dzX_old2 = dzX;
         dzX = Two * outXj * dzX - Two * outYj * dzY + dzX * dzX - dzY * dzY;
@@ -1510,7 +1644,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     }
 
     if (includeDummy) {
-        compressed->m_FullOrbit.PushBack({ {}, {}, ~0ull, false });
+        compressed->m_FullOrbit.PushBack({{}, {}, ~0ull, false});
         compressed->m_Rebases.push_back(~0ull);
     }
 
@@ -1539,14 +1673,13 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     return compressed;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-template<PerturbExtras PExtrasDest>
+template <typename IterType, class T, PerturbExtras PExtras>
+template <PerturbExtras PExtrasDest>
 std::unique_ptr<PerturbationResults<IterType, T, PExtrasDest>>
-PerturbationResults<IterType, T, PExtras>::DecompressMax(
-    int32_t compressionErrorExpParam,
-    size_t newGenerationNumber)
-    const
-    requires (PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T>()) {
+PerturbationResults<IterType, T, PExtras>::DecompressMax(int32_t compressionErrorExpParam,
+                                                         size_t newGenerationNumber) const
+requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T>())
+{
 
     // Show range of indices touched
     constexpr bool outputFile = false;
@@ -1555,18 +1688,18 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
     constexpr bool trackCountsPerIndex = false;
 
     auto normZ = [](T x, T y) -> T {
-        //auto norm_z = x * x + y * y;
+        // auto norm_z = x * x + y * y;
         auto norm_z = HdrMaxReduced(HdrAbs(x), HdrAbs(y));
         HdrReduce(norm_z);
         return norm_z;
-        };
+    };
 
     auto normZTimesT = [](T x, T y, T t) -> T {
-        //auto norm_z = (x * x + y * y) * t;
+        // auto norm_z = (x * x + y * y) * t;
         auto norm_z = (HdrMaxReduced(HdrAbs(x), HdrAbs(y))) * t;
         HdrReduce(norm_z);
         return norm_z;
-        };
+    };
 
     assert(GetCompressedOrbitSize() > 0);
     T zx{};
@@ -1576,18 +1709,16 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
     GPUReferenceIter<T, PExtras> nextWayPoint = m_FullOrbit[0];
     IterTypeFull nextRebase = m_Rebases[0];
 
-    auto decompressed =
-        std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
-            GetRefOrbitOptions(), newGenerationNumber);
+    auto decompressed = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
+        GetRefOrbitOptions(), newGenerationNumber);
     decompressed->CopySettingsWithoutOrbit(*this);
 
-    const auto targetUncompressedIters = GetCountOrbitEntries(); //decompressed->GetCountOrbitEntries();
+    const auto targetUncompressedIters = GetCountOrbitEntries(); // decompressed->GetCountOrbitEntries();
     assert(decompressed->m_UncompressedItersInOrbit == 0);
 
     // Round ViewSizeFromCountBytes to PAGE_SIZE:
     static constexpr auto PAGE_SIZE = 0x1000;
-    size_t ViewSizeFromCountBytes =
-        targetUncompressedIters * sizeof(GPUReferenceIter<T, PExtras>);
+    size_t ViewSizeFromCountBytes = targetUncompressedIters * sizeof(GPUReferenceIter<T, PExtras>);
     ViewSizeFromCountBytes = (ViewSizeFromCountBytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
     decompressed->RecreateFullOrbitVector(ViewSizeFromCountBytes);
@@ -1606,8 +1737,8 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
     }
 
     auto CorrectOrbit = [&](IterTypeFull begin, IterTypeFull end, T diffX, T diffY) {
-        T dzdcX{ 1 }; // FIXME: scaling factor removed
-        T dzdcY{ 0 };
+        T dzdcX{1}; // FIXME: scaling factor removed
+        T dzdcY{0};
 
         HdrReduce(diffX);
         HdrReduce(diffY);
@@ -1616,19 +1747,21 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
             myfile << begin << " " << end << std::endl;
         }
 
-        for (IterTypeFull i = end; i > begin; ) {
+        for (IterTypeFull i = end; i > begin;) {
             i--;
             // dzdc *= Z[i] * 2;
             // dzdcX + dzdcY * i = (dzdcX + dzdcY * i) * (Z[i].x + Z[i].y * i) * 2
             // dzdcX + dzdcY * i = (2 * dzdcX + 2 * dzdcY * i) * (Z[i].x + Z[i].y * i)
             // dzdcX = dzdcX * Z[i].x * 2 - dzdcY * Z[i].y * 2
             // dzdcY = dzdcX * Z[i].y * 2 + dzdcY * Z[i].x * 2
-            // 
+            //
             // TODO double check this:
             const auto old_dzdcX = dzdcX;
-            dzdcX = dzdcX * decompressed->m_FullOrbit[i].x * 2 - dzdcY * decompressed->m_FullOrbit[i].y * 2;
+            dzdcX =
+                dzdcX * decompressed->m_FullOrbit[i].x * 2 - dzdcY * decompressed->m_FullOrbit[i].y * 2;
             HdrReduce(dzdcX);
-            dzdcY = old_dzdcX * decompressed->m_FullOrbit[i].y * 2 + dzdcY * decompressed->m_FullOrbit[i].x * 2;
+            dzdcY = old_dzdcX * decompressed->m_FullOrbit[i].y * 2 +
+                    dzdcY * decompressed->m_FullOrbit[i].x * 2;
             HdrReduce(dzdcY);
 
             // Z[i] += diff / dzdc;
@@ -1652,10 +1785,10 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
                 indexTouched.push_back(i);
             }
 
-            //HdrReduce(decompressed->m_FullOrbit[i].x);
-            //HdrReduce(decompressed->m_FullOrbit[i].y);
+            // HdrReduce(decompressed->m_FullOrbit[i].x);
+            // HdrReduce(decompressed->m_FullOrbit[i].y);
         }
-        };
+    };
 
     IterTypeFull uncompressedCounter = 0;
     IterTypeFull i = 0;
@@ -1674,21 +1807,21 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
             }
         }
         uncompressedCounter++;
-        decompressed->AddUncompressedIteration({ zx, zy });
+        decompressed->AddUncompressedIteration({zx, zy});
 
         if constexpr (trackCountsPerIndex) {
             countsPerIndex[decompressed->GetCountOrbitEntries() - 1]++;
             indexTouched.push_back(decompressed->GetCountOrbitEntries() - 1);
         }
 
-        //z = z * z + c;
+        // z = z * z + c;
         auto zx_old = zx;
         zx = zx * zx - zy * zy + m_OrbitXLow;
         HdrReduce(zx);
-        zy = T{ 2.0f } *zx_old * zy + m_OrbitYLow;
+        zy = T{2.0f} * zx_old * zy + m_OrbitYLow;
         HdrReduce(zy);
     }
-    const auto Two = T{ 2.0f };
+    const auto Two = T{2.0f};
     IterTypeFull j = 0;
     auto dzX = zx;
     auto dzY = zy;
@@ -1721,9 +1854,9 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
             // std::norm(z)
             // auto norm_z = zx * zx + zy * zy;
             auto norm_z = normZ(zx, zy);
-            
+
             // std::norm(dz)
-            //auto norm_dz = dzX * dzX + dzY * dzY;
+            // auto norm_dz = dzX * dzX + dzY * dzY;
             auto norm_dz = normZ(dzX, dzY);
 
             if (HdrCompareToBothPositiveReducedLT(norm_z, norm_dz)) {
@@ -1736,7 +1869,7 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
         }
 
         uncompressedCounter++;
-        decompressed->AddUncompressedIteration({ zx, zy });
+        decompressed->AddUncompressedIteration({zx, zy});
 
         if constexpr (trackCountsPerIndex) {
             countsPerIndex[decompressed->GetCountOrbitEntries() - 1]++;
@@ -1745,15 +1878,17 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
 
         // dz = (Z[j] * 2 + dz) * dz;
 
-        //dzX = (decompressed->m_FullOrbit[j].x * Two + dzX) * dzX;
-        //HdrReduce(dzX);
-        //dzY = MinusTwo * decompressed->m_FullOrbit[j].y * dzY - dzY * dzY;
-        //HdrReduce(dzY);
+        // dzX = (decompressed->m_FullOrbit[j].x * Two + dzX) * dzX;
+        // HdrReduce(dzX);
+        // dzY = MinusTwo * decompressed->m_FullOrbit[j].y * dzY - dzY * dzY;
+        // HdrReduce(dzY);
 
         const auto dzX_old = dzX;
-        dzX = Two * decompressed->m_FullOrbit[j].x * dzX - Two * decompressed->m_FullOrbit[j].y * dzY + dzX * dzX - dzY * dzY;
+        dzX = Two * decompressed->m_FullOrbit[j].x * dzX - Two * decompressed->m_FullOrbit[j].y * dzY +
+              dzX * dzX - dzY * dzY;
         HdrReduce(dzX);
-        dzY = Two * decompressed->m_FullOrbit[j].x * dzY + Two * decompressed->m_FullOrbit[j].y * dzX_old + Two * dzX_old * dzY;
+        dzY = Two * decompressed->m_FullOrbit[j].x * dzY +
+              Two * decompressed->m_FullOrbit[j].y * dzX_old + Two * dzX_old * dzY;
         HdrReduce(dzY);
     }
 
@@ -1769,9 +1904,9 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
             countsPerIndexVec.push_back(pair);
         }
 
-        std::sort(countsPerIndexVec.begin(), countsPerIndexVec.end(), [](const auto &lhs, const auto &rhs) {
-            return lhs.first < rhs.first;
-            });
+        std::sort(countsPerIndexVec.begin(),
+                  countsPerIndexVec.end(),
+                  [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
 
         std::ofstream out("countsPerIndex.txt");
         for (const auto &pair : countsPerIndexVec) {
@@ -1800,28 +1935,38 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
 
 // Explicitly instantiate CopyPerturbationResults for all types.
 // This is needed because the function is defined in the header file.
-#define InstantiateDecompressMax(T, PExtras, PExtrasDest) \
-    template std::unique_ptr<PerturbationResults<uint32_t, T, PExtrasDest>> \
-    PerturbationResults<uint32_t, T, PExtras>::DecompressMax<PExtrasDest>( \
-        int32_t compressionErrorExpParam, \
-        size_t newGenerationNumber) const; \
-    template std::unique_ptr<PerturbationResults<uint64_t, T, PExtrasDest>> \
-    PerturbationResults<uint64_t, T, PExtras>::DecompressMax<PExtrasDest>( \
-        int32_t compressionErrorExpParam, \
-        size_t newGenerationNumber) const;
+#define InstantiateDecompressMax(T, PExtras, PExtrasDest)                                               \
+    template std::unique_ptr<PerturbationResults<uint32_t, T, PExtrasDest>>                             \
+    PerturbationResults<uint32_t, T, PExtras>::DecompressMax<PExtrasDest>(                              \
+        int32_t compressionErrorExpParam, size_t newGenerationNumber) const;                            \
+    template std::unique_ptr<PerturbationResults<uint64_t, T, PExtrasDest>>                             \
+    PerturbationResults<uint64_t, T, PExtras>::DecompressMax<PExtrasDest>(                              \
+        int32_t compressionErrorExpParam, size_t newGenerationNumber) const;
 
 InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Disable)
-InstantiateDecompressMax(double, PerturbExtras::MaxCompression, PerturbExtras::Disable)
-InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::MaxCompression, PerturbExtras::Disable)
-InstantiateDecompressMax(HDRFloat<double>, PerturbExtras::MaxCompression, PerturbExtras::Disable)
+    InstantiateDecompressMax(double, PerturbExtras::MaxCompression, PerturbExtras::Disable)
+        InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::MaxCompression, PerturbExtras::Disable)
+            InstantiateDecompressMax(HDRFloat<double>,
+                                     PerturbExtras::MaxCompression,
+                                     PerturbExtras::Disable)
 
-InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::SimpleCompression)
-InstantiateDecompressMax(double, PerturbExtras::MaxCompression, PerturbExtras::SimpleCompression)
-InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::MaxCompression, PerturbExtras::SimpleCompression)
-InstantiateDecompressMax(HDRFloat<double>, PerturbExtras::MaxCompression, PerturbExtras::SimpleCompression)
+                InstantiateDecompressMax(float,
+                                         PerturbExtras::MaxCompression,
+                                         PerturbExtras::SimpleCompression)
+                    InstantiateDecompressMax(double,
+                                             PerturbExtras::MaxCompression,
+                                             PerturbExtras::SimpleCompression)
+                        InstantiateDecompressMax(HDRFloat<float>,
+                                                 PerturbExtras::MaxCompression,
+                                                 PerturbExtras::SimpleCompression)
+                            InstantiateDecompressMax(HDRFloat<double>,
+                                                     PerturbExtras::MaxCompression,
+                                                     PerturbExtras::SimpleCompression)
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename) const {
+                                template <typename IterType, class T, PerturbExtras PExtras>
+                                void PerturbationResults<IterType, T, PExtras>::SaveOrbit(
+                                    std::wstring filename) const
+{
     auto outFile = filename.empty() ? GenFilename(GrowableVectorTypes::DebugOutput) : filename;
 
     std::ofstream out(outFile);
@@ -1852,7 +1997,8 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename)
         out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y) << std::endl;
 
         if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-            out << "m_FullOrbit[" << i << "].CompressionIndex: " << m_FullOrbit[i].u.f.CompressionIndex << std::endl;
+            out << "m_FullOrbit[" << i << "].CompressionIndex: " << m_FullOrbit[i].u.f.CompressionIndex
+                << std::endl;
             out << "m_FullOrbit[" << i << "].Rebase: " << m_FullOrbit[i].u.f.Rebase << std::endl;
         }
     }
@@ -1867,8 +2013,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename)
     out << "m_ReuseX: " << m_ReuseX.size() << std::endl;
     out << "m_ReuseY: " << m_ReuseY.size() << std::endl;
     out << "m_ReuseIndices: " << m_ReuseIndices.size() << std::endl;
-    if (m_ReuseX.size() != m_ReuseY.size() ||
-        m_ReuseX.size() != m_ReuseIndices.size()) {
+    if (m_ReuseX.size() != m_ReuseY.size() || m_ReuseX.size() != m_ReuseIndices.size()) {
         ::MessageBox(nullptr, L"m_ReuseX and m_ReuseY are different sizes.", L"", MB_OK | MB_APPLMODAL);
         out.close();
         return;
@@ -1883,37 +2028,35 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename)
     out.close();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out) const
-    requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out) const
+requires(PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>())
+{
 
     // This is basically how Imagina stores it so we'll just match it.  TODO Why *16?
     // Are we just counting bits differently or something?  We don't have pow2 either
     // Imagina::HRReal prec{ pow2(-double(m_OrbitX.precisionInBits())) * 16.0_hr };
-    Imagina::HRReal prec{ -static_cast<int64_t>(this->m_OrbitX.precisionInBits()), 2 };
-    Imagina::HRReal maxRadius{ m_MaxRadius };
-    Imagina::ReferenceTrivialContent content = {
-        prec,
-        {},
-        maxRadius
-    };
+    Imagina::HRReal prec{-static_cast<int64_t>(this->m_OrbitX.precisionInBits()), 2};
+    Imagina::HRReal maxRadius{m_MaxRadius};
+    Imagina::ReferenceTrivialContent content = {prec, {}, maxRadius};
 
     out.write(reinterpret_cast<const char *>(&content), sizeof(content));
 
     // Note: m_FullOrbit.size() is the number of iterations in the compressed orbit.
     // Instead, we need to write out the number of iterations in the
     // decompressed orbit, which is m_UncompressedItersInOrbit.
-    std::complex<double> refc{ static_cast<double>(this->m_OrbitX), static_cast<double>(this->m_OrbitY) };
+    std::complex<double> refc{static_cast<double>(this->m_OrbitX), static_cast<double>(this->m_OrbitY)};
     Imagina::LAReferenceTrivialContent laContent{
         refc,
         m_UncompressedItersInOrbit - 1, // TODO -1?
-        GetMaxIterations() - 2, // TODO -2
-        {}, // DoublePrecisionPT
-        {}, // DirectEvaluate
+        GetMaxIterations() - 2,         // TODO -2
+        {},                             // DoublePrecisionPT
+        {},                             // DirectEvaluate
         m_PeriodMaybeZero != 0,
         {}, // UseAT
         {}, // AT
-        {} // LAStageCount
+        {}  // LAStageCount
     };
 
     out.write(reinterpret_cast<const char *>(&laContent), sizeof(laContent));
@@ -1966,22 +2109,24 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
     out.write(reinterpret_cast<const char *>(m_Rebases.data()), rebaseSize * sizeof(IterTypeFull));
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SaveOrbitLocation(std::ofstream &file) const {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::SaveOrbitLocation(std::ofstream &file) const
+{
     this->m_OrbitX.SaveToStream(file);
     file.flush();
     this->m_OrbitY.SaveToStream(file);
     file.flush();
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
-    HighPrecision orbitX,
-    HighPrecision orbitY,
-    IterType fileProvidedIters,
-    const Imagina::HRReal &halfH,
-    std::ifstream &file)
-    requires(PExtras == PerturbExtras::MaxCompression) // std::is_same_v<T, HDRFloat<double>> && 
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(HighPrecision orbitX,
+                                                        HighPrecision orbitY,
+                                                        IterType fileProvidedIters,
+                                                        const Imagina::HRReal &halfH,
+                                                        std::ifstream &file)
+requires(PExtras == PerturbExtras::MaxCompression) // std::is_same_v<T, HDRFloat<double>> &&
 {
     constexpr bool singleStepHelper = false;
 
@@ -2017,12 +2162,7 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
     // Can also use static_cast<IterType>(laContent.MaxIt) instead of fileProvidedIters?
     // Imagina itself appears to use the fileProvidedIters value.
     InitResults(
-        RefOrbitCalc::ReuseMode::DontSaveForReuse,
-        orbitX,
-        orbitY,
-        radius,
-        fileProvidedIters - 1,
-        0);
+        RefOrbitCalc::ReuseMode::DontSaveForReuse, orbitX, orbitY, radius, fileProvidedIters - 1, 0);
 
     if (laContent.IsPeriodic) {
         // TODO + 1?
@@ -2089,15 +2229,15 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
     file.read((char *)m_Rebases.data(), rebaseSize * sizeof(IterTypeFull));
 
     // Append empty elements to m_Rebases and m_FullOrbit
-    //m_FullOrbit.PushBack({});
-    //m_Rebases.push_back(0);
+    // m_FullOrbit.PushBack({});
+    // m_Rebases.push_back(0);
 
-    m_FullOrbit.PushBack({ {}, {}, ~0ull, false });
+    m_FullOrbit.PushBack({{}, {}, ~0ull, false});
     m_Rebases.push_back(~0ull);
 }
 
 // Instantiate LoadOrbitBin
-//#define InstantiateLoadOrbitBin(T, PExtras) \
+// #define InstantiateLoadOrbitBin(T, PExtras) \
 //    template void PerturbationResults<uint64_t, T, PExtras>::LoadOrbitBin( \
 //        HighPrecision orbitX, \
 //        HighPrecision orbitY, \
@@ -2106,16 +2246,17 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
 //        std::ifstream &file) \
 
 
-//InstantiateLoadOrbitBin(float, PerturbExtras::MaxCompression);
-//InstantiateLoadOrbitBin(double, PerturbExtras::MaxCompression);
-//InstantiateLoadOrbitBin(HDRFloat<float>, PerturbExtras::MaxCompression);
-//InstantiateLoadOrbitBin(HDRFloat<double>, PerturbExtras::MaxCompression);
+// InstantiateLoadOrbitBin(float, PerturbExtras::MaxCompression);
+// InstantiateLoadOrbitBin(double, PerturbExtras::MaxCompression);
+// InstantiateLoadOrbitBin(HDRFloat<float>, PerturbExtras::MaxCompression);
+// InstantiateLoadOrbitBin(HDRFloat<double>, PerturbExtras::MaxCompression);
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::DiffOrbit(
-    const PerturbationResults<IterType, T, PExtras> &other,
-    std::wstring outFile) const
-    requires (!Introspection::IsTDblFlt<T>()) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::DiffOrbit(
+    const PerturbationResults<IterType, T, PExtras> &other, std::wstring outFile) const
+requires(!Introspection::IsTDblFlt<T>())
+{
 
     std::ofstream out(outFile);
     if (!out.is_open()) {
@@ -2128,7 +2269,7 @@ void PerturbationResults<IterType, T, PExtras>::DiffOrbit(
     }
 
     // Calculate deltas for each iteration
-    T bound{ 1e-15f };
+    T bound{1e-15f};
     HdrReduce(bound);
     auto strBound = HdrToString<false>(bound);
 
@@ -2162,10 +2303,11 @@ void PerturbationResults<IterType, T, PExtras>::DiffOrbit(
 
 // For information purposes only, not used for anything
 // other than reporting.
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::GetIntermediatePrecision(
-    int64_t &deltaPrecision,
-    int64_t &extraPrecision) const {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::GetIntermediatePrecision(int64_t &deltaPrecision,
+                                                                    int64_t &extraPrecision) const
+{
 
     deltaPrecision = m_DeltaPrecisionCached;
     extraPrecision = m_ExtraPrecisionCached;
@@ -2173,63 +2315,64 @@ void PerturbationResults<IterType, T, PExtras>::GetIntermediatePrecision(
 
 // For information purposes only, not used for anything
 // other than reporting.
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SetIntermediateCachedPrecision(
-    int64_t deltaPrecision,
-    int64_t extraPrecision) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::SetIntermediateCachedPrecision(int64_t deltaPrecision,
+                                                                          int64_t extraPrecision)
+{
 
     m_DeltaPrecisionCached = deltaPrecision;
     m_ExtraPrecisionCached = extraPrecision;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::CloseMetaFileIfOpen() const {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::CloseMetaFileIfOpen() const
+{
     if (m_MetaFileHandle != INVALID_HANDLE_VALUE) {
         CloseHandle(m_MetaFileHandle);
         m_MetaFileHandle = INVALID_HANDLE_VALUE;
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::MapExistingFiles()
-    requires Introspection::TestPExtras<PExtras>::value {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+PerturbationResults<IterType, T, PExtras>::MapExistingFiles()
+requires Introspection::TestPExtras<PExtras>::value
+{
 
     assert(m_LaReference == nullptr);
     assert(m_FullOrbit.GetCapacity() == 0);
 
-    m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str() };
+    m_FullOrbit = {GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str()};
 
     try {
         m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
             GetRefOrbitOptions(),
             GenFilename(GrowableVectorTypes::LAInfoDeep),
             GenFilename(GrowableVectorTypes::LAStageInfo));
-    }
-    catch (const std::exception &) {
+    } catch (const std::exception &) {
         m_LaReference = nullptr;
     }
 }
 
-
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 RefOrbitCompressor<IterType, T, PExtras>::RefOrbitCompressor(
-    PerturbationResults<IterType, T, PExtras> &results,
-    int32_t CompressionErrorExp) :
-    results{ results },
-    zx{ results.m_OrbitXLow },
-    zy{ results.m_OrbitYLow },
-    Two{ 2.0f },
-    CompressionError(static_cast<T>(std::pow(10, CompressionErrorExp))),
-    CompressionErrorExp{ CompressionErrorExp },
-    CurCompressedIndex{} {
+    PerturbationResults<IterType, T, PExtras> &results, int32_t CompressionErrorExp)
+    : results{results}, zx{results.m_OrbitXLow}, zy{results.m_OrbitYLow}, Two{2.0f},
+      CompressionError(static_cast<T>(std::pow(10, CompressionErrorExp))),
+      CompressionErrorExp{CompressionErrorExp}, CurCompressedIndex{}
+{
 
     // This code can run even if compression is disabled, but it doesn't matter.
     results.m_CompressionErrorExp = CompressionErrorExp;
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void RefOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(GPUReferenceIter<T, PExtras> iter)
-    requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+RefOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(GPUReferenceIter<T, PExtras> iter)
+requires(PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>())
+{
 
     // This should only run if compression is enabled.
     static_assert(PExtras == PerturbExtras::SimpleCompression, "!");
@@ -2263,8 +2406,8 @@ void RefOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(GPURe
     results.m_UncompressedItersInOrbit++;
 }
 
-#define InstantiatePerturbationResult(T, PExtras) \
-    template class PerturbationResults<uint32_t, T, PExtras>; \
+#define InstantiatePerturbationResult(T, PExtras)                                                       \
+    template class PerturbationResults<uint32_t, T, PExtras>;                                           \
     template class PerturbationResults<uint64_t, T, PExtras>;
 
 InstantiatePerturbationResult(float, PerturbExtras::Disable);
@@ -2295,8 +2438,8 @@ InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::D
 InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
 InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
 
-#define InstantiateRefOrbitCompressor(T, PExtras) \
-    template class RefOrbitCompressor<uint32_t, T, PExtras>; \
+#define InstantiateRefOrbitCompressor(T, PExtras)                                                       \
+    template class RefOrbitCompressor<uint32_t, T, PExtras>;                                            \
     template class RefOrbitCompressor<uint64_t, T, PExtras>;
 
 InstantiateRefOrbitCompressor(float, PerturbExtras::Disable);
@@ -2325,22 +2468,12 @@ InstantiateRefOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::S
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::SimpleIntermediateOrbitCompressor(
-    PerturbationResults<IterType, T, PExtras> &results,
-    int32_t CompressionErrorExp) :
-    results{ results },
-    zx{},
-    zy{},
-    cx{},
-    cy{},
-    Two{},
-    CompressionError{},
-    ReducedZx{},
-    ReducedZy{},
-    Temp{},
-    IntermediateCompressionErrorExp{},
-    CurCompressedIndex{} {
+    PerturbationResults<IterType, T, PExtras> &results, int32_t CompressionErrorExp)
+    : results{results}, zx{}, zy{}, cx{}, cy{}, Two{}, CompressionError{}, ReducedZx{}, ReducedZy{},
+      Temp{}, IntermediateCompressionErrorExp{}, CurCompressedIndex{}
+{
 
     // This code can run even if compression is disabled, but it doesn't matter.
 
@@ -2373,8 +2506,9 @@ SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::SimpleIntermediateOrbit
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::~SimpleIntermediateOrbitCompressor() {
+template <typename IterType, class T, PerturbExtras PExtras>
+SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::~SimpleIntermediateOrbitCompressor()
+{
     mpf_clear(zx);
     mpf_clear(zy);
     mpf_clear(cx);
@@ -2389,11 +2523,11 @@ SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::~SimpleIntermediateOrbi
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(
-    const mpf_t incomingZx,
-    const mpf_t incomingZy,
-    IterTypeFull index) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(
+    const mpf_t incomingZx, const mpf_t incomingZy, IterTypeFull index)
+{
 
     mpf_set(ReducedZx, incomingZx);
     mpf_set(ReducedZy, incomingZy);
@@ -2436,8 +2570,8 @@ void SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressed
 
         // Corresponds to the entry just added
         CurCompressedIndex++;
-        //assert(CurCompressedIndex == results.m_ReuseX.GetSize() - 1);
-        //assert(CurCompressedIndex == results.m_ReuseY.GetSize() - 1);
+        // assert(CurCompressedIndex == results.m_ReuseX.GetSize() - 1);
+        // assert(CurCompressedIndex == results.m_ReuseY.GetSize() - 1);
     }
 
     // auto zx_old = zx;
@@ -2458,8 +2592,8 @@ void SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressed
     }
 }
 
-#define InstantiateSimpleIntermediateOrbitCompressor(T, PExtras) \
-    template class SimpleIntermediateOrbitCompressor<uint32_t, T, PExtras>; \
+#define InstantiateSimpleIntermediateOrbitCompressor(T, PExtras)                                        \
+    template class SimpleIntermediateOrbitCompressor<uint32_t, T, PExtras>;                             \
     template class SimpleIntermediateOrbitCompressor<uint64_t, T, PExtras>;
 
 InstantiateSimpleIntermediateOrbitCompressor(float, PerturbExtras::Disable);
@@ -2484,42 +2618,19 @@ InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::Si
 
 InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>,
+                                             PerturbExtras::SimpleCompression);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaxIntermediateOrbitCompressor(
-    PerturbationResults<IterType, T, PExtras> &results,
-    int32_t CompressionErrorExp) :
-    results{ results },
-    zx{},
-    zy{},
-    cx{},
-    cy{},
-    Two{},
-    CompressionError{},
-    ReducedZx{},
-    ReducedZy{},
-    Err{},
-    Constant1{},
-    Constant2{},
-    Threshold2{},
-    I{},
-    J{},
-    PrevWayPointIteration{},
-    ItersSinceLastWrite{},
-    PhaseDone{},
-    Zx{},
-    Zy{},
-    Dzx{},
-    Dzy{},
-    DzxOld{},
-    Temp{},
-    NormTemp{},
-    NormInternalTemp{},
-    IntermediateCompressionErrorExp{},
-    CurCompressedIndex{} {
+    PerturbationResults<IterType, T, PExtras> &results, int32_t CompressionErrorExp)
+    : results{results}, zx{}, zy{}, cx{}, cy{}, Two{}, CompressionError{}, ReducedZx{}, ReducedZy{},
+      Err{}, Constant1{}, Constant2{}, Threshold2{}, I{}, J{}, PrevWayPointIteration{},
+      ItersSinceLastWrite{}, PhaseDone{}, Zx{}, Zy{}, Dzx{}, Dzy{}, DzxOld{}, Temp{}, NormTemp{},
+      NormInternalTemp{}, IntermediateCompressionErrorExp{}, CurCompressedIndex{}
+{
 
     // This code can run even if compression is disabled, but it doesn't matter.
 
@@ -2577,8 +2688,9 @@ MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaxIntermediateOrbitCompre
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-MaxIntermediateOrbitCompressor<IterType, T, PExtras>::~MaxIntermediateOrbitCompressor() {
+template <typename IterType, class T, PerturbExtras PExtras>
+MaxIntermediateOrbitCompressor<IterType, T, PExtras>::~MaxIntermediateOrbitCompressor()
+{
     mpf_clear(zx);
     mpf_clear(zy);
     mpf_clear(cx);
@@ -2613,8 +2725,10 @@ MaxIntermediateOrbitCompressor<IterType, T, PExtras>::~MaxIntermediateOrbitCompr
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::WriteResultsForTesting() {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+MaxIntermediateOrbitCompressor<IterType, T, PExtras>::WriteResultsForTesting()
+{
     // Iterate over the intermediate results, convert to HdrFloat, and write to file.
     // Use GetUncompressedReuseEntries
     std::ofstream out("uncompressedReuseEntries.txt");
@@ -2625,11 +2739,12 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::WriteResultsForTestin
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(
-    const mpf_t incomingZx,
-    const mpf_t incomingZy,
-    IterTypeFull index) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(const mpf_t incomingZx,
+                                                                                  const mpf_t incomingZy,
+                                                                                  IterTypeFull index)
+{
 
     // This code is broken.  It is not clear how to fix it without compromising runtime memory
     // consumption.  The initial thought was we could extend "max compression" (see ::CompressMax)
@@ -2645,7 +2760,7 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
         mpf_mul(NormInternalTemp[0], x, x);
         mpf_mul(NormInternalTemp[1], y, y);
         mpf_add(out, NormInternalTemp[0], NormInternalTemp[1]);
-        };
+    };
 
     auto normZTimesT = [&](mpf_t &out, const mpf_t x, const mpf_t y, const mpf_t t) -> void {
         // auto norm_z = (x * x + y * y) * t;
@@ -2653,7 +2768,7 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
         mpf_mul(NormInternalTemp[1], y, y);
         mpf_add(NormInternalTemp[0], NormInternalTemp[0], NormInternalTemp[1]);
         mpf_mul(out, NormInternalTemp[0], t);
-        };
+    };
 
     // I == i from original code
 
@@ -2792,7 +2907,7 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
 
             // dzX = zx - m_FullOrbit[j].x;
             // dzY = zy - m_FullOrbit[j].y;
-            // 
+            //
             // TODO: mpf_sub(Dzx, Zx, ...
             // TODO: mpf_sub(Dzy, Zy, ...
 
@@ -2849,8 +2964,10 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::CompleteResults() {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+MaxIntermediateOrbitCompressor<IterType, T, PExtras>::CompleteResults()
+{
     assert(PhaseDone == 2);
     results.AddUncompressedReusedEntry(Dzx, Dzy, ~0ull);
     results.m_Rebases.push_back(~0ull);
@@ -2861,9 +2978,8 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::CompleteResults() {
     }
 }
 
-
-#define InstantiateMaxIntermediateOrbitCompressor(T, PExtras) \
-    template class MaxIntermediateOrbitCompressor<uint32_t, T, PExtras>; \
+#define InstantiateMaxIntermediateOrbitCompressor(T, PExtras)                                           \
+    template class MaxIntermediateOrbitCompressor<uint32_t, T, PExtras>;                                \
     template class MaxIntermediateOrbitCompressor<uint64_t, T, PExtras>;
 
 InstantiateMaxIntermediateOrbitCompressor(float, PerturbExtras::Disable);
@@ -2888,5 +3004,5 @@ InstantiateMaxIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::Simpl
 
 InstantiateMaxIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 InstantiateMaxIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-InstantiateMaxIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
-
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>,
+                                          PerturbExtras::SimpleCompression);

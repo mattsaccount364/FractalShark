@@ -18,6 +18,7 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <map>
 
 #include "KernelInvoke.h"
 
@@ -430,6 +431,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
     auto desc = SharkFloatParams::GetDescription();
     std::cout << "\nTest " << testNum << ": " << OperatorToString<sharkOperator>() << " " << desc
               << std::endl;
+
+    std::cout << "LaunchParams: " << launchParams.ToString() << std::endl;
 
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();

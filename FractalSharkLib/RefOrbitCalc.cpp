@@ -2171,29 +2171,77 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision c
     mpf_init(cy_mpf);
     mpf_set(cy_mpf, cy.backend());
 
-    const auto NumIters = m_Fractal.GetNumIterations<IterType>();
+    const uint64_t numIters = m_Fractal.GetNumIterations<IterType>();
     const auto PrecInBits = HighPrecision::defaultPrecisionInBits();
     const auto PrecInLimbs = (PrecInBits + 31) / 32;
 
     // TODO: hardcoded is not realistic
     HpShark::LaunchParams launchParams{128, 256};
 
-    auto lamb = [&]<class P>(HpSharkReferenceResults<P> &combo) {
-        HpShark::InitHpSharkReferenceKernel(launchParams, results->GetMaxRadius(), cx_mpf, cy_mpf);
-        HpShark::InvokeHpSharkReferenceKernel(launchParams, combo, NumIters);
+    auto lamb = [&]<class SharkFloatParams>(HpSharkReferenceResults<SharkFloatParams> & /*unused*/) {
+        // ---------------------------------------------------------------------
+        //   1) Init once (returns "combo")
+        //   2) Invoke in bounded chunks (<= MaxOutputIters) until done / escaped / period
+        //   3) Shutdown once
+        //   4) Copy out OutputIters each chunk
+        // ---------------------------------------------------------------------
 
-        for (size_t i = 0; i < combo.OutputIterCount; ++i) {
-            results->AddUncompressedIteration(combo.OutputIters[i]);
+        uint64_t totalExecutedIters = 0;
+
+        // In the test, Init returns a handle/pointer-like thing ("combo") that you then pass
+        // to Invoke repeatedly and finally to Shutdown.
+        auto combo = HpShark::InitHpSharkReferenceKernel<SharkFloatParams>(
+            launchParams, results->GetMaxRadius(), cx_mpf, cy_mpf);
+
+        for (;;) {
+            constexpr uint64_t MaxOutputIters =
+                HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
+
+            const uint64_t remaining =
+                (numIters > totalExecutedIters) ? (numIters - totalExecutedIters) : 0;
+            if (remaining == 0) {
+                break;
+            }
+
+            const uint64_t itersToRun = (remaining > MaxOutputIters) ? MaxOutputIters : remaining;
+
+            // Repeated kernel launches, each producing up to MaxOutputIters in OutputIters.
+            HpShark::InvokeHpSharkReferenceKernel<SharkFloatParams>(
+                launchParams,
+                *combo,
+                itersToRun);
+
+            totalExecutedIters += combo->OutputIterCount;
+
+            // Copy out this batch.
+            for (uint64_t i = 0; i < combo->OutputIterCount; ++i) {
+                results->AddUncompressedIteration(combo->OutputIters[i]);
+            }
+
+            if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound ||
+                combo->PeriodicityStatus == PeriodicityResult::Escaped ||
+                totalExecutedIters >= numIters) {
+                break;
+            }
         }
 
-        results->SetPeriodMaybeZero(combo.Period);
+        HpShark::ShutdownHpSharkReferenceKernel<SharkFloatParams>(launchParams,
+                                                                  *combo,
+                                                                  /*debugGpuCombo=*/nullptr);
 
-        // If OutputIters is a raw new[] owned by combo:
-        delete[] combo.OutputIters;
+        // Period bookkeeping like before.
+        if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound) {
+            results->SetPeriodMaybeZero(
+                static_cast<IterType>(results->GetCompressedOrUncompressedOrbitSize()));
+        } else {
+            results->SetPeriodMaybeZero(0);
+        }
 
         m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
     };
 
+    // Dispatch by precision; the lambda above ignores the reference param because we now keep
+    // the persistent "combo" handle returned by Init, like the test does.
     DispatchByPrecision(PrecInLimbs, lamb);
 
     results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
@@ -2201,6 +2249,7 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision c
     mpf_clear(cx_mpf);
     mpf_clear(cy_mpf);
 }
+
 
 template <typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
 bool

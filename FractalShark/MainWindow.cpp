@@ -14,38 +14,47 @@
 
 #include <commdlg.h>
 #include <minidumpapiset.h>
+#include <random>
 
 struct MainWindow::SavedLocation {
 
-    SavedLocation(std::ifstream &infile)
+    explicit SavedLocation(std::ifstream &infile)
     {
-        // Read minX, minY, maxX, maxY, num_iterations, antialiasing from infile
-        // To read minX, read a string and convert to HighPrecision
+        // If anything fails, put the stream into a failed state and return
+        // so the caller can stop reading.
+        if (!infile.good()) {
+            infile.setstate(std::ios::failbit);
+            return;
+        }
 
         HighPrecision minX, minY, maxX, maxY;
 
-        infile >> width;
-        infile >> height;
+        // Read required fields
+        infile >> width >> height;
+        infile >> minX >> minY >> maxX >> maxY;
+        infile >> num_iterations >> antialiasing;
 
-        infile >> minX;
-        infile >> minY;
-        infile >> maxX;
-        infile >> maxY;
+        // If any of the above failed, bail early
+        if (!infile.good()) {
+            infile.setstate(std::ios::failbit);
+            return;
+        }
 
-        ptz = PointZoomBBConverter(minX, minY, maxX, maxY);
-
-        infile >> num_iterations;
-        infile >> antialiasing;
-
+        // IMPORTANT: consume trailing whitespace before getline
+        infile >> std::ws;
         std::getline(infile, description);
+
+        // Construct after successful parse
+        ptz = PointZoomBBConverter(minX, minY, maxX, maxY);
     }
 
-    PointZoomBBConverter ptz;
-    size_t width, height;
-    IterTypeFull num_iterations;
-    uint32_t antialiasing;
+    PointZoomBBConverter ptz{};
+    size_t width = 0, height = 0;
+    IterTypeFull num_iterations = 0;
+    uint32_t antialiasing = 0;
     std::string description;
 };
+
 
 struct MainWindow::ImaginaSavedLocation {
     std::wstring Filename;
@@ -97,17 +106,22 @@ MainWindow::MainWindow::DrawFractalShark()
 void
 MainWindow::MainWindow::DrawFractalSharkGdi(int nCmdShow)
 {
-    // image.loadImage("FractalShark.png");
-    //  Get a pointer to the binary data in the IDB_PNG1 resource
+    static std::mt19937 rng{std::random_device{}()};
+    static std::uniform_int_distribution<int> dist(0, 2);
 
-    LPCWSTR resStr;
-    const auto curRdtsc = __rdtsc();
-    if (curRdtsc % 3 == 0) {
-        resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH1);
-    } else if (curRdtsc % 3 == 1) {
-        resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH2);
-    } else {
-        resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH3);
+    const int choice = dist(rng);
+
+    LPCWSTR resStr = nullptr;
+    switch (choice) {
+        case 0:
+            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH1);
+            break;
+        case 1:
+            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH2);
+            break;
+        case 2:
+            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH3);
+            break;
     }
 
     HRSRC hRes = FindResource(hInst, resStr, L"PNG");
@@ -303,7 +317,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     SetWindowLongPtrA(hWnd, 0, (LONG_PTR)this);
 
     // Use  SetWindowLong to make the window layered
-    SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+    SetWindowLongPtr(hWnd, GWL_EXSTYLE, GetWindowLongPtr(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
 
     // Set the window as transparent
     SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 0, LWA_ALPHA);
@@ -1954,6 +1968,8 @@ MainWindow::MenuLoadCurrentLocation()
     POINT point;
     GetCursorPos(&point);
     TrackPopupMenu(hSubMenu, 0, point.x, point.y, 0, hWnd, nullptr);
+
+    DestroyMenu(hSubMenu);
 }
 
 // Subclass procedure for the edit controls
@@ -2255,6 +2271,8 @@ MainWindow::MenuLoadImagDyn(ImaginaSettings loadSettings)
     POINT point;
     GetCursorPos(&point);
     TrackPopupMenu(ImaginaMenu, 0, point.x, point.y, 0, hWnd, nullptr);
+
+    DestroyMenu(ImaginaMenu);
 }
 
 void

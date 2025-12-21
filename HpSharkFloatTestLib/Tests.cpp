@@ -2886,6 +2886,8 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
 {
     HpShark::LaunchParams launchParams{numBlocks, numThreads};
 
+    using SharkFloatParams = SharkParams7;
+
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
@@ -2943,20 +2945,20 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
 
     // Convert mpfX/mpfY/mpfZ back to strings
     auto convertedMpfX =
-        MpfToString<SharkParamsNP7>(mpfX, HpSharkFloat<SharkParamsNP7>::DefaultMpirBits);
+        MpfToString<SharkFloatParams>(mpfX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
     auto convertedMpfY =
-        MpfToString<SharkParamsNP7>(mpfY, HpSharkFloat<SharkParamsNP7>::DefaultMpirBits);
+        MpfToString<SharkFloatParams>(mpfY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
     auto convertedMpfZ =
-        MpfToString<SharkParamsNP7>(mpfZ, HpSharkFloat<SharkParamsNP7>::DefaultMpirBits);
+        MpfToString<SharkFloatParams>(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
-    using HdrType = typename SharkParamsNP7::Float;
+    using HdrType = typename SharkFloatParams::Float;
     const HdrType hdrRadiusY{mpfRadiusY};
 
-    // TODO: SharkParamsNP7 is more precision than we need
+    // TODO: SharkFloatParams is more precision than we need
     for (int i = 0; i < numIters; i++) {
         int testNum = testBase + i;
 
-        TestPerf<SharkParamsNP7, sharkOperator>(launchParams,
+        TestPerf<SharkFloatParams, sharkOperator>(launchParams,
                                                      Tests,
                                                      testNum,
                                                      convertedMpfX.c_str(),
@@ -2992,11 +2994,13 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
 // view parameters in FractalShark with the test in some reasonable way
 #include "..\FractalSharkLib\LargeCoords.h"
 
+    using SharkFloatParams = SharkParams7;
+
     HpShark::LaunchParams launchParams{numBlocks, numThreads};
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
-        HpSharkFloat<SharkParamsNP7>::DefaultMpirBits); // Set precision for MPIR floating point
+        HpSharkFloat<SharkFloatParams>::DefaultMpirBits); // Set precision for MPIR floating point
 
     const char *num1 = strX; //.c_str();
     const char *num2 = strY; //.c_str();
@@ -3056,13 +3060,13 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     MpfNormalize(mpfZ);
     MpfNormalize(mpfRadiusY);
 
-    using HdrType = typename SharkParamsNP7::Float;
+    using HdrType = typename SharkFloatParams::Float;
     HdrType hdrRadiusY{mpfRadiusY};
     HdrReduce(hdrRadiusY);
 
     for (int i = 0; i < numIters; i++) {
         int testNum = testBase + i;
-        TestPerf<SharkParamsNP7, sharkOperator>(launchParams,
+        TestPerf<SharkFloatParams, sharkOperator>(launchParams,
                                                      Tests,
                                                      testNum,
                                                      num1,

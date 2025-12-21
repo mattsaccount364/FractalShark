@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -35,11 +35,15 @@
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
-  <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" /><Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" /></ImportGroup>
+    <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" />
+    <Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" />
+  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
-  <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" /><Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" /></ImportGroup>
+    <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" />
+    <Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" />
+  </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <_ProjectFileVersion>12.0.30501.0</_ProjectFileVersion>
@@ -62,9 +66,10 @@
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
       <PrecompiledHeader>Use</PrecompiledHeader>
-      <WarningLevel>Level4</WarningLevel>      <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\FractalSharkLib;..\mpir\lib\x64\Debug</AdditionalIncludeDirectories>
-      </ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <AdditionalIncludeDirectories>..\HpSharkFloatLib;.\FractalSharkLib;..\mpir\lib\x64\Debug</AdditionalIncludeDirectories>
+    </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture>0x0409</Culture>
@@ -79,7 +84,7 @@
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Debug;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
       <StackReserveSize>16777216</StackReserveSize>
     </Link>
-    </ItemDefinitionGroup>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Midl>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -90,10 +95,11 @@
       <MinimalRebuild>false</MinimalRebuild>
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
       <PrecompiledHeader>Use</PrecompiledHeader>
-      <WarningLevel>Level4</WarningLevel>      <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\FractalSharkLib;..\mpir\lib\x64\Release</AdditionalIncludeDirectories>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <AdditionalIncludeDirectories>..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Release</AdditionalIncludeDirectories>
       <OmitFramePointers>true</OmitFramePointers>
-      </ClCompile>
+    </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture>0x0409</Culture>
@@ -109,7 +115,7 @@
       <StackReserveSize>16777216</StackReserveSize>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
-    </ItemDefinitionGroup>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="FractalTray.cpp" />
     <ClCompile Include="FractalTrayDlg.cpp" />
@@ -146,6 +152,9 @@
     </ProjectReference>
     <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">
       <Project>{26552d9e-6051-465a-9405-056be0a65a56}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\HpSharkFloatLib\HpSharkFloatLib.vcxproj">
+      <Project>{e46d1897-0f30-3518-ed23-26ed5ff35747}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

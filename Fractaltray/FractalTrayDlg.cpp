@@ -2,6 +2,16 @@
 //
 
 #include "stdafx.h"
+
+
+// --- MPIR/GMP include fence: avoid ASSERT macro collision with MFC ---
+#ifdef ASSERT
+#pragma push_macro("ASSERT")
+#undef ASSERT
+#define RESTORE_MFC_ASSERT
+#endif
+
+
 #include "FractalTray.h"
 #include "FractalTrayDlg.h"
 #include ".\fractaltraydlg.h"

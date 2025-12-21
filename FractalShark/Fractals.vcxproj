@@ -197,6 +197,7 @@
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="DynamicPopupMenu.cpp" />
     <ClCompile Include="FractalShark.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
@@ -215,10 +216,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\stdafx.h" />
+    <ClInclude Include="DynamicPopupMenu.h" />
+    <ClInclude Include="DynamicPopupTreeDef.h" />
     <ClInclude Include="FractalShark.h" />
     <ClInclude Include="JobObject.h" />
     <ClInclude Include="MainWindow.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="UniqueHMenu.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\Pics\Bing generated Fractal Shark.jpg" />

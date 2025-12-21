@@ -161,7 +161,9 @@
       <Include>..\mpir\lib\x64\Debug;</Include>
       <CodeGeneration>compute_75,sm_75;compute_89,sm_89;</CodeGeneration>
       <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20"  --expt-relaxed-constexpr -t 0 --default-stream per-thread %(AdditionalOptions)</AdditionalOptions>
-      <SplitCompile>MaxThreads</SplitCompile>
+      <SplitCompile>Default</SplitCompile>
+      <SplitCompileCustomThreads>
+      </SplitCompileCustomThreads>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -192,8 +194,10 @@
       <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20"  --expt-relaxed-constexpr -t 0 --default-stream per-thread %(AdditionalOptions)</AdditionalOptions>
       <FastMath>true</FastMath>
       <GenerateLineInfo>true</GenerateLineInfo>
-      <SplitCompile>MaxThreads</SplitCompile>
+      <SplitCompile>Default</SplitCompile>
       <ExtensibleWholeProgramCompilation>true</ExtensibleWholeProgramCompilation>
+      <SplitCompileCustomThreads>
+      </SplitCompileCustomThreads>
     </CudaCompile>
     <CudaLink />
   </ItemDefinitionGroup>

@@ -4,11 +4,17 @@
 #include <vector>
 #include <string>
 
+#include "UniqueHMenu.h"
+
 class JobObject;
 class Fractal;
 enum FractalPalette : size_t;
 enum class CompressToDisk;
 enum class ImaginaSettings;
+
+namespace FractalShark {
+class UniqueHMenu;
+} // namespace FractalShark
 
 class MainWindow {
 public:
@@ -28,7 +34,7 @@ private:
 
     HINSTANCE hInst;                // current instance
     LPCWSTR szWindowClass = L"FractalWindow";
-    HMENU gPopupMenu;
+    FractalShark::UniqueHMenu gPopupMenu;
     bool gWindowed; // Says whether we are in windowed mode or not.
     HWND hWnd;
 

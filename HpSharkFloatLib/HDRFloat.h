@@ -1687,7 +1687,7 @@ HdrToString(const T &dat)
                          std::is_same<T, HighPrecisionT<HPDestructor::False>>::value) {
         return dat.str();
     } else {
-        return dat.ToString<IntegerOutput>();
+        return dat.template ToString<IntegerOutput>();
     }
 }
 
@@ -1726,7 +1726,7 @@ HdrFromIfStream(T &out, std::istream &metafile)
         metafile >> expStr;
         metafile >> expStr;
     } else {
-        out.FromIStream<IntegerInput>(metafile);
+        out.template FromIStream<IntegerInput>(metafile);
     }
 }
 

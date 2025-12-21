@@ -1,0 +1,9 @@
+copy .\FractalSaver\FractalSaver.vcxproj .
+copy .\FractalShark\Fractals.vcxproj .
+copy .\FractalSharkGpuLib\FractalSharkGpuLib.vcxproj .
+copy .\FractalSharkLib\FractalSharkLib.vcxproj .
+copy .\FractalTray\FractalTray.vcxproj .
+copy .\HpSharkFloatLib\HpSharkFloatLib.vcxproj .
+copy .\HpSharkFloatTest\HpSharkFloatTest.vcxproj .
+copy .\HpSharkFloatTestLib\HpSharkFloatTestLib.vcxproj .
+copy .\HpSharkInstantiate\HpSharkInstantiate.vcxproj .

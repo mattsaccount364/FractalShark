@@ -1,0 +1,9 @@
+notepad++ .\FractalSaver\FractalSaver.vcxproj
+notepad++ .\FractalShark\Fractals.vcxproj
+notepad++ .\FractalSharkGpuLib\FractalSharkGpuLib.vcxproj
+notepad++ .\FractalSharkLib\FractalSharkLib.vcxproj
+notepad++ .\FractalTray\FractalTray.vcxproj
+notepad++ .\HpSharkFloatLib\HpSharkFloatLib.vcxproj
+notepad++ .\HpSharkFloatTest\HpSharkFloatTest.vcxproj
+notepad++ .\HpSharkFloatTestLib\HpSharkFloatTestLib.vcxproj
+notepad++ .\HpSharkInstantiate\HpSharkInstantiate.vcxproj

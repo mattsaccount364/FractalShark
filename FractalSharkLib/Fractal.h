@@ -117,7 +117,7 @@ public:
     void ResetNumIterations(void);
 
     RenderAlgorithm GetRenderAlgorithm(void) const;
-    inline void SetRenderAlgorithm(RenderAlgorithm alg);
+    void SetRenderAlgorithm(RenderAlgorithm alg);
     const char *GetRenderAlgorithmName() const;
     static const char *GetRenderAlgorithmName(RenderAlgorithm alg);
 

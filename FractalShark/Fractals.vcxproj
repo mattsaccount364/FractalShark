@@ -13,8 +13,6 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}</ProjectGuid>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <CudaToolkitCustomDir>
-    </CudaToolkitCustomDir>
     <ProjectName>FractalShark</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -23,7 +21,6 @@
     <PlatformToolset>v145</PlatformToolset>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>Unicode</CharacterSet>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -67,10 +64,8 @@
       </HeaderFileName>
     </Midl>
     <ClCompile>
-      <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_CRT_SECURE_NO_WARNINGS;_WINDOWS;SHARK_ALLOC=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>.\Debug/FractalShark.pch</PrecompiledHeaderOutputFile>
@@ -81,11 +76,6 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
       <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Debug;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
-      <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
     <ResourceCompile>
@@ -102,21 +92,11 @@
       <AdditionalDependencies>mpir.lib;cudart_static.lib;cudart.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <LargeAddressAware>true</LargeAddressAware>
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Debug;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
-      <EnableCOMDATFolding>false</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
       <SetChecksum>true</SetChecksum>
       <FixedBaseAddress>true</FixedBaseAddress>
       <AdditionalOptions>/force:multiple %(AdditionalOptions)</AdditionalOptions>
     </Link>
-    <CudaCompile>
-      <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20"  --expt-relaxed-constexpr -t 0 --default-stream per-thread  -allow-unsupported-compiler %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalCompilerOptions>
-      </AdditionalCompilerOptions>
-      <GenerateLineInfo>true</GenerateLineInfo>
-    </CudaCompile>
     <CudaLink>
-      <AdditionalDependencies>
-      </AdditionalDependencies>
       <AdditionalLibraryDirectories>$(CudaToolkitBinDir)/crt</AdditionalLibraryDirectories>
     </CudaLink>
   </ItemDefinitionGroup>
@@ -130,9 +110,7 @@
       </HeaderFileName>
     </Midl>
     <ClCompile>
-      <Optimization>MaxSpeed</Optimization>
       <PreprocessorDefinitions>WIN32;_CRT_SECURE_NO_WARNINGS;_WINDOWS;SHARK_ALLOC=1;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>.\Release/FractalShark.pch</PrecompiledHeaderOutputFile>
@@ -142,18 +120,8 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SDLCheck>false</SDLCheck>
       <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalClient;..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
-      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
-      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
     <ResourceCompile>
@@ -170,27 +138,11 @@
       <AdditionalDependencies>pgobootrun.lib;mpir.lib;cudart_static.lib;cudart.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <LargeAddressAware>true</LargeAddressAware>
-      <OptimizeReferences>true</OptimizeReferences>
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Release;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
-      <EnableCOMDATFolding>false</EnableCOMDATFolding>
       <FixedBaseAddress>true</FixedBaseAddress>
       <SetChecksum>true</SetChecksum>
     </Link>
-    <CudaCompile>
-      <Optimization>O3</Optimization>
-      <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20"  --expt-relaxed-constexpr -t 0 --default-stream per-thread  -allow-unsupported-compiler %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_52,sm_52;compute_60,sm_60;compute_70,sm_70;compute_80,sm_80;compute_86,sm_86;compute_89,sm_89;compute_90,sm_90;compute_90a,sm_90a;</CodeGeneration>
-      <AdditionalCompilerOptions>
-      </AdditionalCompilerOptions>
-      <GenerateLineInfo>true</GenerateLineInfo>
-      <FastMath>true</FastMath>
-      <ExtensibleWholeProgramCompilation>true</ExtensibleWholeProgramCompilation>
-    </CudaCompile>
-    <CudaLink />
     <CudaLink>
-      <PerformDeviceLinkTimeOptimization>true</PerformDeviceLinkTimeOptimization>
-      <AdditionalDependencies>
-      </AdditionalDependencies>
       <AdditionalLibraryDirectories>$(CudaToolkitBinDir)/crt</AdditionalLibraryDirectories>
     </CudaLink>
   </ItemDefinitionGroup>

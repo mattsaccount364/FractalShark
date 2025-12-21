@@ -1,10 +1,78 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <!-- Shared NVCC defaults across FractalShark solution -->
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64' Or '$(Configuration)|$(Platform)'=='Release|x64'">
+
+  <!-- ===================================================================== -->
+  <!-- CUDA BUILD SETTINGS FOR FRACTALSHARK                                  -->
+  <!--                                                                       -->
+  <!-- IMPORTANT RULES (XML/MSBuild + NVCC):                                 -->
+  <!--  1) AdditionalOptions must be a single line. Newlines are passed      -->
+  <!--     through to nvcc and break the command line.                       -->
+  <!--  2) MSVC-only flags that start with a slash must be wrapped in        -->
+  <!--     -Xcompiler, otherwise nvcc may treat them as input files.         -->
+  <!--  3) This configuration intentionally avoids RDC and device LTO.       -->
+  <!--                                                                       -->
+  <!-- NOTE: XML comments cannot contain a double-hyphen sequence.           -->
+  <!-- ===================================================================== -->
+
+
+  <!-- ===================================================================== -->
+  <!-- Debug | x64                                                           -->
+  <!-- Goals: fast iteration + strict-ish behavior                            -->
+  <!-- ===================================================================== -->
+  <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(Configuration)'=='Debug'">
     <CudaCompile>
-      <!-- Common NVCC flags (projects can still add more via %(AdditionalOptions)) -->
-      <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20" --expt-relaxed-constexpr -t 0 --default-stream per-thread -allow-unsupported-compiler -Xcompiler="/Zc:preprocessor" -diag-suppress=177 %(AdditionalOptions)</AdditionalOptions>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+
+      <!-- Debug builds for two architectures for convenience -->
+      <CodeGeneration>compute_75,sm_75;compute_89,sm_89;</CodeGeneration>
+
+      <!-- Minimal optimization in Debug -->
+      <Optimization>O0</Optimization>
+
+      <!-- No fast-math in Debug -->
+      <FastMath>false</FastMath>
+
+      <!--
+        Flags rationale:
+        - allow unsupported compiler: using a newer MSVC toolset than CUDA checks allow
+        - default stream per thread: avoids accidental cross-thread sync on legacy default stream
+        - relaxed constexpr: needed for heavy constexpr/template use in device code
+        - threads=0: let nvcc parallelize compilation
+        - suppress diagnostic 177: silence a known noisy warning in this codebase/toolchain
+        - host flags: MSVC preprocessor conformance + bigobj, passed via -Xcompiler
+      -->
+      <AdditionalOptions>-allow-unsupported-compiler -std=c++20 --default-stream per-thread --expt-relaxed-constexpr --threads=0 -diag-suppress=177 -Xcompiler="/Zc:preprocessor /bigobj" %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
+
+
+  <!-- ===================================================================== -->
+  <!-- Release | x64                                                         -->
+  <!-- Goals: max performance + line info for profiling                       -->
+  <!-- ===================================================================== -->
+  <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(Configuration)'=='Release'">
+    <CudaCompile>
+      <!-- Host-side WPO only (does not enable CUDA RDC/LTO) -->
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+
+      <!-- SM89 native code plus embedded PTX for forward compatibility -->
+      <CodeGeneration>compute_89,sm_89;compute_89,compute_89;</CodeGeneration>
+
+      <Optimization>O2</Optimization>
+      <FastMath>true</FastMath>
+
+      <!-- Enables Nsight source correlation without debug (-G) -->
+      <GenerateLineInfo>true</GenerateLineInfo>
+
+      <!--
+        Release extras:
+        - extra device vectorization: helps in some 64-bit / carry-heavy kernels
+        - same compiler override + host flag handling as Debug
+      -->
+      <AdditionalOptions>-allow-unsupported-compiler -std=c++20 --threads=0 --default-stream per-thread --expt-relaxed-constexpr --extra-device-vectorization -diag-suppress=177 -Xcompiler="/Zc:preprocessor /bigobj" %(AdditionalOptions)</AdditionalOptions>
+    </CudaCompile>
+  </ItemDefinitionGroup>
+
 </Project>

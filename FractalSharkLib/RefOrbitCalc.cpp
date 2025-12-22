@@ -2444,6 +2444,10 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
     // things set to EnableWithSave.  The LA-enabled orbit will not be saved.
     AddPointOptions options_to_use = m_RefOrbitOptions;
 
+    if (results == nullptr) {
+        throw FractalSharkSeriousException("So it seems there's a bug.  Unexpected nullptr results.");
+    }
+
     if (results->GetRefOrbitOptions() == AddPointOptions::DontSave &&
         (m_RefOrbitOptions == AddPointOptions::EnableWithSave ||
          m_RefOrbitOptions == AddPointOptions::EnableWithoutSave)) {

@@ -330,6 +330,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     // Create the menu
     gPopupMenu = FractalShark::DynamicPopupMenu::Create();
+    FractalShark::DynamicPopupMenu::SetCurrentRenderAlgorithmId(IDM_ALG_AUTO);
 
     // Create the fractal
     RECT rt;
@@ -600,6 +601,11 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 #define MapMenuItemToAlg(wmId, renderAlg)                                                               \
     case wmId: {                                                                                        \
         gFractal->SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(renderAlg));                          \
+        FractalShark::DynamicPopupMenu::SetCurrentRenderAlgorithmId(wmId);                              \
+        if (gPopupMenu) {                                                                               \
+            auto popup = FractalShark::DynamicPopupMenu::GetPopup(gPopupMenu.get());                    \
+            FractalShark::DynamicPopupMenu::ApplyRenderAlgorithmRadioChecks(popup, wmId);               \
+        }                                                                                               \
         break;                                                                                          \
     }
 
@@ -1401,6 +1407,10 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             menuY = GET_Y_LPARAM(lParam);
 
             auto popup = FractalShark::DynamicPopupMenu::GetPopup(gPopupMenu.get());
+
+            // sync radio checks on the existing menu instance
+            FractalShark::DynamicPopupMenu::ApplyRenderAlgorithmRadioChecks(
+                popup, FractalShark::DynamicPopupMenu::GetCurrentRenderAlgorithmId());
 
             TrackPopupMenu(popup, 0, menuX, menuY, 0, hWnd, nullptr);
 

@@ -39,6 +39,145 @@ DynamicPopupMenu::GetPopup(HMENU rootMenu) noexcept
     return rootMenu ? ::GetSubMenu(rootMenu, 0) : nullptr;
 }
 
+
+// -------------------- Render algorithm radio support --------------------
+
+static bool
+IsRenderAlgorithmCommandId(UINT id) noexcept
+{
+    switch (id) {
+        case IDM_ALG_AUTO:
+        case IDM_ALG_CPU_1_32_HDR:
+        case IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR:
+        case IDM_ALG_CPU_1_32_PERTURB_BLA_HDR:
+        case IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR:
+        case IDM_ALG_CPU_1_64:
+        case IDM_ALG_CPU_1_64_HDR:
+        case IDM_ALG_CPU_1_64_PERTURB_BLA:
+        case IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR:
+        case IDM_ALG_CPU_1_64_PERTURB_BLA_HDR:
+        case IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR:
+        case IDM_ALG_CPU_HIGH:
+        case IDM_ALG_GPU_1_32:
+        case IDM_ALG_GPU_1_32_PERTURB_LAV2:
+        case IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO:
+        case IDM_ALG_GPU_1_32_PERTURB_LAV2_PO:
+        case IDM_ALG_GPU_1_32_PERTURB_RC_LAV2:
+        case IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO:
+        case IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO:
+        case IDM_ALG_GPU_1_32_PERTURB_SCALED:
+        case IDM_ALG_GPU_1_64:
+        case IDM_ALG_GPU_1_64_PERTURB_BLA:
+        case IDM_ALG_GPU_1_64_PERTURB_LAV2:
+        case IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO:
+        case IDM_ALG_GPU_1_64_PERTURB_LAV2_PO:
+        case IDM_ALG_GPU_1_64_PERTURB_RC_LAV2:
+        case IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO:
+        case IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_PO:
+        case IDM_ALG_GPU_2X32_HDR:
+        case IDM_ALG_GPU_2_32:
+        case IDM_ALG_GPU_2_32_PERTURB_LAV2:
+        case IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO:
+        case IDM_ALG_GPU_2_32_PERTURB_LAV2_PO:
+        case IDM_ALG_GPU_2_32_PERTURB_RC_LAV2:
+        case IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO:
+        case IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_PO:
+        case IDM_ALG_GPU_2_32_PERTURB_SCALED:
+        case IDM_ALG_GPU_2_64:
+        case IDM_ALG_GPU_4_32:
+        case IDM_ALG_GPU_4_64:
+        case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2:
+        case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO:
+        case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO:
+        case IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2:
+        case IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO:
+        case IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_PO:
+        case IDM_ALG_GPU_HDR_32_PERTURB_BLA:
+        case IDM_ALG_GPU_HDR_32_PERTURB_LAV2:
+        case IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO:
+        case IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO:
+        case IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2:
+        case IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO:
+        case IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_PO:
+        case IDM_ALG_GPU_HDR_32_PERTURB_SCALED:
+        case IDM_ALG_GPU_HDR_64_PERTURB_BLA:
+        case IDM_ALG_GPU_HDR_64_PERTURB_LAV2:
+        case IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO:
+        case IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO:
+        case IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2:
+        case IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO:
+        case IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static UINT g_currentRenderAlgorithmId = IDM_ALG_AUTO;
+
+void
+DynamicPopupMenu::SetCurrentRenderAlgorithmId(UINT id) noexcept
+{
+    if (IsRenderAlgorithmCommandId(id))
+        g_currentRenderAlgorithmId = id;
+}
+
+UINT
+DynamicPopupMenu::GetCurrentRenderAlgorithmId() noexcept
+{
+    if (g_currentRenderAlgorithmId == 0)
+        g_currentRenderAlgorithmId = IDM_ALG_AUTO;
+    return g_currentRenderAlgorithmId;
+}
+
+static void
+ApplyRenderAlgorithmRadioChecksRecursive(HMENU menu, UINT checkedId) noexcept
+{
+    const int count = ::GetMenuItemCount(menu);
+    if (count <= 0)
+        return;
+
+    for (int i = 0; i < count; ++i) {
+        MENUITEMINFOW mii{};
+        mii.cbSize = sizeof(mii);
+        mii.fMask = MIIM_ID | MIIM_SUBMENU | MIIM_FTYPE;
+        if (!::GetMenuItemInfoW(menu, static_cast<UINT>(i), TRUE /*by position*/, &mii))
+            continue;
+
+        const UINT id = mii.wID;
+        if (IsRenderAlgorithmCommandId(id)) {
+            // Ensure radio-check styling.
+            if ((mii.fType & MFT_RADIOCHECK) == 0) {
+                MENUITEMINFOW miitype{};
+                miitype.cbSize = sizeof(miitype);
+                miitype.fMask = MIIM_FTYPE;
+                miitype.fType = mii.fType | MFT_RADIOCHECK;
+                (void)::SetMenuItemInfoW(menu, static_cast<UINT>(i), TRUE /*by position*/, &miitype);
+            }
+
+            (void)::CheckMenuItem(menu,
+                                  id,
+                                  MF_BYCOMMAND |
+                                      ((id == checkedId) ? MF_CHECKED : MF_UNCHECKED));
+        }
+
+        if (mii.hSubMenu)
+            ApplyRenderAlgorithmRadioChecksRecursive(mii.hSubMenu, checkedId);
+    }
+}
+
+void
+DynamicPopupMenu::ApplyRenderAlgorithmRadioChecks(HMENU menuRoot, UINT checkedId) noexcept
+{
+    if (!menuRoot)
+        return;
+
+    if (!IsRenderAlgorithmCommandId(checkedId))
+        checkedId = GetCurrentRenderAlgorithmId();
+
+    ApplyRenderAlgorithmRadioChecksRecursive(menuRoot, checkedId);
+}
+
 static UINT
 GetMenuItemCountSafe(HMENU menu) noexcept
 {
@@ -88,7 +227,8 @@ DynamicPopupMenu::InsertItemAtEnd(HMENU menu, const Node &n)
     }
 
     mii.fType = MFT_STRING;
-    if (n.radio) {
+    const bool isAlg = IsRenderAlgorithmCommandId(n.id);
+    if (n.radio || isAlg) {
         mii.fType |= MFT_RADIOCHECK;
     }
     if (n.ownerDraw) {
@@ -98,7 +238,8 @@ DynamicPopupMenu::InsertItemAtEnd(HMENU menu, const Node &n)
     mii.wID = n.id;
 
     UINT state = MapEnabledStateMFToMFS(n.stateFlags);
-    if (n.checked)
+    const bool checked = isAlg ? (n.id == DynamicPopupMenu::GetCurrentRenderAlgorithmId()) : n.checked;
+    if (checked)
         state |= MFS_CHECKED;
     if (n.isDefault)
         state |= MFS_DEFAULT;
@@ -227,6 +368,9 @@ DynamicPopupMenu::Create()
         // Destroying root destroys attached submenus too.
         return {};
     }
+
+    // Apply mutually-exclusive radio checks for render algorithms.
+    ApplyRenderAlgorithmRadioChecks(popup, GetCurrentRenderAlgorithmId());
 
     return root;
 }

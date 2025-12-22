@@ -323,6 +323,12 @@ public:
     static UniqueHMenu Create();
     static HMENU GetPopup(HMENU rootMenu) noexcept;
 
+    // Render algorithm radio-selection support.
+    // Call SetCurrentRenderAlgorithmId() when the user selects an algorithm (WM_COMMAND),
+    // then rebuild/show the popup to see the new checkmark.
+    static void SetCurrentRenderAlgorithmId(UINT id) noexcept;
+    static UINT GetCurrentRenderAlgorithmId() noexcept;
+    static void ApplyRenderAlgorithmRadioChecks(HMENU menuRoot, UINT checkedId) noexcept;
 private:
     enum class Kind : uint8_t { Item, Separator, Popup };
 

@@ -20,6 +20,11 @@ jobs:
         with:
           repository: BrianGladman/mpir
           path: mpir
+          submodules: true
+
+      - name: Initialize MPIR submodules
+        working-directory: mpir
+        run: git submodule update --init --recursive
 
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2

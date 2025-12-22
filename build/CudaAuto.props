@@ -1,0 +1,31 @@
+\
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    CudaAuto.props
+    Imports the highest available CUDA Build Customizations .props (with fallbacks),
+    avoiding hardcoding an exact toolkit version in every .vcxproj.
+
+    Override selection with:
+      /p:CudaBuildCustomizationVersion=13.0
+  -->
+  <PropertyGroup>
+    <!-- Leave empty by default so fallback probing runs -->
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'==''"></CudaBuildCustomizationVersion>
+  </PropertyGroup>
+
+  <!-- If explicitly set and present, use it -->
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props"
+          Condition="'$(CudaBuildCustomizationVersion)'!='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props')" />
+
+  <!-- Fallback list (newest first) -->
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props"
+          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props')" />
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props"
+          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props')" />
+
+  <!-- Clearer error if none found -->
+  <Target Name="CudaAutoPropsValidate" BeforeTargets="PrepareForBuild" Condition="'$(CudaBuildCustomizationVersion)'==''">
+    <Error Text="CUDA build customizations (.props) not found under $(VCTargetsPath)\BuildCustomizations. Install CUDA VS integration (Build Customizations) or set /p:CudaBuildCustomizationVersion=XX.Y."
+           Condition="!Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props') and !Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props')" />
+  </Target>
+</Project>

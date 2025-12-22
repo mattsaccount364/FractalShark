@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ "**" ]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
@@ -29,22 +29,61 @@ jobs:
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      # ---- Tooling MPIR expects for its VS projects ----
+
+      - name: Install NuGet
+        uses: nuget/setup-nuget@v2
+
       - name: Install YASM
         run: choco install yasm -y
 
+      - name: Install VSYASM (NuGet)
+        shell: pwsh
+        run: |
+          nuget install vsyasm -ExcludeVersion -OutputDirectory "$env:RUNNER_TEMP\vsyasm"
+
+          # Find vsyasm.exe anywhere under the output directory (NuGet uses versioned subfolders)
+          $root = Join-Path $env:RUNNER_TEMP "vsyasm"
+          $exe  = Get-ChildItem -Path $root -Recurse -Filter "vsyasm.exe" -File -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
+
+          if (-not $exe) {
+            Write-Host ("Contents under {0}:" -f $root)
+            Get-ChildItem -Path $root -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
+            throw ("vsyasm.exe not found under {0}" -f $root)
+          }
+
+          $vsyasmDir = $exe.Directory.FullName
+          Write-Host ("Found vsyasm.exe at: {0}" -f $exe.FullName)
+          echo $vsyasmDir | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      # Tell VSYASM where yasm.exe is (important: no embedded quotes)
+      - name: Set YASMPATH (directory containing yasm.exe)
+        shell: pwsh
+        run: |
+          $yasmExe = (Get-Command yasm.exe -ErrorAction Stop).Source
+          $yasmDir = Split-Path $yasmExe -Parent
+          # VSYASM expects YASMPATH to point at the directory containing yasm.exe
+          echo "YASMPATH=$yasmDir\" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # ---- CUDA for your main build ----
       - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.16
+        uses: Jimver/cuda-toolkit@v0.2.29
         with:
-          cuda: "12.2.2"
+          cuda: "13.0.2"
 
-      - name: Build MPIR (Release x64)
+      # ---- Build MPIR via its supported entrypoint (avoids missing cfg.h / cdata issues) ----
+      - name: Build MPIR (skylake_avx, Release x64)
         working-directory: mpir\msvc\vs22
-        run: msbuild lib_mpir_skylake_avx\lib_mpir_skylake_avx.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64
+        shell: cmd
+        run: msbuild.bat skylake_avx LIB x64 Release
 
-      - name: Build MPIR (Debug x64)
+      - name: Build MPIR (skylake_avx, Debug x64)
         working-directory: mpir\msvc\vs22
-        run: msbuild lib_mpir_skylake_avx\lib_mpir_skylake_avx.vcxproj /t:Rebuild /p:Configuration=Debug /p:Platform=x64
+        shell: cmd
+        run: msbuild.bat skylake_avx LIB x64 Debug
 
+      # ---- Build your project ----
       - name: Build Fractals
         run: msbuild FractalShark\Fractals.vcxproj /p:Configuration=Release /p:Platform=x64 /m
 

@@ -10,5 +10,5 @@ move -Force .\HpSharkInstantiate.vcxproj      .\HpSharkInstantiate\HpSharkInstan
 move -Force .\FractalShark.CudaDefaults.props .\FractalShark
 move -Force .\FractalShark.MsvcDefaults.props .\FractalShark
 move -Force .\build.yml                       .\.github\workflows
-move -Force .\CudaAuto.props                  .\build
-move -Force .\Directory.Build.props           .\build
+move -Force .\CudaAuto.props                  .\FractalShark
+move -Force .\Directory.FractalShark.props    .\FractalShark

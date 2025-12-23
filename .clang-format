@@ -172,5 +172,5 @@ KeepEmptyLinesAtTheStartOfBlocks: true
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
 ReflowComments: true
-SortIncludes: CaseSensitive
+# SortIncludes: CaseSensitive
 SortUsingDeclarations: true

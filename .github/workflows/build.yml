@@ -82,6 +82,29 @@ jobs:
         working-directory: mpir\msvc\vs22
         shell: cmd
         run: msbuild.bat skylake_avx LIB x64 Debug
+        
+      # ---- Make MPIR visible to your vcxprojs (they look in ..\mpir\lib\x64\{Debug|Release}\mpir.lib) ----
+      - name: Stage mpir.lib into expected folders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $root = Join-Path $env:GITHUB_WORKSPACE "mpir"
+          $dstRel = Join-Path $root "lib\x64\Release"
+          $dstDbg = Join-Path $root "lib\x64\Debug"
+          New-Item -ItemType Directory -Force -Path $dstRel, $dstDbg | Out-Null
+
+          function Copy-MpirLib([string]$cfg, [string]$dst) {
+            $candidates = Get-ChildItem -Path $root -Recurse -Filter "mpir.lib" -File -ErrorAction Stop |
+              Where-Object { $_.FullName -match "\\$cfg\\" }
+            if (-not $candidates) { $candidates = Get-ChildItem -Path $root -Recurse -Filter "mpir.lib" -File }
+            if (-not $candidates) { throw "mpir.lib not found under $root" }
+            Copy-Item -Force $candidates[0].FullName (Join-Path $dst "mpir.lib")
+            Write-Host "Copied $($candidates[0].FullName) -> $(Join-Path $dst "mpir.lib")"
+          }
+
+          Copy-MpirLib "Release" $dstRel
+          Copy-MpirLib "Debug"   $dstDbg
 
       # ---- Build your project ----
       - name: Build Debug

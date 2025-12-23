@@ -178,7 +178,7 @@ public:
         if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
             return {m_FullOrbit[uncompressed_index].x, m_FullOrbit[uncompressed_index].y};
         } else {
-            return PerThreadCompressionHelper.GetCompressedComplex<U>(uncompressed_index);
+            return PerThreadCompressionHelper.template GetCompressedComplex<U>(uncompressed_index);
         }
     }
 

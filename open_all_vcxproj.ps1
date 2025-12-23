@@ -7,5 +7,4 @@ notepad++ .\HpSharkFloatLib\HpSharkFloatLib.vcxproj
 notepad++ .\HpSharkFloatTest\HpSharkFloatTest.vcxproj
 notepad++ .\HpSharkFloatTestLib\HpSharkFloatTestLib.vcxproj
 notepad++ .\HpSharkInstantiate\HpSharkInstantiate.vcxproj
-notepad++ .\build\*.props
 notepad++ .\FractalShark\*.props

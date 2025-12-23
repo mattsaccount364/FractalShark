@@ -29,7 +29,7 @@ jobs:
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      # ---- Tooling MPIR expects for its VS projects ----
+      # ---- Tooling MPIR expects ----
 
       - name: Install NuGet
         uses: nuget/setup-nuget@v2
@@ -42,37 +42,55 @@ jobs:
         run: |
           nuget install vsyasm -ExcludeVersion -OutputDirectory "$env:RUNNER_TEMP\vsyasm"
 
-          # Find vsyasm.exe anywhere under the output directory (NuGet uses versioned subfolders)
           $root = Join-Path $env:RUNNER_TEMP "vsyasm"
-          $exe  = Get-ChildItem -Path $root -Recurse -Filter "vsyasm.exe" -File -ErrorAction SilentlyContinue |
+          $exe  = Get-ChildItem -Path $root -Recurse -Filter "vsyasm.exe" -File |
                   Select-Object -First 1
 
           if (-not $exe) {
-            Write-Host ("Contents under {0}:" -f $root)
-            Get-ChildItem -Path $root -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
-            throw ("vsyasm.exe not found under {0}" -f $root)
+            throw "vsyasm.exe not found under $root"
           }
 
           $vsyasmDir = $exe.Directory.FullName
-          Write-Host ("Found vsyasm.exe at: {0}" -f $exe.FullName)
-          echo $vsyasmDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          Write-Host "Found vsyasm.exe at $($exe.FullName)"
 
-      # Tell VSYASM where yasm.exe is (important: no embedded quotes)
-      - name: Set YASMPATH (directory containing yasm.exe)
+          # Put vsyasm.exe on PATH
+          echo $vsyasmDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          
+          #$env:YASM_PATH = "$vsyasmDir\"
+          #"YASM_PATH=$env:YASM_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+          #Write-Host "YASM_PATH (this step): $env:YASM_PATH"
+
+          # Make MPIR pick it up
+          echo "YASMInstallDir=$vsyasmDir\" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "YASMINSTALLDIR=$vsyasmDir\" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Set YASM_PATH
         shell: pwsh
         run: |
           $yasmExe = (Get-Command yasm.exe -ErrorAction Stop).Source
           $yasmDir = Split-Path $yasmExe -Parent
-          # VSYASM expects YASMPATH to point at the directory containing yasm.exe
-          echo "YASMPATH=$yasmDir\" | Out-File -FilePath $env:GITHUB_ENV -Append
+      
+          # Set for THIS step
+          $env:YASM_PATH = "$yasmDir\"
+      
+          # Persist for NEXT steps
+          "YASM_PATH=$env:YASM_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+      
+          Write-Host "YASM_PATH (this step): $env:YASM_PATH"
 
-      # ---- CUDA for your main build ----
-      - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.29
-        with:
-          cuda: "13.0.2"
+      - name: Verify YASM_PATH (next step)
+        shell: pwsh
+        run: |
+          Write-Host "YASM_PATH (next step): $env:YASM_PATH"
 
-      # ---- Build MPIR via its supported entrypoint (avoids missing cfg.h / cdata issues) ----
+      - name: Verify vsyasm
+        shell: pwsh
+        run: |
+          Copy-Item "$env:YASM_PATH\yasm.exe" "$env:YASM_PATH\vsyasm.exe"
+          dir "$env:YASM_PATH"
+
+      # ---- Build MPIR (official entrypoint) ----
+
       - name: Build MPIR (skylake_avx, Release x64)
         working-directory: mpir\msvc\vs22
         shell: cmd
@@ -82,36 +100,39 @@ jobs:
         working-directory: mpir\msvc\vs22
         shell: cmd
         run: msbuild.bat skylake_avx LIB x64 Debug
-        
-      # ---- Make MPIR visible to your vcxprojs (they look in ..\mpir\lib\x64\{Debug|Release}\mpir.lib) ----
-      - name: Stage mpir.lib into expected folders
+
+      # ---- Stage mpir.lib where FractalShark expects it ----
+      - name: Stage mpir.lib
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-
           $root = Join-Path $env:GITHUB_WORKSPACE "mpir"
+
           $dstRel = Join-Path $root "lib\x64\Release"
           $dstDbg = Join-Path $root "lib\x64\Debug"
           New-Item -ItemType Directory -Force -Path $dstRel, $dstDbg | Out-Null
 
-          function Copy-MpirLib([string]$cfg, [string]$dst) {
-            $candidates = Get-ChildItem -Path $root -Recurse -Filter "mpir.lib" -File -ErrorAction Stop |
-              Where-Object { $_.FullName -match "\\$cfg\\" }
-            if (-not $candidates) { $candidates = Get-ChildItem -Path $root -Recurse -Filter "mpir.lib" -File }
-            if (-not $candidates) { throw "mpir.lib not found under $root" }
-            Copy-Item -Force $candidates[0].FullName (Join-Path $dst "mpir.lib")
-            Write-Host "Copied $($candidates[0].FullName) -> $(Join-Path $dst "mpir.lib")"
-          }
+          Get-ChildItem $root -Recurse -Filter mpir.lib |
+            ForEach-Object {
+              if ($_.FullName -match "\\Release\\") {
+                Copy-Item $_.FullName (Join-Path $dstRel "mpir.lib") -Force
+              }
+              if ($_.FullName -match "\\Debug\\") {
+                Copy-Item $_.FullName (Join-Path $dstDbg "mpir.lib") -Force
+              }
+            }
 
-          Copy-MpirLib "Release" $dstRel
-          Copy-MpirLib "Debug"   $dstDbg
+      # ---- CUDA ----
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.29
+        with:
+          cuda: "13.0.2"
 
-      # ---- Build your project ----
+      # ---- Build FractalShark ----
       - name: Build Debug
-        run: msbuild FractalShark\FractalShark.sln /p:Configuration=Debug /p:Platform=x64
+        run: msbuild FractalShark\FractalShark.sln /p:Configuration=Debug /p:Platform=x64 /p:PlatformToolset=v143
 
       - name: Build Release
-        run: msbuild FractalShark\FractalShark.sln /p:Configuration=Release /p:Platform=x64
+        run: msbuild FractalShark\FractalShark.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

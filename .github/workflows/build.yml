@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Checkout MPIR
         uses: actions/checkout@v4
@@ -26,6 +28,21 @@ jobs:
         working-directory: mpir
         run: git submodule update --init --recursive
 
+      - name: Install VC++ 2010 runtime (for vsyasm)
+        shell: pwsh
+        run: |
+          choco install vcredist2010 -y
+
+#      - name: Install VC++ 2013 runtime
+#        shell: pwsh
+#        run: |
+#          choco install vcredist2013 -y
+#          
+#      - name: Install VC++ 2015-2022 runtime
+#        shell: pwsh
+#        run: |
+#          choco install vcredist140 -y
+
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
@@ -34,61 +51,92 @@ jobs:
       - name: Install NuGet
         uses: nuget/setup-nuget@v2
 
-      - name: Install YASM
-        run: choco install yasm -y
-
-      - name: Install VSYASM (NuGet)
+      - name: Extract bundled tools to Program Files
         shell: pwsh
         run: |
-          nuget install vsyasm -ExcludeVersion -OutputDirectory "$env:RUNNER_TEMP\vsyasm"
+          $zip = Join-Path $env:GITHUB_WORKSPACE "tools\yasm.zip"
+          $dst = "C:\Program Files\vsyasm"
 
-          $root = Join-Path $env:RUNNER_TEMP "vsyasm"
-          $exe  = Get-ChildItem -Path $root -Recurse -Filter "vsyasm.exe" -File |
-                  Select-Object -First 1
-
-          if (-not $exe) {
-            throw "vsyasm.exe not found under $root"
+          Write-Host "ZIP path: $zip"
+          if (-not (Test-Path $zip)) {
+            throw "Zip not found at $zip. Check repo path/casing and that the file is committed."
           }
 
-          $vsyasmDir = $exe.Directory.FullName
-          Write-Host "Found vsyasm.exe at $($exe.FullName)"
+          $item = Get-Item $zip
+          Write-Host ("Zip size: {0:n0} bytes" -f $item.Length)
 
-          # Put vsyasm.exe on PATH
-          echo $vsyasmDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          # Detect Git LFS pointer (typically tiny and starts with 'version https://git-lfs.github.com/spec/v1')
+          $firstLine = (Get-Content -Path $zip -TotalCount 1 -ErrorAction SilentlyContinue)
+          if ($item.Length -lt 2000 -and $firstLine -like "version https://git-lfs.github.com/spec/v1*") {
+            throw "This file is a Git LFS pointer, not the real zip. Fix: set actions/checkout@v4 with `lfs: true`."
+          }
+
+          # Clean install location
+          if (Test-Path $dst) { Remove-Item -Recurse -Force $dst }
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+
+          # Unzip
+          Expand-Archive -Path $zip -DestinationPath $dst -Force
+
+          # Unblock extracted EXEs (Windows MOTW)
+          Get-ChildItem -Path $dst -Recurse -File | Unblock-File
+
+          # Find the actual bin dir (handles nested folders inside the zip)
+          $exe = Get-ChildItem -Path $dst -Recurse -Filter "vsyasm.exe" -File | Select-Object -First 1
+          if (-not $exe) { throw "vsyasm.exe not found anywhere under $dst after unzip." }
+
+          $binDir = $exe.Directory.FullName
+          Write-Host "Using bin dir: $binDir"
+          Get-ChildItem $binDir | Format-Table -AutoSize
+
+          # PATH + env vars for later steps
+          $binDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          "YASMInstallDir=$binDir\"  | Out-File -FilePath $env:GITHUB_ENV -Append
+          "YASMINSTALLDIR=$binDir\"  | Out-File -FilePath $env:GITHUB_ENV -Append
+          "YASM_PATH=$binDir\"       | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          try {
+            & $exe.FullName /?
+          } catch {
+            # ignore
+          }
+          $LASTEXITCODE = 0
           
-          #$env:YASM_PATH = "$vsyasmDir\"
-          #"YASM_PATH=$env:YASM_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
-          #Write-Host "YASM_PATH (this step): $env:YASM_PATH"
-
-          # Make MPIR pick it up
-          echo "YASMInstallDir=$vsyasmDir\" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "YASMINSTALLDIR=$vsyasmDir\" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Set YASM_PATH
+      - name: Dump DLL dependencies (vsyasm)
         shell: pwsh
         run: |
-          $yasmExe = (Get-Command yasm.exe -ErrorAction Stop).Source
-          $yasmDir = Split-Path $yasmExe -Parent
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found"
+          }
       
-          # Set for THIS step
-          $env:YASM_PATH = "$yasmDir\"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) {
+            throw "Visual Studio with VC tools not found"
+          }
       
-          # Persist for NEXT steps
-          "YASM_PATH=$env:YASM_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) {
+            throw "vcvars64.bat not found"
+          }
       
-          Write-Host "YASM_PATH (this step): $env:YASM_PATH"
+          cmd /c "`"$vcvars`" >nul && dumpbin /dependents `"C:\Program Files\vsyasm\vsyasm.exe`""
 
-      - name: Verify YASM_PATH (next step)
+
+      - name: Verify vsyasm/yasm are visible
         shell: pwsh
         run: |
-          Write-Host "YASM_PATH (next step): $env:YASM_PATH"
-
-      - name: Verify vsyasm
+          Write-Host "YASM_PATH: $env:YASM_PATH"
+          Get-Command vsyasm.exe -ErrorAction Stop | Format-List
+          Get-Command yasm.exe   -ErrorAction SilentlyContinue | Format-List
+    
+      - name: Try running vsyasm directly (diagnostic)
         shell: pwsh
+        continue-on-error: true
         run: |
-          Copy-Item "$env:YASM_PATH\yasm.exe" "$env:YASM_PATH\vsyasm.exe"
-          dir "$env:YASM_PATH"
-
+          & "C:\Program Files\vsyasm\vsyasm.exe" --version
+          Write-Host "Exit code: $LASTEXITCODE"
+          
       # ---- Build MPIR (official entrypoint) ----
 
       - name: Build MPIR (skylake_avx, Release x64)
@@ -102,24 +150,24 @@ jobs:
         run: msbuild.bat skylake_avx LIB x64 Debug
 
       # ---- Stage mpir.lib where FractalShark expects it ----
-      - name: Stage mpir.lib
-        shell: pwsh
-        run: |
-          $root = Join-Path $env:GITHUB_WORKSPACE "mpir"
-
-          $dstRel = Join-Path $root "lib\x64\Release"
-          $dstDbg = Join-Path $root "lib\x64\Debug"
-          New-Item -ItemType Directory -Force -Path $dstRel, $dstDbg | Out-Null
-
-          Get-ChildItem $root -Recurse -Filter mpir.lib |
-            ForEach-Object {
-              if ($_.FullName -match "\\Release\\") {
-                Copy-Item $_.FullName (Join-Path $dstRel "mpir.lib") -Force
-              }
-              if ($_.FullName -match "\\Debug\\") {
-                Copy-Item $_.FullName (Join-Path $dstDbg "mpir.lib") -Force
-              }
-            }
+      #- name: Stage mpir.lib
+      #  shell: pwsh
+      #  run: |
+      #    $root = Join-Path $env:GITHUB_WORKSPACE "mpir"
+      #
+      #    $dstRel = Join-Path $root "lib\x64\Release"
+      #    $dstDbg = Join-Path $root "lib\x64\Debug"
+      #    New-Item -ItemType Directory -Force -Path $dstRel, $dstDbg | Out-Null
+      #
+      #    Get-ChildItem $root -Recurse -Filter mpir.lib |
+      #      ForEach-Object {
+      #        if ($_.FullName -match "\\Release\\") {
+      #          Copy-Item $_.FullName (Join-Path $dstRel "mpir.lib") -Force
+      #        }
+      #        if ($_.FullName -match "\\Debug\\") {
+      #          Copy-Item $_.FullName (Join-Path $dstDbg "mpir.lib") -Force
+      #        }
+      #      }
 
       # ---- CUDA ----
       - name: Install CUDA Toolkit

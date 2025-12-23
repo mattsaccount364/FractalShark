@@ -5,11 +5,6 @@
 #include "FractalTray.h"
 #include "FractalTrayDlg.h"
 
-#ifdef _DEBUG
-#define new DEBUG_NEW
-#endif
-
-
 // CFractalTrayApp
 
 BEGIN_MESSAGE_MAP(CFractalTrayApp, CWinApp)

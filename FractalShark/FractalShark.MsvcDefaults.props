@@ -39,6 +39,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <!-- Optional: faster links, less precise PDBs. Leave off if you hate it. -->
       <!-- <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation> -->
+      <AdditionalOptions>/force:multiple %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
 

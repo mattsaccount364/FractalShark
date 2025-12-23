@@ -31,10 +31,6 @@ constexpr auto* fileprefix = L"\\\\192.168.4.1\\Archive\\Fractal Saves\\lav2\\";
 //constexpr auto* fileprefix = L"";
 constexpr int startAt = 0;
 
-#ifdef _DEBUG
-#define new DEBUG_NEW
-#endif
-
 void ConvertCStringToDest(const CString& str,
     uint32_t* width,
     uint32_t* height,

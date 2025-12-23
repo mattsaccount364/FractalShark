@@ -84,8 +84,11 @@ jobs:
         run: msbuild.bat skylake_avx LIB x64 Debug
 
       # ---- Build your project ----
-      - name: Build Fractals
-        run: msbuild FractalShark\Fractals.vcxproj /p:Configuration=Release /p:Platform=x64 /m
+      - name: Build Debug
+        run: msbuild FractalShark\FractalShark.sln /p:Configuration=Debug /p:Platform=x64
+
+      - name: Build Release
+        run: msbuild FractalShark\FractalShark.sln /p:Configuration=Release /p:Platform=x64
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

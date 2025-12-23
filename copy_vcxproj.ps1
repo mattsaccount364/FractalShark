@@ -21,7 +21,10 @@ try {
         ".\HpSharkFloatLib\HpSharkFloatLib.vcxproj",
         ".\HpSharkFloatTest\HpSharkFloatTest.vcxproj",
         ".\HpSharkFloatTestLib\HpSharkFloatTestLib.vcxproj",
-        ".\HpSharkInstantiate\HpSharkInstantiate.vcxproj"
+        ".\HpSharkInstantiate\HpSharkInstantiate.vcxproj",
+        ".\build\*.props",
+        ".\FractalShark\*.props",
+        ".\.github\workflows\*.yml"
     )
 
     # Copy individual files

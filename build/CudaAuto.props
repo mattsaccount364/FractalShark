@@ -1,31 +1,53 @@
-\
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
   <!--
     CudaAuto.props
-    Imports the highest available CUDA Build Customizations .props (with fallbacks),
-    avoiding hardcoding an exact toolkit version in every .vcxproj.
 
-    Override selection with:
+    Goals:
+      1) Optionally import NVIDIA CUDA Build Customizations (.props) if installed.
+      2) Provide CUDA toolkit paths (CudaToolkitLibDir/CudaToolkitBinDir) from CUDA_PATH
+         so link steps can find cudart_static.lib even when VS integration isn't installed.
+
+    Optional override:
       /p:CudaBuildCustomizationVersion=13.0
   -->
+
   <PropertyGroup>
-    <!-- Leave empty by default so fallback probing runs -->
     <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'==''"></CudaBuildCustomizationVersion>
+
+    <!-- Probe CUDA_PATH only if it's not already set -->
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2</CUDA_PATH>
+
+    <!-- Ensure these exist for projects that already reference them -->
+    <CudaToolkitLibDir Condition="'$(CudaToolkitLibDir)'=='' and '$(CUDA_PATH)'!=''">$(CUDA_PATH)\lib\x64\</CudaToolkitLibDir>
+    <CudaToolkitBinDir Condition="'$(CudaToolkitBinDir)'=='' and '$(CUDA_PATH)'!=''">$(CUDA_PATH)\bin\</CudaToolkitBinDir>
+    <CudaToolkitIncludeDir Condition="'$(CudaToolkitIncludeDir)'=='' and '$(CUDA_PATH)'!=''">$(CUDA_PATH)\include\</CudaToolkitIncludeDir>
   </PropertyGroup>
+
+  <!--
+    Import NVIDIA CUDA Build Customizations if they exist.
+    IMPORTANT: do NOT error if missing; many machines won't have VS integration installed.
+  -->
 
   <!-- If explicitly set and present, use it -->
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props"
           Condition="'$(CudaBuildCustomizationVersion)'!='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props')" />
 
-  <!-- Fallback list (newest first) -->
+  <!-- Otherwise try newest-first -->
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props"
           Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props')" />
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props"
           Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props')" />
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.4.props"
+          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.4.props')" />
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.3.props"
+          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.3.props')" />
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.2.props"
+          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.2.props')" />
 
-  <!-- Clearer error if none found -->
-  <Target Name="CudaAutoPropsValidate" BeforeTargets="PrepareForBuild" Condition="'$(CudaBuildCustomizationVersion)'==''">
-    <Error Text="CUDA build customizations (.props) not found under $(VCTargetsPath)\BuildCustomizations. Install CUDA VS integration (Build Customizations) or set /p:CudaBuildCustomizationVersion=XX.Y."
-           Condition="!Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props') and !Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props')" />
-  </Target>
 </Project>

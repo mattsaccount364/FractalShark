@@ -9,3 +9,6 @@ move -Force .\HpSharkFloatTestLib.vcxproj     .\HpSharkFloatTestLib\HpSharkFloat
 move -Force .\HpSharkInstantiate.vcxproj      .\HpSharkInstantiate\HpSharkInstantiate.vcxproj
 move -Force .\FractalShark.CudaDefaults.props .\FractalShark
 move -Force .\FractalShark.MsvcDefaults.props .\FractalShark
+move -Force .\build.yml                       .\.github\workflows
+move -Force .\CudaAuto.props                  .\build
+move -Force .\Directory.Build.props           .\build

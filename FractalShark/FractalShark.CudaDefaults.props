@@ -26,9 +26,7 @@
       <!-- Debug builds for two architectures for convenience -->
       <CodeGeneration>compute_75,sm_75;compute_89,sm_89;</CodeGeneration>
 
-      <!-- Minimal optimization in Debug -->
-      <Optimization>O0</Optimization>
-
+      <Optimization>Od</Optimization>
       <!-- No fast-math in Debug -->
       <FastMath>false</FastMath>
 
@@ -60,7 +58,7 @@
       <!-- SM89 native code plus embedded PTX for forward compatibility -->
       <CodeGeneration>compute_89,sm_89;compute_89,compute_89;</CodeGeneration>
 
-      <Optimization>O2</Optimization>
+      <Optimization>O3</Optimization>
       <FastMath>true</FastMath>
 
       <!-- Enables Nsight source correlation without debug (-G) -->

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <!-- Central toolset selection.
+       Prefer v145 if installed; otherwise fall back to v143.
+       Allow explicit override via /p:PlatformToolset=... -->
+  <PropertyGroup Condition="'$(PlatformToolset)'==''">
+    <_PreferredToolset Condition="Exists('$(VCTargetsPath)Platforms\Win32\PlatformToolsets\v145\Toolset.props')">v145</_PreferredToolset>
+    <_PreferredToolset Condition="'$(_PreferredToolset)'=='' and Exists('$(VCTargetsPath)Platforms\Win32\PlatformToolsets\v143\Toolset.props')">v143</_PreferredToolset>
+    <PlatformToolset Condition="'$(_PreferredToolset)'!=''">$(_PreferredToolset)</PlatformToolset>
+  </PropertyGroup>
+</Project>

@@ -3,12 +3,17 @@ name: Build
 on:
   push:
     branches: ["**"]
+    tags:
+      - "*"
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build Fractals
+    name: Build FractalShark
     runs-on: windows-latest
 
     steps:
@@ -33,16 +38,6 @@ jobs:
         run: |
           choco install vcredist2010 -y
 
-#      - name: Install VC++ 2013 runtime
-#        shell: pwsh
-#        run: |
-#          choco install vcredist2013 -y
-#          
-#      - name: Install VC++ 2015-2022 runtime
-#        shell: pwsh
-#        run: |
-#          choco install vcredist140 -y
-
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
@@ -51,6 +46,8 @@ jobs:
       - name: Install NuGet
         uses: nuget/setup-nuget@v2
 
+      # Note 2025-12: Tried various current vsyasm but failed.  Just
+      # keeping custom one for now.
       - name: Extract bundled tools to Program Files
         shell: pwsh
         run: |
@@ -101,7 +98,8 @@ jobs:
             # ignore
           }
           $LASTEXITCODE = 0
-          
+      
+      # Originally it wouldn't load.  Used this to sort out it was missing the VC runtime dependency.
       - name: Dump DLL dependencies (vsyasm)
         shell: pwsh
         run: |
@@ -123,6 +121,7 @@ jobs:
           cmd /c "`"$vcvars`" >nul && dumpbin /dependents `"C:\Program Files\vsyasm\vsyasm.exe`""
 
 
+      # See if the damn thing runs
       - name: Verify vsyasm/yasm are visible
         shell: pwsh
         run: |
@@ -149,26 +148,6 @@ jobs:
         shell: cmd
         run: msbuild.bat skylake_avx LIB x64 Debug
 
-      # ---- Stage mpir.lib where FractalShark expects it ----
-      #- name: Stage mpir.lib
-      #  shell: pwsh
-      #  run: |
-      #    $root = Join-Path $env:GITHUB_WORKSPACE "mpir"
-      #
-      #    $dstRel = Join-Path $root "lib\x64\Release"
-      #    $dstDbg = Join-Path $root "lib\x64\Debug"
-      #    New-Item -ItemType Directory -Force -Path $dstRel, $dstDbg | Out-Null
-      #
-      #    Get-ChildItem $root -Recurse -Filter mpir.lib |
-      #      ForEach-Object {
-      #        if ($_.FullName -match "\\Release\\") {
-      #          Copy-Item $_.FullName (Join-Path $dstRel "mpir.lib") -Force
-      #        }
-      #        if ($_.FullName -match "\\Debug\\") {
-      #          Copy-Item $_.FullName (Join-Path $dstDbg "mpir.lib") -Force
-      #        }
-      #      }
-
       # ---- CUDA ----
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.29
@@ -191,3 +170,44 @@ jobs:
             **/x64/Release/**
             **/Debug/**
             **/x64/Debug/**
+  release:
+    name: Create FractalShark Release
+    runs-on: windows-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: FractalShark-build
+          path: dist
+
+      - name: Package artifacts (zip)
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path $PWD "dist\Release"
+          $exe = Join-Path $releaseDir "FractalShark.exe"
+          $pdb = Join-Path $releaseDir "FractalShark.pdb"
+
+          if (-not (Test-Path $exe)) { throw "Missing: $exe" }
+          if (-not (Test-Path $pdb)) { throw "Missing: $pdb" }
+
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+
+          Compress-Archive -Path @($exe, $pdb) `
+            -DestinationPath ("out\FractalShark-{0}.zip" -f $env:GITHUB_REF_NAME) `
+            -Force
+
+          Get-ChildItem out | Format-Table -AutoSize
+
+      - name: Create Release and upload asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" `
+            --title "FractalShark $env:GITHUB_REF_NAME" `
+            --notes "Automated release for $env:GITHUB_REF_NAME" `
+            --prerelease `
+            "out\FractalShark-$env:GITHUB_REF_NAME.zip"

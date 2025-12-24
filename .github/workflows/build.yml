@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write        # allows OIDC token minting for signing
+  attestations: write    # allows uploading the attestation to GitHub
 
 jobs:
   build:
@@ -32,6 +34,47 @@ jobs:
       - name: Initialize MPIR submodules
         working-directory: mpir
         run: git submodule update --init --recursive
+
+      - name: Install MiKTeX
+        shell: pwsh
+        run: |
+          choco install miktex -y --no-progress
+      
+          $miktex = "C:\Program Files\MiKTeX\miktex\bin\x64"
+          if (-not (Test-Path $miktex)) { throw "MiKTeX bin dir not found at $miktex" }
+      
+          # Make it available in THIS step and later steps
+          $env:PATH = "$miktex;$env:PATH"
+          $miktex | Out-File -FilePath $env:GITHUB_PATH -Append
+      
+          # Configure MiKTeX for CI use
+          initexmf --admin --set-config-value=[MPM]AutoInstall=1
+          initexmf --admin --set-config-value=[MPM]InstallOnTheFly=1
+          initexmf --admin --set-config-value=[MPM]AskForInstall=0
+
+      - name: Build notes.pdf
+        shell: pwsh
+        working-directory: Notes
+        run: |
+          pdflatex -interaction=nonstopmode -halt-on-error notes.tex
+          bibtex notes
+          pdflatex -interaction=nonstopmode -halt-on-error notes.tex
+          pdflatex -interaction=nonstopmode -halt-on-error notes.tex
+
+      - name: Verify notes.pdf exists
+        shell: pwsh
+        run: |
+          $pdf = "Notes\notes.pdf"
+          if (-not (Test-Path $pdf)) {
+          throw "PDF not generated: $pdf"
+          }
+          Get-Item $pdf | Format-List FullName, Length
+
+      - name: Upload notes PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: FractalSharkNotes
+          path: Notes/notes.pdf
 
       - name: Install VC++ 2010 runtime (for vsyasm)
         shell: pwsh
@@ -156,10 +199,10 @@ jobs:
 
       # ---- Build FractalShark ----
       - name: Build Debug
-        run: msbuild FractalShark\FractalShark.sln /p:Configuration=Debug /p:Platform=x64 /p:PlatformToolset=v143
+        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Debug /p:Platform=x64 /p:PlatformToolset=v143
 
       - name: Build Release
-        run: msbuild FractalShark\FractalShark.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -170,6 +213,7 @@ jobs:
             **/x64/Release/**
             **/Debug/**
             **/x64/Debug/**
+            Notes/notes.pdf
   release:
     name: Create FractalShark Release
     runs-on: windows-latest
@@ -177,37 +221,174 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
+      - name: "Diagnostic: environment + context"
+        shell: pwsh
+        run: |
+          Write-Host "=== GitHub Context ==="
+          Write-Host "GITHUB_REF       = $env:GITHUB_REF"
+          Write-Host "GITHUB_REF_NAME  = $env:GITHUB_REF_NAME"
+          Write-Host "GITHUB_SHA       = $env:GITHUB_SHA"
+          Write-Host "GITHUB_WORKSPACE = $env:GITHUB_WORKSPACE"
+          Write-Host "Runner OS        = $env:RUNNER_OS"
+          Write-Host "Runner Arch      = $env:RUNNER_ARCH"
+
+          Write-Host "`n=== Directory listing (workspace root) ==="
+          Get-ChildItem -Force | Format-Table -AutoSize
+
+          Write-Host "`n=== PowerShell version ==="
+          $PSVersionTable
+
+      - name: Checkout repo (needed for gh/git context)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "Diagnostic: git state"
+        shell: pwsh
+        run: |
+          Write-Host "=== Git version ==="
+          git --version
+
+          Write-Host "`n=== Is this a git repo? ==="
+          git rev-parse --is-inside-work-tree
+
+          Write-Host "`n=== HEAD ==="
+          git log -1 --oneline
+
+          Write-Host "`n=== Tags ==="
+          git tag --list
+
+          Write-Host "`n=== Status ==="
+          git status --porcelain=v1
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: FractalShark-build
           path: dist
+          
+      - name: Download notes PDF artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: FractalSharkNotes
+          path: _notes_art
+      
+      - name: Normalize notes.pdf path
+        shell: pwsh
+        run: |
+          $found = Get-ChildItem -Path _notes_art -Recurse -Filter notes.pdf -File | Select-Object -First 1
+          if (-not $found) { throw "notes.pdf not found under _notes_art" }
+      
+          New-Item -ItemType Directory -Force -Path Notes | Out-Null
+          Copy-Item $found.FullName "Notes\notes.pdf" -Force
+
+      - name: "Diagnostic: artifact layout"
+        shell: pwsh
+        run: |
+          Write-Host "=== dist tree ==="
+          if (Test-Path dist) {
+            Get-ChildItem dist -Recurse | Format-Table FullName, Length
+          } else {
+            Write-Error "dist directory does not exist"
+          }
 
       - name: Package artifacts (zip)
         shell: pwsh
         run: |
           $releaseDir = Join-Path $PWD "dist\Release"
-          $exe = Join-Path $releaseDir "FractalShark.exe"
-          $pdb = Join-Path $releaseDir "FractalShark.pdb"
-
-          if (-not (Test-Path $exe)) { throw "Missing: $exe" }
-          if (-not (Test-Path $pdb)) { throw "Missing: $pdb" }
-
+          $exeSrc   = Join-Path $releaseDir "FractalShark.exe"
+          $pdbSrc   = Join-Path $releaseDir "FractalShark.pdb"
+          $pdfSrc   = Join-Path $PWD "Notes\notes.pdf"
+      
+          Write-Host "Release dir: $releaseDir"
+          Write-Host "EXE source: $exeSrc"
+          Write-Host "PDB source: $pdbSrc"
+          Write-Host "PDF source: $pdfSrc"
+      
+          if (-not (Test-Path $exeSrc)) { throw "Missing: $exeSrc" }
+          if (-not (Test-Path $pdbSrc)) { throw "Missing: $pdbSrc" }
+          if (-not (Test-Path $pdfSrc)) { throw "Missing: $pdfSrc (did the notes build step run?)" }
+      
           New-Item -ItemType Directory -Force -Path out | Out-Null
-
-          Compress-Archive -Path @($exe, $pdb) `
-            -DestinationPath ("out\FractalShark-{0}.zip" -f $env:GITHUB_REF_NAME) `
-            -Force
-
+      
+          $exeDst = Join-Path $PWD "out\FractalShark.exe"
+          $pdbDst = Join-Path $PWD "out\FractalShark.pdb"
+          $pdfDst = Join-Path $PWD "out\notes.pdf"
+      
+          Copy-Item $exeSrc $exeDst -Force
+          Copy-Item $pdbSrc $pdbDst -Force
+          Copy-Item $pdfSrc $pdfDst -Force
+      
+          $zip = "out\FractalShark-$env:GITHUB_REF_NAME.zip"
+          Compress-Archive -Path "out\FractalShark.exe","out\FractalShark.pdb","out\notes.pdf" `
+                           -DestinationPath $zip -Force
+      
+          Write-Host "`n=== out directory ==="
           Get-ChildItem out | Format-Table -AutoSize
+      
+          Write-Host "`n=== ZIP verification ==="
+          if (-not (Test-Path $zip)) { throw "ZIP not created: $zip" }
+      
+          Write-Host "ZIP contents:"
+          Expand-Archive -Path $zip -DestinationPath out\_verify -Force
+          Get-ChildItem out\_verify | Format-Table -AutoSize
 
-      - name: Create Release and upload asset
+      - name: Verify ZIP exists (pre-attestation)
+        shell: pwsh
+        run: |
+          $p = "out\FractalShark-$env:GITHUB_REF_NAME.zip"
+          if (-not (Test-Path $p)) { throw "ZIP not found: $p" }
+
+      - name: Generate build provenance attestation (ZIP)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: out/FractalShark-${{ github.ref_name }}.zip
+
+      - name: "Diagnostic: gh auth + version"
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" `
-            --title "FractalShark $env:GITHUB_REF_NAME" `
-            --notes "Automated release for $env:GITHUB_REF_NAME" `
+          Write-Host "=== gh version ==="
+          gh --version
+
+          Write-Host "`n=== gh auth status ==="
+          gh auth status
+
+          Write-Host "`n=== gh release view (pre-flight) ==="
+          gh release view "$env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Release does not exist yet (expected)"
+            $global:LASTEXITCODE = 0
+          }
+
+      - name: Delete and recreate Release (always overwrite)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $zip = "out\FractalShark-$tag.zip"
+          $pdf = "out\notes.pdf"
+      
+          if (-not (Test-Path $zip)) { throw "Missing asset: $zip" }
+          if (-not (Test-Path $pdf)) { throw "Missing asset: $pdf" }
+      
+          $title = "FractalShark $tag"
+          $notes = "Automated release for $tag"
+      
+          Write-Host "Tag:   $tag"
+          Write-Host "Asset: $zip"
+          Write-Host "Asset: $pdf"
+      
+          Write-Host "Deleting existing release if present..."
+          gh release delete "$tag" --yes 2>$null
+          $LASTEXITCODE = 0
+      
+          Write-Host "Creating release..."
+          gh release create "$tag" `
+            --verify-tag `
+            --title "$title" `
+            --notes "$notes" `
             --prerelease `
-            "out\FractalShark-$env:GITHUB_REF_NAME.zip"
+            "$zip" "$pdf"

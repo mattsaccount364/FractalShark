@@ -13,18 +13,15 @@
 
 namespace GQD {
 
-    /* type construction */
-    __device__ __host__
-        gqd_real make_qd(const double x,
-            const double y,
-            const double z,
-            const double w) {
-        return make_double4(x, y, z, w);
-    }
-
-    __device__ __host__
-        gqd_real make_qd(const double x) {
-        return make_qd(x, 0.0, 0.0, 0.0);
+    __host__ __device__ __forceinline__ gqd_real
+    make_qd(double x, double y = 0.0, double z = 0.0, double w = 0.0)
+    {
+        gqd_real r;
+        r.x = x;
+        r.y = y;
+        r.z = z;
+        r.w = w;
+        return r;
     }
 
 }

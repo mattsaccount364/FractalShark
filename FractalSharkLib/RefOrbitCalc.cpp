@@ -364,14 +364,21 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                          ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
                                                                       m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::GPU) {
-        AddPerturbationReferencePointGPU<uint64_t,
-                                         HDRFloat<float>,
-                                         float,
-                                         true,
-                                         BenchmarkState,
-                                         PerturbExtras::Disable,
-                                         ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
-                                                                      m_PerturbationGuessCalcY);
+
+        if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+            // GPU only supports HDRFloat<float> for now.
+            AddPerturbationReferencePointGPU<IterType,
+                                             HDRFloat<float>,
+                                             float,
+                                             true,
+                                             BenchmarkState,
+                                             PerturbExtras::Disable,
+                                             ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
+                                                                          m_PerturbationGuessCalcY);
+        } else {
+            throw FractalSharkSeriousException(
+                "GPU perturbation algorithm only supports HDRFloat<float> type.");
+        }
     }
 }
 

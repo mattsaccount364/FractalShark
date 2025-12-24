@@ -17,7 +17,7 @@
 /* type definition */
 
 namespace GQD {
-	typedef double4 gqd_real;
+	typedef double4_16a gqd_real;
 }
 
 namespace GQF {

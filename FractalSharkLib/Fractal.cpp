@@ -659,8 +659,8 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
         ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
     }
     
-    SetIterType(IterTypeEnum::Bits64);
-    //SetIterType(IterTypeEnum::Bits32);
+    //SetIterType(IterTypeEnum::Bits64);
+    SetIterType(IterTypeEnum::Bits32);
 
     SetResultsAutosave(AddPointOptions::EnableWithoutSave);
     //SetResultsAutosave(AddPointOptions::DontSave);

@@ -10,56 +10,147 @@
 #include "PngParallelSave.h"
 #include "RecommendedSettings.h"
 #include "WaitCursor.h"
+#include "MainWindowSavedLocation.h"
 #include "resource.h"
 
+#include <cstdio>
 #include <commdlg.h>
 #include <minidumpapiset.h>
 #include <random>
+#include <unordered_map>
 
-struct MainWindow::SavedLocation {
+namespace {
 
-    explicit SavedLocation(std::ifstream &infile)
-    {
-        // If anything fails, put the stream into a failed state and return
-        // so the caller can stop reading.
-        if (!infile.good()) {
-            infile.setstate(std::ios::failbit);
-            return;
+constexpr int kMaxDynamic = 30;
+
+// ---- One source of truth for ALL algorithm command mappings ----
+// Add/remove entries ONLY here. Everything else derives from this.
+#define FS_ALG_CMD_LIST(X)                                                                              \
+    X(IDM_ALG_AUTO, RenderAlgorithmEnum::AUTO)                                                          \
+    X(IDM_ALG_CPU_HIGH, RenderAlgorithmEnum::CpuHigh)                                                   \
+    X(IDM_ALG_CPU_1_32_HDR, RenderAlgorithmEnum::CpuHDR32)                                              \
+    X(IDM_ALG_CPU_1_32_PERTURB_BLA_HDR, RenderAlgorithmEnum::Cpu32PerturbedBLAHDR)                      \
+    X(IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR, RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR)                  \
+    X(IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR, RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR)             \
+    X(IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR, RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR)                  \
+    X(IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR, RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR)             \
+    X(IDM_ALG_CPU_1_64, RenderAlgorithmEnum::Cpu64)                                                     \
+    X(IDM_ALG_CPU_1_64_HDR, RenderAlgorithmEnum::CpuHDR64)                                              \
+    X(IDM_ALG_CPU_1_64_PERTURB_BLA, RenderAlgorithmEnum::Cpu64PerturbedBLA)                             \
+    X(IDM_ALG_CPU_1_64_PERTURB_BLA_HDR, RenderAlgorithmEnum::Cpu64PerturbedBLAHDR)                      \
+    X(IDM_ALG_GPU_1_64, RenderAlgorithmEnum::Gpu1x64)                                                   \
+    X(IDM_ALG_GPU_1_64_PERTURB_BLA, RenderAlgorithmEnum::Gpu1x64PerturbedBLA)                           \
+    X(IDM_ALG_GPU_2_64, RenderAlgorithmEnum::Gpu2x64)                                                   \
+    X(IDM_ALG_GPU_4_64, RenderAlgorithmEnum::Gpu4x64)                                                   \
+    X(IDM_ALG_GPU_2X32_HDR, RenderAlgorithmEnum::GpuHDRx32)                                             \
+    X(IDM_ALG_GPU_1_32, RenderAlgorithmEnum::Gpu1x32)                                                   \
+    X(IDM_ALG_GPU_1_32_PERTURB_SCALED, RenderAlgorithmEnum::Gpu1x32PerturbedScaled)                     \
+    X(IDM_ALG_GPU_HDR_32_PERTURB_SCALED, RenderAlgorithmEnum::GpuHDRx32PerturbedScaled)                 \
+    X(IDM_ALG_GPU_2_32, RenderAlgorithmEnum::Gpu2x32)                                                   \
+    X(IDM_ALG_GPU_2_32_PERTURB_SCALED, RenderAlgorithmEnum::Gpu2x32PerturbedScaled)                     \
+    X(IDM_ALG_GPU_4_32, RenderAlgorithmEnum::Gpu4x32)                                                   \
+    X(IDM_ALG_GPU_HDR_32_PERTURB_BLA, RenderAlgorithmEnum::GpuHDRx32PerturbedBLA)                       \
+    X(IDM_ALG_GPU_HDR_64_PERTURB_BLA, RenderAlgorithmEnum::GpuHDRx64PerturbedBLA)                       \
+    /* ------------------------- LAv2 family ------------------------- */                               \
+    X(IDM_ALG_GPU_1_32_PERTURB_LAV2, RenderAlgorithmEnum::Gpu1x32PerturbedLAv2)                         \
+    X(IDM_ALG_GPU_1_32_PERTURB_LAV2_PO, RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO)                    \
+    X(IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO, RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO)                  \
+    X(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2, RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2)                    \
+    X(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO)               \
+    X(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO)             \
+    X(IDM_ALG_GPU_2_32_PERTURB_LAV2, RenderAlgorithmEnum::Gpu2x32PerturbedLAv2)                         \
+    X(IDM_ALG_GPU_2_32_PERTURB_LAV2_PO, RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO)                    \
+    X(IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO, RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO)                  \
+    X(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2, RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2)                    \
+    X(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO)               \
+    X(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO)             \
+    X(IDM_ALG_GPU_1_64_PERTURB_LAV2, RenderAlgorithmEnum::Gpu1x64PerturbedLAv2)                         \
+    X(IDM_ALG_GPU_1_64_PERTURB_LAV2_PO, RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO)                    \
+    X(IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO, RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO)                  \
+    X(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2, RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2)                    \
+    X(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO)               \
+    X(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO)             \
+    X(IDM_ALG_GPU_HDR_32_PERTURB_LAV2, RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2)                     \
+    X(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO, RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO)                \
+    X(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO)              \
+    X(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2, RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2)                \
+    X(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO)           \
+    X(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO)         \
+    X(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2, RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2)                 \
+    X(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO, RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO)            \
+    X(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO)          \
+    X(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2, RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2)            \
+    X(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO)       \
+    X(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO)     \
+    X(IDM_ALG_GPU_HDR_64_PERTURB_LAV2, RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2)                     \
+    X(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO, RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO)                \
+    X(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO)              \
+    X(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2, RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2)                \
+    X(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO)           \
+    X(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO)
+
+struct AlgCmd {
+    int id;
+    RenderAlgorithmEnum alg;
+};
+
+#define FS_MAKE_ALG_CMD(id_, alg_) AlgCmd{(id_), (alg_)},
+
+static constexpr std::array<AlgCmd,
+                            []() consteval {
+                                size_t n = 0;
+#define FS_COUNT_ALG_CMD(id_, alg_) ++n;
+                                FS_ALG_CMD_LIST(FS_COUNT_ALG_CMD)
+#undef FS_COUNT_ALG_CMD
+                                return n;
+                            }()>
+    kAlgCmds = {FS_ALG_CMD_LIST(FS_MAKE_ALG_CMD)};
+
+#undef FS_MAKE_ALG_CMD
+
+// ---- constexpr checks ----
+template <typename T, size_t N, typename Proj>
+consteval bool
+all_unique(const std::array<T, N> &a, Proj proj)
+{
+    for (size_t i = 0; i < N; ++i) {
+        for (size_t j = i + 1; j < N; ++j) {
+            if (proj(a[i]) == proj(a[j])) {
+                return false;
+            }
         }
-
-        HighPrecision minX, minY, maxX, maxY;
-
-        // Read required fields
-        infile >> width >> height;
-        infile >> minX >> minY >> maxX >> maxY;
-        infile >> num_iterations >> antialiasing;
-
-        // If any of the above failed, bail early
-        if (!infile.good()) {
-            infile.setstate(std::ios::failbit);
-            return;
-        }
-
-        // IMPORTANT: consume trailing whitespace before getline
-        infile >> std::ws;
-        std::getline(infile, description);
-
-        // Construct after successful parse
-        ptz = PointZoomBBConverter(minX, minY, maxX, maxY);
     }
+    return true;
+}
 
-    PointZoomBBConverter ptz{};
-    size_t width = 0, height = 0;
-    IterTypeFull num_iterations = 0;
-    uint32_t antialiasing = 0;
-    std::string description;
-};
+consteval bool
+ids_unique()
+{
+    return all_unique(kAlgCmds, [](const AlgCmd &e) { return e.id; });
+}
 
+consteval bool
+enums_unique()
+{
+    return all_unique(kAlgCmds, [](const AlgCmd &e) { return static_cast<int>(e.alg); });
+}
 
-struct MainWindow::ImaginaSavedLocation {
-    std::wstring Filename;
-    ImaginaSettings Settings;
-};
+static_assert(enums_unique(), "Duplicate RenderAlgorithmEnum in kAlgCmds (did you copy/paste?)");
+
+static_assert(ids_unique(), "Duplicate IDM_ALG_* ID in kAlgCmds (did you copy/paste?)");
+
+// Optional: constexpr lookup helper
+constexpr const AlgCmd *
+FindAlgForCmd(int wmId)
+{
+    for (const auto &e : kAlgCmds) {
+        if (e.id == wmId)
+            return &e;
+    }
+    return nullptr;
+}
+
+} // namespace
 
 MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow)
 {
@@ -586,913 +677,564 @@ MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
 }
 
+std::wstring
+MainWindow::OpenFileDialog(OpenBoxType type)
+{
+    OPENFILENAME ofn;    // common dialog box structure
+    wchar_t szFile[260]; // buffer for file name
+
+    // Initialize OPENFILENAME
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = NULL;
+    ofn.lpstrFile = szFile;
+    ofn.lpstrFile[0] = '\0';
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.lpstrFilter = L"All\0*.*\0Imagina\0*.im\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFileTitle = NULL;
+    ofn.nMaxFileTitle = 0;
+    ofn.lpstrInitialDir = NULL;
+
+    if (type == OpenBoxType::Open) {
+        // Display the Open dialog box.
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+        if (GetOpenFileName(&ofn) == TRUE) {
+            return std::wstring(ofn.lpstrFile);
+        } else {
+            return std::wstring();
+        }
+    } else {
+        ofn.Flags = 0;
+        if (GetSaveFileName(&ofn) == TRUE) {
+            return std::wstring(ofn.lpstrFile);
+        } else {
+            return std::wstring();
+        }
+    }
+}
+
+bool
+MainWindow::HasLastMenuPtClient() const noexcept
+{
+    return lastMenuPtClient_.x >= 0 && lastMenuPtClient_.y >= 0;
+}
+
+POINT
+MainWindow::GetSafeMenuPtClient() const
+{
+    // If user hasn’t opened the context menu yet, fall back to cursor pos.
+    POINT pt = lastMenuPtClient_;
+
+    if (!HasLastMenuPtClient()) {
+        ::GetCursorPos(&pt);
+        ::ScreenToClient(hWnd, &pt);
+    }
+    return pt;
+}
+
+bool
+MainWindow::HandleCommandTable(int wmId)
+{
+    auto doCenter = [](MainWindow &w) {
+        const POINT pt = w.GetSafeMenuPtClient();
+        w.MenuCenterView(pt.x, pt.y);
+    };
+    auto doZoomIn = [](MainWindow &w) {
+        const POINT pt = w.GetSafeMenuPtClient();
+        w.MenuZoomIn(pt);
+    };
+    auto doZoomOut = [](MainWindow &w) {
+        const POINT pt = w.GetSafeMenuPtClient();
+        w.MenuZoomOut(pt);
+    };
+
+    using Fn = std::function<void(MainWindow &)>;
+
+    // NOTE: This table is intended to fully subsume the remaining WM_COMMAND switch cases,
+    // except for:
+    //   - ranges handled by HandleCommandRange()
+    //   - algorithm IDs handled by HandleAlgCommand()
+    static const std::unordered_map<int, Fn> table = {
+        // Navigation / view
+        {IDM_BACK, [](MainWindow &w) { w.MenuGoBack(); }},
+        {IDM_STANDARDVIEW, [](MainWindow &w) { w.MenuStandardView(0); }},
+        {IDM_SQUAREVIEW, [](MainWindow &w) { w.MenuSquareView(); }},
+        {IDM_VIEWS_HELP, [](MainWindow &w) { w.MenuViewsHelp(); }},
+        {IDM_CENTERVIEW, doCenter},
+        {IDM_ZOOMIN, doZoomIn},
+        {IDM_ZOOMOUT, doZoomOut},
+
+        {IDM_AUTOZOOM_DEFAULT,
+         [](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>(); }},
+        {IDM_AUTOZOOM_MAX,
+         [](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>(); }},
+
+        {IDM_REPAINTING, [](MainWindow &w) { w.MenuRepainting(); }},
+        {IDM_WINDOWED, [](MainWindow &w) { w.MenuWindowed(false); }},
+        {IDM_WINDOWED_SQ, [](MainWindow &w) { w.MenuWindowed(true); }},
+        {IDM_MINIMIZE, [](MainWindow &w) { PostMessage(w.hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0); }},
+
+        // GPU AA
+        {IDM_GPUANTIALIASING_1X,
+         [](MainWindow &w) { w.gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1); }},
+        {IDM_GPUANTIALIASING_4X,
+         [](MainWindow &w) { w.gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2); }},
+        {IDM_GPUANTIALIASING_9X,
+         [](MainWindow &w) { w.gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3); }},
+        {IDM_GPUANTIALIASING_16X,
+         [](MainWindow &w) { w.gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4); }},
+
+        // Iteration precision
+        {IDM_ITERATIONPRECISION_1X, [](MainWindow &w) { w.gFractal->SetIterationPrecision(1); }},
+        {IDM_ITERATIONPRECISION_2X, [](MainWindow &w) { w.gFractal->SetIterationPrecision(4); }},
+        {IDM_ITERATIONPRECISION_3X, [](MainWindow &w) { w.gFractal->SetIterationPrecision(8); }},
+        {IDM_ITERATIONPRECISION_4X, [](MainWindow &w) { w.gFractal->SetIterationPrecision(16); }},
+
+        // Algorithm help
+        {IDM_HELP_ALG, [](MainWindow &w) { w.MenuAlgHelp(); }},
+
+        // LA toggles / presets
+        {IDM_LA_SINGLETHREADED,
+         [](MainWindow &w) {
+             auto &p = w.gFractal->GetLAParameters();
+             p.SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
+         }},
+        {IDM_LA_MULTITHREADED,
+         [](MainWindow &w) {
+             auto &p = w.gFractal->GetLAParameters();
+             p.SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
+         }},
+        {IDM_LA_SETTINGS_1,
+         [](MainWindow &w) {
+             auto &p = w.gFractal->GetLAParameters();
+             p.SetDefaults(LAParameters::LADefaults::MaxAccuracy);
+         }},
+        {IDM_LA_SETTINGS_2,
+         [](MainWindow &w) {
+             auto &p = w.gFractal->GetLAParameters();
+             p.SetDefaults(LAParameters::LADefaults::MaxPerf);
+         }},
+        {IDM_LA_SETTINGS_3,
+         [](MainWindow &w) {
+             auto &p = w.gFractal->GetLAParameters();
+             p.SetDefaults(LAParameters::LADefaults::MinMemory);
+         }},
+
+        // Tests / benchmarks
+        {IDM_BASICTEST,
+         [](MainWindow &w) {
+             CrummyTest t{*w.gFractal};
+             t.TestAll();
+         }},
+        {IDM_TEST_27,
+         [](MainWindow &w) {
+             CrummyTest t{*w.gFractal};
+             t.TestReallyHardView27();
+         }},
+        {IDM_BENCHMARK_FULL,
+         [](MainWindow &w) {
+             CrummyTest t{*w.gFractal};
+             t.Benchmark(RefOrbitCalc::PerturbationResultType::All);
+         }},
+        {IDM_BENCHMARK_INT,
+         [](MainWindow &w) {
+             CrummyTest t{*w.gFractal};
+             t.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
+         }},
+
+        // Iterations
+        {IDM_INCREASEITERATIONS_1P5X, [](MainWindow &w) { w.MenuMultiplyIterations(1.5); }},
+        {IDM_INCREASEITERATIONS_6X, [](MainWindow &w) { w.MenuMultiplyIterations(6.0); }},
+        {IDM_INCREASEITERATIONS_24X, [](MainWindow &w) { w.MenuMultiplyIterations(24.0); }},
+        {IDM_DECREASEITERATIONS, [](MainWindow &w) { w.MenuMultiplyIterations(2.0 / 3.0); }},
+        {IDM_RESETITERATIONS, [](MainWindow &w) { w.MenuResetIterations(); }},
+        {IDM_32BIT_ITERATIONS, [](MainWindow &w) { w.gFractal->SetIterType(IterTypeEnum::Bits32); }},
+        {IDM_64BIT_ITERATIONS, [](MainWindow &w) { w.gFractal->SetIterType(IterTypeEnum::Bits64); }},
+
+        // Perturbation UI
+        {IDM_PERTURB_RESULTS,
+         [](MainWindow &w) {
+             ::MessageBox(w.hWnd,
+                          L"TODO.  By default these are shown as white pixels overlayed on the image. "
+                          L"It'd be nice to have an option that shows them as white pixels against a "
+                          L"black screen so they're location is obvious.",
+                          L"TODO",
+                          MB_OK | MB_APPLMODAL);
+         }},
+        {IDM_PERTURB_CLEAR_ALL,
+         [](MainWindow &w) {
+             w.gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+         }},
+        {IDM_PERTURB_CLEAR_MED,
+         [](MainWindow &w) {
+             w.gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+         }},
+        {IDM_PERTURB_CLEAR_HIGH,
+         [](MainWindow &w) {
+             w.gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
+         }},
+
+        {IDM_PERTURBATION_AUTO,
+         [](MainWindow &w) { w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto); }},
+        {IDM_PERTURBATION_SINGLETHREAD,
+         [](MainWindow &w) { w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST); }},
+        {IDM_PERTURBATION_MULTITHREAD,
+         [](MainWindow &w) { w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT); }},
+        {IDM_PERTURBATION_SINGLETHREAD_PERIODICITY,
+         [](MainWindow &w) {
+             w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
+         }},
+        {IDM_PERTURBATION_MULTITHREAD2_PERIODICITY,
+         [](MainWindow &w) {
+             w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+         }},
+        {IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED,
+         [](MainWindow &w) {
+             w.gFractal->SetPerturbationAlg(
+                 RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
+         }},
+        {IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED1,
+         [](MainWindow &w) {
+             w.gFractal->SetPerturbationAlg(
+                 RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
+         }},
+        {IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED2,
+         [](MainWindow &w) {
+             w.gFractal->SetPerturbationAlg(
+                 RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
+         }},
+        {IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED3,
+         [](MainWindow &w) {
+             w.gFractal->SetPerturbationAlg(
+                 RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+         }},
+        {IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED4,
+         [](MainWindow &w) {
+             w.gFractal->SetPerturbationAlg(
+                 RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
+         }},
+        {IDM_PERTURBATION_MULTITHREAD5_PERIODICITY,
+         [](MainWindow &w) {
+             w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
+         }},
+        {IDM_PERTURBATION_GPU,
+         [](MainWindow &w) { w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU); }},
+
+        {IDM_PERTURBATION_SAVE, [](MainWindow &w) { w.gFractal->SavePerturbationOrbits(); }},
+        {IDM_PERTURBATION_LOAD, [](MainWindow &w) { w.gFractal->LoadPerturbationOrbits(); }},
+
+        {IDM_PERTURB_AUTOSAVE_ON,
+         [](MainWindow &w) { w.gFractal->SetResultsAutosave(AddPointOptions::EnableWithSave); }},
+        {IDM_PERTURB_AUTOSAVE_ON_DELETE,
+         [](MainWindow &w) { w.gFractal->SetResultsAutosave(AddPointOptions::EnableWithoutSave); }},
+        {IDM_PERTURB_AUTOSAVE_OFF,
+         [](MainWindow &w) { w.gFractal->SetResultsAutosave(AddPointOptions::DontSave); }},
+
+        // Memory limit toggle
+        {IDM_MEMORY_LIMIT_0, [](MainWindow &w) { w.gJobObj = nullptr; }},
+        {IDM_MEMORY_LIMIT_1, [](MainWindow &w) { w.gJobObj = std::make_unique<JobObject>(); }},
+
+        // Palettes
+        {IDM_PALETTEROTATE, [](MainWindow &w) { w.MenuPaletteRotation(); }},
+        {IDM_CREATENEWPALETTE, [](MainWindow &w) { w.MenuCreateNewPalette(); }},
+
+        {IDM_PALETTE_TYPE_0, [](MainWindow &w) { w.MenuPaletteType(FractalPalette::Basic); }},
+        {IDM_PALETTE_TYPE_1, [](MainWindow &w) { w.MenuPaletteType(FractalPalette::Default); }},
+        {IDM_PALETTE_TYPE_2, [](MainWindow &w) { w.MenuPaletteType(FractalPalette::Patriotic); }},
+        {IDM_PALETTE_TYPE_3, [](MainWindow &w) { w.MenuPaletteType(FractalPalette::Summer); }},
+        {IDM_PALETTE_TYPE_4, [](MainWindow &w) { w.MenuPaletteType(FractalPalette::Random); }},
+
+        {IDM_PALETTE_5, [](MainWindow &w) { w.MenuPaletteDepth(5); }},
+        {IDM_PALETTE_6, [](MainWindow &w) { w.MenuPaletteDepth(6); }},
+        {IDM_PALETTE_8, [](MainWindow &w) { w.MenuPaletteDepth(8); }},
+        {IDM_PALETTE_12, [](MainWindow &w) { w.MenuPaletteDepth(12); }},
+        {IDM_PALETTE_16, [](MainWindow &w) { w.MenuPaletteDepth(16); }},
+        {IDM_PALETTE_20, [](MainWindow &w) { w.MenuPaletteDepth(20); }},
+
+        // Location / IO
+        {IDM_CURPOS, [](MainWindow &w) { w.MenuGetCurPos(); }},
+        {IDM_SAVELOCATION, [](MainWindow &w) { w.MenuSaveCurrentLocation(); }},
+        {IDM_LOADLOCATION, [](MainWindow &w) { w.MenuLoadCurrentLocation(); }},
+        {IDM_LOAD_ENTERLOCATION, [](MainWindow &w) { w.MenuLoadEnterLocation(); }},
+
+        {IDM_SAVEBMP, [](MainWindow &w) { w.MenuSaveBMP(); }},
+        {IDM_SAVEHIRESBMP, [](MainWindow &w) { w.MenuSaveHiResBMP(); }},
+        {IDM_SAVE_ITERS_TEXT, [](MainWindow &w) { w.MenuSaveItersAsText(); }},
+
+        {IDM_SAVE_REFORBIT_TEXT, [](MainWindow &w) { w.MenuSaveImag(CompressToDisk::Disable); }},
+        {IDM_SAVE_REFORBIT_TEXT_SIMPLE,
+         [](MainWindow &w) { w.MenuSaveImag(CompressToDisk::SimpleCompression); }},
+        {IDM_SAVE_REFORBIT_TEXT_MAX,
+         [](MainWindow &w) { w.MenuSaveImag(CompressToDisk::MaxCompression); }},
+        {IDM_SAVE_REFORBIT_IMAG_MAX,
+         [](MainWindow &w) { w.MenuSaveImag(CompressToDisk::MaxCompressionImagina); }},
+        {IDM_DIFF_REFORBIT_IMAG_MAX, [](MainWindow &w) { w.MenuDiffImag(); }},
+
+        {IDM_LOAD_REFORBIT_IMAG_MAX,
+         [](MainWindow &w) { w.MenuLoadImagDyn(ImaginaSettings::ConvertToCurrent); }},
+        {IDM_LOAD_REFORBIT_IMAG_MAX_SAVED,
+         [](MainWindow &w) { w.MenuLoadImagDyn(ImaginaSettings::UseSaved); }},
+
+        {IDM_LOAD_IMAGINA_DLG,
+         [](MainWindow &w) {
+             w.MenuLoadImag(ImaginaSettings::ConvertToCurrent, CompressToDisk::MaxCompressionImagina);
+         }},
+        {IDM_LOAD_IMAGINA_DLG_SAVED,
+         [](MainWindow &w) {
+             w.MenuLoadImag(ImaginaSettings::UseSaved, CompressToDisk::MaxCompressionImagina);
+         }},
+
+        // Help / exit
+        {IDM_SHOWHOTKEYS, [](MainWindow &w) { w.MenuShowHotkeys(); }},
+        {IDM_EXIT, [](MainWindow &w) { DestroyWindow(w.hWnd); }},
+    };
+
+    if (auto it = table.find(wmId); it != table.end()) {
+        it->second(*this);
+        return true;
+    }
+
+    return false;
+}
+
+bool
+MainWindow::HandleCommandRange(int wmId)
+{
+    // ---- Views 1..40 (contiguous) ----
+    if (wmId >= IDM_VIEW1 && wmId <= IDM_VIEW40) {
+        static_assert(IDM_VIEW40 == IDM_VIEW1 + 39, "IDM_VIEW range must be contiguous");
+        MenuStandardView(static_cast<size_t>(wmId - IDM_VIEW1 + 1));
+        return true;
+    }
+
+    // ---- Dynamic orbit slots (0..29) ----
+    if (wmId >= IDM_VIEW_DYNAMIC_ORBIT && wmId < IDM_VIEW_DYNAMIC_ORBIT + kMaxDynamic) {
+        const size_t index = static_cast<size_t>(wmId - IDM_VIEW_DYNAMIC_ORBIT);
+        if (index < gSavedLocations.size()) {
+            ActivateSavedOrbit(index);
+        }
+        return true;
+    }
+
+    // ---- Dynamic imag slots (0..29) ----
+    if (wmId >= IDM_VIEW_DYNAMIC_IMAG && wmId < IDM_VIEW_DYNAMIC_IMAG + kMaxDynamic) {
+        const size_t index = static_cast<size_t>(wmId - IDM_VIEW_DYNAMIC_IMAG);
+        if (index < gImaginaLocations.size()) {
+            ActivateImagina(index);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+void
+MainWindow::ActivateSavedOrbit(size_t index)
+{
+    ClearMenu(LoadSubMenu);
+
+    const auto ptz = gSavedLocations[index].ptz;
+    const auto num_iterations = gSavedLocations[index].num_iterations;
+    const auto antialiasing = gSavedLocations[index].antialiasing;
+
+    gFractal->RecenterViewCalc(ptz);
+    gFractal->SetNumIterations<IterTypeFull>(num_iterations);
+    gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
+    PaintAsNecessary();
+}
+
+void
+MainWindow::ActivateImagina(size_t index)
+{
+    const auto &entry = gImaginaLocations[index];
+
+    LoadRefOrbit(CompressToDisk::MaxCompressionImagina, entry.Settings, entry.Filename);
+    ClearMenu(ImaginaMenu);
+}
+
+// Top-level router expanded in Phase 3
+bool
+MainWindow::HandleCommand(int wmId)
+{
+    if (HandleCommandRange(wmId))
+        return true;
+    if (HandleAlgCommand(wmId))
+        return true;
+    if (HandleCommandTable(wmId))
+        return true;
+    return false;
+}
+
+bool
+MainWindow::HandleAlgCommand(int wmId)
+{
+    if (const auto *e = FindAlgForCmd(wmId)) {
+        gFractal->SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(e->alg));
+        FractalShark::DynamicPopupMenu::SetCurrentRenderAlgorithmId(wmId);
+
+        if (gPopupMenu) {
+            auto popup = FractalShark::DynamicPopupMenu::GetPopup(gPopupMenu.get());
+            FractalShark::DynamicPopupMenu::ApplyRenderAlgorithmRadioChecks(popup, wmId);
+        }
+        return true;
+    }
+    return false;
+}
+
 LRESULT
 MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
-    static bool lButtonDown = false;
-    static int dragBoxX1, dragBoxY1;
-
-    // Used for drawing the inverted rectangle properly.
-    static int prevX1 = -1, prevY1 = -1;
-
-    // Used for keeping track of where the menu was located
-    static int menuX = -1, menuY = -1;
-
-#define MapMenuItemToAlg(wmId, renderAlg)                                                               \
-    case wmId: {                                                                                        \
-        gFractal->SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(renderAlg));                          \
-        FractalShark::DynamicPopupMenu::SetCurrentRenderAlgorithmId(wmId);                              \
-        if (gPopupMenu) {                                                                               \
-            auto popup = FractalShark::DynamicPopupMenu::GetPopup(gPopupMenu.get());                    \
-            FractalShark::DynamicPopupMenu::ApplyRenderAlgorithmRadioChecks(popup, wmId);               \
-        }                                                                                               \
-        break;                                                                                          \
-    }
-
     switch (message) {
         case WM_COMMAND: {
-            int wmId, wmEvent;
-            wmId = LOWORD(wParam);
-            wmEvent = HIWORD(wParam);
-
-            switch (wmId) { // Go back to the previous location
-                case IDM_BACK: {
-                    MenuGoBack();
-                    break;
-                }
-
-                // Reset the view of the fractal to standard
-                case IDM_STANDARDVIEW: {
-                    MenuStandardView(0);
-                    break;
-                }
-
-                case IDM_VIEWS_HELP: {
-                    MenuViewsHelp();
-                    break;
-                }
-
-                case IDM_VIEW1:
-                case IDM_VIEW2:
-                case IDM_VIEW3:
-                case IDM_VIEW4:
-                case IDM_VIEW5:
-                case IDM_VIEW6:
-                case IDM_VIEW7:
-                case IDM_VIEW8:
-                case IDM_VIEW9:
-                case IDM_VIEW10:
-                case IDM_VIEW11:
-                case IDM_VIEW12:
-                case IDM_VIEW13:
-                case IDM_VIEW14:
-                case IDM_VIEW15:
-                case IDM_VIEW16:
-                case IDM_VIEW17:
-                case IDM_VIEW18:
-                case IDM_VIEW19:
-                case IDM_VIEW20:
-                case IDM_VIEW21:
-                case IDM_VIEW22:
-                case IDM_VIEW23:
-                case IDM_VIEW24:
-                case IDM_VIEW25:
-                case IDM_VIEW26:
-                case IDM_VIEW27:
-                case IDM_VIEW28:
-                case IDM_VIEW29:
-                case IDM_VIEW30:
-                case IDM_VIEW31:
-                case IDM_VIEW32:
-                case IDM_VIEW33:
-                case IDM_VIEW34:
-                case IDM_VIEW35:
-                case IDM_VIEW36:
-                case IDM_VIEW37:
-                case IDM_VIEW38:
-                case IDM_VIEW39:
-                case IDM_VIEW40: {
-                    static_assert(IDM_VIEW2 == IDM_VIEW1 + 1, "!");
-                    static_assert(IDM_VIEW3 == IDM_VIEW1 + 2, "!");
-                    static_assert(IDM_VIEW4 == IDM_VIEW1 + 3, "!");
-                    static_assert(IDM_VIEW5 == IDM_VIEW1 + 4, "!");
-                    static_assert(IDM_VIEW6 == IDM_VIEW1 + 5, "!");
-                    static_assert(IDM_VIEW7 == IDM_VIEW1 + 6, "!");
-                    static_assert(IDM_VIEW8 == IDM_VIEW1 + 7, "!");
-                    static_assert(IDM_VIEW9 == IDM_VIEW1 + 8, "!");
-                    static_assert(IDM_VIEW10 == IDM_VIEW1 + 9, "!");
-                    static_assert(IDM_VIEW11 == IDM_VIEW1 + 10, "!");
-                    static_assert(IDM_VIEW12 == IDM_VIEW1 + 11, "!");
-                    static_assert(IDM_VIEW13 == IDM_VIEW1 + 12, "!");
-                    static_assert(IDM_VIEW14 == IDM_VIEW1 + 13, "!");
-                    static_assert(IDM_VIEW15 == IDM_VIEW1 + 14, "!");
-                    static_assert(IDM_VIEW16 == IDM_VIEW1 + 15, "!");
-                    static_assert(IDM_VIEW17 == IDM_VIEW1 + 16, "!");
-                    static_assert(IDM_VIEW18 == IDM_VIEW1 + 17, "!");
-                    static_assert(IDM_VIEW19 == IDM_VIEW1 + 18, "!");
-                    static_assert(IDM_VIEW20 == IDM_VIEW1 + 19, "!");
-                    static_assert(IDM_VIEW21 == IDM_VIEW1 + 20, "!");
-                    static_assert(IDM_VIEW22 == IDM_VIEW1 + 21, "!");
-                    static_assert(IDM_VIEW23 == IDM_VIEW1 + 22, "!");
-                    static_assert(IDM_VIEW24 == IDM_VIEW1 + 23, "!");
-                    static_assert(IDM_VIEW25 == IDM_VIEW1 + 24, "!");
-                    static_assert(IDM_VIEW26 == IDM_VIEW1 + 25, "!");
-                    static_assert(IDM_VIEW27 == IDM_VIEW1 + 26, "!");
-                    static_assert(IDM_VIEW28 == IDM_VIEW1 + 27, "!");
-                    static_assert(IDM_VIEW29 == IDM_VIEW1 + 28, "!");
-                    static_assert(IDM_VIEW30 == IDM_VIEW1 + 29, "!");
-                    static_assert(IDM_VIEW31 == IDM_VIEW1 + 30, "!");
-                    static_assert(IDM_VIEW32 == IDM_VIEW1 + 31, "!");
-                    static_assert(IDM_VIEW33 == IDM_VIEW1 + 32, "!");
-                    static_assert(IDM_VIEW34 == IDM_VIEW1 + 33, "!");
-                    static_assert(IDM_VIEW35 == IDM_VIEW1 + 34, "!");
-                    static_assert(IDM_VIEW36 == IDM_VIEW1 + 35, "!");
-                    static_assert(IDM_VIEW37 == IDM_VIEW1 + 36, "!");
-                    static_assert(IDM_VIEW38 == IDM_VIEW1 + 37, "!");
-                    static_assert(IDM_VIEW39 == IDM_VIEW1 + 38, "!");
-                    static_assert(IDM_VIEW40 == IDM_VIEW1 + 39, "!");
-
-                    MenuStandardView(wmId - IDM_VIEW1 + 1);
-                    break;
-                }
-
-                // Reset the view of the fractal to "square", taking into
-                // account window aspect ratio.  Eliminates distortion.
-                case IDM_SQUAREVIEW: {
-                    MenuSquareView();
-                    break;
-                }
-
-                // Recenter the current view at the point where the menu was
-                // created, not the current mouse position or some bs like that.
-                case IDM_CENTERVIEW: {
-                    MenuCenterView(menuX, menuY);
-                    break;
-                }
-
-                case IDM_ZOOMIN: {
-                    MenuZoomIn({menuX, menuY});
-                    break;
-                }
-
-                case IDM_ZOOMOUT: {
-                    MenuZoomOut({menuX, menuY});
-                    break;
-                }
-
-                case IDM_AUTOZOOM_DEFAULT: {
-                    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-                    break;
-                }
-
-                case IDM_AUTOZOOM_MAX: {
-                    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
-                    break;
-                }
-
-                case IDM_REPAINTING: {
-                    MenuRepainting();
-                    break;
-                }
-
-                // Make the fractal window a "window" instead of fullscreen
-                case IDM_WINDOWED: {
-                    MenuWindowed(false);
-                    break;
-                }
-
-                case IDM_WINDOWED_SQ: {
-                    MenuWindowed(true);
-                    break;
-                }
-
-                // Minimize the window
-                case IDM_MINIMIZE: {
-                    PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-                    break;
-                }
-
-                case IDM_GPUANTIALIASING_1X: {
-                    gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
-                    break;
-                }
-                case IDM_GPUANTIALIASING_4X: {
-                    gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
-                    break;
-                }
-                case IDM_GPUANTIALIASING_9X: {
-                    gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3);
-                    break;
-                }
-
-                case IDM_GPUANTIALIASING_16X: {
-                    gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4);
-                    break;
-                }
-
-                // Iteration precision
-                case IDM_ITERATIONPRECISION_1X: {
-                    gFractal->SetIterationPrecision(1);
-                    break;
-                }
-
-                case IDM_ITERATIONPRECISION_2X: {
-                    gFractal->SetIterationPrecision(4);
-                    break;
-                }
-
-                case IDM_ITERATIONPRECISION_3X: {
-                    gFractal->SetIterationPrecision(8);
-                    break;
-                }
-
-                case IDM_ITERATIONPRECISION_4X: {
-                    gFractal->SetIterationPrecision(16);
-                    break;
-                }
-
-                // Change rendering algorithm
-                case IDM_HELP_ALG: {
-                    MenuAlgHelp();
-                    break;
-                }
-
-                    MapMenuItemToAlg(IDM_ALG_AUTO, RenderAlgorithmEnum::AUTO);
-                    MapMenuItemToAlg(IDM_ALG_CPU_HIGH, RenderAlgorithmEnum::CpuHigh);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_32_HDR, RenderAlgorithmEnum::CpuHDR32);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLA_HDR,
-                                     RenderAlgorithmEnum::Cpu32PerturbedBLAHDR);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR,
-                                     RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR,
-                                     RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR,
-                                     RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR,
-                                     RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_64, RenderAlgorithmEnum::Cpu64);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_64_HDR, RenderAlgorithmEnum::CpuHDR64);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA,
-                                     RenderAlgorithmEnum::Cpu64PerturbedBLA);
-                    MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA_HDR,
-                                     RenderAlgorithmEnum::Cpu64PerturbedBLAHDR);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_64, RenderAlgorithmEnum::Gpu1x64);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_BLA,
-                                     RenderAlgorithmEnum::Gpu1x64PerturbedBLA);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_64, RenderAlgorithmEnum::Gpu2x64);
-                    MapMenuItemToAlg(IDM_ALG_GPU_4_64, RenderAlgorithmEnum::Gpu4x64);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2X32_HDR, RenderAlgorithmEnum::GpuHDRx32);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_32, RenderAlgorithmEnum::Gpu1x32);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_SCALED,
-                                     RenderAlgorithmEnum::Gpu1x32PerturbedScaled);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_SCALED,
-                                     RenderAlgorithmEnum::GpuHDRx32PerturbedScaled);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_32, RenderAlgorithmEnum::Gpu2x32);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_SCALED,
-                                     RenderAlgorithmEnum::Gpu2x32PerturbedScaled);
-                    MapMenuItemToAlg(IDM_ALG_GPU_4_32, RenderAlgorithmEnum::Gpu4x32);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_BLA,
-                                     RenderAlgorithmEnum::GpuHDRx32PerturbedBLA);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_BLA,
-                                     RenderAlgorithmEnum::GpuHDRx64PerturbedBLA);
-
-                    /////////////////////////// Begin LAV2 ///////////////////////////
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2,
-                                     RenderAlgorithmEnum::Gpu1x32PerturbedLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_PO,
-                                     RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO,
-                                     RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2,
-                                     RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO,
-                                     RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO,
-                                     RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO);
-
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2,
-                                     RenderAlgorithmEnum::Gpu2x32PerturbedLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_PO,
-                                     RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO,
-                                     RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2,
-                                     RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_PO,
-                                     RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO,
-                                     RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO);
-
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2,
-                                     RenderAlgorithmEnum::Gpu1x64PerturbedLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_PO,
-                                     RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO,
-                                     RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2,
-                                     RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_PO,
-                                     RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO,
-                                     RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO);
-
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2,
-                                     RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO,
-                                     RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO,
-                                     RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2,
-                                     RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_PO,
-                                     RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO,
-                                     RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO);
-
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2,
-                                     RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO,
-                                     RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO,
-                                     RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2,
-                                     RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_PO,
-                                     RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO,
-                                     RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO);
-
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2,
-                                     RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO,
-                                     RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO,
-                                     RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2,
-                                     RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO,
-                                     RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO);
-                    MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO,
-                                     RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO);
-
-                case IDM_LA_SINGLETHREADED: {
-                    auto &parameters = gFractal->GetLAParameters();
-                    parameters.SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
-                    break;
-                }
-
-                case IDM_LA_MULTITHREADED: {
-                    auto &parameters = gFractal->GetLAParameters();
-                    parameters.SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
-                    break;
-                }
-
-                case IDM_LA_SETTINGS_1: {
-                    auto &parameters = gFractal->GetLAParameters();
-                    parameters.SetDefaults(LAParameters::LADefaults::MaxAccuracy);
-                    break;
-                }
-
-                case IDM_LA_SETTINGS_2: {
-                    auto &parameters = gFractal->GetLAParameters();
-                    parameters.SetDefaults(LAParameters::LADefaults::MaxPerf);
-                    break;
-                }
-
-                case IDM_LA_SETTINGS_3: {
-                    auto &parameters = gFractal->GetLAParameters();
-                    parameters.SetDefaults(LAParameters::LADefaults::MinMemory);
-                    break;
-                }
-
-                case IDM_BASICTEST: {
-                    CrummyTest test{*gFractal};
-                    test.TestAll();
-                    break;
-                }
-
-                case IDM_TEST_27: {
-                    CrummyTest test{*gFractal};
-                    test.TestReallyHardView27();
-                    break;
-                }
-
-                // Increase the number of iterations we are using.
-                // This will slow down rendering, but image quality
-                // will be improved.
-                case IDM_INCREASEITERATIONS_1P5X: {
-                    MenuMultiplyIterations(1.5);
-                    break;
-                }
-                case IDM_INCREASEITERATIONS_6X: {
-                    MenuMultiplyIterations(6.0);
-                    break;
-                }
-
-                case IDM_INCREASEITERATIONS_24X: {
-                    MenuMultiplyIterations(24.0);
-                    break;
-                }
-                // Decrease the number of iterations we are using
-                case IDM_DECREASEITERATIONS: {
-                    MenuMultiplyIterations(2.0 / 3.0);
-                    break;
-                }
-                // Reset the number of iterations to the default
-                case IDM_RESETITERATIONS: {
-                    MenuResetIterations();
-                    break;
-                }
-
-                case IDM_32BIT_ITERATIONS: {
-                    gFractal->SetIterType(IterTypeEnum::Bits32);
-                    break;
-                }
-
-                case IDM_64BIT_ITERATIONS: {
-                    gFractal->SetIterType(IterTypeEnum::Bits64);
-                    break;
-                }
-
-                case IDM_PERTURB_RESULTS: {
-                    // gFractal->DrawAllPerturbationResults(false);
-                    ::MessageBox(
-                        hWnd,
-                        L"TODO.  By default these are shown as white pixels overlayed on the image. "
-                        L"It'd be nice to have an option that shows them as white pixels against a "
-                        L"black screen so they're location is obvious.",
-                        L"TODO",
-                        MB_OK | MB_APPLMODAL);
-                    break;
-                }
-                case IDM_PERTURB_CLEAR_ALL: {
-                    gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                    break;
-                }
-
-                case IDM_PERTURB_CLEAR_MED: {
-                    gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-                    break;
-                }
-
-                case IDM_PERTURB_CLEAR_HIGH: {
-                    gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
-                    break;
-                }
-
-                case IDM_PERTURBATION_AUTO: {
-                    gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
-                    break;
-                }
-
-                case IDM_PERTURBATION_SINGLETHREAD: {
-                    gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST);
-                    break;
-                }
-
-                case IDM_PERTURBATION_MULTITHREAD: {
-                    gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
-                    break;
-                }
-
-                case IDM_PERTURBATION_SINGLETHREAD_PERIODICITY: {
-                    gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
-                    break;
-                }
-
-                case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY: {
-                    gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
-                    break;
-                }
-
-                case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED: {
-                    gFractal->SetPerturbationAlg(
-                        RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
-                    break;
-                }
-
-                case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED1: {
-                    gFractal->SetPerturbationAlg(
-                        RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
-                    break;
-                }
-
-                case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED2: {
-                    gFractal->SetPerturbationAlg(
-                        RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
-                    break;
-                }
-
-                case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED3: {
-                    gFractal->SetPerturbationAlg(
-                        RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
-                    break;
-                }
-
-                case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED4: {
-                    // Broken
-                    gFractal->SetPerturbationAlg(
-                        RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
-                    break;
-                }
-
-                case IDM_PERTURBATION_MULTITHREAD5_PERIODICITY: {
-                    gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
-                    break;
-                }
-
-                case IDM_PERTURBATION_GPU: {
-                    gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU);
-                    break;
-                }
-
-                case IDM_PERTURBATION_SAVE: {
-                    gFractal->SavePerturbationOrbits();
-                    break;
-                }
-
-                case IDM_PERTURBATION_LOAD: {
-                    gFractal->LoadPerturbationOrbits();
-                    break;
-                }
-
-                case IDM_PERTURB_AUTOSAVE_ON: {
-                    gFractal->SetResultsAutosave(AddPointOptions::EnableWithSave);
-                    break;
-                }
-
-                case IDM_PERTURB_AUTOSAVE_ON_DELETE: {
-                    gFractal->SetResultsAutosave(AddPointOptions::EnableWithoutSave);
-                    break;
-                }
-
-                case IDM_PERTURB_AUTOSAVE_OFF: {
-                    gFractal->SetResultsAutosave(AddPointOptions::DontSave);
-                    break;
-                }
-
-                case IDM_MEMORY_LIMIT_0: {
-                    gJobObj = nullptr;
-                    break;
-                }
-
-                case IDM_MEMORY_LIMIT_1: {
-                    gJobObj = std::make_unique<JobObject>();
-                    break;
-                }
-
-                case IDM_PALETTEROTATE: {
-                    MenuPaletteRotation();
-                    break;
-                }
-                case IDM_CREATENEWPALETTE: {
-                    MenuCreateNewPalette();
-                    break;
-                }
-
-                case IDM_PALETTE_TYPE_0: {
-                    MenuPaletteType(FractalPalette::Basic);
-                    break;
-                }
-
-                case IDM_PALETTE_TYPE_1: {
-                    MenuPaletteType(FractalPalette::Default);
-                    break;
-                }
-
-                case IDM_PALETTE_TYPE_2: {
-                    MenuPaletteType(FractalPalette::Patriotic);
-                    break;
-                }
-
-                case IDM_PALETTE_TYPE_3: {
-                    MenuPaletteType(FractalPalette::Summer);
-                    break;
-                }
-
-                case IDM_PALETTE_TYPE_4: {
-                    MenuPaletteType(FractalPalette::Random);
-                    break;
-                }
-
-                case IDM_PALETTE_5: {
-                    MenuPaletteDepth(5);
-                    break;
-                }
-
-                case IDM_PALETTE_6: {
-                    MenuPaletteDepth(6);
-                    break;
-                }
-
-                case IDM_PALETTE_8: {
-                    MenuPaletteDepth(8);
-                    break;
-                }
-
-                case IDM_PALETTE_12: {
-                    MenuPaletteDepth(12);
-                    break;
-                }
-
-                case IDM_PALETTE_16: {
-                    MenuPaletteDepth(16);
-                    break;
-                }
-
-                case IDM_PALETTE_20: {
-                    MenuPaletteDepth(20);
-                    break;
-                }
-
-                // Put the current window position on
-                // the clipboard.  The coordinates put
-                // on the clipboard are the "calculator"
-                // coordinates, not screen coordinates.
-                case IDM_CURPOS: {
-                    MenuGetCurPos();
-                    break;
-                }
-                case IDM_BENCHMARK_FULL: {
-                    CrummyTest test{*gFractal};
-                    test.Benchmark(RefOrbitCalc::PerturbationResultType::All);
-                    break;
-                }
-                case IDM_BENCHMARK_INT: {
-                    CrummyTest test{*gFractal};
-                    test.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
-                    break;
-                }
-
-                // Save/load current location
-                case (IDM_SAVELOCATION): {
-                    MenuSaveCurrentLocation();
-                    break;
-                }
-                case (IDM_LOADLOCATION): {
-                    MenuLoadCurrentLocation();
-                    break;
-                }
-                case IDM_LOAD_ENTERLOCATION: {
-                    MenuLoadEnterLocation();
-                    break;
-                }
-                case IDM_SAVEBMP: {
-                    MenuSaveBMP();
-                    break;
-                }
-                case IDM_SAVEHIRESBMP: {
-                    MenuSaveHiResBMP();
-                    break;
-                }
-                case IDM_SAVE_ITERS_TEXT: {
-                    MenuSaveItersAsText();
-                    break;
-                }
-                case IDM_SAVE_REFORBIT_TEXT: {
-                    MenuSaveImag(CompressToDisk::Disable);
-                    break;
-                }
-                case IDM_SAVE_REFORBIT_TEXT_SIMPLE: {
-                    MenuSaveImag(CompressToDisk::SimpleCompression);
-                    break;
-                }
-                case IDM_SAVE_REFORBIT_TEXT_MAX: {
-                    MenuSaveImag(CompressToDisk::MaxCompression);
-                    break;
-                }
-                case IDM_SAVE_REFORBIT_IMAG_MAX: {
-                    MenuSaveImag(CompressToDisk::MaxCompressionImagina);
-                    break;
-                }
-                case IDM_DIFF_REFORBIT_IMAG_MAX: {
-                    MenuDiffImag();
-                    break;
-                }
-                case IDM_LOAD_REFORBIT_IMAG_MAX: {
-                    MenuLoadImagDyn(ImaginaSettings::ConvertToCurrent);
-                    break;
-                }
-
-                case IDM_LOAD_REFORBIT_IMAG_MAX_SAVED: {
-                    MenuLoadImagDyn(ImaginaSettings::UseSaved);
-                    break;
-                }
-
-                case IDM_SHOWHOTKEYS: {
-                    MenuShowHotkeys();
-                    break;
-                }
-                // Exit the program
-                case IDM_EXIT: {
-                    DestroyWindow(hWnd);
-                    break;
-                }
-
-                case IDM_VIEW_DYNAMIC_ORBIT + 0:
-                case IDM_VIEW_DYNAMIC_ORBIT + 1:
-                case IDM_VIEW_DYNAMIC_ORBIT + 2:
-                case IDM_VIEW_DYNAMIC_ORBIT + 3:
-                case IDM_VIEW_DYNAMIC_ORBIT + 4:
-                case IDM_VIEW_DYNAMIC_ORBIT + 5:
-                case IDM_VIEW_DYNAMIC_ORBIT + 6:
-                case IDM_VIEW_DYNAMIC_ORBIT + 7:
-                case IDM_VIEW_DYNAMIC_ORBIT + 8:
-                case IDM_VIEW_DYNAMIC_ORBIT + 9:
-                case IDM_VIEW_DYNAMIC_ORBIT + 10:
-                case IDM_VIEW_DYNAMIC_ORBIT + 11:
-                case IDM_VIEW_DYNAMIC_ORBIT + 12:
-                case IDM_VIEW_DYNAMIC_ORBIT + 13:
-                case IDM_VIEW_DYNAMIC_ORBIT + 14:
-                case IDM_VIEW_DYNAMIC_ORBIT + 15:
-                case IDM_VIEW_DYNAMIC_ORBIT + 16:
-                case IDM_VIEW_DYNAMIC_ORBIT + 17:
-                case IDM_VIEW_DYNAMIC_ORBIT + 18:
-                case IDM_VIEW_DYNAMIC_ORBIT + 19:
-                case IDM_VIEW_DYNAMIC_ORBIT + 20:
-                case IDM_VIEW_DYNAMIC_ORBIT + 21:
-                case IDM_VIEW_DYNAMIC_ORBIT + 22:
-                case IDM_VIEW_DYNAMIC_ORBIT + 23:
-                case IDM_VIEW_DYNAMIC_ORBIT + 24:
-                case IDM_VIEW_DYNAMIC_ORBIT + 25:
-                case IDM_VIEW_DYNAMIC_ORBIT + 26:
-                case IDM_VIEW_DYNAMIC_ORBIT + 27:
-                case IDM_VIEW_DYNAMIC_ORBIT + 28:
-                case IDM_VIEW_DYNAMIC_ORBIT + 29: {
-                    ClearMenu(LoadSubMenu);
-
-                    auto index = wmId - IDM_VIEW_DYNAMIC_ORBIT;
-                    auto ptz = gSavedLocations[index].ptz;
-                    auto num_iterations = gSavedLocations[index].num_iterations;
-                    auto antialiasing = gSavedLocations[index].antialiasing;
-
-                    gFractal->RecenterViewCalc(ptz);
-                    gFractal->SetNumIterations<IterTypeFull>(num_iterations);
-                    gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
-                    PaintAsNecessary();
-                    break;
-                }
-
-                case IDM_VIEW_DYNAMIC_IMAG + 0:
-                case IDM_VIEW_DYNAMIC_IMAG + 1:
-                case IDM_VIEW_DYNAMIC_IMAG + 2:
-                case IDM_VIEW_DYNAMIC_IMAG + 3:
-                case IDM_VIEW_DYNAMIC_IMAG + 4:
-                case IDM_VIEW_DYNAMIC_IMAG + 5:
-                case IDM_VIEW_DYNAMIC_IMAG + 6:
-                case IDM_VIEW_DYNAMIC_IMAG + 7:
-                case IDM_VIEW_DYNAMIC_IMAG + 8:
-                case IDM_VIEW_DYNAMIC_IMAG + 9:
-                case IDM_VIEW_DYNAMIC_IMAG + 10:
-                case IDM_VIEW_DYNAMIC_IMAG + 11:
-                case IDM_VIEW_DYNAMIC_IMAG + 12:
-                case IDM_VIEW_DYNAMIC_IMAG + 13:
-                case IDM_VIEW_DYNAMIC_IMAG + 14:
-                case IDM_VIEW_DYNAMIC_IMAG + 15:
-                case IDM_VIEW_DYNAMIC_IMAG + 16:
-                case IDM_VIEW_DYNAMIC_IMAG + 17:
-                case IDM_VIEW_DYNAMIC_IMAG + 18:
-                case IDM_VIEW_DYNAMIC_IMAG + 19:
-                case IDM_VIEW_DYNAMIC_IMAG + 20:
-                case IDM_VIEW_DYNAMIC_IMAG + 21:
-                case IDM_VIEW_DYNAMIC_IMAG + 22:
-                case IDM_VIEW_DYNAMIC_IMAG + 23:
-                case IDM_VIEW_DYNAMIC_IMAG + 24:
-                case IDM_VIEW_DYNAMIC_IMAG + 25:
-                case IDM_VIEW_DYNAMIC_IMAG + 26:
-                case IDM_VIEW_DYNAMIC_IMAG + 27:
-                case IDM_VIEW_DYNAMIC_IMAG + 28:
-                case IDM_VIEW_DYNAMIC_IMAG + 29: {
-                    const auto index = wmId - IDM_VIEW_DYNAMIC_IMAG;
-
-                    LoadRefOrbit(CompressToDisk::MaxCompressionImagina,
-                                 gImaginaLocations[index].Settings,
-                                 gImaginaLocations[index].Filename);
-                    ClearMenu(ImaginaMenu);
-
-                    break;
-                }
-
-                case IDM_LOAD_IMAGINA_DLG: {
-                    MenuLoadImag(ImaginaSettings::ConvertToCurrent,
-                                 CompressToDisk::MaxCompressionImagina);
-                    break;
-                }
-
-                case IDM_LOAD_IMAGINA_DLG_SAVED: {
-                    MenuLoadImag(ImaginaSettings::UseSaved, CompressToDisk::MaxCompressionImagina);
-                    break;
-                }
-
-                // Catch-all
-                default: {
-                    ::MessageBox(hWnd, L"Unknown menu item", L"Error", MB_OK | MB_APPLMODAL);
-                    return DefWindowProc(hWnd, message, wParam, lParam);
-                }
+            const int wmId = LOWORD(wParam);
+            const int wmEvent = HIWORD(wParam);
+            (void)wmEvent;
+
+            if (HandleCommand(wmId)) {
+                return 0;
             }
 
-            break;
+            wchar_t buf[256];
+            swprintf_s(buf,
+                       L"Unknown WM_COMMAND.\n\nwmId = %d (0x%X)\nwmEvent = %d (0x%X)\n",
+                       wmId,
+                       wmId,
+                       wmEvent,
+                       wmEvent);
+
+            ::MessageBoxW(hWnd, buf, L"Unknown menu item", MB_OK | MB_APPLMODAL);
+
+            return 0;
         }
 
+
         case WM_SIZE: {
-            if (gFractal != nullptr) {
+            if (gFractal) {
                 gFractal->ResetDimensions(LOWORD(lParam), HIWORD(lParam));
                 PaintAsNecessary();
             }
-            break;
+            return 0;
         }
-        // Display the popup menu with options
-        case WM_CONTEXTMENU: {
-            menuX = GET_X_LPARAM(lParam);
-            menuY = GET_Y_LPARAM(lParam);
 
+        case WM_CONTEXTMENU: {
+            // WM_CONTEXTMENU:
+            //  - If invoked by mouse: lParam contains screen coords (x,y)
+            //  - If invoked by keyboard (Shift+F10 / menu key): lParam == -1
+            POINT ptScreen{};
+
+            if (lParam == static_cast<LPARAM>(-1)) {
+                // Keyboard invocation: use current cursor position as the popup anchor.
+                ::GetCursorPos(&ptScreen);
+            } else {
+                // Mouse invocation: lParam is already in SCREEN coordinates.
+                ptScreen.x = GET_X_LPARAM(lParam);
+                ptScreen.y = GET_Y_LPARAM(lParam);
+            }
+
+            // Show popup (screen coords)
             auto popup = FractalShark::DynamicPopupMenu::GetPopup(gPopupMenu.get());
 
-            // sync radio checks on the existing menu instance
+            // Sync radio checks on the existing menu instance
             FractalShark::DynamicPopupMenu::ApplyRenderAlgorithmRadioChecks(
                 popup, FractalShark::DynamicPopupMenu::GetCurrentRenderAlgorithmId());
 
-            TrackPopupMenu(popup, 0, menuX, menuY, 0, hWnd, nullptr);
+            ::TrackPopupMenu(popup, 0, ptScreen.x, ptScreen.y, 0, hWnd, nullptr);
 
-            // Store the menu location as client coordinates
-            // not screen coordinates.
-            POINT temp;
-            temp.x = menuX;
-            temp.y = menuY;
-            ScreenToClient(hWnd, &temp);
-            menuX = temp.x;
-            menuY = temp.y;
-            break;
+            // Persist menu location as CLIENT coords on the instance (used by Center/Zoom commands).
+            POINT ptClient = ptScreen;
+            ::ScreenToClient(hWnd, &ptClient);
+            lastMenuPtClient_ = ptClient;
+
+            return 0;
         }
 
-        // Begin dragging a box for zooming in.
         case WM_LBUTTONDOWN: {
-            if (gWindowed == true &&
-                IsDownAlt() ==
-                    true) { // Don't drag a box if we are pressing the ALT key and this is windowed
-                // mode.  Instead, move the window!
-                PostMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, lParam);
-            } else {
-                if (lButtonDown == true) {
-                    break;
-                }
-                lButtonDown = true;
-
-                dragBoxX1 = GET_X_LPARAM(lParam);
-                dragBoxY1 = GET_Y_LPARAM(lParam);
+            if (gWindowed && IsDownAlt()) {
+                ::PostMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, lParam);
+                return 0;
             }
-            break;
+
+            if (lButtonDown)
+                return 0;
+
+            lButtonDown = true;
+            dragBoxX1 = GET_X_LPARAM(lParam);
+            dragBoxY1 = GET_Y_LPARAM(lParam);
+            prevX1 = prevY1 = -1;
+
+            ::SetCapture(hWnd);
+            return 0;
         }
 
-        // Zoom in
         case WM_LBUTTONUP: {
-            if (lButtonDown == false || IsDownAlt() == true) {
-                break;
+            if (!lButtonDown || IsDownAlt()) {
+                if (::GetCapture() == hWnd)
+                    ::ReleaseCapture();
+                return 0;
             }
+
+            // release capture early so we don’t get stuck captured on exceptions/returns
+            if (::GetCapture() == hWnd)
+                ::ReleaseCapture();
+
             lButtonDown = false;
+            prevX1 = prevY1 = -1;
 
-            prevX1 = -1;
-            prevY1 = -1;
+            RECT newView{};
+            const bool maintainAspect = !IsDownShift();
 
-            RECT newView;
-            bool MaintainAspectRatio = !IsDownShift();
-            if (MaintainAspectRatio == true) // Maintain aspect ratio
-            {                                // Get the aspect ratio of the window.
+            if (maintainAspect) {
                 RECT windowRect;
-                GetClientRect(hWnd, &windowRect);
-                double ratio = (double)windowRect.right / (double)windowRect.bottom;
+                ::GetClientRect(hWnd, &windowRect);
+                const double ratio = double(windowRect.right) / double(windowRect.bottom);
 
-                // Note order is important.
                 newView.left = dragBoxX1;
                 newView.top = dragBoxY1;
                 newView.bottom = GET_Y_LPARAM(lParam);
                 newView.right =
-                    (long)((double)newView.left +
-                           (double)ratio * (double)((double)newView.bottom - (double)newView.top));
-            } else // Do anything
-            {
+                    LONG(double(newView.left) + ratio * (double(newView.bottom) - double(newView.top)));
+            } else {
                 newView.left = dragBoxX1;
-                newView.right = GET_X_LPARAM(lParam);
                 newView.top = dragBoxY1;
+                newView.right = GET_X_LPARAM(lParam);
                 newView.bottom = GET_Y_LPARAM(lParam);
             }
 
-            if (gFractal->RecenterViewScreen(newView) == true) {
-                if (MaintainAspectRatio == true) {
+            if (gFractal && gFractal->RecenterViewScreen(newView)) {
+                if (maintainAspect)
                     gFractal->SquareCurrentView();
-                }
-
-                RECT rect;
-                GetClientRect(hWnd, &rect);
-
                 PaintAsNecessary();
             }
-            break;
+
+            return 0;
+        }
+
+        case WM_CANCELMODE:
+        case WM_CAPTURECHANGED: {
+            if (!lButtonDown)
+                return 0;
+
+            // erase any existing inverted rect
+            if (prevX1 != -1 || prevY1 != -1) {
+                HDC dc = ::GetDC(hWnd);
+                RECT rect{dragBoxX1, dragBoxY1, prevX1, prevY1};
+                ::InvertRect(dc, &rect);
+                ::ReleaseDC(hWnd, dc);
+            }
+
+            lButtonDown = false;
+            prevX1 = prevY1 = -1;
+
+            if (::GetCapture() == hWnd)
+                ::ReleaseCapture();
+
+            return 0;
         }
 
         case WM_MOUSEMOVE: {
             if (lButtonDown == false) {
-                break;
+                return 0;
             }
 
             HDC dc = GetDC(hWnd);
@@ -1555,75 +1297,34 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             }
 
             PaintAsNecessary();
-            break;
+            return 0;
         }
 
-        // Repaint the screen
         case WM_PAINT: {
             PaintAsNecessary();
 
             PAINTSTRUCT ps;
             BeginPaint(hWnd, &ps);
             EndPaint(hWnd, &ps);
-            break;
+            return 0;
         }
 
-        // Exit
         case WM_DESTROY: {
             PostQuitMessage(0);
-            break;
+            return 0;
         }
 
         case WM_CHAR: {
             HandleKeyDown(message, wParam, lParam);
             PaintAsNecessary();
-            break;
+            return 0;
         }
 
-        // Catch-all.
-        default: {
+        default:
             return DefWindowProc(hWnd, message, wParam, lParam);
-        }
     }
 
     return 0;
-}
-
-std::wstring
-MainWindow::OpenFileDialog(OpenBoxType type)
-{
-    OPENFILENAME ofn;    // common dialog box structure
-    wchar_t szFile[260]; // buffer for file name
-
-    // Initialize OPENFILENAME
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = NULL;
-    ofn.lpstrFile = szFile;
-    ofn.lpstrFile[0] = '\0';
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = L"All\0*.*\0Imagina\0*.im\0";
-    ofn.nFilterIndex = 1;
-    ofn.lpstrFileTitle = NULL;
-    ofn.nMaxFileTitle = 0;
-    ofn.lpstrInitialDir = NULL;
-
-    if (type == OpenBoxType::Open) {
-        // Display the Open dialog box.
-        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-        if (GetOpenFileName(&ofn) == TRUE) {
-            return std::wstring(ofn.lpstrFile);
-        } else {
-            return std::wstring();
-        }
-    } else {
-        ofn.Flags = 0;
-        if (GetSaveFileName(&ofn) == TRUE) {
-            return std::wstring(ofn.lpstrFile);
-        } else {
-            return std::wstring();
-        }
-    }
 }
 
 void
@@ -2490,3 +2191,4 @@ MainWindow::unhandled_handler(struct _EXCEPTION_POINTERS *apExceptionInfo)
     create_minidump(apExceptionInfo);
     return EXCEPTION_CONTINUE_SEARCH;
 }
+

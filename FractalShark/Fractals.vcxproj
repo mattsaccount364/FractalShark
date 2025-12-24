@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -34,11 +34,15 @@
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
-  <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" /><Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" /></ImportGroup>
+    <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" />
+    <Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" />
+  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
-  <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" /><Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" /></ImportGroup>
+    <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" />
+    <Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" />
+  </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <_ProjectFileVersion>12.0.30501.0</_ProjectFileVersion>
@@ -92,6 +96,8 @@
       <LargeAddressAware>true</LargeAddressAware>
       <SetChecksum>true</SetChecksum>
       <FixedBaseAddress>true</FixedBaseAddress>
+      <AdditionalOptions>/PDBALTPATH:%_PDB%
+ %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -135,6 +141,8 @@
       <LargeAddressAware>true</LargeAddressAware>
       <FixedBaseAddress>true</FixedBaseAddress>
       <SetChecksum>true</SetChecksum>
+      <AdditionalOptions>/PDBALTPATH:%_PDB%
+ %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -160,6 +168,7 @@
     <ClInclude Include="FractalShark.h" />
     <ClInclude Include="JobObject.h" />
     <ClInclude Include="MainWindow.h" />
+    <ClInclude Include="MainWindowSavedLocation.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="UniqueHMenu.h" />
   </ItemGroup>

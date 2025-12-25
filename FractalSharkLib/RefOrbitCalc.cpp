@@ -369,7 +369,6 @@ RefOrbitCalc::AddPerturbationReferencePoint()
             // GPU only supports HDRFloat<float> for now.
             AddPerturbationReferencePointGPU<IterType,
                                              HDRFloat<float>,
-                                             float,
                                              true,
                                              BenchmarkState,
                                              PerturbExtras::Disable,
@@ -377,7 +376,9 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                                                           m_PerturbationGuessCalcY);
         } else {
             throw FractalSharkSeriousException(
-                "GPU perturbation algorithm only supports HDRFloat<float> type.");
+                "GPU perturbation algorithm only supports HDRFloat<float> type for now.  "
+                "This is a dumb limitation that I'd like to fix but for now, pick a "
+                "different combination.");
         }
     }
 }
@@ -2155,7 +2156,6 @@ DispatchByPrecision(uint64_t prec, F &&f)
 
 template <typename IterType,
           class T,
-          class SubType,
           bool Periodicity,
           RefOrbitCalc::BenchmarkMode BenchmarkState,
           PerturbExtras PExtras,

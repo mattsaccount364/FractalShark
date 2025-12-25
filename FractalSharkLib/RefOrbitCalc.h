@@ -289,7 +289,6 @@ private:
 
     template <typename IterType,
               class T,
-              class SubType,
               bool Periodicity,
               RefOrbitCalc::BenchmarkMode BenchmarkState,
               PerturbExtras PExtras,

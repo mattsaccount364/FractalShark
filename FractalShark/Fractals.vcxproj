@@ -74,9 +74,7 @@
       <AssemblerListingLocation>.\Debug/</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <WarningLevel>Level4</WarningLevel>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <SDLCheck>false</SDLCheck>
       <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Debug;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
@@ -85,17 +83,12 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <Link>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
       <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <AdditionalDependencies>mpir.lib;cudart_static.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir);..\mpir\lib\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <LargeAddressAware>true</LargeAddressAware>
-      <SetChecksum>true</SetChecksum>
-      <FixedBaseAddress>true</FixedBaseAddress>
       <AdditionalOptions>/PDBALTPATH:%_PDB%
  %(AdditionalOptions)</AdditionalOptions>
     </Link>
@@ -117,8 +110,6 @@
       <AssemblerListingLocation>.\Release/</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <WarningLevel>Level4</WarningLevel>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <SDLCheck>false</SDLCheck>
       <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalClient;..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
       <OmitFramePointers>true</OmitFramePointers>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
@@ -129,18 +120,12 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <Link>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
       <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
-      <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <AdditionalDependencies>pgobootrun.lib;mpir.lib;cudart_static.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir);..\mpir\lib\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <LargeAddressAware>true</LargeAddressAware>
-      <FixedBaseAddress>true</FixedBaseAddress>
-      <SetChecksum>true</SetChecksum>
       <AdditionalOptions>/PDBALTPATH:%_PDB%
  %(AdditionalOptions)</AdditionalOptions>
     </Link>

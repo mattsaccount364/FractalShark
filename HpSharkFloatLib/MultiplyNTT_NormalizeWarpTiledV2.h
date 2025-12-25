@@ -5,7 +5,8 @@ struct WarpNormalizeTriple {
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly WarpNormalizeTriple
-WarpNormalizeTile(unsigned fullMask,
+WarpNormalizeTile(cg::thread_block &block,
+                  unsigned fullMask,
                   const int32_t numActualDigitsPlusGuard, // total digits (N + guard), base-2^32
                   const int lane,                         // 0..31
                   const int tileIndex,                    // which 32-digit tile

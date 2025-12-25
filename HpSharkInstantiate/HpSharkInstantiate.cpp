@@ -157,26 +157,30 @@ GetBatches()
 
     // 1) HpSharkFloat + mpf conversions
     // (Assumed global; adjust wrapNamespace if these actually live in a namespace.)
-    b.push_back(Batch{"HpSharkFloat_Conversions",
-                      "..\\HpSharkFloat_cu.h",
-                      R"(template class HpSharkFloat<SharkFloatParams>;
+    {
+        constexpr auto templates =
+            R"(template class HpSharkFloat<SharkFloatParams>;
 template std::string Uint32ToMpf<SharkFloatParams>(
     const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
-template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);)",
-                      ""});
+template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);)";
+
+        b.push_back(Batch{"HpSharkFloat_Conversions", "..\\HpSharkFloat_cu.h", templates, ""});
+    }
 
     // 2) ComputeHpSharkReferenceGpuLoop
     // You call this unqualified inside namespace HpShark in your reference code; safest to wrap.
-    b.push_back(Batch{"ReferenceGpuLoop",
-                      "..\\KernelHpSharkReferenceOrbit_cu.h",
-                      R"(template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)",
-                      ""});
+    {
+        constexpr auto templates =
+            R"(template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
+    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
+
+        b.push_back(Batch{"ReferenceGpuLoop", "..\\KernelHpSharkReferenceOrbit_cu.h", templates, ""});
+    }
 
     // 3) HpSharkReference init/invoke/shutdown (definitely in namespace HpShark per your snippet)
-    b.push_back(Batch{"HpSharkReference",
-                      "..\\KernelInvokeReferencePerf_cu.h",
-                      R"(template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+    {
+        constexpr auto templates =
+            R"(template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
 InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
                                              const typename SharkFloatParams::Float hdrRadiusY,
                                              const mpf_t,
@@ -193,34 +197,38 @@ InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launch
 template void ShutdownHpSharkReferenceKernel<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams,
     HpSharkReferenceResults<SharkFloatParams> &combo,
-    DebugGpuCombo *debugCombo);)",
-                      "HpShark"});
+    DebugGpuCombo *debugCombo);)";
+
+        b.push_back(
+            Batch{"HpSharkReference", "..\\KernelInvokeReferencePerf_cu.h", templates, "HpShark"});
+    }
 
     // 4) Add kernels (unknown namespace; leave global unless you know otherwise)
-    b.push_back(Batch{
-        "AddKernels",
-        "..\\KernelTestAdd_cu.h",
-        R"(template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
+    {
+        constexpr auto templates =
+            R"(template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
                                                         void *kernelArgs[]);
 template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
-                                                      void *kernelArgs[]);)",
-        ""});
+                                                      void *kernelArgs[]);)";
+
+        b.push_back(Batch{"AddKernels", "..\\KernelTestAdd_cu.h", templates, ""});
+    }
 
     // 5) Multiply NTT kernels (unknown namespace; leave global unless you know otherwise)
-    b.push_back(Batch{
-        "MultiplyNTT",
-        "..\\KernelTestMultiplyNTT_cu.h",
-        R"(template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
+    {
+        constexpr auto templates =
+            R"(template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
                                                                 void *kernelArgs[]);
 template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)",
-        ""});
+    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
+
+        b.push_back(Batch{"MultiplyNTT", "..\\KernelTestMultiplyNTT_cu.h", templates, ""});
+    }
 
     // 6) SharkNTT primitives are already fully-qualified as SharkNTT::..., so no wrapper needed.
-    b.push_back(Batch{
-        "SharkNTT_Primitives",
-        "..\\MultiplyNTTCudaSetup_cu.h",
-        R"(template void SharkNTT::BuildRoots<SharkFloatParams>(uint32_t, uint32_t, SharkNTT::RootTables &);
+    {
+        constexpr auto templates =
+            R"(template void SharkNTT::BuildRoots<SharkFloatParams>(uint32_t, uint32_t, SharkNTT::RootTables &);
 template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(uint64_t a, uint64_t b);
 template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(
     DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a, uint64_t b);
@@ -235,8 +243,10 @@ template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(
     DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a_mont, uint64_t e);
 template void SharkNTT::CopyRootsToCuda<SharkFloatParams>(SharkNTT::RootTables & outT,
                                                           const SharkNTT::RootTables &inT);
-template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables &T);)",
-        ""});
+template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables &T);)";
+
+        b.push_back(Batch{"SharkNTT_Primitives", "..\\MultiplyNTTCudaSetup_cu.h", templates, ""});
+    }
 
     return b;
 }
@@ -375,7 +385,6 @@ MakeEmptyNpStub(const Batch &batch)
            "// This file exists to keep build scripts/project file lists unchanged.\n";
     return oss.str();
 }
-
 
 int
 main()

@@ -64,7 +64,7 @@ ParallelPrefixNormalize3WayV3(cooperative_groups::grid_group &grid,
                               uint32_t *SharkRestrict carryInMask)     // size >= Ddigits
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
-    constexpr int warpSz = block.dim_threads().x;
+    const int warpSz = block.dim_threads().x;
 #else
     constexpr int warpSz = 32;
 #endif

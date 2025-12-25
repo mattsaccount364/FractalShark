@@ -18,12 +18,14 @@
       <!-- Build throughput -->
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
 
       <!-- Diagnostics / security policy -->
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
-      <SDLCheck>true</SDLCheck>
+      <SDLCheck>false</SDLCheck>
       <DisableSpecificWarnings>26812;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
 
       <!-- Debug info -->
       <!-- ProgramDatabase = /Zi; OldStyle = /Z7 (often faster for huge template builds) -->
@@ -36,7 +38,13 @@
 
     <Link>
       <!-- Keep linker PDBs in Debug -->
+      <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <FixedBaseAddress>true</FixedBaseAddress>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <LargeAddressAware>true</LargeAddressAware>
+      <SetChecksum>true</SetChecksum>
+
       <!-- Optional: faster links, less precise PDBs. Leave off if you hate it. -->
       <!-- <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation> -->
       <AdditionalOptions>/force:multiple %(AdditionalOptions)</AdditionalOptions>
@@ -59,12 +67,14 @@
       <!-- Build throughput -->
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
 
       <!-- Optimization -->
       <Optimization>MaxSpeed</Optimization>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
 
       <!-- (2) LTCG: enable whole program optimization (/GL) -->
       <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -72,12 +82,13 @@
       <!-- Diagnostics / security policy -->
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <SDLCheck>true</SDLCheck>
+      <SDLCheck>false</SDLCheck>
       <DisableSpecificWarnings>26812;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
 
       <!-- Debug info in Release (for profiling / crash dumps) -->
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
 
       <!-- Extra conformance + big TU support -->
       <AdditionalOptions>/Zc:preprocessor /Zc:__cplusplus /permissive- /bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -91,8 +102,13 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
 
       <!-- Standard release link optimizations -->
+      <SuppressStartupBanner>true</SuppressStartupBanner>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <FixedBaseAddress>true</FixedBaseAddress>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <LargeAddressAware>true</LargeAddressAware>
+      <SetChecksum>true</SetChecksum>
     </Link>
   </ItemDefinitionGroup>
 </Project>

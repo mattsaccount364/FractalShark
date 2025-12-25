@@ -4,6 +4,7 @@
 #include "DebugStateRaw.h"
 #include "GPU_ReferenceIter.h"
 #include "HDRFloat.h"
+#include "LaunchParams.h"
 #include "MultiplyNTTCudaSetup.h"
 #include "MultiplyNTTPlanBuilder.h"
 
@@ -21,14 +22,15 @@
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 #define SharkRestrict __restrict__
-// #define SharkRestrict
+//#define SharkRestrict
 
 enum class BasicCorrectnessMode : int {
-    Correctness_P1 = 0,      // Params1 only
-    PerfSub = 1,             // Individual add/multiply kernels, not the full one
-    PerfSweep = 2,           // Sweep blocks/threads
-    PerfSingle = 3,          // Single block/thread config (DEFAULT)
-    Correctness_P1_to_P5 = 4 // Params1..5
+    Error = 0,
+    Correctness_P1 = 1,      // Params1 only
+    PerfSub = 2,             // Individual add/multiply kernels, not the full one
+    PerfSweep = 3,           // Sweep blocks/threads
+    PerfSingle = 4,          // Single block/thread config (DEFAULT)
+    Correctness_P1_to_P5 = 5 // Params1..5
 };
 
 namespace HpShark {
@@ -113,31 +115,6 @@ is_pow2_u32(uint32_t v)
 {
     return v && ((v & (v - 1u)) == 0u);
 }
-
-struct LaunchParams {
-    LaunchParams(int32_t numBlocksIn, int32_t threadsPerBlockIn)
-        : NumBlocks{numBlocksIn}, ThreadsPerBlock{threadsPerBlockIn},
-          TotalThreads{numBlocksIn * threadsPerBlockIn}
-    {
-    }
-
-    LaunchParams()
-        : NumBlocks{rand() % 128 + 1}, ThreadsPerBlock{32 * (rand() % 8 + 1)},
-          TotalThreads{NumBlocks * ThreadsPerBlock}
-    {
-    }
-
-    const int32_t NumBlocks;
-    const int32_t ThreadsPerBlock;
-    const int32_t TotalThreads;
-
-    std::string
-    ToString() const
-    {
-        return std::string("Blocks: ") + std::to_string(NumBlocks) + ", ThreadsPerBlock: " + std::to_string(ThreadsPerBlock) +
-               ", TotalThreads: " + std::to_string(TotalThreads);
-    }
-};
 
 template <int32_t pNumDigits, bool Periodicity> struct GenericSharkFloatParams {
     using Float = HDRFloat<float>; // TODO hardcoded

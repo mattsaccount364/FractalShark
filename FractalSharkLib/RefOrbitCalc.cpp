@@ -2182,8 +2182,8 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision c
     const auto PrecInBits = HighPrecision::defaultPrecisionInBits();
     const auto PrecInLimbs = (PrecInBits + 31) / 32;
 
-    // TODO: hardcoded is not realistic
-    HpShark::LaunchParams launchParams{128, 256};
+    // Auto-decide
+    HpShark::LaunchParams launchParams{0, 0};
 
     auto lamb = [&]<class SharkFloatParams>(HpSharkReferenceResults<SharkFloatParams> & /*unused*/) {
         // ---------------------------------------------------------------------

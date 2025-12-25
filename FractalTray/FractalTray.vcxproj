@@ -65,7 +65,6 @@
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
-      <SDLCheck>false</SDLCheck>
       <AdditionalIncludeDirectories>..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Debug</AdditionalIncludeDirectories>
     </ClCompile>
     <ResourceCompile>
@@ -75,7 +74,6 @@
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <AdditionalDependencies>mpir.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -94,7 +92,6 @@
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
-      <SDLCheck>false</SDLCheck>
       <AdditionalIncludeDirectories>..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Release</AdditionalIncludeDirectories>
       <OmitFramePointers>true</OmitFramePointers>
     </ClCompile>
@@ -105,13 +102,11 @@
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <AdditionalDependencies>mpir.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Release;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
       <StackReserveSize>16777216</StackReserveSize>
-      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

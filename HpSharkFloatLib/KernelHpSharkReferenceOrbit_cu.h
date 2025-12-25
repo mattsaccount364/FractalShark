@@ -2,6 +2,7 @@
 #include "MultiplyNTT.cu"
 #include "PeriodicityChecker.h"
 #include "TestVerbose.h"
+#include "LaunchParamsCalculator.h"
 
 //
 // Returns true if we should continue iterating, false if we should stop (period found).
@@ -173,9 +174,15 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
         }
     }
 
+    HpShark::LaunchParams newLaunchParams{launchParams};
+    if (newLaunchParams.NumBlocks == 0) {
+        HpShark::CudaLaunchConfig launchConfig;
+        launchConfig.compute(HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+    }
+
     cudaError_t err = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuLoop<SharkFloatParams>,
-                                                  dim3(launchParams.NumBlocks),
-                                                  dim3(launchParams.ThreadsPerBlock),
+                                                  dim3(newLaunchParams.NumBlocks),
+                                                  dim3(newLaunchParams.ThreadsPerBlock),
                                                   kernelArgs,
                                                   SharedMemSize,
                                                   stream // Stream

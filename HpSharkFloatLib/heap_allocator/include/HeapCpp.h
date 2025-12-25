@@ -13,6 +13,8 @@
 template<typename T>
 class GrowableVector;
 
+void RegisterHeapCleanup();
+
 class HeapCpp {
 
 public:
@@ -20,6 +22,7 @@ public:
     // The constructor does nothing, which is important because the singleton
     // may be created before the static constructor runs.
     static void InitGlobalHeap();
+    
     HeapCpp();
 
     // No ShutdownGlobalHeap().  We don't know when to call it.
@@ -55,7 +58,10 @@ private:
 
     bool Initialized;
     heap_t Heap;
-    std::mutex Mutex;
+
+    // Wow:
+    std::mutex *Mutex;
+    char MutexBuffer[256];
 
     struct StatsCollection {
         size_t BytesAllocated;

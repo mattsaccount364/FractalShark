@@ -404,7 +404,7 @@ find_msd_warp_ABC_DE(const uint64_t *extABC,
                      int32_t &msdD) // out
 {
     const int lane = threadIdx.x & 31;
-    const unsigned fullMask = __activemask();
+    const unsigned fullMask = 0xffff'ffff;
 
     msdA = 0;
     msdD = 0;
@@ -809,7 +809,6 @@ static __device__ void AddHelperSeparates(
     // The result is a 3-way ordering of the three operands.
 
     // A, B, C:
-    int32_t biasedExpABC = 0;
     const auto threeWayMagnitude = CompareMagnitudes3Way(
         effExpA,
         effExpB,
@@ -821,8 +820,7 @@ static __device__ void AddHelperSeparates(
         shiftCLeftToGetMsb,
         ext_A_X2,
         ext_B_Y2,
-        ext_C_A,
-        biasedExpABC);
+        ext_C_A);
 
     const bool DIsBiggerMagnitude = CompareMagnitudes2Way(
         effExpD,

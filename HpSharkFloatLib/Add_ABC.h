@@ -11,7 +11,7 @@ cmp_magnitude_warp(const uint32_t *SharkRestrict e1,
                    const int32_t numActualDigitsPlusGuard)
 {
     const int lane = threadIdx.x & 31;
-    const unsigned fullMask = __activemask();
+    const unsigned fullMask = 0xffffffff;
 
     // 1) Exponent compare: same as scalar version
     if (exp1 != exp2) {
@@ -75,8 +75,7 @@ CompareMagnitudes3Way(const int32_t effExpA,
                       const int32_t shiftC,
                       const uint32_t *SharkRestrict extA,
                       const uint32_t *SharkRestrict extB,
-                      const uint32_t *SharkRestrict extC,
-                      int32_t &outExp)
+                      const uint32_t *SharkRestrict extC)
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
     static constexpr bool OriginalImpl = true;
@@ -127,7 +126,6 @@ CompareMagnitudes3Way(const int32_t effExpA,
             extA, shiftA, effExpA, extC, shiftC, effExpC, actualDigits, numActualDigitsPlusGuard);
 
         if (A_gt_B && A_gt_C) {
-            outExp = effExpA;
             return ThreeWayLargestOrdering::A_GT_AllOthers;
         }
 
@@ -139,12 +137,10 @@ CompareMagnitudes3Way(const int32_t effExpA,
             extB, shiftB, effExpB, extC, shiftC, effExpC, actualDigits, numActualDigitsPlusGuard);
 
         if (B_gt_A && B_gt_C) {
-            outExp = effExpB;
             return ThreeWayLargestOrdering::B_GT_AllOthers;
         }
 
         // 3) Otherwise C is the (strict) max (or tied)
-        outExp = effExpC;
         return ThreeWayLargestOrdering::C_GT_AllOthers;
     }
 }
@@ -508,7 +504,8 @@ struct WarpProcessTriple {
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly WarpProcessTriple
-WarpProcessTileCarry(const int32_t iteration,
+WarpProcessTileCarry(cg::thread_block &block,
+                     const int32_t iteration,
                      unsigned fullMask,
                      const int32_t numActualDigitsPlusGuard,
                      const int lane,
@@ -522,7 +519,7 @@ WarpProcessTileCarry(const int32_t iteration,
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
     // untested
-    constexpr auto warpSz = block.dim_threads().x;
+    const auto warpSz = block.dim_threads().x;
 #else
     constexpr auto warpSz = 32;
 #endif
@@ -910,7 +907,8 @@ CarryPropagation_ABC_TiledV2(uint32_t *globalSync1, // [0] holds convergence cou
             }
 
             const WarpProcessTriple tout =
-                WarpProcessTileCarry<SharkFloatParams>(iteration,
+                WarpProcessTileCarry<SharkFloatParams>(block,
+                                                       iteration,
                                                        fullMask,
                                                        numActualDigitsPlusGuard,
                                                        lane,

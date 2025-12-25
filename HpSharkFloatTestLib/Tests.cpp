@@ -2834,7 +2834,7 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
                        [[maybe_unused]] BasicCorrectnessMode mode)
 {
     TestTracker Tests;
-    HpShark::LaunchParams launchParams{128, 256};
+    HpShark::LaunchParams launchParams{170, 256};
 
     switch (mode) {
         case BasicCorrectnessMode::Correctness_P1:

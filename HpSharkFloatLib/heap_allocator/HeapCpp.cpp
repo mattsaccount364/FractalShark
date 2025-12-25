@@ -1,7 +1,9 @@
 #include "include\HeapCpp.h" // Include your wrapper header
 #include "..\DbgHeap.h"
 #include "include\llist.h"
+
 #include <cstdlib>
+#include <type_traits>
 
 #include "..\Vectors.h"
 
@@ -14,6 +16,14 @@ static constexpr auto PAGE_SIZE = 0x1000;
 // sprintf etc use heap allocations in debug mode, so we can't use them here.
 static constexpr bool LimitedDebugOut = !FractalSharkDebug;
 static constexpr bool FullDebugOut = false;
+
+//
+// It'd be nice to call RegisterHeapCleanup on first use but atexit in VS2026
+// appears to have a table with some stuff in it that's not initialized yet. So
+// if we try to register the cleanup here, it crashes.  The result is that we
+// see some "leaks" because we intercept all allocations but miss some frees by
+// registering later.
+//
 
 //
 // Overriding malloc/free is a bit tricky. The problem is that the C runtime library
@@ -30,15 +40,65 @@ static constexpr bool FullDebugOut = false;
 // What we do here is call a constructor ourselves manually
 //
 
-// Define a global Heap instance
-static HeapCpp globalHeap;
+//
+// We create a special section so that constructor does not run automatically.
+// Instead we run it manually.
+//
+
+#pragma section(".fs_alloc", write)
+
+typedef void(__cdecl *PF)(void);
+int cxpf = 0; // number of destructors we need to call
+PF pfx[200];  // pointers to destructors.
+
+#pragma section(".fs_alloc$a", read)
+__declspec(allocate(".fs_alloc$a")) const PF InitSegStart = (PF)1;
+
+#pragma section(".fs_alloc$z", read)
+__declspec(allocate(".fs_alloc$z")) const PF InitSegEnd = (PF)1;
+
+int __cdecl
+myexit(PF pf)
+{
+    pfx[cxpf++] = pf;
+    return 0;
+}
+
+// by default, goes into a read only section
+#pragma warning(disable : 4075)
+#pragma init_seg(".fs_alloc$m", myexit)
+
+// #pragma init_seg("fs_alloc$m")
+//__declspec(allocate("fs_alloc$m"))
+static HeapCpp gHeap;
+
+void
+CleanupHeap()
+{
+    gHeap.~HeapCpp();
+}
+
+void
+RegisterHeapCleanup()
+{
+    atexit(CleanupHeap);
+}
 
 void VectorStaticInit();
+
+static HeapCpp &
+GlobalHeap()
+{
+    return gHeap;
+}
 
 void
 HeapCpp::InitGlobalHeap()
 {
-    // Initialize the global heap
+    // Construct HeapCpp in raw storage (no dynamic initialization at static-init time;
+    // construction happens here under your control).
+    auto &globalHeap = GlobalHeap();
+
     if (globalHeap.Initialized) {
         return;
     }
@@ -54,16 +114,26 @@ HeapCpp::InitGlobalHeap()
 
     globalHeap.Growable->MutableResize(GrowByAmtBytes);
     globalHeap.Init();
+
+    // TODO
+    // RegisterHeapCleanup();
 }
 
 HeapCpp::HeapCpp()
 {
+    if (IsDebuggerPresent()) {
+        char buffer[256];
+        sprintf_s(buffer, "HeapCpp Constructor called\n");
+        OutputDebugStringA(buffer);
+    }
+
     // It's very important that we don't do anything here, because this heap
     // may be used before its static constructor is called.
 }
 
 HeapCpp::~HeapCpp()
 {
+    Mutex->~mutex();
 
     // So this is pretty excellent.  We don't want to touch anything here,
     // because this heap may still be used after it's destroyed.
@@ -120,6 +190,8 @@ HeapCpp::Init()
         Heap.bins[i] = &Heap.binMemory[i];
     }
 
+    Mutex = new (MutexBuffer) std::mutex();
+
     node_t *init_region = reinterpret_cast<node_t *>(Growable->GetData());
 
     // first we create the initial region, this is the "wilderness" chunk
@@ -144,7 +216,8 @@ void
 SetMagicAtEnd(void *newBuffer, size_t bufferSize)
 {
     // Set magic at end of buffer to detect overruns
-    uint64_t *magicPtr = reinterpret_cast<uint64_t *>((char *)newBuffer + bufferSize - 2 * sizeof(uint64_t));
+    uint64_t *magicPtr =
+        reinterpret_cast<uint64_t *>((char *)newBuffer + bufferSize - 2 * sizeof(uint64_t));
     magicPtr[0] = node_t::Magic;
     magicPtr[1] = node_t::Magic;
 }
@@ -153,7 +226,8 @@ void
 VerifyAndClearMagicAtEnd(void *buffer, size_t bufferSize)
 {
     // Verify magic at end of buffer to detect overruns
-    uint64_t *magicPtr = reinterpret_cast<uint64_t *>((char *)buffer + bufferSize - 2 * sizeof(uint64_t));
+    uint64_t *magicPtr =
+        reinterpret_cast<uint64_t *>((char *)buffer + bufferSize - 2 * sizeof(uint64_t));
     if (magicPtr[0] != node_t::Magic || magicPtr[1] != node_t::Magic) {
         throw std::exception();
     }
@@ -187,7 +261,7 @@ HeapCpp::Allocate(size_t size)
     // Add 16 bytes at end for another magic number to detect buffer overruns
     size += 16;
 
-    std::unique_lock<std::mutex> lock(Mutex);
+    std::unique_lock<std::mutex> lock(*Mutex);
 
     auto TryOnce = [&]() -> void * {
         // first get the bin index that this chunk size should be in
@@ -286,7 +360,7 @@ HeapCpp::Deallocate(void *ptr)
         return;
     }
 
-    std::unique_lock<std::mutex> lock(Mutex);
+    std::unique_lock<std::mutex> lock(*Mutex);
     assert(Initialized);
 
     bin_t *list;
@@ -536,6 +610,7 @@ HeapCpp::GetWilderness()
 void *
 CppMalloc(size_t size)
 {
+    auto &globalHeap = GlobalHeap();
     auto *res = globalHeap.Allocate(size);
 
     // Output res in hex to debug console in Visual Studio
@@ -551,6 +626,8 @@ CppMalloc(size_t size)
 void
 CppFree(void *ptr)
 {
+    auto &globalHeap = GlobalHeap();
+
     // Output ptr in hex to debug console in Visual Studio
     if constexpr (FullDebugOut) {
         char buffer[256];
@@ -562,7 +639,7 @@ CppFree(void *ptr)
 }
 
 void *
-CppRealloc(void *ptr, size_t newSize)
+CppRealloc(void *ptr, size_t newSize, bool zeroNew)
 {
     if (!ptr) {
         return CppMalloc(newSize);
@@ -584,6 +661,12 @@ CppRealloc(void *ptr, size_t newSize)
     // Assume the size is stored somehow, or manage separately in the Heap class
     std::memcpy(newPtr, ptr, std::min(node->size, newSize));
     CppFree(ptr);
+
+    // Erase any new memory if requested
+    if (zeroNew && newSize > node->size) {
+        std::memset(static_cast<char *>(newPtr) + node->size, 0, newSize - node->size);
+    }
+
     return newPtr;
 }
 
@@ -595,16 +678,6 @@ malloc(size_t size)
     return CppMalloc(size);
 }
 
-// We rely on linking with /force:multiple to avoid LNK2005
-#ifdef _DEBUG
-void *
-_malloc_dbg(size_t size, int /*blockType*/, const char * /*filename*/, int /*line*/)
-{
-
-    return CppMalloc(size);
-}
-#endif
-
 __declspec(restrict) void *
 calloc(size_t num, size_t size)
 {
@@ -614,16 +687,6 @@ calloc(size_t num, size_t size)
     }
     return res;
 }
-
-#ifdef _DEBUG
-// We rely on linking with /force:multiple to avoid LNK2005
-void *
-_calloc_dbg(size_t num, size_t size, int /*blockType*/, const char * /*filename*/, int /*line*/)
-{
-
-    return calloc(num, size);
-}
-#endif
 
 __declspec(restrict) void *
 aligned_alloc(size_t alignment, size_t size)
@@ -639,20 +702,10 @@ free(void *ptr)
     CppFree(ptr);
 }
 
-//void __cdecl _free_base(void *const block) { CppFree(block); }
-
-#ifdef _DEBUG
-void
-_free_dbg(void *ptr, int /*blockType*/)
-{
-    CppFree(ptr);
-}
-#endif
-
 __declspec(restrict) void *
 realloc(void *ptr, size_t newSize)
 {
-    return CppRealloc(ptr, newSize);
+    return CppRealloc(ptr, newSize, false);
 }
 
 char *
@@ -683,6 +736,73 @@ realpath(const char *fname, char *resolved_name)
 {
     return _fullpath(resolved_name, fname, _MAX_PATH);
 }
+
+// We rely on linking with /force:multiple to avoid LNK2005
+#ifdef _DEBUG
+void *
+_malloc_dbg(size_t size, int /*blockType*/, const char * /*filename*/, int /*line*/)
+{
+
+    return CppMalloc(size);
+}
+
+// We rely on linking with /force:multiple to avoid LNK2005
+void *
+_calloc_dbg(size_t num, size_t size, int /*blockType*/, const char * /*filename*/, int /*line*/)
+{
+
+    return calloc(num, size);
+}
+
+__declspec(noinline) void *
+_realloc_dbg(void *const block,
+             size_t const requested_size,
+             int const block_use,
+             char const *const file_name,
+             int const line_number)
+{
+    return CppRealloc(block, requested_size, false);
+}
+
+__declspec(noinline) void *
+_recalloc_dbg(void *const block,
+              size_t const count,
+              size_t const element_size,
+              int const block_use,
+              char const *const file_name,
+              int const line_number)
+{
+    return CppRealloc(block, count * element_size, true);
+}
+
+__declspec(noinline) void *
+_expand_dbg(void *const block,
+            size_t const requested_size,
+            int const block_use,
+            char const *const file_name,
+            int const line_number)
+{
+    errno = ENOMEM;
+    return nullptr;
+}
+
+void
+_free_dbg(void *ptr, int /*blockType*/)
+{
+    CppFree(ptr);
+}
+
+__declspec(noinline) size_t
+_msize_dbg(void *const block, int const block_use)
+{
+    if (!block) {
+        return 0;
+    }
+    auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(block) - offset);
+    return node->size;
+}
+
+#endif
 } // extern "C"
 
 void

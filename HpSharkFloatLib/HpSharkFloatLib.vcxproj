@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -23,22 +23,12 @@
     <ClInclude Include="LAInfoI.h" />
     <ClInclude Include="LAParameters.h" />
     <ClInclude Include="LAstep.h" />
+    <ClInclude Include="LaunchParams.h" />
+    <ClInclude Include="LaunchParamsCalculator.h" />
     <ClInclude Include="MultiplyNTT_NormalizeV1.h" />
     <ClInclude Include="MultiplyNTT_NormalizePPv3.h" />
     <ClInclude Include="MultiplyNTT_NormalizeWarpTiledV2.h" />
     <ClInclude Include="Vectors.h" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_NP.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_P.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_NP.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_P.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_NP.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_P.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_NP.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_P.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_NP.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_P.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_NP.cu" />
-    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_P.cu" />
     <ClInclude Include="KernelTestAdd_cu.h" />
     <ClCompile Include="BenchmarkTimer.cpp">
       <FileType>Document</FileType>
@@ -95,6 +85,7 @@
     <ClCompile Include="heap_allocator\llist.cpp" />
     <ClCompile Include="HighPrecision.cpp" />
     <ClCompile Include="LAParameters.cpp" />
+    <ClCompile Include="LaunchParamsCalculator.cpp" />
     <ClCompile Include="MpirSerialization.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
     <ClCompile Include="Vectors.cpp" />
@@ -102,6 +93,20 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="heap_allocator\Heap.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_NP.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_P.cu" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{E46D1897-0F30-3518-ED23-26ED5FF35747}</ProjectGuid>
@@ -126,10 +131,14 @@
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-  <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" /><Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" /></ImportGroup>
+    <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" />
+    <Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" />
+  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-  <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" /><Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" /></ImportGroup>
+    <Import Project="$(SolutionDir)FractalShark.MsvcDefaults.props" />
+    <Import Project="$(SolutionDir)FractalShark.CudaDefaults.props" />
+  </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
@@ -143,7 +152,7 @@
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
-      </ClCompile>
+    </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -157,14 +166,14 @@
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
-      </ClCompile>
+    </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
       <Include>..\mpir\lib\x64\Release;</Include>
-      </CudaCompile>
+    </CudaCompile>
     <CudaLink />
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

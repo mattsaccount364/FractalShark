@@ -1,4 +1,5 @@
 #include "MultiplyNTT.cu"
+#include "LaunchParamsCalculator.h"
 #include "TestVerbose.h"
 
 template <class SharkFloatParams>
@@ -61,9 +62,15 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
         }
     }
 
+    HpShark::LaunchParams newLaunchParams{launchParams};
+    if (newLaunchParams.NumBlocks == 0) {
+        HpShark::CudaLaunchConfig launchConfig;
+        launchConfig.compute(MultiplyKernelNTT<SharkFloatParams>, SharedMemSize, newLaunchParams);
+    }
+
     err = cudaLaunchCooperativeKernel((void *)MultiplyKernelNTT<SharkFloatParams>,
-                                      dim3(launchParams.NumBlocks),
-                                      dim3(launchParams.ThreadsPerBlock),
+                                      dim3(newLaunchParams.NumBlocks),
+                                      dim3(newLaunchParams.ThreadsPerBlock),
                                       kernelArgs,
                                       SharedMemSize, // Shared memory size
                                       0                  // Stream
@@ -102,9 +109,16 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
         }
     }
 
+    HpShark::LaunchParams newLaunchParams{launchParams};
+    if (newLaunchParams.NumBlocks == 0) {
+        HpShark::CudaLaunchConfig launchConfig;
+        launchConfig.compute(
+            MultiplyKernelNTTTestLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+    }
+
     cudaError_t err = cudaLaunchCooperativeKernel((void *)MultiplyKernelNTTTestLoop<SharkFloatParams>,
-                                                  dim3(launchParams.NumBlocks),
-                                                  dim3(launchParams.ThreadsPerBlock),
+                                                  dim3(newLaunchParams.NumBlocks),
+                                                  dim3(newLaunchParams.ThreadsPerBlock),
                                                   kernelArgs,
                                                   SharedMemSize, // Shared memory size
                                                   stream             // Stream

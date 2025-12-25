@@ -12,8 +12,6 @@ template <class SharkFloatParams> struct HpSharkFloat;
 
 template <class SharkFloatParams> struct HpSharkComboResults;
 
-// #include "KernelInvoke.h"
-
 template <class SharkFloatParams>
 void ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[]);
 

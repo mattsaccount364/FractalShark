@@ -1,4 +1,5 @@
 #include "Add.cu"
+#include "LaunchParamsCalculator.h"
 
 template <class SharkFloatParams>
 __global__ void
@@ -38,9 +39,16 @@ ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
+
+    HpShark::LaunchParams newLaunchParams{launchParams};
+    if (newLaunchParams.NumBlocks == 0) {
+        HpShark::CudaLaunchConfig launchConfig;
+        launchConfig.compute(AddKernel<SharkFloatParams>, SharedMemSize, newLaunchParams);
+    }
+
     cudaError_t err = cudaLaunchCooperativeKernel((void *)AddKernel<SharkFloatParams>,
-                                                  dim3(launchParams.NumBlocks),
-                                                  dim3(launchParams.ThreadsPerBlock),
+                                                  dim3(newLaunchParams.NumBlocks),
+                                                  dim3(newLaunchParams.ThreadsPerBlock),
                                                   kernelArgs,
                                                   SharedMemSize, // Shared memory size
                                                   0              // Stream
@@ -62,9 +70,15 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
+    HpShark::LaunchParams newLaunchParams{launchParams};
+    if (newLaunchParams.NumBlocks == 0) {
+        HpShark::CudaLaunchConfig launchConfig;
+        launchConfig.compute(AddKernelTestLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+    }
+
     cudaError_t err = cudaLaunchCooperativeKernel((void *)AddKernelTestLoop<SharkFloatParams>,
-                                                  dim3(launchParams.NumBlocks),
-                                                  dim3(launchParams.ThreadsPerBlock),
+                                                  dim3(newLaunchParams.NumBlocks),
+                                                  dim3(newLaunchParams.ThreadsPerBlock),
                                                   kernelArgs,
                                                   SharedMemSize, // Shared memory size
                                                   0              // Stream

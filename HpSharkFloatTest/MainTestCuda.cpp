@@ -34,8 +34,12 @@ const char *
 BasicCorrectnessModeToString(BasicCorrectnessMode mode)
 {
     switch (mode) {
+        case BasicCorrectnessMode::Error:
+            return "Error";
         case BasicCorrectnessMode::Correctness_P1:
             return "Correctness (Params1)";
+        case BasicCorrectnessMode::PerfSub:
+            return "Performance Sub-kernels";
         case BasicCorrectnessMode::PerfSweep:
             return "Performance Sweep";
         case BasicCorrectnessMode::PerfSingle:
@@ -280,8 +284,10 @@ RunPerfFullSingle(int timeoutInSec, bool &interactiveMode, int numIters, int int
     bool res = true;
     TestTracker Tests;
 
-    auto nb = PromptIntWithTimeout("NumBlocks? Default 65", 65, timeoutInSec, interactiveMode);
-    auto nt = PromptIntWithTimeout("NumThreads? Default 256", 256, timeoutInSec, interactiveMode);
+    auto nb =
+        PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
+    auto nt =
+        PromptIntWithTimeout("NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
 
     int numBlocks = nb.value;
     int numThreads = nt.value;
@@ -291,7 +297,8 @@ RunPerfFullSingle(int timeoutInSec, bool &interactiveMode, int numIters, int int
     if (!ContinueAfterFailure(res))
         return 0;
 
-    PressKey();
+    if (PressKey() == 'q')
+        return 0;
 
     res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
         Tests, numBlocks, numThreads, TestIds::kPerfView5, numIters, internalTestLoopCount);
@@ -369,6 +376,7 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 int
 main(int, char **)
 {
+    RegisterHeapCleanup();
     GlobalCallstacks->InitCallstacks();
 
     {
@@ -381,48 +389,54 @@ main(int, char **)
     constexpr int kTimeoutInSec = 3;
     bool interactiveMode = false; // becomes true after any user input, making later prompts wait forever
 
-    // Verbose
-    {
-        auto v =
-            PromptIntWithTimeout("Verbose? Default=0 (0=No, 1=Yes):", 0, kTimeoutInSec, interactiveMode);
-        SetVerboseMode(v.value ? VerboseMode::Debug : VerboseMode::None);
-    }
-
     // Mode prompt: keep default consistent with the enum value
     const int defaultModeInt = static_cast<int>(BasicCorrectnessMode::PerfSingle);
     std::ostringstream modePrompt;
     modePrompt << "Mode? Default=" << defaultModeInt << " "
-               << "(0=Correctness(P1), 1=PerfSub, 2=PerfSweep, 3=PerfSingle, 4=Correctness(P1..P5)):";
+               << "1=Correctness(P1)" << std::endl
+               << "2=PerfSub" << std::endl
+               << "3=PerfSweep" << std::endl
+               << "4=PerfSingle" << std::endl
+               << "5=Correctness(P1..P5)" << std::endl
+               << "anything else=Exit" << std::endl
+               << "Enter choice:";
 
     int rawMode =
         PromptIntWithTimeout(modePrompt.str(), defaultModeInt, kTimeoutInSec, interactiveMode).value;
 
     BasicCorrectnessMode mode = BasicCorrectnessMode::PerfSingle;
     switch (rawMode) {
-        case 0:
+        case 1:
             mode = BasicCorrectnessMode::Correctness_P1;
             break;
-        case 1:
+        case 2:
             mode = BasicCorrectnessMode::PerfSub;
             break;
-        case 2:
+        case 3:
             mode = BasicCorrectnessMode::PerfSweep;
             break;
-        case 3:
+        case 4:
             mode = BasicCorrectnessMode::PerfSingle;
             break;
-        case 4:
+        case 5:
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
         default:
             std::cout << "Invalid mode " << rawMode << " (valid: 0..4). "
-                      << "Defaulting to " << defaultModeInt << ".\n";
-            mode = BasicCorrectnessMode::PerfSingle;
+                      << "Exiting.\n";
+            mode = BasicCorrectnessMode::Error;
             break;
     }
 
     std::cout << "Selected mode: " << static_cast<int>(mode) << " ("
               << BasicCorrectnessModeToString(mode) << ")\n";
+
+    // Verbose
+    if (mode != BasicCorrectnessMode::Error) {
+        auto v =
+            PromptIntWithTimeout("Verbose? Default=0 (0=No, 1=Yes):", 0, kTimeoutInSec, interactiveMode);
+        SetVerboseMode(v.value ? VerboseMode::Debug : VerboseMode::None);
+    }
 
     // Explicit dispatch (don’t “call both and early-out”)
     switch (mode) {

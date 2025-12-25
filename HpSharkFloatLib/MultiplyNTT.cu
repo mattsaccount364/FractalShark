@@ -183,7 +183,7 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
 {
     // We only ever produce digits in [0, Ddigits).
 #ifdef TEST_SMALL_NORMALIZE_WARP
-    constexpr int warpSz = block.dim_threads().x;
+    const int warpSz = block.dim_threads().x;
 #else
     constexpr int warpSz = 32;
 #endif
@@ -375,7 +375,7 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
 
                 // Warp-tiled normalize for this tile; operates purely in registers.
                 const WarpNormalizeTriple tout = WarpNormalizeTile<SharkFloatParams>(
-                    fullMask, Ddigits, lane, tile, iteration, loXX, loYY, loXY, carry_lo);
+                    block, fullMask, Ddigits, lane, tile, iteration, loXX, loYY, loXY, carry_lo);
 
                 resultXX[basePlusLane] = loXX;
                 resultYY[basePlusLane] = loYY;
@@ -921,7 +921,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     //   [tw_base .. tw_base + half-1], tw_base = 2^(s-1) - 1, half = 2^(s-1).
     // Total twiddles for stages 1..K = 2^K - 1.
     // ----------------------------------------------------------------------
-    constexpr uint32_t MaxCachedStages = 6;
+    constexpr uint32_t MaxCachedStages = 7;
     [[maybe_unused]] constexpr uint32_t MaxCachedTwiddles =
         (1u << MaxCachedStages) - 1; // = 63 // static assert on shared memory usage
 
@@ -1427,7 +1427,8 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     //   false -> use precomputed flattened twiddle tables
     constexpr bool UseMontPow = false;
 
-    constexpr auto TileSizeLog2 = 9u;
+    // 11 crashes currently due to excessive shared memory usage
+    constexpr auto TileSizeLog2 = 10u;
     constexpr uint32_t warpSize = 32u;
 
     const size_t gridSize = grid.size();

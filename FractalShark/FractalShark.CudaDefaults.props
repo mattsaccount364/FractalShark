@@ -24,7 +24,7 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
 
       <!-- Debug builds for two architectures for convenience -->
-      <CodeGeneration>compute_75,sm_75;compute_89,sm_89;</CodeGeneration>
+      <CodeGeneration>compute_75,sm_75;compute_120,sm_120;</CodeGeneration>
 
       <Optimization>Od</Optimization>
       <!-- No fast-math in Debug -->
@@ -56,7 +56,7 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
 
       <!-- SM89 native code plus embedded PTX for forward compatibility -->
-      <CodeGeneration>compute_89,sm_89;compute_89,compute_89;</CodeGeneration>
+      <CodeGeneration>compute_89,sm_89;compute_120,sm_120;</CodeGeneration>
 
       <Optimization>O3</Optimization>
       <FastMath>true</FastMath>

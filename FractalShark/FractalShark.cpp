@@ -11,6 +11,7 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
 
     MSG msg{};
 
+    RegisterHeapCleanup();
     GlobalCallstacks->InitCallstacks();
 
     {

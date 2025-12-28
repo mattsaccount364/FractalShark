@@ -1,5 +1,7 @@
 #include "Add.cu"
 #include "LaunchParamsCalculator.h"
+#include <sstream>
+#include <stdexcept>
 
 template <class SharkFloatParams>
 __global__ void
@@ -36,8 +38,6 @@ template <class SharkFloatParams>
 void
 ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
 {
-
-    constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     HpShark::LaunchParams newLaunchParams{launchParams};
@@ -50,15 +50,33 @@ ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
                                                   dim3(newLaunchParams.NumBlocks),
                                                   dim3(newLaunchParams.ThreadsPerBlock),
                                                   kernelArgs,
-                                                  SharedMemSize, // Shared memory size
-                                                  0              // Stream
-    );
-
-    cudaDeviceSynchronize();
-
+                                                  SharedMemSize,
+                                                  0);
     if (err != cudaSuccess) {
-        std::cerr << "CUDA error in ComputeAddGpu: " << cudaGetErrorString(err) << std::endl;
-        assert(false);
+        std::ostringstream oss;
+        oss << "cudaLaunchCooperativeKernel(AddKernel) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")"
+            << " | blocks=" << newLaunchParams.NumBlocks
+            << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
+        throw std::runtime_error(oss.str());
+    }
+
+    // Catch immediate launch errors too (async)
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaGetLastError() after AddKernel launch failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    // Catch runtime errors (illegal access, device assert, etc.)
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaDeviceSynchronize() after AddKernel failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
     }
 }
 
@@ -66,8 +84,9 @@ template <class SharkFloatParams>
 void
 ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
 {
-
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
+    (void)ExpandedNumDigits;
+
     constexpr size_t SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     HpShark::LaunchParams newLaunchParams{launchParams};
@@ -80,15 +99,31 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
                                                   dim3(newLaunchParams.NumBlocks),
                                                   dim3(newLaunchParams.ThreadsPerBlock),
                                                   kernelArgs,
-                                                  SharedMemSize, // Shared memory size
-                                                  0              // Stream
-    );
-
-    cudaDeviceSynchronize();
-
+                                                  SharedMemSize,
+                                                  0);
     if (err != cudaSuccess) {
-        std::cerr << "CUDA error in ComputeAddGpuTestLoop: " << cudaGetErrorString(err) << std::endl;
-        assert(false);
+        std::ostringstream oss;
+        oss << "cudaLaunchCooperativeKernel(AddKernelTestLoop) failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")"
+            << " | blocks=" << newLaunchParams.NumBlocks
+            << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
+        throw std::runtime_error(oss.str());
+    }
+
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaGetLastError() after AddKernelTestLoop launch failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaDeviceSynchronize() after AddKernelTestLoop failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
     }
 }
 
@@ -98,4 +133,4 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
 //    template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
 //                                                          void *kernelArgs[]);
 //
-//ExplicitInstantiateAll();
+// ExplicitInstantiateAll();

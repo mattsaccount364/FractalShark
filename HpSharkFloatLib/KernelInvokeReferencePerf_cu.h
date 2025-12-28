@@ -3,6 +3,8 @@
 #include "Vectors.h"
 
 #include <memory>
+#include <sstream>
+#include <stdexcept>
 
 namespace HpShark {
 
@@ -67,12 +69,36 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     constexpr size_t BytesToAllocate =
         (HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>()) *
         sizeof(uint64_t);
-    cudaMalloc(&combo->d_tempProducts, BytesToAllocate);
+    {
+        cudaError_t cudaErr = cudaMalloc(&combo->d_tempProducts, BytesToAllocate);
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMalloc failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
 
     if constexpr (!HpShark::TestInitCudaMemory) {
-        cudaMemset(combo->d_tempProducts, 0, BytesToAllocate);
+        {
+            cudaError_t cudaErr = cudaMemset(combo->d_tempProducts, 0, BytesToAllocate);
+            if (cudaErr != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                    << static_cast<int>(cudaErr) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
     } else {
-        cudaMemset(combo->d_tempProducts, 0xCD, BytesToAllocate);
+        {
+            cudaError_t cudaErr = cudaMemset(combo->d_tempProducts, 0xCD, BytesToAllocate);
+            if (cudaErr != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                    << static_cast<int>(cudaErr) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
     }
 
     // Host only
@@ -92,7 +118,16 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    cudaMalloc(&combo->comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>));
+    {
+        cudaError_t cudaErr =
+            cudaMalloc(&combo->comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMalloc failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
 
     // Note; shallow copy; we will memset specific members below
     cudaMemcpy(combo->comboGpu,
@@ -103,14 +138,86 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     uint8_t byteToSet = HpShark::TestInitCudaMemory ? 0xCD : 0;
 
     // Note: we're clearing a specific set of members here, not the whole struct.
-    cudaMemset(&combo->comboGpu->Add.A_X2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(&combo->comboGpu->Add.B_Y2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(&combo->comboGpu->Add.D_2X, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(&combo->comboGpu->Add.Result1_A_B_C, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(&combo->comboGpu->Add.Result2_D_E, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(&combo->comboGpu->Multiply.ResultX2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(&combo->comboGpu->Multiply.Result2XY, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(&combo->comboGpu->Multiply.ResultY2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    {
+        cudaError_t cudaErr =
+            cudaMemset(&combo->comboGpu->Add.A_X2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    {
+        cudaError_t cudaErr =
+            cudaMemset(&combo->comboGpu->Add.B_Y2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    {
+        cudaError_t cudaErr =
+            cudaMemset(&combo->comboGpu->Add.D_2X, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    {
+        cudaError_t cudaErr = cudaMemset(
+            &combo->comboGpu->Add.Result1_A_B_C, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    {
+        cudaError_t cudaErr = cudaMemset(
+            &combo->comboGpu->Add.Result2_D_E, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    {
+        cudaError_t cudaErr = cudaMemset(
+            &combo->comboGpu->Multiply.ResultX2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    {
+        cudaError_t cudaErr = cudaMemset(
+            &combo->comboGpu->Multiply.Result2XY, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    {
+        cudaError_t cudaErr = cudaMemset(
+            &combo->comboGpu->Multiply.ResultY2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
 
     // Build NTT plan + roots exactly like correctness path
     {
@@ -126,7 +233,15 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     int device_id = 0;
 
     if constexpr (HpShark::CustomStream) {
-        cudaGetDeviceProperties(&prop, device_id);
+        {
+            cudaError_t cudaErr = cudaGetDeviceProperties(&prop, device_id);
+            if (cudaErr != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaGetDeviceProperties failed: " << cudaGetErrorString(cudaErr) << " (code "
+                    << static_cast<int>(cudaErr) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
         cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize,
                            prop.persistingL2CacheMaxSize); /* Set aside max possible size of L2 cache for
                                                               persisting accesses */
@@ -150,8 +265,10 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             cudaError_t err =
                 cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
             if (err != cudaSuccess) {
-                std::cerr << "CUDA error in setting stream attribute: " << cudaGetErrorString(err)
-                          << std::endl;
+                std::ostringstream oss;
+                oss << "cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow) failed: "
+                    << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
             }
         };
 
@@ -173,20 +290,30 @@ InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                              uint64_t numIters)
 {
     auto *comboGpu = combo.comboGpu;
-    auto res = cudaMemcpy(&comboGpu->MaxRuntimeIters, &numIters, sizeof(uint64_t), cudaMemcpyHostToDevice);
-    if (res != cudaSuccess) {
-        std::cerr << "CUDA error in memcpy 1: " << cudaGetErrorString(res) << std::endl;
+    {
+        cudaError_t res =
+            cudaMemcpy(&comboGpu->MaxRuntimeIters, &numIters, sizeof(uint64_t), cudaMemcpyHostToDevice);
+        if (res != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemcpy(MaxRuntimeIters H2D) failed: " << cudaGetErrorString(res) << " (code "
+                << static_cast<int>(res) << ")";
+            throw std::runtime_error(oss.str());
+        }
     }
-
     ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
         launchParams, *reinterpret_cast<cudaStream_t *>(&combo.stream), combo.kernelArgs);
 
     // Note: comboGpu is device pointer
     // Note: we copy everything back, even host-only stuff
-    res = cudaMemcpy(
-        &combo, comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
-    if (res != cudaSuccess) {
-        std::cerr << "CUDA error in memcpy 2: " << cudaGetErrorString(res) << std::endl;
+    {
+        cudaError_t res = cudaMemcpy(
+            &combo, comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+        if (res != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemcpy(comboGpu D2H) failed: " << cudaGetErrorString(res) << " (code "
+                << static_cast<int>(res) << ")";
+            throw std::runtime_error(oss.str());
+        }
     }
 }
 
@@ -209,8 +336,24 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     // Roots were device-allocated in CopyRootsToCuda; destroy like correctness does
     SharkNTT::DestroyRoots<SharkFloatParams>(true, combo.comboGpu->Multiply.Roots);
 
-    cudaFree(combo.comboGpu);
-    cudaFree(combo.d_tempProducts);
+    {
+        cudaError_t cudaErr = cudaFree(combo.comboGpu);
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFree failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    {
+        cudaError_t cudaErr = cudaFree(combo.d_tempProducts);
+        if (cudaErr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFree failed: " << cudaGetErrorString(cudaErr) << " (code "
+                << static_cast<int>(cudaErr) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
 
     if constexpr (HpShark::CustomStream) {
         auto &stream = *reinterpret_cast<cudaStream_t *>(&combo.stream);
@@ -242,8 +385,9 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
         DebugGpuCombo *debugCombo);
 
-//#define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
+// #define ExplicitlyInstantiate(SharkFloatParams)
+// ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
 //
-//ExplicitInstantiateAll();
+// ExplicitInstantiateAll();
 
 } // namespace HpShark

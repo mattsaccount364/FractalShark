@@ -1,6 +1,8 @@
-#include "MultiplyNTT.cu"
 #include "LaunchParamsCalculator.h"
+#include "MultiplyNTT.cu"
 #include "TestVerbose.h"
+#include <sstream>
+#include <stdexcept>
 
 template <class SharkFloatParams>
 __maxnreg__(HpShark::RegisterLimit) __global__
@@ -46,15 +48,19 @@ template <class SharkFloatParams>
 void
 ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
 {
-
-    cudaError_t err;
-
     constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
-        cudaFuncSetAttribute(MultiplyKernelNTT<SharkFloatParams>,
-                             cudaFuncAttributeMaxDynamicSharedMemorySize,
-                             SharedMemSize);
+        cudaError_t err = cudaFuncSetAttribute(MultiplyKernelNTT<SharkFloatParams>,
+                                               cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                               SharedMemSize);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFuncSetAttribute(MultiplyKernelNTT, MaxDynamicSharedMemorySize) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")"
+                << " | requested shmem=" << SharedMemSize;
+            throw std::runtime_error(oss.str());
+        }
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
@@ -68,24 +74,35 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
         launchConfig.compute(MultiplyKernelNTT<SharkFloatParams>, SharedMemSize, newLaunchParams);
     }
 
-    err = cudaLaunchCooperativeKernel((void *)MultiplyKernelNTT<SharkFloatParams>,
-                                      dim3(newLaunchParams.NumBlocks),
-                                      dim3(newLaunchParams.ThreadsPerBlock),
-                                      kernelArgs,
-                                      SharedMemSize, // Shared memory size
-                                      0                  // Stream
-    );
-
-    auto err2 = cudaGetLastError();
-    if (err != cudaSuccess || err2 != cudaSuccess) {
-        std::cerr << "CUDA error in cudaLaunchCooperativeKernel: " << cudaGetErrorString(err2)
-                  << "err: " << err << std::endl;
+    cudaError_t err = cudaLaunchCooperativeKernel((void *)MultiplyKernelNTT<SharkFloatParams>,
+                                                  dim3(newLaunchParams.NumBlocks),
+                                                  dim3(newLaunchParams.ThreadsPerBlock),
+                                                  kernelArgs,
+                                                  SharedMemSize,
+                                                  0);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaLaunchCooperativeKernel(MultiplyKernelNTT) failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")"
+            << " | blocks=" << newLaunchParams.NumBlocks
+            << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
+        throw std::runtime_error(oss.str());
     }
 
-    cudaDeviceSynchronize();
-
+    err = cudaGetLastError();
     if (err != cudaSuccess) {
-        std::cerr << "CUDA error in MultiplyKernelKaratsubaV2: " << cudaGetErrorString(err) << std::endl;
+        std::ostringstream oss;
+        oss << "cudaGetLastError() after MultiplyKernelNTT launch failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaDeviceSynchronize() after MultiplyKernelNTT failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
     }
 }
 
@@ -95,13 +112,19 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
                               cudaStream_t &stream,
                               void *kernelArgs[])
 {
-
     constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (HpShark::CustomStream) {
-        cudaFuncSetAttribute(MultiplyKernelNTTTestLoop<SharkFloatParams>,
-                             cudaFuncAttributeMaxDynamicSharedMemorySize,
-                             SharedMemSize);
+        cudaError_t err = cudaFuncSetAttribute(MultiplyKernelNTTTestLoop<SharkFloatParams>,
+                                               cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                               SharedMemSize);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFuncSetAttribute(MultiplyKernelNTTTestLoop, MaxDynamicSharedMemorySize) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")"
+                << " | requested shmem=" << SharedMemSize;
+            throw std::runtime_error(oss.str());
+        }
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
@@ -120,14 +143,31 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
                                                   dim3(newLaunchParams.NumBlocks),
                                                   dim3(newLaunchParams.ThreadsPerBlock),
                                                   kernelArgs,
-                                                  SharedMemSize, // Shared memory size
-                                                  stream             // Stream
-    );
-
-    cudaDeviceSynchronize();
-
+                                                  SharedMemSize,
+                                                  stream);
     if (err != cudaSuccess) {
-        std::cerr << "CUDA error in MultiplyKernelNTTTestLoop: " << cudaGetErrorString(err) << std::endl;
+        std::ostringstream oss;
+        oss << "cudaLaunchCooperativeKernel(MultiplyKernelNTTTestLoop) failed: "
+            << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")"
+            << " | blocks=" << newLaunchParams.NumBlocks
+            << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
+        throw std::runtime_error(oss.str());
+    }
+
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaGetLastError() after MultiplyKernelNTTTestLoop launch failed: "
+            << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaDeviceSynchronize() after MultiplyKernelNTTTestLoop failed: "
+            << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
     }
 }
 
@@ -137,4 +177,4 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
 //    template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(                                      \
 //        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 //
-//ExplicitInstantiateAll();
+// ExplicitInstantiateAll();

@@ -889,7 +889,7 @@ static __device__ void AddHelperSeparates(
     int32_t carryAcc_DE = 0;
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
-        CarryPropagation_ABC_PPv4<SharkFloatParams>(
+        CarryPropagation_ABC_PPv5<SharkFloatParams>(
             globalSync1,
             globalSync2,
             shared_data,

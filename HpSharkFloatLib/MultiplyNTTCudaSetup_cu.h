@@ -8,11 +8,12 @@
 #include "HpSharkFloat.h"
 #include "NTTConstexprGenerator.h"
 #include "TestVerbose.h"
+#include <sstream>
+#include <stdexcept>
 
 namespace SharkNTT {
 
-static
-void
+static void
 Mul64Wide(uint64_t a, uint64_t b, uint64_t &lo, uint64_t &hi)
 {
 #if defined(_MSC_VER) && defined(_M_X64)
@@ -24,8 +25,7 @@ Mul64Wide(uint64_t a, uint64_t b, uint64_t &lo, uint64_t &hi)
 #endif
 }
 
-static
-uint64_t
+static uint64_t
 Add64WithCarry(uint64_t a, uint64_t b, uint64_t &carry)
 {
     uint64_t s = a + b;
@@ -270,22 +270,97 @@ void
 CopyRootsToCuda(RootTables &outT, const RootTables &inT)
 {
     // 1) Shallow copy the struct (scalar fields OK, pointer fields still host-side)
-    cudaMemcpy(&outT, &inT, sizeof(RootTables), cudaMemcpyHostToDevice);
+    cudaError_t err = cudaSuccess;
+    err = cudaMemcpy(&outT, &inT, sizeof(RootTables), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        cudaError_t err = cudaSuccess;
+        oss << "err = cudaMemcpy(&outT, &inT, sizeof(RootTables), cudaMemcpyHostToDevice) failed: "
+            << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+                << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
 
     // 2) stage_omegas / stage_omegas_inv  [stages elements]
     {
         size_t stage_bytes = static_cast<size_t>(inT.stages) * sizeof(uint64_t);
 
         uint64_t *stage_omegas_ptr = nullptr;
-        cudaMalloc(&stage_omegas_ptr, stage_bytes);
-        cudaMemcpy(stage_omegas_ptr, inT.stage_omegas, stage_bytes, cudaMemcpyHostToDevice);
-        cudaMemcpy(&outT.stage_omegas, &stage_omegas_ptr, sizeof(uint64_t *), cudaMemcpyHostToDevice);
+        cudaError_t err = cudaSuccess;
+        err = cudaMalloc(&stage_omegas_ptr, stage_bytes);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMalloc(&stage_omegas_ptr, stage_bytes) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err = cudaMemcpy(stage_omegas_ptr, inT.stage_omegas, stage_bytes, cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            cudaError_t err = cudaSuccess;
+            oss << "err = cudaMemcpy(stage_omegas_ptr, inT.stage_omegas, stage_bytes, "
+                   "cudaMemcpyHostToDevice) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
+        err = cudaMemcpy(
+            &outT.stage_omegas, &stage_omegas_ptr, sizeof(uint64_t *), cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(&outT.stage_omegas, &stage_omegas_ptr, sizeof(uint64_t *), "
+                   "cudaMemcpyHostToDevice) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
 
         uint64_t *stage_omegas_inv_ptr = nullptr;
-        cudaMalloc(&stage_omegas_inv_ptr, stage_bytes);
-        cudaMemcpy(stage_omegas_inv_ptr, inT.stage_omegas_inv, stage_bytes, cudaMemcpyHostToDevice);
-        cudaMemcpy(
+        err = cudaMalloc(&stage_omegas_inv_ptr, stage_bytes);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMalloc(&stage_omegas_inv_ptr, stage_bytes) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err =
+            cudaMemcpy(stage_omegas_inv_ptr, inT.stage_omegas_inv, stage_bytes, cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(stage_omegas_inv_ptr, inT.stage_omegas_inv, stage_bytes, "
+                   "cudaMemcpyHostToDevice) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
+        err = cudaMemcpy(
             &outT.stage_omegas_inv, &stage_omegas_inv_ptr, sizeof(uint64_t *), cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+                << ")";
+            throw std::runtime_error(oss.str());
+        }
     }
 
     // 3) psi_pows / psi_inv_pows  [N elements]
@@ -293,14 +368,79 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
         size_t N_bytes = static_cast<size_t>(inT.N) * sizeof(uint64_t);
 
         uint64_t *psi_pows_ptr = nullptr;
-        cudaMalloc(&psi_pows_ptr, N_bytes);
-        cudaMemcpy(psi_pows_ptr, inT.psi_pows, N_bytes, cudaMemcpyHostToDevice);
-        cudaMemcpy(&outT.psi_pows, &psi_pows_ptr, sizeof(uint64_t *), cudaMemcpyHostToDevice);
+        err = cudaMalloc(&psi_pows_ptr, N_bytes);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMalloc(&psi_pows_ptr, N_bytes) failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err = cudaMemcpy(psi_pows_ptr, inT.psi_pows, N_bytes, cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(psi_pows_ptr, inT.psi_pows, N_bytes, cudaMemcpyHostToDevice) "
+                   "failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
+        err = cudaMemcpy(&outT.psi_pows, &psi_pows_ptr, sizeof(uint64_t *), cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(&outT.psi_pows, &psi_pows_ptr, sizeof(uint64_t *), "
+                   "cudaMemcpyHostToDevice) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
 
         uint64_t *psi_inv_pows_ptr = nullptr;
-        cudaMalloc(&psi_inv_pows_ptr, N_bytes);
-        cudaMemcpy(psi_inv_pows_ptr, inT.psi_inv_pows, N_bytes, cudaMemcpyHostToDevice);
-        cudaMemcpy(&outT.psi_inv_pows, &psi_inv_pows_ptr, sizeof(uint64_t *), cudaMemcpyHostToDevice);
+        err = cudaMalloc(&psi_inv_pows_ptr, N_bytes);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMalloc(&psi_inv_pows_ptr, N_bytes) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err = cudaMemcpy(psi_inv_pows_ptr, inT.psi_inv_pows, N_bytes, cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(psi_inv_pows_ptr, inT.psi_inv_pows, N_bytes, "
+                   "cudaMemcpyHostToDevice) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
+        err = cudaMemcpy(
+            &outT.psi_inv_pows, &psi_inv_pows_ptr, sizeof(uint64_t *), cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(&outT.psi_inv_pows, &psi_inv_pows_ptr, sizeof(uint64_t *), "
+                   "cudaMemcpyHostToDevice) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
     }
 
     // 4) stage_twiddles_fwd / stage_twiddles_inv  [total_twiddles elements]
@@ -308,24 +448,89 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
         size_t tw_bytes = static_cast<size_t>(inT.total_twiddles) * sizeof(uint64_t);
 
         uint64_t *stage_twiddles_fwd_ptr = nullptr;
-        cudaMalloc(&stage_twiddles_fwd_ptr, tw_bytes);
-        cudaMemcpy(stage_twiddles_fwd_ptr, inT.stage_twiddles_fwd, tw_bytes, cudaMemcpyHostToDevice);
-        cudaMemcpy(&outT.stage_twiddles_fwd,
-                   &stage_twiddles_fwd_ptr,
-                   sizeof(uint64_t *),
-                   cudaMemcpyHostToDevice);
+        err = cudaMalloc(&stage_twiddles_fwd_ptr, tw_bytes);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMalloc(&stage_twiddles_fwd_ptr, tw_bytes) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err =
+            cudaMemcpy(stage_twiddles_fwd_ptr, inT.stage_twiddles_fwd, tw_bytes, cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(stage_twiddles_fwd_ptr, inT.stage_twiddles_fwd, tw_bytes, "
+                   "cudaMemcpyHostToDevice) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
+        err = cudaMemcpy(&outT.stage_twiddles_fwd,
+                         &stage_twiddles_fwd_ptr,
+                         sizeof(uint64_t *),
+                         cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+                << ")";
+            throw std::runtime_error(oss.str());
+        }
 
         uint64_t *stage_twiddles_inv_ptr = nullptr;
-        cudaMalloc(&stage_twiddles_inv_ptr, tw_bytes);
-        cudaMemcpy(stage_twiddles_inv_ptr, inT.stage_twiddles_inv, tw_bytes, cudaMemcpyHostToDevice);
-        cudaMemcpy(&outT.stage_twiddles_inv,
-                   &stage_twiddles_inv_ptr,
-                   sizeof(uint64_t *),
-                   cudaMemcpyHostToDevice);
+        err = cudaMalloc(&stage_twiddles_inv_ptr, tw_bytes);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMalloc(&stage_twiddles_inv_ptr, tw_bytes) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err =
+            cudaMemcpy(stage_twiddles_inv_ptr, inT.stage_twiddles_inv, tw_bytes, cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(stage_twiddles_inv_ptr, inT.stage_twiddles_inv, tw_bytes, "
+                   "cudaMemcpyHostToDevice) failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
+        err = cudaMemcpy(&outT.stage_twiddles_inv,
+                         &stage_twiddles_inv_ptr,
+                         sizeof(uint64_t *),
+                         cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+                << ")";
+            throw std::runtime_error(oss.str());
+        }
     }
 
     // 5) Scalars that might be handy to explicitly refresh (already copied in step 1)
-    cudaMemcpy(&outT.Ninvm_mont, &inT.Ninvm_mont, sizeof(uint64_t), cudaMemcpyHostToDevice);
+    err = cudaMemcpy(&outT.Ninvm_mont, &inT.Ninvm_mont, sizeof(uint64_t), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "err = cudaMemcpy(&outT.Ninvm_mont, &inT.Ninvm_mont, sizeof(uint64_t), "
+               "cudaMemcpyHostToDevice) failed: "
+            << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+                << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
     // N, stages, total_twiddles, etc. are already copied by the struct memcpy.
 }
 
@@ -354,16 +559,71 @@ DestroyRoots(bool cuda, RootTables &roots)
         roots.total_twiddles = 0;
     } else {
         RootTables localRoots;
-        cudaMemcpy(&localRoots, &roots, sizeof(RootTables), cudaMemcpyDeviceToHost);
+        auto err = cudaMemcpy(&localRoots, &roots, sizeof(RootTables), cudaMemcpyDeviceToHost);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "err = cudaMemcpy(&localRoots, &roots, sizeof(RootTables), cudaMemcpyDeviceToHost) "
+                   "failed: "
+                << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+            if (err != cudaSuccess) {
+                std::ostringstream oss;
+                oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
+        }
 
-        cudaFree(localRoots.stage_omegas);
-        cudaFree(localRoots.stage_omegas_inv);
-        cudaFree(localRoots.psi_pows);
-        cudaFree(localRoots.psi_inv_pows);
-        cudaFree(localRoots.stage_twiddles_fwd);
-        cudaFree(localRoots.stage_twiddles_inv);
+        err = cudaFree(localRoots.stage_omegas);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFree(localRoots.stage_omegas) failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err = cudaFree(localRoots.stage_omegas_inv);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFree(localRoots.stage_omegas_inv) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err = cudaFree(localRoots.psi_pows);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFree(localRoots.psi_pows) failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err = cudaFree(localRoots.psi_inv_pows);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFree(localRoots.psi_inv_pows) failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err = cudaFree(localRoots.stage_twiddles_fwd);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFree(localRoots.stage_twiddles_fwd) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+        err = cudaFree(localRoots.stage_twiddles_inv);
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFree(localRoots.stage_twiddles_inv) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
 
-        cudaMemset(&roots, 0, sizeof(RootTables));
+        err = cudaMemset(&roots, 0, sizeof(RootTables));
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset(&roots, 0, sizeof(RootTables)) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
     }
 }
 
@@ -387,4 +647,4 @@ DestroyRoots(bool cuda, RootTables &roots)
 //                                                              const SharkNTT::RootTables &inT);         \
 //    template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables &T);
 //
-//ExplicitInstantiateAll();
+// ExplicitInstantiateAll();

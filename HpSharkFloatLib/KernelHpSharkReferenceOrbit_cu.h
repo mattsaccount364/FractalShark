@@ -1,8 +1,10 @@
 #include "Add.cu"
+#include "LaunchParamsCalculator.h"
 #include "MultiplyNTT.cu"
 #include "PeriodicityChecker.h"
 #include "TestVerbose.h"
-#include "LaunchParamsCalculator.h"
+#include <sstream>
+#include <stdexcept>
 
 //
 // Returns true if we should continue iterating, false if we should stop (period found).
@@ -29,7 +31,7 @@ ReferenceHelper(cg::grid_group &grid,
             PeriodicityChecker(
                 grid, block, currentLocalIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference);
         }
-    
+
         //
         // Note: we can get rid of this if we move this check into multiply after the first sync of if we
         // do the same calculation on every thread.  But if we do that then we need to reconcile the fact
@@ -38,8 +40,7 @@ ReferenceHelper(cg::grid_group &grid,
 
         grid.sync();
 
-        if (reference->PeriodicityStatus !=
-                PeriodicityResult::Continue) {
+        if (reference->PeriodicityStatus != PeriodicityResult::Continue) {
             return reference->PeriodicityStatus;
         }
     }
@@ -111,16 +112,15 @@ __maxnreg__(HpShark::RegisterLimit)
 template <class SharkFloatParams>
 __global__ void
 __maxnreg__(HpShark::RegisterLimit)
-    HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *combo,
-                            uint64_t *tempData)
+    HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *combo, uint64_t *tempData)
 {
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
 
-    //typename SharkFloatParams::Float dzdcX{1};
-    //typename SharkFloatParams::Float dzdcY{0};
+    // typename SharkFloatParams::Float dzdcX{1};
+    // typename SharkFloatParams::Float dzdcY{0};
     auto *dzdcX = &combo->dzdcX;
     auto *dzdcY = &combo->dzdcY;
 
@@ -160,13 +160,20 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                                cudaStream_t &stream,
                                void *kernelArgs[])
 {
-
     constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
 
+    // If using a custom stream / large dynamic shared memory, ensure the attribute set succeeds.
     if constexpr (HpShark::CustomStream) {
-        cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
-                             cudaFuncAttributeMaxDynamicSharedMemorySize,
-                             SharedMemSize);
+        cudaError_t errAttr = cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
+                                                   cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                   SharedMemSize);
+        if (errAttr != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaFuncSetAttribute(MaxDynamicSharedMemorySize) failed: "
+                << cudaGetErrorString(errAttr) << " (code " << static_cast<int>(errAttr) << ")"
+                << " | SharedMemSize=" << SharedMemSize;
+            throw std::runtime_error(oss.str());
+        }
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
@@ -179,32 +186,51 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
     HpShark::LaunchParams newLaunchParams{launchParams};
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
-        err = launchConfig.compute(HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
-
+        err = launchConfig.compute(
+            HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
         if (err != cudaSuccess) {
-            std::cerr << "CUDA error in compute launch config: " << cudaGetErrorString(err) << std::endl;
-            return;
+            std::ostringstream oss;
+            oss << "LaunchConfig.compute(HpSharkReferenceGpuLoop) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")"
+                << " | SharedMemSize=" << SharedMemSize;
+            throw std::runtime_error(oss.str());
         }
     }
 
-    err  = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuLoop<SharkFloatParams>,
-                                                  dim3(newLaunchParams.NumBlocks),
-                                                  dim3(newLaunchParams.ThreadsPerBlock),
-                                                  kernelArgs,
-                                                  SharedMemSize,
-                                                  stream // Stream
-    );
-
-    auto err2 = cudaGetLastError();
-    if (err != cudaSuccess || err2 != cudaSuccess) {
-        std::cerr << "CUDA error in cudaLaunchCooperativeKernel: " << cudaGetErrorString(err2)
-                  << "err: " << err << std::endl;
+    err =
+        cudaLaunchCooperativeKernel(reinterpret_cast<void *>(HpSharkReferenceGpuLoop<SharkFloatParams>),
+                                    dim3(newLaunchParams.NumBlocks),
+                                    dim3(newLaunchParams.ThreadsPerBlock),
+                                    kernelArgs,
+                                    SharedMemSize,
+                                    stream);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaLaunchCooperativeKernel(HpSharkReferenceGpuLoop) failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")"
+            << " | blocks=" << newLaunchParams.NumBlocks
+            << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
+        throw std::runtime_error(oss.str());
     }
 
-    err = cudaDeviceSynchronize();
+    // Catch immediate launch errors (async).
+    cudaError_t err2 = cudaGetLastError();
+    if (err2 != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaGetLastError() after HpSharkReferenceGpuLoop launch failed: "
+            << cudaGetErrorString(err2) << " (code " << static_cast<int>(err2) << ")"
+            << " | blocks=" << newLaunchParams.NumBlocks
+            << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
+        throw std::runtime_error(oss.str());
+    }
 
+    // Catch runtime failures (device assert, illegal instruction, illegal address, etc.).
+    err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
-        std::cerr << "CUDA error in MultiplyKernelKaratsubaV2: " << cudaGetErrorString(err) << std::endl;
+        std::ostringstream oss;
+        oss << "cudaDeviceSynchronize() after HpSharkReferenceGpuLoop failed: "
+            << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
     }
 }
 
@@ -212,4 +238,4 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
 //    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
 //        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 //
-//ExplicitInstantiateAll();
+// ExplicitInstantiateAll();

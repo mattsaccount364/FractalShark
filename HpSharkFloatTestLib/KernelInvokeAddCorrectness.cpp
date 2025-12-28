@@ -3,7 +3,6 @@
 #include "KernelInvokeInternal.h"
 
 namespace HpShark {
-
 template <class SharkFloatParams>
 void
 InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
@@ -11,26 +10,59 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
                            HpSharkAddComboResults<SharkFloatParams> &combo,
                            DebugGpuCombo *debugCombo)
 {
+    HpSharkAddComboResults<SharkFloatParams> *comboResults = nullptr;
+    cudaError_t err = cudaMalloc(reinterpret_cast<void **>(&comboResults),
+                                 sizeof(HpSharkAddComboResults<SharkFloatParams>));
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaMalloc(comboResults) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
 
-    // Perform the calculation on the GPU
-    HpSharkAddComboResults<SharkFloatParams> *comboResults;
-    cudaMalloc(&comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>));
-    cudaMemcpy(
+    err = cudaMemcpy(
         comboResults, &combo, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        cudaFree(comboResults);
+        std::ostringstream oss;
+        oss << "cudaMemcpy(combo -> comboResults) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
 
-    if constexpr (!HpShark::TestInitCudaMemory) {
-        cudaMemset(&comboResults->Result1_A_B_C, 0, sizeof(HpSharkFloat<SharkFloatParams>));
-        cudaMemset(&comboResults->Result2_D_E, 0, sizeof(HpSharkFloat<SharkFloatParams>));
-    } else {
-        cudaMemset(&comboResults->Result1_A_B_C, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
-        cudaMemset(&comboResults->Result2_D_E, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+    const int initByte = HpShark::TestInitCudaMemory ? 0xCD : 0x00;
+
+    err = cudaMemset(&comboResults->Result1_A_B_C, initByte, sizeof(HpSharkFloat<SharkFloatParams>));
+    if (err != cudaSuccess) {
+        cudaFree(comboResults);
+        std::ostringstream oss;
+        oss << "cudaMemset(Result1_A_B_C) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    err = cudaMemset(&comboResults->Result2_D_E, initByte, sizeof(HpSharkFloat<SharkFloatParams>));
+    if (err != cudaSuccess) {
+        cudaFree(comboResults);
+        std::ostringstream oss;
+        oss << "cudaMemset(Result2_D_E) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
     }
 
     constexpr auto BytesToAllocate =
         (HpShark::AdditionalUInt64Global + HpShark::CalculateAddFrameSize<SharkFloatParams>()) *
         sizeof(uint64_t);
-    uint64_t *g_extResult;
-    cudaMalloc(&g_extResult, BytesToAllocate);
+
+    uint64_t *g_extResult = nullptr;
+    err = cudaMalloc(reinterpret_cast<void **>(&g_extResult), BytesToAllocate);
+    if (err != cudaSuccess) {
+        cudaFree(comboResults);
+        std::ostringstream oss;
+        oss << "cudaMalloc(g_extResult) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
 
     // Prepare kernel arguments
     void *kernelArgs[] = {(void *)&comboResults, (void *)&g_extResult};
@@ -40,30 +72,69 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
         ComputeAddGpu<SharkFloatParams>(launchParams, kernelArgs);
     }
 
-    cudaMemcpy(
+    err = cudaMemcpy(
         &combo, comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        cudaFree(g_extResult);
+        cudaFree(comboResults);
+        std::ostringstream oss;
+        oss << "cudaMemcpy(comboResults -> combo) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
 
     if (debugCombo != nullptr) {
         if constexpr (HpShark::DebugChecksums) {
             debugCombo->States.resize(SharkFloatParams::NumDebugStates);
-            cudaMemcpy(debugCombo->States.data(),
-                       &g_extResult[HpShark::AdditionalChecksumsOffset],
-                       SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
-                       cudaMemcpyDeviceToHost);
+            err = cudaMemcpy(debugCombo->States.data(),
+                             &g_extResult[HpShark::AdditionalChecksumsOffset],
+                             SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+                             cudaMemcpyDeviceToHost);
+            if (err != cudaSuccess) {
+                cudaFree(g_extResult);
+                cudaFree(comboResults);
+                std::ostringstream oss;
+                oss << "cudaMemcpy(DebugChecksums) failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
         }
 
         if constexpr (HpShark::DebugGlobalState) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
-            cudaMemcpy(debugCombo->MultiplyCounts.data(),
-                       &g_extResult[HpShark::AdditionalMultipliesOffset],
-                       SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
-                       cudaMemcpyDeviceToHost);
+            err = cudaMemcpy(debugCombo->MultiplyCounts.data(),
+                             &g_extResult[HpShark::AdditionalMultipliesOffset],
+                             SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
+                             cudaMemcpyDeviceToHost);
+            if (err != cudaSuccess) {
+                cudaFree(g_extResult);
+                cudaFree(comboResults);
+                std::ostringstream oss;
+                oss << "cudaMemcpy(DebugGlobalState) failed: " << cudaGetErrorString(err) << " (code "
+                    << static_cast<int>(err) << ")";
+                throw std::runtime_error(oss.str());
+            }
         }
     }
 
-    cudaFree(g_extResult);
-    cudaFree(comboResults);
+    err = cudaFree(g_extResult);
+    if (err != cudaSuccess) {
+        cudaFree(comboResults);
+        std::ostringstream oss;
+        oss << "cudaFree(g_extResult) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    err = cudaFree(comboResults);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaFree(comboResults) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw std::runtime_error(oss.str());
+    }
 }
+
 
 #define ExplicitlyInstantiateAdd(SharkFloatParams)                                                      \
     template void InvokeAddKernelCorrectness<SharkFloatParams>(                                         \

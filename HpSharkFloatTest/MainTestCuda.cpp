@@ -253,18 +253,13 @@ RunCorrectnessTest(BasicCorrectnessMode mode)
 // Performance modes (split into smaller dispatchable functions)
 // -----------------------------------------------------------------------------
 static int
-RunPerfFullSingle(int timeoutInSec, bool &interactiveMode, int numIters, int internalTestLoopCount)
+RunPerfFullSingle(const HpShark::LaunchParams &launchParams, int numIters, int internalTestLoopCount)
 {
     bool res = true;
     TestTracker Tests;
 
-    auto nb =
-        PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
-    auto nt =
-        PromptIntWithTimeout("NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
-
-    int numBlocks = nb.value;
-    int numThreads = nt.value;
+    int numBlocks = launchParams.NumBlocks;
+    int numThreads = launchParams.ThreadsPerBlock;
 
     res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
         Tests, numBlocks, numThreads, TestIds::kPerfView30, numIters, internalTestLoopCount);
@@ -374,7 +369,8 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
     }
 
     if (mode == BasicCorrectnessMode::PerfSingle) {
-        if (!RunPerfFullSingle(timeoutInSec, interactiveMode, numIters, internalTestLoopCount))
+        if (!RunPerfFullSingle(
+                launchParams, numIters, internalTestLoopCount))
             return 0;
     }
 

@@ -676,7 +676,7 @@ PPcompose_transfer(const PPTransfer3 &a, const PPTransfer3 &b)
     return r;
 }
 
-constexpr int DIGITS_PER_BLOCK = 3;
+constexpr int DIGITS_PER_BLOCK_V3 = 3;
 
 // Build block-level transfer for a block of up to 3 digits:
 // for each stream and c_in ∈ {-1,0,1}, simulate 3 digits in sequence.
@@ -700,7 +700,7 @@ PPbuild_block_transfer_3digits(const uint64_t *extResultTrue,
             int32_t c = c_in;
 
 #pragma unroll
-            for (int k = 0; k < DIGITS_PER_BLOCK; ++k) {
+            for (int k = 0; k < DIGITS_PER_BLOCK_V3; ++k) {
                 if (k >= len)
                     break; // tail block safety
                 const int i = baseDigit + k;
@@ -1121,15 +1121,15 @@ CarryPropagation_ABC_PPv3(uint32_t *globalSync1, // [0] holds convergence counte
     auto *SharkRestrict tfBlock = reinterpret_cast<PPTransfer3 *>(next1);
 
     const int32_t numDigits = numActualDigitsPlusGuard;
-    const int32_t numBlocks = (numDigits + DIGITS_PER_BLOCK - 1) / DIGITS_PER_BLOCK;
+    const int32_t numBlocks = (numDigits + DIGITS_PER_BLOCK_V3 - 1) / DIGITS_PER_BLOCK_V3;
 
     // ----------------------------
     // Step 1: build per-block transfer functions F_block
     // ----------------------------
     for (int32_t blockIdx = tid; blockIdx < numBlocks; blockIdx += totalThreads) {
-        const int base = blockIdx * DIGITS_PER_BLOCK;
+        const int base = blockIdx * DIGITS_PER_BLOCK_V3;
         const int remaining = numDigits - base;
-        const int len = (remaining > DIGITS_PER_BLOCK) ? DIGITS_PER_BLOCK : remaining;
+        const int len = (remaining > DIGITS_PER_BLOCK_V3) ? DIGITS_PER_BLOCK_V3 : remaining;
         if (len <= 0)
             continue;
 
@@ -1271,9 +1271,9 @@ CarryPropagation_ABC_PPv3(uint32_t *globalSync1, // [0] holds convergence counte
     // ----------------------------
 
     for (int32_t blockIdx = tid; blockIdx < numBlocks; blockIdx += totalThreads) {
-        const int base = blockIdx * DIGITS_PER_BLOCK;
+        const int base = blockIdx * DIGITS_PER_BLOCK_V3;
         const int remaining = numDigits - base;
-        const int len = (remaining > DIGITS_PER_BLOCK) ? DIGITS_PER_BLOCK : remaining;
+        const int len = (remaining > DIGITS_PER_BLOCK_V3) ? DIGITS_PER_BLOCK_V3 : remaining;
         if (len <= 0)
             continue;
 
@@ -1283,7 +1283,7 @@ CarryPropagation_ABC_PPv3(uint32_t *globalSync1, // [0] holds convergence counte
         int32_t c3 = (blockIdx > 0) ? PPeval_transfer(tfBlock[blockIdx - 1], 2, 0) : 0;
 
 #pragma unroll
-        for (int k = 0; k < DIGITS_PER_BLOCK; ++k) {
+        for (int k = 0; k < DIGITS_PER_BLOCK_V3; ++k) {
             if (k >= len)
                 break;
             const int i = base + k;
@@ -1355,4 +1355,383 @@ CarryPropagation_ABC_PPv3(uint32_t *globalSync1, // [0] holds convergence counte
     carryAcc_ABC_True = static_cast<int32_t>(cur1[numDigits]);
     carryAcc_ABC_False = static_cast<int32_t>(cur2[numDigits]);
     carryAcc_DE = static_cast<int32_t>(cur3[numDigits]);
+}
+
+#define DIGITS_PER_BLOCK_V4 3
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+CarryPropagation_ABC_PPv4(uint32_t *globalSync1, // [0] holds convergence counter
+                          uint32_t *globalSync2,
+                          uint64_t *SharkRestrict shared_data,
+                          const int32_t idx,                      // this thread’s global index
+                          const int32_t numActualDigitsPlusGuard, // N
+                          uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
+                          uint64_t *SharkRestrict extResultFalse, // Phase1_ABC “false” limbs
+                          uint64_t *SharkRestrict final128_DE,    // Phase1_DE limbs
+                          uint32_t *SharkRestrict cur1,           // length N+1
+                          uint32_t *SharkRestrict next1,          // length N+1
+                          uint32_t *SharkRestrict cur2,           // length N+1
+                          uint32_t *SharkRestrict next2,          // length N+1
+                          uint32_t *SharkRestrict cur3,           // length N+1
+                          uint32_t *SharkRestrict next3,          // length N+1
+                          int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
+                          int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
+                          int32_t &carryAcc_DE,                   // out: final unsigned carry
+                          cg::thread_block &block,
+                          cg::grid_group &grid,
+                          DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
+{
+#ifdef TEST_SMALL_NORMALIZE_WARP
+    if (grid.size() % 32 != 0) {
+        CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1,
+                                                    idx,
+                                                    numActualDigitsPlusGuard,
+                                                    extResultTrue,
+                                                    extResultFalse,
+                                                    final128_DE,
+                                                    cur1,
+                                                    next1,
+                                                    cur2,
+                                                    next2,
+                                                    cur3,
+                                                    next3,
+                                                    carryAcc_ABC_True,
+                                                    carryAcc_ABC_False,
+                                                    carryAcc_DE,
+                                                    block,
+                                                    grid,
+                                                    debugGlobalState);
+        return;
+    }
+#endif
+
+    const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+    const int totalThreads = gridDim.x * blockDim.x;
+
+    // ----------------------------
+    // Init cur/next = 0
+    // ----------------------------
+    for (int i = tid; i <= numActualDigitsPlusGuard; i += totalThreads) {
+        cur1[i] = cur2[i] = cur3[i] = 0;
+        next1[i] = next2[i] = next3[i] = 0;
+    }
+
+    if (tid == 0) {
+        *globalSync1 = 0;
+        *globalSync2 = 0xFFFF'FFFEu;
+    }
+    grid.sync();
+
+    // ------------------------------------------------------------
+    // Phase 0: split 64-bit limbs -> lo in ext*, hi in next*[i+1]
+    // ------------------------------------------------------------
+    for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
+        const uint64_t limbT = extResultTrue[i];
+        const uint64_t limbF = extResultFalse[i];
+        const uint64_t limbD = final128_DE[i];
+
+        extResultTrue[i] = static_cast<uint32_t>(limbT);
+        extResultFalse[i] = static_cast<uint32_t>(limbF);
+        final128_DE[i] = static_cast<uint32_t>(limbD);
+
+        next1[i + 1] = static_cast<uint32_t>(limbT >> 32);
+        next2[i + 1] = static_cast<uint32_t>(limbF >> 32);
+        next3[i + 1] = static_cast<uint32_t>(limbD >> 32);
+    }
+    grid.sync();
+
+    // ------------------------------------------------------------
+    // Phase 1: add per-digit incoming hi parts, write cur[i+1]
+    // ------------------------------------------------------------
+    for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
+        auto AddHiPhase = [](int32_t N, uint64_t *extResult, uint32_t *next, uint32_t *cur, int32_t i) {
+            const int64_t limb = static_cast<int64_t>(extResult[i]) + static_cast<int32_t>(next[i]);
+            next[i] = 0;
+
+            extResult[i] = static_cast<uint32_t>(limb);
+            const uint32_t hi1 = static_cast<uint32_t>(limb >> 32);
+
+            if (i == N - 1)
+                cur[i + 1] = hi1 + next[i + 1];
+            else
+                cur[i + 1] = hi1;
+        };
+
+        AddHiPhase(numActualDigitsPlusGuard, extResultTrue, next1, cur1, i);
+        AddHiPhase(numActualDigitsPlusGuard, extResultFalse, next2, cur2, i);
+        AddHiPhase(numActualDigitsPlusGuard, final128_DE, next3, cur3, i);
+    }
+    grid.sync();
+
+    // ----------------------------------------------------------------------
+    // Paper-style Decoupled Lookback (DLB) with warp-parallel windows + clamp
+    // Replace atomicAdd(0) descriptor loads with acquire loads.
+    // ----------------------------------------------------------------------
+    const int32_t numDigits = numActualDigitsPlusGuard;
+    const int32_t numBlocks = (numDigits + DIGITS_PER_BLOCK_V4 - 1) / DIGITS_PER_BLOCK_V4;
+
+    // 32-bit packed descriptor in desc[0..numBlocks):
+    // desc = { flag (2 bits), value (low bits) }
+    enum : uint32_t { FLAG_X = 0u, FLAG_A = 1u, FLAG_P = 2u };
+    constexpr uint32_t FLAG_SHIFT = 30u;
+    constexpr uint32_t FLAG_MASK = 3u << FLAG_SHIFT;
+    constexpr uint32_t BITS_MASK = ~FLAG_MASK;
+
+    constexpr uint32_t PP_BITS_USED = 18u;
+    constexpr uint32_t PP_BITS_MASK = (1u << PP_BITS_USED) - 1u;
+
+    auto pack_desc = [](uint32_t flag, uint32_t bitsLow) -> uint32_t {
+        return ((flag & 3u) << FLAG_SHIFT) | (bitsLow & BITS_MASK);
+    };
+    auto unpack_flag = [](uint32_t w) -> uint32_t { return w >> FLAG_SHIFT; };
+    auto unpack_bits = [](uint32_t w) -> uint32_t { return w & BITS_MASK; };
+
+    // compose helper for x ∘ y (apply y then x), using your PPcompose_transfer(a,b)=b∘a:
+    auto compose_x_after_y = [](const PPTransfer3 &x, const PPTransfer3 &y) -> PPTransfer3 {
+        // x ∘ y == PPcompose_transfer(y, x)
+        return PPcompose_transfer(y, x);
+    };
+
+    uint32_t *SharkRestrict desc = next1; // reuse next1[0..numBlocks) as descriptor
+
+    // Init desc to X
+    for (int32_t i = tid; i < numBlocks; i += totalThreads) {
+        desc[i] = pack_desc(FLAG_X, 0u);
+    }
+    grid.sync();
+
+    const int lane = (threadIdx.x & 31);
+    const int warpGlobal = ((blockIdx.x * blockDim.x) + threadIdx.x) >> 5;
+    const int totalWarps = max(1, (gridDim.x * blockDim.x) >> 5);
+
+    // Clamp: only numBlocks warps participate
+    const int activeWarps = min(totalWarps, max(1, numBlocks));
+    const bool warpActive = (warpGlobal < activeWarps);
+
+    // ----------------------------
+    // Step 1: publish aggregates (FLAG_A, value=aggregate)
+    // ----------------------------
+    if (warpActive) {
+        for (int32_t blockIdxScan = warpGlobal; blockIdxScan < numBlocks; blockIdxScan += activeWarps) {
+            if (lane == 0) {
+                const int base = blockIdxScan * DIGITS_PER_BLOCK_V4;
+                const int remaining = numDigits - base;
+                const int len = (remaining > DIGITS_PER_BLOCK_V4) ? DIGITS_PER_BLOCK_V4 : remaining;
+
+                PPTransfer3 a = make_PPIdentity();
+                if (len > 0) {
+                    a = PPbuild_block_transfer_3digits(extResultTrue,
+                                                       extResultFalse,
+                                                       final128_DE,
+                                                       reinterpret_cast<const int32_t *>(cur1),
+                                                       reinterpret_cast<const int32_t *>(cur2),
+                                                       reinterpret_cast<const int32_t *>(cur3),
+                                                       base,
+                                                       len);
+                }
+
+                // Publish A as one atomic word (flag+value together).
+                atomicExch(reinterpret_cast<unsigned int *>(&desc[blockIdxScan]),
+                           pack_desc(FLAG_A, (uint32_t)a.bits & PP_BITS_MASK));
+            }
+            __syncwarp();
+        }
+    }
+
+    // ----------------------------
+    // Step 2: lookback + publish prefixes (FLAG_P, value=prefix) + apply digits
+    // Paper-style: discover P by encounter during lookback.
+    // ----------------------------
+    if (warpActive) {
+        for (int32_t blockIdxScan = warpGlobal; blockIdxScan < numBlocks; blockIdxScan += activeWarps) {
+
+            PPTransfer3 excl = make_PPIdentity();
+            int32_t j = blockIdxScan - 1;
+
+            while (j >= 0) {
+                const int32_t k = j - lane;
+
+                uint32_t w = 0u;
+                if (k >= 0) {
+                    // Wait until descriptor is not X
+                    int spin = 0;
+                    do {
+                        asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(w) : "l"(&desc[k]));
+                        if (unpack_flag(w) != FLAG_X)
+                            break;
+                        if (++spin > 64) {
+                            __nanosleep(64);
+                            spin = 0;
+                        }
+                    } while (true);
+                }
+
+                const uint32_t f = (k >= 0) ? unpack_flag(w) : 0u;
+                const uint32_t pMask = __ballot_sync(0xFFFF'FFFFu, (k >= 0) && (f == FLAG_P));
+                const uint32_t aMask = __ballot_sync(0xFFFF'FFFFu, (k >= 0) && (f == FLAG_A));
+
+                // Encountered P in this window: stop at nearest one (highest k == smallest lane)
+                if (pMask) {
+                    const int pLane = __ffs(pMask) - 1;
+                    const uint32_t wP = __shfl_sync(0xFFFF'FFFFu, w, pLane);
+                    const PPTransfer3 prefK{(uint64_t)(unpack_bits(wP) & PP_BITS_MASK)};
+
+                    // Fold A for lanes [0..pLane)
+                    PPTransfer3 my = make_PPIdentity();
+                    if (lane < pLane) {
+                        if ((aMask >> lane) & 1u) {
+                            my = PPTransfer3{(uint64_t)(unpack_bits(w) & PP_BITS_MASK)};
+                        }
+                    }
+
+#pragma unroll
+                    for (int offset = 1; offset < 32; offset <<= 1) {
+                        const uint32_t partnerBits =
+                            __shfl_down_sync(0xFFFF'FFFFu, (uint32_t)my.bits, offset);
+                        const PPTransfer3 partner{(uint64_t)(partnerBits & PP_BITS_MASK)};
+                        if ((lane + offset) < 32) {
+                            my = compose_x_after_y(my, partner);
+                        }
+                    }
+
+                    if (lane == 0) {
+                        const PPTransfer3 W = compose_x_after_y(my, prefK);
+                        excl = compose_x_after_y(excl, W);
+                    }
+
+                    break;
+                }
+
+                // No P: fold all A in window
+                if (aMask) {
+                    PPTransfer3 my = make_PPIdentity();
+                    if ((aMask >> lane) & 1u) {
+                        my = PPTransfer3{(uint64_t)(unpack_bits(w) & PP_BITS_MASK)};
+                    }
+
+#pragma unroll
+                    for (int offset = 1; offset < 32; offset <<= 1) {
+                        const uint32_t partnerBits =
+                            __shfl_down_sync(0xFFFF'FFFFu, (uint32_t)my.bits, offset);
+                        const PPTransfer3 partner{(uint64_t)(partnerBits & PP_BITS_MASK)};
+                        if ((lane + offset) < 32) {
+                            my = compose_x_after_y(my, partner);
+                        }
+                    }
+
+                    if (lane == 0) {
+                        excl = compose_x_after_y(excl, my);
+                    }
+                }
+
+                j -= 32;
+            }
+
+            if (lane == 0) {
+                // Wait for our aggregate to be published (A)
+                uint32_t wA;
+                int spinA = 0;
+                do {
+                    asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(wA) : "l"(&desc[blockIdxScan]));
+                    if (unpack_flag(wA) != FLAG_X)
+                        break;
+                    if (++spinA > 64) {
+                        __nanosleep(64);
+                        spinA = 0;
+                    }
+                } while (true);
+
+                const PPTransfer3 aggB{(uint64_t)(unpack_bits(wA) & PP_BITS_MASK)};
+                const PPTransfer3 incl = PPcompose_transfer(excl, aggB); // aggB ∘ excl
+
+                // Publish P as one atomic word (flag+value together).
+                atomicExch(reinterpret_cast<unsigned int *>(&desc[blockIdxScan]),
+                           pack_desc(FLAG_P, (uint32_t)incl.bits & PP_BITS_MASK));
+
+                // Apply digits using incoming transfer excl
+                const int base = blockIdxScan * DIGITS_PER_BLOCK_V4;
+                const int remaining = numDigits - base;
+                const int len = (remaining > DIGITS_PER_BLOCK_V4) ? DIGITS_PER_BLOCK_V4 : remaining;
+
+                if (len > 0) {
+                    int32_t c1 = PPeval_transfer(excl, 0, 0);
+                    int32_t c2 = PPeval_transfer(excl, 1, 0);
+                    int32_t c3 = PPeval_transfer(excl, 2, 0);
+
+#pragma unroll
+                    for (int kk = 0; kk < DIGITS_PER_BLOCK_V4; ++kk) {
+                        if (kk >= len)
+                            break;
+                        const int i = base + kk;
+
+                        const int32_t in1 = c1 + static_cast<int32_t>(cur1[i]);
+                        const int32_t in2 = c2 + static_cast<int32_t>(cur2[i]);
+                        const int32_t in3 = c3 + static_cast<int32_t>(cur3[i]);
+
+                        {
+                            const int64_t sum1 = (int64_t)extResultTrue[i] + (int64_t)in1;
+                            extResultTrue[i] = (uint32_t)sum1;
+                            c1 = (int32_t)(sum1 >> 32);
+                        }
+                        {
+                            const int64_t sum2 = (int64_t)extResultFalse[i] + (int64_t)in2;
+                            extResultFalse[i] = (uint32_t)sum2;
+                            c2 = (int32_t)(sum2 >> 32);
+                        }
+                        {
+                            const int64_t sum3 = (int64_t)final128_DE[i] + (int64_t)in3;
+                            final128_DE[i] = (uint32_t)sum3;
+                            c3 = (int32_t)(sum3 >> 32);
+                        }
+                    }
+                }
+            }
+
+            __syncwarp();
+        }
+    }
+
+    // ----------------------------
+    // Final high-slot carry
+    // ----------------------------
+    if (tid == 0) {
+        const int32_t N = numDigits;
+        int32_t c1_N = 0, c2_N = 0, c3_N = 0;
+
+        if (numBlocks > 0) {
+            const int32_t last = numBlocks - 1;
+
+            uint32_t wLast;
+            int spin = 0;
+            do {
+                asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(wLast) : "l"(&desc[last]));
+                if (unpack_flag(wLast) == FLAG_P)
+                    break;
+                if (++spin > 64) {
+                    __nanosleep(64);
+                    spin = 0;
+                }
+            } while (true);
+
+            const PPTransfer3 inclLast{(uint64_t)(unpack_bits(wLast) & PP_BITS_MASK)};
+            c1_N = PPeval_transfer(inclLast, 0, 0);
+            c2_N = PPeval_transfer(inclLast, 1, 0);
+            c3_N = PPeval_transfer(inclLast, 2, 0);
+        }
+
+        cur1[N] = (uint32_t)(c1_N + (int32_t)cur1[N]);
+        cur2[N] = (uint32_t)(c2_N + (int32_t)cur2[N]);
+        cur3[N] = (uint32_t)(c3_N + (int32_t)cur3[N]);
+
+        if constexpr (HpShark::DebugGlobalState) {
+            DebugCarryIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
+        }
+    }
+
+    grid.sync();
+
+    carryAcc_ABC_True = (int32_t)cur1[numDigits];
+    carryAcc_ABC_False = (int32_t)cur2[numDigits];
+    carryAcc_DE = (int32_t)cur3[numDigits];
 }

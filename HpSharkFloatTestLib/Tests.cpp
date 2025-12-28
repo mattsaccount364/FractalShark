@@ -16,9 +16,9 @@
 #include <gmp.h>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <vector>
-#include <map>
 
 #include "KernelInvoke.h"
 
@@ -750,10 +750,26 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                             hpSharkReferenceOrbit.push_back(combo->OutputIters[i]);
                         }
 
-                        if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound ||
-                            combo->PeriodicityStatus == PeriodicityResult::Escaped ||
-                            totalExecutedIters >= numIters) {
+                        if constexpr (SharkFloatParams::EnablePeriodicity) {
+                            if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound ||
+                                combo->PeriodicityStatus == PeriodicityResult::Escaped ||
+                                combo->PeriodicityStatus == PeriodicityResult::Unknown || // error
+                                totalExecutedIters >= numIters) {
+
+                                // Sanity check: if periodicity is enabled, we should never exit
+                                // with "Unknown"
+                                if (combo->PeriodicityStatus == PeriodicityResult::Unknown) {
+                                    DebugBreak();
+                                }
+                            } else {
+                                continue;
+                            }
+
                             break;
+                        } else {
+                            if (totalExecutedIters >= numIters) {
+                                break;
+                            }
                         }
                     }
                 }
@@ -2828,13 +2844,13 @@ TestTernarySpecial25(const HpShark::LaunchParams &launchParams, TestTracker &Tes
 
 template <Operator sharkOperator>
 bool
-TestBinaryOperatorPerf([[maybe_unused]] int testBase,
+TestBinaryOperatorPerf(const HpShark::LaunchParams &launchParams,
+                       [[maybe_unused]] int testBase,
                        [[maybe_unused]] int numIters,
                        [[maybe_unused]] int internalTestLoopCount,
                        [[maybe_unused]] BasicCorrectnessMode mode)
 {
     TestTracker Tests;
-    HpShark::LaunchParams launchParams{170, 256};
 
     switch (mode) {
         case BasicCorrectnessMode::Correctness_P1:
@@ -2842,29 +2858,34 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
             // Not a perf mode; historically this function wouldn't run in those modes.
             break;
 
-        case BasicCorrectnessMode::PerfSingle:
+        case BasicCorrectnessMode::PerfSub:
             for (int i = 0; i < numIters; ++i) {
                 TestPerfRandom<SharkParamsNP6, sharkOperator>(
                     launchParams, Tests, testBase + 1, internalTestLoopCount);
+                TestPerfRandom<SharkParamsNP7, sharkOperator>(
+                    launchParams, Tests, testBase + 2, internalTestLoopCount);
+                TestPerfRandom<SharkParamsNP8, sharkOperator>(
+                    launchParams, Tests, testBase + 3, internalTestLoopCount);
+                TestPerfRandom<SharkParamsNP9, sharkOperator>(
+                    launchParams, Tests, testBase + 4, internalTestLoopCount);
+
+                TestPerfRandom<SharkParamsNP10, sharkOperator>(
+                    launchParams, Tests, testBase + 5, internalTestLoopCount);
+                TestPerfRandom<SharkParamsNP11, sharkOperator>(
+                    launchParams, Tests, testBase + 6, internalTestLoopCount);
+                TestPerfRandom<SharkParamsNP12, sharkOperator>(
+                    launchParams, Tests, testBase + 7, internalTestLoopCount);
             }
             break;
 
-        case BasicCorrectnessMode::PerfSweep:
-            TestPerfRandom<SharkParamsNP6, sharkOperator>(
-                launchParams, Tests, testBase + 1, internalTestLoopCount);
-            TestPerfRandom<SharkParamsNP7, sharkOperator>(
-                launchParams, Tests, testBase + 2, internalTestLoopCount);
-            TestPerfRandom<SharkParamsNP8, sharkOperator>(
-                launchParams, Tests, testBase + 3, internalTestLoopCount);
-            TestPerfRandom<SharkParamsNP9, sharkOperator>(
-                launchParams, Tests, testBase + 4, internalTestLoopCount);
-
-            TestPerfRandom<SharkParamsNP10, sharkOperator>(
-                launchParams, Tests, testBase + 5, internalTestLoopCount);
-            TestPerfRandom<SharkParamsNP11, sharkOperator>(
-                launchParams, Tests, testBase + 6, internalTestLoopCount);
-            TestPerfRandom<SharkParamsNP12, sharkOperator>(
-                launchParams, Tests, testBase + 7, internalTestLoopCount);
+        case BasicCorrectnessMode::PerfSingle:
+        case BasicCorrectnessMode::PerfSingleAdd:
+        case BasicCorrectnessMode::PerfSingleMultiply:
+        case BasicCorrectnessMode::PerfSingleRef:
+            for (int i = 0; i < numIters; ++i) {
+                TestPerfRandom<SharkParamsNP7, sharkOperator>(
+                    launchParams, Tests, testBase + 1, internalTestLoopCount);
+            }
             break;
 
         default:
@@ -2959,19 +2980,19 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
         int testNum = testBase + i;
 
         TestPerf<SharkFloatParams, sharkOperator>(launchParams,
-                                                     Tests,
-                                                     testNum,
-                                                     convertedMpfX.c_str(),
-                                                     convertedMpfY.c_str(),
-                                                     convertedMpfZ.c_str(),
-                                                     radiusYStr,
-                                                     mpfX,
-                                                     mpfY,
-                                                     mpfZ,
-                                                     hdrRadiusY,
-                                                     maxIters,
-                                                     expectedPeriod,
-                                                     expectedResult);
+                                                  Tests,
+                                                  testNum,
+                                                  convertedMpfX.c_str(),
+                                                  convertedMpfY.c_str(),
+                                                  convertedMpfZ.c_str(),
+                                                  radiusYStr,
+                                                  mpfX,
+                                                  mpfY,
+                                                  mpfZ,
+                                                  hdrRadiusY,
+                                                  maxIters,
+                                                  expectedPeriod,
+                                                  expectedResult);
     }
 
     mpf_clear(mpfX);
@@ -3067,19 +3088,19 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     for (int i = 0; i < numIters; i++) {
         int testNum = testBase + i;
         TestPerf<SharkFloatParams, sharkOperator>(launchParams,
-                                                     Tests,
-                                                     testNum,
-                                                     num1,
-                                                     num2,
-                                                     num3,
-                                                     radiusYStr,
-                                                     mpfX,
-                                                     mpfY,
-                                                     mpfZ,
-                                                     hdrRadiusY,
-                                                     maxIters,
-                                                     expectedPeriod,
-                                                     expectedResult);
+                                                  Tests,
+                                                  testNum,
+                                                  num1,
+                                                  num2,
+                                                  num3,
+                                                  radiusYStr,
+                                                  mpfX,
+                                                  mpfY,
+                                                  mpfZ,
+                                                  hdrRadiusY,
+                                                  maxIters,
+                                                  expectedPeriod,
+                                                  expectedResult);
     }
 
     mpf_clear(mpfX);
@@ -3374,18 +3395,27 @@ TestAllBinaryOp(int testBase)
 // Explicitly instantiate TestAllBinaryOp
 #define ADD_KERNEL(SharkFloatParams)                                                                    \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);                       \
-    template bool TestBinaryOperatorPerf<Operator::Add>(                                                \
-        int testBase, int numIters, int internalTestLoopCount, BasicCorrectnessMode mode);
+    template bool TestBinaryOperatorPerf<Operator::Add>(const HpShark::LaunchParams &,                  \
+                                                        int testBase,                                   \
+                                                        int numIters,                                   \
+                                                        int internalTestLoopCount,                      \
+                                                        BasicCorrectnessMode mode);
 
 #define MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                           \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);               \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(                                        \
-        int testBase, int numIters, int internalTestLoopCount, BasicCorrectnessMode mode);
+    template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(const HpShark::LaunchParams &,          \
+                                                                int testBase,                           \
+                                                                int numIters,                           \
+                                                                int internalTestLoopCount,              \
+                                                                BasicCorrectnessMode mode);
 
 #define REFERENCE_KERNEL(SharkFloatParams)                                                              \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
-    template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
-        int testBase, int numIters, int internalTestLoopCount, BasicCorrectnessMode mode);                     \
+    template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(const HpShark::LaunchParams &,       \
+                                                                   int testBase,                        \
+                                                                   int numIters,                        \
+                                                                   int internalTestLoopCount,           \
+                                                                   BasicCorrectnessMode mode);          \
     template bool TestFullReferencePerfView5<Operator::ReferenceOrbit>(TestTracker &,                   \
                                                                        int numBlocks,                   \
                                                                        int numThreads,                  \

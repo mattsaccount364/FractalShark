@@ -1015,6 +1015,7 @@ CarryPropagation_ABC_PPv3(uint32_t *globalSync1, // [0] holds convergence counte
                           DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
 {
 
+#ifdef TEST_SMALL_NORMALIZE_WARP
     if (grid.size() % 32 != 0) {
         CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1, // [0] holds convergence counter
                                                     idx,         // this thread’s global index
@@ -1036,6 +1037,7 @@ CarryPropagation_ABC_PPv3(uint32_t *globalSync1, // [0] holds convergence counte
                                                     debugGlobalState);
         return;
     }
+#endif
 
     // --- geometry ---
 #ifdef TEST_SMALL_NORMALIZE_WARP

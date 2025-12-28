@@ -2227,6 +2227,7 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision c
 
             if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound ||
                 combo->PeriodicityStatus == PeriodicityResult::Escaped ||
+                combo->PeriodicityStatus == PeriodicityResult::Unknown || // error
                 totalExecutedIters >= numIters) {
                 break;
             }

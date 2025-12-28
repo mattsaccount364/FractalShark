@@ -118,8 +118,7 @@ CountLeadingZeros (
 template<Dir D>
 static __device__ SharkForceInlineReleaseOnly void
 MultiWordShift (
-    const cooperative_groups::grid_group &grid,
-    const cooperative_groups::thread_block &block,
+    const int gridSize,
     const int32_t idx,
     const auto *SharkRestrict in,
     const int32_t  numActualDigitsPlusGuard,
@@ -129,9 +128,8 @@ MultiWordShift (
 )
 {
     MattsCudaAssert(numActualDigitsPlusGuard >= outSz);
-    const auto stride = grid.size();
 
-    for (int32_t i = idx; i < outSz; i += stride) {
+    for (int32_t i = idx; i < outSz; i += gridSize) {
         out[i] = FunnelShift32<D>(
             in,
             i,
@@ -443,8 +441,7 @@ find_msd_warp_ABC_DE(const uint64_t *extABC,
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 NormalizeAndCopyResult(
-    cooperative_groups::grid_group &grid,
-    cooperative_groups::thread_block &block,
+    const int stride,
     const int32_t                      idx,
     const int32_t                      actualDigits,    // = SharkFloatParams::GlobalNumUint32
     const int32_t                      numActualDigitsPlusGuard, // = SharkFloatParams::GlobalNumUint32 + SharkFloatParams::Guard
@@ -477,7 +474,6 @@ NormalizeAndCopyResult(
     // compile‐time sizes
     constexpr int N = SharkFloatParams::GlobalNumUint32 + SharkFloatParams::Guard;
     constexpr int Np1 = N + 1;
-    const int stride = int(grid.size());
 
     // 1) inject carries into the guard slot at index N
     extABC[N] = static_cast<uint32_t>(carryABC);
@@ -532,40 +528,34 @@ NormalizeAndCopyResult(
 
     // 4) funnel‐shift each extended array into its 32‐bit Digits
     if (shiftA > 0) {
-        MultiWordShift<Dir::Right>(
-            grid, block, idx,
+        MultiWordShift<Dir::Right>(stride, idx,
             extABC, Np1, shiftA,
             OutABC->Digits, actualDigits
         );
     } else if (shiftA < 0) {
-        MultiWordShift<Dir::Left>(
-            grid, block, idx,
+        MultiWordShift<Dir::Left>(stride, idx,
             extABC, Np1, -shiftA,
             OutABC->Digits, actualDigits
         );
     } else {
-        MultiWordShift<Dir::Left>(
-            grid, block, idx,
+        MultiWordShift<Dir::Left>(stride, idx,
             extABC, Np1, 0,
             OutABC->Digits, actualDigits
         );
     }
 
     if (shiftD > 0) {
-        MultiWordShift<Dir::Right>(
-            grid, block, idx,
+        MultiWordShift<Dir::Right>(stride, idx,
             extDE, Np1, shiftD,
             OutDE->Digits, actualDigits
         );
     } else if (shiftD < 0) {
-        MultiWordShift<Dir::Left>(
-            grid, block, idx,
+        MultiWordShift<Dir::Left>(stride, idx,
             extDE, Np1, -shiftD,
             OutDE->Digits, actualDigits
         );
     } else {
-        MultiWordShift<Dir::Left>(
-            grid, block, idx,
+        MultiWordShift<Dir::Left>(stride, idx,
             extDE, Np1, 0,
             OutDE->Digits, actualDigits
         );
@@ -946,9 +936,7 @@ static __device__ void AddHelperSeparates(
 
     // 2) Normalize & write *only* that branch
     if (useTrueBranch) {
-        NormalizeAndCopyResult<SharkFloatParams>(
-            grid,
-            block,
+        NormalizeAndCopyResult<SharkFloatParams>(grid.size(),
             idx,
             numActualDigits,
             numActualDigitsPlusGuard,
@@ -964,9 +952,7 @@ static __device__ void AddHelperSeparates(
             deSign
         );
     } else {
-        NormalizeAndCopyResult<SharkFloatParams>(
-            grid,
-            block,
+        NormalizeAndCopyResult<SharkFloatParams>(grid.size(),
             idx,
             numActualDigits,
             numActualDigitsPlusGuard,

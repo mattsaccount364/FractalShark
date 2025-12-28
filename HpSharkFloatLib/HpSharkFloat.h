@@ -26,11 +26,14 @@
 
 enum class BasicCorrectnessMode : int {
     Error = 0,
-    Correctness_P1 = 1,      // Params1 only
-    PerfSub = 2,             // Individual add/multiply kernels, not the full one
-    PerfSweep = 3,           // Sweep blocks/threads
-    PerfSingle = 4,          // Single block/thread config (DEFAULT)
-    Correctness_P1_to_P5 = 5 // Params1..5
+    Correctness_P1 = 1, // Params1 only
+    PerfSub = 2,        // Individual add/multiply kernels, not the full one
+    PerfSweep = 3,      // Sweep blocks/threads
+    PerfSingle = 4,
+    PerfSingleAdd = 5,
+    PerfSingleMultiply = 6,
+    PerfSingleRef = 7,       // Single block/thread config (DEFAULT)
+    Correctness_P1_to_P5 = 8 // Params1..5
 };
 
 namespace HpShark {

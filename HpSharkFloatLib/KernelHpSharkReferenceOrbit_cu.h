@@ -174,13 +174,20 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
         }
     }
 
+    cudaError_t err;
+
     HpShark::LaunchParams newLaunchParams{launchParams};
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
-        launchConfig.compute(HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+        err = launchConfig.compute(HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in compute launch config: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
     }
 
-    cudaError_t err = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuLoop<SharkFloatParams>,
+    err  = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuLoop<SharkFloatParams>,
                                                   dim3(newLaunchParams.NumBlocks),
                                                   dim3(newLaunchParams.ThreadsPerBlock),
                                                   kernelArgs,
@@ -194,7 +201,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                   << "err: " << err << std::endl;
     }
 
-    cudaDeviceSynchronize();
+    err = cudaDeviceSynchronize();
 
     if (err != cudaSuccess) {
         std::cerr << "CUDA error in MultiplyKernelKaratsubaV2: " << cudaGetErrorString(err) << std::endl;

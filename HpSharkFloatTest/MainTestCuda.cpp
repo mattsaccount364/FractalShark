@@ -7,6 +7,7 @@
 #include "Tests.h"
 
 #include "Callstacks.h"
+#include "LaunchParams.h"
 #include "HDRFloat.h"
 #include "MainTestCuda.h"
 #include "heap_allocator/include/HeapCpp.h"
@@ -109,18 +110,19 @@ PromptIntWithTimeout(const std::string &promptText,
 {
     std::cout << promptText << " " << std::flush;
 
-    // If user has interacted once, make prompts "sticky" (wait indefinitely).
-    const bool waitForever = interactiveMode;
-    auto deadline =
-        std::chrono::steady_clock::now() + (waitForever ? std::chrono::hours(24 * 365 * 100) // ~100y
-                                                        : std::chrono::seconds(timeoutSec));
+    bool waitForever = interactiveMode;
+
+    auto deadline = std::chrono::steady_clock::now() + (waitForever ? std::chrono::hours(24 * 365 * 100)
+                                                                    : std::chrono::seconds(timeoutSec));
 
     std::string buf;
     bool pressedEnter = false;
+    bool sawEditingKey = false; // <-- new
 
-    while (std::chrono::steady_clock::now() < deadline) {
+    while (waitForever || std::chrono::steady_clock::now() < deadline) {
         if (_kbhit()) {
             int ch = _getch();
+
             if (ch == '\r' || ch == '\n') {
                 pressedEnter = true;
                 std::cout << "\n";
@@ -129,18 +131,25 @@ PromptIntWithTimeout(const std::string &promptText,
 
             // Backspace
             if (ch == 8) {
+                sawEditingKey = true;
+                waitForever = true;     // <-- new: don't timeout mid-edit
+                interactiveMode = true; // optional: make prompts sticky globally now
+
                 if (!buf.empty()) {
                     buf.pop_back();
-                    // Erase last char from console
                     std::cout << "\b \b" << std::flush;
                 }
                 continue;
             }
 
-            // Ctrl+C etc: treat as "no-op" (don’t inject weird chars)
+            // Ctrl+C etc: ignore
             if (ch < 32) {
                 continue;
             }
+
+            sawEditingKey = true;
+            waitForever = true;     // <-- new
+            interactiveMode = true; // optional (see note below)
 
             buf.push_back((char)ch);
             std::cout << (char)ch << std::flush;
@@ -152,20 +161,11 @@ PromptIntWithTimeout(const std::string &promptText,
     PromptResult out;
     out.gotAnyInput = !buf.empty();
 
-    // If user typed anything, consider them "interactive" from now on.
-    if (out.gotAnyInput) {
-        interactiveMode = true;
-    }
-
-    // Timeout cases
+    // Timeout case: only possible if we never went waitForever
     if (!pressedEnter && !waitForever && std::chrono::steady_clock::now() >= deadline) {
-        if (buf.empty()) {
-            std::cout << "\n(no input in " << timeoutSec << "s, defaulting to " << defaultValue << ")\n";
-            out.value = defaultValue;
-            return out;
-        }
-        // User started typing but didn't hit Enter before timeout; accept what we have.
-        std::cout << "\n(timeout; accepting partial input)\n";
+        std::cout << "\n(no input in " << timeoutSec << "s, defaulting to " << defaultValue << ")\n";
+        out.value = defaultValue;
+        return out;
     }
 
     if (buf.empty()) {
@@ -176,19 +176,17 @@ PromptIntWithTimeout(const std::string &promptText,
     try {
         size_t idx = 0;
         int v = std::stoi(buf, &idx, 10);
-        // Reject trailing non-space garbage
         for (; idx < buf.size(); ++idx) {
             if (buf[idx] != ' ' && buf[idx] != '\t') {
                 throw std::runtime_error("trailing garbage");
             }
         }
         out.value = v;
-        return out;
     } catch (...) {
         std::cout << "(could not parse \"" << buf << "\", defaulting to " << defaultValue << ")\n";
         out.value = defaultValue;
-        return out;
     }
+    return out;
 }
 
 // -----------------------------------------------------------------------------
@@ -255,30 +253,6 @@ RunCorrectnessTest(BasicCorrectnessMode mode)
 // Performance modes (split into smaller dispatchable functions)
 // -----------------------------------------------------------------------------
 static int
-RunPerfSubtests(int numIters, int internalTestLoopCount, BasicCorrectnessMode mode)
-{
-    bool res = true;
-
-    // Add / Multiply / Full perf (delegates per-mode behavior to TestBinaryOperatorPerf)
-    res =
-        TestBinaryOperatorPerf<Operator::Add>(TestIds::kAddPerf, numIters, internalTestLoopCount, mode);
-    if (!ContinueAfterFailure(res))
-        return 0;
-
-    res = TestBinaryOperatorPerf<Operator::MultiplyNTT>(
-        TestIds::kMultiplyPerf, numIters, internalTestLoopCount, mode);
-    if (!ContinueAfterFailure(res))
-        return 0;
-
-    res = TestBinaryOperatorPerf<Operator::ReferenceOrbit>(
-        TestIds::kFullPerf, numIters, internalTestLoopCount, mode);
-    if (!ContinueAfterFailure(res))
-        return 0;
-
-    return 1;
-}
-
-static int
 RunPerfFullSingle(int timeoutInSec, bool &interactiveMode, int numIters, int internalTestLoopCount)
 {
     bool res = true;
@@ -315,21 +289,42 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
     TestTracker Tests;
 
     int testBaseLocal = TestIds::kPerfSweepStart;
+    constexpr std::pair<int, int> blockThreadPairs[] = {
+        {64, 128},
+        {64, 256},
+        {64, 512},
 
-    for (int numBlocks = 16; numBlocks <= 256; numBlocks *= 2) {
-        for (int numThreads = 64; numThreads <= 256; numThreads *= 2) {
-            res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-                Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
-            if (!ContinueAfterFailure(res))
-                return 0;
-            testBaseLocal += 100;
+        {65, 256},
 
-            res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-                Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
-            if (!ContinueAfterFailure(res))
-                return 0;
-            testBaseLocal += 100;
-        }
+        {128, 128},
+        {128, 256},
+        {128, 512},
+
+        {129, 256},
+
+        {256, 128},
+        {256, 256},
+
+        {170, 128},
+        {170, 256},
+        {170, 512},
+
+        {340, 128},
+        {340, 256},
+    };
+
+    for (const auto &[numBlocks, numThreads] : blockThreadPairs) {
+        res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
+            Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
+        if (!ContinueAfterFailure(res))
+            return 0;
+        testBaseLocal += 100;
+
+        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+            Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
+        if (!ContinueAfterFailure(res))
+            return 0;
+        testBaseLocal += 100;
     }
 
     return Tests.CheckAllTestsPassed();
@@ -347,14 +342,35 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
     auto iters = PromptIntWithTimeout("NumIters? Default 5", 5, timeoutInSec, interactiveMode);
     auto loops =
         PromptIntWithTimeout("CUDA iteration count? Default 1000", 1000, timeoutInSec, interactiveMode);
+    auto numBlocks = PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
+    auto numThreads =
+        PromptIntWithTimeout("NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
+    const HpShark::LaunchParams launchParams{numBlocks.value, numThreads.value};
 
     const int numIters = iters.value;
     const int internalTestLoopCount = loops.value;
 
     // If PerfSub is selected, run the operator perf suite first.
     if (mode == BasicCorrectnessMode::PerfSub) {
-        if (!RunPerfSubtests(numIters, internalTestLoopCount, mode))
+        bool res = true;
+
+        // Add / Multiply / Full perf (delegates per-mode behavior to TestBinaryOperatorPerf)
+        res = TestBinaryOperatorPerf<Operator::Add>(
+            launchParams, TestIds::kAddPerf, numIters, internalTestLoopCount, mode);
+        if (!ContinueAfterFailure(res))
             return 0;
+
+        res = TestBinaryOperatorPerf<Operator::MultiplyNTT>(
+            launchParams, TestIds::kMultiplyPerf, numIters, internalTestLoopCount, mode);
+        if (!ContinueAfterFailure(res))
+            return 0;
+
+        res = TestBinaryOperatorPerf<Operator::ReferenceOrbit>(
+            launchParams, TestIds::kFullPerf, numIters, internalTestLoopCount, mode);
+        if (!ContinueAfterFailure(res))
+            return 0;
+
+        return 1;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingle) {
@@ -366,6 +382,28 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         if (!RunPerfFullSweep(numIters, internalTestLoopCount))
             return 0;
     }
+
+    return 1;
+}
+
+template <Operator op>
+static int
+RunPerfBasicOp(int testBase, BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)     {
+    auto iters = PromptIntWithTimeout("NumIters? Default 5", 5, timeoutInSec, interactiveMode);
+    auto loops =
+        PromptIntWithTimeout("CUDA iteration count? Default 1000", 1000, timeoutInSec, interactiveMode);
+    auto numBlocks =
+        PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
+    auto numThreads =
+        PromptIntWithTimeout("NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
+    const HpShark::LaunchParams launchParams{numBlocks.value, numThreads.value};
+
+    const int numIters = iters.value;
+    const int internalTestLoopCount = loops.value;
+
+    auto res = TestBinaryOperatorPerf<op>(launchParams, testBase, numIters, internalTestLoopCount, mode);
+    if (!ContinueAfterFailure(res))
+        return 0;
 
     return 1;
 }
@@ -392,12 +430,30 @@ main(int, char **)
     // Mode prompt: keep default consistent with the enum value
     const int defaultModeInt = static_cast<int>(BasicCorrectnessMode::PerfSingle);
     std::ostringstream modePrompt;
+
+    /*
+    enum class BasicCorrectnessMode : int {
+    Error = 0,
+    Correctness_P1 = 1, // Params1 only
+    PerfSub = 2,        // Individual add/multiply kernels, not the full one
+    PerfSweep = 3,      // Sweep blocks/threads
+    PerfSingle = 4,
+    PerfSingleAdd = 5,
+    PerfSingleMultiply = 6,
+    PerfSingleRef = 7,       // Single block/thread config (DEFAULT)
+    Correctness_P1_to_P5 = 8 // Params1..5
+};
+
+*/
     modePrompt << "Mode? Default=" << defaultModeInt << " "
                << "1=Correctness(P1)" << std::endl
                << "2=PerfSub" << std::endl
                << "3=PerfSweep" << std::endl
                << "4=PerfSingle" << std::endl
-               << "5=Correctness(P1..P5)" << std::endl
+               << "5=PerfSingleAdd" << std::endl
+               << "6=PerfSingleMultiply" << std::endl
+               << "7=PerfSingleRef" << std::endl
+               << "8=Correctness(P1..P5)" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
@@ -419,6 +475,15 @@ main(int, char **)
             mode = BasicCorrectnessMode::PerfSingle;
             break;
         case 5:
+            mode = BasicCorrectnessMode::PerfSingleAdd;
+            break;
+        case 6:
+            mode = BasicCorrectnessMode::PerfSingleMultiply;
+            break;
+        case 7:
+            mode = BasicCorrectnessMode::PerfSingleRef;
+            break;
+        case 8:
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
         default:
@@ -442,19 +507,25 @@ main(int, char **)
     switch (mode) {
         case BasicCorrectnessMode::Correctness_P1:
         case BasicCorrectnessMode::Correctness_P1_to_P5:
-            if (!RunCorrectnessTest(mode)) {
-                GlobalCallstacks->FreeCallstacks();
-                return 0;
-            }
+            RunCorrectnessTest(mode);
             break;
 
         case BasicCorrectnessMode::PerfSub:
         case BasicCorrectnessMode::PerfSweep:
         case BasicCorrectnessMode::PerfSingle:
-            if (!RunPerfModes(mode, kTimeoutInSec, interactiveMode)) {
-                GlobalCallstacks->FreeCallstacks();
-                return 0;
-            }
+            RunPerfModes(mode, kTimeoutInSec, interactiveMode);
+            break;
+
+        case BasicCorrectnessMode::PerfSingleAdd:
+            RunPerfBasicOp<Operator::Add>(TestIds::kAddPerf, mode, kTimeoutInSec, interactiveMode);
+            break;
+        case BasicCorrectnessMode::PerfSingleMultiply:
+            RunPerfBasicOp<Operator::MultiplyNTT>(
+                TestIds::kMultiplyPerf, mode, kTimeoutInSec, interactiveMode);
+            break;
+        case BasicCorrectnessMode::PerfSingleRef:
+            RunPerfBasicOp<Operator::ReferenceOrbit>(
+                TestIds::kFullPerf, mode, kTimeoutInSec, interactiveMode);
             break;
 
         default:

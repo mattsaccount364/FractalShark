@@ -173,15 +173,21 @@ InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                              uint64_t numIters)
 {
     auto *comboGpu = combo.comboGpu;
-    cudaMemcpy(&comboGpu->MaxRuntimeIters, &numIters, sizeof(uint64_t), cudaMemcpyHostToDevice);
+    auto res = cudaMemcpy(&comboGpu->MaxRuntimeIters, &numIters, sizeof(uint64_t), cudaMemcpyHostToDevice);
+    if (res != cudaSuccess) {
+        std::cerr << "CUDA error in memcpy 1: " << cudaGetErrorString(res) << std::endl;
+    }
 
     ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
         launchParams, *reinterpret_cast<cudaStream_t *>(&combo.stream), combo.kernelArgs);
 
     // Note: comboGpu is device pointer
     // Note: we copy everything back, even host-only stuff
-    cudaMemcpy(
+    res = cudaMemcpy(
         &combo, comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    if (res != cudaSuccess) {
+        std::cerr << "CUDA error in memcpy 2: " << cudaGetErrorString(res) << std::endl;
+    }
 }
 
 template <class SharkFloatParams>

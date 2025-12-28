@@ -59,6 +59,7 @@ CudaLaunchConfig::compute(const void *kernelFunc, size_t dynSmemBytes)
 {
     auto fail = [&](cudaError_t e) {
         status = e;
+        __debugbreak();
         return e;
     };
     if (!kernelFunc)

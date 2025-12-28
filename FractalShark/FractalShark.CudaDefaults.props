@@ -24,7 +24,7 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
 
       <!-- Debug builds for two architectures for convenience -->
-      <CodeGeneration>compute_75,sm_75;compute_120,sm_120;</CodeGeneration>
+      <CodeGeneration>compute_75,sm_75;compute_120,sm_120;compute_120,compute_120;</CodeGeneration>
 
       <Optimization>Od</Optimization>
       <!-- No fast-math in Debug -->
@@ -56,7 +56,7 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
 
       <!-- SM89 native code plus embedded PTX for forward compatibility -->
-      <CodeGeneration>compute_89,sm_89;compute_120,sm_120;</CodeGeneration>
+      <CodeGeneration>compute_89,sm_89;compute_120,sm_120;compute_120,compute_120;</CodeGeneration>
 
       <Optimization>O3</Optimization>
       <FastMath>true</FastMath>
@@ -69,7 +69,7 @@
         - extra device vectorization: helps in some 64-bit / carry-heavy kernels
         - same compiler override + host flag handling as Debug
       -->
-      <AdditionalOptions>-allow-unsupported-compiler -std=c++20 --threads=0 --default-stream per-thread --expt-relaxed-constexpr --extra-device-vectorization -diag-suppress=177 -Xcompiler="/Zc:preprocessor /bigobj" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-allow-unsupported-compiler -std=c++20 --threads=0 --default-stream per-thread --expt-relaxed-constexpr -diag-suppress=177 -Xcompiler="/Zc:preprocessor /bigobj" %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
 

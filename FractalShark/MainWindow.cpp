@@ -199,117 +199,6 @@ MainWindow::MainWindow::DrawFractalShark()
     glContext->DrawFractalShark(hWnd);
 }
 
-void
-MainWindow::MainWindow::DrawFractalSharkGdi(int nCmdShow)
-{
-    static std::mt19937 rng{std::random_device{}()};
-    static std::uniform_int_distribution<int> dist(0, 2);
-
-    const int choice = dist(rng);
-
-    LPCWSTR resStr = nullptr;
-    switch (choice) {
-        case 0:
-            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH1);
-            break;
-        case 1:
-            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH2);
-            break;
-        case 2:
-            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH3);
-            break;
-    }
-
-    HRSRC hRes = FindResource(hInst, resStr, L"PNG");
-    if (hRes == nullptr) {
-        return;
-    }
-
-    //  Convert the HRSRC into a pointer to the actual data
-    HGLOBAL hResData = LoadResource(hInst, hRes);
-    if (hResData == nullptr) {
-        return;
-    }
-
-    void *pResData = LockResource(hResData);
-    if (pResData == nullptr) {
-        return;
-    }
-
-    //  Get the size of the resource data
-    DWORD dwSize = SizeofResource(hInst, hRes);
-    if (dwSize == 0) {
-        return;
-    }
-
-    WPngImage image{};
-    image.loadImageFromRAM(pResData, dwSize, WPngImage::PixelFormat::kPixelFormat_RGBA8);
-
-    std::vector<uint8_t> imageBytes;
-    imageBytes.resize(image.width() * image.height() * 4);
-
-    for (int y = 0; y < image.height(); y++) {
-        for (int x = 0; x < image.width(); x++) {
-            auto pixel = image.get8(x, y);
-            imageBytes[(y * image.width() + x) * 4 + 0] = pixel.b;
-            imageBytes[(y * image.width() + x) * 4 + 1] = pixel.g;
-            imageBytes[(y * image.width() + x) * 4 + 2] = pixel.r;
-            imageBytes[(y * image.width() + x) * 4 + 3] = pixel.a;
-        }
-    }
-
-    RECT windowDimensions;
-    GetClientRect(hWnd, &windowDimensions);
-
-    // Create a bitmap and render it to hWnd
-    HDC hdc = GetDC(hWnd);
-    HDC hdcMem = CreateCompatibleDC(hdc);
-    HBITMAP hBitmap = CreateBitmap(image.width(), image.height(), 1, 32, imageBytes.data());
-
-    // Render the bitmap to the window, scaling the bitmap down if needed.
-    // If it needs to be scaled up, just leave it at its original size.
-    SelectObject(hdcMem, hBitmap);
-
-    // Find the min width and height between the window and the bitmap, and render it up to that size
-    const int windowWidth = (int)windowDimensions.right;
-    const int windowHeight = (int)windowDimensions.bottom;
-
-    SetStretchBltMode(hdc, HALFTONE);
-    SetBrushOrgEx(hdc, 0, 0, nullptr);
-
-    // Clear the window with black
-    RECT rt;
-    GetClientRect(hWnd, &rt);
-    FillRect(hdc, &rt, (HBRUSH)GetStockObject(BLACK_BRUSH));
-
-    // Display!
-    ShowWindow(hWnd, nCmdShow);
-
-    // Given the image width and window dimensions, calculate the starting point for the image
-    // such that it ends up centered.
-    int startX = (windowWidth - image.width()) / 2;
-    int startY = (windowHeight - image.height()) / 2;
-
-    if (windowWidth < image.width() || windowHeight < image.height()) {
-        StretchBlt(
-            hdc, 0, 0, windowWidth, windowHeight, hdcMem, 0, 0, image.width(), image.height(), SRCCOPY);
-    } else {
-        // Center the image
-        BitBlt(hdc, startX, startY, image.width(), image.height(), hdcMem, 0, 0, SRCCOPY);
-    }
-
-    // Set the window as opaque
-    SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 255, LWA_ALPHA);
-
-    // ShowWindow(hWnd, nCmdShow);
-    // ShowWindow(hWnd, SW_RESTORE);
-
-    // Clean up
-    DeleteObject(hBitmap);
-    DeleteDC(hdcMem);
-    ReleaseDC(hWnd, hdc);
-}
-
 //
 // Registers the window class
 // Note CS_OWNDC.  This is important for OpenGL.
@@ -336,107 +225,238 @@ MainWindow::MyRegisterClass(HINSTANCE hInstance)
     return RegisterClassEx(&wcex);
 }
 
-//
-//   PURPOSE: Saves instance handle and creates main window
-//
-//   COMMENTS:
-//
-//     Here we create the main window and return its handle,
-//     and we perform other initialization.
-//
 HWND
 MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
-{ // Store instance handle in our global variable
+{
+    (void)nCmdShow; // ignore debugger-dependent startup show state
     hInst = hInstance;
 
-    const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
-    const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);
+    // Use *virtual* screen metrics (multi-monitor correct) and signed ints.
+    const int vLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const int vTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    const int vWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const int vHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
-    DWORD startX, startY;
-    DWORD width, height;
+    int startX = 0, startY = 0;
+    int width = 0, height = 0;
 
-    if constexpr (startWindowed) {
-        width = std::min(scrnWidth / 2, scrnHeight / 2);
-        height = width;
-        startX = scrnWidth / 2 - width / 2;
-        startY = scrnHeight / 2 - width / 2;
+    // --- Splash: always windowed centered square-ish ---
+    width = std::min(vWidth / 2, vHeight / 2);
+    height = width;
+    startX = vLeft + (vWidth - width) / 2;
+    startY = vTop + (vHeight - height) / 2;
 
-        // Uncomment to start in smaller window
-        gWindowed = true;
-        // MenuWindowed(hWnd, true);
-    } else {
-        startX = 0;
-        startY = 0;
-        width = scrnWidth;
-        height = scrnHeight;
+    if constexpr (forceStartWidth)
+        width = (int)forceStartWidth;
+    if constexpr (forceStartHeight)
+        height = (int)forceStartHeight;
 
-        gWindowed = false;
-    }
+    // --- SPLASH WINDOW: borderless ---
+    // Create hidden first to prevent Windows from applying "restore placement" at first show.
+    DWORD style = WS_POPUP;
+    DWORD exStyle = WS_EX_APPWINDOW | WS_EX_LAYERED; // taskbar + layered (you use alpha)
 
-    if constexpr (forceStartWidth) {
-        width = forceStartWidth;
-    }
-
-    if constexpr (forceStartHeight) {
-        height = forceStartHeight;
-    }
-
-    DWORD wndFlags = WS_POPUP | WS_THICKFRAME;
-
-    if (!startWindowed) {
-        wndFlags |= WS_MAXIMIZE;
-    }
-
-    // Create the window
-    hWnd = CreateWindow(szWindowClass,
-                        L"",
-                        wndFlags,
-                        startX,
-                        startY,
-                        width,
-                        height,
-                        nullptr,
-                        nullptr,
-                        hInstance,
-                        nullptr);
+    hWnd = CreateWindowExW(exStyle,
+                           szWindowClass,
+                           L"",
+                           style,
+                           startX,
+                           startY,
+                           width,
+                           height,
+                           nullptr,
+                           nullptr,
+                           hInstance,
+                           nullptr);
 
     if (!hWnd) {
         return nullptr;
     }
 
-    // Initialize the 8 bytes after the window handle to point to this object
-    SetWindowLongPtrA(hWnd, 0, (LONG_PTR)this);
+    // Store "this" in the extra bytes *immediately*.
+    SetWindowLongPtrW(hWnd, 0, (LONG_PTR)this);
 
-    // Use  SetWindowLong to make the window layered
-    SetWindowLongPtr(hWnd, GWL_EXSTYLE, GetWindowLongPtr(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
-
-    // Set the window as transparent
+    // Start fully transparent (layered already set via CreateWindowEx)
     SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 0, LWA_ALPHA);
 
-    // DrawFractalShark(hWnd);
-    DrawFractalSharkGdi(nCmdShow);
+    // Force the initial placement BEFORE first show (this matters).
+    SetWindowPos(hWnd,
+                 nullptr,
+                 startX,
+                 startY,
+                 width,
+                 height,
+                 SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
-    // Put us on top
-    // SetWindowPos (hWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    // Show splash deterministically
+    DrawFractalSharkGdi(SW_SHOWNORMAL);
 
-    // Create the menu
+    // Create menu
     gPopupMenu = FractalShark::DynamicPopupMenu::Create();
     FractalShark::DynamicPopupMenu::SetCurrentRenderAlgorithmId(IDM_ALG_AUTO);
 
-    // Create the fractal
-    RECT rt;
+    // Create fractal using current client size
+    RECT rt{};
     GetClientRect(hWnd, &rt);
 
     gFractal =
         std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false, gJobObj->GetCommitLimitInBytes());
 
+    gWindowed = true;
+
+    // --- MAIN WINDOW: borderless fullscreen ---
     if constexpr (finishWindowed == false) {
-        SendMessage(hWnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+
+        // Hide during transition so Windows doesn't "restore" over your SetWindowPos.
+        ShowWindow(hWnd, SW_HIDE);
+
+        // Borderless popup style (remove any leftover bits defensively)
+        LONG_PTR newStyle = GetWindowLongPtrW(hWnd, GWL_STYLE);
+        newStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+        newStyle |= WS_POPUP;
+        SetWindowLongPtrW(hWnd, GWL_STYLE, newStyle);
+
+        LONG_PTR newEx = GetWindowLongPtrW(hWnd, GWL_EXSTYLE);
+        newEx |= WS_EX_APPWINDOW;
+        // keep WS_EX_LAYERED if you want; or drop it after splash:
+        // newEx &= ~WS_EX_LAYERED;
+        SetWindowLongPtrW(hWnd, GWL_EXSTYLE, newEx);
+
+        // Pick monitor nearest the *current* window (splash) position.
+        HMONITOR mon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfoW(mon, &mi);
+
+        RECT r = mi.rcMonitor; // rcWork if you want to respect taskbar
+
+        // --- CRITICAL: also set "normal" placement so Windows stops restoring elsewhere ---
+        WINDOWPLACEMENT wp{};
+        wp.length = sizeof(wp);
+        wp.showCmd = SW_SHOWNORMAL;
+        wp.flags = 0;
+        wp.ptMinPosition = {0, 0};
+        wp.ptMaxPosition = {0, 0};
+        wp.rcNormalPosition = r;
+        SetWindowPlacement(hWnd, &wp);
+
+        // Apply bounds
+        SetWindowPos(hWnd,
+                     HWND_NOTOPMOST,
+                     r.left,
+                     r.top,
+                     r.right - r.left,
+                     r.bottom - r.top,
+                     SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE);
+
+        // Now show
+        ShowWindow(hWnd, SW_SHOW);
+        UpdateWindow(hWnd);
+
         gWindowed = false;
+
+        // Update fractal dims after resize
+        GetClientRect(hWnd, &rt);
+        gFractal->ResetDimensions(rt.right, rt.bottom);
     }
 
     return hWnd;
 }
+
+
+void
+MainWindow::DrawFractalSharkGdi(int /*nCmdShow*/)
+{
+    static std::mt19937 rng{std::random_device{}()};
+    static std::uniform_int_distribution<int> dist(0, 2);
+
+    const int choice = dist(rng);
+
+    LPCWSTR resStr = nullptr;
+    switch (choice) {
+        case 0:
+            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH1);
+            break;
+        case 1:
+            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH2);
+            break;
+        case 2:
+            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH3);
+            break;
+    }
+
+    HRSRC hRes = FindResource(hInst, resStr, L"PNG");
+    if (!hRes)
+        return;
+
+    HGLOBAL hResData = LoadResource(hInst, hRes);
+    if (!hResData)
+        return;
+
+    void *pResData = LockResource(hResData);
+    if (!pResData)
+        return;
+
+    DWORD dwSize = SizeofResource(hInst, hRes);
+    if (!dwSize)
+        return;
+
+    WPngImage image{};
+    image.loadImageFromRAM(pResData, dwSize, WPngImage::PixelFormat::kPixelFormat_RGBA8);
+
+    std::vector<uint8_t> imageBytes(image.width() * image.height() * 4);
+
+    for (int y = 0; y < image.height(); y++) {
+        for (int x = 0; x < image.width(); x++) {
+            auto pixel = image.get8(x, y);
+            imageBytes[(y * image.width() + x) * 4 + 0] = pixel.b;
+            imageBytes[(y * image.width() + x) * 4 + 1] = pixel.g;
+            imageBytes[(y * image.width() + x) * 4 + 2] = pixel.r;
+            imageBytes[(y * image.width() + x) * 4 + 3] = pixel.a;
+        }
+    }
+
+    // Deterministic first show (avoid "restore placement" nonsense)
+    ShowWindow(hWnd, SW_SHOWNOACTIVATE);
+    UpdateWindow(hWnd);
+
+    RECT windowDimensions{};
+    GetClientRect(hWnd, &windowDimensions);
+
+    HDC hdc = GetDC(hWnd);
+    HDC hdcMem = CreateCompatibleDC(hdc);
+    HBITMAP hBitmap = CreateBitmap(image.width(), image.height(), 1, 32, imageBytes.data());
+
+    SelectObject(hdcMem, hBitmap);
+
+    const int windowWidth = (int)windowDimensions.right;
+    const int windowHeight = (int)windowDimensions.bottom;
+
+    SetStretchBltMode(hdc, HALFTONE);
+    SetBrushOrgEx(hdc, 0, 0, nullptr);
+
+    RECT rt{};
+    GetClientRect(hWnd, &rt);
+    FillRect(hdc, &rt, (HBRUSH)GetStockObject(BLACK_BRUSH));
+
+    const int startX = (windowWidth - image.width()) / 2;
+    const int startY = (windowHeight - image.height()) / 2;
+
+    if (windowWidth < image.width() || windowHeight < image.height()) {
+        StretchBlt(
+            hdc, 0, 0, windowWidth, windowHeight, hdcMem, 0, 0, image.width(), image.height(), SRCCOPY);
+    } else {
+        BitBlt(hdc, startX, startY, image.width(), image.height(), hdcMem, 0, 0, SRCCOPY);
+    }
+
+    // Make opaque once painted
+    SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 255, LWA_ALPHA);
+
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(hWnd, hdc);
+}
+
 
 //
 // Performs all cleanup operations
@@ -1110,6 +1130,13 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 
 
         case WM_SIZE: {
+            // Keep gWindowed synced with actual window state
+            if (wParam == SIZE_MAXIMIZED) {
+                gWindowed = false;
+            } else if (wParam == SIZE_RESTORED) {
+                gWindowed = true;
+            }
+
             if (gFractal) {
                 gFractal->ResetDimensions(LOWORD(lParam), HIWORD(lParam));
                 PaintAsNecessary();

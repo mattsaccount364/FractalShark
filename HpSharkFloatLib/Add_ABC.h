@@ -1738,26 +1738,27 @@ CarryPropagation_ABC_PPv4(uint32_t *globalSync1, // [0] holds convergence counte
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
-CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counter
-                          uint32_t *globalSync2,
-                          uint64_t *SharkRestrict shared_data,    // >= 48KB shared available
-                          const int32_t idx,                      // this thread’s global index
-                          const int32_t numActualDigitsPlusGuard, // N
-                          uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
-                          uint64_t *SharkRestrict extResultFalse, // Phase1_ABC “false” limbs
-                          uint64_t *SharkRestrict final128_DE,    // Phase1_DE limbs
-                          uint32_t *SharkRestrict cur1,           // length N+1
-                          uint32_t *SharkRestrict next1,          // length N+1 (reused as desc[])
-                          uint32_t *SharkRestrict cur2,           // length N+1
-                          uint32_t *SharkRestrict next2,          // length N+1
-                          uint32_t *SharkRestrict cur3,           // length N+1
-                          uint32_t *SharkRestrict next3,          // length N+1
-                          int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
-                          int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
-                          int32_t &carryAcc_DE,                   // out: final unsigned carry
-                          cg::thread_block &block,
-                          cg::grid_group &grid,
-                          DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
+CarryPropagation_ABC_PPv5(
+    uint32_t *globalSync1,                  // [0] holds convergence counter (we leave it unused here)
+    uint32_t *globalSync2,                  // MUST have at least 2 u32s: [0]=procCounter, [1]=maxProcId
+    uint64_t *SharkRestrict shared_data,    // >= 48KB shared available
+    const int32_t idx,                      // this thread’s global index
+    const int32_t numActualDigitsPlusGuard, // N
+    uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
+    uint64_t *SharkRestrict extResultFalse, // Phase1_ABC “false” limbs
+    uint64_t *SharkRestrict final128_DE,    // Phase1_DE limbs
+    uint32_t *SharkRestrict cur1,           // length N+1
+    uint32_t *SharkRestrict next1,          // length N+1 (reused as desc[])
+    uint32_t *SharkRestrict cur2,           // length N+1
+    uint32_t *SharkRestrict next2,          // length N+1
+    uint32_t *SharkRestrict cur3,           // length N+1
+    uint32_t *SharkRestrict next3,          // length N+1
+    int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
+    int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
+    int32_t &carryAcc_DE,                   // out: final unsigned carry
+    cg::thread_block &block,
+    cg::grid_group &grid,
+    DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
     if (grid.size() % 32 != 0) {
@@ -1783,24 +1784,30 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
     }
 #endif
 
+    // Store (publish) descriptor. No atomic needed: single writer per desc[k].
+    // Release-publish as membar + store (ptxas-safe on sm_120).
+    auto store_desc_u32 = [](uint32_t *addr, uint32_t v) {
+        asm volatile("membar.gl;\n\t"
+                     "st.global.u32 [%0], %1;\n\t"
+                     :
+                     : "l"(addr), "r"(v)
+                     : "memory");
+    };
+
+    // L2-cached load (cg) (bypass L1). Safe for polling.
+    auto load_desc_u32 = [](const uint32_t *addr) -> uint32_t {
+        uint32_t v;
+        asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(v) : "l"(addr));
+        return v;
+    };
+
     const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
     const int totalThreads = gridDim.x * blockDim.x;
 
     // --------------------------------------------------------------------
-    // Phase 0/1 setup identical to v4/v4b (grid-wide init + split hi/lo)
-    // --------------------------------------------------------------------
-    for (int i = tid; i <= numActualDigitsPlusGuard; i += totalThreads) {
-        cur1[i] = cur2[i] = cur3[i] = 0;
-        next1[i] = next2[i] = next3[i] = 0;
-    }
-
-    if (tid == 0) {
-        *globalSync1 = 0;
-        *globalSync2 = 0;
-    }
-    grid.sync();
-
     // Phase 0: split 64-bit limbs -> lo in ext*, hi in next*[i+1]
+    //          zero cur[*]
+    // --------------------------------------------------------------------
     for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
         const uint64_t limbT = extResultTrue[i];
         const uint64_t limbF = extResultFalse[i];
@@ -1813,10 +1820,34 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
         next1[i + 1] = static_cast<uint32_t>(limbT >> 32);
         next2[i + 1] = static_cast<uint32_t>(limbF >> 32);
         next3[i + 1] = static_cast<uint32_t>(limbD >> 32);
+
+        cur1[i] = 0;
+        cur2[i] = 0;
+        cur3[i] = 0;
+    }
+
+    // Reset counters and tail carry slots.
+    if (tid == 0) {
+        // NOTE: globalSync1 is "convergence counter" in your signature; we leave it 0.
+        // We DO use globalSync2 as a 2-word structure:
+        //   globalSync2[0] = processor id allocator
+        //   globalSync2[1] = max procId observed
+        globalSync1[0] = 0;
+        globalSync2[0] = 0;
+        globalSync2[1] = 0;
+
+        cur1[numActualDigitsPlusGuard] = 0;
+        cur2[numActualDigitsPlusGuard] = 0;
+        cur3[numActualDigitsPlusGuard] = 0;
+        next1[0] = 0;
+        next2[0] = 0;
+        next3[0] = 0;
     }
     grid.sync();
 
+    // --------------------------------------------------------------------
     // Phase 1: add per-digit incoming hi parts, write cur[i+1]
+    // --------------------------------------------------------------------
     for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
         auto AddHiPhase = [](int32_t N, uint64_t *extResult, uint32_t *next, uint32_t *cur, int32_t ii) {
             const int64_t limb = static_cast<int64_t>(extResult[ii]) + static_cast<int32_t>(next[ii]);
@@ -1835,11 +1866,13 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
         AddHiPhase(numActualDigitsPlusGuard, extResultFalse, next2, cur2, i);
         AddHiPhase(numActualDigitsPlusGuard, final128_DE, next3, cur3, i);
     }
-    grid.sync();
 
     // --------------------------------------------------------------------
-    // PPv5: Paper-style DLB with "virtual processors" (persistent CTAs),
-    //       partition size = blockDim.x (blockDim multiple of 32).
+    // PPv5: DLB with
+    //   - dynamic processor IDs (active CTAs only)
+    //   - discover P_active at runtime
+    //   - striped partition assignment: partIdx = procId + t*P_active
+    // Launch flexibility preserved: gridDim.x can be anything cooperative-launch allows.
     // --------------------------------------------------------------------
     const int32_t numDigits = numActualDigitsPlusGuard;
     const int32_t digitsPerPart = (int32_t)blockDim.x; // 1 digit per thread
@@ -1860,17 +1893,6 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
     auto unpack_flag = [](uint32_t w) -> uint32_t { return w >> FLAG_SHIFT; };
     auto unpack_bits = [](uint32_t w) -> uint32_t { return w & BITS_MASK; };
 
-    // L2-cached load (cg) when available; otherwise volatile.
-    auto load_desc_u32 = [](const uint32_t *addr) -> uint32_t {
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 700)
-        uint32_t v;
-        asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(v) : "l"(addr));
-        return v;
-#else
-        return *reinterpret_cast<const volatile uint32_t *>(addr);
-#endif
-    };
-
     // x ∘ y (apply y then x) using PPcompose_transfer(a,b)=b∘a
     auto compose_x_after_y = [](const PPTransfer3 &x, const PPTransfer3 &y) -> PPTransfer3 {
         return PPcompose_transfer(y, x); // == x ∘ y
@@ -1884,32 +1906,25 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
     }
     grid.sync();
 
-    // globalSync2[0] becomes the persistent "next partition" counter.
-    if (tid == 0) {
-        globalSync2[0] = 0u;
-    }
-    grid.sync();
-
     const int lane = (int)(threadIdx.x & 31);
     const int warpId = (int)(threadIdx.x >> 5);
     const int numWarps = (int)((blockDim.x + 31) >> 5);
 
-    // You asked to hardcode: with the fixes below, this is safe for your launch guarantees.
     const uint32_t warpMask = 0xFFFF'FFFFu;
-    const int warpActiveCount = 32;
+    const int warpActiveCount = 32; // launch guarantees
 
-    // Shared scratch (tiny, but we have 48KB available).
-    // Layout: warpAgg[numWarps], warpPref[numWarps], broadcast[1]
+    // Shared scratch (tiny; shared_data assumed large enough).
+    // Layout: warpAgg[numWarps], warpPref[numWarps], broadcast[2]
+    // broadcast[0] : u32 for procId / exclPart / etc
+    // broadcast[1] : u32 for P_active
     uint32_t *smem = reinterpret_cast<uint32_t *>(shared_data);
     uint32_t *warpAgg = smem;                  // [numWarps]
     uint32_t *warpPref = smem + numWarps;      // [numWarps]
-    uint32_t *broadcast = smem + 2 * numWarps; // [>=1]
-
-    const uint32_t warp0MaskAllWarps =
-        (numWarps >= 32) ? 0xFFFF'FFFFu : ((1u << (uint32_t)numWarps) - 1u);
+    uint32_t *broadcast = smem + 2 * numWarps; // [>=2]
 
     // --------------------------------------------------------------------
     // Helper: per-digit transfer for a single digit index (for all 3 streams).
+    // (Keeping your working version as requested.)
     // --------------------------------------------------------------------
     auto build_digit_transfer = [&](int iDigit) -> PPTransfer3 {
         PPTransfer3 t{};
@@ -1935,23 +1950,36 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
         return t;
     };
 
-    // shared slot to broadcast part index
-    int32_t *partIdxShared = reinterpret_cast<int32_t *>(broadcast);
+    // --------------------------------------------------------------------
+    // Discover active processors (paper-style "dynamic processor IDs")
+    // globalSync2[0] : allocator counter
+    // globalSync2[1] : max procId seen
+    // After a grid.sync, P_active = max+1 and is stable.
+    // --------------------------------------------------------------------
+    int32_t procId = 0;
+    if (threadIdx.x == 0) {
+        procId = (int32_t)atomicAdd(&globalSync2[0], 1u);
+        broadcast[0] = (uint32_t)procId;
+    }
+    __syncthreads();
+    procId = (int32_t)broadcast[0];
+
+    // Ensure all CTAs have contributed to maxProcId
+    grid.sync();
+
+    int32_t P_active = 1;
+    if (threadIdx.x == 0) {
+        P_active = (int32_t)globalSync2[0]; // number of active CTAs that incremented
+        broadcast[1] = (uint32_t)P_active;
+    }
+    __syncthreads();
+    P_active = (int32_t)broadcast[1];
 
     // --------------------------------------------------------------------
-    // Persistent-CTA work loop: each CTA claims partitions via atomic counter.
+    // Paper-style striped assignment over ACTIVE processors:
+    //   partIdx = procId + t*P_active
     // --------------------------------------------------------------------
-    while (true) {
-        if (threadIdx.x == 0) {
-            *partIdxShared = (int32_t)atomicAdd(reinterpret_cast<unsigned int *>(&globalSync2[0]), 1u);
-        }
-        __syncthreads();
-
-        const int32_t partIdx = *partIdxShared;
-        if (partIdx >= numParts) {
-            __syncthreads();
-            break;
-        }
+    for (int32_t partIdx = procId; partIdx < numParts; partIdx += P_active) {
 
         const int base = partIdx * digitsPerPart;
         const int remaining = numDigits - base;
@@ -1988,7 +2016,6 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
         // Also stores full partition aggregate into warpAgg[0].
         // ----------------------------
         if (warpId == 0) {
-            // Only lanes [0..numWarps-1] participate in the warp-aggregate scan.
             if (lane < numWarps) {
                 const uint32_t m = (numWarps == 32) ? 0xFFFF'FFFFu : ((1u << (uint32_t)numWarps) - 1u);
 
@@ -2018,15 +2045,13 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
                 }
             }
         }
-
         __syncthreads();
 
         const PPTransfer3 aggPart{(uint64_t)(warpAgg[0] & PP_BITS_MASK)};
 
         // Publish aggregate descriptor A
         if (threadIdx.x == 0) {
-            atomicExch(reinterpret_cast<unsigned int *>(&desc[partIdx]),
-                       pack_desc(FLAG_A, (uint32_t)aggPart.bits & PP_BITS_MASK));
+            store_desc_u32(&desc[partIdx], pack_desc(FLAG_A, (uint32_t)aggPart.bits & PP_BITS_MASK));
         }
 
         // ----------------------------
@@ -2122,8 +2147,7 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
         // Publish inclusive prefix P_i = A_i ∘ E_i
         if (threadIdx.x == 0) {
             const PPTransfer3 inclPart = PPcompose_transfer(exclPart, aggPart);
-            atomicExch(reinterpret_cast<unsigned int *>(&desc[partIdx]),
-                       pack_desc(FLAG_P, (uint32_t)inclPart.bits & PP_BITS_MASK));
+            store_desc_u32(&desc[partIdx], pack_desc(FLAG_P, (uint32_t)inclPart.bits & PP_BITS_MASK));
         }
 
         // ----------------------------
@@ -2135,7 +2159,6 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
         const int32_t seed3 = PPeval_transfer(exclPart, 2, 0);
 
         // Intra-warp exclusive prefix transfer: exclWarp = T_{lane-1} ∘ ... ∘ T_0
-        // FIX: shuffle executed by all lanes in warpMask, then lane0 selects identity.
         const uint32_t prevBitsD = __shfl_up_sync(warpMask, (uint32_t)inclWarp.bits, 1);
         const PPTransfer3 exclWarp =
             (lane == 0) ? make_PPIdentity() : PPTransfer3{(uint64_t)(prevBitsD & PP_BITS_MASK)};
@@ -2165,8 +2188,6 @@ CarryPropagation_ABC_PPv5(uint32_t *globalSync1, // [0] holds convergence counte
                 final128_DE[iDigit] = (uint32_t)sum;
             }
         }
-
-        __syncthreads(); // reuse shared arrays safely before next claimed partition
     }
 
     // --------------------------------------------------------------------

@@ -18,13 +18,11 @@ FractalShark includes several innovations relative to most other Mandelbrot rend
 
 ### 1. Experimental GPU-accelerated reference orbit computation
 
-As of December 2025 (version 0.5), FractalShark includes an **experimental GPU-accelerated reference orbit implementation**. To my knowledge, this is the only existing implementation of this strategy.
+As of December 2025 (version 0.5), FractalShark includes an **experimental GPU-accelerated reference orbit implementation**. To my knowledge, this implementation is unique in the context of trying to accelerate Mandelbrot rendering.  FractalShark implements a full **number-theoretic transform (NTT)** pipeline on the GPU, including high-precision multiply, add, and subtract operations. These operations exploit GPU parallelism to accelerate arithmetic that is traditionally CPU-bound.
 
-FractalShark implements a full **number-theoretic transform (NTT)** pipeline on the GPU, including high-precision multiply, add, and subtract operations. These operations exploit GPU parallelism to accelerate arithmetic that is traditionally CPU-bound.
+At a precision of \(10^{16384}\) using 32-bit limbs (≈ 100,000+ decimal digits), this GPU reference orbit implementation outperforms the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.  The only built-in View that shows a clear benefit to the GPU-accelerated approach is View #30, which uses 16384 32-bit limbs internally.  My new RTX 5090 is slightly slower than the 4090, at ~9x faster than the existing FractalShark multithreaded CPU-based reference orbit calculator.  
 
-At a precision of \(10^{16384}\) using 32-bit limbs (≈ 100,000 decimal digits), this GPU reference orbit implementation outperforms the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.
-
-This feature is still experimental and under active development.
+This feature is still experimental and under active development.  To try it, you'll need an RTX 2xxx series or newer, e.g. RTX 3xxx/4xxx/5xxx should all work with recent drivers.  Then, start FractalShark, manually choose the HDRx32 LAv2 kernel, and under Perturbation choose GPU (experimental).  Then try e.g. View #5 to see if it renders.  If it does, then it's working.
 
 ### 2. Multiple CUDA Mandelbrot rendering strategies
 

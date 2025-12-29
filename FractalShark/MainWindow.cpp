@@ -21,6 +21,11 @@
 
 namespace {
 
+constexpr bool startWindowed = true;
+constexpr bool finishWindowed = false;
+constexpr DWORD forceStartWidth = 0;
+constexpr DWORD forceStartHeight = 0;
+
 constexpr int kMaxDynamic = 30;
 
 // ---- One source of truth for ALL algorithm command mappings ----
@@ -343,11 +348,6 @@ HWND
 MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
-
-    constexpr bool startWindowed = true;
-    constexpr bool finishWindowed = true;
-    constexpr DWORD forceStartWidth = 0;
-    constexpr DWORD forceStartHeight = 0;
 
     const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
     const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);

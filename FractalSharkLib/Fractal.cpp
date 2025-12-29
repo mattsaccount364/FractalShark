@@ -632,12 +632,12 @@ void Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor) {
 
 void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2));
-    SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
+    //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2));
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu2x32PerturbedLAv2));
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO));
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2));
-    // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
+    SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
 
     SetIterationPrecision(1);
 
@@ -645,10 +645,10 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU);
     m_RefOrbit.ResetGuess();
 
     DefaultCompressionErrorExp(CompressionError::Low);

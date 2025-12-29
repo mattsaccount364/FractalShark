@@ -39,14 +39,14 @@ jobs:
         shell: pwsh
         run: |
           choco install miktex -y --no-progress
-      
+
           $miktex = "C:\Program Files\MiKTeX\miktex\bin\x64"
           if (-not (Test-Path $miktex)) { throw "MiKTeX bin dir not found at $miktex" }
-      
+
           # Make it available in THIS step and later steps
           $env:PATH = "$miktex;$env:PATH"
           $miktex | Out-File -FilePath $env:GITHUB_PATH -Append
-      
+
           # Configure MiKTeX for CI use
           initexmf --admin --set-config-value=[MPM]AutoInstall=1
           initexmf --admin --set-config-value=[MPM]InstallOnTheFly=1
@@ -66,7 +66,7 @@ jobs:
         run: |
           $pdf = "Notes\notes.pdf"
           if (-not (Test-Path $pdf)) {
-          throw "PDF not generated: $pdf"
+            throw "PDF not generated: $pdf"
           }
           Get-Item $pdf | Format-List FullName, Length
 
@@ -85,7 +85,6 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       # ---- Tooling MPIR expects ----
-
       - name: Install NuGet
         uses: nuget/setup-nuget@v2
 
@@ -141,7 +140,7 @@ jobs:
             # ignore
           }
           $LASTEXITCODE = 0
-      
+
       # Originally it wouldn't load.  Used this to sort out it was missing the VC runtime dependency.
       - name: Dump DLL dependencies (vsyasm)
         shell: pwsh
@@ -150,19 +149,18 @@ jobs:
           if (-not (Test-Path $vswhere)) {
             throw "vswhere.exe not found"
           }
-      
+
           $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $vsPath) {
             throw "Visual Studio with VC tools not found"
           }
-      
+
           $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
           if (-not (Test-Path $vcvars)) {
             throw "vcvars64.bat not found"
           }
-      
-          cmd /c "`"$vcvars`" >nul && dumpbin /dependents `"C:\Program Files\vsyasm\vsyasm.exe`""
 
+          cmd /c "`"$vcvars`" >nul && dumpbin /dependents `"C:\Program Files\vsyasm\vsyasm.exe`""
 
       # See if the damn thing runs
       - name: Verify vsyasm/yasm are visible
@@ -171,16 +169,15 @@ jobs:
           Write-Host "YASM_PATH: $env:YASM_PATH"
           Get-Command vsyasm.exe -ErrorAction Stop | Format-List
           Get-Command yasm.exe   -ErrorAction SilentlyContinue | Format-List
-    
+
       - name: Try running vsyasm directly (diagnostic)
         shell: pwsh
         continue-on-error: true
         run: |
           & "C:\Program Files\vsyasm\vsyasm.exe" --version
           Write-Host "Exit code: $LASTEXITCODE"
-          
-      # ---- Build MPIR (official entrypoint) ----
 
+      # ---- Build MPIR (official entrypoint) ----
       - name: Build MPIR (skylake_avx, Release x64)
         working-directory: mpir\msvc\vs22
         shell: cmd
@@ -213,7 +210,8 @@ jobs:
             **/x64/Release/**
             **/Debug/**
             **/x64/Debug/**
-            Notes/notes.pdf
+            # Notes/notes.pdf  # (optional) include notes in this artifact again
+
   release:
     name: Create FractalShark Release
     runs-on: windows-latest
@@ -266,21 +264,26 @@ jobs:
         with:
           name: FractalShark-build
           path: dist
-          
-      - name: Download notes PDF artifact
+
+      # Keep downloading notes as a separate artifact (still generated),
+      # but do NOT put it into out/zip/release.
+      - name: Download notes PDF artifact (kept separate; not released)
         uses: actions/download-artifact@v4
         with:
           name: FractalSharkNotes
           path: _notes_art
-      
-      - name: Normalize notes.pdf path
-        shell: pwsh
-        run: |
-          $found = Get-ChildItem -Path _notes_art -Recurse -Filter notes.pdf -File | Select-Object -First 1
-          if (-not $found) { throw "notes.pdf not found under _notes_art" }
-      
-          New-Item -ItemType Directory -Force -Path Notes | Out-Null
-          Copy-Item $found.FullName "Notes\notes.pdf" -Force
+
+      # If you ever want to re-include notes in packaging, uncomment this block to
+      # normalize it into Notes\notes.pdf and then include it in the zip/release steps.
+      #
+      # - name: Normalize notes.pdf path
+      #   shell: pwsh
+      #   run: |
+      #     $found = Get-ChildItem -Path _notes_art -Recurse -Filter notes.pdf -File | Select-Object -First 1
+      #     if (-not $found) { throw "notes.pdf not found under _notes_art" }
+      #
+      #     New-Item -ItemType Directory -Force -Path Notes | Out-Null
+      #     Copy-Item $found.FullName "Notes\notes.pdf" -Force
 
       - name: "Diagnostic: artifact layout"
         shell: pwsh
@@ -292,43 +295,55 @@ jobs:
             Write-Error "dist directory does not exist"
           }
 
+          Write-Host "`n=== _notes_art tree (notes kept separate) ==="
+          if (Test-Path _notes_art) {
+            Get-ChildItem _notes_art -Recurse | Format-Table FullName, Length
+          }
+
       - name: Package artifacts (zip)
         shell: pwsh
         run: |
           $releaseDir = Join-Path $PWD "dist\Release"
           $exeSrc   = Join-Path $releaseDir "FractalShark.exe"
           $pdbSrc   = Join-Path $releaseDir "FractalShark.pdb"
-          $pdfSrc   = Join-Path $PWD "Notes\notes.pdf"
-      
+
+          # Optional: notes (would require Normalize step above)
+          # $pdfSrc   = Join-Path $PWD "Notes\notes.pdf"
+
           Write-Host "Release dir: $releaseDir"
           Write-Host "EXE source: $exeSrc"
           Write-Host "PDB source: $pdbSrc"
-          Write-Host "PDF source: $pdfSrc"
-      
+          # Write-Host "PDF source: $pdfSrc"
+
           if (-not (Test-Path $exeSrc)) { throw "Missing: $exeSrc" }
           if (-not (Test-Path $pdbSrc)) { throw "Missing: $pdbSrc" }
-          if (-not (Test-Path $pdfSrc)) { throw "Missing: $pdfSrc (did the notes build step run?)" }
-      
+          # if (-not (Test-Path $pdfSrc)) { throw "Missing: $pdfSrc (did the Normalize step run?)" }
+
           New-Item -ItemType Directory -Force -Path out | Out-Null
-      
+
           $exeDst = Join-Path $PWD "out\FractalShark.exe"
           $pdbDst = Join-Path $PWD "out\FractalShark.pdb"
-          $pdfDst = Join-Path $PWD "out\notes.pdf"
-      
           Copy-Item $exeSrc $exeDst -Force
           Copy-Item $pdbSrc $pdbDst -Force
-          Copy-Item $pdfSrc $pdfDst -Force
-      
+
+          # $pdfDst = Join-Path $PWD "out\notes.pdf"
+          # Copy-Item $pdfSrc $pdfDst -Force
+
           $zip = "out\FractalShark-$env:GITHUB_REF_NAME.zip"
-          Compress-Archive -Path "out\FractalShark.exe","out\FractalShark.pdb","out\notes.pdf" `
+
+          Compress-Archive -Path "out\FractalShark.exe","out\FractalShark.pdb" `
                            -DestinationPath $zip -Force
-      
+
+          # To include notes again:
+          # Compress-Archive -Path "out\FractalShark.exe","out\FractalShark.pdb","out\notes.pdf" `
+          #                  -DestinationPath $zip -Force
+
           Write-Host "`n=== out directory ==="
           Get-ChildItem out | Format-Table -AutoSize
-      
+
           Write-Host "`n=== ZIP verification ==="
           if (-not (Test-Path $zip)) { throw "ZIP not created: $zip" }
-      
+
           Write-Host "ZIP contents:"
           Expand-Archive -Path $zip -DestinationPath out\_verify -Force
           Get-ChildItem out\_verify | Format-Table -AutoSize
@@ -369,26 +384,34 @@ jobs:
         run: |
           $tag = $env:GITHUB_REF_NAME
           $zip = "out\FractalShark-$tag.zip"
-          $pdf = "out\notes.pdf"
-      
+
           if (-not (Test-Path $zip)) { throw "Missing asset: $zip" }
-          if (-not (Test-Path $pdf)) { throw "Missing asset: $pdf" }
-      
+
+          # Optional: attach notes to the GitHub Release too
+          # $pdf = "out\notes.pdf"
+          # if (-not (Test-Path $pdf)) { throw "Missing asset: $pdf" }
+
           $title = "FractalShark $tag"
           $notes = "Automated release for $tag"
-      
+
           Write-Host "Tag:   $tag"
           Write-Host "Asset: $zip"
-          Write-Host "Asset: $pdf"
-      
+          # Write-Host "Asset: $pdf"
+
           Write-Host "Deleting existing release if present..."
           gh release delete "$tag" --yes 2>$null
           $LASTEXITCODE = 0
-      
+
           Write-Host "Creating release..."
           gh release create "$tag" `
             --verify-tag `
             --title "$title" `
             --notes "$notes" `
-            --prerelease `
-            "$zip" "$pdf"
+            "$zip"
+
+          # To attach notes again:
+          # gh release create "$tag" `
+          #   --verify-tag `
+          #   --title "$title" `
+          #   --notes "$notes" `
+          #   "$zip" "$pdf"

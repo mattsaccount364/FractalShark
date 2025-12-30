@@ -131,6 +131,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ConsoleWindow.cpp" />
     <ClCompile Include="DynamicPopupMenu.cpp" />
     <ClCompile Include="CommandDispatcher.cpp" />
     <ClCompile Include="FractalShark.cpp">
@@ -149,6 +150,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\stdafx.h" />
+    <ClInclude Include="ConsoleWindow.h" />
     <ClInclude Include="DynamicPopupMenu.h" />
     <ClInclude Include="DynamicPopupTreeDef.h" />
     <ClInclude Include="CommandDispatcher.h" />

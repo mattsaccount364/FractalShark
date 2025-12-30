@@ -1,6 +1,7 @@
 #include "StdAfx.h"
 
 #include "CommandDispatcher.h"
+#include "ConsoleWindow.h"
 #include "CrummyTest.h"
 #include "DynamicPopupMenu.h"
 #include "Exceptions.h"
@@ -46,6 +47,8 @@ MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) : commandDispatcher(*t
     if (!hWnd) {
         throw FractalSharkSeriousException("Failed to create window.");
     }
+
+    AttachBackgroundConsole(true);
 
     ImaginaMenu = nullptr;
     LoadSubMenu = nullptr;

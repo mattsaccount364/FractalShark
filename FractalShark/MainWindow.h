@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 
+#include "CommandDispatcher.h"
 #include "UniqueHMenu.h"
 
 class JobObject;
@@ -17,6 +18,8 @@ class UniqueHMenu;
 } // namespace FractalShark
 
 class MainWindow {
+    friend class CommandDispatcher;
+
 public:
     struct SavedLocation;
     struct ImaginaSavedLocation;
@@ -46,6 +49,9 @@ private:
 
     ATOM MyRegisterClass(HINSTANCE hInstance);
     HWND InitInstance(HINSTANCE, int);
+    void ApplyBorderlessWindowedStyle();
+    void ApplyBorderlessFullscreenStyle();
+    void SetModeWindowed(bool windowed);
     static LRESULT CALLBACK StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT CALLBACK WndProc(UINT message, WPARAM wParam, LPARAM lParam); 
     void UnInit();
@@ -64,19 +70,8 @@ private:
 
     static std::wstring OpenFileDialog(OpenBoxType type);
 
-    // ---------------------------------------------------------------------
-    // PHASE 3: command router expanded
-    // ---------------------------------------------------------------------
-    bool HandleCommand(int wmId);
-
-    // Phase 2 pieces
-    bool HandleCommandRange(int wmId);
     void ActivateSavedOrbit(size_t index);
     void ActivateImagina(size_t index);
-
-    // Phase 3 pieces
-    bool HandleAlgCommand(int wmId);
-    bool HandleCommandTable(int wmId);
 
     // ---- Chunk A: persist menu click location as member state ----
     // Stored in CLIENT coordinates. Set by WM_CONTEXTMENU.
@@ -90,6 +85,8 @@ private:
     // Used for drawing the inverted rectangle properly.
     int prevX1 = -1;
     int prevY1 = -1;
+
+    CommandDispatcher commandDispatcher;
 
     bool HasLastMenuPtClient() const noexcept;
     POINT GetSafeMenuPtClient() const;

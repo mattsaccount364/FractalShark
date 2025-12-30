@@ -132,6 +132,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="DynamicPopupMenu.cpp" />
+    <ClCompile Include="CommandDispatcher.cpp" />
     <ClCompile Include="FractalShark.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
     </ClCompile>
@@ -150,6 +151,7 @@
     <ClInclude Include="..\stdafx.h" />
     <ClInclude Include="DynamicPopupMenu.h" />
     <ClInclude Include="DynamicPopupTreeDef.h" />
+    <ClInclude Include="CommandDispatcher.h" />
     <ClInclude Include="FractalShark.h" />
     <ClInclude Include="JobObject.h" />
     <ClInclude Include="MainWindow.h" />

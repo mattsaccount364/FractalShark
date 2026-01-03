@@ -229,10 +229,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     // This is not supported.
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
         assert(false);
-        ::MessageBox(nullptr,
-                     L"AddPointOptions::OpenExistingWithSave is not supported",
-                     L"",
-                     MB_OK | MB_APPLMODAL);
+        std::wcerr << L"AddPointOptions::OpenExistingWithSave is not supported" << std::endl;
         return false;
     }
 
@@ -672,7 +669,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
 
             if (j > End) {
                 if (ThreadID == LastThread) {
-                    ::MessageBox(nullptr, L"Thread finished unexpected", L"", MB_OK | MB_APPLMODAL);
+                    std::wcerr << L"Thread finished unexpected" << std::endl;
                     DebugBreak();
                 }
 
@@ -804,11 +801,11 @@ LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
         std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults)};
 
     if (PrevStage > MaxLAStages) {
-        ::MessageBox(nullptr, L"Too many stages :(", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Too many stages :(" << std::endl;
     }
 
     if (CurrentStage >= MaxLAStages) {
-        ::MessageBox(nullptr, L"Too many stages :(", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Too many stages 2 :(" << std::endl;
     }
 
     m_LAStages[CurrentStage].LAIndex = LAsize();
@@ -862,7 +859,7 @@ LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     }
     m_LAStageCount++;
     if (m_LAStageCount > MaxLAStages) {
-        ::MessageBox(nullptr, L"Too many stages (2) :(", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Too many stages (3) :(" << std::endl;
     }
 
     PeriodBegin = Period;

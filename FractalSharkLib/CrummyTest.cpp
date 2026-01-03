@@ -38,7 +38,7 @@ void CrummyTest::TestPreReq(const wchar_t *dirName) {
         auto shRet = SHFileOperation(&fileOp);
         if (shRet != 0) {
             auto wstrMsg = std::wstring(L"Error deleting directory! SHFileOperation returned: ") + std::to_wstring(shRet);
-            ::MessageBox(nullptr, wstrMsg.c_str(), L"", MB_OK | MB_APPLMODAL);
+            std::wcerr << wstrMsg.c_str() << std::endl;
             return;
         }
     }
@@ -48,7 +48,7 @@ void CrummyTest::TestPreReq(const wchar_t *dirName) {
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
         auto lastError = GetLastError();
         std::wstring msg = L"Error creating directory! Last error: " + std::to_wstring(lastError);
-        ::MessageBox(nullptr, msg.c_str(), L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << msg.c_str() << std::endl;
         return;
     }
 }

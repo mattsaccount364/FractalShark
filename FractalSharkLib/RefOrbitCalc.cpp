@@ -184,8 +184,7 @@ RefOrbitCalc::OptimizeMemory()
 
     GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
     if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
-        ::MessageBox(
-            nullptr, L"Watch the memory use... this is just a warning", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Watch the memory use... this is just a warning" << std::endl;
         assert(false);
     }
 }
@@ -664,8 +663,7 @@ RefOrbitCalc::GetReuseResults(
     // about 2^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
     if (deltaPrecision >= extraPrecision) {
-        //::MessageBox(nullptr, L"Regenerating authoritative orbit is required 1", L"", MB_OK |
-        //:MB_APPLMODAL);
+        std::wcerr << L"Regenerating authoritative orbit is required 1" << std::endl;
         return false;
     }
 
@@ -679,12 +677,12 @@ RefOrbitCalc::GetReuseResults(
     if (HdrCompareToBothPositiveReducedGT(deltaX, existingAuthoritativeResults.GetMaxRadius()) ||
         HdrCompareToBothPositiveReducedGT(deltaY, existingAuthoritativeResults.GetMaxRadius())) {
 
-        // const std::string deltaStr =
-        //     cx.str() + ", " + cy.str() + ", " +
-        //     existingResultsHiX.str() + ", " + existingResultsHiY.str() + ", " +
-        //     deltaX.str() + ", " + deltaY.str();
-        // const std::string outputStr = "Regenerating authoritative orbit is required 2: " + deltaStr;
-        //::MessageBoxA(nullptr, outputStr.c_str(), "", MB_OK | MB_APPLMODAL);
+        //const std::string deltaStr =
+        //    cx.str() + ", " + cy.str() + ", " +
+        //    existingResultsHiX.str() + ", " + existingResultsHiY.str() + ", " +
+        //    deltaX.str() + ", " + deltaY.str();
+        //const std::string outputStr = "Regenerating authoritative orbit is required 2: " + deltaStr;
+        //std::cerr << outputStr << std::endl;
         return false;
     }
 
@@ -2087,8 +2085,7 @@ template <typename IterType,
 void
 RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecision cy)
 {
-    ::MessageBox(
-        nullptr, L"AddPerturbationReferencePointMT5 disabled, using MT3", L"", MB_OK | MB_APPLMODAL);
+    std::wcerr << L"AddPerturbationReferencePointMT5 disabled, using MT3" << std::endl;
     AddPerturbationReferencePointMT3<IterType, T, SubType, Periodicity, BenchmarkState, PExtras, Reuse>(
         cx, cy);
 }
@@ -2404,7 +2401,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
                         m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                     break;
                 default:
-                    ::MessageBox(nullptr, L"Some stupid bug #2343 :(", L"", MB_OK | MB_APPLMODAL);
+                    std::wcerr << L"Some stupid bug #2343 :(" << std::endl;
                     assert(false);
                     break;
             }
@@ -2415,7 +2412,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
         GetUsefulPerturbationResultsMutable<IterType, T, false, PExtras>();
     if (results == nullptr) {
         if (added) {
-            ::MessageBox(nullptr, L"Why didn't this work! :(", L"", MB_OK | MB_APPLMODAL);
+            std::wcerr << L"Why didn't this work! :(" << std::endl;
         }
 
         if constexpr (UsingDblflt) {
@@ -3034,7 +3031,7 @@ RefOrbitCalc::DiffOrbit(CompressToDisk compression,
         std::visit(lambda, results1, results2);
     } catch (const std::exception &e) {
         const auto outstr = std::string("Error diffing orbits: ") + e.what();
-        ::MessageBoxA(nullptr, "Error diffing orbits", "", MB_OK | MB_APPLMODAL);
+        std::cerr << outstr << std::endl;
     }
 }
 
@@ -3258,7 +3255,7 @@ RefOrbitCalc::LoadOrbit(ImaginaSettings imaginaSettings,
                 return helperT.template operator()<float>();
 
             default:
-                ::MessageBox(nullptr, L"Unknown render algorithm", L"Error", MB_OK | MB_ICONERROR);
+                std::wcerr << L"Unknown render algorithm" << std::endl;
                 return helperT.template operator()<HDRFloat<double>>();
         }
     }

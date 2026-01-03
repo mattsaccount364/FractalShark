@@ -328,13 +328,12 @@ CommandDispatcher::BuildTable()
                    [](MainWindow &w) { w.gFractal->SetIterType(IterTypeEnum::Bits64); });
 
     // Perturbation UI
-    table_.emplace(IDM_PERTURB_RESULTS, [](MainWindow &w) {
-        ::MessageBox(w.hWnd,
+    table_.emplace(IDM_PERTURB_RESULTS, [](MainWindow &/*w*/) {
+        std::wcerr <<
                      L"TODO.  By default these are shown as white pixels overlayed on the image. "
                      L"It'd be nice to have an option that shows them as white pixels against a "
                      L"black screen so they're location is obvious.",
-                     L"TODO",
-                     MB_OK | MB_APPLMODAL);
+                     L"TODO";
     });
     table_.emplace(IDM_PERTURB_CLEAR_ALL, [](MainWindow &w) {
         w.gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);

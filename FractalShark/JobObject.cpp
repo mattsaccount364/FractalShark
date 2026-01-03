@@ -1,6 +1,7 @@
 #include "StdAfx.h"
 
 #include "JobObject.h"
+#include <iostream>
 
 class JobObject::JobObjectImpl {
 public:
@@ -26,7 +27,7 @@ JobObject::JobObjectImpl::JobObjectImpl() :
 
     hJob = CreateJobObject(nullptr, nullptr);
     if (hJob == nullptr) {
-        ::MessageBox(nullptr, L"Failed to create job object", L"Error", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Failed to create job object" << std::endl;
         return;
     }
 
@@ -53,13 +54,13 @@ JobObject::JobObjectImpl::JobObjectImpl() :
     jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_JOB_MEMORY;
     jeli.JobMemoryLimit = Limit;
     if (!SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli))) {
-        ::MessageBox(nullptr, L"Failed to set job object information", L"Error", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Failed to set job object information" << std::endl;
         CloseHandle(hJob);
         return;
     }
 
     if (!AssignProcessToJobObject(hJob, GetCurrentProcess())) {
-        ::MessageBox(nullptr, L"Failed to assign process to job object", L"Error", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Failed to assign process to job object" << std::endl;
         CloseHandle(hJob);
         return;
     }

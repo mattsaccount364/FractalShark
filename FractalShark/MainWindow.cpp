@@ -272,7 +272,6 @@ MainWindow::SetModeWindowed(bool enableWindowed)
     }
 }
 
-
 void
 MainWindow::DrawFractalSharkGdi(int /*nCmdShow*/)
 {
@@ -595,11 +594,11 @@ MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         } catch (const FractalSharkSeriousException &e) {
             const auto msg = e.GetCallstack("Message copied to clipboard.  CTRL-V to paste.");
             copyToClipboard(msg);
-            MessageBoxA(hWnd, msg.c_str(), "Error", MB_OK);
+            std::cerr << msg.c_str() << std::endl;
             return 0;
         } catch (const std::exception &e) {
             copyToClipboard(e.what());
-            MessageBoxA(hWnd, e.what(), "Error", MB_OK);
+            std::cerr << e.what() << std::endl;
             return 0;
         }
     }
@@ -765,7 +764,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                        wmEvent,
                        wmEvent);
 
-            ::MessageBoxW(hWnd, buf, L"Unknown menu item", MB_OK | MB_APPLMODAL);
+            std::wcerr << buf << L" Unknown menu item" << std::endl;
 
             return 0;
         }
@@ -1149,34 +1148,29 @@ MainWindow::MenuGetCurPos()
 
     BOOL ret = OpenClipboard(hWnd);
     if (ret == 0) {
-        MessageBox(hWnd,
-                   L"Opening the clipboard failed.  Another program must be using it.",
-                   L"",
-                   MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Opening the clipboard failed.  Another program must be using it." << std::endl;
         return;
     }
 
     ret = EmptyClipboard();
     if (ret == 0) {
-        MessageBox(hWnd,
-                   L"Emptying the clipboard of its current contents failed.  Make sure no other "
-                   L"programs are using it.",
-                   L"",
-                   MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Emptying the clipboard of its current contents failed.  Make sure no other "
+                      L"programs are using it."
+                   << std::endl;
         CloseClipboard();
         return;
     }
 
     HGLOBAL hData = GlobalAlloc(GMEM_MOVEABLE, numBytes);
     if (hData == nullptr) {
-        MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Insufficient memory." << std::endl;
         CloseClipboard();
         return;
     }
 
     char *mem = (char *)GlobalLock(hData);
     if (mem == nullptr) {
-        MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Insufficient memory 2." << std::endl;
         CloseClipboard();
         return;
     }
@@ -1197,11 +1191,9 @@ MainWindow::MenuGetCurPos()
 
     HANDLE clpData = SetClipboardData(CF_TEXT, hData);
     if (clpData == nullptr) {
-        MessageBox(hWnd,
-                   L"Adding the data to the clipboard failed.  You are probably very low on memory.  "
-                   L"Try closing other programs or restarting your computer.",
-                   L"",
-                   MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Adding the data to the clipboard failed.  You are probably very low on memory.  "
+                      L"Try closing other programs or restarting your computer."
+                   << std::endl;
         CloseClipboard();
         return;
     }
@@ -1209,9 +1201,9 @@ MainWindow::MenuGetCurPos()
     CloseClipboard();
 
     if (shortStr.length() < 5000) {
-        ::MessageBoxA(hWnd, shortStr.c_str(), "", MB_OK | MB_APPLMODAL);
+        ::MessageBoxA(hWnd, shortStr.c_str(), "Current Position", MB_OK | MB_APPLMODAL);
     } else {
-        ::MessageBoxA(hWnd, "Location copied to clipboard.", "", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Location copied to clipboard." << std::endl;
     }
 }
 
@@ -1650,13 +1642,8 @@ MainWindow::MenuLoadImagDyn(ImaginaSettings loadSettings)
 
     POINT point;
     GetCursorPos(&point);
-    TrackPopupMenu(ImaginaMenu,
-                   TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN,
-                   point.x,
-                   point.y,
-                   0,
-                   hWnd,
-                   nullptr);
+    TrackPopupMenu(
+        ImaginaMenu, TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN, point.x, point.y, 0, hWnd, nullptr);
 
     DestroyMenu(ImaginaMenu);
 }

@@ -495,7 +495,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
 
     std::ofstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
     if (!metafile.is_open()) {
-        ::MessageBox(nullptr, L"Failed to open file for writing 2", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Failed to open file for writing 2" << std::endl;
         return;
     }
 
@@ -509,7 +509,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         metafile << "uint64_t" << std::endl;
     } else {
-        ::MessageBox(nullptr, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Invalid size." << std::endl;
         return;
     }
 
@@ -526,7 +526,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     } else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
         metafile << "HDRFloat<double>" << std::endl;
     } else {
-        ::MessageBox(nullptr, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Invalid type." << std::endl;
         return;
     }
 
@@ -537,7 +537,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     } else if constexpr (PExtras == PerturbExtras::Disable) {
         metafile << "PerturbExtras::Disable" << std::endl;
     } else {
-        ::MessageBox(nullptr, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Invalid bad." << std::endl;
         return;
     }
 
@@ -563,7 +563,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
         if (m_LaReference != nullptr && m_LaReference->IsValid()) {
             bool ret = m_LaReference->WriteMetadata(metafile);
             if (!ret) {
-                ::MessageBox(nullptr, L"Failed to write LA metadata.", L"", MB_OK | MB_APPLMODAL);
+                std::wcerr << L"Failed to write LA metadata." << std::endl;
                 return;
             }
         }
@@ -601,7 +601,7 @@ requires Introspection::TestPExtras<PExtras>::value
 
     std::ifstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
     if (!metafile.is_open()) {
-        ::MessageBox(nullptr, L"Failed to open file for reading 1", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Failed to open file for reading 1" << std::endl;
         metafile.close();
         return false;
     }
@@ -633,7 +633,7 @@ requires Introspection::TestPExtras<PExtras>::value
                 typematch1 = true;
             }
         } else {
-            ::MessageBox(nullptr, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
+            std::wcerr << L"Invalid size." << std::endl;
             metafile.close();
             return false;
         }
@@ -668,7 +668,7 @@ requires Introspection::TestPExtras<PExtras>::value
                 typematch2 = true;
             }
         } else {
-            ::MessageBox(nullptr, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
+            std::wcerr << L"Invalid type." << std::endl;
             metafile.close();
             return false;
         }
@@ -691,7 +691,7 @@ requires Introspection::TestPExtras<PExtras>::value
                 typematch3 = true;
             }
         } else {
-            ::MessageBox(nullptr, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
+            std::wcerr << L"Invalid bad 2." << std::endl;
             metafile.close();
             return false;
         }
@@ -1971,7 +1971,7 @@ InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Di
 
     std::ofstream out(outFile);
     if (!out.is_open()) {
-        ::MessageBox(nullptr, L"Failed to open file for writing 3", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Failed to open file for writing 3" << std::endl;
         return;
     }
 
@@ -2014,7 +2014,7 @@ InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Di
     out << "m_ReuseY: " << m_ReuseY.size() << std::endl;
     out << "m_ReuseIndices: " << m_ReuseIndices.size() << std::endl;
     if (m_ReuseX.size() != m_ReuseY.size() || m_ReuseX.size() != m_ReuseIndices.size()) {
-        ::MessageBox(nullptr, L"m_ReuseX and m_ReuseY are different sizes.", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"m_ReuseX and m_ReuseY are different sizes." << std::endl;
         out.close();
         return;
     }
@@ -2264,7 +2264,7 @@ requires(!Introspection::IsTDblFlt<T>())
     }
 
     if (m_FullOrbit.GetSize() != other.m_FullOrbit.GetSize()) {
-        ::MessageBox(nullptr, L"Orbit sizes are different.", L"", MB_OK | MB_APPLMODAL);
+        std::wcerr << L"Orbit sizes are different." << std::endl;
         return;
     }
 

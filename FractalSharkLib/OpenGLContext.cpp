@@ -25,13 +25,14 @@ OpenGlContext::OpenGlContext(HWND hWnd)
 
         pf = ChoosePixelFormat(m_hDC, &pfd);
         if (pf == 0) {
-            MessageBox(nullptr, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK | MB_APPLMODAL);
+            std::wcerr << L"ChoosePixelFormat() failed: Cannot find a suitable pixel format."
+                       << std::endl;
             m_Valid = false;
             return;
         }
 
         if (SetPixelFormat(m_hDC, pf, &pfd) == FALSE) {
-            MessageBox(nullptr, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK | MB_APPLMODAL);
+            std::wcerr << L"SetPixelFormat() failed:  Cannot set format specified." << std::endl;
             m_Valid = false;
             return;
         }

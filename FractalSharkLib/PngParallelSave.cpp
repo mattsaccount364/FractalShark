@@ -73,7 +73,7 @@ void PngParallelSave::Run() {
         wsprintf(temp, L"%s", m_FilenameBase.c_str());
         final_filename = std::wstring(temp) + ext;
         if (Utilities::FileExists(final_filename.c_str())) {
-            ::MessageBox(nullptr, L"Not saving, file exists", L"", MB_OK | MB_APPLMODAL);
+            std::wcerr << L"Not saving, file exists" << std::endl;
             return;
         }
     } else {

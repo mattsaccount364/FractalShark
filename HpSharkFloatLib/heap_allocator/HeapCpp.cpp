@@ -11,7 +11,7 @@
 #include <windows.h>
 
 // Comment to disable
-//#define ENABLE_FRACTAL_SHARK_HEAP
+#define ENABLE_FRACTAL_SHARK_HEAP
 
 static int offset = node_t::OffsetOfNext;
 static constexpr auto PAGE_SIZE = 0x1000;

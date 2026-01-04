@@ -210,7 +210,7 @@ jobs:
             **/x64/Release/**
             **/Debug/**
             **/x64/Debug/**
-            # Notes/notes.pdf  # (optional) include notes in this artifact again
+            Notes/notes.pdf
 
   release:
     name: Create FractalShark Release
@@ -265,25 +265,20 @@ jobs:
           name: FractalShark-build
           path: dist
 
-      # Keep downloading notes as a separate artifact (still generated),
-      # but do NOT put it into out/zip/release.
-      - name: Download notes PDF artifact (kept separate; not released)
+      - name: Download notes PDF artifact
         uses: actions/download-artifact@v4
         with:
           name: FractalSharkNotes
           path: _notes_art
 
-      # If you ever want to re-include notes in packaging, uncomment this block to
-      # normalize it into Notes\notes.pdf and then include it in the zip/release steps.
-      #
-      # - name: Normalize notes.pdf path
-      #   shell: pwsh
-      #   run: |
-      #     $found = Get-ChildItem -Path _notes_art -Recurse -Filter notes.pdf -File | Select-Object -First 1
-      #     if (-not $found) { throw "notes.pdf not found under _notes_art" }
-      #
-      #     New-Item -ItemType Directory -Force -Path Notes | Out-Null
-      #     Copy-Item $found.FullName "Notes\notes.pdf" -Force
+      - name: Normalize notes.pdf path
+        shell: pwsh
+        run: |
+          $found = Get-ChildItem -Path _notes_art -Recurse -Filter notes.pdf -File | Select-Object -First 1
+          if (-not $found) { throw "notes.pdf not found under _notes_art" }
+      
+          New-Item -ItemType Directory -Force -Path Notes | Out-Null
+          Copy-Item $found.FullName "Notes\notes.pdf" -Force
 
       - name: "Diagnostic: artifact layout"
         shell: pwsh
@@ -303,40 +298,36 @@ jobs:
       - name: Package artifacts (zip)
         shell: pwsh
         run: |
-          $releaseDir = Join-Path $PWD "dist\Release"
-          $exeSrc   = Join-Path $releaseDir "FractalShark.exe"
-          $pdbSrc   = Join-Path $releaseDir "FractalShark.pdb"
+          # --- locate built binaries robustly (artifact layout may vary) ---
+          $exe = Get-ChildItem dist -Recurse -Filter FractalShark.exe -File | Select-Object -First 1
+          if (-not $exe) { throw "FractalShark.exe not found anywhere under dist" }
 
-          # Optional: notes (would require Normalize step above)
-          # $pdfSrc   = Join-Path $PWD "Notes\notes.pdf"
+          $pdb = Get-ChildItem dist -Recurse -Filter FractalShark.pdb -File | Select-Object -First 1
+          if (-not $pdb) { throw "FractalShark.pdb not found anywhere under dist" }
 
-          Write-Host "Release dir: $releaseDir"
-          Write-Host "EXE source: $exeSrc"
-          Write-Host "PDB source: $pdbSrc"
-          # Write-Host "PDF source: $pdfSrc"
+          $pdfSrc = Join-Path $PWD "Notes\notes.pdf"
+          if (-not (Test-Path $pdfSrc)) {
+            throw "notes.pdf missing at $pdfSrc (Normalize step failed?)"
+          }
 
-          if (-not (Test-Path $exeSrc)) { throw "Missing: $exeSrc" }
-          if (-not (Test-Path $pdbSrc)) { throw "Missing: $pdbSrc" }
-          # if (-not (Test-Path $pdfSrc)) { throw "Missing: $pdfSrc (did the Normalize step run?)" }
+          Write-Host "Using EXE: $($exe.FullName)"
+          Write-Host "Using PDB: $($pdb.FullName)"
+          Write-Host "Using PDF: $pdfSrc"
 
+          # --- stage outputs ---
           New-Item -ItemType Directory -Force -Path out | Out-Null
 
-          $exeDst = Join-Path $PWD "out\FractalShark.exe"
-          $pdbDst = Join-Path $PWD "out\FractalShark.pdb"
-          Copy-Item $exeSrc $exeDst -Force
-          Copy-Item $pdbSrc $pdbDst -Force
-
-          # $pdfDst = Join-Path $PWD "out\notes.pdf"
-          # Copy-Item $pdfSrc $pdfDst -Force
+          Copy-Item $exe.FullName "out\FractalShark.exe" -Force
+          Copy-Item $pdb.FullName "out\FractalShark.pdb" -Force
+          Copy-Item $pdfSrc       "out\notes.pdf"        -Force
 
           $zip = "out\FractalShark-$env:GITHUB_REF_NAME.zip"
 
-          Compress-Archive -Path "out\FractalShark.exe","out\FractalShark.pdb" `
-                           -DestinationPath $zip -Force
-
-          # To include notes again:
-          # Compress-Archive -Path "out\FractalShark.exe","out\FractalShark.pdb","out\notes.pdf" `
-          #                  -DestinationPath $zip -Force
+          # --- create final release zip (exe + pdb + notes) ---
+          Compress-Archive `
+            -Path "out\FractalShark.exe","out\FractalShark.pdb","out\notes.pdf" `
+            -DestinationPath $zip `
+            -Force
 
           Write-Host "`n=== out directory ==="
           Get-ChildItem out | Format-Table -AutoSize
@@ -344,7 +335,6 @@ jobs:
           Write-Host "`n=== ZIP verification ==="
           if (-not (Test-Path $zip)) { throw "ZIP not created: $zip" }
 
-          Write-Host "ZIP contents:"
           Expand-Archive -Path $zip -DestinationPath out\_verify -Force
           Get-ChildItem out\_verify | Format-Table -AutoSize
 
@@ -387,16 +377,15 @@ jobs:
 
           if (-not (Test-Path $zip)) { throw "Missing asset: $zip" }
 
-          # Optional: attach notes to the GitHub Release too
-          # $pdf = "out\notes.pdf"
-          # if (-not (Test-Path $pdf)) { throw "Missing asset: $pdf" }
+          $pdf = "out\notes.pdf"
+          if (-not (Test-Path $pdf)) { throw "Missing asset: $pdf" }
 
           $title = "FractalShark $tag"
           $notes = "Automated release for $tag"
 
           Write-Host "Tag:   $tag"
           Write-Host "Asset: $zip"
-          # Write-Host "Asset: $pdf"
+          Write-Host "Asset: $pdf"
 
           Write-Host "Deleting existing release if present..."
           gh release delete "$tag" --yes 2>$null
@@ -407,11 +396,4 @@ jobs:
             --verify-tag `
             --title "$title" `
             --notes "$notes" `
-            "$zip"
-
-          # To attach notes again:
-          # gh release create "$tag" `
-          #   --verify-tag `
-          #   --title "$title" `
-          #   --notes "$notes" `
-          #   "$zip" "$pdf"
+            "$zip" "$pdf"

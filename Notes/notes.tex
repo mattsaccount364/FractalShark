@@ -23,32 +23,181 @@
 % --- Convenience for inline code that may need breaks ---
 \newcommand{\code}[1]{\texttt{#1}}
 
-\title{FractalShark: High-Performance Mandelbrot Rendering}
+\newcommand{\FractalShark}{FractalShark}
+\newcommand{\FractalSharkItalic}{\textit{FractalShark}}
+
+
+\title{\FractalSharkItalic{}: High-Performance Mandelbrot Rendering}
 \author{Matthew Renzelmann}
-\date{}
+\date{\today}
 
 \begin{document}
 \maketitle
 
+\makeatletter
+\renewcommand\numberline[1]{#1\enspace}
+\makeatother
+
 \tableofcontents
 \clearpage
 
-\section{Goal and overview}
+\section{\FractalShark{} Overview}
 \label{sec:goal}
 
-The goal of these kernels is to \emph{render the Mandelbrot set} by computing an
-\emph{escape-time} iteration count per pixel over a 2D image grid. Each CUDA
-thread evaluates a single complex parameter \(c\) corresponding to one pixel,
-iterates the Mandelbrot recurrence, and stores the iteration count into an
-output buffer. Separate (or fused) stages can map iteration counts to colors,
-apply palettes, and perform anti-aliasing.
+\FractalShark{} is an interactive Mandelbrot set renderer focused on
+\textbf{extreme deep-zoom exploration}, numerical correctness, and
+algorithmic experimentation.  It supports zoom depths ranging from
+conventional views to magnifications exceeding $10^{10000}$, while
+exposing internal rendering choices and precision tradeoffs to the user.
 
-Across kernels, the primary variation is the numeric representation used for
-the orbit arithmetic: from IEEE-754 \code{float}/\code{double} up through
-expansion types (float-float, double-double, quad-float, quad-double) and
-HDR-normalized formats. The shared objective remains the same: compute the
-escape-time for the Mandelbrot iteration as accurately and quickly as needed
-for a desired zoom depth.
+\paragraph{Interactive navigation and view control.}
+\FractalShark{} provides direct mouse-driven navigation, including centering
+the view at an arbitrary point, zooming in and out at the cursor location,
+stepping backward through navigation history, and invoking automatic zoom
+modes.  Window management options allow toggling between windowed and
+full-screen modes, including square-aspect rendering for precise analysis.
+
+\paragraph{Built-in views for demonstration and validation.}
+The application includes an extensive set of built-in views covering a wide
+range of numerical regimes: GPU precision limits, high-period locations,
+known hard points, historical bug cases, regression tests, and ultra-deep
+zoom demonstrations.  These views serve both as showcases of capability and
+as repeatable test cases for performance and correctness.
+
+\paragraph{Explicit algorithm selection and transparency.}
+A central design goal of \FractalShark{} is to make rendering algorithms
+explicit and selectable.  Users may rely on an automatic algorithm selector
+or manually choose among many rendering paths, including:
+\begin{itemize}
+  \item GPU-based low-zoom renderers with selectable iteration precision and
+        multiple numeric formats (single-, dual-, and quad-limb 32- and
+        64-bit variants, as well as HDR-style representations).
+  \item Scaled perturbation algorithms for extending low-precision arithmetic
+        to deeper zooms.
+  \item Bilinear approximation (BLA v1) perturbation paths.
+  \item Linear approximation (LAv2) pipelines, including full rendering,
+        linear-approximation-only, and perturbation-only variants.
+  \item Reference-compression–aware algorithms, including Imagina-compatible
+        ``max'' compression formats.
+  \item CPU-only algorithms for very high precision, verification, and
+        fallback scenarios.
+\end{itemize}
+
+Many of these modes are exposed explicitly for testing and comparison, and
+not all are intended as default or production-quality paths.
+
+\paragraph{Linear approximation configuration.}
+Linear approximation behavior can be configured for multithreaded or
+single-threaded execution and tuned via presets that prioritize accuracy,
+performance, or memory usage.  These controls reflect ongoing development
+and experimentation with LA parameter tradeoffs.
+
+\paragraph{Image quality and coloring.}
+\FractalShark{} supports GPU antialiasing at multiple sample levels and a
+flexible palette system.  Palettes may be selected from predefined themes,
+generated randomly, and rendered at configurable color depths.  Some palette
+features are intentionally limited or disabled where they are known to be
+incomplete.
+
+\paragraph{Iteration limits and precision control.}
+Users can dynamically adjust iteration limits, switch between 32-bit and
+64-bit iteration counters, and modify shallow-zoom iteration precision.
+These controls are primarily relevant for low-zoom or testing scenarios and
+are not universally applicable to all rendering algorithms.
+
+\paragraph{Perturbation and reference-orbit management.}
+\FractalShark{} places strong emphasis on reference-orbit reuse and
+perturbation-based rendering.  It supports multiple perturbation strategies
+(single-threaded, multithreaded, periodicity-assisted, and experimental GPU
+variants), along with tools to clear, inspect, save, reload, and reuse
+reference orbits.  Automatic and manual reference-orbit persistence is
+supported via file-backed storage.
+
+\paragraph{Memory management and scalability.}
+To enable extreme zoom depths without exhausting system memory, \FractalShark{}
+employs file-backed storage, optional reference compression, configurable
+memory limits, and automatic cleanup policies.  These mechanisms are closely
+tied to recent allocator and reference-orbit refactors discussed in the
+project development history.
+
+\paragraph{Diagnostics, benchmarking, and testing.}
+The application includes facilities for displaying detailed rendering
+parameters, running repeatable benchmarks, executing regression tests, and
+comparing reference orbits (including Imagina-compatible formats).  These
+features reflect FractalShark’s dual role as both a visualization tool and a
+development platform.
+
+\paragraph{Data export and interoperability.}
+\FractalShark{} can save rendered images, high-resolution bitmaps, iteration
+counts, and reference orbits in multiple text and compressed formats.  It
+supports loading external reference orbits and matching Imagina-compatible
+data for cross-tool validation.
+
+\medskip
+\noindent
+Overall, \FractalShark{} functions as both a \textbf{deep-zoom Mandelbrot
+explorer} and a \textbf{research and experimentation platform} for
+high-precision fractal rendering, prioritizing transparency, correctness,
+and extensibility over a simplified or opaque user experience.
+
+
+\section{Kernel List}
+
+This section simply lists all the CUDA kernels in \FractalShark{}.
+
+\begin{itemize}
+
+\item \textbf{Mandelbrot base kernels}
+  \begin{itemize}
+    \item \texttt{mandel\_1x\_float}
+    \item \texttt{mandel\_1x\_double}
+    \item \texttt{mandel\_2x\_float}
+    \item \texttt{mandel\_2x\_double}
+    \item \texttt{mandel\_4x\_float}
+    \item \texttt{mandel\_4x\_double}
+    \item \texttt{mandel\_hdr\_float}
+  \end{itemize}
+
+\item \textbf{Mandelbrot perturbation kernels}
+  \begin{itemize}
+    \item \texttt{mandel\_1x\_double\_perturb\_bla}
+    \item \texttt{mandel\_1xHDR\_float\_perturb\_bla}
+    \item \texttt{mandel\_1xHDR\_float\_perturb\_lav2}
+  \end{itemize}
+
+\item \textbf{High-precision reference kernels}
+  \begin{itemize}
+    \item \texttt{HpSharkReferenceGpuKernel}
+    \item \texttt{HpSharkReferenceGpuLoop}
+  \end{itemize}
+
+\item \textbf{Utility kernels}
+  \begin{itemize}
+    \item \texttt{antialiasing\_kernel}
+    \item \texttt{max\_reduce}
+    \item \texttt{max\_kernel}
+  \end{itemize}
+
+\item \textbf{Addition kernels}
+  \begin{itemize}
+    \item \texttt{AddKernel}
+    \item \texttt{AddKernelTestLoop}
+  \end{itemize}
+
+\item \textbf{Multiplication (NTT) kernels}
+  \begin{itemize}
+    \item \texttt{MultiplyKernelNTT}
+    \item \texttt{MultiplyKernelNTTTestLoop}
+  \end{itemize}
+
+\item \textbf{Disabled kernels}
+  \begin{itemize}
+    \item \texttt{mandel\_2x\_float\_perturb\_setup}
+    \item \texttt{mandel\_2x\_float\_perturb}
+  \end{itemize}
+
+\end{itemize}
+
 
 \section{Code Overview}
 
@@ -84,6 +233,7 @@ and aren't optimized heavily. They're much easier to understand and reason
 about though.
 
 \end{itemize}
+
 
 \section{The Mandelbrot set and escape-time rendering}
 \label{sec:mandelbrot-intro}
@@ -128,10 +278,12 @@ bottom-left origin (or vice versa).
 
 \subsection{Affine map into the complex plane}
 The parameter \(c\) is computed by an affine transform:
+
 \begin{align}
 x_0 &= cx + dx \cdot X, \\
 y_0 &= cy + dy \cdot Y,
 \end{align}
+
 where \code{cx,cy} anchor the plane (e.g., the coordinate at pixel \((0,0)\)),
 and \code{dx,dy} are per-pixel increments. Different kernels compute these
 expressions in different numeric types; the intent is always the same: map each
@@ -142,11 +294,14 @@ pixel to its associated complex parameter \(c\).
 \label{sec:real-form}
 
 Writing \(z = x + i y\) and \(c = x_0 + i y_0\), the iteration becomes:
+
 \begin{align}
 x_{n+1} &= x_n^2 - y_n^2 + x_0, \\
 y_{n+1} &= 2 x_n y_n + y_0.
 \end{align}
+
 The escape test is:
+
 \begin{equation}
 x_n^2 + y_n^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
 \end{equation}
@@ -160,39 +315,32 @@ and \code{zrsqr + zisqr}. This is especially valuable when \(x\) and \(y\) are
 represented by multi-component expansion types.
 
 
-\section{Iteration chunking via \code{iteration\_precision}}
-\label{sec:chunking}
+\section{Mandelbrot base kernels}
+\label{sec:mandel-base-kernels}
 
-Some kernels are templated on an integer \code{iteration\_precision}
-(\(1,2,4,8,16\)) and unroll multiple Mandelbrot steps inside the loop:
-\begin{itemize}
-  \item Each loop iteration performs \code{iteration\_precision} updates.
-  \item The counter \code{iter} increases by that amount.
-  \item The maximum iteration \code{n\_iterations} is adjusted so \code{iter}
-        does not exceed the requested limit.
-\end{itemize}
+The goal of these kernels in \FractalShark{} is to \emph{render the Mandelbrot set}
+by computing an \emph{escape-time} iteration count per pixel over a 2D image
+grid efficiently. Each CUDA thread evaluates a single complex parameter \(c\)
+corresponding to one pixel, iterates the Mandelbrot recurrence, and stores the
+iteration count into an output buffer. Separate (or fused) stages can map
+iteration counts to colors, apply palettes, and perform anti-aliasing.
 
-This reduces loop overhead. The trade-off is that the escape predicate is
-typically checked only once per chunk; therefore the reported escape iteration
-can be larger than the true first-escape iteration by up to
-\code{iteration\_precision - 1}. For strict escape iteration counts (e.g., for
-continuous/smooth coloring based on the first bailout), use a chunk size of 1
-or insert bailout checks within the unrolled body.
-
-
-\section{Kernel family: numeric precision ladder for Mandelbrot rendering}
-\label{sec:precision-ladder}
+Across these base kernels, the primary variation is the numeric representation
+used for the orbit arithmetic: from IEEE-754 \code{float}/\code{double} up
+through expansion types (float-float, double-double, quad-float, quad-double)
+and HDR-normalized formats. The shared objective remains the same: compute the
+escape-time for the Mandelbrot iteration as accurately and efficiently as needed
+for a desired zoom depth.
 
 Each kernel variant renders the same Mandelbrot escape-time field; the only
 difference is the numeric type used for mapping and orbit iteration. The
 following sections describe how each type realizes the same recurrence and
-escape test.
+escape test.  This set of kernels does not use linear approximation or
+perturbation; they simply evaluate the Mandelbrot iteration directly in the
+chosen numeric format.
 
 Throughout, \code{IterType} is the integer type used to store the escape-time
-iteration count (e.g., \code{uint16\_t} or \code{uint32\_t}). An output color
-buffer may appear in signatures (e.g., \code{AntialiasedColors OutputColorMatrix})
-even when not written in the shown kernel body; the intent is to support a
-coloring stage using the computed iteration counts.
+iteration count (e.g., \code{uint32\_t} or \code{uint64\_t}).
 
 \subsection{Kernel: \code{mandel\_1x\_float}}
 \label{sec:mandel-1x-float}
@@ -203,7 +351,8 @@ highest throughput but limits usable zoom depth due to rounding error and loss
 of significance in \(c\) and the orbit.
 
 \subsubsection{FMA-based orbit update}
-A typical implementation uses fused multiply-add intrinsics:
+The implementation uses fused multiply-add intrinsics:
+
 \begin{verbatim}
 ytemp = __fmaf_rd(-y, y, x0);     // x0 - y^2
 xtemp = __fmaf_rd(x, x, ytemp);   // x^2 - y^2 + x0
@@ -211,18 +360,22 @@ xtemp2 = 2.0f * x;
 y = __fmaf_rd(xtemp2, y, y0);     // 2xy + y0
 x = xtemp;
 \end{verbatim}
-This corresponds exactly to:
+
+These intrinsics correspond exactly to:
+
 \begin{align}
 x &\leftarrow x^2 - y^2 + x_0,\\
 y &\leftarrow 2xy + y_0.
 \end{align}
+
 Using FMA reduces intermediate rounding and can improve performance. The
 \code{\_\_fmaf\_rd} variant rounds downward; if IEEE round-to-nearest is desired,
 use \code{\_\_fmaf\_rn} (or plain \code{fmaf}).
 
 \subsubsection{Escape test}
-The kernel tests \(x^2+y^2 < 4\) (often recomputing squares each loop in this
-simplest variant).
+The kernel tests \(x^2+y^2 < 4\), which implies recomputing squares each loop in
+this simplest variant.  Perhaps this kernel could explicitly cache the squares
+for better performance.
 
 \subsection{Kernel: \code{mandel\_1x\_double}}
 \label{sec:mandel-1x-double}
@@ -230,7 +383,9 @@ simplest variant).
 \subsubsection{Numeric type}
 This variant uses IEEE-754 \code{double} and therefore carries substantially
 more mantissa precision than float. The Mandelbrot recurrence is identical, but
-performance depends strongly on GPU FP64 throughput.
+performance depends strongly on GPU FP64 throughput.  Consumer GPUs often
+have much lower FP64 throughput than FP32, so this kernel may be slower than
+\code{mandel\_1x\_float} on such hardware.
 
 \subsubsection{Orbit update and escape test}
 The update uses double-precision FMA intrinsics (e.g., \code{\_\_fma\_rd}) or
@@ -255,69 +410,87 @@ correction term. Arithmetic uses compensated routines such as
 and often a specialized \code{mul\_dblflt2x(x,y)} to compute \(2xy\) with good
 accuracy.
 
+All double- and quad- float/double implementations are based on work from Andrew
+Thall \cite{andrew-thall-dblflt}.  The implementations are modified here to
+support both float and double base types.  These changes are unique to
+\FractalShark{}.
+
 \subsubsection{Mapping and orbit iteration}
+
 The affine mapping for \(c\) is performed in \code{dblflt}:
+
 \[
 x_0 = cx + dx \cdot X,\qquad y_0 = cy + dy \cdot Y,
 \]
+
 and the orbit update follows the same real-form recurrence using expansion
 operations. Cached squares are typically maintained as \code{dblflt}:
+
 \[
 zrsqr = x^2,\quad zisqr = y^2.
 \]
 
 \subsubsection{Escape test}
-Some implementations compare only the leading component (e.g., \code{head}) for
+The implementations compares only the leading component (e.g., \code{head}) for
 speed:
+
 \[
 zrsqr.\mathrm{head} + zisqr.\mathrm{head} < 4.
 \]
-This is fast but can misclassify points extremely near the boundary. A fully
-robust bailout can incorporate both components (or a conservative bound).
+
+This approach is fast but can misclassify points extremely near the boundary. A
+fully robust bailout can incorporate both components (or a conservative bound).
 
 \subsection{Kernel: \code{mandel\_2x\_double}}
 \label{sec:mandel-2x-double}
 
 \subsubsection{Numeric type: double-double expansion}
 This variant uses a double-double type \code{dbldbl} representing:
+
 \[
 a \approx a_{\mathrm{hi}} + a_{\mathrm{lo}},
 \]
-with both components in double precision (often yielding \(\sim\)106 bits of
-precision in favorable cases). This enables deeper zoom while retaining a
+
+with both components in double precision, yielding \(\sim\)106 bits of precision
+in favorable cases. This approach enables deeper zoom while retaining a
 structure similar to the float-float kernel.
 
 \subsubsection{Mapping, orbit update, and escape test}
+
 The kernel computes the same affine mapping and iterates the same recurrence,
-but with double-double arithmetic. The escape predicate may use the leading
-component for speed, depending on the library layout and conventions in use.
-If the implementation compares against a single component field (e.g., \code{.x}
-or \code{.y}), verify that this field corresponds to the high part for that
-library.
+but with double-double arithmetic. The escape predicate also uses the leading
+component for speed.
 
 \subsection{Kernel: \code{mandel\_4x\_float}}
 \label{sec:mandel-4x-float}
 
 \subsubsection{Numeric type: quad-float (4-term expansion)}
+
 This variant uses a four-float expansion type \code{GQF::gqf\_real}:
+
 \[
 a \approx a_0 + a_1 + a_2 + a_3,
 \]
+
 with decreasing-magnitude components. Pixel coordinates and constants are lifted
-into this type (e.g., \code{make\_qf(X,0,0,0)}), then the affine mapping and orbit
-update are performed in quad-float arithmetic.
+into this type (e.g., \code{make\_qf(X,0,0,0)}), then the affine mapping and
+orbit update are performed in quad-float arithmetic.  The implementation of this
+numeric type is also based on Andrew Thall's work \cite{andrew-thall-dblflt}
+with some minor changes specific to \FractalShark{}.
 
 \subsubsection{Orbit update and escape test}
 The update implements:
+
 \[
 x \leftarrow x^2 - y^2 + x_0,\qquad y \leftarrow 2xy + y_0,
 \]
+
 using quad-float operations (including specialized square and power-of-two
 multiply helpers). The escape test can be performed in the full quad-float type:
+
 \[
 zrsqr + zisqr \le 4.
 \]
-This yields a numerically faithful bailout for extreme zoom rendering.
 
 \subsection{Kernel: \code{mandel\_4x\_double}}
 \label{sec:mandel-4x-double}
@@ -339,30 +512,61 @@ escape compare remains a full-precision comparison in the quad-double domain.
 
 \subsubsection{Numeric type: HDR-normalized expansion}
 This variant uses an HDR wrapper around an expansion type, e.g.:
+
 \[
 \code{HDRFloat<CudaDblflt<dblflt>>}.
 \]
-The intent is to combine (i) a wider mantissa via expansion arithmetic with
-(ii) explicit normalization/reduction to maintain numeric conditioning and
-dynamic range across many iterations.
+
+This implementation has no practical value because precision is limited by the
+base expansion type; however, it serves as a testbed for HDR arithmetic in the
+Mandelbrot context.  Thus, this kernel is primarily of academic interest.
 
 \subsubsection{Reduction and stable comparisons}
-The kernel frequently calls \code{Reduce()} / \code{HdrReduce()} on intermediate
-values. These reductions are part of the numeric contract: norms and
-comparisons are assumed to be applied to reduced/normalized values, enabling
-specialized comparators without repeatedly materializing primitive scalars.
+
+The kernel frequently calls \code{HdrReduce()} on intermediate values. These
+reductions are part of the numeric contract: norms and comparisons are assumed
+to be applied to reduced/normalized values, enabling specialized comparators
+without repeatedly materializing primitive scalars.
 
 Instead of testing \(x^2+y^2 < 4\) in primitive form, the kernel maintains:
+
 \[
 zsq\_sum = zrsqr + zisqr
 \]
+
 and checks escape via a reduced comparator:
+
 \begin{verbatim}
 while (zsq_sum.compareToBothPositiveReduced(Four) < 0)
 \end{verbatim}
+
 This directly supports escape-time Mandelbrot rendering in HDR arithmetic while
 keeping comparisons meaningful and stable.
 
+\section{Iteration chunking via \code{iteration\_precision}}
+\label{sec:chunking}
+
+A few of the base kernels just described, which exclude linear approximation or
+perturbation, are templated on an integer \code{iteration\_precision}
+(\(1,2,4,8,16\)) and unroll multiple Mandelbrot steps inside the loop:
+
+\begin{itemize}
+  \item Each loop iteration performs \code{iteration\_precision} updates.
+  \item The counter \code{iter} increases by that amount.
+  \item The maximum iteration \code{n\_iterations} is adjusted so \code{iter}
+        does not exceed the requested limit.
+\end{itemize}
+
+This approach reduces loop overhead. The trade-off is that the escape predicate
+is typically checked only once per chunk; therefore the reported escape
+iteration can be larger than the true first-escape iteration by up to
+\code{iteration\_precision - 1}. For strict escape iteration counts (e.g., for
+continuous/smooth coloring based on the first bailout), use a chunk size of 1 or
+insert bailout checks within the unrolled body.
+
+This optimization was mainly explored for educational purposes; in practice, the
+benefit is small compared to other optimizations such as perturbation and linear
+approximation.
 
 \section{Perturbation Rendering of the Mandelbrot Set}
 \label{sec:perturbation-concept}
@@ -376,9 +580,11 @@ recurrence.
 \subsection{Motivation: why perturbation is needed}
 
 At large zoom depths, direct evaluation of
+
 \[
 z_{n+1} = z_n^2 + c,\qquad z_0=0,
 \]
+
 in floating-point arithmetic becomes inaccurate due to loss of significance in
 \(c\) and accumulated rounding error. Using extended or arbitrary precision
 solves the accuracy problem but is expensive when performed independently for
@@ -394,9 +600,11 @@ deviations from it.
 
 Choose a reference parameter \(c_\star\), usually the center of the current
 view, and compute its orbit in sufficiently high precision:
+
 \begin{equation}
 z_{n+1}^\star = (z_n^\star)^2 + c_\star,\qquad z_0^\star = 0.
 \end{equation}
+
 The sequence \(\{z_n^\star\}\) is stored and reused for many pixels. This is the
 only orbit that requires full high-precision evaluation.
 
@@ -405,34 +613,46 @@ only orbit that requires full high-precision evaluation.
 
 For a pixel parameter \(c\) close to the reference parameter \(c_\star\), define
 the parameter delta:
+
 \begin{equation}
 \Delta c \stackrel{\mathrm{def}}{=} c - c_\star,
 \end{equation}
+
 and express the orbit at iteration \(n\) as a perturbation of the reference
 orbit:
+
 \begin{equation}
 z_n = z_n^\star + \Delta z_n,
 \end{equation}
+
 where \(\Delta z_n\) is the \emph{orbit delta}. Substituting into the Mandelbrot
 recurrence,
+
 \[
 z_{n+1} = z_n^2 + c,
 \]
+
 gives:
+
 \begin{align}
 z_{n+1}
 &= (z_n^\star + \Delta z_n)^2 + (c_\star + \Delta c) \\
 &= (z_n^\star)^2 + 2z_n^\star \Delta z_n + (\Delta z_n)^2 + c_\star + \Delta c.
 \end{align}
+
 Subtracting the reference recurrence
+
 \[
 z_{n+1}^\star = (z_n^\star)^2 + c_\star
 \]
+
 yields the \emph{exact delta update}:
+
 \begin{equation}
 \Delta z_{n+1} = 2z_n^\star \Delta z_n + (\Delta z_n)^2 + \Delta c.
 \label{eq:perturb-exact}
 \end{equation}
+
 No approximation has been made: perturbation preserves the exact Mandelbrot
 dynamics as long as the reference orbit is computed accurately.
 
@@ -440,26 +660,33 @@ dynamics as long as the reference orbit is computed accurately.
 
 To map \cref{eq:perturb-exact} directly to an implementation, write all
 quantities in real and imaginary parts:
+
 \begin{align*}
 z_n^\star &= x_n^\star + i y_n^\star, \\
 \Delta z_n &= \Delta x_n + i \Delta y_n, \\
 \Delta c &= \Delta c_x + i \Delta c_y.
 \end{align*}
+
 First expand the quadratic term:
+
 \begin{align}
 (\Delta z_n)^2
 &= (\Delta x_n + i \Delta y_n)^2 \\
 &= (\Delta x_n^2 - \Delta y_n^2)
    + i(2 \Delta x_n \Delta y_n).
 \end{align}
+
 Next expand the linear term:
+
 \begin{align}
 2 z_n^\star \Delta z_n
 &= 2(x_n^\star + i y_n^\star)(\Delta x_n + i \Delta y_n) \\
 &= 2(x_n^\star \Delta x_n - y_n^\star \Delta y_n)
  + i\,2(x_n^\star \Delta y_n + y_n^\star \Delta x_n).
 \end{align}
+
 Combining terms gives the real and imaginary delta updates:
+
 \begin{align}
 \Delta x_{n+1}
 &= 2(x_n^\star \Delta x_n - y_n^\star \Delta y_n)
@@ -473,8 +700,9 @@ Combining terms gives the real and imaginary delta updates:
 
 \subsubsection{Factored form used in implementations}
 
-For numerical efficiency, \cref{eq:perturb-real,eq:perturb-imag} are typically
+For numerical efficiency, \cref{eq:perturb-real,eq:perturb-imag} are often
 evaluated in a factored form. Grouping terms yields:
+
 \begin{align}
 \Delta x_{n+1}
 &= \Delta x_n\,(2x_n^\star + \Delta x_n)
@@ -485,30 +713,41 @@ evaluated in a factored form. Grouping terms yields:
    + \Delta y_n\,(2x_n^\star + \Delta x_n)
    + \Delta c_y. \label{eq:perturb-imag-factored}
 \end{align}
+
 This corresponds exactly to the compact complex form:
+
 \[
 \Delta z_{n+1}
 = \Delta z_n \bigl(2 z_n^\star + \Delta z_n\bigr) + \Delta c,
 \]
+
 and maps directly onto typical GPU code using temporaries such as:
+
 \[
 (2x_n^\star + \Delta x_n), \quad (2y_n^\star + \Delta y_n).
 \]
+
+Despite the efficiency, \FractalShark{} implements the non-factored form
+\cref{eq:perturb-real,eq:perturb-imag} everywhere.
 
 \subsubsection{Reconstruction for escape testing}
 
 Although perturbation evolves only the delta, escape-time rendering requires the
 absolute orbit value:
+
 \begin{equation}
 z_n = z_n^\star + \Delta z_n
      = (x_n^\star + \Delta x_n) + i(y_n^\star + \Delta y_n).
 \end{equation}
+
 The standard Mandelbrot bailout condition is then applied:
+
 \begin{equation}
 |z_n|^2
 = (x_n^\star + \Delta x_n)^2 + (y_n^\star + \Delta y_n)^2
 \ge 4.
 \end{equation}
+
 This separation cleanly explains how perturbation math maps onto real-valued
 implementation variables while preserving the exact Mandelbrot dynamics.
 
@@ -517,16 +756,20 @@ implementation variables while preserving the exact Mandelbrot dynamics.
 
 Equation~\eqref{eq:perturb-exact} can be rearranged into a form well suited for
 implementation:
+
 \begin{equation}
 \Delta z_{n+1} = \Delta z_n \bigl(2z_n^\star + \Delta z_n\bigr) + \Delta c.
 \label{eq:perturb-factored}
 \end{equation}
+
 This form requires only:
+
 \begin{itemize}
 \item one complex multiply,
 \item one complex add,
 \item access to the stored reference sample \(z_n^\star\).
 \end{itemize}
+
 Crucially, it avoids squaring large high-precision numbers for every pixel.
 Instead, the expensive squaring is performed once for the reference orbit and
 reused implicitly through \(z_n^\star\).
@@ -536,41 +779,49 @@ reused implicitly through \(z_n^\star\).
 Perturbation evolves \(\Delta z_n\), but Mandelbrot rendering requires testing
 escape of the absolute orbit. At each iteration, the current iterate is
 reconstructed as:
+
 \begin{equation}
 z_n \approx z_n^\star + \Delta z_n.
 \end{equation}
+
 Escape-time rendering then applies the standard bailout condition:
+
 \begin{equation}
 |z_n|^2 = \Re(z_n)^2 + \Im(z_n)^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
 \end{equation}
+
 The iteration index \(n\) at which this condition is first satisfied (or the
 maximum iteration count if it never is) determines the pixel’s color.
 
-\subsection{Numerical stability and recentering}
+\subsection{Numerical stability and rebasing}
 
 Perturbation is efficient only while \(\Delta z_n\) remains small relative to
 \(z_n^\star\). If \(|\Delta z_n|\) grows comparable to or larger than
 \(|z_n^\star|\), numerical cancellation and loss of significance can degrade
 accuracy.
 
-To maintain stability, practical implementations use \emph{recentering}. When
+To maintain stability, practical implementations use \emph{rebasing}. When
 a stability criterion is violated, the current approximation is folded into a
 new base:
+
 \begin{equation}
 z_n^\star \leftarrow z_n^\star + \Delta z_n,\qquad \Delta z_n \leftarrow 0,
 \end{equation}
+
 and perturbation continues relative to this updated reference state. This
 preserves correctness while keeping deltas small.
 
 \subsection{Why perturbation accelerates Mandelbrot rendering}
 
 The efficiency gains come from two sources:
+
 \begin{itemize}
 \item \textbf{Reduced arithmetic cost.} Only one orbit is computed in full
 high precision. All other pixels use cheaper delta updates.
 \item \textbf{Spatial coherence.} Nearby pixels share the same reference orbit
 for many iterations before diverging.
 \end{itemize}
+
 As a result, perturbation enables deep-zoom Mandelbrot rendering that would be
 prohibitively slow if each pixel were evaluated independently in arbitrary
 precision.
@@ -595,8 +846,71 @@ the quadratic map
   z_{n+1} = z_n^2 + c,\qquad z,c\in\mathbb{C},
 \end{equation}
 
-with an implementation that supports single-threaded CPU, multi-threaded CPU, 
-and GPU backends, plus several storage/compression modes that trade memory footprint against recomputation.
+with an implementation that supports single-threaded CPU, multi-threaded CPU,
+and GPU backends, plus several storage/compression modes that trade memory
+footprint against recomputation.
+
+\subsubsection{Expanded versus factored evaluation of the reference orbit}
+
+The high-precision reference orbit evaluates the quadratic map
+
+\[
+z_{n+1} = z_n^2 + c,
+\qquad
+z_n = x_n + i y_n,
+\qquad
+c = c_x + i c_y,
+\]
+
+with full arbitrary-precision arithmetic.
+
+Writing the iteration in real and imaginary components gives the
+\emph{expanded form}:
+
+\begin{align}
+x_{n+1} &= x_n^2 - y_n^2 + c_x, \label{eq:ref-expanded-real} \\
+y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-expanded-imag}
+\end{align}
+
+This form follows directly from the algebraic definition of the polynomial.
+Each term is evaluated explicitly, requiring two full-precision squares and
+one full-precision multiplication per iteration.
+
+The same quadratic map can be evaluated in a mathematically equivalent
+\emph{factored form}. In particular, the real component may be written as
+
+\begin{align}
+x_{n+1}
+&= (x_n - y_n)(x_n + y_n) + c_x, \label{eq:ref-factored-real}
+\end{align}
+while the imaginary component remains
+\begin{align}
+y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-factored-imag}
+\end{align}
+
+In exact arithmetic, \cref{eq:ref-factored-real,eq:ref-factored-imag} are
+identical to \cref{eq:ref-expanded-real,eq:ref-expanded-imag}. The difference
+lies solely in how the products are formed.
+
+From an implementation perspective, the expanded form evaluates
+$x_n^2$ and $y_n^2$ independently and makes the subtraction
+$x_n^2 - y_n^2$ explicit. This closely mirrors the mathematical definition
+of the Mandelbrot polynomial and exercises the full squaring and
+multiplication paths of the high-precision arithmetic.
+
+The factored form reduces the number of full-precision squares by replacing
+$x_n^2 - y_n^2$ with a single multiplication of the shared intermediates
+$(x_n \pm y_n)$. This can reduce computational cost when multiplication and
+squaring have similar expense, but it introduces stronger coupling between
+terms and alters the way cancellation and rounding effects manifest in
+finite-precision arithmetic.
+
+In all cases, \FractalShark{} uses the expanded form despite the advantages offered
+by the factored form. This choice simplifies reasoning about numerical behavior,
+ensures that all arithmetic paths are exercised, and maintains consistency with
+the perturbation update form used elsewhere in the codebase.  For better
+performance it likely makes sense to implement both forms and compare their behavior
+empirically.
 
 \subsection{High-level pipeline and dispatch}
 \label{subsec:ref-orbit-pipeline}
@@ -614,6 +928,7 @@ instance, where:
 \end{itemize}
 
 Orbit construction is initiated through \texttt{AddPerturbationReferencePoint()}, which:
+
 \begin{enumerate}
   \item Picks an initial guess \((c_x,c_y)\) (center of the current view if unset).
   \item Chooses an algorithm (\texttt{ST}, \texttt{MT}, reuse-based hybrids, or \texttt{GPU}) based on
@@ -636,7 +951,9 @@ _n,\hat{y}_n)\in T^2\) for downstream work (compression, bailout checks,
 periodicity tests).
 
 \paragraph{State and initialization.}
+
 Given a selected reference parameter \(c = c_x + i c_y\), the implementation:
+
 \begin{itemize}
   \item Initializes \texttt{mpf\_t} temporaries for \(x,y,x^2\), and scratch products.
   \item Sets the initial iterate \((x_0,y_0) = (c_x,c_y)\) (this code uses the common convention \(z_0=c\)).
@@ -658,45 +975,59 @@ The implementation uses:
 \end{itemize}
 
 \paragraph{Bailout.}
+
 The bailout threshold is evaluated in low precision using
+
 \begin{equation}
   \|\hat{z}_n + \hat{c}\|^2 = (\hat{x}_n + \hat{c}_x)^2 + (\hat{y}_n + \hat{c}_y)^2 > 256,
 \end{equation}
-which matches the code's use of \texttt{TwoFiftySix} and avoids a high-precision norm each step.
+
+which matches the code's use of \texttt{TwoFiftySix} and avoids a high-precision
+norm each step.  Note that the bailout here is different from the one used in
+the lower-precision kernels discussed previously; this is acceptable because the
+reference orbit is used only for perturbation, not direct rendering.  The
+difference is merely arbitrary.
 
 \subsection{Periodicity tracking via \texorpdfstring{$\partial z/\partial c$}{dz/dc}}
 \label{subsec:ref-orbit-periodicity}
 
 Several modes enable periodicity detection. The implementation tracks the complex derivative
+
 \(\frac{\partial z_n}{\partial c}\) in low precision:
 \begin{equation}
   d_{n+1} = 2 z_n d_n + 1,\qquad d_0 = 1,
 \end{equation}
+
 with \(d_n = d_{x,n} + i d_{y,n}\). Expanding into real and imaginary parts yields:
+
 \begin{align}
   d_{x,n+1} &= 2(x_n d_{x,n} - y_n d_{y,n}) + 1, \\
   d_{y,n+1} &= 2(x_n d_{y,n} + y_n d_{x,n}).
 \end{align}
 
 The code applies a radius-based heuristic: let
+
 \begin{equation}
   n_2 = \max(|\hat{x}_n|,|\hat{y}_n|),\qquad
   r_0 = \max(|d_{x,n}|,|d_{y,n}|),
 \end{equation}
+
 and define a detection threshold
+
 \begin{equation}
   n_3 = 2\,R_{\max}\,r_0,
 \end{equation}
 
 where \(R_{\max}\) is the maximum perturbation radius stored in \texttt{results}
-. If \(n_2 < n_3\), the orbit is marked as \emph{maybe periodic} and the 
-reference loop terminates early (unless benchmarking mode disables the break). 
+. If \(n_2 < n_3\), the orbit is marked as \emph{maybe periodic} and the
+reference loop terminates early (unless periodicity detection is disabled).
 Otherwise, \((d_{x,n},d_{y,n})\) is advanced using the update above.
 
-\subsection{Compression and reuse datasets}
+\section{Compression and Reference Orbit Reuse Modes}
 \label{subsec:ref-orbit-compression-reuse}
 
 Two orthogonal storage decisions are made while iterating:
+
 \begin{enumerate}
   \item \textbf{Orbit storage} for perturbation use (\texttt{PExtras}):
   \begin{itemize}
@@ -713,61 +1044,135 @@ Two orthogonal storage decisions are made while iterating:
   \end{itemize}
 \end{enumerate}
 
-The authoritative orbit and the reuse stream are logically decoupled: the first 
-feeds perturbation evaluation, while the second provides an anchor sequence to 
-reconstruct nearby orbits without recomputing the full authoritative \texttt{mpf
-\_t} recurrence.
+The next two sections describe these mechanisms in more detail.
 
-\subsection{Reuse-based orbit regeneration}
+\section{Reuse-based orbit regeneration}
 \label{subsec:ref-orbit-reuse}
 
-At extreme zoom, a previously computed authoritative orbit may be reused if it remains valid for the
-current view. Reuse is gated by two checks:
-\begin{enumerate}
-  \item \textbf{Precision headroom:} the estimated precision increase demanded by the new view must be below a
-        configured extra-precision margin (otherwise, authoritative recomputation is required).
-  \item \textbf{Spatial locality:} the parameter delta \(\Delta c = c - c^\star\) must lie within the
-        authoritative orbit's validity radius, i.e.\ \(|\Delta x|\le R_{\max}\) and \(|\Delta y|\le R_{\max}\).
-\end{enumerate}
+We consider iteration of the quadratic map
+\[
+f_c(z) = z^2 + c,\qquad z,c \in \mathbb{C},
+\]
+and distinguish between an \emph{authoritative} reference orbit computed in very high precision and a family of
+\emph{intermediate precision} reference orbits constructed via perturbation from that authoritative orbit.
 
-\paragraph{Delta-subiteration recurrence.}
-Let \(z_n^\star\) be the stored authoritative orbit for \(c^\star\), and let \(z_n\) be the desired orbit for
-\(c = c^\star + \Delta c\). Define \(\Delta z_n = z_n - z_n^\star\). For the quadratic map,
-\begin{equation}
-  z_{n+1}^\star = (z_n^\star)^2 + c^\star,\qquad
-  z_{n+1} = (z_n^\star + \Delta z_n)^2 + (c^\star + \Delta c).
-\end{equation}
-Subtracting gives the exact delta recurrence
-\begin{equation}
-  \Delta z_{n+1} = 2 z_n^\star\,\Delta z_n + (\Delta z_n)^2 + \Delta c.
-\end{equation}
+\subsubsection{Authoritative Reference Orbit}
 
-The implementation stores \(\Delta c\) as \((\Delta_0^x,\Delta_0^y)\) and advances
-\((\Delta_n^x,\Delta_n^y)\) in \texttt{mpf\_t}, using reuse entries for \(z_n^\star\). Writing
-\(z_n^\star = x_n^\star + i y_n^\star\) and \(\Delta z_n = \Delta_n^x + i \Delta_n^y\), the real/imaginary
-updates are:
+Let
+\[
+c_0 \in \mathbb{C}
+\]
+denote the authoritative reference parameter.  The corresponding authoritative reference orbit is defined by
+\begin{equation}
+z^{(0)}_0 = 0, \qquad
+z^{(0)}_{n+1} = \bigl(z^{(0)}_n\bigr)^2 + c_0,
+\label{eq:authoritative_orbit}
+\end{equation}
+and is computed using sufficiently high precision that it is treated as exact for all practical purposes.
+This orbit constitutes the single source of truth for all subsequent perturbative constructions.
+
+\subsubsection{Perturbation Formulation}
+
+For any nearby parameter
+\[
+c = c_0 + \Delta c,
+\]
+the corresponding orbit may be written as
+\[
+z_n(c) = z^{(0)}_n + \Delta z_n,
+\]
+where $\Delta z_n$ represents the perturbation relative to the authoritative orbit.
+Substituting into the defining recurrence yields the exact perturbation equation
 \begin{align}
-  \Delta_{n+1}^x &=
-    \Delta_n^x\,(2x_n^\star + \Delta_n^x) - \Delta_n^y\,(2y_n^\star + \Delta_n^y) + \Delta_0^x, \\
-  \Delta_{n+1}^y &=
-    \Delta_n^x\,(2y_n^\star + \Delta_n^y) + \Delta_n^y\,(2x_n^\star + \Delta_n^x) + \Delta_0^y.
+\Delta z_0 &= 0, \\
+\Delta z_{n+1}
+&= 2 z^{(0)}_n \Delta z_n + (\Delta z_n)^2 + \Delta c.
+\label{eq:perturbation_exact}
 \end{align}
-Finally, the reconstructed iterate is obtained by
-\begin{equation}
-  x_n = x_n^\star + \Delta_n^x,\qquad y_n = y_n^\star + \Delta_n^y.
-\end{equation}
+Equation~\eqref{eq:perturbation_exact} is the fundamental relation used both to construct intermediate reference orbits
+and to evaluate per-pixel perturbations during rendering.
 
-\paragraph{Reference iteration reset.}
-To reduce accumulated error when walking a compressed reuse stream, the code periodically resets the reuse
-index back to zero when the delta magnitude becomes comparable to or larger than the current orbit magnitude.
-Operationally, it compares low-precision norms
-\begin{equation}
-  \|\hat{z}_n\|^2 \quad \text{vs.} \quad \|\widehat{\Delta z_n}\|^2,
-\end{equation}
-and if \(\|\hat{z}_n\|^2 < \|\widehat{\Delta z_n}\|^2\) (or the reuse index reaches the end), it sets
-\(\Delta z_n \leftarrow z_n\) and restarts from the beginning of the reuse stream.
+\subsubsection{Intermediate Precision Reference Orbits}
 
-\subsection{Multi-threaded CPU acceleration}
+An intermediate precision reference orbit is defined at a parameter
+\[
+c_1 = c_0 + \Delta c_1,
+\]
+where $\Delta c_1$ is chosen such that the perturbation $\Delta z^{(1)}_n$ remains bounded within a fixed target accuracy
+(e.g.\ absolute error $\lesssim 10^{-100}$) when represented in a chosen intermediate precision arithmetic.
+
+The intermediate reference orbit is defined by
+\[
+z^{(1)}_n \equiv z^{(0)}_n + \Delta z^{(1)}_n,
+\]
+where $\Delta z^{(1)}_n$ is obtained by iterating
+\begin{equation}
+\Delta z^{(1)}_{n+1}
+= 2 z^{(0)}_n \Delta z^{(1)}_n
+  + \bigl(\Delta z^{(1)}_n\bigr)^2
+  + \Delta c_1
+\label{eq:intermediate_perturbation}
+\end{equation}
+in the intermediate precision format.
+
+In the single-thread execution path (beginning at
+\texttt{AddPerturbationReferencePointST}), this construction is performed sequentially using the cached authoritative
+orbit samples $\{z^{(0)}_n\}$ as coefficients.
+No approximation beyond finite-precision rounding is introduced; the intermediate orbit is mathematically equivalent
+to directly iterating $f_{c_1}$, subject only to the chosen precision bound.
+
+\subsubsection{Per-Pixel Perturbation from an Intermediate Orbit}
+
+For an individual pixel parameter
+\[
+c_{\text{px}} = c_1 + \delta c,
+\]
+with $|\delta c| \ll |\Delta c_1|$, the final orbit is expressed as
+\[
+z_n(c_{\text{px}}) = z^{(1)}_n + \delta z_n,
+\]
+where $\delta z_n$ satisfies
+\begin{equation}
+\delta z_{n+1}
+= 2 z^{(1)}_n \delta z_n
+  + (\delta z_n)^2
+  + \delta c.
+\label{eq:pixel_perturbation}
+\end{equation}
+Because $|\delta c|$ is small, $\delta z_n$ remains well within the same fixed precision envelope used for the
+intermediate reference orbit.
+
+\subsubsection{SaveForReuse Modes}
+
+Both \texttt{SaveForReuse1} and \texttt{SaveForReuse2} correspond to the mathematical framework described above.
+They differ only in execution strategy.
+
+\paragraph{SaveForReuse1.}
+In \texttt{SaveForReuse1}, the authoritative orbit samples $\{z^{(0)}_n\}$ are stored after initial computation and reused
+whenever intermediate reference orbits are constructed.
+This avoids recomputation of \eqref{eq:authoritative_orbit} and ensures that all perturbative steps are driven by the same
+authoritative data.
+
+\paragraph{SaveForReuse2.}
+\texttt{SaveForReuse2} is a multithreaded optimization of the same procedure.
+It performs the identical perturbation recurrences
+\eqref{eq:intermediate_perturbation} and \eqref{eq:pixel_perturbation}, using the same authoritative orbit samples and
+producing the same intermediate and per-pixel results.
+The distinction lies solely in how data is staged, reused, and synchronized across threads in the multithreaded path.
+
+\paragraph{Equivalence.}
+From a mathematical standpoint,
+\[
+\texttt{SaveForReuse1} \;\equiv\; \texttt{SaveForReuse2}.
+\]
+Both modes define the same authoritative orbit, the same intermediate reference
+orbits, and the same per-pixel perturbation orbits.  Any differences are
+strictly implementation-level optimizations and do not affect numerical results.
+\texttt{SaveForReuse3} and \texttt{SaveForReuse4} are addressed in a subsequent
+section.
+
+
+\section{Multi-threaded Reference Orbit Acceleration}
 \label{subsec:ref-orbit-mt}
 
 The \texttt{MT3} path parallelizes high-cost MPIR operations by splitting the per-iteration work across
@@ -777,28 +1182,522 @@ threads. Two recurring patterns appear:
 For authoritative orbit computation, two worker threads compute \(x_n^2\) and \(y_n^2\) concurrently while the
 main thread evaluates the cross term for \(y_{n+1} = 2 x_n y_n + c_y\), performs periodicity checks in low
 precision, and orchestrates reuse/serialization. The main update then becomes:
+
 \begin{equation}
   x_{n+1} = x_n^2 - y_n^2 + c_x,
 \end{equation}
+
 where \(x_n^2\) and \(y_n^2\) are returned from the worker threads.
 
 \paragraph{Lock-free handoff with prefetch.}
+
 Threads communicate through a minimal \texttt{ThreadPtrs<T>} mailbox containing atomic \texttt{In} and \texttt{Out}
 pointers. The protocol is:
+
 \begin{enumerate}
   \item Producer stores a work pointer in \texttt{In}.
   \item Worker spins until it swaps \texttt{In} to \texttt{nullptr}, prefetches the pointed-to operands, executes MPIR
         arithmetic, then publishes the same pointer in \texttt{Out}.
   \item Producer spins until it swaps \texttt{Out} back to \texttt{nullptr}, then consumes the computed fields.
 \end{enumerate}
-To mitigate cache miss latency on large MPIR limb arrays, the worker explicitly prefetches both MPIR headers
-and limb ranges (64-byte stride), which is particularly helpful when iterating at very high precision.
 
-\subsection{GPU reference orbit backend}
+To mitigate cache miss latency on large MPIR limb arrays, the worker explicitly
+prefetches both MPIR headers and limb ranges (64-byte stride), which is helpful
+when iterating at very high precision.  There is likely room for improvement
+here but it's not bad.
+
+\section{GPU reference orbit backend}
 \label{subsec:ref-orbit-gpu}
 
-The GPU backend delegates authoritative reference orbit generation to \texttt{HpShark} kernels specialized by
-precision. The key design is a persistent \emph{combo} object returned by initialization:
+In many numerical algorithms, correctness and stability depend on arithmetic
+precision far exceeding that of standard IEEE~754 floating-point formats.
+Fractal reference orbits are a canonical example: small rounding errors
+introduced early in an iteration can grow exponentially, eventually corrupting
+orbit classification, perturbation terms, or bailout logic. While
+arbitrary-precision libraries like MPIR can provide the required accuracy, their
+performance is often insufficient when reference orbits must be computed
+repeatedly or at very high precision. This creates a fundamental tension between
+numerical fidelity and throughput.
+
+To resolve this tension, high-precision arithmetic operations---in particular
+multiplication, addition, and subtraction of large significands---must be
+implemented with both mathematical rigor and architectural efficiency. Addition
+and subtraction are dominated by carry propagation across hundreds or thousands
+of limbs, while multiplication scales quadratically unless asymptotically faster
+algorithms are employed. For precisions relevant to deep zoom reference orbits,
+naive limb-by-limb multiplication quickly becomes the dominant cost,
+overwhelming all other parts of the computation.
+
+\subsection{Why Fast Multiplication Matters for Reference Orbits}
+
+Generating many fractal reference orbits typically involves iterating a
+recurrence relation (e.g.\ $z_{n+1} = f(z_n)$) at very high precision, often for
+thousands of iterations per reference point. Each iteration requires multiple
+high-precision multiplications and additions, and the total cost grows linearly
+with iteration count and superlinearly with precision. Even modest speedups in
+the core arithmetic therefore compound dramatically over the full computation.
+
+By using an NTT-based multiplication strategy, large significand products can be
+computed in $O(n \log n)$ time instead of $O(n^2)$, shifting the performance
+profile of high-precision arithmetic into a regime where GPUs can be effectively
+utilized. When combined with carefully engineered carry propagation and
+normalization steps, this enables high-precision multiply/add/subtract
+operations that are fast enough to make reference orbit computation practical at
+scales that would otherwise be prohibitive.
+
+\subsection{High-Precision Addition and Carry Propagation}
+
+While high-precision multiplication often dominates asymptotic complexity,
+addition and subtraction are also critical in practice for high-precision
+iterative algorithms. Each arithmetic iteration of a reference orbit typically
+performs several additions and subtractions on large significands, and these
+operations occur at every step, regardless of whether multiplication is used. At
+precisions of hundreds or thousands of limbs, even ``simple'' addition becomes a
+nontrivial operation due to carry propagation across the entire limb array.
+
+In a naive implementation, carry propagation is inherently serial: a carry-out
+from limb $i$ must be resolved before limb $i+1$ can be finalized. This leads to
+$O(n)$ latency with strict sequential dependence, which is particularly
+ill-suited to massively parallel architectures such as GPUs. When reference
+orbits are computed on such hardware, naive carry handling can become a
+synchronization bottleneck that negates the performance gains achieved by fast
+multiplication.
+
+\subsection{Parallel Prefix Formulation of Carry Propagation}
+
+Carry propagation can be reformulated as a prefix problem by observing that each
+limb contributes a local carry \emph{transfer function} rather than a single
+bit. Given a limb sum and an incoming carry, the limb either:
+
+\begin{itemize}
+\item \emph{absorbs} the carry (producing no carry-out),
+\item \emph{propagates} the carry unchanged, or
+\item \emph{generates} a new carry regardless of the input.
+\end{itemize}
+
+These behaviors can be encoded as elements of a small algebra with an
+associative composition operator. The final carry into each limb is then the
+prefix composition of all preceding transfer functions. Because the operator is
+associative, standard parallel prefix (scan) algorithms can be used to compute
+all carries in $O(\log n)$ depth.
+
+This perspective generalizes classical carry-lookahead adders from hardware
+design to software implementations operating on large limb arrays. On GPUs, it
+allows the carry problem to be decomposed across threads and warps, enabling
+high throughput while preserving exact arithmetic semantics.
+
+\subsection{Single-Pass Parallel Prefix with Decoupled Look-back}
+
+Traditional parallel prefix scans typically require multiple global
+synchronization phases or multiple kernel launches, which are costly on GPUs and
+limit scalability. Single-pass parallel prefix algorithms address this by
+computing local prefixes within thread blocks and resolving inter-block
+dependencies through a structured communication scheme.
+
+The \emph{Single-pass Parallel Prefix Scan with Decoupled Look-back}
+\cite{merrill2016single} technique further refines this approach. Each block
+computes its local carry prefix independently, while a lightweight look-back
+mechanism resolves the carry-in from preceding blocks without forcing all blocks
+to synchronize globally. By decoupling local computation from global dependency
+resolution, blocks can make forward progress independently, stalling only when
+strictly necessary to obtain an upstream carry.
+
+For high-precision addition and subtraction, this approach is especially
+effective: the vast majority of limbs can be processed in parallel, and long
+carry chains become rare and efficiently handled when they do occur. The result
+is a carry propagation scheme with near-linear throughput, minimal
+synchronization overhead, and better scaling to large precisions. When paired
+with fast NTT-based multiplication, this makes fully high-precision arithmetic
+practical for demanding workloads such as reference orbit generation.
+
+The GPU backend delegates authoritative reference orbit generation to
+\texttt{HpShark} kernels specialized by precision.  This section introduces the
+key concepts and then goes into how the implementation actually works.
+
+\subsection{Number Theoretic Transform and Multiply}
+
+High-precision floating-point multiplication ultimately reduces to multiplying
+two large integers (the significands), followed by normalization and exponent
+adjustment. A standard way to accelerate large-integer multiplication is to
+compute the convolution of digit-limbs using a fast transform. Over the reals,
+one would use an FFT; over modular arithmetic, the analogous tool is the
+\emph{Number Theoretic Transform} (NTT).
+
+\subsection{From Large-Integer Multiplication to Convolution}
+
+Let the two nonnegative integers to be multiplied be represented in base $B$ as
+
+\[
+A = \sum_{i=0}^{n-1} a_i B^i,\qquad
+C = \sum_{i=0}^{n-1} c_i B^i,
+\]
+
+with $0 \le a_i, c_i < B$. Their product is
+
+\[
+A\cdot C = \sum_{k=0}^{2n-2} \left(\sum_{i=0}^{k} a_i c_{k-i}\right) B^k.
+\]
+
+The coefficients
+
+\[
+s_k = \sum_{i=0}^{k} a_i c_{k-i}
+\]
+
+form the \emph{discrete convolution} of the sequences $(a_i)$ and $(c_i)$. If we
+can compute $(s_k)$ quickly, then we can recover the product (with subsequent
+carry propagation in base $B$).
+
+\subsection{NTT as an FFT Over a Finite Field}
+
+The NTT computes a discrete Fourier transform, but with all operations performed
+modulo a prime $p$ rather than over $\mathbb{C}$. Choose a prime modulus $p$ and
+an $N$-th primitive root of unity $\omega \in \mathbb{Z}_p$ such that
+
+\[
+\omega^N \equiv 1 \pmod p,\qquad
+\omega^k \not\equiv 1 \pmod p \text{ for } 0<k<N.
+\]
+
+Then the forward NTT of a length-$N$ sequence $x = (x_0,\dots,x_{N-1})$ is
+
+\[
+X_k = \sum_{j=0}^{N-1} x_j \,\omega^{jk} \pmod p,\qquad k=0,\dots,N-1,
+\]
+
+and the inverse NTT is
+
+\[
+x_j = N^{-1} \sum_{k=0}^{N-1} X_k \,\omega^{-jk} \pmod p,\qquad j=0,\dots,N-1,
+\]
+
+where $N^{-1}$ is the multiplicative inverse of $N$ modulo $p$.
+
+Just as with the complex FFT, the key property is that the transform diagonalizes convolution:
+
+\[
+\mathrm{NTT}(x \star y) \;=\; \mathrm{NTT}(x)\odot \mathrm{NTT}(y),
+\]
+
+where $\odot$ denotes pointwise multiplication and $\star$ denotes cyclic
+convolution modulo $x^N-1$. To compute the \emph{linear} convolution needed for
+multiplication, we pad both inputs with zeros to length $N \ge 2n$ so that the
+cyclic convolution coincides with the linear convolution.
+
+\subsection{Why a Special Prime Helps: \texttt{MagicPrime}}
+
+A practical NTT requires:
+
+\begin{enumerate}
+
+\item $N$ to be highly composite (typically a power of two) so that
+Cooley--Tukey style butterflies apply efficiently;
+
+\item a modulus $p$ such that $N \mid (p-1)$, guaranteeing the existence of an
+$N$-th primitive root of unity in $\mathbb{Z}_p$;
+
+\item fast modular multiplication on the target hardware (here, GPUs with
+efficient 64-bit integer operations).
+
+\end{enumerate}
+
+The prime used here, denoted \texttt{MagicPrime}, is chosen specifically to
+satisfy these constraints. The critical mathematical implication of using a
+prime modulus is that $\mathbb{Z}_p$ is a field, so every nonzero element has a
+multiplicative inverse and the NTT is well-defined and invertible when $\omega$
+exists.
+
+The most important structural requirement is:
+
+\[
+N \mid (p-1).
+\]
+
+When $N$ is a power of two, say $N = 2^m$, this becomes
+
+\[
+2^m \mid (p-1).
+\]
+
+Thus, the larger the power of two dividing $(p-1)$, the larger the supported
+transform sizes.
+
+\subsection{The ``Goldilocks'' Form and Power-of-Two Roots}
+
+A particularly convenient choice on 64-bit hardware is a prime of the form
+
+\[
+p = 2^{64} - 2^{32} + 1,
+\]
+
+often called a ``Goldilocks'' prime. (In the codebase this role is played by
+\texttt{MagicPrime}.) Two consequences make this form attractive:
+
+\paragraph{(1) Large power-of-two factor in $p-1$.}
+
+We have
+
+\[
+p - 1 = 2^{64} - 2^{32} = 2^{32}\left(2^{32}-1\right),
+\]
+
+so $2^{32}$ divides $(p-1)$. Therefore, for any $N = 2^m$ with $m \le 32$, there
+exists an $N$-th root of unity in $\mathbb{Z}_p$. This enables power-of-two NTTs
+up to length $2^{32}$ in principle (practically limited by memory and
+implementation constraints), which is ample for large-limb convolutions.
+
+\paragraph{(2) Efficient modular arithmetic with 64-bit operations.}
+
+While modular multiplication in $\mathbb{Z}_p$ conceptually involves products up
+to $p^2$, this modulus is engineered so reductions can be implemented
+efficiently using 64-bit and 128-bit intermediates and/or Montgomery reduction.
+The prime is close to $2^{64}$, which aligns well with native unsigned integer
+ranges, and its special structure admits reduction strategies that avoid slow
+division.
+
+\subsection{NTT-Based Multiplication at a High Level}
+
+Given limb sequences $(a_i)$ and $(c_i)$:
+
+\begin{enumerate}
+
+  \item Choose $N$ as a power of two with $N \ge 2n$, and choose a primitive
+  $N$-th root $\omega \in \mathbb{Z}_p$.
+
+  \item Zero-pad both sequences to length $N$ (interpreting limbs as elements of
+  $\mathbb{Z}_p$).
+
+  \item Compute $A_k = \mathrm{NTT}(a)_k$ and $C_k = \mathrm{NTT}(c)_k$.
+
+  \item Compute pointwise products $P_k = A_k \cdot C_k \pmod p$.
+
+  \item Compute $p_j = \mathrm{NTT}^{-1}(P)_j$ to obtain the convolution
+  coefficients modulo $p$.
+
+\end{enumerate}
+
+Finally, because the convolution coefficients are computed modulo $p$, we must
+ensure they represent the \emph{true integer} convolution values, not values
+wrapped modulo $p$. This is achieved by choosing the limb base $B$ and transform
+length $N$ so that each exact coefficient $s_k$ satisfies
+
+\[
+0 \le s_k < p,
+\]
+
+(or more generally, can be reconstructed from one or more moduli). With a single
+sufficiently large prime (as is typical with a 64-bit Goldilocks prime and
+appropriately sized limbs), the coefficients can be recovered directly and then
+normalized via carry propagation in base $B$.
+
+\medskip
+
+This section establishes the mathematical foundation: \texttt{MagicPrime} is
+selected so that large power-of-two NTTs exist (because $2^m \mid p-1$) and so
+that modular arithmetic is efficient on 64-bit GPU hardware. Subsequent sections
+will describe how this is specialized for high-precision floating-point
+significands, including limb packing, Montgomery-domain multiplication, twiddle
+scheduling, and normalization/carry handling.
+
+\subsection{NTT in \FractalShark{}}
+
+Fundamentally, the NTT implementation in \FractalShark{} is somewhat naive.  It
+doesn't make much effort at memory layout or optimized coalescing, which is
+likely costing it in performance.  This section describes how the NTT-based
+multiplication is realized in practice, following the structure of
+\FractalShark{}'s CUDA implementation. The overall goal is to compute the exact
+convolution of two large significand arrays using modular arithmetic modulo
+\texttt{MagicPrime}, and then to recover a canonical high-precision result via
+normalization and carry propagation.
+
+\subsubsection{Plan Construction and Parameter Selection}
+
+Before launching any GPU kernels, an NTT ``plan'' is constructed. The plan
+determines:
+
+\begin{itemize}
+
+  \item the coefficient bit-width $b$ used to pack the original 32-bit limbs
+  into NTT coefficients,
+
+  \item the packed coefficient length $L$,
+
+  \item the transform size $N$, chosen as a power of two with $N \ge 2L$.
+
+\end{itemize}
+
+Correctness requires that no convolution coefficient overflow the prime modulus.
+If the coefficients are bounded by $2^b$ and the transform length is $N$, then a
+conservative bound on the largest convolution term is
+
+\[
+\max_k s_k \;\le\; N \cdot 2^{2b}.
+\]
+
+The plan builder enforces
+
+\[
+2b + \log_2 N + \delta \;\le\; 64,
+\]
+
+for a small safety margin $\delta$, ensuring that all exact convolution values
+lie strictly below \texttt{MagicPrime}. This guarantees that the modular
+convolution coincides with the true integer convolution.
+
+\subsubsection{Roots of Unity and Montgomery Domain}
+
+The CUDA setup phase precomputes all roots of unity required for the radix--2
+NTT. For each stage $s$, a primitive $2^s$-th root $\omega_s$ and its inverse
+are generated, along with:
+
+\begin{itemize}
+
+  \item powers of a twist root $\psi^i$ and $\psi^{-i}$,
+
+  \item the modular inverse $N^{-1}$.
+
+\end{itemize}
+
+All constants are stored in Montgomery representation. As a result, every
+modular multiplication inside the NTT butterflies is implemented as a Montgomery
+multiply, avoiding explicit modular reduction by division.
+
+\subsubsection{Packing, Twisting, and Forward NTT}
+
+The input significands are initially stored as arrays of 32-bit limbs. These are
+packed into base-$2^b$ coefficients
+
+\[
+A(x) = \sum_{i=0}^{L-1} a_i x^i,\qquad
+C(x) = \sum_{i=0}^{L-1} c_i x^i,
+\]
+
+with $0 \le a_i, c_i < 2^b$. During packing, each coefficient is:
+
+\begin{enumerate}
+
+  \item mapped into $\mathbb{Z}_p$,
+
+  \item multiplied by the twist factor $\psi^i$,
+
+  \item converted into Montgomery form.
+
+\end{enumerate}
+
+After packing, an in-place radix--2 forward NTT is performed. A bit-reversal
+permutation places coefficients into the correct order, followed by iterative
+butterfly stages:
+
+\[
+(u, v) \;\mapsto\; (u + \omega v,\; u - \omega v),
+\]
+
+with all operations performed modulo \texttt{MagicPrime}. A grid-stride loop is
+used so that threads collectively cover all $N$ coefficients, independent of the
+exact grid dimensions.
+
+\subsubsection{Multiway Pointwise Multiplication}
+
+In the transform domain, convolution reduces to pointwise multiplication. To
+amortize the cost of the NTT, the implementation computes three related
+convolutions simultaneously using a standard three-multiply decomposition.
+Conceptually, if
+
+\[
+X = X_r + iX_i,\qquad Y = Y_r + iY_i,
+\]
+
+then the products
+
+\[
+X_rY_r,\quad X_iY_i,\quad (X_r+X_i)(Y_r+Y_i)
+\]
+
+are sufficient to reconstruct both real and imaginary components. Accordingly,
+three frequency-domain products are computed per transform index:
+
+\[
+\widehat{XX}_k,\quad \widehat{YY}_k,\quad \widehat{XY}_k,
+\]
+
+each via a Montgomery modular multiplication modulo \texttt{MagicPrime}.
+
+\subsubsection{Inverse NTT and Untwisting}
+
+Following pointwise multiplication, inverse radix--2 NTTs are applied using the
+inverse roots of unity. The inverse transform yields coefficients still in
+Montgomery form and still containing the twist factor. These are corrected by:
+
+\begin{enumerate}
+\item multiplying by $\psi^{-i}$,
+\item multiplying by $N^{-1}$,
+\item converting out of Montgomery representation.
+\end{enumerate}
+
+After this step, the data represents the exact integer convolution coefficients in base $2^b$.
+
+\subsubsection{Unpacking and Normalization}
+
+The final stage converts the convolution coefficients back into the original
+limb representation. Base-$2^b$ digits are unpacked into wide accumulators
+(typically 128-bit), after which carry propagation and normalization are
+performed to produce a canonical high-precision result. This normalization step
+is handled separately and is optimized using parallel-prefix techniques as
+described in earlier sections.
+
+\medskip
+
+Together, these steps implement \FractalShark{}'s NTT-based multiplication
+pipeline: from high-precision significand limbs, through modular convolution in
+$\mathbb{Z}_{\texttt{MagicPrime}}$, and back to an exact, normalized
+high-precision product suitable for subsequent arithmetic in reference orbit
+computation.
+
+\subsection{Amortizing Synchronization via Simultaneous Products}
+
+In the presented GPU implementation, a dominant cost of large-scale NTT-based
+multiplication is not the modular arithmetic itself, but the required grid-wide
+synchronization. Each major phase of the pipeline— packing and twisting of
+inputs, forward NTT, pointwise multiplication, inverse NTT, and untwisting with
+normalization—requires that all threads observe a consistent global state. This
+is enforced using explicit grid-level barriers (e.g.,
+\texttt{cooperative\_groups::grid\_group::sync()}), whose latency grows with
+grid size and is largely independent of the amount of arithmetic performed
+between barriers.
+
+To reduce the amortized cost of these synchronization points, the implementation
+computes three related convolution products, $X\cdot Y$, $X^2$, and $Y^2$,
+within a single NTT pipeline. All three products share the same forward
+transforms, inverse transforms, twiddle scheduling, temporary buffers, and
+synchronization boundaries. As a result, the fixed cost of grid-wide
+coordination and memory visibility is incurred once, while producing three
+mathematically independent convolution results. The additional arithmetic
+required for the extra pointwise products consists only of a small number of
+Montgomery multiplications per frequency index and is negligible compared to the
+cost of global synchronization and memory traffic.
+
+At the code level, this strategy is realized by a fused front-end that packs the
+input limb arrays, applies twist factors, and converts values into Montgomery
+form while producing multiple frequency-domain streams in a single pass. A
+single grid-stride pointwise multiplication phase then computes the three
+products concurrently. These are followed by a single multiway inverse radix--2
+NTT, after which a unified untwisting, scaling by $N^{-1}$, and conversion out
+of Montgomery representation are performed. Explicit grid-wide barriers appear
+only at true phase boundaries, serving as producer--consumer separators between
+global-memory stages rather than as fine-grained synchronization.
+
+This design is well matched to the target workload. In high-precision reference
+orbit computation, both cross terms and squared terms arise naturally and
+repeatedly. By folding these operations into a single multiway NTT, the
+implementation reduces the total number of kernel phases and synchronization
+events, increases arithmetic intensity per barrier, and improves overall GPU
+utilization. Consequently, the effective performance of the multiplication
+pipeline is governed primarily by arithmetic throughput and memory bandwidth,
+rather than by synchronization overhead.
+
+\subsection{Usage in \FractalShark{}}
+The key design is a persistent \emph{combo} object returned by initialization:
+
 \begin{enumerate}
   \item \texttt{InitHpSharkReferenceKernel}: allocates device/host state for the reference orbit and sets
         \((c_x,c_y)\), max radius, and launch configuration.
@@ -808,12 +1707,12 @@ precision. The key design is a persistent \emph{combo} object returned by initia
 \end{enumerate}
 
 Because the precision must be fixed at compile time for the \texttt{
-HpSharkFloatParams} specialization, \texttt{DispatchByPrecision} rounds the 
+HpSharkFloatParams} specialization, \texttt{DispatchByPrecision} rounds the
 requested precision to a power of two and chooses from a fixed set (\(\{256,512,
 \dots,524288\}\) bits). Each invocation appends the emitted \texttt{OutputIters}
- records into the CPU-side \texttt{PerturbationResults}. Periodicity and escape 
-are reported through \texttt{PeriodicityStatus} and handled similarly to the 
-CPU paths.
+records into the CPU-side \texttt{PerturbationResults}. Periodicity and escape
+are reported through \texttt{PeriodicityStatus} and handled similarly to the CPU
+paths.
 
 
 \section{Perturbation-only Mandelbrot rendering (without linear approximation)}
@@ -941,12 +1840,12 @@ with the canonical threshold \(4\). For HDR and related types, the norm and the
 comparison are performed on reduced values using specialized reduced
 comparators to keep the escape decision stable at deep zoom.
 
-\subsection{Reference index management and recentering}
-\label{sec:perturb-only-recenter}
+\subsection{Reference index management and rebasing}
+\label{sec:perturb-only-rebase}
 
 The perturbation loop advances a reference-orbit index \code{RefIteration} in
 lockstep with \code{iter}, fetching \(z^\star\) samples from \code{Perturb}. The
-kernel includes a \emph{recentering} mechanism that resets the delta
+kernel includes a \emph{rebasing} mechanism that resets the delta
 representation when it becomes ill-conditioned. Conceptually, if the delta
 becomes comparable to or larger than the reconstructed orbit, the decomposition
 \(z = z^\star + \Delta z\) stops being numerically advantageous. In that case,
@@ -955,9 +1854,9 @@ the kernel folds the delta into the base by setting:
 \Delta z \leftarrow z,\qquad \text{and restart the reference index.}
 \]
 Operationally, the code compares the reconstructed orbit magnitude proxy
-against the delta magnitude proxy, and also recenters if the reference index
+against the delta magnitude proxy, and also rebasing if the reference index
 reaches the end of the stored orbit samples (to avoid out-of-range sampling).
-After recentering, perturbation continues from the new base representation.
+After rebasing, perturbation continues from the new base representation.
 
 This mechanism keeps the perturbation method usable across a wide range of
 pixels and iteration depths while preserving the core rendering objective:
@@ -983,6 +1882,7 @@ In this configuration:
 \end{itemize}
 This provides a complete Mandelbrot renderer based purely on reference-orbit
 perturbation, without relying on any linear-approximation hierarchy.
+
 
 \section{Approximation-based acceleration for Mandelbrot rendering}
 \label{sec:approx-accel}
@@ -1116,6 +2016,7 @@ For HDR/expanded types, norms and comparisons are performed using reduced values
 and specialized reduced comparators, preserving meaningful bailout decisions at
 deep zoom.
 
+
 \section{Summary: rendering-oriented view}
 \label{sec:summary}
 
@@ -1133,23 +2034,47 @@ The common structure (pixel mapping, orbit iteration, bailout test, iteration
 count store) ensures each section remains directly tied to Mandelbrot rendering
 as the end goal.
 
+
 \section{Development Notes}
 
 This section simply has some development notes that were posted over time.
+
+\subsection{2025-12-29 News --- Version 0.5}
+\begin{itemize}
+  \item \textbf{Major feature: GPU-accelerated Mandelbrot reference orbit.} Adds
+  an experimental CUDA reference-orbit calculator intended to complement the
+  existing CPU/MPIR multithreaded approach.
+
+  \item \textbf{High-precision arithmetic pipeline on GPU.} Includes a full
+  multiply/add/subtract pipeline, a Number Theoretic Transform (NTT)
+  implementation, parallel-prefix carry propagation, and HDR-style exponent
+  tracking.
+
+  \item \textbf{Interoperability and correctness.} Supports conversion between
+  MPIR and the GPU high-precision float format and adds manually-run test
+  infrastructure.
+
+  \item \textbf{Performance notes.} Release notes report large speedups at high
+  limb counts on RTX 4090/5090-class GPUs; intended to shine at very deep
+  built-in views.
+
+  \item \textbf{Project plumbing.} Hooks up GitHub Actions to produce “official”
+  builds, plus some refactoring; notes a startup windowing quirk.
+\end{itemize}
 
 \subsection{2025-11-30 News}
 
 The neat thing about this GPU approach is that it still has low-hanging fruit 
 related to optimization, unlike MPIR.  I've been wasting a bunch of time on the 
 (Thanksgiving in USA) holiday weekend working on it.  I'll keep fussing with it 
-and will probably not post again until I put out a version of FractalShark with 
+and will probably not post again until I put out a version of \FractalShark{} with 
 it hooked up, which I expect to happen later in December when I have time off.  
 All code is on github, just no new version yet since it remains rather 
 experimental and hacked up.
 
 Example times in ms of updated implementation, comparing against serial host-
 based approach (1 thread MPIR AVX2 for experiments).  This is the first 20000 
-iterations of View 30 in FractalShark, which is a depth $\sim 1\mathrm{e}{100000
+iterations of View 30 in \FractalShark{}, which is a depth $\sim 1\mathrm{e}{100000
 }$ point.  This uses 16384 limbs on the GPU.  The CPU/MPIR uses the minimum 
 bits required for that point, which is less, because the GPU implementation 
 requires a power of 2.
@@ -1166,7 +2091,7 @@ Averages:
 57446        2029.4    28.30729816
 \end{verbatim}
 
-Here's a summary of what I want to get done before FractalShark 0.5 happens:
+Here's a summary of what I want to get done before \FractalShark{} 0.5 happens:
 
 \begin{itemize}
 
@@ -1174,7 +2099,7 @@ Here's a summary of what I want to get done before FractalShark 0.5 happens:
 is just a weekend hobby after all and because it was unclear this would even 
 work it's a real hack job.
 
-\item Improve integration with FractalShark, it's really just hacked in there 
+\item Improve integration with \FractalShark{}, it's really just hacked in there 
 currently since I've mostly used a standalone test program
 
 \item Improve reference orbit memory usage - I would like to be able to 
@@ -1198,7 +2123,7 @@ Those are the main things offhand, and I'm hoping with time off in December I ca
 The full reference orbit works with CUDA, though without periodicity detection 
 or high precision to ``float exp'' conversion.  That's future work but I'm not 
 worried about it.  To be clear, this is not hooked up end-to-end with 
-FractalShark itself, it's only working in a standalone test environment.  But 
+\FractalShark{} itself, it's only working in a standalone test environment.  But 
 the results are promising and prove it works.
 
 This initial implementation relies on Karatsuba for the multiplies/squaring and 
@@ -1300,7 +2225,7 @@ while keeping occupancy higher than the recursive Karatsuba path.
 
 This page actually gets traffic occasionally, so I just wanted to post a short 
 update.  Since last August, I've been working on a CUDA-based, high-precision 
-reference orbit implementation.  The objective is to beat FractalShark's 
+reference orbit implementation.  The objective is to beat \FractalShark{}'s 
 existing multithreaded reference-orbit performance at higher digit counts, at 
 least if you have a decent card.  Scroll down to ``[2025-6-15](\#2025-6-15)'' 
 for the latest information on this subject.
@@ -1584,18 +2509,233 @@ Groups: \cite{CGBN_NVlabs}
 
 \end{itemize}
 
-
-All the code is here / GPL etc but it's just an experiment and not integrated with the application: \\
+All the code is here / GPL etc but it's just an experiment: \\
 \url{https://github.com/mattsaccount364/FractalShark}
 
-It'll all end up in FractalShark eventually assuming I can get something end-to-
+It'll all end up in \FractalShark{} eventually assuming I can get something end-to-
 end working, and at this point I believe I can, but this is very slow-going 
 yet.  Anyway, it's a fun area and I'll probably continuing dinking with it, so 
-there probably won't be much new on FractalShark proper until I can get this 
+there probably won't be much new on \FractalShark{} proper until I can get this 
 behemoth under better control.  And we'll see if it works out -- lots of 
 remaining details to resolve and it may not work decently when combined into a 
 full reference orbit.  Overall though I'm really happy with where it's at.  
 Happy to answer questions etc.
+
+
+\subsection{2025-07-28 News --- Version 0.46}
+
+Version \texttt{0.46} was published as a pre-release, focusing on refactoring,
+reference compression experimentation, save-file compatibility, and test infrastructure.
+
+\begin{itemize}
+
+  \item Continued internal \textbf{refactoring} of core rendering and control logic.
+  
+  \item Experimental support for \textbf{Imagina-style “max” reference compression},
+        as an alternative to the existing “simple” scheme.
+  
+  \item Added preliminary support for \textbf{Imagina-compatible save files}.
+
+  \item Enhanced internal \textbf{test infrastructure} with broader coverage and tooling.
+    
+  \item Work in progress toward additional infrastructure improvements.
+
+\end{itemize}
+
+This release was published on GitHub on July 28, 2025 (UTC) and is tagged as a
+pre-release build.  
+
+
+\subsection{2024-04-20 --- Version 0.45}
+
+\begin{itemize}
+  
+  \item Adds a first cut at reference compression for an intermediate “perturbed
+  perturbation” reference-orbit strategy.
+
+  \item Includes three internal variants (v1: uncompressed/3 threads; v2:
+  uncompressed/4 threads; v3: compressed/4 threads).
+
+  \item v3 becomes the default at very deep “auto” perturbation settings;
+  guidance given for when to stick to the older MT2 + periodicity workflow.
+
+\end{itemize}
+
+
+\subsection{2024-03-31 News --- Version 0.44}
+
+Version \texttt{0.44} represents a substantial internal refactor emphasizing memory management, allocator control, and reference-orbit performance.
+
+\begin{itemize}
+  \item Removed the Boost dependency and introduced a custom \textbf{HighPrecision} wrapper.
+  \item Improved reference-orbit performance, especially for low-precision, high-period locations.
+  \item Improved performance of the \textbf{perturbed perturbation} algorithm.
+  \item Introduced a custom file-backed \textbf{bump allocator} with stable interior pointers.
+  \item Extended \texttt{GrowableVector} to support allocator-style usage without increasing committed memory.
+  \item Updated reference orbit and linear approximation save-file formats.
+  \item Added an \textbf{automatic perturbation mode} switching between single-threaded and multithreaded execution.
+  \item Instrumented for memory-leak detection and fixed all known leaks.
+  \item Fixed a long-standing correctness bug in BLAv1 dating back to version 0.21.
+\end{itemize}
+
+
+\subsection{2024-03-03 News --- Version 0.43}
+\begin{itemize}
+  \item Significant performance wins for lower-precision, high-period reference-orbit computation.
+  \item Adds a custom per-thread bump allocator for MPIR high-precision numbers.
+  \item Rebalances work across the existing 3-thread multithreaded reference-orbit approach.
+\end{itemize}
+
+
+\subsection{2024-02-24 News --- Version 0.42}
+
+Version \texttt{0.42} introduced major improvements to linear approximation performance, benchmarking, and configurability.
+
+\begin{itemize}
+  \item Added \textbf{multithreaded linear approximation table generation}.
+  \item Dramatically improved performance for high-period locations, especially with reference compression enabled.
+  \item Added fine-grained benchmarking and performance breakdowns.
+  \item Enabled regeneration of linear approximation tables independently of per-pixel data.
+  \item Introduced adjustable linear approximation presets trading memory, accuracy, and performance.
+\end{itemize}
+
+This release corrected a prior precision regression and restored high-accuracy defaults.
+
+
+\subsection{2024-01-15 News --- Version 0.41}
+
+\begin{itemize}
+  \item Fixes a minor bug in reference compression / GPU.
+  \item Memory-use overhaul for storing LA tables and reference orbit to minimize RAM needed for hard views (e.g., View \#27).
+  \item Default mode now uses temporary files + memory-mapped IO; avoids needing 2$\times$ memory during resize/copy and reduces committed-memory requirements with no measurable overhead per the release note.
+\end{itemize}
+
+
+\subsection{2024-01-01 News --- Version 0.4}
+
+\begin{itemize}
+  \item First working implementation of \textbf{runtime} reference compression (decompress-on-demand during rendering).
+  \item Motivated as reducing end-to-end RAM requirements dramatically on very high-period locations; not enabled by default for “Auto” rendering and described as work-in-progress.
+\end{itemize}
+
+
+\subsection{2023-12 News --- Version 0.32}
+
+Version \texttt{0.32} focused on usability, correctness, and incremental architectural cleanup.
+
+\begin{itemize}
+  \item Added \textbf{progressive rendering}, allowing partial image updates
+  during long GPU renders.
+  \item Added a \textbf{2x32 non-HDR linear approximation} path for numerically
+  difficult shallow zooms.
+  \item Fixed a subtle but severe correctness bug in the 2x32 implementation
+  present in version 0.31.
+  \item Added a basic regression test suite.
+  \item Refactored code and restored buildability across inactive code paths.
+\end{itemize}
+
+
+\subsection{2023-12-09 News --- Version 0.31}
+
+Version \texttt{0.31} expanded the set of available rendering algorithms and
+substantially improved default performance at shallow and mid-depth zooms.
+
+\begin{itemize}
+  \item Added \textbf{1x32 linear approximation / perturbation} for
+  high-performance shallow zooms.
+  \item Added \textbf{1x64 linear approximation / perturbation}, primarily for
+  correctness testing.
+  \item Implemented \textbf{automatic render-algorithm selection} based on zoom
+  depth.
+  \item Eliminated unnecessary reference-orbit copying, significantly improving
+  frame-to-frame performance.
+  \item Fixed several bugs, including 2x32 correctness issues and unaligned
+  HDRx64 memory access.
+\end{itemize}
+
+
+\subsection{2023-11-26 News --- Version 0.3}
+\begin{itemize}
+  \item Adds HDRx2x32 linear approximation: faster than LA/HDRx64 on consumer
+  cards while retaining nearly native-64-bit precision.
+  \item Notes that a “Debug View 20” anomaly is resolved under HDRx2x32,
+  supporting the hypothesis that HDRx32 precision limits caused the issue.
+  \item Misc performance improvements and bug fixes elsewhere.
+\end{itemize}
+
+
+\subsection{2023-11-05 News --- Version 0.23}
+\begin{itemize}
+  \item Adds switchable 64-bit iteration count support (enabling tens of
+  billions of iterations per pixel, leveraging LA).
+  \item Moves antialiasing/coloring into its own CUDA kernel for better
+  performance.
+  \item Multiple memory-reduction optimizations (systems-level) and related perf
+  work.
+  \item Adds reference-orbit save/load (no compression yet), useful for
+  debugging deep spots.
+  \item Notes a known bug manifesting in built-in View \#20 under a particular
+  configuration (64-bit iterations + default HDRx32 LAv2), with long render
+  times due to slow reference-orbit calculation.
+\end{itemize}
+
+
+\subsection{2023-10-14 News --- Version 0.22}
+\begin{itemize}
+  \item Significant LAv2 performance improvements (bug fixes); notes BLAv1 still
+  winning in some cases.
+  \item Fixes an LAv2 correctness bug; release note claims no known correctness
+  bugs remaining.
+\end{itemize}
+
+
+\subsection{2023-10-08 News --- Version 0.21}
+\begin{itemize}
+  \item Performance improvements to BLA and LAv2.
+  \item Memory-usage improvements (commit size / virtual address space issues
+  called out).
+  \item Generates more CUDA kernels for older GPUs (system requirements
+  unchanged).
+  \item Notes LAv2 is strong for many deep-zoom cases but still behind older BLA
+  in some shallower cases.
+\end{itemize}
+
+
+\subsection{2023-09-16 News --- Version 0.2}
+
+Version \texttt{0.2} introduced a major algorithmic milestone: the integration
+of Imagina's linear approximation implementation as a CUDA kernel.
+
+\begin{itemize}
+  \item Added Imagina-based linear approximation (\texttt{LAv2}), now the
+  default rendering algorithm.
+  \item Resolved known correctness bugs in the new approximation path.
+  \item Fixed a major performance regression caused by an earlier implementation oversight.
+  \item Achieved large performance gains at deeper zoom levels compared to the
+  existing bilinear approximation.
+\end{itemize}
+
+While the legacy bilinear approximation remains faster at very shallow zooms,
+the new approach dominates once meaningful magnification is reached.
+
+
+\subsection{2023-07-22 News --- Version 0.11}
+
+Version \texttt{0.11} was released with a focus on performance improvements and
+improved diagnostics.
+
+\begin{itemize}
+  \item Approximately \textbf{+10\% performance improvement} in the HDRx32 CUDA
+  rendering path.
+  \item Fixed several minor bugs affecting correctness and stability.
+  \item Improved CUDA error reporting by displaying descriptive error strings
+  instead of numeric codes.
+\end{itemize}
+
+A long-duration technology demonstration video accompanied this release,
+showcasing a zoom to approximately $10^{4000}$ using the default HDRx32/BLA CUDA
+kernel.  Rendering and post-processing each required roughly one and a half
+days.
 
 \bibliographystyle{plain} % or ieeetr, unsrt, alpha, etc.
 \bibliography{notes}      % <-- filename WITHOUT .bib

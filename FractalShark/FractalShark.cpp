@@ -8,12 +8,25 @@
 #include <conio.h>
 
 void
-PressAnyKeyToContinue()
+PressAnyKeyToContinue(DWORD timeoutMs = 5000)
 {
-    std::cout << "\nPress any key to continue . . .";
+    std::cout << "\nPress any key to continue (exits in 5s automatically) . . .";
     std::cout.flush();
 
-    _getch(); // waits for a single key, no Enter required
+    const DWORD start = GetTickCount();
+
+    while (true) {
+        if (_kbhit()) {
+            _getch(); // consume key
+            break;
+        }
+
+        if (GetTickCount() - start >= timeoutMs) {
+            break;
+        }
+
+        Sleep(10); // avoid busy-spin
+    }
 }
 
 

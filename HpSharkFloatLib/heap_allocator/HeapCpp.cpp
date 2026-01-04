@@ -10,6 +10,9 @@
 #define NOMINMAX
 #include <windows.h>
 
+// Comment to disable
+//#define ENABLE_FRACTAL_SHARK_HEAP
+
 static int offset = node_t::OffsetOfNext;
 static constexpr auto PAGE_SIZE = 0x1000;
 
@@ -81,7 +84,13 @@ CleanupHeap()
 void
 RegisterHeapCleanup()
 {
+#ifdef ENABLE_FRACTAL_SHARK_HEAP
     atexit(CleanupHeap);
+#else
+    // Heh, so on this path we bypass the fancy heap but we still must init this
+    // logic or the growable vector fails in other contexts.
+    VectorStaticInit();
+#endif
 }
 
 void VectorStaticInit();
@@ -670,6 +679,8 @@ CppRealloc(void *ptr, size_t newSize, bool zeroNew)
     return newPtr;
 }
 
+#if defined(ENABLE_FRACTAL_SHARK_HEAP)
+
 // Override global malloc, free, and realloc functions
 extern "C" {
 __declspec(restrict) void *
@@ -869,3 +880,9 @@ operator new[](std::size_t count, std::align_val_t al, const std::nothrow_t &) n
 {
     return aligned_alloc(static_cast<size_t>(al), count);
 }
+
+#else // ENABLE_FRACTAL_SHARK_HEAP
+
+// If not enabled, we do nothing special here.
+
+#endif

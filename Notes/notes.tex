@@ -2567,23 +2567,68 @@ pre-release build.
 Version \texttt{0.44} represents a substantial internal refactor emphasizing memory management, allocator control, and reference-orbit performance.
 
 \begin{itemize}
-  \item Removed the Boost dependency and introduced a custom \textbf{HighPrecision} wrapper.
-  \item Improved reference-orbit performance, especially for low-precision, high-period locations.
+
+  \item Removed the Boost dependency and introduced a custom
+  \textbf{HighPrecision} wrapper.
+
+  \item Improved reference-orbit performance, especially for low-precision,
+  high-period locations.
+
   \item Improved performance of the \textbf{perturbed perturbation} algorithm.
-  \item Introduced a custom file-backed \textbf{bump allocator} with stable interior pointers.
-  \item Extended \texttt{GrowableVector} to support allocator-style usage without increasing committed memory.
+
+  \item Introduced a custom file-backed \textbf{bump allocator} with stable
+  interior pointers.
+
+  \item Extended \texttt{GrowableVector} to support allocator-style usage
+  without increasing committed memory.
+  
   \item Updated reference orbit and linear approximation save-file formats.
+
   \item Added an \textbf{automatic perturbation mode} switching between single-threaded and multithreaded execution.
+
   \item Instrumented for memory-leak detection and fixed all known leaks.
-  \item Fixed a long-standing correctness bug in BLAv1 dating back to version 0.21.
+
+  \item Fixed a long-standing correctness bug in BLAv1 dating back to version
+  0.21.
+
+  \item \textbf{Clarified ``perturbed perturbation'' design.} The implementation
+  is framed as storing an intermediate-resolution reference orbit (e.g.\
+  $\sim$500 bits), then using low-precision perturbation off that intermediate
+  orbit to generate subsequent nearby reference orbits more efficiently.
+  :contentReference[oaicite:3]{index=3}
+
 \end{itemize}
 
 
 \subsection{2024-03-03 News --- Version 0.43}
 \begin{itemize}
-  \item Significant performance wins for lower-precision, high-period reference-orbit computation.
+  
+  \item Significant performance wins for lower-precision, high-period
+  reference-orbit computation.
+  
   \item Adds a custom per-thread bump allocator for MPIR high-precision numbers.
-  \item Rebalances work across the existing 3-thread multithreaded reference-orbit approach.
+  
+  \item Rebalances work across the existing 3-thread multithreaded
+  reference-orbit approach.
+
+  \item \textbf{Allocator usage guidance.} The bump allocator is primarily
+  beneficial for low-precision, high-period reference orbits; at very high
+  precision the arithmetic dominates and allocation overhead is negligible. A
+  suggested heuristic is to use the fixed-block bump allocator below roughly
+  1000 digits and fall back to the global allocator above that.
+  :contentReference[oaicite:0]{index=0}
+
+  \item \textbf{Empirical sizing recommendation.} Tested successfully on a $\sim
+  1\mathrm{e}{6000}$ location with about 4\,MB of bump-allocator space;
+  recommendation is to use the smallest practical buffer (cache behavior matters).
+  :contentReference[oaicite:1]{index=1}
+
+  \item \textbf{Implementation refinement note.} In the current multithreaded
+  orbit implementation, most allocations may occur on the main thread;
+  thread-local allocation may be unnecessary. A few small allocator issues were
+  identified for cleanup in the following release.
+  :contentReference[oaicite:2]{index=2}
+
 \end{itemize}
 
 
@@ -2614,8 +2659,17 @@ This release corrected a prior precision regression and restored high-accuracy d
 \subsection{2024-01-01 News --- Version 0.4}
 
 \begin{itemize}
-  \item First working implementation of \textbf{runtime} reference compression (decompress-on-demand during rendering).
-  \item Motivated as reducing end-to-end RAM requirements dramatically on very high-period locations; not enabled by default for “Auto” rendering and described as work-in-progress.
+  \item First working implementation of \textbf{runtime} reference compression
+  (decompress-on-demand during rendering).
+
+  \item Motivated as reducing end-to-end RAM requirements dramatically on very
+  high-period locations; not enabled by default for “Auto” rendering and
+  described as work-in-progress.
+
+  \item \textbf{Motivation: memory pressure.} Reference compression is
+  explicitly framed as a response to high RAM requirements at difficult views
+  (notably after enabling 64-bit iteration counts).
+  :contentReference[oaicite:14]{index=14}
 \end{itemize}
 
 
@@ -2643,24 +2697,72 @@ substantially improved default performance at shallow and mid-depth zooms.
 \begin{itemize}
   \item Added \textbf{1x32 linear approximation / perturbation} for
   high-performance shallow zooms.
+  
   \item Added \textbf{1x64 linear approximation / perturbation}, primarily for
   correctness testing.
+  
   \item Implemented \textbf{automatic render-algorithm selection} based on zoom
   depth.
+  
   \item Eliminated unnecessary reference-orbit copying, significantly improving
   frame-to-frame performance.
+  
   \item Fixed several bugs, including 2x32 correctness issues and unaligned
   HDRx64 memory access.
+
+  \item \textbf{Auto-selection policy detail.} Auto mode is described as staging
+  from direct 32-bit rendering at very shallow zooms, to 1x32 perturb-only, to
+  1x32 LA, and finally 1x32 float-exp LA at deeper zooms, with the goal of
+  improving default performance below roughly $10^{38}$.
+  :contentReference[oaicite:6]{index=6}
+
+  \item \textbf{Reference-orbit reuse optimization.} Removing unnecessary
+  reference-orbit copying is called out as a major win for deep-zoom
+  frame-to-frame responsiveness when reusing a reference orbit.
+  :contentReference[oaicite:7]{index=7}
+
 \end{itemize}
 
 
 \subsection{2023-11-26 News --- Version 0.3}
+
 \begin{itemize}
+  
   \item Adds HDRx2x32 linear approximation: faster than LA/HDRx64 on consumer
   cards while retaining nearly native-64-bit precision.
+  
   \item Notes that a “Debug View 20” anomaly is resolved under HDRx2x32,
   supporting the hypothesis that HDRx32 precision limits caused the issue.
+  
   \item Misc performance improvements and bug fixes elsewhere.
+
+  \item \textbf{Debug View 20 consistency improvement.} The ``Debug View 20''
+  anomaly is reported as resolved under HDRx2x32, supporting the conclusion that
+  the earlier HDRx32 behavior was a precision-limit issue.
+  :contentReference[oaicite:4]{index=4}
+
+  \item \textbf{HDRx2x32 precision characterization.} Described as ``Linear
+  Approximation + Float EXP'' using a pair of 32-bit floats plus an exponent,
+  with an estimated combined precision of roughly 46 bits.
+  :contentReference[oaicite:5]{index=5}
+
+\end{itemize}
+
+
+\subsection{2023-11-12 News --- Version 0.24}
+
+\begin{itemize}
+\item \textbf{UI/UX improvements.} Adds a hotkey help view and general UI
+cleanup. :contentReference[oaicite:8]{index=8}
+\item \textbf{Random palette generation.} Adds a random palette generator; notes
+the palette system remains intentionally constrained and may be expanded.
+:contentReference[oaicite:9]{index=9}
+\item \textbf{Rendering diagnostics.} Adds a ``Show Rendering Details'' view for
+inspecting current algorithm/settings. :contentReference[oaicite:10]{index=10}
+\item \textbf{Early HDRx2x32 work.} Begins a GPU HDR 2x32 float implementation
+(explicitly noted as not working yet). :contentReference[oaicite:11]{index=11}
+\item \textbf{Crash diagnostics.} Automatically generates a crash dump on
+unhandled exceptions. :contentReference[oaicite:12]{index=12}
 \end{itemize}
 
 
@@ -2681,11 +2783,19 @@ substantially improved default performance at shallow and mid-depth zooms.
 
 
 \subsection{2023-10-14 News --- Version 0.22}
+
 \begin{itemize}
+
   \item Significant LAv2 performance improvements (bug fixes); notes BLAv1 still
   winning in some cases.
+
   \item Fixes an LAv2 correctness bug; release note claims no known correctness
   bugs remaining.
+
+  \item \textbf{Performance data point.} Reports a minibrot example improving
+  from roughly 470\,ms to 370\,ms (render-only; reference orbit excluded) on the
+  author’s machine. :contentReference[oaicite:13]{index=13}
+
 \end{itemize}
 
 

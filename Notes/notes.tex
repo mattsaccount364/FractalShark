@@ -584,268 +584,147 @@ approximation.
 \section{Perturbation Rendering of the Mandelbrot Set}
 \label{sec:perturbation-concept}
 
-This section explains \emph{perturbation} as a mathematical and algorithmic
-technique for rendering the Mandelbrot set efficiently at deep zoom. The goal
-is to compute accurate escape-time values for many nearby parameters \(c\)
-while avoiding repeated high-precision evaluation of the full Mandelbrot
-recurrence.
+Rendering the Mandelbrot set at extreme zoom levels presents a fundamental
+numerical challenge. As the image is magnified, the parameters \(c\) associated
+with individual pixels differ by increasingly small amounts, while the number
+of iterations required to determine escape behavior typically grows. Accurately
+tracking these orbits therefore requires both high numerical precision and a
+large number of iterations, making naive per-pixel evaluation prohibitively
+expensive.
 
-\subsection{Motivation: why perturbation is needed}
+Perturbation provides a mathematical and algorithmic framework that addresses
+this challenge by exploiting the strong coherence between nearby orbits. Rather
+than evaluating each pixel independently at full precision, perturbation
+separates the computation into a shared high-precision component and many
+pixel-local low-precision components. This section introduces the perturbation
+approach and explains how it enables efficient deep-zoom Mandelbrot rendering.
 
-At large zoom depths, direct evaluation of
+\subsection{Baseline iteration and its limitations}
 
-\[
-z_{n+1} = z_n^2 + c,\qquad z_0=0,
-\]
+The Mandelbrot set is defined by the iteration
+\begin{equation}
+z_{n+1} = z_n^2 + c, \qquad z_0 = 0,
+\end{equation}
+where \(c \in \mathbb{C}\) is the parameter associated with a pixel and the orbit
+\(\{z_n\}\) is iterated until either escape is detected or a maximum iteration
+count is reached.
 
-in floating-point arithmetic becomes inaccurate due to loss of significance in
-\(c\) and accumulated rounding error. Using extended or arbitrary precision
-solves the accuracy problem but is expensive when performed independently for
-every pixel.
+At modest zoom levels, this iteration can be evaluated accurately using standard
+floating-point arithmetic. At deep zoom levels, however, the differences between
+nearby parameters \(c\) may be many orders of magnitude smaller than the values
+of \(z_n\) encountered during iteration. In such regimes, rounding error and
+loss of significance make fixed-precision arithmetic unreliable. While arbitrary
+precision arithmetic can restore accuracy, applying it independently to every
+pixel scales poorly.
 
-However, in a typical Mandelbrot image, nearby pixels correspond to parameters
-\(c\) that differ only slightly. Their orbits therefore remain close for many
-iterations. Perturbation exploits this coherence by computing one
-high-precision \emph{reference orbit} and expressing nearby orbits as small
-deviations from it.
+\subsection{Coherence of nearby orbits}
+
+A key observation underlying perturbation is that nearby parameters generate
+orbits that remain close for many iterations. In a typical image tile, all pixel
+parameters \(c\) lie within a small neighborhood of a central value. Their
+orbits therefore share a common large-scale structure, differing only by small
+corrections that grow gradually over time.
+
+Perturbation makes this structure explicit by selecting a single
+\emph{reference parameter} and expressing all nearby orbits relative to it. This
+transforms the problem from one of many independent high-precision computations
+into one of a single high-precision computation plus many low-precision updates.
 
 \subsection{Reference orbit}
 
-Choose a reference parameter \(c_\star\), usually the center of the current
-view, and compute its orbit in sufficiently high precision:
-
+Let \(c_\star\) denote a reference parameter, typically chosen as the center of
+the image region. Its orbit is computed using sufficiently high precision to
+serve as a reliable baseline:
 \begin{equation}
-z_{n+1}^\star = (z_n^\star)^2 + c_\star,\qquad z_0^\star = 0.
+z_{n+1}^\star = (z_n^\star)^2 + c_\star, \qquad z_0^\star = 0.
 \end{equation}
+The sequence \(\{z_n^\star\}\) is stored and reused for all pixels within the
+region. Because this orbit underpins the evaluation of many pixels, its
+accuracy is critical.
 
-The sequence \(\{z_n^\star\}\) is stored and reused for many pixels. This is the
-only orbit that requires full high-precision evaluation.
+\subsection{Perturbation as a mixed-precision decomposition}
+\label{subsec:perturbation-mixed-precision}
 
-\subsection{Delta formulation for nearby pixels}
-\label{sec:perturb-delta-real}
-
-For a pixel parameter \(c\) close to the reference parameter \(c_\star\), define
-the parameter delta:
-
+For a nearby pixel parameter \(c = c_\star + \Delta c\), the orbit can be written
+as a small deviation from the reference orbit:
 \begin{equation}
-\Delta c \stackrel{\mathrm{def}}{=} c - c_\star,
+z_n = z_n^\star + \Delta z_n.
 \end{equation}
-
-and express the orbit at iteration \(n\) as a perturbation of the reference
-orbit:
-
+Substituting this expression into the Mandelbrot recurrence yields an exact
+update rule for the deviation:
 \begin{equation}
-z_n = z_n^\star + \Delta z_n,
-\end{equation}
-
-where \(\Delta z_n\) is the \emph{orbit delta}. Substituting into the Mandelbrot
-recurrence,
-
-\[
-z_{n+1} = z_n^2 + c,
-\]
-
-gives:
-
-\begin{align}
-z_{n+1}
-&= (z_n^\star + \Delta z_n)^2 + (c_\star + \Delta c) \\
-&= (z_n^\star)^2 + 2z_n^\star \Delta z_n + (\Delta z_n)^2 + c_\star + \Delta c.
-\end{align}
-
-Subtracting the reference recurrence
-
-\[
-z_{n+1}^\star = (z_n^\star)^2 + c_\star
-\]
-
-yields the \emph{exact delta update}:
-
-\begin{equation}
-\Delta z_{n+1} = 2z_n^\star \Delta z_n + (\Delta z_n)^2 + \Delta c.
+\Delta z_{n+1}
+= 2 z_n^\star \Delta z_n + (\Delta z_n)^2 + \Delta c.
 \label{eq:perturb-exact}
 \end{equation}
+No approximation has been introduced: as long as the reference orbit is computed
+accurately, this formulation preserves the exact Mandelbrot dynamics.
 
-No approximation has been made: perturbation preserves the exact Mandelbrot
-dynamics as long as the reference orbit is computed accurately.
+This decomposition has an important numerical consequence. The reference orbit
+\(z_n^\star\) typically grows in magnitude and requires arbitrary precision to be
+represented accurately at deep zoom. In contrast, the deviation \(\Delta z_n\)
+remains small for many iterations and can usually be evolved using much lower
+precision arithmetic. Perturbation therefore reorganizes the computation into a
+mixed-precision pipeline: expensive high-precision arithmetic is concentrated in
+a single shared orbit, while the majority of per-pixel work is performed using
+lower precision with significantly higher throughput.
 
-\subsubsection{Expansion into real and imaginary components}
+\subsection{Real-valued formulation for implementation}
 
-To map \cref{eq:perturb-exact} directly to an implementation, write all
-quantities in real and imaginary parts:
-
+For practical implementation, particularly on GPUs, it is convenient to express
+the perturbation update in real arithmetic. Writing
 \begin{align*}
 z_n^\star &= x_n^\star + i y_n^\star, \\
 \Delta z_n &= \Delta x_n + i \Delta y_n, \\
-\Delta c &= \Delta c_x + i \Delta c_y.
+\Delta c &= \Delta c_x + i \Delta c_y,
 \end{align*}
-
-First expand the quadratic term:
-
-\begin{align}
-(\Delta z_n)^2
-&= (\Delta x_n + i \Delta y_n)^2 \\
-&= (\Delta x_n^2 - \Delta y_n^2)
-   + i(2 \Delta x_n \Delta y_n).
-\end{align}
-
-Next expand the linear term:
-
-\begin{align}
-2 z_n^\star \Delta z_n
-&= 2(x_n^\star + i y_n^\star)(\Delta x_n + i \Delta y_n) \\
-&= 2(x_n^\star \Delta x_n - y_n^\star \Delta y_n)
- + i\,2(x_n^\star \Delta y_n + y_n^\star \Delta x_n).
-\end{align}
-
-Combining terms gives the real and imaginary delta updates:
-
+and expanding \cref{eq:perturb-exact} yields
 \begin{align}
 \Delta x_{n+1}
 &= 2(x_n^\star \Delta x_n - y_n^\star \Delta y_n)
    + (\Delta x_n^2 - \Delta y_n^2)
-   + \Delta c_x, \label{eq:perturb-real} \\
+   + \Delta c_x, \\
 \Delta y_{n+1}
 &= 2(x_n^\star \Delta y_n + y_n^\star \Delta x_n)
-   + 2\Delta x_n \Delta y_n
-   + \Delta c_y. \label{eq:perturb-imag}
+   + 2 \Delta x_n \Delta y_n
+   + \Delta c_y.
 \end{align}
+These equations map directly onto scalar arithmetic and can be evaluated
+efficiently in parallel for many pixels.
 
-\subsubsection{Factored form used in implementations}
+\subsection{Reconstruction and escape testing}
 
-For numerical efficiency, \cref{eq:perturb-real,eq:perturb-imag} are often
-evaluated in a factored form. Grouping terms yields:
-
-\begin{align}
-\Delta x_{n+1}
-&= \Delta x_n\,(2x_n^\star + \Delta x_n)
-   - \Delta y_n\,(2y_n^\star + \Delta y_n)
-   + \Delta c_x, \label{eq:perturb-real-factored} \\
-\Delta y_{n+1}
-&= \Delta x_n\,(2y_n^\star + \Delta y_n)
-   + \Delta y_n\,(2x_n^\star + \Delta x_n)
-   + \Delta c_y. \label{eq:perturb-imag-factored}
-\end{align}
-
-This corresponds exactly to the compact complex form:
-
-\[
-\Delta z_{n+1}
-= \Delta z_n \bigl(2 z_n^\star + \Delta z_n\bigr) + \Delta c,
-\]
-
-and maps directly onto typical GPU code using temporaries such as:
-
-\[
-(2x_n^\star + \Delta x_n), \quad (2y_n^\star + \Delta y_n).
-\]
-
-Despite the efficiency, \FractalShark{} implements the non-factored form
-\cref{eq:perturb-real,eq:perturb-imag} everywhere.
-
-\subsubsection{Reconstruction for escape testing}
-
-Although perturbation evolves only the delta, escape-time rendering requires the
-absolute orbit value:
-
+Although perturbation evolves only the deviation \(\Delta z_n\), escape-time
+rendering requires testing the magnitude of the full orbit value. At each
+iteration, the current iterate is reconstructed as
 \begin{equation}
-z_n = z_n^\star + \Delta z_n
-     = (x_n^\star + \Delta x_n) + i(y_n^\star + \Delta y_n).
+z_n = z_n^\star + \Delta z_n,
 \end{equation}
-
-The standard Mandelbrot bailout condition is then applied:
-
+and the standard Mandelbrot bailout condition is applied:
 \begin{equation}
-|z_n|^2
-= (x_n^\star + \Delta x_n)^2 + (y_n^\star + \Delta y_n)^2
-\ge 4.
+|z_n|^2 \ge 4.
 \end{equation}
-
-This separation cleanly explains how perturbation math maps onto real-valued
-implementation variables while preserving the exact Mandelbrot dynamics.
-
-
-\subsection{Efficient perturbation update}
-
-Equation~\eqref{eq:perturb-exact} can be rearranged into a form well suited for
-implementation:
-
-\begin{equation}
-\Delta z_{n+1} = \Delta z_n \bigl(2z_n^\star + \Delta z_n\bigr) + \Delta c.
-\label{eq:perturb-factored}
-\end{equation}
-
-This form requires only:
-
-\begin{itemize}
-\item one complex multiply,
-\item one complex add,
-\item access to the stored reference sample \(z_n^\star\).
-\end{itemize}
-
-Crucially, it avoids squaring large high-precision numbers for every pixel.
-Instead, the expensive squaring is performed once for the reference orbit and
-reused implicitly through \(z_n^\star\).
-
-\subsection{Reconstructing the absolute orbit and escape test}
-
-Perturbation evolves \(\Delta z_n\), but Mandelbrot rendering requires testing
-escape of the absolute orbit. At each iteration, the current iterate is
-reconstructed as:
-
-\begin{equation}
-z_n \approx z_n^\star + \Delta z_n.
-\end{equation}
-
-Escape-time rendering then applies the standard bailout condition:
-
-\begin{equation}
-|z_n|^2 = \Re(z_n)^2 + \Im(z_n)^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
-\end{equation}
-
-The iteration index \(n\) at which this condition is first satisfied (or the
-maximum iteration count if it never is) determines the pixel’s color.
+The iteration at which this condition is first satisfied determines the pixel’s
+escape time.
 
 \subsection{Numerical stability and rebasing}
 
-Perturbation is efficient only while \(\Delta z_n\) remains small relative to
-\(z_n^\star\). If \(|\Delta z_n|\) grows comparable to or larger than
-\(|z_n^\star|\), numerical cancellation and loss of significance can degrade
-accuracy.
-
-To maintain stability, practical implementations use \emph{rebasing}. When
-a stability criterion is violated, the current approximation is folded into a
-new base:
-
-\begin{equation}
-z_n^\star \leftarrow z_n^\star + \Delta z_n,\qquad \Delta z_n \leftarrow 0,
-\end{equation}
-
-and perturbation continues relative to this updated reference state. This
-preserves correctness while keeping deltas small.
-
-\subsection{Why perturbation accelerates Mandelbrot rendering}
-
-The efficiency gains come from two sources:
-
-\begin{itemize}
-\item \textbf{Reduced arithmetic cost.} Only one orbit is computed in full
-high precision. All other pixels use cheaper delta updates.
-\item \textbf{Spatial coherence.} Nearby pixels share the same reference orbit
-for many iterations before diverging.
-\end{itemize}
-
-As a result, perturbation enables deep-zoom Mandelbrot rendering that would be
-prohibitively slow if each pixel were evaluated independently in arbitrary
-precision.
+Perturbation remains efficient only while the deviation \(\Delta z_n\) remains
+small relative to the reference orbit. As the deviation grows, numerical
+cancellation and loss of significance may occur. Practical implementations
+therefore employ \emph{rebasing}, in which the current deviation is folded into
+the reference state and perturbation continues relative to this new baseline.
+This process preserves accuracy while maintaining numerical stability.
 
 \subsection{Relation to other acceleration techniques}
 
-Perturbation alone preserves the exact dynamics of the Mandelbrot map and
-requires no linearization. It can be used by itself or combined with further
-approximations (such as linear or bilinear approximation steps) to skip multiple
-iterations at once. In all cases, perturbation provides the mathematical
-foundation that makes efficient deep-zoom Mandelbrot rendering feasible.
+Perturbation preserves the exact dynamics of the Mandelbrot map and forms the
+foundation of many advanced deep-zoom rendering techniques. It can be used by
+itself or combined with additional approximations, such as linear or higher-order
+methods, to skip multiple iterations at once. In all cases, perturbation provides
+the conceptual framework that makes efficient deep-zoom Mandelbrot rendering
+possible.
+
 
 
 \section{Reference Orbit Calculation}

@@ -137,8 +137,10 @@ data for cross-tool validation.
 \noindent
 Overall, \FractalShark{} functions as both a \textbf{deep-zoom Mandelbrot
 explorer} and a \textbf{research and experimentation platform} for
-high-precision fractal rendering, prioritizing transparency, correctness,
-and extensibility over a simplified or opaque user experience.
+high-precision fractal rendering, prioritizing transparency, correctness, and
+performance.  It is not intended as a polished end-user application, but rather
+as an experimental platform for exploring and validating advanced fractal
+rendering algorithms.
 
 
 \section{Kernel List}
@@ -725,6 +727,121 @@ methods, to skip multiple iterations at once. In all cases, perturbation provide
 the conceptual framework that makes efficient deep-zoom Mandelbrot rendering
 possible.
 
+\section{HDR Floating-Point Representation}
+\label{sec:hdr-float}
+
+Deep-zoom Mandelbrot rendering places unusual demands on numerical
+representation. Orbit values may span an extreme dynamic range over the course
+of iteration, while small relative differences between nearby orbits must be
+tracked accurately. Standard floating-point formats are poorly matched to this
+combination of requirements: fixed-precision mantissas limit relative accuracy
+at large magnitudes, while arbitrary-precision formats incur prohibitive
+computational cost when used per pixel.
+
+To address this gap, we employ a custom \emph{high dynamic range (HDR)}
+floating-point representation that explicitly separates scale and precision.
+This representation is designed to preserve relative accuracy across a wide
+range of magnitudes while remaining efficient on GPUs.
+
+\subsection{Decoupling scale and precision}
+
+In standard IEEE floating-point arithmetic, each value is represented as a
+mantissa multiplied by a power of two, with both components stored implicitly in
+a single word. While convenient, this tightly couples scale and precision: as
+values grow in magnitude, fewer bits remain available to represent small
+relative differences.
+
+The HDR representation instead stores values in the form
+\begin{equation}
+x = m \cdot 2^{e},
+\end{equation}
+where:
+\begin{itemize}
+\item \(m\) is a fixed-precision mantissa stored in standard floating-point or
+      double-double format, and
+\item \(e\) is an explicitly managed integer exponent.
+\end{itemize}
+
+By storing the exponent separately, the mantissa can remain centered near unit
+magnitude regardless of the overall scale of the value. This preserves relative
+precision even when the absolute value becomes extremely large or small.
+
+\subsection{Normalization and arithmetic}
+
+HDR arithmetic maintains the invariant that the mantissa remains within a fixed
+normalized range. After each arithmetic operation, the mantissa is renormalized
+and any excess scaling is folded into the exponent. Conceptually, this mirrors
+the behavior of floating-point normalization, but with explicit control over the
+process.
+
+Arithmetic operations are performed as follows:
+\begin{itemize}
+\item \textbf{Multiplication} combines mantissas and adds exponents.
+\item \textbf{Addition and subtraction} align exponents explicitly before
+      operating on mantissas.
+\item \textbf{Renormalization} ensures that mantissas remain well-scaled and
+      numerically stable.
+\end{itemize}
+
+Because mantissas are stored using fixed-precision types, these operations map
+naturally to GPU hardware while avoiding the overhead of general-purpose
+arbitrary-precision arithmetic.
+
+\subsection{HDR complex numbers}
+
+Mandelbrot iteration operates on complex numbers. In the HDR formulation, each
+complex value
+\[
+z = x + i y
+\]
+is represented by storing separate HDR values for the real and imaginary
+components. Both components share the same conceptual structure but may have
+independent exponents.
+
+This representation allows the magnitude of \(z\) to grow or shrink over many
+orders of magnitude while maintaining accurate relative phase and magnitude
+information, which is critical for both escape testing and perturbation-based
+methods.
+
+\subsection{Role of HDR in perturbation and reference orbits}
+
+The HDR representation plays a complementary role to perturbation. In the
+perturbation framework, the reference orbit typically grows rapidly in magnitude
+and therefore demands high dynamic range, while perturbation deltas remain small
+and can often be represented using lower precision.
+
+HDR arithmetic is used primarily for:
+\begin{itemize}
+\item computing reference orbits at deep zoom levels,
+\item evaluating linear and nonlinear terms involving large reference values,
+\item maintaining numerical stability across long iteration sequences.
+\end{itemize}
+
+By decoupling scale from precision, HDR arithmetic allows the reference orbit to
+be computed efficiently without sacrificing accuracy, while still enabling the
+mixed-precision structure exploited by perturbation rendering.
+
+\subsection{Advantages over conventional representations}
+
+Compared to standard floating-point formats, HDR arithmetic offers:
+\begin{itemize}
+\item substantially increased dynamic range,
+\item stable relative precision independent of magnitude,
+\item predictable and controllable numerical behavior.
+\end{itemize}
+
+Compared to arbitrary-precision libraries, it avoids dynamic memory allocation,
+irregular control flow, and large per-operation overheads, making it well suited
+for massively parallel execution on GPUs.
+
+\subsection{Summary}
+
+The HDR floating-point representation provides a numerically robust and
+computationally efficient foundation for deep-zoom Mandelbrot rendering. By
+explicitly separating scale and precision, it bridges the gap between standard
+floating-point arithmetic and full arbitrary-precision methods. In combination
+with perturbation, it enables accurate, high-performance rendering across
+extreme zoom levels while remaining compatible with GPU execution models.
 
 
 \section{Reference Orbit Calculation}
@@ -741,68 +858,6 @@ the quadratic map
 with an implementation that supports single-threaded CPU, multi-threaded CPU,
 and GPU backends, plus several storage/compression modes that trade memory
 footprint against recomputation.
-
-\subsubsection{Expanded versus factored evaluation of the reference orbit}
-
-The high-precision reference orbit evaluates the quadratic map
-
-\[
-z_{n+1} = z_n^2 + c,
-\qquad
-z_n = x_n + i y_n,
-\qquad
-c = c_x + i c_y,
-\]
-
-with full arbitrary-precision arithmetic.
-
-Writing the iteration in real and imaginary components gives the
-\emph{expanded form}:
-
-\begin{align}
-x_{n+1} &= x_n^2 - y_n^2 + c_x, \label{eq:ref-expanded-real} \\
-y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-expanded-imag}
-\end{align}
-
-This form follows directly from the algebraic definition of the polynomial.
-Each term is evaluated explicitly, requiring two full-precision squares and
-one full-precision multiplication per iteration.
-
-The same quadratic map can be evaluated in a mathematically equivalent
-\emph{factored form}. In particular, the real component may be written as
-
-\begin{align}
-x_{n+1}
-&= (x_n - y_n)(x_n + y_n) + c_x, \label{eq:ref-factored-real}
-\end{align}
-while the imaginary component remains
-\begin{align}
-y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-factored-imag}
-\end{align}
-
-In exact arithmetic, \cref{eq:ref-factored-real,eq:ref-factored-imag} are
-identical to \cref{eq:ref-expanded-real,eq:ref-expanded-imag}. The difference
-lies solely in how the products are formed.
-
-From an implementation perspective, the expanded form evaluates
-$x_n^2$ and $y_n^2$ independently and makes the subtraction
-$x_n^2 - y_n^2$ explicit. This closely mirrors the mathematical definition
-of the Mandelbrot polynomial and exercises the full squaring and
-multiplication paths of the high-precision arithmetic.
-
-The factored form reduces the number of full-precision squares by replacing
-$x_n^2 - y_n^2$ with a single multiplication of the shared intermediates
-$(x_n \pm y_n)$. This can reduce computational cost when multiplication and
-squaring have similar expense, but it introduces stronger coupling between
-terms and alters the way cancellation and rounding effects manifest in
-finite-precision arithmetic.
-
-In all cases, \FractalShark{} uses the expanded form despite the advantages offered
-by the factored form. This choice simplifies reasoning about numerical behavior,
-ensures that all arithmetic paths are exercised, and maintains consistency with
-the perturbation update form used elsewhere in the codebase.  For better
-performance it likely makes sense to implement both forms and compare their behavior
-empirically.
 
 \subsection{High-level pipeline and dispatch}
 \label{subsec:ref-orbit-pipeline}
@@ -914,6 +969,68 @@ where \(R_{\max}\) is the maximum perturbation radius stored in \texttt{results}
 . If \(n_2 < n_3\), the orbit is marked as \emph{maybe periodic} and the
 reference loop terminates early (unless periodicity detection is disabled).
 Otherwise, \((d_{x,n},d_{y,n})\) is advanced using the update above.
+
+\subsection{Expanded versus factored evaluation of the reference orbit}
+
+The high-precision reference orbit evaluates the quadratic map
+
+\[
+z_{n+1} = z_n^2 + c,
+\qquad
+z_n = x_n + i y_n,
+\qquad
+c = c_x + i c_y,
+\]
+
+with full arbitrary-precision arithmetic.
+
+Writing the iteration in real and imaginary components gives the
+\emph{expanded form}:
+
+\begin{align}
+x_{n+1} &= x_n^2 - y_n^2 + c_x, \label{eq:ref-expanded-real} \\
+y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-expanded-imag}
+\end{align}
+
+This form follows directly from the algebraic definition of the polynomial.
+Each term is evaluated explicitly, requiring two full-precision squares and
+one full-precision multiplication per iteration.
+
+The same quadratic map can be evaluated in a mathematically equivalent
+\emph{factored form}. In particular, the real component may be written as
+
+\begin{align}
+x_{n+1}
+&= (x_n - y_n)(x_n + y_n) + c_x, \label{eq:ref-factored-real}
+\end{align}
+while the imaginary component remains
+\begin{align}
+y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-factored-imag}
+\end{align}
+
+In exact arithmetic, \cref{eq:ref-factored-real,eq:ref-factored-imag} are
+identical to \cref{eq:ref-expanded-real,eq:ref-expanded-imag}. The difference
+lies solely in how the products are formed.
+
+From an implementation perspective, the expanded form evaluates
+$x_n^2$ and $y_n^2$ independently and makes the subtraction
+$x_n^2 - y_n^2$ explicit. This closely mirrors the mathematical definition
+of the Mandelbrot polynomial and exercises the full squaring and
+multiplication paths of the high-precision arithmetic.
+
+The factored form reduces the number of full-precision squares by replacing
+$x_n^2 - y_n^2$ with a single multiplication of the shared intermediates
+$(x_n \pm y_n)$. This can reduce computational cost when multiplication and
+squaring have similar expense, but it introduces stronger coupling between
+terms and alters the way cancellation and rounding effects manifest in
+finite-precision arithmetic.
+
+In all cases, \FractalShark{} uses the expanded form despite the advantages offered
+by the factored form. This choice simplifies reasoning about numerical behavior,
+ensures that all arithmetic paths are exercised, and maintains consistency with
+the perturbation update form used elsewhere in the codebase.  For better
+performance it likely makes sense to implement both forms and compare their behavior
+empirically.
 
 \section{Compression and Reference Orbit Reuse Modes}
 \label{subsec:ref-orbit-compression-reuse}
@@ -2296,6 +2413,21 @@ already required by the cooperative multi-block arithmetic pipeline, making the
 incremental overhead of periodicity checking negligible relative to the cost of
 high-precision multiplication at large precisions.
 
+\paragraph{Alternative host-side periodicity checking.}
+An alternative design would be to retain the authoritative high-precision orbit
+state entirely on the device, periodically copy the full-precision values
+\((x_n, y_n, dz_n/dc)\) back to the host, and perform periodicity and escape
+testing on the CPU using existing MPIR-based logic. While conceptually simpler,
+this approach is impractical at large precisions: each iteration would require
+transferring hundreds to thousands of limbs per component over the PCIe bus,
+and the cumulative bandwidth and synchronization costs would dominate the total
+runtime. Moreover, host-side checking would introduce additional latency and
+force a tighter coupling between device execution and CPU control flow. By
+performing periodicity detection directly on the GPU using reduced HDR
+representations, the implementation avoids repeated large data transfers while
+preserving an early-termination mechanism that is both inexpensive and tightly
+integrated with the cooperative-grid execution model.
+
 
 
 \section{Perturbation-only Mandelbrot rendering (without linear approximation)}
@@ -2546,7 +2678,7 @@ these components are organized to maintain correctness and performance within
 the bounded-chunk execution model.
 
 
-\section{Approximation-based acceleration for Mandelbrot rendering}
+\section{TODO mess approximation-based acceleration for Mandelbrot rendering}
 \label{sec:approx-accel}
 
 At deep zoom, the cost of iterating high-precision types for every pixel can be
@@ -2679,22 +2811,193 @@ and specialized reduced comparators, preserving meaningful bailout decisions at
 deep zoom.
 
 
-\section{Summary: rendering-oriented view}
-\label{sec:summary}
 
-All kernels and acceleration schemes described here serve the same rendering
-task: compute per-pixel escape-time for the Mandelbrot recurrence
-\(z_{n+1}=z_n^2+c\). The implementation provides a precision ladder:
+\section{Disk-Backed Growable Vectors with Stable Virtual Addresses}
+\label{sec:disk_backed_growable_vectors}
+
+High-resolution Mandelbrot rendering and reference-orbit techniques impose
+extreme demands on memory management. At deep zoom levels, a single authoritative
+reference orbit may contain tens of billions of elements; for example, an orbit
+with $2.7\times10^{10}$ iterations already implies a logical memory footprint far
+beyond what can be held resident in RAM, even with compact per-iteration storage.
+At this scale, both the cost of allocation and the cost of relocation become
+dominant design constraints.
+
+Several subsystems in \FractalShark{}—including orbit logging, metadata streams,
+debug outputs, and the custom heap allocator—require \emph{growable} storage
+while simultaneously maintaining \emph{stable virtual addresses} for previously
+returned pointers. This requirement arises naturally when the program hands out
+interior pointers into a buffer (e.g., into an orbit record array or a heap
+arena). Any reallocation-and-copy strategy would invalidate those pointers and
+would require copying enormous amounts of data, which is computationally
+infeasible at multi-billion-element scales.
+
+In addition to scale and pointer stability, persistence is a first-class
+concern. Reference orbits are expensive to compute but comparatively cheap to
+reuse. If orbit data can be left resident on disk and later reloaded simply by
+mapping the same backing file back into the process address space, recomputation
+can be avoided entirely. This enables efficient multi-pass rendering workflows,
+interactive debugging, and reuse of authoritative reference orbits across program
+invocations.
+
+To address these requirements, we implement a
+\texttt{GrowableVector<EltT>} abstraction that combines (i) a fixed,
+virtually-contiguous address range reserved up front and (ii) incremental growth
+within that range by committing additional pages on demand. Growth is performed
+in place, so the base address never changes and no copying is required as
+capacity increases. The abstraction supports two complementary backing modes:
+
+\begin{enumerate}
+  \item \textbf{Anonymous (pagefile-backed) growth.} A large virtual region is
+  reserved once via \texttt{VirtualAlloc(..., MEM\_RESERVE, ...)} and pages are
+  subsequently committed within that region using
+  \texttt{VirtualAlloc(base, bytes, MEM\_COMMIT, ...)}. Because each commit
+  targets the original base address, successful growth preserves
+  \texttt{m\_Data} and does not require relocation.
+
+  \item \textbf{File-backed (disk-backed) growth.} The reserved address range is
+  backed by a disk file and mapped into the process using a section object. In
+  this mode, pages are demand-paged from the backing file and become resident
+  only as accessed, substantially reducing peak commit requirements when the
+  logical capacity greatly exceeds physical memory. When persistence is enabled,
+  the same backing file can later be remapped to recover the stored data without
+  recomputation.
+\end{enumerate}
+
+\subsection{Stable-address growth via reserve-and-commit}
+\label{sec:reserve_commit}
+
+At initialization time, the vector establishes an address anchor:
 \begin{itemize}
-  \item \code{1x} float/double: direct iteration for speed and moderate zoom,
-  \item \code{2x} and \code{4x} expansions: deeper zoom with controlled error,
-  \item HDR-normalized expansions: stable deep zoom with explicit reduction,
-  \item BLA / LA v2 + perturbation: reuse a reference orbit to accelerate
-        high-precision escape-time rendering for nearby pixels.
+  \item In anonymous mode, the anchor is created by reserving a large region
+  (typically sized to a fraction of physical memory, or an explicit override)
+  and recording the returned base pointer \texttt{m\_Data}.
+  \item In file-backed mode, the anchor is created by mapping a section at a
+  base address and thereafter requiring all remaps/extends to preserve that base.
 \end{itemize}
-The common structure (pixel mapping, orbit iteration, bailout test, iteration
-count store) ensures each section remains directly tied to Mandelbrot rendering
-as the end goal.
+
+Growth proceeds by increasing the logical capacity \texttt{m\_CapacityInElts}
+without moving data. In anonymous mode, this corresponds to committing
+additional pages within the reserved region. In file-backed mode, it corresponds
+to extending the underlying section and allowing the view to cover the expanded
+range. Critically, in both cases we \emph{never} allocate a second buffer and
+copy: the address stability is enforced by explicitly requesting the existing
+base address and treating any base-address change as a hard error.
+
+\subsection{File-backed mapping for low-commit large buffers}
+\label{sec:file_backed_mapping}
+
+When a filename is provided (or a temporary filename is generated), the vector
+opens or creates a backing file and constructs a section object over it. We use
+native NT section APIs (e.g., \texttt{NtCreateSection},
+\texttt{NtMapViewOfSection}, and \texttt{NtExtendSection}) to obtain a
+reserve-style mapping suitable for later extension.
+
+Conceptually, the pipeline is:
+\begin{enumerate}
+  \item \textbf{Open/Create backing file.} The file can be persistent (saved
+  results) or temporary (e.g., created with delete-on-close semantics when the
+  data is not meant to be retained).
+  \item \textbf{Create section.} A section is created with read/write
+  protection. For growable vectors, the section is configured so that the view
+  can be reserved and later extended.
+  \item \textbf{Map a view to establish the base address.} The first mapping
+  produces the stable anchor pointer \texttt{m\_Data}. Subsequent growth must
+  preserve this base.
+  \item \textbf{Extend on demand.} When capacity increases, the section is
+  extended to the new byte size. Because the base mapping remains fixed, all
+  previously returned pointers remain valid.
+\end{enumerate}
+
+This approach has two key practical benefits:
+\begin{itemize}
+  \item \textbf{Stable pointers with large logical capacity.} The program may
+  reserve and grow to very large capacities (hundreds of GiB or more) without
+  the pointer invalidation inherent in \texttt{realloc}-style strategies.
+  \item \textbf{Reduced peak commit pressure.} The OS can keep most of the
+  logical buffer non-resident until touched; pages are faulted in as accessed
+  and can be evicted back to disk under memory pressure. This is particularly
+  effective when the workload has a large addressable dataset but a much smaller
+  active working set.
+\end{itemize}
+
+\subsection{Trimming and persistence policies}
+\label{sec:trim_persist}
+
+The vector supports multiple policies that control whether data is persisted:
+\begin{itemize}
+  \item \textbf{Persistent save (\texttt{EnableWithSave}).} Upon \texttt{Trim()},
+  the backing file is truncated to match the used size, ensuring the on-disk
+  representation reflects the logical content exactly.
+  \item \textbf{Temporary file-backed (\texttt{EnableWithoutSave}).} Upon
+  \texttt{Trim()}, the view can be remapped to match the used size while
+  \emph{reusing the same base address}. This reduces the mapped span without
+  sacrificing pointer stability, and the file is automatically deleted when the
+  handle closes.
+  \item \textbf{Anonymous (\texttt{DontSave}).} Trimming is a logical operation
+  (used size changes) while the reserved region remains as the stable anchor.
+\end{itemize}
+
+\subsection{Using the same mechanism for the heap arena}
+\label{sec:heap_uses_growable_vector}
+
+The custom heap allocator builds its arena on top of the same
+\texttt{GrowableVector<uint8\_t>} abstraction. The heap is initialized by
+creating a file-backed growable vector for the heap arena and committing an
+initial chunk of memory. When the allocator needs more space, it expands the
+arena by growing the underlying vector in-place and then updating the heap's
+wilderness block (coalescing if possible). Because the arena grows within a
+reserved and stable virtual range, all heap pointers returned to the program
+remain valid across heap expansions, and expansion does not require copying or
+relocating the heap.
+
+\subsection{Portability and backing-file considerations}
+\label{sec:disk_backed_portability_notes}
+
+The implementation described above relies on Windows-specific virtual memory and
+section-mapping semantics, in particular the ability to reserve a virtually
+contiguous address range and to grow into that range while preserving a fixed
+base address. On Windows, this is achieved using native section objects backed by
+ordinary (non-sparse) files whose size is explicitly extended as the logical
+capacity grows.
+
+An important consequence of this design choice is that the backing file itself
+physically grows on disk as the vector expands, even if large portions of the
+mapped address space are never touched. Windows mitigates the runtime memory
+impact by demand-paging pages into RAM and evicting them back to disk under
+memory pressure, but the on-disk footprint still reflects the full logical extent
+of the section. This behavior is acceptable—and often desirable—on Windows,
+where file-backed sections are tightly integrated with the operating system's
+paging and commit model.
+
+More specifically, Windows treats a section backed by a regular (non-sparse)
+file with a well-defined size as a complete and deterministic backing store for
+any page in the mapped range. Page faults are resolved by reading from the file,
+and evicted pages can be written back to the same file without requiring
+additional allocation or metadata decisions at fault time. By explicitly
+growing the backing file as capacity increases, the implementation ensures that
+the backing storage for every potential page already exists. This aligns with
+Windows-native paging expectations and simplifies correctness guarantees around
+section growth, page-in, and page-out behavior.
+
+On other platforms, or in alternative designs, a \emph{large sparse file} may be
+a more appropriate backing store for growable, disk-backed vectors. Sparse files
+allow the logical file size to greatly exceed the actual disk space consumed,
+allocating physical blocks only for regions that are written. When combined with
+memory-mapped I/O, this can preserve the core advantages of the approach—stable
+virtual addresses and low resident memory usage—while also minimizing disk space
+consumption for unused regions.
+
+The present implementation intentionally does not rely on sparse-file behavior,
+favoring predictability and robustness of paging semantics over minimizing
+nominal disk usage. This choice, while well aligned with Windows-native behavior,
+has implications for portability: environments that do not support extending a
+mapped view in place, or that impose stricter constraints on file-backed mappings
+(such as Wine or certain Unix-like kernels), may require alternative strategies.
+Possible approaches include explicit sparse-file usage, preallocation of large
+sparse sections, or fallback allocators that relax the stable-address requirement
+in exchange for broader compatibility.
+
 
 
 \section{Development Notes}

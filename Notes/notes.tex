@@ -70,8 +70,8 @@ explicit and selectable.  Users may rely on an automatic algorithm selector
 or manually choose among many rendering paths, including:
 \begin{itemize}
   \item GPU-based low-zoom renderers with selectable iteration precision and
-        multiple numeric formats (single-, dual-, and quad-limb 32- and
-        64-bit variants, as well as HDR-style representations).
+        multiple numeric formats (single-, dual-, and quad-limb 32- and 64-bit
+        variants, as well as deeper representations discussed subsequently).
   \item Scaled perturbation algorithms for extending low-precision arithmetic
         to deeper zooms.
   \item Bilinear approximation (BLA v1) perturbation paths.
@@ -198,6 +198,19 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
 
 \end{itemize}
 
+\paragraph{High-Dynamic-Range (HDR) scalar representation.}
+In this work, the term \emph{HDR} refers to a reduced \emph{high-dynamic-range}
+numeric representation used exclusively for control-flow decisions, not for
+authoritative arithmetic. An HDR value preserves a wide exponent range—sufficient
+to compare magnitudes spanning many orders of magnitude—while intentionally
+discarding most mantissa precision. This design enables inexpensive, robust
+magnitude comparisons (e.g., norms, maxima, and inequality tests) without
+incurring the cost of full arbitrary-precision operations. HDR values are derived
+from the underlying high-precision state via a monotone reduction step and are
+used solely for periodicity detection, escape testing, and other termination
+criteria. They never participate in state updates and therefore cannot influence
+the numerical correctness of the reference orbit itself. The use of the term HDR
+here is purely numerical and is unrelated to high-dynamic-range imaging.
 
 \section{Code Overview}
 
@@ -1175,44 +1188,97 @@ section.
 \section{Multi-threaded Reference Orbit Acceleration}
 \label{subsec:ref-orbit-mt}
 
-The \texttt{MT3} path parallelizes high-cost MPIR operations by splitting the per-iteration work across
-threads. Two recurring patterns appear:
+The \texttt{MT3} reference-orbit path accelerates high-cost MPIR arithmetic by
+decomposing each iteration across multiple CPU threads.  The design targets
+independent, high-latency big-integer operations that naturally overlap in the
+perturbation recurrence, while minimizing synchronization overhead.  Two
+recurring implementation patterns characterize this approach.
 
 \paragraph{Asynchronous squaring.}
-For authoritative orbit computation, two worker threads compute \(x_n^2\) and \(y_n^2\) concurrently while the
-main thread evaluates the cross term for \(y_{n+1} = 2 x_n y_n + c_y\), performs periodicity checks in low
-precision, and orchestrates reuse/serialization. The main update then becomes:
-
+During authoritative orbit evaluation, two worker threads compute the squared
+terms \(x_n^2\) and \(y_n^2\) concurrently.  In parallel, the main thread
+evaluates the cross term in
+\[
+  y_{n+1} = 2 x_n y_n + c_y,
+\]
+performs low-precision periodicity checks, and manages operand reuse and
+serialization.  Once the squared terms are returned, the real component update
+is completed as
 \begin{equation}
-  x_{n+1} = x_n^2 - y_n^2 + c_x,
+  x_{n+1} = x_n^2 - y_n^2 + c_x.
 \end{equation}
-
-where \(x_n^2\) and \(y_n^2\) are returned from the worker threads.
+This decomposition exposes substantial instruction-level and thread-level
+parallelism while preserving the exact arithmetic semantics required for
+reference orbit computation.
 
 \paragraph{Lock-free handoff with prefetch.}
-
-Threads communicate through a minimal \texttt{ThreadPtrs<T>} mailbox containing atomic \texttt{In} and \texttt{Out}
-pointers. The protocol is:
-
+Inter-thread communication is implemented using a minimal lock-free mailbox
+(\texttt{ThreadPtrs<T>}) consisting of atomic \texttt{In} and \texttt{Out}
+pointers.  The protocol proceeds as follows:
 \begin{enumerate}
-  \item Producer stores a work pointer in \texttt{In}.
-  \item Worker spins until it swaps \texttt{In} to \texttt{nullptr}, prefetches the pointed-to operands, executes MPIR
-        arithmetic, then publishes the same pointer in \texttt{Out}.
-  \item Producer spins until it swaps \texttt{Out} back to \texttt{nullptr}, then consumes the computed fields.
+  \item The producer publishes a work pointer by storing it into \texttt{In}.
+  \item The worker spins until it atomically claims the pointer, prefetches the
+        referenced MPIR operands, executes the required arithmetic, and then
+        publishes the same pointer via \texttt{Out}.
+  \item The producer spins until it retrieves the completed pointer from
+        \texttt{Out}, after which the computed results are consumed.
 \end{enumerate}
+To reduce cache-miss latency when operating on large MPIR limb arrays, worker
+threads explicitly prefetch both MPIR metadata and limb data using a fixed
+64-byte stride.  This strategy is particularly beneficial at very high
+precision, where memory latency can otherwise dominate execution time.
 
-To mitigate cache miss latency on large MPIR limb arrays, the worker explicitly
-prefetches both MPIR headers and limb ranges (64-byte stride), which is helpful
-when iterating at very high precision.  There is likely room for improvement
-here but it's not bad.
+\subsection{Precision-dependent single-thread versus multi-thread trade-offs}
+\label{subsec:ref-orbit-mt-tradeoff}
+
+The relative effectiveness of single-threaded and multi-threaded reference-orbit
+evaluation depends strongly on the active precision, which in practice is
+closely correlated with zoom level and MPIR limb count.  Consequently, the
+implementation supports both execution modes and selects between them
+automatically when \texttt{PerturbationAlg::Auto} is enabled.
+
+At lower precision (small limb counts), overall performance is often dominated
+by fixed overheads such as synchronization, atomic mailbox operations, thread
+spinning, and cache traffic.  In this regime, a single-threaded MPIR execution
+path benefits from tight instruction locality, reduced fencing, and predictable
+cache reuse, and may outperform a parallelized approach despite executing all
+arithmetic serially.
+
+As precision increases, the cost structure shifts toward throughput-dominated
+big-integer arithmetic.  Large limb counts cause MPIR squaring and multiplication
+to dominate total runtime, amortizing synchronization overhead and making
+concurrent execution increasingly effective.  Overlapping independent
+operations, such as the simultaneous computation of \(x_n^2\) and \(y_n^2\),
+yields substantial gains, while explicit limb prefetching further mitigates
+memory latency.  Beyond a hardware- and workload-dependent threshold,
+multi-threaded reference-orbit computation consistently outperforms the
+single-threaded path, with speedups increasing as precision grows.
+
+To exploit this behavior without requiring manual tuning, the \texttt{Auto}
+selection mode chooses the perturbation algorithm based on the current zoom
+factor as a proxy for required precision.  At moderate zoom levels, it favors
+single-threaded periodicity detection to avoid unnecessary parallel overhead.
+At higher zoom levels, it transitions to the \texttt{MTPeriodicity3} path, where
+parallel MPIR arithmetic becomes advantageous.  For extreme zoom, a hybrid
+multi-threaded perturbation strategy (e.g.,
+\texttt{MTPeriodicity3PerturbMTHighMTMed3}) is selected to maintain throughput at
+very high precision, acknowledging that some configurations remain
+experimental.
+
+Overall, single-threaded and multi-threaded reference-orbit evaluation are
+treated as complementary strategies rather than a strict hierarchy: fewer limbs
+favor single-thread execution, while increasing precision increasingly favors
+multi-threaded decomposition, with \texttt{Auto} providing an adaptive runtime
+selection mechanism.
+
 
 \section{GPU reference orbit backend}
 \label{subsec:ref-orbit-gpu}
 
 In many numerical algorithms, correctness and stability depend on arithmetic
-precision far exceeding that of standard IEEE~754 floating-point formats.
-Fractal reference orbits are a canonical example: small rounding errors
-introduced early in an iteration can grow exponentially, eventually corrupting
+precision far exceeding that of standard IEEE~754 floating-point formats. The
+Mandelbrot reference orbits is a canonical example: small rounding errors
+introduced early in the iteration can grow exponentially, eventually corrupting
 orbit classification, perturbation terms, or bailout logic. While
 arbitrary-precision libraries like MPIR can provide the required accuracy, their
 performance is often insufficient when reference orbits must be computed
@@ -1245,74 +1311,362 @@ normalization steps, this enables high-precision multiply/add/subtract
 operations that are fast enough to make reference orbit computation practical at
 scales that would otherwise be prohibitive.
 
-\subsection{High-Precision Addition and Carry Propagation}
 
-While high-precision multiplication often dominates asymptotic complexity,
-addition and subtraction are also critical in practice for high-precision
-iterative algorithms. Each arithmetic iteration of a reference orbit typically
-performs several additions and subtractions on large significands, and these
-operations occur at every step, regardless of whether multiplication is used. At
-precisions of hundreds or thousands of limbs, even ``simple'' addition becomes a
-nontrivial operation due to carry propagation across the entire limb array.
+\subsection{System Architecture and Execution Context}
+\label{subsec:ref-orbit-architecture}
 
-In a naive implementation, carry propagation is inherently serial: a carry-out
-from limb $i$ must be resolved before limb $i+1$ can be finalized. This leads to
-$O(n)$ latency with strict sequential dependence, which is particularly
-ill-suited to massively parallel architectures such as GPUs. When reference
-orbits are computed on such hardware, naive carry handling can become a
-synchronization bottleneck that negates the performance gains achieved by fast
-multiplication.
+The GPU reference orbit backend is a stateful, precision-specialized execution
+engine that computes authoritative Mandelbrot reference orbits entirely on the
+GPU. The backend advances the recurrence
+\[
+z_{n+1} \leftarrow z_n^2 + c
+\]
+at fixed high precision by executing multiple iterations per kernel invocation,
+while the CPU orchestrates invocation, result collection, and termination.
 
-\subsection{Parallel Prefix Formulation of Carry Propagation}
+\paragraph{Division of responsibility.}
+The design follows a strict separation of concerns. The CPU is responsible for
+selecting a supported precision, initializing GPU resources, invoking the kernel
+in bounded iteration batches, and accumulating emitted iteration records into
+\texttt{PerturbationResults}. The GPU owns all numerical state of the orbit,
+executes the high-precision arithmetic pipeline, detects escape and periodicity,
+and reports authoritative outcomes to the host.
 
-Carry propagation can be reformulated as a prefix problem by observing that each
-limb contributes a local carry \emph{transfer function} rather than a single
-bit. Given a limb sum and an incoming carry, the limb either:
-
+\paragraph{Persistent backend state.}
+Reference orbit computation is centered around a persistent \emph{combo} object
+(\texttt{HpSharkReferenceResults<SharkFloatParams>}) that encapsulates all state
+required to advance the orbit at a fixed precision. The combo contains:
 \begin{itemize}
-\item \emph{absorbs} the carry (producing no carry-out),
-\item \emph{propagates} the carry unchanged, or
-\item \emph{generates} a new carry regardless of the input.
+  \item high-precision orbit-related values (e.g.\ radius threshold and derivative terms),
+  \item persistent arithmetic pipeline state for multiplication
+        (\texttt{Multiply}, implementing NTT-based convolution) and addition
+        (\texttt{Add}, implementing parallel-prefix carry propagation),
+  \item a fixed-size output mailbox (\texttt{OutputIters} and
+        \texttt{OutputIterCount}) with \texttt{MaxOutputIters}=1024,
+  \item termination status (\texttt{PeriodicityStatus}),
+  \item and host-only launch and resource plumbing, including a device pointer to
+        the GPU-resident state, temporary device buffers, an associated CUDA
+        stream, and cached kernel argument arrays.
 \end{itemize}
+The combo is initialized once, reused across multiple kernel invocations, and
+destroyed only after the reference orbit computation completes.
 
-These behaviors can be encoded as elements of a small algebra with an
-associative composition operator. The final carry into each limb is then the
-prefix composition of all preceding transfer functions. Because the operator is
-associative, standard parallel prefix (scan) algorithms can be used to compute
-all carries in $O(\log n)$ depth.
+\paragraph{Batch-oriented kernel invocation.}
+Each call to \texttt{InvokeHpSharkReferenceKernel} launches a GPU kernel that
+advances the Mandelbrot recurrence by up to a specified number of iterations
+(\texttt{itersToRun}). Within a single invocation, the kernel performs multiple
+full iterations internally, combining high-precision squaring and addition on
+the GPU. As iterations progress, the kernel emits up to
+\texttt{MaxOutputIters} iteration records into the combo’s output mailbox and
+updates \texttt{OutputIterCount} accordingly.
 
-This perspective generalizes classical carry-lookahead adders from hardware
-design to software implementations operating on large limb arrays. On GPUs, it
-allows the carry problem to be decomposed across threads and warps, enabling
-high throughput while preserving exact arithmetic semantics.
+This batching strategy bounds kernel runtime, enables incremental streaming of
+orbit data back to the host, and allows long orbits to be computed without
+reinitializing GPU state.
 
-\subsection{Single-Pass Parallel Prefix with Decoupled Look-back}
+\paragraph{Termination and authority.}
+After each invocation, the host inspects the combo’s \texttt{PeriodicityStatus}
+and stops early if the GPU reports escape, detected periodicity, or an error
+condition, or if the total requested iteration budget has been reached. In this
+model, the GPU backend is authoritative: it owns the orbit state, performs all
+high-precision arithmetic exactly with respect to the fixed significand
+precision, and determines orbit outcomes without CPU-side recomputation or
+correction.
 
-Traditional parallel prefix scans typically require multiple global
-synchronization phases or multiple kernel launches, which are costly on GPUs and
-limit scalability. Single-pass parallel prefix algorithms address this by
-computing local prefixes within thread blocks and resolving inter-block
-dependencies through a structured communication scheme.
+\paragraph{Precision specialization.}
+The entire lifecycle of a reference orbit computation is specialized by
+\texttt{HpSharkFloatParams}. Precision is selected once at startup via
+\texttt{DispatchByPrecision} and remains fixed for the lifetime of the combo
+object. This ensures that kernel code, shared-memory usage, and arithmetic
+pipelines are fully specialized for the chosen precision, at the cost of
+supporting a finite, enumerated set of precisions.
 
-The \emph{Single-pass Parallel Prefix Scan with Decoupled Look-back}
-\cite{merrill2016single} technique further refines this approach. Each block
-computes its local carry prefix independently, while a lightweight look-back
-mechanism resolves the carry-in from preceding blocks without forcing all blocks
-to synchronize globally. By decoupling local computation from global dependency
-resolution, blocks can make forward progress independently, stalling only when
-strictly necessary to obtain an upstream carry.
+\medskip
 
-For high-precision addition and subtraction, this approach is especially
-effective: the vast majority of limbs can be processed in parallel, and long
-carry chains become rare and efficiently handled when they do occur. The result
-is a carry propagation scheme with near-linear throughput, minimal
-synchronization overhead, and better scaling to large precisions. When paired
-with fast NTT-based multiplication, this makes fully high-precision arithmetic
-practical for demanding workloads such as reference orbit generation.
+This architectural structure defines the execution context for the remainder of
+this section. Subsequent subsections describe the internal arithmetic pipelines
+used within each kernel invocation, including NTT-based multiplication,
+high-precision addition, carry propagation, and normalization, and explain how
+these components are organized to maintain correctness and performance within
+the bounded-chunk execution model.
 
-The GPU backend delegates authoritative reference orbit generation to
-\texttt{HpShark} kernels specialized by precision.  This section introduces the
-key concepts and then goes into how the implementation actually works.
+\subsection{High-Precision Floating-Point Addition on the GPU}
+\label{sec:hp-add}
+
+While high-precision multiplication dominates the asymptotic cost of many
+arbitrary-precision algorithms, addition and subtraction remain critical in
+practice. In iterative computations such as reference orbit generation, each
+iteration performs multiple additions and subtractions on large significands,
+often regardless of whether multiplication is required. At precisions of
+hundreds or thousands of limbs, even these ostensibly simple operations become
+nontrivial due to long-range carry and borrow propagation.
+
+A naive limbwise implementation resolves carries sequentially: a carry-out from
+limb $i$ must be fully determined before limb $i+1$ can be finalized. This
+introduces strict serial dependence and $O(N)$ latency, making naive carry
+handling fundamentally incompatible with massively parallel GPU architectures.
+Without reformulation, carry propagation quickly becomes a synchronization
+bottleneck that erodes the benefits of fast high-precision multiplication.
+
+\subsubsection{Numerical Representation}
+
+We represent a high-precision floating-point number as
+\begin{equation}
+x = s_x \cdot 2^{e_x} \cdot \sum_{i=0}^{N-1} d_i \, 2^{-w i},
+\end{equation}
+where $s_x \in \{-1,+1\}$ is the sign, $e_x \in \mathbb{Z}$ is a shared exponent,
+$d_i \in \{0,\dots,2^w-1\}$ are fixed-width limbs, $w$ is the limb bit width
+(typically $32$ or $64$), and $N$ is the limb count. Arithmetic is performed on
+the limb array, while the exponent is tracked separately. The mantissa is thus
+treated as a fixed-point integer scaled by an implicit radix $2^{-w}$.
+
+\subsubsection{Problem Statement and Exponent Alignment}
+
+Given two high-precision floating-point numbers
+\[
+x = s_x \cdot 2^{e_x} \cdot M_x, \qquad
+y = s_y \cdot 2^{e_y} \cdot M_y,
+\]
+the objective is to compute
+\[
+z = x + y
+\]
+exactly, or under a well-defined rounding mode, using GPU-parallel execution.
+
+Assuming without loss of generality that $e_x \ge e_y$, we define
+\[
+\Delta = e_x - e_y
+\]
+and align the mantissas by shifting
+\begin{equation}
+M_y' = M_y \cdot 2^{-\Delta}.
+\end{equation}
+If $\Delta \ge Nw$, the contribution of $y$ is below the representable precision
+and the operation degenerates to $z \approx x$. Otherwise, both mantissas are
+expressed at the shared exponent $e = e_x$.
+
+\subsubsection{Signed Limbwise Accumulation}
+
+After alignment, addition and subtraction are unified by introducing signed limb
+arrays
+\[
+a_i = s_x \cdot d_i^{(x)}, \qquad
+b_i = s_y \cdot d_i^{(y')}.
+\]
+The raw limbwise sum is then
+\begin{equation}
+t_i = a_i + b_i,
+\end{equation}
+which may lie outside the canonical range $[0,2^w)$. This computation is
+embarrassingly parallel and maps directly to GPU threads, with each thread
+computing one or more limb sums independently.
+
+\subsubsection{Carry Structure and Prefix Reformulation}
+
+Each intermediate sum $t_i$ can be decomposed as
+\begin{equation}
+t_i = r_i + c_i \cdot 2^w,
+\end{equation}
+where
+\[
+r_i = t_i \bmod 2^w, \qquad
+c_i = \left\lfloor \frac{t_i}{2^w} \right\rfloor.
+\]
+The carry $c_i$ contributes to limb $i+1$, inducing a dependency chain that is
+sequential in the worst case.
+
+To parallelize this process, carry propagation is reformulated as a prefix
+problem. Each limb defines a carry transfer operator
+\begin{equation}
+T_i(x) = x + c_i,
+\end{equation}
+where $x$ is the incoming carry from lower-order limbs. The total carry entering
+limb $i$ is given by the prefix composition
+\begin{equation}
+C_i = (T_{i-1} \circ T_{i-2} \circ \cdots \circ T_0)(0).
+\end{equation}
+Because the operator composition
+\[
+(T_a \circ T_b)(x) = x + c_b + c_a
+\]
+is associative, carry propagation reduces to a parallel prefix sum over the
+carry values $\{c_i\}$, generalizing classical carry-lookahead techniques to
+arbitrary-precision arithmetic.
+
+\subsubsection{Single-Pass Parallel Prefix on the GPU}
+
+On GPUs, conventional multi-pass prefix scans incur excessive global
+synchronization or kernel-launch overhead. Instead, we employ a single-pass
+parallel prefix formulation with decoupled look-back
+\cite{merrill2016single}. Each thread block computes its local carry prefix
+independently, while a lightweight look-back mechanism resolves inter-block
+dependencies only when required.
+
+This approach allows blocks to make forward progress without global barriers,
+stalling only when an upstream carry must be observed. Long carry chains, while
+possible, are rare in practice and are handled efficiently when they occur. The
+resulting carry propagation exhibits near-linear throughput with logarithmic
+critical path length, making it well-suited to large limb counts.
+
+\subsubsection{Finalization and Normalization}
+
+The corrected result limbs are obtained as
+\begin{equation}
+d_i^{(z)} = (r_i + C_i) \bmod 2^w.
+\end{equation}
+A carry beyond the most significant limb increments the exponent,
+\[
+d_N^{(z)} \neq 0 \;\Rightarrow\; e \leftarrow e + 1,
+\]
+while leading-zero cancellation triggers renormalization and a corresponding
+decrement of the exponent.
+
+\subsubsection{Correctness and Complexity}
+
+The algorithm is mathematically equivalent to exact integer addition of aligned
+mantissas,
+\[
+z = 2^e \cdot (M_x + M_y'),
+\]
+and the prefix formulation preserves the strict associativity of integer
+addition. All operations are integer-valued and deterministic, yielding
+bitwise-identical results across executions.
+
+For $N$ limbs, the algorithm performs $O(N)$ work with $O(\log N)$ span and
+$O(N)$ global memory traffic, making it asymptotically optimal for high-precision
+addition on massively parallel architectures.
+
+\paragraph{Comparison with MPIR/GMP Serial Carry Propagation}
+
+Conventional high-precision libraries such as MPIR and GMP implement addition
+using strictly serial carry propagation. After exponent alignment, limbs are
+processed sequentially from least to most significant, with each carry-out
+immediately applied to the next limb. This approach is optimal for scalar CPUs:
+it minimizes memory traffic, exploits tight data locality, and benefits from
+branch prediction and instruction-level parallelism. For moderate precisions,
+the constant factors are small and the simplicity of the algorithm dominates.
+
+However, the serial carry dependency enforces an $O(N)$ critical path that
+fundamentally limits parallelism. Even when vector instructions are used to
+accelerate limbwise addition, the carry chain itself remains sequential and
+cannot be overlapped across independent execution units. As a result, MPIR/GMP
+addition scales primarily in throughput with clock frequency rather than in
+latency with available parallel resources.
+
+In contrast, the GPU-oriented formulation presented here trades a modest
+increase in algorithmic complexity for a dramatic reduction in critical path
+length. By expressing carry propagation as an associative prefix operation and
+resolving dependencies using a single-pass, decoupled look-back scheme, the
+effective span is reduced from $O(N)$ to $O(\log N)$. This shift aligns the
+algorithm with the strengths of massively parallel architectures, allowing
+thousands of threads to participate in carry resolution while preserving exact
+arithmetic semantics.
+
+Importantly, the GPU approach does not outperform MPIR/GMP for small limb
+counts, where launch overhead and synchronization dominate. Its advantage
+emerges at large precisions, where serial carry latency becomes comparable to
+or exceeds the cost of multiplication. In this regime, parallel carry
+propagation is essential for sustaining end-to-end performance in
+high-precision iterative workloads.
+
+\paragraph{Role of Merrill--Garland in Parallel Carry Propagation}
+
+The approach adopted here is closely informed by the work of
+\cite{merrill2016single} on single-pass parallel prefix scans with decoupled
+look-back. Their contribution is not a numerical
+algorithm per se, but a general execution strategy for evaluating long,
+associative prefix dependencies efficiently on GPUs.
+
+In the context of high-precision addition, carry propagation is naturally
+expressed as a prefix composition over per-limb transfer functions. However,
+naively mapping this formulation to a GPU using classical parallel scans would
+require multiple global synchronization phases or kernel launches, introducing
+significant overhead and limiting scalability. The Merrill--Garland framework
+addresses this by separating the computation into two logically distinct
+components: (1) local prefix evaluation within a thread block, and (2)
+resolution of inter-block dependencies through a lightweight, dynamically
+resolved look-back mechanism.
+
+Crucially, the decoupled look-back design allows blocks to proceed independently
+until a true dependency on an upstream block is encountered. This property
+aligns well with the statistical structure of carry propagation in large
+arbitrary-precision additions, where long carry chains are relatively rare and
+most limbs can be finalized without waiting on distant predecessors. The
+algorithm therefore achieves high average throughput while retaining correctness
+in worst-case carry scenarios.
+
+It is important to emphasize that Merrill--Garland does not prescribe how carry
+information should be represented, nor does it assume a particular numerical
+domain. In this work, their scan framework is specialized to the algebra of
+carry transfer functions arising from signed limbwise addition. The numerical
+semantics---exact integer arithmetic with deterministic behavior---remain
+entirely independent of the scan mechanism. In this sense, Merrill--Garland
+provides the parallel control structure, while the arithmetic formulation
+determines the correctness and stability of the result.
+
+By combining a mathematically exact carry formulation with a single-pass prefix
+execution model, the resulting algorithm bridges a gap between classical
+high-precision arithmetic and modern GPU execution. This synthesis enables
+carry-dominated operations, traditionally viewed as inherently serial, to scale
+efficiently on massively parallel hardware.
+
+\paragraph{Contrast with Blelloch-Style Parallel Prefix Scans}
+
+Classical parallel prefix algorithms, most notably the Blelloch scan, provide a
+well-established framework for evaluating associative operators with
+$O(\log N)$ depth and $O(N)$ work. Blelloch-style scans proceed in two distinct
+phases: an up-sweep (reduce) phase that computes partial aggregates over a
+balanced tree, followed by a down-sweep phase that distributes prefix values to
+all elements. This structure is well suited to SIMD and shared-memory parallel
+models and forms the basis of many CPU and GPU prefix implementations.
+
+However, on GPUs, Blelloch scans impose rigid global synchronization points
+between phases. When applied to large limb arrays, this typically requires
+either multiple kernel launches or explicit grid-wide synchronization barriers.
+As a result, the execution is dominated by synchronization latency rather than
+arithmetic throughput, particularly when the scan is embedded inside a larger
+iterative algorithm such as high-precision reference orbit computation.
+
+In contrast, the single-pass parallel prefix algorithm
+of\cite{merrill2016single} eliminates the global phase separation inherent in
+Blelloch scans. Instead of enforcing a strict up-sweep/down-sweep structure,
+each thread block computes its local prefix independently and resolves
+inter-block dependencies dynamically using a decoupled look-back mechanism. This
+allows blocks to make forward progress asynchronously and avoids global barriers
+in the common case.
+
+For high-precision carry propagation, this distinction is critical. Carry chains
+often terminate locally, and only a small fraction of limbs depend on distant
+predecessors. Blelloch-style scans nevertheless force all blocks to participate
+in every global synchronization phase, regardless of whether a true dependency
+exists. Merrill--Garland, by contrast, pays synchronization cost only when a
+carry must cross block boundaries, yielding substantially better utilization of
+GPU resources.
+
+From a numerical perspective, both approaches compute the same associative
+prefix over carry transfer operators and are therefore equally correct. The
+difference lies entirely in execution strategy. Blelloch scans provide a
+deterministic, phase-structured evaluation with predictable synchronization,
+while Merrill--Garland offers a latency-tolerant, demand-driven execution model
+that is better aligned with the irregular dependency structure of carry
+propagation in large arbitrary-precision additions.
+
+In this work, the Merrill--Garland formulation is preferred not because it
+changes the arithmetic, but because it minimizes synchronization on massively
+parallel hardware, allowing carry-dominated operations to scale to precisions
+where serial or multi-pass approaches become prohibitive.
+
+
+\subsubsection{Discussion}
+
+By expressing carry propagation as a parallel prefix problem and employing a
+single-pass, decoupled look-back strategy, high-precision floating-point
+addition becomes compatible with GPU execution. The formulation cleanly
+separates numerical correctness from execution strategy and composes naturally
+with NTT-based multiplication and fused arithmetic pipelines. As a result,
+fully high-precision arithmetic becomes practical for demanding workloads such
+as GPU-accelerated reference orbit computation.
+
 
 \subsection{Number Theoretic Transform and Multiply}
 
@@ -1714,6 +2068,356 @@ records into the CPU-side \texttt{PerturbationResults}. Periodicity and escape
 are reported through \texttt{PeriodicityStatus} and handled similarly to the CPU
 paths.
 
+\subsection{High-Precision Floating-Point Representation in \FractalShark{}}
+\label{subsec:hpfloat-model}
+
+The GPU reference orbit backend operates on a custom high-precision
+floating-point format implemented by the \texttt{HpSharkFloat} family of types.
+This format is intentionally \emph{not} IEEE~754--compatible. Instead, it is
+designed to support exact arithmetic on large significands, deterministic
+behavior across CPU and GPU backends, and efficient execution on massively
+parallel architectures.
+
+Conceptually, an \texttt{HpSharkFloat} value represents a real number of the
+form
+\[
+x = s \cdot M \cdot 2^E,
+\]
+where $s \in \{-1,+1\}$ is the sign, $M$ is a nonnegative integer significand,
+and $E$ is a signed integer exponent. The sign, significand, and exponent are
+tracked independently, and no implicit normalization or rounding is performed
+during arithmetic operations.
+
+\paragraph{Significand representation.}
+The significand $M$ is stored as a fixed-size array of 32-bit limbs. The number
+of limbs is determined at compile time by the
+\texttt{HpSharkFloatParams} specialization and remains constant throughout the
+lifetime of the computation. As a result, precision is explicit and static:
+all arithmetic kernels operate on limb arrays of identical size, and no dynamic
+reallocation or precision growth occurs during iteration.
+
+The significand represents a nonnegative integer magnitude. Negative values are
+handled by explicit sign logic rather than two’s-complement arithmetic, which
+simplifies carry propagation and normalization.
+
+\paragraph{Exponent handling and deferred normalization.}
+The exponent $E$ is maintained separately from the significand and updated
+explicitly by arithmetic kernels. In contrast to IEEE~754 arithmetic,
+normalization is not performed eagerly after every operation. Intermediate
+results may remain temporarily denormalized, with exponent adjustments and
+carry propagation deferred until well-defined normalization phases.
+
+This separation is essential for GPU execution. Immediate normalization would
+introduce serial dependencies and global synchronization at every arithmetic
+step, whereas deferred normalization allows large batches of arithmetic to be
+performed in parallel before a single, optimized carry-propagation pass.
+
+\paragraph{Normalization and canonical form.}
+A value is considered to be in canonical form when:
+\begin{itemize}
+  \item the significand has been fully carry-propagated,
+  \item the most significant limb is nonzero (except for the zero value),
+  \item the exponent reflects the exact binary scaling of the significand.
+\end{itemize}
+Normalization is implemented as a separate phase and is optimized using
+parallel-prefix carry propagation techniques, as described in earlier
+sections.
+
+\paragraph{Rounding, exceptional values, and determinism.}
+No rounding is performed during addition, subtraction, or multiplication. All
+operations are exact with respect to the fixed significand size. If an
+intermediate result were to exceed the representable precision, this would
+constitute a logic error rather than silently rounded behavior.
+
+The format does not represent NaNs, infinities, or subnormal values. These
+concepts are unnecessary for reference orbit computation, where arithmetic
+ranges are structurally controlled and exceptional conditions (such as escape)
+are handled at the algorithmic level.
+
+Because the precision is fixed, arithmetic is exact, and no data-dependent
+rounding occurs, the \texttt{HpSharkFloat} model provides deterministic,
+bitwise-reproducible results across runs and across CPU and GPU backends,
+subject only to correct synchronization.
+
+\paragraph{Implications for reference orbit computation.}
+This floating-point model is best viewed as high-precision integer arithmetic
+with an explicit exponent rather than as an extension of IEEE floating-point.
+The design directly enables NTT-based multiplication, parallel carry
+propagation, and predictable numerical behavior at extreme precisions, making
+it well suited for authoritative reference orbit generation on the GPU.
+
+
+\section{Checksum-Guided Debugging via Host--Device Cross-Validation}
+\label{sec:checksums}
+
+Correctness bugs in GPU high-precision arithmetic are notoriously difficult to
+localize: a single off-by-one carry, lane-misaligned shuffle, or missing
+synchronization can corrupt results far downstream, often without an obvious
+local symptom. To shorten the feedback loop, we instrument the arithmetic
+pipeline with lightweight \emph{stage checksums} that can be computed on the GPU,
+computed independently on the host reference implementation, and compared to
+pinpoint the first divergence. This converts a diffuse ``wrong final answer''
+into a small set of candidate stages, dramatically reducing the search space
+during development.  These checksums are disabled in production builds to avoid
+any performance impact but can be enabled selectively during debugging.
+
+\subsection{Stage Checksums as Homomorphic Summaries}
+
+Let $A \in (\mathbb{Z}/2^w\mathbb{Z})^N$ denote a limb array representing an
+intermediate mantissa or scratch buffer (e.g., aligned addends, raw limbwise
+sums, carry descriptors, normalized limbs). We associate to each such array a
+64-bit checksum
+\begin{equation}
+  H(A) \in \{0,1\}^{64},
+\end{equation}
+computed deterministically over the ordered limb sequence. In our implementation
+we employ 64-bit rolling checksums (e.g., CRC-64 or Fletcher-64) because they are
+(1) inexpensive relative to high-precision arithmetic, (2) order-sensitive, and
+(3) easily reducible in parallel.
+
+Each \emph{debug checkpoint} records a tuple
+\begin{equation}
+  S_k = \bigl(\texttt{Purpose}_k,\, \texttt{Depth}_k,\, \texttt{CallIndex}_k,\,
+  \texttt{Conv}_k,\, H(A_k)\bigr),
+\end{equation}
+where $\texttt{Purpose}$ identifies which logical stage or buffer is being
+summarized (e.g., \texttt{ADigits}, \texttt{BDigits}, \texttt{FinalAdd1},
+\texttt{Result\_offsetXX}, etc.), and the remaining metadata disambiguates
+dynamic execution contexts such as recursion depth or multiple invocations of
+the same primitive within a larger operation. This metadata ensures that host
+and device checkpoints can be matched without ambiguity even when the same
+kernel path is exercised repeatedly in a pipeline.
+
+\subsection{Parallel Computation with Order Preservation}
+
+The checksum must match between host and device, so the GPU computation must be
+\emph{equivalent} to the sequential definition. This requires two properties:
+\begin{enumerate}
+  \item \textbf{Deterministic segmentation}: the array is partitioned into
+  contiguous chunks assigned to threads in a deterministic manner.
+  \item \textbf{Order-preserving reduction}: partial checksums are combined in
+  the same left-to-right order as the sequential traversal.
+\end{enumerate}
+
+To make this concrete, consider a checksum family whose internal state can be
+represented as a small tuple (e.g., for Fletcher-64, $(s_1,s_2)$ with implicit
+length). Each thread processes a contiguous chunk $A[\ell:r)$ and produces a
+local state $\sigma_j$. To recover the global checksum, we require an
+associative \emph{combine} operator $\oplus$ such that
+\begin{equation}
+  \sigma(A[0:n)) \;=\; \sigma(A[0:k)) \;\oplus\; \sigma(A[k:n)).
+\end{equation}
+Associativity enables hierarchical reduction, while order preservation requires
+that the reduction tree respects the left-to-right concatenation order. On the
+GPU, we implement this reduction hierarchically:
+\begin{enumerate}
+  \item Each thread computes $\sigma_j$ for its chunk.
+  \item Within each warp, we compute an order-preserving prefix/reduction using
+  warp shuffles and $\oplus$.
+  \item Warp results are combined in increasing warp order to form a per-block
+  checksum.
+  \item Block results are reduced across the grid using repeated pairwise
+  left-to-right combinations, yielding a single 64-bit checksum.
+\end{enumerate}
+This structure ensures that the device result is \emph{definitionally identical}
+to the host's sequential traversal, modulo the checksum's arithmetic rules.
+
+\subsection{Host Reference and Cross-Comparison}
+
+On the host, we compute the same checksum $H(A_k)$ over the corresponding
+reference buffers produced by the MPIR/GMP-based implementation (or a trusted
+CPU implementation). Because both sides share the identical stage labeling
+(\texttt{Purpose}, \texttt{Depth}, \texttt{CallIndex}, \texttt{Conv}), we can
+compare checkpoint sequences as keyed records:
+\begin{equation}
+  \Delta_k \;=\;
+  \bigl(H_{\mathrm{gpu}}(A_k) \stackrel{?}{=} H_{\mathrm{host}}(A_k)\bigr).
+\end{equation}
+
+A mismatch at checkpoint $k$ implies that the first divergence occurred at or
+before the computation that produces $A_k$. By inserting checkpoints at
+strategically chosen boundaries (e.g., after exponent alignment, after signed
+limbwise accumulation, after carry resolution, after normalization), we obtain a
+coarse-to-fine localization mechanism. In practice this behaves like a binary
+search over the pipeline: we start with a small number of high-level checkpoints
+and then refine around the earliest failing stage by adding more granular
+summaries (e.g., per-buffer or per-substep).
+
+\subsection{Practical Debugging Workflow}
+
+The checksum mechanism supports a fast iterative workflow:
+\begin{enumerate}
+  \item \textbf{Instrument}: enable checksum capture for selected stages and
+  record the resulting $(\texttt{key}, H)$ tuples from GPU execution.
+  \item \textbf{Replay on host}: run the corresponding host reference path over
+  the same inputs, generating the same keyed tuples.
+  \item \textbf{Diff}: locate the earliest key for which
+  $H_{\mathrm{gpu}} \ne H_{\mathrm{host}}$.
+  \item \textbf{Refine}: insert additional checkpoints in the immediate
+  neighborhood of the first mismatch (e.g., split ``carry propagation'' into
+  descriptor publish, look-back resolution, digit transfer, and final writeback).
+\end{enumerate}
+
+This approach is especially effective for bugs that only manifest at scale:
+race conditions, mis-specified synchronization, and rare carry-chain corner
+cases. Even when the final numerical error is small or intermittent, checksum
+mismatches provide a crisp and reproducible signature of divergence.
+
+\subsection{Why Checksums Help for High-Precision Arithmetic}
+
+High-precision arithmetic pipelines are composed of large, structured arrays
+whose semantics evolve across stages (aligned limbs $\rightarrow$ raw sums
+$\rightarrow$ carry-resolved digits $\rightarrow$ normalized mantissa). A
+checksum provides a compact witness of correctness for each stage without
+requiring full array dumps or expensive per-element comparisons. While a checksum
+does not identify the exact index of the first wrong limb, it reliably answers a
+more valuable question during early debugging: \emph{which transformation first
+produced an incorrect state?} Once localized, targeted assertions, partial dumps,
+or reduced test cases can isolate the exact defect with far less effort.
+
+Taken together, stage checksums act as a low-overhead correctness scaffold that
+bridges device execution and a trusted host reference, enabling rapid fault
+localization in complex GPU high-precision arithmetic kernels.
+
+
+\section{Per-Iteration Periodicity Checking under High-Precision Arithmetic on the GPU}
+\label{sec:hp-periodicity}
+
+The \FractalShark{} GPU reference-orbit kernel evaluates the Mandelbrot recurrence
+\(
+z_{n+1} = z_n^2 + c
+\)
+using high-precision arithmetic for the state \(z_n\), while interleaving a
+low-overhead periodicity/termination test between the (expensive) high-precision
+multiply and add phases. This interleaving is essential: high-precision
+multiplication dominates runtime at large limb counts, so an early stop
+condition that can be evaluated with negligible additional cost yields
+substantial savings when a cycle is detected or the orbit escapes.
+
+\paragraph{State extraction and logging.}
+
+At iteration \(n\), the high-precision state \((x_n, y_n)\) is available in the
+multiplication output registers/structures. The periodicity checker converts
+these values into a reduced high-dynamic-range scalar format,
+\(\mathrm{HDR}(\cdot)\), via a lossy but monotone extraction
+(\texttt{ToHDRFloat}) and stores the resulting pair in a per-iteration trace
+buffer:
+
+\begin{equation}
+  \widehat{x}_n \leftarrow \mathrm{HDR}(x_n), \quad
+  \widehat{y}_n \leftarrow \mathrm{HDR}(y_n), \quad
+  \texttt{OutputIters}[n] \leftarrow (\widehat{x}_n, \widehat{y}_n).
+\end{equation}
+
+This trace is used both for downstream diagnostics and to provide a compact,
+device-side record of the authoritative orbit prefix.
+
+\paragraph{Derivative-based periodicity criterion.}
+
+In addition to the orbit state, we propagate the complex derivative
+\(
+\frac{dz}{dc}
+\)
+along the orbit. For the Mandelbrot map \(f(z)=z^2+c\), the chain rule yields
+
+\begin{equation}
+  \frac{d z_{n+1}}{d c} = f'(z_n)\frac{d z_n}{d c} + 1
+  = 2 z_n \frac{d z_n}{d c} + 1,
+  \label{eq:dzdc-recurrence}
+\end{equation}
+
+with initialization \(\frac{dz_0}{dc}=0\) when \(z_0=0\) (equivalently, one may
+store the pair \((d x_n/dc, d y_n/dc)\) and update in-place).
+Writing \(z_n = x_n + i y_n\) and \(d_n = d x_n/dc + i\, d y_n/dc\), expanding
+\eqref{eq:dzdc-recurrence} into real and imaginary parts gives:
+
+\begin{align}
+  d x_{n+1}/dc &= 2\,(x_n\, d x_n/dc - y_n\, d y_n/dc) + 1, \label{eq:dzdc-real}\\
+  d y_{n+1}/dc &= 2\,(x_n\, d y_n/dc + y_n\, d x_n/dc). \label{eq:dzdc-imag}
+\end{align}
+
+In our implementation, the derivative accumulators \texttt{dzdcX} and
+\texttt{dzdcY} are stored in the same high-precision float type used by the
+orbit state, but the periodicity decision itself is performed on reduced HDR
+magnitudes to minimize overhead:
+
+\begin{equation}
+  \|z_n\|_\infty \approx \max(|\widehat{x}_n|, |\widehat{y}_n|), \qquad
+  \left\|\frac{dz_n}{dc}\right\|_\infty \approx \max(|\widehat{d x}_n|, |\widehat{d y}_n|),
+\end{equation}
+
+where hats denote reduced HDR representations after a normalization/reduction
+step (\texttt{HdrReduce}) to ensure stable comparisons.
+
+The checker uses a sufficient condition of the form
+
+\begin{equation}
+  \|z_n\|_\infty < 2\,R\,\left\|\frac{dz_n}{dc}\right\|_\infty,
+  \label{eq:periodicity-ineq}
+\end{equation}
+
+where \(R\) is a problem-dependent bound (stored as \texttt{RadiusY} in the
+reference structure). Intuitively, \eqref{eq:periodicity-ineq} compares the
+current orbit magnitude against a scaled sensitivity radius implied by the
+derivative growth: when the orbit state becomes small relative to the local
+linearization bound, further iteration is treated as converging toward a
+previous state and the algorithm flags a periodic cycle.
+Concretely, the device computes
+
+\begin{equation}
+  n_2 \leftarrow \max(|\widehat{x}_n|, |\widehat{y}_n|), \quad
+  r_0 \leftarrow \max(|\widehat{d x}_n|, |\widehat{d y}_n|), \quad
+  n_3 \leftarrow 2\,R\,r_0,
+\end{equation}
+
+and terminates when \(n_2 < n_3\), setting \texttt{PeriodicityStatus =
+PeriodFound} and recording \texttt{OutputIterCount = n+1}.
+
+\paragraph{Escape test.}
+We additionally apply a conventional escape-radius test in the same reduced
+domain. After forming the next-state candidates
+\(
+\widehat{x}_n + \widehat{c}_x
+\)
+and
+\(
+\widehat{y}_n + \widehat{c}_y
+\),
+the checker evaluates
+\begin{equation}
+  \|\widehat{z}_n + \widehat{c}\|_2^2
+  = (\widehat{x}_n + \widehat{c}_x)^2 + (\widehat{y}_n + \widehat{c}_y)^2,
+\end{equation}
+and declares \texttt{Escaped} when this value exceeds a fixed threshold
+(\texttt{256.0} in the current implementation). As with the periodicity
+criterion, all comparisons are performed on reduced positive HDR values to avoid
+high-precision control-flow costs on the device.
+
+\paragraph{Control-flow placement and synchronization.}
+Periodicity checking is invoked once per iteration at the top of the reference
+step, before launching the high-precision multiplication and addition kernels
+that compute \(z_{n+1}\). In the current design, a single distinguished thread
+(\texttt{block 0, thread 0}) executes the checker and updates the shared
+termination flag stored in the global \texttt{reference} structure. The kernel
+then executes a cooperative-grid barrier:
+\begin{equation}
+  \texttt{grid.sync()},
+\end{equation}
+ensuring that (i) all blocks observe a consistent \texttt{PeriodicityStatus} and
+(ii) any updates to \texttt{dzdcX}, \texttt{dzdcY}, and the trace buffer are
+visible before subsequent work proceeds. If termination is requested, the
+iteration loop exits immediately; otherwise, the kernel proceeds into the
+multiply-add pipeline that produces the next high-precision state.
+
+This organization isolates the control-intensive termination logic from the
+throughput-oriented NTT multiplication and carry-propagating addition stages,
+while maintaining deterministic, grid-wide early-exit behavior. The only global
+synchronization introduced by periodicity checking is the single \texttt{grid.sync()}
+already required by the cooperative multi-block arithmetic pipeline, making the
+incremental overhead of periodicity checking negligible relative to the cost of
+high-precision multiplication at large precisions.
+
+
 
 \section{Perturbation-only Mandelbrot rendering (without linear approximation)}
 \label{sec:perturb-only}
@@ -1882,6 +2586,85 @@ In this configuration:
 \end{itemize}
 This provides a complete Mandelbrot renderer based purely on reference-orbit
 perturbation, without relying on any linear-approximation hierarchy.
+
+
+\subsection{System Architecture and Execution Context}
+\label{subsec:ref-orbit-architecture}
+
+The GPU reference orbit backend is a stateful, precision-specialized execution
+engine that computes authoritative Mandelbrot reference orbits entirely on the
+GPU. The backend advances the recurrence
+\[
+z_{n+1} \leftarrow z_n^2 + c
+\]
+at fixed high precision by executing multiple iterations per kernel invocation,
+while the CPU orchestrates invocation, result collection, and termination.
+
+\paragraph{Division of responsibility.}
+The design follows a strict separation of concerns. The CPU is responsible for
+selecting a supported precision, initializing GPU resources, invoking the kernel
+in bounded iteration batches, and accumulating emitted iteration records into
+\texttt{PerturbationResults}. The GPU owns all numerical state of the orbit,
+executes the high-precision arithmetic pipeline, detects escape and periodicity,
+and reports authoritative outcomes to the host.
+
+\paragraph{Persistent backend state.}
+Reference orbit computation is centered around a persistent \emph{combo} object
+(\texttt{HpSharkReferenceResults<SharkFloatParams>}) that encapsulates all state
+required to advance the orbit at a fixed precision. The combo contains:
+\begin{itemize}
+  \item high-precision orbit-related values (e.g.\ radius threshold and derivative terms),
+  \item persistent arithmetic pipeline state for multiplication
+        (\texttt{Multiply}, implementing NTT-based convolution) and addition
+        (\texttt{Add}, implementing parallel-prefix carry propagation),
+  \item a fixed-size output mailbox (\texttt{OutputIters} and
+        \texttt{OutputIterCount}) with \texttt{MaxOutputIters}=1024,
+  \item termination status (\texttt{PeriodicityStatus}),
+  \item and host-only launch and resource plumbing, including a device pointer to
+        the GPU-resident state, temporary device buffers, an associated CUDA
+        stream, and cached kernel argument arrays.
+\end{itemize}
+The combo is initialized once, reused across multiple kernel invocations, and
+destroyed only after the reference orbit computation completes.
+
+\paragraph{Batch-oriented kernel invocation.}
+Each call to \texttt{InvokeHpSharkReferenceKernel} launches a GPU kernel that
+advances the Mandelbrot recurrence by up to a specified number of iterations
+(\texttt{itersToRun}). Within a single invocation, the kernel performs multiple
+full iterations internally, combining high-precision squaring and addition on
+the GPU. As iterations progress, the kernel emits up to
+\texttt{MaxOutputIters} iteration records into the combo’s output mailbox and
+updates \texttt{OutputIterCount} accordingly.
+
+This batching strategy bounds kernel runtime, enables incremental streaming of
+orbit data back to the host, and allows long orbits to be computed without
+reinitializing GPU state.
+
+\paragraph{Termination and authority.}
+After each invocation, the host inspects the combo’s \texttt{PeriodicityStatus}
+and stops early if the GPU reports escape, detected periodicity, or an error
+condition, or if the total requested iteration budget has been reached. In this
+model, the GPU backend is authoritative: it owns the orbit state, performs all
+high-precision arithmetic exactly with respect to the fixed significand
+precision, and determines orbit outcomes without CPU-side recomputation or
+correction.
+
+\paragraph{Precision specialization.}
+The entire lifecycle of a reference orbit computation is specialized by
+\texttt{HpSharkFloatParams}. Precision is selected once at startup via
+\texttt{DispatchByPrecision} and remains fixed for the lifetime of the combo
+object. This ensures that kernel code, shared-memory usage, and arithmetic
+pipelines are fully specialized for the chosen precision, at the cost of
+supporting a finite, enumerated set of precisions.
+
+\medskip
+
+This architectural structure defines the execution context for the remainder of
+this section. Subsequent subsections describe the internal arithmetic pipelines
+used within each kernel invocation, including NTT-based multiplication,
+high-precision addition, carry propagation, and normalization, and explain how
+these components are organized to maintain correctness and performance within
+the bounded-chunk execution model.
 
 
 \section{Approximation-based acceleration for Mandelbrot rendering}
@@ -2595,7 +3378,6 @@ Version \texttt{0.44} represents a substantial internal refactor emphasizing mem
   is framed as storing an intermediate-resolution reference orbit (e.g.\
   $\sim$500 bits), then using low-precision perturbation off that intermediate
   orbit to generate subsequent nearby reference orbits more efficiently.
-  :contentReference[oaicite:3]{index=3}
 
 \end{itemize}
 
@@ -2616,18 +3398,15 @@ Version \texttt{0.44} represents a substantial internal refactor emphasizing mem
   precision the arithmetic dominates and allocation overhead is negligible. A
   suggested heuristic is to use the fixed-block bump allocator below roughly
   1000 digits and fall back to the global allocator above that.
-  :contentReference[oaicite:0]{index=0}
 
   \item \textbf{Empirical sizing recommendation.} Tested successfully on a $\sim
   1\mathrm{e}{6000}$ location with about 4\,MB of bump-allocator space;
   recommendation is to use the smallest practical buffer (cache behavior matters).
-  :contentReference[oaicite:1]{index=1}
 
   \item \textbf{Implementation refinement note.} In the current multithreaded
   orbit implementation, most allocations may occur on the main thread;
   thread-local allocation may be unnecessary. A few small allocator issues were
   identified for cleanup in the following release.
-  :contentReference[oaicite:2]{index=2}
 
 \end{itemize}
 
@@ -2669,7 +3448,6 @@ This release corrected a prior precision regression and restored high-accuracy d
   \item \textbf{Motivation: memory pressure.} Reference compression is
   explicitly framed as a response to high RAM requirements at difficult views
   (notably after enabling 64-bit iteration counts).
-  :contentReference[oaicite:14]{index=14}
 \end{itemize}
 
 
@@ -2714,12 +3492,10 @@ substantially improved default performance at shallow and mid-depth zooms.
   from direct 32-bit rendering at very shallow zooms, to 1x32 perturb-only, to
   1x32 LA, and finally 1x32 float-exp LA at deeper zooms, with the goal of
   improving default performance below roughly $10^{38}$.
-  :contentReference[oaicite:6]{index=6}
 
   \item \textbf{Reference-orbit reuse optimization.} Removing unnecessary
   reference-orbit copying is called out as a major win for deep-zoom
   frame-to-frame responsiveness when reusing a reference orbit.
-  :contentReference[oaicite:7]{index=7}
 
 \end{itemize}
 
@@ -2739,12 +3515,10 @@ substantially improved default performance at shallow and mid-depth zooms.
   \item \textbf{Debug View 20 consistency improvement.} The ``Debug View 20''
   anomaly is reported as resolved under HDRx2x32, supporting the conclusion that
   the earlier HDRx32 behavior was a precision-limit issue.
-  :contentReference[oaicite:4]{index=4}
 
   \item \textbf{HDRx2x32 precision characterization.} Described as ``Linear
   Approximation + Float EXP'' using a pair of 32-bit floats plus an exponent,
   with an estimated combined precision of roughly 46 bits.
-  :contentReference[oaicite:5]{index=5}
 
 \end{itemize}
 
@@ -2753,16 +3527,15 @@ substantially improved default performance at shallow and mid-depth zooms.
 
 \begin{itemize}
 \item \textbf{UI/UX improvements.} Adds a hotkey help view and general UI
-cleanup. :contentReference[oaicite:8]{index=8}
+cleanup.
 \item \textbf{Random palette generation.} Adds a random palette generator; notes
 the palette system remains intentionally constrained and may be expanded.
-:contentReference[oaicite:9]{index=9}
 \item \textbf{Rendering diagnostics.} Adds a ``Show Rendering Details'' view for
-inspecting current algorithm/settings. :contentReference[oaicite:10]{index=10}
+inspecting current algorithm/settings.
 \item \textbf{Early HDRx2x32 work.} Begins a GPU HDR 2x32 float implementation
-(explicitly noted as not working yet). :contentReference[oaicite:11]{index=11}
+(explicitly noted as not working yet).
 \item \textbf{Crash diagnostics.} Automatically generates a crash dump on
-unhandled exceptions. :contentReference[oaicite:12]{index=12}
+unhandled exceptions.
 \end{itemize}
 
 
@@ -2794,7 +3567,7 @@ unhandled exceptions. :contentReference[oaicite:12]{index=12}
 
   \item \textbf{Performance data point.} Reports a minibrot example improving
   from roughly 470\,ms to 370\,ms (render-only; reference orbit excluded) on the
-  author’s machine. :contentReference[oaicite:13]{index=13}
+  author’s machine.
 
 \end{itemize}
 

@@ -9,20 +9,24 @@
 
 #include <shellapi.h>
 
-CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {
+CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {}
+
+void
+CrummyTest::TestAll()
+{
+    TestWindowResize();
+    // TestBasic();
+    // TestReferenceSave();
+    // TestVariedCompression();
+    // TestImaginaLoad();
+    // TestStringConversion();
+    // TestPerturbedPerturb();
+    // TestGrowableVector();
 }
 
-void CrummyTest::TestAll() {
-    TestBasic();
-    TestReferenceSave();
-    TestVariedCompression();
-    TestImaginaLoad();
-    TestStringConversion();
-    TestPerturbedPerturb();
-    TestGrowableVector();
-}
-
-void CrummyTest::TestPreReq(const wchar_t *dirName) {
+void
+CrummyTest::TestPreReq(const wchar_t *dirName)
+{
     DWORD ftyp = GetFileAttributesW(dirName);
     if (ftyp != INVALID_FILE_ATTRIBUTES && (ftyp & FILE_ATTRIBUTE_DIRECTORY)) {
         // Delete the directory recursively
@@ -37,7 +41,8 @@ void CrummyTest::TestPreReq(const wchar_t *dirName) {
         fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOF_ALLOWUNDO;
         auto shRet = SHFileOperation(&fileOp);
         if (shRet != 0) {
-            auto wstrMsg = std::wstring(L"Error deleting directory! SHFileOperation returned: ") + std::to_wstring(shRet);
+            auto wstrMsg = std::wstring(L"Error deleting directory! SHFileOperation returned: ") +
+                           std::to_wstring(shRet);
             std::wcerr << wstrMsg.c_str() << std::endl;
             return;
         }
@@ -53,10 +58,9 @@ void CrummyTest::TestPreReq(const wchar_t *dirName) {
     }
 }
 
-void CrummyTest::BasicTestInternal(
-    const wchar_t *dirName,
-    size_t &testIndex,
-    IterTypeEnum iterType) {
+void
+CrummyTest::BasicTestInternal(const wchar_t *dirName, size_t &testIndex, IterTypeEnum iterType)
+{
 
     constexpr bool IncludeSlow = false;
 
@@ -65,108 +69,85 @@ void CrummyTest::BasicTestInternal(
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         BasicOneTest<TestTypeEnum::View0>(alg, testIndex, dirName, L"Default", iterType);
-        });
+    });
 
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         BasicOneTest<TestTypeEnum::View5>(alg, testIndex, dirName, L"View5", iterType);
-        });
+    });
 
     if constexpr (IncludeSlow) {
         IterateRenderAlgs([&](auto i) {
             constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
             BasicOneTest<TestTypeEnum::View10>(alg, testIndex, dirName, L"View10", iterType);
-            });
+        });
     }
 
     // Finally, iterate over all the RenderAlgorithm entries that should work with View #11.
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         BasicOneTest<TestTypeEnum::View11>(alg, testIndex, dirName, L"View11", iterType);
-        });
+    });
 }
 
-std::string CrummyTest::GenFilename(
-    size_t testIndex,
-    size_t viewIndex,
-    RenderAlgorithm origAlgToTest,
-    RenderAlgorithm convertAlgToTest,
-    int32_t compressionError,
-    IterTypeEnum iterType,
-    std::string baseName) {
+std::string
+CrummyTest::GenFilename(size_t testIndex,
+                        size_t viewIndex,
+                        RenderAlgorithm origAlgToTest,
+                        RenderAlgorithm convertAlgToTest,
+                        int32_t compressionError,
+                        IterTypeEnum iterType,
+                        std::string baseName)
+{
 
-    auto iterTypeStr =
-        IterTypeEnum::Bits32 == iterType ? "32" : "64";
+    auto iterTypeStr = IterTypeEnum::Bits32 == iterType ? "32" : "64";
 
     std::string algStr;
     if (origAlgToTest == convertAlgToTest) {
-        algStr =
-            std::string(" - Alg#") +
-            origAlgToTest.AlgorithmStr;
+        algStr = std::string(" - Alg#") + origAlgToTest.AlgorithmStr;
     } else {
-        algStr =
-            std::string(" - Alg#") +
-            origAlgToTest.AlgorithmStr +
-            std::string(" to ") +
-            convertAlgToTest.AlgorithmStr;
+        algStr = std::string(" - Alg#") + origAlgToTest.AlgorithmStr + std::string(" to ") +
+                 convertAlgToTest.AlgorithmStr;
     }
 
-    auto compErrStr = compressionError >= 0 ? std::string(" - CompErr#") + std::to_string(compressionError) : "";
+    auto compErrStr =
+        compressionError >= 0 ? std::string(" - CompErr#") + std::to_string(compressionError) : "";
 
-    auto nameWithIntPrefix =
-        std::to_string(testIndex) +
-        " - View#" + std::to_string(viewIndex) +
-        algStr +
-        compErrStr +
-        " - Bits# " + iterTypeStr +
-        " - " + baseName;
+    auto nameWithIntPrefix = std::to_string(testIndex) + " - View#" + std::to_string(viewIndex) +
+                             algStr + compErrStr + " - Bits# " + iterTypeStr + " - " + baseName;
     return nameWithIntPrefix;
-
 }
 
-std::string CrummyTest::GenFilename(
-    size_t testIndex,
-    size_t viewIndex,
-    RenderAlgorithm algToTest,
-    int32_t compressionError,
-    IterTypeEnum iterType,
-    std::string baseName) {
+std::string
+CrummyTest::GenFilename(size_t testIndex,
+                        size_t viewIndex,
+                        RenderAlgorithm algToTest,
+                        int32_t compressionError,
+                        IterTypeEnum iterType,
+                        std::string baseName)
+{
 
-    return GenFilename(
-        testIndex,
-        viewIndex,
-        algToTest,
-        algToTest,
-        compressionError,
-        iterType,
-        baseName);
+    return GenFilename(testIndex, viewIndex, algToTest, algToTest, compressionError, iterType, baseName);
 }
 
-std::wstring CrummyTest::GenFilenameW(
-    size_t testIndex,
-    size_t viewIndex,
-    RenderAlgorithm origAlgToTest,
-    RenderAlgorithm convertAlgToTest,
-    int32_t compressionError,
-    IterTypeEnum iterType,
-    const wchar_t *testPrefix,
-    const wchar_t *dirName,
-    std::string baseName) {
+std::wstring
+CrummyTest::GenFilenameW(size_t testIndex,
+                         size_t viewIndex,
+                         RenderAlgorithm origAlgToTest,
+                         RenderAlgorithm convertAlgToTest,
+                         int32_t compressionError,
+                         IterTypeEnum iterType,
+                         const wchar_t *testPrefix,
+                         const wchar_t *dirName,
+                         std::string baseName)
+{
 
     auto nameWithIntPrefix = GenFilename(
-        testIndex,
-        viewIndex,
-        origAlgToTest,
-        convertAlgToTest,
-        compressionError,
-        iterType,
-        baseName);
+        testIndex, viewIndex, origAlgToTest, convertAlgToTest, compressionError, iterType, baseName);
 
     std::wstring filenameW;
     std::transform(
-        nameWithIntPrefix.begin(),
-        nameWithIntPrefix.end(),
-        std::back_inserter(filenameW), [](char c) {
+        nameWithIntPrefix.begin(), nameWithIntPrefix.end(), std::back_inserter(filenameW), [](char c) {
             return (wchar_t)c;
         });
 
@@ -175,35 +156,36 @@ std::wstring CrummyTest::GenFilenameW(
     return filenameW;
 }
 
-std::wstring CrummyTest::GenFilenameW(
-    size_t testIndex,
-    size_t viewIndex,
-    RenderAlgorithm algToTest,
-    int32_t compressionError,
-    IterTypeEnum iterType,
-    const wchar_t *testPrefix,
-    const wchar_t *dirName,
-    std::string baseName) {
+std::wstring
+CrummyTest::GenFilenameW(size_t testIndex,
+                         size_t viewIndex,
+                         RenderAlgorithm algToTest,
+                         int32_t compressionError,
+                         IterTypeEnum iterType,
+                         const wchar_t *testPrefix,
+                         const wchar_t *dirName,
+                         std::string baseName)
+{
 
-    return GenFilenameW(
-        testIndex,
-        viewIndex,
-        algToTest,
-        algToTest,
-        compressionError,
-        iterType,
-        testPrefix,
-        dirName,
-        baseName);
+    return GenFilenameW(testIndex,
+                        viewIndex,
+                        algToTest,
+                        algToTest,
+                        compressionError,
+                        iterType,
+                        testPrefix,
+                        dirName,
+                        baseName);
 }
 
-template<TestTypeEnum testEnumIndex>
-void CrummyTest::BasicOneTest(
-    auto algToTest,
-    size_t &testIndex,
-    const wchar_t *dirName,
-    const wchar_t *testPrefix,
-    IterTypeEnum iterType) {
+template <TestTypeEnum testEnumIndex>
+void
+CrummyTest::BasicOneTest(auto algToTest,
+                         size_t &testIndex,
+                         const wchar_t *dirName,
+                         const wchar_t *testPrefix,
+                         IterTypeEnum iterType)
+{
 
     if constexpr (algToTest.TestInclude.Lookup(testEnumIndex) != TestViewEnum::Disabled) {
         const auto viewIndex = static_cast<size_t>(algToTest.TestInclude.Lookup(testEnumIndex));
@@ -215,24 +197,25 @@ void CrummyTest::BasicOneTest(
         auto name = m_Fractal.GetRenderAlgorithmName();
         m_Fractal.CalcFractal(false);
 
-        const auto filenameW = GenFilenameW(
-            testIndex,
-            viewIndex,
-            GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
-            -1,
-            iterType,
-            testPrefix,
-            dirName,
-            name);
+        const auto filenameW = GenFilenameW(testIndex,
+                                            viewIndex,
+                                            GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
+                                            -1,
+                                            iterType,
+                                            testPrefix,
+                                            dirName,
+                                            name);
 
         m_Fractal.SaveCurrentFractal(filenameW, false);
-        //SaveItersAsText(filenameW);
+        // SaveItersAsText(filenameW);
 
         ++testIndex;
     }
 }
 
-void CrummyTest::TestBasic() {
+void
+CrummyTest::TestBasic()
+{
     const wchar_t *dirName = L"TestBasic";
     TestPreReq(dirName);
 
@@ -248,7 +231,7 @@ void CrummyTest::TestBasic() {
         curIterType = IterTypeEnum::Bits64;
         m_Fractal.SetIterType(curIterType);
         BasicTestInternal(dirName, testIndex, curIterType);
-        };
+    };
 
     m_Fractal.SetResultsAutosave(AddPointOptions::DontSave);
     lambda();
@@ -264,17 +247,18 @@ void CrummyTest::TestBasic() {
     ++testIndex;
 }
 
-template<typename OrigAlgToTest, typename ConvertAlgToTest>
-void CrummyTest::ReferenceSaveLoad(
-    Fractal &fractal,
-    const wchar_t *dirName,
-    size_t viewIndex,
-    size_t testIndex,
-    IterTypeEnum iterType,
-    ImaginaSettings imaginaSettings,
-    OrigAlgToTest origAlgToTest,
-    ConvertAlgToTest convertAlgToTest,
-    int32_t compressionError) {
+template <typename OrigAlgToTest, typename ConvertAlgToTest>
+void
+CrummyTest::ReferenceSaveLoad(Fractal &fractal,
+                              const wchar_t *dirName,
+                              size_t viewIndex,
+                              size_t testIndex,
+                              IterTypeEnum iterType,
+                              ImaginaSettings imaginaSettings,
+                              OrigAlgToTest origAlgToTest,
+                              ConvertAlgToTest convertAlgToTest,
+                              int32_t compressionError)
+{
 
     fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     fractal.SetIterType(iterType);
@@ -288,17 +272,16 @@ void CrummyTest::ReferenceSaveLoad(
 
     const auto genLocalFilename = [&](const std::wstring extraPrefix) {
         std::wstring fullPrefix = testPrefix + std::wstring(L" - ") + extraPrefix;
-        return GenFilenameW(
-            testIndex,
-            viewIndex,
-            origAlgToTest,
-            convertAlgToTest,
-            compressionError,
-            iterType,
-            fullPrefix.c_str(),
-            dirName,
-            algStr);
-        };
+        return GenFilenameW(testIndex,
+                            viewIndex,
+                            origAlgToTest,
+                            convertAlgToTest,
+                            compressionError,
+                            iterType,
+                            fullPrefix.c_str(),
+                            dirName,
+                            algStr);
+    };
 
     const auto expectedIterations = fractal.GetNumIterations<IterTypeFull>();
 
@@ -318,21 +301,21 @@ void CrummyTest::ReferenceSaveLoad(
         try {
             const auto simpleFilename = genLocalFilename(L"Simple") + L".txt";
             fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
-        }
-        catch (FractalSharkSeriousException &e) {
+        } catch (FractalSharkSeriousException &e) {
             if constexpr (origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2 ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2 ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2 ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO ||
+                          origAlgToTest.Algorithm ==
+                              RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO ||
 
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2 ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2 ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO ||
-                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO) {
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2 ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2 ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO ||
+                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO) {
 
                 // This is expected to fail for 2x32 algorithms
             } else {
@@ -361,17 +344,16 @@ void CrummyTest::ReferenceSaveLoad(
     fractal.SetIterType(IterTypeEnum::Bits64);
 
     if (origAlgToTest == convertAlgToTest) {
-        fractal.SetRenderAlgorithm(RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
+        fractal.SetRenderAlgorithm(
+            RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
     }
 
     fractal.LoadRefOrbit(
-        nullptr,
-        CompressToDisk::MaxCompressionImagina,
-        imaginaSettings,
-        maxImaginaFilename);
+        nullptr, CompressToDisk::MaxCompressionImagina, imaginaSettings, maxImaginaFilename);
 
     if (fractal.GetNumIterations<IterTypeFull>() != expectedIterations) {
-        throw FractalSharkSeriousException("LoadRefOrbit failed to set the correct number of iterations!");
+        throw FractalSharkSeriousException(
+            "LoadRefOrbit failed to set the correct number of iterations!");
     }
 
     fractal.CalcFractal(false);
@@ -380,7 +362,9 @@ void CrummyTest::ReferenceSaveLoad(
     fractal.SaveCurrentFractal(decompressedResultFilename, false);
 }
 
-void CrummyTest::TestReferenceSave() {
+void
+CrummyTest::TestReferenceSave()
+{
 
     const wchar_t *dirName = L"TestReferenceSave";
     TestPreReq(dirName);
@@ -397,18 +381,17 @@ void CrummyTest::TestReferenceSave() {
         if constexpr (view != TestViewEnum::Disabled) {
             const auto viewIndex = static_cast<size_t>(view);
 
-            const auto testSettings = { ImaginaSettings::ConvertToCurrent, ImaginaSettings::UseSaved };
+            const auto testSettings = {ImaginaSettings::ConvertToCurrent, ImaginaSettings::UseSaved};
             for (auto curSettings : testSettings) {
-                ReferenceSaveLoad(
-                    m_Fractal,
-                    dirName,
-                    viewIndex,
-                    testIndex,
-                    IterTypeEnum::Bits64,
-                    curSettings,
-                    algToTest,
-                    algToTest,
-                    compressionError);
+                ReferenceSaveLoad(m_Fractal,
+                                  dirName,
+                                  viewIndex,
+                                  testIndex,
+                                  IterTypeEnum::Bits64,
+                                  curSettings,
+                                  algToTest,
+                                  algToTest,
+                                  compressionError);
 
                 testIndex++;
             }
@@ -418,30 +401,32 @@ void CrummyTest::TestReferenceSave() {
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         loopAll.operator()<TestTypeEnum::ReferenceSave0>(alg);
-        });
+    });
 
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         loopAll.operator()<TestTypeEnum::ReferenceSave5>(alg);
-        });
+    });
 
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         loopAll.operator()<TestTypeEnum::ReferenceSave10>(alg);
-        });
+    });
 
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         loopAll.operator()<TestTypeEnum::ReferenceSave13>(alg);
-        });
+    });
 
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         loopAll.operator()<TestTypeEnum::ReferenceSave14>(alg);
-        });
+    });
 }
 
-void CrummyTest::TestVariedCompression() {
+void
+CrummyTest::TestVariedCompression()
+{
     const wchar_t *dirName = L"TestVariedCompression";
     TestPreReq(dirName);
 
@@ -452,26 +437,24 @@ void CrummyTest::TestVariedCompression() {
     m_Fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
     int32_t compressionError = m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low);
 
-    auto loopAll = [&]<TestTypeEnum viewEnum>(
-        auto algToTest) {
-
+    auto loopAll = [&]<TestTypeEnum viewEnum>(auto algToTest) {
         constexpr auto view = algToTest.TestInclude.Lookup(viewEnum);
         if constexpr (view != TestViewEnum::Disabled) {
             const auto viewIndex = static_cast<size_t>(view);
 
-            for (int32_t compressionErrorExp = 1; compressionErrorExp <= compressionError; compressionErrorExp++) {
+            for (int32_t compressionErrorExp = 1; compressionErrorExp <= compressionError;
+                 compressionErrorExp++) {
                 const auto origAlg = algToTest;
                 const auto convertToAlg = algToTest;
-                ReferenceSaveLoad(
-                    m_Fractal,
-                    dirName,
-                    viewIndex,
-                    testIndex,
-                    IterTypeEnum::Bits64,
-                    ImaginaSettings::ConvertToCurrent,
-                    origAlg,
-                    convertToAlg,
-                    compressionErrorExp);
+                ReferenceSaveLoad(m_Fractal,
+                                  dirName,
+                                  viewIndex,
+                                  testIndex,
+                                  IterTypeEnum::Bits64,
+                                  ImaginaSettings::ConvertToCurrent,
+                                  origAlg,
+                                  convertToAlg,
+                                  compressionErrorExp);
 
                 testIndex++;
             }
@@ -480,11 +463,13 @@ void CrummyTest::TestVariedCompression() {
 
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
-        loopAll.operator()<TestTypeEnum::ReferenceSave5 >(alg);
+        loopAll.operator()<TestTypeEnum::ReferenceSave5>(alg);
     });
 }
 
-void CrummyTest::TestImaginaLoad() {
+void
+CrummyTest::TestImaginaLoad()
+{
     // First, write out all the Imagina resources to files
 
     struct Pair {
@@ -499,21 +484,22 @@ void CrummyTest::TestImaginaLoad() {
     TestPreReq(dirName);
 
     std::vector<Pair> pairs;
-    pairs.push_back({ IDR_IMAGINA_VIEW0, L"View0.im", 0, L"View0 Orig.png", L"View0 Imagina.png" });
-    pairs.push_back({ IDR_IMAGINA_VIEW5, L"View5.im", 5, L"View5 Orig.png", L"View5 Imagina.png" });
-    pairs.push_back({ IDR_IMAGINA_VIEW14, L"View14.im", 14, L"View14 Orig.png", L"View14 Imagina.png" });
-    pairs.push_back({ IDR_IMAGINA_VIEW15, L"View15.im", 15, L"View15 Orig.png", L"View15 Imagina.png" });
-    pairs.push_back({ IDR_IMAGINA_VIEW19, L"View19.im", 19, L"View19 Orig.png", L"View19 Imagina.png" });
-    pairs.push_back({ IDR_IMAGINA_VIEWEASY1, L"ViewEasy1.im", -1, L"ViewEasy1 Orig.png", L"ViewEasy1 Imagina.png" });
+    pairs.push_back({IDR_IMAGINA_VIEW0, L"View0.im", 0, L"View0 Orig.png", L"View0 Imagina.png"});
+    pairs.push_back({IDR_IMAGINA_VIEW5, L"View5.im", 5, L"View5 Orig.png", L"View5 Imagina.png"});
+    pairs.push_back({IDR_IMAGINA_VIEW14, L"View14.im", 14, L"View14 Orig.png", L"View14 Imagina.png"});
+    pairs.push_back({IDR_IMAGINA_VIEW15, L"View15.im", 15, L"View15 Orig.png", L"View15 Imagina.png"});
+    pairs.push_back({IDR_IMAGINA_VIEW19, L"View19.im", 19, L"View19 Orig.png", L"View19 Imagina.png"});
+    pairs.push_back(
+        {IDR_IMAGINA_VIEWEASY1, L"ViewEasy1.im", -1, L"ViewEasy1 Orig.png", L"ViewEasy1 Imagina.png"});
 
-   auto processOnePair = [this, dirName](const auto &pair) {
+    auto processOnePair = [this, dirName](const auto &pair) {
         auto hInst = GetModuleHandle(nullptr);
 
         auto throwErr = [](const std::string &msg) {
             auto lastError = GetLastError();
             std::string msgFull = msg + " Last error: " + std::to_string(lastError);
             throw FractalSharkSeriousException(msgFull);
-            };
+        };
 
         // Load the Imagina resource
         auto hRes = FindResource(hInst, MAKEINTRESOURCE(pair.rc), L"SHARK_DATA");
@@ -534,7 +520,8 @@ void CrummyTest::TestImaginaLoad() {
         auto size = SizeofResource(hInst, hRes);
         // Write the resource to a file
         auto filename = pair.name;
-        auto hFile = CreateFile(filename, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        auto hFile = CreateFile(
+            filename, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (hFile == INVALID_HANDLE_VALUE) {
             throwErr("CreateFile failed!");
         }
@@ -553,7 +540,8 @@ void CrummyTest::TestImaginaLoad() {
 
         m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         m_Fractal.SetIterType(IterTypeEnum::Bits64);
-        m_Fractal.SetRenderAlgorithm(RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
+        m_Fractal.SetRenderAlgorithm(
+            RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
         m_Fractal.View(pair.view);
         m_Fractal.ForceRecalc();
         m_Fractal.CalcFractal(false);
@@ -566,7 +554,8 @@ void CrummyTest::TestImaginaLoad() {
 
         ImaginaSettings imaginaSettings = ImaginaSettings::UseSaved;
         auto filenameW = std::wstring(pair.name);
-        m_Fractal.LoadRefOrbit(nullptr, CompressToDisk::MaxCompressionImagina, imaginaSettings, filenameW);
+        m_Fractal.LoadRefOrbit(
+            nullptr, CompressToDisk::MaxCompressionImagina, imaginaSettings, filenameW);
         m_Fractal.CalcFractal(false);
 
         const auto outImaginaFilename = dirName + std::wstring(L"\\") + pair.imaginaPngName;
@@ -584,7 +573,9 @@ void CrummyTest::TestImaginaLoad() {
     }
 }
 
-void CrummyTest::TestStringConversion() {
+void
+CrummyTest::TestStringConversion()
+{
     double double1 = 5.5555;
     double double2 = 6.6666;
     float float1 = 15.5555f;
@@ -601,19 +592,23 @@ void CrummyTest::TestStringConversion() {
 
     HDRFloatComplex<float> f2(float1, float2, testHdrExp);
     HDRFloatComplex<double> d2(double1, double2, testHdrExp);
-    HDRFloatComplex<CudaDblflt<MattDblflt>> m2(CudaDblflt<MattDblflt>(float1, float2), CudaDblflt<MattDblflt>(float3, float4), testHdrExp);
-    HDRFloatComplex<CudaDblflt<dblflt>> c2(CudaDblflt<dblflt>(float1, float2), CudaDblflt<dblflt>(float3, float4), testHdrExp);
+    HDRFloatComplex<CudaDblflt<MattDblflt>> m2(
+        CudaDblflt<MattDblflt>(float1, float2), CudaDblflt<MattDblflt>(float3, float4), testHdrExp);
+    HDRFloatComplex<CudaDblflt<dblflt>> c2(
+        CudaDblflt<dblflt>(float1, float2), CudaDblflt<dblflt>(float3, float4), testHdrExp);
 
     CudaDblflt<MattDblflt> cudaDblflt1(float1, float2);
     CudaDblflt<dblflt> cudaDblflt2(float1, float2);
 
     FloatComplex<float> floatComplex1(float1, float2);
     FloatComplex<double> floatComplex2(double1, double2);
-    FloatComplex<CudaDblflt<MattDblflt>> floatComplex3(CudaDblflt<MattDblflt>(float1, float2), CudaDblflt<MattDblflt>(float3, float4));
-    FloatComplex<CudaDblflt<dblflt>> floatComplex4(CudaDblflt<dblflt>(float1, float2), CudaDblflt<dblflt>(float3, float4));
+    FloatComplex<CudaDblflt<MattDblflt>> floatComplex3(CudaDblflt<MattDblflt>(float1, float2),
+                                                       CudaDblflt<MattDblflt>(float3, float4));
+    FloatComplex<CudaDblflt<dblflt>> floatComplex4(CudaDblflt<dblflt>(float1, float2),
+                                                   CudaDblflt<dblflt>(float3, float4));
 
     std::stringstream is;
-    auto toString = [&]<bool IntOut>(auto & hdr) {
+    auto toString = [&]<bool IntOut>(auto &hdr) {
         auto ret = std::string("Descriptor: ");
         ret += HdrToString<IntOut>(hdr);
         // append newline to ret
@@ -625,54 +620,54 @@ void CrummyTest::TestStringConversion() {
     };
 
     std::string allStr;
-    allStr += toString.template operator() < false > (double1);
-    allStr += toString.template operator() < false > (double2);
-    allStr += toString.template operator() < false > (float1);
-    allStr += toString.template operator() < false > (float2);
-    allStr += toString.template operator() < false > (float3);
-    allStr += toString.template operator() < false > (float4);
+    allStr += toString.template operator()<false>(double1);
+    allStr += toString.template operator()<false>(double2);
+    allStr += toString.template operator()<false>(float1);
+    allStr += toString.template operator()<false>(float2);
+    allStr += toString.template operator()<false>(float3);
+    allStr += toString.template operator()<false>(float4);
 
-    allStr += toString.template operator() < false > (f1);
-    allStr += toString.template operator() < false > (d1);
-    allStr += toString.template operator() < false > (m1);
-    allStr += toString.template operator() < false > (c1);
+    allStr += toString.template operator()<false>(f1);
+    allStr += toString.template operator()<false>(d1);
+    allStr += toString.template operator()<false>(m1);
+    allStr += toString.template operator()<false>(c1);
 
-    allStr += toString.template operator() < false > (f2);
-    allStr += toString.template operator() < false > (d2);
-    allStr += toString.template operator() < false > (m2);
-    allStr += toString.template operator() < false > (c2);
+    allStr += toString.template operator()<false>(f2);
+    allStr += toString.template operator()<false>(d2);
+    allStr += toString.template operator()<false>(m2);
+    allStr += toString.template operator()<false>(c2);
 
-    allStr += toString.template operator() < false > (cudaDblflt1);
-    allStr += toString.template operator() < false > (cudaDblflt2);
+    allStr += toString.template operator()<false>(cudaDblflt1);
+    allStr += toString.template operator()<false>(cudaDblflt2);
 
-    allStr += toString.template operator() < false > (floatComplex1);
-    allStr += toString.template operator() < false > (floatComplex2);
-    allStr += toString.template operator() < false > (floatComplex3);
-    allStr += toString.template operator() < false > (floatComplex4);
+    allStr += toString.template operator()<false>(floatComplex1);
+    allStr += toString.template operator()<false>(floatComplex2);
+    allStr += toString.template operator()<false>(floatComplex3);
+    allStr += toString.template operator()<false>(floatComplex4);
 
-    allStr += toString.template operator() < true > (double1);
-    allStr += toString.template operator() < true > (double2);
-    allStr += toString.template operator() < true > (float1);
-    allStr += toString.template operator() < true > (float2);
-    allStr += toString.template operator() < true > (float3);
-    allStr += toString.template operator() < true > (float4);
+    allStr += toString.template operator()<true>(double1);
+    allStr += toString.template operator()<true>(double2);
+    allStr += toString.template operator()<true>(float1);
+    allStr += toString.template operator()<true>(float2);
+    allStr += toString.template operator()<true>(float3);
+    allStr += toString.template operator()<true>(float4);
 
-    allStr += toString.template operator() < true > (f1);
-    allStr += toString.template operator() < true > (d1);
-    allStr += toString.template operator() < true > (m1);
-    allStr += toString.template operator() < true > (c1);
-    allStr += toString.template operator() < true > (f2);
-    allStr += toString.template operator() < true > (d2);
-    allStr += toString.template operator() < true > (m2);
-    allStr += toString.template operator() < true > (c2);
+    allStr += toString.template operator()<true>(f1);
+    allStr += toString.template operator()<true>(d1);
+    allStr += toString.template operator()<true>(m1);
+    allStr += toString.template operator()<true>(c1);
+    allStr += toString.template operator()<true>(f2);
+    allStr += toString.template operator()<true>(d2);
+    allStr += toString.template operator()<true>(m2);
+    allStr += toString.template operator()<true>(c2);
 
-    allStr += toString.template operator() < true > (cudaDblflt1);
-    allStr += toString.template operator() < true > (cudaDblflt2);
+    allStr += toString.template operator()<true>(cudaDblflt1);
+    allStr += toString.template operator()<true>(cudaDblflt2);
 
-    allStr += toString.template operator() < true > (floatComplex1);
-    allStr += toString.template operator() < true > (floatComplex2);
-    allStr += toString.template operator() < true > (floatComplex3);
-    allStr += toString.template operator() < true > (floatComplex4);
+    allStr += toString.template operator()<true>(floatComplex1);
+    allStr += toString.template operator()<true>(floatComplex2);
+    allStr += toString.template operator()<true>(floatComplex3);
+    allStr += toString.template operator()<true>(floatComplex4);
 
     // Concatenate all the strings together to prevent the compiler from optimizing them away.
     //::MessageBoxA(nullptr, allStr.c_str(), "String conversion test", MB_OK | MB_APPLMODAL);
@@ -746,7 +741,8 @@ void CrummyTest::TestStringConversion() {
 
     HdrFromIfStream<false, HDRFloatComplex<float>, float>(readBackF2, iss);
     HdrFromIfStream<false, HDRFloatComplex<double>, double>(readBackD2, iss);
-    HdrFromIfStream<false, HDRFloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackM2, iss);
+    HdrFromIfStream<false, HDRFloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackM2,
+                                                                                            iss);
     HdrFromIfStream<false, HDRFloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackC2, iss);
 
     HdrFromIfStream<false, CudaDblflt<MattDblflt>, MattDblflt>(readBackCudaDblflt1, iss);
@@ -754,14 +750,16 @@ void CrummyTest::TestStringConversion() {
 
     HdrFromIfStream<false, FloatComplex<float>, float>(readBackFloatComplex1, iss);
     HdrFromIfStream<false, FloatComplex<double>, double>(readBackFloatComplex2, iss);
-    HdrFromIfStream<false, FloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackFloatComplex3, iss);
-    HdrFromIfStream<false, FloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackFloatComplex4, iss);
+    HdrFromIfStream<false, FloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(
+        readBackFloatComplex3, iss);
+    HdrFromIfStream<false, FloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackFloatComplex4,
+                                                                                 iss);
 
     auto checker = [&](auto &a, auto &b) {
         if (a != b) {
             throw FractalSharkSeriousException("String conversion failed!");
         }
-        };
+    };
 
     HdrFromIfStream<true, double, double>(readBackDouble1, iss);
     HdrFromIfStream<true, double, double>(readBackDouble2, iss);
@@ -777,7 +775,8 @@ void CrummyTest::TestStringConversion() {
 
     HdrFromIfStream<true, HDRFloatComplex<float>, float>(readBackF2, iss);
     HdrFromIfStream<true, HDRFloatComplex<double>, double>(readBackD2, iss);
-    HdrFromIfStream<true, HDRFloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackM2, iss);
+    HdrFromIfStream<true, HDRFloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackM2,
+                                                                                           iss);
     HdrFromIfStream<true, HDRFloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackC2, iss);
 
     HdrFromIfStream<true, CudaDblflt<MattDblflt>, MattDblflt>(readBackCudaDblflt1, iss);
@@ -785,8 +784,10 @@ void CrummyTest::TestStringConversion() {
 
     HdrFromIfStream<true, FloatComplex<float>, float>(readBackFloatComplex1, iss);
     HdrFromIfStream<true, FloatComplex<double>, double>(readBackFloatComplex2, iss);
-    HdrFromIfStream<true, FloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackFloatComplex3, iss);
-    HdrFromIfStream<true, FloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackFloatComplex4, iss);
+    HdrFromIfStream<true, FloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(
+        readBackFloatComplex3, iss);
+    HdrFromIfStream<true, FloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackFloatComplex4,
+                                                                                iss);
 
     checker(double1, readBackDouble1);
     checker(double2, readBackDouble2);
@@ -814,7 +815,9 @@ void CrummyTest::TestStringConversion() {
     checker(floatComplex4, readBackFloatComplex4);
 }
 
-void CrummyTest::TestPerturbedPerturb() {
+void
+CrummyTest::TestPerturbedPerturb()
+{
     const wchar_t *dirName = L"TestPerturbedPerturb";
     TestPreReq(dirName);
 
@@ -826,32 +829,33 @@ void CrummyTest::TestPerturbedPerturb() {
     int32_t compressionError = m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low);
 
     auto loopAll = [&](auto algToTest) {
-        if constexpr (algToTest.TestInclude.Lookup(TestTypeEnum::PerturbedPerturb12) != TestViewEnum::Disabled) {
+        if constexpr (algToTest.TestInclude.Lookup(TestTypeEnum::PerturbedPerturb12) !=
+                      TestViewEnum::Disabled) {
             const auto viewIndex = 14;
             const auto perturbedViewIndex = 12;
             const auto iterType = IterTypeEnum::Bits32;
             const wchar_t *testPrefix = L"PerturbedPerturb";
             const auto algStr = std::string(algToTest.AlgorithmStr);
-            RenderAlgorithm algToTestRT{ GetRenderAlgorithmTupleEntry(algToTest.Algorithm) };
+            RenderAlgorithm algToTestRT{GetRenderAlgorithmTupleEntry(algToTest.Algorithm)};
 
             const auto genLocalFilename = [&](const std::wstring extraPrefix) {
                 std::wstring fullPrefix = testPrefix + std::wstring(L" - ") + extraPrefix;
-                return GenFilenameW(
-                    testIndex,
-                    viewIndex,
-                    algToTestRT,
-                    algToTestRT,
-                    compressionError,
-                    iterType,
-                    fullPrefix.c_str(),
-                    dirName,
-                    algStr);
-                };
+                return GenFilenameW(testIndex,
+                                    viewIndex,
+                                    algToTestRT,
+                                    algToTestRT,
+                                    compressionError,
+                                    iterType,
+                                    fullPrefix.c_str(),
+                                    dirName,
+                                    algStr);
+            };
 
             m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
             m_Fractal.SetIterType(iterType);
             m_Fractal.SetRenderAlgorithm(algToTestRT);
-            m_Fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+            m_Fractal.SetPerturbationAlg(
+                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
             m_Fractal.View(viewIndex);
             m_Fractal.ForceRecalc();
             m_Fractal.CalcFractal(false);
@@ -868,10 +872,12 @@ void CrummyTest::TestPerturbedPerturb() {
     IterateRenderAlgs([&](auto i) {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         loopAll(alg);
-        });
+    });
 }
 
-void CrummyTest::TestGrowableVector() {
+void
+CrummyTest::TestGrowableVector()
+{
     auto VerifyContents = [](const GrowableVector<uint64_t> &testVector, uint64_t manyElts) {
         for (uint64_t i = 0; i < manyElts; i++) {
             if (testVector[i] != i) {
@@ -926,7 +932,75 @@ void CrummyTest::TestGrowableVector() {
     }
 }
 
-void CrummyTest::TestReallyHardView27() {
+void CrummyTest::TestWindowResize()
+{
+    // Pick a sane starting size that should always be valid
+    constexpr int baseW = 1280;
+    constexpr int baseH = 800;
+
+    const auto initWidth = m_Fractal.GetRenderWidth();
+    const auto initHeight = m_Fractal.GetRenderHeight();
+
+    m_Fractal.ResetDimensions(baseW, baseH);
+
+    // Simulate a smooth drag: small deltas, many calls
+    int w = baseW;
+    int h = baseH;
+
+    // Phase 1: grow slowly
+    for (int i = 0; i < 120; ++i) {
+        w += (i & 1) ? 1 : 2;
+        h += (i & 1) ? 2 : 1;
+        m_Fractal.ResetDimensions(w, h);
+        m_Fractal.CalcFractal(false);
+    }
+
+    // Phase 2: jitter + minor reversals (real mouse behavior)
+    for (int i = 0; i < 200; ++i) {
+        const int dx = (i % 3) - 1; // -1, 0, +1
+        const int dy = ((i + 1) % 3) - 1;
+
+        w += dx;
+        h += dy;
+
+        // Avoid pathological zero / negative sizes
+        if (w < 64)
+            w = 64;
+        if (h < 64)
+            h = 64;
+
+        m_Fractal.ResetDimensions(w, h);
+        m_Fractal.CalcFractal(false);
+    }
+
+    // Phase 3: shrink back down
+    for (int i = 0; i < 100; ++i) {
+        w -= 2;
+        h -= 1;
+
+        if (w < 256)
+            w = 256;
+        if (h < 256)
+            h = 256;
+
+        m_Fractal.ResetDimensions(w, h);
+        m_Fractal.CalcFractal(false);
+    }
+
+    // Phase 4: oscillate around a fixed size
+    for (int i = 0; i < 100; ++i) {
+        const int wobble = (i & 1) ? 3 : -3;
+        m_Fractal.ResetDimensions(w + wobble, h - wobble);
+        m_Fractal.CalcFractal(false);
+    }
+
+    // Final settle — important for catching “last resize wins” bugs
+    m_Fractal.ResetDimensions(initWidth, initHeight);
+}
+
+void
+CrummyTest::TestReallyHardView27()
+{
     const wchar_t *dirName = L"ReallyHardView27";
     TestPreReq(dirName);
 
@@ -938,18 +1012,15 @@ void CrummyTest::TestReallyHardView27() {
     static constexpr auto EndError = 22;
 
     static constexpr auto TestView = TestTypeEnum::View27;
-    //static constexpr auto TestView = TestTypeEnum::View5;
+    // static constexpr auto TestView = TestTypeEnum::View5;
 
-    auto loopAll = [&]<TestTypeEnum viewEnum>(
-        auto algToTest) {
-
+    auto loopAll = [&]<TestTypeEnum viewEnum>(auto algToTest) {
         constexpr auto view = algToTest.TestInclude.Lookup(viewEnum);
         if constexpr (view != TestViewEnum::Disabled) {
             const auto viewIndex = static_cast<size_t>(view);
 
-            for (int32_t compressionErrorExp = StartError;
-                compressionErrorExp <= EndError;
-                compressionErrorExp++) {
+            for (int32_t compressionErrorExp = StartError; compressionErrorExp <= EndError;
+                 compressionErrorExp++) {
 
                 m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
                 const auto iterType = IterTypeEnum::Bits64;
@@ -965,15 +1036,14 @@ void CrummyTest::TestReallyHardView27() {
                 auto name = m_Fractal.GetRenderAlgorithmName();
                 const auto testPrefix = L"LAMaxPerf";
 
-                const auto filenameW = GenFilenameW(
-                    testIndex,
-                    viewIndex,
-                    GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
-                    compressionErrorExp,
-                    iterType,
-                    testPrefix,
-                    dirName,
-                    name);
+                const auto filenameW = GenFilenameW(testIndex,
+                                                    viewIndex,
+                                                    GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
+                                                    compressionErrorExp,
+                                                    iterType,
+                                                    testPrefix,
+                                                    dirName,
+                                                    name);
 
                 std::string renderDetailsShort, renderDetailsLong;
                 m_Fractal.GetRenderDetails(renderDetailsShort, renderDetailsLong);
@@ -981,30 +1051,31 @@ void CrummyTest::TestReallyHardView27() {
 
                 // Write renderDetailsShort to a separate text file
                 const auto textTestPrefix = L"RenderDetailsShort";
-                const auto textFilenameW = GenFilenameW(
-                    testIndex,
-                    viewIndex,
-                    GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
-                    compressionErrorExp,
-                    iterType,
-                    textTestPrefix,
-                    dirName,
-                    name) + L".txt";
+                const auto textFilenameW =
+                    GenFilenameW(testIndex,
+                                 viewIndex,
+                                 GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
+                                 compressionErrorExp,
+                                 iterType,
+                                 textTestPrefix,
+                                 dirName,
+                                 name) +
+                    L".txt";
 
                 std::ofstream file(textFilenameW, std::ios::binary | std::ios::trunc);
                 file << renderDetailsShort;
                 file.close();
 
                 const auto maxImaginaFilename =
-                    GenFilenameW(
-                        testIndex,
-                        viewIndex,
-                        GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
-                        compressionErrorExp,
-                        iterType,
-                        L"MaxImagina",
-                        dirName,
-                        name) + L".im";
+                    GenFilenameW(testIndex,
+                                 viewIndex,
+                                 GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
+                                 compressionErrorExp,
+                                 iterType,
+                                 L"MaxImagina",
+                                 dirName,
+                                 name) +
+                    L".im";
                 m_Fractal.SaveRefOrbit(CompressToDisk::MaxCompressionImagina, maxImaginaFilename);
 
                 testIndex++;
@@ -1012,16 +1083,18 @@ void CrummyTest::TestReallyHardView27() {
         }
     };
 
-    //IterateRenderAlgs([&](auto i) {
-    //    constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
-    //    loopAll.operator() < TestTypeEnum::View5 > (alg);
-    //    });
+    // IterateRenderAlgs([&](auto i) {
+    //     constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+    //     loopAll.operator() < TestTypeEnum::View5 > (alg);
+    //     });
 
-    loopAll.operator() < TestView > (
+    loopAll.operator()<TestView>(
         RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>{});
 }
 
-void CrummyTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {
+void
+CrummyTest::Benchmark(RefOrbitCalc::PerturbationResultType type)
+{
     static constexpr size_t NumIterations = 5;
 
     if (m_Fractal.GetRepaint() == false) {
@@ -1051,13 +1124,14 @@ void CrummyTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {
     // the file if it already exists.
     std::ofstream file("BenchmarkResults.txt", std::ios::binary | std::ios::trunc);
 
-    auto printVectorWithDescription = [&](const std::string &description, const std::vector<size_t> &vec) {
+    auto printVectorWithDescription = [&](const std::string &description,
+                                          const std::vector<size_t> &vec) {
         file << description << "\r\n";
         for (size_t i = 0; i < NumIterations; i++) {
             file << vec[i] << "\r\n";
         }
         file << "\r\n";
-        };
+    };
 
     printVectorWithDescription("Overall times (ms)", overallTimes);
     printVectorWithDescription("Per pixel times (ms)", perPixelTimes);

@@ -19,6 +19,7 @@
     <ClInclude Include="Callstacks.h" />
     <ClInclude Include="Exceptions.h" />
     <ClInclude Include="FloatComplex.h" />
+    <ClInclude Include="heap_allocator\include\HeapPanic.h" />
     <ClInclude Include="LAInfoDeep.h" />
     <ClInclude Include="LAInfoI.h" />
     <ClInclude Include="LAParameters.h" />

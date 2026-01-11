@@ -1,5 +1,6 @@
 #include "include\HeapCpp.h" // Include your wrapper header
 #include "..\DbgHeap.h"
+#include "include\HeapPanic.h"
 #include "include\llist.h"
 
 #include <cstdlib>
@@ -10,10 +11,11 @@
 #define NOMINMAX
 #include <windows.h>
 
+#pragma optimize("", off)
+
 // Comment to disable
 #define ENABLE_FRACTAL_SHARK_HEAP
 
-static int offset = node_t::OffsetOfNext;
 static constexpr auto PAGE_SIZE = 0x1000;
 
 // sprintf etc use heap allocations in debug mode, so we can't use them here.
@@ -75,6 +77,27 @@ myexit(PF pf)
 //__declspec(allocate("fs_alloc$m"))
 static HeapCpp gHeap;
 
+__declspec(noreturn) void
+HeapPanic(const char *msg)
+{
+    // Best-effort debug output; does not allocate.
+    OutputDebugStringA("FractalShark Heap panic: ");
+    OutputDebugStringA(msg);
+    OutputDebugStringA("\n");
+
+    if (IsDebuggerPresent()) {
+        __debugbreak(); // stop *here* with a clean stack
+    }
+
+    // Fail-fast: no unwinding, no handlers, no allocations.
+    // FAST_FAIL_FATAL_APP_EXIT is 7, but any code is fine.
+    __fastfail(7);
+
+    // In case __fastfail is unavailable in some config:
+    TerminateProcess(GetCurrentProcess(), 0xDEAD);
+    __assume(0);
+}
+
 void
 CleanupHeap()
 {
@@ -95,7 +118,7 @@ RegisterHeapCleanup()
 
 void VectorStaticInit();
 
-static HeapCpp &
+HeapCpp &
 GlobalHeap()
 {
     return gHeap;
@@ -183,42 +206,19 @@ HeapCpp::~HeapCpp()
     // Initialized = false;
 }
 
-// ========================================================
-// this function initializes a new heap structure, provided
-// an empty heap struct, and a place to start the heap
-//
-// NOTE: this function uses HEAP_INIT_SIZE to determine
-// how large the heap is so make sure the same constant
-// is used when allocating memory for the heap!
-// ========================================================
-void
-HeapCpp::Init()
+static inline void
+assert_free_unlinked_for_resize(const node_t *n, const char *where)
 {
-    // Initialize the heap
-    for (size_t i = 0; i < HEAP_BIN_COUNT; i++) {
-        Heap.bins[i] = &Heap.binMemory[i];
+    if (n->hole) {
+        HEAP_ASSERT(n->in_bin == node_t::NotInBin, where);
+        HEAP_ASSERT(n->next == nullptr && n->prev == nullptr, where);
     }
+}
 
-    Mutex = new (MutexBuffer) std::mutex();
-
-    node_t *init_region = reinterpret_cast<node_t *>(Growable->GetData());
-
-    // first we create the initial region, this is the "wilderness" chunk
-    // the heap starts as just one big chunk of allocatable memory
-    init_region->hole = 1;
-    init_region->size = (HEAP_INIT_SIZE) - sizeof(node_t) - sizeof(footer_t);
-    init_region->magic = node_t::ClearedMagic;
-
-    CreateFooter(init_region); // create a foot (size must be defined)
-
-    // now we add the region to the correct bin and setup the heap struct
-    add_node(Heap.bins[GetBinIndex(init_region->size)], init_region);
-
-    const uintptr_t start = reinterpret_cast<uintptr_t>(init_region);
-    Heap.start = start;
-    Heap.end = start + HEAP_INIT_SIZE;
-
-    Initialized = true;
+static inline void
+assert_linked_in(node_t *n, uint64_t idx, const char *msg)
+{
+    HEAP_ASSERT(n->in_bin == idx, msg);
 }
 
 void
@@ -230,7 +230,6 @@ SetMagicAtEnd(void *newBuffer, size_t bufferSize)
     magicPtr[0] = node_t::Magic;
     magicPtr[1] = node_t::Magic;
 }
-
 void
 VerifyAndClearMagicAtEnd(void *buffer, size_t bufferSize)
 {
@@ -238,27 +237,61 @@ VerifyAndClearMagicAtEnd(void *buffer, size_t bufferSize)
     uint64_t *magicPtr =
         reinterpret_cast<uint64_t *>((char *)buffer + bufferSize - 2 * sizeof(uint64_t));
     if (magicPtr[0] != node_t::Magic || magicPtr[1] != node_t::Magic) {
-        throw std::exception();
+        HeapPanic("Buffer overrun detected");
     }
-
     // Clear magic to avoid double-free issues
     magicPtr[0] = node_t::ClearedMagic;
     magicPtr[1] = node_t::ClearedMagic;
 }
 
-// ========================================================
-// this is the allocation function of the heap, it takes
-// the heap struct pointer and the size of the chunk we
-// want. this function will search through the bins until
-// it finds a suitable chunk. it will then split the chunk
-// if neccesary and return the start of the chunk
-// ========================================================
+static bool
+bin_contains(const bin_t *b, const node_t *target)
+{
+    for (auto *n = b->head; n; n = n->next)
+        if (n == target)
+            return true;
+    return false;
+}
 
+
+// ========================================================
+// Init
+// ========================================================
+void
+HeapCpp::Init()
+{
+    for (size_t i = 0; i < HEAP_BIN_COUNT; i++) {
+        Heap.bins[i] = &Heap.binMemory[i];
+    }
+
+    Mutex = new (MutexBuffer) std::mutex();
+
+    node_t *init_region = reinterpret_cast<node_t *>(Growable->GetData());
+
+    const uint64_t init_payload_sz = (HEAP_INIT_SIZE) - sizeof(node_t) - sizeof(footer_t);
+
+    // Put the initial region into a clean "free + unlinked" state.
+    init_region->init_free_node_unlinked(init_payload_sz);
+
+    CreateFooter(init_region);
+
+    // add_node should be the ONLY thing that transitions in_bin from NotInBin->idx.
+    const uint64_t bin = GetBinIndex(init_region->size);
+    add_node(Heap.bins[bin], init_region, bin);
+
+    const uintptr_t start = reinterpret_cast<uintptr_t>(init_region);
+    Heap.start = start;
+    Heap.end = start + HEAP_INIT_SIZE;
+
+    Initialized = true;
+}
+
+// ========================================================
+// Allocate
+// ========================================================
 void *
 HeapCpp::Allocate(size_t size)
 {
-    // We'll assume single-threaded initialization and that no races
-    // occur here.
     if (!Initialized) {
         VectorStaticInit();
         InitGlobalHeap();
@@ -267,88 +300,99 @@ HeapCpp::Allocate(size_t size)
     // Round up to nearest 16 bytes
     size = (size + 0xF) & ~0xF;
 
-    // Add 16 bytes at end for another magic number to detect buffer overruns
+    // Tail canary space (two u64)
     size += 16;
 
     std::unique_lock<std::mutex> lock(*Mutex);
-
     auto TryOnce = [&]() -> void * {
-        // first get the bin index that this chunk size should be in
-        auto index = GetBinIndex(size);
-        // now use this bin to try and find a good fitting chunk!
-        bin_t *temp = (bin_t *)Heap.bins[index];
-        node_t *found = get_best_fit(temp, size);
+        uint64_t index = GetBinIndex(size);
+        node_t *found = nullptr;
 
-        // while no chunk if found advance through the bins until we
-        // find a chunk or get to the wilderness
-        while (found == NULL) {
-            if (index + 1 >= HEAP_BIN_COUNT)
-                return NULL;
-
-            temp = Heap.bins[++index];
-            found = get_best_fit(temp, size);
+        for (uint64_t i = index; i < HEAP_BIN_COUNT; ++i) {
+            bin_t *b = Heap.bins[i];
+            found = get_best_fit(b, size);
+            if (found)
+                break;
         }
 
-        // if the differnce between the found chunk and the requested chunk
-        // is bigger than the overhead (metadata size) + the min alloc size
-        // then we should split this chunk, otherwise just return the chunk
+        if (!found)
+            return nullptr;
+
+        if (!found->hole) {
+            HeapPanic("Found node is not free");
+        }
+
+        const uint64_t found_bin_idx = found->in_bin;
+        HEAP_ASSERT(found_bin_idx != node_t::NotInBin, "Allocate: found is free but NotInBin");
+        HEAP_ASSERT(bin_contains(Heap.bins[found_bin_idx], found),
+                    "Allocate: in_bin says it's linked, but list traversal can't find it");
+        remove_node(Heap.bins[found_bin_idx], found, found_bin_idx);
+
+        // Optional diagnostic (not authoritative):
+        HEAP_ASSERT(found_bin_idx == GetBinIndex(found->size),
+                    "Allocate: found is in wrong bin for its size");
+
+
+        // Split if large enough
         if ((found->size - size) > (overhead + MIN_ALLOC_SZ)) {
-            // do the math to get where to split at, then set its metadata
-            node_t *split = reinterpret_cast<node_t *>(((char *)found + overhead) + size);
-            split->size = found->size - size - (overhead);
-            split->hole = 1;
 
-            CreateFooter(split); // create a footer for the split
+            node_t *split =
+                reinterpret_cast<node_t *>(reinterpret_cast<char *>(found) + overhead + size);
 
-            // now we need to get the new index for this split chunk
-            // place it in the correct bin
-            auto new_idx = GetBinIndex(split->size);
-            add_node(Heap.bins[new_idx], split);
+            HEAP_ASSERT(reinterpret_cast<uintptr_t>(split) % alignof(node_t) == 0, "split misaligned");
+            HEAP_ASSERT(
+                (char *)split >= (char *)Heap.start && (char *)split + sizeof(node_t) < (char *)Heap.end,
+                "split out of heap range");
+            HEAP_ASSERT((char *)split >= (char *)found + sizeof(node_t) &&
+                            (char *)split < (char *)GetFooter(found),
+                        "split not inside found block");
 
-            found->size = size;  // set the found chunks size
-            CreateFooter(found); // since size changed, remake foot
+            const uint64_t split_payload_sz = found->size - size - overhead;
+
+            // IMPORTANT: initialize ALL free-node metadata (incl in_bin) BEFORE add_node.
+            split->init_free_node_unlinked(split_payload_sz);
+            CreateFooter(split);
+
+            const auto in_bin = GetBinIndex(split_payload_sz);
+            add_node(Heap.bins[in_bin], split, in_bin);
+
+            // shrink found to requested size (+ canary already included)
+            found->size = static_cast<uint64_t>(size);
+            CreateFooter(found);
+        } else {
+            CreateFooter(found);
         }
 
-        found->hole = 0;                      // not a hole anymore
-        remove_node(Heap.bins[index], found); // remove it from its bin
-
-        // ==========================================
-
-        // since we don't need the prev and next fields when the chunk
-        // is in use by the user, we can clear these and return the
-        // address of the next field
-        found->prev = NULL;
-        found->next = NULL;
+        // Mark allocated (and no longer a freelist node)
+        found->hole = 0;
         found->magic = node_t::Magic;
 
-        SetMagicAtEnd(&found->next, found->size);
-        return &found->next;
+        // You can clear links for tidiness, but they're allocator-owned now anyway.
+        found->next = nullptr;
+        found->prev = nullptr;
+
+        char *user = (char *)found + sizeof(node_t);
+        SetMagicAtEnd(user, found->size);
+        return user;
     };
 
-    auto *res = TryOnce();
-
-    if (res == nullptr) {
-        auto success = Expand(size * 2);
-        if (success) {
+    void *res = TryOnce();
+    if (!res) {
+        if (Expand(size * 2)) {
             res = TryOnce();
         }
     }
 
-    // these following lines are checks to determine if the heap should
-    // be expanded or contracted
-    // ==========================================
     node_t *wild = GetWilderness();
     if (wild->size < MIN_WILDERNESS) {
-        auto success = Expand(PAGE_SIZE);
-        if (success == false) {
-            return NULL;
-        }
+        if (!Expand(PAGE_SIZE))
+            return nullptr;
     } else if (wild->size > MAX_WILDERNESS) {
         Contract(PAGE_SIZE);
     }
 
-    if (reinterpret_cast<uintptr_t>(res) % 16 != 0) {
-        throw std::exception();
+    if (res && (reinterpret_cast<uintptr_t>(res) % 16 != 0)) {
+        HeapPanic("Memory allocation is not aligned");
     }
 
     Stats.Allocations++;
@@ -357,177 +401,213 @@ HeapCpp::Allocate(size_t size)
 }
 
 // ========================================================
-// this is the free function of the heap, it takes the
-// heap struct pointer and the pointer provided by the
-// heap_alloc function. the given chunk will be possibly
-// coalesced  and then placed in the correct bin
+// Deallocate
 // ========================================================
+static inline bool
+ptr_in_heap(const heap_t &H, const void *p)
+{
+    auto u = reinterpret_cast<uintptr_t>(p);
+    return u >= H.start && u < H.end;
+}
+
+static inline node_t *
+safe_prev_node(const heap_t &H, node_t *head)
+{
+    if (reinterpret_cast<uintptr_t>(head) == H.start)
+        return nullptr;
+
+    // footer immediately before head:
+    auto *prev_foot = reinterpret_cast<footer_t *>(reinterpret_cast<char *>(head) - sizeof(footer_t));
+
+    node_t *prev = prev_foot->header;
+    if (!prev)
+        return nullptr;
+
+    if (!ptr_in_heap(H, prev))
+        return nullptr;
+
+    // Optional: sanity that prev's footer points back to prev
+    // (catches random pointers early)
+    auto *foot =
+        reinterpret_cast<footer_t *>(reinterpret_cast<char *>(prev) + sizeof(node_t) + prev->size);
+    if (!ptr_in_heap(H, foot) || foot->header != prev)
+        return nullptr;
+
+    return prev;
+}
+
+static inline node_t *
+safe_next_node(const heap_t &H, node_t *head, footer_t *head_foot)
+{
+    auto *next = reinterpret_cast<node_t *>(reinterpret_cast<char *>(head_foot) + sizeof(footer_t));
+
+    // next begins at heap end => no next
+    if (!ptr_in_heap(H, next))
+        return nullptr;
+
+    // Optional: basic sanity
+    if (!ptr_in_heap(H, reinterpret_cast<char *>(next) + sizeof(node_t)))
+        return nullptr;
+
+    return next;
+}
+
 void
 HeapCpp::Deallocate(void *ptr)
 {
-    if (!ptr) {
+    if (!ptr)
         return;
-    }
 
     std::unique_lock<std::mutex> lock(*Mutex);
     assert(Initialized);
 
-    bin_t *list;
-
-    // the actual head of the node is not p, it is p minus the size
-    // of the fields that precede "next" in the node structure
-    // if the node being free is the start of the heap then there is
-    // no need to coalesce so just put it in the right list
-    node_t *head = (node_t *)((char *)ptr - offset);
+    node_t *head = (node_t *)((char *)ptr - sizeof(node_t));
 
     Stats.BytesFreed += head->size;
     Stats.Frees++;
 
-    if (reinterpret_cast<uintptr_t>(head) == Heap.start) {
-        head->hole = 1;
-        add_node(Heap.bins[GetBinIndex(head->size)], head);
-        return;
-    }
-
     if (head->magic != node_t::Magic) {
-        throw std::exception();
+        HeapPanic("Invalid node magic");
     }
 
     VerifyAndClearMagicAtEnd(ptr, head->size);
 
-    // these are the next and previous nodes in the heap, not the prev and next
-    // in a bin. to find prev we just get subtract from the start of the head node
-    // to get the footer of the previous node (which gives us the header pointer).
-    // to get the next node we simply get the footer and add the sizeof(footer_t).
-    node_t *next = (node_t *)((char *)GetFooter(head) + sizeof(footer_t));
-    node_t *prev = (node_t *)*((uintptr_t *)((char *)head - sizeof(footer_t)));
+    // Identify neighbors in the heap layout (SAFELY)
+    footer_t *head_foot = GetFooter(head);
+    node_t *prev = safe_prev_node(Heap, head);
+    node_t *next = safe_next_node(Heap, head, head_foot);
 
-    // if the previous node is a hole we can coalese!
-    if (prev->hole) {
-        // remove the previous node from its bin
-        list = Heap.bins[GetBinIndex(prev->size)];
-        remove_node(list, prev);
+    // Coalesce with prev if free
+    if (prev && prev->hole) {
+        const uint64_t idx = prev->in_bin;
+        HEAP_ASSERT(idx != node_t::NotInBin, "Deallocate: prev free but NotInBin");
+        HEAP_ASSERT(bin_contains(Heap.bins[idx], prev), "Deallocate: prev in_bin mismatch vs list");
+        remove_node(Heap.bins[idx], prev, idx);
 
-        // re-calculate the size of thie node and recreate a footer
+        // merge
         prev->size += overhead + head->size;
         CreateFooter(prev);
-
-        // previous is now the node we are working with, we head to prev
-        // because the next if statement will coalesce with the next node
-        // and we want that statement to work even when we coalesce with prev
         head = prev;
+
+        // Update head_foot because head changed
+        head_foot = GetFooter(head);
     }
 
-    // if the next node is free coalesce!
-    if (next->hole) {
-        // remove it from its bin
-        list = Heap.bins[GetBinIndex(next->size)];
-        remove_node(list, next);
+    // Coalesce with next if free
+    if (next && next->hole) {
+        const uint64_t idx = next->in_bin;
+        HEAP_ASSERT(idx != node_t::NotInBin, "Deallocate: next free but NotInBin");
+        HEAP_ASSERT(bin_contains(Heap.bins[idx], next), "Deallocate: next in_bin mismatch vs list");
+        remove_node(Heap.bins[idx], next, idx);
 
-        // re-calculate the new size of head
         head->size += overhead + next->size;
 
-        // clear out the old metadata from next
+        // optional clear
         footer_t *old_foot = GetFooter(next);
-        old_foot->header = 0;
+        old_foot->header = nullptr;
         next->size = 0;
         next->hole = 0;
 
-        // make the new footer!
         CreateFooter(head);
     }
 
-    // this chunk is now a hole, so put it in the right bin!
-    head->hole = 1;
-    add_node(Heap.bins[GetBinIndex(head->size)], head);
+    // Now (coalesced) head becomes a free unlinked node; init metadata BEFORE add_node.
+    const uint64_t final_payload_sz = head->size;
+    head->init_free_node_unlinked(final_payload_sz);
+    CreateFooter(head);
+
+    const auto in_bin = GetBinIndex(head->size);
+    add_node(Heap.bins[in_bin], head, in_bin);
 }
 
+// ========================================================
+// Expand
+// ========================================================
 bool
 HeapCpp::Expand(size_t deltaSizeBytes)
 {
     // Mutex must be held
 
-    // Grow by a minimum of a megabyte
-    // Ensure the size to expand is aligned to page size (0x1000).
     const auto growSizeBytes = std::max(size_t(GrowByAmtBytes), deltaSizeBytes * 2);
-
-    // Round up to the nearest page size.
     const auto size = (growSizeBytes + 0xFFF) & ~0xFFF;
 
-    // Calculate the new end of the heap.
     void *new_end = (char *)Heap.end + size;
 
-    // Now we need to grow the GrowableVector to match the new heap size, if needed.
-    // That'll ensure the memory is writable and we can use it.
     Growable->GrowVectorByAmount(size);
 
-    // Check if the new end is within the maximum heap size.
-
-    // Get the current wilderness block (last block in the heap).
     node_t *wild = GetWilderness();
 
-    // If the wilderness block is a hole (free), coalesce it with the new free block.
     if (wild->hole) {
-        // Remove the wilderness block from its current bin.
-        auto wild_bin_index = GetBinIndex(wild->size);
-        remove_node(Heap.bins[wild_bin_index], wild);
+        assert_linked_in(wild, wild->in_bin, "Expand: wilderness not linked in expected bin");
+        remove_node(Heap.bins[wild->in_bin], wild, wild->in_bin);
 
-        // Increase the size of the wilderness block by adding the expanded memory.
+        assert_free_unlinked_for_resize(wild, "Expand: wilderness not free/unlinked for resize");
         wild->size += size;
-
-        // Update the footer of the coalesced wilderness block.
+        // wilderness is free + unlinked right now; normalize metadata
+        wild->init_free_node_unlinked(wild->size);
         CreateFooter(wild);
 
-        // Add the coalesced wilderness block back into the correct bin.
-        auto new_bin_index = GetBinIndex(wild->size);
-        add_node(Heap.bins[new_bin_index], wild);
-    } else {
-        // If the wilderness block is not free, create a new free block at the old heap end.
-        node_t *new_free_block = (node_t *)Heap.end;
-        new_free_block->size = size - overhead; // New block size, minus overhead (header and footer).
-        new_free_block->hole = 1;               // Mark it as a free block (hole).
+        const auto in_bin = GetBinIndex(wild->size);
+        add_node(Heap.bins[in_bin], wild, in_bin);
 
-        // Create the footer for the new free block.
+    } else {
+        node_t *new_free_block = (node_t *)Heap.end;
+        const uint64_t payload_sz = static_cast<uint64_t>(size - overhead);
+
+        new_free_block->init_free_node_unlinked(payload_sz);
         CreateFooter(new_free_block);
 
-        // Add the new free block to the appropriate bin.
-        auto new_bin_index = GetBinIndex(new_free_block->size);
-        add_node(Heap.bins[new_bin_index], new_free_block);
+        const auto in_bin = GetBinIndex(new_free_block->size);
+        add_node(Heap.bins[in_bin], new_free_block, in_bin);
     }
 
-    // Update the heap's end pointer to the new expanded end.
     Heap.end = reinterpret_cast<uintptr_t>(new_end);
-
     return true;
 }
 
+// ========================================================
+// Contract (unchanged logic; shown with no in_bin calls)
+// ========================================================
 bool
 HeapCpp::Contract(size_t size)
 {
     // Mutex must be held
 
-    // Ensure the size to contract is aligned to page size (0x1000).
     size = (size + 0xFFF) & ~0xFFF;
 
     node_t *wild = GetWilderness();
 
-    // Only contract if the wilderness region is large enough.
+    // Only contract if wilderness is free; otherwise you’re chopping a live block.
+    if (!wild->hole) {
+        return false;
+    }
+
     if (wild->size < size) {
         return false;
     }
 
-    // Shrink the wilderness region by reducing its size.
-    wild->size -= size;
+    // Unlink wilderness from its current bin BEFORE changing size.
+    const uint64_t old_bin = wild->in_bin;
+    HEAP_ASSERT(old_bin != node_t::NotInBin, "Contract: wilderness free but NotInBin");
+    HEAP_ASSERT(bin_contains(Heap.bins[old_bin], wild), "Contract: wilderness in_bin mismatch vs list");
+    remove_node(Heap.bins[old_bin], wild, old_bin);
+
+    // Now safe to mutate size.
+    wild->size -= static_cast<uint64_t>(size);
+
+    // Normalize metadata for a free, unlinked node.
+    wild->init_free_node_unlinked(wild->size);
     CreateFooter(wild);
 
-    // Update heap's end pointer to reflect the contraction.
-    auto newEnd = Heap.end - size;
-    Heap.end = newEnd;
+    // Reinsert into correct bin for new size.
+    const uint64_t new_bin = GetBinIndex(wild->size);
+    add_node(Heap.bins[new_bin], wild, new_bin);
 
-    // Simulate returning the memory to the system, in real systems, this would involve OS calls.
-
+    // Shrink heap end pointer.
+    Heap.end -= size;
     return true;
 }
+
 
 size_t
 HeapCpp::CountAllocations() const
@@ -665,7 +745,7 @@ CppRealloc(void *ptr, size_t newSize, bool zeroNew)
     }
 
     // Find the old size:
-    const auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(ptr) - offset);
+    const auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(ptr) - sizeof(node_t));
 
     // Assume the size is stored somehow, or manage separately in the Heap class
     std::memcpy(newPtr, ptr, std::min(node->size, newSize));
@@ -809,7 +889,7 @@ _msize_dbg(void *const block, int const block_use)
     if (!block) {
         return 0;
     }
-    auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(block) - offset);
+    auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(block) - sizeof(node_t));
     return node->size;
 }
 

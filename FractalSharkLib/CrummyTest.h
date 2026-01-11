@@ -21,6 +21,7 @@ public:
     void TestStringConversion();
     void TestPerturbedPerturb();
     void TestGrowableVector();
+    void TestWindowResize();
 
     // TestAll does not include:
     void TestReallyHardView27();

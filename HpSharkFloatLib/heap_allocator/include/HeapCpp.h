@@ -15,6 +15,7 @@ class GrowableVector;
 
 void RegisterHeapCleanup();
 
+
 class HeapCpp {
 
 public:
@@ -77,3 +78,5 @@ private:
     uint8_t GrowableVectorMemory[GrowableVectorSize];
     GrowableVector<uint8_t> *Growable;
 };
+
+HeapCpp &GlobalHeap();

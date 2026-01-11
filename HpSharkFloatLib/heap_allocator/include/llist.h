@@ -4,9 +4,8 @@
 #include "heap.h"
 #include <stdint.h>
 
-void add_node(bin_t *bin, node_t *node);
-
-void remove_node(bin_t *bin, node_t *node);
+void add_node(bin_t *bin, node_t *node, uint64_t in_bin);
+void remove_node(bin_t *bin, node_t *node, uint64_t in_bin);
 
 node_t *get_best_fit(bin_t *list, size_t size);
 node_t *get_last_node(bin_t *list);

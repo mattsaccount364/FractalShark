@@ -1,8 +1,10 @@
 #include "include\HeapCpp.h" // Include your wrapper header
 #include "..\DbgHeap.h"
+#include "include\HeapCommandLine.h"
 #include "include\HeapPanic.h"
 #include "include\llist.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 
@@ -13,14 +15,67 @@
 
 #pragma optimize("", off)
 
-// Comment to disable
-#define ENABLE_FRACTAL_SHARK_HEAP
+
+FancyHeap EnableFractalSharkHeap;
 
 static constexpr auto PAGE_SIZE = 0x1000;
+
+// CRT forwarding declarations
+extern "C" {
+
+void *__cdecl crt_malloc(size_t);
+void *__cdecl crt_calloc(size_t, size_t);
+void *__cdecl crt_realloc(void *, size_t);
+void __cdecl crt_free(void *);
+
+#ifdef _DEBUG
+void *__cdecl crt_malloc_dbg(size_t, int, const char *, int);
+void *__cdecl crt_calloc_dbg(size_t, size_t, int, const char *, int);
+void *__cdecl crt_realloc_dbg(void *, size_t, int, const char *, int);
+void *__cdecl crt_recalloc_dbg(void *, size_t, size_t, int, const char *, int);
+void __cdecl crt_free_dbg(void *, int);
+size_t __cdecl crt_msize_dbg(void *, int);
+#endif
+}
 
 // sprintf etc use heap allocations in debug mode, so we can't use them here.
 static constexpr bool LimitedDebugOut = !FractalSharkDebug;
 static constexpr bool FullDebugOut = false;
+
+// --- CRT forwarding: resolve *all* CRT entrypoints we might need ---
+// This supports the overrides you listed: malloc/calloc/realloc/free,
+// plus (debug) _malloc_dbg/_calloc_dbg/_realloc_dbg/_recalloc_dbg/_free_dbg/_msize_dbg.
+//
+// NOTE: operator new/delete are C++ and should NOT be resolved here; they just call
+// malloc/free (or aligned_alloc) which dispatches via EnableFractalSharkHeap.
+//
+// Also note: MSVC's aligned routines are usually _aligned_malloc/_aligned_free rather
+// than C11 aligned_alloc. If you want to forward aligned allocations to CRT when
+// heap is disabled, resolve those too.
+
+#include <cassert>
+#include <cstddef>
+#include <windows.h>
+
+// --------------------- release CRT allocator function types ---------------------
+using malloc_fn = void *(__cdecl *)(size_t);
+using free_fn = void(__cdecl *)(void *);
+using realloc_fn = void *(__cdecl *)(void *, size_t);
+using calloc_fn = void *(__cdecl *)(size_t, size_t);
+
+// MSVC alignment helpers (recommended if you want true CRT-aligned behavior)
+using aligned_malloc_fn = void *(__cdecl *)(size_t size, size_t alignment);
+using aligned_free_fn = void(__cdecl *)(void *);
+
+// --------------------- debug CRT allocator function types ----------------------
+#ifdef _DEBUG
+using malloc_dbg_fn = void *(__cdecl *)(size_t, int, const char *, int);
+using calloc_dbg_fn = void *(__cdecl *)(size_t, size_t, int, const char *, int);
+using realloc_dbg_fn = void *(__cdecl *)(void *, size_t, int, const char *, int);
+using recalloc_dbg_fn = void *(__cdecl *)(void *, size_t, size_t, int, const char *, int);
+using free_dbg_fn = void(__cdecl *)(void *, int);
+using msize_dbg_fn = size_t(__cdecl *)(void *, int);
+#endif
 
 //
 // It'd be nice to call RegisterHeapCleanup on first use but atexit in VS2026
@@ -77,26 +132,114 @@ myexit(PF pf)
 //__declspec(allocate("fs_alloc$m"))
 static HeapCpp gHeap;
 
-__declspec(noreturn) void
-HeapPanic(const char *msg)
-{
-    // Best-effort debug output; does not allocate.
-    OutputDebugStringA("FractalShark Heap panic: ");
-    OutputDebugStringA(msg);
-    OutputDebugStringA("\n");
+// --------------------- resolved function pointers ------------------------------
+__declspec(allocate(".fs_alloc")) static malloc_fn g_crt_malloc;
+__declspec(allocate(".fs_alloc")) static free_fn g_crt_free;
+__declspec(allocate(".fs_alloc")) static realloc_fn g_crt_realloc;
+__declspec(allocate(".fs_alloc")) static calloc_fn g_crt_calloc;
 
-    if (IsDebuggerPresent()) {
-        __debugbreak(); // stop *here* with a clean stack
+// Optional but useful if you want CRT-backed aligned allocations when disabled.
+__declspec(allocate(".fs_alloc")) static aligned_malloc_fn g_crt_aligned_malloc;
+__declspec(allocate(".fs_alloc")) static aligned_free_fn g_crt_aligned_free;
+
+#ifdef _DEBUG
+__declspec(allocate(".fs_alloc")) static malloc_dbg_fn g_crt_malloc_dbg;
+__declspec(allocate(".fs_alloc")) static calloc_dbg_fn g_crt_calloc_dbg;
+__declspec(allocate(".fs_alloc")) static realloc_dbg_fn g_crt_realloc_dbg;
+__declspec(allocate(".fs_alloc")) static recalloc_dbg_fn g_crt_recalloc_dbg;
+__declspec(allocate(".fs_alloc")) static free_dbg_fn g_crt_free_dbg;
+__declspec(allocate(".fs_alloc")) static msize_dbg_fn g_crt_msize_dbg;
+#endif
+
+// Check if any of these globals is nullptr
+bool
+CheckGlobalsInitted()
+{
+    if (!g_crt_malloc || !g_crt_free || !g_crt_realloc || !g_crt_calloc) {
+        return false;
     }
 
-    // Fail-fast: no unwinding, no handlers, no allocations.
-    // FAST_FAIL_FATAL_APP_EXIT is 7, but any code is fine.
-    __fastfail(7);
+    if (!g_crt_aligned_malloc || !g_crt_aligned_free) {
+        return false;
+    }
 
-    // In case __fastfail is unavailable in some config:
-    TerminateProcess(GetCurrentProcess(), 0xDEAD);
-    __assume(0);
+#ifdef _DEBUG
+    if (!g_crt_malloc_dbg || !g_crt_calloc_dbg || !g_crt_realloc_dbg ||
+        !g_crt_recalloc_dbg || !g_crt_free_dbg || !g_crt_msize_dbg) {
+        return false;
+    }
+#endif
+
+    if (!CheckGlobalsInitted()) {
+        return false;
+    }
+
+    return true;
 }
+
+
+static FARPROC
+MustGetProc(HMODULE m, const char *name)
+{
+    FARPROC p = GetProcAddress(m, name);
+    assert(p && "Missing CRT export");
+    return p;
+}
+
+// Resolve CRT symbols. Important: use GetModuleHandle/GetProcAddress,
+// and do not call malloc/new/etc while resolving.
+static void
+ResolveCrtAllocators()
+{
+    // UCRT on modern MSVC; msvcrt.dll on older/other.
+    HMODULE crt = GetModuleHandleW(L"ucrtbase.dll");
+    if (!crt)
+        crt = GetModuleHandleW(L"msvcrt.dll");
+
+    if (!crt) {
+        assert(false && "Could not locate CRT module for allocator forwarding");
+        return;
+    }
+
+    // Release C allocator API
+    g_crt_malloc = reinterpret_cast<malloc_fn>(MustGetProc(crt, "malloc"));
+    g_crt_free = reinterpret_cast<free_fn>(MustGetProc(crt, "free"));
+    g_crt_realloc = reinterpret_cast<realloc_fn>(MustGetProc(crt, "realloc"));
+    g_crt_calloc = reinterpret_cast<calloc_fn>(MustGetProc(crt, "calloc"));
+
+    // MSVC aligned allocation APIs (present in ucrtbase/msvcrt in typical configs)
+    // If your build doesn't export these, you can drop them or soft-fail them.
+    g_crt_aligned_malloc = reinterpret_cast<aligned_malloc_fn>(GetProcAddress(crt, "_aligned_malloc"));
+    g_crt_aligned_free = reinterpret_cast<aligned_free_fn>(GetProcAddress(crt, "_aligned_free"));
+
+#ifdef _DEBUG
+    HMODULE crt_d = GetModuleHandleW(L"ucrtbased.dll");
+    if (!crt_d)
+        crt_d = GetModuleHandleW(L"msvcrtd.dll");
+
+    if (!crt_d) {
+        assert(false && "Could not locate Debug CRT module for allocator forwarding");
+        return;
+    }
+
+    // Debug CRT entrypoints. These are not always exported by the same DLL depending
+    // on configuration, but in many MSVC debug configurations they resolve from ucrtbase/msvcrt.
+    // If they don't exist in your setup, make these optional (null) and avoid calling them.
+    g_crt_malloc_dbg = reinterpret_cast<malloc_dbg_fn>(GetProcAddress(crt_d, "_malloc_dbg"));
+    g_crt_calloc_dbg = reinterpret_cast<calloc_dbg_fn>(GetProcAddress(crt_d, "_calloc_dbg"));
+    g_crt_realloc_dbg = reinterpret_cast<realloc_dbg_fn>(GetProcAddress(crt_d, "_realloc_dbg"));
+    g_crt_recalloc_dbg = reinterpret_cast<recalloc_dbg_fn>(GetProcAddress(crt_d, "_recalloc_dbg"));
+    g_crt_free_dbg = reinterpret_cast<free_dbg_fn>(GetProcAddress(crt_d, "_free_dbg"));
+    g_crt_msize_dbg = reinterpret_cast<msize_dbg_fn>(GetProcAddress(crt_d, "_msize_dbg"));
+
+    // If you *require* the dbg exports, hard-assert them:
+    // assert(g_crt_malloc_dbg && g_crt_calloc_dbg && g_crt_realloc_dbg &&
+    //        g_crt_recalloc_dbg && g_crt_free_dbg && g_crt_msize_dbg);
+#endif
+
+    assert(g_crt_malloc && g_crt_free && g_crt_realloc && g_crt_calloc);
+}
+
 
 void
 CleanupHeap()
@@ -107,13 +250,15 @@ CleanupHeap()
 void
 RegisterHeapCleanup()
 {
-#ifdef ENABLE_FRACTAL_SHARK_HEAP
-    atexit(CleanupHeap);
-#else
-    // Heh, so on this path we bypass the fancy heap but we still must init this
-    // logic or the growable vector fails in other contexts.
-    VectorStaticInit();
-#endif
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        atexit(CleanupHeap);
+    } else if (EnableFractalSharkHeap == FancyHeap::Disable) {
+        // Heh, so on this path we bypass the fancy heap but we still must init this
+        // logic or the growable vector fails in other contexts.
+        VectorStaticInit();
+    } else {
+        HeapPanic("FractalShark heap disabled via command line");
+    }
 }
 
 void VectorStaticInit();
@@ -127,6 +272,10 @@ GlobalHeap()
 void
 HeapCpp::InitGlobalHeap()
 {
+    if (EnableFractalSharkHeap == FancyHeap::Disable) {
+        return;
+    }
+
     // Construct HeapCpp in raw storage (no dynamic initialization at static-init time;
     // construction happens here under your control).
     auto &globalHeap = GlobalHeap();
@@ -253,7 +402,6 @@ bin_contains(const bin_t *b, const node_t *target)
     return false;
 }
 
-
 // ========================================================
 // Init
 // ========================================================
@@ -331,7 +479,6 @@ HeapCpp::Allocate(size_t size)
         // Optional diagnostic (not authoritative):
         HEAP_ASSERT(found_bin_idx == GetBinIndex(found->size),
                     "Allocate: found is in wrong bin for its size");
-
 
         // Split if large enough
         if ((found->size - size) > (overhead + MIN_ALLOC_SZ)) {
@@ -608,7 +755,6 @@ HeapCpp::Contract(size_t size)
     return true;
 }
 
-
 size_t
 HeapCpp::CountAllocations() const
 {
@@ -759,44 +905,76 @@ CppRealloc(void *ptr, size_t newSize, bool zeroNew)
     return newPtr;
 }
 
-#if defined(ENABLE_FRACTAL_SHARK_HEAP)
-
 // Override global malloc, free, and realloc functions
 extern "C" {
+
 __declspec(restrict) void *
 malloc(size_t size)
 {
-    return CppMalloc(size);
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        return CppMalloc(size);
+    }
+
+    return g_crt_malloc(size);
 }
 
 __declspec(restrict) void *
 calloc(size_t num, size_t size)
 {
-    auto *res = CppMalloc(num * size);
-    if (res) {
-        std::memset(res, 0, num * size);
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
     }
-    return res;
-}
 
-__declspec(restrict) void *
-aligned_alloc(size_t alignment, size_t size)
-{
-    auto res = CppMalloc(size);
-    assert(reinterpret_cast<uintptr_t>(res) % alignment == 0);
-    return res;
-}
-
-void
-free(void *ptr)
-{
-    CppFree(ptr);
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        void *p = CppMalloc(num * size);
+        if (p)
+            std::memset(p, 0, num * size);
+        return p;
+    }
+    return g_crt_calloc(num, size);
 }
 
 __declspec(restrict) void *
 realloc(void *ptr, size_t newSize)
 {
-    return CppRealloc(ptr, newSize, false);
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        return CppRealloc(ptr, newSize, false);
+    }
+    return g_crt_realloc(ptr, newSize);
+}
+
+void
+free(void *ptr)
+{
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        CppFree(ptr);
+        return;
+    }
+    g_crt_free(ptr);
+}
+
+__declspec(restrict) void *
+aligned_alloc(size_t alignment, size_t size)
+{
+    void *p = malloc(size);
+    assert(reinterpret_cast<uintptr_t>(p) % alignment == 0);
+    return p;
 }
 
 char *
@@ -804,9 +982,8 @@ strdup(const char *s)
 {
     size_t len = strlen(s) + 1;
     char *d = (char *)malloc(len);
-    if (d) {
+    if (d)
         memcpy(d, s, len);
-    }
     return d;
 }
 
@@ -828,72 +1005,112 @@ realpath(const char *fname, char *resolved_name)
     return _fullpath(resolved_name, fname, _MAX_PATH);
 }
 
-// We rely on linking with /force:multiple to avoid LNK2005
 #ifdef _DEBUG
+
 void *
-_malloc_dbg(size_t size, int /*blockType*/, const char * /*filename*/, int /*line*/)
+_malloc_dbg(size_t size, int blockType, const char *filename, int line)
 {
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
+    }
 
-    return CppMalloc(size);
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        return CppMalloc(size);
+    }
+    return g_crt_malloc_dbg(size, blockType, filename, line);
 }
 
-// We rely on linking with /force:multiple to avoid LNK2005
 void *
-_calloc_dbg(size_t num, size_t size, int /*blockType*/, const char * /*filename*/, int /*line*/)
+_calloc_dbg(size_t num, size_t size, int blockType, const char *filename, int line)
 {
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
+    }
 
-    return calloc(num, size);
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        void *p = CppMalloc(num * size);
+        if (p)
+            std::memset(p, 0, num * size);
+        return p;
+    }
+    return g_crt_calloc_dbg(num, size, blockType, filename, line);
 }
 
 __declspec(noinline) void *
-_realloc_dbg(void *const block,
-             size_t const requested_size,
-             int const block_use,
-             char const *const file_name,
-             int const line_number)
+_realloc_dbg(void *block, size_t requested_size, int block_use, const char *file, int line)
 {
-    return CppRealloc(block, requested_size, false);
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        return CppRealloc(block, requested_size, false);
+    }
+
+    return g_crt_realloc_dbg(block, requested_size, block_use, file, line);
 }
 
 __declspec(noinline) void *
-_recalloc_dbg(void *const block,
-              size_t const count,
-              size_t const element_size,
-              int const block_use,
-              char const *const file_name,
-              int const line_number)
+_recalloc_dbg(void *block, size_t count, size_t element_size, int block_use, const char *file, int line)
 {
-    return CppRealloc(block, count * element_size, true);
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        return CppRealloc(block, count * element_size, true);
+    }
+
+    return g_crt_recalloc_dbg(block, count, element_size, block_use, file, line);
 }
 
 __declspec(noinline) void *
-_expand_dbg(void *const block,
-            size_t const requested_size,
-            int const block_use,
-            char const *const file_name,
-            int const line_number)
+_expand_dbg(void *, size_t, int, const char *, int)
 {
     errno = ENOMEM;
     return nullptr;
 }
 
 void
-_free_dbg(void *ptr, int /*blockType*/)
+_free_dbg(void *ptr, int blockType)
 {
-    CppFree(ptr);
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        CppFree(ptr);
+        return;
+    }
+    g_crt_free_dbg(ptr, blockType);
 }
 
 __declspec(noinline) size_t
-_msize_dbg(void *const block, int const block_use)
+_msize_dbg(void *block, int block_use)
 {
-    if (!block) {
-        return 0;
+    if (!CheckGlobalsInitted()) {
+        ResolveCrtAllocators();
+        EarlyInit_SafeMode_NoCRT();
     }
-    auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(block) - sizeof(node_t));
-    return node->size;
+
+    if (!block)
+        return 0;
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(block) - sizeof(node_t));
+        return node->size;
+    }
+
+    return g_crt_msize_dbg(block, block_use);
 }
 
 #endif
+
 } // extern "C"
 
 void
@@ -909,16 +1126,14 @@ operator delete[](void *ptr)
 }
 
 void *
-operator new(size_t size) noexcept(false)
+operator new(size_t size)
 {
-    auto *res = malloc(size);
-    if (!res) {
+    void *p = malloc(size);
+    if (!p)
         throw std::bad_alloc();
-    }
-    return res;
+    return p;
 }
 
-// Array form of new:
 void *
 operator new[](size_t size)
 {
@@ -926,43 +1141,37 @@ operator new[](size_t size)
 }
 
 void *
-operator new(std::size_t n, std::align_val_t align) noexcept(false)
+operator new(size_t n, std::align_val_t al)
 {
-    return aligned_alloc(static_cast<size_t>(align), n);
+    return aligned_alloc(static_cast<size_t>(al), n);
 }
 
 void *
-operator new[](std::size_t n, std::align_val_t align) noexcept(false)
+operator new[](size_t n, std::align_val_t al)
 {
-    return aligned_alloc(static_cast<size_t>(align), n);
+    return aligned_alloc(static_cast<size_t>(al), n);
 }
 
 void *
-operator new(std::size_t count, const std::nothrow_t & /*tag*/) noexcept
+operator new(size_t count, const std::nothrow_t &) noexcept
 {
     return malloc(count);
 }
 
 void *
-operator new[](std::size_t count, const std::nothrow_t & /*tag*/) noexcept
+operator new[](size_t count, const std::nothrow_t &) noexcept
 {
     return malloc(count);
 }
 
 void *
-operator new(std::size_t count, std::align_val_t al, const std::nothrow_t &) noexcept
+operator new(size_t count, std::align_val_t al, const std::nothrow_t &) noexcept
 {
     return aligned_alloc(static_cast<size_t>(al), count);
 }
 
 void *
-operator new[](std::size_t count, std::align_val_t al, const std::nothrow_t &) noexcept
+operator new[](size_t count, std::align_val_t al, const std::nothrow_t &) noexcept
 {
     return aligned_alloc(static_cast<size_t>(al), count);
 }
-
-#else // ENABLE_FRACTAL_SHARK_HEAP
-
-// If not enabled, we do nothing special here.
-
-#endif

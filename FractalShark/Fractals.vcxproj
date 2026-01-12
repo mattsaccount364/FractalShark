@@ -91,6 +91,8 @@
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir);..\mpir\lib\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>/PDBALTPATH:%_PDB%
  %(AdditionalOptions)</AdditionalOptions>
+      <ForceSymbolReferences>
+      </ForceSymbolReferences>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -128,6 +130,8 @@
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir);..\mpir\lib\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>/PDBALTPATH:%_PDB%
  %(AdditionalOptions)</AdditionalOptions>
+      <ForceSymbolReferences>
+      </ForceSymbolReferences>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

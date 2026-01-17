@@ -17,9 +17,9 @@
     <ClInclude Include="ATInfo.h" />
     <ClInclude Include="ATResult.h" />
     <ClInclude Include="Callstacks.h" />
+    <ClInclude Include="EarlyCommandLine.h" />
     <ClInclude Include="Exceptions.h" />
     <ClInclude Include="FloatComplex.h" />
-    <ClInclude Include="heap_allocator\include\HeapCommandLine.h" />
     <ClInclude Include="heap_allocator\include\HeapPanic.h" />
     <ClInclude Include="LAInfoDeep.h" />
     <ClInclude Include="LAInfoI.h" />
@@ -82,8 +82,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Callstacks.cpp" />
+    <ClCompile Include="EarlyCommandLine.cpp" />
     <ClCompile Include="Exceptions.cpp" />
-    <ClCompile Include="heap_allocator\HeapCommandLine.cpp" />
     <ClCompile Include="heap_allocator\HeapCpp.cpp" />
     <ClCompile Include="heap_allocator\HeapPanic.cpp" />
     <ClCompile Include="heap_allocator\llist.cpp" />

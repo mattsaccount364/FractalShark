@@ -1,6 +1,6 @@
 #include "include\HeapCpp.h" // Include your wrapper header
 #include "..\DbgHeap.h"
-#include "include\HeapCommandLine.h"
+#include "..\EarlyCommandLine.h"
 #include "include\HeapPanic.h"
 #include "include\llist.h"
 

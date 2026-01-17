@@ -80,6 +80,9 @@
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Debug;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
       <StackReserveSize>16777216</StackReserveSize>
     </Link>
+    <CudaCompile>
+      <CudaRuntime>Static</CudaRuntime>
+    </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Midl>
@@ -108,6 +111,9 @@
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Release;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
       <StackReserveSize>16777216</StackReserveSize>
     </Link>
+    <CudaCompile>
+      <CudaRuntime>Static</CudaRuntime>
+    </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="FractalTray.cpp" />

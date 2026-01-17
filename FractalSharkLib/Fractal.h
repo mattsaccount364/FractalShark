@@ -58,6 +58,7 @@ public:
         uint64_t commitLimitInBytes);
     ~Fractal();
 
+    void SetupCuda();
     void InitialDefaultViewAndSettings(int width = 0, int height = 0);
 
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
@@ -308,6 +309,9 @@ private:
     int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);
 
     uint64_t FindTotalItersUsed(void);
+
+    // True if GPU is not working / should be bypassed
+    bool m_BypassGpu;
 
     // Member Variables
     RefOrbitCalc m_RefOrbit;

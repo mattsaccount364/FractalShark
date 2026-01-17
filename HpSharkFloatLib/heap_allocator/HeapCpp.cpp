@@ -7,10 +7,10 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
-#include <type_traits>
 #include <cstring>
-#include <new>
 #include <errno.h>
+#include <new>
+#include <type_traits>
 
 #include "..\Vectors.h"
 
@@ -19,6 +19,62 @@
 
 #pragma optimize("", off)
 
+//
+// It'd be nice to call RegisterHeapCleanup on first use but atexit in VS2026
+// appears to have a table with some stuff in it that's not initialized yet. So
+// if we try to register the cleanup here, it crashes.  The result is that we
+// see some "leaks" because we intercept all allocations but miss some frees by
+// registering later.
+//
+
+//
+// Overriding malloc/free is a bit tricky. The problem is that the C runtime library
+// may call malloc/free internally, so if you override malloc/free, you may end up
+// with a stack overflow. The solution is to use a global heap that is initialized
+// before the C runtime library is initialized. This is done by defining a global
+// instance of the HeapCpp class.
+//
+// When the first attempt is made to allocate memory, the global heap is initialized.
+// This initialization takes place during the C runtime library initialization, and is
+// before any static constructors are called.  This has implications for the order of
+// initialization of static objects and the "meaning" of static objects.
+//
+// What we do here is call a constructor ourselves manually
+//
+
+// --------------------------------------------------------
+// fs_alloc scaffolding: early-init segment + manual dtor list
+// --------------------------------------------------------
+//
+// Overriding / intercepting allocation can cause the CRT to call into us
+// during its own initialization. We therefore place HeapCpp in a special
+// init segment and capture its destructor without using atexit early.
+//
+
+#pragma section(".fs_alloc", read, write)
+
+using PF = void(__cdecl *)(void);
+static int cxpf = 0; // number of destructors we need to call
+static PF pfx[200];  // pointers to destructors.
+
+#pragma section(".fs_alloc$a", read)
+__declspec(allocate(".fs_alloc$a")) const PF InitSegStart = (PF)1;
+
+#pragma section(".fs_alloc$z", read)
+__declspec(allocate(".fs_alloc$z")) const PF InitSegEnd = (PF)1;
+
+// Called by MSVC for objects in our init_seg (instead of atexit)
+static int __cdecl
+myexit(PF pf)
+{
+    // keep it simple; you can add bounds checking if desired
+    pfx[cxpf++] = pf;
+    return 0;
+}
+
+// by default, goes into a read-only section
+#pragma warning(disable : 4075)
+#pragma init_seg(".fs_alloc$m", myexit)
 
 FancyHeap EnableFractalSharkHeap;
 
@@ -399,7 +455,7 @@ HeapCpp::Allocate(size_t user_size)
     if (res && (reinterpret_cast<uintptr_t>(res) % 16 != 0)) {
         HeapPanic("Memory allocation is not aligned");
     }
-
+     
     Stats.Allocations++;
     Stats.BytesAllocated += actual_size;
     return res;
@@ -824,7 +880,6 @@ free(void *ptr)
     SysFree(ptr);
 }
 
-
 extern "C" __declspec(restrict) void *
 aligned_alloc(size_t /*alignment*/, size_t size)
 {
@@ -841,7 +896,6 @@ aligned_alloc(size_t /*alignment*/, size_t size)
     // SysHeap bypass path: ignore alignment request.
     return SysMalloc(size);
 }
-
 
 char *
 strdup(const char *s)
@@ -911,7 +965,12 @@ _realloc_dbg(void *block, size_t requested_size, int block_use, const char *file
 }
 
 __declspec(noinline) void *
-_recalloc_dbg(void *block, size_t count, size_t element_size, int /*block_use*/, const char * /*file*/, int /*line*/)
+_recalloc_dbg(void *block,
+              size_t count,
+              size_t element_size,
+              int /*block_use*/,
+              const char * /*file*/,
+              int /*line*/)
 {
     // Best-effort implementation.
     // Fancy heap path supports explicit zeroing of newly grown bytes.
@@ -969,7 +1028,6 @@ _msize_dbg(void *block, int /*block_use*/)
     }
     return static_cast<size_t>(s);
 }
-
 
 #endif
 

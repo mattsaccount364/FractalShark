@@ -102,6 +102,31 @@ GPURenderer::~GPURenderer() {
     }
 }
 
+uint32_t
+GPURenderer::TestCudaIsWorking()
+{
+    int deviceCount = 0;
+
+    cudaError_t err = cudaGetDeviceCount(&deviceCount);
+    if (err != cudaSuccess)
+        return false;
+
+    if (deviceCount <= 0)
+        return false;
+
+    // Try to actually select device 0
+    err = cudaSetDevice(0);
+    if (err != cudaSuccess)
+        return false;
+
+    // Force a lightweight runtime interaction
+    err = cudaFree(nullptr);
+    if (err != cudaSuccess)
+        return false;
+
+    return true;
+}
+
 void GPURenderer::ResetPalettesOnly() {
     if (Pals.local_pal != nullptr) {
         cudaFree(Pals.local_pal);

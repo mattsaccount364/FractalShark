@@ -94,6 +94,9 @@
       <ForceSymbolReferences>
       </ForceSymbolReferences>
     </Link>
+    <CudaCompile>
+      <CudaRuntime>Static</CudaRuntime>
+    </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Midl>
@@ -133,6 +136,9 @@
       <ForceSymbolReferences>
       </ForceSymbolReferences>
     </Link>
+    <CudaCompile>
+      <CudaRuntime>Static</CudaRuntime>
+    </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ConsoleWindow.cpp" />

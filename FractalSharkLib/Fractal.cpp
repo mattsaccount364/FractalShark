@@ -37,7 +37,10 @@ Fractal::~Fractal() { Uninitialize(); }
 
 void
 Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
-{ // Create the control-key-down/mouse-movement-monitoring thread.
+{
+    SetupCuda();
+
+    // Create the control-key-down/mouse-movement-monitoring thread.
     if (hWnd != nullptr) {
         m_AbortThreadQuitFlag = false;
         m_UseSensoCursor = UseSensoCursor;
@@ -218,8 +221,13 @@ Fractal::InitializeGPUMemory(bool expectedReuse)
         return 0;
     }
 
+    if (m_BypassGpu) {
+        return 1;
+    }
+
+    uint32_t res;
     if (GetIterType() == IterTypeEnum::Bits32) {
-        return m_r.InitializeMemory<uint32_t>((uint32_t)m_CurIters.m_Width,
+        res = m_r.InitializeMemory<uint32_t>((uint32_t)m_CurIters.m_Width,
                                               (uint32_t)m_CurIters.m_Height,
                                               (uint32_t)m_CurIters.m_Antialiasing,
                                               m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
@@ -229,7 +237,7 @@ Fractal::InitializeGPUMemory(bool expectedReuse)
                                               m_PaletteAuxDepth,
                                               expectedReuse);
     } else {
-        return m_r.InitializeMemory<uint64_t>((uint32_t)m_CurIters.m_Width,
+        res = m_r.InitializeMemory<uint64_t>((uint32_t)m_CurIters.m_Width,
                                               (uint32_t)m_CurIters.m_Height,
                                               (uint32_t)m_CurIters.m_Antialiasing,
                                               m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
@@ -239,6 +247,12 @@ Fractal::InitializeGPUMemory(bool expectedReuse)
                                               m_PaletteAuxDepth,
                                               expectedReuse);
     }
+
+    if (res) {
+        m_BypassGpu = true;
+    }
+
+    return res;
 }
 
 void
@@ -649,6 +663,21 @@ Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor)
 
     PointZoomBBConverter ptz{minXFinal, minYFinal, maxXFinal, maxYFinal};
     RecenterViewCalc(ptz);
+}
+
+void
+Fractal::SetupCuda()
+{
+    auto res = GPURenderer::TestCudaIsWorking();
+
+    if (!res) {
+        std::cerr << "CUDA initialization failed.  GPU rendering will be disabled.\n";
+        MessageBoxCudaError(res);
+        m_BypassGpu = true;
+        return;
+    }
+
+    m_BypassGpu = false;
 }
 
 void
@@ -3318,6 +3347,12 @@ Fractal::GetRenderAlgorithm() const
 void
 Fractal::SetRenderAlgorithm(RenderAlgorithm alg)
 {
+    if (m_BypassGpu) {
+        std::cerr << "Bypassing GPU: Ignoring request to set render algorithm."
+                  << std::endl;
+        alg = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
+    }
+
     m_RenderAlgorithm = alg;
     m_RefOrbit.ResetLastUsedOrbit();
 }

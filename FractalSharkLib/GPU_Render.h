@@ -18,6 +18,8 @@ public:
     GPURenderer();
     ~GPURenderer();
 
+    static uint32_t TestCudaIsWorking();
+
     template<typename IterType, class T>
     uint32_t Render(
         RenderAlgorithm algorithm,

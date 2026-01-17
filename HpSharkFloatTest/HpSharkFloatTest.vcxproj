@@ -67,6 +67,7 @@
     </Link>
     <CudaCompile>
       <Include>..\mpir\lib\x64\Debug;</Include>
+      <CudaRuntime>Static</CudaRuntime>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -85,6 +86,7 @@
       <Include>..\mpir\lib\x64\Release;</Include>
       <SplitCompileCustomThreads>
       </SplitCompileCustomThreads>
+      <CudaRuntime>Static</CudaRuntime>
     </CudaCompile>
     <CudaLink />
   </ItemDefinitionGroup>

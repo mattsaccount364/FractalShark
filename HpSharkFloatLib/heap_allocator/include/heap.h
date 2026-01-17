@@ -21,23 +21,22 @@ typedef struct node_t {
     init_free_node_unlinked(uint64_t sz)
     {
         hole = 1;
-        size = sz;
+        user_size = sz;
+        actual_size = sz;
 
         in_bin = NotInBin;
         magic = ClearedMagic;
 
         // Leave in_bin and in_bin_gen alone.
         // Those are changed via mark_in_bin and mark_not_in_bin.
-
-        pad = 0;
-
         // Now treated as freelist links (allocator-owned).
         next = nullptr;
         prev = nullptr;
     }
 
     uint64_t hole;
-    uint64_t size;
+    uint64_t user_size;
+    uint64_t actual_size;
 
     static constexpr uint64_t Magic = 0xDEADBEEFDEADBEEFllu;
     static constexpr uint64_t ClearedMagic = 0xABCDABCDABCDABCDllu;
@@ -46,7 +45,6 @@ typedef struct node_t {
     uint64_t magic;
     uint64_t in_bin;
     uint64_t in_bin_gen;
-    uint64_t pad;
 
     struct node_t *next;
     struct node_t *prev;

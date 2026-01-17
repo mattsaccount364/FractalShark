@@ -281,7 +281,7 @@ HeapCpp::Init()
     CreateFooter(init_region);
 
     // add_node should be the ONLY thing that transitions in_bin from NotInBin->idx.
-    const uint64_t bin = GetBinIndex(init_region->size);
+    const uint64_t bin = GetBinIndex(init_region->actual_size);
     add_node(Heap.bins[bin], init_region, bin);
 
     const uintptr_t start = reinterpret_cast<uintptr_t>(init_region);
@@ -295,7 +295,7 @@ HeapCpp::Init()
 // Allocate
 // ========================================================
 void *
-HeapCpp::Allocate(size_t size)
+HeapCpp::Allocate(size_t user_size)
 {
     if (!Initialized) {
         VectorStaticInit();
@@ -303,19 +303,19 @@ HeapCpp::Allocate(size_t size)
     }
 
     // Round up to nearest 16 bytes
-    size = (size + 0xF) & ~0xF;
+    auto actual_size = (user_size + 0xF) & ~0xF;
 
     // Tail canary space (two u64)
-    size += 16;
+    actual_size += 16;
 
     std::unique_lock<std::mutex> lock(*Mutex);
     auto TryOnce = [&]() -> void * {
-        uint64_t index = GetBinIndex(size);
+        uint64_t index = GetBinIndex(actual_size);
         node_t *found = nullptr;
 
         for (uint64_t i = index; i < HEAP_BIN_COUNT; ++i) {
             bin_t *b = Heap.bins[i];
-            found = get_best_fit(b, size);
+            found = get_best_fit(b, actual_size);
             if (found)
                 break;
         }
@@ -334,14 +334,14 @@ HeapCpp::Allocate(size_t size)
         remove_node(Heap.bins[found_bin_idx], found, found_bin_idx);
 
         // Optional diagnostic (not authoritative):
-        HEAP_ASSERT(found_bin_idx == GetBinIndex(found->size),
+        HEAP_ASSERT(found_bin_idx == GetBinIndex(found->actual_size),
                     "Allocate: found is in wrong bin for its size");
 
         // Split if large enough
-        if ((found->size - size) > (overhead + MIN_ALLOC_SZ)) {
+        if ((found->actual_size - actual_size) > (overhead + MIN_ALLOC_SZ)) {
 
             node_t *split =
-                reinterpret_cast<node_t *>(reinterpret_cast<char *>(found) + overhead + size);
+                reinterpret_cast<node_t *>(reinterpret_cast<char *>(found) + overhead + actual_size);
 
             HEAP_ASSERT(reinterpret_cast<uintptr_t>(split) % alignof(node_t) == 0, "split misaligned");
             HEAP_ASSERT(
@@ -351,7 +351,7 @@ HeapCpp::Allocate(size_t size)
                             (char *)split < (char *)GetFooter(found),
                         "split not inside found block");
 
-            const uint64_t split_payload_sz = found->size - size - overhead;
+            const uint64_t split_payload_sz = found->actual_size - actual_size - overhead;
 
             // IMPORTANT: initialize ALL free-node metadata (incl in_bin) BEFORE add_node.
             split->init_free_node_unlinked(split_payload_sz);
@@ -361,7 +361,8 @@ HeapCpp::Allocate(size_t size)
             add_node(Heap.bins[in_bin], split, in_bin);
 
             // shrink found to requested size (+ canary already included)
-            found->size = static_cast<uint64_t>(size);
+            found->user_size = static_cast<uint64_t>(user_size);
+            found->actual_size = static_cast<uint64_t>(actual_size);
             CreateFooter(found);
         } else {
             CreateFooter(found);
@@ -376,22 +377,22 @@ HeapCpp::Allocate(size_t size)
         found->prev = nullptr;
 
         char *user = (char *)found + sizeof(node_t);
-        SetMagicAtEnd(user, found->size);
+        SetMagicAtEnd(user, found->actual_size);
         return user;
     };
 
     void *res = TryOnce();
     if (!res) {
-        if (Expand(size * 2)) {
+        if (Expand(actual_size * 2)) {
             res = TryOnce();
         }
     }
 
     node_t *wild = GetWilderness();
-    if (wild->size < MIN_WILDERNESS) {
+    if (wild->actual_size < MIN_WILDERNESS) {
         if (!Expand(PAGE_SIZE))
             return nullptr;
-    } else if (wild->size > MAX_WILDERNESS) {
+    } else if (wild->actual_size > MAX_WILDERNESS) {
         Contract(PAGE_SIZE);
     }
 
@@ -400,7 +401,7 @@ HeapCpp::Allocate(size_t size)
     }
 
     Stats.Allocations++;
-    Stats.BytesAllocated += size;
+    Stats.BytesAllocated += actual_size;
     return res;
 }
 
@@ -432,8 +433,8 @@ safe_prev_node(const heap_t &H, node_t *head)
 
     // Optional: sanity that prev's footer points back to prev
     // (catches random pointers early)
-    auto *foot =
-        reinterpret_cast<footer_t *>(reinterpret_cast<char *>(prev) + sizeof(node_t) + prev->size);
+    auto *foot = reinterpret_cast<footer_t *>(reinterpret_cast<char *>(prev) + sizeof(node_t) +
+                                              prev->actual_size);
     if (!ptr_in_heap(H, foot) || foot->header != prev)
         return nullptr;
 
@@ -467,14 +468,14 @@ HeapCpp::Deallocate(void *ptr)
 
     node_t *head = (node_t *)((char *)ptr - sizeof(node_t));
 
-    Stats.BytesFreed += head->size;
+    Stats.BytesFreed += head->actual_size;
     Stats.Frees++;
 
     if (head->magic != node_t::Magic) {
         HeapPanic("Invalid node magic");
     }
 
-    VerifyAndClearMagicAtEnd(ptr, head->size);
+    VerifyAndClearMagicAtEnd(ptr, head->actual_size);
 
     // Identify neighbors in the heap layout (SAFELY)
     footer_t *head_foot = GetFooter(head);
@@ -489,7 +490,7 @@ HeapCpp::Deallocate(void *ptr)
         remove_node(Heap.bins[idx], prev, idx);
 
         // merge
-        prev->size += overhead + head->size;
+        prev->actual_size += overhead + head->actual_size;
         CreateFooter(prev);
         head = prev;
 
@@ -504,23 +505,24 @@ HeapCpp::Deallocate(void *ptr)
         HEAP_ASSERT(bin_contains(Heap.bins[idx], next), "Deallocate: next in_bin mismatch vs list");
         remove_node(Heap.bins[idx], next, idx);
 
-        head->size += overhead + next->size;
+        head->actual_size += overhead + next->actual_size;
 
         // optional clear
         footer_t *old_foot = GetFooter(next);
         old_foot->header = nullptr;
-        next->size = 0;
+        next->user_size = 0;
+        next->actual_size = 0;
         next->hole = 0;
 
         CreateFooter(head);
     }
 
     // Now (coalesced) head becomes a free unlinked node; init metadata BEFORE add_node.
-    const uint64_t final_payload_sz = head->size;
+    const uint64_t final_payload_sz = head->actual_size;
     head->init_free_node_unlinked(final_payload_sz);
     CreateFooter(head);
 
-    const auto in_bin = GetBinIndex(head->size);
+    const auto in_bin = GetBinIndex(head->actual_size);
     add_node(Heap.bins[in_bin], head, in_bin);
 }
 
@@ -533,11 +535,11 @@ HeapCpp::Expand(size_t deltaSizeBytes)
     // Mutex must be held
 
     const auto growSizeBytes = std::max(size_t(GrowByAmtBytes), deltaSizeBytes * 2);
-    const auto size = (growSizeBytes + 0xFFF) & ~0xFFF;
+    const auto actual_size = (growSizeBytes + 0xFFF) & ~0xFFF;
 
-    void *new_end = (char *)Heap.end + size;
+    void *new_end = (char *)Heap.end + actual_size;
 
-    Growable->GrowVectorByAmount(size);
+    Growable->GrowVectorByAmount(actual_size);
 
     node_t *wild = GetWilderness();
 
@@ -546,22 +548,22 @@ HeapCpp::Expand(size_t deltaSizeBytes)
         remove_node(Heap.bins[wild->in_bin], wild, wild->in_bin);
 
         assert_free_unlinked_for_resize(wild, "Expand: wilderness not free/unlinked for resize");
-        wild->size += size;
+        wild->actual_size += actual_size;
         // wilderness is free + unlinked right now; normalize metadata
-        wild->init_free_node_unlinked(wild->size);
+        wild->init_free_node_unlinked(wild->actual_size);
         CreateFooter(wild);
 
-        const auto in_bin = GetBinIndex(wild->size);
+        const auto in_bin = GetBinIndex(wild->actual_size);
         add_node(Heap.bins[in_bin], wild, in_bin);
 
     } else {
         node_t *new_free_block = (node_t *)Heap.end;
-        const uint64_t payload_sz = static_cast<uint64_t>(size - overhead);
+        const uint64_t payload_sz = static_cast<uint64_t>(actual_size - overhead);
 
         new_free_block->init_free_node_unlinked(payload_sz);
         CreateFooter(new_free_block);
 
-        const auto in_bin = GetBinIndex(new_free_block->size);
+        const auto in_bin = GetBinIndex(new_free_block->actual_size);
         add_node(Heap.bins[in_bin], new_free_block, in_bin);
     }
 
@@ -573,11 +575,11 @@ HeapCpp::Expand(size_t deltaSizeBytes)
 // Contract (unchanged logic; shown with no in_bin calls)
 // ========================================================
 bool
-HeapCpp::Contract(size_t size)
+HeapCpp::Contract(size_t actual_size)
 {
     // Mutex must be held
 
-    size = (size + 0xFFF) & ~0xFFF;
+    actual_size = (actual_size + 0xFFF) & ~0xFFF;
 
     node_t *wild = GetWilderness();
 
@@ -586,29 +588,29 @@ HeapCpp::Contract(size_t size)
         return false;
     }
 
-    if (wild->size < size) {
+    if (wild->actual_size < actual_size) {
         return false;
     }
 
-    // Unlink wilderness from its current bin BEFORE changing size.
+    // Unlink wilderness from its current bin BEFORE changing actual_size.
     const uint64_t old_bin = wild->in_bin;
     HEAP_ASSERT(old_bin != node_t::NotInBin, "Contract: wilderness free but NotInBin");
     HEAP_ASSERT(bin_contains(Heap.bins[old_bin], wild), "Contract: wilderness in_bin mismatch vs list");
     remove_node(Heap.bins[old_bin], wild, old_bin);
 
-    // Now safe to mutate size.
-    wild->size -= static_cast<uint64_t>(size);
+    // Now safe to mutate actual_size.
+    wild->actual_size -= static_cast<uint64_t>(actual_size);
 
     // Normalize metadata for a free, unlinked node.
-    wild->init_free_node_unlinked(wild->size);
+    wild->init_free_node_unlinked(wild->actual_size);
     CreateFooter(wild);
 
     // Reinsert into correct bin for new size.
-    const uint64_t new_bin = GetBinIndex(wild->size);
+    const uint64_t new_bin = GetBinIndex(wild->actual_size);
     add_node(Heap.bins[new_bin], wild, new_bin);
 
     // Shrink heap end pointer.
-    Heap.end -= size;
+    Heap.end -= actual_size;
     return true;
 }
 
@@ -631,7 +633,7 @@ HeapCpp::CountAllocations() const
         }
 
         // Move to the next node by advancing by the size of the current node plus the overhead
-        current_address += sizeof(node_t) + current_node->size + sizeof(footer_t);
+        current_address += sizeof(node_t) + current_node->actual_size + sizeof(footer_t);
     }
 
     return count;
@@ -679,7 +681,7 @@ HeapCpp::CreateFooter(node_t *head)
 footer_t *
 HeapCpp::GetFooter(node_t *head)
 {
-    return (footer_t *)((char *)head + sizeof(node_t) + head->size);
+    return (footer_t *)((char *)head + sizeof(node_t) + head->actual_size);
 }
 
 // ========================================================
@@ -731,34 +733,33 @@ CppFree(void *ptr)
 }
 
 void *
-CppRealloc(void *ptr, size_t newSize, bool zeroNew)
+CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
 {
     if (!ptr) {
-        return CppMalloc(newSize);
+        return CppMalloc(newUserSize);
     }
 
-    if (newSize == 0) {
+    if (newUserSize == 0) {
         CppFree(ptr);
         return nullptr;
     }
 
-    void *newPtr = CppMalloc(newSize);
+    void *newPtr = CppMalloc(newUserSize);
     if (!newPtr) {
         return nullptr;
     }
 
-    // Find the old size:
     const auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(ptr) - sizeof(node_t));
+    const size_t oldUsableSize = node->user_size;
+    const size_t copyUserSize = std::min(oldUsableSize, newUserSize);
+    std::memcpy(newPtr, ptr, copyUserSize);
 
-    // Assume the size is stored somehow, or manage separately in the Heap class
-    std::memcpy(newPtr, ptr, std::min(node->size, newSize));
-    CppFree(ptr);
-
-    // Erase any new memory if requested
-    if (zeroNew && newSize > node->size) {
-        std::memset(static_cast<char *>(newPtr) + node->size, 0, newSize - node->size);
+    // Zero newly extended region if requested
+    if (zeroNew && newUserSize > oldUsableSize) {
+        std::memset(static_cast<char *>(newPtr) + oldUsableSize, 0, newUserSize - oldUsableSize);
     }
 
+    CppFree(ptr);
     return newPtr;
 }
 
@@ -959,7 +960,7 @@ _msize_dbg(void *block, int /*block_use*/)
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
         auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(block) - sizeof(node_t));
-        return node->size;
+        return node->user_size;
     }
 
     SIZE_T s = HeapSize(ProcHeap(), 0, block);

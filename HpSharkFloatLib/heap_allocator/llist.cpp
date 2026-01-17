@@ -150,7 +150,7 @@ add_node(bin_t *bin, node_t *node, uint64_t in_bin)
     node_t *current = bin->head;
     node_t *previous = nullptr;
 
-    while (current && current->size <= node->size) {
+    while (current && current->actual_size <= node->actual_size) {
         previous = current;
         current = current->next;
     }
@@ -228,7 +228,7 @@ get_best_fit(bin_t *bin, size_t size) {
     node_t *temp = bin->head;
 
     while (temp != NULL) {
-        if (temp->size >= size) {
+        if (temp->actual_size >= size) {
             return temp; // found a fit!
         }
         temp = temp->next;

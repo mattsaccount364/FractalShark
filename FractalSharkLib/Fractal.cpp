@@ -38,7 +38,22 @@ Fractal::~Fractal() { Uninitialize(); }
 void
 Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
 {
-    SetupCuda();
+    m_BypassGpu = true;
+    auto SetupCuda = [&]() {
+        auto res = GPURenderer::TestCudaIsWorking();
+
+        if (!res) {
+            std::cerr << "CUDA initialization failed.  GPU rendering will be disabled.\n";
+            MessageBoxCudaError(res);
+            m_BypassGpu = true;
+            return;
+        }
+
+        m_BypassGpu = false;
+    };
+
+    std::vector<std::unique_ptr<std::thread>> threads;
+    auto setupThread = std::make_unique<std::thread>(SetupCuda);
 
     // Create the control-key-down/mouse-movement-monitoring thread.
     if (hWnd != nullptr) {
@@ -58,9 +73,7 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
 
         m_CheckForAbortThread = nullptr;
     }
-
-    InitialDefaultViewAndSettings(width, height);
-
+    
     m_AsyncRenderThreadState = AsyncRenderThreadState::Idle;
     m_AsyncRenderThreadFinish = false;
     m_AsyncRenderThread = std::make_unique<std::thread>(DrawAsyncGpuFractalThreadStatic, this);
@@ -133,8 +146,6 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
         m_PalIters[i].resize(NumBitDepths);
     }
 
-    std::vector<std::unique_ptr<std::thread>> threads;
-
     threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPalette::Default, 0, 5));
     threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPalette::Default, 1, 6));
     threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPalette::Default, 2, 8));
@@ -161,7 +172,7 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPalette::Summer, 3, 12));
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPalette::Summer, 4, 16));
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPalette::Summer, 5, 20));
-
+     
     for (size_t i = 0; i < std::thread::hardware_concurrency(); i++) {
         m_DrawThreads.emplace_back(std::make_unique<DrawThreadSync>(i, nullptr, m_DrawThreadAtomics));
     }
@@ -171,25 +182,21 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
         m_DrawThreads[i]->m_Thread = std::move(thread);
     }
 
-    // Allocate the iterations array.
-    InitializeMemory();
-
     // Set up random palette.
     CreateNewFractalPalette();
+
+    // This one needs to be done before setting up the view.
+    setupThread->join();
+
+    InitialDefaultViewAndSettings(width, height);
+
+    // Allocate the iterations array.
+    InitializeMemory();
 
     // Wait for all this shit to get done
     for (auto &it : threads) {
         it->join();
     }
-
-    m_PaletteRotate = 0;
-    m_PaletteDepthIndex = 2;
-    m_PaletteAuxDepth = 0;
-    UsePaletteType(FractalPalette::Default);
-    UsePalette(8);
-
-    // Make sure the screen is completely redrawn the first time.
-    ChangedMakeDirty();
 }
 
 void
@@ -228,24 +235,24 @@ Fractal::InitializeGPUMemory(bool expectedReuse)
     uint32_t res;
     if (GetIterType() == IterTypeEnum::Bits32) {
         res = m_r.InitializeMemory<uint32_t>((uint32_t)m_CurIters.m_Width,
-                                              (uint32_t)m_CurIters.m_Height,
-                                              (uint32_t)m_CurIters.m_Antialiasing,
-                                              m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
-                                              m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
-                                              m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
-                                              m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
-                                              m_PaletteAuxDepth,
-                                              expectedReuse);
+                                             (uint32_t)m_CurIters.m_Height,
+                                             (uint32_t)m_CurIters.m_Antialiasing,
+                                             m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
+                                             m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
+                                             m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
+                                             m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
+                                             m_PaletteAuxDepth,
+                                             expectedReuse);
     } else {
         res = m_r.InitializeMemory<uint64_t>((uint32_t)m_CurIters.m_Width,
-                                              (uint32_t)m_CurIters.m_Height,
-                                              (uint32_t)m_CurIters.m_Antialiasing,
-                                              m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
-                                              m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
-                                              m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
-                                              m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
-                                              m_PaletteAuxDepth,
-                                              expectedReuse);
+                                             (uint32_t)m_CurIters.m_Height,
+                                             (uint32_t)m_CurIters.m_Antialiasing,
+                                             m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
+                                             m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
+                                             m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
+                                             m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
+                                             m_PaletteAuxDepth,
+                                             expectedReuse);
     }
 
     if (res) {
@@ -666,21 +673,6 @@ Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor)
 }
 
 void
-Fractal::SetupCuda()
-{
-    auto res = GPURenderer::TestCudaIsWorking();
-
-    if (!res) {
-        std::cerr << "CUDA initialization failed.  GPU rendering will be disabled.\n";
-        MessageBoxCudaError(res);
-        m_BypassGpu = true;
-        return;
-    }
-
-    m_BypassGpu = false;
-}
-
-void
 Fractal::InitialDefaultViewAndSettings(int width, int height)
 {
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2));
@@ -722,6 +714,14 @@ Fractal::InitialDefaultViewAndSettings(int width, int height)
     // View(11);
     // View(14);
     // View(27); // extremely hard
+
+    m_PaletteRotate = 0;
+    m_PaletteDepthIndex = 2;
+    m_PaletteAuxDepth = 0;
+    UsePaletteType(FractalPalette::Default);
+    UsePalette(8);
+
+    // Make sure the screen is completely redrawn the first time.
     ChangedMakeDirty();
 
     // Doesn't do anything with the palette.
@@ -3348,8 +3348,7 @@ void
 Fractal::SetRenderAlgorithm(RenderAlgorithm alg)
 {
     if (m_BypassGpu) {
-        std::cerr << "Bypassing GPU: Ignoring request to set render algorithm."
-                  << std::endl;
+        std::cerr << "Bypassing GPU: Ignoring request to set render algorithm." << std::endl;
         alg = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
     }
 

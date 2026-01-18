@@ -58,7 +58,6 @@ public:
         uint64_t commitLimitInBytes);
     ~Fractal();
 
-    void SetupCuda();
     void InitialDefaultViewAndSettings(int width = 0, int height = 0);
 
     static unsigned long WINAPI CheckForAbortThread(void *fractal);

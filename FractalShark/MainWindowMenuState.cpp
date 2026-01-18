@@ -30,8 +30,9 @@ MainWindowMenuState::IsEnabled(DynamicPopupMenu::Rule rule) const noexcept
         case Rule::EnableIfCpuActive:
             return true; // CPU always exists
 
+        // The next two are really just buggy menu items that could probably be removed.
         case Rule::EnableIfPerturbationAvailable:
-            return true;
+            return false;
 
         case Rule::EnableIfPaletteRotationSupported:
             return false;

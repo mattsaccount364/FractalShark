@@ -12,6 +12,7 @@
 #include "OpenGLContext.h"
 #include "PngParallelSave.h"
 #include "RecommendedSettings.h"
+#include "SplashWindow.h"
 #include "WaitCursor.h"
 #include "resource.h"
 
@@ -42,13 +43,22 @@ MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) : commandDispatcher(*t
     // Initialize global strings
     MyRegisterClass(hInstance);
 
+    // --- Splash (separate UI thread) ---
+    splash_.Start(hInstance);
+
+    auto startupBackgroundConsole = []() { AttachBackgroundConsole(true); };
+    auto threadConsole = std::thread(startupBackgroundConsole);
+
     // Perform application initialization:
     hWnd = InitInstance(hInstance, nCmdShow);
     if (!hWnd) {
         throw FractalSharkSeriousException("Failed to create window.");
     }
+    
+    threadConsole.join();
 
-    AttachBackgroundConsole(true);
+    // Main window is ready; close splash now.
+    splash_.Stop();
 
     ImaginaMenu = nullptr;
     LoadSubMenu = nullptr;
@@ -80,23 +90,26 @@ MainWindow::MainWindow::DrawFractalShark()
 ATOM
 MainWindow::MyRegisterClass(HINSTANCE hInstance)
 {
-    WNDCLASSEX wcex;
-
-    wcex.cbSize = sizeof(WNDCLASSEX);
+    WNDCLASSEXW wcex{};
+    wcex.cbSize = sizeof(wcex);
 
     wcex.style = CS_OWNDC;
     wcex.lpfnWndProc = (WNDPROC)StaticWndProc;
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = sizeof(MainWindow *);
     wcex.hInstance = hInstance;
-    wcex.hIcon = LoadIcon(hInstance, (LPCTSTR)IDI_FRACTALS);
-    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = nullptr;
+    wcex.hIcon = LoadIconW(hInstance, (LPCWSTR)IDI_FRACTALS);
+    wcex.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+
+    // IMPORTANT: avoid the default white erase/paint before your first draw.
+    // This makes the client area reliably black from the first frame.
+    wcex.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = szWindowClass;
-    wcex.hIconSm = LoadIcon(wcex.hInstance, (LPCTSTR)IDI_SMALL);
+    wcex.hIconSm = LoadIconW(hInstance, (LPCWSTR)IDI_SMALL);
 
-    return RegisterClassEx(&wcex);
+    return RegisterClassExW(&wcex);
 }
 
 HWND
@@ -111,28 +124,24 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     const int vWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
     const int vHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
-    int startX = 0, startY = 0;
-    int width = 0, height = 0;
-
-    // --- Splash: always windowed centered square-ish ---
-    width = std::min(vWidth / 2, vHeight / 2);
-    height = width;
-    startX = vLeft + (vWidth - width) / 2;
-    startY = vTop + (vHeight - height) / 2;
+    // Default "start windowed" geometry (you can tweak)
+    int startX = vLeft + (vWidth / 8);
+    int startY = vTop + (vHeight / 8);
+    int width = (vWidth * 3) / 4;
+    int height = (vHeight * 3) / 4;
 
     if constexpr (forceStartWidth)
         width = (int)forceStartWidth;
     if constexpr (forceStartHeight)
         height = (int)forceStartHeight;
 
-    // --- SPLASH WINDOW: borderless ---
-    // Create hidden first to prevent Windows from applying "restore placement" at first show.
-    DWORD style = WS_POPUP;
-    DWORD exStyle = WS_EX_APPWINDOW | WS_EX_LAYERED; // taskbar + layered
+    // Create MAIN WINDOW hidden (do NOT show until gFractal is ready)
+    DWORD style = WS_OVERLAPPEDWINDOW; // no WS_VISIBLE
+    DWORD exStyle = WS_EX_APPWINDOW;
 
     hWnd = CreateWindowExW(exStyle,
                            szWindowClass,
-                           L"",
+                           L"FractalShark",
                            style,
                            startX,
                            startY,
@@ -147,74 +156,39 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
         return nullptr;
     }
 
-    // Store "this" in the extra bytes *immediately*.
+    // Store "this" in the extra bytes immediately (StaticWndProc needs it)
     SetWindowLongPtrW(hWnd, 0, (LONG_PTR)this);
 
-    // Start fully transparent (layered already set via CreateWindowEx)
-    SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 0, LWA_ALPHA);
-
-    // Force the initial placement BEFORE first show (this matters).
-    SetWindowPos(hWnd,
-                 nullptr,
-                 startX,
-                 startY,
-                 width,
-                 height,
-                 SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-
-    // Show splash deterministically
-    DrawFractalSharkGdi(SW_SHOWNORMAL);
-
-    // Create menu
+    // Create menu / popup (doesn't require the window to be shown)
     gPopupMenu = FractalShark::DynamicPopupMenu::Create();
-    FractalShark::DynamicPopupMenu::SetCurrentRenderAlgorithmId(IDM_ALG_AUTO);
 
-    // Create fractal using current client size
-    RECT rt{};
-    GetClientRect(hWnd, &rt);
+    // Don't set default algorithm on menu yet; wait until gFractal exists.
 
-    gFractal =
-        std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false, gJobObj->GetCommitLimitInBytes());
+    // Apply your preferred mode while still hidden
+    SetModeWindowed(startWindowed);
 
-    SetModeWindowed(true);
-
-    // --- MAIN WINDOW: borderless fullscreen ---
+    // If you want to end fullscreen immediately, do it here (still hidden)
     if constexpr (finishWindowed == false) {
 
-        // Hide during transition so Windows doesn't "restore" over your SetWindowPos.
-        ShowWindow(hWnd, SW_HIDE);
+        SetModeWindowed(false);
 
-        // Borderless popup style (remove any leftover bits defensively)
-        LONG_PTR newStyle = GetWindowLongPtrW(hWnd, GWL_STYLE);
-        newStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-        newStyle |= WS_POPUP;
-        SetWindowLongPtrW(hWnd, GWL_STYLE, newStyle);
-
-        LONG_PTR newEx = GetWindowLongPtrW(hWnd, GWL_EXSTYLE);
-        newEx |= WS_EX_APPWINDOW;
-        // keep WS_EX_LAYERED
-        // newEx &= ~WS_EX_LAYERED;
-        SetWindowLongPtrW(hWnd, GWL_EXSTYLE, newEx);
-
-        // Pick monitor nearest the *current* window (splash) position.
+        // Pick monitor nearest current window
         HMONITOR mon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi{};
         mi.cbSize = sizeof(mi);
         GetMonitorInfoW(mon, &mi);
-
         RECT r = mi.rcMonitor;
 
-        // --- CRITICAL: also set "normal" placement so Windows stops restoring elsewhere ---
+        // Force "normal" placement so Windows stops restoring elsewhere
         WINDOWPLACEMENT wp{};
         wp.length = sizeof(wp);
-        wp.showCmd = SW_SHOWNORMAL;
+        wp.showCmd = 0;
         wp.flags = 0;
         wp.ptMinPosition = {0, 0};
         wp.ptMaxPosition = {0, 0};
         wp.rcNormalPosition = r;
         SetWindowPlacement(hWnd, &wp);
 
-        // Apply bounds
         SetWindowPos(hWnd,
                      HWND_NOTOPMOST,
                      r.left,
@@ -222,20 +196,37 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
                      r.right - r.left,
                      r.bottom - r.top,
                      SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE);
-
-        // Now show
-        ShowWindow(hWnd, SW_SHOW);
-        UpdateWindow(hWnd);
-
-        SetModeWindowed(false);
-
-        // Update fractal dims after resize
-        GetClientRect(hWnd, &rt);
-        gFractal->ResetDimensions(rt.right, rt.bottom);
     }
+
+    // Create fractal using FINAL client size
+    RECT rt{};
+    GetClientRect(hWnd, &rt);
+
+    gFractal =
+        std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false, gJobObj->GetCommitLimitInBytes());
+
+    // TODO kind of gross but it works, reset now that gFractal exists.  If CPU-only is enforced,
+    // this will show the radio button the menu properly.  Without this, the menu is out of sync
+    // until the user changes algorithm manually.
+    commandDispatcher.Dispatch(IDM_ALG_AUTO);
+
+    // Optional: force an initial black fill before first show (prevents any flash)
+    {
+        HDC dc = GetDC(hWnd);
+        RECT rc{};
+        GetClientRect(hWnd, &rc);
+        FillRect(dc, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
+        ReleaseDC(hWnd, dc);
+    }
+
+    // Now show exactly once
+    ShowWindow(hWnd, SW_SHOW);
+    UpdateWindow(hWnd);
 
     return hWnd;
 }
+
+
 
 void
 MainWindow::ApplyBorderlessWindowedStyle()
@@ -270,99 +261,6 @@ MainWindow::SetModeWindowed(bool enableWindowed)
         ApplyBorderlessFullscreenStyle();
         // SetWindowPos to monitor rect
     }
-}
-
-void
-MainWindow::DrawFractalSharkGdi(int /*nCmdShow*/)
-{
-    static std::mt19937 rng{std::random_device{}()};
-    static std::uniform_int_distribution<int> dist(0, 2);
-
-    const int choice = dist(rng);
-
-    LPCWSTR resStr = nullptr;
-    switch (choice) {
-        case 0:
-            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH1);
-            break;
-        case 1:
-            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH2);
-            break;
-        case 2:
-            resStr = MAKEINTRESOURCE(IDB_PNG_SPLASH3);
-            break;
-    }
-
-    HRSRC hRes = FindResource(hInst, resStr, L"PNG");
-    if (!hRes)
-        return;
-
-    HGLOBAL hResData = LoadResource(hInst, hRes);
-    if (!hResData)
-        return;
-
-    void *pResData = LockResource(hResData);
-    if (!pResData)
-        return;
-
-    DWORD dwSize = SizeofResource(hInst, hRes);
-    if (!dwSize)
-        return;
-
-    WPngImage image{};
-    image.loadImageFromRAM(pResData, dwSize, WPngImage::PixelFormat::kPixelFormat_RGBA8);
-
-    std::vector<uint8_t> imageBytes(image.width() * image.height() * 4);
-
-    for (int y = 0; y < image.height(); y++) {
-        for (int x = 0; x < image.width(); x++) {
-            auto pixel = image.get8(x, y);
-            imageBytes[(y * image.width() + x) * 4 + 0] = pixel.b;
-            imageBytes[(y * image.width() + x) * 4 + 1] = pixel.g;
-            imageBytes[(y * image.width() + x) * 4 + 2] = pixel.r;
-            imageBytes[(y * image.width() + x) * 4 + 3] = pixel.a;
-        }
-    }
-
-    // Deterministic first show (avoid "restore placement" nonsense)
-    ShowWindow(hWnd, SW_SHOWNOACTIVATE);
-    UpdateWindow(hWnd);
-
-    RECT windowDimensions{};
-    GetClientRect(hWnd, &windowDimensions);
-
-    HDC hdc = GetDC(hWnd);
-    HDC hdcMem = CreateCompatibleDC(hdc);
-    HBITMAP hBitmap = CreateBitmap(image.width(), image.height(), 1, 32, imageBytes.data());
-
-    SelectObject(hdcMem, hBitmap);
-
-    const int windowWidth = (int)windowDimensions.right;
-    const int windowHeight = (int)windowDimensions.bottom;
-
-    SetStretchBltMode(hdc, HALFTONE);
-    SetBrushOrgEx(hdc, 0, 0, nullptr);
-
-    RECT rt{};
-    GetClientRect(hWnd, &rt);
-    FillRect(hdc, &rt, (HBRUSH)GetStockObject(BLACK_BRUSH));
-
-    const int startX = (windowWidth - image.width()) / 2;
-    const int startY = (windowHeight - image.height()) / 2;
-
-    if (windowWidth < image.width() || windowHeight < image.height()) {
-        StretchBlt(
-            hdc, 0, 0, windowWidth, windowHeight, hdcMem, 0, 0, image.width(), image.height(), SRCCOPY);
-    } else {
-        BitBlt(hdc, startX, startY, image.width(), image.height(), hdcMem, 0, 0, SRCCOPY);
-    }
-
-    // Make opaque once painted
-    SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 255, LWA_ALPHA);
-
-    DeleteObject(hBitmap);
-    DeleteDC(hdcMem);
-    ReleaseDC(hWnd, hdc);
 }
 
 //
@@ -1592,7 +1490,10 @@ MainWindow::LoadRefOrbit(CompressToDisk compressToDisk,
     // to 64-bit, just leave it.  The "Auto" concept is kind of weird in
     // this context.
     if (settings.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
-        gFractal->SetRenderAlgorithm(settings.GetRenderAlgorithm());
+        const bool success = gFractal->SetRenderAlgorithm(settings.GetRenderAlgorithm());
+        if (!success) {
+            std::wcerr << L"Warning: Could not set render algorithm to AUTO." << std::endl;
+        }
     }
 }
 

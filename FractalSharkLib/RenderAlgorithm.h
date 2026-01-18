@@ -1,11 +1,13 @@
 #pragma once
 
-#include <string>
 #include <array>
 #include <optional>
+#include <string>
 
-#include "HighPrecision.h"
 #include "HDRFloat.h"
+#include "HighPrecision.h"
+
+enum class RequiresGpu { No, Yes };
 
 enum class LAv2Mode {
     Invalid,
@@ -43,26 +45,23 @@ enum class TestViewEnum {
     View27 = 27,
 };
 
-template<typename Key, typename Value, size_t Size, Value MissingVal>
-struct ConstexprMap {
+template <typename Key, typename Value, size_t Size, Value MissingVal> struct ConstexprMap {
     std::array<std::pair<Key, Value>, static_cast<size_t>(Size)> data;
 
     using ConstExprMap = ConstexprMap<Key, Value, Size, MissingVal>;
 
     constexpr ConstexprMap() = default;
-    constexpr ConstexprMap(const ConstexprMap &other) :
-        data(other.data) {
-    }
-    constexpr ConstexprMap(ConstexprMap &&other) :
-        data(std::move(other.data)) {
-    }
+    constexpr ConstexprMap(const ConstexprMap &other) : data(other.data) {}
+    constexpr ConstexprMap(ConstexprMap &&other) : data(std::move(other.data)) {}
     constexpr ConstexprMap &operator=(const ConstexprMap &other) = default;
     constexpr ConstexprMap &operator=(ConstexprMap &&other) = default;
 
     constexpr ConstexprMap(std::array<std::pair<Key, Value>, Size> &&data) : data(std::move(data)) {}
     constexpr ConstexprMap(std::array<std::pair<Key, Value>, Size> &data) : data(data) {}
 
-    constexpr TestViewEnum Lookup(const Key &key) const {
+    constexpr TestViewEnum
+    Lookup(const Key &key) const
+    {
         for (const auto &[k, v] : data) {
             if (k == key) {
                 return v;
@@ -73,11 +72,10 @@ struct ConstexprMap {
     }
 };
 
-using TestViewMap = ConstexprMap<
-    TestTypeEnum,
-    TestViewEnum,
-    static_cast<size_t>(TestTypeEnum::End),
-    TestViewEnum::Disabled>;
+using TestViewMap = ConstexprMap<TestTypeEnum,
+                                 TestViewEnum,
+                                 static_cast<size_t>(TestTypeEnum::End),
+                                 TestViewEnum::Disabled>;
 
 // These should match the UI menu for sanity's sake
 enum class RenderAlgorithmEnum {
@@ -160,8 +158,7 @@ enum class RenderAlgorithmEnum {
     MAX
 };
 
-template<RenderAlgorithmEnum RenderEnum>
-class RenderAlgorithmCompileTime {
+template <RenderAlgorithmEnum RenderEnum> class RenderAlgorithmCompileTime {
 public:
     static const RenderAlgorithmEnum Algorithm = RenderEnum;
     static const char *AlgorithmStr;
@@ -169,13 +166,13 @@ public:
     static bool RequiresCompression;
     static bool RequiresReferencePoints;
     static LAv2Mode LAv2;
+    static RequiresGpu Gpu;
 
     static bool TestIncludeInBasic;
     static bool TestIncludeInView5;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::CpuHigh;
     static constexpr char AlgorithmStr[] = "CpuHigh";
@@ -184,20 +181,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = HighPrecision;
     using OriginatingType = MainType;
     using SubType = HighPrecision;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Cpu64;
     static constexpr char AlgorithmStr[] = "Cpu64";
@@ -206,20 +201,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR32> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR32> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::CpuHDR32;
     static constexpr char AlgorithmStr[] = "CpuHDR32";
@@ -228,20 +221,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR64> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR64> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::CpuHDR64;
     static constexpr char AlgorithmStr[] = "CpuHDR64";
@@ -250,20 +241,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLA> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLA> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Cpu64PerturbedBLA;
     static constexpr char AlgorithmStr[] = "Cpu64PerturbedBLA";
@@ -272,20 +261,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAHDR> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAHDR> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Cpu32PerturbedBLAHDR;
     static constexpr char AlgorithmStr[] = "Cpu32PerturbedBLAHDR";
@@ -294,20 +281,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAHDR> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAHDR> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Cpu64PerturbedBLAHDR;
     static constexpr char AlgorithmStr[] = "Cpu64PerturbedBLAHDR";
@@ -316,21 +301,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR;
     static constexpr char AlgorithmStr[] = "Cpu32PerturbedBLAV2HDR";
@@ -339,20 +321,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR;
     static constexpr char AlgorithmStr[] = "Cpu64PerturbedBLAV2HDR";
@@ -361,20 +341,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-         {
-             std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-             }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR;
     static constexpr char AlgorithmStr[] = "Cpu32PerturbedRCBLAV2HDR";
@@ -383,20 +361,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR;
     static constexpr char AlgorithmStr[] = "Cpu64PerturbedRCBLAV2HDR";
@@ -405,20 +381,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x32;
     static constexpr char AlgorithmStr[] = "Gpu1x32";
@@ -427,21 +401,19 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x32;
     static constexpr char AlgorithmStr[] = "Gpu2x32";
@@ -450,21 +422,19 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x32> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x32> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu4x32;
     static constexpr char AlgorithmStr[] = "Gpu4x32";
@@ -473,20 +443,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = void;
     using OriginatingType = MainType;
     using SubType = void;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x64;
     static constexpr char AlgorithmStr[] = "Gpu1x64";
@@ -495,21 +463,19 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x64> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x64> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x64;
     static constexpr char AlgorithmStr[] = "Gpu2x64";
@@ -518,20 +484,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = void;
     using OriginatingType = MainType;
     using SubType = void;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x64> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x64> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu4x64;
     static constexpr char AlgorithmStr[] = "Gpu4x64";
@@ -540,20 +504,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = void;
     using OriginatingType = MainType;
     using SubType = void;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32;
     static constexpr char AlgorithmStr[] = "GpuHDRx32";
@@ -562,21 +524,19 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedScaled> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedScaled> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x32PerturbedScaled;
     static constexpr char AlgorithmStr[] = "Gpu1x32PerturbedScaled";
@@ -585,21 +545,19 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedScaled> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedScaled> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x32PerturbedScaled;
     static constexpr char AlgorithmStr[] = "Gpu2x32PerturbedScaled";
@@ -608,21 +566,19 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedScaled> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedScaled> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32PerturbedScaled;
     static constexpr char AlgorithmStr[] = "GpuHDRx32PerturbedScaled";
@@ -631,22 +587,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedBLA> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedBLA> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x64PerturbedBLA;
     static constexpr char AlgorithmStr[] = "Gpu1x64PerturbedBLA";
@@ -655,21 +609,19 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedBLA> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedBLA> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32PerturbedBLA;
     static constexpr char AlgorithmStr[] = "GpuHDRx32PerturbedBLA";
@@ -678,22 +630,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedBLA> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedBLA> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx64PerturbedBLA;
     static constexpr char AlgorithmStr[] = "GpuHDRx64PerturbedBLA";
@@ -702,22 +652,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x32PerturbedLAv2;
     static constexpr char AlgorithmStr[] = "Gpu1x32PerturbedLAv2";
@@ -726,20 +674,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO;
     static constexpr char AlgorithmStr[] = "Gpu1x32PerturbedLAv2PO";
@@ -748,20 +694,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO;
     static constexpr char AlgorithmStr[] = "Gpu1x32PerturbedLAv2LAO";
@@ -770,20 +714,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2;
     static constexpr char AlgorithmStr[] = "Gpu1x32PerturbedRCLAv2";
@@ -792,20 +734,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO;
     static constexpr char AlgorithmStr[] = "Gpu1x32PerturbedRCLAv2PO";
@@ -814,20 +754,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO;
     static constexpr char AlgorithmStr[] = "Gpu1x32PerturbedRCLAv2LAO";
@@ -836,20 +774,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x32PerturbedLAv2;
     static constexpr char AlgorithmStr[] = "Gpu2x32PerturbedLAv2";
@@ -858,20 +794,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO;
     static constexpr char AlgorithmStr[] = "Gpu2x32PerturbedLAv2PO";
@@ -880,20 +814,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO;
     static constexpr char AlgorithmStr[] = "Gpu2x32PerturbedLAv2LAO";
@@ -902,20 +834,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2;
     static constexpr char AlgorithmStr[] = "Gpu2x32PerturbedRCLAv2";
@@ -924,20 +854,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO;
     static constexpr char AlgorithmStr[] = "Gpu2x32PerturbedRCLAv2PO";
@@ -946,20 +874,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO;
     static constexpr char AlgorithmStr[] = "Gpu2x32PerturbedRCLAv2LAO";
@@ -968,20 +894,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x64PerturbedLAv2;
     static constexpr char AlgorithmStr[] = "Gpu1x64PerturbedLAv2";
@@ -990,25 +914,24 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-            // std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12}, // should not crash but does
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
+        // std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12}, // should not crash but
+        // does
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO;
     static constexpr char AlgorithmStr[] = "Gpu1x64PerturbedLAv2PO";
@@ -1017,21 +940,19 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO;
     static constexpr char AlgorithmStr[] = "Gpu1x64PerturbedLAv2LAO";
@@ -1040,20 +961,18 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2;
     static constexpr char AlgorithmStr[] = "Gpu1x64PerturbedRCLAv2";
@@ -1062,25 +981,24 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-            // std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12}, // should not crash but does
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
+        // std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12}, // should not crash but
+        // does
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO;
     static constexpr char AlgorithmStr[] = "Gpu1x64PerturbedRCLAv2PO";
@@ -1089,21 +1007,19 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO;
     static constexpr char AlgorithmStr[] = "Gpu1x64PerturbedRCLAv2LAO";
@@ -1112,20 +1028,18 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+    }};
 
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2;
     static constexpr char AlgorithmStr[] = "GpuHDRx32PerturbedLAv2";
@@ -1134,29 +1048,27 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
-            std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
-            std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
+        std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
+        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO;
     static constexpr char AlgorithmStr[] = "GpuHDRx32PerturbedLAv2PO";
@@ -1165,22 +1077,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO;
     static constexpr char AlgorithmStr[] = "GpuHDRx32PerturbedLAv2LAO";
@@ -1189,22 +1099,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2;
     static constexpr char AlgorithmStr[] = "GpuHDRx32PerturbedRCLAv2";
@@ -1213,29 +1121,27 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
-            std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
-            std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
+        std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
+        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO;
     static constexpr char AlgorithmStr[] = "GpuHDRx32PerturbedRCLAv2PO";
@@ -1244,22 +1150,20 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO;
     static constexpr char AlgorithmStr[] = "GpuHDRx32PerturbedRCLAv2LAO";
@@ -1268,22 +1172,20 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2;
     static constexpr char AlgorithmStr[] = "GpuHDRx2x32PerturbedLAv2";
@@ -1292,26 +1194,24 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
+    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO;
     static constexpr char AlgorithmStr[] = "GpuHDRx2x32PerturbedLAv2PO";
@@ -1320,22 +1220,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO;
     static constexpr char AlgorithmStr[] = "GpuHDRx2x32PerturbedLAv2LAO";
@@ -1344,22 +1242,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2;
     static constexpr char AlgorithmStr[] = "GpuHDRx2x32PerturbedRCLAv2";
@@ -1368,28 +1264,26 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            std::pair{TestTypeEnum::View27, TestViewEnum::View27},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+        std::pair{TestTypeEnum::View27, TestViewEnum::View27},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
+    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO;
     static constexpr char AlgorithmStr[] = "GpuHDRx2x32PerturbedRCLAv2PO";
@@ -1398,22 +1292,20 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO;
     static constexpr char AlgorithmStr[] = "GpuHDRx2x32PerturbedRCLAv2LAO";
@@ -1422,22 +1314,20 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2;
     static constexpr char AlgorithmStr[] = "GpuHDRx64PerturbedLAv2";
@@ -1446,29 +1336,27 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
-            std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
-            std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
+        std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
+        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO;
     static constexpr char AlgorithmStr[] = "GpuHDRx64PerturbedLAv2PO";
@@ -1477,22 +1365,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO;
     static constexpr char AlgorithmStr[] = "GpuHDRx64PerturbedLAv2LAO";
@@ -1501,22 +1387,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2;
     static constexpr char AlgorithmStr[] = "GpuHDRx64PerturbedRCLAv2";
@@ -1525,29 +1409,27 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
-            std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
-            std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-        }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
+        std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
+        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO;
     static constexpr char AlgorithmStr[] = "GpuHDRx64PerturbedRCLAv2PO";
@@ -1556,22 +1438,20 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO;
     static constexpr char AlgorithmStr[] = "GpuHDRx64PerturbedRCLAv2LAO";
@@ -1580,22 +1460,20 @@ public:
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::AUTO;
     static constexpr char AlgorithmStr[] = "AutoSelect";
@@ -1604,22 +1482,20 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-            std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-            std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-            }
-    };
+    static constexpr TestViewMap TestInclude{{
+        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
+        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
+        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
+    }};
 
     using MainType = void;
     using OriginatingType = MainType;
     using SubType = void;
 };
 
-template<>
-class RenderAlgorithmCompileTime<RenderAlgorithmEnum::MAX> {
+template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::MAX> {
 public:
     static constexpr RenderAlgorithmEnum Algorithm = RenderAlgorithmEnum::MAX;
     static constexpr char AlgorithmStr[] = "MAX";
@@ -1628,11 +1504,9 @@ public:
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
+    static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{
-        {
-            }
-    };
+    static constexpr TestViewMap TestInclude{{}};
 
     using MainType = void;
     using OriginatingType = MainType;
@@ -1640,239 +1514,247 @@ public:
 };
 
 // operator== for RenderAlgorithmCompileTime.  Use templates.
-template<typename RenderAlgCompileTimeRhs, typename RenderAlgCompileTimeLhs>
-constexpr bool operator== (RenderAlgCompileTimeRhs, RenderAlgCompileTimeLhs)
-    requires std::is_base_of_v<RenderAlgorithmCompileTime<RenderAlgCompileTimeRhs::Algorithm>, RenderAlgCompileTimeRhs>
+template <typename RenderAlgCompileTimeRhs, typename RenderAlgCompileTimeLhs>
+constexpr bool
+operator==(RenderAlgCompileTimeRhs, RenderAlgCompileTimeLhs)
+requires std::is_base_of_v<RenderAlgorithmCompileTime<RenderAlgCompileTimeRhs::Algorithm>,
+                           RenderAlgCompileTimeRhs>
 {
     return RenderAlgCompileTimeRhs::Algorithm == RenderAlgCompileTimeLhs::Algorithm;
 }
 
 class RenderAlgorithm {
 public:
-    constexpr RenderAlgorithm() :
-        Algorithm{ RenderAlgorithmEnum::AUTO },
-        AlgorithmStr{ RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::AlgorithmStr },
-        UseLocalColor{ RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::UseLocalColor },
-        RequiresCompression{ RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::RequiresCompression },
-        RequiresReferencePoints{ RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::RequiresReferencePoints },
-        TestInclude{ RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::TestInclude } {
+    constexpr RenderAlgorithm()
+        : Algorithm{RenderAlgorithmEnum::AUTO},
+          AlgorithmStr{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::AlgorithmStr},
+          UseLocalColor{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::UseLocalColor},
+          RequiresCompression{
+              RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::RequiresCompression},
+          RequiresReferencePoints{
+              RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::RequiresReferencePoints},
+          Gpu{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::Gpu},
+          TestInclude{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::TestInclude}
+    {
     }
 
     // Requires RenderAlgorithmCompileTime
-    template<typename RenderAlgCompileTime>
+    template <typename RenderAlgCompileTime>
     constexpr RenderAlgorithm(RenderAlgCompileTime Alg)
-        requires std::is_base_of_v<RenderAlgorithmCompileTime<RenderAlgCompileTime::Algorithm>, RenderAlgCompileTime>
-        : Algorithm{ Alg.Algorithm },
-        AlgorithmStr{ Alg.AlgorithmStr },
-        UseLocalColor{ Alg.UseLocalColor },
-        RequiresCompression{ Alg.RequiresCompression },
-        RequiresReferencePoints{ Alg.RequiresReferencePoints },
-        TestInclude{ Alg.TestInclude } {
+    requires std::is_base_of_v<RenderAlgorithmCompileTime<RenderAlgCompileTime::Algorithm>,
+                               RenderAlgCompileTime>
+        : Algorithm{Alg.Algorithm}, AlgorithmStr{Alg.AlgorithmStr}, UseLocalColor{Alg.UseLocalColor},
+          RequiresCompression{Alg.RequiresCompression},
+          RequiresReferencePoints{Alg.RequiresReferencePoints}, Gpu{Alg.Gpu}, TestInclude{Alg.TestInclude}
+    {
     }
 
-    constexpr RenderAlgorithm(const RenderAlgorithm &other) :
-        Algorithm{ other.Algorithm },
-        AlgorithmStr{ other.AlgorithmStr },
-        UseLocalColor{ other.UseLocalColor },
-        RequiresCompression{ other.RequiresCompression },
-        RequiresReferencePoints{ other.RequiresReferencePoints },
-        TestInclude{ other.TestInclude } {
+    constexpr RenderAlgorithm(const RenderAlgorithm &other)
+        : Algorithm{other.Algorithm}, AlgorithmStr{other.AlgorithmStr},
+          UseLocalColor{other.UseLocalColor}, RequiresCompression{other.RequiresCompression},
+          RequiresReferencePoints{other.RequiresReferencePoints},
+          Gpu{other.Gpu}, TestInclude{other.TestInclude}
+    {
     }
 
-    constexpr RenderAlgorithm(RenderAlgorithm &&other) :
-        Algorithm{ other.Algorithm },
-        AlgorithmStr{ other.AlgorithmStr },
-        UseLocalColor{ other.UseLocalColor },
-        RequiresCompression{ other.RequiresCompression },
-        RequiresReferencePoints{ other.RequiresReferencePoints },
-        TestInclude{ other.TestInclude } {
+    constexpr RenderAlgorithm(RenderAlgorithm &&other)
+        : Algorithm{other.Algorithm}, AlgorithmStr{other.AlgorithmStr},
+          UseLocalColor{other.UseLocalColor}, RequiresCompression{other.RequiresCompression},
+          RequiresReferencePoints{other.RequiresReferencePoints},
+          Gpu{other.Gpu}, TestInclude{other.TestInclude}
+    {
     }
 
-    constexpr bool operator== (const RenderAlgorithm &other) const {
+    constexpr bool
+    operator==(const RenderAlgorithm &other) const
+    {
         return Algorithm == other.Algorithm;
     }
 
-    constexpr bool operator== (RenderAlgorithmEnum other) const {
+    constexpr bool
+    operator==(RenderAlgorithmEnum other) const
+    {
         return Algorithm == other;
     }
 
-    RenderAlgorithm &operator= (const RenderAlgorithm &other);
-    RenderAlgorithm &operator= (RenderAlgorithm &&other);
+    RenderAlgorithm &operator=(const RenderAlgorithm &other);
+    RenderAlgorithm &operator=(RenderAlgorithm &&other);
 
     RenderAlgorithmEnum Algorithm;
     const char *AlgorithmStr;
     bool UseLocalColor;
     bool RequiresCompression;
     bool RequiresReferencePoints;
+    RequiresGpu Gpu;
 
     TestViewMap TestInclude;
 };
 
-static constexpr
-std::array<RenderAlgorithm, static_cast<size_t>(RenderAlgorithmEnum::MAX) + 1> RenderAlgorithms{
-    // CPU algorithms
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR32>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR64>{}},
+static constexpr std::array<RenderAlgorithm, static_cast<size_t>(RenderAlgorithmEnum::MAX) + 1>
+    RenderAlgorithms{
+        // CPU algorithms
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR32>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR64>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLA>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAHDR>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAHDR>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLA>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAHDR>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAHDR>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR>{}},
 
-    // GPU - low zoom depth:
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x32>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x64>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x64>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32>{}},
+        // GPU - low zoom depth:
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x32>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x64>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x64>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32>{}},
 
-    // GPU
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedScaled>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedScaled>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedScaled>{}},
+        // GPU
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedScaled>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedScaled>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedScaled>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedBLA>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedBLA>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedBLA>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedBLA>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedBLA>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedBLA>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO>{}},
+        RenderAlgorithm{
+            RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}},
-    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::MAX>{}}
-};
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}},
+        RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::MAX>{}}};
 
+using RenderAlgorithmsTupleT =
+    std::tuple<RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR32>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR64>,
 
-using RenderAlgorithmsTupleT = std::tuple <
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR32>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR64>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLA>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAHDR>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAHDR>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLA>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAHDR>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAHDR>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR>,
+               // GPU - low zoom depth:
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x32>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x64>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x64>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32>,
 
-    // GPU - low zoom depth:
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x32>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x64>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x64>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32>,
+               // GPU
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedScaled>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedScaled>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedScaled>,
 
-    // GPU
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedScaled>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedScaled>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedScaled>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedBLA>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedBLA>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedBLA>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedBLA>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedBLA>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedBLA>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO>,
 
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO>,
-
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>,
-    RenderAlgorithmCompileTime<RenderAlgorithmEnum::MAX>
-> ;
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>,
+               RenderAlgorithmCompileTime<RenderAlgorithmEnum::MAX>>;
 
 constexpr static RenderAlgorithmsTupleT RenderAlgorithmsTuple;
 
-template<typename F>
-constexpr void IterateRenderAlgs(F &&function) {
+template <typename F>
+constexpr void
+IterateRenderAlgs(F &&function)
+{
     auto unfold = [&]<size_t... Ints>(std::index_sequence<Ints...>) {
         (std::forward<F>(function)(std::integral_constant<size_t, Ints>{}), ...);
     };
@@ -1881,8 +1763,10 @@ constexpr void IterateRenderAlgs(F &&function) {
     unfold(std::make_index_sequence<size>());
 }
 
-template<typename F>
-constexpr auto IterateRenderAlgsRet(F &&function) {
+template <typename F>
+constexpr auto
+IterateRenderAlgsRet(F &&function)
+{
     auto unfold = [&]<size_t... Ints>(std::index_sequence<Ints...>) {
         return (std::forward<F>(function)(std::integral_constant<size_t, Ints>{}), ...);
     };
@@ -1891,9 +1775,11 @@ constexpr auto IterateRenderAlgsRet(F &&function) {
     return unfold(std::make_index_sequence<size>());
 }
 
-// Given a RenderAlgorithmEnum at runtime, return the associated entry in the 
+// Given a RenderAlgorithmEnum at runtime, return the associated entry in the
 // tuple RenderAlgorithmsTupleT.  Template parameter doesn't work for this.
 // Use the IterateRenderAlgs function above to iterate over the tuple.
-constexpr RenderAlgorithm GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum algorithm) {
+constexpr RenderAlgorithm
+GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum algorithm)
+{
     return RenderAlgorithms[static_cast<size_t>(algorithm)];
 }

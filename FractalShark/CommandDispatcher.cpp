@@ -141,6 +141,16 @@ FindAlgForCmd(int wmId)
     return nullptr;
 }
 
+constexpr int
+FindCmdForAlg(RenderAlgorithmEnum alg)
+{
+    for (const auto &e : kAlgCmds) {
+        if (e.alg == alg)
+            return e.id;
+    }
+    return -1;
+}
+
 } // namespace
 
 CommandDispatcher::CommandDispatcher(MainWindow &owner) : w_(owner) { BuildTable(); }
@@ -192,7 +202,15 @@ bool
 CommandDispatcher::HandleAlgCommand(int wmId)
 {
     if (const auto *e = FindAlgForCmd(wmId)) {
-        w_.gFractal->SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(e->alg));
+        const bool success = w_.gFractal->SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(e->alg));
+
+        if (!success) {
+            // The selection may not be accepted, e.g. because GPU is not working.
+            const auto selectedAlg = w_.gFractal->GetRenderAlgorithm();
+            const auto selectedWmid = FindCmdForAlg(selectedAlg.Algorithm);
+            wmId = selectedWmid;
+        }
+
         FractalShark::DynamicPopupMenu::SetCurrentRenderAlgorithmId(wmId);
 
         if (w_.gPopupMenu) {

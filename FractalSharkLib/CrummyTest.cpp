@@ -190,7 +190,10 @@ CrummyTest::BasicOneTest(auto algToTest,
     if constexpr (algToTest.TestInclude.Lookup(testEnumIndex) != TestViewEnum::Disabled) {
         const auto viewIndex = static_cast<size_t>(algToTest.TestInclude.Lookup(testEnumIndex));
 
-        m_Fractal.SetRenderAlgorithm(algToTest);
+        if (!m_Fractal.SetRenderAlgorithm(algToTest)) {
+            std::cerr << "Error setting RenderAlgorithm in BasicOneTest!" << std::endl;
+        }
+
         m_Fractal.View(viewIndex);
         m_Fractal.ForceRecalc();
 
@@ -262,7 +265,10 @@ CrummyTest::ReferenceSaveLoad(Fractal &fractal,
 
     fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     fractal.SetIterType(iterType);
-    fractal.SetRenderAlgorithm(origAlgToTest);
+    if (!fractal.SetRenderAlgorithm(origAlgToTest)) {
+        std::cerr << "Error setting RenderAlgorithm in ReferenceSaveLoad!" << std::endl;
+    }
+
     fractal.View(viewIndex);
     fractal.ForceRecalc();
     fractal.CalcFractal(false);
@@ -344,8 +350,11 @@ CrummyTest::ReferenceSaveLoad(Fractal &fractal,
     fractal.SetIterType(IterTypeEnum::Bits64);
 
     if (origAlgToTest == convertAlgToTest) {
-        fractal.SetRenderAlgorithm(
+        const bool success = fractal.SetRenderAlgorithm(
             RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
+        if (!success) {
+            std::cerr << "Error setting RenderAlgorithm to AUTO in ReferenceSaveLoad!" << std::endl;
+        }
     }
 
     fractal.LoadRefOrbit(
@@ -540,8 +549,12 @@ CrummyTest::TestImaginaLoad()
 
         m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         m_Fractal.SetIterType(IterTypeEnum::Bits64);
-        m_Fractal.SetRenderAlgorithm(
+        const bool success = m_Fractal.SetRenderAlgorithm(
             RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
+        if (!success) {
+            std::cerr << "Error setting RenderAlgorithm to AUTO in TestImaginaLoad!" << std::endl;
+        }
+
         m_Fractal.View(pair.view);
         m_Fractal.ForceRecalc();
         m_Fractal.CalcFractal(false);
@@ -853,7 +866,11 @@ CrummyTest::TestPerturbedPerturb()
 
             m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
             m_Fractal.SetIterType(iterType);
-            m_Fractal.SetRenderAlgorithm(algToTestRT);
+            const bool success = m_Fractal.SetRenderAlgorithm(algToTestRT);
+            if (!success) {
+                std::cerr << "Error setting RenderAlgorithm in TestPerturbedPerturb!" << std::endl;
+            }
+
             m_Fractal.SetPerturbationAlg(
                 RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
             m_Fractal.View(viewIndex);
@@ -1025,7 +1042,11 @@ CrummyTest::TestReallyHardView27()
                 m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
                 const auto iterType = IterTypeEnum::Bits64;
                 m_Fractal.SetIterType(iterType);
-                m_Fractal.SetRenderAlgorithm(algToTest);
+                const bool success = m_Fractal.SetRenderAlgorithm(algToTest);
+                if (!success) {
+                    std::cerr << "Error setting RenderAlgorithm in TestReallyHardView27!" << std::endl;
+                }
+
                 m_Fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
                 m_Fractal.View(viewIndex, false);
                 m_Fractal.SetCompressionErrorExp(Fractal::CompressionError::Low, compressionErrorExp);

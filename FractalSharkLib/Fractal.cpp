@@ -24,12 +24,9 @@
 
 #include <chrono>
 
-void DefaultOutputMessage(const wchar_t *, ...);
-
 Fractal::Fractal(int width, int height, HWND hWnd, bool UseSensoCursor, uint64_t commitLimitInBytes)
     : m_RefOrbit{*this, commitLimitInBytes}, m_CommitLimitInBytes{commitLimitInBytes}
 {
-
     Initialize(width, height, hWnd, UseSensoCursor);
 }
 
@@ -73,7 +70,7 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
 
         m_CheckForAbortThread = nullptr;
     }
-    
+
     m_AsyncRenderThreadState = AsyncRenderThreadState::Idle;
     m_AsyncRenderThreadFinish = false;
     m_AsyncRenderThread = std::make_unique<std::thread>(DrawAsyncGpuFractalThreadStatic, this);
@@ -172,7 +169,7 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPalette::Summer, 3, 12));
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPalette::Summer, 4, 16));
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPalette::Summer, 5, 20));
-     
+
     for (size_t i = 0; i < std::thread::hardware_concurrency(); i++) {
         m_DrawThreads.emplace_back(std::make_unique<DrawThreadSync>(i, nullptr, m_DrawThreadAtomics));
     }
@@ -675,13 +672,22 @@ Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor)
 void
 Fractal::InitialDefaultViewAndSettings(int width, int height)
 {
+    // const bool success =
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2));
+    // const bool success =
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
+    // const bool success =
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2));
-    // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu2x32PerturbedLAv2));
+    // const bool success =
+    // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu2x32PerturbedLAv2)); const
+    // bool success =
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO));
+    // const bool success =
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2));
-    SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
+    const bool success = SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
+    if (!success) {
+        std::cerr << "Error: could not set default render algorithm." << std::endl;
+    }
 
     SetIterationPrecision(1);
 
@@ -3344,16 +3350,22 @@ Fractal::GetRenderAlgorithm() const
     }
 }
 
-void
+bool
 Fractal::SetRenderAlgorithm(RenderAlgorithm alg)
 {
+    bool ret = true;
     if (m_BypassGpu) {
-        std::cerr << "Bypassing GPU: Ignoring request to set render algorithm." << std::endl;
-        alg = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
+        std::cerr << "Bypassing GPU in effect: CPU-only render algorithms enforced." << std::endl;
+        if (alg.Gpu == RequiresGpu::Yes) {
+            std::cerr << "Bypassing GPU: Forcing CPU64 render algorithm." << std::endl;
+            alg = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
+            ret = false;
+        }
     }
 
     m_RenderAlgorithm = alg;
     m_RefOrbit.ResetLastUsedOrbit();
+    return ret;
 }
 
 const char *
@@ -4082,9 +4094,13 @@ Fractal::DrawFractal(bool /*MemoryOnly*/)
 
     m_AsyncRenderThreadCV.notify_one();
 
-    uint32_t result = m_r.SyncStream(false);
-    if (result) {
-        MessageBoxCudaError(result);
+    if (m_BypassGpu == false) {
+        uint32_t result = m_r.SyncStream(false);
+        if (result) {
+            MessageBoxCudaError(result);
+        }
+    } else {
+        std::cerr << "Bypassing GPU in effect: No GPU synchronization performed." << std::endl;
     }
 
     {
@@ -5768,7 +5784,12 @@ Fractal::LoadRefOrbit(RecommendedSettings *oldSettings,
     m_RefOrbit.LoadOrbit(imaginaSettings, compression, renderAlg, filename, &recommendedSettings);
 
     if (imaginaSettings == ImaginaSettings::UseSaved) {
-        SetRenderAlgorithm(recommendedSettings.GetRenderAlgorithm());
+        const bool success = SetRenderAlgorithm(recommendedSettings.GetRenderAlgorithm());
+        if (!success) {
+            std::wcerr << L"Warning: saved render algorithm is not supported on this system."
+                       << std::endl;
+        }
+
         SetIterType(recommendedSettings.GetIterType());
     }
 

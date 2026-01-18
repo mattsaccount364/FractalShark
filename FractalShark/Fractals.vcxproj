@@ -149,6 +149,7 @@
     </ClCompile>
     <ClCompile Include="JobObject.cpp" />
     <ClCompile Include="MainWindow.cpp" />
+    <ClCompile Include="SplashWindow.cpp" />
     <ClCompile Include="StdAfx.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -169,6 +170,7 @@
     <ClInclude Include="MainWindow.h" />
     <ClInclude Include="MainWindowSavedLocation.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="SplashWindow.h" />
     <ClInclude Include="UniqueHMenu.h" />
   </ItemGroup>
   <ItemGroup>

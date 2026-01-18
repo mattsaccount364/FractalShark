@@ -96,9 +96,6 @@
     <ClCompile Include="WorkaroundVcxAnnoyingCudaBug.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="heap_allocator\Heap.md" />
-  </ItemGroup>
-  <ItemGroup>
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_NP.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_P.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_NP.cu" />

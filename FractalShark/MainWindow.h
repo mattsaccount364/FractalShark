@@ -5,7 +5,9 @@
 #include <string>
 
 #include "CommandDispatcher.h"
+#include "SplashWindow.h"
 #include "UniqueHMenu.h"
+
 
 class JobObject;
 class Fractal;
@@ -28,6 +30,8 @@ public:
     ~MainWindow();
 
 private:
+    SplashWindow splash_;
+
 
     std::vector<SavedLocation> gSavedLocations;
     std::vector<ImaginaSavedLocation> gImaginaLocations;
@@ -61,7 +65,6 @@ private:
     static LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS *apExceptionInfo);
 
     void DrawFractalShark();
-    void DrawFractalSharkGdi(int nCmdShow);
 
     enum class OpenBoxType {
         Open,

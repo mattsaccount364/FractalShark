@@ -128,7 +128,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // --- SPLASH WINDOW: borderless ---
     // Create hidden first to prevent Windows from applying "restore placement" at first show.
     DWORD style = WS_POPUP;
-    DWORD exStyle = WS_EX_APPWINDOW | WS_EX_LAYERED; // taskbar + layered (you use alpha)
+    DWORD exStyle = WS_EX_APPWINDOW | WS_EX_LAYERED; // taskbar + layered
 
     hWnd = CreateWindowExW(exStyle,
                            szWindowClass,
@@ -192,7 +192,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
 
         LONG_PTR newEx = GetWindowLongPtrW(hWnd, GWL_EXSTYLE);
         newEx |= WS_EX_APPWINDOW;
-        // keep WS_EX_LAYERED if you want; or drop it after splash:
+        // keep WS_EX_LAYERED
         // newEx &= ~WS_EX_LAYERED;
         SetWindowLongPtrW(hWnd, GWL_EXSTYLE, newEx);
 
@@ -202,7 +202,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
         mi.cbSize = sizeof(mi);
         GetMonitorInfoW(mon, &mi);
 
-        RECT r = mi.rcMonitor; // rcWork if you want to respect taskbar
+        RECT r = mi.rcMonitor;
 
         // --- CRITICAL: also set "normal" placement so Windows stops restoring elsewhere ---
         WINDOWPLACEMENT wp{};
@@ -1717,7 +1717,7 @@ MainWindow::MenuAlgHelp()
         L"\r\n"
         L"Note that professional/high-end chips offer superior 64-bit performance, so if you have one "
         L"of those, you may find that the 64-bit implementations work well.  Most consumer GPUs offer"
-        L"poor 64-bit performance\r\n",
+        L"poor 64-bit performance (even RTX 4090, 5090 etc)\r\n",
         L"Algorithms",
         MB_OK);
 }

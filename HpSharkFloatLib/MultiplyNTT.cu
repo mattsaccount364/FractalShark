@@ -2228,8 +2228,6 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
 
     // --- Workspaces ---
     // dynamic shared mem: need >= 6 * blockDim.x * sizeof(uint64_t)
-    //   - you already pass dynamic SMEM at launch; just alias it here
-
     // scratch result digits (2*SharkFloatParams::GlobalNumUint32 per channel, uint64_t each; low 32 bits
     // used)
     uint64_t *resultXX = tempDigitsXX1; /* device buffer length 2*SharkFloatParams::GlobalNumUint32 */

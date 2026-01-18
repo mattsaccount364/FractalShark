@@ -67,7 +67,7 @@ __declspec(allocate(".fs_alloc$z")) const PF InitSegEnd = (PF)1;
 static int __cdecl
 myexit(PF pf)
 {
-    // keep it simple; you can add bounds checking if desired
+    // keep it simple; add bounds checking if desired
     pfx[cxpf++] = pf;
     return 0;
 }
@@ -428,7 +428,7 @@ HeapCpp::Allocate(size_t user_size)
         found->hole = 0;
         found->magic = node_t::Magic;
 
-        // You can clear links for tidiness, but they're allocator-owned now anyway.
+        // Clear links for tidiness, but they're allocator-owned now anyway.
         found->next = nullptr;
         found->prev = nullptr;
 
@@ -886,10 +886,8 @@ aligned_alloc(size_t /*alignment*/, size_t size)
     EarlyInit_SafeMode_NoCRT();
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        // Fancy path: keep your existing behavior (or real aligned logic).
         auto p = CppMalloc(size);
-        // If you want, keep the assert here for fancy-only.
-        // assert(reinterpret_cast<uintptr_t>(p) % alignment == 0);
+        assert(reinterpret_cast<uintptr_t>(p) % alignment == 0);
         return p;
     }
 

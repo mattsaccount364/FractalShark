@@ -358,7 +358,7 @@ CarryPropagation_ABC(const int32_t numActualDigitsPlusGuard,
     }
 
     // On exit, carryAcc may be positive (overflow) or negative (net borrow).
-    // You can inspect it to adjust exponent / final sign:
+    // Inspect it to adjust exponent / final sign:
     if (SharkVerbose == VerboseMode::Debug) {
         // assert(carryAcc >= 0);
         std::cout << "CarryPropagation3 final carryAcc = " << carryAcc << std::endl;

@@ -465,9 +465,9 @@ Fractal::RecenterViewCalc(const PointZoomBBConverter &ptz)
 
 //////////////////////////////////////////////////////////////////////////////
 // Recenters the view to the the given screen coordinates.  Translates the
-// screen coordinates to calculator coordinates for you, using whatever
-// dimensions were specified when the Fractal object was constructed or whatever
-// coordinates were given to the last call to the Reset function.
+// screen coordinates to calculator coordinates, using whatever dimensions were
+// specified when the Fractal object was constructed or whatever coordinates
+// were given to the last call to the Reset function.
 //////////////////////////////////////////////////////////////////////////////
 bool
 Fractal::RecenterViewScreen(RECT rect)
@@ -1371,7 +1371,7 @@ Fractal::View(size_t view, bool includeMsgBox)
             break;
 
         case 12: {
-            // If you want to see where precision runs out with the perterburation reuse.  This
+            // If you want to see where precision runs out with the perturbation reuse.  This
             // coordinate is close to #14.
             PointZoomBBConverter convert{
                 HighPrecision{

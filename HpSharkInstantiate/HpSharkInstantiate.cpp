@@ -168,7 +168,6 @@ template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t p
     }
 
     // 2) ComputeHpSharkReferenceGpuLoop
-    // You call this unqualified inside namespace HpShark in your reference code; safest to wrap.
     {
         constexpr auto templates =
             R"(template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
@@ -203,7 +202,7 @@ template void ShutdownHpSharkReferenceKernel<SharkFloatParams>(
             Batch{"HpSharkReference", "..\\KernelInvokeReferencePerf_cu.h", templates, "HpShark"});
     }
 
-    // 4) Add kernels (unknown namespace; leave global unless you know otherwise)
+    // 4) Add kernels
     {
         constexpr auto templates =
             R"(template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
@@ -214,7 +213,7 @@ template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParam
         b.push_back(Batch{"AddKernels", "..\\KernelTestAdd_cu.h", templates, ""});
     }
 
-    // 5) Multiply NTT kernels (unknown namespace; leave global unless you know otherwise)
+    // 5) Multiply NTT kernels
     {
         constexpr auto templates =
             R"(template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
@@ -452,7 +451,6 @@ main()
 
         std::cout << "\nDone.\n";
         std::cout << "Add the generated .cu files to your build.\n";
-        std::cout << "If you use unity/jumbo builds, exclude these instantiation TUs.\n";
         return 0;
     } catch (const std::exception &e) {
         std::cerr << "ERROR: " << e.what() << "\n";

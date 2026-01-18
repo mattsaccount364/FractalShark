@@ -1,10 +1,10 @@
 # Close Adobe Acrobat (Reader or Acrobat DC)
 Get-Process -Name "AcroRd32","Acrobat" -ErrorAction SilentlyContinue | Stop-Process -Force
 
-pdflatex notes.tex
-bibtex notes
-pdflatex notes.tex
-pdflatex notes.tex
+pdflatex FractalShark.tex
+bibtex FractalShark
+pdflatex FractalShark.tex
+pdflatex FractalShark.tex
 
 # Open the PDF
-Start-Process .\notes.pdf
+Start-Process .\FractalShark.pdf

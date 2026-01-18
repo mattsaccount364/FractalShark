@@ -70,6 +70,12 @@ For high-period locations (e.g. period 600,000,000), this can reduce memory usag
 - **Try updating your NVIDIA driver** if you get a "cuda error 35" when you run it.
 - **Windows**
 
+Basic Linux compatibility.  Tested with Wine using this configuration:
+- Wine version: 9.0
+- Ubuntu 24.04 LTS
+- No nvidia GPU, CPU-only rendering
+- Command line: wine FractalShark.exe -safemode
+
 ## Where do I download it?
 
 - Downloadable from here: [https://github.com/mattsaccount364/FractalShark](https://github.com/mattsaccount364/FractalShark)

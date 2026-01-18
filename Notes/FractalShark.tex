@@ -44,6 +44,11 @@
 \section{\FractalShark{} Overview}
 \label{sec:goal}
 
+\textit{These notes are a work-in-progress summary of \FractalShark{} but are
+currently not in a well-edited or organized state.  Moreover, much of it is
+AI-generated and thus may contain errors or inconsistencies.  That said, I've
+made some effort to review and correct it, so it should be better than nothing.}
+
 \FractalShark{} is an interactive Mandelbrot set renderer focused on
 \textbf{extreme deep-zoom exploration}, numerical correctness, and
 algorithmic experimentation.  It supports zoom depths ranging from
@@ -3004,6 +3009,16 @@ in exchange for broader compatibility.
 
 This section simply has some development notes that were posted over time.
 
+\subsection{2026-1-18 News --- Version 0.51}
+
+\begin{itemize}
+\item \textbf{Basic Wine compatibility.}  Tested without a GPU and working under
+Wine 9.0 on Linux.  There are still some quirks, but basic rendering works.
+\item \textbf{Proper fallback when no GPU is present.}  The program now detects lack of a CUDA
+device and falls back to CPU-only rendering, with a warning message.
+\item \textbf{Fixed some windowing bugs.}
+\end{itemize}
+
 \subsection{2025-12-29 News --- Version 0.5}
 \begin{itemize}
   \item \textbf{Major feature: GPU-accelerated Mandelbrot reference orbit.} Adds
@@ -3455,8 +3470,7 @@ Here is some related work:
 \item A Study of High Performance Multiple Precision Arithmetic on Graphics 
 Processing Units: Niall Emmart \cite{Emmart_GPU_MultiPrecision}
 
-\item Missing a Trick: Karatsuba Variations: Michael Scott \cite{Scott_Karatsuba
-_MissingTrick}
+\item Missing a Trick: Karatsuba Variations: Michael Scott \cite{Scott_Karatsuba_MissingTrick}
 
 \item MFFT: A GPU Accelerated Highly Efficient Mixed-Precision Large-Scale FFT 
 Framework: \cite{MFFT_GPU_FFT}
@@ -3803,6 +3817,6 @@ kernel.  Rendering and post-processing each required roughly one and a half
 days.
 
 \bibliographystyle{plain} % or ieeetr, unsrt, alpha, etc.
-\bibliography{notes}      % <-- filename WITHOUT .bib
+\bibliography{FractalShark}      % <-- filename WITHOUT .bib
 
 \end{document}

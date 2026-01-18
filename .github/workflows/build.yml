@@ -52,29 +52,29 @@ jobs:
           initexmf --admin --set-config-value=[MPM]InstallOnTheFly=1
           initexmf --admin --set-config-value=[MPM]AskForInstall=0
 
-      - name: Build notes.pdf
+      - name: Build FractalShark.pdf
         shell: pwsh
         working-directory: Notes
         run: |
-          pdflatex -interaction=nonstopmode -halt-on-error notes.tex
-          bibtex notes
-          pdflatex -interaction=nonstopmode -halt-on-error notes.tex
-          pdflatex -interaction=nonstopmode -halt-on-error notes.tex
+          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
+          bibtex FractalShark
+          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
+          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
 
-      - name: Verify notes.pdf exists
+      - name: Verify FractalShark.pdf exists
         shell: pwsh
         run: |
-          $pdf = "Notes\notes.pdf"
+          $pdf = "Notes\FractalShark.pdf"
           if (-not (Test-Path $pdf)) {
             throw "PDF not generated: $pdf"
           }
           Get-Item $pdf | Format-List FullName, Length
 
-      - name: Upload notes PDF
+      - name: Upload FractalShark PDF
         uses: actions/upload-artifact@v4
         with:
           name: FractalSharkNotes
-          path: Notes/notes.pdf
+          path: Notes/FractalShark.pdf
 
       - name: Install VC++ 2010 runtime (for vsyasm)
         shell: pwsh
@@ -210,7 +210,7 @@ jobs:
             **/x64/Release/**
             **/Debug/**
             **/x64/Debug/**
-            Notes/notes.pdf
+            Notes/FractalShark.pdf
 
   release:
     name: Create FractalShark Release
@@ -265,20 +265,20 @@ jobs:
           name: FractalShark-build
           path: dist
 
-      - name: Download notes PDF artifact
+      - name: Download FractalShark notes PDF artifact
         uses: actions/download-artifact@v4
         with:
           name: FractalSharkNotes
           path: _notes_art
 
-      - name: Normalize notes.pdf path
+      - name: Normalize FractalShark.pdf path
         shell: pwsh
         run: |
-          $found = Get-ChildItem -Path _notes_art -Recurse -Filter notes.pdf -File | Select-Object -First 1
-          if (-not $found) { throw "notes.pdf not found under _notes_art" }
+          $found = Get-ChildItem -Path _notes_art -Recurse -Filter FractalShark.pdf -File | Select-Object -First 1
+          if (-not $found) { throw "FractalShark.pdf not found under _notes_art" }
       
           New-Item -ItemType Directory -Force -Path Notes | Out-Null
-          Copy-Item $found.FullName "Notes\notes.pdf" -Force
+          Copy-Item $found.FullName "Notes\FractalShark.pdf" -Force
 
       - name: "Diagnostic: artifact layout"
         shell: pwsh
@@ -305,9 +305,9 @@ jobs:
           $pdb = Get-ChildItem dist -Recurse -Filter FractalShark.pdb -File | Select-Object -First 1
           if (-not $pdb) { throw "FractalShark.pdb not found anywhere under dist" }
 
-          $pdfSrc = Join-Path $PWD "Notes\notes.pdf"
+          $pdfSrc = Join-Path $PWD "Notes\FractalShark.pdf"
           if (-not (Test-Path $pdfSrc)) {
-            throw "notes.pdf missing at $pdfSrc (Normalize step failed?)"
+            throw "FractalShark.pdf missing at $pdfSrc (Normalize step failed?)"
           }
 
           Write-Host "Using EXE: $($exe.FullName)"
@@ -319,13 +319,13 @@ jobs:
 
           Copy-Item $exe.FullName "out\FractalShark.exe" -Force
           Copy-Item $pdb.FullName "out\FractalShark.pdb" -Force
-          Copy-Item $pdfSrc       "out\notes.pdf"        -Force
+          Copy-Item $pdfSrc       "out\FractalShark.pdf"        -Force
 
           $zip = "out\FractalShark-$env:GITHUB_REF_NAME.zip"
 
           # --- create final release zip (exe + pdb + notes) ---
           Compress-Archive `
-            -Path "out\FractalShark.exe","out\FractalShark.pdb","out\notes.pdf" `
+            -Path "out\FractalShark.exe","out\FractalShark.pdb","out\FractalShark.pdf" `
             -DestinationPath $zip `
             -Force
 
@@ -377,7 +377,7 @@ jobs:
 
           if (-not (Test-Path $zip)) { throw "Missing asset: $zip" }
 
-          $pdf = "out\notes.pdf"
+          $pdf = "out\FractalShark.pdf"
           if (-not (Test-Path $pdf)) { throw "Missing asset: $pdf" }
 
           $title = "FractalShark $tag"

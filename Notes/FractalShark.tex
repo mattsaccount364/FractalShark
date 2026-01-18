@@ -147,6 +147,237 @@ performance.  It is not intended as a polished end-user application, but rather
 as an experimental platform for exploring and validating advanced fractal
 rendering algorithms.
 
+\section{User Interface and Popup Menu Guide}
+\label{sec:ui-popup-menu}
+
+FractalShark can be driven \emph{entirely} from the keyboard and mouse, with the
+right-click popup menu acting as the primary discovery and configuration
+surface.  Day-to-day navigation (zooming, recentering, going back, iteration
+adjustment, palette cycling, and several recomputation paths) is also exposed
+through single-key shortcuts, so common workflows do not require opening the
+menu.
+
+The popup menu is context-sensitive and rebuilt dynamically each time it is
+shown, so that checked, enabled, and disabled states accurately reflect the
+current application settings and rendering state.  The menu can be invoked by
+mouse (\textbf{right-click}) or from the keyboard via the standard Windows
+context-menu invocation (\textbf{Shift+F10} / \textbf{Menu} key).
+
+\subsection{Basic Interaction}
+
+The most common interactions are:
+\begin{itemize}
+  \item \textbf{Right-click}: Open the popup menu at the mouse cursor.
+  \item \textbf{Left-click and drag}: Zoom into a rectangular region.
+  \item \textbf{Keyboard shortcuts}:
+    \begin{itemize}
+      \item \texttt{z}: Zoom in at the mouse cursor.
+      \item \texttt{Shift+Z}: Zoom out slightly.
+      \item \texttt{b}: Return to the previous view.
+      \item \texttt{- / =}: Decrease or increase the iteration limit.
+    \end{itemize}
+\end{itemize}
+
+\subsection{Menu Structure and Behavior}
+
+The popup menu is organized into logical groups.  Items fall into three distinct
+behavioral categories:
+
+\begin{description}
+  \item[Radio groups] Mutually exclusive choices where exactly one option is
+  active at a time (for example, selecting a render algorithm).
+  \item[Toggle options] Independent on/off settings that can be enabled or
+  disabled without affecting other items.
+  \item[Commands] Immediate actions that execute when selected and do not
+  maintain a checked state.
+\end{description}
+
+Radio groups and toggle states are derived from the current internal settings,
+not from static menu state, ensuring that the menu always reflects the actual
+configuration in use.
+
+\subsection{Render Algorithm Selection}
+
+The \emph{Choose Render Algorithm} submenu selects the core Mandelbrot rendering
+strategy.  This is a radio group: selecting one algorithm automatically
+deselects the others.
+
+Available choices may include:
+\begin{itemize}
+  \item CPU-based reference and linear-approximation renderers
+  \item Multiple CUDA-based GPU renderers
+  \item High-dynamic-range and experimental kernels
+\end{itemize}
+
+On systems without a working CUDA setup, CPU renderers can be selected as a
+fallback.  In the event of a CUDA initialization failure, switching to a CPU
+algorithm followed by a recalculation may restore a usable image.
+
+\subsection{Perturbation and Reference-Orbit Controls}
+
+FractalShark supports perturbation-based rendering driven by a high-precision
+reference orbit.  Menu options in this area control how the reference orbit is
+computed and reused.
+
+Typical actions include:
+\begin{itemize}
+  \item Selecting CPU or GPU-based reference-orbit computation
+  \item Enabling or disabling experimental GPU reference-orbit paths
+  \item Reusing an existing reference orbit when possible
+\end{itemize}
+
+GPU-accelerated reference orbits are intended for extremely deep zooms and may
+be slower than CPU computation at modest precision levels.  They are marked as
+experimental and should be used accordingly.
+
+\subsection{Recalculation Commands}
+
+Commands such as \emph{Recalculate} or \emph{Recalculate, Reuse Reference} trigger
+an immediate re-render of the current view.
+
+These commands do not change any persistent settings; they simply instruct the
+renderer to restart computation using the current configuration.  Reusing the
+reference orbit can significantly reduce recomputation time when only display
+parameters change.
+
+\subsection{Experimental and Debug Options}
+
+Some menu entries expose experimental features, debugging aids, or partially
+implemented functionality.  These options may be unstable, incomplete, or
+subject to removal.
+
+FractalShark is an experimental research project rather than a polished
+end-user application.  Users should expect occasional crashes, rendering
+failures, or unresponsive behavior when exercising less common menu options.
+
+\subsection{Practical Usage Notes}
+
+\begin{itemize}
+  \item There is currently no reliable way to cancel a long-running render once
+  it has begun.  If necessary, the application must be terminated externally.
+  \item Some menu options may be temporarily disabled depending on the current
+  render state or selected algorithm.
+  \item If the application exits unexpectedly, a crash dump may be generated in
+  the executable directory and can be used for debugging or issue reporting.
+\end{itemize}
+
+Despite its rough edges, the popup menu provides a unified control surface for
+exploring FractalShark’s many rendering paths and numerical experiments, making
+it the primary interface for both casual exploration and deep technical
+investigation.
+
+\subsection{Keyboard Shortcuts}
+\label{subsec:keyboard-shortcuts}
+
+In addition to the popup menu, FractalShark supports a set of single-key
+shortcuts for navigation, recalculation, palette exploration, and tuning of
+perturbation/linear-approximation parameters.  Most shortcuts operate relative
+to the \emph{current mouse position} (converted into client coordinates at the
+time the key is pressed), which makes them feel similar to context-menu actions.
+
+Unless otherwise noted, shortcuts are \emph{case-sensitive} in the sense that
+uppercase variants are invoked by holding \texttt{Shift}.  Many actions also
+explicitly clear cached perturbation results prior to recomputation, trading
+additional work for correctness or a ``clean'' run.
+
+\paragraph{Navigation and view control.}
+\begin{itemize}
+  \item \texttt{z}: Zoom in by a fixed amount, centered at the mouse cursor.
+  \item \texttt{Z} (\texttt{Shift+z}): Zoom out by a fixed amount, centered at the mouse cursor.
+  \item \texttt{c}: Center the view at the mouse cursor (no forced reference recomputation).
+  \item \texttt{C} (\texttt{Shift+c}): Center the view and clear all perturbation results first.
+  \item \texttt{b}: Go back to the previous view.
+  \item \texttt{r}: Square the current view (aspect normalization).
+  \item \texttt{R} (\texttt{Shift+r}): Clear all perturbation results, then square the current view.
+  \item Mouse \textbf{left-click and drag}: Zoom into a dragged rectangle.
+        Holding \texttt{Shift} while dragging disables aspect-ratio enforcement.
+\end{itemize}
+
+\paragraph{Autozoom (experimental / buggy).}
+\begin{itemize}
+  \item \texttt{a}: Autozoom using the default heuristic (currently experimental and may misbehave).
+  \item \texttt{A} (\texttt{Shift+a}): Autozoom using the ``Max'' heuristic.
+\end{itemize}
+Both autozoom variants first center on the mouse position before executing the
+autozoom routine.  (The on-screen hotkey help also notes that holding \texttt{Ctrl}
+may abort autozoom, but the abort mechanism is not part of this key handler and
+is implemented elsewhere.)
+
+\paragraph{Recalculation and benchmarking.}
+Several keys force a recalculation; uppercase forms often clear cached results
+first.
+\begin{itemize}
+  \item \texttt{i}: Force recalculation and show the current position (copies details to clipboard).
+  \item \texttt{I} (\texttt{Shift+i}): Clear \emph{medium-res} perturbation results, then recalc and show position.
+  \item \texttt{o}: Force recalculation and show the current position.
+  \item \texttt{O} (\texttt{Shift+o}): Clear \emph{all} perturbation results, then recalc and show position.
+  \item \texttt{p}: Force recalculation and show the current position.
+  \item \texttt{P} (\texttt{Shift+p}): Clear \emph{LA-only} perturbation results, then recalc and show position.
+\end{itemize}
+\emph{Note:} The in-application hotkey dialog groups \texttt{i/I}, \texttt{o/O},
+\texttt{p/P}, and \texttt{r/R} under ``Recalculating and Benchmarking'' with
+slightly different wording.  The authoritative behavior is the code path: these
+keys primarily differ by which cached perturbation result class is cleared
+before forcing recomputation.
+
+\paragraph{Reference compression tuning.}
+These keys adjust compression error exponents and then repaint, typically after
+clearing cached perturbation results.
+\begin{itemize}
+  \item \texttt{e}: Clear all perturbation results, reset compression error exponents to defaults,
+        and repaint.
+  \item \texttt{q}: Clear all perturbation results; \emph{increase} intermediate compression error
+        exponent by a step (more error, less memory).
+  \item \texttt{Q} (\texttt{Shift+q}): Clear all perturbation results; \emph{decrease} intermediate compression
+        error exponent by a step (less error, more memory).
+  \item \texttt{w}: Clear all perturbation results; \emph{increase} low-error compression exponent by a step.
+  \item \texttt{W} (\texttt{Shift+w}): Clear all perturbation results; \emph{decrease} low-error compression exponent by a step.
+\end{itemize}
+\emph{Practical interpretation:} increasing the error exponent generally favors
+memory reduction and speed at the expense of fidelity in reconstructed reference
+segments; decreasing it pushes toward higher fidelity and higher memory use.
+
+\paragraph{Linear approximation parameter tuning (powers-of-two adjustments).}
+These keys adjust linear-approximation thresholds and period-detection thresholds.
+After changing parameters, FractalShark clears LA-only perturbation results and
+forces a recalc.
+\begin{itemize}
+  \item \texttt{h}: Increase LA threshold scale exponents (less accurate / faster per-pixel).
+  \item \texttt{H} (\texttt{Shift+h}): Decrease LA threshold scale exponents (more accurate / slower per-pixel).
+  \item \texttt{j}: Increase LA period-detection threshold exponents.
+  \item \texttt{J} (\texttt{Shift+j}): Decrease LA period-detection threshold exponents.
+\end{itemize}
+
+\paragraph{Palettes.}
+\begin{itemize}
+  \item \texttt{d}: Advance to the next palette lookup-table depth and redraw.
+  \item \texttt{D} (\texttt{Shift+d}): Create a new random palette, select it, and redraw.
+  \item \texttt{t}: Increase auxiliary palette depth (cycling auxiliary palette behavior) and redraw.
+  \item \texttt{T} (\texttt{Shift+t}): Decrease auxiliary palette depth and redraw.
+\end{itemize}
+
+\paragraph{Iteration count.}
+These keys scale the maximum iteration count aggressively for quick exploration:
+\begin{itemize}
+  \item \texttt{=} : Multiply max iterations by 24.
+  \item \texttt{-} : Multiply max iterations by $2/3$.
+\end{itemize}
+
+\paragraph{Window manipulation and menu invocation.}
+\begin{itemize}
+  \item \textbf{Right-click}: Open the popup menu at the cursor position.
+  \item \textbf{Shift+F10 / Menu key}: Also opens the popup menu (Windows context-menu invocation).
+  \item \textbf{Alt + left-click drag} (windowed mode): Drag the window by treating the client area as a caption.
+  \item Mouse wheel: Zoom in/out (scroll up zooms in; scroll down zooms out).
+\end{itemize}
+
+\paragraph{Responsiveness note.}
+Many shortcuts trigger a recomputation or redraw immediately.  If FractalShark
+is executing a long-running render (especially a large GPU kernel), keyboard
+input may appear delayed until the render completes.  In practice, the popup
+menu and hotkeys are best used as \emph{configuration and relaunch} controls,
+not as guaranteed real-time interaction during heavy computation.
+
 
 \section{Kernel List}
 

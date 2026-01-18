@@ -149,6 +149,7 @@
     </ClCompile>
     <ClCompile Include="JobObject.cpp" />
     <ClCompile Include="MainWindow.cpp" />
+    <ClCompile Include="MainWindowMenuState.cpp" />
     <ClCompile Include="SplashWindow.cpp" />
     <ClCompile Include="StdAfx.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
@@ -161,6 +162,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\stdafx.h" />
+    <ClInclude Include="AlgCmds.h" />
     <ClInclude Include="ConsoleWindow.h" />
     <ClInclude Include="DynamicPopupMenu.h" />
     <ClInclude Include="DynamicPopupTreeDef.h" />
@@ -168,6 +170,7 @@
     <ClInclude Include="FractalShark.h" />
     <ClInclude Include="JobObject.h" />
     <ClInclude Include="MainWindow.h" />
+    <ClInclude Include="MainWindowMenuState.h" />
     <ClInclude Include="MainWindowSavedLocation.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="SplashWindow.h" />

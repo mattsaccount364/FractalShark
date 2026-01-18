@@ -36,6 +36,7 @@ public:
     CUDA_CRAP LAThreadingAlgorithm GetThreading() const;
 
     CUDA_CRAP void SetDefaults(LADefaults defaults);
+    CUDA_CRAP LADefaults GetDefaults() const; 
 
     bool ReadMetadata(std::ifstream &metafile);
     bool WriteMetadata(std::ofstream &metafile) const;

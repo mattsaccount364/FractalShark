@@ -249,6 +249,12 @@ RefOrbitCalc::SetOptions(AddPointOptions options)
     m_RefOrbitOptions = options;
 }
 
+AddPointOptions
+RefOrbitCalc::GetOptions() const
+{
+    return m_RefOrbitOptions;
+}
+
 template <typename IterType,
           class T,
           class SubType,

@@ -2,6 +2,8 @@
 #include "DynamicPopupMenu.h"
 #include "UniqueHMenu.h"
 
+#include <cstddef> // size_t
+#include <cwchar>  // wmemcpy, wcslen, wmemset
 #include <utility> // std::exchange
 
 #include "resource.h"
@@ -39,161 +41,111 @@ DynamicPopupMenu::GetPopup(HMENU rootMenu) noexcept
     return rootMenu ? ::GetSubMenu(rootMenu, 0) : nullptr;
 }
 
-
-// -------------------- Render algorithm radio support --------------------
-
-static bool
-IsRenderAlgorithmCommandId(UINT id) noexcept
-{
-    switch (id) {
-        case IDM_ALG_AUTO:
-        case IDM_ALG_CPU_1_32_HDR:
-        case IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR:
-        case IDM_ALG_CPU_1_32_PERTURB_BLA_HDR:
-        case IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR:
-        case IDM_ALG_CPU_1_64:
-        case IDM_ALG_CPU_1_64_HDR:
-        case IDM_ALG_CPU_1_64_PERTURB_BLA:
-        case IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR:
-        case IDM_ALG_CPU_1_64_PERTURB_BLA_HDR:
-        case IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR:
-        case IDM_ALG_CPU_HIGH:
-        case IDM_ALG_GPU_1_32:
-        case IDM_ALG_GPU_1_32_PERTURB_LAV2:
-        case IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO:
-        case IDM_ALG_GPU_1_32_PERTURB_LAV2_PO:
-        case IDM_ALG_GPU_1_32_PERTURB_RC_LAV2:
-        case IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO:
-        case IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO:
-        case IDM_ALG_GPU_1_32_PERTURB_SCALED:
-        case IDM_ALG_GPU_1_64:
-        case IDM_ALG_GPU_1_64_PERTURB_BLA:
-        case IDM_ALG_GPU_1_64_PERTURB_LAV2:
-        case IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO:
-        case IDM_ALG_GPU_1_64_PERTURB_LAV2_PO:
-        case IDM_ALG_GPU_1_64_PERTURB_RC_LAV2:
-        case IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO:
-        case IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_PO:
-        case IDM_ALG_GPU_2X32_HDR:
-        case IDM_ALG_GPU_2_32:
-        case IDM_ALG_GPU_2_32_PERTURB_LAV2:
-        case IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO:
-        case IDM_ALG_GPU_2_32_PERTURB_LAV2_PO:
-        case IDM_ALG_GPU_2_32_PERTURB_RC_LAV2:
-        case IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO:
-        case IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_PO:
-        case IDM_ALG_GPU_2_32_PERTURB_SCALED:
-        case IDM_ALG_GPU_2_64:
-        case IDM_ALG_GPU_4_32:
-        case IDM_ALG_GPU_4_64:
-        case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2:
-        case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO:
-        case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO:
-        case IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2:
-        case IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO:
-        case IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_PO:
-        case IDM_ALG_GPU_HDR_32_PERTURB_BLA:
-        case IDM_ALG_GPU_HDR_32_PERTURB_LAV2:
-        case IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO:
-        case IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO:
-        case IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2:
-        case IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO:
-        case IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_PO:
-        case IDM_ALG_GPU_HDR_32_PERTURB_SCALED:
-        case IDM_ALG_GPU_HDR_64_PERTURB_BLA:
-        case IDM_ALG_GPU_HDR_64_PERTURB_LAV2:
-        case IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO:
-        case IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO:
-        case IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2:
-        case IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO:
-        case IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO:
-            return true;
-        default:
-            return false;
-    }
-}
-
-static UINT g_currentRenderAlgorithmId = IDM_ALG_AUTO;
-
-void
-DynamicPopupMenu::SetCurrentRenderAlgorithmId(UINT id) noexcept
-{
-    if (IsRenderAlgorithmCommandId(id))
-        g_currentRenderAlgorithmId = id;
-}
-
 UINT
-DynamicPopupMenu::GetCurrentRenderAlgorithmId() noexcept
-{
-    if (g_currentRenderAlgorithmId == 0)
-        g_currentRenderAlgorithmId = IDM_ALG_AUTO;
-    return g_currentRenderAlgorithmId;
-}
-
-static void
-ApplyRenderAlgorithmRadioChecksRecursive(HMENU menu, UINT checkedId) noexcept
-{
-    const int count = ::GetMenuItemCount(menu);
-    if (count <= 0)
-        return;
-
-    for (int i = 0; i < count; ++i) {
-        MENUITEMINFOW mii{};
-        mii.cbSize = sizeof(mii);
-        mii.fMask = MIIM_ID | MIIM_SUBMENU | MIIM_FTYPE;
-        if (!::GetMenuItemInfoW(menu, static_cast<UINT>(i), TRUE /*by position*/, &mii))
-            continue;
-
-        const UINT id = mii.wID;
-        if (IsRenderAlgorithmCommandId(id)) {
-            // Ensure radio-check styling.
-            if ((mii.fType & MFT_RADIOCHECK) == 0) {
-                MENUITEMINFOW miitype{};
-                miitype.cbSize = sizeof(miitype);
-                miitype.fMask = MIIM_FTYPE;
-                miitype.fType = mii.fType | MFT_RADIOCHECK;
-                (void)::SetMenuItemInfoW(menu, static_cast<UINT>(i), TRUE /*by position*/, &miitype);
-            }
-
-            (void)::CheckMenuItem(menu,
-                                  id,
-                                  MF_BYCOMMAND |
-                                      ((id == checkedId) ? MF_CHECKED : MF_UNCHECKED));
-        }
-
-        if (mii.hSubMenu)
-            ApplyRenderAlgorithmRadioChecksRecursive(mii.hSubMenu, checkedId);
-    }
-}
-
-void
-DynamicPopupMenu::ApplyRenderAlgorithmRadioChecks(HMENU menuRoot, UINT checkedId) noexcept
-{
-    if (!menuRoot)
-        return;
-
-    if (!IsRenderAlgorithmCommandId(checkedId))
-        checkedId = GetCurrentRenderAlgorithmId();
-
-    ApplyRenderAlgorithmRadioChecksRecursive(menuRoot, checkedId);
-}
-
-static UINT
-GetMenuItemCountSafe(HMENU menu) noexcept
+DynamicPopupMenu::GetMenuItemCountSafe(HMENU menu) noexcept
 {
     const int c = ::GetMenuItemCount(menu);
     return (c < 0) ? 0u : static_cast<UINT>(c);
 }
 
-static UINT
-MapEnabledStateMFToMFS(UINT stateFlags) noexcept
+UINT
+DynamicPopupMenu::MapEnabledStateToMFS(UINT mfEnabled) noexcept
 {
-    // Your tree uses MF_GRAYED / MF_ENABLED.
-    // MENUITEMINFO expects MFS_DISABLED / MFS_ENABLED.
-    if ((stateFlags & MF_GRAYED) || (stateFlags & MF_DISABLED)) {
-        return MFS_DISABLED;
+    // We accept a bool-like MF enabled decision and convert to MFS.
+    // (Kept as UINT to match old style.)
+    return (mfEnabled != 0) ? MFS_ENABLED : MFS_DISABLED;
+}
+
+UINT
+DynamicPopupMenu::GetEnabledState(const Node &n, const IMenuState &state) noexcept
+{
+    // Convert Rule evaluation into MFS state.
+    const bool enabled = state.IsEnabled(n.enableRule);
+    return enabled ? MFS_ENABLED : MFS_DISABLED;
+}
+
+bool
+DynamicPopupMenu::IsCheckedNow(const Node &n, const IMenuState &state) noexcept
+{
+    switch (n.checkKind) {
+        case CheckKind::Toggle:
+            return state.IsChecked(n.id);
+
+        case CheckKind::Radio: {
+            const UINT sel = state.GetRadioSelection(n.radioGroup);
+            return (sel != 0 && sel == n.id);
+        }
+
+        case CheckKind::None:
+        default:
+            return false;
     }
-    return MFS_ENABLED;
+}
+
+void
+DynamicPopupMenu::BuildPopupLabel(const Node &n,
+                                  const IMenuState &state,
+                                  /*out*/ wchar_t *buf,
+                                  size_t bufCount) noexcept
+{
+    if (!buf || bufCount == 0) {
+        return;
+    }
+
+    // Default: just the base label.
+    buf[0] = L'\0';
+
+    // Copy base label.
+    const size_t baseLen = n.text.size();
+    const size_t baseCopy = (baseLen < (bufCount - 1)) ? baseLen : (bufCount - 1);
+    if (baseCopy > 0) {
+        wmemcpy(buf, n.text.data(), baseCopy);
+        buf[baseCopy] = L'\0';
+    }
+
+    // Optional adornment: "Label (Selection)"
+    if (n.adornGroup == RadioGroup::None) {
+        return;
+    }
+
+    const UINT adornId = state.GetPopupAdornmentCommandId(n.adornGroup);
+    const UINT selId = (adornId != 0) ? adornId : state.GetRadioSelection(n.adornGroup);
+    if (selId == 0) {
+        return;
+    }
+
+    const std::wstring_view selLabel = state.GetCommandLabel(selId);
+    if (selLabel.empty()) {
+        return; // no label available => no adornment
+    }
+
+    // Append " (" + selLabel + ")"
+    size_t cur = wcslen(buf);
+    auto append = [&](const wchar_t *s) {
+        if (!s)
+            return;
+        const size_t sl = wcslen(s);
+        const size_t rem = (cur < bufCount) ? (bufCount - 1 - cur) : 0;
+        const size_t cp = (sl < rem) ? sl : rem;
+        if (cp > 0) {
+            wmemcpy(buf + cur, s, cp);
+            cur += cp;
+            buf[cur] = L'\0';
+        }
+    };
+    auto append_view = [&](std::wstring_view v) {
+        const size_t rem = (cur < bufCount) ? (bufCount - 1 - cur) : 0;
+        const size_t cp = (v.size() < rem) ? v.size() : rem;
+        if (cp > 0) {
+            wmemcpy(buf + cur, v.data(), cp);
+            cur += cp;
+            buf[cur] = L'\0';
+        }
+    };
+
+    append(L" (");
+    append_view(selLabel);
+    append(L")");
 }
 
 bool
@@ -205,11 +157,11 @@ DynamicPopupMenu::InsertSeparatorAtEnd(HMENU menu)
     mii.fType = MFT_SEPARATOR;
 
     const UINT pos = GetMenuItemCountSafe(menu);
-    return ::InsertMenuItemW(menu, pos, TRUE /*fByPosition*/, &mii) != FALSE;
+    return ::InsertMenuItemW(menu, pos, TRUE /*by position*/, &mii) != FALSE;
 }
 
 bool
-DynamicPopupMenu::InsertItemAtEnd(HMENU menu, const Node &n)
+DynamicPopupMenu::InsertItemAtEnd(HMENU menu, const Node &n, const IMenuState &state)
 {
     MENUITEMINFOW mii{};
     mii.cbSize = sizeof(mii);
@@ -227,34 +179,40 @@ DynamicPopupMenu::InsertItemAtEnd(HMENU menu, const Node &n)
     }
 
     mii.fType = MFT_STRING;
-    const bool isAlg = IsRenderAlgorithmCommandId(n.id);
-    if (n.radio || isAlg) {
+
+    // Radio-check styling for radio items.
+    if (n.checkKind == CheckKind::Radio) {
         mii.fType |= MFT_RADIOCHECK;
     }
+
     if (n.ownerDraw) {
         mii.fType |= MFT_OWNERDRAW;
     }
 
     mii.wID = n.id;
 
-    UINT state = MapEnabledStateMFToMFS(n.stateFlags);
-    const bool checked = isAlg ? (n.id == DynamicPopupMenu::GetCurrentRenderAlgorithmId()) : n.checked;
-    if (checked)
-        state |= MFS_CHECKED;
-    if (n.isDefault)
-        state |= MFS_DEFAULT;
-    mii.fState = state;
+    UINT stateFlags = GetEnabledState(n, state);
 
-    // InsertMenuItemW uses a non-const pointer type; Windows won't modify it on insert.
+    if (IsCheckedNow(n, state)) {
+        stateFlags |= MFS_CHECKED;
+    }
+
+    if (n.isDefault) {
+        stateFlags |= MFS_DEFAULT;
+    }
+
+    mii.fState = stateFlags;
+
+    // InsertMenuItemW uses non-const pointer type; Windows won't modify it.
     mii.dwTypeData = const_cast<wchar_t *>(n.text.data());
     mii.cch = static_cast<UINT>(n.text.size());
 
     const UINT pos = GetMenuItemCountSafe(menu);
-    return ::InsertMenuItemW(menu, pos, TRUE /*fByPosition*/, &mii) != FALSE;
+    return ::InsertMenuItemW(menu, pos, TRUE /*by position*/, &mii) != FALSE;
 }
 
 bool
-DynamicPopupMenu::InsertPopupAtEnd(HMENU menu, const Node &n, HMENU popup)
+DynamicPopupMenu::InsertPopupAtEnd(HMENU menu, const Node &n, HMENU popup, const IMenuState &state)
 {
     MENUITEMINFOW mii{};
     mii.cbSize = sizeof(mii);
@@ -276,42 +234,57 @@ DynamicPopupMenu::InsertPopupAtEnd(HMENU menu, const Node &n, HMENU popup)
         mii.fType |= MFT_OWNERDRAW;
     }
 
-    UINT state = MapEnabledStateMFToMFS(n.stateFlags);
-    if (n.isDefault)
-        state |= MFS_DEFAULT;
-    mii.fState = state;
+    UINT stateFlags = GetEnabledState(n, state);
+    if (n.isDefault) {
+        stateFlags |= MFS_DEFAULT;
+    }
+    mii.fState = stateFlags;
 
     mii.hSubMenu = popup;
 
-    mii.dwTypeData = const_cast<wchar_t *>(n.text.data());
-    mii.cch = static_cast<UINT>(n.text.size());
+    // If adornment is requested, build a temporary label.
+    wchar_t labelBuf[256];
+    if (n.adornGroup != RadioGroup::None) {
+        BuildPopupLabel(n, state, labelBuf, sizeof(labelBuf) / sizeof(labelBuf[0]));
+        mii.dwTypeData = labelBuf;
+        mii.cch = static_cast<UINT>(wcslen(labelBuf));
+    } else {
+        mii.dwTypeData = const_cast<wchar_t *>(n.text.data());
+        mii.cch = static_cast<UINT>(n.text.size());
+    }
 
     const UINT pos = GetMenuItemCountSafe(menu);
-    return ::InsertMenuItemW(menu, pos, TRUE /*fByPosition*/, &mii) != FALSE;
+    return ::InsertMenuItemW(menu, pos, TRUE /*by position*/, &mii) != FALSE;
 }
 
 bool
-DynamicPopupMenu::InsertNodeAtEnd(HMENU menu, const Node &n)
+DynamicPopupMenu::InsertNodeAtEnd(HMENU menu, const Node &n, const IMenuState &state)
 {
     switch (n.kind) {
         case Kind::Separator:
             return InsertSeparatorAtEnd(menu);
 
         case Kind::Item:
-            return InsertItemAtEnd(menu, n);
+            return InsertItemAtEnd(menu, n, state);
 
         case Kind::Popup: {
             HMENU sub = ::CreatePopupMenu();
-            if (!sub)
+            if (!sub) {
                 return false;
+            }
 
-            if (!InsertPopupAtEnd(menu, n, sub)) {
+            if (!InsertPopupAtEnd(menu, n, sub, state)) {
                 ::DestroyMenu(sub);
                 return false;
             }
 
-            if (!BuildMenuTree(sub, n.kids))
+            if (!BuildMenuTree(sub, n.kids, state)) {
+                // Parent menu owns the submenu only if insertion succeeded;
+                // since insertion succeeded, destroying parent will destroy submenus.
+                // But to be safe here, explicitly destroy.
+                ::DestroyMenu(sub);
                 return false;
+            }
 
             return true;
         }
@@ -322,66 +295,59 @@ DynamicPopupMenu::InsertNodeAtEnd(HMENU menu, const Node &n)
 }
 
 bool
-DynamicPopupMenu::BuildMenuTree(HMENU parent, std::initializer_list<Node> nodes)
+DynamicPopupMenu::BuildMenuTree(HMENU parent, std::span<const Node> nodes, const IMenuState &state)
 {
     for (const Node &n : nodes) {
-        if (!InsertNodeAtEnd(parent, n))
+        if (!InsertNodeAtEnd(parent, n, state)) {
             return false;
+        }
     }
     return true;
 }
 
+// -----------------------------------------------------------------------------
+// Menu creation
+// -----------------------------------------------------------------------------
+
 UniqueHMenu
-DynamicPopupMenu::Create()
+DynamicPopupMenu::Create(const IMenuState &state)
 {
     UniqueHMenu root(::CreateMenu());
-    if (!root)
+    if (!root) {
         return {};
+    }
 
     HMENU popup = ::CreatePopupMenu();
-    if (!popup)
+    if (!popup) {
         return {};
+    }
 
     // Top-level "POPUP" item.
-    // NOTE: We must provide values for ALL Node fields we care about;
-    // extra fields can be value-initialized.
-    Node top = {Kind::Popup,
-                L"POPUP",
-                0,
-                Enabled(),
-                {},
+    Node top = Popup(L"POPUP", {}, Rule::Always, RadioGroup::None);
 
-                // extended fields (default):
-                false,
-                false,
-                false,
-                false,
-                nullptr,
-                0};
-
-    if (!InsertPopupAtEnd(root.get(), top, popup)) {
+    if (!InsertPopupAtEnd(root.get(), top, popup, state)) {
         ::DestroyMenu(popup);
         return {};
     }
 
-    if (!BuildPopupContents(popup)) {
+    // Build popup contents from the tree.
+    // This header defines: static const Node menu[] = {...};
+    // It is included here to keep the structure in a data-only definition unit.
+    if (!BuildPopupContents(popup, state)) {
         // Destroying root destroys attached submenus too.
         return {};
     }
-
-    // Apply mutually-exclusive radio checks for render algorithms.
-    ApplyRenderAlgorithmRadioChecks(popup, GetCurrentRenderAlgorithmId());
 
     return root;
 }
 
 bool
-DynamicPopupMenu::BuildPopupContents(HMENU popup)
+DynamicPopupMenu::BuildPopupContents(HMENU popup, const IMenuState &state)
 {
 #include "DynamicPopupTreeDef.h"
 
-    return BuildMenuTree(popup,
-                         std::initializer_list<Node>(menu, menu + (sizeof(menu) / sizeof(menu[0]))));
+    return BuildMenuTree(
+        popup, std::initializer_list<Node>(menu, menu + (sizeof(menu) / sizeof(menu[0]))), state);
 }
 
 } // namespace FractalShark

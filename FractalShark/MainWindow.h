@@ -11,6 +11,8 @@
 
 class JobObject;
 class Fractal;
+class MainWindowMenuState;
+
 enum FractalPalette : size_t;
 enum class CompressToDisk;
 enum class ImaginaSettings;
@@ -20,7 +22,8 @@ class UniqueHMenu;
 } // namespace FractalShark
 
 class MainWindow {
-    friend class CommandDispatcher;
+    friend class FractalShark::CommandDispatcher;
+    friend class MainWindowMenuState;
 
 public:
     struct SavedLocation;
@@ -30,7 +33,7 @@ public:
     ~MainWindow();
 
 private:
-    SplashWindow splash_;
+    SplashWindow Splash;
 
 
     std::vector<SavedLocation> gSavedLocations;
@@ -89,7 +92,7 @@ private:
     int prevX1 = -1;
     int prevY1 = -1;
 
-    CommandDispatcher commandDispatcher;
+    FractalShark::CommandDispatcher commandDispatcher;
 
     bool HasLastMenuPtClient() const noexcept;
     POINT GetSafeMenuPtClient() const;

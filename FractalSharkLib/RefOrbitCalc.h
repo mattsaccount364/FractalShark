@@ -173,6 +173,7 @@ public:
     const PerturbationResults<IterType, T, PExtras> *GetEltConst(size_t i) const;
 
     void SetOptions(AddPointOptions options);
+    AddPointOptions GetOptions() const;
 
     template<
         typename IterType,

@@ -3281,6 +3281,10 @@ Fractal::SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg)
     m_RefOrbit.SetPerturbationAlg(alg);
 }
 
+RefOrbitCalc::PerturbationAlg Fractal::GetPerturbationAlg() const {
+    return m_RefOrbit.GetPerturbationAlg();
+}
+
 void
 Fractal::ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type)
 {
@@ -3843,6 +3847,11 @@ Fractal::UsePaletteType(FractalPalette type)
         MessageBoxCudaError(err);
         return;
     }
+}
+
+FractalPalette Fractal::GetPaletteType() const
+{
+    return m_WhichPalette;
 }
 
 uint32_t
@@ -5805,13 +5814,12 @@ Fractal::LoadRefOrbit(RecommendedSettings *oldSettings,
 void
 Fractal::SetResultsAutosave(AddPointOptions Enable)
 {
-    if (Enable == AddPointOptions::EnableWithSave) {
-        m_RefOrbit.SetOptions(AddPointOptions::EnableWithSave);
-    } else if (Enable == AddPointOptions::EnableWithoutSave) {
-        m_RefOrbit.SetOptions(AddPointOptions::EnableWithoutSave);
-    } else {
-        m_RefOrbit.SetOptions(AddPointOptions::DontSave);
-    }
+    m_RefOrbit.SetOptions(Enable);
+}
+
+AddPointOptions Fractal::GetResultsAutosave() const
+{
+    return m_RefOrbit.GetOptions();
 }
 
 // This function is used for benchmarking.
@@ -6052,6 +6060,12 @@ Fractal::GetRenderDetails(std::string &shortStr, std::string &longStr) const
                                smaxY);
 
     longStr += tempStr;
+}
+
+bool
+Fractal::GpuBypassed() const
+{
+    return m_BypassGpu;
 }
 
 bool

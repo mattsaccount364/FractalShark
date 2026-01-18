@@ -145,6 +145,7 @@ public:
 
     HighPrecision GetZoomFactor() const;
     void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg);
+    RefOrbitCalc::PerturbationAlg GetPerturbationAlg() const;
     void ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type);
     void SavePerturbationOrbits();
     void LoadPerturbationOrbits();
@@ -169,6 +170,8 @@ public:
     void SetPaletteAuxDepth(int32_t aux_depth);
     void UseNextPaletteAuxDepth(int32_t inc);
     void UsePaletteType(FractalPalette type);
+    FractalPalette GetPaletteType() const;
+
     void ResetFractalPalette(void);
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
@@ -210,6 +213,7 @@ public:
     }
 
     void SetResultsAutosave(AddPointOptions Enable);
+    AddPointOptions GetResultsAutosave() const;
 
     // Unit conversion helpers
     template<bool IncludeGpuAntialiasing = false>
@@ -232,6 +236,8 @@ public:
     void GetRenderDetails(
         std::string &shortStr,
         std::string &longStr) const;
+
+    bool GpuBypassed() const;
 
 private:
     void Initialize(int width,

@@ -881,7 +881,7 @@ free(void *ptr)
 }
 
 extern "C" __declspec(restrict) void *
-aligned_alloc(size_t /*alignment*/, size_t size)
+aligned_alloc(size_t [[maybe_unused]] alignment, size_t size)
 {
     EarlyInit_SafeMode_NoCRT();
 

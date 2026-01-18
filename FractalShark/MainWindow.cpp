@@ -9,6 +9,7 @@
 #include "JobObject.h"
 #include "MainWindow.h"
 #include "MainWindowSavedLocation.h"
+#include "MainWindowMenuState.h"
 #include "OpenGLContext.h"
 #include "PngParallelSave.h"
 #include "RecommendedSettings.h"
@@ -44,7 +45,7 @@ MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) : commandDispatcher(*t
     MyRegisterClass(hInstance);
 
     // --- Splash (separate UI thread) ---
-    splash_.Start(hInstance);
+    Splash.Start(hInstance);
 
     auto startupBackgroundConsole = []() { AttachBackgroundConsole(true); };
     auto threadConsole = std::thread(startupBackgroundConsole);
@@ -58,7 +59,7 @@ MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) : commandDispatcher(*t
     threadConsole.join();
 
     // Main window is ready; close splash now.
-    splash_.Stop();
+    Splash.Stop();
 
     ImaginaMenu = nullptr;
     LoadSubMenu = nullptr;
@@ -159,9 +160,6 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // Store "this" in the extra bytes immediately (StaticWndProc needs it)
     SetWindowLongPtrW(hWnd, 0, (LONG_PTR)this);
 
-    // Create menu / popup (doesn't require the window to be shown)
-    gPopupMenu = FractalShark::DynamicPopupMenu::Create();
-
     // Don't set default algorithm on menu yet; wait until gFractal exists.
 
     // Apply your preferred mode while still hidden
@@ -204,6 +202,10 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     gFractal =
         std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false, gJobObj->GetCommitLimitInBytes());
+
+    // Create menu / popup (doesn't require the window to be shown)
+    MainWindowMenuState menuState(*this);
+    gPopupMenu = FractalShark::DynamicPopupMenu::Create(menuState);
 
     // TODO kind of gross but it works, reset now that gFractal exists.  If CPU-only is enforced,
     // this will show the radio button the menu properly.  Without this, the menu is out of sync
@@ -690,12 +692,14 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 ptScreen.y = GET_Y_LPARAM(lParam);
             }
 
-            // Show popup (screen coords)
-            auto popup = FractalShark::DynamicPopupMenu::GetPopup(gPopupMenu.get());
+            // Rebuild the menu each time so dynamic state (radio/toggles/enabled) is fresh.
+            MainWindowMenuState menuState(*this);
+            gPopupMenu = FractalShark::DynamicPopupMenu::Create(menuState);
 
-            // Sync radio checks on the existing menu instance
-            FractalShark::DynamicPopupMenu::ApplyRenderAlgorithmRadioChecks(
-                popup, FractalShark::DynamicPopupMenu::GetCurrentRenderAlgorithmId());
+            HMENU popup = FractalShark::DynamicPopupMenu::GetPopup(gPopupMenu.get());
+            if (!popup) {
+                return 0;
+            }
 
             ::TrackPopupMenu(popup,
                              TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN,

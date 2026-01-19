@@ -27,12 +27,25 @@
 \newcommand{\FractalShark}{FractalShark}
 \newcommand{\FractalSharkItalic}{\textit{FractalShark}}
 
-
 \title{\FractalSharkItalic{}: High-Performance Mandelbrot Rendering}
 \author{Matthew Renzelmann}
 \date{\today}
 
 \begin{document}
+
+\vspace*{\fill}
+
+\begin{center}
+\textit{These notes are a work-in-progress summary of
+\FractalShark{} but are currently not in a well-edited or organized state.
+Moreover, much of it is presently AI-generated and thus may contain errors or
+inconsistencies.  That said, I've made some effort to review and correct it, so
+it should be better than nothing.  I'll remove this warning once I'm better
+satisfied with the content.}
+\end{center}
+
+\vspace*{\fill}
+
 \maketitle
 
 \makeatletter
@@ -44,13 +57,6 @@
 
 \section{\FractalShark{} Overview}
 \label{sec:goal}
-
-\textit{These notes are a work-in-progress summary of \FractalShark{} but are
-currently not in a well-edited or organized state.  Moreover, much of it is
-presently AI-generated and thus may contain errors or inconsistencies.  That
-said, I've made some effort to review and correct it, so it should be better
-than nothing.  I'll remove this warning once I'm better satisfied with the
-content.}
 
 \begin{figure}[!htbp]
   \centering
@@ -1611,15 +1617,19 @@ Two orthogonal storage decisions are made while iterating:
 
 The next two sections describe these mechanisms in more detail.
 
-\section{Reuse-based orbit regeneration}
+\subsection{Reuse-based orbit regeneration}
 \label{subsec:ref-orbit-reuse}
 
 We consider iteration of the quadratic map
 \[
 f_c(z) = z^2 + c,\qquad z,c \in \mathbb{C},
 \]
-and distinguish between an \emph{authoritative} reference orbit computed in very high precision and a family of
+and distinguish between an \emph{authoritative} reference orbit computed in very high precision and a hierarchy of
 \emph{intermediate precision} reference orbits constructed via perturbation from that authoritative orbit.
+The central motivation for this construction is performance at extreme zoom depths: while the authoritative orbit
+is expensive to compute, it need only be regenerated infrequently as the view parameter drifts.
+Intermediate precision orbits, by contrast, are substantially cheaper to evaluate and can be reused across many
+incremental zoom steps before their accuracy envelope is exceeded.
 
 \subsubsection{Authoritative Reference Orbit}
 
@@ -1627,7 +1637,8 @@ Let
 \[
 c_0 \in \mathbb{C}
 \]
-denote the authoritative reference parameter.  The corresponding authoritative reference orbit is defined by
+denote the authoritative reference parameter.
+The corresponding authoritative reference orbit is defined by
 \begin{equation}
 z^{(0)}_0 = 0, \qquad
 z^{(0)}_{n+1} = \bigl(z^{(0)}_n\bigr)^2 + c_0,
@@ -1635,6 +1646,11 @@ z^{(0)}_{n+1} = \bigl(z^{(0)}_n\bigr)^2 + c_0,
 \end{equation}
 and is computed using sufficiently high precision that it is treated as exact for all practical purposes.
 This orbit constitutes the single source of truth for all subsequent perturbative constructions.
+
+At very deep zooms, recomputing~\eqref{eq:authoritative_orbit} at every navigation step would dominate runtime,
+as the required precision grows with zoom depth.
+The reuse-based framework therefore seeks to minimize how often this authoritative orbit must be recalculated,
+while still maintaining numerical correctness.
 
 \subsubsection{Perturbation Formulation}
 
@@ -1680,6 +1696,13 @@ where $\Delta z^{(1)}_n$ is obtained by iterating
 \end{equation}
 in the intermediate precision format.
 
+Crucially, the cost of evaluating~\eqref{eq:intermediate_perturbation} is dramatically lower than that of recomputing
+the authoritative orbit~\eqref{eq:authoritative_orbit}.
+As a result, once an intermediate reference orbit has been established, it may be reused across many subsequent zoom
+or pan operations, as long as the view parameter remains within its validity radius.
+Only when accumulated drift causes the perturbation to exceed the fixed accuracy envelope does a new authoritative
+orbit need to be computed.
+
 In the single-thread execution path (beginning at
 \texttt{AddPerturbationReferencePointST}), this construction is performed sequentially using the cached authoritative
 orbit samples $\{z^{(0)}_n\}$ as coefficients.
@@ -1707,6 +1730,20 @@ where $\delta z_n$ satisfies
 Because $|\delta c|$ is small, $\delta z_n$ remains well within the same fixed precision envelope used for the
 intermediate reference orbit.
 
+From a performance perspective, this two-level perturbation hierarchy is
+beneficial when interacting with the Mandelbrot. The expensive high-precision
+authoritative orbit is amortized over many intermediate orbits, and each
+intermediate orbit in turn supports an entire image worth of per-pixel
+perturbations. As zoom depth increases, most navigation steps therefore reuse
+existing intermediate data, with authoritative recomputation occurring only
+sporadically.
+
+The two-level approach nevertheless does have an important downside: instead of
+maintaing only a low-precision copy of the reference orbit, the system must also
+store the authoritative orbit samples $\{z^{(0)}_n\}$ to support intermediate
+reconstruction.  This increases memory usage and data transfer requirements,
+potentially impacting performance.
+
 \subsubsection{SaveForReuse Modes}
 
 Both \texttt{SaveForReuse1} and \texttt{SaveForReuse2} correspond to the mathematical framework described above.
@@ -1715,7 +1752,7 @@ They differ only in execution strategy.
 \paragraph{SaveForReuse1.}
 In \texttt{SaveForReuse1}, the authoritative orbit samples $\{z^{(0)}_n\}$ are stored after initial computation and reused
 whenever intermediate reference orbits are constructed.
-This avoids recomputation of \eqref{eq:authoritative_orbit} and ensures that all perturbative steps are driven by the same
+This avoids recomputation of~\eqref{eq:authoritative_orbit} and ensures that all perturbative steps are driven by the same
 authoritative data.
 
 \paragraph{SaveForReuse2.}
@@ -1731,10 +1768,342 @@ From a mathematical standpoint,
 \texttt{SaveForReuse1} \;\equiv\; \texttt{SaveForReuse2}.
 \]
 Both modes define the same authoritative orbit, the same intermediate reference
-orbits, and the same per-pixel perturbation orbits.  Any differences are
-strictly implementation-level optimizations and do not affect numerical results.
-\texttt{SaveForReuse3} and \texttt{SaveForReuse4} are addressed in a subsequent
-section.
+orbits, and the same per-pixel perturbation orbits.
+Any differences are strictly implementation-level optimizations and do not affect numerical results.
+\texttt{SaveForReuse3} and \texttt{SaveForReuse4} are addressed in a subsequent section.
+
+\subsection{Reference Compression}
+\label{sec:ref-compression-zhuoran}
+
+The idea in this section was developed by Zhuoran
+\cite{Zhuoran2023ReferenceCompression} and \FractalShark{} implements it.
+
+\subsubsection{Motivation}
+For deep zoom escape-time fractals, pixel evaluation has become extremely fast
+(e.g., via perturbation and GPU acceleration), while \emph{reference-orbit}
+construction often remains comparatively expensive and can dominate total render
+time.  Additionally, when the reference orbit is large, it can consume
+significant amounts of memory.  The goal of \emph{reference compression} is to
+store this potentially-large reference orbit in a compact form that can be
+transmitted or cached, then \emph{reconstructed} efficiently with a guaranteed
+bounded reconstruction error. The key idea is to store only a sparse set of
+\emph{waypoints} and fill the gaps by recomputing intermediate iterations in
+reduced precision.  This section describes the approach.
+
+\subsubsection{High-precision reference and low-precision surrogate}
+Let the (authoritative) high-precision reference orbit be
+\(
+z_n^{\mathrm{HP}} \in \mathbb{C}
+\)
+for \(n=0,\dots,N\).
+During compression and decompression we also maintain a low-precision surrogate
+\(
+\hat z_n \in \mathbb{C}
+\)
+computed by iterating the same recurrence in a cheaper numeric type.
+
+Because the dynamics are initially stable to rounding and only later amplify
+numerical differences, \(\hat z_n\) typically tracks \(z_n^{\mathrm{HP}}\) for
+many iterations before diverging.  This observation enables a streaming scheme:
+store occasional exact anchors (waypoints) and recover all omitted states by
+recomputing them in low precision between anchors.
+
+\subsubsection{Waypoint selection criterion}
+A \emph{waypoint} stores the iteration index and a corrective payload.
+In the simplest mode, the payload is the full authoritative value
+\(z_{n_k}^{\mathrm{HP}}\) at iteration \(n_k\).
+Waypoints are chosen by simulating \(\hat z_n\) in low precision while comparing
+against \(z_n^{\mathrm{HP}}\).  If the relative error exceeds a threshold, the
+iteration must be retained.
+
+A convenient test is
+
+\begin{equation}
+  \frac{\lVert z_n^{\mathrm{HP}} - \hat z_n \rVert}{\lVert z_n^{\mathrm{HP}} \rVert}
+  \;>\; \varepsilon,
+  \label{eq:relerr-test}
+\end{equation}
+
+where \(\lVert \cdot \rVert\) may be \(\ell_\infty\), \(\ell_2\), or another cheap norm
+(consistent between compression and decompression), and \(\varepsilon\) is a
+user-controlled tolerance.  Whenever the test fails, we emit a waypoint at \(n\)
+and \emph{reset} the low-precision state to the authoritative value:
+
+\begin{equation}
+  \text{if waypoint at } n:\qquad \hat z_n \leftarrow z_n^{\mathrm{HP}}.
+\end{equation}
+
+Between waypoints, the compressor stores nothing, relying on \(\hat z\)-iteration
+to reconstruct the missing values later.
+
+\paragraph{Compressed representation.}
+The compressed reference is thus a sparse, ordered list
+\(
+\mathcal{W} = \{(n_k, w_k)\}_{k=0}^{K-1}
+\)
+with strictly increasing indices \(0 \le n_0 < n_1 < \cdots < n_{K-1} \le N\),
+where the payload \(w_k\) depends on the mode (Section~\ref{sec:refcomp-pert}).
+
+\subsubsection{Decompression by replay}
+
+Decompression replays the same low-precision recurrence and applies waypoints as
+hard resets:
+
+\begin{equation}
+  \hat z_{n+1} = \hat z_n^2 + c \quad\text{(low precision)},\qquad
+  \text{and if } n = n_k:\ \hat z_n \leftarrow w_k.
+\end{equation}
+
+If the decompressor uses the same low-precision arithmetic, the same recurrence,
+and encounters the same waypoints at the same indices, then the reconstructed
+orbit matches what the compressor would have produced by replay; consequently,
+the reconstruction error is bounded by the same tolerance logic used to place
+waypoints.
+
+\paragraph{On-the-fly use during rendering.}
+Because decompression is just a forward scan with occasional resets, it can be
+performed \emph{streaming} (no random access required), and can be interleaved
+with perturbation-based pixel evaluation by iterating \(\hat z_n\) alongside the
+main render loop.
+
+\subsubsection{Perturbation-assisted compression}
+
+\label{sec:refcomp-pert}
+Waypointing only the absolute states \(z_n\) is useful but may not achieve high
+compression at extreme depths, where the orbit's sensitivity forces frequent
+anchors.  Compression improves substantially by switching to a perturbation form
+once the orbit becomes suitable.
+
+\paragraph{Self-referenced perturbation.}
+Choose a \emph{base} (reference) iteration \(r\) and represent subsequent states as
+
+\begin{equation}
+  z_n = z_r + \Delta z_n, \qquad n \ge r,
+\end{equation}
+
+where \(z_r\) is treated as a reference and \(\Delta z_n\) is (ideally) small.
+In standard perturbation rendering, \(\Delta z\) is evolved using derivatives
+around a known reference orbit.  For \emph{reference compression}, the only
+available reference is the reference itself, so the scheme starts in the
+absolute waypoint mode (previous sections) and transitions to perturbation only
+when \(\lVert \Delta z \rVert\) is sufficiently small that perturbation yields
+meaningful extra precision in the reduced type.
+
+\paragraph{Switch criterion.}
+Let \(\tau\) be a user parameter.  When \(\lVert \Delta z_n \rVert < \tau\), the
+compressor may begin emitting waypoints that store \(\Delta z_n\) rather than
+\(z_n\).  After the switch, a waypoint payload becomes
+
+\begin{equation}
+  w_k = \Delta z_{n_k} \quad\text{(instead of } z_{n_k}\text{)}.
+\end{equation}
+
+\paragraph{Rebasing synchronization.}
+Perturbation implementations commonly \emph{rebase} to prevent \(\Delta z\) from
+growing too large: at some iteration \(b\), the reference is updated so that
+\(\Delta z_b \leftarrow 0\) and the base index becomes \(r \leftarrow b\).
+During decompression, if rebases occur at different iterations than during
+compression, the decompressor will interpret stored \(\Delta z\) against the
+wrong base \(z_r\), producing catastrophic corruption.
+
+A robust compressed format therefore must encode enough information to keep
+rebases in lockstep.  One approach is to include a single \emph{rebase flag} per
+waypoint indicating whether a rebase occurs at that iteration; if a rebase
+occurs at an iteration where no waypoint would otherwise be required, the
+compressor must still record the iteration (e.g., by forcing a waypoint or
+storing an index) so the decompressor can rebase at the same \(b\).
+
+\subsubsection{Error propagation and correction}
+
+Reconstruction introduces small errors.  Without perturbation, such errors are
+often tolerable because each pixel's perturbation evaluation can be stable to
+small reference drift.  However, once perturbation is used \emph{inside} the
+reference reconstruction, errors can feed forward recursively: an error early in
+the reconstructed reference becomes part of the base used later, and thus
+contaminates subsequent \(\Delta z\) evolution.
+
+\paragraph{Local linear model.}
+Let \(e_n = z_n^{\mathrm{HP}} - \tilde z_n\) be the reconstruction error, where
+\(\tilde z_n\) denotes the reconstructed (decompressed) value.  Linearizing the
+map \(f(z)=z^2+c\) around the reconstructed state gives
+\begin{equation}
+  e_{n+1}
+  \;=\; f(z_n^{\mathrm{HP}}) - f(\tilde z_n)
+  \;\approx\; f'(\tilde z_n)\, e_n
+  \;=\; 2\tilde z_n\, e_n.
+  \label{eq:error-forward}
+\end{equation}
+Thus, when \(|2\tilde z_n|\) is large, errors amplify rapidly.
+
+\paragraph{Inverse (Newton-style) correction sweep.}
+At a waypoint iteration \(m\), the compressor knows the authoritative value
+(either \(z_m\) or the perturbation payload consistent with the base).  The
+decompressor can compute the current error at \(m\) directly:
+
+\begin{equation}
+  e_m = z_m^{\mathrm{HP}} - \tilde z_m
+  \quad\text{(or the analogous difference in the perturbation representation).}
+\end{equation}
+
+Assuming the dominant source of \(e_m\) is accumulated from the previous segment,
+one can approximate the error in earlier iterations by inverting the local model
+\eqref{eq:error-forward}:
+
+\begin{equation}
+  e_n \;\approx\; \frac{e_{n+1}}{2\tilde z_n},
+  \qquad \text{for } n=m-1,m-2,\dots.
+  \label{eq:error-backward}
+\end{equation}
+
+A single backward sweep applying
+
+\(
+\tilde z_n \leftarrow \tilde z_n + e_n
+\)
+
+is equivalent to performing one Newton--Raphson-style correction pass over the
+segment to enforce consistency with the waypoint constraint at \(m\).  In
+practice this substantially reduces recursive drift and allows larger gaps
+between waypoints in perturbation mode.
+
+\paragraph{Compressor constraint.}
+To keep the scheme well-defined, the compressor must ensure that iterations not
+yet eligible for correction are never used as a perturbation base.  Operationally:
+when the current perturbation base index approaches the end of the corrected
+region, the compressor inserts a new waypoint so the decompressor has an
+opportunity to correct that segment before it would be used as a base for future
+\(\Delta z\) evolution.
+
+\subsubsection{Algorithm sketch}
+
+The following high-level procedure summarizes the method.
+
+\begin{enumerate}
+  \item \textbf{Compression pass:}
+    \begin{enumerate}
+      \item Initialize low-precision \(\hat z_0 \leftarrow 0\); iterate forward.
+      \item At each \(n\), evaluate relative error \eqref{eq:relerr-test}.
+      \item If error too large, emit waypoint \((n, z_n^{\mathrm{HP}})\) (or \((n,\Delta z_n)\) after perturbation switch),
+            set \(\hat z_n \leftarrow z_n^{\mathrm{HP}}\) (or reset perturbation state), and continue.
+      \item If in perturbation mode, record/synchronize any rebase events (bit flag or forced waypoint).
+      \item Insert additional waypoints as needed to guarantee correction opportunities before uncorrected
+            states would become perturbation bases.
+    \end{enumerate}
+
+  \item \textbf{Decompression pass:}
+    \begin{enumerate}
+      \item Replay the same low-precision recurrence, applying waypoints as resets.
+      \item In perturbation mode, rebase exactly when signaled by the compressed stream.
+      \item When a waypoint is reached, compute the current error and apply a backward correction sweep
+            using \eqref{eq:error-backward} over the segment since the previous waypoint.
+    \end{enumerate}
+\end{enumerate}
+
+\subsubsection{Practical tradeoffs}
+
+Reference compression exposes a clear accuracy--size--time trade:
+\begin{itemize}
+  \item Smaller tolerance \(\varepsilon\) \(\Rightarrow\) more waypoints \(\Rightarrow\) larger compressed size but tighter fidelity.
+  \item Larger gaps reduce storage but increase decompression work and may require more frequent correction points,
+        especially in perturbation mode.
+  \item Perturbation-mode waypoints (\(\Delta z\)) can greatly improve compression when \(\Delta z\) remains small for long
+        stretches, but require careful rebase synchronization and correction to avoid catastrophic desynchronization.
+\end{itemize}
+
+Overall, the method turns an expensive, dense high-precision reference into a
+compact, streamable representation whose reconstruction cost is dominated by
+cheap low-precision iteration plus sparse waypoint application, enabling reuse
+of deep references across sessions, machines, or render nodes.
+
+\subsubsection{Supporting both random and sequential access patterns}
+\label{sec:refcomp-runtime-access}
+
+Reference-orbit consumers exhibit two fundamentally different access patterns.
+On the one hand, perturbation-based evaluation and on-the-fly decompression
+naturally traverse the orbit sequentially, requesting
+\(z_0, z_1, z_2, \dots\) in order.  On the other hand, higher-level algorithms
+such as linear (or affine) approximation, reuse heuristics, and error analysis
+require \emph{direct access} to arbitrary iteration indices in order to evaluate
+local behavior around a chosen anchor.  A decompression strategy optimized only
+for sequential replay performs poorly for such random probes, while a strategy
+optimized only for random access would impose unnecessary overhead on the
+dominant sequential case.
+
+To accommodate both use cases efficiently, the runtime decompressor implements a
+hybrid access scheme: binary-search-based anchoring for random access, combined
+with cached linear scans for sequential access.
+
+\paragraph{Random access via waypoint search.}
+The compressed reference orbit is stored as a strictly increasing sequence of
+waypoints
+\(
+\{(i_k, z_{i_k})\}_{k=0}^{K-1}
+\),
+where \(i_k\) denotes the uncompressed iteration index and \(z_{i_k}\) the saved
+state.  Given a request for an arbitrary iteration \(n\), we locate the nearest
+preceding waypoint
+\begin{equation}
+  k^\star = \max\{k \mid i_k \le n\},
+\end{equation}
+using a binary search over the waypoint indices in
+\(\mathcal{O}(\log K)\) time.  Reconstruction then proceeds by replaying the
+low-precision recurrence forward from that anchor for
+\(\Delta = n - i_{k^\star}\) steps:
+\begin{equation}
+  z_{t+1} \leftarrow z_t^2 + c,
+  \qquad t = i_{k^\star}, \dots, n-1,
+\end{equation}
+with the same reduction/normalization operations used during compression.  This
+provides efficient, bounded-cost random access suitable for linear approximation
+and analysis routines that must probe isolated iteration indices.
+
+\paragraph{Sequential access via cached linear scans.}
+In contrast, perturbation pipelines typically consume the reference orbit in
+monotone order.  Repeating a binary search for every \(n+1\) would be wasteful,
+so the decompressor maintains a small cache of recently reconstructed states,
+including both their uncompressed and compressed indices.  When a request
+targets the immediate successor of a cached iteration, the decompressor advances
+the state in-place:
+\begin{itemize}
+  \item If the next uncompressed index lies strictly between two waypoints, a
+        single recurrence step is performed.
+  \item If the next index coincides with a waypoint, the cached state is replaced
+        by the stored waypoint value and the compressed index is advanced.
+\end{itemize}
+A dual-entry cache tolerates minor access jitter by retaining both the most
+recent and the previously-recent state; exact cache hits are returned
+immediately, and near-sequential requests avoid both binary search and replay
+from older anchors.
+
+\paragraph{Combined complexity and practical behavior.}
+This hybrid design yields the desirable properties of both approaches:
+\begin{align}
+  \text{sequential access} &: \quad \mathcal{O}(1)\ \text{amortized per iteration}, \\
+  \text{random access} &: \quad \mathcal{O}(\log K + \Delta),
+\end{align}
+where \(\Delta\) is the distance from the nearest preceding waypoint.  In typical
+compressed references, \(\Delta\) is small relative to the full orbit length,
+while sequential traversal dominates overall access volume.  The result is a
+single runtime decompressor that efficiently supports both perturbation-driven
+sequential replay and analysis-driven random probing, without duplicating
+reference representations or specializing the data structure to a single access
+pattern.
+
+\paragraph{Example usage.}
+See \ref{fig:view27-1-quadrillion} for an example of a deep-zoom render
+that requires reference compression to complete.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{view27-1-quadrillion.png}
+  \caption{View \#27, a period ~28-billion point rendered at 1 quadrillion
+  iterations per pixel, requires reference compression to render on most
+  hardware because of its memory requirements.  This render takes ~6h with an
+  RTX 4090 and AMD 5950X and 128GB RAM with the multi-threaded reference orbit
+  backend and is effectively the hardest point \FractalShark{} has likely ever
+  rendered.}
+  \label{fig:view27-1-quadrillion}
+\end{figure}
 
 
 \section{Multi-threaded Reference Orbit Acceleration}
@@ -1822,23 +2191,6 @@ treated as complementary strategies rather than a strict hierarchy: fewer limbs
 favor single-thread execution, while increasing precision increasingly favors
 multi-threaded decomposition, with \texttt{Auto} providing an adaptive runtime
 selection mechanism.
-
-\section{Reference Compression}
-
-See \ref{fig:view27-1-quadrillion} for an example of a deep-zoom render
-that requires reference compression to complete.
-
-\begin{figure}[!htbp]
-  \centering
-  \includegraphics[width=0.9\linewidth]{view27-1-quadrillion.png}
-  \caption{View \#27, a period ~28-billion point rendered at 1 quadrillion
-  iterations per pixel, requires reference compression to render on most
-  hardware because of its memory requirements.  This render takes ~6h with an
-  RTX 4090 and AMD 5950X and 128GB RAM with the multi-threaded reference orbit
-  backend and is effectively the hardest point \FractalShark{} has likely ever
-  rendered.}
-  \label{fig:view27-1-quadrillion}
-\end{figure}
 
 
 \section{GPU reference orbit backend}

@@ -18,7 +18,7 @@ FractalShark includes several innovations relative to most other Mandelbrot rend
 
 ### 1. Experimental GPU-accelerated reference orbit computation
 
-As of December 2025 (version 0.5), FractalShark includes an **experimental GPU-accelerated reference orbit implementation**. To my knowledge, this implementation is unique in the context of trying to accelerate Mandelbrot rendering.  FractalShark implements a full **number-theoretic transform (NTT)** pipeline on the GPU, including high-precision multiply, add, and subtract operations. These operations exploit GPU parallelism to accelerate arithmetic that is traditionally CPU-bound.
+As of December 2025 (version 0.5), FractalShark includes an **experimental GPU-accelerated reference orbit implementation**. To my knowledge, this implementation is unique in the context of trying to accelerate Mandelbrot rendering.  FractalShark implements a full high-precision floating point pipeline on the GPU, including high-precision multiply, add, and subtract operations. The multiply implementation uses the Number Theoretic Transform for efficient at operation at very high preicsion.  These operations exploit GPU parallelism to accelerate arithmetic that is traditionally CPU-bound.
 
 At a precision of \(10^{16384}\) using 32-bit limbs (≈ 100,000+ decimal digits), this GPU reference orbit implementation outperforms the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.  The only built-in View that shows a clear benefit to the GPU-accelerated approach is View #30, which uses 16384 32-bit limbs internally.  My new RTX 5090 is slightly slower than the 4090, at ~9x faster than the existing FractalShark multithreaded CPU-based reference orbit calculator.  
 

@@ -95,7 +95,7 @@ static const DynamicPopupMenu::Node menu[] = {
     Item(L"Minimize Window", IDM_MINIMIZE),
     Sep(),
 
-    FS_POPUP(L"GPU Antialiasing",
+    FS_POPUP(L"Antialiasing",
              R::Always,
              /*adornment*/ RG::GpuAntialiasing,
              Radio(L"1x (fast)", IDM_GPUANTIALIASING_1X, RG::GpuAntialiasing),

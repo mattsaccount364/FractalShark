@@ -19,7 +19,7 @@
 //          * Toggle -> checked via IsChecked(commandId)
 //          * Radio  -> checked if commandId == GetRadioSelection(group)
 //      - Optional popup "adornment" appends the current selection label to a
-//        submenu caption (e.g. "GPU Antialiasing (4x)").
+//        submenu caption (e.g. "Antialiasing (4x)").
 //
 // Key invariants:
 //
@@ -264,7 +264,7 @@ private:
     static bool IsCheckedNow(const Node &n, const IMenuState &state) noexcept;
 
     // Optional: decorate popup labels with current selection, if adornGroup != None.
-    // Example: "GPU Antialiasing (4x)".
+    // Example: "Antialiasing (4x)".
     static void BuildPopupLabel(const Node &n,
                                 const IMenuState &state,
                                 /*out*/ wchar_t *buf,

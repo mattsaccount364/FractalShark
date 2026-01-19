@@ -574,7 +574,7 @@ Fractal::RecenterViewScreen(RECT rect)
                 //     m_PerturbationGuessCalcY = 0;
                 // }
             } else {
-                // Do nothing.  This case can occur if we e.g. change dimension, change gpu antialiasing
+                // Do nothing.  This case can occur if we e.g. change dimension, change antialiasing
                 // etc.
             }
         };

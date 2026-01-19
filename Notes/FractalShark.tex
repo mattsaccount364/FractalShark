@@ -7,6 +7,7 @@
 % --- Math ---
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{graphicx}
 
 % --- Layout ---
 \usepackage{geometry}
@@ -46,8 +47,17 @@
 
 \textit{These notes are a work-in-progress summary of \FractalShark{} but are
 currently not in a well-edited or organized state.  Moreover, much of it is
-AI-generated and thus may contain errors or inconsistencies.  That said, I've
-made some effort to review and correct it, so it should be better than nothing.}
+presently AI-generated and thus may contain errors or inconsistencies.  That
+said, I've made some effort to review and correct it, so it should be better
+than nothing.  I'll remove this warning once I'm better satisfied with the
+content.}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{mandelbrot.png}
+  \caption{The Mandelbrot set.}
+  \label{fig:mandelbrot}
+\end{figure}
 
 \FractalShark{} is an interactive Mandelbrot set renderer focused on
 \textbf{extreme deep-zoom exploration}, numerical correctness, and
@@ -180,81 +190,385 @@ The most common interactions are:
 
 \subsection{Menu Structure and Behavior}
 
-The popup menu is organized into logical groups.  Items fall into three distinct
-behavioral categories:
+The popup menu is organized into logical groups and submenus. Items fall into
+three distinct behavioral categories:
 
 \begin{description}
   \item[Radio groups] Mutually exclusive choices where exactly one option is
-  active at a time (for example, selecting a render algorithm).
-  \item[Toggle options] Independent on/off settings that can be enabled or
-  disabled without affecting other items.
+  active at a time (for example, selecting a render algorithm or GPU antialiasing level).
   \item[Commands] Immediate actions that execute when selected and do not
   maintain a checked state.
 \end{description}
 
-Radio groups and toggle states are derived from the current internal settings,
-not from static menu state, ensuring that the menu always reflects the actual
-configuration in use.
+Radio groups reflect the configuration in use, with the currently active option
+checked. Selecting a different option automatically deselects the previous
+choice and triggers any necessary reconfiguration.
 
-\subsection{Render Algorithm Selection}
+\subsection{Top-Level Menu}
 
-The \emph{Choose Render Algorithm} submenu selects the core Mandelbrot rendering
-strategy.  This is a radio group: selecting one algorithm automatically
-deselects the others.
-
-Available choices may include:
 \begin{itemize}
-  \item CPU-based reference and linear-approximation renderers
-  \item Multiple CUDA-based GPU renderers
-  \item High-dynamic-range and experimental kernels
+  \item \emph{Show Help} (command): Displays an on-screen help dialog summarizing keyboard shortcuts.
+
+  \item \emph{Navigate} (submenu):
+    \begin{itemize}
+      \item \emph{Back} (command): Navigate back to the previous view in history.
+      \item \emph{Center View Here} (command): Centers the current view on the
+      point under the cursor.
+      \item \emph{Zoom In Here} (command): Zooms in toward the point under the cursor.
+      \item \emph{Zoom Out} (command): Zooms out from the current view.
+      \item \emph{Autozoom Default} (command): See \ref{par:autozoom} for details.
+      \item \emph{Autozoom Max} (command): See \ref{par:autozoom} for details.
+    \end{itemize}
+
+  \item \emph{Built-In Views} (submenu): Loads a predefined view/location used
+  for demonstrations, debugging, or performance testing.
+    \begin{itemize}
+      \item \emph{Help} (command): Pops up a message box that simply says this
+      submenu contains built-in test views.
+      \item \emph{Standard View} (command): Loads the default starting view: the
+      classic Mandelbrot.
+      \item \emph{\#1 -- \#whatever} (commands): Loads a specific predefined
+      test view. Many entries encode expected precision limits, kernel behavior,
+      or known failure cases in their label text.  Several views require intense
+      computation and take a long time to render.  View \#27, for example, is a
+      period ~28 billion point that takes hours to render and requires reference
+      compression even with 128GB of RAM.  Exercise caution when selecting deep-zoom
+      views, as they may cause long delays or high memory usage.
+
+    \end{itemize}
+
+  \item \emph{Recalculate, Reuse Reference} (command): Forces an immediate
+  re-render using the current settings, reusing the existing reference orbit if
+  possible.
+
+  \item \emph{Toggle Repainting}: Enables or disables progressive
+  repainting while a render is in progress. When disabled, no recalculation
+  takes place on window resize or related, which can be helpful if you want a
+  new window size but don't want to trigger a re-render.
+  \item \emph{Toggle Window Size}: Toggles between windowed and
+  full-screen behavior.  The window stays at the same aspect ratio by default.
+  \item \emph{Toggle Window Size (Square)}: Toggles an alternate sizing
+  mode constrained to a square aspect ratio.
+  \item \emph{Minimize Window} (command): Minimizes the application window.
+
+  \item \emph{Antialiasing} (radio group submenu): Selects the antialiasing
+  level used for rendering.
+    \begin{itemize}
+      \item \emph{1x (fast)}
+      \item \emph{4x}
+      \item \emph{9x}
+      \item \emph{16x (better quality)}
+    \end{itemize}
+
+  Note that antiasliasing as used here is not traditional GPU antialiasing.
+  Instead, 4, 9, or 16 samples are explicitly computed per pixel and averaged
+  together either on the CPU or GPU.  This approach is known as
+  \emph{supersampling} and produces high-quality results at the cost of
+  increased computation time and memory usage.  It's a naive approach---in
+  principle, more sophisticated techniques could be implemented in the future,
+  such as edge-aware sampling or adaptive sampling.
+
+  \item \emph{Choose Render Algorithm} (radio group submenu): Selects the core
+  Mandelbrot rendering strategy. This is a radio group: selecting one algorithm
+  automatically deselects the others. Available choices may include CPU-based
+  reference and linear-approximation renderers, multiple CUDA-based GPU
+  renderers, and high-dynamic-range and experimental kernels. On systems without
+  a working CUDA setup, CPU renderers can be selected as a fallback. In the
+  event of a CUDA initialization failure, switching to a CPU algorithm followed
+  by a recalculation may restore a usable image.
+
+    \begin{itemize}
+      \item \emph{Help} (command): Displays help for algorithm selection and
+      related concepts.
+
+      \item \emph{Auto (Default)} (radio): Automatically selects the
+      default/recommended renderer.  Recommended.
+
+      \emph{Note}: this option exhibits potentially-confusing behavior.  When
+      selected, it does not lock in a specific algorithm; rather, it allows the
+      system to choose the most appropriate algorithm based on current view
+      parameters. The radio button for "Auto" will not be checked; instead, the
+      actual algorithm in use will be checked.  Thus, selecting \emph{Auto} may
+      appear to have no effect but if you navigate the submenus you'll find the
+      algorithm currently in use is checked.  This design allows users to see
+      what algorithm is active.
+
+      At present, only three algorithms are eligible for automatic selection:
+      \begin{itemize}
+        \item \emph{1x32 GPU}: The default low-zoom GPU linear-approximation
+              renderer.  No perturbation or linear approximation is used.
+        \item \emph{1x32 GPU -- Perturbation Only}: The default
+              perturbation-only GPU renderer for moderate zooms uses
+              perturbation but no linear approximation.
+        \item \emph{1x32 GPU -- LAv2}: A bit deeper, no high-dynamic range
+              floats but does use linear-approximation renderer and
+              perturbation.
+        \item \emph{HDRx32 GPU -- LAv2}: Arbitrary depth, combines all known
+              algorithmic optimizations.  This one can result in rendering
+              artifacts at some deep locations due to numeric precision
+              limitations.  "Auto" mode can't tell, so if you see artifacts, try
+              HDRx2x32 or HDRx64 variants instead.  View \#26 is an example of a
+              point that fails with HDRx32 but works correctly with HDRx64.
+
+              See figure \ref{fig:auto-renderer-artifact} for an example of
+              artifacts that can arise when using HDRx32 at extreme depths.
+      \end{itemize}
+
+      \item \emph{LA Parameters} (submenu): Controls linear-approximation (LA) configuration and tuning.
+        \begin{itemize}
+          \item \emph{Multithreaded (Default)} (radio): Uses multithreaded LA processing.
+          \item \emph{Single Threaded} (radio): Uses single-threaded LA processing.
+          \item \emph{Max Accuracy (Default)} (command): \textit{[TODO: unclear behavior/description]}
+          \item \emph{Max Performance (Accuracy Loss)} (command): \textit{[TODO: unclear behavior/description]}
+          \item \emph{Min Memory} (command): \textit{[TODO: unclear behavior/description]}
+        \end{itemize}
+
+      \item \emph{CPU-Only} (submenu): CPU renderers and CPU-driven perturbation variants.
+        \begin{itemize}
+          \item \emph{Very High Precision CPU} (radio)
+          \item \emph{1x64 CPU} (radio)
+          \item \emph{HDRx32 CPU} (radio)
+          \item \emph{HDRx64 CPU} (radio)
+
+          \item \emph{1x64 CPU -- Perturbation BLA} (radio)
+          \item \emph{HDRx32 CPU -- Perturbation BLA} (radio)
+          \item \emph{HDRx64 CPU -- Perturbation BLA} (radio)
+
+          \item \emph{HDRx32 CPU -- Perturbation LAv2} (radio)
+          \item \emph{HDRx64 CPU -- Perturbation LAv2} (radio)
+          \item \emph{HDRx32 RC CPU -- Perturbation LAv2} (radio)
+          \item \emph{HDRx64 RC CPU -- Perturbation LAv2} (radio)
+        \end{itemize}
+
+      \item \emph{Low-Zoom Depth} (submenu): GPU renderers intended for relatively modest zoom depths and lower precision requirements.
+        \begin{itemize}
+          \item \emph{Iteration Precision} (radio group submenu): Selects the iteration precision mode used by low-zoom GPU paths.
+            \begin{itemize}
+              \item \emph{4x (fast)} (radio)
+              \item \emph{3x} (radio)
+              \item \emph{2x} (radio)
+              \item \emph{1x (better quality)} (radio)
+            \end{itemize}
+
+          \item \emph{1x32 GPU} (radio)
+          \item \emph{2x32 GPU} (radio)
+          \item \emph{4x32 GPU} (radio)
+          \item \emph{1x64 GPU} (radio)
+          \item \emph{2x64 GPU} (radio)
+          \item \emph{4x64 GPU} (radio)
+          \item \emph{HDRx32 GPU} (radio)
+        \end{itemize}
+
+      \item \emph{Scaled} (submenu): Perturbation renderers using a scaled formulation.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- Perturbation Scaled} (radio)
+          \item \emph{2x32 GPU -- Perturbation Scaled (broken)} (radio)
+          \item \emph{HDRx32 GPU -- Perturbation Scaled} (radio)
+        \end{itemize}
+
+      \item \emph{Bilinear Approximation V1} (submenu): Perturbation renderers using the original bilinear approximation approach.
+        \begin{itemize}
+          \item \emph{1x64 GPU -- Perturbation BLA} (radio)
+          \item \emph{HDRx32 GPU -- Perturbation BLA} (radio)
+          \item \emph{HDRx64 GPU -- Perturbation BLA} (radio)
+        \end{itemize}
+
+      \item \emph{LA Only (for testing)} (submenu): Test configurations that run only the linear-approximation portion of the pipeline.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{2x32 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{1x64 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{HDRx32 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{HDRx2x32 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{HDRx64 GPU -- LAv2 -- LA only} (radio)
+        \end{itemize}
+
+      \item \emph{Perturbation Only} (submenu): Test configurations that run only the perturbation portion of the pipeline.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- Perturb only} (radio)
+          \item \emph{2x32 GPU -- Perturb only} (radio)
+          \item \emph{1x64 GPU -- Perturb only} (radio)
+          \item \emph{HDRx32 GPU -- Perturb only} (radio)
+          \item \emph{HDRx2x32 GPU -- Perturb only} (radio)
+          \item \emph{HDRx64 GPU -- Perturb only} (radio)
+        \end{itemize}
+
+      \item \emph{Reference Compression} (submenu): Algorithms using reference-orbit compression as part of the perturbation pipeline.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- RC LAv2} (radio)
+          \item \emph{2x32 GPU -- RC LAv2} (radio)
+          \item \emph{1x64 GPU -- RC LAv2} (radio)
+          \item \emph{HDRx32 GPU -- RC LAv2} (radio)
+          \item \emph{HDRx2x32 GPU -- RC LAv2} (radio)
+          \item \emph{HDRx64 GPU -- RC LAv2} (radio)
+
+          \item \emph{Perturbation Only} (submenu): Reference-compressed perturbation-only variants.
+            \begin{itemize}
+              \item \emph{1x32 GPU -- RC Perturb Only} (radio)
+              \item \emph{2x32 GPU -- RC Perturb Only} (radio)
+              \item \emph{1x64 GPU -- RC Perturb Only} (radio)
+              \item \emph{HDRx32 GPU -- RC Perturb Only} (radio)
+              \item \emph{HDRx2x32 GPU -- RC Perturb Only} (radio)
+              \item \emph{HDRx64 GPU -- RC Perturb Only} (radio)
+            \end{itemize}
+
+          \item \emph{LA Only} (submenu): Reference-compressed LA-only variants.
+            \begin{itemize}
+              \item \emph{1x32 GPU -- RC LAv2} (radio)
+              \item \emph{2x32 GPU -- RC LAv2} (radio)
+              \item \emph{1x64 GPU -- RC LAv2} (radio)
+              \item \emph{HDRx32 GPU -- RC LAv2} (radio)
+              \item \emph{HDRx2x32 GPU -- RC LAv2} (radio)
+              \item \emph{HDRx64 GPU -- RC LAv2} (radio)
+            \end{itemize}
+        \end{itemize}
+
+      \item \emph{LAv2 (Full Pipeline)} (radio entries): Main LAv2 renderers combining LA, perturbation, and reference handling.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- LAv2} (radio)
+          \item \emph{2x32 GPU -- LAv2} (radio)
+          \item \emph{1x64 GPU -- LAv2} (radio)
+          \item \emph{HDRx32 GPU -- LAv2} (radio)
+          \item \emph{HDRx2x32 GPU -- LAv2} (radio)
+          \item \emph{HDRx64 GPU -- LAv2} (radio)
+        \end{itemize}
+
+      \item \emph{Tests} (submenu): Development and diagnostic test actions.
+        \begin{itemize}
+          \item \emph{Run Basic Test (saves files in local dir)} (command)
+          \item \emph{Run View \#27 test} (command)
+        \end{itemize}
+
+    \end{itemize}
+
+  \item \emph{Iterations} (submenu): Adjusts the iteration limit and iteration counter width.
+    \begin{itemize}
+      \item \emph{Default Iterations} (command): Resets iteration count to defaults.
+      \item \emph{+1.5x} (command): Multiplies iteration limit by 1.5.
+      \item \emph{+6x} (command): Multiplies iteration limit by 6.
+      \item \emph{+24x} (command): Multiplies iteration limit by 24.
+      \item \emph{Decrease Iterations} (command): Decreases the current iteration limit.
+      \item \emph{32-Bit Iterations} (radio): Uses 32-bit iteration counters (lower memory, smaller range).
+      \item \emph{64-Bit Iterations} (radio): Uses 64-bit iteration counters (larger range).
+    \end{itemize}
+
+  \item \emph{Perturbation} (radio group submenu): Controls perturbation rendering and related reference-orbit management. FractalShark supports perturbation-based rendering driven by a high-precision reference orbit. Menu options in this area control how the reference orbit is computed and reused. GPU-accelerated reference orbits are intended for extremely deep zooms and may be slower than CPU computation at modest precision levels. They are marked as experimental and should be used accordingly.
+    \begin{itemize}
+      \item \emph{Clear Perturbation References -- All} (command): Clears all cached perturbation references.
+      \item \emph{Clear Perturbation References -- Med} (command): Clears medium-class cached references.
+      \item \emph{Clear Perturbation References -- High} (command): Clears high-class cached references.
+      \item \emph{Show Perturbation Results} (command): Displays diagnostic/summary results for perturbation state.
+
+      \item \emph{Auto (default)} (radio)
+      \item \emph{Single Thread (ST)} (radio)
+      \item \emph{Multi Thread (MT)} (radio)
+      \item \emph{ST + Periodicity} (radio)
+      \item \emph{MT2 + Periodicity} (radio)
+      \item \emph{MT2 + Periodicity + Perturb ST} (radio)
+      \item \emph{MT2 + Periodicity + Perturb MT v1} (radio)
+      \item \emph{MT2 + Periodicity + Perturb MT v2} (radio)
+      \item \emph{MT2 + Periodicity + Perturb MT v3} (radio)
+      \item \emph{MT2 + Periodicity + Perturb MT v4 (broken)} (radio)
+      \item \emph{MT5 + Periodicity} (command): Only enabled when perturbation support is available.
+
+      \item \emph{GPU-Accelerated (see README)} (command): Selects or enables a GPU-accelerated perturbation path. \textit{[TODO: clarify whether this is a mode toggle, a mode selection, or a one-shot action]}
+
+      \item \emph{Clear and Reload Reference Orbits} (command): Clears reference-orbit state and reloads it from persistent storage.
+      \item \emph{Save Reference Orbits} (command): Saves reference-orbit state to persistent storage.
+    \end{itemize}
+
+  \item \emph{Palette Color Depth} (submenu): Controls palette selection, palette bit depth, and optional palette rotation. Some entries may be enabled only when palette rotation support is available.
+    \begin{itemize}
+      \item \emph{Basic} (radio): \textit{[TODO: clarify palette type ``Basic'']}
+      \item \emph{Default} (radio)
+      \item \emph{Patriotic} (radio)
+      \item \emph{Summer} (radio)
+      \item \emph{Random} (radio)
+
+      \item \emph{Create Random Palette} (command): Generates a new random palette.
+
+      \item \emph{5-bit} (radio)
+      \item \emph{6-bit} (radio)
+      \item \emph{8-bit} (radio)
+      \item \emph{12-bit} (radio)
+      \item \emph{16-bit} (radio)
+      \item \emph{20-bit} (radio)
+
+      \item \emph{Palette Rotation} (command): \textit{[TODO: clarify whether this is a toggle or a one-shot action; enabled only when rotation is supported]}
+    \end{itemize}
+
+  \item \emph{Memory Management} (submenu): Controls memory-limit policy and whether reference orbit data is automatically saved.
+    \begin{itemize}
+      \item \emph{Enable Auto-Save Orbit (delete when done, default)} (radio): Automatically saves orbit data temporarily and deletes it when no longer needed.
+      \item \emph{Enable Auto-Save Orbit (keep files)} (radio): Automatically saves orbit data and retains files on disk.
+      \item \emph{Disable Auto-Save Orbit} (radio): Disables automatic orbit saving.
+
+      \item \emph{Remove Memory Limits} (radio): Disables memory limiting behavior.
+      \item \emph{Leave max of (1/2*ram, 8GB) free (default)} (radio): Constrains allocation to preserve system memory headroom.
+    \end{itemize}
+
+  \item \emph{Show Rendering Details} (command): Displays current rendering status and diagnostics (e.g., position/state details). \textit{[TODO: refine what fields are shown]}
+
+  \item \emph{Save} (submenu): Output and benchmarking commands.
+    \begin{itemize}
+      \item \emph{Save Location...} (command): Saves the current location/view parameters.
+      \item \emph{Save High Res Bitmap} (command): Saves a high-resolution bitmap render. \textit{[TODO: clarify how resolution is selected]}
+      \item \emph{Save Iterations as Text} (command): Saves iteration counts in a text format.
+      \item \emph{Save Bitmap Image} (command): Saves the current bitmap image.
+
+      \item \emph{Save Reference Orbit as Text} (command): Saves the reference orbit in text form.
+      \item \emph{Save Compressed Orbit as Text (simple)} (command)
+      \item \emph{Save Compressed Orbit as Text (max)} (command)
+      \item \emph{Save Compressed Orbit (Imagina/max)} (command)
+
+      \item \emph{Benchmark (5x, full recalc)} (command): Runs a benchmark performing full recalculation passes.
+      \item \emph{Benchmark (5x, intermediate only)} (command): Runs a benchmark emphasizing intermediate stages. \textit{[TODO: clarify what ``intermediate'' means here]}
+
+      \item \emph{Diff Imagina Orbits (choose two)} (command): Compares two Imagina-format saved orbits.
+    \end{itemize}
+
+  \item \emph{Load} (submenu): Load view parameters and reference orbits.
+    \begin{itemize}
+      \item \emph{Load Location...} (command): Loads a previously saved location/view.
+      \item \emph{Enter Location} (command): Manually enters a location/view. \textit{[TODO: clarify input format]}
+      \item \emph{Load Imagina Orbit (Match)...} (command): Loads an Imagina orbit by matching parameters. \textit{[TODO: clarify match criteria]}
+      \item \emph{Load Imagina Orbit (Use Saved)...} (command): Loads a previously saved Imagina orbit directly.
+    \end{itemize}
+
+  \item \emph{Exit} (command): Exits the application.
 \end{itemize}
 
-On systems without a working CUDA setup, CPU renderers can be selected as a
-fallback.  In the event of a CUDA initialization failure, switching to a CPU
-algorithm followed by a recalculation may restore a usable image.
-
-\subsection{Perturbation and Reference-Orbit Controls}
-
-FractalShark supports perturbation-based rendering driven by a high-precision
-reference orbit.  Menu options in this area control how the reference orbit is
-computed and reused.
-
-Typical actions include:
-\begin{itemize}
-  \item Selecting CPU or GPU-based reference-orbit computation
-  \item Enabling or disabling experimental GPU reference-orbit paths
-  \item Reusing an existing reference orbit when possible
-\end{itemize}
-
-GPU-accelerated reference orbits are intended for extremely deep zooms and may
-be slower than CPU computation at modest precision levels.  They are marked as
-experimental and should be used accordingly.
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{auto-renderer-artifact.png}
+  \caption{Rendering artifacts arising from insufficient precision in the
+  HDRx32 GPU renderer. Switching to HDRx64 or a CPU-based renderer resolves these
+  artifacts.}
+  \label{fig:auto-renderer-artifact}
+\end{figure}
 
 \subsection{Recalculation Commands}
 
 Commands such as \emph{Recalculate} or \emph{Recalculate, Reuse Reference} trigger
-an immediate re-render of the current view.
-
-These commands do not change any persistent settings; they simply instruct the
-renderer to restart computation using the current configuration.  Reusing the
-reference orbit can significantly reduce recomputation time when only display
-parameters change.
+an immediate re-render of the current view. These commands do not change any
+persistent settings; they simply instruct the renderer to restart computation
+using the current configuration. Reusing the reference orbit can significantly
+reduce recomputation time when only display parameters change.
 
 \subsection{Experimental and Debug Options}
 
 Some menu entries expose experimental features, debugging aids, or partially
-implemented functionality.  These options may be unstable, incomplete, or
-subject to removal.
-
-FractalShark is an experimental research project rather than a polished
-end-user application.  Users should expect occasional crashes, rendering
-failures, or unresponsive behavior when exercising less common menu options.
+implemented functionality. These options may be unstable, incomplete, or
+subject to removal. FractalShark is an experimental research project rather than
+a polished end-user application. Users should expect occasional crashes,
+rendering failures, or unresponsive behavior when exercising less common menu
+options.
 
 \subsection{Practical Usage Notes}
 
 \begin{itemize}
   \item There is currently no reliable way to cancel a long-running render once
-  it has begun.  If necessary, the application must be terminated externally.
+  it has begun. If necessary, the application must be terminated externally.
   \item Some menu options may be temporarily disabled depending on the current
   render state or selected algorithm.
   \item If the application exits unexpectedly, a crash dump may be generated in
@@ -265,6 +579,7 @@ Despite its rough edges, the popup menu provides a unified control surface for
 exploring FractalShark’s many rendering paths and numerical experiments, making
 it the primary interface for both casual exploration and deep technical
 investigation.
+
 
 \subsection{Keyboard Shortcuts}
 \label{subsec:keyboard-shortcuts}
@@ -294,6 +609,8 @@ additional work for correctness or a ``clean'' run.
 \end{itemize}
 
 \paragraph{Autozoom (experimental / buggy).}
+\label{par:autozoom}
+
 \begin{itemize}
   \item \texttt{a}: Autozoom using the default heuristic (currently experimental and may misbehave).
   \item \texttt{A} (\texttt{Shift+a}): Autozoom using the ``Max'' heuristic.
@@ -378,6 +695,25 @@ input may appear delayed until the render completes.  In practice, the popup
 menu and hotkeys are best used as \emph{configuration and relaunch} controls,
 not as guaranteed real-time interaction during heavy computation.
 
+\subsection{Commentary}
+
+\begin{itemize}
+\item One fun thing you can try is running with LAv2 + ``LA only''. This 
+approach actually works pretty well once Linear Approximation kicks in at 
+deeper zooms --- it gives you an idea of what the actual image should look like 
+but is very fast, since it does no perturbation. The images it produces are not 
+precise, and often leave out the fine detail; however, it's fun to play with 
+when zooming in on a specific point.
+
+\item The most interesting reference orbit calculation is at \texttt{
+AddPerturbationReferencePointMT3}. It includes a ``bad'' calculation which is 
+used for the ``scaled'' CUDA kernels. The multithreaded approach handily beats 
+the single-threaded implementation on my CPU in all scenarios.
+
+\item There are CPU renderers, but they were mostly to learn/debug more easily, 
+and aren't optimized heavily. They're much easier to understand and reason 
+about though.
+\end{itemize}
 
 \section{Kernel List}
 
@@ -436,6 +772,25 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
 
 \end{itemize}
 
+\subsection{Commentary}
+
+\begin{itemize}
+
+\item All the per-pixel CUDA kernels are in \texttt{gpu\_render.cu}. The two
+most interesting are probably \texttt{mandel\_1xHDR\_float\_perturb\_bla} and
+\texttt {mandel\_1xHDR\_float\_perturb\_lav2}, which are the ones I've spent the
+most time on lately. For better performance at low zoom levels, you could look
+at \texttt{mandel\_1x\_float\_perturb}, which leaves out linear approximation
+and just does straight perturbation up to $\sim 10^{30}$, which corresponds with
+the 32-bit float exponent range.
+
+\item The \texttt{mandel\_1x\_float} is the classic 32-bit float Mandelbrot and 
+is screaming fast on a GPU. This one is optimized with fused multiply-add for 
+fun even though it's kind of useless because you can barely zoom in before you 
+get pixellation.
+
+\end{itemize}
+
 \paragraph{High-Dynamic-Range (HDR) scalar representation.}
 In this work, the term \emph{HDR} refers to a reduced \emph{high-dynamic-range}
 numeric representation used exclusively for control-flow decisions, not for
@@ -449,41 +804,6 @@ used solely for periodicity detection, escape testing, and other termination
 criteria. They never participate in state updates and therefore cannot influence
 the numerical correctness of the reference orbit itself. The use of the term HDR
 here is purely numerical and is unrelated to high-dynamic-range imaging.
-
-\section{Code Overview}
-
-\begin{itemize}
-
-\item All the CUDA kernels are in \texttt{render\_gpu.cu}. The two most 
-interesting are probably \texttt{mandel\_1xHDR\_float\_perturb\_bla} and \texttt
-{mandel\_1xHDR\_float\_perturb\_lav2}, which are the ones I've spent the most 
-time on lately. For better performance at low zoom levels, you could look at 
-\texttt{mandel\_1x\_float\_perturb}, which leaves out linear approximation and 
-just does straight perturbation up to $\sim 10^{30}$, which corresponds with 
-the 32-bit float exponent range.
-
-\item One fun thing you can try is running with LAv2 + ``LA only''. This 
-approach actually works pretty well once Linear Approximation kicks in at 
-deeper zooms --- it gives you an idea of what the actual image should look like 
-but is very fast, since it does no perturbation. The images it produces are not 
-precise, and often leave out the fine detail; however, it's fun to play with 
-when zooming in on a specific point.
-
-\item The \texttt{mandel\_1x\_float} is the classic 32-bit float Mandelbrot and 
-is screaming fast on a GPU. This one is optimized with fused multiply-add for 
-fun even though it's kind of useless because you can barely zoom in before you 
-get pixellation.
-
-\item The most interesting reference orbit calculation is at \texttt{
-AddPerturbationReferencePointMT3}. It includes a ``bad'' calculation which is 
-used for the ``scaled'' CUDA kernels. The multithreaded approach handily beats 
-the single-threaded implementation on my CPU in all scenarios.
-
-\item There are CPU renderers, but they were mostly to learn/debug more easily, 
-and aren't optimized heavily. They're much easier to understand and reason 
-about though.
-
-\end{itemize}
 
 
 \section{The Mandelbrot set and escape-time rendering}
@@ -1503,6 +1823,23 @@ favor single-thread execution, while increasing precision increasingly favors
 multi-threaded decomposition, with \texttt{Auto} providing an adaptive runtime
 selection mechanism.
 
+\section{Reference Compression}
+
+See \ref{fig:view27-1-quadrillion} for an example of a deep-zoom render
+that requires reference compression to complete.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{view27-1-quadrillion.png}
+  \caption{View \#27, a period ~28-billion point rendered at 1 quadrillion
+  iterations per pixel, requires reference compression to render on most
+  hardware because of its memory requirements.  This render takes ~6h with an
+  RTX 4090 and AMD 5950X and 128GB RAM with the multi-threaded reference orbit
+  backend and is effectively the hardest point \FractalShark{} has likely ever
+  rendered.}
+  \label{fig:view27-1-quadrillion}
+\end{figure}
+
 
 \section{GPU reference orbit backend}
 \label{subsec:ref-orbit-gpu}
@@ -1526,6 +1863,14 @@ algorithms are employed. For precisions relevant to deep zoom reference orbits,
 naive limb-by-limb multiplication quickly becomes the dominant cost,
 overwhelming all other parts of the computation.
 
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{gpu-reference-orbit.png}
+  \caption{View \#30 rendered at zoom factor \(10^{114,514}\) using the GPU
+  reference orbit backend.  Requires ~73s to render on RTX 5090.}
+  \label{fig:gpu-reference-orbit}
+\end{figure}
+
 \subsection{Why Fast Multiplication Matters for Reference Orbits}
 
 Generating many fractal reference orbits typically involves iterating a
@@ -1542,7 +1887,6 @@ utilized. When combined with carefully engineered carry propagation and
 normalization steps, this enables high-precision multiply/add/subtract
 operations that are fast enough to make reference orbit computation practical at
 scales that would otherwise be prohibitive.
-
 
 \subsection{System Architecture and Execution Context}
 \label{subsec:ref-orbit-architecture}
@@ -2835,85 +3179,6 @@ This provides a complete Mandelbrot renderer based purely on reference-orbit
 perturbation, without relying on any linear-approximation hierarchy.
 
 
-\subsection{System Architecture and Execution Context}
-\label{subsec:ref-orbit-architecture}
-
-The GPU reference orbit backend is a stateful, precision-specialized execution
-engine that computes authoritative Mandelbrot reference orbits entirely on the
-GPU. The backend advances the recurrence
-\[
-z_{n+1} \leftarrow z_n^2 + c
-\]
-at fixed high precision by executing multiple iterations per kernel invocation,
-while the CPU orchestrates invocation, result collection, and termination.
-
-\paragraph{Division of responsibility.}
-The design follows a strict separation of concerns. The CPU is responsible for
-selecting a supported precision, initializing GPU resources, invoking the kernel
-in bounded iteration batches, and accumulating emitted iteration records into
-\texttt{PerturbationResults}. The GPU owns all numerical state of the orbit,
-executes the high-precision arithmetic pipeline, detects escape and periodicity,
-and reports authoritative outcomes to the host.
-
-\paragraph{Persistent backend state.}
-Reference orbit computation is centered around a persistent \emph{combo} object
-(\texttt{HpSharkReferenceResults<SharkFloatParams>}) that encapsulates all state
-required to advance the orbit at a fixed precision. The combo contains:
-\begin{itemize}
-  \item high-precision orbit-related values (e.g.\ radius threshold and derivative terms),
-  \item persistent arithmetic pipeline state for multiplication
-        (\texttt{Multiply}, implementing NTT-based convolution) and addition
-        (\texttt{Add}, implementing parallel-prefix carry propagation),
-  \item a fixed-size output mailbox (\texttt{OutputIters} and
-        \texttt{OutputIterCount}) with \texttt{MaxOutputIters}=1024,
-  \item termination status (\texttt{PeriodicityStatus}),
-  \item and host-only launch and resource plumbing, including a device pointer to
-        the GPU-resident state, temporary device buffers, an associated CUDA
-        stream, and cached kernel argument arrays.
-\end{itemize}
-The combo is initialized once, reused across multiple kernel invocations, and
-destroyed only after the reference orbit computation completes.
-
-\paragraph{Batch-oriented kernel invocation.}
-Each call to \texttt{InvokeHpSharkReferenceKernel} launches a GPU kernel that
-advances the Mandelbrot recurrence by up to a specified number of iterations
-(\texttt{itersToRun}). Within a single invocation, the kernel performs multiple
-full iterations internally, combining high-precision squaring and addition on
-the GPU. As iterations progress, the kernel emits up to
-\texttt{MaxOutputIters} iteration records into the combo’s output mailbox and
-updates \texttt{OutputIterCount} accordingly.
-
-This batching strategy bounds kernel runtime, enables incremental streaming of
-orbit data back to the host, and allows long orbits to be computed without
-reinitializing GPU state.
-
-\paragraph{Termination and authority.}
-After each invocation, the host inspects the combo’s \texttt{PeriodicityStatus}
-and stops early if the GPU reports escape, detected periodicity, or an error
-condition, or if the total requested iteration budget has been reached. In this
-model, the GPU backend is authoritative: it owns the orbit state, performs all
-high-precision arithmetic exactly with respect to the fixed significand
-precision, and determines orbit outcomes without CPU-side recomputation or
-correction.
-
-\paragraph{Precision specialization.}
-The entire lifecycle of a reference orbit computation is specialized by
-\texttt{HpSharkFloatParams}. Precision is selected once at startup via
-\texttt{DispatchByPrecision} and remains fixed for the lifetime of the combo
-object. This ensures that kernel code, shared-memory usage, and arithmetic
-pipelines are fully specialized for the chosen precision, at the cost of
-supporting a finite, enumerated set of precisions.
-
-\medskip
-
-This architectural structure defines the execution context for the remainder of
-this section. Subsequent subsections describe the internal arithmetic pipelines
-used within each kernel invocation, including NTT-based multiplication,
-high-precision addition, carry propagation, and normalization, and explain how
-these components are organized to maintain correctness and performance within
-the bounded-chunk execution model.
-
-
 \section{TODO mess approximation-based acceleration for Mandelbrot rendering}
 \label{sec:approx-accel}
 
@@ -3248,6 +3513,8 @@ Wine 9.0 on Linux.  There are still some quirks, but basic rendering works.
 \item \textbf{Proper fallback when no GPU is present.}  The program now detects lack of a CUDA
 device and falls back to CPU-only rendering, with a warning message.
 \item \textbf{Fixed some windowing bugs.}
+\item \textbf{Improved these notes.}
+\item \textbf{Linked at FractalForums.}  See \url{https://fractalforums.org/index.php?topic=5564.0}
 \end{itemize}
 
 \subsection{2025-12-29 News --- Version 0.5}

@@ -324,10 +324,8 @@ static const DynamicPopupMenu::Node menu[] = {
              IDM_PERTURBATION_MULTITHREAD5_PERIODICITY,
              R::EnableIfPerturbationAvailable),
 
-        Sep(),
-
         // If this is also a mode selection you can convert it to Radio() in RG::PerturbationMode.
-        Item(L"GPU-Accelerated (see README)", IDM_PERTURBATION_GPU),
+        Radio(L"GPU-Accelerated (see README)", IDM_PERTURBATION_GPU, RG::PerturbationMode),
 
         Sep(),
         Item(L"Clear and Reload Reference Orbits", IDM_PERTURBATION_LOAD),

@@ -134,6 +134,20 @@ MainWindowMenuState::GetRadioSelection(DynamicPopupMenu::RadioGroup group) const
                     return IDM_PERTURBATION_SINGLETHREAD_PERIODICITY;
                 case RefOrbitCalc::PerturbationAlg::MTPeriodicity3:
                     return IDM_PERTURBATION_MULTITHREAD2_PERIODICITY;
+                case RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
+                    return IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED;
+                case RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1:
+                    return IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED1;
+                case RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2:
+                    return IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED2;
+                case RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3:
+                    return IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED3;
+                case RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4:
+                    return IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED4;
+                case RefOrbitCalc::PerturbationAlg::MTPeriodicity5:
+                    return IDM_PERTURBATION_MULTITHREAD5_PERIODICITY;
+                case RefOrbitCalc::PerturbationAlg::GPU:
+                    return IDM_PERTURBATION_GPU;
                 default:
                     return IDM_PERTURBATION_AUTO;
             }

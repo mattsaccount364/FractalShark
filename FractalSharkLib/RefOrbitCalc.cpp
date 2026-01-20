@@ -28,13 +28,16 @@
 #include <string>
 #include <tuple>
 
-template <class Type> struct ThreadPtrs {
+template <class Type> struct alignas(64) ThreadPtrs {
     std::atomic<Type *> In;
+    char pad0[64 - sizeof(std::atomic<Type *>)];
     std::atomic<Type *> Out;
+    char pad1[64 - sizeof(std::atomic<Type *>)];
 };
+static_assert(alignof(ThreadPtrs<int>) == 64);
 
 #define ENABLE_PREFETCH(ARG0, ARG1) _mm_prefetch(ARG0, ARG1)
-// #define ENABLE_PREFETCH(ARG0, ARG1)
+//#define ENABLE_PREFETCH(ARG0, ARG1)
 
 #define CheckStartCriteria                                                                              \
     while (true) {                                                                                      \
@@ -630,6 +633,15 @@ RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy
 
         results->CompleteResults<Reuse>(bumpAllocator->GetAllocated(1));
         m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
+
+        mpf_clear(cx_mpf);
+        mpf_clear(cy_mpf);
+        mpf_clear(zx);
+        mpf_clear(zy);
+
+        mpf_clear(zx2);
+        mpf_clear(temp_mpf);
+        mpf_clear(temp2_mpf);
     } // End of scope for allocators.
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
@@ -2076,6 +2088,16 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision c
 
         results->CompleteResults<Reuse>(std::move(reusedAllocator));
         m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
+
+        mpf_clear(cx_mpf);
+        mpf_clear(cy_mpf);
+        mpf_clear(zx);
+        mpf_clear(zy);
+        mpf_clear(zx2);
+        mpf_clear(temp_mpf);
+        mpf_clear(temp2_mpf);
+        mpf_clear(zy_sq_orig);
+
     } // End of scope for boundedAllocator and bumpAllocator
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);

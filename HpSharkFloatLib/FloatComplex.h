@@ -1,5 +1,8 @@
 #pragma once
 
+#include "CudaDblflt.h"
+#include "dblflt.h"
+
 template <class SubType> class FloatComplex {
 
 private:

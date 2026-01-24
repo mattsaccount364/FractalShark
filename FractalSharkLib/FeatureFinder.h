@@ -14,7 +14,6 @@ template <class IterType> struct PeriodicPointFeature {
     double Residual2{}; // squared residual at acceptance (double for quick logging/debug)
 };
 
-
 template <class IterType, class T, PerturbExtras Extras> class PeriodicPointFinder final {
 public:
     using IterTypeFull = uint64_t;
@@ -39,6 +38,8 @@ public:
                            const HighPrecision &seedY,
                            const HighPrecision &radius,
                            PeriodicPointFeature<IterType> &outFeature) const;
+
+    bool RenderScreenLine_OpenGL(OpenGlContext &gl, int x0, int y0, int x1, int y1) const;
 
 private:
     struct EvalState {

@@ -3484,7 +3484,7 @@ Fractal::RequiresUseLocalColor() const
 void
 Fractal::CalcFractal(bool MemoryOnly)
 {
-    // if (m_glContext->GetRepaint() == false)
+    // if (m_glContextAsync->GetRepaint() == false)
     //{
     //     DrawFractal(MemoryOnly);
     //     return;
@@ -3518,7 +3518,7 @@ Fractal::CalcFractalTypedIter(bool MemoryOnly)
     m_StopCalculating = false;
 
     // Do nothing if nothing has changed
-    if (ChangedIsDirty() == false || (m_glContext && m_glContext->GetRepaint() == false)) {
+    if (ChangedIsDirty() == false || (m_glContextAsync && m_glContextAsync->GetRepaint() == false)) {
         DrawFractal(MemoryOnly);
         return;
     }
@@ -4262,19 +4262,19 @@ Fractal::DrawGlFractal(bool LocalColor, bool lastIter)
 void
 Fractal::SetRepaint(bool repaint)
 {
-    m_glContext->SetRepaint(repaint);
+    m_glContextAsync->SetRepaint(repaint);
 }
 
 bool
 Fractal::GetRepaint() const
 {
-    return m_glContext->GetRepaint();
+    return m_glContextAsync->GetRepaint();
 }
 
 void
 Fractal::ToggleRepainting()
 {
-    m_glContext->ToggleRepaint();
+    m_glContextAsync->ToggleRepaint();
 }
 
 void
@@ -4433,16 +4433,16 @@ Fractal::DrawFractalThread(size_t index, Fractal *fractal)
 void
 Fractal::DrawAsyncGpuFractalThread()
 {
-    m_glContext = std::make_unique<OpenGlContext>(m_hWnd);
-    if (!m_glContext->IsValid()) {
+    m_glContextAsync = std::make_unique<OpenGlContext>(m_hWnd);
+    if (!m_glContextAsync->IsValid()) {
         return;
     }
 
     auto lambda = [&]<typename IterType>(bool lastIter) -> bool {
-        m_glContext->glResetViewDim(m_ScrnWidth, m_ScrnHeight);
+        m_glContextAsync->glResetViewDim(m_ScrnWidth, m_ScrnHeight);
 
-        if (m_glContext->GetRepaint() == false) {
-            m_glContext->DrawGlBox();
+        if (m_glContextAsync->GetRepaint() == false) {
+            m_glContextAsync->DrawGlBox();
             return false;
         }
 
@@ -4506,7 +4506,7 @@ Fractal::DrawAsyncGpuFractalThread()
         m_AsyncRenderThreadCV.notify_one();
     }
 
-    m_glContext = nullptr;
+    m_glContextAsync = nullptr;
 }
 
 void
@@ -4616,6 +4616,8 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2)
     FillCoord(src_dy, dy2);
 }
 
+// Fractal::TryFindPeriodicPoint()  (do the HP->screen conversion here)
+
 void
 Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
 {
@@ -4629,51 +4631,64 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
     using T = double;
     constexpr PerturbExtras PExtras = PerturbExtras::Disable;
 
-    // ------------------------------------------------------------
-    // 1. Create a decompressor (no-op for Disable, required by API)
-    // ------------------------------------------------------------
     RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
-
-    // ------------------------------------------------------------
-    // 2. Construct the finder (use default parameters)
-    // ------------------------------------------------------------
     PeriodicPointFinder<IterType, T, PExtras> finder;
 
-    // ------------------------------------------------------------
-    // 3. Define search region (offset + radius)
-    // ------------------------------------------------------------
     HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
     HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
+    HighPrecision radius{results->GetMaxRadius()};
 
-    // Search radius in parameter space (adjust to taste)
-    HighPrecision radius { results->GetMaxRadius() };
-
-    // ------------------------------------------------------------
-    // 4. Output container
-    // ------------------------------------------------------------
     PeriodicPointFeature<IterType> feature;
 
-    // ------------------------------------------------------------
-    // 5. Invoke
-    // ------------------------------------------------------------
-    bool found =
+    const bool found =
         finder.FindPeriodicPoint(*results, decompressor, centerOffsetX, centerOffsetY, radius, feature);
 
-    // ------------------------------------------------------------
-    // 6. Result handling
-    // ------------------------------------------------------------
-    if (found) {
-        // Coordinates already printed by the finder (per your request)
-        // But you also have them programmatically:
-        //
-        //   feature.X, feature.Y   -> absolute Mandelbrot coordinates
-        //   feature.Period         -> detected period
-        //   feature.Scale          -> scale heuristic
-        //
-    } else {
+    if (!found) {
         std::cout << "No periodic point found in search region.\n";
+        return;
     }
+
+    // ------------------------------------------------------------
+    // Convert BOTH endpoints to *screen integer pixels* here
+    // ------------------------------------------------------------
+    const HighPrecision sxHP = XFromCalcToScreen(centerOffsetX);
+    const HighPrecision syHP = YFromCalcToScreen(centerOffsetY);
+
+    const HighPrecision fxHP = XFromCalcToScreen(feature.X);
+    const HighPrecision fyHP = YFromCalcToScreen(feature.Y);
+
+    // Convert HighPrecision -> int, with clamping to screen bounds.
+    auto clampToScreen = [&](double v, int maxv) -> int {
+        if (!(v == v))
+            return 0; // NaN => 0
+        if (v < 0.0)
+            return 0;
+        const double hi = (double)(maxv - 1);
+        if (v > hi)
+            return (int)hi;
+        return (int)std::llround(v);
+    };
+
+    const int x0 = clampToScreen((double)sxHP, (int)m_ScrnWidth);
+    const int y0 = clampToScreen((double)syHP, (int)m_ScrnHeight);
+    const int x1 = clampToScreen((double)fxHP, (int)m_ScrnWidth);
+    const int y1 = clampToScreen((double)fyHP, (int)m_ScrnHeight);
+
+    auto flipY = [&](int y) -> int {
+        // Convert top-left origin (UI) to bottom-left origin (GL)
+        return (int)m_ScrnHeight - 1 - y;
+    };
+
+    const int y0_gl = flipY(y0);
+    const int y1_gl = flipY(y1);
+
+    // ------------------------------------------------------------
+    // Call new function: pass OpenGlContext by reference
+    // ------------------------------------------------------------
+    auto glContext = std::make_unique<OpenGlContext>(m_hWnd);
+    finder.RenderScreenLine_OpenGL(*glContext, x0, y0_gl, x1, y1_gl);
 }
+
 
 
 template <typename IterType, class T>

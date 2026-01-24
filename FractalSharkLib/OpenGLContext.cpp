@@ -3,12 +3,8 @@
 #include "WPngImage\WPngImage.hh"
 
 OpenGlContext::OpenGlContext(HWND hWnd)
-    : m_hWnd(hWnd)
-    , m_hRC(nullptr)
-    , m_hDC(nullptr)
-    , m_Valid(false)
-    , m_Repainting(true)
-    , m_CachedRect{} {
+    : m_hWnd(hWnd), m_hRC(nullptr), m_hDC(nullptr), m_Valid(false), m_Repainting(true), m_CachedRect{}
+{
     if (m_hWnd) {
         m_hDC = GetDC(m_hWnd);
         PIXELFORMATDESCRIPTOR pfd;
@@ -64,7 +60,8 @@ OpenGlContext::OpenGlContext(HWND hWnd)
     m_Valid = true;
 }
 
-OpenGlContext::~OpenGlContext() {
+OpenGlContext::~OpenGlContext()
+{
     if (m_hWnd) {
         wglMakeCurrent(nullptr, nullptr);
         ReleaseDC(m_hWnd, m_hDC);
@@ -72,22 +69,24 @@ OpenGlContext::~OpenGlContext() {
     }
 }
 
-void OpenGlContext::glResetView() {
+void
+OpenGlContext::glResetView()
+{
     if (m_hWnd) {
         RECT rt;
         GetClientRect(m_hWnd, &rt);
 
-        if (rt.right != m_CachedRect.right ||
-            rt.bottom != m_CachedRect.bottom ||
-            rt.left != m_CachedRect.left ||
-            rt.top != m_CachedRect.top) {
+        if (rt.right != m_CachedRect.right || rt.bottom != m_CachedRect.bottom ||
+            rt.left != m_CachedRect.left || rt.top != m_CachedRect.top) {
             glResetViewDim(rt.right, rt.bottom);
             m_CachedRect = rt;
         }
     }
 }
 
-void OpenGlContext::glResetViewDim(size_t width, size_t height) {
+void
+OpenGlContext::glResetViewDim(size_t width, size_t height)
+{
     if (m_hWnd) {
         glViewport(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
         glMatrixMode(GL_PROJECTION);
@@ -97,11 +96,15 @@ void OpenGlContext::glResetViewDim(size_t width, size_t height) {
     }
 }
 
-bool OpenGlContext::IsValid() const {
+bool
+OpenGlContext::IsValid() const
+{
     return m_Valid;
 }
 
-void OpenGlContext::DrawGlBox() {
+void
+OpenGlContext::DrawGlBox()
+{
     if (m_hWnd) {
         RECT rt;
         GetClientRect(m_hWnd, &rt);
@@ -122,19 +125,27 @@ void OpenGlContext::DrawGlBox() {
     }
 }
 
-void OpenGlContext::SetRepaint(bool repaint) {
+void
+OpenGlContext::SetRepaint(bool repaint)
+{
     m_Repainting = repaint;
 }
 
-bool OpenGlContext::GetRepaint() const {
+bool
+OpenGlContext::GetRepaint() const
+{
     return m_Repainting;
 }
 
-void OpenGlContext::ToggleRepaint() {
+void
+OpenGlContext::ToggleRepaint()
+{
     m_Repainting = !m_Repainting;
 }
 
-void OpenGlContext::DrawFractalShark(HWND hWnd) {
+void
+OpenGlContext::DrawFractalShark(HWND hWnd)
+{
     WPngImage image{};
     image.loadImage("FractalShark.png");
 
@@ -160,23 +171,32 @@ void OpenGlContext::DrawFractalShark(HWND hWnd) {
     glBindTexture(GL_TEXTURE_2D, texid);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);  //Always set the base and max mipmap levels of a texture.
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);  //Always set the base and max mipmap
+    // levels of a texture. glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 
     // Change m_DrawOutBytes size if GL_RGBA is changed
-    glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGBA8,
-        (GLsizei)image.width(), (GLsizei)image.height(), 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, imageBytes.data());
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_RGBA8,
+                 (GLsizei)image.width(),
+                 (GLsizei)image.height(),
+                 0,
+                 GL_RGBA,
+                 GL_UNSIGNED_BYTE,
+                 imageBytes.data());
 
     const GLint scrnHeight = windowDimensions.bottom;
     const GLint scrnWidth = windowDimensions.right;
 
     glBegin(GL_QUADS);
-    glTexCoord2i(0, 0); glVertex2i(0, scrnHeight);
-    glTexCoord2i(0, 1); glVertex2i(0, 0);
-    glTexCoord2i(1, 1); glVertex2i(scrnWidth, 0);
-    glTexCoord2i(1, 0); glVertex2i(scrnWidth, scrnHeight);
+    glTexCoord2i(0, 0);
+    glVertex2i(0, scrnHeight);
+    glTexCoord2i(0, 1);
+    glVertex2i(0, 0);
+    glTexCoord2i(1, 1);
+    glVertex2i(scrnWidth, 0);
+    glTexCoord2i(1, 0);
+    glVertex2i(scrnWidth, scrnHeight);
     glEnd();
     glFlush();
     glFinish();

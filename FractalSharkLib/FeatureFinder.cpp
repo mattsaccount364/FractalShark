@@ -4,8 +4,6 @@
 // No std::complex, no DComplex, no HDR complex types.
 
 #include "stdafx.h"
-#include "CudaDblflt.h"
-#include "dblflt.h"
 #include "FloatComplex.h"
 #include "HighPrecision.h"
 #include "FeatureFinder.h"
@@ -307,10 +305,8 @@ PeriodicPointFinder<IterType, T, Extras>::FindPeriodicPoint(
     outFeature.Period = period;
     outFeature.Residual2 = residual2;
 
-    // If you want X/Y filled, do it however your HighPrecision is constructed in your project.
-    // (You can also keep them unset until you wire the correct constructors.)
-    // outFeature.X = HighPrecision(Re(c));
-    // outFeature.Y = HighPrecision(Im(c));
+     outFeature.X = HighPrecision(Re(c));
+     outFeature.Y = HighPrecision(Im(c));
 
     //if (m_params.PrintResult) {
         std::cout << "Periodic point (direct): "
@@ -323,7 +319,24 @@ PeriodicPointFinder<IterType, T, Extras>::FindPeriodicPoint(
 }
 
 
+template <class IterType, class T, PerturbExtras Extras>
+bool
+PeriodicPointFinder<IterType, T, Extras>::RenderScreenLine_OpenGL(
+    OpenGlContext &/*gl*/, int x0, int y0, int x1, int y1) const
+{
+    // Dead-simple immediate mode line in screen space.
+    // Assumes you've already set an ortho projection where (0,0) is top-left
+    // OR whatever your normal UI overlay pipeline expects.
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
 
+    glBegin(GL_LINES);
+    glVertex2i(x0, y0);
+    glVertex2i(x1, y1);
+    glEnd();
+
+    return true;
+}
 
 
 template <class IterType, class T, PerturbExtras Extras>

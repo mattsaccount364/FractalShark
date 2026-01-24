@@ -325,7 +325,9 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             break;
 
         case 'f': {
-                const POINT pt = GetSafeMenuPtClient();
+                POINT pt;
+                ::GetCursorPos(&pt);
+                ::ScreenToClient(hWnd, &pt);
                 gFractal->TryFindPeriodicPoint(pt.x, pt.y);
                 break;
             }

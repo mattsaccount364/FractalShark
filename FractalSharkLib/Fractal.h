@@ -413,7 +413,7 @@ private:
 
     // GPU rendering
     GPURenderer m_r;
-    std::unique_ptr<OpenGlContext> m_glContext;
+    std::unique_ptr<OpenGlContext> m_glContextAsync;
 
     std::mutex m_AsyncRenderThreadMutex;
     std::condition_variable m_AsyncRenderThreadCV;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BenchmarkData.h"
 #include "GPU_Types.h"
 #include "HighPrecision.h"
 #include "Introspection.h"

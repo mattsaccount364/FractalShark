@@ -377,7 +377,7 @@ public:
     toComplex(SubType &re, SubType &img) const
     {
         // return new Complex(mantissaReal * MantExp.toExp(exp), mantissaImag * MantExp.toExp(exp));
-        auto d = SubType::getMultiplier(exp);
+        auto d = typename SubType::getMultiplier(exp);
         // return new Complex(MantExp.toDouble(mantissaReal, exp), MantExp.toDouble(mantissaImag, exp));
         re = mantissaReal * d;
         img = mantissaImag * d;

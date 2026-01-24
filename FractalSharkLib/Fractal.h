@@ -239,6 +239,8 @@ public:
 
     bool GpuBypassed() const;
 
+    void TryFindPeriodicPoint(size_t scrnX, size_t scrnY);
+
 private:
     void Initialize(int width,
         int height,

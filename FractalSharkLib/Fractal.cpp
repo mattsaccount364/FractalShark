@@ -14,6 +14,7 @@
 #include "HDRFloatComplex.h"
 #include "LAInfoDeep.h"
 #include "LAReference.h"
+#include "FeatureFinder.h"
 
 #include "BenchmarkData.h"
 #include "CudaDblflt.h"
@@ -4614,6 +4615,66 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2)
     FillCoord(src_dx, dx2);
     FillCoord(src_dy, dy2);
 }
+
+void
+Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
+{
+    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<uint32_t,
+                                                                     double,
+                                                                     double,
+                                                                     PerturbExtras::Disable,
+                                                                     RefOrbitCalc::Extras::None>();
+
+    using IterType = uint32_t;
+    using T = double;
+    constexpr PerturbExtras PExtras = PerturbExtras::Disable;
+
+    // ------------------------------------------------------------
+    // 1. Create a decompressor (no-op for Disable, required by API)
+    // ------------------------------------------------------------
+    RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
+
+    // ------------------------------------------------------------
+    // 2. Construct the finder (use default parameters)
+    // ------------------------------------------------------------
+    PeriodicPointFinder<IterType, T, PExtras> finder;
+
+    // ------------------------------------------------------------
+    // 3. Define search region (offset + radius)
+    // ------------------------------------------------------------
+    HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
+    HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
+
+    // Search radius in parameter space (adjust to taste)
+    HighPrecision radius { results->GetMaxRadius() };
+
+    // ------------------------------------------------------------
+    // 4. Output container
+    // ------------------------------------------------------------
+    PeriodicPointFeature<IterType> feature;
+
+    // ------------------------------------------------------------
+    // 5. Invoke
+    // ------------------------------------------------------------
+    bool found =
+        finder.FindPeriodicPoint(*results, decompressor, centerOffsetX, centerOffsetY, radius, feature);
+
+    // ------------------------------------------------------------
+    // 6. Result handling
+    // ------------------------------------------------------------
+    if (found) {
+        // Coordinates already printed by the finder (per your request)
+        // But you also have them programmatically:
+        //
+        //   feature.X, feature.Y   -> absolute Mandelbrot coordinates
+        //   feature.Period         -> detected period
+        //   feature.Scale          -> scale heuristic
+        //
+    } else {
+        std::cout << "No periodic point found in search region.\n";
+    }
+}
+
 
 template <typename IterType, class T>
 void

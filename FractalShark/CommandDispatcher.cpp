@@ -139,6 +139,11 @@ CommandDispatcher::BuildTable()
         w.MenuZoomOut(pt);
     };
 
+    auto doPeriodic = [](MainWindow &w) {
+        const POINT pt = w.GetSafeMenuPtClient();
+        w.gFractal->TryFindPeriodicPoint(pt.x, pt.y);
+    };
+
     // Navigation / view
     table_.emplace(IDM_BACK, +[](MainWindow &w) { w.MenuGoBack(); });
     table_.emplace(IDM_STANDARDVIEW, +[](MainWindow &w) { w.MenuStandardView(0); });
@@ -154,6 +159,7 @@ CommandDispatcher::BuildTable()
     table_.emplace(
         IDM_AUTOZOOM_MAX,
         +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>(); });
+    table_.emplace(IDM_FEATUREFINDER, doPeriodic);
 
     table_.emplace(IDM_REPAINTING, +[](MainWindow &w) { w.MenuRepainting(); });
     table_.emplace(IDM_WINDOWED, +[](MainWindow &w) { w.MenuWindowed(false); });

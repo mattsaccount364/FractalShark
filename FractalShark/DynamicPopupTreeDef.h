@@ -47,8 +47,9 @@ static const DynamicPopupMenu::Node menu[] = {
               Item(L"Zoom Out", IDM_ZOOMOUT),
               Sep(),
               Item(L"Autozoom Default", IDM_AUTOZOOM_DEFAULT),
-              Item(L"Autozoom Max", IDM_AUTOZOOM_MAX)),
-
+              Item(L"Autozoom Max", IDM_AUTOZOOM_MAX),
+              Sep(),
+              Item(L"Feature Finder", IDM_FEATUREFINDER)),
     FS_POPUP0(L"Built-In Views",
               Item(L"Help", IDM_VIEWS_HELP),
               Sep(),

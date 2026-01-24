@@ -324,6 +324,12 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             PaintAsNecessary();
             break;
 
+        case 'f': {
+                const POINT pt = GetSafeMenuPtClient();
+                gFractal->TryFindPeriodicPoint(pt.x, pt.y);
+                break;
+            }
+
         case 'H':
         case 'h': {
             auto &laParameters = gFractal->GetLAParameters();

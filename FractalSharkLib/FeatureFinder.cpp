@@ -189,75 +189,267 @@ FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_Direct(
     return true;
 }
 
+// =====================================================================================
+// PT evaluation using PerturbationResults + RuntimeDecompressor
+// (FloatComplex<double> only, like your new direct implementation)
+// =====================================================================================
+
+// --- helpers -------------------------------------------------------------
+
+template <class IterType, class T, PerturbExtras Extras>
+static inline C
+ToC_fromRefOrbitPoint(const PerturbationResults<IterType, T, Extras> &results,
+                      RuntimeDecompressor<IterType, T, Extras> &dec,
+                      size_t idx)
+{
+    // For double / float orbit types this will be exact.
+    // For HDRFloat / CudaDblflt variants, pick a SubType (double) and cast.
+    //
+    // Your PerturbationResults::GetComplex returns HDRFloatComplex<SubType>.
+    // That type in your codebase typically has .x/.y or .real()/.imag().
+    // Adjust member names if needed.
+
+    auto v = results.GetComplex(dec, idx);
+
+    // Common patterns in your code:
+    //   return {m_FullOrbit[i].x, m_FullOrbit[i].y};
+    // so v likely has .x and .y (or .real/.imag).
+    //
+    // If it's .x/.y:
+    const double xr = static_cast<double>(v.getRe());
+    const double yi = static_cast<double>(v.getIm());
+
+    return C(xr, yi);
+}
+
+template <class IterType, class T, PerturbExtras Extras>
+static inline C
+ToC_fromReferenceC(const PerturbationResults<IterType, T, Extras> &results)
+{
+    // reference parameter c_ref that the authoritative orbit was generated at
+    // (low precision fields are fine for PT in double; you can swap to hi if desired).
+    const double cx = static_cast<double>(results.GetOrbitXLow());
+    const double cy = static_cast<double>(results.GetOrbitYLow());
+    return C(cx, cy);
+}
+
+// =====================================================================================
+// 1) Find period candidate using PT (reference orbit)
+// =====================================================================================
 template <class IterType, class T, PerturbExtras Extras>
 bool
-FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
-    const PerturbationResults<IterType, T, Extras> & /*results*/,
-    const RuntimeDecompressor<IterType, T, Extras> & /*dec*/,
-    FeatureSummary &feature) const
+FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_PT(
+    const PerturbationResults<IterType, T, Extras> &results,
+    RuntimeDecompressor<IterType, T, Extras> &dec,
+    const C &cAbs,              // absolute candidate c
+    IterTypeFull maxItersToTry, // how far to search for a period
+    double R,                   // radius for near-linear trigger
+    IterType &outPeriod,
+    EvalState &st) const
 {
-    //  1) Find a period candidate using dzdc-based near-linear criterion
-    //  2) Newton: c <- c - diff/dzdc until convergence
-    //
-    // Using FloatComplex<double> only.
+    if (!(R > 0.0))
+        return false;
+    const double R2 = R * R;
 
+    const C cRef = ToC_fromReferenceC(results);
+    const C dc = cAbs - cRef; // dc in perturbation formula
+
+    // Guard: need reference orbit long enough.
+    const size_t refCount = static_cast<size_t>(results.GetCountOrbitEntries());
+    if (refCount < 2)
+        return false;
+
+    C dz(0.0, 0.0); // perturbation delta (your old "dz")
+    C z(0.0, 0.0);  // full z
+    C dzdc(0.0, 0.0);
+    C zcoeff(0.0, 0.0);
+
+    int scaleExp = 0; // true_dzdc = dzdc * 2^scaleExp (and same for zcoeff)
+
+    // We need z_ref[n] each step. Assume results stores z_ref[0]=0 and subsequent.
+    // We iterate n from 0..N-1, using z_ref[n] to advance delta to n+1, and then form z at n+1.
+    const IterTypeFull N =
+        std::min<IterTypeFull>(maxItersToTry, static_cast<IterTypeFull>(refCount - 1));
+
+    for (IterTypeFull n = 0; n < N; ++n) {
+        const double scalingFactor = std::ldexp(1.0, -scaleExp);
+
+        // Full z_n = z_ref[n] + dz_n
+        const C zref = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(n));
+        z = zref + dz;
+
+        // Derivative recurrences match your reference ordering:
+        if (n == 0)
+            zcoeff = C(scalingFactor, 0.0);
+        else
+            zcoeff = zcoeff * (z * 2.0);
+
+        dzdc = dzdc * (z * 2.0) + C(scalingFactor, 0.0);
+
+        RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
+
+        // Perturbation advance:
+        // dz_{n+1} = dz_n * (z_ref[n] + z_n) + dc
+        //          = dz_n * (2*z_ref[n] + dz_n) + dc
+        dz = dz * (zref + z) + dc;
+
+        // Full z_{n+1} for escape / periodic check:
+        const C zrefNext = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(n + 1));
+        const C zNext = zrefNext + dz;
+
+        if (zNext.norm_squared() > 4096.0)
+            break;
+
+        // Period trigger uses TRUE dzdc (unscaled)
+        const double magZ = zNext.norm_squared();
+        const C dzdcTrue = Unscale(dzdc, scaleExp);
+        const double magD = dzdcTrue.norm_squared();
+
+        if (magZ < (R2 * magD)) {
+            const IterTypeFull cand = n + 1; // matches your direct: period = n+1
+            if (cand <= static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
+                outPeriod = static_cast<IterType>(cand);
+                st.z = zNext;
+                return true;
+            }
+            return false;
+        }
+
+        // Optional hard fail on NaNs/Infs
+        if (!std::isfinite(zNext.getRe()) || !std::isfinite(zNext.getIm()) ||
+            !std::isfinite(dz.getRe()) || !std::isfinite(dz.getIm()) || !std::isfinite(dzdc.getRe()) ||
+            !std::isfinite(dzdc.getIm())) {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+// =====================================================================================
+// 2) Evaluate diff=z_p(c), dzdc, zcoeff at a fixed period using PT
+// =====================================================================================
+template <class IterType, class T, PerturbExtras Extras>
+bool
+FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_PT(
+    const PerturbationResults<IterType, T, Extras> &results,
+    RuntimeDecompressor<IterType, T, Extras> &dec,
+    const C &cAbs, // absolute candidate c
+    IterType period,
+    C &outDiff,   // z_p(c)  (or delta vs z0 if you prefer)
+    C &outDzdc,   // dz_p/dc
+    C &outZcoeff, // product(2*z_k) in your convention
+    double &outResidual2) const
+{
+    const C cRef = ToC_fromReferenceC(results);
+    const C dc = cAbs - cRef;
+
+    const size_t refCount = static_cast<size_t>(results.GetCountOrbitEntries());
+    if (refCount < static_cast<size_t>(period) + 1)
+        return false;
+
+    C dz(0.0, 0.0);
+    C z(0.0, 0.0);
+    C dzdc(0.0, 0.0);
+    C zcoeff(0.0, 0.0);
+
+    int scaleExp = 0;
+
+    for (IterType i = 0; i < period; ++i) {
+        const double scalingFactor = std::ldexp(1.0, -scaleExp);
+
+        const C zref = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(i));
+        z = zref + dz;
+
+        if (i == 0)
+            zcoeff = C(scalingFactor, 0.0);
+        else
+            zcoeff = zcoeff * (z * 2.0);
+
+        dzdc = dzdc * (z * 2.0) + C(scalingFactor, 0.0);
+
+        RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
+
+        // perturbation step
+        dz = dz * (zref + z) + dc;
+
+        // optional bail-outs
+        const C zrefNext = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(i + 1));
+        const C zNext = zrefNext + dz;
+        if (zNext.norm_squared() > 4096.0)
+            return false;
+
+        if (!std::isfinite(zNext.getRe()) || !std::isfinite(zNext.getIm()) ||
+            !std::isfinite(dz.getRe()) || !std::isfinite(dz.getIm()) || !std::isfinite(dzdc.getRe()) ||
+            !std::isfinite(dzdc.getIm())) {
+            return false;
+        }
+    }
+
+    // After "period" steps, full z_p = zref[period] + dz_period.
+    const C zrefP = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(period));
+    const C zP = zrefP + dz;
+
+    outDiff = zP; // matches your direct version (z_p starting from z0=0)
+    outResidual2 = outDiff.norm_squared();
+
+    // Unscale derivatives back to true values
+    outDzdc = Unscale(dzdc, scaleExp);
+    outZcoeff = Unscale(zcoeff, scaleExp);
+
+    return true;
+}
+
+template <class IterType, class T, PerturbExtras Extras>
+template <class FindPeriodFn, class EvalFn>
+bool
+FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
+                                                             FeatureSummary &feature,
+                                                             FindPeriodFn &&findPeriod,
+                                                             EvalFn &&evalAtPeriod) const
+{
     const double cx0 = ToDouble(feature.GetOrigX());
     const double cy0 = ToDouble(feature.GetOrigY());
     const double R = std::abs(ToDouble(feature.GetRadius()));
 
-    C origC = C{cx0, cy0};
+    const C origC{cx0, cy0};
     C c = origC;
 
     EvalState st{};
     IterType period = 0;
 
-    if (!Evaluate_FindPeriod_Direct(
-            c, static_cast<IterTypeFull>(m_params.MaxPeriodToTry), R, period, st)) {
+    // 1) Find candidate period (same role as original: Evaluate<true>)
+    if (!findPeriod(origC, refIters, R, period, st)) {
         return false;
     }
 
-    // Now do Newton iterations at the *fixed period*:
-    // F(c) = z_p(c) (starting z0=0)
-    // F'(c) = dz_p/dc
-    //
-    // step = F / F'
-    // c <- c - step
-
-    // Convergence controls:
-    // - Absolute residual test: outResidual2 <= Eps2Accept (but note: your default is likely too strict)
-    // - Relative step test: |step|^2 <= |c|^2 * StepRelTol2
-    //
-    // Use a sane default relative step tolerance equivalent to your old 2^-40.
-    constexpr double kTol = 0x1p-40; // 2^-40
-    constexpr double kTol2 = kTol * kTol;
+    // 2) Newton at fixed period (match original acceptance: relative step size)
+    // Original:
+    //   Tolerance = 2^-40; SqrTolerance = 2^-80;
+    //   if (norm(step) < norm(c) * SqrTolerance) break;
+    const double relTol = m_params.RelStepTol; // e.g. 0x1p-40
+    const double relTol2 = relTol * relTol;
 
     C diff, dzdc, zcoeff;
     double residual2 = 0.0;
 
-    // First evaluation at seed (for logging / initial correction).
-    if (!Evaluate_PeriodResidualAndDzdc_Direct(c, period, diff, dzdc, zcoeff, residual2)) {
+    // Initial eval + correction (matches original "dc -= diff/dzdc" before loop)
+    if (!evalAtPeriod(c, period, diff, dzdc, zcoeff, residual2)) {
         return false;
     }
-
-    // If derivative is degenerate, bail.
-    if (!(dzdc.norm_squared() > 0.0)) {
+    const double dzdc2_init = dzdc.norm_squared();
+    if (!(dzdc2_init > 0.0)) {
         return false;
     }
+    C step0 = Div(diff, dzdc);
+    c = c - step0;
 
-    // Initial correction (matches your code: dc -= diff/dzdc)
-    {
-        const C step = Div(diff, dzdc);
-        c = c - step;
-    }
+    bool convergedByStep = false;
 
-    // Newton loop
+    // Newton loop (original did up to 32 iters, break by relative step size)
     for (uint32_t it = 0; it < m_params.MaxNewtonIters; ++it) {
-        if (!Evaluate_PeriodResidualAndDzdc_Direct(c, period, diff, dzdc, zcoeff, residual2)) {
+        if (!evalAtPeriod(c, period, diff, dzdc, zcoeff, residual2)) {
             return false;
-        }
-
-        if (residual2 <= m_params.Eps2Accept) {
-            break;
         }
 
         const double dzdc2 = dzdc.norm_squared();
@@ -267,43 +459,121 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
 
         C step = Div(diff, dzdc);
 
-        // Optional damping scaffold
-        // c <- c - damp*step
-        double damp = m_params.DampMax;
-        damp = std::clamp(damp, m_params.DampMin, m_params.DampMax);
-        step = step * damp;
+        // To match the original behavior, do NOT damp by default.
+        // If you want damping, apply it here (but understand it changes behavior).
+        // const double damp = std::clamp(m_params.Damp, m_params.DampMin, m_params.DampMax);
+        // step = step * damp;
 
         c = c - step;
 
-        // Relative step stop like your FeatureFinder:
-        // if |step|^2 < |c|^2 * tol^2 => done
         const double step2 = step.norm_squared();
         const double c2 = c.norm_squared();
-        if (step2 <= c2 * kTol2) {
+
+        // Match original: norm(step) < norm(c) * 2^-80  (squared form)
+        if (step2 <= c2 * relTol2) {
+            convergedByStep = true;
+            break;
+        }
+
+        // Optional: keep residual-based early-out only if you explicitly want it.
+        // (Original did NOT do this.)
+        if (m_params.Eps2Accept > 0.0 && residual2 <= m_params.Eps2Accept) {
             break;
         }
     }
 
-    // Final evaluate for outputs
-    if (!Evaluate_PeriodResidualAndDzdc_Direct(c, period, diff, dzdc, zcoeff, residual2)) {
+    // Original does one extra "final eval + step" after the loop.
+    // Keep that to match behavior closely.
+    if (!evalAtPeriod(c, period, diff, dzdc, zcoeff, residual2)) {
+        return false;
+    }
+    const double dzdc2_final = dzdc.norm_squared();
+    if (!(dzdc2_final > 0.0)) {
+        return false;
+    }
+    {
+        C step = Div(diff, dzdc);
+        c = c - step;
+
+        const double step2 = step.norm_squared();
+        const double c2 = c.norm_squared();
+        if (step2 <= c2 * relTol2) {
+            convergedByStep = true;
+        }
+    }
+
+    // Final eval (so residual2 reflects the returned/printed solution)
+    if (!evalAtPeriod(c, period, diff, dzdc, zcoeff, residual2)) {
         return false;
     }
 
-    const auto realFound = c.getRe();
-    const auto imagFound = c.getIm();
-    HighPrecision hpFoundX(realFound);
-    HighPrecision hpFoundY(imagFound);
+    feature.SetFound(HighPrecision(c.getRe()), HighPrecision(c.getIm()), period, residual2);
 
-    feature.SetFound(hpFoundX, hpFoundY, period, residual2);
+    if (m_params.PrintResult) {
+        std::cout << "Periodic point: "
+                  << "orig cx=" << origC.getRe() << " orig cy=" << origC.getIm()
+                  << " new cx=" << c.getRe() << " new cy=" << c.getIm()
+                  << " period=" << static_cast<uint64_t>(period) << " residual2=" << residual2 << "\n";
+    }
 
-    // if (m_params.PrintResult) {
-    std::cout << "Periodic point (direct): "
-              << "orig cx=" << origC.getRe() << " orig cy=" << origC.getIm() << "new cx=" << c.getRe()
-              << " new cy=" << c.getIm() << " period=" << static_cast<uint64_t>(period)
-              << " residual2=" << residual2 << "\n";
-    //}
+    // MATCH ORIGINAL "success" semantics:
+    // success is primarily about Newton converging by step size.
+    // (Optionally also accept small residual if you enabled it.)
+    if (convergedByStep) {
+        return true;
+    }
+    if (m_params.Eps2Accept > 0.0 && residual2 <= m_params.Eps2Accept) {
+        return true;
+    }
+    return false;
+}
 
-    return (residual2 <= m_params.Eps2Accept);
+
+// -----------------------------------------------------------------------------
+// HOW IT'S CALLED (Direct)
+// -----------------------------------------------------------------------------
+template <class IterType, class T, PerturbExtras Extras>
+bool
+FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(IterType iters, FeatureSummary &feature) const
+{
+    return FindPeriodicPoint_Common(
+        iters,
+        feature,
+        // findPeriod
+        [this](const C &cAbs, IterTypeFull maxItersToTry, double R, IterType &outPeriod, EvalState &st) {
+            return this->Evaluate_FindPeriod_Direct(cAbs, maxItersToTry, R, outPeriod, st);
+        },
+        // evalAtPeriod
+        [this](const C &cAbs, IterType period, C &diff, C &dzdc, C &zcoeff, double &residual2) {
+            return this->Evaluate_PeriodResidualAndDzdc_Direct(
+                cAbs, period, diff, dzdc, zcoeff, residual2);
+        });
+}
+
+// -----------------------------------------------------------------------------
+// HOW IT'S CALLED (PT)
+// -----------------------------------------------------------------------------
+template <class IterType, class T, PerturbExtras Extras>
+bool
+FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
+    const PerturbationResults<IterType, T, Extras> &results,
+    RuntimeDecompressor<IterType, T, Extras> &dec,
+    FeatureSummary &feature) const
+{
+    return FindPeriodicPoint_Common(
+        results.GetCountOrbitEntries(),
+        feature,
+        // findPeriod
+        [this, &results, &dec](
+            const C &cAbs, IterTypeFull maxItersToTry, double R, IterType &outPeriod, EvalState &st) {
+            return this->Evaluate_FindPeriod_PT(results, dec, cAbs, maxItersToTry, R, outPeriod, st);
+        },
+        // evalAtPeriod
+        [this, &results, &dec](
+            const C &cAbs, IterType period, C &diff, C &dzdc, C &zcoeff, double &residual2) {
+            return this->Evaluate_PeriodResidualAndDzdc_PT(
+                results, dec, cAbs, period, diff, dzdc, zcoeff, residual2);
+        });
 }
 
 template <class IterType, class T, PerturbExtras Extras>

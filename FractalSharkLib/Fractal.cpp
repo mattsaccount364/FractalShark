@@ -4647,6 +4647,7 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
     HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
     HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
     HighPrecision radius{results->GetMaxRadius()};
+    //radius /= HighPrecision{12};
 
     // Setup feature finder
     auto featureFinder =
@@ -4657,6 +4658,7 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
         *results, decompressor, *m_FeatureSummary);
 
     if (!found) {
+        m_FeatureSummary = nullptr;
         std::cout << "No periodic point found in search region.\n";
         return;
     }

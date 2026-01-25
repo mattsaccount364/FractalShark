@@ -27,7 +27,7 @@ public:
     explicit FeatureFinder(const Params &p = Params{}) : m_params(p) {}
 
     bool FindPeriodicPoint(const PerturbationResults<IterType, T, Extras> &results,
-                           RuntimeDecompressor<IterType, T, Extras> &dec,
+                           const RuntimeDecompressor<IterType, T, Extras> &dec,
                            FeatureSummary &feature) const;
 
 private:
@@ -50,27 +50,6 @@ private:
                            IterType period,
                            EvalState &st,
                            double &outResidual2) const;
-
-    static C
-    MakeC(double re, double im)
-    {
-        return C(re, im);
-    }
-    static double
-    Re(const C &z)
-    {
-        return static_cast<double>(z.getRe());
-    }
-    static double
-    Im(const C &z)
-    {
-        return static_cast<double>(z.getIm());
-    }
-    static double
-    Norm2(const C &z)
-    {
-        return static_cast<double>(z.norm_squared());
-    }
 
     static double ToDouble(const HighPrecision &v);
 

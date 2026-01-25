@@ -67,8 +67,8 @@ typename FeatureFinder<IterType, T, Extras>::C
 FeatureFinder<IterType, T, Extras>::Div(const C &a, const C &b)
 {
     // a / b = a * conj(b) / |b|^2
-    const double br = Re(b);
-    const double bi = Im(b);
+    const double br = b.getRe();
+    const double bi = b.getIm();
     const double denom = br * br + bi * bi;
 
     // If denom is 0, caller is hosed; keep it explicit.
@@ -77,8 +77,8 @@ FeatureFinder<IterType, T, Extras>::Div(const C &a, const C &b)
     }
 
     // a * conj(b)
-    const double ar = Re(a);
-    const double ai = Im(a);
+    const double ar = a.getRe();
+    const double ai = a.getIm();
     const double rr = (ar * br + ai * bi) / denom;
     const double ii = (ai * br - ar * bi) / denom;
     return C(rr, ii);
@@ -117,13 +117,13 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
         // Advance orbit
         z = (z * z) + c;
 
-        if (Norm2(z) > 4096.0)
+        if (z.norm_squared() > 4096.0)
             break;
 
         // Period trigger uses TRUE dzdc (unscaled)
-        const double magZ = Norm2(z);
+        const double magZ = z.norm_squared();
         const C dzdcTrue = Unscale(dzdc, scaleExp);
-        const double magD = Norm2(dzdcTrue);
+        const double magD = dzdcTrue.norm_squared();
 
         if (magZ < (R2 * magD)) {
             const IterTypeFull cand = n + 1;
@@ -136,8 +136,8 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
         }
 
         // Optional hard fail on NaNs/Infs
-        if (!std::isfinite(Re(z)) || !std::isfinite(Im(z)) || !std::isfinite(Re(dzdc)) ||
-            !std::isfinite(Im(dzdc))) {
+        if (!std::isfinite(z.getRe()) || !std::isfinite(z.getIm()) || !std::isfinite(dzdc.getRe()) ||
+            !std::isfinite(dzdc.getIm())) {
             return false;
         }
     }
@@ -170,17 +170,17 @@ FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_Direct(
 
         z = (z * z) + c;
 
-        if (Norm2(z) > 4096.0)
+        if (z.norm_squared() > 4096.0)
             return false;
 
-        if (!std::isfinite(Re(z)) || !std::isfinite(Im(z)) || !std::isfinite(Re(dzdc)) ||
-            !std::isfinite(Im(dzdc))) {
+        if (!std::isfinite(z.getRe()) || !std::isfinite(z.getIm()) || !std::isfinite(dzdc.getRe()) ||
+            !std::isfinite(dzdc.getIm())) {
             return false;
         }
     }
 
     outDiff = z;
-    outResidual2 = Norm2(outDiff);
+    outResidual2 = outDiff.norm_squared();
 
     // Unscale derivatives back to true values
     outDzdc = Unscale(dzdc, scaleExp);
@@ -193,22 +193,19 @@ template <class IterType, class T, PerturbExtras Extras>
 bool
 FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
     const PerturbationResults<IterType, T, Extras> & /*results*/,
-    RuntimeDecompressor<IterType, T, Extras> & /*dec*/,
+    const RuntimeDecompressor<IterType, T, Extras> & /*dec*/,
     FeatureSummary &feature) const
 {
-    // This is now aligned with your FeatureFinder approach:
     //  1) Find a period candidate using dzdc-based near-linear criterion
     //  2) Newton: c <- c - diff/dzdc until convergence
     //
     // Using FloatComplex<double> only.
 
-
-
     const double cx0 = ToDouble(feature.GetOrigX());
     const double cy0 = ToDouble(feature.GetOrigY());
     const double R = std::abs(ToDouble(feature.GetRadius()));
 
-    C origC = MakeC(cx0, cy0);
+    C origC = C{cx0, cy0};
     C c = origC;
 
     EvalState st{};
@@ -243,7 +240,7 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
     }
 
     // If derivative is degenerate, bail.
-    if (!(Norm2(dzdc) > 0.0)) {
+    if (!(dzdc.norm_squared() > 0.0)) {
         return false;
     }
 
@@ -263,14 +260,14 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
             break;
         }
 
-        const double dzdc2 = Norm2(dzdc);
+        const double dzdc2 = dzdc.norm_squared();
         if (!(dzdc2 > 0.0)) {
             return false;
         }
 
         C step = Div(diff, dzdc);
 
-        // Optional damping scaffold (same idea as your params):
+        // Optional damping scaffold
         // c <- c - damp*step
         double damp = m_params.DampMax;
         damp = std::clamp(damp, m_params.DampMin, m_params.DampMax);
@@ -280,8 +277,8 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
 
         // Relative step stop like your FeatureFinder:
         // if |step|^2 < |c|^2 * tol^2 => done
-        const double step2 = Norm2(step);
-        const double c2 = Norm2(c);
+        const double step2 = step.norm_squared();
+        const double c2 = c.norm_squared();
         if (step2 <= c2 * kTol2) {
             break;
         }
@@ -292,8 +289,8 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
         return false;
     }
 
-    const auto realFound = Re(c);
-    const auto imagFound = Im(c);
+    const auto realFound = c.getRe();
+    const auto imagFound = c.getIm();
     HighPrecision hpFoundX(realFound);
     HighPrecision hpFoundY(imagFound);
 
@@ -301,8 +298,8 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
 
     // if (m_params.PrintResult) {
     std::cout << "Periodic point (direct): "
-              << "orig cx=" << Re(origC) << " orig cy=" << Im(origC) << "new cx=" << Re(c)
-              << " new cy=" << Im(c) << " period=" << static_cast<uint64_t>(period)
+              << "orig cx=" << origC.getRe() << " orig cy=" << origC.getIm() << "new cx=" << c.getRe()
+              << " new cy=" << c.getIm() << " period=" << static_cast<uint64_t>(period)
               << " residual2=" << residual2 << "\n";
     //}
 
@@ -329,7 +326,7 @@ FeatureFinder<IterType, T, Extras>::Evaluate_AtPeriod(
     }
 
     const C delta = z - z0;
-    outResidual2 = Norm2(delta);
+    outResidual2 = delta.norm_squared();
     st.z = z;
     return true;
 }

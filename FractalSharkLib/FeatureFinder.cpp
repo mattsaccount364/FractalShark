@@ -1,21 +1,18 @@
-﻿// PeriodicPointFinder.cpp  (or keep in FeatureFinder.cpp if you prefer)
-//
-// NOTE: This is written to use *only* FloatComplex<double> everywhere.
-// No std::complex, no DComplex, no HDR complex types.
+﻿#include "stdafx.h"
 
-#include "stdafx.h"
+#include "FeatureFinder.h"
+#include "FeatureSummary.h"
 #include "FloatComplex.h"
 #include "HighPrecision.h"
-#include "FeatureFinder.h"
+#include "PerturbationResults.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
 
-using C = FloatComplex<double>; // <--- ONE complex type everywhere (per your request)
+using C = FloatComplex<double>;
 
-// Choose a cheap norm proxy (Chebyshev / max-abs) to avoid overflow in squares.
 static inline double
 ChebAbs(const C &a)
 {
@@ -58,20 +55,16 @@ Unscale(const C &a, int scaleExp)
     return a * std::ldexp(1.0, scaleExp); // a * 2^scaleExp
 }
 
-
 template <class IterType, class T, PerturbExtras Extras>
 double
-PeriodicPointFinder<IterType, T, Extras>::ToDouble(const HighPrecision &v)
+FeatureFinder<IterType, T, Extras>::ToDouble(const HighPrecision &v)
 {
     return v.operator double();
 }
 
-// PeriodicPointFinder.cpp  (revised / related logic)
-// NOTE: FloatComplex<double> only.
-
 template <class IterType, class T, PerturbExtras Extras>
-typename PeriodicPointFinder<IterType, T, Extras>::C
-PeriodicPointFinder<IterType, T, Extras>::Div(const C &a, const C &b)
+typename FeatureFinder<IterType, T, Extras>::C
+FeatureFinder<IterType, T, Extras>::Div(const C &a, const C &b)
 {
     // a / b = a * conj(b) / |b|^2
     const double br = Re(b);
@@ -93,7 +86,7 @@ PeriodicPointFinder<IterType, T, Extras>::Div(const C &a, const C &b)
 
 template <class IterType, class T, PerturbExtras Extras>
 bool
-PeriodicPointFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
+FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
     const C &c, IterTypeFull maxIters, double R, IterType &outPeriod, EvalState &st) const
 {
     if (!(R > 0.0))
@@ -152,10 +145,9 @@ PeriodicPointFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
     return false;
 }
 
-
 template <class IterType, class T, PerturbExtras Extras>
 bool
-PeriodicPointFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_Direct(
+FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_Direct(
     const C &c, IterType period, C &outDiff, C &outDzdc, C &outZcoeff, double &outResidual2) const
 {
     C z(0.0, 0.0);
@@ -197,16 +189,12 @@ PeriodicPointFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_Direct(
     return true;
 }
 
-
 template <class IterType, class T, PerturbExtras Extras>
 bool
-PeriodicPointFinder<IterType, T, Extras>::FindPeriodicPoint(
+FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
     const PerturbationResults<IterType, T, Extras> & /*results*/,
     RuntimeDecompressor<IterType, T, Extras> & /*dec*/,
-    const HighPrecision &seedX,
-    const HighPrecision &seedY,
-    const HighPrecision &radius,
-    PeriodicPointFeature<IterType> &outFeature) const
+    FeatureSummary &feature) const
 {
     // This is now aligned with your FeatureFinder approach:
     //  1) Find a period candidate using dzdc-based near-linear criterion
@@ -214,9 +202,11 @@ PeriodicPointFinder<IterType, T, Extras>::FindPeriodicPoint(
     //
     // Using FloatComplex<double> only.
 
-    const double cx0 = ToDouble(seedX);
-    const double cy0 = ToDouble(seedY);
-    const double R = std::abs(ToDouble(radius)); // caller-supplied neighborhood scale
+
+
+    const double cx0 = ToDouble(feature.GetOrigX());
+    const double cy0 = ToDouble(feature.GetOrigY());
+    const double R = std::abs(ToDouble(feature.GetRadius()));
 
     C origC = MakeC(cx0, cy0);
     C c = origC;
@@ -302,46 +292,26 @@ PeriodicPointFinder<IterType, T, Extras>::FindPeriodicPoint(
         return false;
     }
 
-    outFeature.Period = period;
-    outFeature.Residual2 = residual2;
+    const auto realFound = Re(c);
+    const auto imagFound = Im(c);
+    HighPrecision hpFoundX(realFound);
+    HighPrecision hpFoundY(imagFound);
 
-     outFeature.X = HighPrecision(Re(c));
-     outFeature.Y = HighPrecision(Im(c));
+    feature.SetFound(hpFoundX, hpFoundY, period, residual2);
 
-    //if (m_params.PrintResult) {
-        std::cout << "Periodic point (direct): "
-                  << "orig cx=" << Re(origC) << " orig cy=" << Im(origC)
-                  << "new cx=" << Re(c) << " new cy=" << Im(c) << " period=" << static_cast<uint64_t>(period)
-                  << " residual2=" << residual2 << "\n";
+    // if (m_params.PrintResult) {
+    std::cout << "Periodic point (direct): "
+              << "orig cx=" << Re(origC) << " orig cy=" << Im(origC) << "new cx=" << Re(c)
+              << " new cy=" << Im(c) << " period=" << static_cast<uint64_t>(period)
+              << " residual2=" << residual2 << "\n";
     //}
 
     return (residual2 <= m_params.Eps2Accept);
 }
 
-
 template <class IterType, class T, PerturbExtras Extras>
 bool
-PeriodicPointFinder<IterType, T, Extras>::RenderScreenLine_OpenGL(
-    OpenGlContext &/*gl*/, int x0, int y0, int x1, int y1) const
-{
-    // Dead-simple immediate mode line in screen space.
-    // Assumes you've already set an ortho projection where (0,0) is top-left
-    // OR whatever your normal UI overlay pipeline expects.
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-
-    glBegin(GL_LINES);
-    glVertex2i(x0, y0);
-    glVertex2i(x1, y1);
-    glEnd();
-
-    return true;
-}
-
-
-template <class IterType, class T, PerturbExtras Extras>
-bool
-PeriodicPointFinder<IterType, T, Extras>::Evaluate_AtPeriod(
+FeatureFinder<IterType, T, Extras>::Evaluate_AtPeriod(
     const PerturbationResults<IterType, T, Extras> & /*results*/,
     RuntimeDecompressor<IterType, T, Extras> &dec,
     const C &c,
@@ -368,68 +338,67 @@ PeriodicPointFinder<IterType, T, Extras>::Evaluate_AtPeriod(
 // Explicit instantiations (minimal set you enabled)
 // ------------------------------
 #define InstantiatePeriodicPointFinder(IterTypeT, TT, PExtrasT)                                         \
-    template struct PeriodicPointFeature<IterTypeT>;                                                    \
-    template class PeriodicPointFinder<IterTypeT, TT, PExtrasT>;
+    template class FeatureFinder<IterTypeT, TT, PExtrasT>;
 
 //// ---- Disable ----
 InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Disable);
 InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Disable);
 //
-//InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Disable);
-//InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Disable);
 //
-//InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
-//InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 //
-//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Disable);
-//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Disable);
 //
-//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Disable);
-//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Disable);
 //
-//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
-//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 //
 //// ---- Bad ----
-//InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Bad);
-//InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Bad);
 //
-//InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Bad);
-//InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Bad);
 //
-//InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
-//InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
 //
-//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Bad);
-//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Bad);
 //
-//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Bad);
-//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Bad);
 //
-//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
 //
 //// ---- SimpleCompression ----
-//InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::SimpleCompression);
-//InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::SimpleCompression);
 //
-//InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::SimpleCompression);
-//InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::SimpleCompression);
 //
-//InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
-//InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
 //
-//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
-//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
 //
-//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
-//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
 //
-//InstantiatePeriodicPointFinder(uint32_t,
-//                               HDRFloat<CudaDblflt<MattDblflt>>,
-//                               PerturbExtras::SimpleCompression);
-//InstantiatePeriodicPointFinder(uint64_t,
-//                               HDRFloat<CudaDblflt<MattDblflt>>,
-//                               PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint32_t,
+//                                HDRFloat<CudaDblflt<MattDblflt>>,
+//                                PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint64_t,
+//                                HDRFloat<CudaDblflt<MattDblflt>>,
+//                                PerturbExtras::SimpleCompression);
 
 #undef InstantiatePeriodicPointFinder

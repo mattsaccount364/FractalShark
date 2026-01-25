@@ -15,10 +15,11 @@
 #include "LAInfoDeep.h"
 #include "LAReference.h"
 #include "FeatureFinder.h"
+#include "FeatureSummary.h"
 
 #include "BenchmarkData.h"
 #include "CudaDblflt.h"
-
+#include "FeatureFinder.h"
 #include "PerturbationResults.h"
 #include "PrecisionCalculator.h"
 #include "RecommendedSettings.h"
@@ -4289,6 +4290,18 @@ Fractal::DrawAllPerturbationResults(bool LeaveScreen)
     m_RefOrbit.DrawPerturbationResults();
 
     glEnd();
+
+    if (m_FeatureSummary != nullptr) {
+        int x0, y0, x1, y1;
+        m_FeatureSummary->EstablishScreenCoordinates(*this);
+        m_FeatureSummary->GetScreenCoordinates(x0, y0, x1, y1);
+
+        glBegin(GL_LINES);
+        glVertex2i(x0, y0);
+        glVertex2i(x1, y1);
+        glEnd();
+    }
+
     glFlush();
 }
 
@@ -4616,8 +4629,6 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2)
     FillCoord(src_dy, dy2);
 }
 
-// Fractal::TryFindPeriodicPoint()  (do the HP->screen conversion here)
-
 void
 Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
 {
@@ -4632,64 +4643,24 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
     constexpr PerturbExtras PExtras = PerturbExtras::Disable;
 
     RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
-    PeriodicPointFinder<IterType, T, PExtras> finder;
 
     HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
     HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
     HighPrecision radius{results->GetMaxRadius()};
 
-    PeriodicPointFeature<IterType> feature;
+    // Setup feature finder
+    auto featureFinder =
+        std::make_unique<FeatureFinder<IterType, T, PExtras>>();
 
-    const bool found =
-        finder.FindPeriodicPoint(*results, decompressor, centerOffsetX, centerOffsetY, radius, feature);
+    m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
+    const bool found = featureFinder->FindPeriodicPoint(
+        *results, decompressor, *m_FeatureSummary);
 
     if (!found) {
         std::cout << "No periodic point found in search region.\n";
         return;
     }
-
-    // ------------------------------------------------------------
-    // Convert BOTH endpoints to *screen integer pixels* here
-    // ------------------------------------------------------------
-    const HighPrecision sxHP = XFromCalcToScreen(centerOffsetX);
-    const HighPrecision syHP = YFromCalcToScreen(centerOffsetY);
-
-    const HighPrecision fxHP = XFromCalcToScreen(feature.X);
-    const HighPrecision fyHP = YFromCalcToScreen(feature.Y);
-
-    // Convert HighPrecision -> int, with clamping to screen bounds.
-    auto clampToScreen = [&](double v, int maxv) -> int {
-        if (!(v == v))
-            return 0; // NaN => 0
-        if (v < 0.0)
-            return 0;
-        const double hi = (double)(maxv - 1);
-        if (v > hi)
-            return (int)hi;
-        return (int)std::llround(v);
-    };
-
-    const int x0 = clampToScreen((double)sxHP, (int)m_ScrnWidth);
-    const int y0 = clampToScreen((double)syHP, (int)m_ScrnHeight);
-    const int x1 = clampToScreen((double)fxHP, (int)m_ScrnWidth);
-    const int y1 = clampToScreen((double)fyHP, (int)m_ScrnHeight);
-
-    auto flipY = [&](int y) -> int {
-        // Convert top-left origin (UI) to bottom-left origin (GL)
-        return (int)m_ScrnHeight - 1 - y;
-    };
-
-    const int y0_gl = flipY(y0);
-    const int y1_gl = flipY(y1);
-
-    // ------------------------------------------------------------
-    // Call new function: pass OpenGlContext by reference
-    // ------------------------------------------------------------
-    auto glContext = std::make_unique<OpenGlContext>(m_hWnd);
-    finder.RenderScreenLine_OpenGL(*glContext, x0, y0_gl, x1, y1_gl);
 }
-
-
 
 template <typename IterType, class T>
 void

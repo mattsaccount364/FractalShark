@@ -113,14 +113,25 @@ FixNamespaceComments: true
 # Include settings
 IncludeBlocks: Preserve
 IncludeCategories:
+  # --- Precompiled header always first ---
+  - Regex: '^"stdafx\.h"$'
+    Priority: 0
+    SortPriority: 0
+    CaseSensitive: false
+
+  # --- LLVM / Clang ---
   - Regex: '^"(llvm|llvm-c|clang|clang-c)/'
     Priority: 2
     SortPriority: 0
     CaseSensitive: false
+
+  # --- System / third-party ---
   - Regex: '^(<|"(gtest|gmock|isl|json)/)'
     Priority: 3
     SortPriority: 0
     CaseSensitive: false
+
+  # --- Everything else (project headers) ---
   - Regex: '.*'
     Priority: 1
     SortPriority: 0

@@ -1,23 +1,19 @@
-// PeriodicPointFinder.h
 #pragma once
 
 #include <cstdint>
 #include <iosfwd>
 
-#include "FloatComplex.h" // your FloatComplex<SubType>
-#include "PerturbationResults.h"
+#include "FloatComplex.h"
 
-template <class IterType> struct PeriodicPointFeature {
-    HighPrecision X;
-    HighPrecision Y;
-    IterType Period{};
-    double Residual2{}; // squared residual at acceptance (double for quick logging/debug)
-};
+template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;
+template <typename IterType, class T, PerturbExtras PExtras> class RuntimeDecompressor;
 
-template <class IterType, class T, PerturbExtras Extras> class PeriodicPointFinder final {
+class FeatureSummary;
+
+template <class IterType, class T, PerturbExtras Extras> class FeatureFinder final {
 public:
     using IterTypeFull = uint64_t;
-    using C = FloatComplex<double>; // <--- ONE complex type everywhere (per your request)
+    using C = FloatComplex<double>;
 
     struct Params {
         IterType MaxPeriodToTry = 4096;
@@ -28,31 +24,18 @@ public:
         bool PrintResult = true;
     };
 
-    explicit PeriodicPointFinder(const Params &p = Params{}) : m_params(p) {}
+    explicit FeatureFinder(const Params &p = Params{}) : m_params(p) {}
 
-    // Finds a periodic point near (seedX, seedY). The meaning of radius is up to your caller;
-    // commonly it bounds the search neighborhood or sets a numeric scale for steps.
     bool FindPeriodicPoint(const PerturbationResults<IterType, T, Extras> &results,
                            RuntimeDecompressor<IterType, T, Extras> &dec,
-                           const HighPrecision &seedX,
-                           const HighPrecision &seedY,
-                           const HighPrecision &radius,
-                           PeriodicPointFeature<IterType> &outFeature) const;
-
-    bool RenderScreenLine_OpenGL(OpenGlContext &gl, int x0, int y0, int x1, int y1) const;
+                           FeatureSummary &feature) const;
 
 private:
     struct EvalState {
-        // You can stash per-evaluation scratch here if you want to avoid re-allocations.
-        // Keeping it explicit also makes it easy to checksum/debug.
         C z{};
     };
 
 private:
-    // Direct / absolute evaluation (no decompressor, no perturbation):
-    //  - If FindPeriod==true: run up to maxIters and trigger the same kind of
-    //    dzdc-based "near-linear" criterion to *suggest* a period candidate.
-    //  - If FindPeriod==false: run exactly "period" iterations and return diff/dzdc/zcoeff.
     bool Evaluate_FindPeriod_Direct(
         const C &c, IterTypeFull maxIters, double R, IterType &outPeriod, EvalState &st) const;
 
@@ -68,7 +51,6 @@ private:
                            EvalState &st,
                            double &outResidual2) const;
 
-    // Helpers
     static C
     MakeC(double re, double im)
     {
@@ -90,7 +72,6 @@ private:
         return static_cast<double>(z.norm_squared());
     }
 
-    // You almost certainly have a real conversion; wire these to your existing code.
     static double ToDouble(const HighPrecision &v);
 
 private:

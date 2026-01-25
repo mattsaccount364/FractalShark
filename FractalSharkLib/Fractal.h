@@ -44,6 +44,9 @@
 template<typename IterType, class T, class SubType, PerturbExtras PExtras>
 class LAReference;
 
+class FeatureSummary;
+struct ItersMemoryContainer;
+
 class Fractal {
 public:
     // TODO get rid of this junk:
@@ -67,7 +70,7 @@ public:
     //SetPrecision(166050, minX, minY, maxX, maxY);
     static constexpr size_t MaxPrecisionLame = 400000;
 
-    uint64_t GetPrecision(void) const;
+    uint64_t GetPrecision() const;
     static uint64_t GetPrecision(const PointZoomBBConverter &ptz, bool requiresReuse);
     void SetPrecision();
     void SetPrecision(uint64_t prec);
@@ -93,9 +96,9 @@ public:
     void AutoZoom();
 
     void View(size_t i, bool includeMsgBox = true);
-    void SquareCurrentView(void);
-    void ApproachTarget(void);
-    bool Back(void);
+    void SquareCurrentView();
+    void ApproachTarget();
+    bool Back();
 
     void FindInterestingLocation(RECT *rect);
 
@@ -103,10 +106,10 @@ public:
     void SetNumIterations(IterTypeFull num);
 
     template<typename IterType>
-    IterType GetNumIterations(void) const;
+    IterType GetNumIterations() const;
 
     template<typename IterType>
-    static constexpr IterType GetMaxIterations(void) {
+    static constexpr IterType GetMaxIterations() {
         return ((sizeof(IterType) == 4) ? (INT32_MAX - 1) : (INT64_MAX - 1));
     }
 
@@ -114,9 +117,9 @@ public:
 
     void SetIterType(IterTypeEnum type);
     IterTypeEnum GetIterType() const;
-    void ResetNumIterations(void);
+    void ResetNumIterations();
 
-    RenderAlgorithm GetRenderAlgorithm(void) const;
+    RenderAlgorithm GetRenderAlgorithm() const;
     [[nodiscard]] bool SetRenderAlgorithm(RenderAlgorithm alg);
     const char *GetRenderAlgorithmName() const;
     static const char *GetRenderAlgorithmName(RenderAlgorithm alg);
@@ -139,8 +142,8 @@ public:
     void SetCompressionErrorExp(enum class CompressionError, int32_t CompressionExp);
     void DefaultCompressionErrorExp(enum class CompressionError);
 
-    inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
-    inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
+    inline uint32_t GetGpuAntialiasing() const { return m_GpuAntialiasing; }
+    inline uint32_t GetIterationPrecision() const { return m_IterationPrecision; }
     inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision; }
 
     HighPrecision GetZoomFactor() const;
@@ -172,11 +175,12 @@ public:
     void UsePaletteType(FractalPalette type);
     FractalPalette GetPaletteType() const;
 
-    void ResetFractalPalette(void);
+    void ResetFractalPalette();
     void RotateFractalPalette(int delta);
-    void CreateNewFractalPalette(void);
+    void CreateNewFractalPalette();
 
     void DrawAllPerturbationResults(bool LeaveScreen);
+    void DrawFeatureFinderResults();
 
     // Saving images of the fractal
     int SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters);
@@ -201,12 +205,12 @@ public:
     const BenchmarkDataCollection &GetBenchmark() const;
 
     // Used for retrieving our current location
-    const HighPrecision &GetMinX(void) const;
-    const HighPrecision &GetMaxX(void) const;
-    const HighPrecision &GetMinY(void) const;
-    const HighPrecision &GetMaxY(void) const;
-    size_t GetRenderWidth(void) const;
-    size_t GetRenderHeight(void) const;
+    const HighPrecision &GetMinX() const;
+    const HighPrecision &GetMaxX() const;
+    const HighPrecision &GetMinY() const;
+    const HighPrecision &GetMaxY() const;
+    size_t GetRenderWidth() const;
+    size_t GetRenderHeight() const;
 
     void GetSomeDetails(RefOrbitDetails &details) const {
         m_RefOrbit.GetSomeDetails(details);
@@ -246,19 +250,19 @@ private:
         int height,
         HWND hWnd,
         bool UseSensoCursor);
-    void Uninitialize(void);
+    void Uninitialize();
     void PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int val2);
     void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
-    bool IsDownControl(void);
-    void CheckForAbort(void);
+    bool IsDownControl();
+    void CheckForAbort();
 
-    void SaveCurPos(void);
+    void SaveCurPos();
 
     // Keeps track of what has changed and what hasn't since the last draw
-    inline void ChangedMakeClean(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = false; }
-    inline void ChangedMakeDirty(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = true; }
-    inline bool ChangedIsDirty(void) const { return (m_ChangedWindow || m_ChangedScrn || m_ChangedIterations); }
-    inline bool ChangedItersOnly(void) const { return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow)); }
+    inline void ChangedMakeClean() { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = false; }
+    inline void ChangedMakeDirty() { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = true; }
+    inline bool ChangedIsDirty() const { return (m_ChangedWindow || m_ChangedScrn || m_ChangedIterations); }
+    inline bool ChangedItersOnly() const { return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow)); }
 
     template<typename IterType>
     void CalcFractalTypedIter(bool MemoryOnly);
@@ -315,13 +319,14 @@ private:
     template<PngParallelSave::Type Typ>
     int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);
 
-    uint64_t FindTotalItersUsed(void);
+    uint64_t FindTotalItersUsed();
 
     // True if GPU is not working / should be bypassed
     bool m_BypassGpu;
 
     // Member Variables
     RefOrbitCalc m_RefOrbit;
+    std::unique_ptr<FeatureSummary> m_FeatureSummary;
 
     std::unique_ptr<uint16_t[]> m_DrawOutBytes;
     std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;

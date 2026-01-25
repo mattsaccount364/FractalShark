@@ -8,8 +8,8 @@
 #include "Fractal.h"
 #include "JobObject.h"
 #include "MainWindow.h"
-#include "MainWindowSavedLocation.h"
 #include "MainWindowMenuState.h"
+#include "MainWindowSavedLocation.h"
 #include "OpenGLContext.h"
 #include "PngParallelSave.h"
 #include "RecommendedSettings.h"
@@ -55,7 +55,7 @@ MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) : commandDispatcher(*t
     if (!hWnd) {
         throw FractalSharkSeriousException("Failed to create window.");
     }
-    
+
     threadConsole.join();
 
     // Main window is ready; close splash now.
@@ -228,8 +228,6 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     return hWnd;
 }
 
-
-
 void
 MainWindow::ApplyBorderlessWindowedStyle()
 {
@@ -325,12 +323,12 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             break;
 
         case 'f': {
-                POINT pt;
-                ::GetCursorPos(&pt);
-                ::ScreenToClient(hWnd, &pt);
-                gFractal->TryFindPeriodicPoint(pt.x, pt.y);
-                break;
-            }
+            POINT pt;
+            ::GetCursorPos(&pt);
+            ::ScreenToClient(hWnd, &pt);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y);
+            break;
+        }
 
         case 'H':
         case 'h': {

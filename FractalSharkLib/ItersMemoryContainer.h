@@ -87,5 +87,4 @@ private:
     std::wstring m_Iters64Filename;
     GrowableVector<uint64_t> m_ItersMemory64;
     std::vector<uint64_t *> m_ItersArray64;
-
 };

@@ -1,99 +1,221 @@
+// OpenGLContext.cpp
 #include "stdafx.h"
 #include "OpenGLContext.h"
 #include "WPngImage\WPngImage.hh"
 
-OpenGlContext::OpenGlContext(HWND hWnd)
-    : m_hWnd(hWnd), m_hRC(nullptr), m_hDC(nullptr), m_Valid(false), m_Repainting(true), m_CachedRect{}
+#include <cassert>
+#include <cstdint>
+#include <iostream>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
+
+namespace {
+
+// One-time (per HWND) pixel format setup + optional context sharing.
+// This lets you create TWO OpenGlContext instances for the same HWND
+// (e.g., one per thread) without calling SetPixelFormat twice.
+struct SharedWindowGlState {
+    int pixelFormat = 0;       // GetPixelFormat(hdc)
+    HGLRC shareRoot = nullptr; // First context created for this HWND
+};
+
+std::mutex g_hwndMutex;
+std::unordered_map<HWND, SharedWindowGlState> g_hwndState;
+
+bool
+EnsurePixelFormatSet(HWND hWnd, HDC hdc, int &outPixelFormat)
 {
-    if (m_hWnd) {
-        m_hDC = GetDC(m_hWnd);
-        PIXELFORMATDESCRIPTOR pfd;
-        int pf;
+    if (!hWnd || !hdc)
+        return false;
 
-        /* there is no guarantee that the contents of the stack that become
-            the pfd are zeroed, therefore _make sure_ to clear these bits. */
-        memset(&pfd, 0, sizeof(pfd));
-        pfd.nSize = sizeof(pfd);
-        pfd.nVersion = 1;
-        pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL; // | PFD_DOUBLEBUFFER;
-        pfd.iPixelType = PFD_TYPE_RGBA;
-        pfd.cColorBits = 32;
+    std::scoped_lock lock(g_hwndMutex);
+    auto &st = g_hwndState[hWnd];
 
-        pf = ChoosePixelFormat(m_hDC, &pfd);
-        if (pf == 0) {
-            std::wcerr << L"ChoosePixelFormat() failed: Cannot find a suitable pixel format."
-                       << std::endl;
-            m_Valid = false;
-            return;
-        }
-
-        if (SetPixelFormat(m_hDC, pf, &pfd) == FALSE) {
-            std::wcerr << L"SetPixelFormat() failed:  Cannot set format specified." << std::endl;
-            m_Valid = false;
-            return;
-        }
-
-        DescribePixelFormat(m_hDC, pf, sizeof(PIXELFORMATDESCRIPTOR), &pfd);
-
-        m_hRC = wglCreateContext(m_hDC);
-        if (m_hRC == nullptr) {
-            m_Valid = false;
-            return;
-        }
-
-        auto ret = wglMakeCurrent(m_hDC, m_hRC);
-        if (ret == FALSE) {
-            m_Valid = false;
-            return;
-        }
-
-        glClearColor(0.0, 0.0, 0.0, 0.0);
-        glShadeModel(GL_FLAT);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-        RECT rt;
-        GetClientRect(m_hWnd, &rt);
-
-        glResetViewDim(rt.right, rt.bottom);
+    // If already known, trust it.
+    if (st.pixelFormat != 0) {
+        outPixelFormat = st.pixelFormat;
+        return true;
     }
+
+    // If the DC already has a pixel format, keep it.
+    const int existing = GetPixelFormat(hdc);
+    if (existing != 0) {
+        st.pixelFormat = existing;
+        outPixelFormat = existing;
+        return true;
+    }
+
+    // Otherwise set it once.
+    PIXELFORMATDESCRIPTOR pfd{};
+    pfd.nSize = sizeof(pfd);
+    pfd.nVersion = 1;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL; // (no double buffer per your code)
+    pfd.iPixelType = PFD_TYPE_RGBA;
+    pfd.cColorBits = 32;
+    pfd.cAlphaBits = 8;
+    pfd.cDepthBits = 0;
+    pfd.cStencilBits = 0;
+    pfd.iLayerType = PFD_MAIN_PLANE;
+
+    const int pf = ChoosePixelFormat(hdc, &pfd);
+    if (pf == 0)
+        return false;
+
+    if (SetPixelFormat(hdc, pf, &pfd) == FALSE) {
+        // If SetPixelFormat fails, it may already be set on that DC; try reading it again.
+        const int nowPf = GetPixelFormat(hdc);
+        if (nowPf == 0)
+            return false;
+        st.pixelFormat = nowPf;
+        outPixelFormat = nowPf;
+        return true;
+    }
+
+    st.pixelFormat = pf;
+    outPixelFormat = pf;
+    return true;
+}
+
+void
+RegisterShareRoot(HWND hWnd, HGLRC rc)
+{
+    std::scoped_lock lock(g_hwndMutex);
+    auto &st = g_hwndState[hWnd];
+    if (!st.shareRoot)
+        st.shareRoot = rc;
+}
+
+HGLRC
+GetShareRoot(HWND hWnd)
+{
+    std::scoped_lock lock(g_hwndMutex);
+    auto it = g_hwndState.find(hWnd);
+    if (it == g_hwndState.end())
+        return nullptr;
+    return it->second.shareRoot;
+}
+
+void
+MaybeShareWithRoot(HWND hWnd, HGLRC newRc)
+{
+    // Share objects (textures, display lists, etc.) with the first-created context for this HWND.
+    // This is optional, but is usually what people want for "two threads, two contexts".
+    HGLRC root = GetShareRoot(hWnd);
+    if (!root || root == newRc)
+        return;
+
+    // wglShareLists returns FALSE on failure; not fatal for correctness of simple line drawing.
+    if (wglShareLists(root, newRc) == FALSE) {
+        // Keep it quiet; you can log if you want.
+        // std::wcerr << L"wglShareLists failed.\n";
+    }
+}
+
+} // namespace
+
+OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
+{
+    m_Valid = false;
+
+    if (!m_hWnd)
+        return;
+
+    m_hDC = GetDC(m_hWnd);
+    if (!m_hDC)
+        return;
+
+    int pf = 0;
+    if (!EnsurePixelFormatSet(m_hWnd, m_hDC, pf)) {
+        std::wcerr << L"EnsurePixelFormatSet failed.\n";
+        return;
+    }
+
+    // Create a dedicated context for this instance (so you can have one per thread).
+    m_hRC = wglCreateContext(m_hDC);
+    if (!m_hRC)
+        return;
+
+    // Optional sharing with first context created for this HWND.
+    // This is safe even if it fails; it just means no shared textures/lists.
+    MaybeShareWithRoot(m_hWnd, m_hRC);
+    RegisterShareRoot(m_hWnd, m_hRC);
+
+    if (!MakeCurrent())
+        return;
+
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glShadeModel(GL_FLAT);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    RECT rt{};
+    GetClientRect(m_hWnd, &rt);
+    m_CachedRect = rt;
+    glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
 
     m_Valid = true;
 }
 
 OpenGlContext::~OpenGlContext()
 {
-    if (m_hWnd) {
+    // Only detach if THIS context is current on this thread.
+    if (wglGetCurrentContext() == m_hRC) {
         wglMakeCurrent(nullptr, nullptr);
-        ReleaseDC(m_hWnd, m_hDC);
-        wglDeleteContext(m_hRC);
     }
+
+    if (m_hRC) {
+        wglDeleteContext(m_hRC);
+        m_hRC = nullptr;
+    }
+
+    if (m_hWnd && m_hDC) {
+        ReleaseDC(m_hWnd, m_hDC);
+        m_hDC = nullptr;
+    }
+}
+
+bool
+OpenGlContext::MakeCurrent() noexcept
+{
+    if (!m_hDC || !m_hRC)
+        return false;
+
+    // If another context is current on this thread, this will switch it.
+    return wglMakeCurrent(m_hDC, m_hRC) == TRUE;
 }
 
 void
 OpenGlContext::glResetView()
 {
-    if (m_hWnd) {
-        RECT rt;
-        GetClientRect(m_hWnd, &rt);
+    if (!m_hWnd)
+        return;
 
-        if (rt.right != m_CachedRect.right || rt.bottom != m_CachedRect.bottom ||
-            rt.left != m_CachedRect.left || rt.top != m_CachedRect.top) {
-            glResetViewDim(rt.right, rt.bottom);
-            m_CachedRect = rt;
-        }
+    RECT rt{};
+    GetClientRect(m_hWnd, &rt);
+
+    if (rt.right != m_CachedRect.right || rt.bottom != m_CachedRect.bottom ||
+        rt.left != m_CachedRect.left || rt.top != m_CachedRect.top) {
+
+        glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
+        m_CachedRect = rt;
     }
 }
 
 void
 OpenGlContext::glResetViewDim(size_t width, size_t height)
 {
-    if (m_hWnd) {
-        glViewport(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        gluOrtho2D(0.0, static_cast<GLsizei>(width), 0.0, static_cast<GLsizei>(height));
-        glMatrixMode(GL_MODELVIEW);
-    }
+    if (!m_hWnd)
+        return;
+
+    glViewport(0, 0, (GLsizei)width, (GLsizei)height);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    // Bottom-left origin in GL coords:
+    gluOrtho2D(0.0, (GLdouble)width, 0.0, (GLdouble)height);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity(); // IMPORTANT: your old code omitted this.
 }
 
 bool
@@ -105,24 +227,30 @@ OpenGlContext::IsValid() const
 void
 OpenGlContext::DrawGlBox()
 {
-    if (m_hWnd) {
-        RECT rt;
-        GetClientRect(m_hWnd, &rt);
+    if (!m_hWnd || !MakeCurrent())
+        return;
 
-        glClear(GL_COLOR_BUFFER_BIT);
+    glResetView();
 
-        glBegin(GL_LINES);
+    RECT rt{};
+    GetClientRect(m_hWnd, &rt);
 
-        glColor3f(1.0, 1.0, 1.0);
-        glVertex2i(0, 0);
-        glVertex2i(rt.right, rt.bottom);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
 
-        glVertex2i(rt.right, 0);
-        glVertex2i(0, rt.bottom);
+    glClear(GL_COLOR_BUFFER_BIT);
 
-        glEnd();
-        glFlush();
-    }
+    glBegin(GL_LINES);
+    glColor3f(1.f, 1.f, 1.f);
+    glVertex2i(0, 0);
+    glVertex2i(rt.right, rt.bottom);
+
+    glVertex2i(rt.right, 0);
+    glVertex2i(0, rt.bottom);
+    glEnd();
+
+    glFlush();
 }
 
 void
@@ -146,35 +274,42 @@ OpenGlContext::ToggleRepaint()
 void
 OpenGlContext::DrawFractalShark(HWND hWnd)
 {
+    if (!hWnd || !MakeCurrent())
+        return;
+
+    glResetView();
+
     WPngImage image{};
     image.loadImage("FractalShark.png");
 
     std::vector<uint8_t> imageBytes;
-    imageBytes.resize(image.width() * image.height() * 4);
+    imageBytes.resize((size_t)image.width() * (size_t)image.height() * 4);
 
     for (int y = 0; y < image.height(); y++) {
         for (int x = 0; x < image.width(); x++) {
             auto pixel = image.get8(x, y);
-            imageBytes[(y * image.width() + x) * 4 + 0] = pixel.r;
-            imageBytes[(y * image.width() + x) * 4 + 1] = pixel.g;
-            imageBytes[(y * image.width() + x) * 4 + 2] = pixel.b;
-            imageBytes[(y * image.width() + x) * 4 + 3] = pixel.a;
+            const size_t idx = ((size_t)y * (size_t)image.width() + (size_t)x) * 4;
+            imageBytes[idx + 0] = pixel.r;
+            imageBytes[idx + 1] = pixel.g;
+            imageBytes[idx + 2] = pixel.b;
+            imageBytes[idx + 3] = pixel.a;
         }
     }
 
-    RECT windowDimensions;
+    RECT windowDimensions{};
     GetClientRect(hWnd, &windowDimensions);
 
-    GLuint texid;
+    const GLint scrnHeight = windowDimensions.bottom;
+    const GLint scrnWidth = windowDimensions.right;
+
+    GLuint texid = 0;
     glEnable(GL_TEXTURE_2D);
     glGenTextures(1, &texid);
     glBindTexture(GL_TEXTURE_2D, texid);
+
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);  //Always set the base and max mipmap
-    // levels of a texture. glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 
-    // Change m_DrawOutBytes size if GL_RGBA is changed
     glTexImage2D(GL_TEXTURE_2D,
                  0,
                  GL_RGBA8,
@@ -185,8 +320,8 @@ OpenGlContext::DrawFractalShark(HWND hWnd)
                  GL_UNSIGNED_BYTE,
                  imageBytes.data());
 
-    const GLint scrnHeight = windowDimensions.bottom;
-    const GLint scrnWidth = windowDimensions.right;
+    // In fixed function, make sure vertex color doesn't tint the texture.
+    glColor4f(1.f, 1.f, 1.f, 1.f);
 
     glBegin(GL_QUADS);
     glTexCoord2i(0, 0);
@@ -198,7 +333,11 @@ OpenGlContext::DrawFractalShark(HWND hWnd)
     glTexCoord2i(1, 0);
     glVertex2i(scrnWidth, scrnHeight);
     glEnd();
+
     glFlush();
     glFinish();
+
     glDeleteTextures(1, &texid);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
 }

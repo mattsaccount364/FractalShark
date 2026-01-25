@@ -18,6 +18,7 @@
     <ClInclude Include="BLAS.h" />
     <ClInclude Include="DrawThreadSync.h" />
     <ClInclude Include="FeatureFinder.h" />
+    <ClInclude Include="FeatureSummary.h" />
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="CrummyTest.h" />
     <ClInclude Include="GPU_BLAS.h" />
@@ -61,6 +62,7 @@
     <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />
     <ClCompile Include="FeatureFinder.cpp" />
+    <ClCompile Include="FeatureSummary.cpp" />
     <ClCompile Include="Fractal.cpp" />
     <ClCompile Include="CrummyTest.cpp" />
     <ClCompile Include="ImaginaOrbit.cpp" />

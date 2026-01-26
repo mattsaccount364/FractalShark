@@ -4632,15 +4632,14 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2)
 void
 Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
 {
-    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<uint32_t,
-                                                                     double,
+    using IterType = uint64_t;
+    using T = HDRFloat<double>;
+    constexpr PerturbExtras PExtras = PerturbExtras::Disable;
+    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<uint64_t,
+                                                                     T,
                                                                      double,
                                                                      PerturbExtras::Disable,
                                                                      RefOrbitCalc::Extras::None>();
-
-    using IterType = uint32_t;
-    using T = double;
-    constexpr PerturbExtras PExtras = PerturbExtras::Disable;
 
     RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
 

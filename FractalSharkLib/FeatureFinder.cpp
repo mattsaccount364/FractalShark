@@ -11,37 +11,37 @@
 #include <cstdint>
 #include <iostream>
 
-using C = FloatComplex<double>;
-
-static inline double
-ChebAbs(const C &a)
+template<class IterType, class T, PerturbExtras PExtras>
+T
+FeatureFinder<IterType, T, PExtras>::ChebAbs(const C &a) const
 {
-    return std::max(std::abs(a.getRe()), std::abs(a.getIm()));
+    return HdrMaxReduced(HdrAbs(a.getRe()), HdrAbs(a.getIm()));
 }
 
 // Renormalize dzdc/zcoeff so their magnitude stays ~ 2^targetExp.
 // This preserves the invariant: true_dzdc = dzdc * 2^scaleExp
 // and forces the recurrence to add scalingFactor = 2^-scaleExp instead of 1.
-static inline void
-RenormalizeDzdcZcoeff(C &dzdc, C &zcoeff, int &scaleExp)
+template <class IterType, class T, PerturbExtras PExtras>
+void
+FeatureFinder<IterType, T, PExtras>::RenormalizeDzdcZcoeff(C &dzdc, C &zcoeff, int &scaleExp) const
 {
     // Pick thresholds with lots of headroom before double overflow (~2^1024).
     constexpr int kHiExp = 700;     // if exponent exceeds this, renormalize
     constexpr int kTargetExp = 200; // bring it back near this exponent
 
-    const double m = std::max(ChebAbs(dzdc), ChebAbs(zcoeff));
-    if (!(m > 0.0) || !std::isfinite(m)) {
+    auto m = HdrMaxReduced(ChebAbs(dzdc), ChebAbs(zcoeff));
+    if (!(HdrCompareToBothPositiveReducedGT(m, T{0.0f}))) {
         return; // caller will fail on non-finite elsewhere
     }
 
     // ilogb gives floor(log2(|m|)) as an int, without computing log().
-    const int e = std::ilogb(m);
+    const int e = HdrIlogb(m);
     if (e <= kHiExp) {
         return;
     }
 
     const int shift = e - kTargetExp;            // shift > 0
-    const double down = std::ldexp(1.0, -shift); // 2^-shift
+    const T down = HdrLdexp(T{1.0}, -shift); // 2^-shift
 
     dzdc = dzdc * down;
     zcoeff = zcoeff * down;
@@ -49,49 +49,50 @@ RenormalizeDzdcZcoeff(C &dzdc, C &zcoeff, int &scaleExp)
 }
 
 // Convert scaled values back to true values.
-static inline C
-Unscale(const C &a, int scaleExp)
+template <class IterType, class T, PerturbExtras PExtras>
+FeatureFinder<IterType, T, PExtras>::C
+FeatureFinder<IterType, T, PExtras>::Unscale(const C &a, int scaleExp) const
 {
-    return a * std::ldexp(1.0, scaleExp); // a * 2^scaleExp
+    return a * HdrLdexp(T{1.0}, scaleExp); // a * 2^scaleExp
 }
 
-template <class IterType, class T, PerturbExtras Extras>
-double
-FeatureFinder<IterType, T, Extras>::ToDouble(const HighPrecision &v)
+template <class IterType, class T, PerturbExtras PExtras>
+T
+FeatureFinder<IterType, T, PExtras>::ToDouble(const HighPrecision &v)
 {
-    return v.operator double();
+    return T{v};
 }
 
-template <class IterType, class T, PerturbExtras Extras>
-typename FeatureFinder<IterType, T, Extras>::C
-FeatureFinder<IterType, T, Extras>::Div(const C &a, const C &b)
+template <class IterType, class T, PerturbExtras PExtras>
+typename FeatureFinder<IterType, T, PExtras>::C
+FeatureFinder<IterType, T, PExtras>::Div(const C &a, const C &b)
 {
     // a / b = a * conj(b) / |b|^2
-    const double br = b.getRe();
-    const double bi = b.getIm();
-    const double denom = br * br + bi * bi;
+    const T br = b.getRe();
+    const T bi = b.getIm();
+    const T denom = br * br + bi * bi;
 
     // If denom is 0, caller is hosed; keep it explicit.
-    if (!(denom > 0.0)) {
+    if (HdrCompareToBothPositiveReducedLE(denom, T{0.0})) {
         return C(0.0, 0.0);
     }
 
     // a * conj(b)
-    const double ar = a.getRe();
-    const double ai = a.getIm();
-    const double rr = (ar * br + ai * bi) / denom;
-    const double ii = (ai * br - ar * bi) / denom;
+    const T ar = a.getRe();
+    const T ai = a.getIm();
+    const T rr = (ar * br + ai * bi) / denom;
+    const T ii = (ai * br - ar * bi) / denom;
     return C(rr, ii);
 }
 
-template <class IterType, class T, PerturbExtras Extras>
+template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
-    const C &c, IterTypeFull maxIters, double R, IterType &outPeriod, EvalState &st) const
+FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_Direct(
+    const C &c, IterTypeFull maxIters, T R, IterType &outPeriod, EvalState &st) const
 {
-    if (!(R > 0.0))
+    if (HdrCompareToBothPositiveReducedLE(R, T{0.0}))
         return false;
-    const double R2 = R * R;
+    const T R2 = R * R;
 
     C z(0.0, 0.0);
     C dzdc(0.0, 0.0);
@@ -100,16 +101,16 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
     int scaleExp = 0; // true_dzdc = dzdc * 2^scaleExp
 
     for (IterTypeFull n = 0; n < maxIters; ++n) {
-        const double scalingFactor = std::ldexp(1.0, -scaleExp); // 2^-scaleExp
+        const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp); // 2^-scaleExp
 
         // zcoeff ordering matches your reference:
         if (n == 0)
-            zcoeff = C(scalingFactor, 0.0);
+            zcoeff = C(scalingFactor, T{0.0});
         else
-            zcoeff = zcoeff * (z * 2.0);
+            zcoeff = zcoeff * (z * T{2.0});
 
         // dzdc <- 2*z*dzdc + scalingFactor  (instead of +1)
-        dzdc = dzdc * (z * 2.0) + C(scalingFactor, 0.0);
+        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{0.0});
 
         // Keep dzdc/zcoeff from blowing up; updates scaleExp.
         RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
@@ -117,15 +118,15 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
         // Advance orbit
         z = (z * z) + c;
 
-        if (z.norm_squared() > 4096.0)
+        if (HdrCompareToBothPositiveReducedGT(z.norm_squared(), T{4096.0}))
             break;
 
         // Period trigger uses TRUE dzdc (unscaled)
-        const double magZ = z.norm_squared();
+        const T magZ = z.norm_squared();
         const C dzdcTrue = Unscale(dzdc, scaleExp);
-        const double magD = dzdcTrue.norm_squared();
+        const T magD = dzdcTrue.norm_squared();
 
-        if (magZ < (R2 * magD)) {
+        if (HdrCompareToBothPositiveReducedLT(magZ, T{R2 * magD})) {
             const IterTypeFull cand = n + 1;
             if (cand <= static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
                 outPeriod = static_cast<IterType>(cand);
@@ -134,21 +135,15 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_Direct(
             }
             return false;
         }
-
-        // Optional hard fail on NaNs/Infs
-        if (!std::isfinite(z.getRe()) || !std::isfinite(z.getIm()) || !std::isfinite(dzdc.getRe()) ||
-            !std::isfinite(dzdc.getIm())) {
-            return false;
-        }
     }
 
     return false;
 }
 
-template <class IterType, class T, PerturbExtras Extras>
+template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_Direct(
-    const C &c, IterType period, C &outDiff, C &outDzdc, C &outZcoeff, double &outResidual2) const
+FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_Direct(
+    const C &c, IterType period, C &outDiff, C &outDzdc, C &outZcoeff, T &outResidual2) const
 {
     C z(0.0, 0.0);
     C dzdc(0.0, 0.0);
@@ -157,26 +152,21 @@ FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_Direct(
     int scaleExp = 0;
 
     for (IterType i = 0; i < period; ++i) {
-        const double scalingFactor = std::ldexp(1.0, -scaleExp);
+        const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp);
 
         if (i == 0)
-            zcoeff = C(scalingFactor, 0.0);
+            zcoeff = C(scalingFactor, T{0.0});
         else
-            zcoeff = zcoeff * (z * 2.0);
+            zcoeff = zcoeff * (z * T{2.0});
 
-        dzdc = dzdc * (z * 2.0) + C(scalingFactor, 0.0);
+        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{0.0});
 
         RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
 
         z = (z * z) + c;
 
-        if (z.norm_squared() > 4096.0)
+        if (HdrCompareToBothPositiveReducedLT(z.norm_squared(), T{4096.0}))
             return false;
-
-        if (!std::isfinite(z.getRe()) || !std::isfinite(z.getIm()) || !std::isfinite(dzdc.getRe()) ||
-            !std::isfinite(dzdc.getIm())) {
-            return false;
-        }
     }
 
     outDiff = z;
@@ -196,11 +186,12 @@ FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_Direct(
 
 // --- helpers -------------------------------------------------------------
 
-template <class IterType, class T, PerturbExtras Extras>
-static inline C
-ToC_fromRefOrbitPoint(const PerturbationResults<IterType, T, Extras> &results,
-                      RuntimeDecompressor<IterType, T, Extras> &dec,
-                      size_t idx)
+template <class IterType, class T, PerturbExtras PExtras>
+FeatureFinder<IterType, T, PExtras>::C
+FeatureFinder<IterType, T, PExtras>::ToC_fromRefOrbitPoint(
+    const PerturbationResults<IterType, T, PExtras> &results,
+                      RuntimeDecompressor<IterType, T, PExtras> &dec,
+    size_t idx) const
 {
     // For double / float orbit types this will be exact.
     // For HDRFloat / CudaDblflt variants, pick a SubType (double) and cast.
@@ -216,40 +207,41 @@ ToC_fromRefOrbitPoint(const PerturbationResults<IterType, T, Extras> &results,
     // so v likely has .x and .y (or .real/.imag).
     //
     // If it's .x/.y:
-    const double xr = static_cast<double>(v.getRe());
-    const double yi = static_cast<double>(v.getIm());
+    const auto xr = static_cast<T>(v.getRe());
+    const auto yi = static_cast<T>(v.getIm());
 
     return C(xr, yi);
 }
 
-template <class IterType, class T, PerturbExtras Extras>
-static inline C
-ToC_fromReferenceC(const PerturbationResults<IterType, T, Extras> &results)
+template <class IterType, class T, PerturbExtras PExtras>
+FeatureFinder<IterType, T, PExtras>::C
+FeatureFinder<IterType, T, PExtras>::ToC_fromReferenceC(
+    const PerturbationResults<IterType, T, PExtras> &results) const
 {
     // reference parameter c_ref that the authoritative orbit was generated at
     // (low precision fields are fine for PT in double; you can swap to hi if desired).
-    const double cx = static_cast<double>(results.GetOrbitXLow());
-    const double cy = static_cast<double>(results.GetOrbitYLow());
+    const auto cx = static_cast<T>(results.GetOrbitXLow());
+    const auto cy = static_cast<T>(results.GetOrbitYLow());
     return C(cx, cy);
 }
 
 // =====================================================================================
 // 1) Find period candidate using PT (reference orbit)
 // =====================================================================================
-template <class IterType, class T, PerturbExtras Extras>
+template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_PT(
-    const PerturbationResults<IterType, T, Extras> &results,
-    RuntimeDecompressor<IterType, T, Extras> &dec,
+FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_PT(
+    const PerturbationResults<IterType, T, PExtras> &results,
+    RuntimeDecompressor<IterType, T, PExtras> &dec,
     const C &cAbs,              // absolute candidate c
     IterTypeFull maxItersToTry, // how far to search for a period
-    double R,                   // radius for near-linear trigger
+    T R,                   // radius for near-linear trigger
     IterType &outPeriod,
     EvalState &st) const
 {
-    if (!(R > 0.0))
+    if (HdrCompareToBothPositiveReducedLE(R, T{0.0}))
         return false;
-    const double R2 = R * R;
+    const T R2 = R * R;
 
     const C cRef = ToC_fromReferenceC(results);
     const C dc = cAbs - cRef; // dc in perturbation formula
@@ -272,7 +264,7 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_PT(
         std::min<IterTypeFull>(maxItersToTry, static_cast<IterTypeFull>(refCount - 1));
 
     for (IterTypeFull n = 0; n < N; ++n) {
-        const double scalingFactor = std::ldexp(1.0, -scaleExp);
+        const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp);
 
         // Full z_n = z_ref[n] + dz_n
         const C zref = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(n));
@@ -280,11 +272,11 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_PT(
 
         // Derivative recurrences match your reference ordering:
         if (n == 0)
-            zcoeff = C(scalingFactor, 0.0);
+            zcoeff = C(scalingFactor, T{0.0});
         else
-            zcoeff = zcoeff * (z * 2.0);
+            zcoeff = zcoeff * (z * T{2.0});
 
-        dzdc = dzdc * (z * 2.0) + C(scalingFactor, 0.0);
+        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{0.0});
 
         RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
 
@@ -297,28 +289,21 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_PT(
         const C zrefNext = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(n + 1));
         const C zNext = zrefNext + dz;
 
-        if (zNext.norm_squared() > 4096.0)
+        if (HdrCompareToBothPositiveReducedGT(zNext.norm_squared(), T{4096.0}))
             break;
 
         // Period trigger uses TRUE dzdc (unscaled)
-        const double magZ = zNext.norm_squared();
+        const T magZ = zNext.norm_squared();
         const C dzdcTrue = Unscale(dzdc, scaleExp);
-        const double magD = dzdcTrue.norm_squared();
+        const T magD = dzdcTrue.norm_squared();
 
-        if (magZ < (R2 * magD)) {
+        if (HdrCompareToBothPositiveReducedLT(magZ, T(R2 * magD))) {
             const IterTypeFull cand = n + 1; // matches your direct: period = n+1
             if (cand <= static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
                 outPeriod = static_cast<IterType>(cand);
                 st.z = zNext;
                 return true;
             }
-            return false;
-        }
-
-        // Optional hard fail on NaNs/Infs
-        if (!std::isfinite(zNext.getRe()) || !std::isfinite(zNext.getIm()) ||
-            !std::isfinite(dz.getRe()) || !std::isfinite(dz.getIm()) || !std::isfinite(dzdc.getRe()) ||
-            !std::isfinite(dzdc.getIm())) {
             return false;
         }
     }
@@ -329,17 +314,17 @@ FeatureFinder<IterType, T, Extras>::Evaluate_FindPeriod_PT(
 // =====================================================================================
 // 2) Evaluate diff=z_p(c), dzdc, zcoeff at a fixed period using PT
 // =====================================================================================
-template <class IterType, class T, PerturbExtras Extras>
+template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_PT(
-    const PerturbationResults<IterType, T, Extras> &results,
-    RuntimeDecompressor<IterType, T, Extras> &dec,
+FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_PT(
+    const PerturbationResults<IterType, T, PExtras> &results,
+    RuntimeDecompressor<IterType, T, PExtras> &dec,
     const C &cAbs, // absolute candidate c
     IterType period,
     C &outDiff,   // z_p(c)  (or delta vs z0 if you prefer)
     C &outDzdc,   // dz_p/dc
     C &outZcoeff, // product(2*z_k) in your convention
-    double &outResidual2) const
+    T &outResidual2) const
 {
     const C cRef = ToC_fromReferenceC(results);
     const C dc = cAbs - cRef;
@@ -356,17 +341,17 @@ FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_PT(
     int scaleExp = 0;
 
     for (IterType i = 0; i < period; ++i) {
-        const double scalingFactor = std::ldexp(1.0, -scaleExp);
+        const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp);
 
         const C zref = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(i));
         z = zref + dz;
 
         if (i == 0)
-            zcoeff = C(scalingFactor, 0.0);
+            zcoeff = C{scalingFactor, T{0.0}};
         else
-            zcoeff = zcoeff * (z * 2.0);
+            zcoeff = zcoeff * (z * T{2.0});
 
-        dzdc = dzdc * (z * 2.0) + C(scalingFactor, 0.0);
+        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{0.0});
 
         RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
 
@@ -376,14 +361,8 @@ FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_PT(
         // optional bail-outs
         const C zrefNext = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(i + 1));
         const C zNext = zrefNext + dz;
-        if (zNext.norm_squared() > 4096.0)
+        if (HdrCompareToBothPositiveReducedGT(zNext.norm_squared(), T{4096.0}))
             return false;
-
-        if (!std::isfinite(zNext.getRe()) || !std::isfinite(zNext.getIm()) ||
-            !std::isfinite(dz.getRe()) || !std::isfinite(dz.getIm()) || !std::isfinite(dzdc.getRe()) ||
-            !std::isfinite(dzdc.getIm())) {
-            return false;
-        }
     }
 
     // After "period" steps, full z_p = zref[period] + dz_period.
@@ -400,17 +379,18 @@ FeatureFinder<IterType, T, Extras>::Evaluate_PeriodResidualAndDzdc_PT(
     return true;
 }
 
-template <class IterType, class T, PerturbExtras Extras>
+template <class IterType, class T, PerturbExtras PExtras>
 template <class FindPeriodFn, class EvalFn>
 bool
-FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
+FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
                                                              FeatureSummary &feature,
                                                              FindPeriodFn &&findPeriod,
                                                              EvalFn &&evalAtPeriod) const
 {
-    const double cx0 = ToDouble(feature.GetOrigX());
-    const double cy0 = ToDouble(feature.GetOrigY());
-    const double R = std::abs(ToDouble(feature.GetRadius()));
+    const T cx0 {feature.GetOrigX()};
+    const T cy0 {feature.GetOrigY()};
+    T R {feature.GetRadius()};
+    R = HdrAbs(R);
 
     const C origC{cx0, cy0};
     C c = origC;
@@ -427,18 +407,18 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
     // Original:
     //   Tolerance = 2^-40; SqrTolerance = 2^-80;
     //   if (norm(step) < norm(c) * SqrTolerance) break;
-    const double relTol = m_params.RelStepTol; // e.g. 0x1p-40
-    const double relTol2 = relTol * relTol;
+    const T relTol = m_params.RelStepTol; // e.g. 0x1p-40
+    const T relTol2 = relTol * relTol;
 
     C diff, dzdc, zcoeff;
-    double residual2 = 0.0;
+    T residual2{0.0};
 
     // Initial eval + correction (matches original "dc -= diff/dzdc" before loop)
     if (!evalAtPeriod(c, period, diff, dzdc, zcoeff, residual2)) {
         return false;
     }
-    const double dzdc2_init = dzdc.norm_squared();
-    if (!(dzdc2_init > 0.0)) {
+    const T dzdc2_init = dzdc.norm_squared();
+    if (HdrCompareToBothPositiveReducedLE(dzdc2_init, T{0.0})) {
         return false;
     }
     C step0 = Div(diff, dzdc);
@@ -452,8 +432,8 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
             return false;
         }
 
-        const double dzdc2 = dzdc.norm_squared();
-        if (!(dzdc2 > 0.0)) {
+        const T dzdc2 = dzdc.norm_squared();
+        if (HdrCompareToBothPositiveReducedLE(dzdc2, T{0.0})) {
             return false;
         }
 
@@ -466,18 +446,19 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
 
         c = c - step;
 
-        const double step2 = step.norm_squared();
-        const double c2 = c.norm_squared();
+        const T step2 = step.norm_squared();
+        const T c2 = c.norm_squared();
 
         // Match original: norm(step) < norm(c) * 2^-80  (squared form)
-        if (step2 <= c2 * relTol2) {
+        if (HdrCompareToBothPositiveReducedLE(step2, c2 * relTol2)) {
             convergedByStep = true;
             break;
         }
 
         // Optional: keep residual-based early-out only if you explicitly want it.
         // (Original did NOT do this.)
-        if (m_params.Eps2Accept > 0.0 && residual2 <= m_params.Eps2Accept) {
+        if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{0.0}) &&
+            HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
             break;
         }
     }
@@ -487,17 +468,17 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
     if (!evalAtPeriod(c, period, diff, dzdc, zcoeff, residual2)) {
         return false;
     }
-    const double dzdc2_final = dzdc.norm_squared();
-    if (!(dzdc2_final > 0.0)) {
+    const T dzdc2_final = dzdc.norm_squared();
+    if (HdrCompareToBothPositiveReducedLE(dzdc2_final, T{0.0})) {
         return false;
     }
     {
         C step = Div(diff, dzdc);
         c = c - step;
 
-        const double step2 = step.norm_squared();
-        const double c2 = c.norm_squared();
-        if (step2 <= c2 * relTol2) {
+        const T step2 = step.norm_squared();
+        const T c2 = c.norm_squared();
+        if (HdrCompareToBothPositiveReducedLE(step2, c2 * relTol2)) {
             convergedByStep = true;
         }
     }
@@ -507,13 +488,13 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
         return false;
     }
 
-    feature.SetFound(HighPrecision(c.getRe()), HighPrecision(c.getIm()), period, residual2);
+    feature.SetFound(HighPrecision(c.getRe()), HighPrecision(c.getIm()), period, HDRFloat<double>{residual2});
 
     if (m_params.PrintResult) {
         std::cout << "Periodic point: "
-                  << "orig cx=" << origC.getRe() << " orig cy=" << origC.getIm()
-                  << " new cx=" << c.getRe() << " new cy=" << c.getIm()
-                  << " period=" << static_cast<uint64_t>(period) << " residual2=" << residual2 << "\n";
+                  << "orig cx=" << HdrToString<false, T>(origC.getRe()) << " orig cy=" << HdrToString<false, T>(origC.getIm())
+                  << " new cx=" << HdrToString<false, T>(c.getRe()) << " new cy=" << HdrToString<false, T>(c.getIm())
+                  << " period=" << static_cast<uint64_t>(period) << " residual2=" << HdrToString<false, T>(residual2) << "\n";
     }
 
     // MATCH ORIGINAL "success" semantics:
@@ -522,7 +503,7 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
     if (convergedByStep) {
         return true;
     }
-    if (m_params.Eps2Accept > 0.0 && residual2 <= m_params.Eps2Accept) {
+    if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{0.0}) && HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
         return true;
     }
     return false;
@@ -532,19 +513,19 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint_Common(IterType refIters,
 // -----------------------------------------------------------------------------
 // HOW IT'S CALLED (Direct)
 // -----------------------------------------------------------------------------
-template <class IterType, class T, PerturbExtras Extras>
+template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(IterType iters, FeatureSummary &feature) const
+FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(IterType iters, FeatureSummary &feature) const
 {
     return FindPeriodicPoint_Common(
         iters,
         feature,
         // findPeriod
-        [this](const C &cAbs, IterTypeFull maxItersToTry, double R, IterType &outPeriod, EvalState &st) {
+        [this](const C &cAbs, IterTypeFull maxItersToTry, T R, IterType &outPeriod, EvalState &st) {
             return this->Evaluate_FindPeriod_Direct(cAbs, maxItersToTry, R, outPeriod, st);
         },
         // evalAtPeriod
-        [this](const C &cAbs, IterType period, C &diff, C &dzdc, C &zcoeff, double &residual2) {
+        [this](const C &cAbs, IterType period, C &diff, C &dzdc, C &zcoeff, T &residual2) {
             return this->Evaluate_PeriodResidualAndDzdc_Direct(
                 cAbs, period, diff, dzdc, zcoeff, residual2);
         });
@@ -553,11 +534,11 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(IterType iters, FeatureSum
 // -----------------------------------------------------------------------------
 // HOW IT'S CALLED (PT)
 // -----------------------------------------------------------------------------
-template <class IterType, class T, PerturbExtras Extras>
+template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
-    const PerturbationResults<IterType, T, Extras> &results,
-    RuntimeDecompressor<IterType, T, Extras> &dec,
+FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(
+    const PerturbationResults<IterType, T, PExtras> &results,
+    RuntimeDecompressor<IterType, T, PExtras> &dec,
     FeatureSummary &feature) const
 {
     return FindPeriodicPoint_Common(
@@ -565,26 +546,26 @@ FeatureFinder<IterType, T, Extras>::FindPeriodicPoint(
         feature,
         // findPeriod
         [this, &results, &dec](
-            const C &cAbs, IterTypeFull maxItersToTry, double R, IterType &outPeriod, EvalState &st) {
+            const C &cAbs, IterTypeFull maxItersToTry, T R, IterType &outPeriod, EvalState &st) {
             return this->Evaluate_FindPeriod_PT(results, dec, cAbs, maxItersToTry, R, outPeriod, st);
         },
         // evalAtPeriod
         [this, &results, &dec](
-            const C &cAbs, IterType period, C &diff, C &dzdc, C &zcoeff, double &residual2) {
+            const C &cAbs, IterType period, C &diff, C &dzdc, C &zcoeff, T &residual2) {
             return this->Evaluate_PeriodResidualAndDzdc_PT(
                 results, dec, cAbs, period, diff, dzdc, zcoeff, residual2);
         });
 }
 
-template <class IterType, class T, PerturbExtras Extras>
+template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, Extras>::Evaluate_AtPeriod(
-    const PerturbationResults<IterType, T, Extras> & /*results*/,
-    RuntimeDecompressor<IterType, T, Extras> &dec,
+FeatureFinder<IterType, T, PExtras>::Evaluate_AtPeriod(
+    const PerturbationResults<IterType, T, PExtras> & /*results*/,
+    RuntimeDecompressor<IterType, T, PExtras> &dec,
     const C &c,
     IterType period,
     EvalState &st,
-    double &outResidual2) const
+    T &outResidual2) const
 {
     // Re-evaluate orbit up to "period" and measure how close we are to z0.
     C z(0.0, 0.0);
@@ -617,8 +598,8 @@ InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Disable);
 // InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 // InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 //
-// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Disable);
-// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Disable);
+InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Disable);
+InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Disable);
 //
 // InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Disable);
 // InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Disable);

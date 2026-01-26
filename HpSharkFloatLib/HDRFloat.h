@@ -1705,6 +1705,232 @@ HdrFromIntToDbl(const std::string &mantissaStr)
     }
 }
 
+// -----------------------------------------------------------------------------
+// ilogb() equivalent for HDRFloat
+// -----------------------------------------------------------------------------
+//
+// What std::ilogb(x) returns:
+//   floor(log2(|x|))   (with special cases for 0 / NaN / Inf)
+//
+// For HDRFloat, after Reduce(), your representation is essentially:
+//
+//   x = mantissa * 2^exp
+//   with mantissa normalized to roughly [1,2) (or [-2,-1] for negative)
+//
+// Therefore, for any *reduced* nonzero HDRFloat:
+//   ilogb(x) == exp
+//
+// If it is *not reduced*, you must normalize first (copy + Reduce()).
+//
+// Notes:
+// - We ignore sign (ilogb uses |x|).
+// - For 0, we mimic std::ilogb by returning FP_ILOGB0 (usually INT_MIN).
+// - For NaN, return FP_ILOGBNAN (implementation-defined; usually INT_MIN).
+// - For +/-inf: std::ilogb returns INT_MAX; for HDRFloat you may or may not
+//   represent infinities. If you don't, you can skip that case.
+//
+
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <type_traits>
+
+#if __has_include(<bit>)
+#include <bit>
+#endif
+
+// -----------------------------------------------------------------------------
+// ilogb
+// -----------------------------------------------------------------------------
+
+// HDRFloat overload
+template <class MantT, HDROrder Order, class ExpT>
+CUDA_CRAP inline int
+HdrIlogb(const HDRFloat<MantT, Order, ExpT> &x)
+{
+    auto t = x; // Reduce mutates
+    t.Reduce(); // mantissa normalized ~[1,2), exp holds the binary exponent
+    return (int)t.getExp();
+}
+
+// float/double overload (constexpr-capable in C++20 via std::bit_cast)
+template <class T>
+CUDA_CRAP inline constexpr int
+HdrIlogb(T x)
+requires(std::is_same_v<std::remove_cv_t<T>, float> || std::is_same_v<std::remove_cv_t<T>, double>)
+{
+    using U = std::conditional_t<std::is_same_v<std::remove_cv_t<T>, float>, uint32_t, uint64_t>;
+    constexpr int kMantBits = std::is_same_v<std::remove_cv_t<T>, float> ? 23 : 52;
+    constexpr int kExpBits = std::is_same_v<std::remove_cv_t<T>, float> ? 8 : 11;
+    constexpr int kExpBias = std::is_same_v<std::remove_cv_t<T>, float> ? 127 : 1023;
+
+#if defined(__cpp_lib_bit_cast) && !defined(__CUDACC__)
+    const U bits = std::bit_cast<U>(x);
+#else
+    // non-constexpr fallback (still inline)
+    U bits;
+    __builtin_memcpy(&bits, &x, sizeof(T));
+#endif
+
+    const U expMask = ((U((((U)1) << kExpBits) - 1)) << kMantBits);
+    const U mantMask = (U(1) << kMantBits) - 1;
+
+    const U expBits = (bits & expMask) >> kMantBits;
+    const U mantBits = (bits & mantMask);
+
+    // zero
+    if (expBits == 0 && mantBits == 0) {
+        return std::numeric_limits<int>::min(); // FP_ILOGB0-style sentinel
+    }
+    // inf/nan
+    if (expBits == ((U(1) << kExpBits) - 1)) {
+        return std::numeric_limits<int>::max(); // FP_ILOGBNAN/HUGE-ish sentinel
+    }
+    // normal
+    if (expBits != 0) {
+        return int(expBits) - kExpBias;
+    }
+
+    // subnormal: normalize mantissa by shifting until top mantissa bit is 1
+    int lead = 0;
+    U m = mantBits;
+    while ((m & (U(1) << (kMantBits - 1))) == 0) {
+        m <<= 1;
+        ++lead;
+        if (lead > kMantBits)
+            break;
+    }
+    const int floorLog2Mant = (kMantBits - 1) - lead;
+    return (1 - kExpBias - kMantBits) + floorLog2Mant;
+}
+
+// -----------------------------------------------------------------------------
+// ldexp (x * 2^k)
+// -----------------------------------------------------------------------------
+
+// HDRFloat overload
+template <class MantT, HDROrder Order, class ExpT>
+CUDA_CRAP inline HDRFloat<MantT, Order, ExpT>
+HdrLdexp(const HDRFloat<MantT, Order, ExpT> &x, int k)
+{
+    if (x.getMantissa() == MantT{}) {
+        return x; // matches std::ldexp(0, k) == 0
+    }
+
+    HDRFloat<MantT, Order, ExpT> r = x;
+    r.setExp(r.getExp() + static_cast<ExpT>(k));
+    return r;
+}
+
+// float/double overload (bit-based; constexpr-capable when bit_cast is constexpr)
+template <class T>
+CUDA_CRAP inline constexpr T
+HdrLdexp(T x, int k)
+requires(std::is_same_v<std::remove_cv_t<T>, float> || std::is_same_v<std::remove_cv_t<T>, double>)
+{
+    using U = std::conditional_t<std::is_same_v<std::remove_cv_t<T>, float>, uint32_t, uint64_t>;
+    constexpr int kMantBits = std::is_same_v<std::remove_cv_t<T>, float> ? 23 : 52;
+    constexpr int kExpBits = std::is_same_v<std::remove_cv_t<T>, float> ? 8 : 11;
+    constexpr int kExpBias = std::is_same_v<std::remove_cv_t<T>, float> ? 127 : 1023;
+    constexpr int kExpMax = (1 << kExpBits) - 1;
+
+#if defined(__cpp_lib_bit_cast) && !defined(__CUDACC__)
+    U bits = std::bit_cast<U>(x);
+#else
+    U bits;
+    __builtin_memcpy(&bits, &x, sizeof(T));
+#endif
+
+    const U signBit = bits & (U(1) << (kMantBits + kExpBits));
+    const U expMask = (U(kExpMax) << kMantBits);
+    const U mantMask = (U(1) << kMantBits) - 1;
+
+    U expBits = (bits & expMask) >> kMantBits;
+    U mantBits = (bits & mantMask);
+
+    // zero -> zero (preserve sign)
+    if (expBits == 0 && mantBits == 0) {
+        return x;
+    }
+    // inf/nan -> unchanged
+    if (expBits == U(kExpMax)) {
+        return x;
+    }
+
+    // If subnormal, normalize into normal range first (so we can just adjust exponent)
+    if (expBits == 0) {
+        // shift mantissa until leading 1 reaches top mantissa bit
+        int shift = 0;
+        while ((mantBits & (U(1) << (kMantBits - 1))) == 0) {
+            mantBits <<= 1;
+            ++shift;
+            if (shift > kMantBits)
+                break;
+        }
+        // Now mantBits has the leading 1 at top; drop it into implicit-1 form.
+        // Subnormal exponent is 1-bias, but we shifted left by 'shift' => exponent -= shift
+        expBits = 1;          // make it "normal" (will be biased below)
+        mantBits &= mantMask; // keep mantissa field (implicit 1 removed)
+        k -= shift;
+    }
+
+    // Adjust exponent
+    int e = int(expBits) + k;
+    if (e >= kExpMax) {
+        // overflow -> inf
+        U out = signBit | (U(kExpMax) << kMantBits);
+#if defined(__cpp_lib_bit_cast) && !defined(__CUDACC__)
+        return std::bit_cast<T>(out);
+#else
+        T r;
+        __builtin_memcpy(&r, &out, sizeof(T));
+        return r;
+#endif
+    }
+    if (e <= 0) {
+        // underflow -> subnormal or zero
+        // We need to shift the significand right by (1 - e)
+        const int rshift = 1 - e;
+
+        // Recreate full significand with implicit 1
+        U sig = (U(1) << kMantBits) | mantBits;
+
+        if (rshift > kMantBits + 1) {
+            // too small -> signed zero
+            U out = signBit;
+#if defined(__cpp_lib_bit_cast) && !defined(__CUDACC__)
+            return std::bit_cast<T>(out);
+#else
+            T r;
+            __builtin_memcpy(&r, &out, sizeof(T));
+            return r;
+#endif
+        }
+
+        sig >>= rshift;
+        U out = signBit | (sig & mantMask); // exponent=0
+#if defined(__cpp_lib_bit_cast) && !defined(__CUDACC__)
+        return std::bit_cast<T>(out);
+#else
+        T r;
+        __builtin_memcpy(&r, &out, sizeof(T));
+        return r;
+#endif
+    }
+
+    // normal result
+    U out = signBit | (U(e) << kMantBits) | (mantBits & mantMask);
+#if defined(__cpp_lib_bit_cast) && !defined(__CUDACC__)
+    return std::bit_cast<T>(out);
+#else
+    T r;
+    __builtin_memcpy(&r, &out, sizeof(T));
+    return r;
+#endif
+}
+
+
+
 template <bool IntegerInput, class T, typename SubType>
 static CUDA_CRAP void
 HdrFromIfStream(T &out, std::istream &metafile)

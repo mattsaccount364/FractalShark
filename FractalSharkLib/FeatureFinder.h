@@ -4,39 +4,43 @@
 #include <iosfwd>
 
 #include "FloatComplex.h"
+#include "PerturbationResultsHelpers.h"
 
 template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;
 template <typename IterType, class T, PerturbExtras PExtras> class RuntimeDecompressor;
 
 class FeatureSummary;
 
-template <class IterType, class T, PerturbExtras Extras> class FeatureFinder final {
+template <class IterType, class T, PerturbExtras PExtras>
+class FeatureFinder final : public TemplateHelpers<IterType, T, PExtras> {
 public:
+    using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
+    using SubType = TemplateHelpers::SubType;
+    using C = TemplateHelpers::template HDRFloatComplex<SubType>;
+
     using IterTypeFull = uint64_t;
-    using C = FloatComplex<double>;
 
     struct Params {
         uint32_t MaxNewtonIters = 32;
 
         // Match original: Tolerance = 2^-40, compare squared norms
-        double RelStepTol = 0x1p-40;  // 2^-40
-        double RelStepTol2 = 0x1p-80; // 2^-80  (or compute RelStepTol*RelStepTol)
+        T RelStepTol{0x1p-40};   // 2^-40
+        T RelStepTol2{0x1p-80}; // 2^-80  (or compute RelStepTol*RelStepTol)
 
         // Optional: keep residual accept as a *secondary* early-out (can be 0 to disable)
-        double Eps2Accept = 0.0;
+        T Eps2Accept{0.0};
 
-        double DampMin = 0.1;
-        double DampMax = 1.0;
+        T DampMin{0.1};
+        T DampMax{1.0};
         bool PrintResult = true;
     };
-
 
     explicit FeatureFinder(const Params &p = Params{}) : m_params(p) {}
 
     bool FindPeriodicPoint(IterType iters, FeatureSummary &feature) const;
 
-    bool FindPeriodicPoint(const PerturbationResults<IterType, T, Extras> &results,
-                           RuntimeDecompressor<IterType, T, Extras> &dec,
+    bool FindPeriodicPoint(const PerturbationResults<IterType, T, PExtras> &results,
+                           RuntimeDecompressor<IterType, T, PExtras> &dec,
                            FeatureSummary &feature) const;
 
 private:
@@ -49,40 +53,47 @@ private:
         C z{};
     };
 
-private:
-    bool Evaluate_PeriodResidualAndDzdc_PT(const PerturbationResults<IterType, T, Extras> &results,
-                                           RuntimeDecompressor<IterType, T, Extras> &dec,
+    T ChebAbs(const C &a) const;
+    void RenormalizeDzdcZcoeff(C &dzdc, C &zcoeff, int &scaleExp) const;
+    C Unscale(const C &a, int scaleExp) const;
+    C ToC_fromRefOrbitPoint(const PerturbationResults<IterType, T, PExtras> &results,
+                            RuntimeDecompressor<IterType, T, PExtras> &dec,
+                            size_t idx) const;
+    C ToC_fromReferenceC(const PerturbationResults<IterType, T, PExtras> &results) const;
+
+    bool Evaluate_PeriodResidualAndDzdc_PT(const PerturbationResults<IterType, T, PExtras> &results,
+                                           RuntimeDecompressor<IterType, T, PExtras> &dec,
                                            const C &cAbs, // absolute candidate c
                                            IterType period,
                                            C &outDiff,   // z_p(c)  (or delta vs z0 if you prefer)
                                            C &outDzdc,   // dz_p/dc
                                            C &outZcoeff, // product(2*z_k) in your convention
-                                           double &outResidual2) const;
+                                           T &outResidual2) const;
 
-    bool Evaluate_FindPeriod_PT(const PerturbationResults<IterType, T, Extras> &results,
-                                RuntimeDecompressor<IterType, T, Extras> &dec,
+    bool Evaluate_FindPeriod_PT(const PerturbationResults<IterType, T, PExtras> &results,
+                                RuntimeDecompressor<IterType, T, PExtras> &dec,
                                 const C &cAbs,              // absolute candidate c
                                 IterTypeFull maxItersToTry, // how far to search for a period
-                                double R,                   // radius for near-linear trigger
+                                T R,                   // radius for near-linear trigger
                                 IterType &outPeriod,
                                 EvalState &st) const;
 
     bool Evaluate_FindPeriod_Direct(
-        const C &c, IterTypeFull maxIters, double R, IterType &outPeriod, EvalState &st) const;
+        const C &c, IterTypeFull maxIters, T R, IterType &outPeriod, EvalState &st) const;
 
     bool Evaluate_PeriodResidualAndDzdc_Direct(
-        const C &c, IterType period, C &outDiff, C &outDzdc, C &outZcoeff, double &outResidual2) const;
+        const C &c, IterType period, C &outDiff, C &outDzdc, C &outZcoeff, T &outResidual2) const;
 
-    static C Div(const C &a, const C &b); // a/b for FloatComplex<double>
+    static C Div(const C &a, const C &b);
 
-    bool Evaluate_AtPeriod(const PerturbationResults<IterType, T, Extras> &results,
-                           RuntimeDecompressor<IterType, T, Extras> &dec,
+    bool Evaluate_AtPeriod(const PerturbationResults<IterType, T, PExtras> &results,
+                           RuntimeDecompressor<IterType, T, PExtras> &dec,
                            const C &c,
                            IterType period,
                            EvalState &st,
-                           double &outResidual2) const;
+                           T &outResidual2) const;
 
-    static double ToDouble(const HighPrecision &v);
+    static T ToDouble(const HighPrecision &v);
 
 private:
     Params m_params{};

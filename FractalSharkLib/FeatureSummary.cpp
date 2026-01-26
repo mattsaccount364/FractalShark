@@ -14,7 +14,7 @@ void
 FeatureSummary::SetFound(const HighPrecision &foundX,
                          const HighPrecision &foundY,
                          IterTypeFull period,
-                         double residual2)
+                         HDRFloat<double> residual2)
 {
     FoundX = foundX;
     FoundY = foundY;
@@ -58,7 +58,7 @@ FeatureSummary::GetPeriod() const
     return Period;
 }
 
-double
+HDRFloat<double>
 FeatureSummary::GetResidual2() const
 {
     return Residual2;

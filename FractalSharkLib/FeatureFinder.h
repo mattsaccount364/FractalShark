@@ -21,18 +21,29 @@ public:
     using IterTypeFull = uint64_t;
 
     struct Params {
-        uint32_t MaxNewtonIters = 32;
+        Params()
+            : MaxNewtonIters(32), RelStepTol{0x1p-40}, // 2^-40
+              RelStepTol2{0x1p-80},                    // 2^-80
+              Eps2Accept{}, DampMin{0.1}, DampMax{1.0}, PrintResult(true)
+        {
+            HdrReduce(RelStepTol);
+            HdrReduce(RelStepTol2);
+            HdrReduce(DampMin);
+            HdrReduce(DampMax);
+        }
+
+        uint32_t MaxNewtonIters;
 
         // Match original: Tolerance = 2^-40, compare squared norms
-        T RelStepTol{0x1p-40};   // 2^-40
-        T RelStepTol2{0x1p-80}; // 2^-80  (or compute RelStepTol*RelStepTol)
+        T RelStepTol;  // 2^-40
+        T RelStepTol2; // 2^-80  (or compute RelStepTol*RelStepTol)
 
         // Optional: keep residual accept as a *secondary* early-out (can be 0 to disable)
-        T Eps2Accept{0.0};
+        T Eps2Accept;
 
-        T DampMin{0.1};
-        T DampMax{1.0};
-        bool PrintResult = true;
+        T DampMin;
+        T DampMax;
+        bool PrintResult;
     };
 
     explicit FeatureFinder(const Params &p = Params{}) : m_params(p) {}

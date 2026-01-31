@@ -4632,35 +4632,59 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2)
 void
 Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
 {
-    using IterType = uint64_t;
-    using T = HDRFloat<double>;
-    constexpr PerturbExtras PExtras = PerturbExtras::Disable;
-    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<uint64_t,
-                                                                     T,
-                                                                     double,
-                                                                     PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>();
+    constexpr auto DirectEvaluate = true;
+    
+    if constexpr (DirectEvaluate) {
+        using T = HDRFloat<double>;
+        using IterType = uint64_t;
+        constexpr PerturbExtras PExtras = PerturbExtras::Disable;
 
-    RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
+        HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
+        HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
 
-    HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
-    HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
-    HighPrecision radius{results->GetMaxRadius()};
-    //radius /= HighPrecision{12};
+        const T radiusY{T{GetMaxY() - GetMinY()} / T{2.0f}};
+        HighPrecision radius{radiusY};
+        radius /= HighPrecision{12};
 
-    // Setup feature finder
-    auto featureFinder =
-        std::make_unique<FeatureFinder<IterType, T, PExtras>>();
+        // Setup feature finder
+        auto featureFinder = std::make_unique<FeatureFinder<IterType, T, PExtras>>();
 
-    m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
-    //const bool found = featureFinder->FindPeriodicPoint(
-    //    *results, decompressor, *m_FeatureSummary);
-    const bool found = featureFinder->FindPeriodicPoint(results->GetMaxIterations(), *m_FeatureSummary);
+        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
+        const bool found = featureFinder->FindPeriodicPoint(GetNumIterations<IterType>(), *m_FeatureSummary);
 
-    if (!found) {
-        m_FeatureSummary = nullptr;
-        std::cout << "No periodic point found in search region.\n";
-        return;
+        if (!found) {
+            m_FeatureSummary = nullptr;
+            std::cout << "No periodic point found in search region.\n";
+            return;
+        }
+    } else {
+        using IterType = uint64_t;
+        using T = HDRFloat<double>;
+        constexpr PerturbExtras PExtras = PerturbExtras::Disable;
+        auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<uint64_t,
+                                                                         T,
+                                                                         double,
+                                                                         PerturbExtras::Disable,
+                                                                         RefOrbitCalc::Extras::None>();
+
+        RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
+
+        HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
+        HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
+        HighPrecision radius{results->GetMaxRadius()};
+        // radius /= HighPrecision{12};
+
+        // Setup feature finder
+        auto featureFinder = std::make_unique<FeatureFinder<IterType, T, PExtras>>();
+
+        const bool found = featureFinder->FindPeriodicPoint(
+            *results, decompressor, *m_FeatureSummary);
+
+        if (!found) {
+            m_FeatureSummary = nullptr;
+            std::cout << "No periodic point found in search region.\n";
+            return;
+        }
     }
 }
 

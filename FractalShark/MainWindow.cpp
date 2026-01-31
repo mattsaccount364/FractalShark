@@ -25,7 +25,7 @@
 namespace {
 
 constexpr bool startWindowed = true;
-constexpr bool finishWindowed = false;
+constexpr bool finishWindowed = true;
 constexpr DWORD forceStartWidth = 0;
 constexpr DWORD forceStartHeight = 0;
 
@@ -126,10 +126,11 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     const int vHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
     // Default "start windowed" geometry (you can tweak)
-    int startX = vLeft + (vWidth / 8);
-    int startY = vTop + (vHeight / 8);
-    int width = (vWidth * 3) / 4;
-    int height = (vHeight * 3) / 4;
+    const int size = std::min(vWidth / 2, vHeight / 2);
+    const int startX = vLeft + (vWidth - size) / 2;
+    const int startY = vTop + (vHeight - size) / 2;
+    int width = size;
+    int height = size;
 
     if constexpr (forceStartWidth)
         width = (int)forceStartWidth;

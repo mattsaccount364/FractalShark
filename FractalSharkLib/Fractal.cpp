@@ -4653,8 +4653,9 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
         std::make_unique<FeatureFinder<IterType, T, PExtras>>();
 
     m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
-    const bool found = featureFinder->FindPeriodicPoint(
-        *results, decompressor, *m_FeatureSummary);
+    //const bool found = featureFinder->FindPeriodicPoint(
+    //    *results, decompressor, *m_FeatureSummary);
+    const bool found = featureFinder->FindPeriodicPoint(results->GetMaxIterations(), *m_FeatureSummary);
 
     if (!found) {
         m_FeatureSummary = nullptr;

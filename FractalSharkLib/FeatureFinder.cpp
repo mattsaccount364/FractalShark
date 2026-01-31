@@ -30,7 +30,7 @@ FeatureFinder<IterType, T, PExtras>::RenormalizeDzdcZcoeff(C &dzdc, C &zcoeff, i
     constexpr int kTargetExp = 200; // bring it back near this exponent
 
     auto m = HdrMaxReduced(ChebAbs(dzdc), ChebAbs(zcoeff));
-    if (!(HdrCompareToBothPositiveReducedGT(m, T{0.0f}))) {
+    if (!(HdrCompareToBothPositiveReducedGT(m, T{}))) {
         return; // caller will fail on non-finite elsewhere
     }
 
@@ -73,7 +73,7 @@ FeatureFinder<IterType, T, PExtras>::Div(const C &a, const C &b)
     const T denom = br * br + bi * bi;
 
     // If denom is 0, caller is hosed; keep it explicit.
-    if (HdrCompareToBothPositiveReducedLE(denom, T{0.0})) {
+    if (HdrCompareToBothPositiveReducedLE(denom, T{})) {
         return C(0.0, 0.0);
     }
 
@@ -90,7 +90,9 @@ bool
 FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_Direct(
     const C &c, IterTypeFull maxIters, T R, IterType &outPeriod, EvalState &st) const
 {
-    if (HdrCompareToBothPositiveReducedLE(R, T{0.0}))
+    auto reduced0{HdrReduce(T{})};
+    HdrReduce(R);
+    if (HdrCompareToBothPositiveReducedLE(R, reduced0))
         return false;
     const T R2 = R * R;
 
@@ -105,12 +107,12 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_Direct(
 
         // zcoeff ordering matches your reference:
         if (n == 0)
-            zcoeff = C(scalingFactor, T{0.0});
+            zcoeff = C(scalingFactor, T{});
         else
             zcoeff = zcoeff * (z * T{2.0});
 
         // dzdc <- 2*z*dzdc + scalingFactor  (instead of +1)
-        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{0.0});
+        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{});
 
         // Keep dzdc/zcoeff from blowing up; updates scaleExp.
         RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
@@ -155,11 +157,11 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_Direct(
         const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp);
 
         if (i == 0)
-            zcoeff = C(scalingFactor, T{0.0});
+            zcoeff = C(scalingFactor, T{});
         else
             zcoeff = zcoeff * (z * T{2.0});
 
-        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{0.0});
+        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{});
 
         RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
 
@@ -239,7 +241,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_PT(
     IterType &outPeriod,
     EvalState &st) const
 {
-    if (HdrCompareToBothPositiveReducedLE(R, T{0.0}))
+    if (HdrCompareToBothPositiveReducedLE(R, T{}))
         return false;
     const T R2 = R * R;
 
@@ -272,11 +274,11 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_PT(
 
         // Derivative recurrences match your reference ordering:
         if (n == 0)
-            zcoeff = C(scalingFactor, T{0.0});
+            zcoeff = C(scalingFactor, T{});
         else
             zcoeff = zcoeff * (z * T{2.0});
 
-        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{0.0});
+        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{});
 
         RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
 
@@ -347,11 +349,11 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_PT(
         z = zref + dz;
 
         if (i == 0)
-            zcoeff = C{scalingFactor, T{0.0}};
+            zcoeff = C{scalingFactor, T{}};
         else
             zcoeff = zcoeff * (z * T{2.0});
 
-        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{0.0});
+        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{});
 
         RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
 
@@ -418,7 +420,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         return false;
     }
     const T dzdc2_init = dzdc.norm_squared();
-    if (HdrCompareToBothPositiveReducedLE(dzdc2_init, T{0.0})) {
+    if (HdrCompareToBothPositiveReducedLE(dzdc2_init, T{})) {
         return false;
     }
     C step0 = Div(diff, dzdc);
@@ -433,7 +435,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         }
 
         const T dzdc2 = dzdc.norm_squared();
-        if (HdrCompareToBothPositiveReducedLE(dzdc2, T{0.0})) {
+        if (HdrCompareToBothPositiveReducedLE(dzdc2, T{})) {
             return false;
         }
 
@@ -457,7 +459,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
 
         // Optional: keep residual-based early-out only if you explicitly want it.
         // (Original did NOT do this.)
-        if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{0.0}) &&
+        if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{}) &&
             HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
             break;
         }
@@ -469,7 +471,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         return false;
     }
     const T dzdc2_final = dzdc.norm_squared();
-    if (HdrCompareToBothPositiveReducedLE(dzdc2_final, T{0.0})) {
+    if (HdrCompareToBothPositiveReducedLE(dzdc2_final, T{})) {
         return false;
     }
     {
@@ -503,7 +505,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     if (convergedByStep) {
         return true;
     }
-    if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{0.0}) && HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
+    if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{}) && HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
         return true;
     }
     return false;

@@ -243,7 +243,11 @@ public:
 
     bool GpuBypassed() const;
 
-    void TryFindPeriodicPoint(size_t scrnX, size_t scrnY);
+    enum class FeatureFinderMode {
+        Direct,
+        PT
+    };
+    void TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
 
 private:
     void Initialize(int width,

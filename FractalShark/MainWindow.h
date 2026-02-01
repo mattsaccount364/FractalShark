@@ -35,7 +35,6 @@ public:
 private:
     SplashWindow Splash;
 
-
     std::vector<SavedLocation> gSavedLocations;
     std::vector<ImaginaSavedLocation> gImaginaLocations;
 

@@ -19,6 +19,7 @@
 
 #include "BenchmarkData.h"
 #include "CudaDblflt.h"
+#include "Exceptions.h"
 #include "FeatureFinder.h"
 #include "PerturbationResults.h"
 #include "PrecisionCalculator.h"
@@ -674,6 +675,8 @@ Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor)
 void
 Fractal::InitialDefaultViewAndSettings(int width, int height)
 {
+    const bool success =
+        SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO));
     // const bool success =
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2));
     // const bool success =
@@ -686,7 +689,7 @@ Fractal::InitialDefaultViewAndSettings(int width, int height)
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO));
     // const bool success =
     // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2));
-    const bool success = SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
+    //const bool success = SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
     if (!success) {
         std::cerr << "Error: could not set default render algorithm." << std::endl;
     }
@@ -4630,11 +4633,9 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2)
 }
 
 void
-Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
+Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode)
 {
-    constexpr auto DirectEvaluate = true;
-    
-    if constexpr (DirectEvaluate) {
+    if (mode == FeatureFinderMode::Direct) {
         using T = HDRFloat<double>;
         using IterType = uint64_t;
         constexpr PerturbExtras PExtras = PerturbExtras::Disable;
@@ -4657,7 +4658,7 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
             std::cout << "No periodic point found in search region.\n";
             return;
         }
-    } else {
+    } else if (mode == FeatureFinderMode::PT) {
         using IterType = uint64_t;
         using T = HDRFloat<double>;
         constexpr PerturbExtras PExtras = PerturbExtras::Disable;
@@ -4672,11 +4673,12 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
         HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
         HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
         HighPrecision radius{results->GetMaxRadius()};
-        // radius /= HighPrecision{12};
+        radius /= HighPrecision{12};
 
         // Setup feature finder
         auto featureFinder = std::make_unique<FeatureFinder<IterType, T, PExtras>>();
 
+        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
         const bool found = featureFinder->FindPeriodicPoint(
             *results, decompressor, *m_FeatureSummary);
 
@@ -4685,6 +4687,8 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY)
             std::cout << "No periodic point found in search region.\n";
             return;
         }
+    } else {
+        throw FractalSharkSeriousException("Unknown FeatureFinderMode in TryFindPeriodicPoint");
     }
 }
 

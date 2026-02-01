@@ -90,66 +90,78 @@ bool
 FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_Direct(
     const C &c, IterTypeFull maxIters, T R, IterType &outPeriod, EvalState &st) const
 {
-    auto reduced0{HdrReduce(T{})};
+    // Require positive radius
     HdrReduce(R);
-    if (HdrCompareToBothPositiveReducedLE(R, reduced0)) {
+    const T zero = HdrReduce(T{});
+    if (HdrCompareToBothPositiveReducedLE(R, zero)) {
         std::cout << "FeatureFinder::Evaluate_FindPeriod_Direct: R must be positive.\n";
         return false;
     }
 
-    const T R2 = R * R;
+    // Pre-reduce constants used in Reduced compares
+    const T two = HdrReduce(T{2.0});
+    const T one = HdrReduce(T{1.0});
+    const T escape2 = HdrReduce(T{4096.0});
 
-    C z{};
-    C dzdc{};
-    C zcoeff{};
+    // R2 (reduced)
+    T R2 = R * R;
+    HdrReduce(R2);
 
-    int scaleExp = 0; // true_dzdc = dzdc * 2^scaleExp
+    C z{};      // z_0 = 0
+    C dzdc{};   // dz/dc at z0 is 0
+    C zcoeff{}; // matches your reference ordering (product-ish)
 
     for (IterTypeFull n = 0; n < maxIters; ++n) {
-        const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp); // 2^-scaleExp
+        // zcoeff ordering matches your double direct reference:
+        // if (n==0) zcoeff = 1; else zcoeff *= (2*z)
+        if (n == 0) {
+            zcoeff = C(one, T{});
+        } else {
+            zcoeff = zcoeff * (z * two);
+        }
+        zcoeff.Reduce();
 
-        // zcoeff ordering matches your reference:
-        if (n == 0)
-            zcoeff = C(scalingFactor, T{});
-        else
-            zcoeff = zcoeff * (z * T{2.0});
+        // dzdc <- 2*z*dzdc + 1
+        dzdc = dzdc * (z * two) + C(one, T{});
+        dzdc.Reduce();
 
-        // dzdc <- 2*z*dzdc + scalingFactor  (instead of +1)
-        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{});
-
-        // Keep dzdc/zcoeff from blowing up; updates scaleExp.
-        RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
-
-        // Advance orbit
+        // Advance orbit: z <- z^2 + c
         z = (z * z) + c;
+        z.Reduce();
 
-        if (HdrCompareToBothPositiveReducedGT(z.norm_squared(), T{4096.0})) {
-            std::cout << "FeatureFinder::Evaluate_FindPeriod_Direct: orbit escaped.\n";
+        // Escape check on |z|^2
+        T z2 = z.norm_squared();
+        HdrReduce(z2);
+        if (HdrCompareToBothPositiveReducedGT(z2, escape2)) {
+            // Non-periodic / escaped before finding a candidate period.
             break;
         }
 
-        // Period trigger uses TRUE dzdc (unscaled)
-        const T magZ = z.norm_squared();
-        const C dzdcTrue = Unscale(dzdc, scaleExp);
-        const T magD = dzdcTrue.norm_squared();
+        // Period trigger:
+        // if |z|^2 < R^2 * |dzdc|^2  => candidate period = n+1
+        T d2 = dzdc.norm_squared();
+        HdrReduce(d2);
 
-        if (HdrCompareToBothPositiveReducedLT(magZ, T{R2 * magD})) {
+        T rhs = R2 * d2;
+        HdrReduce(rhs);
+
+        if (HdrCompareToBothPositiveReducedLT(z2, rhs)) {
             const IterTypeFull cand = n + 1;
             if (cand <= static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
-                std::cout << "FeatureFinder::Evaluate_FindPeriod_Direct: found period candidate " << cand
-                          << " at iter " << n << ".\n";
                 outPeriod = static_cast<IterType>(cand);
                 st.z = z;
                 return true;
             }
 
-            std::cout << "FeatureFinder::Evaluate_FindPeriod_Direct: period candidate " << cand
-                      << " exceeds max IterType.\n";
+            std::cout
+                << "FeatureFinder::Evaluate_FindPeriod_Direct: candidate period exceeds IterType.\n";
             return false;
         }
+
+        // (Optional) extra guard if dzdc went degenerate
+        // if (HdrCompareToBothPositiveReducedLE(d2, zero)) break;
     }
 
-    std::cout << "FeatureFinder::Evaluate_FindPeriod_Direct: no period found up to maxIters.\n";
     return false;
 }
 
@@ -258,91 +270,165 @@ bool
 FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_PT(
     const PerturbationResults<IterType, T, PExtras> &results,
     RuntimeDecompressor<IterType, T, PExtras> &dec,
-    const C &cAbs,              // absolute candidate c
-    IterTypeFull maxItersToTry, // how far to search for a period
-    T R,                   // radius for near-linear trigger
+    const C &cAbs,
+    IterTypeFull maxItersToTry,
+    T R,
     IterType &outPeriod,
     EvalState &st) const
 {
-    if (HdrCompareToBothPositiveReducedLE(R, T{}))
+    auto Zref = [&](size_t n) -> C {
+        auto v = results.GetComplex(dec, n);
+        C z(static_cast<T>(v.getRe()), static_cast<T>(v.getIm()));
+        z.Reduce();
+        return z;
+    };
+
+    const IterType pScreen = results.GetPeriodMaybeZero();
+    if (pScreen != 0) {
+        outPeriod = pScreen;
+        st.z = C{};
+        std::cout << "[PT FindPeriod] SUCCESS: using stored period=" << (uint64_t)pScreen << "\n";
+        return true;
+    }
+
+    HdrReduce(R);
+    const T zero = HdrReduce(T{});
+    if (HdrCompareToBothPositiveReducedLE(R, zero)) {
+        std::cout << "[PT FindPeriod] FAIL: R <= 0\n";
         return false;
-    const T R2 = R * R;
+    }
 
-    const C cRef = ToC_fromReferenceC(results);
-    const C dc = cAbs - cRef; // dc in perturbation formula
+    T SqrNearLinearRadius = R * R;
+    HdrReduce(SqrNearLinearRadius);
 
-    // Guard: need reference orbit long enough.
-    const size_t refCount = static_cast<size_t>(results.GetCountOrbitEntries());
-    if (refCount < 2)
+    const T near1 = HdrReduce(T{0.25});
+    T SqrNearLinearRadiusScale = near1 * near1;
+    HdrReduce(SqrNearLinearRadiusScale);
+
+    const T one = HdrReduce(T{1.0});
+    const T two = HdrReduce(T{2.0});
+    const T escape2 = HdrReduce(T{4096.0});
+
+    const C cRef(ToDouble(results.GetHiX()), ToDouble(results.GetHiY()));
+    C dc = cAbs - cRef;
+    dc.Reduce();
+
+    const size_t storedCount = static_cast<size_t>(results.GetCountOrbitEntries());
+    if (storedCount < 2) {
+        std::cout << "[PT FindPeriod] FAIL: ref orbit too short\n";
         return false;
+    }
 
-    C dz{}; // perturbation delta (your old "dz")
-    C z{};  // full z
+    const IterTypeFull hardCap = static_cast<IterTypeFull>(storedCount - 1);
+    const IterTypeFull cap = std::min<IterTypeFull>(maxItersToTry, hardCap);
+
+    if (cap < 1) {
+        std::cout << "[PT FindPeriod] FAIL: cap < 1\n";
+        return false;
+    }
+
+    C dz{};
+    C z{};
     C dzdc{};
     C zcoeff{};
 
-    int scaleExp = 0; // true_dzdc = dzdc * 2^scaleExp (and same for zcoeff)
+    dz.Reduce();
+    dzdc.Reduce();
+    zcoeff.Reduce();
 
-    // We need z_ref[n] each step. Assume results stores z_ref[0]=0 and subsequent.
-    // We iterate n from 0..N-1, using z_ref[n] to advance delta to n+1, and then form z at n+1.
-    const IterTypeFull N =
-        std::min<IterTypeFull>(maxItersToTry, static_cast<IterTypeFull>(refCount - 1));
+    // Track reference iteration separately (key difference from original)
+    size_t refIteration = 0;
+    const size_t refOrbitLength = storedCount;
 
-    for (IterTypeFull n = 0; n < N; ++n) {
-        const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp);
+    for (IterTypeFull n = 0; n < cap; ++n) {
+        const C zref = Zref(refIteration);
 
-        // Full z_n = z_ref[n] + dz_n
-        const C zref = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(n));
-
+        // full z_n = zref + dz
         z = zref + dz;
-        HdrReduce(z);
+        z.Reduce();
 
-        // Derivative recurrences match your reference ordering:
+        // derivative updates using full z
         if (n == 0)
-            zcoeff = C(scalingFactor, T{});
+            zcoeff = C(one, T{});
         else
-            zcoeff = zcoeff * (z * T{2.0});
+            zcoeff = zcoeff * (z * two);
+        zcoeff.Reduce();
 
-        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{});
-        HdrReduce(dzdc);
+        dzdc = dzdc * (z * two) + C(one, T{});
+        dzdc.Reduce();
 
-        RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
-
-        // Perturbation advance:
-        // dz_{n+1} = dz_n * (z_ref[n] + z_n) + dc
-        //          = dz_n * (2*z_ref[n] + dz_n) + dc
+        // PT advance: dz_{n+1} = dz * (zref + z) + dc
         dz = dz * (zref + z) + dc;
-        HdrReduce(dz);
+        dz.Reduce();
 
-        // Full z_{n+1} for escape / periodic check:
-        const C zrefNext = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(n + 1));
-        const C zNext = zrefNext + dz;
+        // Advance reference iteration
+        refIteration++;
 
-        if (HdrCompareToBothPositiveReducedGT(zNext.norm_squared(), T{4096.0}))
-            break;
+        // Clamp refIteration to valid range for Zref access
+        size_t safeRefIt = (refIteration < refOrbitLength) ? refIteration : refOrbitLength - 1;
 
-        // Period trigger uses TRUE dzdc (unscaled)
-        T magZ = zNext.norm_squared();
-        HdrReduce(magZ);
+        // Get next reference point
+        const C zrefNext = Zref(safeRefIt);
+        C zNext = zrefNext + dz;
+        zNext.Reduce();
 
-        const C dzdcTrue = Unscale(dzdc, scaleExp);
-        T magD = dzdcTrue.norm_squared();
-        HdrReduce(magD);
+        // **REBASING**: Critical check from original implementation
+        // When reference orbit exhausted OR perturbation exceeds full value
+        T dzNorm = dz.norm_squared();
+        HdrReduce(dzNorm);
+        T zNextNorm = zNext.norm_squared();
+        HdrReduce(zNextNorm);
 
-        T prodMagDR2 = R2 * magD;
-        HdrReduce(prodMagDR2);
+        if (refIteration >= refOrbitLength || HdrCompareToBothPositiveReducedLT(zNextNorm, dzNorm)) {
+            // Rebase: set dz = z (full value) and restart reference
+            dz = zNext;
+            dz.Reduce();
+            refIteration = 0;
+        }
 
-        if (HdrCompareToBothPositiveReducedLT(magZ, prodMagDR2)) {
-            const IterTypeFull cand = n + 1; // matches your direct: period = n+1
+        // Escape check
+        T Magnitude = zNext.norm_squared();
+        HdrReduce(Magnitude);
+        if (HdrCompareToBothPositiveReducedGT(Magnitude, escape2)) {
+            std::cout << "[PT FindPeriod] FAIL: escape at n=" << (uint64_t)n << "\n";
+            return false;
+        }
+
+        // Near-linear trigger
+        T d2 = dzdc.norm_squared();
+        HdrReduce(d2);
+
+        T rhs = SqrNearLinearRadius * d2;
+        HdrReduce(rhs);
+
+        if (HdrCompareToBothPositiveReducedLT(Magnitude, rhs)) {
+            const IterTypeFull cand = n + 1;
             if (cand <= static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
                 outPeriod = static_cast<IterType>(cand);
                 st.z = zNext;
+                std::cout << "[PT FindPeriod] SUCCESS: found period=" << (uint64_t)cand << "\n";
                 return true;
             }
+            std::cout << "[PT FindPeriod] FAIL: period overflow\n";
             return false;
+        }
+
+        // Adaptive tightening
+        if (HdrCompareToBothPositiveReducedGT(d2, zero)) {
+            T lhsTighten = Magnitude * SqrNearLinearRadiusScale;
+            HdrReduce(lhsTighten);
+
+            if (HdrCompareToBothPositiveReducedLT(lhsTighten, rhs)) {
+                T newSqr = lhsTighten / d2;
+                HdrReduce(newSqr);
+                if (HdrCompareToBothPositiveReducedGT(newSqr, zero)) {
+                    SqrNearLinearRadius = newSqr;
+                }
+            }
         }
     }
 
+    std::cout << "[PT FindPeriod] FAIL: no trigger found\n";
     return false;
 }
 
@@ -356,63 +442,125 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_PT(
     RuntimeDecompressor<IterType, T, PExtras> &dec,
     const C &cAbs, // absolute candidate c
     IterType period,
-    C &outDiff,   // z_p(c)  (or delta vs z0 if you prefer)
-    C &outDzdc,   // dz_p/dc
-    C &outZcoeff, // product(2*z_k) in your convention
+    C &outDiff,
+    C &outDzdc,
+    C &outZcoeff,
     T &outResidual2) const
 {
-    const C cRef = ToC_fromReferenceC(results);
-    const C dc = cAbs - cRef;
+    auto Zref = [&](size_t n) -> C {
+        auto v = results.GetComplex(dec, n);
+        C z(static_cast<T>(v.getRe()), static_cast<T>(v.getIm()));
+        z.Reduce();
+        return z;
+    };
 
-    const size_t refCount = static_cast<size_t>(results.GetCountOrbitEntries());
-    if (refCount < static_cast<size_t>(period) + 1)
+    const size_t storedCount = static_cast<size_t>(results.GetCountOrbitEntries());
+    if (storedCount < 2) {
+        std::cout << "[PT EvalPeriod] FAIL: orbit too short; need at least 2, have "
+                  << (uint64_t)storedCount << "\n";
         return false;
-
-    C dz{};
-    C z{};
-    C dzdc{};
-    C zcoeff{};
-
-    int scaleExp = 0;
-
-    for (IterType i = 0; i < period; ++i) {
-        const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp);
-
-        const C zref = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(i));
-        z = zref + dz;
-
-        if (i == 0)
-            zcoeff = C{scalingFactor, T{}};
-        else
-            zcoeff = zcoeff * (z * T{2.0});
-
-        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{});
-
-        RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
-
-        // perturbation step
-        dz = dz * (zref + z) + dc;
-
-        // optional bail-outs
-        const C zrefNext = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(i + 1));
-        const C zNext = zrefNext + dz;
-        if (HdrCompareToBothPositiveReducedGT(zNext.norm_squared(), T{4096.0}))
-            return false;
     }
 
-    // After "period" steps, full z_p = zref[period] + dz_period.
-    const C zrefP = ToC_fromRefOrbitPoint(results, dec, static_cast<size_t>(period));
-    const C zP = zrefP + dz;
+    const T one = HdrReduce(T{1.0});
+    const T two = HdrReduce(T{2.0});
+    const T escape2 = HdrReduce(T{4096.0});
 
-    outDiff = zP; // matches your direct version (z_p starting from z0=0)
+    // Use hi-precision c_ref so dc is correct even for deep zoom.
+    const C cRef(ToDouble(results.GetHiX()), ToDouble(results.GetHiY()));
+    C dc = cAbs - cRef;
+    dc.Reduce();
+
+    C dz{};     // dz_0 = 0
+    C z{};      // full z_i
+    C dzdc{};   // dz/dc
+    C zcoeff{}; // product-ish convention parity
+
+    dz.Reduce();
+    dzdc.Reduce();
+    zcoeff.Reduce();
+
+    // Track reference iteration separately (matches original implementation)
+    size_t refIteration = 0;
+    const size_t refOrbitLength = storedCount;
+
+    for (IterType i = 0; i < period; ++i) {
+        const C zref = Zref(refIteration);
+
+        // full z_i = zref + dz
+        z = zref + dz;
+        z.Reduce();
+
+        // zcoeff update (parity with direct path ordering)
+        if (i == 0)
+            zcoeff = C(one, T{});
+        else
+            zcoeff = zcoeff * (z * two);
+        zcoeff.Reduce();
+
+        // dzdc update
+        dzdc = dzdc * (z * two) + C(one, T{});
+        dzdc.Reduce();
+
+        // PT advance: dz_{i+1} = dz * (zref + z) + dc
+        dz = dz * (zref + z) + dc;
+        dz.Reduce();
+
+        // Advance reference iteration
+        refIteration++;
+
+        // Clamp refIteration to valid range for Zref access
+        size_t safeRefIt = (refIteration < refOrbitLength) ? refIteration : refOrbitLength - 1;
+
+        // Get next reference point
+        const C zrefNext = Zref(safeRefIt);
+        C zNext = zrefNext + dz;
+        zNext.Reduce();
+
+        // **REBASING**: Critical check from original implementation
+        // When reference orbit exhausted OR perturbation exceeds full value
+        T dzNorm = dz.norm_squared();
+        HdrReduce(dzNorm);
+        T zNextNorm = zNext.norm_squared();
+        HdrReduce(zNextNorm);
+
+        if (refIteration >= refOrbitLength || HdrCompareToBothPositiveReducedLT(zNextNorm, dzNorm)) {
+            // Rebase: set dz = z (full value) and restart reference
+            dz = zNext;
+            dz.Reduce();
+            refIteration = 0;
+        }
+
+        // Escape check on full z_{i+1}
+        T z2 = zNext.norm_squared();
+        HdrReduce(z2);
+        if (HdrCompareToBothPositiveReducedGT(z2, escape2)) {
+            std::cout << "[PT EvalPeriod] FAIL: escape at i=" << (uint64_t)i << "\n";
+            return false;
+        }
+    }
+
+    // Compute final z_p = zref[refIteration] + dz
+    const C zrefP = Zref(refIteration);
+    C zP = zrefP + dz;
+    zP.Reduce();
+
+    outDiff = zP;
     outResidual2 = outDiff.norm_squared();
+    HdrReduce(outResidual2);
 
-    // Unscale derivatives back to true values
-    outDzdc = Unscale(dzdc, scaleExp);
-    outZcoeff = Unscale(zcoeff, scaleExp);
+    outDzdc = dzdc;
+    outDzdc.Reduce();
+
+    outZcoeff = zcoeff;
+    outZcoeff.Reduce();
+
+    std::cout << "[PT EvalPeriod] SUCCESS: period=" << (uint64_t)period
+              << " residual2=" << HdrToString<false, T>(outResidual2) << "\n";
 
     return true;
 }
+
+
 
 template <class IterType, class T, PerturbExtras PExtras>
 template <class FindPeriodFn, class EvalFn>
@@ -598,9 +746,6 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(IterType iters, FeatureSu
         });
 }
 
-// -----------------------------------------------------------------------------
-// HOW IT'S CALLED (PT)
-// -----------------------------------------------------------------------------
 template <class IterType, class T, PerturbExtras PExtras>
 bool
 FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(
@@ -611,18 +756,29 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(
     return FindPeriodicPoint_Common(
         results.GetCountOrbitEntries(),
         feature,
-        // findPeriod
+        // findPeriod (now uses stored period if present)
         [this, &results, &dec](
             const C &cAbs, IterTypeFull maxItersToTry, T R, IterType &outPeriod, EvalState &st) {
             return this->Evaluate_FindPeriod_PT(results, dec, cAbs, maxItersToTry, R, outPeriod, st);
         },
-        // evalAtPeriod
+        // evalAtPeriod with fallback
         [this, &results, &dec](
             const C &cAbs, IterType period, C &diff, C &dzdc, C &zcoeff, T &residual2) {
-            return this->Evaluate_PeriodResidualAndDzdc_PT(
-                results, dec, cAbs, period, diff, dzdc, zcoeff, residual2);
+            if (this->Evaluate_PeriodResidualAndDzdc_PT(
+                    results, dec, cAbs, period, diff, dzdc, zcoeff, residual2)) {
+                return true;
+            }
+
+            std::cout << "[PT->Direct fallback] INFO: PT eval failed; trying DIRECT at same period="
+                      << (uint64_t)period << "\n";
+
+            // Direct fallback uses exact dynamics at the same period.
+            // This is the closest analogue to the original mixed-mode evaluator.
+            return this->Evaluate_PeriodResidualAndDzdc_Direct(
+                cAbs, period, diff, dzdc, zcoeff, residual2);
         });
 }
+
 
 template <class IterType, class T, PerturbExtras PExtras>
 bool

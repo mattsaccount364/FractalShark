@@ -327,7 +327,15 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, Fractal::FeatureFinderMode::Direct);
+            break;
+        }
+
+        case 'F': {
+            POINT pt;
+            ::GetCursorPos(&pt);
+            ::ScreenToClient(hWnd, &pt);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, Fractal::FeatureFinderMode::PT);
             break;
         }
 

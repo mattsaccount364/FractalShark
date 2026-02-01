@@ -33,7 +33,8 @@
 #define IDM_ZOOMOUT 40103
 #define IDM_AUTOZOOM_DEFAULT 40104
 #define IDM_AUTOZOOM_MAX 40105
-#define IDM_FEATUREFINDER 40106
+#define IDM_FEATUREFINDER_DIRECT 40106
+#define IDM_FEATUREFINDER_PT 40107
 
 //
 // ---------------------------------------------------------------------------

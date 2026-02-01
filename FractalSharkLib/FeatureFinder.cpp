@@ -18,44 +18,6 @@ FeatureFinder<IterType, T, PExtras>::ChebAbs(const C &a) const
     return HdrMaxReduced(HdrAbs(a.getRe()), HdrAbs(a.getIm()));
 }
 
-// Renormalize dzdc/zcoeff so their magnitude stays ~ 2^targetExp.
-// This preserves the invariant: true_dzdc = dzdc * 2^scaleExp
-// and forces the recurrence to add scalingFactor = 2^-scaleExp instead of 1.
-template <class IterType, class T, PerturbExtras PExtras>
-void
-FeatureFinder<IterType, T, PExtras>::RenormalizeDzdcZcoeff(C &dzdc, C &zcoeff, int &scaleExp) const
-{
-    // Pick thresholds with lots of headroom before double overflow (~2^1024).
-    constexpr int kHiExp = 700;     // if exponent exceeds this, renormalize
-    constexpr int kTargetExp = 200; // bring it back near this exponent
-
-    auto m = HdrMaxReduced(ChebAbs(dzdc), ChebAbs(zcoeff));
-    if (!(HdrCompareToBothPositiveReducedGT(m, T{}))) {
-        return; // caller will fail on non-finite elsewhere
-    }
-
-    // ilogb gives floor(log2(|m|)) as an int, without computing log().
-    const int e = HdrIlogb(m);
-    if (e <= kHiExp) {
-        return;
-    }
-
-    const int shift = e - kTargetExp;            // shift > 0
-    const T down = HdrLdexp(T{1.0}, -shift); // 2^-shift
-
-    dzdc = dzdc * down;
-    zcoeff = zcoeff * down;
-    scaleExp += shift;
-}
-
-// Convert scaled values back to true values.
-template <class IterType, class T, PerturbExtras PExtras>
-FeatureFinder<IterType, T, PExtras>::C
-FeatureFinder<IterType, T, PExtras>::Unscale(const C &a, int scaleExp) const
-{
-    return a * HdrLdexp(T{1.0}, scaleExp); // a * 2^scaleExp
-}
-
 template <class IterType, class T, PerturbExtras PExtras>
 T
 FeatureFinder<IterType, T, PExtras>::ToDouble(const HighPrecision &v)
@@ -172,24 +134,19 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_Direct(
 {
     C z{};
     C dzdc{};
-    C zcoeff{};
 
-    int scaleExp = 0;
+    C oneC{T{1.0}, T{}};
+    C zcoeff{T{1.0}, T{}};
+
+    oneC.Reduce();
+    zcoeff.Reduce();
 
     for (IterType i = 0; i < period; ++i) {
-        const T scalingFactor = HdrLdexp(T{1.0}, -scaleExp);
-
-        if (i == 0)
-            zcoeff = C(scalingFactor, T{});
-        else
-            zcoeff = zcoeff * (z * T{2.0});
-
+        zcoeff = zcoeff * (z * T{2.0});
         zcoeff.Reduce();
 
-        dzdc = dzdc * (z * T{2.0}) + C(scalingFactor, T{});
+        dzdc = dzdc * (z * T{2.0}) + oneC;
         dzdc.Reduce();
-
-        RenormalizeDzdcZcoeff(dzdc, zcoeff, scaleExp);
 
         z = (z * z) + c;
         z.Reduce();
@@ -207,59 +164,13 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_Direct(
     outResidual2 = outDiff.norm_squared();
 
     // Unscale derivatives back to true values
-    outDzdc = Unscale(dzdc, scaleExp);
-    outZcoeff = Unscale(zcoeff, scaleExp);
+    outDzdc = dzdc;
+    outZcoeff = zcoeff;
 
     std::cout << "FeatureFinder::Evaluate_PeriodResidualAndDzdc_Direct: residual^2 = "
               << HdrToString<false>(outResidual2)
               << ".\n";
     return true;
-}
-
-// =====================================================================================
-// PT evaluation using PerturbationResults + RuntimeDecompressor
-// (FloatComplex<double> only, like your new direct implementation)
-// =====================================================================================
-
-// --- helpers -------------------------------------------------------------
-
-template <class IterType, class T, PerturbExtras PExtras>
-FeatureFinder<IterType, T, PExtras>::C
-FeatureFinder<IterType, T, PExtras>::ToC_fromRefOrbitPoint(
-    const PerturbationResults<IterType, T, PExtras> &results,
-                      RuntimeDecompressor<IterType, T, PExtras> &dec,
-    size_t idx) const
-{
-    // For double / float orbit types this will be exact.
-    // For HDRFloat / CudaDblflt variants, pick a SubType (double) and cast.
-    //
-    // Your PerturbationResults::GetComplex returns HDRFloatComplex<SubType>.
-    // That type in your codebase typically has .x/.y or .real()/.imag().
-    // Adjust member names if needed.
-
-    auto v = results.GetComplex(dec, idx);
-
-    // Common patterns in your code:
-    //   return {m_FullOrbit[i].x, m_FullOrbit[i].y};
-    // so v likely has .x and .y (or .real/.imag).
-    //
-    // If it's .x/.y:
-    const auto xr = static_cast<T>(v.getRe());
-    const auto yi = static_cast<T>(v.getIm());
-
-    return C(xr, yi);
-}
-
-template <class IterType, class T, PerturbExtras PExtras>
-FeatureFinder<IterType, T, PExtras>::C
-FeatureFinder<IterType, T, PExtras>::ToC_fromReferenceC(
-    const PerturbationResults<IterType, T, PExtras> &results) const
-{
-    // reference parameter c_ref that the authoritative orbit was generated at
-    // (low precision fields are fine for PT in double; you can swap to hi if desired).
-    const auto cx = static_cast<T>(results.GetOrbitXLow());
-    const auto cy = static_cast<T>(results.GetOrbitYLow());
-    return C(cx, cy);
 }
 
 // =====================================================================================

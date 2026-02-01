@@ -65,12 +65,6 @@ private:
     };
 
     T ChebAbs(const C &a) const;
-    void RenormalizeDzdcZcoeff(C &dzdc, C &zcoeff, int &scaleExp) const;
-    C Unscale(const C &a, int scaleExp) const;
-    C ToC_fromRefOrbitPoint(const PerturbationResults<IterType, T, PExtras> &results,
-                            RuntimeDecompressor<IterType, T, PExtras> &dec,
-                            size_t idx) const;
-    C ToC_fromReferenceC(const PerturbationResults<IterType, T, PExtras> &results) const;
 
     bool Evaluate_PeriodResidualAndDzdc_PT(const PerturbationResults<IterType, T, PExtras> &results,
                                            RuntimeDecompressor<IterType, T, PExtras> &dec,

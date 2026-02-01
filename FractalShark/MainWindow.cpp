@@ -212,7 +212,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // this will show the radio button the menu properly.  Without this, the menu is out of sync
     // until the user changes algorithm manually.
     // commandDispatcher.Dispatch(IDM_ALG_AUTO);
-    commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO);
+    commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
 
     // Optional: force an initial black fill before first show (prevents any flash)
     {

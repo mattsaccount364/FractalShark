@@ -188,9 +188,11 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     const PerturbationResults<IterType, T, PExtras> &results,
     RuntimeDecompressor<IterType, T, PExtras> &dec,
     const C &origC,
-    T R,                   // Used when FindPeriod=true
-    IterTypeFull maxIters, // Max iterations (FindPeriod) or exact period (EvalAtPeriod)
-    IterType &ioPeriod,    // Output period (FindPeriod) or input period (EvalAtPeriod)
+    const HighPrecision &origCX_hp, // High precision original X
+    const HighPrecision &origCY_hp, // High precision original Y
+    T R,
+    IterTypeFull maxIters,
+    IterType &ioPeriod,
     C &outDiff,
     C &outDzdc,
     C &outZcoeff,
@@ -201,7 +203,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     const T two = HdrReduce(T{2.0});
     const T escape2 = HdrReduce(T{4096.0});
 
-    // Adaptive radius for period finding
     T SqrNearLinearRadius{};
     T SqrNearLinearRadiusScale{};
     if constexpr (FindPeriod) {
@@ -218,8 +219,10 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         HdrReduce(SqrNearLinearRadiusScale);
     }
 
-    const C cRef(ToDouble(results.GetHiX()), ToDouble(results.GetHiY()));
-    C dc = origC - cRef;
+    // Compute dc at HIGH PRECISION, then convert to T
+    const HighPrecision dcX_hp = origCX_hp - results.GetHiX();
+    const HighPrecision dcY_hp = origCY_hp - results.GetHiY();
+    C dc(ToDouble(dcX_hp), ToDouble(dcY_hp));
     dc.Reduce();
 
     const size_t refOrbitLength = static_cast<size_t>(results.GetCountOrbitEntries());
@@ -228,7 +231,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         return false;
     }
 
-    // Determine iteration cap
     IterTypeFull cap;
     if constexpr (FindPeriod) {
         cap = maxIters;
@@ -241,10 +243,8 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         return false;
     }
 
-    // Track reference iteration separately
     size_t refIteration = 0;
 
-    // State variables - z persists across iterations (not recomputed from dz after rebase)
     C dz{};
     C z{};
     C dzdc{};
@@ -255,22 +255,8 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     dzdc.Reduce();
     zcoeff.Reduce();
 
-    // Add at the start of Evaluate_PT to debug:
-    std::cout << "[PT Debug] origC = (" << HdrToString<false, T>(origC.getRe()) << ", "
-              << HdrToString<false, T>(origC.getIm()) << ")\n";
-    std::cout << "[PT Debug] cRef = (" << HdrToString<false, T>(cRef.getRe()) << ", "
-              << HdrToString<false, T>(cRef.getIm()) << ")\n";
-    std::cout << "[PT Debug] dc = (" << HdrToString<false, T>(dc.getRe()) << ", "
-              << HdrToString<false, T>(dc.getIm()) << ")\n";
-    std::cout << "[PT Debug] Zref(0) = (" << HdrToString<false, T>(results.GetComplex(dec, 0).getRe()) << ", "
-              << HdrToString<false, T>(results.GetComplex(dec, 0).getIm()) << ")\n";
-    std::cout << "[PT Debug] Zref(1) = (" << HdrToString<false, T>(results.GetComplex(dec, 1).getRe()) << ", "
-              << HdrToString<false, T>(results.GetComplex(dec, 1).getIm()) << ")\n";
-    // At the start of Evaluate_PT, add:
-    std::cout << "[PT Debug] cap = " << cap << ", refOrbitLength = " << refOrbitLength << "\n";
-
+    const C cRef(ToDouble(results.GetHiX()), ToDouble(results.GetHiY()));
     for (IterTypeFull n = 0; n < cap; ++n) {
-        // Derivative updates using z from PREVIOUS iteration (or initial 0)
         if (n == 0)
             zcoeff = C(one, T{});
         else
@@ -280,34 +266,27 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         dzdc = dzdc * (z * two) + C(one, T{});
         dzdc.Reduce();
 
-        // PT advance: dz_{n+1} = dz * (Ref[refIteration] + z) + dc
         const C zref = results.GetComplex(dec, refIteration);
         dz = dz * (zref + z) + dc;
         dz.Reduce();
 
-        // Advance reference iteration
         refIteration++;
 
-        // Compute new z at END of iteration
         const C zrefNext = results.GetComplex(dec, refIteration);
         z = zrefNext + dz;
         z.Reduce();
 
-        // Rebasing check: when reference exhausted OR |z| < |dz|
         T dzNorm = dz.norm_squared();
         HdrReduce(dzNorm);
         T zNorm = z.norm_squared();
         HdrReduce(zNorm);
 
         if (refIteration >= refOrbitLength - 1 || HdrCompareToBothPositiveReducedLT(zNorm, dzNorm)) {
-            // Rebase: dz becomes full z, restart reference
-            // z remains unchanged
             dz = z;
             dz.Reduce();
             refIteration = 0;
         }
 
-        // Escape check
         T Magnitude = zNorm;
         if (HdrCompareToBothPositiveReducedGT(Magnitude, escape2)) {
             std::cout << "[PT Evaluate] FAIL: escape at n=" << (uint64_t)n << "\n";
@@ -315,7 +294,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         }
 
         if constexpr (FindPeriod) {
-            // Near-linear trigger: |z|^2 < SqrNearLinearRadius * |dzdc|^2
             T d2 = dzdc.norm_squared();
             HdrReduce(d2);
 
@@ -337,7 +315,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
                 return false;
             }
 
-            // Adaptive tightening
             if (HdrCompareToBothPositiveReducedGT(d2, zero)) {
                 T lhsTighten = Magnitude * SqrNearLinearRadiusScale;
                 HdrReduce(lhsTighten);
@@ -357,7 +334,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         std::cout << "[PT Evaluate] FAIL: no trigger found\n";
         return false;
     } else {
-        // Return final values for fixed-period evaluation
         outDiff = z;
         outResidual2 = z.norm_squared();
         HdrReduce(outResidual2);
@@ -381,8 +357,12 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
                                                               FeatureSummary &feature,
                                                               EvalPolicy &&evaluator) const
 {
-    const T cx0{feature.GetOrigX()};
-    const T cy0{feature.GetOrigY()};
+    // Get high-precision coordinates from feature
+    const HighPrecision &origCX_hp = feature.GetOrigX();
+    const HighPrecision &origCY_hp = feature.GetOrigY();
+
+    const T cx0{origCX_hp};
+    const T cy0{origCY_hp};
     T R{feature.GetRadius()};
     R = HdrAbs(R);
     T SqrRadius = R * R;
@@ -391,13 +371,17 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     const C origC{cx0, cy0};
     C c = origC;
 
+    // Track high-precision c for Newton iteration
+    HighPrecision cX_hp = origCX_hp;
+    HighPrecision cY_hp = origCY_hp;
+
     IterType period = 0;
     C diff, dzdc, zcoeff;
     T residual2{};
 
     // 1) Find candidate period: Evaluate<true>
     if (!evaluator.template Eval<true>(
-            origC, SqrRadius, refIters, period, diff, dzdc, zcoeff, residual2)) {
+            origC, cX_hp, cY_hp, SqrRadius, refIters, period, diff, dzdc, zcoeff, residual2)) {
         std::cout << "Rejected: findPeriod failed\n";
         return false;
     }
@@ -412,6 +396,10 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     C step0 = Div(diff, dzdc);
     c = c - step0;
 
+    // Update high-precision c
+    cX_hp = cX_hp - HighPrecision{step0.getRe()};
+    cY_hp = cY_hp - HighPrecision{step0.getIm()};
+
     const T relTol = m_params.RelStepTol;
     const T relTol2 = relTol * relTol;
     bool convergedByStep = false;
@@ -419,7 +407,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     // 2) Newton loop: Evaluate<false>
     for (uint32_t it = 0; it < m_params.MaxNewtonIters; ++it) {
         if (!evaluator.template Eval<false>(
-                c, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
+                c, cX_hp, cY_hp, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
             std::cout << "Rejected: evalAtPeriod failed in loop\n";
             return false;
         }
@@ -435,6 +423,10 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         C step = Div(diff, dzdc);
         step.Reduce();
         c = c - step;
+
+        // Update high-precision c
+        cX_hp = cX_hp - HighPrecision{step.getRe()};
+        cY_hp = cY_hp - HighPrecision{step.getIm()};
 
         T step2 = step.norm_squared();
         HdrReduce(step2);
@@ -454,7 +446,8 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     }
 
     // Final correction
-    if (!evaluator.template Eval<false>(c, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
+    if (!evaluator.template Eval<false>(
+            c, cX_hp, cY_hp, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
         std::cout << "Rejected: final eval failed\n";
         return false;
     }
@@ -468,16 +461,20 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     {
         C step = Div(diff, dzdc);
         c = c - step;
+
+        // Update high-precision c
+        cX_hp = cX_hp - HighPrecision{step.getRe()};
+        cY_hp = cY_hp - HighPrecision{step.getIm()};
     }
 
     // Final evaluation for residual
-    if (!evaluator.template Eval<false>(c, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
+    if (!evaluator.template Eval<false>(
+            c, cX_hp, cY_hp, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
         std::cout << "Rejected: final eval failed\n";
         return false;
     }
 
-    feature.SetFound(
-        HighPrecision(c.getRe()), HighPrecision(c.getIm()), period, HDRFloat<double>{residual2});
+    feature.SetFound(cX_hp, cY_hp, period, HDRFloat<double>{residual2});
 
     if (m_params.PrintResult) {
         std::cout << "Periodic point: "
@@ -497,6 +494,8 @@ template <class IterType, class T, PerturbExtras PExtras>
 template <bool FindPeriod>
 bool
 FeatureFinder<IterType, T, PExtras>::DirectEvaluator::Eval(const C &c,
+                                                           const HighPrecision &cX_hp,
+                                                           const HighPrecision &cY_hp,
                                                            T SqrRadius,
                                                            IterTypeFull maxIters,
                                                            IterType &ioPeriod,
@@ -516,21 +515,34 @@ FeatureFinder<IterType, T, PExtras>::DirectEvaluator::Eval(const C &c,
 }
 
 // PTEvaluator::Eval implementation
+// PTEvaluator::Eval implementation
 template <class IterType, class T, PerturbExtras PExtras>
 template <bool FindPeriod>
 bool
 FeatureFinder<IterType, T, PExtras>::PTEvaluator::Eval(const C &c,
+                                                       const HighPrecision &cX_hp, // ADD
+                                                       const HighPrecision &cY_hp, // ADD
                                                        T SqrRadius,
                                                        IterTypeFull maxIters,
                                                        IterType &ioPeriod,
                                                        C &outDiff,
                                                        C &outDzdc,
                                                        C &outZcoeff,
-                                                        T &outResidual2) const
+                                                       T &outResidual2) const
 {
     T R = HdrSqrt(SqrRadius);
-    if (self->template Evaluate_PT<FindPeriod>(
-            *results, *dec, c, R, maxIters, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2)) {
+    if (self->template Evaluate_PT<FindPeriod>(*results,
+                                               *dec,
+                                               c,
+                                               cX_hp,
+                                               cY_hp,
+                                               R,
+                                               maxIters,
+                                               ioPeriod,
+                                               outDiff,
+                                               outDzdc,
+                                               outZcoeff,
+                                               outResidual2)) {
         return true;
     }
 

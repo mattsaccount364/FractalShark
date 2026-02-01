@@ -66,6 +66,8 @@ private:
 
         template <bool FindPeriod>
         bool Eval(const C &c,
+                  const HighPrecision &cX_hp,
+                  const HighPrecision &cY_hp,
                   T SqrRadius,
                   IterTypeFull maxIters,
                   IterType &ioPeriod,
@@ -83,6 +85,8 @@ private:
 
         template <bool FindPeriod>
         bool Eval(const C &c,
+                  const HighPrecision &cX_hp,
+                  const HighPrecision &cY_hp,
                   T SqrRadius,
                   IterTypeFull maxIters,
                   IterType &ioPeriod,
@@ -100,16 +104,20 @@ private:
     T ChebAbs(const C &a) const;
 
     template <bool FindPeriod>
-    bool Evaluate_PT(const PerturbationResults<IterType, T, PExtras> &results,
-                     RuntimeDecompressor<IterType, T, PExtras> &dec,
-                     const C &origC,
-                     T R,
-                     IterTypeFull maxIters,
-                     IterType &ioPeriod,
-                     C &outDiff,
-                     C &outDzdc,
-                     C &outZcoeff,
-                     T &outResidual2) const;
+    bool Evaluate_PT(
+        const PerturbationResults<IterType, T, PExtras> &results,
+        RuntimeDecompressor<IterType, T, PExtras> &dec,
+        const C &origC,
+        const HighPrecision &origCX_hp, // High precision original X
+        const HighPrecision &origCY_hp, // High precision original Y
+        T R,
+        IterTypeFull maxIters,
+        IterType &ioPeriod,
+        C &outDiff,
+        C &outDzdc,
+        C &outZcoeff,
+        T &outResidual2) const;
+
 
     bool Evaluate_FindPeriod_Direct(const C &c,
                                     IterTypeFull maxIters,

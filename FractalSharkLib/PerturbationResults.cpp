@@ -841,7 +841,8 @@ PerturbationResults<IterType, T, PExtras>::InitResults(RefOrbitCalc::ReuseMode R
                                                        size_t GuessReserveSize)
 {
 
-    const T radiusY{T{maxY - minY} / T{2.0f}};
+    auto delta = maxY - minY;
+    const T radiusY{T{delta} / T{2.0f}};
 
     InitResults(Reuse, cx, cy, radiusY, NumIterations, GuessReserveSize);
 }

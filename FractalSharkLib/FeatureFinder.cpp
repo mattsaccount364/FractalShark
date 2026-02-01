@@ -163,7 +163,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_Direct(
     outDiff = z;
     outResidual2 = outDiff.norm_squared();
 
-    // Unscale derivatives back to true values
     outDzdc = dzdc;
     outZcoeff = zcoeff;
 

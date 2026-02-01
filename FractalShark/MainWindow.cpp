@@ -211,7 +211,8 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // TODO kind of gross but it works, reset now that gFractal exists.  If CPU-only is enforced,
     // this will show the radio button the menu properly.  Without this, the menu is out of sync
     // until the user changes algorithm manually.
-    commandDispatcher.Dispatch(IDM_ALG_AUTO);
+    // commandDispatcher.Dispatch(IDM_ALG_AUTO);
+    commandDispatcher.Dispatch(IDM_ALG_GPU_1_64_PERTURB_LAV2_PO);
 
     // Optional: force an initial black fill before first show (prevents any flash)
     {

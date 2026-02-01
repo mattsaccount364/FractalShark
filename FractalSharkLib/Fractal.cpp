@@ -4655,7 +4655,8 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode
         radius /= HighPrecision{12};
 
         m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
-        found = featureFinder->FindPeriodicPoint(*results, decompressor, *m_FeatureSummary);
+        found = featureFinder->FindPeriodicPoint(
+            GetNumIterations<IterType>(), * results, decompressor, *m_FeatureSummary);
 
     } else {
         throw FractalSharkSeriousException("Unknown FeatureFinderMode in TryFindPeriodicPoint");

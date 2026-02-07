@@ -69,6 +69,7 @@ void BenchmarkData::StartTimer() {
     LARGE_INTEGER startTime;
     QueryPerformanceCounter(&startTime);
     m_startTime = startTime.QuadPart;
+    m_WaitCursor = std::make_unique<WaitCursor>();
 }
 
 void BenchmarkData::StopTimer() {
@@ -78,7 +79,7 @@ void BenchmarkData::StopTimer() {
 
     m_DeltaTime = m_endTime - m_startTime;
 
-    m_WaitCursor->ResetCursor();
+    m_WaitCursor.reset();
 }
 
 uint64_t BenchmarkData::GetDeltaInMs() const {

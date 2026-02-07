@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <iosfwd>
 
+#include "FeatureFinderMode.h"
 #include "FloatComplex.h"
 #include "PerturbationResultsHelpers.h"
 
@@ -61,6 +62,8 @@ public:
                            RuntimeDecompressor<IterType, T, PExtras> &dec,
                            LAReference<IterType, T, SubType, PExtras> &laRef,
                            FeatureSummary &feature) const;
+
+    bool RefinePeriodicPoint_HighPrecision(FeatureSummary &feature) const;
 
 private:
     struct EvalState {
@@ -182,10 +185,12 @@ private:
 
     static T ToDouble(const HighPrecision &v);
 
-    IterTypeFull RefinePeriodicPoint_WithMPF(HighPrecision &cX_hp,
-                                             HighPrecision &cY_hp,
-                                             IterType period,
-                                             mp_bitcnt_t prec_bits) const;
+    IterType RefinePeriodicPoint_WithMPF(HighPrecision &cX_hp,
+                                         HighPrecision &cY_hp,
+                                         IterType period,
+                                         mp_bitcnt_t coord_prec,
+                                         const T &sqrRadius_T,
+                                         int scaleExp2_for_deriv) const;
 
 private:
     Params m_params{};

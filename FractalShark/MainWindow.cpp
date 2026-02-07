@@ -329,7 +329,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, Fractal::FeatureFinderMode::Direct);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::Direct);
             break;
         }
 
@@ -337,7 +337,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, Fractal::FeatureFinderMode::PT);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::PT);
             break;
         }
 
@@ -345,7 +345,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, Fractal::FeatureFinderMode::LA);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::LA);
             break;
         }
 

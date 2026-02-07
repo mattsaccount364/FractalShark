@@ -5,6 +5,7 @@
 
 #include "stdafx.h"
 
+#include "Exceptions.h"
 #include "FeatureFinder.h"
 #include "FeatureSummary.h"
 #include "FloatComplex.h"
@@ -12,7 +13,6 @@
 #include "LAInfoDeep.h"
 #include "LAReference.h"
 #include "PerturbationResults.h"
-#include "LAReference.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,6 +49,43 @@ mpf_complex_set_ui(mpf_complex &z, unsigned long re, unsigned long im)
 {
     mpf_set_ui(z.re, re);
     mpf_set_ui(z.im, im);
+}
+
+static inline void
+mpf_complex_sub(mpf_complex &out, const mpf_complex &a, const mpf_complex &b)
+{
+    mpf_sub(out.re, a.re, b.re);
+    mpf_sub(out.im, a.im, b.im);
+}
+
+static inline void
+mpf_complex_add(mpf_complex &out, const mpf_complex &a, const mpf_complex &b)
+{
+    mpf_add(out.re, a.re, b.re);
+    mpf_add(out.im, a.im, b.im);
+}
+
+static inline mp_bitcnt_t
+ChooseDerivPrec_ImaginaStyle(mp_bitcnt_t coord_prec,
+                             int scaleExp2,         // exponent of Scale ≈ 1/|zcoeff*dzdc|
+                             int coordExp2_max_abs, // approx max exponent of |c.re|,|c.im|
+                             mp_bitcnt_t minPrec = 256)
+{
+    // Imagina-ish: DerivativePrecision ≈ (-ScaleExp + 32)/4   (in "bits")
+    // Here scaleExp2 is exponent of Scale (base2). If Scale is tiny => negative => need more.
+    // Note: If your scaleExp2 is computed via frexp, it already matches this spirit.
+    long dp = (long)((-scaleExp2 + 32) / 4);
+    if (dp < (long)minPrec)
+        dp = (long)minPrec;
+
+    // Cap like Imagina: coord_prec + coordExponent + 32
+    long cap = (long)coord_prec + (long)coordExp2_max_abs + 32;
+    if (dp > cap)
+        dp = cap;
+
+    if (dp > (long)coord_prec)
+        dp = (long)coord_prec;
+    return (mp_bitcnt_t)dp;
 }
 
 // out = a*b (alias-safe)  -- provided by you
@@ -103,29 +140,39 @@ approx_ilogb_mpf(const mpf_t x)
     return int(exp2 - 1);
 }
 
+static inline int
+approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mpf_t outAbs2)
+{
+    // outAbs2 = re^2 + im^2, return floor(log2(outAbs2)) approx
+    mpf_mul(t1, re, re);
+    mpf_mul(t2, im, im);
+    mpf_add(outAbs2, t1, t2);
+    return approx_ilogb_mpf(outAbs2);
+}
+
 // ------------------------------------------------------------
 // z is maintained at coord_prec.
 // dzdc and d2zdc2 are maintained at deriv_prec.
 // Each iter we make z_d = z rounded to deriv_prec, and use that for derivative updates.
 // ------------------------------------------------------------
 static inline void
-EvaluateCriticalOrbitAndDerivs_mpf_mixedprec(const mpf_complex &c_coord, // coord_prec
-                                             uint64_t period,
-                                             mpf_complex &z_coord,      // coord_prec (output z_p)
-                                             mpf_complex &dzdc_deriv,   // deriv_prec (output dzdc_p)
-                                             mpf_complex &d2zdc2_deriv, // deriv_prec (output d2_p)
-                                             mpf_complex &z_deriv,    // deriv_prec (scratch: z rounded)
-                                             mpf_complex &tmpA_deriv, // deriv_prec
-                                             mpf_complex &tmpB_deriv, // deriv_prec
-                                             mpf_complex &tmpZ_coord, // coord_prec
-                                             mpf_t tr_d,
-                                             mpf_t ti_d,
-                                             mpf_t t1_d,
-                                             mpf_t t2_d, // deriv_prec scalars
-                                             mpf_t tr_c,
-                                             mpf_t ti_c,
-                                             mpf_t t1_c,
-                                             mpf_t t2_c // coord_prec scalars
+EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
+                               uint64_t period,
+                               mpf_complex &z_coord,      // coord_prec (output z_p)
+                               mpf_complex &dzdc_deriv,   // deriv_prec (output dzdc_p)
+                               mpf_complex &d2zdc2_deriv, // deriv_prec (output d2_p)
+                               mpf_complex &z_deriv,      // deriv_prec (scratch: z rounded)
+                               mpf_complex &tmpA_deriv,   // deriv_prec
+                               mpf_complex &tmpB_deriv,   // deriv_prec
+                               mpf_complex &tmpZ_coord,   // coord_prec
+                               mpf_t tr_d,
+                               mpf_t ti_d,
+                               mpf_t t1_d,
+                               mpf_t t2_d, // deriv_prec scalars
+                               mpf_t tr_c,
+                               mpf_t ti_c,
+                               mpf_t t1_c,
+                               mpf_t t2_c // coord_prec scalars
 )
 {
     // z = 0 (coord)
@@ -224,53 +271,75 @@ ComputeNewtonStep_mpf_coord_from_deriv(mpf_complex &step_coord,       // coord_p
 }
 
 // ------------------------------------------------------------
-// Revised: Error-controlled MPF refine with mixed precision.
-// Intended as a *polish* step, not a second full solver.
+// Imagina-style NR polish for periodic point (critical orbit):
 //
-// - coord_prec: high precision for c/z/step
-// - deriv_prec: smaller precision for dzdc/d2
+// Solve z_p(c) = 0 via Newton:
+//   step = z / dzdc
+//   c <- c - step
 //
-// Returns number of NR iterations performed.
+// Stopping rule matches Imagina precise-locator:
+//   normStep = |step|^2
+//   err = normStep^2 * norm(d2) / norm(dzdc)
+// where norm(.) is squared magnitude.
+//
+// Stop when:  -ilogb(err) >= coord_prec*2
+//
+// Also performs one final correction pass, and rejects if
+// |c - c0|^2 > sqrRadius (Imagina FindPeriodicPoint does this).
 // ------------------------------------------------------------
 static inline uint32_t
-RefinePeriodicPoint_ErrorControlled_mpf_mixedprec(
-    mpf_complex &c_coord, // coord_prec (in/out)
-    uint64_t period,
-    mp_bitcnt_t coord_prec,
-    mp_bitcnt_t deriv_prec,
-    uint32_t max_nr_iters
-)
+RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
+                    const mpf_complex &c0_coord, // coord_prec (initial seed)
+                    mpf_t sqrRadius_coord,       // coord_prec (R^2) for final accept/reject
+                    uint64_t period,
+                    mp_bitcnt_t coord_prec,
+                    int scaleExp2_for_deriv_choice, // exponent of Scale ≈ 1/|zcoeff*dzdc|
+                    uint32_t max_nr_iters)
 {
-    // coord temporaries
-    mpf_t denom_c, tr_c, ti_c, t1_c, t2_c;
+    // ---------------- coord temporaries ----------------
+    mpf_t denom_c, tr_c, ti_c, t1_c, t2_c, abs2_c;
     mpf_init2(denom_c, coord_prec);
     mpf_init2(tr_c, coord_prec);
     mpf_init2(ti_c, coord_prec);
     mpf_init2(t1_c, coord_prec);
     mpf_init2(t2_c, coord_prec);
+    mpf_init2(abs2_c, coord_prec);
 
-    mpf_t normStep_c, normStep2_c, err_c, tmp_c;
-    mpf_init2(normStep_c, coord_prec);
-    mpf_init2(normStep2_c, coord_prec);
-    mpf_init2(err_c, coord_prec);
-    mpf_init2(tmp_c, coord_prec);
+    mpf_t normStep, normStep2, err, tmp;
+    mpf_init2(normStep, coord_prec);
+    mpf_init2(normStep2, coord_prec);
+    mpf_init2(err, coord_prec);
+    mpf_init2(tmp, coord_prec);
 
-    // deriv temporaries
+    mpf_t dzdcNormSq_c, d2NormSq_c;
+    mpf_init2(dzdcNormSq_c, coord_prec);
+    mpf_init2(d2NormSq_c, coord_prec);
+
+    // c-delta for final accept/reject
+    mpf_complex dc;
+    mpf_complex_init(dc, coord_prec);
+
+    // ---------------- choose deriv precision (Imagina-like) ----------------
+    // Estimate coordinate exponent from |c|
+    const int coordExp2_re = approx_ilogb_mpf(c_coord.re);
+    const int coordExp2_im = approx_ilogb_mpf(c_coord.im);
+    const int coordExp2_max_abs = std::max(coordExp2_re, coordExp2_im);
+
+    const mp_bitcnt_t deriv_prec = ChooseDerivPrec_ImaginaStyle(
+        coord_prec, scaleExp2_for_deriv_choice, coordExp2_max_abs, /*minPrec*/ 256);
+
+    // ---------------- deriv temporaries ----------------
     mpf_t tr_d, ti_d, t1_d, t2_d;
     mpf_init2(tr_d, deriv_prec);
     mpf_init2(ti_d, deriv_prec);
     mpf_init2(t1_d, deriv_prec);
     mpf_init2(t2_d, deriv_prec);
 
-    mpf_t n1_c, n2_c; // norms promoted to coord precision (for error estimator)
-    mpf_init2(n1_c, coord_prec);
-    mpf_init2(n2_c, coord_prec);
-
-    // complex state
+    // ---------------- complex state ----------------
     mpf_complex z_coord, step_coord, dzdc_coord, tmpZ_coord;
     mpf_complex_init(z_coord, coord_prec);
     mpf_complex_init(step_coord, coord_prec);
-    mpf_complex_init(dzdc_coord, coord_prec); // promoted dzdc for division
+    mpf_complex_init(dzdc_coord, coord_prec);
     mpf_complex_init(tmpZ_coord, coord_prec);
 
     mpf_complex dzdc_deriv, d2_deriv, z_deriv, tmpA_d, tmpB_d;
@@ -280,29 +349,32 @@ RefinePeriodicPoint_ErrorControlled_mpf_mixedprec(
     mpf_complex_init(tmpA_d, deriv_prec);
     mpf_complex_init(tmpB_d, deriv_prec);
 
-    const int targetExp = int(coord_prec) * 2; // similar spirit to your old target
+    // Imagina stop threshold: Precision*2 in exponent space
+    const int targetExp = int(coord_prec) * 2;
 
     uint32_t it = 0;
     for (; it < max_nr_iters; ++it) {
-        EvaluateCriticalOrbitAndDerivs_mpf_mixedprec(c_coord,
-                                                     period,
-                                                     z_coord,
-                                                     dzdc_deriv,
-                                                     d2_deriv,
-                                                     z_deriv,
-                                                     tmpA_d,
-                                                     tmpB_d,
-                                                     tmpZ_coord,
-                                                     tr_d,
-                                                     ti_d,
-                                                     t1_d,
-                                                     t2_d,
-                                                     tr_c,
-                                                     ti_c,
-                                                     t1_c,
-                                                     t2_c);
 
-        // step = z / dzdc (coord), using dzdc computed at deriv precision
+        // Full forward eval at current c
+        EvaluateCriticalOrbitAndDerivs(c_coord,
+                                       period,
+                                       z_coord,
+                                       dzdc_deriv,
+                                       d2_deriv,
+                                       z_deriv,
+                                       tmpA_d,
+                                       tmpB_d,
+                                       tmpZ_coord,
+                                       tr_d,
+                                       ti_d,
+                                       t1_d,
+                                       t2_d,
+                                       tr_c,
+                                       ti_c,
+                                       t1_c,
+                                       t2_c);
+
+        // step = z / dzdc  (division done at coord_prec)
         if (!ComputeNewtonStep_mpf_coord_from_deriv(
                 step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
             break; // singular derivative
@@ -312,88 +384,100 @@ RefinePeriodicPoint_ErrorControlled_mpf_mixedprec(
         mpf_sub(c_coord.re, c_coord.re, step_coord.re);
         mpf_sub(c_coord.im, c_coord.im, step_coord.im);
 
-        // --- Error estimator (optional):
-        // err = ||step||^4 * ||d2|| / ||dzdc||
-        //
-        // Compute ||step||^2 at coord precision
-        mpf_complex_norm(normStep_c, step_coord, t1_c, t2_c);
-        mpf_mul(normStep2_c, normStep_c, normStep_c);
+        // ---------------- Imagina error estimate ----------------
+        // normStep = |step|^2
+        mpf_complex_norm(normStep, step_coord, t1_c, t2_c);
 
-        // ||d2||, ||dzdc|| computed at deriv precision, promote via mpf_set into coord vars
-        // n2_c = norm(d2)
-        {
-            mpf_t t1p, t2p;
-            mpf_init2(t1p, coord_prec);
-            mpf_init2(t2p, coord_prec);
+        // normStep2 = |step|^4
+        mpf_mul(normStep2, normStep, normStep);
 
-            mpf_set(t1p, d2_deriv.re);
-            mpf_set(t2p, d2_deriv.im);
-            mpf_mul(t1_c, t1p, t1p);
-            mpf_mul(t2_c, t2p, t2p);
-            mpf_add(n2_c, t1_c, t2_c);
+        // d2NormSq_c = |d2|^2  (promote components)
+        mpf_set(t1_c, d2_deriv.re);
+        mpf_mul(t1_c, t1_c, t1_c);
+        mpf_set(t2_c, d2_deriv.im);
+        mpf_mul(t2_c, t2_c, t2_c);
+        mpf_add(d2NormSq_c, t1_c, t2_c);
 
-            mpf_set(t1p, dzdc_deriv.re);
-            mpf_set(t2p, dzdc_deriv.im);
-            mpf_mul(t1_c, t1p, t1p);
-            mpf_mul(t2_c, t2p, t2p);
-            mpf_add(n1_c, t1_c, t2_c);
+        // dzdcNormSq_c = |dzdc|^2
+        mpf_set(t1_c, dzdc_deriv.re);
+        mpf_mul(t1_c, t1_c, t1_c);
+        mpf_set(t2_c, dzdc_deriv.im);
+        mpf_mul(t2_c, t2_c, t2_c);
+        mpf_add(dzdcNormSq_c, t1_c, t2_c);
 
-            mpf_clear(t1p);
-            mpf_clear(t2p);
-        }
-
-        if (mpf_cmp_ui(n1_c, 0) == 0)
+        if (mpf_cmp_ui(dzdcNormSq_c, 0) == 0)
             break;
 
-        mpf_mul(tmp_c, normStep2_c, n2_c);
-        mpf_div(err_c, tmp_c, n1_c);
+        // err = |step|^4 * |d2|^2 / |dzdc|^2
+        mpf_mul(tmp, normStep2, d2NormSq_c);
+        mpf_div(err, tmp, dzdcNormSq_c);
 
-        const int e = approx_ilogb_mpf(err_c);
+        const int e = approx_ilogb_mpf(err);
         if (-e >= targetExp) {
-            // One final polish (optional)
-            EvaluateCriticalOrbitAndDerivs_mpf_mixedprec(c_coord,
-                                                         period,
-                                                         z_coord,
-                                                         dzdc_deriv,
-                                                         d2_deriv,
-                                                         z_deriv,
-                                                         tmpA_d,
-                                                         tmpB_d,
-                                                         tmpZ_coord,
-                                                         tr_d,
-                                                         ti_d,
-                                                         t1_d,
-                                                         t2_d,
-                                                         tr_c,
-                                                         ti_c,
-                                                         t1_c,
-                                                         t2_c);
-            if (ComputeNewtonStep_mpf_coord_from_deriv(
-                    step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
-                mpf_sub(c_coord.re, c_coord.re, step_coord.re);
-                mpf_sub(c_coord.im, c_coord.im, step_coord.im);
-            }
-            ++it;
             break;
         }
     }
 
-    // cleanup
+    // ---------------- Imagina final correction pass ----------------
+    // Imagina does one more Evaluate + correction regardless of loop stop.
+    {
+        EvaluateCriticalOrbitAndDerivs(c_coord,
+                                       period,
+                                       z_coord,
+                                       dzdc_deriv,
+                                       d2_deriv,
+                                       z_deriv,
+                                       tmpA_d,
+                                       tmpB_d,
+                                       tmpZ_coord,
+                                       tr_d,
+                                       ti_d,
+                                       t1_d,
+                                       t2_d,
+                                       tr_c,
+                                       ti_c,
+                                       t1_c,
+                                       t2_c);
+
+        if (ComputeNewtonStep_mpf_coord_from_deriv(
+                step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
+            mpf_sub(c_coord.re, c_coord.re, step_coord.re);
+            mpf_sub(c_coord.im, c_coord.im, step_coord.im);
+        }
+    }
+
+    // ---------------- Imagina accept/reject: stay within radius ----------------
+    // Reject if |c - c0|^2 > R^2
+    mpf_complex_sub(dc, c_coord, c0_coord);
+    mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
+
+    if (mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
+        // Put c back to original (Imagina would reject the feature)
+        mpf_set(c_coord.re, c0_coord.re);
+        mpf_set(c_coord.im, c0_coord.im);
+        // You can signal failure by returning 0 or max_nr_iters+1; choose what you prefer.
+        // Here: return 0 iterations meaning "reject".
+        it = 0;
+    }
+
+    // ---------------- cleanup ----------------
     mpf_clear(denom_c);
     mpf_clear(tr_c);
     mpf_clear(ti_c);
     mpf_clear(t1_c);
     mpf_clear(t2_c);
-    mpf_clear(normStep_c);
-    mpf_clear(normStep2_c);
-    mpf_clear(err_c);
-    mpf_clear(tmp_c);
+    mpf_clear(abs2_c);
+    mpf_clear(normStep);
+    mpf_clear(normStep2);
+    mpf_clear(err);
+    mpf_clear(tmp);
+    mpf_clear(dzdcNormSq_c);
+    mpf_clear(d2NormSq_c);
+
     mpf_clear(tr_d);
     mpf_clear(ti_d);
     mpf_clear(t1_d);
     mpf_clear(t2_d);
-    mpf_clear(n1_c);
-    mpf_clear(n2_c);
 
     mpf_complex_clear(z_coord);
     mpf_complex_clear(step_coord);
@@ -406,64 +490,76 @@ RefinePeriodicPoint_ErrorControlled_mpf_mixedprec(
     mpf_complex_clear(tmpA_d);
     mpf_complex_clear(tmpB_d);
 
+    mpf_complex_clear(dc);
+
     return it;
 }
 
 // ------------------------------------------------------------
-// - coord_prec is the real “final precision” you care about for c
-// - deriv_prec is chosen smaller to save work (heuristic)
-// - iterations are few: this is meant to be a polish after your HDR Newton loop
+// Imagina-style MPF polish wrapper.
+//
+// - Builds MPF c from HighPrecision (mpf backend)
+// - Preserves initial seed c0 for the final "stay within radius" reject
+// - Chooses derivative precision in the Imagina spirit (scale-driven)
+// - Runs Imagina-style mixed-precision NR polish
+// - Writes back to HighPrecision
+//
+// Returns: number of NR iterations performed (0 can mean "rejected").
 // ------------------------------------------------------------
 template <class IterType, class T, PerturbExtras PExtras>
-IterTypeFull
-FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(HighPrecision &cX_hp,
-                                                                 HighPrecision &cY_hp,
-                                                                 IterType period,
-                                                                 mp_bitcnt_t coord_prec) const
+IterType
+FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(
+    HighPrecision &cX_hp,
+    HighPrecision &cY_hp,
+    IterType period,
+    mp_bitcnt_t coord_prec,
+    const T &sqrRadius_T,          // NEW: radius^2 in T-space
+    int scaleExp2_for_deriv) const // NEW: exponent of Scale≈1/|zcoeff*dzdc|
 {
-    // Heuristic derivative precision (tune!):
-    // Start around ~half precision + headroom, capped to coord_prec.
-    mp_bitcnt_t deriv_prec = coord_prec;
-    {
-        const mp_bitcnt_t half = coord_prec / 2;
-        const mp_bitcnt_t headroom = 128;
-        deriv_prec = std::min(coord_prec, half + headroom);
-        deriv_prec = std::max<mp_bitcnt_t>(deriv_prec, 256); // don’t go too low
-    }
-
+    // ---- Convert inputs to MPF at coord_prec ----
     mpf_complex c;
     mpf_complex_init(c, coord_prec);
 
+    mpf_complex c0;
+    mpf_complex_init(c0, coord_prec);
+
     // Seed from HighPrecision backends
+    // NOTE: HighPrecision::backend() is expected to be an mpf_t-compatible pointer.
     mpf_set(c.re, (mpf_srcptr)cX_hp.backend());
     mpf_set(c.im, (mpf_srcptr)cY_hp.backend());
 
+    // Keep initial seed (Imagina reject check compares final c vs initial)
+    mpf_set(c0.re, c.re);
+    mpf_set(c0.im, c.im);
+
+    // Convert sqrRadius_T (T-space) -> mpf_t at coord_prec
+    // We treat radius units consistently with your HP/T plane coordinates.
+    mpf_t sqrRadius_mpf;
+    mpf_init2(sqrRadius_mpf, coord_prec);
+    {
+        // sqrRadius_T is a T (HDRFloat<double> etc).
+        // Convert to HighPrecision then to mpf.
+        HighPrecision r2_hp{sqrRadius_T};
+        mpf_set(sqrRadius_mpf, (mpf_srcptr)r2_hp.backend());
+    }
+
+    // ---- Run Imagina-style polish ----
     const uint32_t max_polish = 32;
 
-    const uint32_t iters = RefinePeriodicPoint_ErrorControlled_mpf_mixedprec(
-        c, (uint64_t)period, coord_prec, deriv_prec, max_polish);
+    const uint32_t iters = RefinePeriodicPoint(
+        c, c0, sqrRadius_mpf, (uint64_t)period, coord_prec, scaleExp2_for_deriv, max_polish);
 
-    // Write back
+    // ---- Write back ----
     cX_hp = HighPrecision{c.re};
     cY_hp = HighPrecision{c.im};
 
+    // ---- Cleanup ----
+    mpf_clear(sqrRadius_mpf);
+    mpf_complex_clear(c0);
     mpf_complex_clear(c);
+
     return (IterTypeFull)iters;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // Periodicity state for periodic-point detection
 // All quantities are *squared* magnitudes.
@@ -538,8 +634,7 @@ template <class IterType, class T, class C> struct PeriodicityPP {
     }
 };
 
-
-template<class IterType, class T, PerturbExtras PExtras>
+template <class IterType, class T, PerturbExtras PExtras>
 T
 FeatureFinder<IterType, T, PExtras>::ChebAbs(const C &a) const
 {
@@ -757,7 +852,6 @@ MakeRealC(const T &s)
     return out;
 }
 
-
 template <class IterType, class T, PerturbExtras PExtras>
 template <bool FindPeriod>
 bool
@@ -917,29 +1011,42 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     return true;
 }
 
-
 // =====================================================================================
-// LA Evaluation - fixed to match Imagina semantics:
+// LA Evaluation (rewritten):
 //
-// Key fixes vs your previous version:
-//  1) Apply the same ScalingFactor / InvScalingFactor contract as PT/direct.
-//  2) Update zcoeff/dzdc from *dz* (the delta state) and do it in the Imagina order:
-//        Prepare -> (zcoeff update) -> (dzdc update) -> dz update -> advance iteration/ref -> z update
-//        -> periodicity
-//  3) Periodicity uses TRUE ||dzdc|| (unscale via InvScale2) and uses the shared PeriodicityPP
-//  tightening logic. 4) Outputs are unscaled (multiply by InvScalingFactor) to match your direct
-//  conventions.
+// Goals:
+//  - Use LA strictly as an *accelerator* to advance z and dzdc safely (with ScalingFactor).
+//  - For FindPeriod, use the SAME period trigger as PT/direct:
+//        |z|^2 < R^2 * |dzdc_true|^2   (via PeriodicityPP tightening)
+//    (NOT LAParameters::DetectPeriod — that is a different detector).
+//  - NEVER attempt to synthesize DIRECT/PT "zcoeff" from LA internals.
+//    On success, we output:
+//      outDiff   = z  (same as PT/direct convention)
+//      outDzdc   = dzdc_true (unscaled)
+//      outZcoeff = 1 (dummy; caller should *not* use LA zcoeff for intrinsic radius)
+//    and callers that need canonical (diff,dzdc,zcoeff) for precision/radius should
+//    re-evaluate with PT or DIRECT at the final c (recommended).
 //
-// NOTE: This assumes LAstep exposes methods analogous to Imagina:
+// Notes / assumptions (based on your types):
+//  - LAstep::Evaluate(dz, dc) advances dz to the next macro step (step length = las.step).
+//  - LAstep::getZ(dz) returns absolute z = Refp1Deep + dz for that macro step.
+//  - LAstep::EvaluateDzdcDeep(dz, dzdc, ScalingFactor) updates *stored scaled* dzdc:
+//        dzdc_stored = dzdc_true * ScalingFactor
+//  - ScalingFactor is a scalar Float (HDRFloat or float/double) and is applied exactly
+//    like PT path uses ScalingFactor to keep derivatives stable.
 //
-//   - las.Prepare(dz, dc)  (or Prepare is done inside laRef.getLA; in that case you can ignore temp)
-//   - las.EvaluateDzdzDeep(dz, zcoeff, dc, ScalingFactorC)   // updates zcoeff for this macro-step
-//   - las.EvaluateDzdcDeep(dz, dzdc, dc, ScalingFactorC)     // updates dzdc for this macro-step
-//   - las.Evaluate(dz, dc) OR las.Evaluate(dc) returning new dz
+//  - We keep dzdc and (optionally) zcoeff in the SAME scaling contract as PT:
+//        dzdc_stored = dzdc_true * ScalingFactor
+//    and we unscale for periodicity by multiplying norm^2 by InvScale2.
 //
-// If your current LAstep only has Evaluate(dc) and EvaluateDzdcDeep(z, x),
-// you should *split* that API so zcoeff/dzdc updates take (dz, dc, ScalingFactor),
-// not absolute z, and not the previous-step z.
+//  - Rebase rule matches PT:
+//        if refIteration hits MacroItCount OR |dz| > |z| then
+//            dz = z; refIteration = 0;
+//
+//  - We do NOT attempt to renormalize scaleExp adaptively here. In your current setup,
+//    scaleExp==0 is fine because HDRFloatComplex already reduces and you are not pushing
+//    mpf-level magnitudes through LA. If you later need renorm, it can be added exactly
+//    like PT's stored-derivative renorm scheme.
 // =====================================================================================
 template <class IterType, class T, PerturbExtras PExtras>
 template <bool FindPeriod>
@@ -958,7 +1065,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     T &outResidual2) const
 {
     if (!laRef.IsValid()) {
-        std::cout << "[LA Evaluate] FAIL: LAReference not valid\n";
         return false;
     }
 
@@ -968,7 +1074,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     const T escape2 = HdrReduce(T{4096.0});
 
     // --------------------------
-    // Radius / periodicity state
+    // Periodicity state (PT/direct semantics)
     // --------------------------
     PeriodicityPP<IterType, T, C> pp;
     IterType prePeriod = 0;
@@ -977,7 +1083,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     if constexpr (FindPeriod) {
         HdrReduce(R);
         if (HdrCompareToBothPositiveReducedLE(R, zero)) {
-            std::cout << "[LA Evaluate] FAIL: R <= 0\n";
             return false;
         }
         pp.Init(R);
@@ -1000,49 +1105,51 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     } else {
         cap = static_cast<IterTypeFull>(ioPeriod);
     }
-
     if (cap < 1) {
-        std::cout << "[LA Evaluate] FAIL: cap < 1\n";
         return false;
     }
 
-    // --------------------------
-    // ScalingFactor contract (same as PT)
-    // --------------------------
+    // =========================================================================
+    // Scaling contract (same as PT path)
+    //
+    // stored = true * ScalingFactor
+    // Here we keep scaleExp = 0; ScalingFactor = 1.
+    // =========================================================================
     int scaleExp = 0;
-    const T ScalingFactor = HdrLdexp(one, -scaleExp);   // 2^-scaleExp
-    const T InvScalingFactor = HdrLdexp(one, scaleExp); // 2^scaleExp
-
+    const T ScalingFactor = HdrReduce(HdrLdexp(one, -scaleExp));   // 2^-scaleExp
+    const T InvScalingFactor = HdrReduce(HdrLdexp(one, scaleExp)); // 2^scaleExp
     const C ScalingFactorC(ScalingFactor, T{});
     const C InvScalingFactorC(InvScalingFactor, T{});
-
-    // For periodicity: TRUE ||dzdc||^2 = STORED ||dzdc||^2 * (InvScalingFactor^2)
     T InvScale2 = InvScalingFactor * InvScalingFactor;
     HdrReduce(InvScale2);
 
-    // --------------------------
-    // State (matches Imagina)
-    // --------------------------
+    // =========================================================================
+    // State
+    // =========================================================================
     C dz{};
     dz.Reduce(); // delta state
     C z{};
-    z.Reduce(); // absolute z = ref + dz
+    z.Reduce(); // absolute z
+
+    // Stored (scaled) derivative dzdc
     C dzdc{};
-    dzdc.Reduce(); // STORED scaled: true * ScalingFactor
-    C zcoeff{};
-    zcoeff.Reduce(); // STORED scaled: true * ScalingFactor
+    dzdc.Reduce(); // stored = true * ScalingFactor
+
+    // We do NOT use LA "zcoeff" for downstream intrinsic radius / MPF.
+    // Set it to 1 at output as a sentinel.
+    const C oneC(one, T{});
 
     IterTypeFull iteration = 0;
     const IterType laStageCount = laRef.GetLAStageCount();
 
-    // Process LA stages from highest to lowest (coarse to fine)
+    // Process stages coarse->fine (same as your previous loop)
     for (IterType currentLAStage = laStageCount; currentLAStage > 0 && iteration < cap;) {
         --currentLAStage;
 
         const IterType laIndex = laRef.getLAIndex(currentLAStage);
         const IterType macroItCount = laRef.getMacroItCount(currentLAStage);
 
-        // Stage validity check (Imagina: ChebyshevNorm(dc) >= LA[0].LAThresholdC => jump out)
+        // Stage invalidity check uses LAThresholdC idea
         if (laRef.isLAStageInvalid(laIndex, dc)) {
             continue;
         }
@@ -1050,62 +1157,53 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
         IterType refIteration = 0;
 
         while (iteration < cap) {
-            // Get the LA step description for this (laIndex, refIteration, iteration)
-            // NOTE: laRef.getLA takes dz and returns an LAstep which contains:
-            //       - unusable
-            //       - step (macro step length)
-            //       - access to ZCoeff and the reference z
+
+            // Get LA step descriptor for this block
             auto las = laRef.getLA(
                 laIndex, dz, refIteration, static_cast<IterType>(iteration), static_cast<IterType>(cap));
 
             if (las.unusable) {
-                // In Imagina, unusable triggers a jump to a different LA index for the same stage.
-                // If/when your LAInfoI exposes NextStageLAIndex, do it here.
-                // For now, fall through to try the next (finer) stage (or PT fallback).
-                break;
+                // Jump within this stage
+                const IterType nextRef = las.nextStageLAindex;
+
+                if (nextRef == refIteration || nextRef >= macroItCount) {
+                    // can't progress at this stage -> go finer stage
+                    break;
+                }
+
+                refIteration = nextRef;
+                continue;
             }
 
             // ------------------------------------------------------------
-            // Imagina order:
-            //   Prepare(dz, dc) -> update zcoeff -> update dzdc -> update dz -> advance it/ref ->
-            //   compute z -> periodicity
-            //
-            // IMPORTANT: these updates must depend on (dz, dc, ScalingFactor), NOT absolute z.
+            // Update dzdc (stored scaled) for this macro-step
+            // MUST use the scaled API: EvaluateDzdcDeep(dz, dzdc, ScalingFactor)
             // ------------------------------------------------------------
-
-            // zcoeff (scaled)
-            if (iteration == 0) {
-                // Imagina: zcoeff = ScalingFactor * LA[RefIteration].ZCoeff;
-                zcoeff = ScalingFactorC * las.LAjdeep->getZCoeff();
-            } else {
-                // Imagina: LA[RefIteration].EvaluateDzdz(temp, dz, zcoeff, dc, ScalingFactor)
-                las.EvaluateDzdz(dz, zcoeff, dc);
-            }
-            zcoeff.Reduce();
-
-            // dzdc (scaled)
-            // Imagina: LA[RefIteration].EvaluateDzdc(temp, dz, dzdc, dc, ScalingFactor)
             las.EvaluateDzdcDeep(dz, dzdc, ScalingFactor);
             dzdc.Reduce();
 
-            // dz update
-            // Imagina: LA[RefIteration].Evaluate(temp, dz, dc)
-            // If your LAstep currently only provides Evaluate(dc) returning a new dz, that’s fine:
-            // just make sure it’s equivalent to Evaluate(temp, dz, dc).
+            // ------------------------------------------------------------
+            // Advance dz for this macro-step
+            // ------------------------------------------------------------
             dz = las.Evaluate(dz, dc);
             dz.Reduce();
 
-            // Advance iteration/refIteration (Imagina: Iteration += StepLength; RefIteration++; z = dz +
-            // Ref[RefIteration])
+            // Advance iteration/refIteration
             iteration += las.step;
             refIteration++;
 
-            // Compute z (absolute) from reference + dz
+            // Absolute z at the end of the macro-step
             z = las.getZ(dz);
             z.Reduce();
 
-            // Rebasing check (Imagina: if RefIteration == MacroItCount || ChebyshevNorm(dz) >
-            // ChebyshevNorm(z))
+            // Escape check (like PT/direct)
+            T zNorm = z.norm_squared();
+            HdrReduce(zNorm);
+            if (HdrCompareToBothPositiveReducedGT(zNorm, escape2)) {
+                return false;
+            }
+
+            // Rebase rule (match PT)
             if (refIteration >= macroItCount ||
                 HdrCompareToBothPositiveReducedGT(ChebAbs(dz), ChebAbs(z))) {
                 dz = z;
@@ -1113,74 +1211,71 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
                 refIteration = 0;
             }
 
-            // Escape check
-            T zNorm = z.norm_squared();
-            HdrReduce(zNorm);
-
-            if (HdrCompareToBothPositiveReducedGT(zNorm, escape2)) {
-                std::cout << "[LA Evaluate] FAIL: escape at iteration=" << iteration << "\n";
-                return false;
-            }
-
-            // Period detection
+            // ------------------------------------------------------------
+            // Period detection (PT/direct semantics)
+            // ------------------------------------------------------------
             if constexpr (FindPeriod) {
-                // Use TRUE dzdc norm for periodicity (Imagina does norm(dzdc) in true space)
+                // TRUE ||dzdc||^2 = STORED ||dzdc||^2 * InvScale2
                 T dzdcNormStored = dzdc.norm_squared();
                 HdrReduce(dzdcNormStored);
 
                 T dzdcNormTrue = dzdcNormStored * InvScale2;
                 HdrReduce(dzdcNormTrue);
 
-                const IterType IterationIt = static_cast<IterType>(iteration);
+                // iteration is IterTypeFull; PP expects IterType
+                if (iteration <= static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
+                    const IterType IterIt = static_cast<IterType>(iteration);
 
-                if (pp.CheckPeriodicity(zNorm, dzdcNormTrue, IterationIt, prePeriod, period)) {
-                    ioPeriod = period; // (prePeriod always 0 for periodic-point path)
+                    if (pp.CheckPeriodicity(zNorm, dzdcNormTrue, IterIt, prePeriod, period)) {
+                        ioPeriod = period;
 
-                    // Unscale outputs to match DIRECT conventions
-                    outDiff = z;
-                    outDzdc = dzdc * InvScalingFactorC;
-                    outZcoeff = zcoeff * InvScalingFactorC;
+                        // Outputs:
+                        outDiff = z; // same as PT/direct convention
 
-                    outDiff.Reduce();
-                    outDzdc.Reduce();
-                    outZcoeff.Reduce();
+                        // Unscale dzdc to match PT/direct
+                        outDzdc = dzdc * InvScalingFactorC;
+                        outDzdc.Reduce();
 
-                    outResidual2 = zNorm;
-                    return true;
+                        // DO NOT use LA zcoeff. Provide a safe sentinel value.
+                        outZcoeff = oneC;
+                        outZcoeff.Reduce();
+
+                        outResidual2 = zNorm;
+                        return true;
+                    }
+                } else {
+                    // period won't fit IterType
+                    return false;
                 }
             }
         } // while iteration < cap
     } // for stages
 
-    // If LA didn't reach cap, let caller fall back (PT/direct)
+    // If we didn't reach cap, caller should fall back (PT/direct)
     if (iteration < cap) {
-        std::cout << "[LA Evaluate] INFO: LA incomplete at iteration=" << iteration
-                  << ", needs fallback\n";
         return false;
     }
 
-    if constexpr (FindPeriod) {
-        std::cout << "[LA Evaluate] FAIL: no trigger found\n";
-        return false;
+    // Fixed-period evaluation path: return final state at period==cap
+    if constexpr (!FindPeriod) {
+        // We made it to iteration==cap (or beyond).
+        // Output z, dzdc_true, dummy zcoeff.
+        outDiff = z;
+        outResidual2 = z.norm_squared();
+        HdrReduce(outResidual2);
+
+        outDzdc = dzdc * InvScalingFactorC;
+        outDzdc.Reduce();
+
+        outZcoeff = oneC;
+        outZcoeff.Reduce();
+
+        return true;
     }
 
-    // Fixed-period path: return final state (unscaled) at ioPeriod==cap
-    outDiff = z;
-    outResidual2 = z.norm_squared();
-    HdrReduce(outResidual2);
-
-    outDzdc = dzdc * InvScalingFactorC;
-    outZcoeff = zcoeff * InvScalingFactorC;
-
-    outDiff.Reduce();
-    outDzdc.Reduce();
-    outZcoeff.Reduce();
-
-    std::cout << "[LA Evaluate] SUCCESS: period=" << ioPeriod
-              << " residual2=" << HdrToString<false, T>(outResidual2) << "\n";
-    return true;
+    // FindPeriod: reached cap without trigger
+    return false;
 }
-
 
 // DirectEvaluator::Eval implementation
 template <class IterType, class T, PerturbExtras PExtras>
@@ -1226,10 +1321,27 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
 {
     T R = HdrSqrt(SqrRadius);
 
-    // Try LA first if valid
-    if (laRef->IsValid()) {
-        if (self->template Evaluate_LA<FindPeriod>(*results,
-                                                   *laRef,
+    if constexpr (FindPeriod) {
+        // Try LA first if valid
+        if (laRef->IsValid()) {
+            if (self->template Evaluate_LA<FindPeriod>(*results,
+                                                       *laRef,
+                                                       cX_hp,
+                                                       cY_hp,
+                                                       R,
+                                                       maxIters,
+                                                       ioPeriod,
+                                                       outDiff,
+                                                       outDzdc,
+                                                       outZcoeff,
+                                                       outResidual2)) {
+                return true;
+            }
+        }
+
+        // Fall back to PT
+        if (self->template Evaluate_PT<FindPeriod>(*results,
+                                                   *dec,
                                                    cX_hp,
                                                    cY_hp,
                                                    R,
@@ -1241,31 +1353,31 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
                                                    outResidual2)) {
             return true;
         }
-    }
 
-    // Fall back to PT
-    if (self->template Evaluate_PT<FindPeriod>(*results,
-                                               *dec,
-                                               cX_hp,
-                                               cY_hp,
-                                               R,
-                                               maxIters,
-                                               ioPeriod,
-                                               outDiff,
-                                               outDzdc,
-                                               outZcoeff,
-                                               outResidual2)) {
-        return true;
+        return false;
     }
 
     // Final fallback to direct (for non-FindPeriod case)
-    if constexpr (!FindPeriod) {
-        std::cout << "[LA->Direct fallback] INFO: LA/PT eval failed; trying DIRECT at period="
-                  << (uint64_t)ioPeriod << "\n";
-        return self->Evaluate_PeriodResidualAndDzdc_Direct(
-            c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
+    // Use the requested period as cap (your Evaluate_PT ignores maxIters for !FindPeriod)
+    // Note: Here maxIters is actually passed as "period" by your caller, but we ignore it.
+    if (self->template Evaluate_PT<false>(*results,
+                                          *dec,
+                                          cX_hp,
+                                          cY_hp,
+                                          R,
+                                          /*maxIters*/ (IterTypeFull)ioPeriod,
+                                          ioPeriod,
+                                          outDiff,
+                                          outDzdc,
+                                          outZcoeff,
+                                          outResidual2)) {
+        return true;
     }
-    return false;
+
+    std::cout << "[LA->Direct fallback] INFO: LA/PT eval failed; trying DIRECT at period="
+                << (uint64_t)ioPeriod << "\n";
+    return self->Evaluate_PeriodResidualAndDzdc_Direct(
+        c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
 }
 
 // PTEvaluator::Eval implementation
@@ -1340,6 +1452,50 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(
 {
     return FindPeriodicPoint_Common(maxIters, feature, LAEvaluator{this, &results, &dec, &laRef});
 }
+
+template <class IterType, class T, PerturbExtras PExtras>
+bool
+FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSummary &feature) const
+{
+    auto *cand = feature.GetCandidate();
+    if (!cand)
+        return false;
+
+    HighPrecision cX_hp = cand->cX_hp;
+    HighPrecision cY_hp = cand->cY_hp;
+
+    // period conversion
+    IterType period{};
+    if (cand->period > (IterType)std::numeric_limits<IterType>::max())
+        return false;
+    period = (IterType)cand->period;
+
+    // Use candidate’s stored radius^2 so Phase B is independent of current FeatureSummary radius
+    // (Add this field to PeriodicPointCandidate)
+    const HighPrecision &sqrRadius_hp = cand->sqrRadius_hp;
+
+    // MPF polish only
+    const IterType refineIters = RefinePeriodicPoint_WithMPF(cX_hp,
+                                                             cY_hp,
+                                                             period,
+                                                             cand->mpfPrecBits,
+                                                             /*sqrRadius_T*/ T{sqrRadius_hp},
+                                                             cand->scaleExp2_for_mpf);
+
+    // Commit only the refined coordinates + period.
+    // residual2/intrinsicRadius can be filled later by a measurement pass.
+    feature.SetFound(cX_hp,
+                     cY_hp,
+                     (IterType)period,
+                     /*residual2*/ T{},
+                     /*intrinsicRadius*/ HighPrecision{0});
+
+    // Optionally keep candidate (or clear it)
+    // feature.ClearCandidate();
+
+    return true;
+}
+
 
 template <class IterType, class T, PerturbExtras PExtras>
 template <class EvalPolicy>
@@ -1442,6 +1598,8 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
 
             if (HdrCompareToBothPositiveReducedLE(diff2, rhs)) {
                 // Residual is small enough relative to current c => converged
+                std::cout << "Iter1 " << it << ": diff^2=" << HdrToString<false>(diff2)
+                          << ", |c|^2*tol^2=" << HdrToString<false>(rhs) << "\n";
                 break;
             }
         }
@@ -1477,6 +1635,8 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
             HdrReduce(rhs);
 
             if (HdrCompareToBothPositiveReducedLE(step2, rhs)) {
+                std::cout << "Iter2 " << it << ": step^2=" << HdrToString<false>(step2)
+                          << ", |c|^2*relTol^2=" << HdrToString<false>(rhs) << "\n";
                 break;
             }
         }
@@ -1484,6 +1644,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         // Optional absolute residual accept (if you already use this)
         if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{}) &&
             HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
+            std::cout << "Iter3 " << it << ": residual^2=" << HdrToString<false>(residual2) << "\n";
             break;
         }
     }
@@ -1523,82 +1684,55 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         return false;
     }
 
-{
-        // -------------------------------------------------------------------------
-        // Imagina-style precision selection (without needing intrinsicRadius yet):
-        //
-        // Imagina uses Feature.Scale.Exponent where
-        //   Scale = 1 / |zcoeff * dzdc|
-        //
-        // We can compute the same thing right here from the current zcoeff & dzdc
-        // and choose mpf coordinate precision from its exponent.
-        // -------------------------------------------------------------------------
-
-        // Compute w = zcoeff * dzdc in T-space (already available here)
+    {
         C w = zcoeff * dzdc;
         w.Reduce();
 
-        T w2 = w.norm_squared(); // |w|^2
+        T w2 = w.norm_squared();
         HdrReduce(w2);
 
-        mp_bitcnt_t prec_bits = cX_hp.precisionInBits(); // baseline: never go below current HP
+        if (!HdrCompareToBothPositiveReducedGT(w2, T{})) {
+            std::cout << "Rejected: zero w in candidate store\n";
+            feature.ClearCandidate();
+            return false;
+        }
 
-        if (HdrCompareToBothPositiveReducedGT(w2, T{})) {
-            // |w| = sqrt(|w|^2)
+        int scaleExp2 = 0;
+        mp_bitcnt_t prec_bits = cX_hp.precisionInBits();
+
+        {
             T absW = HdrSqrt(w2);
             HdrReduce(absW);
 
-            // Scale = 1/|w|
-            // We only need its exponent-ish to choose precision.
             T scaleT = HdrReduce(T{1.0}) / absW;
             HdrReduce(scaleT);
 
-            // Convert to HighPrecision to access exponent (matches your HighPrecision conventions)
-            HighPrecision scaleHP{scaleT}; // Scale ≈ mant * 2^exp
-
-            // If Scale is tiny/huge, exponent tells us required bits.
-            // Required coordinate bits ~ -Scale.Exponent + marginBits
-            // but for coordinate precision we want the full "-exp" order.)
+            HighPrecision scaleHP{scaleT};
             long exp_long;
             double mant;
             scaleHP.frexp(mant, exp_long);
-            int exp2 = static_cast<int>(exp_long);
+            scaleExp2 = (int)exp_long;
 
-            // If scale = 2^exp2 * mant, then resolving to ~scale needs about -exp2 bits.
-            // (If exp2 is positive, scale is large => not many bits needed from scale alone.)
-            const int bitsFromScale = std::max(0, -exp2);
+            const int bitsFromScale = std::max(0, -scaleExp2);
             const int marginBits = 256;
 
             mp_bitcnt_t want = (mp_bitcnt_t)(bitsFromScale + marginBits);
-
-            // Don't go below current HP precision
-            want = std::max(want, cX_hp.precisionInBits());
-
-            // Keep a sane floor for MPF (avoid tiny precisions)
+            want = std::max(want, (mp_bitcnt_t)cX_hp.precisionInBits());
             want = std::max<mp_bitcnt_t>(want, 512);
-
-            // Optional: cap runaway precision if you want
-            // want = std::min<mp_bitcnt_t>(want, 200000);
-
             prec_bits = want;
-        } else {
-            // Degenerate w2 (shouldn't happen for valid dzdc), fall back conservatively
-            prec_bits = std::max<mp_bitcnt_t>(prec_bits, 2048);
         }
 
-        auto refineIters = RefinePeriodicPoint_WithMPF(cX_hp, cY_hp, period, prec_bits);
+        // Convert T SqrRadius → HP once and store it
+        HighPrecision sqrRadius_hp{SqrRadius};
 
-        // IMPORTANT: after MPF modifies HP, rebuild c in T-space and refresh outputs
-        c = MakeCTFromHP();
-
-        std::cout << "MPF refinement iters: " << refineIters << ", prec_bits=" << (uint64_t)prec_bits
-                  << ", new cX_hp=" << cX_hp.str() << ", new cY_hp=" << cY_hp.str() << "\n";
-
-        if (!evaluator.template Eval<false>(
-                c, cX_hp, cY_hp, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
-            std::cout << "Rejected: eval failed after MPF refine\n";
-            return false;
-        }
+        // Store candidate for Phase B refinement
+        feature.SetCandidate(cX_hp,
+                             cY_hp,
+                             (IterTypeFull)period,
+                             HDRFloat<double>{residual2},
+                             sqrRadius_hp,
+                             scaleExp2,
+                             prec_bits);
     }
 
     const HighPrecision intrinsicRadius = ComputeIntrinsicRadius_HP(zcoeff, dzdc);
@@ -1651,14 +1785,14 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_AtPeriod(
     template class FeatureFinder<IterTypeT, TT, PExtrasT>;
 
 //// ---- Disable ----
-//InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Disable);
-//InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Disable);
 //
-// InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Disable);
-// InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Disable);
+//  InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Disable);
+//  InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Disable);
 //
-// InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
-// InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+//  InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+//  InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 //
 InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Disable);
 InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Disable);

@@ -1,13 +1,15 @@
 #include "stdafx.h"
+
+#include "FeatureFinderMode.h" // (or whatever header defines FeatureFinderMode)
 #include "FeatureSummary.h"
-#include "Fractal.h"
+#include "Fractal.h" // needed for EstablishScreenCoordinates()
 
 FeatureSummary::FeatureSummary(const HighPrecision &origX,
                                const HighPrecision &origY,
-                               const HighPrecision &radius)
+                               const HighPrecision &radius,
+                               FeatureFinderMode mode)
     : Radius{radius}, OrigX{origX}, OrigY{origY}, FoundX{origX}, FoundY{origY},
-      Precision{origX.precisionInBits()},
-      IntrinsicRadius{radius} // reasonable init; overwritten on SetFound
+      Precision{origX.precisionInBits()}, IntrinsicRadius{radius}, Mode{mode}
 {
 }
 
@@ -23,6 +25,62 @@ FeatureSummary::SetFound(const HighPrecision &foundX,
     Period = period;
     Residual2 = residual2;
     IntrinsicRadius = intrinsicRadius;
+
+    // Once we have a final answer, we typically don't need the staged candidate anymore.
+    // Keep it if you want; otherwise clear it.
+    // m_candidate = nullptr;
+}
+
+void
+FeatureSummary::ClearCandidate()
+{
+    m_candidate = nullptr;
+}
+
+bool
+FeatureSummary::HasCandidate() const
+{
+    return (bool)m_candidate;
+}
+
+void
+FeatureSummary::SetCandidate(std::unique_ptr<PeriodicPointCandidate> cand)
+{
+    m_candidate = std::move(cand);
+}
+
+void
+FeatureSummary::SetCandidate(const HighPrecision &candidateX,
+                             const HighPrecision &candidateY,
+                             IterTypeFull period,
+                             T residual2,
+                             const HighPrecision &sqrRadius_hp,
+                             int scaleExp2_for_mpf,
+                             mp_bitcnt_t mpfPrecBits)
+{
+    auto cand = std::make_unique<PeriodicPointCandidate>();
+
+    cand->cX_hp = candidateX;
+    cand->cY_hp = candidateY;
+    cand->period = period;
+    cand->residual2 = residual2;
+    cand->scaleExp2_for_mpf = scaleExp2_for_mpf;
+    cand->mpfPrecBits = mpfPrecBits;
+    cand->sqrRadius_hp = sqrRadius_hp;
+
+    m_candidate = std::move(cand);
+}
+
+const PeriodicPointCandidate *
+FeatureSummary::GetCandidate() const
+{
+    return m_candidate.get();
+}
+
+PeriodicPointCandidate *
+FeatureSummary::GetCandidate()
+{
+    return m_candidate.get();
 }
 
 const HighPrecision &
@@ -73,7 +131,7 @@ FeatureSummary::GetPeriod() const
     return Period;
 }
 
-HDRFloat<double>
+FeatureSummary::T
 FeatureSummary::GetResidual2() const
 {
     return Residual2;

@@ -164,6 +164,7 @@ CommandDispatcher::BuildTable()
     table_.emplace(IDM_FEATUREFINDER_DIRECT,
                    makeDoPeriodic.operator()<Fractal::FeatureFinderMode::Direct>());
     table_.emplace(IDM_FEATUREFINDER_PT, makeDoPeriodic.operator()<Fractal::FeatureFinderMode::PT>());
+    table_.emplace(IDM_FEATUREFINDER_LA, makeDoPeriodic.operator()<Fractal::FeatureFinderMode::LA>());
 
     table_.emplace(IDM_REPAINTING, +[](MainWindow &w) { w.MenuRepainting(); });
     table_.emplace(IDM_WINDOWED, +[](MainWindow &w) { w.MenuWindowed(false); });

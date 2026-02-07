@@ -5,8 +5,9 @@
 FeatureSummary::FeatureSummary(const HighPrecision &origX,
                                const HighPrecision &origY,
                                const HighPrecision &radius)
-    : Radius{radius}, OrigX{origX}, OrigY{origY}, FoundX{}, FoundY{}, Period{}, Residual2{},
-      screenXStart{}, screenYStart{}, screenXEnd{}, screenYEnd{}
+    : Radius{radius}, OrigX{origX}, OrigY{origY}, FoundX{origX}, FoundY{origY},
+      Precision{origX.precisionInBits()},
+      IntrinsicRadius{radius} // reasonable init; overwritten on SetFound
 {
 }
 
@@ -14,12 +15,20 @@ void
 FeatureSummary::SetFound(const HighPrecision &foundX,
                          const HighPrecision &foundY,
                          IterTypeFull period,
-                         HDRFloat<double> residual2)
+                         T residual2,
+                         const HighPrecision &intrinsicRadius)
 {
     FoundX = foundX;
     FoundY = foundY;
     Period = period;
     Residual2 = residual2;
+    IntrinsicRadius = intrinsicRadius;
+}
+
+const HighPrecision &
+FeatureSummary::GetIntrinsicRadius() const
+{
+    return IntrinsicRadius;
 }
 
 const HighPrecision &
@@ -50,6 +59,12 @@ const HighPrecision &
 FeatureSummary::GetFoundY() const
 {
     return FoundY;
+}
+
+size_t
+FeatureSummary::GetPrecision() const
+{
+    return Precision;
 }
 
 IterTypeFull

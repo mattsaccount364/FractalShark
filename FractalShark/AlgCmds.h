@@ -35,6 +35,7 @@
 #define IDM_AUTOZOOM_MAX 40105
 #define IDM_FEATUREFINDER_DIRECT 40106
 #define IDM_FEATUREFINDER_PT 40107
+#define IDM_FEATUREFINDER_LA 40108
 
 //
 // ---------------------------------------------------------------------------

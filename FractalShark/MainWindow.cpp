@@ -208,9 +208,10 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     MainWindowMenuState menuState(*this);
     gPopupMenu = FractalShark::DynamicPopupMenu::Create(menuState);
 
-    // TODO kind of gross but it works, reset now that gFractal exists.  If CPU-only is enforced,
-    // this will show the radio button the menu properly.  Without this, the menu is out of sync
-    // until the user changes algorithm manually.
+    // SetRenderAlgorithm: TODO kind of gross but it works, reset now that
+    // gFractal exists.  If CPU-only is enforced, this will show the radio
+    // button the menu properly.  Without this, the menu is out of sync until
+    // the user changes algorithm manually.
     // commandDispatcher.Dispatch(IDM_ALG_AUTO);
     commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
 
@@ -338,6 +339,21 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             ::ScreenToClient(hWnd, &pt);
             gFractal->TryFindPeriodicPoint(pt.x, pt.y, Fractal::FeatureFinderMode::PT);
             break;
+        }
+
+        case 'g': {
+            POINT pt;
+            ::GetCursorPos(&pt);
+            ::ScreenToClient(hWnd, &pt);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, Fractal::FeatureFinderMode::LA);
+            break;
+        }
+
+        case 'G': {
+            bool ret = gFractal->ZoomToFoundFeature();
+            if (ret) {
+                PaintAsNecessary();
+            }
         }
 
         case 'H':

@@ -8,6 +8,7 @@
 
 template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;
 template <typename IterType, class T, PerturbExtras PExtras> class RuntimeDecompressor;
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras> class LAReference;
 
 class FeatureSummary;
 
@@ -55,6 +56,12 @@ public:
                            RuntimeDecompressor<IterType, T, PExtras> &dec,
                            FeatureSummary &feature) const;
 
+    bool FindPeriodicPoint(IterType maxIters,
+                           const PerturbationResults<IterType, T, PExtras> &results,
+                           RuntimeDecompressor<IterType, T, PExtras> &dec,
+                           LAReference<IterType, T, SubType, PExtras> &laRef,
+                           FeatureSummary &feature) const;
+
 private:
     struct EvalState {
         C z{};
@@ -96,6 +103,26 @@ private:
                   T &outResidual2) const;
     };
 
+    // NEW: Evaluator policy for Linear Approximation iteration
+    struct LAEvaluator {
+        const FeatureFinder *self;
+        const PerturbationResults<IterType, T, PExtras> *results;
+        RuntimeDecompressor<IterType, T, PExtras> *dec;
+        LAReference<IterType, T, SubType, PExtras> *laRef;
+
+        template <bool FindPeriod>
+        bool Eval(const C &c,
+                  const HighPrecision &cX_hp,
+                  const HighPrecision &cY_hp,
+                  T SqrRadius,
+                  IterTypeFull maxIters,
+                  IterType &ioPeriod,
+                  C &outDiff,
+                  C &outDzdc,
+                  C &outZcoeff,
+                  T &outResidual2) const;
+    };
+
     template <class EvalPolicy>
     bool FindPeriodicPoint_Common(IterType refIters,
                                   FeatureSummary &feature,
@@ -103,21 +130,32 @@ private:
 
     T ChebAbs(const C &a) const;
 
+    // NEW: LA evaluation method
     template <bool FindPeriod>
-    bool Evaluate_PT(
-        const PerturbationResults<IterType, T, PExtras> &results,
-        RuntimeDecompressor<IterType, T, PExtras> &dec,
-        const C &origC,
-        const HighPrecision &origCX_hp, // High precision original X
-        const HighPrecision &origCY_hp, // High precision original Y
-        T R,
-        IterTypeFull maxIters,
-        IterType &ioPeriod,
-        C &outDiff,
-        C &outDzdc,
-        C &outZcoeff,
-        T &outResidual2) const;
+    bool Evaluate_LA(const PerturbationResults<IterType, T, PExtras> &results,
+                     LAReference<IterType, T, SubType, PExtras> &laRef,
+                     const HighPrecision &cX_hp,
+                     const HighPrecision &cY_hp,
+                     T R,
+                     IterTypeFull maxIters,
+                     IterType &ioPeriod,
+                     C &outDiff,
+                     C &outDzdc,
+                     C &outZcoeff,
+                     T &outResidual2) const;
 
+    template <bool FindPeriod>
+    bool Evaluate_PT(const PerturbationResults<IterType, T, PExtras> &results,
+                     RuntimeDecompressor<IterType, T, PExtras> &dec,
+                     const HighPrecision &cX_hp, // <-- CURRENT Newton iterate
+                     const HighPrecision &cY_hp, // <-- CURRENT Newton iterate
+                     T R,
+                     IterTypeFull maxIters,
+                     IterType &ioPeriod,
+                     C &outDiff,
+                     C &outDzdc,
+                     C &outZcoeff,
+                     T &outResidual2) const;
 
     bool Evaluate_FindPeriod_Direct(const C &c,
                                     IterTypeFull maxIters,
@@ -131,6 +169,8 @@ private:
     bool Evaluate_PeriodResidualAndDzdc_Direct(
         const C &c, IterType period, C &outDiff, C &outDzdc, C &outZcoeff, T &outResidual2) const;
 
+    HighPrecision ComputeIntrinsicRadius_HP(const C &zcoeff, const C &dzdc) const;
+
     static C Div(const C &a, const C &b);
 
     bool Evaluate_AtPeriod(const PerturbationResults<IterType, T, PExtras> &results,
@@ -141,6 +181,11 @@ private:
                            T &outResidual2) const;
 
     static T ToDouble(const HighPrecision &v);
+
+    IterTypeFull RefinePeriodicPoint_WithMPF(HighPrecision &cX_hp,
+                                             HighPrecision &cY_hp,
+                                             IterType period,
+                                             mp_bitcnt_t prec_bits) const;
 
 private:
     Params m_params{};

@@ -4658,6 +4658,20 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode
         found = featureFinder->FindPeriodicPoint(
             GetNumIterations<IterType>(), * results, decompressor, *m_FeatureSummary);
 
+    } else if (mode == FeatureFinderMode::LA) {
+        auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                                         T,
+                                                                         SubType,
+                                                                         PExtras,
+                                                                         RefOrbitCalc::Extras::IncludeLAv2>();
+        RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
+
+        HighPrecision radius{results->GetMaxRadius()};
+        radius /= HighPrecision{12};
+
+        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
+        found = featureFinder->FindPeriodicPoint(
+            GetNumIterations<IterType>(), *results, decompressor, *results->GetLaReference(), *m_FeatureSummary);
     } else {
         throw FractalSharkSeriousException("Unknown FeatureFinderMode in TryFindPeriodicPoint");
     }
@@ -4667,6 +4681,94 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode
         std::cout << "No periodic point found in search region.\n";
     }
 }
+
+
+bool
+Fractal::ZoomToFoundFeature(const FeatureSummary &feature,
+                            const HighPrecision &zoomFactor,
+                            bool invalidateAll)
+{
+    // -------------------------------------------------
+    // 1. Read current viewport
+    // -------------------------------------------------
+    HighPrecision minX, minY;
+    HighPrecision maxX, maxY;
+
+    minX = GetMinX();
+    minY = GetMinY();
+    maxX = GetMaxX();
+    maxY = GetMaxY();
+
+    // -------------------------------------------------
+    // 2. Feature center
+    // -------------------------------------------------
+    const size_t featurePrec = feature.GetPrecision();
+    if (featurePrec > GetPrecision()) {
+        std::cerr << "Feature precision (" << featurePrec
+                  << ") is higher than current fractal precision (" << GetPrecision()
+                  << "). Resetting fractal precision to match feature.\n";
+        SetPrecision(featurePrec);
+    }
+
+    const HighPrecision ptX = feature.GetFoundX();
+    const HighPrecision ptY = feature.GetFoundY();
+
+    // -------------------------------------------------
+    // 3. Convert point+zoom -> bounding box
+    // -------------------------------------------------
+    PointZoomBBConverter ptz(ptX, ptY, zoomFactor);
+
+    if (ptz.Degenerate()) {
+        return false;
+    }
+
+    // -------------------------------------------------
+    // 4. Apply viewport
+    // -------------------------------------------------
+    return RecenterViewCalc(ptz);
+}
+
+bool
+Fractal::ZoomToFoundFeature()
+{
+    if (!m_FeatureSummary) {
+        std::cerr << "No feature found to zoom to.\n";
+        return false;
+    }
+
+    const HighPrecision z = ComputeZoomFactorForFeature(*m_FeatureSummary);
+    return ZoomToFoundFeature(*m_FeatureSummary, z, true);
+}
+
+HighPrecision
+Fractal::ComputeZoomFactorForFeature(const FeatureSummary &feature) const
+{
+    const HighPrecision curHalfH = (GetMaxY() - GetMinY()) / HighPrecision{2};
+    const HighPrecision r = feature.GetIntrinsicRadius();
+
+    if (r == HighPrecision{0} || curHalfH == HighPrecision{0}) {
+        return GetZoomFactor();
+    }
+
+    const HighPrecision k = HighPrecision{6};
+    const HighPrecision targetHalfH = r * k;
+
+    // zoomFactor in your PointZoomBBConverter is "magnification": larger -> smaller BB -> zoom in.
+    // halfHeight = factor / zoomFactor  (since BB uses +/- factor/zoomFactor)
+    // so: zoomTarget = factor / targetHalfH
+    const HighPrecision zTarget = HighPrecision{PointZoomBBConverter::factor} / targetHalfH;
+
+    // Don't zoom out: if zTarget is smaller than current zoom, keep current
+    const HighPrecision zCur = GetZoomFactor();
+    if (zTarget < zCur)
+        return zCur;
+
+    return zTarget;
+}
+
+
+
+
 
 template <typename IterType, class T>
 void

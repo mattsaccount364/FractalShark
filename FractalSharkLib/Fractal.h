@@ -19,6 +19,7 @@
 #include "GPU_Render.h"
 
 #include "CudaDblflt.h"
+#include "FeatureFinderMode.h"
 #include "HDRFloat.h"
 #include "HighPrecision.h"
 #include "ItersMemoryContainer.h"
@@ -235,13 +236,11 @@ public:
 
     bool GpuBypassed() const;
 
-    enum class FeatureFinderMode { Direct, PT, LA };
-
     void TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
 
     HighPrecision ComputeZoomFactorForFeature(const FeatureSummary &feature) const;
 
-    bool ZoomToFoundFeature(const FeatureSummary &feature,
+    bool ZoomToFoundFeature(FeatureSummary &feature,
                             const HighPrecision &zoomFactor,
                             bool invalidateAll);
     bool ZoomToFoundFeature();

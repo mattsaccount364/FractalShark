@@ -18,6 +18,7 @@
     <ClInclude Include="BLAS.h" />
     <ClInclude Include="DrawThreadSync.h" />
     <ClInclude Include="FeatureFinder.h" />
+    <ClInclude Include="FeatureFinderMode.h" />
     <ClInclude Include="FeatureSummary.h" />
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="CrummyTest.h" />

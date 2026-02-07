@@ -8,4 +8,6 @@ public:
     BenchmarkData m_PerPixel;
     BenchmarkData m_RefOrbitSave;
     BenchmarkData m_RefOrbitLoad;
+    BenchmarkData m_FeatureFinder;
+    BenchmarkData m_FeatureFinderHP;
 };

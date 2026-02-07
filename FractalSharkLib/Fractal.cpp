@@ -11,11 +11,11 @@
 #include <thread>
 
 #include "ATInfo.h"
+#include "FeatureFinder.h"
+#include "FeatureSummary.h"
 #include "HDRFloatComplex.h"
 #include "LAInfoDeep.h"
 #include "LAReference.h"
-#include "FeatureFinder.h"
-#include "FeatureSummary.h"
 
 #include "BenchmarkData.h"
 #include "CudaDblflt.h"
@@ -3274,7 +3274,9 @@ Fractal::SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg)
     m_RefOrbit.SetPerturbationAlg(alg);
 }
 
-RefOrbitCalc::PerturbationAlg Fractal::GetPerturbationAlg() const {
+RefOrbitCalc::PerturbationAlg
+Fractal::GetPerturbationAlg() const
+{
     return m_RefOrbit.GetPerturbationAlg();
 }
 
@@ -3842,7 +3844,8 @@ Fractal::UsePaletteType(FractalPalette type)
     }
 }
 
-FractalPalette Fractal::GetPaletteType() const
+FractalPalette
+Fractal::GetPaletteType() const
 {
     return m_WhichPalette;
 }
@@ -4623,6 +4626,8 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2)
 void
 Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode)
 {
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_FeatureFinder);
+
     using T = HDRFloat<double>;
     using SubType = double;
     using IterType = uint64_t;
@@ -4640,7 +4645,7 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode
         HighPrecision radius{radiusY};
         radius /= HighPrecision{12};
 
-        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
+        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius, mode);
         found = featureFinder->FindPeriodicPoint(GetNumIterations<IterType>(), *m_FeatureSummary);
 
     } else if (mode == FeatureFinderMode::PT) {
@@ -4654,24 +4659,28 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode
         HighPrecision radius{results->GetMaxRadius()};
         radius /= HighPrecision{12};
 
-        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
+        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius, mode);
         found = featureFinder->FindPeriodicPoint(
-            GetNumIterations<IterType>(), * results, decompressor, *m_FeatureSummary);
+            GetNumIterations<IterType>(), *results, decompressor, *m_FeatureSummary);
 
     } else if (mode == FeatureFinderMode::LA) {
-        auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                                         T,
-                                                                         SubType,
-                                                                         PExtras,
-                                                                         RefOrbitCalc::Extras::IncludeLAv2>();
+        auto *results =
+            m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                             T,
+                                                             SubType,
+                                                             PExtras,
+                                                             RefOrbitCalc::Extras::IncludeLAv2>();
         RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
 
         HighPrecision radius{results->GetMaxRadius()};
         radius /= HighPrecision{12};
 
-        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius);
-        found = featureFinder->FindPeriodicPoint(
-            GetNumIterations<IterType>(), *results, decompressor, *results->GetLaReference(), *m_FeatureSummary);
+        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius, mode);
+        found = featureFinder->FindPeriodicPoint(GetNumIterations<IterType>(),
+                                                 *results,
+                                                 decompressor,
+                                                 *results->GetLaReference(),
+                                                 *m_FeatureSummary);
     } else {
         throw FractalSharkSeriousException("Unknown FeatureFinderMode in TryFindPeriodicPoint");
     }
@@ -4682,49 +4691,45 @@ Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode
     }
 }
 
-
 bool
-Fractal::ZoomToFoundFeature(const FeatureSummary &feature,
-                            const HighPrecision &zoomFactor,
-                            bool invalidateAll)
+Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision &zoomFactor, bool invalidateAll)
 {
-    // -------------------------------------------------
-    // 1. Read current viewport
-    // -------------------------------------------------
-    HighPrecision minX, minY;
-    HighPrecision maxX, maxY;
+    // If we only have a candidate, refine now
+    if (feature.HasCandidate()) {
+        ScopedBenchmarkStopper stopper(m_BenchmarkData.m_FeatureFinderHP);
 
-    minX = GetMinX();
-    minY = GetMinY();
-    maxX = GetMaxX();
-    maxY = GetMaxY();
+        using T = HDRFloat<double>;
+        using SubType = double;
+        using IterType = uint64_t;
+        constexpr PerturbExtras PExtras = PerturbExtras::Disable;
 
-    // -------------------------------------------------
-    // 2. Feature center
-    // -------------------------------------------------
+        auto featureFinder = std::make_unique<FeatureFinder<IterType, T, PExtras>>();
+
+        // Acquire PT data if possible (same logic as TryFindPeriodicPoint)
+        auto extras = RefOrbitCalc::Extras::None;
+        if (auto *cand = feature.GetCandidate()) {
+            if (cand->modeFoundBy == FeatureFinderMode::LA)
+                extras = RefOrbitCalc::Extras::IncludeLAv2;
+        }
+
+        if (!featureFinder->RefinePeriodicPoint_HighPrecision(feature)) {
+            return false;
+        }
+    }
+
+    // ... now identical to your existing zoom logic ...
     const size_t featurePrec = feature.GetPrecision();
     if (featurePrec > GetPrecision()) {
-        std::cerr << "Feature precision (" << featurePrec
-                  << ") is higher than current fractal precision (" << GetPrecision()
-                  << "). Resetting fractal precision to match feature.\n";
         SetPrecision(featurePrec);
     }
 
     const HighPrecision ptX = feature.GetFoundX();
     const HighPrecision ptY = feature.GetFoundY();
 
-    // -------------------------------------------------
-    // 3. Convert point+zoom -> bounding box
-    // -------------------------------------------------
     PointZoomBBConverter ptz(ptX, ptY, zoomFactor);
-
-    if (ptz.Degenerate()) {
+    if (ptz.Degenerate())
         return false;
-    }
 
-    // -------------------------------------------------
-    // 4. Apply viewport
-    // -------------------------------------------------
     return RecenterViewCalc(ptz);
 }
 
@@ -4765,10 +4770,6 @@ Fractal::ComputeZoomFactorForFeature(const FeatureSummary &feature) const
 
     return zTarget;
 }
-
-
-
-
 
 template <typename IterType, class T>
 void
@@ -5972,7 +5973,8 @@ Fractal::SetResultsAutosave(AddPointOptions Enable)
     m_RefOrbit.SetOptions(Enable);
 }
 
-AddPointOptions Fractal::GetResultsAutosave() const
+AddPointOptions
+Fractal::GetResultsAutosave() const
 {
     return m_RefOrbit.GetOptions();
 }
@@ -6171,7 +6173,11 @@ Fractal::GetRenderDetails(std::string &shortStr, std::string &longStr) const
         std::string("RefOrbit load (ms) = ") +
         std::to_string(GetBenchmark().m_RefOrbitLoad.GetDeltaInMs()) + "\r\n" +
         std::string("RefOrbit (ms) = ") + std::to_string(details.OrbitMilliseconds) + "\r\n" +
-        std::string("LA generation time (ms) = ") + std::to_string(details.LAMilliseconds) + "\r\n";
+        std::string("LA generation time (ms) = ") + std::to_string(details.LAMilliseconds) + "\r\n" +
+        std::string("Feature Finder time low-prec (ms) = ") +
+        std::to_string(GetBenchmark().m_FeatureFinder.GetDeltaInMs()) + "\r\n" +
+        std::string("Feature Finder time high-prec (ms) = ") +
+        std::to_string(GetBenchmark().m_FeatureFinderHP.GetDeltaInMs()) + "\r\n";
 
     shortStr = std::format("This text is copied to clipboard.  Using \"{}\"\r\n"
                            "Antialiasing: {}\r\n"

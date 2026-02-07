@@ -139,7 +139,7 @@ CommandDispatcher::BuildTable()
         w.MenuZoomOut(pt);
     };
 
-    auto makeDoPeriodic = []<Fractal::FeatureFinderMode mode>() {
+    auto makeDoPeriodic = []<FeatureFinderMode mode>() {
         return [](MainWindow &w) {
             const POINT pt = w.GetSafeMenuPtClient();
             w.gFractal->TryFindPeriodicPoint(pt.x, pt.y, mode);
@@ -162,9 +162,9 @@ CommandDispatcher::BuildTable()
         IDM_AUTOZOOM_MAX,
         +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>(); });
     table_.emplace(IDM_FEATUREFINDER_DIRECT,
-                   makeDoPeriodic.operator()<Fractal::FeatureFinderMode::Direct>());
-    table_.emplace(IDM_FEATUREFINDER_PT, makeDoPeriodic.operator()<Fractal::FeatureFinderMode::PT>());
-    table_.emplace(IDM_FEATUREFINDER_LA, makeDoPeriodic.operator()<Fractal::FeatureFinderMode::LA>());
+                   makeDoPeriodic.operator()<FeatureFinderMode::Direct>());
+    table_.emplace(IDM_FEATUREFINDER_PT, makeDoPeriodic.operator()<FeatureFinderMode::PT>());
+    table_.emplace(IDM_FEATUREFINDER_LA, makeDoPeriodic.operator()<FeatureFinderMode::LA>());
 
     table_.emplace(IDM_REPAINTING, +[](MainWindow &w) { w.MenuRepainting(); });
     table_.emplace(IDM_WINDOWED, +[](MainWindow &w) { w.MenuWindowed(false); });

@@ -59,10 +59,21 @@ public:
     CUDA_CRAP LAInfoDeep Composite(const LAParameters &la_parameters, LAInfoDeep LA);
     CUDA_CRAP LAstep<IterType, Float, SubType, PExtras> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);
+    CUDA_CRAP void EvaluateDzdz(HDRFloatComplex &dz,
+                                HDRFloatComplex &dzdz,
+                                const HDRFloatComplex &dc) const;
     CUDA_CRAP HDRFloatComplex EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc);
+    CUDA_CRAP void EvaluateDzdc(HDRFloatComplex &dz,
+                                HDRFloatComplex &dzdc,
+                                const HDRFloat &ScalingFactor) const;
     CUDA_CRAP HDRFloatComplex EvaluateDzdc2(HDRFloatComplex z,
                                             HDRFloatComplex dzdc2,
                                             HDRFloatComplex dzdc);
+    CUDA_CRAP HDRFloatComplex DzdzStep(const HDRFloatComplex &dz) const;
+    CUDA_CRAP void EvaluateDerivatives(HDRFloatComplex &dz,
+                                       HDRFloatComplex &dzdz,
+                                       HDRFloatComplex &dzdc,
+                                       const HDRFloat &ScalingFactor) const;
     CUDA_CRAP void CreateAT(ATInfo<IterType, Float, SubType> &Result,
                             LAInfoDeep Next,
                             bool UseSmallExponents);
@@ -408,10 +419,29 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::Evaluate(HDRFloatComplex newdz, H
 }
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
+CUDA_CRAP void
+LAInfoDeep<IterType, Float, SubType, PExtras>::EvaluateDzdz(HDRFloatComplex &dz,
+                                                            HDRFloatComplex &dzdz,
+                                                            const HDRFloatComplex &dc) const
+{
+    dzdz = dzdz * HDRFloat{2.0} * (dz + HDRFloatComplex(Ref)) * HDRFloatComplex(ZCoeff);
+}
+
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP LAInfoDeep<IterType, Float, SubType, PExtras>::HDRFloatComplex
 LAInfoDeep<IterType, Float, SubType, PExtras>::EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc)
 {
     return dzdc * HDRFloat(2) * z * ZCoeff + CCoeff;
+}
+
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
+CUDA_CRAP void
+LAInfoDeep<IterType, Float, SubType, PExtras>::EvaluateDzdc(HDRFloatComplex &dz,
+                                                            HDRFloatComplex &dzdc,
+                                                            const HDRFloat &ScalingFactor) const
+{
+    dzdc = dzdc * HDRFloat{2.0} * (dz + HDRFloatComplex(Ref)) * HDRFloatComplex(ZCoeff) +
+           HDRFloatComplex(CCoeff) * ScalingFactor;
 }
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
@@ -469,6 +499,26 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::CreateAT(ATInfo<IterType, Float, 
         Result.SqrEscapeRadius = std::min(ZCoeff.norm_squared() * LAThreshold, lim);
         Result.ThresholdC = std::min(LAThresholdC, lim / Result.CCoeff.chebychevNorm());
     }
+}
+
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
+CUDA_CRAP typename LAInfoDeep<IterType, Float, SubType, PExtras>::HDRFloatComplex
+LAInfoDeep<IterType, Float, SubType, PExtras>::DzdzStep(const HDRFloatComplex &dz) const
+{
+    return HDRFloat{2.0f} * (dz + HDRFloatComplex(Ref)) * HDRFloatComplex(ZCoeff);
+}
+
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
+CUDA_CRAP void
+LAInfoDeep<IterType, Float, SubType, PExtras>::EvaluateDerivatives(HDRFloatComplex &dz,
+                                                                   HDRFloatComplex &dzdz,
+                                                                   HDRFloatComplex &dzdc,
+                                                                   const HDRFloat &ScalingFactor) const
+{
+    const HDRFloatComplex step = DzdzStep(dz);
+
+    dzdz = dzdz * step;
+    dzdc = dzdc * step + HDRFloatComplex(CCoeff) * ScalingFactor;
 }
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>

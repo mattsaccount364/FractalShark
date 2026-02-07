@@ -35,7 +35,18 @@ public:
 public:
     bool unusable;
 
+    CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex &dz, HDRFloatComplex DeltaSub0);
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex DeltaSub0);
+    CUDA_CRAP void EvaluateDzdz(HDRFloatComplex &dz,
+                                HDRFloatComplex &dzdz,
+                                const HDRFloatComplex &dc) const;
+    CUDA_CRAP void EvaluateDzdcDeep(HDRFloatComplex &dz,
+                                    HDRFloatComplex &dzdc,
+                                    const Float &ScalingFactor) const;
+    CUDA_CRAP void EvaluateDerivatives(HDRFloatComplex &dz,
+                                       HDRFloatComplex &dzdz,
+                                       HDRFloatComplex &dzdc,
+                                       const Float &ScalingFactor) const;
     CUDA_CRAP HDRFloatComplex EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc2Deep(HDRFloatComplex z,
                                                 HDRFloatComplex dzdc2,
@@ -44,11 +55,46 @@ public:
 };
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
+CUDA_CRAP void
+LAstep<IterType, Float, SubType, PExtras>::EvaluateDzdz(HDRFloatComplex &dz,
+                                                        HDRFloatComplex &dzdz,
+                                                        const HDRFloatComplex &dc) const
+{
+    LAjdeep->EvaluateDzdz(dz, dzdz, dc);
+}
+
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
+CUDA_CRAP void LAstep<IterType, Float, SubType, PExtras>::EvaluateDzdcDeep(HDRFloatComplex &dz,
+                                                                        HDRFloatComplex &dzdc,
+                                                                        const Float &ScalingFactor) const
+{
+    LAjdeep->EvaluateDzdc(dz, dzdc, ScalingFactor);
+}
+
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
+CUDA_CRAP void
+LAstep<IterType, Float, SubType, PExtras>::EvaluateDerivatives(HDRFloatComplex &dz,
+                                                               HDRFloatComplex &dzdz,
+                                                               HDRFloatComplex &dzdc,
+                                                               const Float &ScalingFactor) const
+{
+    LAjdeep->EvaluateDerivatives(dz, dzdz, dzdc, ScalingFactor);
+}
+
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP LAstep<IterType, Float, SubType, PExtras>::HDRFloatComplex
 LAstep<IterType, Float, SubType, PExtras>::Evaluate(HDRFloatComplex DeltaSub0)
 {
     return LAjdeep->Evaluate(newDzDeep, DeltaSub0);
 }
+
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
+CUDA_CRAP LAstep<IterType, Float, SubType, PExtras>::HDRFloatComplex
+LAstep<IterType, Float, SubType, PExtras>::Evaluate(HDRFloatComplex &dz, HDRFloatComplex DeltaSub0)
+{
+    return LAjdeep->Evaluate(dz, DeltaSub0);
+}
+
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP LAstep<IterType, Float, SubType, PExtras>::HDRFloatComplex

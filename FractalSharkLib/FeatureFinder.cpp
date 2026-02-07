@@ -29,18 +29,21 @@ mpf_complex_init(mpf_complex &z, mp_bitcnt_t prec)
     mpf_init2(z.re, prec);
     mpf_init2(z.im, prec);
 }
+
 static inline void
 mpf_complex_clear(mpf_complex &z)
 {
     mpf_clear(z.re);
     mpf_clear(z.im);
 }
+
 static inline void
 mpf_complex_set(mpf_complex &dst, const mpf_complex &src)
 {
     mpf_set(dst.re, src.re);
     mpf_set(dst.im, src.im);
 }
+
 static inline void
 mpf_complex_set_ui(mpf_complex &z, unsigned long re, unsigned long im)
 {
@@ -916,7 +919,27 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
 
 
 // =====================================================================================
-// LA Evaluation - uses linear approximation for faster period finding
+// LA Evaluation - fixed to match Imagina semantics:
+//
+// Key fixes vs your previous version:
+//  1) Apply the same ScalingFactor / InvScalingFactor contract as PT/direct.
+//  2) Update zcoeff/dzdc from *dz* (the delta state) and do it in the Imagina order:
+//        Prepare -> (zcoeff update) -> (dzdc update) -> dz update -> advance iteration/ref -> z update
+//        -> periodicity
+//  3) Periodicity uses TRUE ||dzdc|| (unscale via InvScale2) and uses the shared PeriodicityPP
+//  tightening logic. 4) Outputs are unscaled (multiply by InvScalingFactor) to match your direct
+//  conventions.
+//
+// NOTE: This assumes LAstep exposes methods analogous to Imagina:
+//
+//   - las.Prepare(dz, dc)  (or Prepare is done inside laRef.getLA; in that case you can ignore temp)
+//   - las.EvaluateDzdzDeep(dz, zcoeff, dc, ScalingFactorC)   // updates zcoeff for this macro-step
+//   - las.EvaluateDzdcDeep(dz, dzdc, dc, ScalingFactorC)     // updates dzdc for this macro-step
+//   - las.Evaluate(dz, dc) OR las.Evaluate(dc) returning new dz
+//
+// If your current LAstep only has Evaluate(dc) and EvaluateDzdcDeep(z, x),
+// you should *split* that API so zcoeff/dzdc updates take (dz, dc, ScalingFactor),
+// not absolute z, and not the previous-step z.
 // =====================================================================================
 template <class IterType, class T, PerturbExtras PExtras>
 template <bool FindPeriod>
@@ -944,27 +967,33 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     const T two = HdrReduce(T{2.0});
     const T escape2 = HdrReduce(T{4096.0});
 
-    T SqrNearLinearRadius{};
-    T SqrNearLinearRadiusScale{};
+    // --------------------------
+    // Radius / periodicity state
+    // --------------------------
+    PeriodicityPP<IterType, T, C> pp;
+    IterType prePeriod = 0;
+    IterType period = 0;
+
     if constexpr (FindPeriod) {
         HdrReduce(R);
         if (HdrCompareToBothPositiveReducedLE(R, zero)) {
             std::cout << "[LA Evaluate] FAIL: R <= 0\n";
             return false;
         }
-        SqrNearLinearRadius = R * R;
-        HdrReduce(SqrNearLinearRadius);
-
-        const T near1 = HdrReduce(T{0.25});
-        SqrNearLinearRadiusScale = near1 * near1;
-        HdrReduce(SqrNearLinearRadiusScale);
+        pp.Init(R);
     }
 
+    // --------------------------
+    // dc = c - referenceCenter
+    // --------------------------
     const HighPrecision dcX_hp = cX_hp - results.GetHiX();
     const HighPrecision dcY_hp = cY_hp - results.GetHiY();
     C dc(ToDouble(dcX_hp), ToDouble(dcY_hp));
     dc.Reduce();
 
+    // --------------------------
+    // Cap
+    // --------------------------
     IterTypeFull cap;
     if constexpr (FindPeriod) {
         cap = maxIters;
@@ -977,69 +1006,106 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
         return false;
     }
 
-    C dz{};
-    C z{};
-    C dzdc{};
-    C zcoeff{};
+    // --------------------------
+    // ScalingFactor contract (same as PT)
+    // --------------------------
+    int scaleExp = 0;
+    const T ScalingFactor = HdrLdexp(one, -scaleExp);   // 2^-scaleExp
+    const T InvScalingFactor = HdrLdexp(one, scaleExp); // 2^scaleExp
 
-    dz.Reduce();
-    z.Reduce();
-    dzdc.Reduce();
-    zcoeff.Reduce();
+    const C ScalingFactorC(ScalingFactor, T{});
+    const C InvScalingFactorC(InvScalingFactor, T{});
+
+    // For periodicity: TRUE ||dzdc||^2 = STORED ||dzdc||^2 * (InvScalingFactor^2)
+    T InvScale2 = InvScalingFactor * InvScalingFactor;
+    HdrReduce(InvScale2);
+
+    // --------------------------
+    // State (matches Imagina)
+    // --------------------------
+    C dz{};
+    dz.Reduce(); // delta state
+    C z{};
+    z.Reduce(); // absolute z = ref + dz
+    C dzdc{};
+    dzdc.Reduce(); // STORED scaled: true * ScalingFactor
+    C zcoeff{};
+    zcoeff.Reduce(); // STORED scaled: true * ScalingFactor
 
     IterTypeFull iteration = 0;
-    IterType laStageCount = laRef.GetLAStageCount();
+    const IterType laStageCount = laRef.GetLAStageCount();
 
     // Process LA stages from highest to lowest (coarse to fine)
     for (IterType currentLAStage = laStageCount; currentLAStage > 0 && iteration < cap;) {
         --currentLAStage;
 
-        IterType laIndex = laRef.getLAIndex(currentLAStage);
-        IterType macroItCount = laRef.getMacroItCount(currentLAStage);
+        const IterType laIndex = laRef.getLAIndex(currentLAStage);
+        const IterType macroItCount = laRef.getMacroItCount(currentLAStage);
 
-        // Check if dc is within LA threshold for this stage
+        // Stage validity check (Imagina: ChebyshevNorm(dc) >= LA[0].LAThresholdC => jump out)
         if (laRef.isLAStageInvalid(laIndex, dc)) {
-            continue; // Try next (finer) stage
+            continue;
         }
 
         IterType refIteration = 0;
 
         while (iteration < cap) {
-            auto las = laRef.getLA(laIndex,
-                                   dz,
-                                   refIteration,
-                                   static_cast<IterType>(iteration),
-                                   static_cast<IterType>(cap));
+            // Get the LA step description for this (laIndex, refIteration, iteration)
+            // NOTE: laRef.getLA takes dz and returns an LAstep which contains:
+            //       - unusable
+            //       - step (macro step length)
+            //       - access to ZCoeff and the reference z
+            auto las = laRef.getLA(
+                laIndex, dz, refIteration, static_cast<IterType>(iteration), static_cast<IterType>(cap));
 
             if (las.unusable) {
-                // Fall through to next stage or PT
+                // In Imagina, unusable triggers a jump to a different LA index for the same stage.
+                // If/when your LAInfoI exposes NextStageLAIndex, do it here.
+                // For now, fall through to try the next (finer) stage (or PT fallback).
                 break;
             }
 
-            // Update zcoeff
+            // ------------------------------------------------------------
+            // Imagina order:
+            //   Prepare(dz, dc) -> update zcoeff -> update dzdc -> update dz -> advance it/ref ->
+            //   compute z -> periodicity
+            //
+            // IMPORTANT: these updates must depend on (dz, dc, ScalingFactor), NOT absolute z.
+            // ------------------------------------------------------------
+
+            // zcoeff (scaled)
             if (iteration == 0) {
-                zcoeff = C(one, T{}) * las.LAjdeep->getZCoeff();
+                // Imagina: zcoeff = ScalingFactor * LA[RefIteration].ZCoeff;
+                zcoeff = ScalingFactorC * las.LAjdeep->getZCoeff();
             } else {
-                zcoeff = las.EvaluateDzdcDeep(z, zcoeff);
+                // Imagina: LA[RefIteration].EvaluateDzdz(temp, dz, zcoeff, dc, ScalingFactor)
+                las.EvaluateDzdz(dz, zcoeff, dc);
             }
             zcoeff.Reduce();
 
-            // Update dzdc
-            dzdc = las.EvaluateDzdcDeep(z, dzdc);
+            // dzdc (scaled)
+            // Imagina: LA[RefIteration].EvaluateDzdc(temp, dz, dzdc, dc, ScalingFactor)
+            las.EvaluateDzdcDeep(dz, dzdc, ScalingFactor);
             dzdc.Reduce();
 
-            // Evaluate LA step: dz = newdz * ZCoeff + dc * CCoeff
-            dz = las.Evaluate(dc);
+            // dz update
+            // Imagina: LA[RefIteration].Evaluate(temp, dz, dc)
+            // If your LAstep currently only provides Evaluate(dc) returning a new dz, that’s fine:
+            // just make sure it’s equivalent to Evaluate(temp, dz, dc).
+            dz = las.Evaluate(dz, dc);
             dz.Reduce();
 
+            // Advance iteration/refIteration (Imagina: Iteration += StepLength; RefIteration++; z = dz +
+            // Ref[RefIteration])
             iteration += las.step;
             refIteration++;
 
-            // Get z from reference + delta
+            // Compute z (absolute) from reference + dz
             z = las.getZ(dz);
             z.Reduce();
 
-            // Rebasing check
+            // Rebasing check (Imagina: if RefIteration == MacroItCount || ChebyshevNorm(dz) >
+            // ChebyshevNorm(z))
             if (refIteration >= macroItCount ||
                 HdrCompareToBothPositiveReducedGT(ChebAbs(dz), ChebAbs(z))) {
                 dz = z;
@@ -1047,56 +1113,46 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
                 refIteration = 0;
             }
 
+            // Escape check
             T zNorm = z.norm_squared();
             HdrReduce(zNorm);
 
-            // Escape check
             if (HdrCompareToBothPositiveReducedGT(zNorm, escape2)) {
                 std::cout << "[LA Evaluate] FAIL: escape at iteration=" << iteration << "\n";
                 return false;
             }
 
-            // Period detection (when FindPeriod=true)
+            // Period detection
             if constexpr (FindPeriod) {
-                T d2 = dzdc.norm_squared();
-                HdrReduce(d2);
+                // Use TRUE dzdc norm for periodicity (Imagina does norm(dzdc) in true space)
+                T dzdcNormStored = dzdc.norm_squared();
+                HdrReduce(dzdcNormStored);
 
-                T rhs = SqrNearLinearRadius * d2;
-                HdrReduce(rhs);
+                T dzdcNormTrue = dzdcNormStored * InvScale2;
+                HdrReduce(dzdcNormTrue);
 
-                if (HdrCompareToBothPositiveReducedLT(zNorm, rhs)) {
-                    if (iteration <=
-                        static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
-                        ioPeriod = static_cast<IterType>(iteration);
-                        outDiff = z;
-                        outDzdc = dzdc;
-                        outZcoeff = zcoeff;
-                        outResidual2 = zNorm;
-                        std::cout << "[LA Evaluate] SUCCESS: found period=" << iteration << "\n";
-                        return true;
-                    }
-                    std::cout << "[LA Evaluate] FAIL: period overflow\n";
-                    return false;
-                }
+                const IterType IterationIt = static_cast<IterType>(iteration);
 
-                // Tighten radius
-                if (HdrCompareToBothPositiveReducedGT(d2, zero)) {
-                    T lhsTighten = zNorm * SqrNearLinearRadiusScale;
-                    HdrReduce(lhsTighten);
+                if (pp.CheckPeriodicity(zNorm, dzdcNormTrue, IterationIt, prePeriod, period)) {
+                    ioPeriod = period; // (prePeriod always 0 for periodic-point path)
 
-                    if (HdrCompareToBothPositiveReducedLT(lhsTighten, rhs)) {
-                        T newSqr = lhsTighten / d2;
-                        HdrReduce(newSqr);
-                        if (HdrCompareToBothPositiveReducedGT(newSqr, zero)) {
-                            SqrNearLinearRadius = newSqr;
-                        }
-                    }
+                    // Unscale outputs to match DIRECT conventions
+                    outDiff = z;
+                    outDzdc = dzdc * InvScalingFactorC;
+                    outZcoeff = zcoeff * InvScalingFactorC;
+
+                    outDiff.Reduce();
+                    outDzdc.Reduce();
+                    outZcoeff.Reduce();
+
+                    outResidual2 = zNorm;
+                    return true;
                 }
             }
-        }
-    }
+        } // while iteration < cap
+    } // for stages
 
-    // If LA didn't complete, return false to trigger fallback
+    // If LA didn't reach cap, let caller fall back (PT/direct)
     if (iteration < cap) {
         std::cout << "[LA Evaluate] INFO: LA incomplete at iteration=" << iteration
                   << ", needs fallback\n";
@@ -1106,17 +1162,25 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     if constexpr (FindPeriod) {
         std::cout << "[LA Evaluate] FAIL: no trigger found\n";
         return false;
-    } else {
-        outDiff = z;
-        outResidual2 = z.norm_squared();
-        HdrReduce(outResidual2);
-        outDzdc = dzdc;
-        outZcoeff = zcoeff;
-        std::cout << "[LA Evaluate] SUCCESS: period=" << ioPeriod
-                  << " residual2=" << HdrToString<false, T>(outResidual2) << "\n";
-        return true;
     }
+
+    // Fixed-period path: return final state (unscaled) at ioPeriod==cap
+    outDiff = z;
+    outResidual2 = z.norm_squared();
+    HdrReduce(outResidual2);
+
+    outDzdc = dzdc * InvScalingFactorC;
+    outZcoeff = zcoeff * InvScalingFactorC;
+
+    outDiff.Reduce();
+    outDzdc.Reduce();
+    outZcoeff.Reduce();
+
+    std::cout << "[LA Evaluate] SUCCESS: period=" << ioPeriod
+              << " residual2=" << HdrToString<false, T>(outResidual2) << "\n";
+    return true;
 }
+
 
 // DirectEvaluator::Eval implementation
 template <class IterType, class T, PerturbExtras PExtras>

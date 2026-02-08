@@ -26,7 +26,7 @@ public:
         Params()
             : MaxNewtonIters(32), RelStepTol{0x1p-40}, // 2^-40
               RelStepTol2{0x1p-80},                    // 2^-80
-              Eps2Accept{}, DampMin{0.1}, DampMax{1.0}, PrintResult(true)
+              Eps2Accept{}, DampMin{0.1f}, DampMax{1.0f}, PrintResult(true)
         {
             HdrReduce(RelStepTol);
             HdrReduce(RelStepTol2);

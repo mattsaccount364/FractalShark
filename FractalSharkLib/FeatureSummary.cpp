@@ -17,7 +17,7 @@ void
 FeatureSummary::SetFound(const HighPrecision &foundX,
                          const HighPrecision &foundY,
                          IterTypeFull period,
-                         T residual2,
+                         HDRFloat<double> residual2,
                          const HighPrecision &intrinsicRadius)
 {
     FoundX = foundX;
@@ -53,7 +53,7 @@ void
 FeatureSummary::SetCandidate(const HighPrecision &candidateX,
                              const HighPrecision &candidateY,
                              IterTypeFull period,
-                             T residual2,
+                             HDRFloat<double> residual2,
                              const HighPrecision &sqrRadius_hp,
                              int scaleExp2_for_mpf,
                              mp_bitcnt_t mpfPrecBits)
@@ -131,7 +131,7 @@ FeatureSummary::GetPeriod() const
     return Period;
 }
 
-FeatureSummary::T
+HDRFloat<double>
 FeatureSummary::GetResidual2() const
 {
     return Residual2;

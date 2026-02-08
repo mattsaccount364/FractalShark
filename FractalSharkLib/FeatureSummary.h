@@ -37,8 +37,6 @@ struct PeriodicPointCandidate {
 
 class FeatureSummary {
 public:
-    using T = HDRFloat<double>;
-
     FeatureSummary(const HighPrecision &origX,
                    const HighPrecision &origY,
                    const HighPrecision &radius,
@@ -48,7 +46,7 @@ public:
     void SetFound(const HighPrecision &foundX,
                   const HighPrecision &foundY,
                   IterTypeFull period,
-                  T residual2,
+                  HDRFloat<double> residual2,
                   const HighPrecision &intrinsicRadius);
 
     // Candidate management (nullable)
@@ -59,7 +57,7 @@ public:
     void SetCandidate(const HighPrecision &candidateX,
                       const HighPrecision &candidateY,
                       IterTypeFull period,
-                      T residual2,
+                      HDRFloat<double> residual2,
                       const HighPrecision &sqrRadius_hp,
                       int scaleExp2_for_mpf,
                       mp_bitcnt_t mpfPrecBits);
@@ -78,7 +76,7 @@ public:
     size_t GetPrecision() const;
 
     IterTypeFull GetPeriod() const;
-    T GetResidual2() const;
+    HDRFloat<double> GetResidual2() const;
 
     const HighPrecision &GetIntrinsicRadius() const;
 
@@ -101,7 +99,7 @@ private:
     HighPrecision IntrinsicRadius;
 
     IterTypeFull Period{};
-    T Residual2{};
+    HDRFloat<double> Residual2{};
 
     int screenXStart{0};
     int screenYStart{0};

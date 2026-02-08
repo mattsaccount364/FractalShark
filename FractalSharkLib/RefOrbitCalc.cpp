@@ -3475,6 +3475,7 @@ RefOrbitCalc::LoadOrbitConstInternal(OrbitParameterPack &params,
 
     // Based on the precision of halfH, determine the type
     uint64_t precision = -std::min(0ll, halfH.getExp()) + AuthoritativeMinExtraPrecisionInBits;
+    HighPrecision::defaultPrecisionInBits(precision);
 
     // Convert to zoom factor
     HighPrecision zoomFactor{};
@@ -3501,7 +3502,7 @@ RefOrbitCalc::LoadOrbitConstInternal(OrbitParameterPack &params,
         uint64_t curPos2 = file->tellg();
     }
 
-    RecommendedSettings settingsOut{orbitX, orbitY, zoomFactor, {}, iterationLimit};
+    RecommendedSettings settingsOut{precision, orbitX, orbitY, zoomFactor, {}, iterationLimit};
 
     bool extendedRange = false;
     OrbitParameterPack::IncludedOrbit includedOrbit = OrbitParameterPack::IncludedOrbit::NoOrbit;

@@ -1070,7 +1070,7 @@ template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
 bool
 LAReference<IterType, Float, SubType, PExtras>::isLAStageInvalid(IterType LAIndex, FloatComplexT dc)
 {
-    return (dc.chebychevNorm().compareToBothPositiveReduced((m_LAs[LAIndex]).getLAThresholdC()) >= 0);
+    return HdrCompareToBothPositiveReducedLT(dc.chebychevNorm(), m_LAs[LAIndex].getLAThresholdC());
 }
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
@@ -1129,6 +1129,17 @@ LAReference<IterType, Float, SubType, PExtras>::getLA(IterType LAIndex,
 
 #define InitializeLAReference(IterType, T, SubType, PExtras)                                            \
     template class LAReference<IterType, T, SubType, PExtras>;
+
+InitializeLAReference(uint32_t, float, float, PerturbExtras::Disable);
+InitializeLAReference(uint64_t, float, float, PerturbExtras::Disable);
+InitializeLAReference(uint32_t, double, double, PerturbExtras::Disable);
+InitializeLAReference(uint64_t, double, double, PerturbExtras::Disable);
+
+InitializeLAReference(uint32_t, float, float, PerturbExtras::SimpleCompression);
+InitializeLAReference(uint64_t, float, float, PerturbExtras::SimpleCompression);
+InitializeLAReference(uint32_t, double, double, PerturbExtras::SimpleCompression);
+InitializeLAReference(uint64_t, double, double, PerturbExtras::SimpleCompression);
+
 
 InitializeLAReference(uint32_t, HDRFloat<float>, float, PerturbExtras::Disable);
 InitializeLAReference(uint64_t, HDRFloat<float>, float, PerturbExtras::Disable);

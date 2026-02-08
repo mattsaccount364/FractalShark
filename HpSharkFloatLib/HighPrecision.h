@@ -43,6 +43,10 @@ public:
     void
     InitMpf2(uint64_t precisionInBits)
     {
+        if (precisionInBits > 1'000'000) {
+            throw std::runtime_error("Requested precision is too high.  This is probably a bug..");
+        }
+
         mpf_init2(m_Data, precisionInBits);
     }
 
@@ -80,7 +84,7 @@ public:
 
     HighPrecisionT(uint64_t precisionInBits, std::istream &file)
     {
-        mpf_init2(m_Data, precisionInBits);
+        InitMpf2(precisionInBits);
         MpirSerialization::mpf_inp_raw_stream(file, m_Data);
     }
 
@@ -158,7 +162,7 @@ public:
 
     explicit HighPrecisionT(SetPrecision /*setPrecision*/, uint64_t precisionInBits)
     {
-        mpf_init2(m_Data, precisionInBits);
+        InitMpf2(precisionInBits);
     }
 
     explicit HighPrecisionT(double data)
@@ -373,6 +377,10 @@ public:
     static void
     defaultPrecisionInBits(uint64_t prec)
     {
+        if (prec > 1'000'000) {
+            throw std::runtime_error("Requested precision is too high.  This is probably a bug..");
+        }
+
         mpf_set_default_prec(prec);
     }
 

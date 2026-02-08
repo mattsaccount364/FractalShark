@@ -119,7 +119,7 @@ approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mpf_t 
 }
 
 // ------------------------------------------------------------
-// EvaluateCriticalOrbitAndDerivs (option 2 pipeline)
+// EvaluateCriticalOrbitAndDerivs
 //
 // z_coord:      mpf (coord_prec) orbit
 // dzdc_deriv:   mpf (deriv_prec) first derivative
@@ -157,8 +157,8 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
     mpf_set_ui(dzdc_deriv.re, 0);
     mpf_set_ui(dzdc_deriv.im, 0);
 
-    d2r_hdr = T{};
-    d2i_hdr = T{};
+    T local_d2r = T{};
+    T local_d2i = T{};
 
     // HDR scratch (kept local; no helpers)
     T zr, zi, dzr, dzi;
@@ -181,21 +181,30 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
         // Promote mpf -> HDRFloat inline using HDRFloat(mpf_t) ctor.
         // ============================================================
 
-        zr = T(z_deriv.re);
-        zi = T(z_deriv.im);
-        dzr = T(dzdc_deriv.re);
-        dzi = T(dzdc_deriv.im);
+        if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float>) {
+             // Fast path for common floating types: convert directly to T (potentially lossy, but we just want an approximation for the HDR math)
+             zr =  static_cast<T>(mpf_get_d(z_deriv.re));
+             zi =  static_cast<T>(mpf_get_d(z_deriv.im));
+             dzr = static_cast<T>(mpf_get_d(dzdc_deriv.re));
+             dzi = static_cast<T>(mpf_get_d(dzdc_deriv.im));
+        } else {
+             // Slow path for other HDRFloat types: convert to double first, then to T
+             zr = T(z_deriv.re);
+             zi = T(z_deriv.im);
+             dzr = T(dzdc_deriv.re);
+             dzi = T(dzdc_deriv.im);
+        }
 
         // dzdc^2:
         //   (dzr + i*dzi)^2 = (dzr^2 - dzi^2) + i*(2*dzr*dzi)
         {
-            const T dzr2 = dzr.square();
-            const T dzi2 = dzi.square();
+            const T dzr2 = dzr * dzr;
+            const T dzi2 = dzi * dzi;
 
             dz2r = dzr2 - dzi2;
             HdrReduce(dz2r);
 
-            dz2i = (dzr * dzi).multiply2(); // 2*dzr*dzi
+            dz2i = T{2.0} * (dzr * dzi); // 2*dzr*dzi
             HdrReduce(dz2i);
         }
 
@@ -203,13 +212,13 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
         //   (zr + i*zi)*(d2r + i*d2i)
         // = (zr*d2r - zi*d2i) + i*(zr*d2i + zi*d2r)
         {
-            const T zr_d2r = zr * d2r_hdr;
-            const T zi_d2i = zi * d2i_hdr;
+            const T zr_d2r = zr * local_d2r;
+            const T zi_d2i = zi * local_d2i;
             zd2r = zr_d2r - zi_d2i;
             HdrReduce(zd2r);
 
-            const T zr_d2i = zr * d2i_hdr;
-            const T zi_d2r = zi * d2r_hdr;
+            const T zr_d2i = zr * local_d2i;
+            const T zi_d2r = zi * local_d2r;
             zd2i = zr_d2i + zi_d2r;
             HdrReduce(zd2i);
         }
@@ -221,8 +230,8 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
         HdrReduce(sumi);
 
         // d2 = 2*sum
-        d2r_hdr = sumr.multiply2();
-        d2i_hdr = sumi.multiply2();
+        local_d2r = T{2.0} * sumr;
+        local_d2i = T{2.0} * sumi;
         // multiply2 is exponent-only; reduce optional, but safe:
         // HdrReduce(d2r_hdr); HdrReduce(d2i_hdr);
 
@@ -272,6 +281,9 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
         mpf_add(z_coord.re, tmpZ_coord.re, c_coord.re);
         mpf_add(z_coord.im, tmpZ_coord.im, c_coord.im);
     }
+
+    d2r_hdr = HDRFloat<double>(local_d2r);
+    d2i_hdr = HDRFloat<double>(local_d2i);
 }
 
 // ------------------------------------------------------------
@@ -345,8 +357,8 @@ ComputeHalleyStep_mpf_coord_from_deriv(
     mpf_complex &step_coord,       // coord_prec (out)
     const mpf_complex &z_coord,    // coord_prec  F
     const mpf_complex &dzdc_deriv, // deriv_prec  F'
-    const T &d2r_hdr,              // low-prec F'' real
-    const T &d2i_hdr,              // low-prec F'' imag
+    const HDRFloat<double> &d2r_hdr,              // low-prec F'' real
+    const HDRFloat<double> &d2i_hdr,              // low-prec F'' imag
     mpf_complex &dzdc_coord,       // coord_prec scratch (promoted F')
     mpf_complex &tmp1,             // coord_prec scratch complex
     mpf_complex &tmp2,             // coord_prec scratch complex
@@ -566,19 +578,19 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     mpf_complex_init(htmp2, coord_prec);
 
     // ---------------- d2 output (HDRFloat) ----------------
-    T d2r_hdr{}, d2i_hdr{};
+    HDRFloat<double> d2r_hdr{}, d2i_hdr{};
 
     // ---------------- HDRFloat err pipeline scalars ----------------
-    T normStep_hdr{};
-    T normStep2_hdr{};
-    T d2Norm_hdr{};
-    T dzdcNorm_hdr{};
-    T err_hdr{};
+    HDRFloat<double> normStep_hdr{};
+    HDRFloat<double> normStep2_hdr{};
+    HDRFloat<double> d2Norm_hdr{};
+    HDRFloat<double> dzdcNorm_hdr{};
+    HDRFloat<double> err_hdr{};
 
     // Halley gate scalars
-    T zNorm_hdr{};
-    T rho2_hdr{};
-    T dzdcNormSq_hdr{}; // (|dzdc|^2)^2 i.e. |dzdc|^4
+    HDRFloat<double> zNorm_hdr{};
+    HDRFloat<double> rho2_hdr{};
+    HDRFloat<double> dzdcNormSq_hdr{}; // (|dzdc|^2)^2 i.e. |dzdc|^4
 
     // Imagina stop threshold: Precision*2 in exponent space
     const int targetExp = int(coord_prec) * 2;
@@ -613,7 +625,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
         // |z|^2 (mpf -> HDRFloat)
         mpf_complex_norm(zNormSq_mpf, z_coord, t1_c, t2_c);
-        zNorm_hdr = T(zNormSq_mpf);
+        zNorm_hdr = HDRFloat<double>{zNormSq_mpf};
         HdrReduce(zNorm_hdr);
 
         // |d2|^2 (HDRFloat)
@@ -622,8 +634,8 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
         // |dzdc|^2 (mpf -> HDRFloat)
         {
-            T dzr = T(dzdc_deriv.re);
-            T dzi = T(dzdc_deriv.im);
+            HDRFloat<double> dzr{dzdc_deriv.re};
+            HDRFloat<double> dzi{dzdc_deriv.im};
             HdrReduce(dzr);
             HdrReduce(dzi);
 
@@ -704,7 +716,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         // ------------------------------------------------------------
         mpf_complex_norm(normStep, step_coord, t1_c, t2_c);
 
-        normStep_hdr = T(normStep);
+        normStep_hdr = HDRFloat<double>(normStep);
         HdrReduce(normStep_hdr);
 
         normStep2_hdr = normStep_hdr.square(); // |step|^4
@@ -1784,7 +1796,7 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
     feature.SetFound(cX_hp,
                      cY_hp,
                      (IterType)period,
-                     /*residual2*/ T{},
+                     HDRFloat<double>{},
                      /*intrinsicRadius*/ HighPrecision{0});
 
     // Optionally keep candidate (or clear it)
@@ -2081,64 +2093,64 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_AtPeriod(
     template class FeatureFinder<IterTypeT, TT, PExtrasT>;
 
 //// ---- Disable ----
-// InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Disable);
-// InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Disable);
-//
-//  InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Disable);
-//  InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Disable);
-//
-//  InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
-//  InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
-//
+InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Disable);
+InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Disable);
+
+InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Disable);
+InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Disable);
+
+// InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+// InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+
 InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Disable);
 InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Disable);
-//
-// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Disable);
-// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Disable);
-//
+
+InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Disable);
+InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Disable);
+
 // InstantiatePeriodicPointFinder(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 // InstantiatePeriodicPointFinder(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 //
-//// ---- Bad ----
-// InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Bad);
-// InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Bad);
-//
-// InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Bad);
-// InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Bad);
-//
-// InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
-// InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
-//
-// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Bad);
-// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Bad);
-//
-// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Bad);
-// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Bad);
-//
-// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-//
-//// ---- SimpleCompression ----
-// InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::SimpleCompression);
-// InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::SimpleCompression);
-//
-// InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::SimpleCompression);
-// InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::SimpleCompression);
-//
-// InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
-// InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
-//
-// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
-// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
-//
-// InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
-// InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
-//
-// InstantiatePeriodicPointFinder(uint32_t,
-//                                HDRFloat<CudaDblflt<MattDblflt>>,
-//                                PerturbExtras::SimpleCompression);
-// InstantiatePeriodicPointFinder(uint64_t,
-//                                HDRFloat<CudaDblflt<MattDblflt>>,
-//                                PerturbExtras::SimpleCompression);
+// ---- Bad ----
+//InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::Bad);
+//InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Bad);
+
+//InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Bad);
+//InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Bad);
+
+//InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+//InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+
+//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::Bad);
+//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Bad);
+
+//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Bad);
+//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Bad);
+
+//InstantiatePeriodicPointFinder(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+//InstantiatePeriodicPointFinder(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+
+// ---- SimpleCompression ----
+InstantiatePeriodicPointFinder(uint32_t, double, PerturbExtras::SimpleCompression);
+InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::SimpleCompression);
+
+InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::SimpleCompression);
+InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::SimpleCompression);
+
+//InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+//InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+
+InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
+InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
+
+InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
+InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
+
+//InstantiatePeriodicPointFinder(uint32_t,
+//                               HDRFloat<CudaDblflt<MattDblflt>>,
+//                               PerturbExtras::SimpleCompression);
+//InstantiatePeriodicPointFinder(uint64_t,
+//                               HDRFloat<CudaDblflt<MattDblflt>>,
+//                               PerturbExtras::SimpleCompression);
 
 #undef InstantiatePeriodicPointFinder

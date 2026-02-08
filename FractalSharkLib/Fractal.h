@@ -62,7 +62,7 @@ public:
     // Kludgy.  Resets at end of function.
     // Roughly 50000 digits of precision (50000 * 3.321)
     // SetPrecision(166050, minX, minY, maxX, maxY);
-    static constexpr size_t MaxPrecisionLame = 400000;
+    static constexpr size_t MaxPrecisionLame = 500000;
 
     uint64_t GetPrecision() const;
     static uint64_t GetPrecision(const PointZoomBBConverter &ptz, bool requiresReuse);
@@ -237,6 +237,12 @@ public:
     bool GpuBypassed() const;
 
     void TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
+
+    template<typename IterType>
+    void TryFindPeriodicPointIterType(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
+
+    template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
+    void TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
 
     HighPrecision ComputeZoomFactorForFeature(const FeatureSummary &feature) const;
 

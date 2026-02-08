@@ -88,38 +88,6 @@ ChooseDerivPrec_ImaginaStyle(mp_bitcnt_t coord_prec,
     return (mp_bitcnt_t)dp;
 }
 
-// out = a*b (alias-safe)  -- provided by you
-static inline void
-mpf_complex_mul_safe(
-    mpf_complex &out, const mpf_complex &a, const mpf_complex &b, mpf_t tr, mpf_t ti, mpf_t t1, mpf_t t2)
-{
-    mpf_mul(t1, a.re, b.re);
-    mpf_mul(t2, a.im, b.im);
-    mpf_sub(tr, t1, t2);
-
-    mpf_mul(t1, a.re, b.im);
-    mpf_mul(t2, a.im, b.re);
-    mpf_add(ti, t1, t2);
-
-    mpf_set(out.re, tr);
-    mpf_set(out.im, ti);
-}
-
-// out = a^2 (alias-safe)  -- provided by you
-static inline void
-mpf_complex_sqr_safe(mpf_complex &out, const mpf_complex &a, mpf_t tr, mpf_t ti, mpf_t t1, mpf_t t2)
-{
-    mpf_mul(t1, a.re, a.re);
-    mpf_mul(t2, a.im, a.im);
-    mpf_sub(tr, t1, t2);
-
-    mpf_mul(t1, a.re, a.im);
-    mpf_mul_ui(ti, t1, 2);
-
-    mpf_set(out.re, tr);
-    mpf_set(out.im, ti);
-}
-
 static inline void
 mpf_complex_norm(mpf_t out, const mpf_complex &z, mpf_t t1, mpf_t t2)
 {
@@ -151,32 +119,25 @@ approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mpf_t 
 }
 
 // ------------------------------------------------------------
-// EvaluateCriticalOrbitAndDerivs
+// EvaluateCriticalOrbitAndDerivs (option 2 pipeline)
 //
-// Purpose:
-//   - "Mandelbrot / critical orbit" part (coord_prec):
-//       z_{n+1} = z_n^2 + c,  starting from z_0 = 0
+// z_coord:      mpf (coord_prec) orbit
+// dzdc_deriv:   mpf (deriv_prec) first derivative
+// d2r_hdr/d2i_hdr: HDRFloat (low precision, huge exponent) second derivative
 //
-//   - "Derivative" part (deriv_prec):
-//       dz/dc recurrence:      (dz/dc)_{n+1} = 2*z_n*(dz/dc)_n + 1
-//       d2z/dc2 recurrence:    (d2)_{n+1}    = 2*((dz/dc)_n^2 + z_n*(d2)_n)
-//
-// Notes:
-//   - z_coord is maintained at coord_prec.
-//   - dzdc_deriv, d2zdc2_deriv are maintained at deriv_prec.
-//   - Each iter, we copy z_coord -> z_deriv (rounded to deriv_prec by mpf_set into deriv-prec vars).
-//   - All complex mul/sqr are inlined for clarity and to avoid helper indirection.
+// No mpf d2 anywhere.
 // ------------------------------------------------------------
+template <typename IterType, typename T>
 static inline void
 EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
                                uint64_t period,
                                mpf_complex &z_coord,      // coord_prec (output z_p)
                                mpf_complex &dzdc_deriv,   // deriv_prec (output dzdc_p)
-                               mpf_complex &d2zdc2_deriv, // deriv_prec (output d2_p)
+                               HDRFloat<double> &d2r_hdr, // out
+                               HDRFloat<double> &d2i_hdr, // out
                                mpf_complex &z_deriv,      // deriv_prec (scratch: z rounded)
-                               mpf_complex &tmpA_deriv,   // deriv_prec
-                               mpf_complex &tmpB_deriv,   // deriv_prec
-                               mpf_complex &tmpZ_coord,   // coord_prec
+                               mpf_complex &tmpB_deriv,   // deriv_prec (scratch)
+                               mpf_complex &tmpZ_coord,   // coord_prec (scratch)
                                mpf_t tr_d,
                                mpf_t ti_d,
                                mpf_t t1_d,
@@ -190,15 +151,21 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
     // -------------------------
     // Initialize state
     // -------------------------
-    // Mandelbrot orbit state (coord precision): z = 0
     mpf_set_ui(z_coord.re, 0);
     mpf_set_ui(z_coord.im, 0);
 
-    // Derivatives (deriv precision): dzdc = 0, d2 = 0
     mpf_set_ui(dzdc_deriv.re, 0);
     mpf_set_ui(dzdc_deriv.im, 0);
-    mpf_set_ui(d2zdc2_deriv.re, 0);
-    mpf_set_ui(d2zdc2_deriv.im, 0);
+
+    d2r_hdr = T{};
+    d2i_hdr = T{};
+
+    // HDR scratch (kept local; no helpers)
+    T zr, zi, dzr, dzi;
+
+    T dz2r, dz2i; // dzdc^2
+    T zd2r, zd2i; // z*d2
+    T sumr, sumi; // dzdc^2 + z*d2
 
     for (uint64_t i = 0; i < period; ++i) {
 
@@ -209,66 +176,70 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
         mpf_set(z_deriv.im, z_coord.im);
 
         // ============================================================
-        // DERIVATIVE SECTION (deriv_prec)
+        // d2 SECTION (HDRFloat):  d2 <- 2*(dzdc^2 + z*d2)
+        //
+        // Promote mpf -> HDRFloat inline using HDRFloat(mpf_t) ctor.
         // ============================================================
 
-        // ---- d2 <- 2*(dzdc^2 + z*d2)
+        zr = T(z_deriv.re);
+        zi = T(z_deriv.im);
+        dzr = T(dzdc_deriv.re);
+        dzi = T(dzdc_deriv.im);
 
-        // tmpA_deriv = dzdc_deriv^2   (complex square)
-        //   (a+bi)^2 = (a^2 - b^2) + (2ab)i
+        // dzdc^2:
+        //   (dzr + i*dzi)^2 = (dzr^2 - dzi^2) + i*(2*dzr*dzi)
         {
-            // tr_d = ar^2 - ai^2
-            mpf_mul(t1_d, dzdc_deriv.re, dzdc_deriv.re); // t1 = ar^2
-            mpf_mul(t2_d, dzdc_deriv.im, dzdc_deriv.im); // t2 = ai^2
-            mpf_sub(tr_d, t1_d, t2_d);
+            const T dzr2 = dzr.square();
+            const T dzi2 = dzi.square();
 
-            // ti_d = 2*ar*ai
-            mpf_mul(t1_d, dzdc_deriv.re, dzdc_deriv.im); // t1 = ar*ai
-            mpf_mul_ui(ti_d, t1_d, 2);
+            dz2r = dzr2 - dzi2;
+            HdrReduce(dz2r);
 
-            mpf_set(tmpA_deriv.re, tr_d);
-            mpf_set(tmpA_deriv.im, ti_d);
+            dz2i = (dzr * dzi).multiply2(); // 2*dzr*dzi
+            HdrReduce(dz2i);
         }
 
-        // tmpB_deriv = z_deriv * d2zdc2_deriv  (complex multiply)
-        //   (ar+ai i)*(br+bi i) = (ar*br - ai*bi) + (ar*bi + ai*br)i
+        // z*d2:
+        //   (zr + i*zi)*(d2r + i*d2i)
+        // = (zr*d2r - zi*d2i) + i*(zr*d2i + zi*d2r)
         {
-            // tr_d = zr*d2r - zi*d2i
-            mpf_mul(t1_d, z_deriv.re, d2zdc2_deriv.re);
-            mpf_mul(t2_d, z_deriv.im, d2zdc2_deriv.im);
-            mpf_sub(tr_d, t1_d, t2_d);
+            const T zr_d2r = zr * d2r_hdr;
+            const T zi_d2i = zi * d2i_hdr;
+            zd2r = zr_d2r - zi_d2i;
+            HdrReduce(zd2r);
 
-            // ti_d = zr*d2i + zi*d2r
-            mpf_mul(t1_d, z_deriv.re, d2zdc2_deriv.im);
-            mpf_mul(t2_d, z_deriv.im, d2zdc2_deriv.re);
-            mpf_add(ti_d, t1_d, t2_d);
-
-            mpf_set(tmpB_deriv.re, tr_d);
-            mpf_set(tmpB_deriv.im, ti_d);
+            const T zr_d2i = zr * d2i_hdr;
+            const T zi_d2r = zi * d2r_hdr;
+            zd2i = zr_d2i + zi_d2r;
+            HdrReduce(zd2i);
         }
 
-        // tmpA_deriv += tmpB_deriv
-        mpf_add(tmpA_deriv.re, tmpA_deriv.re, tmpB_deriv.re);
-        mpf_add(tmpA_deriv.im, tmpA_deriv.im, tmpB_deriv.im);
+        // sum = dzdc^2 + z*d2
+        sumr = dz2r + zd2r;
+        sumi = dz2i + zd2i;
+        HdrReduce(sumr);
+        HdrReduce(sumi);
 
-        // d2zdc2_deriv = 2 * tmpA_deriv
-        mpf_mul_ui(d2zdc2_deriv.re, tmpA_deriv.re, 2);
-        mpf_mul_ui(d2zdc2_deriv.im, tmpA_deriv.im, 2);
+        // d2 = 2*sum
+        d2r_hdr = sumr.multiply2();
+        d2i_hdr = sumi.multiply2();
+        // multiply2 is exponent-only; reduce optional, but safe:
+        // HdrReduce(d2r_hdr); HdrReduce(d2i_hdr);
 
-        // ---- dzdc <- 2*z*dzdc + 1
+        // ============================================================
+        // dzdc SECTION (mpf, deriv_prec):  dzdc <- 2*z*dzdc + 1
+        // ============================================================
 
         // tmpB_deriv = 2*z_deriv
         mpf_mul_ui(tmpB_deriv.re, z_deriv.re, 2);
         mpf_mul_ui(tmpB_deriv.im, z_deriv.im, 2);
 
-        // dzdc_deriv = dzdc_deriv * tmpB_deriv   (complex multiply, alias-safe via temps)
+        // dzdc_deriv = dzdc_deriv * tmpB_deriv
         {
-            // tr_d = dzr*(2zr) - dzi*(2zi)
             mpf_mul(t1_d, dzdc_deriv.re, tmpB_deriv.re);
             mpf_mul(t2_d, dzdc_deriv.im, tmpB_deriv.im);
             mpf_sub(tr_d, t1_d, t2_d);
 
-            // ti_d = dzr*(2zi) + dzi*(2zr)
             mpf_mul(t1_d, dzdc_deriv.re, tmpB_deriv.im);
             mpf_mul(t2_d, dzdc_deriv.im, tmpB_deriv.re);
             mpf_add(ti_d, t1_d, t2_d);
@@ -277,23 +248,19 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
             mpf_set(dzdc_deriv.im, ti_d);
         }
 
-        // dzdc += 1 (real)
+        // +1 (real)
         mpf_add_ui(dzdc_deriv.re, dzdc_deriv.re, 1);
 
         // ============================================================
-        // MANDELBROT / ORBIT SECTION (coord_prec)
+        // ORBIT SECTION (mpf, coord_prec):  z <- z^2 + c
         // ============================================================
 
-        // ---- z <- z^2 + c
-
-        // tmpZ_coord = z_coord^2  (complex square at coord precision)
+        // tmpZ_coord = z_coord^2
         {
-            // tr_c = zr^2 - zi^2
             mpf_mul(t1_c, z_coord.re, z_coord.re);
             mpf_mul(t2_c, z_coord.im, z_coord.im);
             mpf_sub(tr_c, t1_c, t2_c);
 
-            // ti_c = 2*zr*zi
             mpf_mul(t1_c, z_coord.re, z_coord.im);
             mpf_mul_ui(ti_c, t1_c, 2);
 
@@ -314,6 +281,7 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
 //
 // dzdc is provided in deriv precision, so we promote to coord once.
 // ------------------------------------------------------------
+template <typename IterType, typename T>
 static inline bool
 ComputeNewtonStep_mpf_coord_from_deriv(mpf_complex &step_coord,       // coord_prec (out)
                                        const mpf_complex &z_coord,    // coord_prec
@@ -353,22 +321,167 @@ ComputeNewtonStep_mpf_coord_from_deriv(mpf_complex &step_coord,       // coord_p
 }
 
 // ------------------------------------------------------------
-// Imagina-style NR polish for periodic point (critical orbit):
+// Halley step computation in COORD precision (mpf) with LOW-PRECISION
+// second derivative carried in HDRFloat.
 //
-// Solve z_p(c) = 0 via Newton:
-//   step = z / dzdc
-//   c <- c - step
+// For F(c)=z_p(c), with F' = dzdc, F'' = d2zdc2:
 //
-// Stopping rule matches Imagina precise-locator:
-//   normStep = |step|^2
-//   err = normStep^2 * norm(d2) / norm(dzdc)
-// where norm(.) is squared magnitude.
+//   Δ_H = (2 * F * F') / (2*(F')^2 - F*F'')
 //
-// Stop when:  -ilogb(err) >= coord_prec*2
+// Here:
+//   - F is mpf (coord_prec): z_coord
+//   - F' is mpf (deriv_prec): dzdc_deriv, promoted to coord_prec mpf
+//   - F'' is HDRFloat (low-prec, huge exponent): d2r_hdr, d2i_hdr
+//       promoted to coord_prec mpf via HighPrecision->mpf_t
 //
-// Also performs one final correction pass, and rejects if
-// |c - c0|^2 > sqrRadius (Imagina FindPeriodicPoint does this).
+// Returns false if denominator is (near-)singular.
+//
+// NOTE: This is a "drop-in" step analogous to Newton's step.
+// You still update: c <- c - step
 // ------------------------------------------------------------
+template <typename IterType, typename T>
+static inline bool
+ComputeHalleyStep_mpf_coord_from_deriv_hdr_d2(
+    mpf_complex &step_coord,       // coord_prec (out)
+    const mpf_complex &z_coord,    // coord_prec  F
+    const mpf_complex &dzdc_deriv, // deriv_prec  F'
+    const T &d2r_hdr,              // low-prec F'' real
+    const T &d2i_hdr,              // low-prec F'' imag
+    mpf_complex &dzdc_coord,       // coord_prec scratch (promoted F')
+    mpf_complex &tmp1,             // coord_prec scratch complex
+    mpf_complex &tmp2,             // coord_prec scratch complex
+    mpf_t denom_c,                 // coord_prec scalar
+    mpf_t tr_c,
+    mpf_t ti_c, // coord_prec scalars
+    mpf_t t1_c,
+    mpf_t t2_c) // coord_prec scalars
+{
+    // -----------------------------
+    // Promote F' to coord precision
+    // -----------------------------
+    mpf_set(dzdc_coord.re, dzdc_deriv.re);
+    mpf_set(dzdc_coord.im, dzdc_deriv.im);
+
+    // -----------------------------
+    // Promote HDRFloat d2 -> mpf (coord_prec) into tmp2 (reuse as d2_coord)
+    //   tmp2 = d2_coord
+    // -----------------------------
+    {
+        HighPrecision d2r_hp, d2i_hp;
+        d2r_hdr.GetHighPrecision(d2r_hp);
+        d2i_hdr.GetHighPrecision(d2i_hp);
+        mpf_set(tmp2.re, *d2r_hp.backendRaw());
+        mpf_set(tmp2.im, *d2i_hp.backendRaw());
+    }
+
+    // tmp1 = dzdc_coord^2  (F')^2
+    // (a+bi)^2 = (a^2-b^2) + (2ab)i
+    {
+        mpf_mul(t1_c, dzdc_coord.re, dzdc_coord.re); // a^2
+        mpf_mul(t2_c, dzdc_coord.im, dzdc_coord.im); // b^2
+        mpf_sub(tr_c, t1_c, t2_c);                   // re
+
+        mpf_mul(t1_c, dzdc_coord.re, dzdc_coord.im); // ab
+        mpf_mul_ui(ti_c, t1_c, 2);                   // im
+
+        mpf_set(tmp1.re, tr_c);
+        mpf_set(tmp1.im, ti_c);
+    }
+
+    // tmp1 = 2*(F')^2
+    mpf_mul_ui(tmp1.re, tmp1.re, 2);
+    mpf_mul_ui(tmp1.im, tmp1.im, 2);
+
+    // tmp2 = F * F''  (z_coord * d2_coord)
+    // (ar+ai i)*(br+bi i) = (ar*br - ai*bi) + (ar*bi + ai*br)i
+    // NOTE: tmp2 currently holds d2_coord, so we must compute into (tr_c,ti_c) and then overwrite tmp2.
+    {
+        mpf_mul(t1_c, z_coord.re, tmp2.re);
+        mpf_mul(t2_c, z_coord.im, tmp2.im);
+        mpf_sub(tr_c, t1_c, t2_c);
+
+        mpf_mul(t1_c, z_coord.re, tmp2.im);
+        mpf_mul(t2_c, z_coord.im, tmp2.re);
+        mpf_add(ti_c, t1_c, t2_c);
+
+        mpf_set(tmp2.re, tr_c);
+        mpf_set(tmp2.im, ti_c);
+    }
+
+    // Den = 2*(F')^2 - F*F''  (complex)
+    // Store Den in tmp2: tmp2 = tmp1 - tmp2
+    mpf_sub(tmp2.re, tmp1.re, tmp2.re);
+    mpf_sub(tmp2.im, tmp1.im, tmp2.im);
+
+    // Numerator = 2 * F * F'  (complex)
+    // Compute tmp1 = F*F' first, then scale by 2
+    {
+        mpf_mul(t1_c, z_coord.re, dzdc_coord.re);
+        mpf_mul(t2_c, z_coord.im, dzdc_coord.im);
+        mpf_sub(tr_c, t1_c, t2_c); // re = ar*br - ai*bi
+
+        mpf_mul(t1_c, z_coord.re, dzdc_coord.im);
+        mpf_mul(t2_c, z_coord.im, dzdc_coord.re);
+        mpf_add(ti_c, t1_c, t2_c); // im = ar*bi + ai*br
+
+        mpf_set(tmp1.re, tr_c);
+        mpf_set(tmp1.im, ti_c);
+    }
+    mpf_mul_ui(tmp1.re, tmp1.re, 2);
+    mpf_mul_ui(tmp1.im, tmp1.im, 2);
+
+    // step = Numer / Den  computed as (Numer * conj(Den)) / |Den|^2
+    // denom_c = |Den|^2
+    mpf_mul(t1_c, tmp2.re, tmp2.re);
+    mpf_mul(t2_c, tmp2.im, tmp2.im);
+    mpf_add(denom_c, t1_c, t2_c);
+    if (mpf_cmp_ui(denom_c, 0) == 0)
+        return false;
+
+    // tr = num_re*den_re + num_im*den_im    (since multiplying by conj)
+    mpf_mul(t1_c, tmp1.re, tmp2.re);
+    mpf_mul(t2_c, tmp1.im, tmp2.im);
+    mpf_add(tr_c, t1_c, t2_c);
+
+    // ti = num_im*den_re - num_re*den_im
+    mpf_mul(t1_c, tmp1.im, tmp2.re);
+    mpf_mul(t2_c, tmp1.re, tmp2.im);
+    mpf_sub(ti_c, t1_c, t2_c);
+
+    mpf_div(step_coord.re, tr_c, denom_c);
+    mpf_div(step_coord.im, ti_c, denom_c);
+    return true;
+}
+
+// ------------------------------------------------------------
+// Imagina-style Newton/Halley polish for periodic point
+//
+// Goal:
+//   Solve F(c) = z_p(c) = 0
+//
+// Pipeline:
+//   z        → mpf (coord precision)
+//   dzdc     → mpf (deriv precision)
+//   d2zdc2   → HDRFloat (low precision, large exponent)
+//   err      → HDRFloat
+//
+// Iteration step:
+//   Newton:  step = z / dzdc
+//   Halley:  step = (2 F F') / (2(F')^2 − F F'')
+//
+// Halley is used only when the dimensionless ratio
+//
+//   rho^2 = |z|^2 |d2|^2 / |dzdc|^4
+//
+// is sufficiently small, ensuring the Halley denominator
+// is dominated by 2(F')^2.
+//
+// Stop condition (Imagina-style):
+//
+//   err = |step|^4 * |d2|^2 / |dzdc|^2
+//   stop when −ilogb(err) ≥ 2 * coord_prec
+// ------------------------------------------------------------
+template <typename IterType, typename T>
 static inline uint32_t
 RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                     const mpf_complex &c0_coord, // coord_prec (initial seed)
@@ -378,6 +491,14 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                     int scaleExp2_for_deriv_choice, // exponent of Scale ≈ 1/|zcoeff*dzdc|
                     uint32_t max_nr_iters)
 {
+    // Compile-time enable, runtime gating below.
+    constexpr bool UseHalley = true;
+
+    // Gate: require rho^2 < 2^-k (k bigger => more conservative)
+    // With rho^2 = |z|^2*|d2|^2 / |dzdc|^4.
+    // For low-precision d2, be conservative.
+    constexpr int HalleyRho2ExpThreshold = -12; // rho^2 < 2^-12
+
     // ---------------- coord temporaries ----------------
     mpf_t denom_c, tr_c, ti_c, t1_c, t2_c, abs2_c;
     mpf_init2(denom_c, coord_prec);
@@ -387,15 +508,13 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     mpf_init2(t2_c, coord_prec);
     mpf_init2(abs2_c, coord_prec);
 
-    mpf_t normStep, normStep2, err, tmp;
+    // We keep normStep in mpf (computed from mpf step), then promote to HDRFloat.
+    mpf_t normStep;
     mpf_init2(normStep, coord_prec);
-    mpf_init2(normStep2, coord_prec);
-    mpf_init2(err, coord_prec);
-    mpf_init2(tmp, coord_prec);
 
-    mpf_t dzdcNormSq_c, d2NormSq_c;
-    mpf_init2(dzdcNormSq_c, coord_prec);
-    mpf_init2(d2NormSq_c, coord_prec);
+    // Also keep |z|^2 in mpf for the Halley gate (cheap; avoids mpf sqrt)
+    mpf_t zNormSq_mpf;
+    mpf_init2(zNormSq_mpf, coord_prec);
 
     // c-delta for final accept/reject
     mpf_complex dc;
@@ -407,9 +526,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     const int coordExp2_im = approx_ilogb_mpf(c_coord.im);
     const int coordExp2_max_abs = std::max(coordExp2_re, coordExp2_im);
 
-    const mp_bitcnt_t deriv_prec = ChooseDerivPrec_ImaginaStyle(
-        coord_prec, scaleExp2_for_deriv_choice, coordExp2_max_abs, /*minPrec*/ 256);
-    //const mp_bitcnt_t deriv_prec = coord_prec;
+    // const mp_bitcnt_t deriv_prec = ChooseDerivPrec_ImaginaStyle(
+    //     coord_prec, scaleExp2_for_deriv_choice, coordExp2_max_abs, /*minPrec*/ 256);
+    const mp_bitcnt_t deriv_prec = coord_prec;
 
     std::cout << "RefinePeriodicPoint: coord_prec=" << coord_prec << " bits, deriv_prec=" << deriv_prec
               << " bits (scaleExp2=" << scaleExp2_for_deriv_choice
@@ -422,19 +541,38 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     mpf_init2(t1_d, deriv_prec);
     mpf_init2(t2_d, deriv_prec);
 
-    // ---------------- complex state ----------------
+    // ---------------- complex state (mpf) ----------------
     mpf_complex z_coord, step_coord, dzdc_coord, tmpZ_coord;
     mpf_complex_init(z_coord, coord_prec);
     mpf_complex_init(step_coord, coord_prec);
     mpf_complex_init(dzdc_coord, coord_prec);
     mpf_complex_init(tmpZ_coord, coord_prec);
 
-    mpf_complex dzdc_deriv, d2_deriv, z_deriv, tmpA_d, tmpB_d;
+    mpf_complex dzdc_deriv, z_deriv, tmpB_d;
     mpf_complex_init(dzdc_deriv, deriv_prec);
-    mpf_complex_init(d2_deriv, deriv_prec);
     mpf_complex_init(z_deriv, deriv_prec);
-    mpf_complex_init(tmpA_d, deriv_prec);
     mpf_complex_init(tmpB_d, deriv_prec);
+
+    // Extra coord scratch needed for Halley (mpf-only)
+    mpf_complex d2_coord_scratch, htmp1, htmp2;
+    mpf_complex_init(d2_coord_scratch, coord_prec);
+    mpf_complex_init(htmp1, coord_prec);
+    mpf_complex_init(htmp2, coord_prec);
+
+    // ---------------- d2 output (HDRFloat) ----------------
+    T d2r_hdr{}, d2i_hdr{};
+
+    // ---------------- HDRFloat err pipeline scalars ----------------
+    T normStep_hdr{};
+    T normStep2_hdr{};
+    T d2Norm_hdr{};
+    T dzdcNorm_hdr{};
+    T err_hdr{};
+
+    // Halley gate scalars
+    T zNorm_hdr{};
+    T rho2_hdr{};
+    T dzdcNormSq_hdr{}; // (|dzdc|^2)^2 i.e. |dzdc|^4
 
     // Imagina stop threshold: Precision*2 in exponent space
     const int targetExp = int(coord_prec) * 2;
@@ -444,91 +582,160 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
         std::cout << "  Refinement iter " << it << std::endl;
 
-        // Full forward eval at current c
-        EvaluateCriticalOrbitAndDerivs(c_coord,
-                                       period,
-                                       z_coord,
-                                       dzdc_deriv,
-                                       d2_deriv,
-                                       z_deriv,
-                                       tmpA_d,
-                                       tmpB_d,
-                                       tmpZ_coord,
-                                       tr_d,
-                                       ti_d,
-                                       t1_d,
-                                       t2_d,
-                                       tr_c,
-                                       ti_c,
-                                       t1_c,
-                                       t2_c);
+        // Full forward eval at current c (option 2: d2 in HDRFloat)
+        EvaluateCriticalOrbitAndDerivs<IterType, T>(c_coord,
+                                                    period,
+                                                    z_coord,
+                                                    dzdc_deriv,
+                                                    d2r_hdr,
+                                                    d2i_hdr,
+                                                    z_deriv,
+                                                    tmpB_d,
+                                                    tmpZ_coord,
+                                                    tr_d,
+                                                    ti_d,
+                                                    t1_d,
+                                                    t2_d,
+                                                    tr_c,
+                                                    ti_c,
+                                                    t1_c,
+                                                    t2_c);
 
-        // step = z / dzdc  (division done at coord_prec)
-        if (!ComputeNewtonStep_mpf_coord_from_deriv(
-                step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
-            break; // singular derivative
+        // ------------------------------------------------------------
+        // Build norms needed for: (a) Halley gate, (b) err estimate.
+        // ------------------------------------------------------------
+
+        // |z|^2 (mpf -> HDRFloat)
+        mpf_complex_norm(zNormSq_mpf, z_coord, t1_c, t2_c);
+        zNorm_hdr = T(zNormSq_mpf);
+        HdrReduce(zNorm_hdr);
+
+        // |d2|^2 (HDRFloat)
+        d2Norm_hdr = d2r_hdr.square() + d2i_hdr.square();
+        HdrReduce(d2Norm_hdr);
+
+        // |dzdc|^2 (mpf -> HDRFloat)
+        {
+            T dzr = T(dzdc_deriv.re);
+            T dzi = T(dzdc_deriv.im);
+            HdrReduce(dzr);
+            HdrReduce(dzi);
+
+            dzdcNorm_hdr = dzr.square() + dzi.square();
+            HdrReduce(dzdcNorm_hdr);
+        }
+
+        if (dzdcNorm_hdr.getMantissa() == 0.0) {
+            std::cout << "RefinePeriodicPoint: break after dzdcNorm==0\n";
+            break;
+        }
+
+        // ------------------------------------------------------------
+        // Choose Halley vs Newton (gate on rho^2)
+        //   rho^2 = |z|^2 * |d2|^2 / |dzdc|^4
+        // ------------------------------------------------------------
+        bool wantHalley = false;
+
+        dzdcNormSq_hdr = dzdcNorm_hdr.square(); // |dzdc|^4
+        HdrReduce(dzdcNormSq_hdr);
+
+        rho2_hdr = (zNorm_hdr * d2Norm_hdr) / dzdcNormSq_hdr;
+        HdrReduce(rho2_hdr);
+
+        if constexpr (UseHalley) {
+            // rho2_hdr.exp is ~ floor(log2(rho^2)) for reduced HDRFloat
+            // want Halley if rho^2 is tiny (exp very negative)
+            wantHalley = ((int)rho2_hdr.getExp() <= HalleyRho2ExpThreshold);
+        }
+
+        std::cout << "    rho2=" << rho2_hdr.ToString<false>() << " wantHalley=" << wantHalley << "\n";
+
+        // ------------------------------------------------------------
+        // Compute step
+        // ------------------------------------------------------------
+        if (wantHalley) {
+            // Try Halley; fall back to Newton on failure.
+            bool ok = ComputeHalleyStep_mpf_coord_from_deriv_hdr_d2<IterType, T>(step_coord,
+                                                                                 z_coord,
+                                                                                 dzdc_deriv,
+                                                                                 d2r_hdr,
+                                                                                 d2i_hdr,
+                                                                                 dzdc_coord,
+                                                                                 htmp1,
+                                                                                 htmp2,
+                                                                                 denom_c,
+                                                                                 tr_c,
+                                                                                 ti_c,
+                                                                                 t1_c,
+                                                                                 t2_c);
+
+            if (!ok) {
+                std::cout << "RefinePeriodicPoint: Halley denom singular, fallback to Newton\n";
+                ok = ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
+                    step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c);
+            }
+            if (!ok) {
+                std::cout << "RefinePeriodicPoint: break after Halley/Newton failure\n";
+                break;
+            }
+        } else {
+            // Newton step
+            if (!ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
+                    step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
+                std::cout << "RefinePeriodicPoint: break after Newton\n";
+                break;
+            }
         }
 
         // c <- c - step
         mpf_sub(c_coord.re, c_coord.re, step_coord.re);
         mpf_sub(c_coord.im, c_coord.im, step_coord.im);
 
-        // ---------------- Imagina error estimate ----------------
-        // normStep = |step|^2
+        // ------------------------------------------------------------
+        // Imagina error estimate (HDRFloat)
+        //   err = |step|^4 * |d2|^2 / |dzdc|^2
+        // ------------------------------------------------------------
         mpf_complex_norm(normStep, step_coord, t1_c, t2_c);
 
-        // normStep2 = |step|^4
-        mpf_mul(normStep2, normStep, normStep);
+        normStep_hdr = T(normStep);
+        HdrReduce(normStep_hdr);
 
-        // d2NormSq_c = |d2|^2  (promote components)
-        mpf_set(t1_c, d2_deriv.re);
-        mpf_mul(t1_c, t1_c, t1_c);
-        mpf_set(t2_c, d2_deriv.im);
-        mpf_mul(t2_c, t2_c, t2_c);
-        mpf_add(d2NormSq_c, t1_c, t2_c);
+        normStep2_hdr = normStep_hdr.square(); // |step|^4
+        HdrReduce(normStep2_hdr);
 
-        // dzdcNormSq_c = |dzdc|^2
-        mpf_set(t1_c, dzdc_deriv.re);
-        mpf_mul(t1_c, t1_c, t1_c);
-        mpf_set(t2_c, dzdc_deriv.im);
-        mpf_mul(t2_c, t2_c, t2_c);
-        mpf_add(dzdcNormSq_c, t1_c, t2_c);
+        err_hdr = (normStep2_hdr * d2Norm_hdr) / dzdcNorm_hdr;
+        HdrReduce(err_hdr);
 
-        if (mpf_cmp_ui(dzdcNormSq_c, 0) == 0)
-            break;
-
-        // err = |step|^4 * |d2|^2 / |dzdc|^2
-        mpf_mul(tmp, normStep2, d2NormSq_c);
-        mpf_div(err, tmp, dzdcNormSq_c);
-
-        const int e = approx_ilogb_mpf(err);
+        const int e = (int)err_hdr.getExp();
         if (-e >= targetExp) {
+            std::cout << "RefinePeriodicPoint: stop with err_hdr=" << err_hdr.ToString<false>()
+                      << " (e=" << e << " >= targetExp=" << targetExp << ")\n";
             break;
         }
     }
 
     // ---------------- Imagina final correction pass ----------------
-    // Imagina does one more Evaluate + correction regardless of loop stop.
+    // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
     {
-        EvaluateCriticalOrbitAndDerivs(c_coord,
-                                       period,
-                                       z_coord,
-                                       dzdc_deriv,
-                                       d2_deriv,
-                                       z_deriv,
-                                       tmpA_d,
-                                       tmpB_d,
-                                       tmpZ_coord,
-                                       tr_d,
-                                       ti_d,
-                                       t1_d,
-                                       t2_d,
-                                       tr_c,
-                                       ti_c,
-                                       t1_c,
-                                       t2_c);
+        EvaluateCriticalOrbitAndDerivs<IterType, T>(c_coord,
+                                                    period,
+                                                    z_coord,
+                                                    dzdc_deriv,
+                                                    d2r_hdr,
+                                                    d2i_hdr,
+                                                    z_deriv,
+                                                    tmpB_d,
+                                                    tmpZ_coord,
+                                                    tr_d,
+                                                    ti_d,
+                                                    t1_d,
+                                                    t2_d,
+                                                    tr_c,
+                                                    ti_c,
+                                                    t1_c,
+                                                    t2_c);
 
-        if (ComputeNewtonStep_mpf_coord_from_deriv(
+        if (ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
                 step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
             mpf_sub(c_coord.re, c_coord.re, step_coord.re);
             mpf_sub(c_coord.im, c_coord.im, step_coord.im);
@@ -536,16 +743,12 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     }
 
     // ---------------- Imagina accept/reject: stay within radius ----------------
-    // Reject if |c - c0|^2 > R^2
     mpf_complex_sub(dc, c_coord, c0_coord);
     mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
 
     if (mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
-        // Put c back to original (Imagina would reject the feature)
         mpf_set(c_coord.re, c0_coord.re);
         mpf_set(c_coord.im, c0_coord.im);
-        // You can signal failure by returning 0 or max_nr_iters+1; choose what you prefer.
-        // Here: return 0 iterations meaning "reject".
         it = 0;
     }
 
@@ -557,11 +760,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     mpf_clear(t2_c);
     mpf_clear(abs2_c);
     mpf_clear(normStep);
-    mpf_clear(normStep2);
-    mpf_clear(err);
-    mpf_clear(tmp);
-    mpf_clear(dzdcNormSq_c);
-    mpf_clear(d2NormSq_c);
+    mpf_clear(zNormSq_mpf);
 
     mpf_clear(tr_d);
     mpf_clear(ti_d);
@@ -574,10 +773,12 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     mpf_complex_clear(tmpZ_coord);
 
     mpf_complex_clear(dzdc_deriv);
-    mpf_complex_clear(d2_deriv);
     mpf_complex_clear(z_deriv);
-    mpf_complex_clear(tmpA_d);
     mpf_complex_clear(tmpB_d);
+
+    mpf_complex_clear(d2_coord_scratch);
+    mpf_complex_clear(htmp1);
+    mpf_complex_clear(htmp2);
 
     mpf_complex_clear(dc);
 
@@ -635,7 +836,7 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(
     // ---- Run Imagina-style polish ----
     const uint32_t max_polish = 32;
 
-    const uint32_t iters = RefinePeriodicPoint(
+    const uint32_t iters = RefinePeriodicPoint<IterType, T>(
         c, c0, sqrRadius_mpf, (uint64_t)period, coord_prec, scaleExp2_for_deriv, max_polish);
 
     // ---- Write back ----
@@ -1464,7 +1665,7 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
     }
 
     std::cout << "[LA->Direct fallback] INFO: LA/PT eval failed; trying DIRECT at period="
-                << (uint64_t)ioPeriod << "\n";
+              << (uint64_t)ioPeriod << "\n";
     return self->Evaluate_PeriodResidualAndDzdc_Direct(
         c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
 }
@@ -1584,7 +1785,6 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
 
     return true;
 }
-
 
 template <class IterType, class T, PerturbExtras PExtras>
 template <class EvalPolicy>

@@ -84,7 +84,8 @@ static const DynamicPopupMenu::Node menu[] = {
               Item(L"#27", IDM_VIEW27),
               Item(L"#28", IDM_VIEW28),
               Item(L"#29 - Fast HDRx32 broke, HDRx64 works", IDM_VIEW29),
-              Item(L"#30 - 1e100000 - low period", IDM_VIEW30)),
+              Item(L"#30 - 1e100000 - low period", IDM_VIEW30),
+              Item(L"#31 - 1e715 - feature finder test", IDM_VIEW31)),
 
     Item(L"Recalculate, Reuse Reference", IDM_SQUAREVIEW),
     Sep(),

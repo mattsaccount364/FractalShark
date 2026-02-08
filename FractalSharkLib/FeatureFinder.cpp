@@ -151,9 +151,21 @@ approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mpf_t 
 }
 
 // ------------------------------------------------------------
-// z is maintained at coord_prec.
-// dzdc and d2zdc2 are maintained at deriv_prec.
-// Each iter we make z_d = z rounded to deriv_prec, and use that for derivative updates.
+// EvaluateCriticalOrbitAndDerivs
+//
+// Purpose:
+//   - "Mandelbrot / critical orbit" part (coord_prec):
+//       z_{n+1} = z_n^2 + c,  starting from z_0 = 0
+//
+//   - "Derivative" part (deriv_prec):
+//       dz/dc recurrence:      (dz/dc)_{n+1} = 2*z_n*(dz/dc)_n + 1
+//       d2z/dc2 recurrence:    (d2)_{n+1}    = 2*((dz/dc)_n^2 + z_n*(d2)_n)
+//
+// Notes:
+//   - z_coord is maintained at coord_prec.
+//   - dzdc_deriv, d2zdc2_deriv are maintained at deriv_prec.
+//   - Each iter, we copy z_coord -> z_deriv (rounded to deriv_prec by mpf_set into deriv-prec vars).
+//   - All complex mul/sqr are inlined for clarity and to avoid helper indirection.
 // ------------------------------------------------------------
 static inline void
 EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
@@ -175,51 +187,121 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
                                mpf_t t2_c // coord_prec scalars
 )
 {
-    // z = 0 (coord)
+    // -------------------------
+    // Initialize state
+    // -------------------------
+    // Mandelbrot orbit state (coord precision): z = 0
     mpf_set_ui(z_coord.re, 0);
     mpf_set_ui(z_coord.im, 0);
 
-    // dzdc = 0 (deriv)
+    // Derivatives (deriv precision): dzdc = 0, d2 = 0
     mpf_set_ui(dzdc_deriv.re, 0);
     mpf_set_ui(dzdc_deriv.im, 0);
-
-    // d2 = 0 (deriv)
     mpf_set_ui(d2zdc2_deriv.re, 0);
     mpf_set_ui(d2zdc2_deriv.im, 0);
 
     for (uint64_t i = 0; i < period; ++i) {
-        // z_deriv = z_coord rounded to deriv precision
+
+        // ============================================================
+        // Round/copy z from coord_prec -> deriv_prec (for derivative math)
+        // ============================================================
         mpf_set(z_deriv.re, z_coord.re);
         mpf_set(z_deriv.im, z_coord.im);
 
+        // ============================================================
+        // DERIVATIVE SECTION (deriv_prec)
+        // ============================================================
+
         // ---- d2 <- 2*(dzdc^2 + z*d2)
-        // tmpA = dzdc^2
-        mpf_complex_sqr_safe(tmpA_deriv, dzdc_deriv, tr_d, ti_d, t1_d, t2_d);
 
-        // tmpB = z * d2
-        mpf_complex_mul_safe(tmpB_deriv, z_deriv, d2zdc2_deriv, tr_d, ti_d, t1_d, t2_d);
+        // tmpA_deriv = dzdc_deriv^2   (complex square)
+        //   (a+bi)^2 = (a^2 - b^2) + (2ab)i
+        {
+            // tr_d = ar^2 - ai^2
+            mpf_mul(t1_d, dzdc_deriv.re, dzdc_deriv.re); // t1 = ar^2
+            mpf_mul(t2_d, dzdc_deriv.im, dzdc_deriv.im); // t2 = ai^2
+            mpf_sub(tr_d, t1_d, t2_d);
 
-        // tmpA = tmpA + tmpB
+            // ti_d = 2*ar*ai
+            mpf_mul(t1_d, dzdc_deriv.re, dzdc_deriv.im); // t1 = ar*ai
+            mpf_mul_ui(ti_d, t1_d, 2);
+
+            mpf_set(tmpA_deriv.re, tr_d);
+            mpf_set(tmpA_deriv.im, ti_d);
+        }
+
+        // tmpB_deriv = z_deriv * d2zdc2_deriv  (complex multiply)
+        //   (ar+ai i)*(br+bi i) = (ar*br - ai*bi) + (ar*bi + ai*br)i
+        {
+            // tr_d = zr*d2r - zi*d2i
+            mpf_mul(t1_d, z_deriv.re, d2zdc2_deriv.re);
+            mpf_mul(t2_d, z_deriv.im, d2zdc2_deriv.im);
+            mpf_sub(tr_d, t1_d, t2_d);
+
+            // ti_d = zr*d2i + zi*d2r
+            mpf_mul(t1_d, z_deriv.re, d2zdc2_deriv.im);
+            mpf_mul(t2_d, z_deriv.im, d2zdc2_deriv.re);
+            mpf_add(ti_d, t1_d, t2_d);
+
+            mpf_set(tmpB_deriv.re, tr_d);
+            mpf_set(tmpB_deriv.im, ti_d);
+        }
+
+        // tmpA_deriv += tmpB_deriv
         mpf_add(tmpA_deriv.re, tmpA_deriv.re, tmpB_deriv.re);
         mpf_add(tmpA_deriv.im, tmpA_deriv.im, tmpB_deriv.im);
 
-        // d2 = 2 * tmpA
+        // d2zdc2_deriv = 2 * tmpA_deriv
         mpf_mul_ui(d2zdc2_deriv.re, tmpA_deriv.re, 2);
         mpf_mul_ui(d2zdc2_deriv.im, tmpA_deriv.im, 2);
 
         // ---- dzdc <- 2*z*dzdc + 1
-        // tmpB = 2*z
+
+        // tmpB_deriv = 2*z_deriv
         mpf_mul_ui(tmpB_deriv.re, z_deriv.re, 2);
         mpf_mul_ui(tmpB_deriv.im, z_deriv.im, 2);
 
-        // dzdc = dzdc * (2*z)
-        mpf_complex_mul_safe(dzdc_deriv, dzdc_deriv, tmpB_deriv, tr_d, ti_d, t1_d, t2_d);
+        // dzdc_deriv = dzdc_deriv * tmpB_deriv   (complex multiply, alias-safe via temps)
+        {
+            // tr_d = dzr*(2zr) - dzi*(2zi)
+            mpf_mul(t1_d, dzdc_deriv.re, tmpB_deriv.re);
+            mpf_mul(t2_d, dzdc_deriv.im, tmpB_deriv.im);
+            mpf_sub(tr_d, t1_d, t2_d);
 
-        // +1 (real)
+            // ti_d = dzr*(2zi) + dzi*(2zr)
+            mpf_mul(t1_d, dzdc_deriv.re, tmpB_deriv.im);
+            mpf_mul(t2_d, dzdc_deriv.im, tmpB_deriv.re);
+            mpf_add(ti_d, t1_d, t2_d);
+
+            mpf_set(dzdc_deriv.re, tr_d);
+            mpf_set(dzdc_deriv.im, ti_d);
+        }
+
+        // dzdc += 1 (real)
         mpf_add_ui(dzdc_deriv.re, dzdc_deriv.re, 1);
 
-        // ---- z <- z^2 + c   (coord precision)
-        mpf_complex_sqr_safe(tmpZ_coord, z_coord, tr_c, ti_c, t1_c, t2_c);
+        // ============================================================
+        // MANDELBROT / ORBIT SECTION (coord_prec)
+        // ============================================================
+
+        // ---- z <- z^2 + c
+
+        // tmpZ_coord = z_coord^2  (complex square at coord precision)
+        {
+            // tr_c = zr^2 - zi^2
+            mpf_mul(t1_c, z_coord.re, z_coord.re);
+            mpf_mul(t2_c, z_coord.im, z_coord.im);
+            mpf_sub(tr_c, t1_c, t2_c);
+
+            // ti_c = 2*zr*zi
+            mpf_mul(t1_c, z_coord.re, z_coord.im);
+            mpf_mul_ui(ti_c, t1_c, 2);
+
+            mpf_set(tmpZ_coord.re, tr_c);
+            mpf_set(tmpZ_coord.im, ti_c);
+        }
+
+        // z_coord = tmpZ_coord + c_coord
         mpf_add(z_coord.re, tmpZ_coord.re, c_coord.re);
         mpf_add(z_coord.im, tmpZ_coord.im, c_coord.im);
     }
@@ -327,6 +409,11 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
     const mp_bitcnt_t deriv_prec = ChooseDerivPrec_ImaginaStyle(
         coord_prec, scaleExp2_for_deriv_choice, coordExp2_max_abs, /*minPrec*/ 256);
+    //const mp_bitcnt_t deriv_prec = coord_prec;
+
+    std::cout << "RefinePeriodicPoint: coord_prec=" << coord_prec << " bits, deriv_prec=" << deriv_prec
+              << " bits (scaleExp2=" << scaleExp2_for_deriv_choice
+              << ", coordExp2_max_abs=" << coordExp2_max_abs << ")\n";
 
     // ---------------- deriv temporaries ----------------
     mpf_t tr_d, ti_d, t1_d, t2_d;
@@ -354,6 +441,8 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
     uint32_t it = 0;
     for (; it < max_nr_iters; ++it) {
+
+        std::cout << "  Refinement iter " << it << std::endl;
 
         // Full forward eval at current c
         EvaluateCriticalOrbitAndDerivs(c_coord,

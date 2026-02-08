@@ -341,7 +341,7 @@ ComputeNewtonStep_mpf_coord_from_deriv(mpf_complex &step_coord,       // coord_p
 // ------------------------------------------------------------
 template <typename IterType, typename T>
 static inline bool
-ComputeHalleyStep_mpf_coord_from_deriv_hdr_d2(
+ComputeHalleyStep_mpf_coord_from_deriv(
     mpf_complex &step_coord,       // coord_prec (out)
     const mpf_complex &z_coord,    // coord_prec  F
     const mpf_complex &dzdc_deriv, // deriv_prec  F'
@@ -493,6 +493,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 {
     // Compile-time enable, runtime gating below.
     constexpr bool UseHalley = true;
+    constexpr bool UseFullPrecDerivatives = true;
 
     // Gate: require rho^2 < 2^-k (k bigger => more conservative)
     // With rho^2 = |z|^2*|d2|^2 / |dzdc|^4.
@@ -526,9 +527,14 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     const int coordExp2_im = approx_ilogb_mpf(c_coord.im);
     const int coordExp2_max_abs = std::max(coordExp2_re, coordExp2_im);
 
-    // const mp_bitcnt_t deriv_prec = ChooseDerivPrec_ImaginaStyle(
-    //     coord_prec, scaleExp2_for_deriv_choice, coordExp2_max_abs, /*minPrec*/ 256);
-    const mp_bitcnt_t deriv_prec = coord_prec;
+    mp_bitcnt_t deriv_prec;
+
+    if constexpr (UseFullPrecDerivatives) {
+        deriv_prec = coord_prec;
+    } else {
+        deriv_prec = ChooseDerivPrec_ImaginaStyle(
+            coord_prec, scaleExp2_for_deriv_choice, coordExp2_max_abs, /*minPrec*/ 256);
+    }
 
     std::cout << "RefinePeriodicPoint: coord_prec=" << coord_prec << " bits, deriv_prec=" << deriv_prec
               << " bits (scaleExp2=" << scaleExp2_for_deriv_choice
@@ -643,8 +649,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         HdrReduce(rho2_hdr);
 
         if constexpr (UseHalley) {
-            // rho2_hdr.exp is ~ floor(log2(rho^2)) for reduced HDRFloat
-            // want Halley if rho^2 is tiny (exp very negative)
+            // rho2_hdr.exp is ~ floor(log2(rho^2)) for reduced HDRFloat want
+            // Halley if rho^2 is tiny (exp very negative) which should almost
+            // every time.
             wantHalley = ((int)rho2_hdr.getExp() <= HalleyRho2ExpThreshold);
         }
 
@@ -655,19 +662,19 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         // ------------------------------------------------------------
         if (wantHalley) {
             // Try Halley; fall back to Newton on failure.
-            bool ok = ComputeHalleyStep_mpf_coord_from_deriv_hdr_d2<IterType, T>(step_coord,
-                                                                                 z_coord,
-                                                                                 dzdc_deriv,
-                                                                                 d2r_hdr,
-                                                                                 d2i_hdr,
-                                                                                 dzdc_coord,
-                                                                                 htmp1,
-                                                                                 htmp2,
-                                                                                 denom_c,
-                                                                                 tr_c,
-                                                                                 ti_c,
-                                                                                 t1_c,
-                                                                                 t2_c);
+            bool ok = ComputeHalleyStep_mpf_coord_from_deriv<IterType, T>(step_coord,
+                                                                          z_coord,
+                                                                          dzdc_deriv,
+                                                                          d2r_hdr,
+                                                                          d2i_hdr,
+                                                                          dzdc_coord,
+                                                                          htmp1,
+                                                                          htmp2,
+                                                                          denom_c,
+                                                                          tr_c,
+                                                                          ti_c,
+                                                                          t1_c,
+                                                                          t2_c);
 
             if (!ok) {
                 std::cout << "RefinePeriodicPoint: Halley denom singular, fallback to Newton\n";

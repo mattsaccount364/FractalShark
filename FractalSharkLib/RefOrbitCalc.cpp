@@ -37,7 +37,7 @@ template <class Type> struct alignas(64) ThreadPtrs {
 static_assert(alignof(ThreadPtrs<int>) == 64);
 
 #define ENABLE_PREFETCH(ARG0, ARG1) _mm_prefetch(ARG0, ARG1)
-//#define ENABLE_PREFETCH(ARG0, ARG1)
+// #define ENABLE_PREFETCH(ARG0, ARG1)
 
 #define CheckStartCriteria                                                                              \
     while (true) {                                                                                      \
@@ -695,12 +695,12 @@ RefOrbitCalc::GetReuseResults(
     if (HdrCompareToBothPositiveReducedGT(deltaX, existingAuthoritativeResults.GetMaxRadius()) ||
         HdrCompareToBothPositiveReducedGT(deltaY, existingAuthoritativeResults.GetMaxRadius())) {
 
-        //const std::string deltaStr =
-        //    cx.str() + ", " + cy.str() + ", " +
-        //    existingResultsHiX.str() + ", " + existingResultsHiY.str() + ", " +
-        //    deltaX.str() + ", " + deltaY.str();
-        //const std::string outputStr = "Regenerating authoritative orbit is required 2: " + deltaStr;
-        //std::cerr << outputStr << std::endl;
+        // const std::string deltaStr =
+        //     cx.str() + ", " + cy.str() + ", " +
+        //     existingResultsHiX.str() + ", " + existingResultsHiY.str() + ", " +
+        //     deltaX.str() + ", " + deltaY.str();
+        // const std::string outputStr = "Regenerating authoritative orbit is required 2: " + deltaStr;
+        // std::cerr << outputStr << std::endl;
         return false;
     }
 
@@ -1142,6 +1142,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecis
     constexpr bool floatOrDouble = std::is_same<T, double>::value || std::is_same<T, float>::value;
 
     auto ThreadSqZx = [&](ThreadPtrs<ThreadZxData> *ThreadMemory) {
+        SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3Reuse SqZxThread");
+
         mpf_t temp_mpf;
         mpf_init(temp_mpf);
 
@@ -1230,6 +1232,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecis
     };
 
     auto ThreadSqZy = [&](ThreadPtrs<ThreadZyData> *ThreadMemory) {
+        SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3Reuse SqZyThread");
+
         mpf_t temp_mpf;
         mpf_init(temp_mpf);
 
@@ -1694,6 +1698,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision c
         };
 
         auto ThreadSqZx = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZxData> *ThreadMemory) {
+            SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3 ThreadSqZx");
+
             InitTls();
 
             for (;;) {
@@ -1723,6 +1729,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision c
         };
 
         auto ThreadSqZy = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZyData> *ThreadMemory) {
+            SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3 ThreadSqZy");
+
             InitTls();
 
             for (;;) {
@@ -1754,56 +1762,57 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision c
         const int32_t IntermediateCompressionErrorExp =
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Intermediate);
 
-        auto ThreadReused =
-            [results,
-             &bumpAllocator,
-             &reusedAllocator,
-             &InitTls,
-             &ShutdownTls,
-             IntermediateCompressionErrorExp](ThreadPtrs<ThreadReusedData> *ThreadMemory) {
-                InitTls();
+        auto ThreadReused = [results,
+                             &bumpAllocator,
+                             &reusedAllocator,
+                             &InitTls,
+                             &ShutdownTls,
+                             IntermediateCompressionErrorExp](
+                                ThreadPtrs<ThreadReusedData> *ThreadMemory) {
+            SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3 ThreadReused");
+            InitTls();
 
-                SimpleIntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
-                    *results, IntermediateCompressionErrorExp};
+            SimpleIntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
+                *results, IntermediateCompressionErrorExp};
 
-                MaxIntermediateOrbitCompressor<IterType, T, PExtras> maxIntermediateCompressor{
-                    *results, IntermediateCompressionErrorExp};
+            MaxIntermediateOrbitCompressor<IterType, T, PExtras> maxIntermediateCompressor{
+                *results, IntermediateCompressionErrorExp};
 
-                // Initialize to 1 because the array starts with a zero at the front
-                size_t index = 1;
+            // Initialize to 1 because the array starts with a zero at the front
+            size_t index = 1;
 
-                for (;;) {
-                    ThreadReusedData *expected = ThreadMemory->In.load();
-                    ThreadReusedData *ok = nullptr;
+            for (;;) {
+                ThreadReusedData *expected = ThreadMemory->In.load();
+                ThreadReusedData *ok = nullptr;
 
-                    CheckStartCriteria;
+                CheckStartCriteria;
 
-                    // SaveForReuse1 shouldn't be done on this thread.
-                    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
-                        results->AddUncompressedReusedEntry(ok->zx, ok->zy, index);
-                    } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
-                        intermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
-                    } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-                        maxIntermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
-                    } else {
-                        assert(false);
-                    }
-
-                    index++;
-
-                    // Give result back.
-                    CheckFinishCriteria;
+                // SaveForReuse1 shouldn't be done on this thread.
+                if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+                    results->AddUncompressedReusedEntry(ok->zx, ok->zy, index);
+                } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
+                    intermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
+                } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+                    maxIntermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
+                } else {
+                    assert(false);
                 }
 
-                if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-                    maxIntermediateCompressor.CompleteResults();
-                }
+                index++;
 
-                auto allocatorIndex = bumpAllocator->GetAllocatorIndex();
-                reusedAllocator = bumpAllocator->GetAllocated(allocatorIndex);
+                // Give result back.
+                CheckFinishCriteria;
+            }
 
-                ShutdownTls();
-            };
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+                maxIntermediateCompressor.CompleteResults();
+            }
+
+            auto allocatorIndex = bumpAllocator->GetAllocatorIndex();
+            reusedAllocator = bumpAllocator->GetAllocated(allocatorIndex);
+
+            ShutdownTls();
+        };
 
         auto *threadZxdata = (ThreadZxData *)_aligned_malloc(sizeof(ThreadZxData), 64);
         auto *threadZydata = (ThreadZyData *)_aligned_malloc(sizeof(ThreadZyData), 64);
@@ -2238,10 +2247,7 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision c
             const uint64_t itersToRun = (remaining > MaxOutputIters) ? MaxOutputIters : remaining;
 
             // Repeated kernel launches, each producing up to MaxOutputIters in OutputIters.
-            HpShark::InvokeHpSharkReferenceKernel<SharkFloatParams>(
-                launchParams,
-                *combo,
-                itersToRun);
+            HpShark::InvokeHpSharkReferenceKernel<SharkFloatParams>(launchParams, *combo, itersToRun);
 
             totalExecutedIters += combo->OutputIterCount;
 
@@ -2282,7 +2288,6 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision c
     mpf_clear(cx_mpf);
     mpf_clear(cy_mpf);
 }
-
 
 template <typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
 bool

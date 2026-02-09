@@ -140,36 +140,183 @@ FeatureSummary::GetResidual2() const
 void
 FeatureSummary::EstablishScreenCoordinates(const Fractal &fractal)
 {
-    const HighPrecision sxHP = fractal.XFromCalcToScreen(OrigX);
-    const HighPrecision syHP = fractal.YFromCalcToScreen(OrigY);
+    HighPrecision sxHP = fractal.XFromCalcToScreen(OrigX);
+    HighPrecision syHP = fractal.YFromCalcToScreen(OrigY);
 
-    const HighPrecision fxHP = fractal.XFromCalcToScreen(FoundX);
-    const HighPrecision fyHP = fractal.YFromCalcToScreen(FoundY);
+    HighPrecision fxHP = fractal.XFromCalcToScreen(FoundX);
+    HighPrecision fyHP = fractal.YFromCalcToScreen(FoundY);
 
-    const int x0 = (int)((double)sxHP);
-    const int y0 = (int)((double)syHP);
-    const int x1 = (int)((double)fxHP);
-    const int y1 = (int)((double)fyHP);
+    // Pick the higher precision of the two points for clipping
+    uint64_t precForClipping = std::max({sxHP.precisionInBits(),
+                                         syHP.precisionInBits(),
+                                         fxHP.precisionInBits(),
+                                         fyHP.precisionInBits()});
 
-    auto flipY = [&](int y) -> int {
-        // Convert top-left origin (UI) to bottom-left origin (GL)
-        return (int)fractal.GetRenderHeight() - 1 - y;
+    sxHP.precisionInBits(precForClipping);
+    syHP.precisionInBits(precForClipping);
+    fxHP.precisionInBits(precForClipping);
+    fyHP.precisionInBits(precForClipping);
+
+    const int64_t W = static_cast<int64_t>(fractal.GetRenderWidth());
+    const int64_t H = static_cast<int64_t>(fractal.GetRenderHeight());
+
+    if (W <= 0 || H <= 0) {
+        screenXStart = screenYStart = screenXEnd = screenYEnd = 0;
+        return;
+    }
+
+    // Clip rectangle in UI space (top-left origin)
+    const HighPrecision xmin{0};
+    const HighPrecision ymin{0};
+    const HighPrecision xmax{W - 1};
+    const HighPrecision ymax{H - 1};
+
+    auto clamp_i64 = [](int64_t v, int64_t lo, int64_t hi) -> int64_t {
+        if (v < lo)
+            return lo;
+        if (v > hi)
+            return hi;
+        return v;
     };
 
-    const int y0_gl = flipY(y0);
-    const int y1_gl = flipY(y1);
+    // Cohen–Sutherland outcodes
+    constexpr int INSIDE = 0;
+    constexpr int LEFT = 1 << 0;
+    constexpr int RIGHT = 1 << 1;
+    constexpr int BOTTOM = 1 << 2; // y < ymin  (above top edge)
+    constexpr int TOP = 1 << 3;    // y > ymax  (below bottom edge)
 
-    screenXStart = x0;
-    screenYStart = y0_gl;
-    screenXEnd = x1;
-    screenYEnd = y1_gl;
+    auto outcode = [&](const HighPrecision &x, const HighPrecision &y) -> int {
+        int c = INSIDE;
+
+        if (x < xmin)
+            c |= LEFT;
+        else if (x > xmax)
+            c |= RIGHT;
+
+        if (y < ymin)
+            c |= BOTTOM;
+        else if (y > ymax)
+            c |= TOP;
+
+        return c;
+    };
+
+    auto clipLineToRect =
+        [&](HighPrecision &x0, HighPrecision &y0, HighPrecision &x1, HighPrecision &y1) -> bool {
+        int c0 = outcode(x0, y0);
+        int c1 = outcode(x1, y1);
+
+        for (;;) {
+            if ((c0 | c1) == 0) {
+                // trivially accept
+                return true;
+            }
+            if (c0 & c1) {
+                // trivially reject
+                return false;
+            }
+
+            const int cOut = c0 ? c0 : c1;
+
+            const HighPrecision dx = x1 - x0;
+            const HighPrecision dy = y1 - y0;
+
+            HighPrecision x = x0;
+            HighPrecision y = y0;
+
+            // Intersect with the appropriate boundary.
+            // Use the parametric form:
+            //   x = x0 + t*dx
+            //   y = y0 + t*dy
+            // Solve for t using the chosen boundary.
+            if (cOut & TOP) {
+                // y = ymax
+                if (dy == HighPrecision{0})
+                    return false;
+                const HighPrecision t = (ymax - y0) / dy;
+                x = x0 + t * dx;
+                y = ymax;
+            } else if (cOut & BOTTOM) {
+                // y = ymin
+                if (dy == HighPrecision{0})
+                    return false;
+                const HighPrecision t = (ymin - y0) / dy;
+                x = x0 + t * dx;
+                y = ymin;
+            } else if (cOut & RIGHT) {
+                // x = xmax
+                if (dx == HighPrecision{0})
+                    return false;
+                const HighPrecision t = (xmax - x0) / dx;
+                y = y0 + t * dy;
+                x = xmax;
+            } else { // LEFT
+                // x = xmin
+                if (dx == HighPrecision{0})
+                    return false;
+                const HighPrecision t = (xmin - x0) / dx;
+                y = y0 + t * dy;
+                x = xmin;
+            }
+
+            // Replace outside endpoint
+            if (cOut == c0) {
+                x0 = x;
+                y0 = y;
+                c0 = outcode(x0, y0);
+            } else {
+                x1 = x;
+                y1 = y;
+                c1 = outcode(x1, y1);
+            }
+        }
+    };
+
+    // Work in HighPrecision for clipping
+    HighPrecision x0 = sxHP, y0 = syHP;
+    HighPrecision x1 = fxHP, y1 = fyHP;
+
+    const bool ok = clipLineToRect(x0, y0, x1, y1);
+
+    // Convert to integer pixels in UI space
+    int64_t ix0 = static_cast<int64_t>(static_cast<double>(x0));
+    int64_t iy0 = static_cast<int64_t>(static_cast<double>(y0));
+    int64_t ix1 = static_cast<int64_t>(static_cast<double>(x1));
+    int64_t iy1 = static_cast<int64_t>(static_cast<double>(y1));
+
+    // If no intersection, keep safe (fallback); you can also choose to mark invalid instead.
+    if (!ok) {
+        // fall back to clamping original endpoints (or set both to same point)
+        ix0 = clamp_i64(static_cast<int64_t>(static_cast<double>(sxHP)), 0, W - 1);
+        iy0 = clamp_i64(static_cast<int64_t>(static_cast<double>(syHP)), 0, H - 1);
+        ix1 = clamp_i64(static_cast<int64_t>(static_cast<double>(fxHP)), 0, W - 1);
+        iy1 = clamp_i64(static_cast<int64_t>(static_cast<double>(fyHP)), 0, H - 1);
+    } else {
+        // Numerical safety clamp
+        ix0 = clamp_i64(ix0, 0, W - 1);
+        iy0 = clamp_i64(iy0, 0, H - 1);
+        ix1 = clamp_i64(ix1, 0, W - 1);
+        iy1 = clamp_i64(iy1, 0, H - 1);
+    }
+
+    auto flipY = [&](int64_t y_ui) -> int64_t {
+        return (H - 1) - y_ui; // UI top-left -> GL bottom-left
+    };
+
+    screenXStart = static_cast<uint64_t>(ix0);
+    screenYStart = static_cast<uint64_t>(flipY(iy0));
+    screenXEnd = static_cast<uint64_t>(ix1);
+    screenYEnd = static_cast<uint64_t>(flipY(iy1));
 }
+
+
 
 void
 FeatureSummary::GetScreenCoordinates(int &outXStart, int &outYStart, int &outXEnd, int &outYEnd) const
 {
-    outXStart = screenXStart;
-    outYStart = screenYStart;
-    outXEnd = screenXEnd;
-    outYEnd = screenYEnd;
+    outXStart = static_cast<int>(screenXStart);
+    outYStart = static_cast<int>(screenYStart);
+    outXEnd = static_cast<int>(screenXEnd);
+    outYEnd = static_cast<int>(screenYEnd);
 }

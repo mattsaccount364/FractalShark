@@ -82,6 +82,7 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
 
     // Initialize the palette
     auto DefaultPaletteGen = [&](FractalPalette WhichPalette, size_t PaletteIndex, size_t Depth) {
+        SetThreadDescription(GetCurrentThread(), L"Fractal::DefaultPaletteGen");
         int depth_total = (int)(1 << Depth);
 
         int max_val = 65535;
@@ -97,6 +98,7 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
     };
 
     auto PatrioticPaletteGen = [&](FractalPalette WhichPalette, size_t PaletteIndex, size_t Depth) {
+        SetThreadDescription(GetCurrentThread(), L"Fractal::PatrioticPaletteGen");
         int depth_total = (int)(1 << Depth);
 
         int max_val = 65535;
@@ -127,6 +129,7 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
     };
 
     auto SummerPaletteGen = [&](FractalPalette WhichPalette, size_t PaletteIndex, size_t Depth) {
+        SetThreadDescription(GetCurrentThread(), L"Fractal::SummerPaletteGen");
         int depth_total = (int)(1 << Depth);
 
         int max_val = 65535;
@@ -4032,6 +4035,7 @@ Fractal::CreateNewFractalPalette(void)
     };
 
     auto RandomPaletteGen = [&](size_t PaletteIndex, size_t Depth) {
+        SetThreadDescription(GetCurrentThread(), L"Random Palette Gen");
         int depth_total = (int)(1 << Depth);
 
         srand((unsigned int)rtime);
@@ -4330,11 +4334,18 @@ Fractal::DrawAllPerturbationResults(bool LeaveScreen)
         m_FeatureSummary->EstablishScreenCoordinates(*this);
         m_FeatureSummary->GetScreenCoordinates(x0, y0, x1, y1);
 
+        glEnable(GL_COLOR_LOGIC_OP);
+        glLogicOp(GL_INVERT);
+        glLineWidth(2.0f);
+
         glBegin(GL_LINES);
         glVertex2i(x0, y0);
         glVertex2i(x1, y1);
         glEnd();
+
+        glDisable(GL_COLOR_LOGIC_OP);
     }
+
 
     glFlush();
 }
@@ -4342,6 +4353,7 @@ Fractal::DrawAllPerturbationResults(bool LeaveScreen)
 void
 Fractal::DrawFractalThread(size_t index, Fractal *fractal)
 {
+    SetThreadDescription(GetCurrentThread(), L"Fractal Draw Thread");
     DrawThreadSync &sync = *fractal->m_DrawThreads[index].get();
 
     constexpr size_t BytesPerPixel = 4;
@@ -5145,7 +5157,8 @@ Fractal::TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderM
                                                                          RefOrbitCalc::Extras::None>();
         RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
 
-        HighPrecision radius{results->GetMaxRadius()};
+        const T radiusY{T{GetMaxY() - GetMinY()} / T{2.0f}};
+        HighPrecision radius{radiusY};
         radius /= HighPrecision{12};
 
         m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius, mode);
@@ -5161,7 +5174,8 @@ Fractal::TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderM
                                                              RefOrbitCalc::Extras::IncludeLAv2>();
         RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
 
-        HighPrecision radius{results->GetMaxRadius()};
+        const T radiusY{T{GetMaxY() - GetMinY()} / T{2.0f}};
+        HighPrecision radius{radiusY};
         radius /= HighPrecision{12};
 
         m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius, mode);
@@ -5206,7 +5220,6 @@ Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision &zoomFa
         }
     }
 
-    // ... now identical to your existing zoom logic ...
     const size_t featurePrec = feature.GetPrecision();
     if (featurePrec > GetPrecision()) {
         SetPrecision(featurePrec);
@@ -5336,6 +5349,7 @@ Fractal::CalcCpuPerturbationFractal(bool MemoryOnly)
     //}
 
     auto one_thread = [&]() {
+        SetThreadDescription(GetCurrentThread(), L"CalcCpuPerturbationFractal thread");
         auto compressionHelper{
             std::make_unique<RuntimeDecompressor<IterType, double, PerturbExtras::Disable>>(*results)};
 
@@ -5480,6 +5494,8 @@ Fractal::CalcCpuHDR(bool MemoryOnly)
     const T Two{2};
 
     auto one_thread = [&]() {
+        SetThreadDescription(GetCurrentThread(), L"CalcCpuHDR thread");
+
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
                 continue;
@@ -5576,6 +5592,7 @@ Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly)
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
+        SetThreadDescription(GetCurrentThread(), L"CalcCpuPerturbationFractalBLA thread");
         // T dzdcX = T(1);
         // T dzdcY = T(0);
         // bool periodicity_should_break = false;
@@ -5839,6 +5856,8 @@ Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly)
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
+        SetThreadDescription(GetCurrentThread(), L"CalcCpuPerturbationFractalLAV2 thread");
+
         auto compressionHelper{std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(*results)};
 
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {

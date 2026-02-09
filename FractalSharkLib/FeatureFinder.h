@@ -26,25 +26,20 @@ public:
         Params()
             : MaxNewtonIters(32), RelStepTol{0x1p-40}, // 2^-40
               RelStepTol2{0x1p-80},                    // 2^-80
-              Eps2Accept{}, DampMin{0.1f}, DampMax{1.0f}, PrintResult(true)
+              Eps2Accept{}, PrintResult(true)
         {
             HdrReduce(RelStepTol);
             HdrReduce(RelStepTol2);
-            HdrReduce(DampMin);
-            HdrReduce(DampMax);
         }
 
         uint32_t MaxNewtonIters;
 
-        // Match original: Tolerance = 2^-40, compare squared norms
         T RelStepTol;  // 2^-40
-        T RelStepTol2; // 2^-80  (or compute RelStepTol*RelStepTol)
+        T RelStepTol2; // 2^-80
 
         // Optional: keep residual accept as a *secondary* early-out (can be 0 to disable)
         T Eps2Accept;
 
-        T DampMin;
-        T DampMax;
         bool PrintResult;
     };
 

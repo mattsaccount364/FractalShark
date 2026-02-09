@@ -101,8 +101,8 @@ private:
     IterTypeFull Period{};
     HDRFloat<double> Residual2{};
 
-    int screenXStart{0};
-    int screenYStart{0};
-    int screenXEnd{0};
-    int screenYEnd{0};
+    uint64_t screenXStart{0};
+    uint64_t screenYStart{0};
+    uint64_t screenXEnd{0};
+    uint64_t screenYEnd{0};
 };

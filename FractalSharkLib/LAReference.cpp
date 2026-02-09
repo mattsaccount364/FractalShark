@@ -400,6 +400,8 @@ requires(PExtras != PerturbExtras::MaxCompression)
                        ThreadCount,
                        maxRefIteration,
                        this]() {
+        SetThreadDescription(GetCurrentThread(), L"LAReference Starter Thread");
+
         auto compressionHelper{
             std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults)};
 
@@ -493,6 +495,8 @@ requires(PExtras != PerturbExtras::MaxCompression)
                    ThreadCount,
                    maxRefIteration,
                    this](uint32_t ThreadID) {
+        SetThreadDescription(GetCurrentThread(),
+                             (L"LAReference Worker Thread " + std::to_wstring(ThreadID)).c_str());
         auto compressionHelper{
             std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults)};
 

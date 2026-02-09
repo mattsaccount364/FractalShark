@@ -120,6 +120,58 @@ approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mpf_t 
     return approx_ilogb_mpf(outAbs2);
 }
 
+// ============================================================
+// Spin-based multiply worker helpers
+// ============================================================
+
+// Cache-line align each job so different workers don't false-share
+struct alignas(64) MulJob {
+    mpf_ptr out{};
+    mpf_srcptr a{};
+    mpf_srcptr b{};
+
+    // Pad to a full cache line if needed (optional; alignas often enough,
+    // but padding makes intent explicit across compilers/ABIs).
+    // If this triggers warnings on some compilers, you can remove it.
+    char _pad[64 - (sizeof(mpf_ptr) + sizeof(mpf_srcptr) + sizeof(mpf_srcptr) + sizeof(unsigned long)) >
+                      0
+                  ? 64 - (sizeof(mpf_ptr) + sizeof(mpf_srcptr) + sizeof(mpf_srcptr) +
+                          sizeof(unsigned long))
+                  : 1]{};
+};
+
+struct MulWorkerParams {
+    int idx{};
+    MulJob *jobs{};
+    std::atomic<uint64_t> *job_gen{};
+    std::atomic<uint64_t> *done_gen{};
+};
+
+static inline void
+MulWorkerMain(MulWorkerParams p)
+{
+    SetThreadDescription(GetCurrentThread(), std::format(L"FeatureFinder MulWorker {}", p.idx).c_str()); 
+    uint64_t seen = 0;
+
+    for (;;) {
+        // Wait for a new generation.
+        uint64_t g;
+        do {
+            g = p.job_gen[p.idx].load(std::memory_order_acquire);
+            if (g == std::numeric_limits<uint64_t>::max())
+                return; // main thread signals stop by setting gen to max
+        } while (g == seen);
+
+        // Run job for generation g.
+        const MulJob &jb = p.jobs[p.idx];
+        mpf_mul(jb.out, jb.a, jb.b);
+
+        // Publish completion for generation g.
+        p.done_gen[p.idx].store(g, std::memory_order_release);
+        seen = g;
+    }
+}
+
 // ------------------------------------------------------------
 template <typename IterType, typename T>
 static inline void
@@ -169,25 +221,15 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
     //   - 4 deriv multiplies (complex mul) + 3 orbit multiplies (sqr) concurrently.
     // ============================================================
 
-    struct MulJob {
-        mpf_ptr out{};
-        mpf_srcptr a{};
-        mpf_srcptr b{};
-        unsigned long ui{};
-        int op{}; // 0 = mpf_mul(out,a,b), 1 = mpf_mul_ui(out,a,ui)
-    };
-
     static constexpr int NWORK = 7;
 
-    MulJob w_job[NWORK];
+    // Per-worker slots (aligned to reduce false sharing)
+    alignas(64) MulJob w_job[NWORK];
 
     // main->worker: increments to signal a new job (must change each dispatch)
-    std::atomic<uint64_t> job_gen[NWORK];
+    alignas(64) std::atomic<uint64_t> job_gen[NWORK];
     // worker->main: set to gen that has completed
-    std::atomic<uint64_t> done_gen[NWORK];
-
-    // stop flag for teardown
-    std::atomic<bool> stop{false};
+    alignas(64) std::atomic<uint64_t> done_gen[NWORK];
 
     for (int k = 0; k < NWORK; ++k) {
         job_gen[k].store(0, std::memory_order_relaxed);
@@ -207,77 +249,67 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
     for (int k = 0; k < 3; ++k)
         mpf_init2(w_out_coord[k], coord_prec_bits);
 
-    auto worker_lambda = [&](int idx) {
-        uint64_t seen = 0;
-        for (;;) {
-            // Wait for a new generation.
-            uint64_t g;
-            do {
-                if (stop.load(std::memory_order_acquire))
-                    return;
-                g = job_gen[idx].load(std::memory_order_acquire);
-            } while (g == seen);
-
-            // Run job for generation g.
-            const MulJob &jb = w_job[idx];
-            if (jb.op == 0) {
-                mpf_mul(jb.out, jb.a, jb.b);
-            } else {
-                mpf_mul_ui(jb.out, jb.a, jb.ui);
-            }
-
-            // Publish completion for generation g.
-            done_gen[idx].store(g, std::memory_order_release);
-            seen = g;
-        }
-    };
+    MulWorkerParams w_params[NWORK];
+    for (int k = 0; k < NWORK; ++k) {
+        w_params[k].idx = k;
+        w_params[k].jobs = w_job;
+        w_params[k].job_gen = job_gen;
+        w_params[k].done_gen = done_gen;
+    }
 
     std::thread w_threads[NWORK] = {
-        std::thread(worker_lambda, 0),
-        std::thread(worker_lambda, 1),
-        std::thread(worker_lambda, 2),
-        std::thread(worker_lambda, 3),
-        std::thread(worker_lambda, 4),
-        std::thread(worker_lambda, 5),
-        std::thread(worker_lambda, 6),
+        std::thread(MulWorkerMain, w_params[0]),
+        std::thread(MulWorkerMain, w_params[1]),
+        std::thread(MulWorkerMain, w_params[2]),
+        std::thread(MulWorkerMain, w_params[3]),
+        std::thread(MulWorkerMain, w_params[4]),
+        std::thread(MulWorkerMain, w_params[5]),
+        std::thread(MulWorkerMain, w_params[6]),
     };
+
+    uint64_t main_gen[NWORK]{};
 
     auto dispatch_mul = [&](int idx, mpf_ptr out, mpf_srcptr a, mpf_srcptr b) {
         w_job[idx].out = out;
         w_job[idx].a = a;
         w_job[idx].b = b;
-        w_job[idx].ui = 0;
-        w_job[idx].op = 0;
 
-        const uint64_t g = job_gen[idx].load(std::memory_order_relaxed) + 1;
-        job_gen[idx].store(g, std::memory_order_release);
+        const uint64_t g = ++main_gen[idx];               // purely local
+        job_gen[idx].store(g, std::memory_order_release); // publish job
     };
 
-    auto dispatch_mul_ui = [&](int idx, mpf_ptr out, mpf_srcptr a, unsigned long ui) {
-        w_job[idx].out = out;
-        w_job[idx].a = a;
-        w_job[idx].b = nullptr;
-        w_job[idx].ui = ui;
-        w_job[idx].op = 1;
-
-        const uint64_t g = job_gen[idx].load(std::memory_order_relaxed) + 1;
-        job_gen[idx].store(g, std::memory_order_release);
-    };
 
     auto wait_done = [&](int idx) {
-        const uint64_t g = job_gen[idx].load(std::memory_order_acquire);
+        const uint64_t g = main_gen[idx];
         while (done_gen[idx].load(std::memory_order_acquire) != g) {
             // spin
         }
     };
+
 
     for (uint64_t i = 0; i < period; ++i) {
 
         // ============================================================
         // Round/copy z from coord_prec -> deriv_prec (for derivative math)
         // ============================================================
+
+        // Orbit multiplies:
+        dispatch_mul(4, w_out_coord[0], z_coord.re, z_coord.re); // z.re * z.re
+        dispatch_mul(5, w_out_coord[1], z_coord.im, z_coord.im); // z.im * z.im
+        dispatch_mul(6, w_out_coord[2], z_coord.re, z_coord.im); // z.re * z.im
+
+        // Deriv multiply:
         mpf_set(z_deriv.re, z_coord.re);
+        mpf_mul_ui(tmpB_deriv.re, z_deriv.re, 2);
+        dispatch_mul(0, w_out_deriv[0], dzdc_deriv.re, tmpB_deriv.re); // dzdc.re * tmpB.re
+
         mpf_set(z_deriv.im, z_coord.im);
+        mpf_mul_ui(tmpB_deriv.im, z_deriv.im, 2);
+
+        // Remaining deriv multiplies:
+        dispatch_mul(1, w_out_deriv[1], dzdc_deriv.im, tmpB_deriv.im); // dzdc.im * tmpB.im
+        dispatch_mul(2, w_out_deriv[2], dzdc_deriv.re, tmpB_deriv.im); // dzdc.re * tmpB.im
+        dispatch_mul(3, w_out_deriv[3], dzdc_deriv.im, tmpB_deriv.re); // dzdc.im * tmpB.re
 
         // ============================================================
         // d2 SECTION (HDRFloat):  d2 <- 2*(dzdc^2 + z*d2)
@@ -332,42 +364,21 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
         local_d2r = T{2.0} * sumr;
         local_d2i = T{2.0} * sumi;
 
-        // ============================================================
-        // dzdc SECTION prep (mpf, deriv_prec): tmpB_deriv = 2*z_deriv
-        // ============================================================
-        mpf_mul_ui(tmpB_deriv.re, z_deriv.re, 2);
-        mpf_mul_ui(tmpB_deriv.im, z_deriv.im, 2);
 
-        // ============================================================
-        // OVERLAPPED MULTIPLIES:
-        //   - workers 0..3: deriv complex multiply (4 multiplies)
-        //   - workers 4..6: orbit square (3 multiplies)
-        // ============================================================
 
-        // Deriv multiplies:
-        dispatch_mul(0, w_out_deriv[0], dzdc_deriv.re, tmpB_deriv.re); // dzdc.re * tmpB.re
-        dispatch_mul(1, w_out_deriv[1], dzdc_deriv.im, tmpB_deriv.im); // dzdc.im * tmpB.im
-        dispatch_mul(2, w_out_deriv[2], dzdc_deriv.re, tmpB_deriv.im); // dzdc.re * tmpB.im
-        dispatch_mul(3, w_out_deriv[3], dzdc_deriv.im, tmpB_deriv.re); // dzdc.im * tmpB.re
-
-        // Orbit multiplies:
-        dispatch_mul(4, w_out_coord[0], z_coord.re, z_coord.re); // z.re * z.re
-        dispatch_mul(5, w_out_coord[1], z_coord.im, z_coord.im); // z.im * z.im
-        dispatch_mul(6, w_out_coord[2], z_coord.re, z_coord.im); // z.re * z.im
 
         // Wait for all 7
         wait_done(0);
         wait_done(1);
-        wait_done(2);
-        wait_done(3);
-        wait_done(4);
-        wait_done(5);
-        wait_done(6);
 
         // ============================================================
         // Combine deriv results (main thread): dzdc *= tmpB; then +1
         // ============================================================
         mpf_sub(tr_d, w_out_deriv[0], w_out_deriv[1]); // tr_d = w0 - w1
+
+        wait_done(2);
+        wait_done(3);
+
         mpf_add(ti_d, w_out_deriv[2], w_out_deriv[3]); // ti_d = w2 + w3
 
         mpf_set(dzdc_deriv.re, tr_d);
@@ -378,8 +389,15 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
         // ============================================================
         // Combine orbit results (main thread): z = z^2 + c
         // ============================================================
+
+        wait_done(4);
+        wait_done(5);
+
         mpf_sub(tr_c, w_out_coord[0], w_out_coord[1]); // tr_c = zr^2 - zi^2
-        mpf_mul_ui(ti_c, w_out_coord[2], 2);           // ti_c = 2*zr*zi
+
+        wait_done(6);
+
+        mpf_mul_ui(ti_c, w_out_coord[2], 2); // ti_c = 2*zr*zi
 
         mpf_set(tmpZ_coord.re, tr_c);
         mpf_set(tmpZ_coord.im, ti_c);
@@ -394,11 +412,8 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
     // ============================================================
     // Tear down workers
     // ============================================================
-    stop.store(true, std::memory_order_release);
     for (int k = 0; k < NWORK; ++k) {
-        // Nudge each worker so it re-checks stop promptly even if period is 0.
-        // (No job fields needed; just bump gen.)
-        const uint64_t g = job_gen[k].load(std::memory_order_relaxed) + 1;
+        const uint64_t g = std::numeric_limits<uint64_t>::max();
         job_gen[k].store(g, std::memory_order_release);
     }
 
@@ -412,6 +427,7 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
     for (int k = 0; k < 3; ++k)
         mpf_clear(w_out_coord[k]);
 }
+
 
 // ------------------------------------------------------------
 // EvaluateCriticalOrbitAndDerivsST
@@ -1941,6 +1957,13 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
                                                        outResidual2)) {
                 return true;
             }
+
+            std::cout
+                << "[LA->PT fallback] INFO: LA eval incomplete; trying PT at same period cap="
+                << (uint64_t)ioPeriod << "\n";
+        } else {
+            std::cout << "[LA->PT fallback] INFO: LA reference invalid; trying PT at same period cap="
+                      << (uint64_t)ioPeriod << "\n";
         }
 
         // Fall back to PT
@@ -1957,6 +1980,8 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
                                                    outResidual2)) {
             return true;
         }
+
+        std::cout << "[LA->PT fallback] INFO: PT eval failed" << std::endl;
 
         return false;
     }

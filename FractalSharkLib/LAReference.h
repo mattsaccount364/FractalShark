@@ -196,6 +196,7 @@ public:
         auto numElementsPerThread = other.m_LAs.GetSize() / numThreads;
 
         auto oneThread = [&](size_t start, size_t end) {
+            SetThreadDescription(GetCurrentThread(), L"LAReference::CopyLAReference");
             for (size_t i = start; i < end; i++) {
                 m_LAs[i] = other.m_LAs[i];
             }

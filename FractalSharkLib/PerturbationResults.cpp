@@ -258,6 +258,7 @@ PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
     auto numElementsPerThread = other.m_FullOrbit.GetSize() / numThreads;
 
     auto oneThread = [&](size_t start, size_t end) {
+        SetThreadDescription(GetCurrentThread(), L"PerturbationResults::CopyFullOrbitVector");
         for (size_t i = start; i < end; i++) {
             if constexpr (PExtras == PerturbExtras::Bad) {
                 m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{

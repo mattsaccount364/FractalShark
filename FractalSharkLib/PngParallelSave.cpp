@@ -58,6 +58,8 @@ void PngParallelSave::StartThread() {
 }
 
 void PngParallelSave::Run() {
+    SetThreadDescription(GetCurrentThread(), L"PngParallelSave::Run");
+
     int ret;
     std::wstring final_filename;
 

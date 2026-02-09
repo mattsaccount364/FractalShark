@@ -7,6 +7,8 @@
 void
 AttachBackgroundConsole(bool initiallyVisible)
 {
+    SetThreadDescription(GetCurrentThread(), L"Background Console Thread");
+
     // Prefer AllocConsoleWithOptions so the window is never shown until we're ready.
     // (If unavailable, fall back to AllocConsole + immediate hide.)
     using AllocConsoleWithOptionsFn = HRESULT(WINAPI *)(PALLOC_CONSOLE_OPTIONS, PALLOC_CONSOLE_RESULT);

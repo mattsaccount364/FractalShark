@@ -298,10 +298,10 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
         case 'a':
             if (!shiftDown) {
                 MenuCenterView(mousePt.x, mousePt.y);
-                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Feature>();
             } else {
                 MenuCenterView(mousePt.x, mousePt.y);
-                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
+                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
             }
             break;
 

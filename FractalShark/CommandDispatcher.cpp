@@ -157,10 +157,10 @@ CommandDispatcher::BuildTable()
 
     table_.emplace(
         IDM_AUTOZOOM_DEFAULT,
-        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>(); });
+        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Feature>(); });
     table_.emplace(
         IDM_AUTOZOOM_MAX,
-        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>(); });
+        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>(); });
     table_.emplace(IDM_FEATUREFINDER_DIRECT,
                    makeDoPeriodic.operator()<FeatureFinderMode::Direct>());
     table_.emplace(IDM_FEATUREFINDER_PT, makeDoPeriodic.operator()<FeatureFinderMode::PT>());

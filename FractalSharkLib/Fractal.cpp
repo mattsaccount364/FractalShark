@@ -741,13 +741,8 @@ Fractal::AutoZoom()
     HighPrecision guessX;
     HighPrecision guessY;
 
-    HighPrecision p10_9;
-
-    size_t retries = 0;
-
-    // static std::vector<size_t> top100;
-
     HighPrecision Divisor;
+
     if constexpr (h == AutoZoomHeuristic::Default) {
         Divisor = HighPrecision{3};
     }
@@ -756,8 +751,53 @@ Fractal::AutoZoom()
         Divisor = HighPrecision{32};
     }
 
+    if constexpr (h == AutoZoomHeuristic::Feature) {
+        Divisor = HighPrecision{3};
+
+        FeatureSummary *best = ChooseClosestFeatureToMouse();
+        if (!best) {
+            std::cerr << "AutoZoom(Feature): no features available.\n";
+            return;
+        }
+
+        if (ZoomToFoundFeature(*best, nullptr) == false) {
+            std::cout << "AutoZoom(Feature): failed to zoom to feature.\n";
+            return;
+        }
+
+        int replacePTCounterHeuristic = 0;
+        for (;;) {
+            {
+                MSG msg;
+                PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
+            }
+
+            guessX = best->GetFoundX();
+            guessY = best->GetFoundY();
+
+            auto existingZoom = m_Ptz.GetZoomFactor();
+            auto newZoom = existingZoom * HighPrecision{1.1};
+
+            PointZoomBBConverter newPtz{guessX, guessY, newZoom};
+            RecenterViewCalc(newPtz);
+
+            CalcFractal(false);
+
+            if (m_StopCalculating)
+                break;
+
+            if (replacePTCounterHeuristic++ > 100) {
+                ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                replacePTCounterHeuristic = 0;
+            }
+        }
+
+        return;
+    }
+
+    size_t retries = 0;
+
     for (;;) {
-        // SaveCurPos();
         {
             MSG msg;
             PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
@@ -775,11 +815,12 @@ Fractal::AutoZoom()
 
         size_t numAtMax = 0;
         size_t numAtLimit = 0;
-
         bool shouldBreak = false;
 
         auto lambda = [&](auto **ItersArray, auto NumIterations) {
+            // ---------------- DEFAULT ----------------
             if constexpr (h == AutoZoomHeuristic::Default) {
+
                 ULONG shiftWidth = (ULONG)m_ScrnWidth / 8;
                 ULONG shiftHeight = (ULONG)m_ScrnHeight / 8;
 
@@ -799,96 +840,67 @@ Fractal::AutoZoom()
 
                 size_t maxiter = 0;
                 double totaliters = 0;
+
                 for (auto y = antiRect.top; y < antiRect.bottom; y++) {
                     for (auto x = antiRect.left; x < antiRect.right; x++) {
                         auto curiter = ItersArray[y][x];
                         totaliters += curiter;
-
-                        if (curiter > maxiter) {
+                        if (curiter > maxiter)
                             maxiter = curiter;
-                        }
-
-                        // if (top100.empty() ||
-                        //     (!top100.empty() && curiter > top100[0])) {
-                        //     top100.push_back(curiter);
-                        //     std::sort(top100.begin(), top100.end(), std::less<size_t>());
-
-                        //    if (top100.size() > 100) {
-                        //        top100.erase(top100.begin());
-                        //    }
-                        //}
                     }
                 }
 
                 double avgiters =
                     totaliters / ((antiRect.bottom - antiRect.top) * (antiRect.right - antiRect.left));
 
-                // double midpointX = ((double) antiRect.left + antiRect.right) / 2.0;
-                // double midpointY = ((double) antiRect.top + antiRect.bottom) / 2.0;
-                double antirectWidth = antiRectWidthInt;
-                double antirectHeight = antiRectHeightInt;
-
-                double widthOver2 = antirectWidth / 2.0;
-                double heightOver2 = antirectHeight / 2.0;
+                double widthOver2 = antiRectWidthInt / 2.0;
+                double heightOver2 = antiRectHeightInt / 2.0;
                 double maxDistance = sqrt(widthOver2 * widthOver2 + heightOver2 * heightOver2);
 
                 for (auto y = antiRect.top; y < antiRect.bottom; y++) {
                     for (auto x = antiRect.left; x < antiRect.right; x++) {
+
                         auto curiter = ItersArray[y][x];
 
-                        if (curiter == maxiter) {
+                        if (curiter == maxiter)
                             numAtLimit++;
-                        }
 
-                        if (curiter < avgiters) {
+                        if (curiter < avgiters)
                             continue;
-                        }
 
-                        // if (curiter > maxiter) {
-                        //     maxiter = curiter;
-                        //     geometricMeanX = x;
-                        //     geometricMeanY = y;
-                        //     geometricMeanSum = 1;
-                        // }
-
-                        // TODO this is all fucked up
                         double distanceX = fabs(widthOver2 - fabs(widthOver2 - fabs(x - antiRect.left)));
                         double distanceY =
                             fabs(heightOver2 - fabs(heightOver2 - fabs(y - antiRect.top)));
+
                         double normalizedIters = (double)curiter / (double)NumIterations;
 
-                        if (curiter == maxiter) {
+                        if (curiter == maxiter)
                             normalizedIters *= normalizedIters;
-                        }
+
                         double normalizedDist =
-                            (sqrt(distanceX * distanceX + distanceY * distanceY) / maxDistance);
+                            sqrt(distanceX * distanceX + distanceY * distanceY) / maxDistance;
+
                         double sq = normalizedIters * normalizedDist;
+
                         geometricMeanSum += sq;
                         geometricMeanX += sq * x;
                         geometricMeanY += sq * y;
 
-                        if (curiter >= NumIterations) {
+                        if (curiter >= NumIterations)
                             numAtMax++;
-                        }
                     }
                 }
 
-                assert(geometricMeanSum != 0);
-
-                if (geometricMeanSum != 0) {
-                    double meanX = geometricMeanX / geometricMeanSum;
-                    double meanY = geometricMeanY / geometricMeanSum;
-
-                    guessX = XFromScreenToCalc<true>(HighPrecision{meanX});
-                    guessY = YFromScreenToCalc<true>(HighPrecision{meanY});
-
-                    // wchar_t temps[256];
-                    // swprintf(temps, 256, L"Coords: %f %f", meanX, meanY);
-                    //::MessageBox(nullptr, temps, L"", MB_OK | MB_APPLMODAL);
-                } else {
+                if (geometricMeanSum == 0) {
                     shouldBreak = true;
                     return;
                 }
+
+                double meanX = geometricMeanX / geometricMeanSum;
+                double meanY = geometricMeanY / geometricMeanSum;
+
+                guessX = XFromScreenToCalc<true>(HighPrecision{meanX});
+                guessY = YFromScreenToCalc<true>(HighPrecision{meanY});
 
                 if (numAtLimit == antiRectWidthInt * antiRectHeightInt) {
                     std::wcerr << L"Flat screen! :(" << std::endl;
@@ -897,23 +909,25 @@ Fractal::AutoZoom()
                 }
             }
 
+            // ---------------- MAX ----------------
             if constexpr (h == AutoZoomHeuristic::Max) {
+
                 LONG targetX = -1;
                 LONG targetY = -1;
-
                 size_t maxiter = 0;
+
                 for (auto y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
                     for (auto x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
                         auto curiter = ItersArray[y][x];
-                        if (curiter > maxiter) {
+                        if (curiter > maxiter)
                             maxiter = curiter;
-                        }
                     }
                 }
 
                 for (auto y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
                     for (auto x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
                         auto curiter = ItersArray[y][x];
+
                         if (curiter == maxiter) {
                             numAtLimit++;
                             if (targetX == -1 && targetY == -1) {
@@ -922,9 +936,8 @@ Fractal::AutoZoom()
                             }
                         }
 
-                        if (curiter >= NumIterations) {
+                        if (curiter >= NumIterations)
                             numAtMax++;
-                        }
                     }
                 }
 
@@ -946,59 +959,32 @@ Fractal::AutoZoom()
             lambda(m_CurIters.GetItersArray<uint64_t>(), GetNumIterations<uint64_t>());
         }
 
-        if (shouldBreak) {
+        if (shouldBreak)
             break;
-        }
 
         HighPrecision newMinX = guessX - width / Divisor;
         HighPrecision newMinY = guessY - height / Divisor;
         HighPrecision newMaxX = guessX + width / Divisor;
         HighPrecision newMaxY = guessY + height / Divisor;
 
-        HighPrecision centerX = (m_Ptz.GetMinX() + m_Ptz.GetMaxX()) / Two;
-        HighPrecision centerY = (m_Ptz.GetMinY() + m_Ptz.GetMaxY()) / Two;
+        PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY};
 
-        HighPrecision defaultMinX = centerX - width / Divisor;
-        HighPrecision defaultMinY = centerY - height / Divisor;
-        HighPrecision defaultMaxX = centerX + width / Divisor;
-        HighPrecision defaultMaxY = centerY + height / Divisor;
-
-        const HighPrecision defaultWeight{0};
-        const HighPrecision newWeight{1};
-        HighPrecision weightedNewMinX =
-            (newWeight * newMinX + defaultWeight * defaultMinX) / (newWeight + defaultWeight);
-        HighPrecision weightedNewMinY =
-            (newWeight * newMinY + defaultWeight * defaultMinY) / (newWeight + defaultWeight);
-        HighPrecision weightedNewMaxX =
-            (newWeight * newMaxX + defaultWeight * defaultMaxX) / (newWeight + defaultWeight);
-        HighPrecision weightedNewMaxY =
-            (newWeight * newMaxY + defaultWeight * defaultMaxY) / (newWeight + defaultWeight);
-
-        // HighPrecision weightedNewMinX = guessX - width / Divisor;
-        // HighPrecision weightedNewMinY = guessY - height / Divisor;
-        // HighPrecision weightedNewMaxX = guessX + width / Divisor;
-        // HighPrecision weightedNewMaxY = guessY + height / Divisor;
-
-        PointZoomBBConverter newPtz{weightedNewMinX, weightedNewMinY, weightedNewMaxX, weightedNewMaxY};
         RecenterViewCalc(newPtz);
-
         CalcFractal(false);
-        // DrawFractal(false);
 
-        if (numAtMax > 500) {
+        if (numAtMax > 500)
             break;
-        }
 
         retries++;
 
-        if (m_StopCalculating) {
+        if (m_StopCalculating)
             break;
-        }
     }
 }
 
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Default>();
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>();
+template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Feature>();
 
 //////////////////////////////////////////////////////////////////////////////
 // Resets the fractal to the standard view.
@@ -5272,7 +5258,7 @@ Fractal::ClearAllFoundFeatures()
 }
 
 bool
-Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision &zoomFactor, bool invalidateAll)
+Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFactor)
 {
     // If we only have a candidate, refine now
     if (feature.HasCandidate()) {
@@ -5302,52 +5288,43 @@ Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision &zoomFa
         SetPrecision(featurePrec);
     }
 
-    const HighPrecision ptX = feature.GetFoundX();
-    const HighPrecision ptY = feature.GetFoundY();
+    if (zoomFactor) {
+        const HighPrecision ptX = feature.GetFoundX();
+        const HighPrecision ptY = feature.GetFoundY();
 
-    PointZoomBBConverter ptz(ptX, ptY, zoomFactor);
-    if (ptz.Degenerate())
-        return false;
+        PointZoomBBConverter ptz(ptX, ptY, *zoomFactor);
+        if (ptz.Degenerate())
+            return false;
 
-    return RecenterViewCalc(ptz);
+        return RecenterViewCalc(ptz);
+    }
+
+    return true;
 }
 
-// Pick closest feature (in calc-space) to current mouse position and zoom to it.
-bool
-Fractal::ZoomToFoundFeature()
+FeatureSummary *
+Fractal::ChooseClosestFeatureToMouse() const
 {
-    if (m_FeatureSummaries.empty()) {
-        std::cerr << "No feature found to zoom to.\n";
-        return false;
-    }
+    if (m_FeatureSummaries.empty())
+        return nullptr;
 
-    // ---------------------------
-    // 1) Get mouse in client pixels
-    // ---------------------------
+    // Mouse in client pixels
     POINT pt{};
-    if (!::GetCursorPos(&pt)) {
-        std::cerr << "GetCursorPos failed.\n";
-        return false;
-    }
+    if (!::GetCursorPos(&pt))
+        return nullptr;
 
     HWND hwnd = m_hWnd;
-    if (!hwnd) {
-        std::cerr << "ZoomToFoundFeature: invalid HWND.\n";
-        return false;
-    }
+    if (!hwnd)
+        return nullptr;
 
-    if (!::ScreenToClient(hwnd, &pt)) {
-        std::cerr << "ScreenToClient failed.\n";
-        return false;
-    }
+    if (!::ScreenToClient(hwnd, &pt))
+        return nullptr;
 
-    // Optional: clamp mouse to render bounds so conversion stays sane
+    // Clamp to render bounds
     const int w = (int)GetRenderWidth();
     const int h = (int)GetRenderHeight();
-    if (w <= 0 || h <= 0) {
-        std::cerr << "Invalid render size.\n";
-        return false;
-    }
+    if (w <= 0 || h <= 0)
+        return nullptr;
 
     if (pt.x < 0)
         pt.x = 0;
@@ -5358,52 +5335,46 @@ Fractal::ZoomToFoundFeature()
     if (pt.y >= h)
         pt.y = h - 1;
 
-    // ---------------------------
-    // 2) Convert mouse -> calc coords
-    // ---------------------------
-    const HighPrecision mx_calc = XFromScreenToCalc(HighPrecision{(int64_t)pt.x});
-    const HighPrecision my_calc = YFromScreenToCalc(HighPrecision{(int64_t)pt.y});
+    // Convert mouse -> calc coords (same space as found feature coords)
+    const HighPrecision mx = XFromScreenToCalc(HighPrecision{(int64_t)pt.x});
+    const HighPrecision my = YFromScreenToCalc(HighPrecision{(int64_t)pt.y});
 
-    // ---------------------------
-    // 3) Choose closest feature by FoundX/FoundY
-    // ---------------------------
     FeatureSummary *best = nullptr;
-    HighPrecision bestDist2; // initialized once we have a candidate
+    HighPrecision bestDist2{};
     bool haveBest = false;
 
-    for (auto &up : m_FeatureSummaries) {
-        if (!up)
+    for (auto &fsPtr : m_FeatureSummaries) {
+        if (!fsPtr)
             continue;
-        FeatureSummary &fs = *up;
 
-        const HighPrecision dx = fs.GetFoundX() - mx_calc;
-        const HighPrecision dy = fs.GetFoundY() - my_calc;
-        HighPrecision dist2 = dx * dx + dy * dy;
+        FeatureSummary &fs = *fsPtr;
 
-        if (!haveBest) {
+        const HighPrecision dx = fs.GetFoundX() - mx;
+        const HighPrecision dy = fs.GetFoundY() - my;
+        const HighPrecision dist2 = dx * dx + dy * dy;
+
+        if (!haveBest || dist2 < bestDist2) {
             best = &fs;
             bestDist2 = dist2;
             haveBest = true;
-        } else {
-            if (dist2 < bestDist2) {
-                best = &fs;
-                bestDist2 = dist2;
-            }
         }
     }
 
+    return best;
+}
+
+bool
+Fractal::ZoomToFoundFeature()
+{
+    FeatureSummary *best = ChooseClosestFeatureToMouse();
     if (!best) {
-        std::cerr << "No valid features in m_FeatureSummaries.\n";
+        std::cerr << "No feature found to zoom to.\n";
         return false;
     }
 
-    // ---------------------------
-    // 4) Zoom to chosen feature
-    // ---------------------------
     const HighPrecision z = ComputeZoomFactorForFeature(*best);
-    return ZoomToFoundFeature(*best, z, true);
+    return ZoomToFoundFeature(*best, &z);
 }
-
 
 HighPrecision
 Fractal::ComputeZoomFactorForFeature(const FeatureSummary &feature) const
@@ -6672,7 +6643,7 @@ Fractal::FindTotalItersUsed(void)
 //////////////////////////////////////////////////////////////////////////////
 template <bool IncludeGpuAntialiasing>
 HighPrecision
-Fractal::XFromScreenToCalc(HighPrecision x)
+Fractal::XFromScreenToCalc(HighPrecision x) const
 {
     HighPrecision aa(IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
     HighPrecision highHeight(m_ScrnHeight);
@@ -6683,7 +6654,7 @@ Fractal::XFromScreenToCalc(HighPrecision x)
 
 template <bool IncludeGpuAntialiasing>
 HighPrecision
-Fractal::YFromScreenToCalc(HighPrecision y)
+Fractal::YFromScreenToCalc(HighPrecision y) const
 {
     HighPrecision aa(IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
     HighPrecision highHeight(m_ScrnHeight);

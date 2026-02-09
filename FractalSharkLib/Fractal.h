@@ -81,7 +81,7 @@ public:
 
     void TestBasic();
 
-    enum class AutoZoomHeuristic { Default, Max };
+    enum class AutoZoomHeuristic { Default, Max, Feature };
 
     template <AutoZoomHeuristic h> void AutoZoom();
 
@@ -217,9 +217,8 @@ public:
     AddPointOptions GetResultsAutosave() const;
 
     // Unit conversion helpers
-    template <bool IncludeGpuAntialiasing = false> HighPrecision XFromScreenToCalc(HighPrecision x);
-
-    template <bool IncludeGpuAntialiasing = false> HighPrecision YFromScreenToCalc(HighPrecision y);
+    template <bool IncludeGpuAntialiasing = false> HighPrecision XFromScreenToCalc(HighPrecision x) const;
+    template <bool IncludeGpuAntialiasing = false> HighPrecision YFromScreenToCalc(HighPrecision y) const;
 
     HighPrecision XFromCalcToScreen(HighPrecision x) const;
     HighPrecision YFromCalcToScreen(HighPrecision y) const;
@@ -247,9 +246,9 @@ public:
     HighPrecision ComputeZoomFactorForFeature(const FeatureSummary &feature) const;
 
     void ClearAllFoundFeatures();
+    FeatureSummary *ChooseClosestFeatureToMouse() const;
     bool ZoomToFoundFeature(FeatureSummary &feature,
-                            const HighPrecision &zoomFactor,
-                            bool invalidateAll);
+                            const HighPrecision *zoomFactor);
     bool ZoomToFoundFeature();
 
 private:

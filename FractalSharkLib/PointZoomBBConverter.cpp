@@ -26,15 +26,34 @@ PointZoomBBConverter::PointZoomBBConverter(
 
     auto deltaY = m_MaxY - m_MinY;
     if constexpr (m_Test) {
-        m_MinXStr = m_MinX.str();
-        m_MinYStr = m_MinY.str();
-        m_MaxXStr = m_MaxX.str();
-        m_MaxYStr = m_MaxY.str();
-        m_PtXStr = m_PtX.str();
-        m_PtYStr = m_PtY.str();
-        m_ZoomFactorStr = m_ZoomFactor.str();
-        m_RadiusStr = ((m_MaxY - m_MinY) / HighPrecision{2}).str();
-        m_DeltaYStr = deltaY.str();
+        if (m_MinX.precisionInBits() < 1000)
+            m_MinXStr = m_MinX.str();
+
+        if (m_MinY.precisionInBits() < 1000)
+            m_MinYStr = m_MinY.str();
+
+        if (m_MaxX.precisionInBits() < 1000)
+            m_MaxXStr = m_MaxX.str();
+
+        if (m_MaxY.precisionInBits() < 1000)
+            m_MaxYStr = m_MaxY.str();
+
+        if (m_PtX.precisionInBits() < 1000)
+            m_PtXStr = m_PtX.str();
+            
+        if (m_PtY.precisionInBits() < 1000)
+            m_PtYStr = m_PtY.str();
+
+        if (m_ZoomFactor.precisionInBits() < 1000)
+            m_ZoomFactorStr = m_ZoomFactor.str();
+
+        HighPrecision radius = (m_MaxY - m_MinY) / HighPrecision{2};
+
+        if (radius.precisionInBits() < 1000)
+            m_RadiusStr = radius.str();
+
+        if (deltaY.precisionInBits() < 1000)
+            m_DeltaYStr = deltaY.str();
     }
 }
 
@@ -53,26 +72,46 @@ PointZoomBBConverter::PointZoomBBConverter(
     auto deltaY = m_MaxY - m_MinY;
 
     if constexpr (m_Test) {
-        std::string minXStr = minX.str();
-        std::string maxXStr = maxX.str();
-        std::string minYStr = minY.str();
-        std::string maxYStr = maxY.str();
+        std::string minXStr;
+        std::string maxXStr;
+        std::string minYStr;
+        std::string maxYStr;
 
-        m_MinXStr = m_MinX.str();
-        m_MaxXStr = m_MaxX.str();
-        m_MinYStr = m_MinY.str();
-        m_MaxYStr = m_MaxY.str();
-        m_PtXStr = m_PtX.str();
-        m_PtYStr = m_PtY.str();
-        m_RadiusStr = ((m_MaxY - m_MinY) / HighPrecision{2}).str();
-        m_DeltaYStr = deltaY.str();
+        if (minX.precisionInBits() < 1000)
+            minXStr = minX.str();
+        if (maxX.precisionInBits() < 1000)
+            maxXStr = maxX.str();
+        if (minY.precisionInBits() < 1000)
+            minYStr = minY.str();
+        if (maxY.precisionInBits() < 1000)
+            maxYStr = maxY.str();
+
+        if (m_MinX.precisionInBits() < 1000)
+            m_MinXStr = m_MinX.str();
+        if (m_MaxX.precisionInBits() < 1000)
+            m_MaxXStr = m_MaxX.str();
+        if (m_MinY.precisionInBits() < 1000)
+            m_MinYStr = m_MinY.str();
+        if (m_MaxY.precisionInBits() < 1000)
+            m_MaxYStr = m_MaxY.str();
+        if (m_PtX.precisionInBits() < 1000)
+            m_PtXStr = m_PtX.str();
+        if (m_PtY.precisionInBits() < 1000)
+            m_PtYStr = m_PtY.str();
+
+        HighPrecision radius = (m_MaxY - m_MinY) / HighPrecision{2};
+        if (radius.precisionInBits() < 1000)
+            m_RadiusStr = radius.str();
+        if (deltaY.precisionInBits() < 1000)
+            m_DeltaYStr = deltaY.str();
     }
 
     if (/*deltaX == 0 || */deltaY == HighPrecision{ 0 }) {
         m_ZoomFactor = HighPrecision{ 1 };
 
         if constexpr (m_Test) {
-            m_ZoomFactorStr = m_ZoomFactor.str();
+            if (m_ZoomFactor.precisionInBits() < 1000)
+                m_ZoomFactorStr = m_ZoomFactor.str();
         }
 
         return;
@@ -87,7 +126,8 @@ PointZoomBBConverter::PointZoomBBConverter(
     m_ZoomFactor = zf2;
 
     if constexpr (m_Test) {
-        m_ZoomFactorStr = m_ZoomFactor.str();
+        if (m_ZoomFactor.precisionInBits() < 1000)
+            m_ZoomFactorStr = m_ZoomFactor.str();
     }
 }
 
@@ -131,14 +171,30 @@ void PointZoomBBConverter::SetPrecision(uint64_t precInBits) {
     m_ZoomFactor.precisionInBits(precInBits);
 
     if constexpr (m_Test) {
-        m_MinXStr = m_MinX.str();
-        m_MinYStr = m_MinY.str();
-        m_MaxXStr = m_MaxX.str();
-        m_MaxYStr = m_MaxY.str();
-        m_PtXStr = m_PtX.str();
-        m_PtYStr = m_PtY.str();
-        m_ZoomFactorStr = m_ZoomFactor.str();
-        m_RadiusStr = ((m_MaxY - m_MinY) / HighPrecision{2}).str();
+        if (m_MinX.precisionInBits() < 1000)
+            m_MinXStr = m_MinX.str();
+
+        if (m_MinY.precisionInBits() < 1000)
+            m_MinYStr = m_MinY.str();
+
+        if (m_MaxX.precisionInBits() < 1000)
+            m_MaxXStr = m_MaxX.str();
+
+        if (m_MaxY.precisionInBits() < 1000)
+            m_MaxYStr = m_MaxY.str();
+
+        if (m_PtX.precisionInBits() < 1000)
+            m_PtXStr = m_PtX.str();
+
+        if (m_PtY.precisionInBits() < 1000)
+            m_PtYStr = m_PtY.str();
+
+        if (m_ZoomFactor.precisionInBits() < 1000)
+            m_ZoomFactorStr = m_ZoomFactor.str();
+
+        HighPrecision radius = (m_MaxY - m_MinY) / HighPrecision{2};
+        if (radius.precisionInBits() < 1000)
+            m_RadiusStr = ((m_MaxY - m_MinY) / HighPrecision{2}).str();
     }
 }
 

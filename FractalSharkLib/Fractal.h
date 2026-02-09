@@ -246,6 +246,7 @@ public:
 
     HighPrecision ComputeZoomFactorForFeature(const FeatureSummary &feature) const;
 
+    void ClearAllFoundFeatures();
     bool ZoomToFoundFeature(FeatureSummary &feature,
                             const HighPrecision &zoomFactor,
                             bool invalidateAll);
@@ -339,7 +340,8 @@ private:
 
     // Member Variables
     RefOrbitCalc m_RefOrbit;
-    std::unique_ptr<FeatureSummary> m_FeatureSummary;
+    std::vector<std::unique_ptr<FeatureSummary>> m_FeatureSummaries;
+
 
     std::unique_ptr<uint16_t[]> m_DrawOutBytes;
     std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;

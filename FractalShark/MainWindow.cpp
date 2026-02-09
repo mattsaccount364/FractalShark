@@ -325,7 +325,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             PaintAsNecessary();
             break;
 
-        case 'f': {
+        case 'n': {
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
@@ -333,7 +333,15 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             break;
         }
 
-        case 'F': {
+        case 'N': {
+            POINT pt;
+            ::GetCursorPos(&pt);
+            ::ScreenToClient(hWnd, &pt);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::DirectScan);
+            break;
+        }
+
+        case 'm': {
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
@@ -341,7 +349,15 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             break;
         }
 
-        case 'g': {
+        case 'M': {
+            POINT pt;
+            ::GetCursorPos(&pt);
+            ::ScreenToClient(hWnd, &pt);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::PTScan);
+            break;
+        }
+
+        case ',': {
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
@@ -349,11 +365,25 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             break;
         }
 
-        case 'G': {
+        case '<': {
+            POINT pt;
+            ::GetCursorPos(&pt);
+            ::ScreenToClient(hWnd, &pt);
+            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::LAScan);
+            break;
+        }
+
+        case '.': {
             bool ret = gFractal->ZoomToFoundFeature();
             if (ret) {
                 PaintAsNecessary();
             }
+        }
+
+        case '>': {
+            gFractal->ClearAllFoundFeatures();
+            PaintAsNecessary();
+            break;
         }
 
         case 'H':

@@ -4316,6 +4316,25 @@ Fractal::ToggleRepainting()
     m_glContextAsync->ToggleRepaint();
 }
 
+static inline void
+DrawFilledCircle2i(int cx, int cy, int radius, int segments = 24)
+{
+    if (segments < 8)
+        segments = 8;
+
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex2i(cx, cy); // center
+
+    // simple fan; last point repeats first for closure
+    for (int i = 0; i <= segments; ++i) {
+        const double a = (2.0 * 3.14159265358979323846 * i) / (double)segments;
+        const int x = cx + (int)std::lround(std::cos(a) * (double)radius);
+        const int y = cy + (int)std::lround(std::sin(a) * (double)radius);
+        glVertex2i(x, y);
+    }
+    glEnd();
+}
+
 void
 Fractal::DrawAllPerturbationResults(bool LeaveScreen)
 {
@@ -4324,31 +4343,58 @@ Fractal::DrawAllPerturbationResults(bool LeaveScreen)
     }
 
     glBegin(GL_POINTS);
-
     m_RefOrbit.DrawPerturbationResults();
-
     glEnd();
 
-    if (m_FeatureSummary != nullptr) {
-        int x0, y0, x1, y1;
-        m_FeatureSummary->EstablishScreenCoordinates(*this);
-        m_FeatureSummary->GetScreenCoordinates(x0, y0, x1, y1);
+    if (!m_FeatureSummaries.empty()) {
 
         glEnable(GL_COLOR_LOGIC_OP);
         glLogicOp(GL_INVERT);
-        glLineWidth(2.0f);
 
-        glBegin(GL_LINES);
-        glVertex2i(x0, y0);
-        glVertex2i(x1, y1);
-        glEnd();
+        bool showLines = (m_FeatureSummaries.size() == 1);
+        if (showLines) {
+            glLineWidth(2.0f);
+
+            glBegin(GL_LINES);
+            for (auto &fsPtr : m_FeatureSummaries) {
+                if (!fsPtr)
+                    continue;
+
+                int x0, y0, x1, y1;
+                fsPtr->EstablishScreenCoordinates(*this);
+                fsPtr->GetScreenCoordinates(x0, y0, x1, y1);
+
+                glVertex2i(x0, y0);
+                glVertex2i(x1, y1);
+            }
+            glEnd();
+
+            glLineWidth(1.0f); // restore default (optional)
+        } else {
+            // Filled inverted circles around the FOUND point (line end)
+            // Tweak radius as desired (in pixels)
+            const int radiusPx = 6;
+            const int segments = 28;
+
+            for (auto &fsPtr : m_FeatureSummaries) {
+                if (!fsPtr)
+                    continue;
+
+                int x0, y0, x1, y1;
+                fsPtr->EstablishScreenCoordinates(*this);
+                fsPtr->GetScreenCoordinates(x0, y0, x1, y1);
+
+                // Use end point as "found" center
+                DrawFilledCircle2i(x1, y1, radiusPx, segments);
+            }
+        }
 
         glDisable(GL_COLOR_LOGIC_OP);
     }
 
-
     glFlush();
 }
+
 
 void
 Fractal::DrawFractalThread(size_t index, Fractal *fractal)
@@ -5132,66 +5178,97 @@ Fractal::TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderM
 
     using T = RenderAlg::MainType;
     using SubType = RenderAlg::SubType;
-    constexpr PerturbExtras PExtras = PerturbExtras::Disable;
+    constexpr PerturbExtras PExtrasLocal = PerturbExtras::Disable;
 
-    const HighPrecision centerOffsetX = XFromScreenToCalc((HighPrecision)scrnX);
-    const HighPrecision centerOffsetY = YFromScreenToCalc((HighPrecision)scrnY);
+    auto featureFinder = std::make_unique<FeatureFinder<IterType, T, PExtrasLocal>>();
 
-    auto featureFinder = std::make_unique<FeatureFinder<IterType, T, PExtras>>();
+    m_FeatureSummaries.clear();
 
-    bool found = false;
+    const bool scan = mode == FeatureFinderMode::DirectScan || mode == FeatureFinderMode::PTScan ||
+                      mode == FeatureFinderMode::LAScan;
 
-    if (mode == FeatureFinderMode::Direct) {
-        const T radiusY{T{GetMaxY() - GetMinY()} / T{2.0f}};
-        HighPrecision radius{radiusY};
-        radius /= HighPrecision{12};
+    // Base mode
+    FeatureFinderMode baseMode = mode;
+    if (mode == FeatureFinderMode::DirectScan)
+        baseMode = FeatureFinderMode::Direct;
+    if (mode == FeatureFinderMode::PTScan)
+        baseMode = FeatureFinderMode::PT;
+    if (mode == FeatureFinderMode::LAScan)
+        baseMode = FeatureFinderMode::LA;
 
-        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius, mode);
-        found = featureFinder->FindPeriodicPoint(GetNumIterations<IterType>(), *m_FeatureSummary);
+    const T radiusY{T{GetMaxY() - GetMinY()} / T{2.0f}};
+    HighPrecision radius{radiusY};
+    radius /= HighPrecision{12};
 
-    } else if (mode == FeatureFinderMode::PT) {
-        auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                                         T,
-                                                                         SubType,
-                                                                         PExtras,
-                                                                         RefOrbitCalc::Extras::None>();
-        RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
+    auto RunOne = [&](size_t px, size_t py) {
+        const HighPrecision cx = XFromScreenToCalc(HighPrecision(px));
+        const HighPrecision cy = YFromScreenToCalc(HighPrecision(py));
 
-        const T radiusY{T{GetMaxY() - GetMinY()} / T{2.0f}};
-        HighPrecision radius{radiusY};
-        radius /= HighPrecision{12};
+        auto fs = std::make_unique<FeatureSummary>(cx, cy, radius, baseMode);
 
-        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius, mode);
-        found = featureFinder->FindPeriodicPoint(
-            GetNumIterations<IterType>(), *results, decompressor, *m_FeatureSummary);
+        bool found = false;
 
-    } else if (mode == FeatureFinderMode::LA) {
-        auto *results =
-            m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                             T,
-                                                             SubType,
-                                                             PExtras,
-                                                             RefOrbitCalc::Extras::IncludeLAv2>();
-        RuntimeDecompressor<IterType, T, PExtras> decompressor(*results);
+        if (baseMode == FeatureFinderMode::Direct) {
+            found = featureFinder->FindPeriodicPoint(GetNumIterations<IterType>(), *fs);
+        } else if (baseMode == FeatureFinderMode::PT) {
+            auto *results =
+                m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                                 T,
+                                                                 SubType,
+                                                                 PExtrasLocal,
+                                                                 RefOrbitCalc::Extras::None>();
+            RuntimeDecompressor<IterType, T, PExtrasLocal> decompressor(*results);
 
-        const T radiusY{T{GetMaxY() - GetMinY()} / T{2.0f}};
-        HighPrecision radius{radiusY};
-        radius /= HighPrecision{12};
+            found = featureFinder->FindPeriodicPoint(
+                GetNumIterations<IterType>(), *results, decompressor, *fs);
+        } else if (baseMode == FeatureFinderMode::LA) {
+            auto *results =
+                m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                                 T,
+                                                                 SubType,
+                                                                 PExtrasLocal,
+                                                                 RefOrbitCalc::Extras::IncludeLAv2>();
+            RuntimeDecompressor<IterType, T, PExtrasLocal> decompressor(*results);
 
-        m_FeatureSummary = std::make_unique<FeatureSummary>(centerOffsetX, centerOffsetY, radius, mode);
-        found = featureFinder->FindPeriodicPoint(GetNumIterations<IterType>(),
-                                                 *results,
-                                                 decompressor,
-                                                 *results->GetLaReference(),
-                                                 *m_FeatureSummary);
+            found = featureFinder->FindPeriodicPoint(
+                GetNumIterations<IterType>(), *results, decompressor, *results->GetLaReference(), *fs);
+        }
+
+        if (found) {
+            m_FeatureSummaries.emplace_back(std::move(fs));
+        }
+    };
+
+    if (!scan) {
+        RunOne(scrnX, scrnY);
     } else {
-        throw FractalSharkSeriousException("Unknown FeatureFinderMode in TryFindPeriodicPoint");
+        constexpr size_t NX = 12;
+        constexpr size_t NY = 12;
+
+        const size_t W = GetRenderWidth();
+        const size_t H = GetRenderHeight();
+
+        for (size_t gy = 0; gy < NY; ++gy) {
+            const size_t y = (H * (2 * gy + 1)) / (2 * NY);
+            for (size_t gx = 0; gx < NX; ++gx) {
+                const size_t x = (W * (2 * gx + 1)) / (2 * NX);
+                RunOne(x, y);
+            }
+        }
     }
 
-    if (!found) {
-        m_FeatureSummary = nullptr;
-        std::cout << "No periodic point found in search region.\n";
+    if (m_FeatureSummaries.empty()) {
+        std::cout << "No periodic points found.\n";
+    } else {
+        std::cout << "Found " << m_FeatureSummaries.size() << " periodic points.\n";
     }
+}
+
+void
+Fractal::ClearAllFoundFeatures()
+{
+    m_FeatureSummaries.clear();
+    m_ChangedWindow = true;
 }
 
 bool
@@ -5235,17 +5312,98 @@ Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision &zoomFa
     return RecenterViewCalc(ptz);
 }
 
+// Pick closest feature (in calc-space) to current mouse position and zoom to it.
 bool
 Fractal::ZoomToFoundFeature()
 {
-    if (!m_FeatureSummary) {
+    if (m_FeatureSummaries.empty()) {
         std::cerr << "No feature found to zoom to.\n";
         return false;
     }
 
-    const HighPrecision z = ComputeZoomFactorForFeature(*m_FeatureSummary);
-    return ZoomToFoundFeature(*m_FeatureSummary, z, true);
+    // ---------------------------
+    // 1) Get mouse in client pixels
+    // ---------------------------
+    POINT pt{};
+    if (!::GetCursorPos(&pt)) {
+        std::cerr << "GetCursorPos failed.\n";
+        return false;
+    }
+
+    HWND hwnd = m_hWnd;
+    if (!hwnd) {
+        std::cerr << "ZoomToFoundFeature: invalid HWND.\n";
+        return false;
+    }
+
+    if (!::ScreenToClient(hwnd, &pt)) {
+        std::cerr << "ScreenToClient failed.\n";
+        return false;
+    }
+
+    // Optional: clamp mouse to render bounds so conversion stays sane
+    const int w = (int)GetRenderWidth();
+    const int h = (int)GetRenderHeight();
+    if (w <= 0 || h <= 0) {
+        std::cerr << "Invalid render size.\n";
+        return false;
+    }
+
+    if (pt.x < 0)
+        pt.x = 0;
+    if (pt.y < 0)
+        pt.y = 0;
+    if (pt.x >= w)
+        pt.x = w - 1;
+    if (pt.y >= h)
+        pt.y = h - 1;
+
+    // ---------------------------
+    // 2) Convert mouse -> calc coords
+    // ---------------------------
+    const HighPrecision mx_calc = XFromScreenToCalc(HighPrecision{(int64_t)pt.x});
+    const HighPrecision my_calc = YFromScreenToCalc(HighPrecision{(int64_t)pt.y});
+
+    // ---------------------------
+    // 3) Choose closest feature by FoundX/FoundY
+    // ---------------------------
+    FeatureSummary *best = nullptr;
+    HighPrecision bestDist2; // initialized once we have a candidate
+    bool haveBest = false;
+
+    for (auto &up : m_FeatureSummaries) {
+        if (!up)
+            continue;
+        FeatureSummary &fs = *up;
+
+        const HighPrecision dx = fs.GetFoundX() - mx_calc;
+        const HighPrecision dy = fs.GetFoundY() - my_calc;
+        HighPrecision dist2 = dx * dx + dy * dy;
+
+        if (!haveBest) {
+            best = &fs;
+            bestDist2 = dist2;
+            haveBest = true;
+        } else {
+            if (dist2 < bestDist2) {
+                best = &fs;
+                bestDist2 = dist2;
+            }
+        }
+    }
+
+    if (!best) {
+        std::cerr << "No valid features in m_FeatureSummaries.\n";
+        return false;
+    }
+
+    // ---------------------------
+    // 4) Zoom to chosen feature
+    // ---------------------------
+    const HighPrecision z = ComputeZoomFactorForFeature(*best);
+    return ZoomToFoundFeature(*best, z, true);
 }
+
 
 HighPrecision
 Fractal::ComputeZoomFactorForFeature(const FeatureSummary &feature) const

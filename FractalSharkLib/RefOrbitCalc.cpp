@@ -9,6 +9,7 @@
 #include "LAReference.h"
 #include "MpirSerialization.h"
 #include "OrbitParameterPack.h"
+#include "PointZoomBBConverter.h"
 #include "PrecisionCalculator.h"
 #include "RecommendedSettings.h"
 #include "ScopedMpir.h"
@@ -264,11 +265,11 @@ template <typename IterType,
           PerturbExtras PExtras,
           RefOrbitCalc::BenchmarkMode BenchmarkState>
 void
-RefOrbitCalc::AddPerturbationReferencePoint()
+RefOrbitCalc::AddPerturbationReferencePoint(const PointZoomBBConverter &ptz)
 {
     if (m_PerturbationGuessCalcX == HighPrecision{} && m_PerturbationGuessCalcY == HighPrecision{}) {
-        m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / HighPrecision(2);
-        m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / HighPrecision(2);
+        m_PerturbationGuessCalcX = (ptz.GetMaxX() + ptz.GetMinX()) / HighPrecision(2);
+        m_PerturbationGuessCalcY = (ptz.GetMaxY() + ptz.GetMinY()) / HighPrecision(2);
     }
 
     if (GetPerturbationAlg() == PerturbationAlg::ST) {
@@ -278,8 +279,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                         false,
                                         BenchmarkState,
                                         PExtras,
-                                        ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
-                                                                     m_PerturbationGuessCalcY);
+                                        ReuseMode::DontSaveForReuse>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MT) {
         AddPerturbationReferencePointMT3<IterType,
                                          T,
@@ -287,8 +288,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                          false,
                                          BenchmarkState,
                                          PExtras,
-                                         ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
-                                                                      m_PerturbationGuessCalcY);
+                                         ReuseMode::DontSaveForReuse>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::STPeriodicity) {
         AddPerturbationReferencePointST<IterType,
                                         T,
@@ -296,8 +297,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                         true,
                                         BenchmarkState,
                                         PExtras,
-                                        ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
-                                                                     m_PerturbationGuessCalcY);
+                                        ReuseMode::DontSaveForReuse>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3) {
         AddPerturbationReferencePointMT3<IterType,
                                          T,
@@ -305,8 +306,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                          true,
                                          BenchmarkState,
                                          PExtras,
-                                         ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
-                                                                      m_PerturbationGuessCalcY);
+                                         ReuseMode::DontSaveForReuse>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
         // TODO: we're hardcoding SaveForReuse3 here.  This is the single-threaded case.
         // Single threaded only supports one option, so we're hardcoding it here.
@@ -316,8 +317,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                         true,
                                         BenchmarkState,
                                         PExtras,
-                                        ReuseMode::SaveForReuse3>(m_PerturbationGuessCalcX,
-                                                                  m_PerturbationGuessCalcY);
+                                        ReuseMode::SaveForReuse3>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
 
         // If you want to test, use single threaded for both high-precision and
         // medium precision orbit calculations.
@@ -333,8 +334,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                          true,
                                          BenchmarkState,
                                          PExtras,
-                                         ReuseMode::SaveForReuse1>(m_PerturbationGuessCalcX,
-                                                                   m_PerturbationGuessCalcY);
+                                         ReuseMode::SaveForReuse1>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2) {
         AddPerturbationReferencePointMT3<IterType,
                                          T,
@@ -342,8 +343,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                          true,
                                          BenchmarkState,
                                          PExtras,
-                                         ReuseMode::SaveForReuse2>(m_PerturbationGuessCalcX,
-                                                                   m_PerturbationGuessCalcY);
+                                         ReuseMode::SaveForReuse2>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3) {
         AddPerturbationReferencePointMT3<IterType,
                                          T,
@@ -351,8 +352,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                          true,
                                          BenchmarkState,
                                          PExtras,
-                                         ReuseMode::SaveForReuse3>(m_PerturbationGuessCalcX,
-                                                                   m_PerturbationGuessCalcY);
+                                         ReuseMode::SaveForReuse3>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4) {
         AddPerturbationReferencePointMT3<IterType,
                                          T,
@@ -360,8 +361,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                          true,
                                          BenchmarkState,
                                          PExtras,
-                                         ReuseMode::SaveForReuse4>(m_PerturbationGuessCalcX,
-                                                                   m_PerturbationGuessCalcY);
+                                         ReuseMode::SaveForReuse4>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity5) {
         AddPerturbationReferencePointMT5<IterType,
                                          T,
@@ -369,8 +370,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                          true,
                                          BenchmarkState,
                                          PExtras,
-                                         ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
-                                                                      m_PerturbationGuessCalcY);
+                                         ReuseMode::DontSaveForReuse>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::GPU) {
 
         if constexpr (std::is_same<T, HDRFloat<float>>::value) {
@@ -380,8 +381,8 @@ RefOrbitCalc::AddPerturbationReferencePoint()
                                              true,
                                              BenchmarkState,
                                              PerturbExtras::Disable,
-                                             ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
-                                                                          m_PerturbationGuessCalcY);
+                                             ReuseMode::DontSaveForReuse>(
+                ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
         } else {
             throw FractalSharkSeriousException(
                 "GPU perturbation algorithm only supports HDRFloat<float> type for now.  "
@@ -405,6 +406,7 @@ template <typename IterType,
           RefOrbitCalc::ReuseMode Reuse>
 void
 RefOrbitCalc::InitResults(PerturbationResultsType &results,
+                          const PointZoomBBConverter &ptz,
                           const HighPrecision &initX,
                           const HighPrecision &initY)
 {
@@ -412,10 +414,10 @@ RefOrbitCalc::InitResults(PerturbationResultsType &results,
     results.InitResults(Reuse,
                         initX,
                         initY,
-                        m_Fractal.GetMinX(),
-                        m_Fractal.GetMinY(),
-                        m_Fractal.GetMaxX(),
-                        m_Fractal.GetMaxY(),
+                        ptz.GetMinX(),
+                        ptz.GetMinY(),
+                        ptz.GetMaxX(),
+                        ptz.GetMaxY(),
                         m_Fractal.GetNumIterations<IterType>(),
                         m_GuessReserveSize);
 }
@@ -428,14 +430,16 @@ template <typename IterType,
           PerturbExtras PExtras,
           RefOrbitCalc::ReuseMode Reuse>
 void
-RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy)
+RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
+                                              HighPrecision cx,
+                                              HighPrecision cy)
 {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     PushbackResults(std::move(newArray));
     auto *results = GetLast<IterType, T, PExtras>();
 
-    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
+    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, ptz, cx, cy);
 
     std::unique_ptr<MPIRBoundedAllocator> boundedAllocator;
     std::unique_ptr<MPIRBumpAllocator> bumpAllocator;
@@ -716,7 +720,9 @@ template <typename IterType,
           RefOrbitCalc::BenchmarkMode BenchmarkState,
           RefOrbitCalc::ReuseMode Reuse>
 bool
-RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPrecision cy)
+RefOrbitCalc::AddPerturbationReferencePointSTReuse(const PointZoomBBConverter &ptz,
+                                                   HighPrecision cx,
+                                                   HighPrecision cy)
 {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
@@ -740,7 +746,7 @@ RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPrecisi
 
     MPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(
-        *results, cx, cy);
+        *results, ptz, cx, cy);
 
     mpf_t zx, zy;
     mpf_init(zx);
@@ -990,7 +996,9 @@ template <typename IterType,
           RefOrbitCalc::BenchmarkMode BenchmarkState,
           RefOrbitCalc::ReuseMode Reuse>
 bool
-RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecision cy)
+RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &ptz,
+                                                    HighPrecision cx,
+                                                    HighPrecision cy)
 {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
@@ -1014,7 +1022,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecis
 
     MPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(
-        *results, cx, cy);
+        *results, ptz, cx, cy);
 
     mpf_t zx, zy;
     mpf_init(zx);
@@ -1521,14 +1529,16 @@ template <typename IterType,
           PerturbExtras PExtras,
           RefOrbitCalc::ReuseMode Reuse>
 void
-RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision cy)
+RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
+                                               HighPrecision cx,
+                                               HighPrecision cy)
 {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     PushbackResults(std::move(newArray));
     auto *results = GetLast<IterType, T, PExtras>();
 
-    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
+    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, ptz, cx, cy);
 
     std::unique_ptr<MPIRBoundedAllocator> boundedAllocator;
     std::unique_ptr<MPIRBumpAllocator> bumpAllocator;
@@ -2120,11 +2130,13 @@ template <typename IterType,
           PerturbExtras PExtras,
           RefOrbitCalc::ReuseMode Reuse>
 void
-RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecision cy)
+RefOrbitCalc::AddPerturbationReferencePointMT5(const PointZoomBBConverter &ptz,
+                                               HighPrecision cx,
+                                               HighPrecision cy)
 {
     std::wcerr << L"AddPerturbationReferencePointMT5 disabled, using MT3" << std::endl;
     AddPerturbationReferencePointMT3<IterType, T, SubType, Periodicity, BenchmarkState, PExtras, Reuse>(
-        cx, cy);
+        ptz, cx, cy);
 }
 
 template <class P, class F>
@@ -2195,14 +2207,16 @@ template <typename IterType,
           PerturbExtras PExtras,
           RefOrbitCalc::ReuseMode Reuse>
 void
-RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision cy)
+RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
+                                               HighPrecision cx,
+                                               HighPrecision cy)
 {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     PushbackResults(std::move(newArray));
     auto *results = GetLast<IterType, T, PExtras>();
 
-    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
+    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, ptz, cx, cy);
 
     mpf_t cx_mpf;
     mpf_init(cx_mpf);
@@ -2349,7 +2363,7 @@ template <typename IterType,
           RefOrbitCalc::Extras Ex,
           class ConvertTType>
 PerturbationResults<IterType, ConvertTType, PExtras> *
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &ptz)
 {
     constexpr bool ForceCompressDecompressForTesting = false;
     constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
@@ -2380,8 +2394,8 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
 
     if (RequiresReuse()) {
         if (m_PerturbationGuessCalcX == HighPrecision{} && m_PerturbationGuessCalcY == HighPrecision{}) {
-            m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / HighPrecision{2};
-            m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / HighPrecision{2};
+            m_PerturbationGuessCalcX = (ptz.GetMaxX() + ptz.GetMinX()) / HighPrecision{2};
+            m_PerturbationGuessCalcY = (ptz.GetMaxY() + ptz.GetMinY()) / HighPrecision{2};
         }
 
         PerturbationResults<IterType, T, PExtrasHackYay> *results =
@@ -2395,7 +2409,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
                                                                  true,
                                                                  BenchmarkMode::Disable,
                                                                  ReuseMode::SaveForReuse1>(
-                        m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+                        ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                     break;
                 case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1:
                     added = AddPerturbationReferencePointMT3Reuse<IterType,
@@ -2404,7 +2418,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
                                                                   true,
                                                                   BenchmarkMode::Disable,
                                                                   ReuseMode::SaveForReuse1>(
-                        m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+                        ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                     break;
                 case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2:
                     added = AddPerturbationReferencePointMT3Reuse<IterType,
@@ -2413,7 +2427,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
                                                                   true,
                                                                   BenchmarkMode::Disable,
                                                                   ReuseMode::SaveForReuse2>(
-                        m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+                        ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                     break;
                 case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3:
                     added = AddPerturbationReferencePointMT3Reuse<IterType,
@@ -2422,7 +2436,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
                                                                   true,
                                                                   BenchmarkMode::Disable,
                                                                   ReuseMode::SaveForReuse3>(
-                        m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+                        ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                     break;
                 case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4:
                     added = AddPerturbationReferencePointMT3Reuse<IterType,
@@ -2431,7 +2445,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
                                                                   true,
                                                                   BenchmarkMode::Disable,
                                                                   ReuseMode::SaveForReuse4>(
-                        m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+                        ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                     break;
                 default:
                     std::wcerr << L"Some stupid bug #2343 :(" << std::endl;
@@ -2457,7 +2471,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults()
             }
         }
 
-        AddPerturbationReferencePoint<IterType, T, SubType, PExtras, BenchmarkMode::Disable>();
+        AddPerturbationReferencePoint<IterType, T, SubType, PExtras, BenchmarkMode::Disable>(ptz);
         added = true;
 
         results = GetLast<IterType, T, PExtras>();

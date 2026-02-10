@@ -25,16 +25,20 @@ public:
     const HighPrecision &GetPtX() const;
     const HighPrecision &GetPtY() const;
     const HighPrecision &GetZoomFactor() const;
+    const HighPrecision &GetRadius() const;
 
     void SetPrecision(uint64_t precInBits);
 
     bool Degenerate() const;
+    PointZoomBBConverter NewZoom(double factor) const;
+    void Zoom(double factor);
 
 private:
     HighPrecision m_MinX, m_MinY;
     HighPrecision m_MaxX, m_MaxY;
     HighPrecision m_PtX, m_PtY;
     HighPrecision m_ZoomFactor;
+    HighPrecision m_Radius;
 
     std::string m_MinXStr, m_MinYStr;
     std::string m_MaxXStr, m_MaxYStr;
@@ -43,5 +47,5 @@ private:
     std::string m_RadiusStr;
     std::string m_DeltaYStr;
 
-    static constexpr bool m_Test = true;
+    static constexpr bool m_Test = false;
 };

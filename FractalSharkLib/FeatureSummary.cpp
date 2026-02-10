@@ -3,6 +3,7 @@
 #include "FeatureFinderMode.h" // (or whatever header defines FeatureFinderMode)
 #include "FeatureSummary.h"
 #include "Fractal.h" // needed for EstablishScreenCoordinates()
+#include "PointZoomBBConverter.h"
 
 FeatureSummary::FeatureSummary(const HighPrecision &origX,
                                const HighPrecision &origY,
@@ -319,4 +320,40 @@ FeatureSummary::GetScreenCoordinates(int &outXStart, int &outYStart, int &outXEn
     outYStart = static_cast<int>(screenYStart);
     outXEnd = static_cast<int>(screenXEnd);
     outYEnd = static_cast<int>(screenYEnd);
+}
+
+HighPrecision
+FeatureSummary::ComputeZoomFactor(const PointZoomBBConverter &ptz) const
+{
+    const HighPrecision curHalfH = (ptz.GetMaxY() - ptz.GetMinY()) / HighPrecision{2};
+    const HighPrecision r = GetIntrinsicRadius();
+
+    if (r == HighPrecision{0} || curHalfH == HighPrecision{0}) {
+        return ptz.GetZoomFactor();
+    }
+
+    const HighPrecision k = HighPrecision{6};
+    const HighPrecision targetHalfH = r * k;
+
+    // zoomFactor in your PointZoomBBConverter is "magnification": larger -> smaller BB -> zoom in.
+    // halfHeight = factor / zoomFactor  (since BB uses +/- factor/zoomFactor)
+    // so: zoomTarget = factor / targetHalfH
+    const HighPrecision zTarget = HighPrecision{PointZoomBBConverter::factor} / targetHalfH;
+
+    // Don't zoom out: if zTarget is smaller than current zoom, keep current
+    const HighPrecision zCur = ptz.GetZoomFactor();
+    if (zTarget < zCur)
+        return zCur;
+
+    return zTarget;
+}
+
+void FeatureSummary::SetRefined()
+{
+    Refined = true;
+}
+
+bool FeatureSummary::IsRefined() const
+{
+    return Refined;
 }

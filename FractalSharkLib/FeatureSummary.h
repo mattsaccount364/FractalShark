@@ -12,6 +12,7 @@
 #include "Vectors.h" // (or your real header that defines IterTypeFull)
 
 class Fractal;
+class PointZoomBBConverter;
 
 struct PeriodicPointCandidate {
     using ResidualT = HDRFloat<double>;
@@ -82,6 +83,9 @@ public:
 
     void EstablishScreenCoordinates(const Fractal &fractal);
     void GetScreenCoordinates(int &outXStart, int &outYStart, int &outXEnd, int &outYEnd) const;
+    HighPrecision ComputeZoomFactor(const PointZoomBBConverter &ptz) const;
+    void SetRefined();
+    bool IsRefined() const;
 
 private:
     HighPrecision Radius; // search radius
@@ -105,4 +109,6 @@ private:
     uint64_t screenYStart{0};
     uint64_t screenXEnd{0};
     uint64_t screenYEnd{0};
+
+    bool Refined{false};
 };

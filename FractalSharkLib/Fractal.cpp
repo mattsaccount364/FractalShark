@@ -628,14 +628,7 @@ Fractal::CenterAtPoint(size_t x, size_t y)
 void
 Fractal::Zoom(double factor)
 {
-    const HighPrecision deltaX = (m_Ptz.GetMaxX() - m_Ptz.GetMinX()) * (HighPrecision)factor;
-    const HighPrecision deltaY = (m_Ptz.GetMaxY() - m_Ptz.GetMinY()) * (HighPrecision)factor;
-
-    PointZoomBBConverter ptz{m_Ptz.GetMinX() - deltaX,
-                             m_Ptz.GetMinY() - deltaY,
-                             m_Ptz.GetMaxX() + deltaX,
-                             m_Ptz.GetMaxY() + deltaY};
-
+    auto ptz = m_Ptz.NewZoom(factor);
     RecenterViewCalc(ptz);
 }
 
@@ -760,10 +753,30 @@ Fractal::AutoZoom()
             return;
         }
 
-        if (ZoomToFoundFeature(*best, nullptr) == false) {
+        const size_t featurePrec = best->GetPrecision();
+        if (featurePrec > GetPrecision()) {
+            HighPrecision::defaultPrecisionInBits(featurePrec);
+        }
+
+        auto startPtz = m_Ptz;
+        startPtz.SetPrecision(featurePrec);
+        HighPrecision origZoom = startPtz.GetZoomFactor();
+
+        HighPrecision targetZoomFactor = best->ComputeZoomFactor(startPtz);
+        PointZoomBBConverter featurePtz{best->GetFoundX(), best->GetFoundY(), targetZoomFactor};
+        ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        if (ZoomToFoundFeature(*best, &targetZoomFactor) == false) {
             std::cout << "AutoZoom(Feature): failed to zoom to feature.\n";
             return;
         }
+
+        CalcFractal(false);
+
+        PointZoomBBConverter startPtzCentered{best->GetFoundX(), best->GetFoundY(), origZoom};
+        m_Ptz = startPtzCentered;
+
+        guessX = best->GetFoundX();
+        guessY = best->GetFoundY();
 
         int replacePTCounterHeuristic = 0;
         for (;;) {
@@ -772,14 +785,8 @@ Fractal::AutoZoom()
                 PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
             }
 
-            guessX = best->GetFoundX();
-            guessY = best->GetFoundY();
-
-            auto existingZoom = m_Ptz.GetZoomFactor();
-            auto newZoom = existingZoom * HighPrecision{1.1};
-
-            PointZoomBBConverter newPtz{guessX, guessY, newZoom};
-            RecenterViewCalc(newPtz);
+            m_Ptz.Zoom(1.1);
+            m_ChangedWindow = true;
 
             CalcFractal(false);
 
@@ -787,7 +794,7 @@ Fractal::AutoZoom()
                 break;
 
             if (replacePTCounterHeuristic++ > 100) {
-                ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                //ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
                 replacePTCounterHeuristic = 0;
             }
         }
@@ -5202,7 +5209,7 @@ Fractal::TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderM
                                                                  T,
                                                                  SubType,
                                                                  PExtrasLocal,
-                                                                 RefOrbitCalc::Extras::None>();
+                                                                 RefOrbitCalc::Extras::None>(m_Ptz);
             RuntimeDecompressor<IterType, T, PExtrasLocal> decompressor(*results);
 
             found = featureFinder->FindPeriodicPoint(
@@ -5213,7 +5220,8 @@ Fractal::TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderM
                                                                  T,
                                                                  SubType,
                                                                  PExtrasLocal,
-                                                                 RefOrbitCalc::Extras::IncludeLAv2>();
+                                                                 RefOrbitCalc::Extras::IncludeLAv2>(
+                    m_Ptz);
             RuntimeDecompressor<IterType, T, PExtrasLocal> decompressor(*results);
 
             found = featureFinder->FindPeriodicPoint(
@@ -5372,34 +5380,8 @@ Fractal::ZoomToFoundFeature()
         return false;
     }
 
-    const HighPrecision z = ComputeZoomFactorForFeature(*best);
+    const HighPrecision z = best->ComputeZoomFactor(m_Ptz);
     return ZoomToFoundFeature(*best, &z);
-}
-
-HighPrecision
-Fractal::ComputeZoomFactorForFeature(const FeatureSummary &feature) const
-{
-    const HighPrecision curHalfH = (GetMaxY() - GetMinY()) / HighPrecision{2};
-    const HighPrecision r = feature.GetIntrinsicRadius();
-
-    if (r == HighPrecision{0} || curHalfH == HighPrecision{0}) {
-        return GetZoomFactor();
-    }
-
-    const HighPrecision k = HighPrecision{6};
-    const HighPrecision targetHalfH = r * k;
-
-    // zoomFactor in your PointZoomBBConverter is "magnification": larger -> smaller BB -> zoom in.
-    // halfHeight = factor / zoomFactor  (since BB uses +/- factor/zoomFactor)
-    // so: zoomTarget = factor / targetHalfH
-    const HighPrecision zTarget = HighPrecision{PointZoomBBConverter::factor} / targetHalfH;
-
-    // Don't zoom out: if zTarget is smaller than current zoom, keep current
-    const HighPrecision zCur = GetZoomFactor();
-    if (zTarget < zCur)
-        return zCur;
-
-    return zTarget;
 }
 
 template <typename IterType, class T>
@@ -5434,7 +5416,7 @@ Fractal::CalcCpuPerturbationFractal(bool MemoryOnly)
                                                                      double,
                                                                      double,
                                                                      PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>();
+                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
 
     const auto &maxX = m_Ptz.GetMaxX();
     const auto &minX = m_Ptz.GetMinX();
@@ -5698,7 +5680,7 @@ Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly)
                                                                      T,
                                                                      SubType,
                                                                      PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>();
+                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
 
     BLAS<IterType, T> blas(*results);
     blas.Init((IterType)results->GetCountOrbitEntries(), results->GetMaxRadius());
@@ -5953,7 +5935,7 @@ Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly)
                                                          T,
                                                          SubType,
                                                          PExtras,
-                                                         RefOrbitCalc::Extras::IncludeLAv2>();
+                                                         RefOrbitCalc::Extras::IncludeLAv2>(m_Ptz);
 
     if (results->GetLaReference() == nullptr || results->GetOrbitData() == nullptr) {
         std::wcerr << L"Oops - a null pointer deref" << std::endl;
@@ -6154,7 +6136,7 @@ Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly)
                                                                      T,
                                                                      SubType,
                                                                      PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>();
+                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
 
     uint32_t err = InitializeGPUMemory();
     if (err) {
@@ -6246,7 +6228,7 @@ Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly)
                                                                ConditionalSubType,
                                                                PExtras,
                                                                RefOrbitMode,
-                                                               T>();
+                                                               T>(m_Ptz);
 
     // Reference orbit is always required for LAv2
     // The LaReference is not required when running perturbation only
@@ -6304,7 +6286,7 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly)
                                                                      T,
                                                                      SubType,
                                                                      PerturbExtras::Bad,
-                                                                     RefOrbitCalc::Extras::None>();
+                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
     auto *results2 =
         m_RefOrbit
             .CopyUsefulPerturbationResults<IterType, T, PerturbExtras::Bad, T2, PerturbExtras::Bad>(

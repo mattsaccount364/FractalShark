@@ -2090,6 +2090,10 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
     if (!cand)
         return false;
 
+    // Already refined (e.g. from a previous pass); no need to redo
+    if (feature.IsRefined())
+        return true;
+
     HighPrecision cX_hp = cand->cX_hp;
     HighPrecision cY_hp = cand->cY_hp;
 
@@ -2118,6 +2122,7 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
                      (IterType)period,
                      HDRFloat<double>{},
                      /*intrinsicRadius*/ HighPrecision{0});
+    feature.SetRefined();
 
     // Optionally keep candidate (or clear it)
     // feature.ClearCandidate();

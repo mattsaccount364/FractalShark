@@ -20,6 +20,7 @@ class RenderAlgorithm;
 
 class MPIRBoundedAllocator;
 class MPIRBumpAllocator;
+class PointZoomBBConverter;
 
 class RefOrbitCalc {
 public:
@@ -181,7 +182,7 @@ public:
         class SubType,
         PerturbExtras PExtras,
         BenchmarkMode BenchmarkState>
-    void AddPerturbationReferencePoint();
+    void AddPerturbationReferencePoint(const PointZoomBBConverter &ptz);
 
     template<typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
     bool IsPerturbationResultUsefulHere(size_t i) const;
@@ -210,8 +211,8 @@ public:
         PerturbExtras PExtras,
         RefOrbitCalc::Extras Ex,
         class ConvertTType = T>
-    PerturbationResults<IterType, ConvertTType, PExtras> *
-        GetAndCreateUsefulPerturbationResults();
+    PerturbationResults<IterType, ConvertTType, PExtras> *GetAndCreateUsefulPerturbationResults(
+        const PointZoomBBConverter &ptz);
 
     template<typename IterType, class SrcT, PerturbExtras SrcEnableBad, class DestT, PerturbExtras DestEnableBad>
     PerturbationResults<IterType, DestT, DestEnableBad> *CopyUsefulPerturbationResults(
@@ -274,19 +275,27 @@ private:
     const PerturbationResults<IterType, T, PExtras> *GetPerturbationResults(size_t index) const;
 
     template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, ReuseMode Reuse>
-    bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
+    bool AddPerturbationReferencePointSTReuse(const PointZoomBBConverter &ptz, HighPrecision initX, HighPrecision initY);
 
     template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, ReuseMode Reuse>
-    bool AddPerturbationReferencePointMT3Reuse(HighPrecision initX, HighPrecision initY);
+    bool AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &ptz,
+                                               HighPrecision initX,
+                                               HighPrecision initY);
 
     template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, PerturbExtras PExtras, ReuseMode Reuse>
-    void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
+    void AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
+                                         HighPrecision initX,
+                                         HighPrecision initY);
 
     template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, PerturbExtras PExtras, ReuseMode Reuse>
-    void AddPerturbationReferencePointMT3(HighPrecision initX, HighPrecision initY);
+    void AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
+                                          HighPrecision initX,
+                                          HighPrecision initY);
 
     template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, PerturbExtras PExtras, ReuseMode Reuse>
-    void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
+    void AddPerturbationReferencePointMT5(const PointZoomBBConverter &ptz,
+                                          HighPrecision initX,
+                                          HighPrecision initY);
 
     template <typename IterType,
               class T,
@@ -294,7 +303,9 @@ private:
               RefOrbitCalc::BenchmarkMode BenchmarkState,
               PerturbExtras PExtras,
               RefOrbitCalc::ReuseMode Reuse>
-    void AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision cy);
+    void AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
+                                          HighPrecision cx,
+                                          HighPrecision cy);
 
     template<typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
     PerturbationResults<IterType, T, PExtras> *GetUsefulPerturbationResultsMutable();
@@ -303,7 +314,10 @@ private:
     const PerturbationResults<IterType, T, PExtras> *GetUsefulPerturbationResultsConst() const;
 
     template<typename IterType, class T, class PerturbationResultsType, PerturbExtras PExtras, ReuseMode Reuse>
-    void InitResults(PerturbationResultsType &results, const HighPrecision &initX, const HighPrecision &initY);
+    void InitResults(PerturbationResultsType &results,
+                     const PointZoomBBConverter &ptz,
+                     const HighPrecision &initX,
+                     const HighPrecision &initY);
 
     template<typename IterType, class T, PerturbExtras PExtras>
     void DrawPerturbationResultsHelper();

@@ -1,4 +1,4 @@
-#include "StdAfx.h"
+﻿#include "StdAfx.h"
 
 #include "CommandDispatcher.h"
 #include "ConsoleWindow.h"
@@ -212,8 +212,8 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // gFractal exists.  If CPU-only is enforced, this will show the radio
     // button the menu properly.  Without this, the menu is out of sync until
     // the user changes algorithm manually.
-    // commandDispatcher.Dispatch(IDM_ALG_AUTO);
-    commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
+    commandDispatcher.Dispatch(IDM_ALG_AUTO);
+    //commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
 
     // Optional: force an initial black fill before first show (prevents any flash)
     {
@@ -297,7 +297,6 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
         case 'A':
         case 'a':
             if (!shiftDown) {
-                MenuCenterView(mousePt.x, mousePt.y);
                 gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Feature>();
             } else {
                 MenuCenterView(mousePt.x, mousePt.y);
@@ -612,7 +611,7 @@ MainWindow::HasLastMenuPtClient() const noexcept
 POINT
 MainWindow::GetSafeMenuPtClient() const
 {
-    // If user hasn�t opened the context menu yet, fall back to cursor pos.
+    // If user hasn’t opened the context menu yet, fall back to cursor pos.
     POINT pt = lastMenuPtClient_;
 
     if (!HasLastMenuPtClient()) {
@@ -804,7 +803,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 return 0;
             }
 
-            // release capture early so we don�t get stuck captured on exceptions/returns
+            // release capture early so we don’t get stuck captured on exceptions/returns
             if (::GetCapture() == hWnd)
                 ::ReleaseCapture();
 
@@ -911,18 +910,30 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
         }
 
         case WM_MOUSEWHEEL: {
-            // Zoom in or out when mouse wheel is scrolled.
+            // Mouse wheel zoom control
+            //
+            // Windows convention:
+            //   GET_WHEEL_DELTA_WPARAM(wParam) > 0  => wheel rotated FORWARD (away from user)
+            //   GET_WHEEL_DELTA_WPARAM(wParam) < 0  => wheel rotated BACKWARD (toward user)
+            //
+            // UI convention (FractalShark):
+            //   Wheel FORWARD  = zoom IN
+            //   Wheel BACKWARD = zoom OUT
+
             POINT pt;
             pt.x = GET_X_LPARAM(lParam);
             pt.y = GET_Y_LPARAM(lParam);
 
-            // convert to client coordinates
+            // Convert to client coordinates
             ScreenToClient(hWnd, &pt);
 
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
-                gFractal->Zoom2(pt.x, pt.y, -.3);
+                // Wheel FORWARD → ZOOM IN
+                // Negative factor shrinks the bounding box in Zoom2()
+                gFractal->Zoom2(pt.x, pt.y, -0.3);
             } else {
-                // gFractal->Zoom(pt.x, pt.y, 0.3);
+                // Wheel BACKWARD → ZOOM OUT
+                // Smaller zoom factor expands the view
                 gFractal->Zoom(0.3);
             }
 

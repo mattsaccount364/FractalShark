@@ -75,9 +75,9 @@ public:
     bool RecenterViewCalc(const PointZoomBBConverter &ptz);
     bool RecenterViewScreen(RECT rect);
     bool CenterAtPoint(size_t x, size_t y);
-    void Zoom(double factor);
-    void Zoom(size_t scrnX, size_t scrnY, double factor);
-    void Zoom2(size_t scrnX, size_t scrnY, double factor);
+    void ZoomAtCenter(double factor);
+    void ZoomRecentered(size_t scrnX, size_t scrnY, double factor);
+    void ZoomTowardPoint(size_t scrnX, size_t scrnY, double factor);
 
     void TestBasic();
 

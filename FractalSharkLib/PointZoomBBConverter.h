@@ -30,10 +30,13 @@ public:
     void SetPrecision(uint64_t precInBits);
 
     bool Degenerate() const;
-    PointZoomBBConverter NewZoom(double factor) const;
-    void Zoom(double factor);
+    PointZoomBBConverter ZoomedAtCenter(double factor) const;
+    PointZoomBBConverter ZoomedRecentered(const HighPrecision &calcX, const HighPrecision &calcY, double factor) const;
+    PointZoomBBConverter ZoomedTowardPoint(const HighPrecision &calcX, const HighPrecision &calcY, double factor) const;
+    void ZoomInPlace(double factor);
 
 private:
+    void ZoomDivisor(double divisor);
     HighPrecision m_MinX, m_MinY;
     HighPrecision m_MaxX, m_MaxY;
     HighPrecision m_PtX, m_PtY;

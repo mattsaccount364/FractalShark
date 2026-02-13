@@ -626,45 +626,31 @@ Fractal::CenterAtPoint(size_t x, size_t y)
 }
 
 void
-Fractal::Zoom(double factor)
+Fractal::ZoomAtCenter(double factor)
 {
-    auto ptz = m_Ptz.NewZoom(factor);
+    auto ptz = m_Ptz.ZoomedAtCenter(factor);
     RecenterViewCalc(ptz);
 }
 
 // This one recenters and zooms in on the mouse cursor.
 // This one is better with the keyboard.
 void
-Fractal::Zoom(size_t scrnX, size_t scrnY, double factor)
+Fractal::ZoomRecentered(size_t scrnX, size_t scrnY, double factor)
 {
-    CenterAtPoint(scrnX, scrnY);
-    Zoom(factor);
+    const HighPrecision calcX = XFromScreenToCalc((HighPrecision)scrnX);
+    const HighPrecision calcY = YFromScreenToCalc((HighPrecision)scrnY);
+    auto ptz = m_Ptz.ZoomedRecentered(calcX, calcY, factor);
+    RecenterViewCalc(ptz);
 }
 
 // The idea is to zoom in on the mouse cursor, without also recentering it.
 // This one is better with the wheel.
 void
-Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor)
+Fractal::ZoomTowardPoint(size_t scrnX, size_t scrnY, double factor)
 {
-    const HighPrecision newCenterX = XFromScreenToCalc((HighPrecision)scrnX);
-    const HighPrecision newCenterY = YFromScreenToCalc((HighPrecision)scrnY);
-
-    const auto &minX = m_Ptz.GetMinX();
-    const auto &minY = m_Ptz.GetMinY();
-    const auto &maxX = m_Ptz.GetMaxX();
-    const auto &maxY = m_Ptz.GetMaxY();
-
-    const HighPrecision leftWeight = (newCenterX - minX) / (maxX - minX);
-    const HighPrecision rightWeight = HighPrecision{1} - leftWeight;
-    const HighPrecision topWeight = (newCenterY - minY) / (maxY - minY);
-    const HighPrecision bottomWeight = HighPrecision{1} - topWeight;
-
-    const HighPrecision minXFinal = minX - (maxX - minX) * leftWeight * (HighPrecision)factor;
-    const HighPrecision minYFinal = minY - (maxY - minY) * topWeight * (HighPrecision)factor;
-    const HighPrecision maxXFinal = maxX + (maxX - minX) * rightWeight * (HighPrecision)factor;
-    const HighPrecision maxYFinal = maxY + (maxY - minY) * bottomWeight * (HighPrecision)factor;
-
-    PointZoomBBConverter ptz{minXFinal, minYFinal, maxXFinal, maxYFinal};
+    const HighPrecision calcX = XFromScreenToCalc((HighPrecision)scrnX);
+    const HighPrecision calcY = YFromScreenToCalc((HighPrecision)scrnY);
+    auto ptz = m_Ptz.ZoomedTowardPoint(calcX, calcY, factor);
     RecenterViewCalc(ptz);
 }
 
@@ -785,7 +771,7 @@ Fractal::AutoZoom()
                 PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
             }
 
-            m_Ptz.Zoom(1.1);
+            m_Ptz.ZoomInPlace(-1.0 / 22.0);
             m_ChangedWindow = true;
 
             CalcFractal(false);

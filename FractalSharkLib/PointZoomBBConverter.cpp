@@ -216,27 +216,78 @@ PointZoomBBConverter::Degenerate() const
 }
 
 PointZoomBBConverter
-PointZoomBBConverter::NewZoom(double scale) const
+PointZoomBBConverter::ZoomedAtCenter(double factor) const
 {
+    double divisor = 1.0 / (1.0 + 2.0 * factor);
     PointZoomBBConverter out = *this;
-    out.Zoom(scale);
+    out.ZoomDivisor(divisor);
     return out;
 }
 
-void
-PointZoomBBConverter::Zoom(double factor)
+PointZoomBBConverter
+PointZoomBBConverter::ZoomedRecentered(const HighPrecision &calcX,
+                                      const HighPrecision &calcY,
+                                      double factor) const
 {
-    if (!(factor > 0.0) || Degenerate()) {
+    // Recenter bounding box on (calcX, calcY), preserving current extents,
+    // then apply ZoomedAtCenter.
+    const HighPrecision width = m_MaxX - m_MinX;
+    const HighPrecision height = m_MaxY - m_MinY;
+    const auto two = HighPrecision{2};
+
+    PointZoomBBConverter centered{calcX - width / two,
+                                  calcY - height / two,
+                                  calcX + width / two,
+                                  calcY + height / two};
+    return centered.ZoomedAtCenter(factor);
+}
+
+PointZoomBBConverter
+PointZoomBBConverter::ZoomedTowardPoint(const HighPrecision &calcX,
+                                      const HighPrecision &calcY,
+                                      double factor) const
+{
+    // Asymmetric weighted zoom toward (calcX, calcY) without recentering.
+    // Edges expand/contract proportionally to their distance from the point.
+    const HighPrecision leftWeight = (calcX - m_MinX) / (m_MaxX - m_MinX);
+    const HighPrecision rightWeight = HighPrecision{1} - leftWeight;
+    const HighPrecision topWeight = (calcY - m_MinY) / (m_MaxY - m_MinY);
+    const HighPrecision bottomWeight = HighPrecision{1} - topWeight;
+
+    const HighPrecision hf{factor};
+    const HighPrecision width = m_MaxX - m_MinX;
+    const HighPrecision height = m_MaxY - m_MinY;
+
+    return PointZoomBBConverter{m_MinX - width * leftWeight * hf,
+                                m_MinY - height * topWeight * hf,
+                                m_MaxX + width * rightWeight * hf,
+                                m_MaxY + height * bottomWeight * hf};
+}
+
+void
+PointZoomBBConverter::ZoomInPlace(double factor)
+{
+    // Old-style additive convention:
+    // factor=0.3 expands each edge by 30% (zoom out)
+    // factor=-0.3 shrinks each edge by 30% (zoom in)
+    double divisor = 1.0 / (1.0 + 2.0 * factor);
+    ZoomDivisor(divisor);
+}
+
+void
+PointZoomBBConverter::ZoomDivisor(double divisor)
+{
+    if (!(divisor > 0.0) || Degenerate()) {
         return;
     }
 
-    const HighPrecision hf{factor};
+    const HighPrecision hf{divisor};
 
     // Current half-extents
     const HighPrecision halfX = (m_MaxX - m_MinX) / HighPrecision{2};
     const HighPrecision halfY = (m_MaxY - m_MinY) / HighPrecision{2};
 
-    // factor > 1 => smaller box (zoom in)
+    // divisor > 1 => smaller box (zoom in)
     const HighPrecision newHalfX = halfX / hf;
     const HighPrecision newHalfY = halfY / hf;
 

@@ -929,12 +929,12 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
                 // Wheel FORWARD → ZOOM IN
-                // Negative factor shrinks the bounding box in Zoom2()
-                gFractal->Zoom2(pt.x, pt.y, -0.3);
+                // Negative factor shrinks the bounding box in ZoomTowardPoint()
+                gFractal->ZoomTowardPoint(pt.x, pt.y, -0.3);
             } else {
                 // Wheel BACKWARD → ZOOM OUT
                 // Smaller zoom factor expands the view
-                gFractal->Zoom(0.3);
+                gFractal->ZoomAtCenter(0.3);
             }
 
             PaintAsNecessary();
@@ -1000,14 +1000,14 @@ MainWindow::MenuCenterView(int x, int y)
 void
 MainWindow::MenuZoomIn(POINT mousePt)
 {
-    gFractal->Zoom(mousePt.x, mousePt.y, -.45);
+    gFractal->ZoomRecentered(mousePt.x, mousePt.y, -.45);
     PaintAsNecessary();
 }
 
 void
 MainWindow::MenuZoomOut(POINT mousePt)
 {
-    gFractal->Zoom(mousePt.x, mousePt.y, 1);
+    gFractal->ZoomRecentered(mousePt.x, mousePt.y, 1);
     PaintAsNecessary();
 }
 

@@ -816,7 +816,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 {
     // Compile-time enable, runtime gating below.
     constexpr bool UseHalley = true;
-    constexpr bool UseFullPrecDerivatives = true;
+    constexpr bool UseFullPrecDerivatives = false;
 
     // Gate: require rho^2 < 2^-k (k bigger => more conservative)
     // With rho^2 = |z|^2*|d2|^2 / |dzdc|^4.

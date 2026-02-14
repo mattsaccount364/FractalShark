@@ -62,6 +62,10 @@ This idea was first implemented in Imagina for saving and loading reference orbi
 
 For high-period locations (e.g. period 600,000,000), this can reduce memory usage by multiple gigabytes, often making the difference between a render being feasible or impossible.
 
+### 7. Feature Finder / periodic point detection
+
+FractalShark includes a **Feature Finder** that locates periodic points (minibrots, fixed points, etc.) in the Mandelbrot set. Right-click on a point of interest and the Feature Finder will attempt to identify its period and refine its coordinates using Newton-Raphson iteration at high precision. It supports multiple evaluation modes — Direct, Perturbation Theory, and Linear Approximation — each with an optional grid-scanning variant that searches a neighborhood around the clicked point for the best candidate. The design is loosely inspired by similar functionality in Imagina.
+
 ## CUDA? What are the system requirements?
 
 - **AVX-2 CPU**: used for reference orbit/MPIR library.
@@ -114,11 +118,6 @@ Note that the GPU-accelerated reference orbit really doesn't pay off until you'r
 - Support for non-Mandelbrot fractals. Not worth the engineering complexity relative to the payoff.
 - Support for AMD cards unless I buy one
 - High-quality CPU support. Zhuoran's Imagina easily has that covered - he did a great job. FractalShark does have two CPU-based linear approximation implementations, but it's not very well optimized, and is intended primarily for testing/debugging. Runtime reference compression also is supported in CPU-only mode.
-
-## What future work is there?
-
-- Minibrot detection/location. Imagina has this I know, not sure who else has it.
-- TBD - depends on motivation.
 
 ## What bugs does FractalShark have?
 

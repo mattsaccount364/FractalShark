@@ -2576,10 +2576,17 @@ RefOrbitCalc::GetUsefulPerturbationResultsMutable()
         m_C.erase(m_C.begin());
     }
 
+    std::cout << "Looking for useful perturbation results among " << m_C.size() << " candidates..."
+              << std::endl;
+
     for (size_t i = 0; i < m_C.size(); i++) {
         auto *cur_elt = GetElt<IterType, T, PExtras>(i);
 
         if (cur_elt) {
+            std::cout << "Candidate " << i
+                      << ", authoritative precision in bits: " << cur_elt->GetAuthoritativePrecisionInBits()
+                      << ", max iterations: " << cur_elt->GetMaxIterations()
+                      << ", count orbit entries: " << cur_elt->GetCountOrbitEntries() << std::endl;
             if (IsPerturbationResultUsefulHere<IterType, T, Authoritative, PExtras>(i)) {
                 useful_results.push_back(GetElt<IterType, T, PExtras>(i));
             }

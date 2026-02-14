@@ -139,6 +139,18 @@ FeatureSummary::GetResidual2() const
 }
 
 void
+FeatureSummary::SetNumIterationsAtFind(IterTypeFull numIters)
+{
+    NumIterationsAtFind = numIters;
+}
+
+IterTypeFull
+FeatureSummary::GetNumIterationsAtFind() const
+{
+    return NumIterationsAtFind;
+}
+
+void
 FeatureSummary::EstablishScreenCoordinates(const Fractal &fractal)
 {
     HighPrecision sxHP = fractal.XFromCalcToScreen(OrigX);
@@ -180,7 +192,7 @@ FeatureSummary::EstablishScreenCoordinates(const Fractal &fractal)
         return v;
     };
 
-    // Cohen–Sutherland outcodes
+    // Cohenï¿½Sutherland outcodes
     constexpr int INSIDE = 0;
     constexpr int LEFT = 1 << 0;
     constexpr int RIGHT = 1 << 1;

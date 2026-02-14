@@ -1,10 +1,4 @@
 #pragma once
-//package fractalzoomer.core.la;
-//
-//import fractalzoomer.core.*;
-//import fractalzoomer.functions.Fractal;
-//
-//import java.util.Arrays;
 
 #include <cmath>
 #include "HDRFloat.h"
@@ -32,6 +26,11 @@ class PerturbationResults;
 template<typename IterType, class T, class SubType>
 class GPU_LAReference;
 
+void SetCopyThreadDescription();
+
+// Note: The helper functions in this header cannot be moved to the .cpp file
+// unless we can properly instantiate the template with CudaDblflt, which we
+// currently cannot do.
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 class LAReference {
 private:
@@ -196,7 +195,7 @@ public:
         auto numElementsPerThread = other.m_LAs.GetSize() / numThreads;
 
         auto oneThread = [&](size_t start, size_t end) {
-            SetThreadDescription(GetCurrentThread(), L"LAReference::CopyLAReference");
+            SetCopyThreadDescription();
             for (size_t i = start; i < end; i++) {
                 m_LAs[i] = other.m_LAs[i];
             }

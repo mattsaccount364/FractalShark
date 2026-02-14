@@ -1019,6 +1019,11 @@ requires(PExtras != PerturbExtras::MaxCompression)
     finish();
 }
 
+void SetCopyThreadDescription()
+{
+    SetThreadDescription(GetCurrentThread(), L"LAReference::CopyLAReference");
+}
+
 // TODO - this is a mess
 #define InitializeApproximationData(IterType, T, SubType, PExtras)                                      \
     template void LAReference<IterType, T, SubType, PExtras>::GenerateApproximationData<T>(             \

@@ -756,6 +756,15 @@ Fractal::AutoZoom()
             return;
         }
 
+        // Restore the iteration count that was active when the feature was found.
+        // View(0) resets m_NumIterations to DefaultIterations (8192), which is
+        // too low for the feature's zoom level and produces a bad reference orbit.
+        const auto savedNumIterations = GetNumIterations<IterTypeFull>();
+        const auto featureIters = best->GetNumIterationsAtFind();
+        if (featureIters > 0) {
+            SetNumIterations<IterTypeFull>(featureIters);
+        }
+
         CalcFractal(false);
 
         PointZoomBBConverter startPtzCentered{best->GetFoundX(), best->GetFoundY(), origZoom};
@@ -763,6 +772,19 @@ Fractal::AutoZoom()
 
         guessX = best->GetFoundX();
         guessY = best->GetFoundY();
+
+        // Linearly interpolate iteration count from savedNumIterations
+        // back to featureIters as the zoom progresses from origZoom to
+        // targetZoomFactor.  Each ZoomInPlace(-1/22) step multiplies the
+        // zoom factor by 1.1, so the total number of steps is
+        // log(targetZoomFactor/origZoom) / log(1.1).
+        const double logZoomRatio = Convert<HighPrecision, double>(targetZoomFactor / origZoom);
+        const double zoomPerStep = 1.1; // divisor = 22/20
+        const int64_t totalSteps =
+            (logZoomRatio > 0.0)
+                ? static_cast<int64_t>(std::ceil(std::log(logZoomRatio) / std::log(zoomPerStep)))
+                : 1;
+        int64_t curStep = 0;
 
         int replacePTCounterHeuristic = 0;
         for (;;) {
@@ -774,204 +796,213 @@ Fractal::AutoZoom()
             m_Ptz.ZoomInPlace(-1.0 / 22.0);
             m_ChangedWindow = true;
 
+            // Interpolate iterations: savedNumIterations → featureIters
+            ++curStep;
+            const double t =
+                (totalSteps > 0) ? std::min(static_cast<double>(curStep) / totalSteps, 1.0) : 1.0;
+            const auto interpIters = static_cast<IterTypeFull>(
+                savedNumIterations + t * (static_cast<double>(featureIters) - savedNumIterations));
+            SetNumIterations<IterTypeFull>(interpIters);
+
             CalcFractal(false);
 
             if (m_StopCalculating)
                 break;
 
             if (replacePTCounterHeuristic++ > 100) {
-                //ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                // ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
                 replacePTCounterHeuristic = 0;
             }
         }
 
         return;
-    }
+    } else {
+        size_t retries = 0;
 
-    size_t retries = 0;
-
-    for (;;) {
-        {
-            MSG msg;
-            PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
-        }
-
-        double geometricMeanX = 0;
-        double geometricMeanSum = 0;
-        double geometricMeanY = 0;
-
-        if (retries >= 0) {
-            width = m_Ptz.GetMaxX() - m_Ptz.GetMinX();
-            height = m_Ptz.GetMaxY() - m_Ptz.GetMinY();
-            retries = 0;
-        }
-
-        size_t numAtMax = 0;
-        size_t numAtLimit = 0;
-        bool shouldBreak = false;
-
-        auto lambda = [&](auto **ItersArray, auto NumIterations) {
-            // ---------------- DEFAULT ----------------
-            if constexpr (h == AutoZoomHeuristic::Default) {
-
-                ULONG shiftWidth = (ULONG)m_ScrnWidth / 8;
-                ULONG shiftHeight = (ULONG)m_ScrnHeight / 8;
-
-                RECT antiRect;
-                antiRect.left = shiftWidth;
-                antiRect.right = (ULONG)m_ScrnWidth - shiftWidth;
-                antiRect.top = shiftHeight;
-                antiRect.bottom = (ULONG)m_ScrnHeight - shiftHeight;
-
-                antiRect.left *= GetGpuAntialiasing();
-                antiRect.right *= GetGpuAntialiasing();
-                antiRect.top *= GetGpuAntialiasing();
-                antiRect.bottom *= GetGpuAntialiasing();
-
-                const auto antiRectWidthInt = antiRect.right - antiRect.left;
-                const auto antiRectHeightInt = antiRect.bottom - antiRect.top;
-
-                size_t maxiter = 0;
-                double totaliters = 0;
-
-                for (auto y = antiRect.top; y < antiRect.bottom; y++) {
-                    for (auto x = antiRect.left; x < antiRect.right; x++) {
-                        auto curiter = ItersArray[y][x];
-                        totaliters += curiter;
-                        if (curiter > maxiter)
-                            maxiter = curiter;
-                    }
-                }
-
-                double avgiters =
-                    totaliters / ((antiRect.bottom - antiRect.top) * (antiRect.right - antiRect.left));
-
-                double widthOver2 = antiRectWidthInt / 2.0;
-                double heightOver2 = antiRectHeightInt / 2.0;
-                double maxDistance = sqrt(widthOver2 * widthOver2 + heightOver2 * heightOver2);
-
-                for (auto y = antiRect.top; y < antiRect.bottom; y++) {
-                    for (auto x = antiRect.left; x < antiRect.right; x++) {
-
-                        auto curiter = ItersArray[y][x];
-
-                        if (curiter == maxiter)
-                            numAtLimit++;
-
-                        if (curiter < avgiters)
-                            continue;
-
-                        double distanceX = fabs(widthOver2 - fabs(widthOver2 - fabs(x - antiRect.left)));
-                        double distanceY =
-                            fabs(heightOver2 - fabs(heightOver2 - fabs(y - antiRect.top)));
-
-                        double normalizedIters = (double)curiter / (double)NumIterations;
-
-                        if (curiter == maxiter)
-                            normalizedIters *= normalizedIters;
-
-                        double normalizedDist =
-                            sqrt(distanceX * distanceX + distanceY * distanceY) / maxDistance;
-
-                        double sq = normalizedIters * normalizedDist;
-
-                        geometricMeanSum += sq;
-                        geometricMeanX += sq * x;
-                        geometricMeanY += sq * y;
-
-                        if (curiter >= NumIterations)
-                            numAtMax++;
-                    }
-                }
-
-                if (geometricMeanSum == 0) {
-                    shouldBreak = true;
-                    return;
-                }
-
-                double meanX = geometricMeanX / geometricMeanSum;
-                double meanY = geometricMeanY / geometricMeanSum;
-
-                guessX = XFromScreenToCalc<true>(HighPrecision{meanX});
-                guessY = YFromScreenToCalc<true>(HighPrecision{meanY});
-
-                if (numAtLimit == antiRectWidthInt * antiRectHeightInt) {
-                    std::wcerr << L"Flat screen! :(" << std::endl;
-                    shouldBreak = true;
-                    return;
-                }
+        for (;;) {
+            {
+                MSG msg;
+                PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
             }
 
-            // ---------------- MAX ----------------
-            if constexpr (h == AutoZoomHeuristic::Max) {
+            double geometricMeanX = 0;
+            double geometricMeanSum = 0;
+            double geometricMeanY = 0;
 
-                LONG targetX = -1;
-                LONG targetY = -1;
-                size_t maxiter = 0;
+            if (retries >= 0) {
+                width = m_Ptz.GetMaxX() - m_Ptz.GetMinX();
+                height = m_Ptz.GetMaxY() - m_Ptz.GetMinY();
+                retries = 0;
+            }
 
-                for (auto y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
-                    for (auto x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
-                        auto curiter = ItersArray[y][x];
-                        if (curiter > maxiter)
-                            maxiter = curiter;
-                    }
-                }
+            size_t numAtMax = 0;
+            size_t numAtLimit = 0;
+            bool shouldBreak = false;
 
-                for (auto y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
-                    for (auto x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
-                        auto curiter = ItersArray[y][x];
+            auto lambda = [&]([[maybe_unused]] auto **ItersArray, [[maybe_unused]] auto NumIterations) {
+                // ---------------- DEFAULT ----------------
+                if constexpr (h == AutoZoomHeuristic::Default) {
 
-                        if (curiter == maxiter) {
-                            numAtLimit++;
-                            if (targetX == -1 && targetY == -1) {
-                                targetX = x;
-                                targetY = y;
-                            }
+                    ULONG shiftWidth = (ULONG)m_ScrnWidth / 8;
+                    ULONG shiftHeight = (ULONG)m_ScrnHeight / 8;
+
+                    RECT antiRect;
+                    antiRect.left = shiftWidth;
+                    antiRect.right = (ULONG)m_ScrnWidth - shiftWidth;
+                    antiRect.top = shiftHeight;
+                    antiRect.bottom = (ULONG)m_ScrnHeight - shiftHeight;
+
+                    antiRect.left *= GetGpuAntialiasing();
+                    antiRect.right *= GetGpuAntialiasing();
+                    antiRect.top *= GetGpuAntialiasing();
+                    antiRect.bottom *= GetGpuAntialiasing();
+
+                    const auto antiRectWidthInt = antiRect.right - antiRect.left;
+                    const auto antiRectHeightInt = antiRect.bottom - antiRect.top;
+
+                    size_t maxiter = 0;
+                    double totaliters = 0;
+
+                    for (auto y = antiRect.top; y < antiRect.bottom; y++) {
+                        for (auto x = antiRect.left; x < antiRect.right; x++) {
+                            auto curiter = ItersArray[y][x];
+                            totaliters += curiter;
+                            if (curiter > maxiter)
+                                maxiter = curiter;
                         }
+                    }
 
-                        if (curiter >= NumIterations)
-                            numAtMax++;
+                    double avgiters = totaliters / ((antiRect.bottom - antiRect.top) *
+                                                    (antiRect.right - antiRect.left));
+
+                    double widthOver2 = antiRectWidthInt / 2.0;
+                    double heightOver2 = antiRectHeightInt / 2.0;
+                    double maxDistance = sqrt(widthOver2 * widthOver2 + heightOver2 * heightOver2);
+
+                    for (auto y = antiRect.top; y < antiRect.bottom; y++) {
+                        for (auto x = antiRect.left; x < antiRect.right; x++) {
+
+                            auto curiter = ItersArray[y][x];
+
+                            if (curiter == maxiter)
+                                numAtLimit++;
+
+                            if (curiter < avgiters)
+                                continue;
+
+                            double distanceX =
+                                fabs(widthOver2 - fabs(widthOver2 - fabs(x - antiRect.left)));
+                            double distanceY =
+                                fabs(heightOver2 - fabs(heightOver2 - fabs(y - antiRect.top)));
+
+                            double normalizedIters = (double)curiter / (double)NumIterations;
+
+                            if (curiter == maxiter)
+                                normalizedIters *= normalizedIters;
+
+                            double normalizedDist =
+                                sqrt(distanceX * distanceX + distanceY * distanceY) / maxDistance;
+
+                            double sq = normalizedIters * normalizedDist;
+
+                            geometricMeanSum += sq;
+                            geometricMeanX += sq * x;
+                            geometricMeanY += sq * y;
+
+                            if (curiter >= NumIterations)
+                                numAtMax++;
+                        }
+                    }
+
+                    if (geometricMeanSum == 0) {
+                        shouldBreak = true;
+                        return;
+                    }
+
+                    double meanX = geometricMeanX / geometricMeanSum;
+                    double meanY = geometricMeanY / geometricMeanSum;
+
+                    guessX = XFromScreenToCalc<true>(HighPrecision{meanX});
+                    guessY = YFromScreenToCalc<true>(HighPrecision{meanY});
+
+                    if (numAtLimit == antiRectWidthInt * antiRectHeightInt) {
+                        std::wcerr << L"Flat screen! :(" << std::endl;
+                        shouldBreak = true;
+                        return;
                     }
                 }
 
-                guessX = XFromScreenToCalc<true>(HighPrecision{targetX});
-                guessY = YFromScreenToCalc<true>(HighPrecision{targetY});
+                // ---------------- MAX ----------------
+                if constexpr (h == AutoZoomHeuristic::Max) {
 
-                if (numAtLimit ==
-                    m_ScrnWidth * m_ScrnHeight * GetGpuAntialiasing() * GetGpuAntialiasing()) {
-                    std::wcerr << L"Flat screen! :(" << std::endl;
-                    shouldBreak = true;
-                    return;
+                    LONG targetX = -1;
+                    LONG targetY = -1;
+                    size_t maxiter = 0;
+
+                    for (auto y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
+                        for (auto x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
+                            auto curiter = ItersArray[y][x];
+                            if (curiter > maxiter)
+                                maxiter = curiter;
+                        }
+                    }
+
+                    for (auto y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
+                        for (auto x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
+                            auto curiter = ItersArray[y][x];
+
+                            if (curiter == maxiter) {
+                                numAtLimit++;
+                                if (targetX == -1 && targetY == -1) {
+                                    targetX = x;
+                                    targetY = y;
+                                }
+                            }
+
+                            if (curiter >= NumIterations)
+                                numAtMax++;
+                        }
+                    }
+
+                    guessX = XFromScreenToCalc<true>(HighPrecision{targetX});
+                    guessY = YFromScreenToCalc<true>(HighPrecision{targetY});
+
+                    if (numAtLimit ==
+                        m_ScrnWidth * m_ScrnHeight * GetGpuAntialiasing() * GetGpuAntialiasing()) {
+                        std::wcerr << L"Flat screen! :(" << std::endl;
+                        shouldBreak = true;
+                        return;
+                    }
                 }
+            };
+
+            if (GetIterType() == IterTypeEnum::Bits32) {
+                lambda(m_CurIters.GetItersArray<uint32_t>(), GetNumIterations<uint32_t>());
+            } else {
+                lambda(m_CurIters.GetItersArray<uint64_t>(), GetNumIterations<uint64_t>());
             }
-        };
 
-        if (GetIterType() == IterTypeEnum::Bits32) {
-            lambda(m_CurIters.GetItersArray<uint32_t>(), GetNumIterations<uint32_t>());
-        } else {
-            lambda(m_CurIters.GetItersArray<uint64_t>(), GetNumIterations<uint64_t>());
+            if (shouldBreak)
+                break;
+
+            HighPrecision newMinX = guessX - width / Divisor;
+            HighPrecision newMinY = guessY - height / Divisor;
+            HighPrecision newMaxX = guessX + width / Divisor;
+            HighPrecision newMaxY = guessY + height / Divisor;
+
+            PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY};
+
+            RecenterViewCalc(newPtz);
+            CalcFractal(false);
+
+            if (numAtMax > 500)
+                break;
+
+            retries++;
+
+            if (m_StopCalculating)
+                break;
         }
-
-        if (shouldBreak)
-            break;
-
-        HighPrecision newMinX = guessX - width / Divisor;
-        HighPrecision newMinY = guessY - height / Divisor;
-        HighPrecision newMaxX = guessX + width / Divisor;
-        HighPrecision newMaxY = guessY + height / Divisor;
-
-        PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY};
-
-        RecenterViewCalc(newPtz);
-        CalcFractal(false);
-
-        if (numAtMax > 500)
-            break;
-
-        retries++;
-
-        if (m_StopCalculating)
-            break;
     }
 }
 
@@ -5215,6 +5246,7 @@ Fractal::TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderM
         }
 
         if (found) {
+            fs->SetNumIterationsAtFind(GetNumIterations<IterTypeFull>());
             m_FeatureSummaries.emplace_back(std::move(fs));
         }
     };

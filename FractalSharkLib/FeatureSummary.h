@@ -79,6 +79,9 @@ public:
     IterTypeFull GetPeriod() const;
     HDRFloat<double> GetResidual2() const;
 
+    void SetNumIterationsAtFind(IterTypeFull numIters);
+    IterTypeFull GetNumIterationsAtFind() const;
+
     const HighPrecision &GetIntrinsicRadius() const;
 
     void EstablishScreenCoordinates(const Fractal &fractal);
@@ -104,6 +107,7 @@ private:
 
     IterTypeFull Period{};
     HDRFloat<double> Residual2{};
+    IterTypeFull NumIterationsAtFind{};
 
     uint64_t screenXStart{0};
     uint64_t screenYStart{0};

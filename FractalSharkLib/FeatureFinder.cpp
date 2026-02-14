@@ -1,4 +1,4 @@
-﻿//
+//
 // This feature finder logic is heavily based on the implementation in Imagina
 // but likely screws up some of the details.
 //
@@ -194,6 +194,11 @@ EvaluateCriticalOrbitAndDerivs(const mpf_complex &c_coord, // coord_prec
                                mpf_t t2_c // coord_prec scalars
 )
 {
+    // Suppress unused-parameter warnings: the MT version uses worker threads
+    // instead of these scratch temps (the ST variant does use them).
+    (void)t2_d;
+    (void)t2_c;
+
     // -------------------------
     // Initialize state
     // -------------------------
@@ -1618,6 +1623,8 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         return false;
     }
 
+#pragma warning(push)
+#pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
     // Fixed-period path: unscale outputs
     outDiff = z;
     outResidual2 = z.norm_squared();
@@ -1629,6 +1636,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     outDzdc.Reduce();
     outZcoeff.Reduce();
     return true;
+#pragma warning(pop)
 }
 
 // =====================================================================================
@@ -1690,7 +1698,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
 
     const T zero = T{};
     const T one = HdrReduce(T{1.0});
-    const T two = HdrReduce(T{2.0});
     const T escape2 = HdrReduce(T{4096.0});
 
     // --------------------------
@@ -1902,8 +1909,8 @@ template <class IterType, class T, PerturbExtras PExtras>
 template <bool FindPeriod>
 bool
 FeatureFinder<IterType, T, PExtras>::DirectEvaluator::Eval(const C &c,
-                                                           const HighPrecision &cX_hp,
-                                                           const HighPrecision &cY_hp,
+                                                           [[maybe_unused]] const HighPrecision &cX_hp,
+                                                           [[maybe_unused]] const HighPrecision &cY_hp,
                                                            T SqrRadius,
                                                            IterTypeFull maxIters,
                                                            IterType &ioPeriod,
@@ -1986,6 +1993,8 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
         return false;
     }
 
+#pragma warning(push)
+#pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
     // Final fallback to direct (for non-FindPeriod case)
     // Use the requested period as cap (your Evaluate_PT ignores maxIters for !FindPeriod)
     // Note: Here maxIters is actually passed as "period" by your caller, but we ignore it.
@@ -2007,6 +2016,7 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
               << (uint64_t)ioPeriod << "\n";
     return self->Evaluate_PeriodResidualAndDzdc_Direct(
         c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
+#pragma warning(pop)
 }
 
 // PTEvaluator::Eval implementation
@@ -2046,7 +2056,11 @@ FeatureFinder<IterType, T, PExtras>::PTEvaluator::Eval(const C &c,
         return self->Evaluate_PeriodResidualAndDzdc_Direct(
             c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
     }
+
+#pragma warning(push)
+#pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
     return false;
+#pragma warning(pop)
 }
 
 // Simplified FindPeriodicPoint (Direct)

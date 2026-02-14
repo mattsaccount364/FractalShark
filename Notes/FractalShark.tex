@@ -214,10 +214,18 @@ context-menu invocation (\textbf{Shift+F10} / \textbf{Menu} key).
 
 \subsection{Basic Interaction}
 
+On startup, \FractalShark{} displays a brief splash screen (randomly chosen
+from a set of built-in images) while initializing the renderer.
+
 The most common interactions are:
 \begin{itemize}
   \item \textbf{Right-click}: Open the popup menu at the mouse cursor.
   \item \textbf{Left-click and drag}: Zoom into a rectangular region.
+        By default the zoom rectangle preserves the window aspect ratio;
+        holding \texttt{Shift} while dragging allows a free-form
+        (non-square) selection.
+  \item \textbf{Mouse wheel}: Scroll forward to zoom in at the cursor;
+        scroll backward to zoom out from the center.
   \item \textbf{Keyboard shortcuts}:
     \begin{itemize}
       \item \texttt{z}: Zoom in at the mouse cursor.
@@ -226,6 +234,9 @@ The most common interactions are:
       \item \texttt{- / =}: Decrease or increase the iteration limit.
     \end{itemize}
 \end{itemize}
+
+Resizing the window automatically resets the renderer dimensions and triggers
+a recalculation of the fractal to match the new window size.
 
 \subsection{Menu Structure and Behavior}
 
@@ -295,13 +306,14 @@ choice and triggers any necessary reconfiguration.
     \end{itemize}
 
   \item \emph{Built-In Views} (submenu): Loads a predefined view/location used
-  for demonstrations, debugging, or performance testing.
+  for demonstrations, debugging, or performance testing.  Up to 31 views are
+  defined in the source (\texttt{FractalViewPresets.cpp}).
     \begin{itemize}
       \item \emph{Help} (command): Pops up a message box that simply says this
       submenu contains built-in test views.
       \item \emph{Standard View} (command): Loads the default starting view: the
       classic Mandelbrot.
-      \item \emph{\#1 -- \#whatever} (commands): Loads a specific predefined
+      \item \emph{\#1 -- \#31} (commands): Loads a specific predefined
       test view. Many entries encode expected precision limits, kernel behavior,
       or known failure cases in their label text.  Several views require intense
       computation and take a long time to render.  View \#27, for example, is a
@@ -353,7 +365,8 @@ choice and triggers any necessary reconfiguration.
 
     \begin{itemize}
       \item \emph{Help} (command): Displays help for algorithm selection and
-      related concepts.
+      related concepts (e.g., what LAv2, BLA, perturbation, and reference
+      compression mean, and when to use each).
 
       \item \emph{Auto (Default)} (radio): Automatically selects the
       default/recommended renderer.  Recommended.
@@ -531,19 +544,29 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Clear Perturbation References -- All} (command): Clears all cached perturbation references.
       \item \emph{Clear Perturbation References -- Med} (command): Clears medium-class cached references.
       \item \emph{Clear Perturbation References -- High} (command): Clears high-class cached references.
-      \item \emph{Show Perturbation Results} (command): Displays diagnostic/summary results for perturbation state.
+      \item \emph{Show Perturbation Results} (command): Intended to display
+      diagnostic overlay information for perturbation state.  Currently
+      a stub (prints a TODO to the debug console).
 
-      \item \emph{Auto (default)} (radio)
-      \item \emph{Single Thread (ST)} (radio)
-      \item \emph{Multi Thread (MT)} (radio)
-      \item \emph{ST + Periodicity} (radio)
-      \item \emph{MT2 + Periodicity} (radio)
-      \item \emph{MT2 + Periodicity + Perturb ST} (radio)
-      \item \emph{MT2 + Periodicity + Perturb MT v1} (radio)
-      \item \emph{MT2 + Periodicity + Perturb MT v2} (radio)
-      \item \emph{MT2 + Periodicity + Perturb MT v3} (radio)
-      \item \emph{MT2 + Periodicity + Perturb MT v4 (broken)} (radio)
-      \item \emph{MT5 + Periodicity} (command): Only enabled when perturbation support is available.
+      \item \emph{Auto (default)} (radio): Automatically selects the perturbation
+      algorithm based on current conditions.  Recommended for most use.
+      \item \emph{Single Thread (ST)} (radio): Uses a single-threaded
+      reference-orbit computation with no periodicity checking.
+      \item \emph{Multi Thread (MT)} (radio): Uses a multithreaded
+      reference-orbit computation with no periodicity checking.
+      \item \emph{ST + Periodicity} (radio): Single-threaded reference-orbit
+      computation with periodicity checking to detect convergence early.
+      \item \emph{MT2 + Periodicity} (radio): Multithreaded reference-orbit
+      computation (generation~2) with periodicity checking.
+      \item \emph{MT2 + Periodicity + Perturb ST} (radio): MT2 reference orbit
+      with a single-threaded perturbation pass for the high-resolution layer.
+      \item \emph{MT2 + Periodicity + Perturb MT v1--v4} (radio entries):
+      MT2 reference orbit with multithreaded perturbation.  Versions v1--v3
+      represent different threading/scheduling strategies for the per-pixel
+      perturbation pass; v4 is marked as broken.
+      \item \emph{MT5 + Periodicity} (command): A newer multithreaded variant
+      (generation~5) with periodicity checking.  Only enabled when perturbation
+      support is available.
 
       \item \emph{GPU-Accelerated (see README)} (command): Selects or enables a GPU-accelerated perturbation path. \textit{[TODO: clarify whether this is a mode toggle, a mode selection, or a one-shot action]}
 
@@ -581,7 +604,10 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Leave max of (1/2*ram, 8GB) free (default)} (radio): Constrains allocation to preserve system memory headroom.
     \end{itemize}
 
-  \item \emph{Show Rendering Details} (command): Displays current rendering status and diagnostics (e.g., position/state details). \textit{[TODO: refine what fields are shown]}
+  \item \emph{Show Rendering Details} (command): Displays current rendering
+  status and diagnostics, including position coordinates (real, imaginary,
+  zoom level), the active render algorithm, and perturbation/LA state.
+  The information is shown in a message box and also copied to the clipboard.
 
   \item \emph{Save} (submenu): Output and benchmarking commands.
     \begin{itemize}
@@ -593,21 +619,41 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Save Reference Orbit as Text} (command): Saves the reference orbit in text form.
       \item \emph{Save Compressed Orbit as Text (simple)} (command)
       \item \emph{Save Compressed Orbit as Text (max)} (command)
-      \item \emph{Save Compressed Orbit (Imagina/max)} (command)
+      \item \emph{Save Compressed Orbit (Imagina/max)} (command): Saves the
+      reference orbit in Imagina's file format with maximum compression,
+      suitable for import into Imagina or later reload via
+      \emph{Load~$\to$~Load Imagina Orbit}.
 
-      \item \emph{Benchmark (5x, full recalc)} (command): Runs a benchmark performing full recalculation passes.
-      \item \emph{Benchmark (5x, intermediate only)} (command): Runs a benchmark emphasizing intermediate stages. \textit{[TODO: clarify what ``intermediate'' means here]}
+      \item \emph{Benchmark (5x, full recalc)} (command): Runs 5 full
+      recalculation passes using all perturbation result types and reports
+      overall and per-pixel rendering times in milliseconds.
+      \item \emph{Benchmark (5x, intermediate only)} (command): Runs 5
+      recalculation passes using only the medium-resolution perturbation
+      results, which isolates intermediate-stage performance.
 
-      \item \emph{Diff Imagina Orbits (choose two)} (command): Compares two Imagina-format saved orbits.
+      \item \emph{Diff Imagina Orbits (choose two)} (command): Opens two
+      file-chooser dialogs to select a pair of Imagina-format orbit files, then
+      compares them element-by-element and reports any differences.  Useful for
+      verifying that two orbit computations produce equivalent results.
     \end{itemize}
 
   \item \emph{Load} (submenu): Load view parameters and reference orbits.
     \begin{itemize}
       \item \emph{Load Location...} (command): Loads a previously saved location/view.
-      \item \emph{Enter Location} (command): Manually enters a location/view. \textit{[TODO: clarify input format]}
-      \item \emph{Load Imagina Orbit (Match)...} (command): Loads an Imagina orbit by matching parameters. \textit{[TODO: clarify match criteria]}
-      \item \emph{Load Imagina Orbit (Use Saved)...} (command): Loads a previously saved Imagina orbit directly.
+      \item \emph{Enter Location} (command): Manually enters a location/view
+      via a dialog where you type the real part, imaginary part, and zoom level.
+      \item \emph{Load Imagina Orbit (Match)...} (command): Loads an
+      Imagina-format orbit file and matches it against the current view
+      parameters (coordinates and precision) to validate compatibility.
+      \item \emph{Load Imagina Orbit (Use Saved)...} (command): Loads a
+      previously saved Imagina orbit file directly, using whatever parameters
+      are stored in the file without matching against the current view.
     \end{itemize}
+
+  Imagina is a separate Mandelbrot rendering application.  \FractalShark{}
+  can import and export reference orbits in Imagina's file format, which is
+  useful for cross-validating orbit computations between the two programs or
+  for sharing precomputed orbits.
 
   \item \emph{Exit} (command): Exits the application.
 \end{itemize}
@@ -626,8 +672,10 @@ choice and triggers any necessary reconfiguration.
 Commands such as \emph{Recalculate} or \emph{Recalculate, Reuse Reference} trigger
 an immediate re-render of the current view. These commands do not change any
 persistent settings; they simply instruct the renderer to restart computation
-using the current configuration. Reusing the reference orbit can significantly
-reduce recomputation time when only display parameters change.
+using the current configuration. \emph{Recalculate, Reuse Reference} keeps the
+existing high-precision reference orbit and only recomputes the per-pixel
+perturbation pass, which is significantly faster when the view center has not
+changed.
 
 \subsection{Experimental and Debug Options}
 
@@ -645,8 +693,10 @@ options.
   it has begun. If necessary, the application must be terminated externally.
   \item Some menu options may be temporarily disabled depending on the current
   render state or selected algorithm.
-  \item If the application exits unexpectedly, a crash dump may be generated in
-  the executable directory and can be used for debugging or issue reporting.
+  \item If the application exits unexpectedly, a Windows minidump
+  (\texttt{.dmp}) file may be generated in the same directory as the
+  executable.  These dumps can be loaded in Visual Studio or WinDbg for
+  post-mortem debugging.
 \end{itemize}
 
 Despite its rough edges, the popup menu provides a unified control surface for

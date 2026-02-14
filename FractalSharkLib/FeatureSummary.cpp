@@ -192,7 +192,7 @@ FeatureSummary::EstablishScreenCoordinates(const Fractal &fractal)
         return v;
     };
 
-    // Cohen�Sutherland outcodes
+    // Cohen-Sutherland outcodes
     constexpr int INSIDE = 0;
     constexpr int LEFT = 1 << 0;
     constexpr int RIGHT = 1 << 1;

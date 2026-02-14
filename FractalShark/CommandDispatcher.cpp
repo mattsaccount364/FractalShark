@@ -163,8 +163,23 @@ CommandDispatcher::BuildTable()
         +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>(); });
     table_.emplace(IDM_FEATUREFINDER_DIRECT,
                    makeDoPeriodic.operator()<FeatureFinderMode::Direct>());
+    table_.emplace(IDM_FEATUREFINDER_DIRECTSCAN,
+                   makeDoPeriodic.operator()<FeatureFinderMode::DirectScan>());
     table_.emplace(IDM_FEATUREFINDER_PT, makeDoPeriodic.operator()<FeatureFinderMode::PT>());
+    table_.emplace(IDM_FEATUREFINDER_PTSCAN,
+                   makeDoPeriodic.operator()<FeatureFinderMode::PTScan>());
     table_.emplace(IDM_FEATUREFINDER_LA, makeDoPeriodic.operator()<FeatureFinderMode::LA>());
+    table_.emplace(IDM_FEATUREFINDER_LASCAN,
+                   makeDoPeriodic.operator()<FeatureFinderMode::LAScan>());
+    table_.emplace(IDM_FEATUREFINDER_ZOOM, +[](MainWindow &w) {
+        if (w.gFractal->ZoomToFoundFeature()) {
+            w.PaintAsNecessary();
+        }
+    });
+    table_.emplace(IDM_FEATUREFINDER_CLEAR, +[](MainWindow &w) {
+        w.gFractal->ClearAllFoundFeatures();
+        w.PaintAsNecessary();
+    });
 
     table_.emplace(IDM_REPAINTING, +[](MainWindow &w) { w.MenuRepainting(); });
     table_.emplace(IDM_WINDOWED, +[](MainWindow &w) { w.MenuWindowed(false); });

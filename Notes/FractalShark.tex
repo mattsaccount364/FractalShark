@@ -55,6 +55,37 @@ satisfied with the content.}
 \tableofcontents
 \clearpage
 
+\subsection*{Notation}
+\label{sec:notation}
+
+The following symbols appear throughout these notes.  Where a concept
+admits more than one notation the table lists the canonical form first
+and notes the section-local variant.
+
+\begin{center}
+\begin{tabular}{lll}
+\hline
+\textbf{Symbol} & \textbf{Meaning} & \textbf{Notes} \\
+\hline
+$z_n$        & orbit value at iteration $n$  & $z_0=0$,\; $z_{n+1}=z_n^2+c$ \\
+$c$          & complex parameter (pixel)     & \\
+$z_n^\star,\; c_\star$ & reference orbit / parameter
+             & $z^{(0)}_n,\; c_0$ in the reuse hierarchy (\cref{subsec:ref-orbit-reuse}) \\
+$\Delta z_n$ & perturbation $z_n - z_n^\star$ & \\
+$\delta z_n$ & second-level perturbation      & relative to an intermediate orbit (\cref{subsec:ref-orbit-reuse}) \\
+$\Delta c$   & parameter offset $c - c_\star$ & \\
+$d_n \equiv \partial z_n/\partial c$ & orbit derivative
+             & $d_0=0$;\; implementation starts from $d_1=1$ \\
+$c^*$        & nucleus of a hyperbolic component & distinct from $c_\star$ \\
+$n$          & iteration index               & \\
+$p$          & period                        & \\
+$N$          & limb count (multi-precision)  & \\
+\hline
+\end{tabular}
+\end{center}
+
+\clearpage
+
 \section{\FractalShark{} Overview}
 \label{sec:goal}
 
@@ -202,6 +233,8 @@ three distinct behavioral categories:
 \begin{description}
   \item[Radio groups] Mutually exclusive choices where exactly one option is
   active at a time (for example, selecting a render algorithm or GPU antialiasing level).
+  \item[Toggles] Binary on/off options that switch between two states each time
+  they are selected (for example, toggling repainting or full-screen mode).
   \item[Commands] Immediate actions that execute when selected and do not
   maintain a checked state.
 \end{description}
@@ -224,6 +257,39 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Zoom Out} (command): Zooms out from the current view.
       \item \emph{Autozoom Default} (command): See \ref{par:autozoom} for details.
       \item \emph{Autozoom Max} (command): See \ref{par:autozoom} for details.
+      \item \emph{Feature Finder} (submenu): Locates nearby mini-Mandelbrot
+      nuclei (periodic points) using Newton's method and optionally zooms to
+      them.  Three evaluation back-ends are available, each in a single-point
+      and a whole-screen scan variant.  See
+      Section~\ref{sec:feature-finder} for the underlying algorithm.
+        \begin{itemize}
+          \item \emph{Direct} (\texttt{n}) (command): Runs the feature finder at
+          the mouse cursor using direct iteration.  Best for shallow zooms where
+          no perturbation data is needed.
+          \item \emph{DirectScan} (\texttt{N}) (command): Runs direct-iteration
+          feature finding on a $12\times12$ grid across the entire viewport,
+          locating multiple features at once.
+          \item \emph{PT} (\texttt{m}) (command): Runs the feature finder at the
+          mouse cursor using perturbation theory.  Requires a reference orbit and
+          works at deeper zooms than Direct.
+          \item \emph{PTScan} (\texttt{M}) (command): Runs perturbation-theory
+          feature finding on a $12\times12$ grid across the viewport.
+          \item \emph{LA} (\texttt{,}) (command): Runs the feature finder at the
+          mouse cursor using linear approximation.  Works at extreme zoom depths
+          where PT alone would be too slow.
+          \item \emph{LAScan} (\texttt{<}) (command): Runs linear-approximation
+          feature finding on a $12\times12$ grid across the viewport.
+          \item \emph{Zoom to Found Feature} (\texttt{.}) (command): Zooms into
+          the most recently found feature.  If the feature has only been located
+          at low precision, a high-precision GMP refinement pass is performed
+          automatically before zooming.
+          \item \emph{Clear All Found Features} (\texttt{>}) (command): Removes
+          all found-feature overlays (lines and circles drawn on the fractal).
+        \end{itemize}
+      When a feature is found, a line is drawn from the search origin to the
+      detected nucleus so you can see where it is.  Scan modes are useful for
+      surveying an entire view at a glance; single-point modes are faster and
+      target the area near your cursor.
     \end{itemize}
 
   \item \emph{Built-In Views} (submenu): Loads a predefined view/location used
@@ -266,7 +332,7 @@ choice and triggers any necessary reconfiguration.
       \item \emph{16x (better quality)}
     \end{itemize}
 
-  Note that antiasliasing as used here is not traditional GPU antialiasing.
+  Note that antialiasing as used here is not traditional GPU antialiasing.
   Instead, 4, 9, or 16 samples are explicitly computed per pixel and averaged
   together either on the CPU or GPU.  This approach is known as
   \emph{supersampling} and produces high-quality results at the cost of
@@ -694,6 +760,22 @@ These keys scale the maximum iteration count aggressively for quick exploration:
   \item Mouse wheel: Zoom in/out (scroll up zooms in; scroll down zooms out).
 \end{itemize}
 
+\paragraph{Feature Finder.}
+These keys invoke the periodic-point (feature) finder at the current mouse
+position, or scan the entire viewport.  See Section~\ref{sec:feature-finder}
+for the algorithm details and Section~\ref{sec:ui-popup-menu} for the
+corresponding menu items under \emph{Navigate $\to$ Feature Finder}.
+\begin{itemize}
+  \item \texttt{n}: Find the nearest feature using direct iteration (single point at cursor).
+  \item \texttt{N} (\texttt{Shift+n}): Scan the viewport on a $12\times12$ grid using direct iteration.
+  \item \texttt{m}: Find the nearest feature using perturbation theory (single point at cursor).
+  \item \texttt{M} (\texttt{Shift+m}): Scan the viewport on a $12\times12$ grid using perturbation theory.
+  \item \texttt{,}: Find the nearest feature using linear approximation (single point at cursor).
+  \item \texttt{<} (\texttt{Shift+,}): Scan the viewport on a $12\times12$ grid using linear approximation.
+  \item \texttt{.}: Zoom to the most recently found feature (refines to high precision first if needed).
+  \item \texttt{>} (\texttt{Shift+.}): Clear all found-feature overlays.
+\end{itemize}
+
 \paragraph{Responsiveness note.}
 Many shortcuts trigger a recomputation or redraw immediately.  If FractalShark
 is executing a long-running render (especially a large GPU kernel), keyboard
@@ -798,18 +880,17 @@ get pixellation.
 \end{itemize}
 
 \paragraph{High-Dynamic-Range (HDR) scalar representation.}
-In this work, the term \emph{HDR} refers to a reduced \emph{high-dynamic-range}
-numeric representation used exclusively for control-flow decisions, not for
-authoritative arithmetic. An HDR value preserves a wide exponent range—sufficient
-to compare magnitudes spanning many orders of magnitude—while intentionally
-discarding most mantissa precision. This design enables inexpensive, robust
-magnitude comparisons (e.g., norms, maxima, and inequality tests) without
-incurring the cost of full arbitrary-precision operations. HDR values are derived
-from the underlying high-precision state via a monotone reduction step and are
-used solely for periodicity detection, escape testing, and other termination
-criteria. They never participate in state updates and therefore cannot influence
-the numerical correctness of the reference orbit itself. The use of the term HDR
-here is purely numerical and is unrelated to high-dynamic-range imaging.
+In this work, the term \emph{HDR} refers to a \emph{high-dynamic-range} numeric
+representation that pairs a fixed-precision mantissa (float or double) with an
+explicitly managed integer exponent.  When the GPU reference-orbit kernel or
+perturbation pipeline needs lightweight control-flow decisions—periodicity
+detection, escape testing, magnitude comparisons—it converts the full
+arbitrary-precision state into an HDR value via a lossy reduction step
+(\texttt{ToHDRFloat}).  The resulting HDR value preserves a wide exponent range,
+sufficient to compare magnitudes spanning many orders of magnitude, but carries
+only the fixed mantissa precision of the underlying float type rather than the
+full arbitrary-precision mantissa.  The use of the term HDR here is purely
+numerical and is unrelated to high-dynamic-range imaging.
 
 
 \section{The Mandelbrot set and escape-time rendering}
@@ -1506,8 +1587,12 @@ Several modes enable periodicity detection. The implementation tracks the comple
 
 \(\frac{\partial z_n}{\partial c}\) in low precision:
 \begin{equation}
-  d_{n+1} = 2 z_n d_n + 1,\qquad d_0 = 1,
+  d_{n+1} = 2 z_n d_n + 1,\qquad d_0 = 0.
 \end{equation}
+Mathematically \(d_0 = \partial z_0/\partial c = 0\), since \(z_0=0\).
+Because the implementation begins its loop at \(z_1=c\) (folding in the
+first iteration), the code variable \texttt{dzdcX} is initialized to~$1$,
+which corresponds to \(d_1=1\) in the recurrence above.
 
 with \(d_n = d_{x,n} + i d_{y,n}\). Expanding into real and imaginary parts yields:
 
@@ -1635,6 +1720,18 @@ incremental zoom steps before their accuracy envelope is exceeded.
 
 \subsubsection{Authoritative Reference Orbit}
 
+\paragraph{Notation.}
+The earlier perturbation sections
+(\cref{sec:perturbation-concept,sec:perturb-only})
+write the reference orbit and parameter as
+\(z_n^\star\) and \(c_\star\).
+Here we use the indexed notation
+\(z^{(0)}_n\) and \(c_0\) instead, so that the superscript can
+distinguish the authoritative level~\(0\) from intermediate
+levels~\(1,2,\ldots\) in the reuse hierarchy.
+The two conventions describe the same object:
+\(z^{(0)}_n \equiv z_n^\star\) and \(c_0 \equiv c_\star\).
+
 Let
 \[
 c_0 \in \mathbb{C}
@@ -1741,7 +1838,7 @@ existing intermediate data, with authoritative recomputation occurring only
 sporadically.
 
 The two-level approach nevertheless does have an important downside: instead of
-maintaing only a low-precision copy of the reference orbit, the system must also
+maintaining only a low-precision copy of the reference orbit, the system must also
 store the authoritative orbit samples $\{z^{(0)}_n\}$ to support intermediate
 reconstruction.  This increases memory usage and data transfer requirements,
 potentially impacting performance.
@@ -3256,14 +3353,15 @@ along the orbit. For the Mandelbrot map \(f(z)=z^2+c\), the chain rule yields
   \label{eq:dzdc-recurrence}
 \end{equation}
 
-with initialization \(\frac{dz_0}{dc}=0\) when \(z_0=0\) (equivalently, one may
-store the pair \((d x_n/dc, d y_n/dc)\) and update in-place).
-Writing \(z_n = x_n + i y_n\) and \(d_n = d x_n/dc + i\, d y_n/dc\), expanding
+with initialization \(\frac{dz_0}{dc}=0\) when \(z_0=0\).
+Writing \(z_n = x_n + i y_n\) and introducing the shorthand
+\(d_n \equiv \frac{\partial z_n}{\partial c}\) with real and imaginary parts
+\(d_{x,n}\) and \(d_{y,n}\), expanding
 \eqref{eq:dzdc-recurrence} into real and imaginary parts gives:
 
 \begin{align}
-  d x_{n+1}/dc &= 2\,(x_n\, d x_n/dc - y_n\, d y_n/dc) + 1, \label{eq:dzdc-real}\\
-  d y_{n+1}/dc &= 2\,(x_n\, d y_n/dc + y_n\, d x_n/dc). \label{eq:dzdc-imag}
+  d_{x,n+1} &= 2\,(x_n\, d_{x,n} - y_n\, d_{y,n}) + 1, \label{eq:dzdc-real}\\
+  d_{y,n+1} &= 2\,(x_n\, d_{y,n} + y_n\, d_{x,n}). \label{eq:dzdc-imag}
 \end{align}
 
 In our implementation, the derivative accumulators \texttt{dzdcX} and
@@ -3533,7 +3631,7 @@ This provides a complete Mandelbrot renderer based purely on reference-orbit
 perturbation, without relying on any linear-approximation hierarchy.
 
 
-\section{TODO mess approximation-based acceleration for Mandelbrot rendering}
+\section{TODO}
 \label{sec:approx-accel}
 
 At deep zoom, the cost of iterating high-precision types for every pixel can be
@@ -3855,11 +3953,356 @@ in exchange for broader compatibility.
 
 
 
+\section{Periodic Point Detection (Feature Finder)}
+\label{sec:feature-finder}
+
+Given a viewer location and a search radius, \FractalShark{} can automatically
+locate the center of a nearby mini-Mandelbrot copy---i.e.\ the unique parameter
+$c$ at which the critical orbit is exactly periodic.  This capability is
+implemented by the \code{FeatureFinder} class (files
+\code{FeatureFinder.h}/\code{FeatureFinder.cpp}), whose design is heavily
+influenced by the periodic-point finder in the Imagina fractal viewer.  The
+algorithm proceeds in two phases:
+\begin{enumerate}
+\item \textbf{Phase~A (T-space).}
+  Detect the candidate period $p$ and perform a coarse Newton iteration using
+  the renderer's native floating-point type~$T$ (which may be \code{float},
+  \code{double}, or \code{HDRFloat}).
+\item \textbf{Phase~B (MPF refinement).}
+  Polish the candidate to arbitrary precision using GMP \code{mpf\_t}
+  arithmetic, employing a mixed Newton--Halley iteration with precision
+  management modeled after Imagina.
+\end{enumerate}
+Three evaluation back-ends are available for Phase~A---direct iteration,
+perturbation theory (PT), and linear approximation (LA)---so that the finder
+can operate at any zoom depth supported by the renderer.
+
+\subsection{Motivation: mini-Mandelbrot copies}
+\label{subsec:ff-motivation}
+
+The Mandelbrot set contains infinitely many small-scale copies of itself,
+commonly called \emph{mini-brots}.  Each copy is the nucleus of a hyperbolic
+component of period~$p$: a connected region of the parameter plane in which the
+critical orbit $z_0=0,\;z_{n+1}=z_n^2+c$ converges to an attracting cycle of
+exact period~$p$.  The center of the component---the \emph{nucleus}---is the
+unique parameter $c^*$ satisfying
+\begin{equation}\label{eq:ff-nucleus}
+z_p(c^*) = 0,\qquad z_0 = 0,
+\end{equation}
+where $z_p$ denotes the $p$-fold iterate of the critical point.
+
+Locating these nuclei is useful for several reasons:
+\begin{itemize}
+\item \textbf{Reference orbit placement.}  A reference orbit centered at a
+  nucleus is exactly periodic, eliminating long-term drift and improving the
+  accuracy of perturbation-based rendering nearby.
+\item \textbf{Automatic navigation.}  Given a user click, the finder can snap
+  to the nearest mini-brot center and report its period and intrinsic size,
+  enabling one-click deep-zoom targeting.
+\item \textbf{Scale estimation.}  The derivative $\partial z_p/\partial c$ at
+  the nucleus determines the local magnification scale of the mini-brot
+  relative to the full set, which informs precision requirements for rendering.
+\end{itemize}
+At extreme zoom depths the nucleus coordinates may require thousands of bits of
+precision, so the finder must combine fast low-precision search with
+high-precision refinement.
+
+\subsection{Design and implementation}
+\label{subsec:ff-design}
+
+\paragraph{Class template.}
+\code{FeatureFinder<IterType, T, PExtras>} is a final class template
+parameterized by the iteration-count type (\code{uint32\_t} or
+\code{uint64\_t}), the working floating-point type~$T$, and a
+\code{PerturbExtras} tag that selects compression behavior.  It inherits
+convenience typedefs from \code{TemplateHelpers} and defines a nested
+\code{Params} struct with tunable constants (maximum Newton iterations,
+relative step tolerances $2^{-40}$ and $2^{-80}$, an optional absolute
+residual accept threshold, and a print flag).
+
+\paragraph{Evaluator policies (strategy pattern).}
+Phase~A must iterate the critical orbit to detect the period and compute
+derivatives.  Three evaluator structs encapsulate this:
+\begin{itemize}
+\item \code{DirectEvaluator} --- iterates $z\leftarrow z^2+c$ from scratch,
+  suitable when no reference orbit is available.
+\item \code{PTEvaluator} --- uses a precomputed reference orbit and
+  perturbation delta $\Delta c$ to evaluate the orbit, decompressing
+  reference data on the fly via \code{RuntimeDecompressor}.
+\item \code{LAEvaluator} --- uses the linear-approximation (LA) coefficients
+  from \code{LAReference} to skip early iterations, falling back to
+  perturbation for the remaining tail.
+\end{itemize}
+Each evaluator exposes a single templated method \code{Eval<FindPeriod>}.
+When \code{FindPeriod=true}, it searches for the smallest $n$ at which a
+periodicity trigger fires; when \code{FindPeriod=false}, it evaluates at a
+known period and returns the residual, $\partial z/\partial c$, and
+$z_{\mathrm{coeff}}$.
+
+\paragraph{Common Newton loop (\code{FindPeriodicPoint\_Common}).}
+All three \code{FindPeriodicPoint} overloads delegate to this template,
+which:
+\begin{enumerate}
+\item Calls the evaluator with \code{FindPeriod=true} to obtain a candidate
+  period~$p$.
+\item Applies an initial Newton correction
+  $c \leftarrow c - z_p / (\partial z_p/\partial c)$ in high precision
+  (the canonical $c$ is maintained as a \code{HighPrecision} value and
+  projected to $T$ for each evaluation).
+\item Runs up to \code{MaxNewtonIters} Newton steps in $T$-space, stopping when
+  either
+  $|\Delta c|^2 \le |c|^2 \cdot (2^{-40})^2$ (relative step) or
+  $|z_p|^2 \le |c|^2 \cdot (2^{-40})^2$ (relative residual).
+\item Performs a final correction pass and stores the result as a
+  \code{PeriodicPointCandidate} inside \code{FeatureSummary}, along with the
+  MPF precision needed for Phase~B.
+\end{enumerate}
+
+\paragraph{Phase~B: MPF refinement (\code{RefinePeriodicPoint\_HighPrecision}).}
+This method retrieves the candidate from \code{FeatureSummary}, converts
+its coordinates to GMP \code{mpf\_t} at the candidate's stored precision,
+and calls the Imagina-style mixed Newton--Halley polisher described in
+\cref{subsec:ff-newton,subsec:ff-halley,subsec:ff-mixed-prec}.  On
+completion the refined coordinates are written back to \code{FeatureSummary}
+and the candidate is marked as refined.
+
+\paragraph{Parallel orbit evaluation.}
+The high-precision forward evaluation
+(\code{EvaluateCriticalOrbitAndDerivs}) must perform several large
+\code{mpf\_mul} operations per iteration.  To overlap these, the code spawns
+seven spin-based worker threads (four for derivative-precision products,
+three for coordinate-precision products).  Workers spin on per-slot
+\code{std::atomic<uint64\_t>} generation counters; the main thread
+publishes operand pointers, bumps the generation, and spin-waits on a
+matching done counter.  Each slot is cache-line-aligned (\code{alignas(64)})
+to avoid false sharing.
+
+\subsection{Newton--Raphson iteration}
+\label{subsec:ff-newton}
+
+\paragraph{Root-finding formulation.}
+Finding a period-$p$ nucleus amounts to solving $F(c)=0$ where
+\begin{equation}\label{eq:ff-Fc}
+F(c) \;=\; z_p(c),\qquad
+z_0 = 0,\quad z_{n+1} = z_n^2 + c.
+\end{equation}
+Newton's method produces the update
+\begin{equation}\label{eq:ff-newton-step}
+\Delta c \;=\; \frac{F(c)}{F'(c)}
+         \;=\; \frac{z_p}{\partial z_p / \partial c},
+\qquad c \leftarrow c - \Delta c.
+\end{equation}
+Because $z_{n+1}=z_n^2+c$, the derivative satisfies the linear recurrence
+\begin{equation}\label{eq:ff-dzdc-recurrence}
+\frac{\partial z_{n+1}}{\partial c}
+  = 2\,z_n\,\frac{\partial z_n}{\partial c} + 1,
+\qquad \frac{\partial z_0}{\partial c} = 0,
+\end{equation}
+so both $z_n$ and $\partial z_n/\partial c$ are available at the end of a
+single forward pass of $p$~iterations.
+
+\paragraph{The \code{zcoeff} product.}
+In addition to $\partial z_p/\partial c$, the code tracks a multiplicative
+coefficient
+\begin{equation}\label{eq:ff-zcoeff}
+w_n = \prod_{k=0}^{n-1} 2\,z_k,
+\end{equation}
+with the convention $w_0=1$.  This product satisfies
+$\partial z_n/\partial c = w_n + \text{lower-order terms}$ and is used later
+to compute the intrinsic scale of the mini-brot (see
+\cref{subsec:ff-intrinsic-radius}).  In the code it is updated as
+\code{zcoeff *= 2*z} at each iteration, matching the recurrence for the
+leading factor of the derivative.
+
+\paragraph{Convergence.}
+Standard Newton--Raphson converges quadratically near a simple root.  The
+Phase~A loop in \code{FindPeriodicPoint\_Common} uses two independent
+stopping criteria, whichever triggers first:
+\begin{enumerate}
+\item \emph{Relative step:}
+  $|\Delta c|^2 \le |c|^2 \cdot \epsilon_{\mathrm{step}}^2$
+  with $\epsilon_{\mathrm{step}} = 2^{-40}$.
+\item \emph{Relative residual:}
+  $|z_p|^2 \le |c|^2 \cdot \epsilon_{\mathrm{diff}}^2$
+  with $\epsilon_{\mathrm{diff}} = 2^{-40}$.
+\end{enumerate}
+An optional absolute residual accept (\code{Eps2Accept}) provides a third
+early-out that can be enabled via \code{Params}.
+
+\paragraph{Period detection trigger.}
+Before Newton iteration begins, the evaluator must identify the candidate
+period.  The criterion used is: at iteration~$n$, if
+\begin{equation}\label{eq:ff-period-trigger}
+|z_n|^2 \;<\; R^2 \cdot \left|\frac{\partial z_n}{\partial c}\right|^2,
+\end{equation}
+then $p = n$ is accepted as the candidate period, where $R$ is the search
+radius.  This test detects the moment the orbit passes close to the origin
+relative to the local stretching factor $|\partial z/\partial c|$, which is
+a hallmark of near-periodic behavior.  A dynamic tightening mechanism
+(implemented in the \code{PeriodicityPP} helper) progressively shrinks the
+effective $R^2$ during the scan to reduce false triggers.
+
+\subsection{Halley's method}
+\label{subsec:ff-halley}
+
+Phase~B optionally upgrades from Newton to Halley iteration for cubic
+convergence.  The Halley step for $F(c) = z_p(c)$ is
+\begin{equation}\label{eq:ff-halley-step}
+\Delta_H \;=\;
+  \frac{2\,F(c)\,F'(c)}
+       {2\bigl(F'(c)\bigr)^2 - F(c)\,F''(c)},
+\qquad c \leftarrow c - \Delta_H,
+\end{equation}
+where $F'=\partial z_p/\partial c$ and $F''=\partial^2 z_p/\partial c^2$.
+
+\paragraph{Second derivative recurrence.}
+Differentiating \cref{eq:ff-dzdc-recurrence} once more gives
+\begin{equation}\label{eq:ff-d2zdc2}
+\frac{\partial^2 z_{n+1}}{\partial c^2}
+  = 2\left(\frac{\partial z_n}{\partial c}\right)^{\!2}
+  + 2\,z_n\,\frac{\partial^2 z_n}{\partial c^2},
+\qquad \frac{\partial^2 z_0}{\partial c^2} = 0.
+\end{equation}
+In the code this quantity is carried as a pair of \code{HDRFloat<double>}
+values (real and imaginary parts), which provide a wide exponent range at low
+mantissa precision.  The coordinate-precision quantities $z$ and
+$\partial z/\partial c$ are stored in \code{mpf\_t}, while
+$\partial^2 z/\partial c^2$ remains in HDR throughout the forward
+evaluation.  When the Halley step is actually computed, the HDR second
+derivative is promoted to \code{mpf\_t} at coordinate precision.
+
+\paragraph{Halley gate.}
+Halley's step is only beneficial when $F''$ is well-conditioned relative to
+$F$ and $F'$.  The code uses the dimensionless ratio
+\begin{equation}\label{eq:ff-halley-gate}
+\rho^2 \;=\;
+  \frac{|F|^2\,|F''|^2}{|F'|^4}
+\end{equation}
+and activates Halley only when $\rho^2 < 2^{-12}$.  When $\rho^2$ is
+small the denominator $2(F')^2 - F\,F''$ is dominated by the $(F')^2$ term,
+so the Halley correction is a small, well-determined perturbation of the
+Newton step.  If the Halley denominator turns out to be exactly zero (or the
+gate is not satisfied), the code falls back to a plain Newton step for that
+iteration.
+
+\subsection{Mixed-precision refinement}
+\label{subsec:ff-mixed-prec}
+
+The Phase~B polisher (\code{RefinePeriodicPoint}) operates entirely in GMP
+\code{mpf\_t} arithmetic but uses two distinct precision levels to balance cost
+and accuracy, following the strategy used in Imagina.
+
+\paragraph{Coordinate vs.\ derivative precision.}
+The candidate coordinate $c$ and the orbit value $z_p$ are maintained at full
+\emph{coordinate precision} $P_c$ (typically hundreds to tens of thousands of
+bits, determined by the zoom depth).  The derivative
+$\partial z_p/\partial c$ is maintained at a reduced \emph{derivative
+precision} $P_d$ chosen by
+\begin{equation}\label{eq:ff-deriv-prec}
+P_d = \operatorname{clamp}\!\left(
+  \frac{-E_{\mathrm{scale}} + 32}{4},\;
+  256,\;
+  P_c + E_{\max}^{|c|} + 32
+\right),
+\end{equation}
+where $E_{\mathrm{scale}}$ is the base-2 exponent of the scale factor
+$\text{Scale} \approx 1/|w_p \cdot \partial z_p/\partial c|$ and
+$E_{\max}^{|c|}$ is the exponent of $\max(|\Re c|,|\Im c|)$.
+The rationale is that the derivative need only be accurate enough to produce
+a Newton/Halley step whose relative error is smaller than the current
+residual; carrying it at full coordinate precision would roughly double the
+cost of each forward evaluation without improving the convergence rate.
+
+\paragraph{Error estimator and stopping criterion.}
+After each step $\Delta c$, the code computes an error proxy entirely in
+\code{HDRFloat<double>}:
+\begin{equation}\label{eq:ff-err}
+\mathrm{err} \;=\;
+  \frac{|\Delta c|^4 \cdot |F''|^2}{|F'|^2}.
+\end{equation}
+This quantity approximates the leading-order truncation error of the Newton
+step (or, more precisely, the residual that would remain after two successive
+Newton steps of similar quality).  Iteration stops when
+\begin{equation}\label{eq:ff-stop}
+-\lfloor \log_2(\mathrm{err}) \rfloor \;\ge\; 2\,P_c,
+\end{equation}
+meaning the estimated error occupies fewer than $2P_c$ bits---well below the
+representable precision of the coordinate.
+
+\paragraph{Final correction and accept/reject.}
+After the main loop converges (or exhausts the iteration budget), a single
+additional Newton step is applied as a final correction.  The refined $c$ is
+then checked against the initial seed $c_0$: if
+$|c - c_0|^2 > R^2$ (the squared search radius, carried in \code{mpf\_t}),
+the result is rejected and $c$ is reset to~$c_0$.  This guard prevents the
+iteration from wandering to a distant nucleus outside the user's region of
+interest.
+
+\subsection{Intrinsic radius and scale}
+\label{subsec:ff-intrinsic-radius}
+
+Once the nucleus $c^*$ and its period~$p$ are known, the local magnification
+of the mini-brot copy is characterized by
+\begin{equation}\label{eq:ff-scale}
+\mathrm{Scale} \;=\;
+  \frac{1}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|},
+\end{equation}
+where $w_p = \prod_{k=0}^{p-1} 2\,z_k$ is the \code{zcoeff} product
+evaluated at $c^*$.  The code reports an \emph{intrinsic radius}
+\begin{equation}\label{eq:ff-intrinsic-radius}
+r_{\mathrm{int}} = 4 \cdot \mathrm{Scale}
+  = \frac{4}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|}.
+\end{equation}
+Geometrically, $r_{\mathrm{int}}$ estimates the diameter of the
+period-$p$ hyperbolic component in the parameter plane.  It is stored
+as a \code{HighPrecision} value in \code{FeatureSummary} and can be used by
+the renderer to set an appropriate zoom level or to determine the additional
+bits of precision needed to render the component's interior.
+
+
 \section{Development Notes}
 
 This section simply has some development notes that were posted over time.
 
-\subsection{2026-1-18 News --- Version 0.51}
+\subsection{2026-2-14 News --- Version 0.51}
+
+Version \texttt{0.51} introduces the \textbf{Feature Finder}, a major new tool
+for exploring the Mandelbrot set, along with several usability improvements.
+
+\begin{itemize}
+\item \textbf{Feature Finder.}  Move mouse near a feature, select feature
+  finder, and \FractalShark{} will locate the nearest interesting feature---a
+  mini-Mandelbrot or satellite bulb---using Newton's method.  A line is drawn
+  from your cursor to the detected feature so you can see exactly where it is.
+  The finder works at any zoom depth.  Currently, you manually choose between
+  direct iteration, perturbation theory, and linear approximation depending on
+  how deep you are.  In the future, this choice will be automatic.
+
+\item \textbf{Scan mode.}  Instead of a single click, scan mode surveys a grid
+  of points across the screen and marks up to 144 discovered features with small
+  circles.  This gives you a quick overview of what is nearby before you decide
+  where to zoom next.
+
+\item \textbf{Auto-zoom to feature.}  Once a feature has been found you can tell
+  the program to zoom into it automatically.  The iteration count is ramped up
+  smoothly during the zoom so the image stays sharp as you approach the target.
+  This feature remains hacky and experimental but if it works it's fun to
+  play with.
+
+\item \textbf{Mouse-wheel zoom.}  Scroll the mouse wheel forward to zoom in
+  toward the cursor, or backward to zoom out.  The code is rewritten.
+
+\item \textbf{Rendering improvements.}  Parts of the OpenGL display layer are
+  rewritten for better reliability and to support the new feature-finder
+  overlays (lines and circles drawn on top of the fractal).
+
+\item \textbf{Under the hood.}  Extended the derivative math in the
+  linear-approximation pipeline so the feature finder works at extreme depths.
+  Improved precision tracking during zoom.  Added a \texttt{.clang-format}
+  configuration for consistent code formatting.
+\end{itemize}
+
+\subsection{2026-1-18 News --- Version 0.501}
 
 \begin{itemize}
 \item \textbf{Basic Wine compatibility.}  Tested without a GPU and working under
@@ -4055,6 +4498,31 @@ while keeping occupancy higher than the recursive Karatsuba path.
 \item Number-theoretic transform \cite{NTT_Wikipedia}
 \end{itemize}
 
+
+\subsection{2025-07-28 News --- Version 0.46}
+
+Version \texttt{0.46} was published as a pre-release, focusing on refactoring,
+reference compression experimentation, save-file compatibility, and test infrastructure.
+
+\begin{itemize}
+
+  \item Continued internal \textbf{refactoring} of core rendering and control logic.
+  
+  \item Experimental support for \textbf{Imagina-style “max” reference compression},
+        as an alternative to the existing “simple” scheme.
+  
+  \item Added preliminary support for \textbf{Imagina-compatible save files}.
+
+  \item Enhanced internal \textbf{test infrastructure} with broader coverage and tooling.
+    
+  \item Work in progress toward additional infrastructure improvements.
+
+\end{itemize}
+
+This release was published on GitHub on July 28, 2025 (UTC) and is tagged as a
+pre-release build.  
+
+
 \subsection{2025-6-15 News}
 
 This page actually gets traffic occasionally, so I just wanted to post a short 
@@ -4078,7 +4546,7 @@ play with).
 \subsection{2025-4-26}
 
 This high-precision arithmetic project is a lot of fun even if it's pretty 
-ameteur-hour -- I know I'm leaving a lot of perf on the table yet.
+amateur-hour -- I know I'm leaving a lot of perf on the table yet.
 
 Here's a brief update.  I'm happy enough with Karatsuba multiply now.  I've got 
 $3\times$ parallel multiplies working.  For Mandelbrot, that corresponds to $x^2
@@ -4122,8 +4590,8 @@ intermediate step and outputs those as well.  The host calculates the same
 intermediate checksums using my reference CPU implementation and comparison of 
 the two happens in the test framework.  This approach is a pretty handy way to 
 debug this nightmarish stuff because it just compares these checksums and 
-immediately identifies where the first discrepency arises in the CUDA 
-calculation.  The discrepency points right at the bad chunk of code.  Getting 
+immediately identifies where the first discrepancy arises in the CUDA 
+calculation.  The discrepancy points right at the bad chunk of code.  Getting 
 this checksumming strategy to work reliably was a real pain but it's a lot 
 easier to debug than just getting a result that says ``wrong answer.''
 
@@ -4177,65 +4645,6 @@ Host iter time: 26051 ms
 GPU iter time: 2757 ms
 
 Edited from earlier, fussing with perf-related parameters.  I'm very happy with how it's looking now.
-
-\subsection{2025-2 -- What's going on with this native CUDA reference orbit calculation?}
-
-It's been a month so here's an update before I go on vacation.  I'm still 
-focusing on multiply performance and correctness.  I have a pretty aggressive 
-test framework set up now and am evaluating it with various number sizes and 
-hardware allocations.  Supporting weird lengths makes it easier to apply more 
-levels of Karatsuba recursion.
-
-I've added optional debug-specific logic that calculates checksums of each 
-intermediate step and outputs those as well.  The host calculates the same 
-intermediate checksums using my reference CPU implementation and comparison of 
-the two happens in the test framework.  This approach is a pretty handy way to 
-debug this nightmarish stuff because it just compares these checksums and 
-immediately identifies where the first discrepency arises in the CUDA 
-calculation.  The discrepency points right at the bad chunk of code.  Getting 
-this checksumming strategy to work reliably was a real pain but it's a lot 
-easier to debug than just getting a result that says ``wrong answer.''
-
-For additional validation, it's initializing all dynamically-allocated CUDA 
-global memory with a \texttt{0xCDCDCDCD} pattern, so if the implementation 
-misses a byte, or overwrites something incorrectly, the checksum immediately 
-captures it and makes it clear where the problem occurred.  This is not default 
-CUDA behavior so I just put in a \texttt{memset}.  This approach also helps 
-ensure that I have clear definitions for how many digits are being processed at 
-each point in the calculation, since CUDA doesn't have nice \texttt{std::vector}
- or related containers.
-
-One annoying thing I hit is slow compilation times.  It's using templates 
-aggressively, so the kernel it spits out is optimized for a specific length of 
-number.  That's OK in principle because we can just produce a series of kernels 
-for different precisions but the downside is compiling a bunch of them takes 
-quite a while and produces large code sizes.  It may make more sense to 
-introduce more runtime variables and rely less on templates here but as it is 
-this endeavor is mostly an academic exercise anyway, and I'm not expecting this 
-thing to replace the existing CPU-based reference orbit calculations we have in 
-the general sense.  But it'd be cool to get high performance in some meaningful 
-range of scenarios anyway, hehe.
-
-I'll probably try moving to $3\times$ parallel multiplies soon as a step toward 
-a reference orbit, because I want to check that this thing can still compile 
-effectively with that change.  This kernel already requires a fair number of 
-registers in order to perform (avoid spilling registers to memory) and that's a 
-bit of a concern because if $3\times$ parallel multiplies pushes it over the 
-edge, performance will suffer.  There are various things I could do to decrease 
-register usage of course, but all this stuff takes time.  Once $3\times$ 
-multiplies works, then adding the additions/subtracts for a reference orbit 
-should be OK.  Those would take place after the multiplies so should have no 
-adverse effect on register use.
-
-After that I still have to deal with periodicity and truncating the high-
-precision values to float/exp, and all that will take more time.  This part may 
-actually be rather costly perf-wise if I'm not careful because the naive 
-approach is to serialize it with the rest of the calculation but that's a waste 
-of hardware.
-
-In a nutshell, this is a fun project and I'm having a blast, but it ended up 
-bigger than I anticipated given how far I'm from the actual goal.  I'll keep 
-grinding away at and we'll see where it can go.
 
 \subsection{2025-1 -- What's going on with this native CUDA reference orbit calculation?}
 
@@ -4353,31 +4762,6 @@ behemoth under better control.  And we'll see if it works out -- lots of
 remaining details to resolve and it may not work decently when combined into a 
 full reference orbit.  Overall though I'm really happy with where it's at.  
 Happy to answer questions etc.
-
-
-\subsection{2025-07-28 News --- Version 0.46}
-
-Version \texttt{0.46} was published as a pre-release, focusing on refactoring,
-reference compression experimentation, save-file compatibility, and test infrastructure.
-
-\begin{itemize}
-
-  \item Continued internal \textbf{refactoring} of core rendering and control logic.
-  
-  \item Experimental support for \textbf{Imagina-style “max” reference compression},
-        as an alternative to the existing “simple” scheme.
-  
-  \item Added preliminary support for \textbf{Imagina-compatible save files}.
-
-  \item Enhanced internal \textbf{test infrastructure} with broader coverage and tooling.
-    
-  \item Work in progress toward additional infrastructure improvements.
-
-\end{itemize}
-
-This release was published on GitHub on July 28, 2025 (UTC) and is tagged as a
-pre-release build.  
-
 
 \subsection{2024-04-20 --- Version 0.45}
 

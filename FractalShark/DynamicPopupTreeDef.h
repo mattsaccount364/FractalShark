@@ -13,7 +13,7 @@
 //   2) passes `std::span{_kids}` into Popup(...),
 //   3) returns a normal Node that simply *views* those children.
 //
-// Result: `menu[]` stays readable and static, and every submenu’s children live
+// Result: `menu[]` stays readable and static, and every submenu's children live
 // for the entire program lifetime, so recursive menu building is safe.
 //
 
@@ -49,8 +49,16 @@ static const DynamicPopupMenu::Node menu[] = {
               Item(L"Autozoom Default", IDM_AUTOZOOM_DEFAULT),
               Item(L"Autozoom Max", IDM_AUTOZOOM_MAX),
               Sep(),
-              Item(L"Feature Finder Direct", IDM_FEATUREFINDER_DIRECT),
-              Item(L"Feature Finder PT", IDM_FEATUREFINDER_PT)),
+              FS_POPUP0(L"Feature Finder",
+                        Item(L"Direct (n)", IDM_FEATUREFINDER_DIRECT),
+                        Item(L"DirectScan (N)", IDM_FEATUREFINDER_DIRECTSCAN),
+                        Item(L"PT (m)", IDM_FEATUREFINDER_PT),
+                        Item(L"PTScan (M)", IDM_FEATUREFINDER_PTSCAN),
+                        Item(L"LA (,)", IDM_FEATUREFINDER_LA),
+                        Item(L"LAScan (<)", IDM_FEATUREFINDER_LASCAN),
+                        Sep(),
+                        Item(L"Zoom to Found Feature (.)", IDM_FEATUREFINDER_ZOOM),
+                        Item(L"Clear All Found Features (>)", IDM_FEATUREFINDER_CLEAR))),
     FS_POPUP0(L"Built-In Views",
               Item(L"Help", IDM_VIEWS_HELP),
               Sep(),

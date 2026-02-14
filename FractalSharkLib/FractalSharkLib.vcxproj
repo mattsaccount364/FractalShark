@@ -21,6 +21,7 @@
     <ClInclude Include="FeatureFinderMode.h" />
     <ClInclude Include="FeatureSummary.h" />
     <ClInclude Include="Fractal.h" />
+    <ClInclude Include="FractalViewPresets.h" />
     <ClInclude Include="CrummyTest.h" />
     <ClInclude Include="GPU_BLAS.h" />
     <ClInclude Include="GPU_LAInfoDeep.h" />
@@ -65,6 +66,7 @@
     <ClCompile Include="FeatureFinder.cpp" />
     <ClCompile Include="FeatureSummary.cpp" />
     <ClCompile Include="Fractal.cpp" />
+    <ClCompile Include="FractalViewPresets.cpp" />
     <ClCompile Include="CrummyTest.cpp" />
     <ClCompile Include="ImaginaOrbit.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />

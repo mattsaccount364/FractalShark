@@ -143,6 +143,7 @@ CommandDispatcher::BuildTable()
         return [](MainWindow &w) {
             const POINT pt = w.GetSafeMenuPtClient();
             w.gFractal->TryFindPeriodicPoint(pt.x, pt.y, mode);
+            w.PaintAsNecessary();
         };
     };
 

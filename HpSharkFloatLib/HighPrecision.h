@@ -414,6 +414,56 @@ public:
         return result;
     }
 
+    // In-place ternary operations: result stored in this->m_Data,
+    // preserving this->precision. Safe when &a or &b alias *this.
+    void
+    addFrom(const HighPrecisionT &a, const HighPrecisionT &b)
+    {
+        mpf_add(m_Data, a.m_Data, b.m_Data);
+    }
+
+    void
+    subFrom(const HighPrecisionT &a, const HighPrecisionT &b)
+    {
+        mpf_sub(m_Data, a.m_Data, b.m_Data);
+    }
+
+    void
+    mulFrom(const HighPrecisionT &a, const HighPrecisionT &b)
+    {
+        mpf_mul(m_Data, a.m_Data, b.m_Data);
+    }
+
+    void
+    divFrom(const HighPrecisionT &a, const HighPrecisionT &b)
+    {
+        mpf_div(m_Data, a.m_Data, b.m_Data);
+    }
+
+    void
+    mulFrom_ui(const HighPrecisionT &a, unsigned long b)
+    {
+        mpf_mul_ui(m_Data, a.m_Data, b);
+    }
+
+    void
+    divFrom_ui(const HighPrecisionT &a, unsigned long b)
+    {
+        mpf_div_ui(m_Data, a.m_Data, b);
+    }
+
+    void
+    setFrom(const HighPrecisionT &a)
+    {
+        mpf_set(m_Data, a.m_Data);
+    }
+
+    void
+    negFrom(const HighPrecisionT &a)
+    {
+        mpf_neg(m_Data, a.m_Data);
+    }
+
     const __mpf_struct *
     backend() const
     {

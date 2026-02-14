@@ -34,9 +34,11 @@ public:
     PointZoomBBConverter ZoomedRecentered(const HighPrecision &calcX, const HighPrecision &calcY, double factor) const;
     PointZoomBBConverter ZoomedTowardPoint(const HighPrecision &calcX, const HighPrecision &calcY, double factor) const;
     void ZoomInPlace(double factor);
+    void SquareAspectRatio(size_t scrnWidth, size_t scrnHeight);
 
 private:
     void ZoomDivisor(double divisor);
+    void SetDebugStrings(const HighPrecision* deltaY = nullptr);
     HighPrecision m_MinX, m_MinY;
     HighPrecision m_MaxX, m_MaxY;
     HighPrecision m_PtX, m_PtY;

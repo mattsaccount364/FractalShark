@@ -731,6 +731,14 @@ Fractal::AutoZoom()
     }
 
     if constexpr (h == AutoZoomHeuristic::Feature) {
+        std::cout << "Forcing GPU HDRx32 Perturbed LAv2 for AutoZoom(Feature) since it relies on "
+                     "perturbation results to perform the zoom.";
+        const bool success = SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
+        if (!success) {
+            std::cerr << "Error: could not set render algorithm for AutoZoom(Feature).\n";
+            return;
+        }
+
         Divisor = HighPrecision{3};
 
         FeatureSummary *best = ChooseClosestFeatureToMouse();
@@ -769,6 +777,7 @@ Fractal::AutoZoom()
 
         PointZoomBBConverter startPtzCentered{best->GetFoundX(), best->GetFoundY(), origZoom};
         m_Ptz = startPtzCentered;
+        SquareCurrentView();
 
         guessX = best->GetFoundX();
         guessY = best->GetFoundY();
@@ -778,11 +787,18 @@ Fractal::AutoZoom()
         // targetZoomFactor.  Each ZoomInPlace(-1/22) step multiplies the
         // zoom factor by 1.1, so the total number of steps is
         // log(targetZoomFactor/origZoom) / log(1.1).
-        const double logZoomRatio = Convert<HighPrecision, double>(targetZoomFactor / origZoom);
-        const double zoomPerStep = 1.1; // divisor = 22/20
+        // Decompose the ratio via frexp to avoid double overflow for
+        // extreme zoom depths.  frexp gives mantissa in [0.5,1) and a
+        // base-2 exponent, so log(ratio) = log(mantissa) + exp*log(2).
+        const HighPrecision zoomRatio = targetZoomFactor / origZoom;
+        double mantissa{};
+        long exp2{};
+        zoomRatio.frexp(mantissa, exp2);
+        const double logRatio = std::log(std::abs(mantissa)) + exp2 * std::log(2.0);
+        const double logZoomPerStep = std::log(1.1); // zoomPerStep = 1.1, divisor = 22/20
         const int64_t totalSteps =
-            (logZoomRatio > 0.0)
-                ? static_cast<int64_t>(std::ceil(std::log(logZoomRatio) / std::log(zoomPerStep)))
+            (zoomRatio > HighPrecision{1})
+                ? static_cast<int64_t>(std::ceil(logRatio / logZoomPerStep))
                 : 1;
         int64_t curStep = 0;
 
@@ -3053,27 +3069,8 @@ Fractal::View(size_t view, bool includeMsgBox)
 void
 Fractal::SquareCurrentView(void)
 {
-    auto minX = m_Ptz.GetMinX();
-    auto minY = m_Ptz.GetMinY();
-    auto maxX = m_Ptz.GetMaxX();
-    auto maxY = m_Ptz.GetMaxY();
-
-    HighPrecision ratio = (HighPrecision)m_ScrnWidth / (HighPrecision)m_ScrnHeight;
-    HighPrecision mwidth = (maxX - minX) / ratio;
-    HighPrecision height = maxY - minY;
-
-    if (height > mwidth) {
-        minX -= ratio * (height - mwidth) / HighPrecision{2.0};
-        maxX += ratio * (height - mwidth) / HighPrecision{2.0};
-        m_ChangedWindow = true;
-    } else if (height < mwidth) {
-        minY -= (mwidth - height) / HighPrecision{2.0};
-        maxY += (mwidth - height) / HighPrecision{2.0};
-        m_ChangedWindow = true;
-    }
-
-    m_Ptz = PointZoomBBConverter{minX, minY, maxX, maxY};
-
+    m_Ptz.SquareAspectRatio(m_ScrnWidth, m_ScrnHeight);
+    m_ChangedWindow = true;
     CleanupThreads(false);
 }
 

@@ -19,34 +19,7 @@ PointZoomBBConverter::PointZoomBBConverter(HighPrecision ptX,
     m_Radius = (m_MaxY - m_MinY) / HighPrecision{2};
 
     auto deltaY = m_MaxY - m_MinY;
-    if constexpr (m_Test) {
-        if (m_MinX.precisionInBits() < 1000)
-            m_MinXStr = m_MinX.str();
-
-        if (m_MinY.precisionInBits() < 1000)
-            m_MinYStr = m_MinY.str();
-
-        if (m_MaxX.precisionInBits() < 1000)
-            m_MaxXStr = m_MaxX.str();
-
-        if (m_MaxY.precisionInBits() < 1000)
-            m_MaxYStr = m_MaxY.str();
-
-        if (m_PtX.precisionInBits() < 1000)
-            m_PtXStr = m_PtX.str();
-
-        if (m_PtY.precisionInBits() < 1000)
-            m_PtYStr = m_PtY.str();
-
-        if (m_ZoomFactor.precisionInBits() < 1000)
-            m_ZoomFactorStr = m_ZoomFactor.str();
-
-        if (m_Radius.precisionInBits() < 1000)
-            m_RadiusStr = m_Radius.str();
-
-        if (deltaY.precisionInBits() < 1000)
-            m_DeltaYStr = deltaY.str();
-    }
+    SetDebugStrings(&deltaY);
 }
 
 PointZoomBBConverter::PointZoomBBConverter(HighPrecision minX,
@@ -58,46 +31,12 @@ PointZoomBBConverter::PointZoomBBConverter(HighPrecision minX,
 {
     auto deltaY = m_MaxY - m_MinY;
 
-    if constexpr (m_Test) {
-        std::string minXStr;
-        std::string maxXStr;
-        std::string minYStr;
-        std::string maxYStr;
-
-        if (minX.precisionInBits() < 1000)
-            minXStr = minX.str();
-        if (maxX.precisionInBits() < 1000)
-            maxXStr = maxX.str();
-        if (minY.precisionInBits() < 1000)
-            minYStr = minY.str();
-        if (maxY.precisionInBits() < 1000)
-            maxYStr = maxY.str();
-
-        if (m_MinX.precisionInBits() < 1000)
-            m_MinXStr = m_MinX.str();
-        if (m_MaxX.precisionInBits() < 1000)
-            m_MaxXStr = m_MaxX.str();
-        if (m_MinY.precisionInBits() < 1000)
-            m_MinYStr = m_MinY.str();
-        if (m_MaxY.precisionInBits() < 1000)
-            m_MaxYStr = m_MaxY.str();
-        if (m_PtX.precisionInBits() < 1000)
-            m_PtXStr = m_PtX.str();
-        if (m_PtY.precisionInBits() < 1000)
-            m_PtYStr = m_PtY.str();
-        if (m_Radius.precisionInBits() < 1000)
-            m_RadiusStr = m_Radius.str();
-        if (deltaY.precisionInBits() < 1000)
-            m_DeltaYStr = deltaY.str();
-    }
+    SetDebugStrings(&deltaY);
 
     if (/*deltaX == 0 || */ deltaY == HighPrecision{0}) {
         m_ZoomFactor = HighPrecision{1};
 
-        if constexpr (m_Test) {
-            if (m_ZoomFactor.precisionInBits() < 1000)
-                m_ZoomFactorStr = m_ZoomFactor.str();
-        }
+        SetDebugStrings(&deltaY);
 
         return;
     }
@@ -110,10 +49,7 @@ PointZoomBBConverter::PointZoomBBConverter(HighPrecision minX,
     // m_ZoomFactor = std::min(zf1, zf2);
     m_ZoomFactor = zf2;
 
-    if constexpr (m_Test) {
-        if (m_ZoomFactor.precisionInBits() < 1000)
-            m_ZoomFactorStr = m_ZoomFactor.str();
-    }
+    SetDebugStrings(&deltaY);
 }
 
 const HighPrecision &
@@ -177,31 +113,31 @@ PointZoomBBConverter::SetPrecision(uint64_t precInBits)
     m_PtY.precisionInBits(precInBits);
     m_ZoomFactor.precisionInBits(precInBits);
 
+    SetDebugStrings();
+}
+
+void
+PointZoomBBConverter::SetDebugStrings(const HighPrecision* deltaY)
+{
     if constexpr (m_Test) {
         if (m_MinX.precisionInBits() < 1000)
             m_MinXStr = m_MinX.str();
-
         if (m_MinY.precisionInBits() < 1000)
             m_MinYStr = m_MinY.str();
-
         if (m_MaxX.precisionInBits() < 1000)
             m_MaxXStr = m_MaxX.str();
-
         if (m_MaxY.precisionInBits() < 1000)
             m_MaxYStr = m_MaxY.str();
-
         if (m_PtX.precisionInBits() < 1000)
             m_PtXStr = m_PtX.str();
-
         if (m_PtY.precisionInBits() < 1000)
             m_PtYStr = m_PtY.str();
-
         if (m_ZoomFactor.precisionInBits() < 1000)
             m_ZoomFactorStr = m_ZoomFactor.str();
-
-        HighPrecision radius = (m_MaxY - m_MinY) / HighPrecision{2};
-        if (radius.precisionInBits() < 1000)
-            m_RadiusStr = ((m_MaxY - m_MinY) / HighPrecision{2}).str();
+        if (m_Radius.precisionInBits() < 1000)
+            m_RadiusStr = m_Radius.str();
+        if (deltaY != nullptr && deltaY->precisionInBits() < 1000)
+            m_DeltaYStr = deltaY->str();
     }
 }
 
@@ -231,14 +167,35 @@ PointZoomBBConverter::ZoomedRecentered(const HighPrecision &calcX,
 {
     // Recenter bounding box on (calcX, calcY), preserving current extents,
     // then apply ZoomedAtCenter.
-    const HighPrecision width = m_MaxX - m_MinX;
-    const HighPrecision height = m_MaxY - m_MinY;
-    const auto two = HighPrecision{2};
+    const auto prec = m_PtX.precisionInBits();
 
-    PointZoomBBConverter centered{calcX - width / two,
-                                  calcY - height / two,
-                                  calcX + width / two,
-                                  calcY + height / two};
+    HighPrecision width{HighPrecision::SetPrecision::True, prec};
+    HighPrecision height{HighPrecision::SetPrecision::True, prec};
+    HighPrecision halfW{HighPrecision::SetPrecision::True, prec};
+    HighPrecision halfH{HighPrecision::SetPrecision::True, prec};
+
+    width.subFrom(m_MaxX, m_MinX);
+    height.subFrom(m_MaxY, m_MinY);
+
+    // halfW = width / 2,  halfH = height / 2
+    halfW.divFrom_ui(width, 2);
+    halfH.divFrom_ui(height, 2);
+
+    // Reuse width/height as the four bounding-box corners
+    HighPrecision newMinX{HighPrecision::SetPrecision::True, prec};
+    HighPrecision newMinY{HighPrecision::SetPrecision::True, prec};
+    HighPrecision newMaxX{HighPrecision::SetPrecision::True, prec};
+    HighPrecision newMaxY{HighPrecision::SetPrecision::True, prec};
+
+    newMinX.subFrom(calcX, halfW);
+    newMinY.subFrom(calcY, halfH);
+    newMaxX.addFrom(calcX, halfW);
+    newMaxY.addFrom(calcY, halfH);
+
+    PointZoomBBConverter centered{std::move(newMinX),
+                                  std::move(newMinY),
+                                  std::move(newMaxX),
+                                  std::move(newMaxY)};
     return centered.ZoomedAtCenter(factor);
 }
 
@@ -249,19 +206,137 @@ PointZoomBBConverter::ZoomedTowardPoint(const HighPrecision &calcX,
 {
     // Asymmetric weighted zoom toward (calcX, calcY) without recentering.
     // Edges expand/contract proportionally to their distance from the point.
-    const HighPrecision leftWeight = (calcX - m_MinX) / (m_MaxX - m_MinX);
-    const HighPrecision rightWeight = HighPrecision{1} - leftWeight;
-    const HighPrecision topWeight = (calcY - m_MinY) / (m_MaxY - m_MinY);
-    const HighPrecision bottomWeight = HighPrecision{1} - topWeight;
+    const auto prec = m_PtX.precisionInBits();
+
+    HighPrecision width{HighPrecision::SetPrecision::True, prec};
+    HighPrecision height{HighPrecision::SetPrecision::True, prec};
+    HighPrecision tmp{HighPrecision::SetPrecision::True, prec};
+
+    width.subFrom(m_MaxX, m_MinX);    // width = m_MaxX - m_MinX
+    height.subFrom(m_MaxY, m_MinY);   // height = m_MaxY - m_MinY
+
+    // leftWeight = (calcX - m_MinX) / width
+    HighPrecision leftWeight{HighPrecision::SetPrecision::True, prec};
+    leftWeight.subFrom(calcX, m_MinX);
+    leftWeight.divFrom(leftWeight, width);
+
+    // rightWeight = 1 - leftWeight
+    HighPrecision rightWeight{HighPrecision::SetPrecision::True, prec};
+    {
+        HighPrecision one{1};
+        rightWeight.subFrom(one, leftWeight);
+    }
+
+    // topWeight = (calcY - m_MinY) / height
+    HighPrecision topWeight{HighPrecision::SetPrecision::True, prec};
+    topWeight.subFrom(calcY, m_MinY);
+    topWeight.divFrom(topWeight, height);
+
+    // bottomWeight = 1 - topWeight
+    HighPrecision bottomWeight{HighPrecision::SetPrecision::True, prec};
+    {
+        HighPrecision one{1};
+        bottomWeight.subFrom(one, topWeight);
+    }
 
     const HighPrecision hf{factor};
-    const HighPrecision width = m_MaxX - m_MinX;
-    const HighPrecision height = m_MaxY - m_MinY;
 
-    return PointZoomBBConverter{m_MinX - width * leftWeight * hf,
-                                m_MinY - height * topWeight * hf,
-                                m_MaxX + width * rightWeight * hf,
-                                m_MaxY + height * bottomWeight * hf};
+    // newMinX = m_MinX - width * leftWeight * hf
+    HighPrecision newMinX{HighPrecision::SetPrecision::True, prec};
+    tmp.mulFrom(width, leftWeight);
+    tmp.mulFrom(tmp, hf);
+    newMinX.subFrom(m_MinX, tmp);
+
+    // newMinY = m_MinY - height * topWeight * hf
+    HighPrecision newMinY{HighPrecision::SetPrecision::True, prec};
+    tmp.mulFrom(height, topWeight);
+    tmp.mulFrom(tmp, hf);
+    newMinY.subFrom(m_MinY, tmp);
+
+    // newMaxX = m_MaxX + width * rightWeight * hf
+    HighPrecision newMaxX{HighPrecision::SetPrecision::True, prec};
+    tmp.mulFrom(width, rightWeight);
+    tmp.mulFrom(tmp, hf);
+    newMaxX.addFrom(m_MaxX, tmp);
+
+    // newMaxY = m_MaxY + height * bottomWeight * hf
+    HighPrecision newMaxY{HighPrecision::SetPrecision::True, prec};
+    tmp.mulFrom(height, bottomWeight);
+    tmp.mulFrom(tmp, hf);
+    newMaxY.addFrom(m_MaxY, tmp);
+
+    return PointZoomBBConverter{std::move(newMinX),
+                                std::move(newMinY),
+                                std::move(newMaxX),
+                                std::move(newMaxY)};
+}
+
+void
+PointZoomBBConverter::SquareAspectRatio(size_t scrnWidth, size_t scrnHeight)
+{
+    if (scrnWidth == 0 || scrnHeight == 0) {
+        return;
+    }
+
+    const auto prec = m_PtX.precisionInBits();
+
+    HighPrecision ratio{HighPrecision::SetPrecision::True, prec};
+    HighPrecision mwidth{HighPrecision::SetPrecision::True, prec};
+    HighPrecision height{HighPrecision::SetPrecision::True, prec};
+    HighPrecision tmp{HighPrecision::SetPrecision::True, prec};
+
+    // ratio = scrnWidth / scrnHeight
+    {
+        HighPrecision w{static_cast<uint64_t>(scrnWidth)};
+        HighPrecision h{static_cast<uint64_t>(scrnHeight)};
+        ratio.divFrom(w, h);
+    }
+
+    // mwidth = (maxX - minX) / ratio
+    mwidth.subFrom(m_MaxX, m_MinX);
+    mwidth.divFrom(mwidth, ratio);
+
+    // height = maxY - minY
+    height.subFrom(m_MaxY, m_MinY);
+
+    if (height > mwidth) {
+        // diff = height - mwidth
+        // adjust = ratio * diff / 2
+        tmp.subFrom(height, mwidth);
+        tmp.mulFrom(ratio, tmp);
+        tmp.divFrom_ui(tmp, 2);
+        m_MinX -= tmp;
+        m_MaxX += tmp;
+    } else if (height < mwidth) {
+        // adjust = (mwidth - height) / 2
+        tmp.subFrom(mwidth, height);
+        tmp.divFrom_ui(tmp, 2);
+        m_MinY -= tmp;
+        m_MaxY += tmp;
+    }
+
+    // Recompute derived members from adjusted bounds
+    m_PtX.addFrom(m_MinX, m_MaxX);
+    m_PtX.divFrom_ui(m_PtX, 2);
+
+    m_PtY.addFrom(m_MinY, m_MaxY);
+    m_PtY.divFrom_ui(m_PtY, 2);
+
+    m_Radius.subFrom(m_MaxY, m_MinY);
+    m_Radius.divFrom_ui(m_Radius, 2);
+
+    // Recompute zoom factor: factor * 2 / deltaY
+    HighPrecision deltaY{HighPrecision::SetPrecision::True, prec};
+    deltaY.subFrom(m_MaxY, m_MinY);
+
+    if (deltaY == HighPrecision{0}) {
+        m_ZoomFactor = HighPrecision{1};
+    } else {
+        m_ZoomFactor.divFrom(HighPrecision{factor}, deltaY);
+        m_ZoomFactor.mulFrom_ui(m_ZoomFactor, 2);
+    }
+
+    SetDebugStrings(&deltaY);
 }
 
 void
@@ -281,48 +356,40 @@ PointZoomBBConverter::ZoomDivisor(double divisor)
         return;
     }
 
+    const auto prec = m_PtX.precisionInBits();
     const HighPrecision hf{divisor};
 
-    // Current half-extents
-    const HighPrecision halfX = (m_MaxX - m_MinX) / HighPrecision{2};
-    const HighPrecision halfY = (m_MaxY - m_MinY) / HighPrecision{2};
+    // Scratch variables pre-allocated at working precision
+    HighPrecision halfX{HighPrecision::SetPrecision::True, prec};
+    HighPrecision halfY{HighPrecision::SetPrecision::True, prec};
 
-    // divisor > 1 => smaller box (zoom in)
-    const HighPrecision newHalfX = halfX / hf;
-    const HighPrecision newHalfY = halfY / hf;
+    // halfX = (m_MaxX - m_MinX) / 2
+    halfX.subFrom(m_MaxX, m_MinX);
+    halfX.divFrom_ui(halfX, 2);
+
+    // halfY = (m_MaxY - m_MinY) / 2
+    halfY.subFrom(m_MaxY, m_MinY);
+    halfY.divFrom_ui(halfY, 2);
+
+    // newHalf = half / hf  (divisor > 1 => smaller box => zoom in)
+    // Reuse halfX/halfY as newHalfX/newHalfY
+    halfX.divFrom(halfX, hf);
+    halfY.divFrom(halfY, hf);
 
     // Scale about current point
-    m_MinX = m_PtX - newHalfX;
-    m_MaxX = m_PtX + newHalfX;
-    m_MinY = m_PtY - newHalfY;
-    m_MaxY = m_PtY + newHalfY;
+    m_MinX.subFrom(m_PtX, halfX);
+    m_MaxX.addFrom(m_PtX, halfX);
+    m_MinY.subFrom(m_PtY, halfY);
+    m_MaxY.addFrom(m_PtY, halfY);
 
-    m_Radius = newHalfY;
+    m_Radius.setFrom(halfY);
 
-    // If zoomFactor ∝ 1/deltaY, and deltaY shrinks by factor,
-    // then zoomFactor grows by factor.
+    // zoomFactor ∝ 1/deltaY, deltaY shrinks by factor => zoomFactor grows
     m_ZoomFactor *= hf;
 
     if constexpr (m_Test) {
-        auto deltaY = m_MaxY - m_MinY;
-
-        if (m_MinX.precisionInBits() < 1000)
-            m_MinXStr = m_MinX.str();
-        if (m_MinY.precisionInBits() < 1000)
-            m_MinYStr = m_MinY.str();
-        if (m_MaxX.precisionInBits() < 1000)
-            m_MaxXStr = m_MaxX.str();
-        if (m_MaxY.precisionInBits() < 1000)
-            m_MaxYStr = m_MaxY.str();
-        if (m_PtX.precisionInBits() < 1000)
-            m_PtXStr = m_PtX.str();
-        if (m_PtY.precisionInBits() < 1000)
-            m_PtYStr = m_PtY.str();
-        if (m_ZoomFactor.precisionInBits() < 1000)
-            m_ZoomFactorStr = m_ZoomFactor.str();
-        if (m_Radius.precisionInBits() < 1000)
-            m_RadiusStr = m_Radius.str();
-        if (deltaY.precisionInBits() < 1000)
-            m_DeltaYStr = deltaY.str();
+        HighPrecision deltaY{HighPrecision::SetPrecision::True, prec};
+        deltaY.subFrom(m_MaxY, m_MinY);
+        SetDebugStrings(&deltaY);
     }
 }

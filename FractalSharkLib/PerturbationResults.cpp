@@ -1148,6 +1148,7 @@ template <typename IterType, class T, PerturbExtras PExtras>
 void
 PerturbationResults<IterType, T, PExtras>::SetPeriodMaybeZero(IterType period)
 {
+    std::cout << "Setting period maybe zero to " << period << std::endl;
     m_PeriodMaybeZero = period;
 }
 

@@ -1,0 +1,743 @@
+\section{User Interface and Popup Menu Guide}
+\label{sec:ui-popup-menu}
+
+\FractalShark{} can be driven \emph{entirely} from the keyboard and mouse, with the
+right-click popup menu acting as the primary discovery and configuration
+surface.  Day-to-day navigation (zooming, recentering, going back, iteration
+adjustment, palette cycling, and several recomputation paths) is also exposed
+through single-key shortcuts, so common workflows do not require opening the
+menu.
+
+The popup menu is context-sensitive and rebuilt dynamically each time it is
+shown, so that checked, enabled, and disabled states accurately reflect the
+current application settings and rendering state.  The menu can be invoked by
+mouse (\textbf{right-click}) or from the keyboard via the standard Windows
+context-menu invocation (\textbf{Shift+F10} / \textbf{Menu} key).
+
+\subsection{Basic Interaction}
+
+On startup, \FractalShark{} displays a brief splash screen (randomly chosen
+from a set of built-in images) while initializing the renderer.
+
+The most common interactions are:
+\begin{itemize}
+  \item \textbf{Right-click}: Open the popup menu at the mouse cursor.
+  \item \textbf{Left-click and drag}: Zoom into a rectangular region.
+        By default the zoom rectangle preserves the window aspect ratio;
+        holding \texttt{Shift} while dragging allows a free-form
+        (non-square) selection.
+  \item \textbf{Mouse wheel}: Scroll forward to zoom in at the cursor;
+        scroll backward to zoom out from the center.
+  \item \textbf{Keyboard shortcuts}:
+    \begin{itemize}
+      \item \texttt{z}: Zoom in at the mouse cursor.
+      \item \texttt{Shift+Z}: Zoom out slightly.
+      \item \texttt{b}: Return to the previous view.
+      \item \texttt{- / =}: Decrease or increase the iteration limit.
+    \end{itemize}
+\end{itemize}
+
+Resizing the window automatically resets the renderer dimensions and triggers
+a recalculation of the fractal to match the new window size.
+
+\subsection{Menu Structure and Behavior}
+
+The popup menu is organized into logical groups and submenus. Items fall into
+three distinct behavioral categories:
+
+\begin{description}
+  \item[Radio groups] Mutually exclusive choices where exactly one option is
+  active at a time (for example, selecting a render algorithm or GPU antialiasing level).
+  \item[Toggles] Binary on/off options that switch between two states each time
+  they are selected (for example, toggling repainting or full-screen mode).
+  \item[Commands] Immediate actions that execute when selected and do not
+  maintain a checked state.
+\end{description}
+
+Radio groups reflect the configuration in use, with the currently active option
+checked. Selecting a different option automatically deselects the previous
+choice and triggers any necessary reconfiguration.
+
+\subsection{Top-Level Menu}
+
+\begin{itemize}
+  \item \emph{Show Help} (command): Displays an on-screen help dialog summarizing keyboard shortcuts.
+
+  \item \emph{Navigate} (submenu):
+    \begin{itemize}
+      \item \emph{Back} (command): Navigate back to the previous view in history.
+      \item \emph{Center View Here} (command): Centers the current view on the
+      point under the cursor.
+      \item \emph{Zoom In Here} (command): Zooms in toward the point under the cursor.
+      \item \emph{Zoom Out} (command): Zooms out from the current view.
+      \item \emph{Autozoom Feature} (command): See \cref{par:autozoom} for details.
+      \item \emph{Autozoom Default} (command): See \cref{par:autozoom} for details.
+      \item \emph{Feature Finder} (submenu): Locates nearby mini-Mandelbrot
+      nuclei (periodic points) using Newton's method and optionally zooms to
+      them.  Three evaluation back-ends are available, each in a single-point
+      and a whole-screen scan variant.  See
+      \cref{sec:feature-finder} for the underlying algorithm.
+        \begin{itemize}
+          \item \emph{Direct} (\texttt{n}) (command): Runs the feature finder at
+          the mouse cursor using direct iteration.  Best for shallow zooms where
+          no perturbation data is needed.
+          \item \emph{DirectScan} (\texttt{N}) (command): Runs direct-iteration
+          feature finding on a $12\times12$ grid across the entire viewport,
+          locating multiple features at once.
+          \item \emph{PT} (\texttt{m}) (command): Runs the feature finder at the
+          mouse cursor using perturbation theory (\cref{sec:perturbation-concept}).
+          Requires a reference orbit and works at deeper zooms than Direct.
+          \item \emph{PTScan} (\texttt{M}) (command): Runs perturbation-theory
+          feature finding on a $12\times12$ grid across the viewport.
+          \item \emph{LA} (\texttt{,}) (command): Runs the feature finder at the
+          mouse cursor using linear approximation (\cref{sec:la-v2-perturb}).
+          Works at extreme zoom depths where PT alone would be too slow.
+          \item \emph{LAScan} (\texttt{<}) (command): Runs linear-approximation
+          feature finding on a $12\times12$ grid across the viewport.
+          \item \emph{Zoom to Found Feature} (\texttt{.}) (command): Zooms into
+          the most recently found feature.  If the feature has only been located
+          at low precision, a high-precision GMP refinement pass is performed
+          automatically before zooming.
+          \item \emph{Clear All Found Features} (\texttt{>}) (command): Removes
+          all found-feature overlays (lines and circles drawn on the fractal).
+        \end{itemize}
+      When a feature is found, a line is drawn from the search origin to the
+      detected nucleus so you can see where it is.  Scan modes are useful for
+      surveying an entire view at a glance; single-point modes are faster and
+      target the area near your cursor.
+    \end{itemize}
+
+  \item \emph{Built-In Views} (submenu): Loads a predefined view/location used
+  for demonstrations, debugging, or performance testing.  Up to 31 views are
+  defined in the source (\texttt{FractalViewPresets.cpp}).
+    \begin{itemize}
+      \item \emph{Help} (command): Pops up a message box that simply says this
+      submenu contains built-in test views.
+      \item \emph{Standard View} (command): Loads the default starting view: the
+      classic Mandelbrot.
+      \item \emph{\#1 -- \#31} (commands): Loads a specific predefined
+      test view. Many entries encode expected precision limits, kernel behavior,
+      or known failure cases in their label text.  Several views require intense
+      computation and take a long time to render.  View \#27, for example, is a
+      period ~28 billion point that takes hours to render and requires reference
+      compression even with 128GB of RAM.  Exercise caution when selecting deep-zoom
+      views, as they may cause long delays or high memory usage.
+
+    \end{itemize}
+
+  \item \emph{Recalculate, Reuse Reference} (command): Forces an immediate
+  re-render using the current settings, reusing the existing reference orbit if
+  possible.
+
+  \item \emph{Toggle Repainting}: Enables or disables progressive
+  repainting while a render is in progress. When disabled, no recalculation
+  takes place on window resize or related, which can be helpful if you want a
+  new window size but don't want to trigger a re-render.
+  \item \emph{Toggle Window Size}: Toggles between windowed and
+  full-screen behavior.  The window stays at the same aspect ratio by default.
+  \item \emph{Toggle Window Size (Square)}: Toggles an alternate sizing
+  mode constrained to a square aspect ratio.
+  \item \emph{Minimize Window} (command): Minimizes the application window.
+
+  \item \emph{Antialiasing} (radio group submenu): Selects the antialiasing
+  level used for rendering.
+    \begin{itemize}
+      \item \emph{1x (fast)}
+      \item \emph{4x}
+      \item \emph{9x}
+      \item \emph{16x (better quality)}
+    \end{itemize}
+
+  Note that antialiasing as used here is not traditional GPU antialiasing.
+  Instead, 4, 9, or 16 samples are explicitly computed per pixel and averaged
+  together either on the CPU or GPU.  This approach is known as
+  \emph{supersampling} and produces high-quality results at the cost of
+  increased computation time and memory usage.  It's a naive approach---in
+  principle, more sophisticated techniques could be implemented in the future,
+  such as edge-aware sampling or adaptive sampling.
+
+  \item \emph{Choose Render Algorithm} (radio group submenu): Selects the core
+  Mandelbrot rendering strategy. This is a radio group: selecting one algorithm
+  automatically deselects the others. Available choices may include CPU-based
+  reference and linear-approximation renderers, multiple CUDA-based GPU
+  renderers, and high-dynamic-range and experimental kernels. On systems without
+  a working CUDA setup, CPU renderers can be selected as a fallback. In the
+  event of a CUDA initialization failure, switching to a CPU algorithm followed
+  by a recalculation may restore a usable image.
+
+    \begin{itemize}
+      \item \emph{Help} (command): Displays help for algorithm selection and
+      related concepts (e.g., what LAv2 (\cref{sec:la-v2-perturb}), BLA
+      (\cref{sec:bilinear-approx}), perturbation (\cref{sec:perturbation-concept}),
+      and reference compression (\cref{subsec:ref-orbit-compression-reuse}) mean,
+      and when to use each).
+
+      \item \emph{Auto (Default)} (radio): Automatically selects the
+      default/recommended renderer.  Recommended.
+
+      \emph{Note}: this option exhibits potentially-confusing behavior.  When
+      selected, it does not lock in a specific algorithm; rather, it allows the
+      system to choose the most appropriate algorithm based on current view
+      parameters. The radio button for "Auto" will not be checked; instead, the
+      actual algorithm in use will be checked.  Thus, selecting \emph{Auto} may
+      appear to have no effect but if you navigate the submenus you'll find the
+      algorithm currently in use is checked.  This design allows users to see
+      what algorithm is active.
+
+      At present, only three algorithms are eligible for automatic selection:
+      \begin{itemize}
+        \item \emph{1x32 GPU}: The default low-zoom GPU linear-approximation
+              renderer.  No perturbation or linear approximation is used.
+        \item \emph{1x32 GPU -- Perturbation Only}: The default
+              perturbation-only GPU renderer (\cref{sec:perturb-only}) for
+              moderate zooms uses perturbation but no linear approximation.
+        \item \emph{1x32 GPU -- LAv2}: A bit deeper, no high-dynamic range
+              floats but does use linear-approximation renderer and
+              perturbation.
+        \item \emph{HDRx32 GPU -- LAv2}: Arbitrary depth (\cref{sec:la-v2-perturb,sec:hdr-float}), combines all known
+              algorithmic optimizations.  This one can result in rendering
+              artifacts at some deep locations due to numeric precision
+              limitations.  "Auto" mode can't tell, so if you see artifacts, try
+              HDRx2x32 or HDRx64 variants instead.  View \#26 is an example of a
+              point that fails with HDRx32 but works correctly with HDRx64.
+
+              See \cref{fig:auto-renderer-artifact} for an example of
+              artifacts that can arise when using HDRx32 at extreme depths.
+      \end{itemize}
+
+      \item \emph{LA Parameters} (submenu): Controls linear-approximation (LA) configuration and tuning.
+        \begin{itemize}
+          \item \emph{Multithreaded (Default)} (radio): Uses multithreaded LA processing.
+          \item \emph{Single Threaded} (radio): Uses single-threaded LA processing.
+          \item \emph{Max Accuracy (Default)} (command): \textit{[TODO: unclear behavior/description]}
+          \item \emph{Max Performance (Accuracy Loss)} (command): \textit{[TODO: unclear behavior/description]}
+          \item \emph{Min Memory} (command): \textit{[TODO: unclear behavior/description]}
+        \end{itemize}
+
+      \item \emph{CPU-Only} (submenu): CPU renderers and CPU-driven perturbation variants.
+        \begin{itemize}
+          \item \emph{Very High Precision CPU} (radio)
+          \item \emph{1x64 CPU} (radio)
+          \item \emph{HDRx32 CPU} (radio)
+          \item \emph{HDRx64 CPU} (radio)
+
+          \item \emph{1x64 CPU -- Perturbation BLA} (radio)
+          \item \emph{HDRx32 CPU -- Perturbation BLA} (radio)
+          \item \emph{HDRx64 CPU -- Perturbation BLA} (radio)
+
+          \item \emph{HDRx32 CPU -- Perturbation LAv2} (radio)
+          \item \emph{HDRx64 CPU -- Perturbation LAv2} (radio)
+          \item \emph{HDRx32 RC CPU -- Perturbation LAv2} (radio)
+          \item \emph{HDRx64 RC CPU -- Perturbation LAv2} (radio)
+        \end{itemize}
+
+      \item \emph{Low-Zoom Depth} (submenu): GPU renderers intended for relatively modest zoom depths and lower precision requirements.
+        \begin{itemize}
+          \item \emph{Iteration Precision} (radio group submenu): Selects the iteration precision mode used by low-zoom GPU paths.
+            \begin{itemize}
+              \item \emph{4x (fast)} (radio)
+              \item \emph{3x} (radio)
+              \item \emph{2x} (radio)
+              \item \emph{1x (better quality)} (radio)
+            \end{itemize}
+
+          \item \emph{1x32 GPU} (radio)
+          \item \emph{2x32 GPU} (radio)
+          \item \emph{4x32 GPU} (radio)
+          \item \emph{1x64 GPU} (radio)
+          \item \emph{2x64 GPU} (radio)
+          \item \emph{4x64 GPU} (radio)
+          \item \emph{HDRx32 GPU} (radio)
+        \end{itemize}
+
+      \item \emph{Scaled} (submenu): Perturbation renderers using a scaled formulation.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- Perturbation Scaled} (radio)
+          \item \emph{2x32 GPU -- Perturbation Scaled (broken)} (radio)
+          \item \emph{HDRx32 GPU -- Perturbation Scaled} (radio)
+        \end{itemize}
+
+      \item \emph{Bilinear Approximation V1} (submenu): Perturbation renderers using the original bilinear approximation approach.
+        \begin{itemize}
+          \item \emph{1x64 GPU -- Perturbation BLA} (radio)
+          \item \emph{HDRx32 GPU -- Perturbation BLA} (radio)
+          \item \emph{HDRx64 GPU -- Perturbation BLA} (radio)
+        \end{itemize}
+
+      \item \emph{LA Only (for testing)} (submenu): Test configurations that run only the linear-approximation portion of the pipeline.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{2x32 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{1x64 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{HDRx32 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{HDRx2x32 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{HDRx64 GPU -- LAv2 -- LA only} (radio)
+        \end{itemize}
+
+      \item \emph{Perturbation Only} (submenu): Test configurations that run only the perturbation portion of the pipeline.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- Perturb only} (radio)
+          \item \emph{2x32 GPU -- Perturb only} (radio)
+          \item \emph{1x64 GPU -- Perturb only} (radio)
+          \item \emph{HDRx32 GPU -- Perturb only} (radio)
+          \item \emph{HDRx2x32 GPU -- Perturb only} (radio)
+          \item \emph{HDRx64 GPU -- Perturb only} (radio)
+        \end{itemize}
+
+      \item \emph{Reference Compression} (submenu): Algorithms using reference-orbit compression as part of the perturbation pipeline.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- RC LAv2} (radio)
+          \item \emph{2x32 GPU -- RC LAv2} (radio)
+          \item \emph{1x64 GPU -- RC LAv2} (radio)
+          \item \emph{HDRx32 GPU -- RC LAv2} (radio)
+          \item \emph{HDRx2x32 GPU -- RC LAv2} (radio)
+          \item \emph{HDRx64 GPU -- RC LAv2} (radio)
+
+          \item \emph{Perturbation Only} (submenu): Reference-compressed perturbation-only variants.
+            \begin{itemize}
+              \item \emph{1x32 GPU -- RC Perturb Only} (radio)
+              \item \emph{2x32 GPU -- RC Perturb Only} (radio)
+              \item \emph{1x64 GPU -- RC Perturb Only} (radio)
+              \item \emph{HDRx32 GPU -- RC Perturb Only} (radio)
+              \item \emph{HDRx2x32 GPU -- RC Perturb Only} (radio)
+              \item \emph{HDRx64 GPU -- RC Perturb Only} (radio)
+            \end{itemize}
+
+          \item \emph{LA Only} (submenu): Reference-compressed LA-only variants.
+            \begin{itemize}
+              \item \emph{1x32 GPU -- RC LAv2} (radio)
+              \item \emph{2x32 GPU -- RC LAv2} (radio)
+              \item \emph{1x64 GPU -- RC LAv2} (radio)
+              \item \emph{HDRx32 GPU -- RC LAv2} (radio)
+              \item \emph{HDRx2x32 GPU -- RC LAv2} (radio)
+              \item \emph{HDRx64 GPU -- RC LAv2} (radio)
+            \end{itemize}
+        \end{itemize}
+
+      \item \emph{LAv2 (Full Pipeline)} (radio entries): Main LAv2 renderers combining LA, perturbation, and reference handling.
+        \begin{itemize}
+          \item \emph{1x32 GPU -- LAv2} (radio)
+          \item \emph{2x32 GPU -- LAv2} (radio)
+          \item \emph{1x64 GPU -- LAv2} (radio)
+          \item \emph{HDRx32 GPU -- LAv2} (radio)
+          \item \emph{HDRx2x32 GPU -- LAv2} (radio)
+          \item \emph{HDRx64 GPU -- LAv2} (radio)
+        \end{itemize}
+
+      \item \emph{Tests} (submenu): Development and diagnostic test actions.
+        \begin{itemize}
+          \item \emph{Run Basic Test (saves files in local dir)} (command)
+          \item \emph{Run View \#27 test} (command)
+        \end{itemize}
+
+    \end{itemize}
+
+  \item \emph{Iterations} (submenu): Adjusts the iteration limit and iteration counter width.
+    \begin{itemize}
+      \item \emph{Default Iterations} (command): Resets iteration count to defaults.
+      \item \emph{+1.5x} (command): Multiplies iteration limit by 1.5.
+      \item \emph{+6x} (command): Multiplies iteration limit by 6.
+      \item \emph{+24x} (command): Multiplies iteration limit by 24.
+      \item \emph{Decrease Iterations} (command): Decreases the current iteration limit.
+      \item \emph{32-Bit Iterations} (radio): Uses 32-bit iteration counters (lower memory, smaller range).
+      \item \emph{64-Bit Iterations} (radio): Uses 64-bit iteration counters (larger range).
+    \end{itemize}
+
+  \item \emph{Perturbation} (radio group submenu): Controls perturbation rendering and related reference-orbit management. \FractalShark{} supports perturbation-based rendering driven by a high-precision reference orbit. Menu options in this area control how the reference orbit is computed and reused. GPU-accelerated reference orbits are intended for extremely deep zooms and may be slower than CPU computation at modest precision levels. They are marked as experimental and should be used accordingly.
+    \begin{itemize}
+      \item \emph{Clear Perturbation References -- All} (command): Clears all cached perturbation references.
+      \item \emph{Clear Perturbation References -- Med} (command): Clears medium-class cached references.
+      \item \emph{Clear Perturbation References -- High} (command): Clears high-class cached references.
+      \item \emph{Show Perturbation Results} (command): Intended to display
+      diagnostic overlay information for perturbation state.  Currently
+      a stub (prints a TODO to the debug console).
+
+      \item \emph{Auto (default)} (radio): Automatically selects the perturbation
+      algorithm based on current conditions.  Recommended for most use.
+      \item \emph{Single Thread (ST)} (radio): Uses a single-threaded
+      reference-orbit computation with no periodicity checking.
+      \item \emph{Multi Thread (MT)} (radio): Uses a multithreaded
+      reference-orbit computation with no periodicity checking.
+      \item \emph{ST + Periodicity} (radio): Single-threaded reference-orbit
+      computation with periodicity checking to detect convergence early.
+      \item \emph{MT2 + Periodicity} (radio): Multithreaded reference-orbit
+      computation (generation~2) with periodicity checking.
+      \item \emph{MT2 + Periodicity + Perturb ST} (radio): MT2 reference orbit
+      with a single-threaded perturbation pass for the high-resolution layer.
+      \item \emph{MT2 + Periodicity + Perturb MT v1--v4} (radio entries):
+      MT2 reference orbit with multithreaded perturbation.  Versions v1--v3
+      represent different threading/scheduling strategies for the per-pixel
+      perturbation pass; v4 is marked as broken.
+      \item \emph{MT5 + Periodicity} (command): A newer multithreaded variant
+      (generation~5) with periodicity checking.  Only enabled when perturbation
+      support is available.
+
+      \item \emph{GPU-Accelerated (see README)} (command): Selects or enables a GPU-accelerated perturbation path. \textit{[TODO: clarify whether this is a mode toggle, a mode selection, or a one-shot action]}
+
+      \item \emph{Clear and Reload Reference Orbits} (command): Clears reference-orbit state and reloads it from persistent storage.
+      \item \emph{Save Reference Orbits} (command): Saves reference-orbit state to persistent storage.
+    \end{itemize}
+
+  \item \emph{Palette Color Depth} (submenu): Controls palette selection, palette bit depth, and optional palette rotation. Some entries may be enabled only when palette rotation support is available.
+    \begin{itemize}
+      \item \emph{Basic} (radio): \textit{[TODO: clarify palette type ``Basic'']}
+      \item \emph{Default} (radio)
+      \item \emph{Patriotic} (radio)
+      \item \emph{Summer} (radio)
+      \item \emph{Random} (radio)
+
+      \item \emph{Create Random Palette} (command): Generates a new random palette.
+
+      \item \emph{5-bit} (radio)
+      \item \emph{6-bit} (radio)
+      \item \emph{8-bit} (radio)
+      \item \emph{12-bit} (radio)
+      \item \emph{16-bit} (radio)
+      \item \emph{20-bit} (radio)
+
+      \item \emph{Palette Rotation} (command): \textit{[TODO: clarify whether this is a toggle or a one-shot action; enabled only when rotation is supported]}
+    \end{itemize}
+
+  \item \emph{Memory Management} (submenu): Controls memory-limit policy and whether reference orbit data is automatically saved.
+    \begin{itemize}
+      \item \emph{Enable Auto-Save Orbit (delete when done, default)} (radio): Automatically saves orbit data temporarily and deletes it when no longer needed.
+      \item \emph{Enable Auto-Save Orbit (keep files)} (radio): Automatically saves orbit data and retains files on disk.
+      \item \emph{Disable Auto-Save Orbit} (radio): Disables automatic orbit saving.
+
+      \item \emph{Remove Memory Limits} (radio): Disables memory limiting behavior.
+      \item \emph{Leave max of (1/2*ram, 8GB) free (default)} (radio): Constrains allocation to preserve system memory headroom.
+    \end{itemize}
+
+  \item \emph{Show Rendering Details} (command): Displays current rendering
+  status and diagnostics, including position coordinates (real, imaginary,
+  zoom level), the active render algorithm, and perturbation/LA state.
+  The information is shown in a message box and also copied to the clipboard.
+
+  \item \emph{Save} (submenu): Output and benchmarking commands.
+    \begin{itemize}
+      \item \emph{Save Location...} (command): Saves the current location/view parameters.
+      \item \emph{Save High Res Bitmap} (command): Saves a high-resolution bitmap render. \textit{[TODO: clarify how resolution is selected]}
+      \item \emph{Save Iterations as Text} (command): Saves iteration counts in a text format.
+      \item \emph{Save Bitmap Image} (command): Saves the current bitmap image.
+
+      \item \emph{Save Reference Orbit as Text} (command): Saves the reference orbit in text form.
+      \item \emph{Save Compressed Orbit as Text (simple)} (command)
+      \item \emph{Save Compressed Orbit as Text (max)} (command)
+      \item \emph{Save Compressed Orbit (Imagina/max)} (command): Saves the
+      reference orbit in Imagina's file format with maximum compression,
+      suitable for import into Imagina or later reload via
+      \emph{Load~$\to$~Load Imagina Orbit}.
+
+      \item \emph{Benchmark (5x, full recalc)} (command): Runs 5 full
+      recalculation passes using all perturbation result types and reports
+      overall and per-pixel rendering times in milliseconds.
+      \item \emph{Benchmark (5x, intermediate only)} (command): Runs 5
+      recalculation passes using only the medium-resolution perturbation
+      results, which isolates intermediate-stage performance.
+
+      \item \emph{Diff Imagina Orbits (choose two)} (command): Opens two
+      file-chooser dialogs to select a pair of Imagina-format orbit files, then
+      compares them element-by-element and reports any differences.  Useful for
+      verifying that two orbit computations produce equivalent results.
+    \end{itemize}
+
+  \item \emph{Load} (submenu): Load view parameters and reference orbits.
+    \begin{itemize}
+      \item \emph{Load Location...} (command): Loads a previously saved location/view.
+      \item \emph{Enter Location} (command): Manually enters a location/view
+      via a dialog where you type the real part, imaginary part, and zoom level.
+      \item \emph{Load Imagina Orbit (Match)...} (command): Loads an
+      Imagina-format orbit file and matches it against the current view
+      parameters (coordinates and precision) to validate compatibility.
+      \item \emph{Load Imagina Orbit (Use Saved)...} (command): Loads a
+      previously saved Imagina orbit file directly, using whatever parameters
+      are stored in the file without matching against the current view.
+    \end{itemize}
+
+  Imagina is a separate Mandelbrot rendering application.  \FractalShark{}
+  can import and export reference orbits in Imagina's file format, which is
+  useful for cross-validating orbit computations between the two programs or
+  for sharing precomputed orbits.
+
+  \item \emph{Exit} (command): Exits the application.
+\end{itemize}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{auto-renderer-artifact.png}
+  \caption{Rendering artifacts arising from insufficient precision in the
+  HDRx32 GPU renderer. Switching to HDRx64 or a CPU-based renderer resolves these
+  artifacts.}
+  \label{fig:auto-renderer-artifact}
+\end{figure}
+
+\subsection{Recalculation Commands}
+
+Commands such as \emph{Recalculate} or \emph{Recalculate, Reuse Reference} trigger
+an immediate re-render of the current view. These commands do not change any
+persistent settings; they simply instruct the renderer to restart computation
+using the current configuration. \emph{Recalculate, Reuse Reference} keeps the
+existing high-precision reference orbit and only recomputes the per-pixel
+perturbation pass, which is significantly faster when the view center has not
+changed.
+
+\subsection{Experimental and Debug Options}
+
+Some menu entries expose experimental features, debugging aids, or partially
+implemented functionality. These options may be unstable, incomplete, or
+subject to removal. \FractalShark{} is an experimental research project rather than
+a polished end-user application. Users should expect occasional crashes,
+rendering failures, or unresponsive behavior when exercising less common menu
+options.
+
+\subsection{Practical Usage Notes}
+
+\begin{itemize}
+  \item There is currently no reliable way to cancel a long-running render once
+  it has begun. If necessary, the application must be terminated externally.
+  \item Some menu options may be temporarily disabled depending on the current
+  render state or selected algorithm.
+  \item If the application exits unexpectedly, a Windows minidump
+  (\texttt{.dmp}) file may be generated in the same directory as the
+  executable.  These dumps can be loaded in Visual Studio or WinDbg for
+  post-mortem debugging.
+\end{itemize}
+
+Despite its rough edges, the popup menu provides a unified control surface for
+exploring \FractalShark{}’s many rendering paths and numerical experiments, making
+it the primary interface for both casual exploration and deep technical
+investigation.
+
+
+\section{Keyboard Shortcuts}
+\label{sec:keyboard-shortcuts}
+
+In addition to the popup menu, \FractalShark{} supports a set of single-key
+shortcuts for navigation, recalculation, palette exploration, and tuning of
+perturbation/linear-approximation parameters.  Most shortcuts operate relative
+to the \emph{current mouse position} (converted into client coordinates at the
+time the key is pressed), which makes them feel similar to context-menu actions.
+
+Unless otherwise noted, shortcuts are \emph{case-sensitive} in the sense that
+uppercase variants are invoked by holding \texttt{Shift}.  Many actions also
+explicitly clear cached perturbation results prior to recomputation, trading
+additional work for correctness or a ``clean'' run.
+
+\paragraph{Navigation and view control.}
+\begin{itemize}
+  \item \texttt{z}: Zoom in by a fixed amount, centered at the mouse cursor.
+  \item \texttt{Z} (\texttt{Shift+z}): Zoom out by a fixed amount, centered at the mouse cursor.
+  \item \texttt{c}: Center the view at the mouse cursor (no forced reference recomputation).
+  \item \texttt{C} (\texttt{Shift+c}): Center the view and clear all perturbation results first.
+  \item \texttt{b}: Go back to the previous view.
+  \item \texttt{r}: Square the current view (aspect normalization).
+  \item \texttt{R} (\texttt{Shift+r}): Clear all perturbation results, then square the current view.
+  \item Mouse \textbf{left-click and drag}: Zoom into a dragged rectangle.
+        Holding \texttt{Shift} while dragging disables aspect-ratio enforcement.
+\end{itemize}
+
+\paragraph{Autozoom (experimental / buggy).}
+\label{par:autozoom}
+
+\begin{itemize}
+  \item \texttt{a}: Autozoom using the ``Feature'' heuristic.  Forces the
+        \texttt{GpuHDRx32PerturbedLAv2} render algorithm, centres on the
+        perturbation reference point, computes a target zoom depth from the
+        reference orbit's maximum radius, and zooms in incrementally while
+        linearly interpolating the iteration count toward the reference orbit's
+        target.
+  \item \texttt{A} (\texttt{Shift+a}): Autozoom using the ``Default''
+        heuristic.  First centres on the mouse position, then iteratively picks
+        a zoom target via a weighted geometric mean of iteration counts
+        (favouring high-iteration, centre-proximate pixels) and zooms by a
+        factor of~3 each step.
+\end{itemize}
+Holding \texttt{Ctrl} may abort either autozoom variant (the abort mechanism is
+not part of the key handler and is implemented elsewhere).
+
+\paragraph{Recalculation and benchmarking.}
+Several keys force a recalculation; uppercase forms often clear cached results
+first.
+\begin{itemize}
+  \item \texttt{i}: Force recalculation and show the current position (copies details to clipboard).
+  \item \texttt{I} (\texttt{Shift+i}): Clear \emph{medium-res} perturbation results, then recalc and show position.
+  \item \texttt{o}: Force recalculation and show the current position.
+  \item \texttt{O} (\texttt{Shift+o}): Clear \emph{all} perturbation results, then recalc and show position.
+  \item \texttt{p}: Force recalculation and show the current position.
+  \item \texttt{P} (\texttt{Shift+p}): Clear \emph{LA-only} perturbation results, then recalc and show position.
+\end{itemize}
+\emph{Note:} The in-application hotkey dialog groups \texttt{i/I}, \texttt{o/O},
+\texttt{p/P}, and \texttt{r/R} under ``Recalculating and Benchmarking'' with
+slightly different wording.  The authoritative behavior is the code path: these
+keys primarily differ by which cached perturbation result class is cleared
+before forcing recomputation.
+
+\paragraph{Reference compression tuning.}
+These keys adjust compression error exponents and then repaint, typically after
+clearing cached perturbation results.
+\begin{itemize}
+  \item \texttt{e}: Clear all perturbation results, reset compression error exponents to defaults,
+        and repaint.
+  \item \texttt{q}: Clear all perturbation results; \emph{increase} intermediate compression error
+        exponent by a step (more error, less memory).
+  \item \texttt{Q} (\texttt{Shift+q}): Clear all perturbation results; \emph{decrease} intermediate compression
+        error exponent by a step (less error, more memory).
+  \item \texttt{w}: Clear all perturbation results; \emph{increase} low-error compression exponent by a step.
+  \item \texttt{W} (\texttt{Shift+w}): Clear all perturbation results; \emph{decrease} low-error compression exponent by a step.
+\end{itemize}
+\emph{Practical interpretation:} increasing the error exponent generally favors
+memory reduction and speed at the expense of fidelity in reconstructed reference
+segments; decreasing it pushes toward higher fidelity and higher memory use.
+
+\paragraph{Linear approximation parameter tuning (powers-of-two adjustments).}
+These keys adjust linear-approximation thresholds and period-detection thresholds.
+After changing parameters, \FractalShark{} clears LA-only perturbation results and
+forces a recalc.
+\begin{itemize}
+  \item \texttt{h}: Increase LA threshold scale exponents (less accurate / faster per-pixel).
+  \item \texttt{H} (\texttt{Shift+h}): Decrease LA threshold scale exponents (more accurate / slower per-pixel).
+  \item \texttt{j}: Increase LA period-detection threshold exponents.
+  \item \texttt{J} (\texttt{Shift+j}): Decrease LA period-detection threshold exponents.
+\end{itemize}
+
+\paragraph{Palettes.}
+\begin{itemize}
+  \item \texttt{d}: Advance to the next palette lookup-table depth and redraw.
+  \item \texttt{D} (\texttt{Shift+d}): Create a new random palette, select it, and redraw.
+  \item \texttt{t}: Increase auxiliary palette depth (cycling auxiliary palette behavior) and redraw.
+  \item \texttt{T} (\texttt{Shift+t}): Decrease auxiliary palette depth and redraw.
+\end{itemize}
+
+\paragraph{Iteration count.}
+These keys scale the maximum iteration count aggressively for quick exploration:
+\begin{itemize}
+  \item \texttt{=} : Multiply max iterations by 24.
+  \item \texttt{-} : Multiply max iterations by $2/3$.
+\end{itemize}
+
+\paragraph{Window manipulation and menu invocation.}
+\begin{itemize}
+  \item \textbf{Right-click}: Open the popup menu at the cursor position.
+  \item \textbf{Shift+F10 / Menu key}: Also opens the popup menu (Windows context-menu invocation).
+  \item \textbf{Alt + left-click drag} (windowed mode): Drag the window by treating the client area as a caption.
+  \item Mouse wheel: Zoom in/out (scroll up zooms in; scroll down zooms out).
+\end{itemize}
+
+\paragraph{Feature Finder.}
+These keys invoke the periodic-point (feature) finder at the current mouse
+position, or scan the entire viewport.  See \cref{sec:feature-finder}
+for the algorithm details and \cref{sec:ui-popup-menu} for the
+corresponding menu items under \emph{Navigate $\to$ Feature Finder}.
+\begin{itemize}
+  \item \texttt{n}: Find the nearest feature using direct iteration (single point at cursor).
+  \item \texttt{N} (\texttt{Shift+n}): Scan the viewport on a $12\times12$ grid using direct iteration.
+  \item \texttt{m}: Find the nearest feature using perturbation theory (single point at cursor).
+  \item \texttt{M} (\texttt{Shift+m}): Scan the viewport on a $12\times12$ grid using perturbation theory.
+  \item \texttt{,}: Find the nearest feature using linear approximation (single point at cursor).
+  \item \texttt{<} (\texttt{Shift+,}): Scan the viewport on a $12\times12$ grid using linear approximation.
+  \item \texttt{.}: Zoom to the most recently found feature (refines to high precision first if needed).
+  \item \texttt{>} (\texttt{Shift+.}): Clear all found-feature overlays.
+\end{itemize}
+
+\paragraph{Responsiveness note.}
+Many shortcuts trigger a recomputation or redraw immediately.  If \FractalShark{}
+is executing a long-running render (especially a large GPU kernel), keyboard
+input may appear delayed until the render completes.  In practice, the popup
+menu and hotkeys are best used as \emph{configuration and relaunch} controls,
+not as guaranteed real-time interaction during heavy computation.
+
+\subsection{Commentary}
+
+\begin{itemize}
+\item One fun thing you can try is running with LAv2 + ``LA only''. This 
+approach actually works pretty well once Linear Approximation kicks in at 
+deeper zooms --- it gives you an idea of what the actual image should look like 
+but is very fast, since it does no perturbation. The images it produces are not 
+precise, and often leave out the fine detail; however, it's fun to play with 
+when zooming in on a specific point.
+
+\item The most interesting reference orbit calculation is at \texttt{
+AddPerturbationReferencePointMT3}. It includes a ``bad'' calculation which is 
+used for the ``scaled'' CUDA kernels. The multithreaded approach handily beats 
+the single-threaded implementation on my CPU in all scenarios.
+
+\item There are CPU renderers, but they were mostly to learn/debug more easily, 
+and aren't optimized heavily. They're much easier to understand and reason 
+about though.
+\end{itemize}
+
+\section{Kernel List}
+
+This section simply lists all the CUDA kernels in \FractalShark{}.
+
+\begin{itemize}
+
+\item \textbf{Mandelbrot base kernels} (\cref{sec:mandel-base-kernels})
+  \begin{itemize}
+    \item \texttt{mandel\_1x\_float}
+    \item \texttt{mandel\_1x\_double}
+    \item \texttt{mandel\_2x\_float}
+    \item \texttt{mandel\_2x\_double}
+    \item \texttt{mandel\_4x\_float}
+    \item \texttt{mandel\_4x\_double}
+    \item \texttt{mandel\_hdr\_float}
+  \end{itemize}
+
+\item \textbf{Mandelbrot perturbation kernels}
+  \begin{itemize}
+    \item \texttt{mandel\_1x\_double\_perturb\_bla}
+    \item \texttt{mandel\_1xHDR\_float\_perturb\_bla} (\cref{sec:bilinear-approx})
+    \item \texttt{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
+  \end{itemize}
+
+\item \textbf{High-precision reference kernels} (\cref{subsec:ref-orbit-gpu})
+  \begin{itemize}
+    \item \texttt{HpSharkReferenceGpuKernel}
+    \item \texttt{HpSharkReferenceGpuLoop}
+  \end{itemize}
+
+\item \textbf{Utility kernels}
+  \begin{itemize}
+    \item \texttt{antialiasing\_kernel}
+    \item \texttt{max\_reduce}
+    \item \texttt{max\_kernel}
+  \end{itemize}
+
+\item \textbf{Addition kernels} (\cref{sec:hp-add})
+  \begin{itemize}
+    \item \texttt{AddKernel}
+    \item \texttt{AddKernelTestLoop}
+  \end{itemize}
+
+\item \textbf{Multiplication (NTT) kernels} (\cref{sec:ntt-multiply})
+  \begin{itemize}
+    \item \texttt{MultiplyKernelNTT}
+    \item \texttt{MultiplyKernelNTTTestLoop}
+  \end{itemize}
+
+\item \textbf{Disabled kernels}
+  \begin{itemize}
+    \item \texttt{mandel\_2x\_float\_perturb\_setup}
+    \item \texttt{mandel\_2x\_float\_perturb}
+  \end{itemize}
+
+\end{itemize}
+
+\subsection{Commentary}
+
+\begin{itemize}
+
+\item All the per-pixel CUDA kernels are in \texttt{gpu\_render.cu}. The two
+most interesting are probably \texttt{mandel\_1xHDR\_float\_perturb\_bla} and
+\texttt {mandel\_1xHDR\_float\_perturb\_lav2}, which are the ones I've spent the
+most time on lately. For better performance at low zoom levels, you could look
+at \texttt{mandel\_1x\_float\_perturb}, which leaves out linear approximation
+and just does straight perturbation up to $\sim 10^{30}$, which corresponds with
+the 32-bit float exponent range.
+
+\item The \texttt{mandel\_1x\_float} (\cref{sec:mandel-1x-float}) is the classic 32-bit float Mandelbrot and 
+is screaming fast on a GPU. This one is optimized with fused multiply-add for 
+fun even though it's kind of useless because you can barely zoom in before you 
+get pixellation.
+
+\end{itemize}

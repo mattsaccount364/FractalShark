@@ -257,8 +257,8 @@ choice and triggers any necessary reconfiguration.
       point under the cursor.
       \item \emph{Zoom In Here} (command): Zooms in toward the point under the cursor.
       \item \emph{Zoom Out} (command): Zooms out from the current view.
+      \item \emph{Autozoom Feature} (command): See \cref{par:autozoom} for details.
       \item \emph{Autozoom Default} (command): See \cref{par:autozoom} for details.
-      \item \emph{Autozoom Max} (command): See \cref{par:autozoom} for details.
       \item \emph{Feature Finder} (submenu): Locates nearby mini-Mandelbrot
       nuclei (periodic points) using Newton's method and optionally zooms to
       them.  Three evaluation back-ends are available, each in a single-point
@@ -686,13 +686,20 @@ additional work for correctness or a ``clean'' run.
 \label{par:autozoom}
 
 \begin{itemize}
-  \item \texttt{a}: Autozoom using the default heuristic (currently experimental and may misbehave).
-  \item \texttt{A} (\texttt{Shift+a}): Autozoom using the ``Max'' heuristic.
+  \item \texttt{a}: Autozoom using the ``Feature'' heuristic.  Forces the
+        \texttt{GpuHDRx32PerturbedLAv2} render algorithm, centres on the
+        perturbation reference point, computes a target zoom depth from the
+        reference orbit's maximum radius, and zooms in incrementally while
+        linearly interpolating the iteration count toward the reference orbit's
+        target.
+  \item \texttt{A} (\texttt{Shift+a}): Autozoom using the ``Default''
+        heuristic.  First centres on the mouse position, then iteratively picks
+        a zoom target via a weighted geometric mean of iteration counts
+        (favouring high-iteration, centre-proximate pixels) and zooms by a
+        factor of~3 each step.
 \end{itemize}
-Both autozoom variants first center on the mouse position before executing the
-autozoom routine.  (The on-screen hotkey help also notes that holding \texttt{Ctrl}
-may abort autozoom, but the abort mechanism is not part of this key handler and
-is implemented elsewhere.)
+Holding \texttt{Ctrl} may abort either autozoom variant (the abort mechanism is
+not part of the key handler and is implemented elsewhere).
 
 \paragraph{Recalculation and benchmarking.}
 Several keys force a recalculation; uppercase forms often clear cached results

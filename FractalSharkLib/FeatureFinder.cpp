@@ -2108,7 +2108,7 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
     const HighPrecision &sqrRadius_hp = cand->sqrRadius_hp;
 
     // MPF polish only
-    const IterType refineIters = RefinePeriodicPoint_WithMPF(cX_hp,
+    [[maybe_unused]] const IterType refineIters = RefinePeriodicPoint_WithMPF(cX_hp,
                                                              cY_hp,
                                                              period,
                                                              cand->mpfPrecBits,

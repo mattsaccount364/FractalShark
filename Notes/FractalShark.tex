@@ -119,18 +119,20 @@ as repeatable test cases for performance and correctness.
 \paragraph{Explicit algorithm selection and transparency.}
 A central design goal of \FractalShark{} is to make rendering algorithms
 explicit and selectable.  Users may rely on an automatic algorithm selector
-or manually choose among many rendering paths, including:
+or manually choose among many rendering paths (see \cref{subsec:ref-orbit-mt-tradeoff} for automatic selection), including:
 \begin{itemize}
   \item GPU-based low-zoom renderers with selectable iteration precision and
         multiple numeric formats (single-, dual-, and quad-limb 32- and 64-bit
-        variants, as well as deeper representations discussed subsequently).
+        variants, as well as deeper representations discussed subsequently);
+        see \cref{sec:mandel-base-kernels}.
   \item Scaled perturbation algorithms for extending low-precision arithmetic
-        to deeper zooms.
-  \item Bilinear approximation (BLA v1) perturbation paths.
+        to deeper zooms (\cref{sec:perturbation-concept}).
+  \item Bilinear approximation (BLA v1) perturbation paths (\cref{sec:bilinear-approx}).
   \item Linear approximation (LAv2) pipelines, including full rendering,
-        linear-approximation-only, and perturbation-only variants.
+        linear-approximation-only, and perturbation-only variants
+        (\cref{sec:la-v2-perturb}).
   \item Reference-compression–aware algorithms, including Imagina-compatible
-        ``max'' compression formats.
+        ``max'' compression formats (\cref{subsec:ref-orbit-compression-reuse}).
   \item CPU-only algorithms for very high precision, verification, and
         fallback scenarios.
 \end{itemize}
@@ -159,11 +161,11 @@ are not universally applicable to all rendering algorithms.
 
 \paragraph{Perturbation and reference-orbit management.}
 \FractalShark{} places strong emphasis on reference-orbit reuse and
-perturbation-based rendering.  It supports multiple perturbation strategies
+perturbation-based rendering (\cref{sec:ref-orbit-calc}).  It supports multiple perturbation strategies
 (single-threaded, multithreaded, periodicity-assisted, and experimental GPU
 variants), along with tools to clear, inspect, save, reload, and reuse
 reference orbits.  Automatic and manual reference-orbit persistence is
-supported via file-backed storage.
+supported via file-backed storage (\cref{sec:disk_backed_growable_vectors}).
 
 \paragraph{Memory management and scalability.}
 To enable extreme zoom depths without exhausting system memory, \FractalShark{}
@@ -255,13 +257,13 @@ choice and triggers any necessary reconfiguration.
       point under the cursor.
       \item \emph{Zoom In Here} (command): Zooms in toward the point under the cursor.
       \item \emph{Zoom Out} (command): Zooms out from the current view.
-      \item \emph{Autozoom Default} (command): See \ref{par:autozoom} for details.
-      \item \emph{Autozoom Max} (command): See \ref{par:autozoom} for details.
+      \item \emph{Autozoom Default} (command): See \cref{par:autozoom} for details.
+      \item \emph{Autozoom Max} (command): See \cref{par:autozoom} for details.
       \item \emph{Feature Finder} (submenu): Locates nearby mini-Mandelbrot
       nuclei (periodic points) using Newton's method and optionally zooms to
       them.  Three evaluation back-ends are available, each in a single-point
       and a whole-screen scan variant.  See
-      Section~\ref{sec:feature-finder} for the underlying algorithm.
+      \cref{sec:feature-finder} for the underlying algorithm.
         \begin{itemize}
           \item \emph{Direct} (\texttt{n}) (command): Runs the feature finder at
           the mouse cursor using direct iteration.  Best for shallow zooms where
@@ -382,7 +384,7 @@ choice and triggers any necessary reconfiguration.
               HDRx2x32 or HDRx64 variants instead.  View \#26 is an example of a
               point that fails with HDRx32 but works correctly with HDRx64.
 
-              See figure \ref{fig:auto-renderer-artifact} for an example of
+              See \cref{fig:auto-renderer-artifact} for an example of
               artifacts that can arise when using HDRx32 at extreme depths.
       \end{itemize}
 
@@ -762,8 +764,8 @@ These keys scale the maximum iteration count aggressively for quick exploration:
 
 \paragraph{Feature Finder.}
 These keys invoke the periodic-point (feature) finder at the current mouse
-position, or scan the entire viewport.  See Section~\ref{sec:feature-finder}
-for the algorithm details and Section~\ref{sec:ui-popup-menu} for the
+position, or scan the entire viewport.  See \cref{sec:feature-finder}
+for the algorithm details and \cref{sec:ui-popup-menu} for the
 corresponding menu items under \emph{Navigate $\to$ Feature Finder}.
 \begin{itemize}
   \item \texttt{n}: Find the nearest feature using direct iteration (single point at cursor).
@@ -809,7 +811,7 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
 
 \begin{itemize}
 
-\item \textbf{Mandelbrot base kernels}
+\item \textbf{Mandelbrot base kernels} (\cref{sec:mandel-base-kernels})
   \begin{itemize}
     \item \texttt{mandel\_1x\_float}
     \item \texttt{mandel\_1x\_double}
@@ -823,11 +825,11 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
 \item \textbf{Mandelbrot perturbation kernels}
   \begin{itemize}
     \item \texttt{mandel\_1x\_double\_perturb\_bla}
-    \item \texttt{mandel\_1xHDR\_float\_perturb\_bla}
-    \item \texttt{mandel\_1xHDR\_float\_perturb\_lav2}
+    \item \texttt{mandel\_1xHDR\_float\_perturb\_bla} (\cref{sec:bilinear-approx})
+    \item \texttt{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
   \end{itemize}
 
-\item \textbf{High-precision reference kernels}
+\item \textbf{High-precision reference kernels} (\cref{subsec:ref-orbit-gpu})
   \begin{itemize}
     \item \texttt{HpSharkReferenceGpuKernel}
     \item \texttt{HpSharkReferenceGpuLoop}
@@ -840,13 +842,13 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
     \item \texttt{max\_kernel}
   \end{itemize}
 
-\item \textbf{Addition kernels}
+\item \textbf{Addition kernels} (\cref{sec:hp-add})
   \begin{itemize}
     \item \texttt{AddKernel}
     \item \texttt{AddKernelTestLoop}
   \end{itemize}
 
-\item \textbf{Multiplication (NTT) kernels}
+\item \textbf{Multiplication (NTT) kernels} (\cref{sec:ntt-multiply})
   \begin{itemize}
     \item \texttt{MultiplyKernelNTT}
     \item \texttt{MultiplyKernelNTTTestLoop}
@@ -872,7 +874,7 @@ at \texttt{mandel\_1x\_float\_perturb}, which leaves out linear approximation
 and just does straight perturbation up to $\sim 10^{30}$, which corresponds with
 the 32-bit float exponent range.
 
-\item The \texttt{mandel\_1x\_float} is the classic 32-bit float Mandelbrot and 
+\item The \texttt{mandel\_1x\_float} (\cref{sec:mandel-1x-float}) is the classic 32-bit float Mandelbrot and 
 is screaming fast on a GPU. This one is optimized with fused multiply-add for 
 fun even though it's kind of useless because you can barely zoom in before you 
 get pixellation.
@@ -882,7 +884,7 @@ get pixellation.
 \paragraph{High-Dynamic-Range (HDR) scalar representation.}
 In this work, the term \emph{HDR} refers to a \emph{high-dynamic-range} numeric
 representation that pairs a fixed-precision mantissa (float or double) with an
-explicitly managed integer exponent.  When the GPU reference-orbit kernel or
+explicitly managed integer exponent (see \cref{sec:hdr-float} for the full description).  When the GPU reference-orbit kernel or
 perturbation pipeline needs lightweight control-flow decisions—periodicity
 detection, escape testing, magnitude comparisons—it converts the full
 arbitrary-precision state into an HDR value via a lossy reduction step
@@ -977,9 +979,9 @@ represented by multi-component expansion types.
 \label{sec:mandel-base-kernels}
 
 The goal of these kernels in \FractalShark{} is to \emph{render the Mandelbrot set}
-by computing an \emph{escape-time} iteration count per pixel over a 2D image
+by computing an \emph{escape-time} iteration count (\cref{sec:mandelbrot-intro}) per pixel over a 2D image
 grid efficiently. Each CUDA thread evaluates a single complex parameter \(c\)
-corresponding to one pixel, iterates the Mandelbrot recurrence, and stores the
+corresponding to one pixel (\cref{sec:mapping}), iterates the Mandelbrot recurrence (\cref{sec:real-form}), and stores the
 iteration count into an output buffer. Separate (or fused) stages can map
 iteration counts to colors, apply palettes, and perform anti-aliasing.
 
@@ -1204,7 +1206,7 @@ keeping comparisons meaningful and stable.
 \section{Iteration chunking via \code{iteration\_precision}}
 \label{sec:chunking}
 
-A few of the base kernels just described, which exclude linear approximation or
+A few of the base kernels just described (\cref{sec:mandel-base-kernels}), which exclude linear approximation or
 perturbation, are templated on an integer \code{iteration\_precision}
 (\(1,2,4,8,16\)) and unroll multiple Mandelbrot steps inside the loop:
 
@@ -1223,13 +1225,13 @@ continuous/smooth coloring based on the first bailout), use a chunk size of 1 or
 insert bailout checks within the unrolled body.
 
 This optimization was mainly explored for educational purposes; in practice, the
-benefit is small compared to other optimizations such as perturbation and linear
-approximation.
+benefit is small compared to other optimizations such as perturbation (\cref{sec:perturbation-concept}) and linear
+approximation (\cref{sec:approx-accel}).
 
 \section{Perturbation Rendering of the Mandelbrot Set}
 \label{sec:perturbation-concept}
 
-Rendering the Mandelbrot set at extreme zoom levels presents a fundamental
+Rendering the Mandelbrot set (\cref{sec:mandelbrot-intro}) at extreme zoom levels presents a fundamental
 numerical challenge. As the image is magnified, the parameters \(c\) associated
 with individual pixels differ by increasingly small amounts, while the number
 of iterations required to determine escape behavior typically grows. Accurately
@@ -1367,8 +1369,9 @@ stability.
 
 Perturbation preserves the exact dynamics of the Mandelbrot map and forms the
 foundation of many advanced deep-zoom rendering techniques. It can be used by
-itself or combined with additional approximations, such as linear or higher-order
-methods, to skip multiple iterations at once. In all cases, perturbation provides
+itself (\cref{sec:perturb-only}) or combined with additional approximations, such as bilinear approximation
+(\cref{sec:bilinear-approx}) or linear approximation (\cref{sec:la-v2-perturb}),
+to skip multiple iterations at once. In all cases, perturbation provides
 the conceptual framework that makes efficient deep-zoom Mandelbrot rendering
 possible.
 
@@ -1450,8 +1453,8 @@ methods.
 
 \subsection{Role of HDR in perturbation and reference orbits}
 
-The HDR representation plays a complementary role to perturbation. In the
-perturbation framework, the reference orbit typically grows rapidly in magnitude
+The HDR representation plays a complementary role to perturbation (\cref{sec:perturbation-concept}). In the
+perturbation framework, the reference orbit (\cref{sec:ref-orbit-calc}) typically grows rapidly in magnitude
 and therefore demands high dynamic range, while perturbation deltas remain small
 and can often be represented using lower precision.
 
@@ -1493,7 +1496,7 @@ extreme zoom levels while remaining compatible with GPU execution models.
 \label{sec:ref-orbit-calc}
 
 This section describes how \texttt{RefOrbitCalc} constructs (and optionally 
-reuses) a high-precision \emph{reference orbit} for perturbation rendering of 
+reuses) a high-precision \emph{reference orbit} for perturbation rendering (\cref{sec:perturbation-concept}) of 
 the quadratic map
 
 \begin{equation}
@@ -1575,10 +1578,14 @@ The bailout threshold is evaluated in low precision using
 \end{equation}
 
 which matches the code's use of \texttt{TwoFiftySix} and avoids a high-precision
-norm each step.  Note that the bailout here is different from the one used in
+norm each step.  Here \(\hat{x}_n\) and \(\hat{y}_n\) are the low-precision
+shadows of the orbit state captured \emph{before} the high-precision recurrence
+update (i.e.\ they represent the current \(z_n\), not the just-computed
+\(z_{n+1}\)).  The sum \(\hat{z}_n + \hat{c}\) is therefore a cheap proxy that
+avoids re-extracting a low-precision snapshot after the update.
+Note that the bailout here is different from the one used in
 the lower-precision kernels discussed previously; this is acceptable because the
-reference orbit is used only for perturbation, not direct rendering.  The
-difference is merely arbitrary.
+reference orbit is used only for perturbation, not direct rendering.
 
 \subsection{Periodicity tracking via \texorpdfstring{$\partial z/\partial c$}{dz/dc}}
 \label{subsec:ref-orbit-periodicity}
@@ -1618,6 +1625,7 @@ where \(R_{\max}\) is the maximum perturbation radius stored in \texttt{results}
 . If \(n_2 < n_3\), the orbit is marked as \emph{maybe periodic} and the
 reference loop terminates early (unless periodicity detection is disabled).
 Otherwise, \((d_{x,n},d_{y,n})\) is advanced using the update above.
+See \cref{sec:hp-periodicity} for the analogous GPU-side periodicity mechanism.
 
 \subsection{Expanded versus factored evaluation of the reference orbit}
 
@@ -1941,7 +1949,7 @@ The compressed reference is thus a sparse, ordered list
 \mathcal{W} = \{(n_k, w_k)\}_{k=0}^{K-1}
 \)
 with strictly increasing indices \(0 \le n_0 < n_1 < \cdots < n_{K-1} \le N\),
-where the payload \(w_k\) depends on the mode (Section~\ref{sec:refcomp-pert}).
+where the payload \(w_k\) depends on the mode (\cref{sec:refcomp-pert}).
 
 \subsubsection{Decompression by replay}
 
@@ -2189,7 +2197,7 @@ reference representations or specializing the data structure to a single access
 pattern.
 
 \paragraph{Example usage.}
-See \ref{fig:view27-1-quadrillion} for an example of a deep-zoom render
+See \cref{fig:view27-1-quadrillion} for an example of a deep-zoom render
 that requires reference compression to complete.
 
 \begin{figure}[!htbp]
@@ -2208,7 +2216,8 @@ that requires reference compression to complete.
 \section{Multi-threaded Reference Orbit Acceleration}
 \label{subsec:ref-orbit-mt}
 
-The \texttt{MT3} reference-orbit path accelerates high-cost MPIR arithmetic by
+The \texttt{MT3} reference-orbit path accelerates the high-cost MPIR arithmetic
+of the single-threaded authoritative orbit (\cref{subsec:ref-orbit-st}) by
 decomposing each iteration across multiple CPU threads.  The design targets
 independent, high-latency big-integer operations that naturally overlap in the
 perturbation recurrence, while minimizing synchronization overhead.  Two
@@ -2300,13 +2309,14 @@ precision far exceeding that of standard IEEE~754 floating-point formats. The
 Mandelbrot reference orbits is a canonical example: small rounding errors
 introduced early in the iteration can grow exponentially, eventually corrupting
 orbit classification, perturbation terms, or bailout logic. While
-arbitrary-precision libraries like MPIR can provide the required accuracy, their
+arbitrary-precision libraries like MPIR can provide the required accuracy
+(\cref{sec:ref-orbit-calc}), their
 performance is often insufficient when reference orbits must be computed
 repeatedly or at very high precision. This creates a fundamental tension between
 numerical fidelity and throughput.
 
 To resolve this tension, high-precision arithmetic operations---in particular
-multiplication, addition, and subtraction of large significands---must be
+multiplication (\cref{sec:ntt-multiply}), addition, and subtraction (\cref{sec:hp-add}) of large significands---must be
 implemented with both mathematical rigor and architectural efficiency. Addition
 and subtraction are dominated by carry propagation across hundreds or thousands
 of limbs, while multiplication scales quadratically unless asymptotically faster
@@ -2420,7 +2430,7 @@ the bounded-chunk execution model.
 \subsection{High-Precision Floating-Point Addition on the GPU}
 \label{sec:hp-add}
 
-While high-precision multiplication dominates the asymptotic cost of many
+While high-precision multiplication (\cref{sec:ntt-multiply}) dominates the asymptotic cost of many
 arbitrary-precision algorithms, addition and subtraction remain critical in
 practice. In iterative computations such as reference orbit generation, each
 iteration performs multiple additions and subtractions on large significands,
@@ -2655,7 +2665,7 @@ arithmetic throughput, particularly when the scan is embedded inside a larger
 iterative algorithm such as high-precision reference orbit computation.
 
 In contrast, the single-pass parallel prefix algorithm
-of\cite{merrill2016single} eliminates the global phase separation inherent in
+of \cite{merrill2016single} eliminates the global phase separation inherent in
 Blelloch scans. Instead of enforcing a strict up-sweep/down-sweep structure,
 each thread block computes its local prefix independently and resolves
 inter-block dependencies dynamically using a decoupled look-back mechanism. This
@@ -2696,6 +2706,7 @@ as GPU-accelerated reference orbit computation.
 
 
 \subsection{Number Theoretic Transform and Multiply}
+\label{sec:ntt-multiply}
 
 High-precision floating-point multiplication ultimately reduces to multiplying
 two large integers (the significands), followed by normalization and exponent
@@ -3181,7 +3192,7 @@ Correctness bugs in GPU high-precision arithmetic are notoriously difficult to
 localize: a single off-by-one carry, lane-misaligned shuffle, or missing
 synchronization can corrupt results far downstream, often without an obvious
 local symptom. To shorten the feedback loop, we instrument the arithmetic
-pipeline with lightweight \emph{stage checksums} that can be computed on the GPU,
+pipeline (\cref{sec:hp-add,sec:ntt-multiply}) with lightweight \emph{stage checksums} that can be computed on the GPU,
 computed independently on the host reference implementation, and compared to
 pinpoint the first divergence. This converts a diffuse ``wrong final answer''
 into a small set of candidate stages, dramatically reducing the search space
@@ -3310,7 +3321,7 @@ localization in complex GPU high-precision arithmetic kernels.
 \section{Per-Iteration Periodicity Checking under High-Precision Arithmetic on the GPU}
 \label{sec:hp-periodicity}
 
-The \FractalShark{} GPU reference-orbit kernel evaluates the Mandelbrot recurrence
+The \FractalShark{} GPU reference-orbit kernel (\cref{subsec:ref-orbit-gpu}) evaluates the Mandelbrot recurrence
 \(
 z_{n+1} = z_n^2 + c
 \)
@@ -3345,7 +3356,7 @@ In addition to the orbit state, we propagate the complex derivative
 \(
 \frac{dz}{dc}
 \)
-along the orbit. For the Mandelbrot map \(f(z)=z^2+c\), the chain rule yields
+along the orbit (cf.\ the CPU-side counterpart in \cref{subsec:ref-orbit-periodicity}). For the Mandelbrot map \(f(z)=z^2+c\), the chain rule yields
 
 \begin{equation}
   \frac{d z_{n+1}}{d c} = f'(z_n)\frac{d z_n}{d c} + 1
@@ -3471,7 +3482,7 @@ without taking any LA v2 linear-approximation steps. The same CUDA entry point
 used; the behavior is selected at compile time via \code{LAv2Mode}. In
 particular, when \code{Mode} includes only the perturbation path (e.g.\
 \code{LAv2Mode::PO}), the kernel skips the LA stage traversal and runs only the
-perturbation loop against a stored reference orbit.
+perturbation loop against a stored reference orbit (\cref{sec:ref-orbit-calc}).
 
 \subsection{Rendering objective}
 \label{sec:perturb-only-goal}
@@ -3553,15 +3564,18 @@ the sums
 \]
 then updating:
 \begin{align}
-\Delta x &\leftarrow \Delta x\,(2x^\star + \Delta x) - \Delta y\,(2y^\star + \Delta y) + \Delta c_x, \\
-\Delta y &\leftarrow \Delta x\,(2y^\star + \Delta y) + \Delta y\,(2x^\star + \Delta x) + \Delta c_y.
+\Delta x' &= \Delta x\,(2x^\star + \Delta x) - \Delta y\,(2y^\star + \Delta y) + \Delta c_x, \\
+\Delta y' &= \Delta x\,(2y^\star + \Delta y) + \Delta y\,(2x^\star + \Delta x) + \Delta c_y.
 \end{align}
-In the code, the intermediate quantities correspond to:
+Note that both right-hand sides use the \emph{pre-update} values of
+\(\Delta x\) and \(\Delta y\).  In the code, these originals are saved as
+\code{DeltaSubNXOrig} and \code{DeltaSubNYOrig} before either component is
+overwritten.  The intermediate quantities correspond to:
 \begin{verbatim}
 tempSum1 = 2*zy + DeltaSubNYOrig;  // (2 y^\star + \Delta y)
 tempSum2 = 2*zx + DeltaSubNXOrig;  // (2 x^\star + \Delta x)
 \end{verbatim}
-followed by the real/imag updates. For extended or HDR types, the kernel routes
+followed by the real/imag updates. For extended or HDR types (\cref{sec:hdr-float}), the kernel routes
 the same math through type-specialized implementations
 (\code{T::custom\_perturb2} / \code{T::custom\_perturb3}) to keep the inner loop
 tight and to enforce the type's reduction/normalization rules.
@@ -3643,7 +3657,8 @@ a \emph{reference orbit} and evolving \emph{deltas} for nearby pixels.
 \label{sec:bilinear-approx}
 
 \subsubsection{Reference orbit and delta formulation}
-Let the reference parameter be \(c_\star\) with orbit:
+Let the reference parameter be \(c_\star\) with orbit
+(see \cref{sec:perturbation-concept} for the general perturbation framework):
 \[
 z_{n+1}^\star = (z_n^\star)^2 + c_\star,\qquad z_0^\star=0.
 \]
@@ -3694,11 +3709,14 @@ expanded into real arithmetic:
 \end{align}
 
 \subsubsection{Composing steps to build longer jumps}
-If one step maps \(\Delta z \mapsto A_x\Delta z + B_x\Delta c\) and a second maps
-\(\Delta z' \mapsto A_y\Delta z' + B_y\Delta c\), the composition is:
+If a first step maps \(\Delta z \mapsto A_1\Delta z + B_1\Delta c\) and a second maps
+\(\Delta z' \mapsto A_2\Delta z' + B_2\Delta c\), the composition is:
 \[
-A_{\text{new}} = A_yA_x,\qquad B_{\text{new}} = A_yB_x + B_y.
+A_{\text{new}} = A_2 A_1,\qquad B_{\text{new}} = A_2 B_1 + B_2.
 \]
+In the code (\code{BLA.h}), these two steps are passed as the parameters
+\code{x} and \code{y} to \code{getNewA} and \code{getNewB}, corresponding to
+step~1 and step~2 respectively.
 This supports a hierarchy of step sizes (often powers of two) for quickly
 advancing delta orbits while rendering the escape-time field.
 
@@ -3714,7 +3732,8 @@ performing \code{l} full high-precision Mandelbrot updates.
 \label{sec:la-v2-perturb}
 
 This kernel family combines staged linear-approximation steps with a
-perturbation finisher loop against a stored reference orbit. The rendering
+perturbation finisher loop against a stored reference orbit
+(see \cref{sec:perturb-only} for the perturbation-only variant). The rendering
 objective remains escape-time Mandelbrot evaluation; the kernel accelerates
 that evaluation by evolving deltas and periodically reconstructing \(z\) to
 perform bailout checks.
@@ -3748,11 +3767,12 @@ x+i\Delta y\), the perturbation form is:
 In real arithmetic, with temporaries corresponding to \((2x^\star+\Delta x)\)
 and \((2y^\star+\Delta y)\), this yields:
 \begin{align}
-\Delta x &\leftarrow \Delta x\,(2x^\star+\Delta x) - \Delta y\,(2y^\star+\Delta y) + \Delta c_x, \\
-\Delta y &\leftarrow \Delta x\,(2y^\star+\Delta y) + \Delta y\,(2x^\star+\Delta x) + \Delta c_y.
+\Delta x' &= \Delta x\,(2x^\star+\Delta x) - \Delta y\,(2y^\star+\Delta y) + \Delta c_x, \\
+\Delta y' &= \Delta x\,(2y^\star+\Delta y) + \Delta y\,(2x^\star+\Delta x) + \Delta c_y,
 \end{align}
-In code comments, write these as \(x^\star\) and \(\Delta x\) (and similarly for
-\(y\)) rather than using Unicode symbols.
+where both right-hand sides use the pre-update values of \(\Delta x\) and
+\(\Delta y\) (the code saves these as \code{DeltaSubNXOrig} and
+\code{DeltaSubNYOrig}).
 
 \subsubsection{Escape test}
 After updating \(\Delta z\), reconstruct \(z\approx z^\star+\Delta z\) and test:
@@ -3768,7 +3788,7 @@ deep zoom.
 \section{Disk-Backed Growable Vectors with Stable Virtual Addresses}
 \label{sec:disk_backed_growable_vectors}
 
-High-resolution Mandelbrot rendering and reference-orbit techniques impose
+High-resolution Mandelbrot rendering and reference-orbit techniques (\cref{sec:ref-orbit-calc}) impose
 extreme demands on memory management. At deep zoom levels, a single authoritative
 reference orbit may contain tens of billions of elements; for example, an orbit
 with $2.7\times10^{10}$ iterations already implies a logical memory footprint far
@@ -3993,9 +4013,9 @@ where $z_p$ denotes the $p$-fold iterate of the critical point.
 
 Locating these nuclei is useful for several reasons:
 \begin{itemize}
-\item \textbf{Reference orbit placement.}  A reference orbit centered at a
+\item \textbf{Reference orbit placement.}  A reference orbit (\cref{sec:ref-orbit-calc}) centered at a
   nucleus is exactly periodic, eliminating long-term drift and improving the
-  accuracy of perturbation-based rendering nearby.
+  accuracy of perturbation-based rendering (\cref{sec:perturbation-concept}) nearby.
 \item \textbf{Automatic navigation.}  Given a user click, the finder can snap
   to the nearest mini-brot center and report its period and intrinsic size,
   enabling one-click deep-zoom targeting.
@@ -4266,7 +4286,7 @@ This section simply has some development notes that were posted over time.
 
 \subsection{2026-2-14 News --- Version 0.51}
 
-Version \texttt{0.51} introduces the \textbf{Feature Finder}, a major new tool
+Version \texttt{0.51} introduces the \textbf{Feature Finder} (\cref{sec:feature-finder}), a major new tool
 for exploring the Mandelbrot set, along with several usability improvements.
 
 \begin{itemize}
@@ -4319,11 +4339,11 @@ device and falls back to CPU-only rendering, with a warning message.
 \subsection{2025-12-29 News --- Version 0.5}
 \begin{itemize}
   \item \textbf{Major feature: GPU-accelerated Mandelbrot reference orbit.} Adds
-  an experimental CUDA reference-orbit calculator intended to complement the
+  an experimental CUDA reference-orbit calculator (\cref{subsec:ref-orbit-gpu}) intended to complement the
   existing CPU/MPIR multithreaded approach.
 
   \item \textbf{High-precision arithmetic pipeline on GPU.} Includes a full
-  multiply/add/subtract pipeline, a Number Theoretic Transform (NTT)
+  multiply/add/subtract pipeline (\cref{sec:hp-add,sec:ntt-multiply}), a Number Theoretic Transform (NTT)
   implementation, parallel-prefix carry propagation, and HDR-style exponent
   tracking.
 

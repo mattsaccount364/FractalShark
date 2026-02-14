@@ -367,15 +367,15 @@ CommandDispatcher::BuildTable()
     table_.emplace(IDM_PALETTEROTATE, +[](MainWindow &w) { w.MenuPaletteRotation(); });
     table_.emplace(IDM_CREATENEWPALETTE, +[](MainWindow &w) { w.MenuCreateNewPalette(); });
 
-    table_.emplace(IDM_PALETTE_TYPE_0, +[](MainWindow &w) { w.MenuPaletteType(FractalPalette::Basic); });
+    table_.emplace(IDM_PALETTE_TYPE_0, +[](MainWindow &w) { w.MenuPaletteType(FractalPaletteType::Basic); });
     table_.emplace(
-        IDM_PALETTE_TYPE_1, +[](MainWindow &w) { w.MenuPaletteType(FractalPalette::Default); });
+        IDM_PALETTE_TYPE_1, +[](MainWindow &w) { w.MenuPaletteType(FractalPaletteType::Default); });
     table_.emplace(
-        IDM_PALETTE_TYPE_2, +[](MainWindow &w) { w.MenuPaletteType(FractalPalette::Patriotic); });
+        IDM_PALETTE_TYPE_2, +[](MainWindow &w) { w.MenuPaletteType(FractalPaletteType::Patriotic); });
     table_.emplace(
-        IDM_PALETTE_TYPE_3, +[](MainWindow &w) { w.MenuPaletteType(FractalPalette::Summer); });
+        IDM_PALETTE_TYPE_3, +[](MainWindow &w) { w.MenuPaletteType(FractalPaletteType::Summer); });
     table_.emplace(
-        IDM_PALETTE_TYPE_4, +[](MainWindow &w) { w.MenuPaletteType(FractalPalette::Random); });
+        IDM_PALETTE_TYPE_4, +[](MainWindow &w) { w.MenuPaletteType(FractalPaletteType::Random); });
 
     table_.emplace(IDM_PALETTE_5, +[](MainWindow &w) { w.MenuPaletteDepth(5); });
     table_.emplace(IDM_PALETTE_6, +[](MainWindow &w) { w.MenuPaletteDepth(6); });

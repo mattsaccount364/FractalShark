@@ -350,7 +350,7 @@ FeatureSummary::ComputeZoomFactor(const PointZoomBBConverter &ptz) const
     // zoomFactor in your PointZoomBBConverter is "magnification": larger -> smaller BB -> zoom in.
     // halfHeight = factor / zoomFactor  (since BB uses +/- factor/zoomFactor)
     // so: zoomTarget = factor / targetHalfH
-    const HighPrecision zTarget = HighPrecision{PointZoomBBConverter::factor} / targetHalfH;
+    const HighPrecision zTarget = HighPrecision{PointZoomBBConverter::Factor} / targetHalfH;
 
     // Don't zoom out: if zTarget is smaller than current zoom, keep current
     const HighPrecision zCur = ptz.GetZoomFactor();

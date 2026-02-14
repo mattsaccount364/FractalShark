@@ -12,10 +12,10 @@ PointZoomBBConverter::PointZoomBBConverter(HighPrecision ptX,
     : m_PtX(ptX), m_PtY(ptY), m_ZoomFactor(zoomFactor)
 {
 
-    m_MinX = ptX - (HighPrecision{factor} / m_ZoomFactor);
-    m_MinY = ptY - (HighPrecision{factor} / m_ZoomFactor);
-    m_MaxX = ptX + (HighPrecision{factor} / m_ZoomFactor);
-    m_MaxY = ptY + (HighPrecision{factor} / m_ZoomFactor);
+    m_MinX = ptX - (HighPrecision{Factor} / m_ZoomFactor);
+    m_MinY = ptY - (HighPrecision{Factor} / m_ZoomFactor);
+    m_MaxX = ptX + (HighPrecision{Factor} / m_ZoomFactor);
+    m_MaxY = ptY + (HighPrecision{Factor} / m_ZoomFactor);
     m_Radius = (m_MaxY - m_MinY) / HighPrecision{2};
 
     auto deltaY = m_MaxY - m_MinY;
@@ -41,10 +41,10 @@ PointZoomBBConverter::PointZoomBBConverter(HighPrecision minX,
         return;
     }
 
-    // auto zf1 = HighPrecision{ factor } / deltaX * 4;
-    auto zf2 = HighPrecision{factor} / deltaY * HighPrecision{2};
-    // auto zf3 = HighPrecision{ factor } / (m_MaxX - m_PtX) * 4;
-    // auto zf4 = HighPrecision{ factor } / (m_MaxY - m_PtY) * 4;
+    // auto zf1 = HighPrecision{ Factor } / deltaX * 4;
+    auto zf2 = HighPrecision{Factor} / deltaY * HighPrecision{2};
+    // auto zf3 = HighPrecision{ Factor } / (m_MaxX - m_PtX) * 4;
+    // auto zf4 = HighPrecision{ Factor } / (m_MaxY - m_PtY) * 4;
     // m_ZoomFactor = std::min(std::min(zf1, zf2), std::min(zf3, zf4));
     // m_ZoomFactor = std::min(zf1, zf2);
     m_ZoomFactor = zf2;
@@ -117,7 +117,7 @@ PointZoomBBConverter::SetPrecision(uint64_t precInBits)
 }
 
 void
-PointZoomBBConverter::SetDebugStrings(const HighPrecision* deltaY)
+PointZoomBBConverter::SetDebugStrings(const HighPrecision *deltaY)
 {
     if constexpr (m_Test) {
         if (m_MinX.precisionInBits() < 1000)
@@ -152,9 +152,9 @@ PointZoomBBConverter::Degenerate() const
 }
 
 PointZoomBBConverter
-PointZoomBBConverter::ZoomedAtCenter(double factor) const
+PointZoomBBConverter::ZoomedAtCenter(double scale) const
 {
-    double divisor = 1.0 / (1.0 + 2.0 * factor);
+    double divisor = 1.0 / (1.0 + 2.0 * scale);
     PointZoomBBConverter out = *this;
     out.ZoomDivisor(divisor);
     return out;
@@ -162,8 +162,8 @@ PointZoomBBConverter::ZoomedAtCenter(double factor) const
 
 PointZoomBBConverter
 PointZoomBBConverter::ZoomedRecentered(const HighPrecision &calcX,
-                                      const HighPrecision &calcY,
-                                      double factor) const
+                                       const HighPrecision &calcY,
+                                       double scale) const
 {
     // Recenter bounding box on (calcX, calcY), preserving current extents,
     // then apply ZoomedAtCenter.
@@ -192,17 +192,15 @@ PointZoomBBConverter::ZoomedRecentered(const HighPrecision &calcX,
     newMaxX.addFrom(calcX, halfW);
     newMaxY.addFrom(calcY, halfH);
 
-    PointZoomBBConverter centered{std::move(newMinX),
-                                  std::move(newMinY),
-                                  std::move(newMaxX),
-                                  std::move(newMaxY)};
-    return centered.ZoomedAtCenter(factor);
+    PointZoomBBConverter centered{
+        std::move(newMinX), std::move(newMinY), std::move(newMaxX), std::move(newMaxY)};
+    return centered.ZoomedAtCenter(scale);
 }
 
 PointZoomBBConverter
 PointZoomBBConverter::ZoomedTowardPoint(const HighPrecision &calcX,
-                                      const HighPrecision &calcY,
-                                      double factor) const
+                                        const HighPrecision &calcY,
+                                        double scale) const
 {
     // Asymmetric weighted zoom toward (calcX, calcY) without recentering.
     // Edges expand/contract proportionally to their distance from the point.
@@ -212,8 +210,8 @@ PointZoomBBConverter::ZoomedTowardPoint(const HighPrecision &calcX,
     HighPrecision height{HighPrecision::SetPrecision::True, prec};
     HighPrecision tmp{HighPrecision::SetPrecision::True, prec};
 
-    width.subFrom(m_MaxX, m_MinX);    // width = m_MaxX - m_MinX
-    height.subFrom(m_MaxY, m_MinY);   // height = m_MaxY - m_MinY
+    width.subFrom(m_MaxX, m_MinX);  // width = m_MaxX - m_MinX
+    height.subFrom(m_MaxY, m_MinY); // height = m_MaxY - m_MinY
 
     // leftWeight = (calcX - m_MinX) / width
     HighPrecision leftWeight{HighPrecision::SetPrecision::True, prec};
@@ -239,7 +237,7 @@ PointZoomBBConverter::ZoomedTowardPoint(const HighPrecision &calcX,
         bottomWeight.subFrom(one, topWeight);
     }
 
-    const HighPrecision hf{factor};
+    const HighPrecision hf{scale};
 
     // newMinX = m_MinX - width * leftWeight * hf
     HighPrecision newMinX{HighPrecision::SetPrecision::True, prec};
@@ -265,10 +263,8 @@ PointZoomBBConverter::ZoomedTowardPoint(const HighPrecision &calcX,
     tmp.mulFrom(tmp, hf);
     newMaxY.addFrom(m_MaxY, tmp);
 
-    return PointZoomBBConverter{std::move(newMinX),
-                                std::move(newMinY),
-                                std::move(newMaxX),
-                                std::move(newMaxY)};
+    return PointZoomBBConverter{
+        std::move(newMinX), std::move(newMinY), std::move(newMaxX), std::move(newMaxY)};
 }
 
 void
@@ -325,14 +321,14 @@ PointZoomBBConverter::SquareAspectRatio(size_t scrnWidth, size_t scrnHeight)
     m_Radius.subFrom(m_MaxY, m_MinY);
     m_Radius.divFrom_ui(m_Radius, 2);
 
-    // Recompute zoom factor: factor * 2 / deltaY
+    // Recompute zoom Factor: Factor * 2 / deltaY
     HighPrecision deltaY{HighPrecision::SetPrecision::True, prec};
     deltaY.subFrom(m_MaxY, m_MinY);
 
     if (deltaY == HighPrecision{0}) {
         m_ZoomFactor = HighPrecision{1};
     } else {
-        m_ZoomFactor.divFrom(HighPrecision{factor}, deltaY);
+        m_ZoomFactor.divFrom(HighPrecision{Factor}, deltaY);
         m_ZoomFactor.mulFrom_ui(m_ZoomFactor, 2);
     }
 
@@ -340,12 +336,12 @@ PointZoomBBConverter::SquareAspectRatio(size_t scrnWidth, size_t scrnHeight)
 }
 
 void
-PointZoomBBConverter::ZoomInPlace(double factor)
+PointZoomBBConverter::ZoomInPlace(double scale)
 {
     // Old-style additive convention:
-    // factor=0.3 expands each edge by 30% (zoom out)
-    // factor=-0.3 shrinks each edge by 30% (zoom in)
-    double divisor = 1.0 / (1.0 + 2.0 * factor);
+    // scale=0.3 expands each edge by 30% (zoom out)
+    // scale=-0.3 shrinks each edge by 30% (zoom in)
+    double divisor = 1.0 / (1.0 + 2.0 * scale);
     ZoomDivisor(divisor);
 }
 
@@ -384,7 +380,7 @@ PointZoomBBConverter::ZoomDivisor(double divisor)
 
     m_Radius.setFrom(halfY);
 
-    // zoomFactor ∝ 1/deltaY, deltaY shrinks by factor => zoomFactor grows
+    // zoomFactor ∝ 1/deltaY, deltaY shrinks by Factor => zoomFactor grows
     m_ZoomFactor *= hf;
 
     if constexpr (m_Test) {

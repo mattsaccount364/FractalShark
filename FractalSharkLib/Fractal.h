@@ -16,6 +16,7 @@
 //      message pump.  Make it use callback functions so whoever is using this code
 //      can see the progress, be notified when it is done, whatever.
 
+#include "FractalPalette.h"
 #include "GPU_Render.h"
 
 #include "CudaDblflt.h"
@@ -169,12 +170,14 @@ public:
     void UseNextPaletteDepth();
     void SetPaletteAuxDepth(int32_t aux_depth);
     void UseNextPaletteAuxDepth(int32_t inc);
-    void UsePaletteType(FractalPalette type);
-    FractalPalette GetPaletteType() const;
+    void UsePaletteType(FractalPaletteType type);
+    FractalPaletteType GetPaletteType() const;
 
     void ResetFractalPalette();
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette();
+
+    FractalPalette &GetPalette();
 
     void DrawAllPerturbationResults(bool LeaveScreen);
     void DrawFeatureFinderResults();
@@ -254,8 +257,6 @@ public:
 private:
     void Initialize(int width, int height, HWND hWnd, bool UseSensoCursor);
     void Uninitialize();
-    void PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int val2);
-    void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
     bool IsDownControl();
     void CheckForAbort();
 
@@ -397,18 +398,7 @@ private:
     // Render algorithm
     RenderAlgorithm m_RenderAlgorithm;
 
-    static constexpr const size_t NumBitDepths = 6;
-
-    std::vector<uint16_t> m_PalR[FractalPalette::Num][NumBitDepths];
-    std::vector<uint16_t> m_PalG[FractalPalette::Num][NumBitDepths];
-    std::vector<uint16_t> m_PalB[FractalPalette::Num][NumBitDepths];
-    std::vector<uint32_t> m_PalIters[FractalPalette::Num];
-    FractalPalette m_WhichPalette;
-
-    IterTypeFull m_PaletteRotate; // Used to shift the palette
-    int m_PaletteDepthIndex;      // 0, 1, 2
-    int m_PaletteAuxDepth;        // 0..16
-    static constexpr int NumPalettes = 3;
+    FractalPalette m_Palette;
 
     uint32_t InitializeGPUMemory(bool expectedReuse = true);
 

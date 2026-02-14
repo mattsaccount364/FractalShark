@@ -37,6 +37,7 @@
     <ClInclude Include="OrbitParameterPack.h" />
     <ClInclude Include="PerturbationResults.h" />
     <ClInclude Include="PerturbationResultsHelpers.h" />
+    <ClInclude Include="FractalPalette.h" />
     <ClInclude Include="PngParallelSave.h" />
     <ClInclude Include="PointZoomBBConverter.h" />
     <ClInclude Include="PrecisionCalculator.h" />
@@ -74,6 +75,7 @@
     <ClCompile Include="OpenGLContext.cpp" />
     <ClCompile Include="OrbitParameterPack.cpp" />
     <ClCompile Include="PerturbationResults.cpp" />
+    <ClCompile Include="FractalPalette.cpp" />
     <ClCompile Include="PngParallelSave.cpp" />
     <ClCompile Include="PointZoomBBConverter.cpp" />
     <ClCompile Include="PrecisionCalculator.cpp" />

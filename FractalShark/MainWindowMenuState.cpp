@@ -154,15 +154,15 @@ MainWindowMenuState::GetRadioSelection(DynamicPopupMenu::RadioGroup group) const
 
         case RG::PaletteType:
             switch (f_.GetPaletteType()) {
-                case FractalPalette::Basic:
+                case FractalPaletteType::Basic:
                     return IDM_PALETTE_TYPE_0;
-                case FractalPalette::Default:
+                case FractalPaletteType::Default:
                     return IDM_PALETTE_TYPE_1;
-                case FractalPalette::Patriotic:
+                case FractalPaletteType::Patriotic:
                     return IDM_PALETTE_TYPE_2;
-                case FractalPalette::Summer:
+                case FractalPaletteType::Summer:
                     return IDM_PALETTE_TYPE_3;
-                case FractalPalette::Random:
+                case FractalPaletteType::Random:
                     return IDM_PALETTE_TYPE_4;
             }
             return IDM_PALETTE_TYPE_1;

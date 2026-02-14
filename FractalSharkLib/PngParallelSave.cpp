@@ -20,19 +20,19 @@ PngParallelSave::PngParallelSave(
     m_ScrnHeight(fractal.m_ScrnHeight),
     m_GpuAntialiasing(fractal.m_GpuAntialiasing),
     m_NumIterations(fractal.m_NumIterations),
-    m_PaletteRotate(fractal.m_PaletteRotate),
-    m_PaletteDepthIndex(fractal.m_PaletteDepthIndex),
-    m_PaletteAuxDepth(fractal.m_PaletteAuxDepth),
-    m_WhichPalette(fractal.m_WhichPalette),
+    m_PaletteRotate(fractal.GetPalette().GetPaletteRotation()),
+    m_PaletteDepthIndex(fractal.GetPalette().GetPaletteDepthIndex()),
+    m_PaletteAuxDepth(fractal.GetPalette().GetAuxDepth()),
+    m_WhichPalette(fractal.GetPalette().GetPaletteType()),
     m_CurIters{},
     m_CopyTheIters(copy_the_iters) {
 
-    for (size_t i = 0; i < FractalPalette::Num; i++) {
-        m_PalR[i] = fractal.m_PalR[i];
-        m_PalG[i] = fractal.m_PalG[i];
-        m_PalB[i] = fractal.m_PalB[i];
+    for (size_t i = 0; i < FractalPaletteType::Num; i++) {
+        m_PalR[i] = fractal.GetPalette().GetPalR(i);
+        m_PalG[i] = fractal.GetPalette().GetPalG(i);
+        m_PalB[i] = fractal.GetPalette().GetPalB(i);
 
-        m_PalIters[i] = fractal.m_PalIters[i];
+        m_PalIters[i] = fractal.GetPalette().GetPalIters(i);
     }
 
     m_Thread = nullptr;

@@ -500,7 +500,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
         case 'd': {
             if (shiftDown) {
                 gFractal->CreateNewFractalPalette();
-                gFractal->UsePaletteType(FractalPalette::Random);
+                gFractal->UsePaletteType(FractalPaletteType::Random);
             } else {
                 gFractal->UseNextPaletteDepth();
             }
@@ -1202,10 +1202,10 @@ MainWindow::MenuPaletteRotation()
 }
 
 void
-MainWindow::MenuPaletteType(FractalPalette type)
+MainWindow::MenuPaletteType(FractalPaletteType type)
 {
     gFractal->UsePaletteType(type);
-    if (type == FractalPalette::Default) {
+    if (type == FractalPaletteType::Default) {
         gFractal->UsePalette(8);
         gFractal->SetPaletteAuxDepth(0);
     }
@@ -1223,7 +1223,7 @@ void
 MainWindow::MenuCreateNewPalette()
 {
     gFractal->CreateNewFractalPalette();
-    gFractal->UsePaletteType(FractalPalette::Random);
+    gFractal->UsePaletteType(FractalPaletteType::Random);
     gFractal->DrawFractal(false);
 }
 

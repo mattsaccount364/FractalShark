@@ -8,7 +8,7 @@
 class Fractal;
 
 // The palette!
-enum FractalPalette : size_t {
+enum FractalPaletteType : size_t {
     Basic = 0,
     Default,
     Patriotic,
@@ -44,9 +44,9 @@ public:
     IterTypeFull m_PaletteRotate; // Used to shift the palette
     int m_PaletteDepthIndex; // 0, 1, 2
     int m_PaletteAuxDepth;
-    std::vector<uint16_t> *m_PalR[FractalPalette::Num], *m_PalG[FractalPalette::Num], *m_PalB[FractalPalette::Num];
-    FractalPalette m_WhichPalette;
-    std::vector<uint32_t> m_PalIters[FractalPalette::Num];
+    std::vector<uint16_t> *m_PalR[FractalPaletteType::Num], *m_PalG[FractalPaletteType::Num], *m_PalB[FractalPaletteType::Num];
+    FractalPaletteType m_WhichPalette;
+    std::vector<uint32_t> m_PalIters[FractalPaletteType::Num];
     ItersMemoryContainer m_CurIters;
     bool m_CopyTheIters;
     std::wstring m_FilenameBase;

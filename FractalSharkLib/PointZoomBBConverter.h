@@ -4,7 +4,7 @@
 
 class PointZoomBBConverter {
 public:
-    static constexpr auto factor = 2;
+    static constexpr auto Factor = 2;
 
     PointZoomBBConverter();
     PointZoomBBConverter(
@@ -30,10 +30,14 @@ public:
     void SetPrecision(uint64_t precInBits);
 
     bool Degenerate() const;
-    PointZoomBBConverter ZoomedAtCenter(double factor) const;
-    PointZoomBBConverter ZoomedRecentered(const HighPrecision &calcX, const HighPrecision &calcY, double factor) const;
-    PointZoomBBConverter ZoomedTowardPoint(const HighPrecision &calcX, const HighPrecision &calcY, double factor) const;
-    void ZoomInPlace(double factor);
+    PointZoomBBConverter ZoomedAtCenter(double scale) const;
+    PointZoomBBConverter ZoomedRecentered(const HighPrecision &calcX,
+                                          const HighPrecision &calcY,
+                                          double scale) const;
+    PointZoomBBConverter ZoomedTowardPoint(const HighPrecision &calcX,
+                                           const HighPrecision &calcY,
+                                           double scale) const;
+    void ZoomInPlace(double scale);
     void SquareAspectRatio(size_t scrnWidth, size_t scrnHeight);
 
 private:

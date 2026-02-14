@@ -13,7 +13,7 @@ class JobObject;
 class Fractal;
 class MainWindowMenuState;
 
-enum FractalPalette : size_t;
+enum FractalPaletteType : size_t;
 enum class CompressToDisk;
 enum class ImaginaSettings;
 
@@ -108,7 +108,7 @@ private:
     void MenuWindowed(bool square);
     void MenuMultiplyIterations(double factor);
     void MenuResetIterations();
-    void MenuPaletteType(FractalPalette type);
+    void MenuPaletteType(FractalPaletteType type);
     void MenuPaletteDepth(int depth);
     void MenuPaletteRotation();
     void MenuCreateNewPalette();

@@ -154,8 +154,8 @@ public:
 
     // Drawing functions
     bool RequiresUseLocalColor() const;
-    void CalcFractal(bool MemoryOnly);
-    void DrawFractal(bool MemoryOnly);
+    void CalcFractal();
+    void DrawFractal();
 
     template <typename IterType> void DrawGlFractal(bool LocalColor, bool LastIter);
 
@@ -284,7 +284,7 @@ private:
         return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow));
     }
 
-    template <typename IterType> void CalcFractalTypedIter(bool MemoryOnly);
+    template <typename IterType> void CalcFractalTypedIter();
 
     static void DrawFractalThread(size_t index, Fractal *fractal);
 
@@ -303,14 +303,14 @@ private:
 
     template <typename IterType> void CalcAutoFractal();
 
-    template <typename IterType, class T> void CalcGpuFractal(bool MemoryOnly);
+    template <typename IterType, class T> void CalcGpuFractal();
 
-    template <typename IterType> void CalcCpuPerturbationFractal(bool MemoryOnly);
+    template <typename IterType> void CalcCpuPerturbationFractal();
 
-    template <typename IterType, class T, class SubType> void CalcCpuHDR(bool MemoryOnly);
+    template <typename IterType, class T, class SubType> void CalcCpuHDR();
 
     template <typename IterType, class T, class SubType>
-    void CalcCpuPerturbationFractalBLA(bool MemoryOnly);
+    void CalcCpuPerturbationFractalBLA();
 
     // HDRFloatComplex<float>* initializeFromBLA2(
     //     LAReference& laReference,
@@ -319,16 +319,16 @@ private:
     //     IterType& BLA2SkippedSteps);
 
     template <typename IterType, class SubType, PerturbExtras PExtras>
-    void CalcCpuPerturbationFractalLAV2(bool MemoryOnly);
+    void CalcCpuPerturbationFractalLAV2();
 
     template <typename IterType, class T, class SubType>
-    void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
+    void CalcGpuPerturbationFractalBLA();
 
     template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
-    void CalcGpuPerturbationFractalLAv2(bool MemoryOnly);
+    void CalcGpuPerturbationFractalLAv2();
 
     template <typename IterType, class T, class SubType, class T2, class SubType2>
-    void CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly);
+    void CalcGpuPerturbationFractalScaledBLA();
 
     template <PngParallelSave::Type Typ>
     int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);

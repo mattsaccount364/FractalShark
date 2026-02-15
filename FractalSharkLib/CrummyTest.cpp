@@ -198,7 +198,7 @@ CrummyTest::BasicOneTest(auto algToTest,
         m_Fractal.ForceRecalc();
 
         auto name = m_Fractal.GetRenderAlgorithmName();
-        m_Fractal.CalcFractal(false);
+        m_Fractal.CalcFractal();
 
         const auto filenameW = GenFilenameW(testIndex,
                                             viewIndex,
@@ -245,7 +245,7 @@ CrummyTest::TestBasic()
     m_Fractal.SavePerturbationOrbits();
 
     m_Fractal.InitialDefaultViewAndSettings();
-    m_Fractal.CalcFractal(false);
+    m_Fractal.CalcFractal();
 
     ++testIndex;
 }
@@ -271,7 +271,7 @@ CrummyTest::ReferenceSaveLoad(Fractal &fractal,
 
     fractal.View(viewIndex);
     fractal.ForceRecalc();
-    fractal.CalcFractal(false);
+    fractal.CalcFractal();
 
     const wchar_t *testPrefix = L"RefOrbitTest";
     const auto algStr = fractal.GetRenderAlgorithmName(origAlgToTest);
@@ -344,7 +344,7 @@ CrummyTest::ReferenceSaveLoad(Fractal &fractal,
     fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     fractal.View(0);
     fractal.ForceRecalc();
-    fractal.CalcFractal(false);
+    fractal.CalcFractal();
 
     // Force 64-bit on load
     fractal.SetIterType(IterTypeEnum::Bits64);
@@ -365,7 +365,7 @@ CrummyTest::ReferenceSaveLoad(Fractal &fractal,
             "LoadRefOrbit failed to set the correct number of iterations!");
     }
 
-    fractal.CalcFractal(false);
+    fractal.CalcFractal();
 
     const auto decompressedResultFilename = genLocalFilename(L"Decompressed");
     fractal.SaveCurrentFractal(decompressedResultFilename, false);
@@ -557,7 +557,7 @@ CrummyTest::TestImaginaLoad()
 
         m_Fractal.View(pair.view);
         m_Fractal.ForceRecalc();
-        m_Fractal.CalcFractal(false);
+        m_Fractal.CalcFractal();
 
         const auto outOrigFilename = dirName + std::wstring(L"\\") + pair.origPngName;
         m_Fractal.SaveCurrentFractal(outOrigFilename, false);
@@ -569,7 +569,7 @@ CrummyTest::TestImaginaLoad()
         auto filenameW = std::wstring(pair.name);
         m_Fractal.LoadRefOrbit(
             nullptr, CompressToDisk::MaxCompressionImagina, imaginaSettings, filenameW);
-        m_Fractal.CalcFractal(false);
+        m_Fractal.CalcFractal();
 
         const auto outImaginaFilename = dirName + std::wstring(L"\\") + pair.imaginaPngName;
         m_Fractal.SaveCurrentFractal(outImaginaFilename, false);
@@ -875,12 +875,12 @@ CrummyTest::TestPerturbedPerturb()
                 RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
             m_Fractal.View(viewIndex);
             m_Fractal.ForceRecalc();
-            m_Fractal.CalcFractal(false);
+            m_Fractal.CalcFractal();
             m_Fractal.SaveCurrentFractal(genLocalFilename(L"Original"), false);
 
             m_Fractal.View(perturbedViewIndex);
             m_Fractal.ForceRecalc();
-            m_Fractal.CalcFractal(false);
+            m_Fractal.CalcFractal();
 
             m_Fractal.SaveCurrentFractal(genLocalFilename(L"Perturbed"), false);
         }
@@ -969,7 +969,7 @@ void CrummyTest::TestWindowResize()
         w += (i & 1) ? 1 : 2;
         h += (i & 1) ? 2 : 1;
         m_Fractal.ResetDimensions(w, h);
-        m_Fractal.CalcFractal(false);
+        m_Fractal.CalcFractal();
     }
 
     // Phase 2: jitter + minor reversals (real mouse behavior)
@@ -987,7 +987,7 @@ void CrummyTest::TestWindowResize()
             h = 64;
 
         m_Fractal.ResetDimensions(w, h);
-        m_Fractal.CalcFractal(false);
+        m_Fractal.CalcFractal();
     }
 
     // Phase 3: shrink back down
@@ -1001,17 +1001,17 @@ void CrummyTest::TestWindowResize()
             h = 256;
 
         m_Fractal.ResetDimensions(w, h);
-        m_Fractal.CalcFractal(false);
+        m_Fractal.CalcFractal();
     }
 
     // Phase 4: oscillate around a fixed size
     for (int i = 0; i < 100; ++i) {
         const int wobble = (i & 1) ? 3 : -3;
         m_Fractal.ResetDimensions(w + wobble, h - wobble);
-        m_Fractal.CalcFractal(false);
+        m_Fractal.CalcFractal();
     }
 
-    // Final settle — important for catching “last resize wins” bugs
+    // Final settle ï¿½ important for catching ï¿½last resize winsï¿½ bugs
     m_Fractal.ResetDimensions(initWidth, initHeight);
 }
 
@@ -1052,7 +1052,7 @@ CrummyTest::TestReallyHardView27()
                 m_Fractal.SetCompressionErrorExp(Fractal::CompressionError::Low, compressionErrorExp);
                 m_Fractal.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxPerf);
                 m_Fractal.ForceRecalc();
-                m_Fractal.CalcFractal(false);
+                m_Fractal.CalcFractal();
 
                 auto name = m_Fractal.GetRenderAlgorithmName();
                 const auto testPrefix = L"LAMaxPerf";
@@ -1130,7 +1130,7 @@ CrummyTest::Benchmark(RefOrbitCalc::PerturbationResultType type)
     for (size_t i = 0; i < NumIterations; i++) {
         m_Fractal.ClearPerturbationResults(type);
         m_Fractal.ForceRecalc();
-        m_Fractal.CalcFractal(false);
+        m_Fractal.CalcFractal();
 
         RefOrbitDetails details;
         m_Fractal.GetSomeDetails(details);

@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\stdafx.h" />
+    <ClInclude Include="AutoZoomer.h" />
     <ClInclude Include="BenchmarkData.h" />
     <ClInclude Include="BenchmarkDataCollection.h" />
     <ClInclude Include="BLA.h" />
@@ -62,6 +63,7 @@
     <ClInclude Include="WPngImage\WPngImage.hh" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AutoZoomer.cpp" />
     <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />
     <ClCompile Include="FeatureFinder.cpp" />

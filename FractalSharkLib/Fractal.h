@@ -52,6 +52,7 @@ public:
     // TODO get rid of this junk:
     friend class PngParallelSave;
     friend class BenchmarkData;
+    friend class AutoZoomer;
 
     Fractal(int width, int height, HWND hWnd, bool UseSensoCursor, uint64_t commitLimitInBytes);
     ~Fractal();

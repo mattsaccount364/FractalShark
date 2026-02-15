@@ -201,7 +201,7 @@ iteration counts to colors, apply palettes, and perform anti-aliasing.
 Across these base kernels, the primary variation is the numeric representation
 used for the orbit arithmetic: from IEEE-754 \code{float}/\code{double} up
 through expansion types (float-float, double-double, quad-float, quad-double)
-and HDR-normalized formats. The shared objective remains the same: compute the
+and HDR-normalized formats (\cref{sec:extended-precision-types}).The shared objective remains the same: compute the
 escape-time for the Mandelbrot iteration as accurately and efficiently as needed
 for a desired zoom depth.
 
@@ -272,7 +272,8 @@ with the same bailout condition \(|z|^2 \ge 4\).
 \label{sec:mandel-2x-float}
 
 \subsubsection{Numeric type: float-float expansion}
-This variant uses a float-float expansion type \code{dblflt} to represent a
+This variant uses a float-float expansion type \code{dblflt}
+(\cref{subsec:ep-dblflt}) to represent a
 value as:
 \[
 a \approx a_{\mathrm{hi}} + a_{\mathrm{lo}},
@@ -339,7 +340,8 @@ component for speed.
 
 \subsubsection{Numeric type: quad-float (4-term expansion)}
 
-This variant uses a four-float expansion type \code{GQF::gqf\_real}:
+This variant uses a four-float expansion type \code{GQF::gqf\_real}
+(\cref{subsec:ep-higher-prec}):
 
 \[
 a \approx a_0 + a_1 + a_2 + a_3,
@@ -369,7 +371,8 @@ zrsqr + zisqr \le 4.
 \label{sec:mandel-4x-double}
 
 \subsubsection{Numeric type: quad-double (4-term expansion)}
-This variant uses a four-double expansion type \code{GQD::gqd\_real}:
+This variant uses a four-double expansion type \code{GQD::gqd\_real}
+(\cref{subsec:ep-higher-prec}):
 \[
 a \approx a_0 + a_1 + a_2 + a_3,\qquad a_k\in\mathbb{R}_{double}.
 \]
@@ -384,7 +387,8 @@ escape compare remains a full-precision comparison in the quad-double domain.
 \label{sec:mandel-hdr-float}
 
 \subsubsection{Numeric type: HDR-normalized expansion}
-This variant uses an HDR wrapper around an expansion type, e.g.:
+This variant uses an HDR wrapper around an expansion type
+(\cref{subsec:ep-cudadblflt}), e.g.:
 
 \[
 \code{HDRFloat<CudaDblflt<dblflt>>}.
@@ -716,6 +720,171 @@ explicitly separating scale and precision, it bridges the gap between standard
 floating-point arithmetic and full arbitrary-precision methods. In combination
 with perturbation, it enables accurate, high-performance rendering across
 extreme zoom levels while remaining compatible with GPU execution models.
+
+
+\section{Extended-Precision Floating-Point Types for Perturbation}
+\label{sec:extended-precision-types}
+
+In perturbation-based rendering (\cref{sec:perturbation-concept}), each pixel
+computes a low-precision \emph{delta} from a high-precision reference orbit.
+The precision of this delta arithmetic (the \code{SubType} template parameter)
+determines both the accuracy of the rendered image and the GPU throughput.
+\FractalShark{} provides a hierarchy of multi-component floating-point types
+that trade additional ALU operations for higher effective precision without
+relying on native 64-bit floating-point hardware.
+
+\subsection{Motivation: the perturbation precision gap}
+\label{subsec:ep-motivation}
+
+Single-precision IEEE~754 (\code{float}, 24-bit mantissa) is the fastest
+arithmetic available on consumer GPUs, but it does not always provide enough
+precision for accurate perturbation rendering.  In some cases,
+rendering artifacts appear because the per-pixel deltas lose significant bits
+during the perturbation recurrence.  Native \code{double} (53-bit mantissa)
+resolves these artifacts but incurs a substantial throughput penalty on consumer
+GPUs, where fp64 performance is often 32:1 slower than fp32.
+
+The \textbf{2$\times$32 double-float} type bridges this gap: it provides
+${\sim}48$~bits of effective mantissa using only fp32 arithmetic, delivering
+sufficient precision for accurate perturbation while remaining on the fast
+fp32 ALUs.  This is the extended-precision type with real practical value in
+\FractalShark{}'s rendering pipeline.
+
+\FractalShark{} also includes higher-precision types (2$\times$64,
+4$\times$32, 4$\times$64) as reference implementations based on existing work,
+primarily for experimentation and completeness.  Some base (non-perturbation)
+kernels also use these types for direct Mandelbrot iteration (e.g.\
+\code{mandel\_2x\_float}, \code{mandel\_4x\_float}), but those kernels are not
+particularly useful in practice---perturbation with linear approximation is the
+primary rendering path at any serious zoom depth.
+
+\subsection{The 2\texorpdfstring{$\times$}{x}32 double-float type (\code{dblflt})}
+\label{subsec:ep-dblflt}
+
+The core type is \code{MattDblflt} (aliased as \code{dblflt}), a struct
+containing two \code{float} values:
+\begin{description}
+  \item[\code{head}] The most significant bits of the represented value.
+  \item[\code{tail}] A correction term satisfying
+    $|\mathtt{tail}| \le \tfrac{1}{2}\,\mathrm{ulp}(\mathtt{head})$,
+    so that the represented value is exactly $\mathtt{head} + \mathtt{tail}$.
+\end{description}
+Construction from a \code{double} uses Knuth's error-free sum algorithm to
+split the value into a head--tail pair.  The total storage is 8~bytes---the
+same footprint as a single \code{double}.
+
+\paragraph{Arithmetic operations.}
+The CUDA device functions in \code{dblflt.cuh} implement the standard
+operations:
+
+\begin{center}
+\begin{tabular}{lll}
+\hline
+\textbf{Function} & \textbf{Operation} & \textbf{Max relative error} \\
+\hline
+\code{add\_dblflt(a, b)} & $a + b$  & ${\sim}2^{-104.7}$ \\
+\code{sub\_dblflt(a, b)} & $a - b$  & ${\sim}2^{-104.7}$ \\
+\code{mul\_dblflt(a, b)} & $a \times b$  & ${\sim}2^{-103.9}$ \\
+\code{sqr\_dblflt(a)}    & $a^2$         & optimized via $2 \cdot \mathtt{head} \cdot \mathtt{tail}$ \\
+\code{mul\_dblflt2x(a,b)}& $2ab$         & multiply then shift \\
+\hline
+\end{tabular}
+\end{center}
+
+All operations are built on fused multiply-add (\code{\_\_fmaf\_rn},
+\code{\_\_fmaf\_rd}) intrinsics, which compute $a \times b + c$ in a single
+rounding step.  This is essential for maintaining the head--tail invariant:
+intermediate products must be exact or correctly rounded before the correction
+term is computed.
+
+\subsection{\code{CudaDblflt} wrapper and \code{HDRFloat} integration}
+\label{subsec:ep-cudadblflt}
+
+The \code{CudaDblflt<T>} class template wraps a \code{dblflt} value with
+C++ operator overloads (\code{+}, \code{-}, \code{*}, \code{/}, comparisons)
+suitable for use in GPU device code.  This allows perturbation kernels to be
+written generically over the \code{SubType} parameter without
+\code{dblflt}-specific function calls.
+
+For perturbation rendering with linear approximation, the delta values need
+both extended precision \emph{and} wide dynamic range.  This is achieved by
+combining \code{CudaDblflt} with the HDR wrapper
+(\cref{sec:hdr-float}):
+\[
+  \code{HDRFloat<CudaDblflt<dblflt>>} \;=\;
+    \underbrace{\text{2$\times$32-bit mantissa}}_{\sim\text{48 bits}}
+    \;+\;
+    \underbrace{\text{int32 exponent}}_{\text{wide dynamic range}}
+    \;=\; \text{12 bytes total.}
+\]
+The \code{Reduce()} method on \code{HDRFloat} normalizes the two float
+components relative to the shared exponent by extracting and aligning their
+IEEE~754 exponent fields.  A \code{DoubleTo2x32Converter} utility handles
+host-side fallback paths where CUDA device code is unavailable.
+
+In the render algorithm enumeration, kernel variants using this type are named
+with the \code{2x32} or \code{HDRx2x32} suffix (e.g.\
+\code{Gpu2x32PerturbedLAv2}, \code{GpuHDRx2x32PerturbedLAv2}).
+
+\subsection{Higher-precision types (academic interest)}
+\label{subsec:ep-higher-prec}
+
+\FractalShark{} includes additional multi-component types based on existing
+implementations.  These are primarily of academic interest and are not
+essential for typical rendering.
+
+\paragraph{2\texorpdfstring{$\times$}{x}64 double-double (\code{dbldbl}).}
+\code{MattDbldbl} pairs two \code{double} values (head + tail) for
+${\sim}104$~bits of mantissa in 16~bytes.  On GPUs this is less interesting
+than \code{dblflt} because it exercises the slow fp64 units---if fp64
+throughput is available, a single \code{double} is usually sufficient for
+perturbation, and if more precision is needed, the 4$\times$32 type avoids
+fp64 entirely.
+
+\paragraph{4\texorpdfstring{$\times$}{x}32 quad-float (\code{GQF::gqf\_real}).}
+Four \code{float} values (${\sim}112$-bit mantissa, ${\sim}34$ decimal digits)
+stored as a CUDA \code{float4} vector.  The implementation is adapted from the
+QD library by Bailey and Hida (Lawrence Berkeley National Laboratory) and
+resides in the \code{GQF} namespace with a \code{make\_qf()} constructor.
+Because it uses only fp32 ALUs, it can be faster than fp64-based alternatives
+on consumer GPUs despite using four components.
+
+\paragraph{4\texorpdfstring{$\times$}{x}64 quad-double (\code{GQD::gqd\_real}).}
+Four \code{double} values (${\sim}212$-bit mantissa, ${\sim}64$ decimal
+digits) stored as an aligned \code{double4} type.  This is the highest
+software-only precision available before switching to arbitrary-precision
+arithmetic (MPIR on CPU or \code{HpSharkFloat} on GPU).  Also adapted from
+the QD library.
+
+Unlike \code{dblflt}, the quad types do not have a \code{CudaDblflt}-style
+wrapper class; they use direct namespaced helper functions for arithmetic.
+
+\subsection{Precision hierarchy}
+\label{subsec:ep-hierarchy}
+
+The complete precision hierarchy available for per-pixel computation in
+\FractalShark{}, from lowest to highest:
+
+\begin{center}
+\begin{tabular}{llrl}
+\hline
+\textbf{Type} & \textbf{Components} & \textbf{Effective bits} & \textbf{Practical role} \\
+\hline
+\code{float}                & 1$\times$fp32 & ${\sim}24$  & fastest; sometimes insufficient \\
+\code{dblflt}               & 2$\times$fp32 & ${\sim}48$  & practical sweet spot \\
+\code{double}               & 1$\times$fp64 & ${\sim}53$  & standard; slow on consumer GPUs \\
+\code{dbldbl}               & 2$\times$fp64 & ${\sim}104$ & academic \\
+\code{GQF::gqf\_real}       & 4$\times$fp32 & ${\sim}112$ & academic \\
+\code{GQD::gqd\_real}       & 4$\times$fp64 & ${\sim}212$ & academic \\
+MPIR / \code{HpSharkFloat}  & $N$ limbs     & arbitrary   & reference orbit only \\
+\hline
+\end{tabular}
+\end{center}
+
+Any of these types can be combined with the \code{HDRFloat} exponent wrapper
+when wide dynamic range is also required.  In practice, the vast majority of
+rendering uses either \code{float}, \code{double}, or
+\code{HDRFloat<CudaDblflt<dblflt>>} as the perturbation delta type.
 
 
 \section{Reference Orbit Calculation}
@@ -3600,7 +3769,7 @@ overlap.
 
 \paragraph{GPU acceleration via \code{HpSharkFloat}.}
 The arithmetic bottleneck that motivates the seven-worker CPU pool is the same
-bottleneck that the GPU reference orbit backend (\cref{sec:gpu-ref-orbit})
+bottleneck that the GPU reference orbit backend (\cref{subsec:ref-orbit-gpu})
 already addresses: high-precision multiplication at thousands of limbs.
 \FractalShark{}'s existing \code{HpSharkFloat} pipeline performs NTT-based
 multiplication on the GPU and has demonstrated roughly $10\times$ speedups over

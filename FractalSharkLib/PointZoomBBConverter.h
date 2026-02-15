@@ -40,6 +40,24 @@ public:
     void ZoomInPlace(double scale);
     void SquareAspectRatio(size_t scrnWidth, size_t scrnHeight);
 
+    // Coordinate conversion: screen pixels ↔ fractal complex plane
+    HighPrecision XFromScreenToCalc(HighPrecision x,
+                                    size_t scrnWidth,
+                                    size_t antialiasing) const;
+    HighPrecision YFromScreenToCalc(HighPrecision y,
+                                    size_t scrnHeight,
+                                    size_t antialiasing) const;
+    HighPrecision XFromCalcToScreen(HighPrecision x, size_t scrnWidth) const;
+    HighPrecision YFromCalcToScreen(HighPrecision y, size_t scrnHeight) const;
+
+    // Returns a new converter centered on (calcX, calcY) with same extents
+    PointZoomBBConverter Recentered(const HighPrecision &calcX,
+                                    const HighPrecision &calcY) const;
+
+    // Per-pixel stepping values for GPU rendering
+    HighPrecision GetDeltaX(size_t scrnWidth, size_t antialiasing) const;
+    HighPrecision GetDeltaY(size_t scrnHeight, size_t antialiasing) const;
+
 private:
     void ZoomDivisor(double divisor);
     void SetDebugStrings(const HighPrecision* deltaY = nullptr);

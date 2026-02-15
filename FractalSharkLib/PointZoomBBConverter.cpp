@@ -335,6 +335,68 @@ PointZoomBBConverter::SquareAspectRatio(size_t scrnWidth, size_t scrnHeight)
     SetDebugStrings(&deltaY);
 }
 
+HighPrecision
+PointZoomBBConverter::XFromScreenToCalc(HighPrecision x,
+                                        size_t scrnWidth,
+                                        size_t antialiasing) const
+{
+    HighPrecision aa(antialiasing);
+    HighPrecision highWidth(scrnWidth);
+    HighPrecision OriginX{highWidth * aa / (m_MaxX - m_MinX) * -m_MinX};
+    return HighPrecision{(x - OriginX) * (m_MaxX - m_MinX) / (highWidth * aa)};
+}
+
+HighPrecision
+PointZoomBBConverter::YFromScreenToCalc(HighPrecision y,
+                                        size_t scrnHeight,
+                                        size_t antialiasing) const
+{
+    HighPrecision aa(antialiasing);
+    HighPrecision highHeight(scrnHeight);
+    HighPrecision OriginY = highHeight * aa / (m_MaxY - m_MinY) * m_MaxY;
+    return HighPrecision{-(y - OriginY) * (m_MaxY - m_MinY) / (highHeight * aa)};
+}
+
+HighPrecision
+PointZoomBBConverter::XFromCalcToScreen(HighPrecision x, size_t scrnWidth) const
+{
+    HighPrecision highWidth(scrnWidth);
+    return HighPrecision{(x - m_MinX) * (highWidth / (m_MaxX - m_MinX))};
+}
+
+HighPrecision
+PointZoomBBConverter::YFromCalcToScreen(HighPrecision y, size_t scrnHeight) const
+{
+    HighPrecision highHeight(scrnHeight);
+    return HighPrecision{highHeight - (y - m_MinY) * highHeight / (m_MaxY - m_MinY)};
+}
+
+PointZoomBBConverter
+PointZoomBBConverter::Recentered(const HighPrecision &calcX,
+                                 const HighPrecision &calcY) const
+{
+    const HighPrecision width = m_MaxX - m_MinX;
+    const HighPrecision height = m_MaxY - m_MinY;
+    const auto two = HighPrecision{2};
+
+    return PointZoomBBConverter{calcX - width / two,
+                                calcY - height / two,
+                                calcX + width / two,
+                                calcY + height / two};
+}
+
+HighPrecision
+PointZoomBBConverter::GetDeltaX(size_t scrnWidth, size_t antialiasing) const
+{
+    return (m_MaxX - m_MinX) / (HighPrecision)(scrnWidth * antialiasing);
+}
+
+HighPrecision
+PointZoomBBConverter::GetDeltaY(size_t scrnHeight, size_t antialiasing) const
+{
+    return (m_MaxY - m_MinY) / (HighPrecision)(scrnHeight * antialiasing);
+}
+
 void
 PointZoomBBConverter::ZoomInPlace(double scale)
 {

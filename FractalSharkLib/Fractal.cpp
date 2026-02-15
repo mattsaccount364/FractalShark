@@ -2789,7 +2789,7 @@ Fractal::ZoomToFoundFeature()
 
 template <typename IterType, class T>
 void
-Fractal::CalcGpuFractal(RendererIndex idx)
+Fractal::CalcGpuFractal(RendererIndex idx, bool drawFractal)
 {
     T cx2{}, cy2{}, dx2{}, dy2{};
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
@@ -2809,7 +2809,9 @@ Fractal::CalcGpuFractal(RendererIndex idx)
         MessageBoxCudaError(err);
     }
 
-    DrawFractal(idx);
+    if (drawFractal) {
+        DrawFractal(idx);
+    }
 }
 
 template <typename IterType>
@@ -3534,7 +3536,7 @@ Fractal::CalcCpuPerturbationFractalLAV2()
 
 template <typename IterType, class T, class SubType>
 void
-Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx)
+Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal)
 {
     auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
                                                                      T,
@@ -3588,7 +3590,9 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx)
                                                GetNumIterations<IterType>(),
                                                m_IterationPrecision);
 
-    DrawFractal(idx);
+    if (drawFractal) {
+        DrawFractal(idx);
+    }
 
     if (result) {
         MessageBoxCudaError(result);
@@ -3597,7 +3601,7 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx)
 
 template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
 void
-Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx)
+Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal)
 {
 
     using T = RenderAlg::MainType;
@@ -3681,12 +3685,14 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx)
         return;
     }
 
-    DrawFractal(idx);
+    if (drawFractal) {
+        DrawFractal(idx);
+    }
 }
 
 template <typename IterType, class T, class SubType, class T2, class SubType2>
 void
-Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx)
+Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal)
 {
     auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
                                                                      T,
@@ -3752,7 +3758,9 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx)
                                                           GetNumIterations<IterType>(),
                                                           m_IterationPrecision);
 
-    DrawFractal(idx);
+    if (drawFractal) {
+        DrawFractal(idx);
+    }
 
     if (result) {
         MessageBoxCudaError(result);

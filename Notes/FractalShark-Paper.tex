@@ -3912,6 +3912,18 @@ The \code{ScaledColor} flag selects between raw and scaled palette
 indexing.  Pixels whose iteration count equals \code{n\_iterations}
 (the Mandelbrot-set interior) are left black.
 
+\paragraph{Limitations.}
+Brute-force SSAA supersamples every pixel uniformly, which is
+wasteful: most of the image consists of smooth-gradient regions where
+a single sample suffices, while visual aliasing concentrates along the
+boundary of the Mandelbrot set.  An edge-aware or adaptive
+supersampling strategy---sampling densely only near detected
+edges---would achieve comparable image quality at a fraction of the
+cost.  The current uniform approach was chosen for implementation
+simplicity on the GPU (all threads perform identical work, avoiding
+divergence), but replacing it with an adaptive scheme is a natural
+future improvement.
+
 % -----------------------------------------------------------------
 \subsection{Coloring and palette system}
 \label{subsec:coloring}
@@ -3958,6 +3970,38 @@ A rotation offset \code{m\_PaletteRotate} is added to the iteration
 count before palette lookup, allowing the user to phase-shift the
 colour mapping for visual exploration without re-rendering.
 
+\paragraph{Alternative coloring approaches.}
+The palette-indexed scheme above is simple and fast but has known
+limitations: discrete iteration counts produce visible banding, and
+the palette cycle length is fixed.  Several alternative techniques
+exist in the fractal-rendering community:
+\begin{itemize}
+  \item \textbf{Smooth (continuous) iteration count.}  By incorporating
+    the final orbit magnitude into a fractional escape count
+    ($n_{\text{smooth}} = n - \log_2\!\log_2|z_n| + \text{const}$),
+    banding is eliminated and colour transitions become continuous.
+  \item \textbf{Distance estimation.}  The analytic derivative
+    $\partial z_n/\partial c$ (already computed for perturbation
+    purposes) can yield an estimate of the distance from~$c$ to the
+    Mandelbrot boundary.  Mapping distance to colour emphasises fine
+    boundary structure and enables resolution-independent rendering of
+    thin filaments.
+  \item \textbf{Histogram equalization.}  Collecting a histogram of
+    iteration counts across the image and mapping colours via the
+    cumulative distribution produces uniform colour utilisation
+    regardless of the iteration distribution---useful at deep zooms
+    where most counts cluster in a narrow range.
+  \item \textbf{Orbit-trap coloring.}  Measuring the closest approach
+    of the orbit to a geometric shape (circle, cross, point) during
+    iteration provides a distance metric unrelated to escape time,
+    yielding distinctive visual effects.
+\end{itemize}
+\FractalShark{} currently implements only the palette-indexed method.
+Integrating smooth iteration counts would be straightforward and would
+pair naturally with the existing palette infrastructure; distance
+estimation would leverage derivative data that the perturbation
+pipeline already maintains.
+
 % -----------------------------------------------------------------
 \subsection{Iteration statistics via parallel reduction}
 \label{subsec:reduction}
@@ -3982,6 +4026,13 @@ the same stream as the antialiasing kernel, so no additional
 synchronization is required.  After the kernel completes, the host
 copies back the \code{ReductionResults} via \code{cudaMemcpy} in
 \code{ExtractItersAndColors}.
+
+\paragraph{Current status.}
+The reduction results are computed every frame but are not currently
+used to drive any rendering decision (e.g.\ adaptive palette scaling
+or histogram equalization).  They exist primarily for diagnostic
+interest and as infrastructure that could support future coloring
+enhancements.
 
 % -----------------------------------------------------------------
 \subsection{Coordinate management}

@@ -307,7 +307,7 @@ private:
 
     template <typename IterType> void CalcAutoFractal();
 
-    template <typename IterType, class T> void CalcGpuFractal(RendererIndex idx);
+    template <typename IterType, class T> void CalcGpuFractal(RendererIndex idx, bool drawFractal = true);
 
     template <typename IterType> void CalcCpuPerturbationFractal();
 
@@ -326,13 +326,13 @@ private:
     void CalcCpuPerturbationFractalLAV2();
 
     template <typename IterType, class T, class SubType>
-    void CalcGpuPerturbationFractalBLA(RendererIndex idx);
+    void CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal = true);
 
     template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
-    void CalcGpuPerturbationFractalLAv2(RendererIndex idx);
+    void CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal = true);
 
     template <typename IterType, class T, class SubType, class T2, class SubType2>
-    void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx);
+    void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal = true);
 
     template <PngParallelSave::Type Typ>
     int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);

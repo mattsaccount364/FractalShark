@@ -1638,7 +1638,7 @@ correction.
 
 \paragraph{Precision specialization.}
 The entire lifecycle of a reference orbit computation is specialized by
-\texttt{HpSharkFloatParams}. Precision is selected once at startup via
+\texttt{SharkFloatParams}. Precision is selected once at startup via
 \texttt{DispatchByPrecision} and remains fixed for the lifetime of the combo
 object. This ensures that kernel code, shared-memory usage, and arithmetic
 pipelines are fully specialized for the chosen precision, at the cost of
@@ -2325,7 +2325,7 @@ The key design is a persistent \emph{combo} object returned by initialization:
 \end{enumerate}
 
 Because the precision must be fixed at compile time for the \texttt{
-HpSharkFloatParams} specialization, \texttt{DispatchByPrecision} rounds the
+SharkFloatParams} specialization, \texttt{DispatchByPrecision} rounds the
 requested precision to a power of two and chooses from a fixed set (\(\{256,512,
 \dots,524288\}\) bits). Each invocation appends the emitted \texttt{OutputIters}
 records into the CPU-side \texttt{PerturbationResults}. Periodicity and escape
@@ -2355,7 +2355,7 @@ during arithmetic operations.
 \paragraph{Significand representation.}
 The significand $M$ is stored as a fixed-size array of 32-bit limbs. The number
 of limbs is determined at compile time by the
-\texttt{HpSharkFloatParams} specialization and remains constant throughout the
+\texttt{SharkFloatParams} specialization and remains constant throughout the
 lifetime of the computation. As a result, precision is explicit and static:
 all arithmetic kernels operate on limb arrays of identical size, and no dynamic
 reallocation or precision growth occurs during iteration.
@@ -3391,6 +3391,29 @@ effective $R^2$ during the scan to reduce false triggers.
 \subsection{Halley's method}
 \label{subsec:ff-halley}
 
+The second derivative $F'' = \partial^2 z_p/\partial c^2$ is computed during
+every forward evaluation, even when the Halley step itself is not taken.  This
+is because $F''$ serves two distinct purposes in the refinement loop:
+
+\begin{enumerate}
+\item \textbf{Halley correction.}  When the Halley gate (\cref{eq:ff-halley-gate})
+  is satisfied, $F''$ enables a cubic-convergence step that can save expensive
+  forward evaluations compared to plain Newton (see below).
+\item \textbf{Error estimator.}  The stopping criterion
+  (\cref{eq:ff-err}) uses $|F''|^2$ to estimate the residual after
+  each step.  Without the second derivative, the code would have no reliable
+  way to judge convergence short of comparing successive iterates---which
+  requires an extra forward evaluation per check.
+\end{enumerate}
+
+Because $F''$ is carried in \code{HDRFloat<double>} (${\sim}53$~bits of
+mantissa with a wide exponent), it adds only cheap low-precision arithmetic to
+the forward evaluation: a few \code{HDRFloat} multiplies and additions per
+iteration of the period loop, compared with the expensive \code{mpf\_t}
+multiplies needed for $z$ and $\partial z/\partial c$.  The cost is therefore
+negligible relative to the rest of the evaluation, making it worthwhile to
+compute unconditionally.
+
 Phase~B optionally upgrades from Newton to Halley iteration for cubic
 convergence.  The Halley step for $F(c) = z_p(c)$ is
 \begin{equation}\label{eq:ff-halley-step}
@@ -3430,6 +3453,49 @@ so the Halley correction is a small, well-determined perturbation of the
 Newton step.  If the Halley denominator turns out to be exactly zero (or the
 gate is not satisfied), the code falls back to a plain Newton step for that
 iteration.
+
+\paragraph{Is Halley worthwhile given low-precision $F''$?}
+The second derivative $F''$ is accumulated in \code{HDRFloat<double>}
+throughout the forward evaluation, providing only ${\sim}53$~bits of
+mantissa (with a wide exponent range), while $F$ and $F'$ are carried in
+\code{mpf\_t} at hundreds or thousands of bits.  This precision mismatch
+limits---but does not eliminate---the benefit of the Halley correction.
+
+The Halley step can be decomposed as
+\begin{equation}\label{eq:ff-halley-decomp}
+\Delta_H \;=\; \Delta_N \cdot \frac{1}{1 - \frac{F \cdot F''}{2(F')^2}}
+\;=\; \Delta_N \cdot \frac{1}{1 - \tfrac{1}{2}\rho^2 e^{i\theta}},
+\end{equation}
+where $\Delta_N = F/F'$ is the Newton step and $\rho^2$ is the dimensionless
+ratio from \cref{eq:ff-halley-gate}.  Since $F''$ is recomputed from scratch
+at each Newton iterate via the recurrence~\cref{eq:ff-d2zdc2}, it provides a
+fresh ${\sim}53$-bit approximation of the true second derivative at the
+current scale.  The Halley correction factor therefore adjusts the Newton step
+by a relative amount of order~$\rho^2$, with that correction accurate to
+${\sim}53$~bits.
+
+In terms of convergence, suppose Newton has produced $n$~correct bits of the
+nucleus coordinate.  A plain Newton step would yield ${\sim}2n$~correct bits
+(quadratic convergence), while a full-precision Halley step would yield
+${\sim}3n$ (cubic convergence).  With $F''$ limited to ${\sim}53$~bits of
+mantissa, the Halley step yields ${\sim}\min(3n,\; 2n+53)$~correct bits.
+That is, Halley contributes up to ${\sim}53$~additional correct bits per step
+beyond what Newton alone provides.  This bonus applies every iteration, not
+just in early convergence: each forward evaluation produces a fresh $F''$ at
+the current residual's scale, so the ${\sim}53$-bit correction remains
+meaningful throughout.
+
+Whether this trade-off is net positive depends on the period~$p$.  Each
+Newton/Halley iteration requires a full forward evaluation ($p$~iterations of
+$z = z^2 + c$ plus the derivative recurrence), so the per-iteration cost
+scales with~$p$.  For large~$p$, saving even one forward evaluation by
+converging in fewer Halley steps is significant, and the ${\sim}53$ extra bits
+per step can eliminate one or more expensive iterations compared to pure
+Newton.  For small~$p$, the additional arithmetic for the second derivative and
+Halley denominator is modest but the savings from faster convergence are also
+small.  A full-precision $F''$ (carried in \code{mpf\_t}) would recover true
+cubic convergence at the cost of additional high-precision multiplies per
+iteration; whether that cost is justified remains an open question.
 
 \subsection{Mixed-precision refinement}
 \label{subsec:ff-mixed-prec}
@@ -3504,3 +3570,54 @@ period-$p$ hyperbolic component in the parameter plane.  It is stored
 as a \code{HighPrecision} value in \code{FeatureSummary} and can be used by
 the renderer to set an appropriate zoom level or to determine the additional
 bits of precision needed to render the component's interior.
+
+\subsection{Threading model and GPU prospects}
+\label{subsec:ff-threading}
+
+\paragraph{Current multi-threaded implementation.}
+The dominant cost of the Feature Finder is the forward evaluation
+\code{EvaluateCriticalOrbitAndDerivs}, which iterates $z_{n+1}=z_n^2+c$ and
+the derivative $\partial z_p/\partial c$ for $p$ iterations at high precision
+using GMP \code{mpf\_t} arithmetic.  Each iteration requires several
+independent high-precision multiplies: three at coordinate precision
+($z_{\mathrm{re}}^2$, $z_{\mathrm{im}}^2$, $z_{\mathrm{re}} \cdot
+z_{\mathrm{im}}$) and four at derivative precision (the complex product
+$\mathrm{dzdc} \cdot 2z$).  Because these multiplies are independent within a
+single iteration, \FractalShark{} dispatches them to a pool of seven spin-based
+worker threads (\code{NWORK~=~7}).  Synchronization uses cache-line-aligned
+(\code{alignas(64)}) generation counters with atomic acquire/release
+semantics---no mutexes or condition variables---so the main thread and workers
+coordinate with minimal latency.  The main thread composes the results after
+each batch completes and advances to the next iteration.
+
+A single-threaded fallback (\code{EvaluateCriticalOrbitAndDerivsST}) with
+identical logic is also provided.
+
+The Newton outer loop in \code{FindPeriodicPoint\_Common} is inherently
+sequential: each Newton step $c \leftarrow c - z_p / (\partial z_p / \partial
+c)$ depends on the preceding evaluation's output, so successive steps cannot
+overlap.
+
+\paragraph{GPU acceleration via \code{HpSharkFloat}.}
+The arithmetic bottleneck that motivates the seven-worker CPU pool is the same
+bottleneck that the GPU reference orbit backend (\cref{sec:gpu-ref-orbit})
+already addresses: high-precision multiplication at thousands of limbs.
+\FractalShark{}'s existing \code{HpSharkFloat} pipeline performs NTT-based
+multiplication on the GPU and has demonstrated roughly $10\times$ speedups over
+multithreaded MPIR at 16384 limbs.
+
+A natural extension would replace the CPU \code{mpf\_mul} calls inside the
+forward evaluation with GPU kernel launches through the same
+\code{HpSharkFloat} infrastructure.  The host would continue to drive the
+Newton outer loop, but each forward evaluation---$p$ iterations of $z=z^2+c$
+plus the derivative recurrence---would execute as GPU work.  This mirrors the
+architecture of the reference orbit GPU backend, where the host orchestrates
+iteration batches and the GPU performs the heavy arithmetic.
+
+At high periods and deep zooms (thousands of 32-bit limbs), the per-multiply
+GPU advantage would dominate the overall wall-clock time.  The Newton loop
+typically converges in tens of steps, each requiring $p$ high-precision
+multiplies, so the total arithmetic volume scales as $O(p \cdot N \log N)$ per
+Newton step (where $N$ is the limb count).  For large $p$ and $N$, offloading
+this to the GPU would yield substantial speedups over both the single-threaded
+and seven-worker CPU implementations.

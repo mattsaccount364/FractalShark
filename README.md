@@ -20,7 +20,7 @@ FractalShark includes several innovations relative to most other Mandelbrot rend
 
 As of December 2025 (version 0.5), FractalShark includes an **experimental GPU-accelerated reference orbit implementation**. To my knowledge, this implementation is unique in the context of trying to accelerate Mandelbrot rendering.  FractalShark implements a full high-precision floating point pipeline on the GPU, including high-precision multiply, add, and subtract operations. The multiply implementation uses the Number Theoretic Transform for efficient at operation at very high preicsion.  These operations exploit GPU parallelism to accelerate arithmetic that is traditionally CPU-bound.
 
-At a precision of \(10^{16384}\) using 32-bit limbs (≈ 100,000+ decimal digits), this GPU reference orbit implementation outperforms the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.  The only built-in View that shows a clear benefit to the GPU-accelerated approach is View #30, which uses 16384 32-bit limbs internally.  My new RTX 5090 is slightly slower than the 4090, at ~9x faster than the existing FractalShark multithreaded CPU-based reference orbit calculator.  
+At a precision of 16384 32-bit limbs (≈ 158,000 decimal digits), this GPU reference orbit implementation outperforms the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.  The only built-in View that shows a clear benefit to the GPU-accelerated approach is View #30, which uses 16384 32-bit limbs internally.  My new RTX 5090 is slightly slower than the 4090, at ~9x faster than the existing FractalShark multithreaded CPU-based reference orbit calculator.  
 
 This feature is still experimental and under active development.  To try it, you'll need an RTX 2xxx series or newer, e.g. RTX 3xxx/4xxx/5xxx should all work with recent drivers.  Then, start FractalShark, manually choose the HDRx32 LAv2 kernel, and under Perturbation choose GPU (experimental).  Then try e.g. View #5 to see if it renders.  If it does, then it's working.
 
@@ -82,7 +82,7 @@ Basic Linux compatibility.  Tested with Wine using this configuration:
 
 ## Where do I download it?
 
-- Downloadable from here: [https://github.com/mattsaccount364/FractalShark](https://github.com/mattsaccount364/FractalShark)
+- Downloadable from here: [https://github.com/mattsaccount364/FractalShark/releases](https://github.com/mattsaccount364/FractalShark/releases)
 
 ## More docs?
 See FractalShark\Notes.  It's a major WIP and is mostly AI slop currently but I'd like to make it better.  It builds fine on Windows with Miktex installed.
@@ -98,7 +98,7 @@ See FractalShark\Notes.  It's a major WIP and is mostly AI slop currently but I'
 
 ## How do I use it?
 
-- Download `FractalShark.exe` from GitHub.
+- Download the release ZIP from the [GitHub Releases page](https://github.com/mattsaccount364/FractalShark/releases). It contains `FractalShark.exe`, debug symbols, and documentation.
 - Run it. If you get a blank screen or error message and believe you meet the system requirements then let me know and I'll speculate about the problem.
 - Right-click to get a pop-up menu. Some of the options are buggy and will just crash/misbehave but most of the basic things should be fine.
 - Left-click/drag to zoom in on a box. Alternatively, use hot keys: `z` to zoom in at mouse cursor, `shift+Z` to zoom out a bit, `b` to go back, `-` or `=` to increase/decrease iterations.
@@ -174,9 +174,9 @@ Here are some more hand-wavy instructions that basically describe the idea:
 2. `cd FractalShark`
 3. `git clone https://github.com/BrianGladman/mpir.git`
 4. Open `mpir\msvc\vs22\mpir.sln`
-5. Rebuild everything. Note, you probably want YASM installed at: `C:\Program Files\yasm\*`. This may take a little while.
+5. Rebuild everything. Note, you probably want YASM (vsyasm) installed at: `C:\Program Files\vsyasm\*`. This may take a little while.
 6. The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
-7. Install Nvidia Nsight Compute SDK. The distributed version of FractalShark uses 12.2
-8. At this point, you should be able to build all the FractalShark projects. The one called FractalShark is the most interesting. FractalTray basically works. The rest are effectively dead code.
+7. Install the NVIDIA CUDA Toolkit. The CI build currently uses CUDA 13.0.2
+8. At this point, you should be able to build all the FractalShark projects. The one called FractalShark is the most interesting. FractalTray basically works. HpSharkFloatTest is a GPU arithmetic test harness. FractalSaver is legacy/dead code.
 
 Have fun, hopefully :)

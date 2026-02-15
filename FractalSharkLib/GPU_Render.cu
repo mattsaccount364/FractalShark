@@ -69,7 +69,7 @@ constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = Default;
 constexpr static bool EnableGpuHDRx64PerturbedLAv2 = Default;
 
 //#define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block, 0, cudaStreamPerThread
-#define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block
+#define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block, 0, m_ComputeStream
 
 __device__
 size_t
@@ -99,6 +99,10 @@ GPURenderer::~GPURenderer() {
 
     if (m_Stream1Initialized) {
         cudaStreamDestroy(m_Stream1);
+    }
+
+    if (m_ComputeStreamInitialized) {
+        cudaStreamDestroy(m_ComputeStream);
     }
 }
 
@@ -187,6 +191,7 @@ void GPURenderer::ClearLocals() {
     N_color_cu = 0;
 
     m_Stream1Initialized = false;
+    m_ComputeStreamInitialized = false;
 
     Pals = {};
 
@@ -376,6 +381,16 @@ uint32_t GPURenderer::InitializeMemory(
         }
 
         m_Stream1Initialized = true;
+    }
+
+    if (m_ComputeStreamInitialized == false) {
+        cudaError_t err = cudaStreamCreateWithPriority(&m_ComputeStream, cudaStreamNonBlocking, m_StreamPriorityLow);
+        if (err != cudaSuccess) {
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            return err;
+        }
+
+        m_ComputeStreamInitialized = true;
     }
 
     return 0;
@@ -582,6 +597,13 @@ uint32_t GPURenderer::SyncStream(bool altStream) {
     } else {
         return cudaStreamSynchronize(cudaStreamDefault);
     }
+}
+
+uint32_t GPURenderer::SyncComputeStream() {
+    if (m_ComputeStreamInitialized) {
+        return cudaStreamSynchronize(m_ComputeStream);
+    }
+    return cudaSuccess;
 }
 
 template<typename IterType, class T>

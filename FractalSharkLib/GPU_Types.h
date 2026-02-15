@@ -27,6 +27,16 @@ struct AntialiasedColors {
 using cudaStream_t = void *;
 #endif
 
+enum class RendererIndex {
+    Renderer0,
+    Renderer1,
+    Renderer2,
+    Renderer3,
+    Count
+};
+
+static constexpr size_t NumRenderers = static_cast<size_t>(RendererIndex::Count);
+
 struct ReductionResults {
     ReductionResults() :
         Max{},

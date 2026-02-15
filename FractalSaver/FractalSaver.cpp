@@ -241,7 +241,7 @@ unsigned long WINAPI DrawingThread(void *) { /////////////////////////////
 
         // Render the fractal and draw it after rendering is complete.
         gFractal->CalcFractal();
-        gFractal->DrawFractal();
+        gFractal->DrawFractal(RendererIndex::Renderer0);
 
         // Find a new target
         gFractal->FindInterestingLocation(&nextView);

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-FractalShark is a high-performance Mandelbrot set renderer focused on extreme zoom depths using CUDA GPU acceleration. It is a Windows-native C++20/CUDA application built with Visual Studio 2022 (v143 toolset). The project targets NVIDIA GPUs (GTX 900-series+, RTX 2xxx+ for GPU reference orbits) and requires AVX-2 CPUs.
+FractalShark is a high-performance Mandelbrot set renderer focused on extreme zoom depths using CUDA GPU acceleration. It is a Windows-native C++20/CUDA application built with Visual Studio 2026 (v145 toolset). The project targets NVIDIA GPUs (GTX 900-series+, RTX 2xxx+ for GPU reference orbits) and requires AVX-2 CPUs.
 
 ## Build Instructions
 
@@ -10,7 +10,7 @@ The authoritative build process is defined in `.github/workflows/build.yml`.
 
 ### Prerequisites
 
-- Visual Studio 2022 with C++ and CUDA support
+- Visual Studio 2026 with C++ and CUDA support
 - NVIDIA CUDA Toolkit 13.0.2
 - YASM assembler at `C:\Program Files\yasm\*` (bundled in `tools/yasm.zip` for CI)
 - MPIR library: clone `https://github.com/BrianGladman/mpir.git` into the repo root, then build `mpir\msvc\vs22\mpir.sln` (lib_mpir_skylake_avx, x64)

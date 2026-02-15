@@ -19,6 +19,8 @@
 #include "FractalPalette.h"
 #include "GPU_Render.h"
 
+#include <array>
+
 #include "CudaDblflt.h"
 #include "FeatureFinderMode.h"
 #include "HDRFloat.h"
@@ -156,9 +158,10 @@ public:
     // Drawing functions
     bool RequiresUseLocalColor() const;
     void CalcFractal();
-    void DrawFractal();
+    void CalcFractal(RendererIndex idx);
+    void DrawFractal(RendererIndex idx);
 
-    template <typename IterType> void DrawGlFractal(bool LocalColor, bool LastIter);
+    template <typename IterType> void DrawGlFractal(RendererIndex idx, bool LocalColor, bool LastIter);
 
     void SetRepaint(bool repaint);
     bool GetRepaint() const;
@@ -285,7 +288,7 @@ private:
         return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow));
     }
 
-    template <typename IterType> void CalcFractalTypedIter();
+    template <typename IterType> void CalcFractalTypedIter(RendererIndex idx);
 
     static void DrawFractalThread(size_t index, Fractal *fractal);
 
@@ -304,7 +307,7 @@ private:
 
     template <typename IterType> void CalcAutoFractal();
 
-    template <typename IterType, class T> void CalcGpuFractal();
+    template <typename IterType, class T> void CalcGpuFractal(RendererIndex idx);
 
     template <typename IterType> void CalcCpuPerturbationFractal();
 
@@ -323,13 +326,13 @@ private:
     void CalcCpuPerturbationFractalLAV2();
 
     template <typename IterType, class T, class SubType>
-    void CalcGpuPerturbationFractalBLA();
+    void CalcGpuPerturbationFractalBLA(RendererIndex idx);
 
     template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
-    void CalcGpuPerturbationFractalLAv2();
+    void CalcGpuPerturbationFractalLAv2(RendererIndex idx);
 
     template <typename IterType, class T, class SubType, class T2, class SubType2>
-    void CalcGpuPerturbationFractalScaledBLA();
+    void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx);
 
     template <PngParallelSave::Type Typ>
     int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);
@@ -401,7 +404,7 @@ private:
 
     FractalPalette m_Palette;
 
-    uint32_t InitializeGPUMemory(bool expectedReuse = true);
+    uint32_t InitializeGPUMemory(RendererIndex idx, bool expectedReuse = true);
 
     void InitializeMemory();
     void SetCurItersMemory();
@@ -422,14 +425,26 @@ private:
     HighPrecision m_CompressionError[static_cast<size_t>(CompressionError::Num)];
 
     // GPU rendering
-    GPURenderer m_r;
+    std::array<GPURenderer, NumRenderers> m_Renderers;
+
+    GPURenderer &GetRenderer(RendererIndex idx) {
+        return m_Renderers[static_cast<size_t>(idx)];
+    }
+
+    const GPURenderer &GetRenderer(RendererIndex idx) const {
+        return m_Renderers[static_cast<size_t>(idx)];
+    }
     std::unique_ptr<OpenGlContext> m_glContextAsync;
 
     std::mutex m_AsyncRenderThreadMutex;
     std::condition_variable m_AsyncRenderThreadCV;
 
-    enum class AsyncRenderThreadState { Idle, Start, SyncDone, Finish };
-    AsyncRenderThreadState m_AsyncRenderThreadState;
+    struct AsyncRenderThreadCommand {
+        enum class State { Idle, Start, SyncDone, Finish };
+        State state;
+        RendererIndex rendererIdx;
+    };
+    AsyncRenderThreadCommand m_AsyncRenderThreadCommand;
     bool m_AsyncRenderThreadFinish;
 
     // Benchmarking

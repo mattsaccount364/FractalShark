@@ -473,7 +473,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             } else {
                 gFractal->UseNextPaletteAuxDepth(1);
             }
-            gFractal->DrawFractal();
+            gFractal->DrawFractal(RendererIndex::Renderer0);
             break;
 
         case 'W':
@@ -504,7 +504,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             } else {
                 gFractal->UseNextPaletteDepth();
             }
-            gFractal->DrawFractal();
+            gFractal->DrawFractal(RendererIndex::Renderer0);
             break;
         }
 
@@ -1190,7 +1190,7 @@ MainWindow::MenuPaletteRotation()
 
     for (;;) {
         gFractal->RotateFractalPalette(10);
-        gFractal->DrawFractal();
+        gFractal->DrawFractal(RendererIndex::Renderer0);
         GetCursorPos(&CurPos);
         if (abs(CurPos.x - OrgPos.x) > 5 || abs(CurPos.y - OrgPos.y) > 5) {
             break;
@@ -1198,7 +1198,7 @@ MainWindow::MenuPaletteRotation()
     }
 
     gFractal->ResetFractalPalette();
-    gFractal->DrawFractal();
+    gFractal->DrawFractal(RendererIndex::Renderer0);
 }
 
 void
@@ -1209,14 +1209,14 @@ MainWindow::MenuPaletteType(FractalPaletteType type)
         gFractal->UsePalette(8);
         gFractal->SetPaletteAuxDepth(0);
     }
-    gFractal->DrawFractal();
+    gFractal->DrawFractal(RendererIndex::Renderer0);
 }
 
 void
 MainWindow::MenuPaletteDepth(int depth)
 {
     gFractal->UsePalette(depth);
-    gFractal->DrawFractal();
+    gFractal->DrawFractal(RendererIndex::Renderer0);
 }
 
 void
@@ -1224,7 +1224,7 @@ MainWindow::MenuCreateNewPalette()
 {
     gFractal->CreateNewFractalPalette();
     gFractal->UsePaletteType(FractalPaletteType::Random);
-    gFractal->DrawFractal();
+    gFractal->DrawFractal(RendererIndex::Renderer0);
 }
 
 void

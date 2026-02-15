@@ -125,6 +125,7 @@ public:
         ReductionResults *reduction_results);
 
     uint32_t SyncStream(bool altStream);
+    uint32_t SyncComputeStream();
 
 private:
     bool MemoryInitialized() const;
@@ -182,6 +183,9 @@ private:
     cudaStream_t m_Stream1;
     int m_StreamPriorityLow;
     int m_StreamPriorityHigh;
+
+    bool m_ComputeStreamInitialized;
+    cudaStream_t m_ComputeStream;
 
     PerturbResultsCollection m_PerturbResults;
 };

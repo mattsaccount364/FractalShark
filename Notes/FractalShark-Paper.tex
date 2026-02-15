@@ -60,7 +60,7 @@ and experimentation with LA parameter tradeoffs.
 
 \paragraph{Image quality and coloring.}
 \FractalShark{} supports GPU antialiasing at multiple sample levels and a
-flexible palette system.  Palettes may be selected from predefined themes,
+flexible palette system (\cref{subsec:antialiasing,subsec:coloring}).  Palettes may be selected from predefined themes,
 generated randomly, and rendered at configurable color depths.  Some palette
 features are intentionally limited or disabled where they are known to be
 incomplete.
@@ -196,7 +196,8 @@ by computing an \emph{escape-time} iteration count (\cref{sec:mandelbrot-intro})
 grid efficiently. Each CUDA thread evaluates a single complex parameter \(c\)
 corresponding to one pixel (\cref{sec:mapping}), iterates the Mandelbrot recurrence (\cref{sec:real-form}), and stores the
 iteration count into an output buffer. Separate (or fused) stages can map
-iteration counts to colors, apply palettes, and perform anti-aliasing.
+iteration counts to colors, apply palettes, and perform anti-aliasing
+(\cref{subsec:coloring,subsec:antialiasing}).
 
 Across these base kernels, the primary variation is the numeric representation
 used for the orbit arithmetic: from IEEE-754 \code{float}/\code{double} up
@@ -3038,6 +3039,9 @@ In this configuration:
 \end{itemize}
 This provides a complete Mandelbrot renderer based purely on reference-orbit
 perturbation, without relying on any linear-approximation hierarchy.
+After all pixels are computed, the antialiasing and reduction passes
+(\cref{subsec:antialiasing,subsec:reduction}) extract the final colour
+image and iteration statistics.
 
 
 \section{Approximation-Based Orbit Acceleration}
@@ -3853,3 +3857,219 @@ multiplies, so the total arithmetic volume scales as $O(p \cdot N \log N)$ per
 Newton step (where $N$ is the limb count).  For large $p$ and $N$, offloading
 this to the GPU would yield substantial speedups over both the single-threaded
 and seven-worker CPU implementations.
+
+%% ===================================================================
+\section{Additional Implementation Details}
+\label{sec:misc-details}
+%% ===================================================================
+
+This section collects several subsystems that, while individually
+straightforward, are essential to the complete rendering pipeline.
+
+% -----------------------------------------------------------------
+\subsection{Antialiasing via supersampling}
+\label{subsec:antialiasing}
+
+\FractalShark{} supports GPU-side supersampled antialiasing (SSAA).
+The iteration kernels render at a resolution that is a multiple of
+the output size; a separate \emph{antialiasing kernel} then
+down-samples the result to the final pixel grid.
+
+The supersampling factor is a compile-time template parameter
+\code{Antialiasing}, explicitly instantiated for $1\times$, $2\times$,
+$3\times$, and $4\times$.  For a factor~$k$, each output pixel
+corresponds to a $k\times k$ block in the high-resolution iteration
+buffer \code{OutputIterMatrix}.  The kernel loops over the $k^2$
+samples, maps each iteration count to a palette colour
+(\cref{subsec:coloring}), accumulates the RGB channels, and divides
+by $k^2$ to produce an averaged \code{Color16} (16-bit per channel
+RGBA) output.
+
+\paragraph{Stream separation.}
+The antialiasing kernel is launched on a dedicated CUDA stream
+(\code{m\_Stream1}), distinct from the compute stream used by the
+iteration kernels.  This allows the display thread to run
+antialiasing and read back the colour buffer while the compute thread
+continues issuing iteration work on its own default stream
+(see also the \code{--default-stream per-thread}
+compilation flag in \code{CudaDefaults.props}).
+
+\paragraph{Kernel template.}
+\begin{verbatim}
+template<typename IterType,
+         uint32_t Antialiasing,
+         bool ScaledColor>
+__global__ void antialiasing_kernel(
+    const IterType *OutputIterMatrix,
+    uint32_t Width, uint32_t Height,
+    AntialiasedColors OutputColorMatrix,
+    Palette Pals,
+    int local_color_width,
+    int local_color_height,
+    IterType n_iterations);
+\end{verbatim}
+The \code{ScaledColor} flag selects between raw and scaled palette
+indexing.  Pixels whose iteration count equals \code{n\_iterations}
+(the Mandelbrot-set interior) are left black.
+
+% -----------------------------------------------------------------
+\subsection{Coloring and palette system}
+\label{subsec:coloring}
+
+After the antialiasing kernel maps iteration counts to colours, the
+mapping itself is controlled by the palette system implemented in
+\code{FractalPalette}.
+
+\paragraph{Palette types.}
+Five palettes are available, enumerated by
+\code{FractalPaletteType}:
+\texttt{Basic} (placeholder),
+\texttt{Default} (rainbow transitions R$\to$Y$\to$G$\to$C$\to$B$\to$M),
+\texttt{Patriotic} (red/blue),
+\texttt{Summer} (red/green/cyan/white), and
+\texttt{Random} (procedurally generated).
+Palette data is pre-generated on the CPU (using smooth colour
+transitions via \code{PalTransition}) and uploaded to the GPU as an
+array of \code{Color16} values.
+
+\paragraph{Bit-depth levels.}
+Each palette is generated at six bit-depth levels, corresponding to
+$2^5$, $2^6$, $2^8$, $2^{12}$, $2^{16}$, and $2^{20}$ colours
+(32 to roughly one million).  The active depth is selected by
+\code{m\_PaletteDepthIndex} (default: index~2, i.e.\ 256 colours)
+and can be cycled at runtime.
+
+\paragraph{Iteration-to-colour mapping.}
+On the GPU, the palette index for a given iteration count is computed
+as
+\[
+  \mathrm{palIndex} \;=\;
+  \bigl(\mathtt{numIters} \gg \mathtt{palette\_aux\_depth}\bigr)
+    \bmod \mathtt{local\_palIters},
+\]
+where \code{palette\_aux\_depth} (range 0--16) controls the iteration
+compression---higher values produce wider colour bands---and
+\code{local\_palIters} is the palette size at the active bit depth.
+The modulo wrapping causes the palette to cycle when the iteration
+count exceeds the palette length.
+
+\paragraph{Palette rotation.}
+A rotation offset \code{m\_PaletteRotate} is added to the iteration
+count before palette lookup, allowing the user to phase-shift the
+colour mapping for visual exploration without re-rendering.
+
+% -----------------------------------------------------------------
+\subsection{Iteration statistics via parallel reduction}
+\label{subsec:reduction}
+
+After the antialiasing kernel completes, a single reduction pass
+extracts global statistics from the iteration buffer.  The
+\code{max\_kernel} template reads every element of
+\code{OutputIterMatrix} and computes three values simultaneously:
+\begin{itemize}
+  \item the minimum iteration count,
+  \item the maximum iteration count,
+  \item the sum of all iteration counts.
+\end{itemize}
+These are stored in a \code{ReductionResults} structure
+(three \code{uint64\_t} fields: \code{Min}, \code{Max}, \code{Sum}).
+
+The kernel uses shared-memory accumulators within each thread block
+and atomic operations (\code{atomicMax}, \code{atomicMin},
+\code{atomicAdd}) to merge block-level results into a single global
+output.  It is launched with a $16\times16$ block grid and runs on
+the same stream as the antialiasing kernel, so no additional
+synchronization is required.  After the kernel completes, the host
+copies back the \code{ReductionResults} via \code{cudaMemcpy} in
+\code{ExtractItersAndColors}.
+
+% -----------------------------------------------------------------
+\subsection{Coordinate management}
+\label{subsec:coordinates}
+
+The \code{PointZoomBBConverter} class manages the bidirectional
+mapping between screen pixel coordinates and points on the complex
+plane.  All internal coordinate quantities---centre, bounding-box
+corners, zoom factor, radius---are stored as \code{HighPrecision}
+values, which wrap MPIR's \code{mpf\_t} arbitrary-precision
+floating-point type.  This allows the coordinate system to maintain
+meaningful precision at extreme zoom depths where IEEE~754 types are
+long exhausted.
+
+\paragraph{Bounding box from centre and zoom.}
+Given a centre $(c_x, c_y)$ and zoom factor~$Z$, the visible region
+is
+\[
+  x \in \bigl[c_x - 2/Z,\; c_x + 2/Z\bigr],\qquad
+  y \in \bigl[c_y - 2/Z,\; c_y + 2/Z\bigr].
+\]
+The constant~2 (the \code{Factor} member) sets the initial
+un-zoomed viewport to the range $[-2,2]$ in both axes.
+
+\paragraph{Screen-to-complex and complex-to-screen transforms.}
+Pixel coordinates are mapped linearly:
+\[
+  x_{\text{calc}} = \frac{(x_{\text{px}} - x_0)\,(x_{\max}-x_{\min})}
+                         {W \cdot k},
+\]
+where $W$ is the screen width and $k$ is the antialiasing factor.
+The $y$~axis is inverted (screen~$y$ increases downward; imaginary
+axis increases upward).  The inverse mapping is used to convert
+fractal coordinates back to pixel positions.
+
+\paragraph{Per-pixel stepping for the GPU.}
+For GPU kernel launches, the converter computes per-pixel deltas
+$\Delta x = (x_{\max}-x_{\min})/(W \cdot k)$ and
+$\Delta y = (y_{\max}-y_{\min})/(H \cdot k)$ at full
+\code{HighPrecision}.  These are then down-converted to the
+kernel's working type (e.g.\ \code{double}, \code{HDRFloat}) for
+per-thread coordinate calculation on the GPU.
+
+\paragraph{Zoom operations.}
+Zooming recomputes the bounding box around the current centre:
+$x'_{\min} = c_x - r/d$, $x'_{\max} = c_x + r/d$ (and similarly
+for~$y$), where $d$ is the zoom divisor.  All intermediate arithmetic
+is performed at the working precision of the \code{HighPrecision}
+members, which is dynamically adjusted via \code{SetPrecision} as
+the zoom deepens.
+
+% -----------------------------------------------------------------
+\subsection{GPU memory allocation with host fallback}
+\label{subsec:gpu-mem-fallback}
+
+Reference orbits at deep zoom levels can be extremely large---tens of
+billions of iterations, each storing several floating-point
+values---and may exceed the GPU's physical VRAM (typically 8--24\,GB
+on consumer hardware).  However, the host system often has
+substantially more RAM available.  Rather than aborting the render
+when GPU memory is exhausted, \FractalShark{} uses a two-tier
+fallback strategy.
+
+\paragraph{Allocation cascade.}
+Each large GPU allocation follows a try-device-then-host pattern:
+\begin{enumerate}
+\item Attempt \code{cudaMalloc} (device memory, full GPU bandwidth).
+\item If that fails, attempt \code{cudaMallocHost}
+      (pinned host memory, accessible from GPU via PCIe but at
+      reduced bandwidth).
+\item If both fail, mark the allocation as invalid and set
+      its size to zero.
+\end{enumerate}
+A boolean flag (e.g.\ \code{AllocHost} in
+\code{GPUPerturbSingleResults}, or \code{AllocHostLA} in
+\code{GPU\_LAReference}) records which tier succeeded.
+
+\paragraph{Transparent access.}
+Because \code{cudaMallocHost} returns a \emph{pinned} host pointer
+that is GPU-visible via unified addressing, CUDA kernels can read
+and write the buffer with no code changes---only bandwidth
+decreases (PCIe~4.0 $\approx$\,32\,GB/s versus device memory at
+$\approx$\,500--1000\,GB/s).  For data that is streamed
+sequentially (e.g.\ reference orbit look-ups during perturbation
+iteration), the performance impact is manageable.
+
+\paragraph{Matched cleanup.}
+Destructors inspect the allocation-tier flag and call the
+corresponding free function (\code{cudaFree} for device memory,
+\code{cudaFreeHost} for pinned host memory), ensuring correct
+resource release regardless of which tier was used.

@@ -195,17 +195,17 @@ void GPURenderer::ClearLocals() {
 
 template<typename IterType>
 void GPURenderer::ClearMemory() {
-    if (OutputIterMatrix != nullptr) {
-        cudaMemset(OutputIterMatrix, 0, N_cu * sizeof(IterType));
-    }
-
-    if (OutputReductionResults != nullptr) {
-        cudaMemset(OutputReductionResults, 0, sizeof(IterType));
-    }
-
-    if (OutputColorMatrix.aa_colors != nullptr) {
-        cudaMemset(OutputColorMatrix.aa_colors, 0, N_color_cu * sizeof(Color16));
-    }
+    //if (OutputIterMatrix != nullptr) {
+    //    cudaMemset(OutputIterMatrix, 0, N_cu * sizeof(IterType));
+    //}
+    //
+    //if (OutputReductionResults != nullptr) {
+    //    cudaMemset(OutputReductionResults, 0, sizeof(IterType));
+    //}
+    //
+    //if (OutputColorMatrix.aa_colors != nullptr) {
+    //    cudaMemset(OutputColorMatrix.aa_colors, 0, N_color_cu * sizeof(Color16));
+    //}
 }
 
 template

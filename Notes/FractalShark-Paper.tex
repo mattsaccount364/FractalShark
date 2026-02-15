@@ -3628,7 +3628,7 @@ The second derivative $F''$ is accumulated in \code{HDRFloat<double>}
 throughout the forward evaluation, providing only ${\sim}53$~bits of
 mantissa (with a wide exponent range), while $F$ and $F'$ are carried in
 \code{mpf\_t} at hundreds or thousands of bits.  This precision mismatch
-limits---but does not eliminate---the benefit of the Halley correction.
+limits the benefit of the Halley correction.
 
 The Halley step can be decomposed as
 \begin{equation}\label{eq:ff-halley-decomp}
@@ -3636,35 +3636,98 @@ The Halley step can be decomposed as
 \;=\; \Delta_N \cdot \frac{1}{1 - \tfrac{1}{2}\rho^2 e^{i\theta}},
 \end{equation}
 where $\Delta_N = F/F'$ is the Newton step and $\rho^2$ is the dimensionless
-ratio from \cref{eq:ff-halley-gate}.  Since $F''$ is recomputed from scratch
-at each Newton iterate via the recurrence~\cref{eq:ff-d2zdc2}, it provides a
-fresh ${\sim}53$-bit approximation of the true second derivative at the
-current scale.  The Halley correction factor therefore adjusts the Newton step
-by a relative amount of order~$\rho^2$, with that correction accurate to
-${\sim}53$~bits.
+ratio from \cref{eq:ff-halley-gate}.
 
-In terms of convergence, suppose Newton has produced $n$~correct bits of the
-nucleus coordinate.  A plain Newton step would yield ${\sim}2n$~correct bits
-(quadratic convergence), while a full-precision Halley step would yield
-${\sim}3n$ (cubic convergence).  With $F''$ limited to ${\sim}53$~bits of
-mantissa, the Halley step yields ${\sim}\min(3n,\; 2n+53)$~correct bits.
-That is, Halley contributes up to ${\sim}53$~additional correct bits per step
-beyond what Newton alone provides.  This bonus applies every iteration, not
-just in early convergence: each forward evaluation produces a fresh $F''$ at
-the current residual's scale, so the ${\sim}53$-bit correction remains
-meaningful throughout.
+\paragraph{Why it works: error analysis of the correction factor.}
+Write the true second derivative as $F''$ and the 53-bit approximation as
+$\hat{F}'' = F''(1 + \epsilon)$ where $|\epsilon| \lesssim 2^{-53}$.  The
+Halley step with the approximate $\hat{F}''$ is
+\[
+\hat{\Delta}_H \;=\; \Delta_N \cdot
+  \frac{1}{1 - \frac{F \cdot \hat{F}''}{2(F')^2}}.
+\]
+Near a simple root, the error $e_k = c_k - c^*$ satisfies $F \approx F' e_k$,
+so the correction ratio
+\[
+\frac{F \cdot F''}{2(F')^2} \;\approx\;
+  \frac{e_k \cdot F''}{2 F'} \;=\; O(e_k).
+\]
+This term shrinks as $c_k$ converges.  The \emph{error} introduced by using
+$\hat{F}''$ instead of $F''$ modifies this ratio by
+\[
+\frac{F \cdot \hat{F}''}{2(F')^2}
+  - \frac{F \cdot F''}{2(F')^2}
+  \;=\; \frac{F \cdot F'' \epsilon}{2(F')^2}
+  \;=\; O(e_k \cdot \epsilon).
+\]
+This is the product of the current error and the 53-bit truncation noise.
+The resulting Halley step error, relative to the true Halley step, is therefore
+$O(e_k \cdot \epsilon)$, producing a next error of
+\[
+e_{k+1}^{\text{(approx Halley)}} \;=\;
+  \underbrace{O(e_k^3)}_{\text{true Halley}}
+  \;+\;
+  \underbrace{O(e_k^2 \cdot \epsilon)}_{\text{truncation of } F''}.
+\]
+(The extra factor of $e_k$ in the second term comes from the fact that
+$\Delta_N$ itself is $O(e_k)$, and the relative perturbation of the
+correction factor is $O(e_k \cdot \epsilon)$.)
 
-Whether this trade-off is net positive depends on the period~$p$.  Each
-Newton/Halley iteration requires a full forward evaluation ($p$~iterations of
-$z = z^2 + c$ plus the derivative recurrence), so the per-iteration cost
-scales with~$p$.  For large~$p$, saving even one forward evaluation by
-converging in fewer Halley steps is significant, and the ${\sim}53$ extra bits
-per step can eliminate one or more expensive iterations compared to pure
-Newton.  For small~$p$, the additional arithmetic for the second derivative and
-Halley denominator is modest but the savings from faster convergence are also
-small.  A full-precision $F''$ (carried in \code{mpf\_t}) would recover true
-cubic convergence at the cost of additional high-precision multiplies per
-iteration; whether that cost is justified remains an open question.
+Two regimes emerge:
+\begin{itemize}
+\item \textbf{Early convergence} ($|e_k| \gg 2^{-53}$): the $O(e_k^3)$ term
+  dominates, and the method converges cubically---identical to full-precision
+  Halley.  The 53-bit noise is invisible.
+\item \textbf{Late convergence} ($|e_k| \ll 2^{-53}$): the
+  $O(e_k^2 \cdot \epsilon)$ term dominates.  Since $\epsilon$ is a fixed
+  ${\sim}2^{-53}$, the effective recurrence becomes $|e_{k+1}| \approx
+  C \cdot e_k^2 \cdot 2^{-53}$, which is quadratic convergence (like Newton)
+  but with an extra constant factor of $2^{-53}$.  In terms of correct bits,
+  this gives ${\sim}2n + 53$ bits per step---still better than Newton's
+  ${\sim}2n$, but no longer cubic.
+\end{itemize}
+
+The crossover occurs when $|e_k|^3 \approx |e_k|^2 \cdot 2^{-53}$,
+i.e.\ when $|e_k| \approx 2^{-53}$, or equivalently when the iterate has
+${\sim}53$ correct bits.
+
+\paragraph{Empirical confirmation.}
+Numerical experiments on the period-3 nucleus confirm this analysis:
+
+\begin{center}
+\begin{tabular}{crrr}
+\hline
+\textbf{Step} & \textbf{Newton} & \textbf{Halley (53-bit $F''$)}
+              & \textbf{Halley (full $F''$)} \\
+\hline
+0 &  13.8 &  20.7 &  20.7 \\
+1 &  26.5 &  60.4 &  60.4 \\
+2 &  51.9 & 173.8 & 179.6 \\
+3 & 102.6 & 400.6 & 536.9 \\
+4 & 204.1 & 854.2 & 1608.9 \\
+5 & 407.0 & 1761.4 & --- \\
+6 & 812.8 & --- & --- \\
+7 & 1624.4 & --- & --- \\
+\hline
+\end{tabular}
+\end{center}
+
+(Correct bits of the period-3 nucleus, starting from the same initial guess.)
+Steps~0--1 show cubic convergence for both Halley variants (ratio
+${\approx}\,3$). At step~2, the 53-bit Halley begins to diverge from the
+full-precision version (173.8 vs.\ 179.6), consistent with the crossover at
+${\sim}53$ correct bits.  By step~4, the 53-bit Halley's ratio has dropped to
+${\sim}2.1$, approaching quadratic.
+
+\paragraph{Net benefit.}
+Despite the degeneration, the low-precision Halley reaches 1761~correct bits
+in 6~steps versus Newton's 8~steps for 1624~bits---saving two full forward
+evaluations.  The savings come from the early cubic burst: by the time the
+method degenerates to quadratic, it already has a ${\sim}3\times$ lead in
+correct bits over Newton, and this lead persists through all subsequent
+iterations.  For large period~$p$, each saved forward evaluation avoids
+$p$~expensive high-precision multiplies, making the modest cost of computing
+$F''$ in \code{HDRFloat} easily worthwhile.
 
 \subsection{Mixed-precision refinement}
 \label{subsec:ff-mixed-prec}

@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include "HighPrecision.h"
+#include "WaitCursor.h"
 
 class WaitCursor;
 
@@ -26,7 +27,7 @@ private:
 
     uint64_t m_DeltaTime;
 
-    std::unique_ptr<WaitCursor> m_WaitCursor;
+    WaitCursor m_WaitCursor;
 };
 
 struct ScopedBenchmarkStopper {

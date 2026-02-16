@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PngParallelSave.h"
+#include "GPU_Types.h"
 
 #include <cstdint>
 #include <vector>
@@ -29,28 +30,21 @@ public:
     int32_t GetAuxDepth() const;
 
     // Data access for GPU upload and drawing
-    const uint16_t *GetCurrentPalR() const;
-    const uint16_t *GetCurrentPalG() const;
-    const uint16_t *GetCurrentPalB() const;
+    const Color16 *GetCurrentPalInterleaved() const;
     uint32_t GetCurrentNumColors() const;
 
     // Access palette arrays for PngParallelSave
-    std::vector<uint16_t> *GetPalR(size_t whichPalette);
-    std::vector<uint16_t> *GetPalG(size_t whichPalette);
-    std::vector<uint16_t> *GetPalB(size_t whichPalette);
+    const std::vector<Color16> *GetPalInterleaved(size_t whichPalette) const;
     const std::vector<uint32_t> &GetPalIters(size_t whichPalette) const;
 
     void SetDefaults();
 
 private:
-    static void PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int val2);
     void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
 
     static constexpr size_t NumBitDepths = 6;
 
-    std::vector<uint16_t> m_PalR[FractalPaletteType::Num][NumBitDepths];
-    std::vector<uint16_t> m_PalG[FractalPaletteType::Num][NumBitDepths];
-    std::vector<uint16_t> m_PalB[FractalPaletteType::Num][NumBitDepths];
+    std::vector<Color16> m_PalInterleaved[FractalPaletteType::Num][NumBitDepths];
     std::vector<uint32_t> m_PalIters[FractalPaletteType::Num];
     FractalPaletteType m_WhichPalette;
 

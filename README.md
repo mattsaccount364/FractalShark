@@ -92,7 +92,7 @@ See FractalShark\Notes.  It's a major WIP and is mostly AI slop currently but I'
 - FractalShark is an experimental research project, not a polished end-user application. Expect bugs, dead code, rough edges, and missing abstractions.  Other implementations, like FractalZoomer, have much more polish, and Imagina will probably beat it on performance in the long term because Zhuoran is definitely better at coming up with optimized algorithms than I am.
 - FractalShark is designed exclusively for use with Nvidia GPUs on Windows. I have an RTX 4090 and it's optimized for operation on that, but I believe it'll work fine on anything since the GTX 9xx series from ~2016.
 - FractalShark only supports the Mandelbrot set, not other variants/derivatives.
-- FractalShark offers very good performance if you have an Nvidia GPU, especially a 4090.
+- FractalShark offers very good performance if you have an Nvidia GPU, especially a 4090+.
 - FractalShark includes most algorithmic enhancements I'm aware of: linear approximation, high-precision MPIR perturbation for the reference orbit calculation, high-dynamic range float/float exp, many CUDA implementations, periodicity detection for reference calculation, and so forth.
 - The source code is available under the GPLv3 license, so you can look at it if you want.
 
@@ -102,6 +102,7 @@ See FractalShark\Notes.  It's a major WIP and is mostly AI slop currently but I'
 - Run it. If you get a blank screen or error message and believe you meet the system requirements then let me know and I'll speculate about the problem.
 - Right-click to get a pop-up menu. Some of the options are buggy and will just crash/misbehave but most of the basic things should be fine.
 - Left-click/drag to zoom in on a box. Alternatively, use hot keys: `z` to zoom in at mouse cursor, `shift+Z` to zoom out a bit, `b` to go back, `-` or `=` to increase/decrease iterations.
+- Look at the FractalShark.pdf distributed with newer releases.  It has a user guide near the front.  Look in the table of contents.  The rest of it you can ignore unless you're motivated.
 
 ## Can I use CPU-only rendering and try it without an NVIDIA card?
 

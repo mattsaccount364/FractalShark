@@ -473,7 +473,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             } else {
                 gFractal->UseNextPaletteAuxDepth(1);
             }
-            gFractal->DrawFractal(RendererIndex::Renderer0);
+            gFractal->EnqueueRender();
             break;
 
         case 'W':
@@ -504,7 +504,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             } else {
                 gFractal->UseNextPaletteDepth();
             }
-            gFractal->DrawFractal(RendererIndex::Renderer0);
+            gFractal->EnqueueRender();
             break;
         }
 
@@ -1190,7 +1190,7 @@ MainWindow::MenuPaletteRotation()
 
     for (;;) {
         gFractal->RotateFractalPalette(10);
-        gFractal->DrawFractal(RendererIndex::Renderer0);
+        gFractal->EnqueueRender();
         GetCursorPos(&CurPos);
         if (abs(CurPos.x - OrgPos.x) > 5 || abs(CurPos.y - OrgPos.y) > 5) {
             break;
@@ -1198,7 +1198,7 @@ MainWindow::MenuPaletteRotation()
     }
 
     gFractal->ResetFractalPalette();
-    gFractal->DrawFractal(RendererIndex::Renderer0);
+    gFractal->EnqueueRender();
 }
 
 void
@@ -1209,14 +1209,14 @@ MainWindow::MenuPaletteType(FractalPaletteType type)
         gFractal->UsePalette(8);
         gFractal->SetPaletteAuxDepth(0);
     }
-    gFractal->DrawFractal(RendererIndex::Renderer0);
+    gFractal->EnqueueRender();
 }
 
 void
 MainWindow::MenuPaletteDepth(int depth)
 {
     gFractal->UsePalette(depth);
-    gFractal->DrawFractal(RendererIndex::Renderer0);
+    gFractal->EnqueueRender();
 }
 
 void
@@ -1224,7 +1224,7 @@ MainWindow::MenuCreateNewPalette()
 {
     gFractal->CreateNewFractalPalette();
     gFractal->UsePaletteType(FractalPaletteType::Random);
-    gFractal->DrawFractal(RendererIndex::Renderer0);
+    gFractal->EnqueueRender();
 }
 
 void
@@ -1795,7 +1795,7 @@ MainWindow::PaintAsNecessary()
     }
 
     if (gFractal != nullptr) {
-        gFractal->CalcFractal(true);
+        gFractal->EnqueueRender();
     }
 }
 

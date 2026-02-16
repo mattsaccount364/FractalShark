@@ -32,6 +32,7 @@
 
 #include "DrawThreadSync.h"
 #include "PointZoomBBConverter.h"
+#include "RenderThreadPool.h"
 
 #include "BenchmarkDataCollection.h"
 #include "PngParallelSave.h"
@@ -55,6 +56,7 @@ public:
     friend class PngParallelSave;
     friend class BenchmarkData;
     friend class AutoZoomer;
+    friend class RenderThreadPool;
 
     Fractal(int width, int height, HWND hWnd, bool UseSensoCursor, uint64_t commitLimitInBytes);
     ~Fractal();
@@ -159,7 +161,12 @@ public:
     bool RequiresUseLocalColor() const;
     void CalcFractal(bool drawFractal);
     void CalcFractal(RendererIndex idx, bool drawFractal);
-    void DrawFractal(RendererIndex idx);
+
+    // Async render pool: enqueue current state for rendering.
+    // Returns a handle that can optionally be waited on.
+    RenderJobHandle EnqueueRender();
+    RenderJobHandle EnqueueRender(const PointZoomBBConverter &ptz);
+    RenderThreadPool *GetRenderPool() { return m_RenderPool.get(); }
 
     template <typename IterType> void DrawGlFractal(RendererIndex idx, bool LocalColor, bool LastIter);
 
@@ -213,6 +220,15 @@ public:
     const HighPrecision &GetMaxY() const;
     size_t GetRenderWidth() const;
     size_t GetRenderHeight() const;
+
+    // Accessors for RenderThreadPool snapshot
+    const PointZoomBBConverter &GetPtz() const { return m_Ptz; }
+    size_t GetScrnWidth() const { return m_ScrnWidth; }
+    size_t GetScrnHeight() const { return m_ScrnHeight; }
+    IterTypeFull GetNumIterationsRT() const { return m_NumIterations; }
+    bool GetChangedWindow() const { return m_ChangedWindow; }
+    bool GetChangedScrn() const { return m_ChangedScrn; }
+    bool GetChangedIterations() const { return m_ChangedIterations; }
 
     void
     GetSomeDetails(RefOrbitDetails &details) const
@@ -411,6 +427,9 @@ private:
 
     void ReturnIterMemory(ItersMemoryContainer &&to_return);
 
+    // Acquire an ItersMemoryContainer from the pool. Blocks if none available.
+    ItersMemoryContainer AcquireItersMemory();
+
     IterTypeEnum m_IterType;
 
     ItersMemoryContainer m_CurIters;
@@ -434,29 +453,19 @@ private:
     const GPURenderer &GetRenderer(RendererIndex idx) const {
         return m_Renderers[static_cast<size_t>(idx)];
     }
-    std::unique_ptr<OpenGlContext> m_glContextAsync;
 
-    std::mutex m_AsyncRenderThreadMutex;
-    std::condition_variable m_AsyncRenderThreadCV;
-
-    struct AsyncRenderThreadCommand {
-        enum class State { Idle, Start, SyncDone, Finish };
-        State state;
-        RendererIndex rendererIdx;
-    };
-    AsyncRenderThreadCommand m_AsyncRenderThreadCommand;
-    bool m_AsyncRenderThreadFinish;
+    // Repaint flag (controls whether rendering produces visible output)
+    bool m_Repaint = true;
 
     // Benchmarking
     mutable BenchmarkDataCollection m_BenchmarkData;
 
-    std::unique_ptr<std::thread> m_AsyncRenderThread;
-    std::atomic<uint32_t> m_AsyncGpuRenderIsAtomic;
-    void DrawAsyncGpuFractalThread();
-    static void DrawAsyncGpuFractalThreadStatic(Fractal *fractal);
     void MessageBoxCudaError(uint32_t err);
 
     LAParameters m_LAParameters;
 
     const uint64_t m_CommitLimitInBytes;
+
+    // Async render thread pool
+    std::unique_ptr<RenderThreadPool> m_RenderPool;
 };

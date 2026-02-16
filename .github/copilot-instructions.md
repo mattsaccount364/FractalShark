@@ -112,3 +112,8 @@ A `.clang-format` is configured for the project:
 1. `"stdafx.h"` (precompiled header, always first)
 2. Project headers
 3. System/third-party headers
+
+## Workflow
+
+- **Do not create git commits.** Leave all changes uncommitted for the user to review and commit manually.
+- **Do not make code changes in plan mode.** Plan mode is for analysis and planning only.

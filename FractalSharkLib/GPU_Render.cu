@@ -97,11 +97,8 @@ GPURenderer::GPURenderer() {
 GPURenderer::~GPURenderer() {
     ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
 
-    if (m_Stream1Initialized) {
-        cudaStreamDestroy(m_Stream1);
-    }
-
     if (m_ComputeStreamInitialized) {
+        cudaStreamSynchronize(m_ComputeStream);
         cudaStreamDestroy(m_ComputeStream);
     }
 }
@@ -133,7 +130,11 @@ GPURenderer::TestCudaIsWorking()
 
 void GPURenderer::ResetPalettesOnly() {
     if (Pals.local_pal != nullptr) {
-        cudaFree(Pals.local_pal);
+        if (m_ComputeStreamInitialized) {
+            cudaFreeAsync(Pals.local_pal, m_ComputeStream);
+        } else {
+            cudaFree(Pals.local_pal);
+        }
         Pals.local_pal = nullptr;
     }
 }
@@ -144,17 +145,29 @@ void GPURenderer::ResetMemory(
     ResetPerturb perturb) {
 
     if (OutputIterMatrix != nullptr) {
-        cudaFree(OutputIterMatrix);
+        if (m_ComputeStreamInitialized) {
+            cudaFreeAsync(OutputIterMatrix, m_ComputeStream);
+        } else {
+            cudaFree(OutputIterMatrix);
+        }
         OutputIterMatrix = nullptr;
     }
 
     if (OutputReductionResults != nullptr) {
-        cudaFree(OutputReductionResults);
+        if (m_ComputeStreamInitialized) {
+            cudaFreeAsync(OutputReductionResults, m_ComputeStream);
+        } else {
+            cudaFree(OutputReductionResults);
+        }
         OutputReductionResults = nullptr;
     }
 
     if (OutputColorMatrix.aa_colors != nullptr) {
-        cudaFree(OutputColorMatrix.aa_colors);
+        if (m_ComputeStreamInitialized) {
+            cudaFreeAsync(OutputColorMatrix.aa_colors, m_ComputeStream);
+        } else {
+            cudaFree(OutputColorMatrix.aa_colors);
+        }
         OutputColorMatrix.aa_colors = nullptr;
     }
 
@@ -190,7 +203,6 @@ void GPURenderer::ClearLocals() {
     N_cu = 0;
     N_color_cu = 0;
 
-    m_Stream1Initialized = false;
     m_ComputeStreamInitialized = false;
 
     Pals = {};
@@ -223,9 +235,7 @@ uint32_t GPURenderer::InitializeMemory(
     uint32_t antialias_width, // screen width
     uint32_t antialias_height, // screen height
     uint32_t antialiasing,
-    const uint16_t *palR,
-    const uint16_t *palG,
-    const uint16_t *palB,
+    const Color16 *palInterleaved,
     uint32_t palIters,
     uint32_t paletteAuxDepth,
     bool expectedReuse) {
@@ -233,10 +243,25 @@ uint32_t GPURenderer::InitializeMemory(
         Pals.palette_aux_depth = paletteAuxDepth;
     }
 
+    // Ensure compute stream exists before any cudaMallocAsync/cudaFreeAsync calls
+    if (m_ComputeStreamInitialized == false) {
+        int streamPriorityLow;
+        int streamPriorityHigh;
+        cudaError_t err = cudaDeviceGetStreamPriorityRange(&streamPriorityLow, &streamPriorityHigh);
+        if (err != cudaSuccess) {
+            return err;
+        }
+
+        err = cudaStreamCreateWithPriority(&m_ComputeStream, cudaStreamNonBlocking, streamPriorityHigh);
+        if (err != cudaSuccess) {
+            return err;
+        }
+
+        m_ComputeStreamInitialized = true;
+    }
+
     // Re-do palettes only.
-    if ((Pals.cached_hostPalR != palR) ||
-        (Pals.cached_hostPalG != palG) ||
-        (Pals.cached_hostPalB != palB)) {
+    if (Pals.cached_hostPalInterleaved != palInterleaved) {
 
         ResetPalettesOnly();
 
@@ -244,26 +269,28 @@ uint32_t GPURenderer::InitializeMemory(
             nullptr,
             palIters,
             paletteAuxDepth,
-            palR,
-            palG,
-            palB);
+            palInterleaved);
 
         // Palettes:
-        cudaError_t err = cudaMallocManaged(
+        cudaError_t err = cudaMallocAsync(
             &Pals.local_pal,
             Pals.local_palIters * sizeof(Color16),
-            cudaMemAttachGlobal);
+            m_ComputeStream);
         if (err != cudaSuccess) {
             ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
             return err;
         }
 
-        // TODO the incoming data should be rearranged so we can memcpy
-        // Copy in palettes
-        for (uint32_t i = 0; i < Pals.local_palIters; i++) {
-            Pals.local_pal[i].r = palR[i];
-            Pals.local_pal[i].g = palG[i];
-            Pals.local_pal[i].b = palB[i];
+        // Host data is already in interleaved Color16 format — direct memcpy
+        err = cudaMemcpyAsync(
+            Pals.local_pal,
+            palInterleaved,
+            Pals.local_palIters * sizeof(Color16),
+            cudaMemcpyHostToDevice,
+            m_ComputeStream);
+        if (err != cudaSuccess) {
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            return err;
         }
     }
 
@@ -323,10 +350,10 @@ uint32_t GPURenderer::InitializeMemory(
 
     {
         IterType *tempiter = nullptr;
-        cudaError_t err = cudaMallocManaged(
+        cudaError_t err = cudaMallocAsync(
             &tempiter,
             N_cu * sizeof(IterType),
-            cudaMemAttachGlobal);
+            m_ComputeStream);
         if (err != cudaSuccess) {
             ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
             return err;
@@ -338,9 +365,10 @@ uint32_t GPURenderer::InitializeMemory(
     {
         // Unconditionally allocate uint64_t
         ReductionResults *tempreduction = nullptr;
-        cudaError_t err = cudaMallocManaged(
+        cudaError_t err = cudaMallocAsync(
             &tempreduction,
-            sizeof(ReductionResults));
+            sizeof(ReductionResults),
+            m_ComputeStream);
         if (err != cudaSuccess) {
             ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
             return err;
@@ -352,10 +380,10 @@ uint32_t GPURenderer::InitializeMemory(
     {
         Color16 *tempaa = nullptr;
 
-        cudaError_t err = cudaMallocManaged(
+        cudaError_t err = cudaMallocAsync(
             &tempaa,
             N_color_cu * sizeof(Color16),
-            cudaMemAttachGlobal);
+            m_ComputeStream);
         if (err != cudaSuccess) {
             ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
             return err;
@@ -366,33 +394,6 @@ uint32_t GPURenderer::InitializeMemory(
 
     ClearMemory<IterType>();
 
-    if (m_Stream1Initialized == false) {
-        cudaError_t err = cudaDeviceGetStreamPriorityRange(&m_StreamPriorityLow, &m_StreamPriorityHigh);
-        if (err != cudaSuccess) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
-            return err;
-        }
-
-        // cudaStreamNonBlocking
-        err = cudaStreamCreateWithPriority(&m_Stream1, cudaStreamNonBlocking, m_StreamPriorityHigh);
-        if (err != cudaSuccess) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
-            return err;
-        }
-
-        m_Stream1Initialized = true;
-    }
-
-    if (m_ComputeStreamInitialized == false) {
-        cudaError_t err = cudaStreamCreateWithPriority(&m_ComputeStream, cudaStreamNonBlocking, m_StreamPriorityLow);
-        if (err != cudaSuccess) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
-            return err;
-        }
-
-        m_ComputeStreamInitialized = true;
-    }
-
     return 0;
 }
 
@@ -401,9 +402,7 @@ uint32_t GPURenderer::InitializeMemory<uint32_t>(
     uint32_t antialias_width, // screen width
     uint32_t antialias_height, // screen height
     uint32_t antialiasing,
-    const uint16_t *palR,
-    const uint16_t *palG,
-    const uint16_t *palB,
+    const Color16 *palInterleaved,
     uint32_t palIters,
     uint32_t paletteAuxDepth,
     bool expectedReuse);
@@ -413,9 +412,7 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
     uint32_t antialias_width, // screen width
     uint32_t antialias_height, // screen height
     uint32_t antialiasing,
-    const uint16_t *palR,
-    const uint16_t *palG,
-    const uint16_t *palB,
+    const Color16 *palInterleaved,
     uint32_t palIters,
     uint32_t paletteAuxDepth,
     bool expectedReuse);
@@ -554,27 +551,13 @@ uint32_t GPURenderer::RenderCurrent(
         return cudaSuccess;
     }
 
-    uint32_t result = cudaSuccess;
+    uint32_t result = RunAntialiasing(n_iterations);
 
-    if (iter_buffer == nullptr) {
-        result = RunAntialiasing(n_iterations, &m_Stream1);
-
-        if (!result) {
-            result = ExtractItersAndColors<IterType, true>(
-                iter_buffer,
-                color_buffer,
-                reduction_results);
-        }
-    } else {
-        cudaStream_t stream = 0;
-        result = RunAntialiasing(n_iterations, &stream);
-
-        if (!result) {
-            result = ExtractItersAndColors<IterType, false>(
-                iter_buffer,
-                color_buffer,
-                reduction_results);
-        }
+    if (!result) {
+        result = ExtractItersAndColors<IterType>(
+            iter_buffer,
+            color_buffer,
+            reduction_results);
     }
 
     return result;
@@ -591,17 +574,28 @@ template uint32_t GPURenderer::RenderCurrent(
     Color16 *color_buffer,
     ReductionResults *reduction_results);
 
-uint32_t GPURenderer::SyncStream(bool altStream) {
-    if (altStream) {
-        return cudaStreamSynchronize(m_Stream1);
-    } else {
-        return cudaStreamSynchronize(cudaStreamDefault);
-    }
-}
-
 uint32_t GPURenderer::SyncComputeStream() {
     if (m_ComputeStreamInitialized) {
         return cudaStreamSynchronize(m_ComputeStream);
+    }
+    return cudaSuccess;
+}
+
+uint32_t GPURenderer::QueryComputeStream() {
+    if (m_ComputeStreamInitialized) {
+        return cudaStreamQuery(m_ComputeStream);
+    }
+    return cudaSuccess;
+}
+
+static void CUDART_CB ComputeDoneCallback(void *userData) {
+    auto *renderer = static_cast<GPURenderer *>(userData);
+    renderer->SignalComputeDone();
+}
+
+uint32_t GPURenderer::EnqueueComputeDoneCallback() {
+    if (m_ComputeStreamInitialized) {
+        return cudaLaunchHostFunc(m_ComputeStream, ::ComputeDoneCallback, this);
     }
     return cudaSuccess;
 }
@@ -1682,13 +1676,13 @@ uint32_t GPURenderer::RenderPerturbBLA(
 template<typename IterType>
 __host__
 uint32_t
-GPURenderer::RunAntialiasing(IterType n_iterations, cudaStream_t *stream) {
+GPURenderer::RunAntialiasing(IterType n_iterations) {
     dim3 aa_blocks(w_color_block, h_color_block, 1);
     dim3 aa_threads_per_block(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
 
     switch (m_Antialiasing) {
     case 1:
-        antialiasing_kernel<IterType, 1, true> << <aa_blocks, aa_threads_per_block, 0, *stream >> > (
+        antialiasing_kernel<IterType, 1, true> << <aa_blocks, aa_threads_per_block, 0, m_ComputeStream >> > (
             static_cast<IterType *>(OutputIterMatrix),
             m_Width,
             m_Height,
@@ -1699,7 +1693,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations, cudaStream_t *stream) {
             n_iterations);
         break;
     case 2:
-        antialiasing_kernel<IterType, 2, true> << <aa_blocks, aa_threads_per_block, 0, *stream >> > (
+        antialiasing_kernel<IterType, 2, true> << <aa_blocks, aa_threads_per_block, 0, m_ComputeStream >> > (
             static_cast<IterType *>(OutputIterMatrix),
             m_Width,
             m_Height,
@@ -1710,7 +1704,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations, cudaStream_t *stream) {
             n_iterations);
         break;
     case 3:
-        antialiasing_kernel<IterType, 3, true> << <aa_blocks, aa_threads_per_block, 0, *stream >> > (
+        antialiasing_kernel<IterType, 3, true> << <aa_blocks, aa_threads_per_block, 0, m_ComputeStream >> > (
             static_cast<IterType *>(OutputIterMatrix),
             m_Width,
             m_Height,
@@ -1722,7 +1716,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations, cudaStream_t *stream) {
         break;
     case 4:
     default:
-        antialiasing_kernel<IterType, 4, true> << <aa_blocks, aa_threads_per_block, 0, *stream >> > (
+        antialiasing_kernel<IterType, 4, true> << <aa_blocks, aa_threads_per_block, 0, m_ComputeStream >> > (
             static_cast<IterType *>(OutputIterMatrix),
             m_Width,
             m_Height,
@@ -1735,7 +1729,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations, cudaStream_t *stream) {
     }
 
     dim3 max_blocks(16, 16, 1);
-    max_kernel<IterType> << <max_blocks, aa_threads_per_block, 0, *stream >> > (
+    max_kernel<IterType> << <max_blocks, aa_threads_per_block, 0, m_ComputeStream >> > (
         static_cast<IterType *>(OutputIterMatrix),
         m_Width,
         m_Height,
@@ -1743,7 +1737,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations, cudaStream_t *stream) {
     return cudaSuccess;
 }
 
-template<typename IterType, bool Async>
+template<typename IterType>
 uint32_t GPURenderer::ExtractItersAndColors(
     IterType *iter_buffer,
     Color16 *color_buffer,
@@ -1752,86 +1746,39 @@ uint32_t GPURenderer::ExtractItersAndColors(
     const size_t ERROR_COLOR = 255;
     cudaError_t result = cudaSuccess;
 
-    if (!Async) {
-        result = cudaStreamSynchronize(cudaStreamDefault);
+    if (iter_buffer) {
+        result = cudaMemcpyAsync(
+            iter_buffer,
+            static_cast<IterType *>(OutputIterMatrix),
+            sizeof(IterType) * N_cu,
+            cudaMemcpyDefault,
+            m_ComputeStream);
         if (result != cudaSuccess) {
-            if (iter_buffer) {
-                cudaMemset(iter_buffer, ERROR_COLOR, sizeof(IterType) * m_Width * m_Height);
-            }
-
-            if (color_buffer) {
-                cudaMemset(color_buffer, ERROR_COLOR, sizeof(Color16) * local_color_width * local_color_height);
-            }
             return result;
         }
     }
 
-    if (iter_buffer) {
-        if constexpr (Async) {
-            result = cudaMemcpyAsync(
-                iter_buffer,
-                static_cast<IterType *>(OutputIterMatrix),
-                sizeof(IterType) * N_cu,
-                cudaMemcpyDefault,
-                m_Stream1);
-            if (result != cudaSuccess) {
-                return result;
-            }
-        } else {
-            result = cudaMemcpy(
-                iter_buffer,
-                static_cast<IterType *>(OutputIterMatrix),
-                sizeof(IterType) * N_cu,
-                cudaMemcpyDefault);
-            if (result != cudaSuccess) {
-                return result;
-            }
-        }
-    }
-
     if (color_buffer) {
-        if constexpr (Async) {
-            result = cudaMemcpyAsync(
-                color_buffer,
-                OutputColorMatrix.aa_colors,
-                sizeof(Color16) * N_color_cu,
-                cudaMemcpyDefault,
-                m_Stream1);
-            if (result != cudaSuccess) {
-                return result;
-            }
-        } else {
-            result = cudaMemcpy(
-                color_buffer,
-                OutputColorMatrix.aa_colors,
-                sizeof(Color16) * N_color_cu,
-                cudaMemcpyDefault);
-            if (result != cudaSuccess) {
-                return result;
-            }
+        result = cudaMemcpyAsync(
+            color_buffer,
+            OutputColorMatrix.aa_colors,
+            sizeof(Color16) * N_color_cu,
+            cudaMemcpyDefault,
+            m_ComputeStream);
+        if (result != cudaSuccess) {
+            return result;
         }
     }
 
     if (reduction_results != nullptr) {
-        if constexpr (Async) {
-            result = cudaMemcpyAsync(
-                reduction_results,
-                OutputReductionResults,
-                sizeof(ReductionResults),
-                cudaMemcpyDefault,
-                m_Stream1);
-            if (result != cudaSuccess) {
-                return result;
-            }
-        } else {
-            result = cudaMemcpy(
-                reduction_results,
-                OutputReductionResults,
-                sizeof(ReductionResults),
-                cudaMemcpyDefault);
-            if (result != cudaSuccess) {
-                return result;
-            }
+        result = cudaMemcpyAsync(
+            reduction_results,
+            OutputReductionResults,
+            sizeof(ReductionResults),
+            cudaMemcpyDefault,
+            m_ComputeStream);
+        if (result != cudaSuccess) {
+            return result;
         }
     }
 
@@ -1839,23 +1786,12 @@ uint32_t GPURenderer::ExtractItersAndColors(
 }
 
 template
-uint32_t GPURenderer::ExtractItersAndColors<uint32_t, false>(
+uint32_t GPURenderer::ExtractItersAndColors<uint32_t>(
     uint32_t *iter_buffer,
     Color16 *color_buffer,
     ReductionResults *reduction_results);
 template
-uint32_t GPURenderer::ExtractItersAndColors<uint64_t, false>(
-    uint64_t *iter_buffer,
-    Color16 *color_buffer,
-    ReductionResults *reduction_results);
-
-template
-uint32_t GPURenderer::ExtractItersAndColors<uint32_t, true>(
-    uint32_t *iter_buffer,
-    Color16 *color_buffer,
-    ReductionResults *reduction_results);
-template
-uint32_t GPURenderer::ExtractItersAndColors<uint64_t, true>(
+uint32_t GPURenderer::ExtractItersAndColors<uint64_t>(
     uint64_t *iter_buffer,
     Color16 *color_buffer,
     ReductionResults *reduction_results);

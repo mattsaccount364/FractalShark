@@ -128,23 +128,43 @@ AutoZoomer::Run()
             }
         }
 
+        // Pre-initialize all renderers' GPU memory before the zoom loop
+        // so that managed memory allocations don't conflict with in-flight kernels.
+        for (size_t r = 0; r < NumRenderers; ++r) {
+            auto err = m_Fractal.InitializeGPUMemory(static_cast<RendererIndex>(r), false);
+            if (err) {
+                m_Fractal.MessageBoxCudaError(err);
+                return;
+            }
+        }
+
+        static constexpr size_t PipelineDepth = 2 * NumRenderers;
+        std::vector<RenderJobHandle> handles(PipelineDepth);
+
         for (int64_t i = 0; i < totalSteps; ++i) {
             {
                 MSG msg;
                 PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
             }
 
-            m_Fractal.m_Ptz = zoomSteps[i];
-            m_Fractal.m_ChangedWindow = true;
+            if (m_Fractal.m_StopCalculating)
+                break;
+
+            // Wait for the oldest in-flight item before enqueueing
+            size_t slot = i % PipelineDepth;
+            handles[slot].Wait();
 
             if (shouldInterpolateIters) {
                 m_Fractal.SetNumIterations<IterTypeFull>(iterCounts[i]);
             }
 
-            m_Fractal.CalcFractal(true);
+            // Pass coordinates directly — avoids racing on m_Ptz
+            handles[slot] = m_Fractal.EnqueueRender(zoomSteps[i]);
+        }
 
-            if (m_Fractal.m_StopCalculating)
-                break;
+        // Drain all remaining in-flight renders
+        for (auto &h : handles) {
+            h.Wait();
         }
 
         return;
@@ -325,7 +345,8 @@ AutoZoomer::Run()
             PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY};
 
             m_Fractal.RecenterViewCalc(newPtz);
-            m_Fractal.CalcFractal(true);
+            auto handle = m_Fractal.EnqueueRender();
+            handle.Wait();
 
             if (numAtMax > 500)
                 break;

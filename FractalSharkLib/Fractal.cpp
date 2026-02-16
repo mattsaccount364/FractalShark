@@ -75,10 +75,6 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
         m_CheckForAbortThread = nullptr;
     }
 
-    m_AsyncRenderThreadCommand = { AsyncRenderThreadCommand::State::Idle, RendererIndex::Renderer0 };
-    m_AsyncRenderThreadFinish = false;
-    m_AsyncRenderThread = std::make_unique<std::thread>(DrawAsyncGpuFractalThreadStatic, this);
-
     srand((unsigned int)time(nullptr));
 
     // Initialize the palette
@@ -100,6 +96,9 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
 
     // Allocate the iterations array.
     InitializeMemory();
+
+    // Initialize the render thread pool
+    m_RenderPool = std::make_unique<RenderThreadPool>(this, m_hWnd);
 }
 
 void
@@ -109,9 +108,11 @@ Fractal::InitializeMemory()
     m_FractalSavesInProgress.clear();
 
     // Set up new memory.
+    // 1 for m_CurIters + NumRenderers for pool workers + 2 spare for PngParallelSave
+    static constexpr size_t NumContainers = 1 + NumRenderers + 2;
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
     m_ItersMemoryStorage.clear();
-    for (size_t i = 0; i < 3; i++) {
+    for (size_t i = 0; i < NumContainers; i++) {
         const size_t total_aa = GetGpuAntialiasing();
         ItersMemoryContainer container(GetIterType(), m_ScrnWidth, m_ScrnHeight, total_aa);
         m_ItersMemoryStorage.push_back(std::move(container));
@@ -141,9 +142,7 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse)
         res = renderer.InitializeMemory<uint32_t>((uint32_t)m_CurIters.m_Width,
                                              (uint32_t)m_CurIters.m_Height,
                                              (uint32_t)m_CurIters.m_Antialiasing,
-                                             m_Palette.GetCurrentPalR(),
-                                             m_Palette.GetCurrentPalG(),
-                                             m_Palette.GetCurrentPalB(),
+                                             m_Palette.GetCurrentPalInterleaved(),
                                              m_Palette.GetCurrentNumColors(),
                                              m_Palette.GetAuxDepth(),
                                              expectedReuse);
@@ -151,9 +150,7 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse)
         res = renderer.InitializeMemory<uint64_t>((uint32_t)m_CurIters.m_Width,
                                              (uint32_t)m_CurIters.m_Height,
                                              (uint32_t)m_CurIters.m_Antialiasing,
-                                             m_Palette.GetCurrentPalR(),
-                                             m_Palette.GetCurrentPalG(),
-                                             m_Palette.GetCurrentPalB(),
+                                             m_Palette.GetCurrentPalInterleaved(),
                                              m_Palette.GetCurrentNumColors(),
                                              m_Palette.GetAuxDepth(),
                                              expectedReuse);
@@ -170,7 +167,30 @@ void
 Fractal::ReturnIterMemory(ItersMemoryContainer &&to_return)
 {
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
+
+    // Discard containers with stale dimensions (from before a resize)
+    if (to_return.m_OutputWidth != m_ScrnWidth ||
+        to_return.m_OutputHeight != m_ScrnHeight) {
+        return;
+    }
+
     m_ItersMemoryStorage.push_back(std::move(to_return));
+}
+
+ItersMemoryContainer
+Fractal::AcquireItersMemory()
+{
+    std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
+    for (;;) {
+        if (!m_ItersMemoryStorage.empty()) {
+            auto container = std::move(m_ItersMemoryStorage.back());
+            m_ItersMemoryStorage.pop_back();
+            return container;
+        }
+        lock.unlock();
+        Sleep(100);
+        lock.lock();
+    }
 }
 
 void
@@ -198,16 +218,10 @@ Fractal::SetCurItersMemory()
 void
 Fractal::Uninitialize(void)
 {
-
-    {
-        std::lock_guard lk(m_AsyncRenderThreadMutex);
-        m_AsyncRenderThreadCommand.state = AsyncRenderThreadCommand::State::Finish;
-        m_AsyncRenderThreadFinish = true;
-    }
-    m_AsyncRenderThreadCV.notify_one();
-
-    if (m_AsyncRenderThread != nullptr) {
-        m_AsyncRenderThread->join();
+    // Shutdown the render thread pool first
+    if (m_RenderPool) {
+        m_RenderPool->Shutdown();
+        m_RenderPool.reset();
     }
 
     CleanupThreads(true);
@@ -1071,12 +1085,6 @@ Fractal::CalcFractal(bool drawFractal)
 void
 Fractal::CalcFractal(RendererIndex idx, bool drawFractal)
 {
-    // if (m_glContextAsync->GetRepaint() == false)
-    //{
-    //     DrawFractal(RendererIndex::Renderer0);
-    //     return;
-    // }
-
     ScopedBenchmarkStopper stopper(m_BenchmarkData.m_Overall);
 
     // Bypass this function if the screen is too small.
@@ -1089,6 +1097,24 @@ Fractal::CalcFractal(RendererIndex idx, bool drawFractal)
     } else {
         CalcFractalTypedIter<uint64_t>(idx, drawFractal);
     }
+}
+
+RenderJobHandle
+Fractal::EnqueueRender()
+{
+    if (m_RenderPool) {
+        return m_RenderPool->EnqueueCurrentState();
+    }
+    return RenderJobHandle{};
+}
+
+RenderJobHandle
+Fractal::EnqueueRender(const PointZoomBBConverter &ptz)
+{
+    if (m_RenderPool) {
+        return m_RenderPool->EnqueueCurrentState(ptz);
+    }
+    return RenderJobHandle{};
 }
 
 template <typename IterType>
@@ -1105,8 +1131,7 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal)
     m_StopCalculating = false;
 
     // Do nothing if nothing has changed
-    if (ChangedIsDirty() == false || (m_glContextAsync && m_glContextAsync->GetRepaint() == false)) {
-        DrawFractal(idx);
+    if (ChangedIsDirty() == false) {
         return;
     }
 
@@ -1525,55 +1550,6 @@ Fractal::GetPalette()
     return m_Palette;
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Redraws the fractal using OpenGL calls.
-// Note that coordinates here are weird, so we have to make a few tweaks to
-// get the image oriented right side up. In particular, the line which reads:
-//       glVertex2i (px, m_ScrnHeight - py);
-//////////////////////////////////////////////////////////////////////////////
-void
-Fractal::DrawFractal(RendererIndex idx)
-{
-    {
-        std::unique_lock lk(m_AsyncRenderThreadMutex);
-
-        m_AsyncRenderThreadCV.wait(
-            lk, [&] { return m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Idle; });
-
-        m_AsyncRenderThreadCommand = { AsyncRenderThreadCommand::State::Start, idx };
-    }
-
-    m_AsyncRenderThreadCV.notify_one();
-
-    if (m_BypassGpu == false) {
-        uint32_t result = GetRenderer(idx).SyncComputeStream();
-        if (result) {
-            MessageBoxCudaError(result);
-        }
-    } else {
-        std::cerr << "Bypassing GPU in effect: No GPU synchronization performed." << std::endl;
-    }
-
-    {
-        std::unique_lock lk(m_AsyncRenderThreadMutex);
-
-        m_AsyncRenderThreadCV.wait(
-            lk, [&] { return m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Idle; });
-
-        m_AsyncRenderThreadCommand.state = AsyncRenderThreadCommand::State::SyncDone;
-    }
-
-    m_AsyncRenderThreadCV.notify_one();
-
-    {
-        std::unique_lock lk(m_AsyncRenderThreadMutex);
-
-        m_AsyncRenderThreadCV.wait(lk, [&] { return m_AsyncRenderThreadFinish; });
-
-        m_AsyncRenderThreadFinish = false;
-    }
-}
-
 template <typename IterType>
 void
 Fractal::DrawGlFractal(RendererIndex idx, bool LocalColor, bool lastIter)
@@ -1618,7 +1594,7 @@ Fractal::DrawGlFractal(RendererIndex idx, bool LocalColor, bool lastIter)
             return;
         }
 
-        result = renderer.SyncStream(true);
+        result = renderer.SyncComputeStream();
         if (result) {
             MessageBoxCudaError(result);
             return;
@@ -1704,19 +1680,19 @@ Fractal::DrawGlFractal(RendererIndex idx, bool LocalColor, bool lastIter)
 void
 Fractal::SetRepaint(bool repaint)
 {
-    m_glContextAsync->SetRepaint(repaint);
+    m_Repaint = repaint;
 }
 
 bool
 Fractal::GetRepaint() const
 {
-    return m_glContextAsync->GetRepaint();
+    return m_Repaint;
 }
 
 void
 Fractal::ToggleRepainting()
 {
-    m_glContextAsync->ToggleRepaint();
+    m_Repaint = !m_Repaint;
 }
 
 static inline void
@@ -1828,9 +1804,7 @@ Fractal::DrawFractalThread(size_t index, Fractal *fractal)
 
             const size_t totalAA = fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
             uint32_t palIters = fractal->m_Palette.GetCurrentNumColors();
-            const uint16_t *palR = fractal->m_Palette.GetCurrentPalR();
-            const uint16_t *palG = fractal->m_Palette.GetCurrentPalG();
-            const uint16_t *palB = fractal->m_Palette.GetCurrentPalB();
+            const Color16 *pal = fractal->m_Palette.GetCurrentPalInterleaved();
             size_t basicFactor = 65536 / NumIterations;
             if (basicFactor == 0) {
                 basicFactor = 1;
@@ -1842,9 +1816,9 @@ Fractal::DrawFractalThread(size_t index, Fractal *fractal)
 
                     if (fractal->m_Palette.GetPaletteType() != FractalPaletteType::Basic) {
                         auto palIndex = shiftedIters % palIters;
-                        acc_r += palR[palIndex];
-                        acc_g += palG[palIndex];
-                        acc_b += palB[palIndex];
+                        acc_r += pal[palIndex].r;
+                        acc_g += pal[palIndex].g;
+                        acc_b += pal[palIndex].b;
                     } else {
                         acc_r += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
                         acc_g += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
@@ -1934,92 +1908,6 @@ Fractal::DrawFractalThread(size_t index, Fractal *fractal)
     }
 }
 
-void
-Fractal::DrawAsyncGpuFractalThread()
-{
-    m_glContextAsync = std::make_unique<OpenGlContext>(m_hWnd);
-    if (!m_glContextAsync->IsValid()) {
-        return;
-    }
-
-    auto lambda = [&]<typename IterType>(RendererIndex rendererIdx, bool lastIter) -> bool {
-        m_glContextAsync->glResetViewDim(m_ScrnWidth, m_ScrnHeight);
-
-        if (m_glContextAsync->GetRepaint() == false) {
-            m_glContextAsync->DrawGlBox();
-            return false;
-        }
-
-        const bool LocalColor = RequiresUseLocalColor();
-        DrawGlFractal<IterType>(rendererIdx, LocalColor, lastIter);
-        return false;
-    };
-
-    for (;;) {
-        RendererIndex rendererIdx;
-        {
-            std::unique_lock lk(m_AsyncRenderThreadMutex);
-
-            m_AsyncRenderThreadCV.wait(lk, [&] {
-                return m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Start ||
-                       m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Finish;
-            });
-
-            if (m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Finish) {
-                break;
-            }
-
-            rendererIdx = m_AsyncRenderThreadCommand.rendererIdx;
-            m_AsyncRenderThreadCommand.state = AsyncRenderThreadCommand::State::Idle;
-        }
-
-        m_AsyncRenderThreadCV.notify_one();
-
-        for (size_t i = 0;; i++) {
-            // Setting the timeout lower works fine but puts more load on the GPU
-            static constexpr auto set_time = std::chrono::milliseconds(1000);
-
-            std::unique_lock lk(m_AsyncRenderThreadMutex);
-            auto doneearly = m_AsyncRenderThreadCV.wait_for(lk, set_time, [&] {
-                return m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::SyncDone;
-            });
-
-            m_AsyncRenderThreadCommand.state = AsyncRenderThreadCommand::State::Idle;
-
-            bool err;
-
-            if (GetIterType() == IterTypeEnum::Bits32) {
-                err = lambda.template operator()<uint32_t>(rendererIdx, doneearly);
-            } else {
-                err = lambda.template operator()<uint64_t>(rendererIdx, doneearly);
-            }
-
-            if (err) {
-                std::wcerr << L"Unexpected error in DrawAsyncGpuFractalThread 1" << std::endl;
-                break;
-            }
-
-            if (doneearly) {
-                break;
-            }
-        }
-
-        {
-            std::unique_lock lk(m_AsyncRenderThreadMutex);
-            m_AsyncRenderThreadFinish = true;
-        }
-
-        m_AsyncRenderThreadCV.notify_one();
-    }
-
-    m_glContextAsync = nullptr;
-}
-
-void
-Fractal::DrawAsyncGpuFractalThreadStatic(Fractal *fractal)
-{
-    fractal->DrawAsyncGpuFractalThread();
-}
 
 void
 Fractal::FillCoord(const HighPrecision &src, MattQFltflt &dest)
@@ -2808,10 +2696,6 @@ Fractal::CalcGpuFractal(RendererIndex idx, bool drawFractal)
     if (err) {
         MessageBoxCudaError(err);
     }
-
-    if (drawFractal) {
-        DrawFractal(idx);
-    }
 }
 
 template <typename IterType>
@@ -2977,8 +2861,6 @@ Fractal::CalcCpuPerturbationFractal()
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
         threads[cur_thread]->join();
     }
-
-    DrawFractal(RendererIndex::Renderer0);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -3069,8 +2951,6 @@ Fractal::CalcCpuHDR()
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
         threads[cur_thread]->join();
     }
-
-    DrawFractal(RendererIndex::Renderer0);
 }
 
 template <typename IterType, class T, class SubType>
@@ -3326,8 +3206,6 @@ Fractal::CalcCpuPerturbationFractalBLA()
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
         threads[cur_thread]->join();
     }
-
-    DrawFractal(RendererIndex::Renderer0);
 }
 
 template <typename IterType, class SubType, PerturbExtras PExtras>
@@ -3530,8 +3408,6 @@ Fractal::CalcCpuPerturbationFractalLAV2()
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
         threads[cur_thread]->join();
     }
-
-    DrawFractal(RendererIndex::Renderer0);
 }
 
 template <typename IterType, class T, class SubType>
@@ -3589,10 +3465,6 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal)
                                                centerY2,
                                                GetNumIterations<IterType>(),
                                                m_IterationPrecision);
-
-    if (drawFractal) {
-        DrawFractal(idx);
-    }
 
     if (result) {
         MessageBoxCudaError(result);
@@ -3684,10 +3556,6 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal)
         MessageBoxCudaError(result);
         return;
     }
-
-    if (drawFractal) {
-        DrawFractal(idx);
-    }
 }
 
 template <typename IterType, class T, class SubType, class T2, class SubType2>
@@ -3757,10 +3625,6 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal
                                                           centerY2,
                                                           GetNumIterations<IterType>(),
                                                           m_IterationPrecision);
-
-    if (drawFractal) {
-        DrawFractal(idx);
-    }
 
     if (result) {
         MessageBoxCudaError(result);

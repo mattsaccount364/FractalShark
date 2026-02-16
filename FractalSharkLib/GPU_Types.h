@@ -54,33 +54,25 @@ struct Palette {
         local_pal(nullptr),
         local_palIters(0),
         palette_aux_depth(0),
-        cached_hostPalR(nullptr),
-        cached_hostPalG(nullptr),
-        cached_hostPalB(nullptr) {
+        cached_hostPalInterleaved(nullptr) {
     }
 
     Palette(
         Color16 *local_pal,
         uint32_t local_palIters,
         uint32_t palette_aux_depth,
-        const uint16_t *cached_hostPalR,
-        const uint16_t *cached_hostPalG,
-        const uint16_t *cached_hostPalB) :
+        const Color16 *cached_hostPalInterleaved) :
         local_pal(local_pal),
         local_palIters(local_palIters),
         palette_aux_depth(palette_aux_depth),
-        cached_hostPalR(cached_hostPalR),
-        cached_hostPalG(cached_hostPalG),
-        cached_hostPalB(cached_hostPalB) {
+        cached_hostPalInterleaved(cached_hostPalInterleaved) {
     }
 
     Color16 *local_pal;
     uint32_t local_palIters;
     uint32_t palette_aux_depth;
 
-    const uint16_t *cached_hostPalR;
-    const uint16_t *cached_hostPalG;
-    const uint16_t *cached_hostPalB;
+    const Color16 *cached_hostPalInterleaved;
 };
 
 #include "GPU_ReferenceIter.h"

@@ -28,9 +28,7 @@ PngParallelSave::PngParallelSave(
     m_CopyTheIters(copy_the_iters) {
 
     for (size_t i = 0; i < FractalPaletteType::Num; i++) {
-        m_PalR[i] = fractal.GetPalette().GetPalR(i);
-        m_PalG[i] = fractal.GetPalette().GetPalG(i);
-        m_PalB[i] = fractal.GetPalette().GetPalB(i);
+        m_PalInterleaved[i] = fractal.GetPalette().GetPalInterleaved(i);
 
         m_PalIters[i] = fractal.GetPalette().GetPalIters(i);
     }
@@ -133,9 +131,9 @@ void PngParallelSave::Run() {
                             auto shiftedIters = (numIters >> m_PaletteAuxDepth);
                             auto palIndex = shiftedIters % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
 
-                            acc_r += m_PalR[m_WhichPalette][m_PaletteDepthIndex][palIndex];
-                            acc_g += m_PalG[m_WhichPalette][m_PaletteDepthIndex][palIndex];
-                            acc_b += m_PalB[m_WhichPalette][m_PaletteDepthIndex][palIndex];
+                            acc_r += m_PalInterleaved[m_WhichPalette][m_PaletteDepthIndex][palIndex].r;
+                            acc_g += m_PalInterleaved[m_WhichPalette][m_PaletteDepthIndex][palIndex].g;
+                            acc_b += m_PalInterleaved[m_WhichPalette][m_PaletteDepthIndex][palIndex].b;
                         }
                     }
                 }

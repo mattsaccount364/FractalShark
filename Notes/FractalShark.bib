@@ -1,3 +1,7 @@
+% =====================================================================
+% GPU Libraries and Tools
+% =====================================================================
+
 @misc{CGBN_NVlabs,
   title        = {CGBN: CUDA Accelerated Multiple Precision Arithmetic Using Cooperative Groups},
   author       = {{NVIDIA Labs}},
@@ -6,11 +10,166 @@
   note         = {GitHub repository}
 }
 
+@misc{MPIR_Library,
+  title        = {MPIR: Multiple Precision Integers and Rationals},
+  author       = {Hart, William and others},
+  howpublished = {\url{https://github.com/BrianGladman/mpir}},
+  year         = {2017},
+  note         = {Version 3.0.0. Fork of GMP; GNU LGPL v3+}
+}
+
+% =====================================================================
+% Perturbation Theory for Mandelbrot Rendering
+% =====================================================================
+
+@misc{Martin2013Perturbation,
+  author       = {Martin, K. I.},
+  title        = {Superfractalthing --- Arbitrary Precision Mandelbrot Set Rendering in {Java}},
+  howpublished = {Fractal Forums announcement},
+  year         = {2013},
+  month        = may,
+  url          = {http://www.fractalforums.com/announcements-and-news/superfractalthing-arbitrary-precision-mandelbrot-set-rendering-in-java/},
+  note         = {Introduced perturbation theory with series approximation for
+                  deep-zoom Mandelbrot rendering}
+}
+
+@misc{HeilandAllen2013Perturbation,
+  author       = {Heiland-Allen, Claude},
+  title        = {Perturbation techniques applied to the {Mandelbrot} set},
+  howpublished = {\url{http://mathr.co.uk/mandelbrot/perturbation.pdf}},
+  year         = {2013},
+  month        = oct,
+  note         = {Extends perturbation to interior distance estimation;
+                  discusses glitch detection and automatic reference selection}
+}
+
+@misc{HeilandAllen2022DeepZoom,
+  author       = {Heiland-Allen, Claude},
+  title        = {Deep zoom theory and practice again},
+  howpublished = {\url{https://mathr.co.uk/blog/2022-02-21_deep_zoom_theory_and_practice_again.html}},
+  year         = {2022},
+  month        = feb,
+  note         = {Discusses rebasing, glitch avoidance, and reference orbit
+                  selection strategies}
+}
+
+@misc{KallesFraktaler,
+  author       = {Runmo, Karl and Heiland-Allen, Claude},
+  title        = {Kalles Fraktaler 2+},
+  howpublished = {\url{https://mathr.co.uk/kf/kf.html}},
+  year         = {2022},
+  note         = {Pioneering deep-zoom Mandelbrot renderer using perturbation
+                  theory and series approximation.  Originally by Karl Runmo;
+                  enhanced fork by Heiland-Allen with MPFR-based arbitrary
+                  precision.  An acknowledged influence on \FractalShark{}}
+}
+
+@misc{Wikibooks_Perturbation,
+  title        = {Fractals/perturbation},
+  author       = {{Wikibooks contributors}},
+  howpublished = {\url{https://en.wikibooks.org/wiki/Fractals/perturbation}},
+  note         = {Community reference on perturbation methods, glitch detection,
+                  rebasing, and series approximation. Accessed 2026}
+}
+
+% =====================================================================
+% Bilinear / Linear Approximation (BLA / LA)
+% =====================================================================
+
+@misc{Thompson2023BLA,
+  author       = {Thompson, Phil},
+  title        = {Faster {Mandelbrot} Set Rendering with {BLA}: Bivariate Linear Approximation},
+  howpublished = {\url{https://philthompson.me/2023/Faster-Mandelbrot-Set-Rendering-with-BLA-Bivariate-Linear-Approximation.html}},
+  year         = {2023},
+  note         = {Detailed exposition of the BLA technique for skipping
+                  iterations via composable linear maps with validity bounds}
+}
+
+@misc{Imagina,
+  author       = {Zhuoran},
+  title        = {Imagina --- a {Mandelbrot} set viewer},
+  howpublished = {\url{https://github.com/5E-324/Imagina}},
+  year         = {2021},
+  note         = {Fractal viewer implementing LA v2 linear approximation,
+                  reference compression, and related techniques.
+                  Several algorithms in \FractalShark{} are adapted from or
+                  influenced by Imagina}
+}
+
+% =====================================================================
+% Extended-Precision Arithmetic
+% =====================================================================
+
+@techreport{Hida2001QD,
+  title        = {Library for Double-Double and Quad-Double Arithmetic},
+  author       = {Hida, Yozo and Li, Xiaoye S. and Bailey, David H.},
+  institution  = {Lawrence Berkeley National Laboratory},
+  year         = {2001},
+  number       = {LBNL-46996},
+  url          = {https://www.davidhbailey.com/dhbpapers/quad-double.pdf},
+  note         = {Revised December 29, 2007.  The QD library;
+                  basis for the \code{GQF}/\code{GQD} types in \FractalShark{}}
+}
+
+@article{Dekker1971DoubleDouble,
+  title        = {A floating-point technique for extending the available precision},
+  author       = {Dekker, T. J.},
+  journal      = {Numerische Mathematik},
+  volume       = {18},
+  number       = {3},
+  pages        = {224--242},
+  year         = {1971},
+  doi          = {10.1007/BF01397083},
+  note         = {Foundational double-double arithmetic;
+                  basis for the compensated-sum techniques used in \code{dblflt}}
+}
+
+@inproceedings{andrew-thall-dblflt,
+  author    = {Thall, Andrew},
+  title     = {Extended-precision floating-point numbers for {GPU} computation},
+  year      = {2006},
+  isbn      = {1595933646},
+  publisher = {Association for Computing Machinery},
+  address   = {New York, NY, USA},
+  url       = {https://doi.org/10.1145/1179622.1179682},
+  doi       = {10.1145/1179622.1179682},
+  booktitle = {ACM SIGGRAPH 2006 Research Posters},
+  pages     = {52–és},
+  location  = {Boston, Massachusetts},
+  series    = {SIGGRAPH '06}
+}
+
+@book{Knuth1997TAOCP2,
+  title        = {The Art of Computer Programming, Volume 2: Seminumerical Algorithms},
+  author       = {Knuth, Donald E.},
+  edition      = {3rd},
+  publisher    = {Addison-Wesley},
+  year         = {1997},
+  isbn         = {0201896842},
+  note         = {Section 4.2.2: error-free transformations (TwoSum, FastTwoSum)}
+}
+
+% =====================================================================
+% Multiplication Algorithms and NTT
+% =====================================================================
+
 @misc{NTT_Wikipedia,
   title        = {Number-Theoretic Transform},
   author       = {{Wikipedia contributors}},
   howpublished = {\url{https://en.wikipedia.org/wiki/Number-theoretic_transform}},
-  note         = {Accessed online}
+  year         = {2025},
+  note         = {Accessed 2025}
+}
+
+@article{Montgomery1985Modular,
+  title        = {Modular multiplication without trial division},
+  author       = {Montgomery, Peter L.},
+  journal      = {Mathematics of Computation},
+  volume       = {44},
+  number       = {170},
+  pages        = {519--521},
+  year         = {1985},
+  doi          = {10.1090/S0025-5718-1985-0777282-X}
 }
 
 @phdthesis{Emmart_GPU_MultiPrecision,
@@ -31,62 +190,85 @@
 }
 
 @article{MFFT_GPU_FFT,
-  title        = {MFFT: A GPU Accelerated Highly Efficient Mixed-Precision Large-Scale FFT Framework},
+  title        = {{MFFT}: A {GPU} Accelerated Highly Efficient Mixed-Precision Large-Scale {FFT} Framework},
   author       = {Xin, Haoyang and Zhao, Yanfei and Li, Dongning and Wang, Jun},
   journal      = {ACM Transactions on Mathematical Software},
+  volume       = {49},
+  number       = {3},
+  pages        = {1--26},
   year         = {2023},
-  url          = {https://dl.acm.org/doi/full/10.1145/3605148}
+  doi          = {10.1145/3605148}
 }
 
 @misc{GMP_Karatsuba,
-  title        = {Karatsuba Multiplication in GMP},
+  title        = {Karatsuba Multiplication in {GMP}},
   author       = {{GMP Project}},
   howpublished = {\url{https://gmplib.org/manual/Karatsuba-Multiplication}},
-  note         = {Online documentation}
+  note         = {Online documentation. Accessed 2025}
 }
 
 @misc{Karatsuba_Wikipedia,
   title        = {Karatsuba Algorithm},
   author       = {{Wikipedia contributors}},
   howpublished = {\url{https://en.wikipedia.org/wiki/Karatsuba_algorithm}},
-  note         = {Accessed online}
+  year         = {2025},
+  note         = {Accessed 2025}
 }
 
 @misc{ToomCook_Wikipedia,
   title        = {Toom--Cook Multiplication},
   author       = {{Wikipedia contributors}},
   howpublished = {\url{https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication}},
-  note         = {Accessed online}
+  year         = {2025},
+  note         = {Accessed 2025}
 }
 
 @misc{SchonhageStrassen_Wikipedia,
   title        = {Sch{\"o}nhage--Strassen Algorithm},
   author       = {{Wikipedia contributors}},
   howpublished = {\url{https://en.wikipedia.org/wiki/Sch%C3%B6nhage%E2%80%93Strassen_algorithm}},
-  note         = {Accessed online}
+  year         = {2025},
+  note         = {Accessed 2025}
 }
 
-@inproceedings{andrew-thall-dblflt,
-author = {Thall, Andrew},
-title = {Extended-precision floating-point numbers for GPU computation},
-year = {2006},
-isbn = {1595933646},
-publisher = {Association for Computing Machinery},
-address = {New York, NY, USA},
-url = {https://doi.org/10.1145/1179622.1179682},
-doi = {10.1145/1179622.1179682},
-booktitle = {ACM SIGGRAPH 2006 Research Posters},
-pages = {52–es},
-location = {Boston, Massachusetts},
-series = {SIGGRAPH '06}
-}
+% =====================================================================
+% Parallel Prefix Scans
+% =====================================================================
 
 @article{merrill2016single,
-  title={Single-pass parallel prefix scan with decoupled look-back},
-  author={Merrill, Duane and Garland, Michael},
-  journal={NVIDIA, Tech. Rep. NVR-2016-002},
-  year={2016}
+  title        = {Single-pass parallel prefix scan with decoupled look-back},
+  author       = {Merrill, Duane and Garland, Michael},
+  journal      = {NVIDIA, Tech. Rep. NVR-2016-002},
+  year         = {2016}
 }
+
+@techreport{Blelloch1990PrefixSums,
+  title        = {Prefix Sums and Their Applications},
+  author       = {Blelloch, Guy E.},
+  institution  = {School of Computer Science, Carnegie Mellon University},
+  year         = {1990},
+  number       = {CMU-CS-90-190},
+  note         = {Describes the classical up-sweep/down-sweep parallel prefix
+                  scan algorithm}
+}
+
+% =====================================================================
+% Mandelbrot Set --- Foundational
+% =====================================================================
+
+@article{Mandelbrot1980Fractal,
+  title        = {Fractal aspects of the iteration of $z \mapsto \lambda z(1-z)$ for complex $\lambda$ and $z$},
+  author       = {Mandelbrot, Beno{\^\i}t B.},
+  journal      = {Annals of the New York Academy of Sciences},
+  volume       = {357},
+  pages        = {249--259},
+  year         = {1980},
+  doi          = {10.1111/j.1749-6632.1980.tb29690.x}
+}
+
+% =====================================================================
+% Reference Compression and Community Contributions
+% =====================================================================
 
 @misc{Zhuoran2023ReferenceCompression,
   author       = {Zhuoran},
@@ -96,5 +278,6 @@ series = {SIGGRAPH '06}
   month        = jul,
   url          = {https://fractalforums.org/index.php?topic=5142.0},
   urldate      = {2026-01-19},
-  note         = {Thread started July 23, 2023. Accessed January 19, 2026.}
+  note         = {Thread started July 23, 2023. Accessed January 19, 2026.
+                  Introduces rebasing and waypoint-based reference compression}
 }

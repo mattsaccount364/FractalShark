@@ -1,0 +1,969 @@
+\section{Reference Orbit Calculation}
+\label{sec:ref-orbit-calc}
+
+This section describes how \code{RefOrbitCalc} constructs (and optionally 
+reuses) a high-precision \emph{reference orbit} for perturbation rendering (\cref{sec:perturbation-concept}) of 
+the quadratic map
+
+\begin{equation}
+  z_{n+1} = z_n^2 + c,\qquad z,c\in\mathbb{C},
+\end{equation}
+
+with an implementation that supports single-threaded CPU, multi-threaded CPU,
+and GPU backends, plus several storage/compression modes that trade memory
+footprint against recomputation.
+
+\subsection{High-level pipeline and dispatch}
+\label{subsec:ref-orbit-pipeline}
+
+A reference orbit is stored in a \code{PerturbationResults<IterType,T,PExtras>}
+instance, where:
+
+\begin{itemize}
+  \item \code{IterType} is the iteration index type (\code{uint32\_t} or \code{uint64\_t}).
+  \item \code{T} is the low-precision numeric type used for downstream perturbation math (e.g.\ \code{float},
+        \code{double}, \code{HDRFloat<...>}).
+  \item \code{PExtras} selects the storage format for per-iteration orbit data:
+        uncompressed (\code{Disable}), a lightweight compressor (\code{SimpleCompression}),
+        or additional diagnostic bookkeeping (e.g.\ \code{Bad}).
+\end{itemize}
+
+Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, which:
+
+\begin{enumerate}
+  \item Picks an initial guess \((c_x,c_y)\) (center of the current view
+        if unset).
+  \item Chooses an algorithm (\code{ST}, \code{MT}, reuse-based hybrids,
+        or \code{GPU}) based on \code{m\_PerturbationAlg} and zoom factor
+        heuristics.
+  \item Allocates a new \code{PerturbationResults} slot, initializes
+        metadata and bounds, and runs the chosen orbit kernel until escape,
+        periodicity detection, or the maximum iteration count is reached.
+\end{enumerate}
+
+To control memory pressure, \code{OptimizeMemory()} monitors process commit 
+usage and opportunistically drops cached orbits that are not of the currently 
+demanded variant type when the working set exceeds a configurable threshold.
+
+\subsection{Single-threaded authoritative orbit}
+\label{subsec:ref-orbit-st}
+
+The single-threaded path
+(\code{AddPerturbationReferencePointST})
+computes the authoritative orbit directly using MPIR/GMP \cite{MPIR_Library} \code{mpf\_t} for
+the recurrence, while simultaneously emitting a low-precision shadow copy
+\((\hat{x}_n,\hat{y}_n)\in T^2\) for downstream work (compression, bailout
+checks, periodicity tests).
+
+\paragraph{State and initialization.}
+
+Given a selected reference parameter \(c = c_x + i c_y\), the implementation:
+
+\begin{itemize}
+  \item Initializes \code{mpf\_t} temporaries for \(x,y,x^2\), and scratch products.
+  \item Sets the initial iterate \((x_0,y_0) = (c_x,c_y)\) (this code uses the common convention \(z_0=c\)).
+  \item Computes low-precision cast values \(\hat{c}_x,\hat{c}_y \in T\) either via \code{mpf\_get\_d} for
+        native float/double, or via a mantissa/exponent extraction for extended formats.
+\end{itemize}
+
+\paragraph{Recurrence.}
+Writing \(z_n = x_n + i y_n\), one iteration evaluates
+\begin{align}
+  x_{n+1} &= x_n^2 - y_n^2 + c_x, \\
+  y_{n+1} &= 2 x_n y_n + c_y.
+\end{align}
+The implementation uses:
+\begin{itemize}
+  \item \code{mpf\_mul} and \code{mpf\_sub}/\code{mpf\_add} for the high-precision update.
+  \item A low-precision snapshot \((\hat{x}_n,\hat{y}_n)\) acquired once per iteration for storage/compression,
+        periodicity heuristics, and bailout checks.
+\end{itemize}
+
+\paragraph{Bailout.}
+
+The bailout threshold is evaluated in low precision using
+
+\begin{equation}
+  \|\hat{z}_n + \hat{c}\|^2 = (\hat{x}_n + \hat{c}_x)^2 + (\hat{y}_n + \hat{c}_y)^2 > 256,
+\end{equation}
+
+which matches the code's use of \code{TwoFiftySix} and avoids a high-precision
+norm each step.  Here \(\hat{x}_n\) and \(\hat{y}_n\) are the low-precision
+shadows of the orbit state captured \emph{before} the high-precision recurrence
+update (i.e.\ they represent the current \(z_n\), not the just-computed
+\(z_{n+1}\)).  The sum \(\hat{z}_n + \hat{c}\) is therefore a cheap proxy that
+avoids re-extracting a low-precision snapshot after the update.
+Note that the bailout here is different from the one used in
+the lower-precision kernels discussed previously; this is acceptable because the
+reference orbit is used only for perturbation, not direct rendering.
+
+\subsection{Periodicity tracking via \texorpdfstring{$\partial z/\partial c$}{dz/dc}}
+\label{subsec:ref-orbit-periodicity}
+
+Several modes enable periodicity detection. The implementation tracks the complex derivative
+
+\(\frac{\partial z_n}{\partial c}\) in low precision:
+\begin{equation}
+  d_{n+1} = 2 z_n d_n + 1,\qquad d_0 = 0.
+\end{equation}
+Mathematically \(d_0 = \partial z_0/\partial c = 0\), since \(z_0=0\).
+Because the implementation begins its loop at \(z_1=c\) (folding in the
+first iteration), the code variable \code{dzdcX} is initialized to~$1$,
+which corresponds to \(d_1=1\) in the recurrence above.
+
+with \(d_n = d_{x,n} + i d_{y,n}\). Expanding into real and imaginary parts yields:
+
+\begin{align}
+  d_{x,n+1} &= 2(x_n d_{x,n} - y_n d_{y,n}) + 1, \\
+  d_{y,n+1} &= 2(x_n d_{y,n} + y_n d_{x,n}).
+\end{align}
+
+The code applies a radius-based heuristic: let
+
+\begin{equation}
+  n_2 = \max(|\hat{x}_n|,|\hat{y}_n|),\qquad
+  r_0 = \max(|d_{x,n}|,|d_{y,n}|),
+\end{equation}
+
+and define a detection threshold
+
+\begin{equation}
+  n_3 = 2\,R_{\max}\,r_0,
+\end{equation}
+
+where \(R_{\max}\) is the maximum perturbation radius stored in \code{results}
+. If \(n_2 < n_3\), the orbit is marked as \emph{maybe periodic} and the
+reference loop terminates early (unless periodicity detection is disabled).
+Otherwise, \((d_{x,n},d_{y,n})\) is advanced using the update above.
+See \cref{sec:hp-periodicity} for the analogous GPU-side periodicity mechanism.
+
+\subsection{Expanded versus factored evaluation of the reference orbit}
+
+The high-precision reference orbit evaluates the quadratic map
+
+\[
+z_{n+1} = z_n^2 + c,
+\qquad
+z_n = x_n + i y_n,
+\qquad
+c = c_x + i c_y,
+\]
+
+with full arbitrary-precision arithmetic.
+
+Writing the iteration in real and imaginary components gives the
+\emph{expanded form}:
+
+\begin{align}
+x_{n+1} &= x_n^2 - y_n^2 + c_x, \label{eq:ref-expanded-real} \\
+y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-expanded-imag}
+\end{align}
+
+This form follows directly from the algebraic definition of the polynomial.
+Each term is evaluated explicitly, requiring two full-precision squares and
+one full-precision multiplication per iteration.
+
+The same quadratic map can be evaluated in a mathematically equivalent
+\emph{factored form}. In particular, the real component may be written as
+
+\begin{align}
+x_{n+1}
+&= (x_n - y_n)(x_n + y_n) + c_x, \label{eq:ref-factored-real}
+\end{align}
+while the imaginary component remains
+\begin{align}
+y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-factored-imag}
+\end{align}
+
+In exact arithmetic, \cref{eq:ref-factored-real,eq:ref-factored-imag} are
+identical to \cref{eq:ref-expanded-real,eq:ref-expanded-imag}. The difference
+lies solely in how the products are formed.
+
+From an implementation perspective, the expanded form evaluates
+$x_n^2$ and $y_n^2$ independently and makes the subtraction
+$x_n^2 - y_n^2$ explicit. This closely mirrors the mathematical definition
+of the Mandelbrot polynomial and exercises the full squaring and
+multiplication paths of the high-precision arithmetic.
+
+The factored form reduces the number of full-precision squares by replacing
+$x_n^2 - y_n^2$ with a single multiplication of the shared intermediates
+$(x_n \pm y_n)$. This can reduce computational cost when multiplication and
+squaring have similar expense, but it introduces stronger coupling between
+terms and alters the way cancellation and rounding effects manifest in
+finite-precision arithmetic.
+
+In all cases, \FractalShark{} uses the expanded form despite the advantages offered
+by the factored form. This choice simplifies reasoning about numerical behavior,
+ensures that all arithmetic paths are exercised, and maintains consistency with
+the perturbation update form used elsewhere in the codebase.  For better
+performance it likely makes sense to implement both forms and compare their behavior
+empirically.
+
+\section{Compression and Reference Orbit Reuse Modes}
+\label{subsec:ref-orbit-compression-reuse}
+
+Two orthogonal storage decisions are made while iterating:
+
+\begin{enumerate}
+  \item \textbf{Orbit storage} for perturbation use (\code{PExtras}):
+  \begin{itemize}
+    \item \code{Disable}: store every \((\hat{x}_n,\hat{y}_n)\) uncompressed.
+    \item \code{SimpleCompression}: store a compressed subset of iterations using an error exponent
+          determined by \code{Fractal::CompressionError}.
+    \item \code{Bad}: store orbit values plus underflow/diagnostic flags.
+  \end{itemize}
+  \item \textbf{Reuse storage} for intermediate-precision regeneration (\code{ReuseMode}):
+  \begin{itemize}
+    \item \code{SaveForReuse1/2}: store uncompressed \code{mpf\_t} reuse entries.
+    \item \code{SaveForReuse3}: store an intermediate-compressed reuse stream.
+    \item \code{SaveForReuse4}: store a maximally-compressed intermediate reuse stream.
+  \end{itemize}
+\end{enumerate}
+
+The next two sections describe these mechanisms in more detail.
+
+\subsection{Reuse-based orbit regeneration}
+\label{subsec:ref-orbit-reuse}
+
+We consider iteration of the quadratic map
+\[
+f_c(z) = z^2 + c,\qquad z,c \in \mathbb{C},
+\]
+and distinguish between an \emph{authoritative} reference orbit computed in very high precision and a hierarchy of
+\emph{intermediate precision} reference orbits constructed via perturbation from that authoritative orbit.
+The central motivation for this construction is performance at extreme zoom depths: while the authoritative orbit
+is expensive to compute, it need only be regenerated infrequently as the view parameter drifts.
+Intermediate precision orbits, by contrast, are substantially cheaper to evaluate and can be reused across many
+incremental zoom steps before their accuracy envelope is exceeded.
+
+\subsubsection{Authoritative Reference Orbit}
+
+\paragraph{Notation.}
+The earlier perturbation sections
+(\cref{sec:perturbation-concept,sec:perturb-only})
+write the reference orbit and parameter as
+\(z_n^\star\) and \(c_\star\).
+Here we use the indexed notation
+\(z^{(0)}_n\) and \(c_0\) instead, so that the superscript can
+distinguish the authoritative level~\(0\) from intermediate
+levels~\(1,2,\ldots\) in the reuse hierarchy.
+The two conventions describe the same object:
+\(z^{(0)}_n \equiv z_n^\star\) and \(c_0 \equiv c_\star\).
+
+Let
+\[
+c_0 \in \mathbb{C}
+\]
+denote the authoritative reference parameter.
+The corresponding authoritative reference orbit is defined by
+\begin{equation}
+z^{(0)}_0 = 0, \qquad
+z^{(0)}_{n+1} = \bigl(z^{(0)}_n\bigr)^2 + c_0,
+\label{eq:authoritative_orbit}
+\end{equation}
+and is computed using sufficiently high precision that it is treated as exact for all practical purposes.
+This orbit constitutes the single source of truth for all subsequent perturbative constructions.
+
+At very deep zooms, recomputing~\eqref{eq:authoritative_orbit} at every navigation step would dominate runtime,
+as the required precision grows with zoom depth.
+The reuse-based framework therefore seeks to minimize how often this authoritative orbit must be recalculated,
+while still maintaining numerical correctness.
+
+\subsubsection{Perturbation Formulation}
+
+For any nearby parameter
+\[
+c = c_0 + \Delta c,
+\]
+the corresponding orbit may be written as
+\[
+z_n(c) = z^{(0)}_n + \Delta z_n,
+\]
+where $\Delta z_n$ represents the perturbation relative to the authoritative orbit.
+Substituting into the defining recurrence yields the exact perturbation equation
+\begin{align}
+\Delta z_0 &= 0, \\
+\Delta z_{n+1}
+&= 2 z^{(0)}_n \Delta z_n + (\Delta z_n)^2 + \Delta c.
+\label{eq:perturbation_exact}
+\end{align}
+Equation~\eqref{eq:perturbation_exact} is the fundamental relation used both to construct intermediate reference orbits
+and to evaluate per-pixel perturbations during rendering.
+
+\subsubsection{Intermediate Precision Reference Orbits}
+
+An intermediate precision reference orbit is defined at a parameter
+\[
+c_1 = c_0 + \Delta c_1,
+\]
+where $\Delta c_1$ is chosen such that the perturbation $\Delta z^{(1)}_n$ remains bounded within a fixed target accuracy
+(e.g.\ absolute error $\lesssim 10^{-100}$) when represented in a chosen intermediate precision arithmetic.
+
+The intermediate reference orbit is defined by
+\[
+z^{(1)}_n \equiv z^{(0)}_n + \Delta z^{(1)}_n,
+\]
+where $\Delta z^{(1)}_n$ is obtained by iterating
+\begin{equation}
+\Delta z^{(1)}_{n+1}
+= 2 z^{(0)}_n \Delta z^{(1)}_n
+  + \bigl(\Delta z^{(1)}_n\bigr)^2
+  + \Delta c_1
+\label{eq:intermediate_perturbation}
+\end{equation}
+in the intermediate precision format.
+
+Crucially, the cost of evaluating~\eqref{eq:intermediate_perturbation} is dramatically lower than that of recomputing
+the authoritative orbit~\eqref{eq:authoritative_orbit}.
+As a result, once an intermediate reference orbit has been established, it may be reused across many subsequent zoom
+or pan operations, as long as the view parameter remains within its validity radius.
+Only when accumulated drift causes the perturbation to exceed the fixed accuracy envelope does a new authoritative
+orbit need to be computed.
+
+In the single-thread execution path (beginning at
+\code{AddPerturbation\-ReferencePointST}), this construction is performed
+sequentially using the cached authoritative
+orbit samples $\{z^{(0)}_n\}$ as coefficients.
+No approximation beyond finite-precision rounding is introduced; the intermediate orbit is mathematically equivalent
+to directly iterating $f_{c_1}$, subject only to the chosen precision bound.
+
+\subsubsection{Per-Pixel Perturbation from an Intermediate Orbit}
+
+For an individual pixel parameter
+\[
+c_{\text{px}} = c_1 + \delta c,
+\]
+with $|\delta c| \ll |\Delta c_1|$, the final orbit is expressed as
+\[
+z_n(c_{\text{px}}) = z^{(1)}_n + \delta z_n,
+\]
+where $\delta z_n$ satisfies
+\begin{equation}
+\delta z_{n+1}
+= 2 z^{(1)}_n \delta z_n
+  + (\delta z_n)^2
+  + \delta c.
+\label{eq:pixel_perturbation}
+\end{equation}
+Because $|\delta c|$ is small, $\delta z_n$ remains well within the same fixed precision envelope used for the
+intermediate reference orbit.
+
+From a performance perspective, this two-level perturbation hierarchy is
+beneficial when interacting with the Mandelbrot. The expensive high-precision
+authoritative orbit is amortized over many intermediate orbits, and each
+intermediate orbit in turn supports an entire image worth of per-pixel
+perturbations. As zoom depth increases, most navigation steps therefore reuse
+existing intermediate data, with authoritative recomputation occurring only
+sporadically.
+
+The two-level approach nevertheless does have an important downside: instead of
+maintaining only a low-precision copy of the reference orbit, the system must also
+store the authoritative orbit samples $\{z^{(0)}_n\}$ to support intermediate
+reconstruction.  This increases memory usage and data transfer requirements,
+potentially impacting performance.
+
+\subsubsection{SaveForReuse Modes}
+
+Both \code{SaveForReuse1} and \code{SaveForReuse2} correspond to the mathematical framework described above.
+They differ only in execution strategy.
+
+\paragraph{SaveForReuse1.}
+In \code{SaveForReuse1}, the authoritative orbit samples $\{z^{(0)}_n\}$ are stored after initial computation and reused
+whenever intermediate reference orbits are constructed.
+This avoids recomputation of~\eqref{eq:authoritative_orbit} and ensures that all perturbative steps are driven by the same
+authoritative data.
+
+\paragraph{SaveForReuse2.}
+\code{SaveForReuse2} is a multithreaded optimization of the same procedure.
+It performs the identical perturbation recurrences
+\eqref{eq:intermediate_perturbation} and \eqref{eq:pixel_perturbation}, using the same authoritative orbit samples and
+producing the same intermediate and per-pixel results.
+The distinction lies solely in how data is staged, reused, and synchronized across threads in the multithreaded path.
+
+\paragraph{Equivalence.}
+From a mathematical standpoint,
+\[
+\code{SaveForReuse1} \;\equiv\; \code{SaveForReuse2}.
+\]
+Both modes define the same authoritative orbit, the same intermediate reference
+orbits, and the same per-pixel perturbation orbits.
+Any differences are strictly implementation-level optimizations and do not affect numerical results.
+\code{SaveForReuse3} and \code{SaveForReuse4} are addressed in a subsequent section.
+
+\subsection{Reference Compression}
+\label{sec:ref-compression-zhuoran}
+
+The idea in this section was developed by Zhuoran
+\cite{Zhuoran2023ReferenceCompression} and \FractalShark{} implements it.
+
+\subsubsection{Motivation}
+For deep zoom escape-time fractals, pixel evaluation has become extremely fast
+(e.g., via perturbation and GPU acceleration), while \emph{reference-orbit}
+construction often remains comparatively expensive and can dominate total render
+time.  Additionally, when the reference orbit is large, it can consume
+significant amounts of memory.  The goal of \emph{reference compression} is to
+store this potentially-large reference orbit in a compact form that can be
+transmitted or cached, then \emph{reconstructed} efficiently with a guaranteed
+bounded reconstruction error. The key idea is to store only a sparse set of
+\emph{waypoints} and fill the gaps by recomputing intermediate iterations in
+reduced precision.  This section describes the approach.
+
+\subsubsection{High-precision reference and low-precision surrogate}
+Let the (authoritative) high-precision reference orbit be
+\(
+z_n^{\mathrm{HP}} \in \mathbb{C}
+\)
+for \(n=0,\dots,N\).
+During compression and decompression we also maintain a low-precision surrogate
+\(
+\hat z_n \in \mathbb{C}
+\)
+computed by iterating the same recurrence in a cheaper numeric type.
+
+Because the dynamics are initially stable to rounding and only later amplify
+numerical differences, \(\hat z_n\) typically tracks \(z_n^{\mathrm{HP}}\) for
+many iterations before diverging.  This observation enables a streaming scheme:
+store occasional exact anchors (waypoints) and recover all omitted states by
+recomputing them in low precision between anchors.
+
+\subsubsection{Waypoint selection criterion}
+A \emph{waypoint} stores the iteration index and a corrective payload.
+In the simplest mode, the payload is the full authoritative value
+\(z_{n_k}^{\mathrm{HP}}\) at iteration \(n_k\).
+Waypoints are chosen by simulating \(\hat z_n\) in low precision while comparing
+against \(z_n^{\mathrm{HP}}\).  If the relative error exceeds a threshold, the
+iteration must be retained.
+
+A convenient test is
+
+\begin{equation}
+  \frac{\lVert z_n^{\mathrm{HP}} - \hat z_n \rVert}{\lVert z_n^{\mathrm{HP}} \rVert}
+  \;>\; \varepsilon,
+  \label{eq:relerr-test}
+\end{equation}
+
+where \(\lVert \cdot \rVert\) may be \(\ell_\infty\), \(\ell_2\), or another cheap norm
+(consistent between compression and decompression), and \(\varepsilon\) is a
+user-controlled tolerance.  Whenever the test fails, we emit a waypoint at \(n\)
+and \emph{reset} the low-precision state to the authoritative value:
+
+\begin{equation}
+  \text{if waypoint at } n:\qquad \hat z_n \leftarrow z_n^{\mathrm{HP}}.
+\end{equation}
+
+Between waypoints, the compressor stores nothing, relying on \(\hat z\)-iteration
+to reconstruct the missing values later.
+
+\paragraph{Compressed representation.}
+The compressed reference is thus a sparse, ordered list
+\(
+\mathcal{W} = \{(n_k, w_k)\}_{k=0}^{K-1}
+\)
+with strictly increasing indices \(0 \le n_0 < n_1 < \cdots < n_{K-1} \le N\),
+where the payload \(w_k\) depends on the mode (\cref{sec:refcomp-pert}).
+
+\subsubsection{Decompression by replay}
+
+Decompression replays the same low-precision recurrence and applies waypoints as
+hard resets:
+
+\begin{equation}
+  \hat z_{n+1} = \hat z_n^2 + c \quad\text{(low precision)},\qquad
+  \text{and if } n = n_k:\ \hat z_n \leftarrow w_k.
+\end{equation}
+
+If the decompressor uses the same low-precision arithmetic, the same recurrence,
+and encounters the same waypoints at the same indices, then the reconstructed
+orbit matches what the compressor would have produced by replay; consequently,
+the reconstruction error is bounded by the same tolerance logic used to place
+waypoints.
+
+\paragraph{On-the-fly use during rendering.}
+Because decompression is just a forward scan with occasional resets, it can be
+performed \emph{streaming} (no random access required), and can be interleaved
+with perturbation-based pixel evaluation by iterating \(\hat z_n\) alongside the
+main render loop.
+
+\subsubsection{Perturbation-assisted compression}
+
+\label{sec:refcomp-pert}
+Waypointing only the absolute states \(z_n\) is useful but may not achieve high
+compression at extreme depths, where the orbit's sensitivity forces frequent
+anchors.  Compression improves substantially by switching to a perturbation form
+once the orbit becomes suitable.
+
+\paragraph{Self-referenced perturbation.}
+Choose a \emph{base} (reference) iteration \(r\) and represent subsequent states as
+
+\begin{equation}
+  z_n = z_r + \Delta z_n, \qquad n \ge r,
+\end{equation}
+
+where \(z_r\) is treated as a reference and \(\Delta z_n\) is (ideally) small.
+In standard perturbation rendering, \(\Delta z\) is evolved using derivatives
+around a known reference orbit.  For \emph{reference compression}, the only
+available reference is the reference itself, so the scheme starts in the
+absolute waypoint mode (previous sections) and transitions to perturbation only
+when \(\lVert \Delta z \rVert\) is sufficiently small that perturbation yields
+meaningful extra precision in the reduced type.
+
+\paragraph{Switch criterion.}
+Let \(\tau\) be a user parameter.  When \(\lVert \Delta z_n \rVert < \tau\), the
+compressor may begin emitting waypoints that store \(\Delta z_n\) rather than
+\(z_n\).  After the switch, a waypoint payload becomes
+
+\begin{equation}
+  w_k = \Delta z_{n_k} \quad\text{(instead of } z_{n_k}\text{)}.
+\end{equation}
+
+\paragraph{Rebasing synchronization.}
+Perturbation implementations commonly \emph{rebase} to prevent \(\Delta z\) from
+growing too large: at some iteration \(b\), the reference is updated so that
+\(\Delta z_b \leftarrow 0\) and the base index becomes \(r \leftarrow b\).
+During decompression, if rebases occur at different iterations than during
+compression, the decompressor will interpret stored \(\Delta z\) against the
+wrong base \(z_r\), producing catastrophic corruption.
+
+A robust compressed format therefore must encode enough information to keep
+rebases in lockstep.  One approach is to include a single \emph{rebase flag} per
+waypoint indicating whether a rebase occurs at that iteration; if a rebase
+occurs at an iteration where no waypoint would otherwise be required, the
+compressor must still record the iteration (e.g., by forcing a waypoint or
+storing an index) so the decompressor can rebase at the same \(b\).
+
+\subsubsection{Error propagation and correction}
+
+Reconstruction introduces small errors.  Without perturbation, such errors are
+often tolerable because each pixel's perturbation evaluation can be stable to
+small reference drift.  However, once perturbation is used \emph{inside} the
+reference reconstruction, errors can feed forward recursively: an error early in
+the reconstructed reference becomes part of the base used later, and thus
+contaminates subsequent \(\Delta z\) evolution.
+
+\paragraph{Local linear model.}
+Let \(e_n = z_n^{\mathrm{HP}} - \tilde z_n\) be the reconstruction error, where
+\(\tilde z_n\) denotes the reconstructed (decompressed) value.  Linearizing the
+map \(f(z)=z^2+c\) around the reconstructed state gives
+\begin{equation}
+  e_{n+1}
+  \;=\; f(z_n^{\mathrm{HP}}) - f(\tilde z_n)
+  \;\approx\; f'(\tilde z_n)\, e_n
+  \;=\; 2\tilde z_n\, e_n.
+  \label{eq:error-forward}
+\end{equation}
+Thus, when \(|2\tilde z_n|\) is large, errors amplify rapidly.
+
+\paragraph{Inverse (Newton-style) correction sweep.}
+At a waypoint iteration \(m\), the compressor knows the authoritative value
+(either \(z_m\) or the perturbation payload consistent with the base).  The
+decompressor can compute the current error at \(m\) directly:
+
+\begin{equation}
+  e_m = z_m^{\mathrm{HP}} - \tilde z_m
+  \quad\text{(or the analogous difference in the perturbation representation).}
+\end{equation}
+
+Assuming the dominant source of \(e_m\) is accumulated from the previous segment,
+one can approximate the error in earlier iterations by inverting the local model
+\eqref{eq:error-forward}:
+
+\begin{equation}
+  e_n \;\approx\; \frac{e_{n+1}}{2\tilde z_n},
+  \qquad \text{for } n=m-1,m-2,\dots.
+  \label{eq:error-backward}
+\end{equation}
+
+A single backward sweep applying
+
+\(
+\tilde z_n \leftarrow \tilde z_n + e_n
+\)
+
+is equivalent to performing one Newton--Raphson-style correction pass over the
+segment to enforce consistency with the waypoint constraint at \(m\).  In
+practice this substantially reduces recursive drift and allows larger gaps
+between waypoints in perturbation mode.
+
+\paragraph{Compressor constraint.}
+To keep the scheme well-defined, the compressor must ensure that iterations not
+yet eligible for correction are never used as a perturbation base.  Operationally:
+when the current perturbation base index approaches the end of the corrected
+region, the compressor inserts a new waypoint so the decompressor has an
+opportunity to correct that segment before it would be used as a base for future
+\(\Delta z\) evolution.
+
+\subsubsection{Algorithm sketch}
+
+The following high-level procedure summarizes the method.
+
+\begin{enumerate}
+  \item \textbf{Compression pass:}
+    \begin{enumerate}
+      \item Initialize low-precision \(\hat z_0 \leftarrow 0\); iterate forward.
+      \item At each \(n\), evaluate relative error \eqref{eq:relerr-test}.
+      \item If error too large, emit waypoint \((n, z_n^{\mathrm{HP}})\) (or \((n,\Delta z_n)\) after perturbation switch),
+            set \(\hat z_n \leftarrow z_n^{\mathrm{HP}}\) (or reset perturbation state), and continue.
+      \item If in perturbation mode, record/synchronize any rebase events (bit flag or forced waypoint).
+      \item Insert additional waypoints as needed to guarantee correction opportunities before uncorrected
+            states would become perturbation bases.
+    \end{enumerate}
+
+  \item \textbf{Decompression pass:}
+    \begin{enumerate}
+      \item Replay the same low-precision recurrence, applying waypoints as resets.
+      \item In perturbation mode, rebase exactly when signaled by the compressed stream.
+      \item When a waypoint is reached, compute the current error and apply a backward correction sweep
+            using \eqref{eq:error-backward} over the segment since the previous waypoint.
+    \end{enumerate}
+\end{enumerate}
+
+\subsubsection{Practical tradeoffs}
+
+Reference compression exposes a clear accuracy--size--time trade:
+\begin{itemize}
+  \item Smaller tolerance \(\varepsilon\) \(\Rightarrow\) more waypoints \(\Rightarrow\) larger compressed size but tighter fidelity.
+  \item Larger gaps reduce storage but increase decompression work and may require more frequent correction points,
+        especially in perturbation mode.
+  \item Perturbation-mode waypoints (\(\Delta z\)) can greatly improve compression when \(\Delta z\) remains small for long
+        stretches, but require careful rebase synchronization and correction to avoid catastrophic desynchronization.
+\end{itemize}
+
+Overall, the method turns an expensive, dense high-precision reference into a
+compact, streamable representation whose reconstruction cost is dominated by
+cheap low-precision iteration plus sparse waypoint application, enabling reuse
+of deep references across sessions, machines, or render nodes.
+
+\subsubsection{Supporting both random and sequential access patterns}
+\label{sec:refcomp-runtime-access}
+
+Reference-orbit consumers exhibit two fundamentally different access patterns.
+On the one hand, perturbation-based evaluation and on-the-fly decompression
+naturally traverse the orbit sequentially, requesting
+\(z_0, z_1, z_2, \dots\) in order.  On the other hand, higher-level algorithms
+such as linear (or affine) approximation, reuse heuristics, and error analysis
+require \emph{direct access} to arbitrary iteration indices in order to evaluate
+local behavior around a chosen anchor.  A decompression strategy optimized only
+for sequential replay performs poorly for such random probes, while a strategy
+optimized only for random access would impose unnecessary overhead on the
+dominant sequential case.
+
+To accommodate both use cases efficiently, the runtime decompressor implements a
+hybrid access scheme: binary-search-based anchoring for random access, combined
+with cached linear scans for sequential access.
+
+\paragraph{Random access via waypoint search.}
+The compressed reference orbit is stored as a strictly increasing sequence of
+waypoints
+\(
+\{(i_k, z_{i_k})\}_{k=0}^{K-1}
+\),
+where \(i_k\) denotes the uncompressed iteration index and \(z_{i_k}\) the saved
+state.  Given a request for an arbitrary iteration \(n\), we locate the nearest
+preceding waypoint
+\begin{equation}
+  k^\star = \max\{k \mid i_k \le n\},
+\end{equation}
+using a binary search over the waypoint indices in
+\(\mathcal{O}(\log K)\) time.  Reconstruction then proceeds by replaying the
+low-precision recurrence forward from that anchor for
+\(\Delta = n - i_{k^\star}\) steps:
+\begin{equation}
+  z_{t+1} \leftarrow z_t^2 + c,
+  \qquad t = i_{k^\star}, \dots, n-1,
+\end{equation}
+with the same reduction/normalization operations used during compression.  This
+provides efficient, bounded-cost random access suitable for linear approximation
+and analysis routines that must probe isolated iteration indices.
+
+\paragraph{Sequential access via cached linear scans.}
+In contrast, perturbation pipelines typically consume the reference orbit in
+monotone order.  Repeating a binary search for every \(n+1\) would be wasteful,
+so the decompressor maintains a small cache of recently reconstructed states,
+including both their uncompressed and compressed indices.  When a request
+targets the immediate successor of a cached iteration, the decompressor advances
+the state in-place:
+\begin{itemize}
+  \item If the next uncompressed index lies strictly between two waypoints, a
+        single recurrence step is performed.
+  \item If the next index coincides with a waypoint, the cached state is replaced
+        by the stored waypoint value and the compressed index is advanced.
+\end{itemize}
+A dual-entry cache tolerates minor access jitter by retaining both the most
+recent and the previously-recent state; exact cache hits are returned
+immediately, and near-sequential requests avoid both binary search and replay
+from older anchors.
+
+\paragraph{Combined complexity and practical behavior.}
+This hybrid design yields the desirable properties of both approaches:
+\begin{align}
+  \text{sequential access} &: \quad \mathcal{O}(1)\ \text{amortized per iteration}, \\
+  \text{random access} &: \quad \mathcal{O}(\log K + \Delta),
+\end{align}
+where \(\Delta\) is the distance from the nearest preceding waypoint.  In typical
+compressed references, \(\Delta\) is small relative to the full orbit length,
+while sequential traversal dominates overall access volume.  The result is a
+single runtime decompressor that efficiently supports both perturbation-driven
+sequential replay and analysis-driven random probing, without duplicating
+reference representations or specializing the data structure to a single access
+pattern.
+
+\paragraph{Example usage.}
+See \cref{fig:view27-1-quadrillion} for an example of a deep-zoom render
+that requires reference compression to complete.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{view27-1-quadrillion.png}
+  \caption{View \#27, a period ~28-billion point rendered at 1 quadrillion
+  iterations per pixel, requires reference compression to render on most
+  hardware because of its memory requirements.  This render takes ~6h with an
+  RTX 4090 and AMD 5950X and 128GB RAM with the multi-threaded reference orbit
+  backend and is effectively the hardest point \FractalShark{} has likely ever
+  rendered.}
+  \label{fig:view27-1-quadrillion}
+\end{figure}
+
+
+\section{Multi-threaded Reference Orbit Acceleration}
+\label{subsec:ref-orbit-mt}
+
+The \code{MT3} reference-orbit path accelerates the high-cost MPIR arithmetic
+of the single-threaded authoritative orbit (\cref{subsec:ref-orbit-st}) by
+decomposing each iteration across multiple CPU threads.  The design targets
+independent, high-latency big-integer operations that naturally overlap in the
+perturbation recurrence, while minimizing synchronization overhead.  Two
+recurring implementation patterns characterize this approach.
+
+\paragraph{Asynchronous squaring.}
+During authoritative orbit evaluation, two worker threads compute the squared
+terms \(x_n^2\) and \(y_n^2\) concurrently.  In parallel, the main thread
+evaluates the cross term in
+\[
+  y_{n+1} = 2 x_n y_n + c_y,
+\]
+performs low-precision periodicity checks, and manages operand reuse and
+serialization.  Once the squared terms are returned, the real component update
+is completed as
+\begin{equation}
+  x_{n+1} = x_n^2 - y_n^2 + c_x.
+\end{equation}
+This decomposition exposes substantial instruction-level and thread-level
+parallelism while preserving the exact arithmetic semantics required for
+reference orbit computation.
+
+\paragraph{Lock-free handoff with prefetch.}
+Inter-thread communication is implemented using a minimal lock-free mailbox
+(\code{ThreadPtrs<T>}) consisting of atomic \code{In} and \code{Out}
+pointers.  The protocol proceeds as follows:
+\begin{enumerate}
+  \item The producer publishes a work pointer by storing it into \code{In}.
+  \item The worker spins until it atomically claims the pointer, prefetches the
+        referenced MPIR operands, executes the required arithmetic, and then
+        publishes the same pointer via \code{Out}.
+  \item The producer spins until it retrieves the completed pointer from
+        \code{Out}, after which the computed results are consumed.
+\end{enumerate}
+To reduce cache-miss latency when operating on large MPIR limb arrays, worker
+threads explicitly prefetch both MPIR metadata and limb data using a fixed
+64-byte stride.  This strategy is particularly beneficial at very high
+precision, where memory latency can otherwise dominate execution time.
+
+\subsection{Precision-dependent single-thread versus multi-thread trade-offs}
+\label{subsec:ref-orbit-mt-tradeoff}
+
+The relative effectiveness of single-threaded and multi-threaded reference-orbit
+evaluation depends strongly on the active precision, which in practice is
+closely correlated with zoom level and MPIR limb count.  Consequently, the
+implementation supports both execution modes and selects between them
+automatically when \code{PerturbationAlg::Auto} is enabled.
+
+At lower precision (small limb counts), overall performance is often dominated
+by fixed overheads such as synchronization, atomic mailbox operations, thread
+spinning, and cache traffic.  In this regime, a single-threaded MPIR execution
+path benefits from tight instruction locality, reduced fencing, and predictable
+cache reuse, and may outperform a parallelized approach despite executing all
+arithmetic serially.
+
+As precision increases, the cost structure shifts toward throughput-dominated
+big-integer arithmetic.  Large limb counts cause MPIR squaring and multiplication
+to dominate total runtime, amortizing synchronization overhead and making
+concurrent execution increasingly effective.  Overlapping independent
+operations, such as the simultaneous computation of \(x_n^2\) and \(y_n^2\),
+yields substantial gains, while explicit limb prefetching further mitigates
+memory latency.  Beyond a hardware- and workload-dependent threshold,
+multi-threaded reference-orbit computation consistently outperforms the
+single-threaded path, with speedups increasing as precision grows.
+
+To exploit this behavior without requiring manual tuning, the \code{Auto}
+selection mode chooses the perturbation algorithm based on the current zoom
+factor as a proxy for required precision.  At moderate zoom levels, it favors
+single-threaded periodicity detection to avoid unnecessary parallel overhead.
+At higher zoom levels, it transitions to the \code{MTPeriodicity3} path, where
+parallel MPIR arithmetic becomes advantageous.  For extreme zoom, a hybrid
+multi-threaded perturbation strategy (e.g.,
+\code{MTPeriodicity3PerturbMTHighMTMed3}) is selected to maintain throughput at
+very high precision, acknowledging that some configurations remain
+experimental.
+
+Overall, single-threaded and multi-threaded reference-orbit evaluation are
+treated as complementary strategies rather than a strict hierarchy: fewer limbs
+favor single-thread execution, while increasing precision increasingly favors
+multi-threaded decomposition, with \code{Auto} providing an adaptive runtime
+selection mechanism.
+
+
+\section{Per-Iteration Periodicity Checking under High-Precision Arithmetic on the GPU}
+\label{sec:hp-periodicity}
+
+The \FractalShark{} GPU reference-orbit kernel (\cref{subsec:ref-orbit-gpu}) evaluates the Mandelbrot recurrence
+\(
+z_{n+1} = z_n^2 + c
+\)
+using high-precision arithmetic for the state \(z_n\), while interleaving a
+low-overhead periodicity/termination test between the (expensive) high-precision
+multiply and add phases. This interleaving is essential: high-precision
+multiplication dominates runtime at large limb counts, so an early stop
+condition that can be evaluated with negligible additional cost yields
+substantial savings when a cycle is detected or the orbit escapes.
+
+\paragraph{State extraction and logging.}
+
+At iteration \(n\), the high-precision state \((x_n, y_n)\) is available in the
+multiplication output registers/structures. The periodicity checker converts
+these values into a reduced high-dynamic-range scalar format,
+\(\mathrm{HDR}(\cdot)\), via a lossy but monotone extraction
+(\code{ToHDRFloat}) and stores the resulting pair in a per-iteration trace
+buffer:
+
+\begin{equation}
+  \widehat{x}_n \leftarrow \mathrm{HDR}(x_n), \quad
+  \widehat{y}_n \leftarrow \mathrm{HDR}(y_n), \quad
+  \code{OutputIters}[n] \leftarrow (\widehat{x}_n, \widehat{y}_n).
+\end{equation}
+
+This trace is used both for downstream diagnostics and to provide a compact,
+device-side record of the authoritative orbit prefix.
+
+\paragraph{Derivative-based periodicity criterion.}
+
+In addition to the orbit state, we propagate the complex derivative
+\(
+\frac{dz}{dc}
+\)
+along the orbit (cf.\ the CPU-side counterpart in \cref{subsec:ref-orbit-periodicity}). For the Mandelbrot map \(f(z)=z^2+c\), the chain rule yields
+
+\begin{equation}
+  \frac{d z_{n+1}}{d c} = f'(z_n)\frac{d z_n}{d c} + 1
+  = 2 z_n \frac{d z_n}{d c} + 1,
+  \label{eq:dzdc-recurrence}
+\end{equation}
+
+with initialization \(\frac{dz_0}{dc}=0\) when \(z_0=0\).
+Writing \(z_n = x_n + i y_n\) and introducing the shorthand
+\(d_n \equiv \frac{\partial z_n}{\partial c}\) with real and imaginary parts
+\(d_{x,n}\) and \(d_{y,n}\), expanding
+\eqref{eq:dzdc-recurrence} into real and imaginary parts gives:
+
+\begin{align}
+  d_{x,n+1} &= 2\,(x_n\, d_{x,n} - y_n\, d_{y,n}) + 1, \label{eq:dzdc-real}\\
+  d_{y,n+1} &= 2\,(x_n\, d_{y,n} + y_n\, d_{x,n}). \label{eq:dzdc-imag}
+\end{align}
+
+In our implementation, the derivative accumulators \code{dzdcX} and
+\code{dzdcY} are stored in the same high-precision float type used by the
+orbit state, but the periodicity decision itself is performed on reduced HDR
+magnitudes to minimize overhead:
+
+\begin{equation}
+  \|z_n\|_\infty \approx \max(|\widehat{x}_n|, |\widehat{y}_n|), \qquad
+  \left\|\frac{dz_n}{dc}\right\|_\infty \approx \max(|\widehat{d x}_n|, |\widehat{d y}_n|),
+\end{equation}
+
+where hats denote reduced HDR representations after a normalization/reduction
+step (\code{HdrReduce}) to ensure stable comparisons.
+
+The checker uses a sufficient condition of the form
+
+\begin{equation}
+  \|z_n\|_\infty < 2\,R\,\left\|\frac{dz_n}{dc}\right\|_\infty,
+  \label{eq:periodicity-ineq}
+\end{equation}
+
+where \(R\) is a problem-dependent bound (stored as \code{RadiusY} in the
+reference structure). Intuitively, \eqref{eq:periodicity-ineq} compares the
+current orbit magnitude against a scaled sensitivity radius implied by the
+derivative growth: when the orbit state becomes small relative to the local
+linearization bound, further iteration is treated as converging toward a
+previous state and the algorithm flags a periodic cycle.
+Concretely, the device computes
+
+\begin{equation}
+  n_2 \leftarrow \max(|\widehat{x}_n|, |\widehat{y}_n|), \quad
+  r_0 \leftarrow \max(|\widehat{d x}_n|, |\widehat{d y}_n|), \quad
+  n_3 \leftarrow 2\,R\,r_0,
+\end{equation}
+
+and terminates when \(n_2 < n_3\), setting \code{PeriodicityStatus =
+PeriodFound} and recording \code{OutputIterCount = n+1}.
+
+\paragraph{Escape test.}
+We additionally apply a conventional escape-radius test in the same reduced
+domain. After forming the next-state candidates
+\(
+\widehat{x}_n + \widehat{c}_x
+\)
+and
+\(
+\widehat{y}_n + \widehat{c}_y
+\),
+the checker evaluates
+\begin{equation}
+  \|\widehat{z}_n + \widehat{c}\|_2^2
+  = (\widehat{x}_n + \widehat{c}_x)^2 + (\widehat{y}_n + \widehat{c}_y)^2,
+\end{equation}
+and declares \code{Escaped} when this value exceeds a fixed threshold
+(\code{256.0} in the current implementation). As with the periodicity
+criterion, all comparisons are performed on reduced positive HDR values to avoid
+high-precision control-flow costs on the device.
+
+\paragraph{Control-flow placement and synchronization.}
+Periodicity checking is invoked once per iteration at the top of the reference
+step, before launching the high-precision multiplication and addition kernels
+that compute \(z_{n+1}\). In the current design, a single distinguished thread
+(\code{block 0, thread 0}) executes the checker and updates the shared
+termination flag stored in the global \code{reference} structure. The kernel
+then executes a cooperative-grid barrier:
+\begin{equation}
+  \code{grid.sync()},
+\end{equation}
+ensuring that (i) all blocks observe a consistent \code{PeriodicityStatus} and
+(ii) any updates to \code{dzdcX}, \code{dzdcY}, and the trace buffer are
+visible before subsequent work proceeds. If termination is requested, the
+iteration loop exits immediately; otherwise, the kernel proceeds into the
+multiply-add pipeline that produces the next high-precision state.
+
+This organization isolates the control-intensive termination logic from the
+throughput-oriented NTT multiplication and carry-propagating addition stages,
+while maintaining deterministic, grid-wide early-exit behavior. The only global
+synchronization introduced by periodicity checking is the single \code{grid.sync()}
+already required by the cooperative multi-block arithmetic pipeline, making the
+incremental overhead of periodicity checking negligible relative to the cost of
+high-precision multiplication at large precisions.
+
+\paragraph{Alternative host-side periodicity checking.}
+An alternative design would be to retain the authoritative high-precision orbit
+state entirely on the device, periodically copy the full-precision values
+\((x_n, y_n, dz_n/dc)\) back to the host, and perform periodicity and escape
+testing on the CPU using existing MPIR-based logic. While conceptually simpler,
+this approach is impractical at large precisions: each iteration would require
+transferring hundreds to thousands of limbs per component over the PCIe bus,
+and the cumulative bandwidth and synchronization costs would dominate the total
+runtime. Moreover, host-side checking would introduce additional latency and
+force a tighter coupling between device execution and CPU control flow. By
+performing periodicity detection directly on the GPU using reduced HDR
+representations, the implementation avoids repeated large data transfers while
+preserving an early-termination mechanism that is both inexpensive and tightly
+integrated with the cooperative-grid execution model.
+
+
+

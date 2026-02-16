@@ -26,17 +26,20 @@
 #include "HDRFloat.h"
 #include "HighPrecision.h"
 #include "ItersMemoryContainer.h"
+#include "CalcContext.h"
 #include "OpenGLContext.h"
 #include "RefOrbitCalc.h"
 #include "WPngImage\WPngImage.hh"
 
 #include "DrawThreadSync.h"
 #include "PointZoomBBConverter.h"
+#include "RenderThreadPool.h"
 
 #include "BenchmarkDataCollection.h"
 #include "PngParallelSave.h"
 #include "Utilities.h"
 
+#include "AbortMonitor.h"
 #include "LAParameters.h"
 
 #include "RefOrbitDetails.h"
@@ -55,13 +58,15 @@ public:
     friend class PngParallelSave;
     friend class BenchmarkData;
     friend class AutoZoomer;
+    friend class RenderThreadPool;
 
     Fractal(int width, int height, HWND hWnd, bool UseSensoCursor, uint64_t commitLimitInBytes);
     ~Fractal();
 
     void InitialDefaultViewAndSettings(int width = 0, int height = 0);
 
-    static unsigned long WINAPI CheckForAbortThread(void *fractal);
+    bool GetStopCalculating() const;
+    void ResetStopCalculating();
 
     // Kludgy.  Resets at end of function.
     // Roughly 50000 digits of precision (50000 * 3.321)
@@ -158,8 +163,13 @@ public:
     // Drawing functions
     bool RequiresUseLocalColor() const;
     void CalcFractal(bool drawFractal);
-    void CalcFractal(RendererIndex idx, bool drawFractal);
-    void DrawFractal(RendererIndex idx);
+    void CalcFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx);
+
+    // Async render pool: enqueue current state for rendering.
+    // Returns a handle that can optionally be waited on.
+    RenderJobHandle EnqueueRender();
+    RenderJobHandle EnqueueRender(const PointZoomBBConverter &ptz);
+    RenderThreadPool *GetRenderPool() { return m_RenderPool.get(); }
 
     template <typename IterType> void DrawGlFractal(RendererIndex idx, bool LocalColor, bool LastIter);
 
@@ -214,6 +224,15 @@ public:
     size_t GetRenderWidth() const;
     size_t GetRenderHeight() const;
 
+    // Accessors for RenderThreadPool snapshot
+    const PointZoomBBConverter &GetPtz() const { return m_Ptz; }
+    size_t GetScrnWidth() const { return m_ScrnWidth; }
+    size_t GetScrnHeight() const { return m_ScrnHeight; }
+    IterTypeFull GetNumIterationsRT() const { return m_NumIterations; }
+    bool GetChangedWindow() const { return m_ChangedWindow; }
+    bool GetChangedScrn() const { return m_ChangedScrn; }
+    bool GetChangedIterations() const { return m_ChangedIterations; }
+
     void
     GetSomeDetails(RefOrbitDetails &details) const
     {
@@ -261,8 +280,6 @@ public:
 private:
     void Initialize(int width, int height, HWND hWnd, bool UseSensoCursor);
     void Uninitialize();
-    bool IsDownControl();
-    void CheckForAbort();
 
     void SaveCurPos();
 
@@ -288,7 +305,7 @@ private:
         return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow));
     }
 
-    template <typename IterType> void CalcFractalTypedIter(RendererIndex idx, bool drawFractal);
+    template <typename IterType> void CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     static void DrawFractalThread(size_t index, Fractal *fractal);
 
@@ -303,18 +320,18 @@ private:
     void FillCoord(const HighPrecision &src, CudaDblflt<MattDblflt> &dest);
     void FillCoord(const HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &dest);
 
-    template <class T> void FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2);
+    template <class T> void FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2, const PointZoomBBConverter &ptz);
 
     template <typename IterType> void CalcAutoFractal();
 
-    template <typename IterType, class T> void CalcGpuFractal(RendererIndex idx, bool drawFractal);
+    template <typename IterType, class T> void CalcGpuFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
-    template <typename IterType> void CalcCpuPerturbationFractal();
+    template <typename IterType> void CalcCpuPerturbationFractal(CalcContext &ctx);
 
-    template <typename IterType, class T, class SubType> void CalcCpuHDR();
+    template <typename IterType, class T, class SubType> void CalcCpuHDR(CalcContext &ctx);
 
     template <typename IterType, class T, class SubType>
-    void CalcCpuPerturbationFractalBLA();
+    void CalcCpuPerturbationFractalBLA(CalcContext &ctx);
 
     // HDRFloatComplex<float>* initializeFromBLA2(
     //     LAReference& laReference,
@@ -323,16 +340,16 @@ private:
     //     IterType& BLA2SkippedSteps);
 
     template <typename IterType, class SubType, PerturbExtras PExtras>
-    void CalcCpuPerturbationFractalLAV2();
+    void CalcCpuPerturbationFractalLAV2(CalcContext &ctx);
 
     template <typename IterType, class T, class SubType>
-    void CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal);
+    void CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
-    void CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal);
+    void CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     template <typename IterType, class T, class SubType, class T2, class SubType2>
-    void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal);
+    void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     template <PngParallelSave::Type Typ>
     int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);
@@ -357,12 +374,8 @@ private:
     static constexpr IterTypeFull DefaultIterations = 256 * 32;
     // static constexpr IterType DefaultIterations = 256;
 
-    // Handle to the thread which checks to see if we should quit or not
-    HANDLE m_CheckForAbortThread;
-    volatile bool m_AbortThreadQuitFlag;
-    bool m_UseSensoCursor;
+    std::unique_ptr<AbortMonitor> m_AbortMonitor;
     HWND m_hWnd;
-    volatile bool m_StopCalculating;
 
     // Holds all previous positions within the fractal.
     // Allows us to go "back."
@@ -404,12 +417,15 @@ private:
 
     FractalPalette m_Palette;
 
-    uint32_t InitializeGPUMemory(RendererIndex idx, bool expectedReuse);
+    uint32_t InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryContainer &itersMemory);
 
     void InitializeMemory();
     void SetCurItersMemory();
 
     void ReturnIterMemory(ItersMemoryContainer &&to_return);
+
+    // Acquire an ItersMemoryContainer from the pool. Blocks if none available.
+    ItersMemoryContainer AcquireItersMemory();
 
     IterTypeEnum m_IterType;
 
@@ -434,29 +450,19 @@ private:
     const GPURenderer &GetRenderer(RendererIndex idx) const {
         return m_Renderers[static_cast<size_t>(idx)];
     }
-    std::unique_ptr<OpenGlContext> m_glContextAsync;
 
-    std::mutex m_AsyncRenderThreadMutex;
-    std::condition_variable m_AsyncRenderThreadCV;
-
-    struct AsyncRenderThreadCommand {
-        enum class State { Idle, Start, SyncDone, Finish };
-        State state;
-        RendererIndex rendererIdx;
-    };
-    AsyncRenderThreadCommand m_AsyncRenderThreadCommand;
-    bool m_AsyncRenderThreadFinish;
+    // Repaint flag (controls whether rendering produces visible output)
+    bool m_Repaint = true;
 
     // Benchmarking
     mutable BenchmarkDataCollection m_BenchmarkData;
 
-    std::unique_ptr<std::thread> m_AsyncRenderThread;
-    std::atomic<uint32_t> m_AsyncGpuRenderIsAtomic;
-    void DrawAsyncGpuFractalThread();
-    static void DrawAsyncGpuFractalThreadStatic(Fractal *fractal);
     void MessageBoxCudaError(uint32_t err);
 
     LAParameters m_LAParameters;
 
     const uint64_t m_CommitLimitInBytes;
+
+    // Async render thread pool
+    std::unique_ptr<RenderThreadPool> m_RenderPool;
 };

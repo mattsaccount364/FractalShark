@@ -10,7 +10,7 @@ BenchmarkData::BenchmarkData() :
     m_startTime{},
     m_endTime{},
     m_DeltaTime{},
-    m_WaitCursor{ std::make_unique<WaitCursor>()} {
+    m_WaitCursor{std::make_unique<WaitCursor>()} {
 
     LARGE_INTEGER freq;
 
@@ -19,7 +19,6 @@ BenchmarkData::BenchmarkData() :
 }
 
 BenchmarkData::~BenchmarkData() {
-    m_WaitCursor.reset();
 }
 
 BenchmarkData::BenchmarkData(const BenchmarkData &other) :
@@ -27,7 +26,7 @@ BenchmarkData::BenchmarkData(const BenchmarkData &other) :
     m_startTime{ other.m_startTime },
     m_endTime{ other.m_endTime },
     m_DeltaTime{ other.m_DeltaTime },
-    m_WaitCursor{ std::make_unique<WaitCursor>() } {
+    m_WaitCursor{std::make_unique<WaitCursor>()} {
 }
 
 BenchmarkData::BenchmarkData(BenchmarkData &&other) noexcept :
@@ -35,7 +34,7 @@ BenchmarkData::BenchmarkData(BenchmarkData &&other) noexcept :
     m_startTime{ other.m_startTime },
     m_endTime{ other.m_endTime },
     m_DeltaTime{ other.m_DeltaTime },
-    m_WaitCursor{ std::make_unique<WaitCursor>() } {
+    m_WaitCursor{std::move(other.m_WaitCursor)} {
 }
 
 BenchmarkData &BenchmarkData::operator=(const BenchmarkData &other) {
@@ -56,7 +55,7 @@ BenchmarkData &BenchmarkData::operator=(BenchmarkData &&other) noexcept {
         m_startTime = other.m_startTime;
         m_endTime = other.m_endTime;
         m_DeltaTime = other.m_DeltaTime;
-        m_WaitCursor = std::make_unique<WaitCursor>();
+        m_WaitCursor = std::move(other.m_WaitCursor);
     }
 
     return *this;
@@ -69,7 +68,7 @@ void BenchmarkData::StartTimer() {
     LARGE_INTEGER startTime;
     QueryPerformanceCounter(&startTime);
     m_startTime = startTime.QuadPart;
-    m_WaitCursor = std::make_unique<WaitCursor>();
+    m_WaitCursor->ResetCursor();
 }
 
 void BenchmarkData::StopTimer() {
@@ -79,7 +78,7 @@ void BenchmarkData::StopTimer() {
 
     m_DeltaTime = m_endTime - m_startTime;
 
-    m_WaitCursor.reset();
+    m_WaitCursor->ResetCursor();
 }
 
 uint64_t BenchmarkData::GetDeltaInMs() const {

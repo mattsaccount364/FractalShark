@@ -12,6 +12,10 @@
 
 #include "GPU_Types.h"
 
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
+
 // This is the main class that does the rendering on the GPU
 class GPURenderer {
 public:
@@ -89,9 +93,7 @@ public:
         uint32_t w, // original width * antialiasing
         uint32_t h, // original height * antialiasing
         uint32_t antialiasing, // w and h are ech scaled up by this amt
-        const uint16_t *palR,
-        const uint16_t *palG,
-        const uint16_t *palB,
+        const Color16 *palInterleaved,
         uint32_t palIters,
         uint32_t paletteAuxDepth,
         bool expectedReuse);
@@ -122,10 +124,37 @@ public:
         IterType n_iterations,
         IterType *iter_buffer,
         Color16 *color_buffer,
-        ReductionResults *reduction_results);
+        ReductionResults *reduction_results,
+        bool progressive = false);
 
-    uint32_t SyncStream(bool altStream);
     uint32_t SyncComputeStream();
+    uint32_t SyncDisplayStream();
+    uint32_t QueryComputeStream();
+    uint32_t EnqueueComputeDoneCallback();
+
+    void ResetComputeDoneFlag() {
+        m_ComputeDoneFlag.store(false, std::memory_order_release);
+    }
+
+    bool IsComputeDone() const {
+        return m_ComputeDoneFlag.load(std::memory_order_acquire);
+    }
+
+    void SignalComputeDone() {
+        m_ComputeDoneFlag.store(true, std::memory_order_release);
+        if (m_ComputeDoneMutex && m_ComputeDoneCV) {
+            std::lock_guard lk(*m_ComputeDoneMutex);
+            m_ComputeDoneCV->notify_all();
+        }
+    }
+
+    void SetComputeDoneNotification(std::mutex *mutex, std::condition_variable *cv) {
+        m_ComputeDoneMutex = mutex;
+        m_ComputeDoneCV = cv;
+    }
+
+    uint32_t GetWidth() const { return m_Width; }
+    uint32_t GetHeight() const { return m_Height; }
 
 private:
     bool MemoryInitialized() const;
@@ -152,13 +181,14 @@ private:
     void ClearLocals();
 
     template<typename IterType>
-    uint32_t RunAntialiasing(IterType n_iterations, cudaStream_t *stream);
+    uint32_t RunAntialiasing(IterType n_iterations, cudaStream_t stream);
 
-    template<typename IterType, bool Async>
+    template<typename IterType>
     uint32_t ExtractItersAndColors(
         IterType *iter_buffer,
         Color16 *color_buffer,
-        ReductionResults *reduction_results);
+        ReductionResults *reduction_results,
+        cudaStream_t stream);
 
     void *OutputIterMatrix;
     ReductionResults *OutputReductionResults;
@@ -179,13 +209,12 @@ private:
     size_t N_cu;
     size_t N_color_cu;
 
-    bool m_Stream1Initialized;
-    cudaStream_t m_Stream1;
-    int m_StreamPriorityLow;
-    int m_StreamPriorityHigh;
-
-    bool m_ComputeStreamInitialized;
     cudaStream_t m_ComputeStream;
+    cudaStream_t m_DisplayStream;
+
+    std::atomic<bool> m_ComputeDoneFlag{false};
+    std::mutex *m_ComputeDoneMutex{nullptr};
+    std::condition_variable *m_ComputeDoneCV{nullptr};
 
     PerturbResultsCollection m_PerturbResults;
 };

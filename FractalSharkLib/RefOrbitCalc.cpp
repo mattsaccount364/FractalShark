@@ -2340,6 +2340,8 @@ template <typename IterType,
 const PerturbationResults<IterType, ConvertTType, PExtras> *
 RefOrbitCalc::GetUsefulPerturbationResults() const
 {
+    std::lock_guard lk(m_PerturbationMutex);
+
     const auto *resultsExisting =
         GetUsefulPerturbationResultsConst<IterType, ConvertTType, false, PExtras>();
 
@@ -2365,6 +2367,8 @@ template <typename IterType,
 PerturbationResults<IterType, ConvertTType, PExtras> *
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &ptz)
 {
+    std::lock_guard lk(m_PerturbationMutex);
+
     constexpr bool ForceCompressDecompressForTesting = false;
     constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
     constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
@@ -2630,6 +2634,7 @@ RefOrbitCalc::CopyUsefulPerturbationResults(PerturbationResults<IterType, SrcT, 
 requires((SrcEnableBad == PerturbExtras::Bad && DestEnableBad == PerturbExtras::Bad) ||
          (SrcEnableBad == PerturbExtras::Disable && DestEnableBad == PerturbExtras::Disable))
 {
+    std::lock_guard lk(m_PerturbationMutex);
 
     if constexpr (std::is_same<SrcT, double>::value) {
         auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(
@@ -2662,6 +2667,8 @@ requires((SrcEnableBad == PerturbExtras::Bad && DestEnableBad == PerturbExtras::
 void
 RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type)
 {
+    std::lock_guard lk(m_PerturbationMutex);
+
     auto IsMarkedToDelete = [&](const auto &val) -> bool {
         // Erase results as needed.
         // Note: erase full results in dbl-float case -- we'll reconvert
@@ -2714,6 +2721,8 @@ RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y)
 void
 RefOrbitCalc::SaveAllOrbits()
 {
+    std::lock_guard lk(m_PerturbationMutex);
+
     auto lambda = [&](auto &elt) {
         const auto *results = elt.get();
 
@@ -2737,6 +2746,8 @@ RefOrbitCalc::SaveAllOrbits()
 void
 RefOrbitCalc::LoadAllOrbits()
 {
+    std::lock_guard lk(m_PerturbationMutex);
+
     // Matches the extension of a filename
     auto extmatch = [](std::string fn) -> bool {
         if (fn.substr(fn.find_last_of(".") + 1) == "met") {
@@ -2911,6 +2922,7 @@ RefOrbitCalc::GetPerturbationAlgStr() const
 void
 RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const
 {
+    std::lock_guard lk(m_PerturbationMutex);
 
     details = {};
 
@@ -2955,6 +2967,8 @@ RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const
 void
 RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring filename) const
 {
+    std::lock_guard lk(m_PerturbationMutex);
+
     auto resultsSaver = [this, &filename](const auto &resultsToSave) {
         const auto compressedResults = resultsToSave->Compress(
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low), GetNextGenerationNumber());
@@ -3214,6 +3228,7 @@ RefOrbitCalc::LoadOrbit(ImaginaSettings imaginaSettings,
                         std::wstring imagFilename,
                         RecommendedSettings *recommendedSettings)
 {
+    std::lock_guard lk(m_PerturbationMutex);
 
     auto lambda = [&](auto &ptr) -> const PerturbationResultsBase * {
         const auto *retval = ptr.get();
@@ -3588,6 +3603,7 @@ RefOrbitCalc::DrawPerturbationResultsHelper()
 void
 RefOrbitCalc::DrawPerturbationResults()
 {
+    std::lock_guard lk(m_PerturbationMutex);
 
     auto drawbatch = [&]<typename IterType>() {
         DrawPerturbationResultsHelper<IterType, double, PerturbExtras::Disable>();

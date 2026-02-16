@@ -1,0 +1,941 @@
+\section{Disk-Backed Growable Vectors with Stable Virtual Addresses}
+\label{sec:disk_backed_growable_vectors}
+
+High-resolution Mandelbrot rendering and reference-orbit techniques (\cref{sec:ref-orbit-calc}) impose
+extreme demands on memory management. At deep zoom levels, a single authoritative
+reference orbit may contain tens of billions of elements; for example, an orbit
+with $2.7\times10^{10}$ iterations already implies a logical memory footprint far
+beyond what can be held resident in RAM, even with compact per-iteration storage.
+At this scale, both the cost of allocation and the cost of relocation become
+dominant design constraints.
+
+Several subsystems in \FractalShark{}—including orbit logging, metadata streams,
+debug outputs, and the custom heap allocator—require \emph{growable} storage
+while simultaneously maintaining \emph{stable virtual addresses} for previously
+returned pointers. This requirement arises naturally when the program hands out
+interior pointers into a buffer (e.g., into an orbit record array or a heap
+arena). Any reallocation-and-copy strategy would invalidate those pointers and
+would require copying enormous amounts of data, which is computationally
+infeasible at multi-billion-element scales.
+
+In addition to scale and pointer stability, persistence is a first-class
+concern. Reference orbits are expensive to compute but comparatively cheap to
+reuse. If orbit data can be left resident on disk and later reloaded simply by
+mapping the same backing file back into the process address space, recomputation
+can be avoided entirely. This enables efficient multi-pass rendering workflows,
+interactive debugging, and reuse of authoritative reference orbits across program
+invocations.
+
+To address these requirements, we implement a
+\code{GrowableVector<EltT>} abstraction that combines (i) a fixed,
+virtually-contiguous address range reserved up front and (ii) incremental growth
+within that range by committing additional pages on demand. Growth is performed
+in place, so the base address never changes and no copying is required as
+capacity increases. The abstraction supports two complementary backing modes:
+
+\begin{enumerate}
+  \item \textbf{Anonymous (pagefile-backed) growth.} A large virtual region is
+  reserved once via \code{VirtualAlloc(..., MEM\_RESERVE, ...)} and pages are
+  subsequently committed within that region using
+  \code{VirtualAlloc(base, bytes, MEM\_COMMIT, ...)}. Because each commit
+  targets the original base address, successful growth preserves
+  \code{m\_Data} and does not require relocation.
+
+  \item \textbf{File-backed (disk-backed) growth.} The reserved address range is
+  backed by a disk file and mapped into the process using a section object. In
+  this mode, pages are demand-paged from the backing file and become resident
+  only as accessed, substantially reducing peak commit requirements when the
+  logical capacity greatly exceeds physical memory. When persistence is enabled,
+  the same backing file can later be remapped to recover the stored data without
+  recomputation.
+\end{enumerate}
+
+\subsection{Stable-address growth via reserve-and-commit}
+\label{sec:reserve_commit}
+
+At initialization time, the vector establishes an address anchor:
+\begin{itemize}
+  \item In anonymous mode, the anchor is created by reserving a large region
+  (typically sized to a fraction of physical memory, or an explicit override)
+  and recording the returned base pointer \code{m\_Data}.
+  \item In file-backed mode, the anchor is created by mapping a section at a
+  base address and thereafter requiring all remaps/extends to preserve that base.
+\end{itemize}
+
+Growth proceeds by increasing the logical capacity \code{m\_CapacityInElts}
+without moving data. In anonymous mode, this corresponds to committing
+additional pages within the reserved region. In file-backed mode, it corresponds
+to extending the underlying section and allowing the view to cover the expanded
+range. Critically, in both cases we \emph{never} allocate a second buffer and
+copy: the address stability is enforced by explicitly requesting the existing
+base address and treating any base-address change as a hard error.
+
+\subsection{File-backed mapping for low-commit large buffers}
+\label{sec:file_backed_mapping}
+
+When a filename is provided (or a temporary filename is generated), the vector
+opens or creates a backing file and constructs a section object over it. We use
+native NT section APIs (e.g., \code{NtCreateSection},
+\code{NtMapViewOfSection}, and \code{NtExtendSection}) to obtain a
+reserve-style mapping suitable for later extension.
+
+Conceptually, the pipeline is:
+\begin{enumerate}
+  \item \textbf{Open/Create backing file.} The file can be persistent (saved
+  results) or temporary (e.g., created with delete-on-close semantics when the
+  data is not meant to be retained).
+  \item \textbf{Create section.} A section is created with read/write
+  protection. For growable vectors, the section is configured so that the view
+  can be reserved and later extended.
+  \item \textbf{Map a view to establish the base address.} The first mapping
+  produces the stable anchor pointer \code{m\_Data}. Subsequent growth must
+  preserve this base.
+  \item \textbf{Extend on demand.} When capacity increases, the section is
+  extended to the new byte size. Because the base mapping remains fixed, all
+  previously returned pointers remain valid.
+\end{enumerate}
+
+This approach has two key practical benefits:
+\begin{itemize}
+  \item \textbf{Stable pointers with large logical capacity.} The program may
+  reserve and grow to very large capacities (hundreds of GiB or more) without
+  the pointer invalidation inherent in \code{realloc}-style strategies.
+  \item \textbf{Reduced peak commit pressure.} The OS can keep most of the
+  logical buffer non-resident until touched; pages are faulted in as accessed
+  and can be evicted back to disk under memory pressure. This is particularly
+  effective when the workload has a large addressable dataset but a much smaller
+  active working set.
+\end{itemize}
+
+\subsection{Trimming and persistence policies}
+\label{sec:trim_persist}
+
+The vector supports multiple policies that control whether data is persisted:
+\begin{itemize}
+  \item \textbf{Persistent save (\code{EnableWithSave}).} Upon \code{Trim()},
+  the backing file is truncated to match the used size, ensuring the on-disk
+  representation reflects the logical content exactly.
+  \item \textbf{Temporary file-backed (\code{EnableWithoutSave}).} Upon
+  \code{Trim()}, the view can be remapped to match the used size while
+  \emph{reusing the same base address}. This reduces the mapped span without
+  sacrificing pointer stability, and the file is automatically deleted when the
+  handle closes.
+  \item \textbf{Anonymous (\code{DontSave}).} Trimming is a logical operation
+  (used size changes) while the reserved region remains as the stable anchor.
+\end{itemize}
+
+\subsection{Using the same mechanism for the heap arena}
+\label{sec:heap_uses_growable_vector}
+
+The custom heap allocator builds its arena on top of the same
+\code{GrowableVector<uint8\_t>} abstraction. The heap is initialized by
+creating a file-backed growable vector for the heap arena and committing an
+initial chunk of memory. When the allocator needs more space, it expands the
+arena by growing the underlying vector in-place and then updating the heap's
+wilderness block (coalescing if possible). Because the arena grows within a
+reserved and stable virtual range, all heap pointers returned to the program
+remain valid across heap expansions, and expansion does not require copying or
+relocating the heap.
+
+\subsection{Portability and backing-file considerations}
+\label{sec:disk_backed_portability_notes}
+
+The implementation described above relies on Windows-specific virtual memory and
+section-mapping semantics, in particular the ability to reserve a virtually
+contiguous address range and to grow into that range while preserving a fixed
+base address. On Windows, this is achieved using native section objects backed by
+ordinary (non-sparse) files whose size is explicitly extended as the logical
+capacity grows.
+
+An important consequence of this design choice is that the backing file itself
+physically grows on disk as the vector expands, even if large portions of the
+mapped address space are never touched. Windows mitigates the runtime memory
+impact by demand-paging pages into RAM and evicting them back to disk under
+memory pressure, but the on-disk footprint still reflects the full logical extent
+of the section. This behavior is acceptable—and often desirable—on Windows,
+where file-backed sections are tightly integrated with the operating system's
+paging and commit model.
+
+More specifically, Windows treats a section backed by a regular (non-sparse)
+file with a well-defined size as a complete and deterministic backing store for
+any page in the mapped range. Page faults are resolved by reading from the file,
+and evicted pages can be written back to the same file without requiring
+additional allocation or metadata decisions at fault time. By explicitly
+growing the backing file as capacity increases, the implementation ensures that
+the backing storage for every potential page already exists. This aligns with
+Windows-native paging expectations and simplifies correctness guarantees around
+section growth, page-in, and page-out behavior.
+
+On other platforms, or in alternative designs, a \emph{large sparse file} may be
+a more appropriate backing store for growable, disk-backed vectors. Sparse files
+allow the logical file size to greatly exceed the actual disk space consumed,
+allocating physical blocks only for regions that are written. When combined with
+memory-mapped I/O, this can preserve the core advantages of the approach—stable
+virtual addresses and low resident memory usage—while also minimizing disk space
+consumption for unused regions.
+
+The present implementation intentionally does not rely on sparse-file behavior,
+favoring predictability and robustness of paging semantics over minimizing
+nominal disk usage. This choice, while well aligned with Windows-native behavior,
+has implications for portability: environments that do not support extending a
+mapped view in place, or that impose stricter constraints on file-backed mappings
+(such as Wine or certain Unix-like kernels), may require alternative strategies.
+Possible approaches include explicit sparse-file usage, preallocation of large
+sparse sections, or fallback allocators that relax the stable-address requirement
+in exchange for broader compatibility.
+
+
+
+\section{Periodic Point Detection (Feature Finder)}
+\label{sec:feature-finder}
+
+Given a viewer location and a search radius, \FractalShark{} can automatically
+locate the center of a nearby mini-Mandelbrot copy---i.e.\ the unique parameter
+$c$ at which the critical orbit is exactly periodic.  This capability is
+implemented by the \code{FeatureFinder} class (files
+\code{FeatureFinder.h}/\code{FeatureFinder.cpp}), whose design is heavily
+influenced by the periodic-point finder in the Imagina fractal viewer \cite{Imagina}.  The
+algorithm proceeds in two phases:
+\begin{enumerate}
+\item \textbf{Phase~A (T-space).}
+  Detect the candidate period $p$ and perform a coarse Newton iteration using
+  the renderer's native floating-point type~$T$ (which may be \code{float},
+  \code{double}, or \code{HDRFloat}).
+\item \textbf{Phase~B (MPF refinement).}
+  Polish the candidate to arbitrary precision using GMP \code{mpf\_t}
+  arithmetic, employing a mixed Newton--Halley iteration with precision
+  management modeled after Imagina.
+\end{enumerate}
+Three evaluation back-ends are available for Phase~A---direct iteration,
+perturbation theory (PT), and linear approximation (LA)---so that the finder
+can operate at any zoom depth supported by the renderer.
+
+\subsection{Motivation: mini-Mandelbrot copies}
+\label{subsec:ff-motivation}
+
+The Mandelbrot set contains infinitely many small-scale copies of itself,
+commonly called \emph{mini-brots}.  Each copy is the nucleus of a hyperbolic
+component of period~$p$: a connected region of the parameter plane in which the
+critical orbit $z_0=0,\;z_{n+1}=z_n^2+c$ converges to an attracting cycle of
+exact period~$p$.  The center of the component---the \emph{nucleus}---is the
+unique parameter $c^*$ satisfying
+\begin{equation}\label{eq:ff-nucleus}
+z_p(c^*) = 0,\qquad z_0 = 0,
+\end{equation}
+where $z_p$ denotes the $p$-fold iterate of the critical point.
+
+Locating these nuclei is useful for several reasons:
+\begin{itemize}
+\item \textbf{Reference orbit placement.}  A reference orbit (\cref{sec:ref-orbit-calc}) centered at a
+  nucleus is exactly periodic, eliminating long-term drift and improving the
+  accuracy of perturbation-based rendering (\cref{sec:perturbation-concept}) nearby.
+\item \textbf{Automatic navigation.}  Given a user click, the finder can snap
+  to the nearest mini-brot center and report its period and intrinsic size,
+  enabling one-click deep-zoom targeting.
+\item \textbf{Scale estimation.}  The derivative $\partial z_p/\partial c$ at
+  the nucleus determines the local magnification scale of the mini-brot
+  relative to the full set, which informs precision requirements for rendering.
+\end{itemize}
+At extreme zoom depths the nucleus coordinates may require thousands of bits of
+precision, so the finder must combine fast low-precision search with
+high-precision refinement.
+
+\subsection{Design and implementation}
+\label{subsec:ff-design}
+
+\paragraph{Class template.}
+\code{FeatureFinder<IterType, T, PExtras>} is a final class template
+parameterized by the iteration-count type (\code{uint32\_t} or
+\code{uint64\_t}), the working floating-point type~$T$, and a
+\code{PerturbExtras} tag that selects compression behavior.  It inherits
+convenience typedefs from \code{TemplateHelpers} and defines a nested
+\code{Params} struct with tunable constants (maximum Newton iterations,
+relative step tolerances $2^{-40}$ and $2^{-80}$, an optional absolute
+residual accept threshold, and a print flag).
+
+\paragraph{Evaluator policies (strategy pattern).}
+Phase~A must iterate the critical orbit to detect the period and compute
+derivatives.  Three evaluator structs encapsulate this:
+\begin{itemize}
+\item \code{DirectEvaluator} --- iterates $z\leftarrow z^2+c$ from scratch,
+  suitable when no reference orbit is available.
+\item \code{PTEvaluator} --- uses a precomputed reference orbit and
+  perturbation delta $\Delta c$ to evaluate the orbit, decompressing
+  reference data on the fly via \code{RuntimeDecompressor}.
+\item \code{LAEvaluator} --- uses the linear-approximation (LA) coefficients
+  from \code{LAReference} to skip early iterations, falling back to
+  perturbation for the remaining tail.
+\end{itemize}
+Each evaluator exposes a single templated method \code{Eval<FindPeriod>}.
+When \code{FindPeriod=true}, it searches for the smallest $n$ at which a
+periodicity trigger fires; when \code{FindPeriod=false}, it evaluates at a
+known period and returns the residual, $\partial z/\partial c$, and
+$z_{\mathrm{coeff}}$.
+
+\paragraph{Common Newton loop (\code{FindPeriodicPoint\_Common}).}
+All three \code{FindPeriodicPoint} overloads delegate to this template,
+which:
+\begin{enumerate}
+\item Calls the evaluator with \code{FindPeriod=true} to obtain a candidate
+  period~$p$.
+\item Applies an initial Newton correction
+  $c \leftarrow c - z_p / (\partial z_p/\partial c)$ in high precision
+  (the canonical $c$ is maintained as a \code{HighPrecision} value and
+  projected to $T$ for each evaluation).
+\item Runs up to \code{MaxNewtonIters} Newton steps in $T$-space, stopping when
+  either
+  $|\Delta c|^2 \le |c|^2 \cdot (2^{-40})^2$ (relative step) or
+  $|z_p|^2 \le |c|^2 \cdot (2^{-40})^2$ (relative residual).
+\item Performs a final correction pass and stores the result as a
+  \code{PeriodicPointCandidate} inside \code{FeatureSummary}, along with the
+  MPF precision needed for Phase~B.
+\end{enumerate}
+
+\paragraph{Phase~B: MPF refinement (\code{RefinePeriodicPoint\_HighPrecision}).}
+This method retrieves the candidate from \code{FeatureSummary}, converts
+its coordinates to GMP \code{mpf\_t} at the candidate's stored precision,
+and calls the Imagina-style mixed Newton--Halley polisher described in
+\cref{subsec:ff-newton,subsec:ff-halley,subsec:ff-mixed-prec}.  On
+completion the refined coordinates are written back to \code{FeatureSummary}
+and the candidate is marked as refined.
+
+\paragraph{Parallel orbit evaluation.}
+The high-precision forward evaluation
+(\code{Evaluate\-Critical\-Orbit\-And\-Derivs}) must perform several large
+\code{mpf\_mul} operations per iteration.  To overlap these, the code spawns
+seven spin-based worker threads (four for derivative-precision products,
+three for coordinate-precision products).  Workers spin on per-slot
+\code{std::atomic\allowbreak<uint64\_t>} generation counters;
+the main thread
+publishes operand pointers, bumps the generation, and spin-waits on a
+matching done counter.  Each slot is cache-line-aligned (\code{alignas(64)})
+to avoid false sharing.
+
+\subsection{Newton--Raphson iteration}
+\label{subsec:ff-newton}
+
+\paragraph{Root-finding formulation.}
+Finding a period-$p$ nucleus amounts to solving $F(c)=0$ where
+\begin{equation}\label{eq:ff-Fc}
+F(c) \;=\; z_p(c),\qquad
+z_0 = 0,\quad z_{n+1} = z_n^2 + c.
+\end{equation}
+Newton's method produces the update
+\begin{equation}\label{eq:ff-newton-step}
+\Delta c \;=\; \frac{F(c)}{F'(c)}
+         \;=\; \frac{z_p}{\partial z_p / \partial c},
+\qquad c \leftarrow c - \Delta c.
+\end{equation}
+Because $z_{n+1}=z_n^2+c$, the derivative satisfies the linear recurrence
+\begin{equation}\label{eq:ff-dzdc-recurrence}
+\frac{\partial z_{n+1}}{\partial c}
+  = 2\,z_n\,\frac{\partial z_n}{\partial c} + 1,
+\qquad \frac{\partial z_0}{\partial c} = 0,
+\end{equation}
+so both $z_n$ and $\partial z_n/\partial c$ are available at the end of a
+single forward pass of $p$~iterations.
+
+\paragraph{The \code{zcoeff} product.}
+In addition to $\partial z_p/\partial c$, the code tracks a multiplicative
+coefficient
+\begin{equation}\label{eq:ff-zcoeff}
+w_n = \prod_{k=0}^{n-1} 2\,z_k,
+\end{equation}
+with the convention $w_0=1$.  This product satisfies
+$\partial z_n/\partial c = w_n + \text{lower-order terms}$ and is used later
+to compute the intrinsic scale of the mini-brot (see
+\cref{subsec:ff-intrinsic-radius}).  In the code it is updated as
+\code{zcoeff *= 2*z} at each iteration, matching the recurrence for the
+leading factor of the derivative.
+
+\paragraph{Convergence.}
+Standard Newton--Raphson converges quadratically near a simple root.  The
+Phase~A loop in \code{FindPeriodicPoint\_Common} uses two independent
+stopping criteria, whichever triggers first:
+\begin{enumerate}
+\item \emph{Relative step:}
+  $|\Delta c|^2 \le |c|^2 \cdot \epsilon_{\mathrm{step}}^2$
+  with $\epsilon_{\mathrm{step}} = 2^{-40}$.
+\item \emph{Relative residual:}
+  $|z_p|^2 \le |c|^2 \cdot \epsilon_{\mathrm{diff}}^2$
+  with $\epsilon_{\mathrm{diff}} = 2^{-40}$.
+\end{enumerate}
+An optional absolute residual accept (\code{Eps2Accept}) provides a third
+early-out that can be enabled via \code{Params}.
+
+\paragraph{Period detection trigger.}
+Before Newton iteration begins, the evaluator must identify the candidate
+period.  The criterion used is: at iteration~$n$, if
+\begin{equation}\label{eq:ff-period-trigger}
+|z_n|^2 \;<\; R^2 \cdot \left|\frac{\partial z_n}{\partial c}\right|^2,
+\end{equation}
+then $p = n$ is accepted as the candidate period, where $R$ is the search
+radius.  This test detects the moment the orbit passes close to the origin
+relative to the local stretching factor $|\partial z/\partial c|$, which is
+a hallmark of near-periodic behavior.  A dynamic tightening mechanism
+(implemented in the \code{PeriodicityPP} helper) progressively shrinks the
+effective $R^2$ during the scan to reduce false triggers.
+
+\subsection{Halley's method}
+\label{subsec:ff-halley}
+
+The second derivative $F'' = \partial^2 z_p/\partial c^2$ is computed during
+every forward evaluation, even when the Halley step itself is not taken.  This
+is because $F''$ serves two distinct purposes in the refinement loop:
+
+\begin{enumerate}
+\item \textbf{Halley correction.}  When the Halley gate (\cref{eq:ff-halley-gate})
+  is satisfied, $F''$ enables a cubic-convergence step that can save expensive
+  forward evaluations compared to plain Newton (see below).
+\item \textbf{Error estimator.}  The stopping criterion
+  (\cref{eq:ff-err}) uses $|F''|^2$ to estimate the residual after
+  each step.  Without the second derivative, the code would have no reliable
+  way to judge convergence short of comparing successive iterates---which
+  requires an extra forward evaluation per check.
+\end{enumerate}
+
+Because $F''$ is carried in \code{HDRFloat<double>} (${\sim}53$~bits of
+mantissa with a wide exponent), it adds only cheap low-precision arithmetic to
+the forward evaluation: a few \code{HDRFloat} multiplies and additions per
+iteration of the period loop, compared with the expensive \code{mpf\_t}
+multiplies needed for $z$ and $\partial z/\partial c$.  The cost is therefore
+negligible relative to the rest of the evaluation, making it worthwhile to
+compute unconditionally.
+
+Phase~B optionally upgrades from Newton to Halley iteration for cubic
+convergence.  The Halley step for $F(c) = z_p(c)$ is
+\begin{equation}\label{eq:ff-halley-step}
+\Delta_H \;=\;
+  \frac{2\,F(c)\,F'(c)}
+       {2\bigl(F'(c)\bigr)^2 - F(c)\,F''(c)},
+\qquad c \leftarrow c - \Delta_H,
+\end{equation}
+where $F'=\partial z_p/\partial c$ and $F''=\partial^2 z_p/\partial c^2$.
+
+\paragraph{Second derivative recurrence.}
+Differentiating \cref{eq:ff-dzdc-recurrence} once more gives
+\begin{equation}\label{eq:ff-d2zdc2}
+\frac{\partial^2 z_{n+1}}{\partial c^2}
+  = 2\left(\frac{\partial z_n}{\partial c}\right)^{\!2}
+  + 2\,z_n\,\frac{\partial^2 z_n}{\partial c^2},
+\qquad \frac{\partial^2 z_0}{\partial c^2} = 0.
+\end{equation}
+In the code this quantity is carried as a pair of \code{HDRFloat<double>}
+values (real and imaginary parts), which provide a wide exponent range at low
+mantissa precision.  The coordinate-precision quantities $z$ and
+$\partial z/\partial c$ are stored in \code{mpf\_t}, while
+$\partial^2 z/\partial c^2$ remains in HDR throughout the forward
+evaluation.  When the Halley step is actually computed, the HDR second
+derivative is promoted to \code{mpf\_t} at coordinate precision.
+
+\paragraph{Halley gate.}
+Halley's step is only beneficial when $F''$ is well-conditioned relative to
+$F$ and $F'$.  The code uses the dimensionless ratio
+\begin{equation}\label{eq:ff-halley-gate}
+\rho^2 \;=\;
+  \frac{|F|^2\,|F''|^2}{|F'|^4}
+\end{equation}
+and activates Halley only when $\rho^2 < 2^{-12}$.  When $\rho^2$ is
+small the denominator $2(F')^2 - F\,F''$ is dominated by the $(F')^2$ term,
+so the Halley correction is a small, well-determined perturbation of the
+Newton step.  If the Halley denominator turns out to be exactly zero (or the
+gate is not satisfied), the code falls back to a plain Newton step for that
+iteration.
+
+\paragraph{Is Halley worthwhile given low-precision $F''$?}
+The second derivative $F''$ is accumulated in \code{HDRFloat<double>}
+throughout the forward evaluation, providing only ${\sim}53$~bits of
+mantissa (with a wide exponent range), while $F$ and $F'$ are carried in
+\code{mpf\_t} at hundreds or thousands of bits.  This precision mismatch
+limits the benefit of the Halley correction.
+
+The Halley step can be decomposed as
+\begin{equation}\label{eq:ff-halley-decomp}
+\Delta_H \;=\; \Delta_N \cdot \frac{1}{1 - \frac{F \cdot F''}{2(F')^2}}
+\;=\; \Delta_N \cdot \frac{1}{1 - \tfrac{1}{2}\rho^2 e^{i\theta}},
+\end{equation}
+where $\Delta_N = F/F'$ is the Newton step and $\rho^2$ is the dimensionless
+ratio from \cref{eq:ff-halley-gate}.
+
+\paragraph{Why it works: error analysis of the correction factor.}
+Write the true second derivative as $F''$ and the 53-bit approximation as
+$\hat{F}'' = F''(1 + \epsilon)$ where $|\epsilon| \lesssim 2^{-53}$.  The
+Halley step with the approximate $\hat{F}''$ is
+\[
+\hat{\Delta}_H \;=\; \Delta_N \cdot
+  \frac{1}{1 - \frac{F \cdot \hat{F}''}{2(F')^2}}.
+\]
+Near a simple root, the error $e_k = c_k - c^*$ satisfies $F \approx F' e_k$,
+so the correction ratio
+\[
+\frac{F \cdot F''}{2(F')^2} \;\approx\;
+  \frac{e_k \cdot F''}{2 F'} \;=\; O(e_k).
+\]
+This term shrinks as $c_k$ converges.  The \emph{error} introduced by using
+$\hat{F}''$ instead of $F''$ modifies this ratio by
+\[
+\frac{F \cdot \hat{F}''}{2(F')^2}
+  - \frac{F \cdot F''}{2(F')^2}
+  \;=\; \frac{F \cdot F'' \epsilon}{2(F')^2}
+  \;=\; O(e_k \cdot \epsilon).
+\]
+This is the product of the current error and the 53-bit truncation noise.
+The resulting Halley step error, relative to the true Halley step, is therefore
+$O(e_k \cdot \epsilon)$, producing a next error of
+\[
+e_{k+1}^{\text{(approx Halley)}} \;=\;
+  \underbrace{O(e_k^3)}_{\text{true Halley}}
+  \;+\;
+  \underbrace{O(e_k^2 \cdot \epsilon)}_{\text{truncation of } F''}.
+\]
+(The extra factor of $e_k$ in the second term comes from the fact that
+$\Delta_N$ itself is $O(e_k)$, and the relative perturbation of the
+correction factor is $O(e_k \cdot \epsilon)$.)
+
+Two regimes emerge:
+\begin{itemize}
+\item \textbf{Early convergence} ($|e_k| \gg 2^{-53}$): the $O(e_k^3)$ term
+  dominates, and the method converges cubically---identical to full-precision
+  Halley.  The 53-bit noise is invisible.
+\item \textbf{Late convergence} ($|e_k| \ll 2^{-53}$): the
+  $O(e_k^2 \cdot \epsilon)$ term dominates.  Since $\epsilon$ is a fixed
+  ${\sim}2^{-53}$, the effective recurrence becomes $|e_{k+1}| \approx
+  C \cdot e_k^2 \cdot 2^{-53}$, which is quadratic convergence (like Newton)
+  but with an extra constant factor of $2^{-53}$.  In terms of correct bits,
+  this gives ${\sim}2n + 53$ bits per step---still better than Newton's
+  ${\sim}2n$, but no longer cubic.
+\end{itemize}
+
+The crossover occurs when $|e_k|^3 \approx |e_k|^2 \cdot 2^{-53}$,
+i.e.\ when $|e_k| \approx 2^{-53}$, or equivalently when the iterate has
+${\sim}53$ correct bits.
+
+\paragraph{Empirical confirmation.}
+Numerical experiments on the period-3 nucleus confirm this analysis:
+
+\begin{center}
+\begin{tabular}{crrr}
+\hline
+\textbf{Step} & \textbf{Newton} & \textbf{Halley (53-bit $F''$)}
+              & \textbf{Halley (full $F''$)} \\
+\hline
+0 &  13.8 &  20.7 &  20.7 \\
+1 &  26.5 &  60.4 &  60.4 \\
+2 &  51.9 & 173.8 & 179.6 \\
+3 & 102.6 & 400.6 & 536.9 \\
+4 & 204.1 & 854.2 & 1608.9 \\
+5 & 407.0 & 1761.4 & --- \\
+6 & 812.8 & --- & --- \\
+7 & 1624.4 & --- & --- \\
+\hline
+\end{tabular}
+\end{center}
+
+(Correct bits of the period-3 nucleus, starting from the same initial guess.)
+Steps~0--1 show cubic convergence for both Halley variants (ratio
+${\approx}\,3$). At step~2, the 53-bit Halley begins to diverge from the
+full-precision version (173.8 vs.\ 179.6), consistent with the crossover at
+${\sim}53$ correct bits.  By step~4, the 53-bit Halley's ratio has dropped to
+${\sim}2.1$, approaching quadratic.
+
+\paragraph{Net benefit.}
+Despite the degeneration, the low-precision Halley reaches 1761~correct bits
+in 6~steps versus Newton's 8~steps for 1624~bits---saving two full forward
+evaluations.  The savings come from the early cubic burst: by the time the
+method degenerates to quadratic, it already has a ${\sim}3\times$ lead in
+correct bits over Newton, and this lead persists through all subsequent
+iterations.  For large period~$p$, each saved forward evaluation avoids
+$p$~expensive high-precision multiplies, making the modest cost of computing
+$F''$ in \code{HDRFloat} easily worthwhile.
+
+\subsection{Mixed-precision refinement}
+\label{subsec:ff-mixed-prec}
+
+The Phase~B polisher (\code{RefinePeriodicPoint}) operates entirely in GMP
+\code{mpf\_t} arithmetic but uses two distinct precision levels to balance cost
+and accuracy, following the strategy used in Imagina.
+
+\paragraph{Coordinate vs.\ derivative precision.}
+The candidate coordinate $c$ and the orbit value $z_p$ are maintained at full
+\emph{coordinate precision} $P_c$ (typically hundreds to tens of thousands of
+bits, determined by the zoom depth).  The derivative
+$\partial z_p/\partial c$ is maintained at a reduced \emph{derivative
+precision} $P_d$ chosen by
+\begin{equation}\label{eq:ff-deriv-prec}
+P_d = \operatorname{clamp}\!\left(
+  \frac{-E_{\mathrm{scale}} + 32}{4},\;
+  256,\;
+  P_c + E_{\max}^{|c|} + 32
+\right),
+\end{equation}
+where $E_{\mathrm{scale}}$ is the base-2 exponent of the scale factor
+$\text{Scale} \approx 1/|w_p \cdot \partial z_p/\partial c|$ and
+$E_{\max}^{|c|}$ is the exponent of $\max(|\Re c|,|\Im c|)$.
+The rationale is that the derivative need only be accurate enough to produce
+a Newton/Halley step whose relative error is smaller than the current
+residual; carrying it at full coordinate precision would roughly double the
+cost of each forward evaluation without improving the convergence rate.
+
+\paragraph{Error estimator and stopping criterion.}
+After each step $\Delta c$, the code computes an error proxy entirely in
+\code{HDRFloat<double>}:
+\begin{equation}\label{eq:ff-err}
+\mathrm{err} \;=\;
+  \frac{|\Delta c|^4 \cdot |F''|^2}{|F'|^2}.
+\end{equation}
+This quantity approximates the leading-order truncation error of the Newton
+step (or, more precisely, the residual that would remain after two successive
+Newton steps of similar quality).  Iteration stops when
+\begin{equation}\label{eq:ff-stop}
+-\lfloor \log_2(\mathrm{err}) \rfloor \;\ge\; 2\,P_c,
+\end{equation}
+meaning the estimated error occupies fewer than $2P_c$ bits---well below the
+representable precision of the coordinate.
+
+\paragraph{Final correction and accept/reject.}
+After the main loop converges (or exhausts the iteration budget), a single
+additional Newton step is applied as a final correction.  The refined $c$ is
+then checked against the initial seed $c_0$: if
+$|c - c_0|^2 > R^2$ (the squared search radius, carried in \code{mpf\_t}),
+the result is rejected and $c$ is reset to~$c_0$.  This guard prevents the
+iteration from wandering to a distant nucleus outside the user's region of
+interest.
+
+\subsection{Intrinsic radius and scale}
+\label{subsec:ff-intrinsic-radius}
+
+Once the nucleus $c^*$ and its period~$p$ are known, the local magnification
+of the mini-brot copy is characterized by
+\begin{equation}\label{eq:ff-scale}
+\mathrm{Scale} \;=\;
+  \frac{1}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|},
+\end{equation}
+where $w_p = \prod_{k=0}^{p-1} 2\,z_k$ is the \code{zcoeff} product
+evaluated at $c^*$.  The code reports an \emph{intrinsic radius}
+\begin{equation}\label{eq:ff-intrinsic-radius}
+r_{\mathrm{int}} = 4 \cdot \mathrm{Scale}
+  = \frac{4}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|}.
+\end{equation}
+Geometrically, $r_{\mathrm{int}}$ estimates the diameter of the
+period-$p$ hyperbolic component in the parameter plane.  It is stored
+as a \code{HighPrecision} value in \code{FeatureSummary} and can be used by
+the renderer to set an appropriate zoom level or to determine the additional
+bits of precision needed to render the component's interior.
+
+\subsection{Threading model and GPU prospects}
+\label{subsec:ff-threading}
+
+\paragraph{Current multi-threaded implementation.}
+The dominant cost of the Feature Finder is the forward evaluation
+\code{EvaluateCriticalOrbitAndDerivs}, which iterates $z_{n+1}=z_n^2+c$ and
+the derivative $\partial z_p/\partial c$ for $p$ iterations at high precision
+using GMP \code{mpf\_t} arithmetic.  Each iteration requires several
+independent high-precision multiplies: three at coordinate precision
+($z_{\mathrm{re}}^2$, $z_{\mathrm{im}}^2$, $z_{\mathrm{re}} \cdot
+z_{\mathrm{im}}$) and four at derivative precision (the complex product
+$\mathrm{dzdc} \cdot 2z$).  Because these multiplies are independent within a
+single iteration, \FractalShark{} dispatches them to a pool of seven spin-based
+worker threads (\code{NWORK~=~7}).  Synchronization uses cache-line-aligned
+(\code{alignas(64)}) generation counters with atomic acquire/release
+semantics---no mutexes or condition variables---so the main thread and workers
+coordinate with minimal latency.  The main thread composes the results after
+each batch completes and advances to the next iteration.
+
+A single-threaded fallback (\code{EvaluateCriticalOrbitAndDerivsST}) with
+identical logic is also provided.
+
+The Newton outer loop in \code{FindPeriodicPoint\_Common} is inherently
+sequential: each Newton step $c \leftarrow c - z_p / (\partial z_p / \partial
+c)$ depends on the preceding evaluation's output, so successive steps cannot
+overlap.
+
+\paragraph{GPU acceleration via \code{HpSharkFloat}.}
+The arithmetic bottleneck that motivates the seven-worker CPU pool is the same
+bottleneck that the GPU reference orbit backend (\cref{subsec:ref-orbit-gpu})
+already addresses: high-precision multiplication at thousands of limbs.
+\FractalShark{}'s existing \code{HpSharkFloat} pipeline performs NTT-based
+multiplication on the GPU and has demonstrated roughly $10\times$ speedups over
+multithreaded MPIR at 16384 limbs.
+
+A natural extension would replace the CPU \code{mpf\_mul} calls inside the
+forward evaluation with GPU kernel launches through the same
+\code{HpSharkFloat} infrastructure.  The host would continue to drive the
+Newton outer loop, but each forward evaluation---$p$ iterations of $z=z^2+c$
+plus the derivative recurrence---would execute as GPU work.  This mirrors the
+architecture of the reference orbit GPU backend, where the host orchestrates
+iteration batches and the GPU performs the heavy arithmetic.
+
+At high periods and deep zooms (thousands of 32-bit limbs), the per-multiply
+GPU advantage would dominate the overall wall-clock time.  The Newton loop
+typically converges in tens of steps, each requiring $p$ high-precision
+multiplies, so the total arithmetic volume scales as $O(p \cdot N \log N)$ per
+Newton step (where $N$ is the limb count).  For large $p$ and $N$, offloading
+this to the GPU would yield substantial speedups over both the single-threaded
+and seven-worker CPU implementations.
+
+%% ===================================================================
+\section{Additional Implementation Details}
+\label{sec:misc-details}
+%% ===================================================================
+
+This section collects several subsystems that, while individually
+straightforward, are essential to the complete rendering pipeline.
+
+% -----------------------------------------------------------------
+\subsection{Antialiasing via supersampling}
+\label{subsec:antialiasing}
+
+\FractalShark{} supports GPU-side supersampled antialiasing (SSAA).
+The iteration kernels render at a resolution that is a multiple of
+the output size; a separate \emph{antialiasing kernel} then
+down-samples the result to the final pixel grid.
+
+The supersampling factor is a compile-time template parameter
+\code{Antialiasing}, explicitly instantiated for $1\times$, $2\times$,
+$3\times$, and $4\times$.  For a factor~$k$, each output pixel
+corresponds to a $k\times k$ block in the high-resolution iteration
+buffer \code{OutputIterMatrix}.  The kernel loops over the $k^2$
+samples, maps each iteration count to a palette colour
+(\cref{subsec:coloring}), accumulates the RGB channels, and divides
+by $k^2$ to produce an averaged \code{Color16} (16-bit per channel
+RGBA) output.
+
+\paragraph{Stream separation.}
+The antialiasing kernel is launched on a dedicated CUDA stream
+(\code{m\_Stream1}), distinct from the compute stream used by the
+iteration kernels.  This allows the display thread to run
+antialiasing and read back the colour buffer while the compute thread
+continues issuing iteration work on its own default stream
+(see also the \code{--default-stream per-thread}
+compilation flag in \code{CudaDefaults.props}).
+
+\paragraph{Kernel template.}
+\begin{verbatim}
+template<typename IterType,
+         uint32_t Antialiasing,
+         bool ScaledColor>
+__global__ void antialiasing_kernel(
+    const IterType *OutputIterMatrix,
+    uint32_t Width, uint32_t Height,
+    AntialiasedColors OutputColorMatrix,
+    Palette Pals,
+    int local_color_width,
+    int local_color_height,
+    IterType n_iterations);
+\end{verbatim}
+The \code{ScaledColor} flag selects between raw and scaled palette
+indexing.  Pixels whose iteration count equals \code{n\_iterations}
+(the Mandelbrot-set interior) are left black.
+
+\paragraph{Limitations.}
+Brute-force SSAA supersamples every pixel uniformly, which is
+wasteful: most of the image consists of smooth-gradient regions where
+a single sample suffices, while visual aliasing concentrates along the
+boundary of the Mandelbrot set.  An edge-aware or adaptive
+supersampling strategy---sampling densely only near detected
+edges---would achieve comparable image quality at a fraction of the
+cost.  The current uniform approach was chosen for implementation
+simplicity on the GPU (all threads perform identical work, avoiding
+divergence), but replacing it with an adaptive scheme is a natural
+future improvement.
+
+% -----------------------------------------------------------------
+\subsection{Coloring and palette system}
+\label{subsec:coloring}
+
+After the antialiasing kernel maps iteration counts to colours, the
+mapping itself is controlled by the palette system implemented in
+\code{FractalPalette}.
+
+\paragraph{Palette types.}
+Five palettes are available, enumerated by
+\code{FractalPaletteType}:
+\code{Basic} (placeholder),
+\code{Default} (rainbow transitions R$\to$Y$\to$G$\to$C$\to$B$\to$M),
+\code{Patriotic} (red/blue),
+\code{Summer} (red/green/cyan/white), and
+\code{Random} (procedurally generated).
+Palette data is pre-generated on the CPU (using smooth colour
+transitions via \code{PalTransition}) and uploaded to the GPU as an
+array of \code{Color16} values.
+
+\paragraph{Bit-depth levels.}
+Each palette is generated at six bit-depth levels, corresponding to
+$2^5$, $2^6$, $2^8$, $2^{12}$, $2^{16}$, and $2^{20}$ colours
+(32 to roughly one million).  The active depth is selected by
+\code{m\_PaletteDepthIndex} (default: index~2, i.e.\ 256 colours)
+and can be cycled at runtime.
+
+\paragraph{Iteration-to-colour mapping.}
+On the GPU, the palette index for a given iteration count is computed
+as
+\[
+  \mathrm{palIndex} \;=\;
+  \bigl(\mathtt{numIters} \gg \mathtt{palette\_aux\_depth}\bigr)
+    \bmod \mathtt{local\_palIters},
+\]
+where \code{palette\_aux\_depth} (range 0--16) controls the iteration
+compression---higher values produce wider colour bands---and
+\code{local\_palIters} is the palette size at the active bit depth.
+The modulo wrapping causes the palette to cycle when the iteration
+count exceeds the palette length.
+
+\paragraph{Palette rotation.}
+A rotation offset \code{m\_PaletteRotate} is added to the iteration
+count before palette lookup, allowing the user to phase-shift the
+colour mapping for visual exploration without re-rendering.
+
+\paragraph{Alternative coloring approaches.}
+The palette-indexed scheme above is simple and fast but has known
+limitations: discrete iteration counts produce visible banding, and
+the palette cycle length is fixed.  Several alternative techniques
+exist in the fractal-rendering community:
+\begin{itemize}
+  \item \textbf{Smooth (continuous) iteration count.}  By incorporating
+    the final orbit magnitude into a fractional escape count
+    ($n_{\text{smooth}} = n - \log_2\!\log_2|z_n| + \text{const}$),
+    banding is eliminated and colour transitions become continuous.
+  \item \textbf{Distance estimation.}  The analytic derivative
+    $\partial z_n/\partial c$ (already computed for perturbation
+    purposes) can yield an estimate of the distance from~$c$ to the
+    Mandelbrot boundary.  Mapping distance to colour emphasises fine
+    boundary structure and enables resolution-independent rendering of
+    thin filaments.
+  \item \textbf{Histogram equalization.}  Collecting a histogram of
+    iteration counts across the image and mapping colours via the
+    cumulative distribution produces uniform colour utilisation
+    regardless of the iteration distribution---useful at deep zooms
+    where most counts cluster in a narrow range.
+  \item \textbf{Orbit-trap coloring.}  Measuring the closest approach
+    of the orbit to a geometric shape (circle, cross, point) during
+    iteration provides a distance metric unrelated to escape time,
+    yielding distinctive visual effects.
+\end{itemize}
+\FractalShark{} currently implements only the palette-indexed method.
+Integrating smooth iteration counts would be straightforward and would
+pair naturally with the existing palette infrastructure; distance
+estimation would leverage derivative data that the perturbation
+pipeline already maintains.
+
+% -----------------------------------------------------------------
+\subsection{Iteration statistics via parallel reduction}
+\label{subsec:reduction}
+
+After the antialiasing kernel completes, a single reduction pass
+extracts global statistics from the iteration buffer.  The
+\code{max\_kernel} template reads every element of
+\code{OutputIterMatrix} and computes three values simultaneously:
+\begin{itemize}
+  \item the minimum iteration count,
+  \item the maximum iteration count,
+  \item the sum of all iteration counts.
+\end{itemize}
+These are stored in a \code{ReductionResults} structure
+(three \code{uint64\_t} fields: \code{Min}, \code{Max}, \code{Sum}).
+
+The kernel uses shared-memory accumulators within each thread block
+and atomic operations (\code{atomicMax}, \code{atomicMin},
+\code{atomicAdd}) to merge block-level results into a single global
+output.  It is launched with a $16\times16$ block grid and runs on
+the same stream as the antialiasing kernel, so no additional
+synchronization is required.  After the kernel completes, the host
+copies back the \code{ReductionResults} via \code{cudaMemcpy} in
+\code{ExtractItersAndColors}.
+
+\paragraph{Current status.}
+The reduction results are computed every frame but are not currently
+used to drive any rendering decision (e.g.\ adaptive palette scaling
+or histogram equalization).  They exist primarily for diagnostic
+interest and as infrastructure that could support future coloring
+enhancements.
+
+% -----------------------------------------------------------------
+\subsection{Coordinate management}
+\label{subsec:coordinates}
+
+The \code{PointZoomBBConverter} class manages the bidirectional
+mapping between screen pixel coordinates and points on the complex
+plane.  All internal coordinate quantities---centre, bounding-box
+corners, zoom factor, radius---are stored as \code{HighPrecision}
+values, which wrap MPIR's \code{mpf\_t} arbitrary-precision
+floating-point type.  This allows the coordinate system to maintain
+meaningful precision at extreme zoom depths where IEEE~754 types are
+long exhausted.
+
+\paragraph{Bounding box from centre and zoom.}
+Given a centre $(c_x, c_y)$ and zoom factor~$Z$, the visible region
+is
+\[
+  x \in \bigl[c_x - 2/Z,\; c_x + 2/Z\bigr],\qquad
+  y \in \bigl[c_y - 2/Z,\; c_y + 2/Z\bigr].
+\]
+The constant~2 (the \code{Factor} member) sets the initial
+un-zoomed viewport to the range $[-2,2]$ in both axes.
+
+\paragraph{Screen-to-complex and complex-to-screen transforms.}
+Pixel coordinates are mapped linearly:
+\[
+  x_{\text{calc}} = \frac{(x_{\text{px}} - x_0)\,(x_{\max}-x_{\min})}
+                         {W \cdot k},
+\]
+where $W$ is the screen width and $k$ is the antialiasing factor.
+The $y$~axis is inverted (screen~$y$ increases downward; imaginary
+axis increases upward).  The inverse mapping is used to convert
+fractal coordinates back to pixel positions.
+
+\paragraph{Per-pixel stepping for the GPU.}
+For GPU kernel launches, the converter computes per-pixel deltas
+$\Delta x = (x_{\max}-x_{\min})/(W \cdot k)$ and
+$\Delta y = (y_{\max}-y_{\min})/(H \cdot k)$ at full
+\code{HighPrecision}.  These are then down-converted to the
+kernel's working type (e.g.\ \code{double}, \code{HDRFloat}) for
+per-thread coordinate calculation on the GPU.
+
+\paragraph{Zoom operations.}
+Zooming recomputes the bounding box around the current centre:
+$x'_{\min} = c_x - r/d$, $x'_{\max} = c_x + r/d$ (and similarly
+for~$y$), where $d$ is the zoom divisor.  All intermediate arithmetic
+is performed at the working precision of the \code{HighPrecision}
+members, which is dynamically adjusted via \code{SetPrecision} as
+the zoom deepens.
+
+% -----------------------------------------------------------------
+\subsection{GPU memory allocation with host fallback}
+\label{subsec:gpu-mem-fallback}
+
+Reference orbits at deep zoom levels can be extremely large---tens of
+billions of iterations, each storing several floating-point
+values---and may exceed the GPU's physical VRAM (typically 8--24\,GB
+on consumer hardware).  However, the host system often has
+substantially more RAM available.  Rather than aborting the render
+when GPU memory is exhausted, \FractalShark{} uses a two-tier
+fallback strategy.
+
+\paragraph{Allocation cascade.}
+Each large GPU allocation follows a try-device-then-host pattern:
+\begin{enumerate}
+\item Attempt \code{cudaMalloc} (device memory, full GPU bandwidth).
+\item If that fails, attempt \code{cudaMallocHost}
+      (pinned host memory, accessible from GPU via PCIe but at
+      reduced bandwidth).
+\item If both fail, mark the allocation as invalid and set
+      its size to zero.
+\end{enumerate}
+A boolean flag (e.g.\ \code{AllocHost} in
+\code{GPUPerturbSingleResults}, or \code{AllocHostLA} in
+\code{GPU\_LAReference}) records which tier succeeded.
+
+\paragraph{Transparent access.}
+Because \code{cudaMallocHost} returns a \emph{pinned} host pointer
+that is GPU-visible via unified addressing, CUDA kernels can read
+and write the buffer with no code changes---only bandwidth
+decreases (PCIe~4.0 $\approx$\,32\,GB/s versus device memory at
+$\approx$\,500--1000\,GB/s).  For data that is streamed
+sequentially (e.g.\ reference orbit look-ups during perturbation
+iteration), the performance impact is manageable.
+
+\paragraph{Matched cleanup.}
+Destructors inspect the allocation-tier flag and call the
+corresponding free function (\code{cudaFree} for device memory,
+\code{cudaFreeHost} for pinned host memory), ensuring correct
+resource release regardless of which tier was used.

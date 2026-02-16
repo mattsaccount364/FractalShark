@@ -92,20 +92,27 @@ $N$          & limb count (multi-precision)  & \\
 % ============================================================
 % User guide (practical usage information first)
 % ============================================================
-\input{FractalShark-UserGuide}
+\input{FractalShark-00-UserGuide}
 
 % ============================================================
-% Main technical content
+% Main technical content (numbered files in reading order)
 % ============================================================
-\input{FractalShark-Paper}
+\input{FractalShark-01-Foundations}
+\input{FractalShark-02-NumericTypes}
+\input{FractalShark-03-Perturbation}
+\input{FractalShark-04-RefOrbit}
+\input{FractalShark-05-GpuArithmetic}
+\input{FractalShark-06-Infrastructure}
 
 % ============================================================
 % Appendix: development notes
 % ============================================================
 \appendix
 
-\input{FractalShark-DevNotes}
+\input{FractalShark-07-DevNotes}
 
+\phantomsection
+\addcontentsline{toc}{section}{References}
 \bibliographystyle{plain} % or ieeetr, unsrt, alpha, etc.
 \bibliography{FractalShark}      % <-- filename WITHOUT .bib
 

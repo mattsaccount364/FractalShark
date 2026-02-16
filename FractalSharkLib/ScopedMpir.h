@@ -37,6 +37,13 @@ private:
     // Currently, this one maxes out around 10.  So 10 live allocations at once.
     static std::atomic<size_t> MaxAllocatedDebug;
 
+    // Static fallback allocators for threads that haven't initialized TLS.
+    // Set once in InitScopedAllocators, read by New* static functions.
+    static void *(*s_ExistingMalloc) (size_t);
+    static void *(*s_ExistingRealloc) (void *, size_t, size_t);
+    static void (*s_ExistingFree) (void *, size_t);
+    thread_local static bool TlsInitialized;
+
     static void *NewMalloc(size_t size);
     static void *NewRealloc(void *ptr, size_t old_size, size_t new_size);
     static void NewFree(void *ptr, size_t size);
@@ -81,6 +88,12 @@ private:
 
     static std::atomic<size_t> MaxAllocatedDebug;
     static bool InstalledBumpAllocator;
+
+    // Static fallback allocators for threads that haven't initialized TLS.
+    static void *(*s_ExistingMalloc) (size_t);
+    static void *(*s_ExistingRealloc) (void *, size_t, size_t);
+    static void (*s_ExistingFree) (void *, size_t);
+    thread_local static bool TlsInitialized;
 
     static void *NewMalloc(size_t size);
     static void *NewRealloc(void *ptr, size_t old_size, size_t new_size);

@@ -1,0 +1,451 @@
+\section{\FractalShark{} Overview}
+\label{sec:goal}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{mandelbrot.png}
+  \caption{The Mandelbrot set.}
+  \label{fig:mandelbrot}
+\end{figure}
+
+\FractalShark{} is an interactive Mandelbrot set renderer focused on
+\textbf{extreme deep-zoom exploration}, numerical correctness, and
+algorithmic experimentation.  It supports zoom depths ranging from
+conventional views to magnifications exceeding $10^{10000}$, while
+exposing internal rendering choices and precision tradeoffs to the user.
+
+\paragraph{Interactive navigation and view control.}
+\FractalShark{} provides direct mouse-driven navigation, including centering
+the view at an arbitrary point, zooming in and out at the cursor location,
+stepping backward through navigation history, and invoking automatic zoom
+modes.  Window management options allow toggling between windowed and
+full-screen modes, including square-aspect rendering for precise analysis.
+
+\paragraph{Built-in views for demonstration and validation.}
+The application includes an extensive set of built-in views covering a wide
+range of numerical regimes: GPU precision limits, high-period locations,
+known hard points, historical bug cases, regression tests, and ultra-deep
+zoom demonstrations.  These views serve both as showcases of capability and
+as repeatable test cases for performance and correctness.
+
+\paragraph{Explicit algorithm selection and transparency.}
+A central design goal of \FractalShark{} is to make rendering algorithms
+explicit and selectable.  Users may rely on an automatic algorithm selector
+or manually choose among many rendering paths (see \cref{subsec:ref-orbit-mt-tradeoff} for automatic selection), including:
+\begin{itemize}
+  \item GPU-based low-zoom renderers with selectable iteration precision and
+        multiple numeric formats (single-, dual-, and quad-limb 32- and 64-bit
+        variants, as well as deeper representations discussed subsequently);
+        see \cref{sec:mandel-base-kernels}.
+  \item Scaled perturbation algorithms for extending low-precision arithmetic
+        to deeper zooms (\cref{sec:perturbation-concept}).
+  \item Bilinear approximation (BLA v1) perturbation paths (\cref{sec:bilinear-approx}).
+  \item Linear approximation (LAv2) pipelines, including full rendering,
+        linear-approximation-only, and perturbation-only variants
+        (\cref{sec:la-v2-perturb}).
+  \item Reference-compression–aware algorithms, including Imagina-compatible
+        ``max'' compression formats (\cref{subsec:ref-orbit-compression-reuse}).
+  \item CPU-only algorithms for very high precision, verification, and
+        fallback scenarios.
+\end{itemize}
+
+Many of these modes are exposed explicitly for testing and comparison, and
+not all are intended as default or production-quality paths.
+
+\paragraph{Linear approximation configuration.}
+Linear approximation behavior can be configured for multithreaded or
+single-threaded execution and tuned via presets that prioritize accuracy,
+performance, or memory usage.  These controls reflect ongoing development
+and experimentation with LA parameter tradeoffs.
+
+\paragraph{Image quality and coloring.}
+\FractalShark{} supports GPU antialiasing at multiple sample levels and a
+flexible palette system (\cref{subsec:antialiasing,subsec:coloring}).  Palettes may be selected from predefined themes,
+generated randomly, and rendered at configurable color depths.  Some palette
+features are intentionally limited or disabled where they are known to be
+incomplete.
+
+\paragraph{Iteration limits and precision control.}
+Users can dynamically adjust iteration limits, switch between 32-bit and
+64-bit iteration counters, and modify shallow-zoom iteration precision.
+These controls are primarily relevant for low-zoom or testing scenarios and
+are not universally applicable to all rendering algorithms.
+
+\paragraph{Perturbation and reference-orbit management.}
+\FractalShark{} places strong emphasis on reference-orbit reuse and
+perturbation-based rendering (\cref{sec:ref-orbit-calc}).  It supports multiple perturbation strategies
+(single-threaded, multithreaded, periodicity-assisted (\cref{sec:hp-periodicity}), and experimental GPU
+variants), along with tools to clear, inspect, save, reload, and reuse
+reference orbits.  Automatic and manual reference-orbit persistence is
+supported via file-backed storage (\cref{sec:disk_backed_growable_vectors}).
+
+\paragraph{Memory management and scalability.}
+To enable extreme zoom depths without exhausting system memory, \FractalShark{}
+employs file-backed storage, optional reference compression, configurable
+memory limits, and automatic cleanup policies.  These mechanisms are closely
+tied to recent allocator and reference-orbit refactors discussed in the
+project development history.
+
+\paragraph{Diagnostics, benchmarking, and testing.}
+The application includes facilities for displaying detailed rendering
+parameters, running repeatable benchmarks, executing regression tests, and
+comparing reference orbits (including Imagina-compatible formats).  These
+features reflect \FractalShark{}’s dual role as both a visualization tool and a
+development platform.
+
+\paragraph{Data export and interoperability.}
+\FractalShark{} can save rendered images, high-resolution bitmaps, iteration
+counts, and reference orbits in multiple text and compressed formats.  It
+supports loading external reference orbits and matching Imagina-compatible
+data for cross-tool validation.
+
+\medskip
+\noindent
+Overall, \FractalShark{} functions as both a \textbf{deep-zoom Mandelbrot
+explorer} and a \textbf{research and experimentation platform} for
+high-precision fractal rendering, prioritizing transparency, correctness, and
+performance.  It is not intended as a polished end-user application, but rather
+as an experimental platform for exploring and validating advanced fractal
+rendering algorithms.
+
+\section{The Mandelbrot set and escape-time rendering}
+\label{sec:mandelbrot-intro}
+
+The Mandelbrot set \(M\subset\mathbb{C}\) \cite{Mandelbrot1980Fractal} is defined as the set of complex
+parameters \(c\) for which the orbit of
+\begin{equation}
+z_{n+1} = z_n^2 + c,\qquad z_0 = 0
+\end{equation}
+remains bounded. A common rendering method is \emph{escape-time}: iterate until
+the orbit magnitude exceeds a bailout threshold, or until a maximum iteration
+count is reached.
+
+A standard bailout uses \(|z_n|^2 \ge 4\), since \(|z|>2\) implies divergence:
+\begin{equation}
+|z_n|^2 = \Re(z_n)^2 + \Im(z_n)^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
+\end{equation}
+For each pixel, the stored value is the smallest \(n\) (or a bounded proxy) at
+which escape occurs, or the maximum iteration limit if escape never occurs.
+
+
+\section{Pixel-to-parameter mapping}
+\label{sec:mapping}
+
+Each CUDA thread computes a pixel coordinate \((X,Y)\) and maps it to a complex
+parameter \(c = x_0 + i y_0\). A typical kernel starts with:
+\begin{verbatim}
+int X = blockIdx.x * blockDim.x + threadIdx.x;
+int Y = blockIdx.y * blockDim.y + threadIdx.y;
+if (X >= width || Y >= height) return;
+size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
+\end{verbatim}
+
+\subsection{Thread-to-pixel mapping}
+A 2D CUDA grid of 2D blocks covers the image. Each thread is responsible for one
+pixel. The bounds check prevents out-of-range threads from writing.
+
+\subsection{Y-axis convention}
+The expression \code{height - Y - 1} flips \(Y\). This is common when the image
+buffer uses a top-left origin but the complex-plane mapping assumes a
+bottom-left origin (or vice versa).
+
+\subsection{Affine map into the complex plane}
+The parameter \(c\) is computed by an affine transform:
+
+\begin{align}
+x_0 &= cx + dx \cdot X, \\
+y_0 &= cy + dy \cdot Y,
+\end{align}
+
+where \code{cx,cy} anchor the plane (e.g., the coordinate at pixel \((0,0)\)),
+and \code{dx,dy} are per-pixel increments. Different kernels compute these
+expressions in different numeric types; the intent is always the same: map each
+pixel to its associated complex parameter \(c\).
+
+
+\section{Mandelbrot recurrence in real arithmetic}
+\label{sec:real-form}
+
+Writing \(z = x + i y\) and \(c = x_0 + i y_0\), the iteration becomes:
+
+\begin{align}
+x_{n+1} &= x_n^2 - y_n^2 + x_0, \\
+y_{n+1} &= 2 x_n y_n + y_0.
+\end{align}
+
+The escape test is:
+
+\begin{equation}
+x_n^2 + y_n^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
+\end{equation}
+
+Many kernels cache squares:
+\[
+zrsqr = x^2,\quad zisqr = y^2,
+\]
+so that \(x^2-y^2\) and \(x^2+y^2\) can be formed cheaply as \code{zrsqr - zisqr}
+and \code{zrsqr + zisqr}. This is especially valuable when \(x\) and \(y\) are
+represented by multi-component expansion types.
+
+
+\section{Mandelbrot base kernels}
+\label{sec:mandel-base-kernels}
+
+The goal of these kernels in \FractalShark{} is to \emph{render the Mandelbrot set}
+by computing an \emph{escape-time} iteration count (\cref{sec:mandelbrot-intro}) per pixel over a 2D image
+grid efficiently. Each CUDA thread evaluates a single complex parameter \(c\)
+corresponding to one pixel (\cref{sec:mapping}), iterates the Mandelbrot recurrence (\cref{sec:real-form}), and stores the
+iteration count into an output buffer. Separate (or fused) stages can map
+iteration counts to colors, apply palettes, and perform anti-aliasing
+(\cref{subsec:coloring,subsec:antialiasing}).
+
+Across these base kernels, the primary variation is the numeric representation
+used for the orbit arithmetic: from IEEE-754 \code{float}/\code{double} up
+through expansion types (float-float, double-double, quad-float, quad-double)
+and HDR-normalized formats (\cref{sec:extended-precision-types}). The shared objective remains the same: compute the
+escape-time for the Mandelbrot iteration as accurately and efficiently as needed
+for a desired zoom depth.  A complete listing of all CUDA kernels is given in
+\cref{sec:kernel-list}.
+
+Each kernel variant renders the same Mandelbrot escape-time field; the only
+difference is the numeric type used for mapping and orbit iteration. The
+following sections describe how each type realizes the same recurrence and
+escape test.  This set of kernels does not use linear approximation or
+perturbation; they simply evaluate the Mandelbrot iteration directly in the
+chosen numeric format.
+
+Throughout, \code{IterType} is the integer type used to store the escape-time
+iteration count (e.g., \code{uint32\_t} or \code{uint64\_t}).
+
+\subsection{Kernel: \code{mandel\_1x\_float}}
+\label{sec:mandel-1x-float}
+
+\subsubsection{Numeric type}
+This variant uses IEEE-754 single precision \code{float}. It provides the
+highest throughput but limits usable zoom depth due to rounding error and loss
+of significance in \(c\) and the orbit.
+
+\subsubsection{FMA-based orbit update}
+The implementation uses fused multiply-add intrinsics:
+
+\begin{verbatim}
+ytemp = __fmaf_rd(-y, y, x0);     // x0 - y^2
+xtemp = __fmaf_rd(x, x, ytemp);   // x^2 - y^2 + x0
+xtemp2 = 2.0f * x;
+y = __fmaf_rd(xtemp2, y, y0);     // 2xy + y0
+x = xtemp;
+\end{verbatim}
+
+These intrinsics correspond exactly to:
+
+\begin{align}
+x &\leftarrow x^2 - y^2 + x_0,\\
+y &\leftarrow 2xy + y_0.
+\end{align}
+
+Using FMA reduces intermediate rounding and can improve performance. The
+\code{\_\_fmaf\_rd} variant rounds downward; if IEEE round-to-nearest is desired,
+use \code{\_\_fmaf\_rn} (or plain \code{fmaf}).
+
+\subsubsection{Escape test}
+The kernel tests \(x^2+y^2 < 4\), which implies recomputing squares each loop in
+this simplest variant.  Perhaps this kernel could explicitly cache the squares
+for better performance.
+
+\subsection{Kernel: \code{mandel\_1x\_double}}
+\label{sec:mandel-1x-double}
+
+\subsubsection{Numeric type}
+This variant uses IEEE-754 \code{double} and therefore carries substantially
+more mantissa precision than float. The Mandelbrot recurrence is identical, but
+performance depends strongly on GPU FP64 throughput.  Consumer GPUs often
+have much lower FP64 throughput than FP32, so this kernel may be slower than
+\code{mandel\_1x\_float} on such hardware.
+
+\subsubsection{Orbit update and escape test}
+The update uses double-precision FMA intrinsics (e.g., \code{\_\_fma\_rd}) or
+equivalent arithmetic to compute:
+\[
+x \leftarrow x^2 - y^2 + x_0,\qquad y \leftarrow 2xy + y_0,
+\]
+with the same bailout condition \(|z|^2 \ge 4\).
+
+\subsection{Kernel: \code{mandel\_2x\_float}}
+\label{sec:mandel-2x-float}
+
+\subsubsection{Numeric type: float-float expansion}
+This variant uses a float-float expansion type \code{dblflt}
+(\cref{subsec:ep-dblflt}) to represent a
+value as:
+\[
+a \approx a_{\mathrm{hi}} + a_{\mathrm{lo}},
+\]
+where \code{head} (hi) carries the leading magnitude and \code{tail} (lo) is a
+correction term. Arithmetic uses compensated routines such as
+\code{add\_dblflt}, \code{sub\_dblflt}, \code{mul\_dblflt}, \code{sqr\_dblflt},
+and often a specialized \code{mul\_dblflt2x(x,y)} to compute \(2xy\) with good
+accuracy.
+
+All double- and quad- float/double implementations are based on work from Andrew
+Thall \cite{andrew-thall-dblflt}, which in turn builds on Dekker's
+double-double technique \cite{Dekker1971DoubleDouble}.  The implementations are modified here to
+support both float and double base types.  These changes are unique to
+\FractalShark{}.
+
+\subsubsection{Mapping and orbit iteration}
+
+The affine mapping for \(c\) is performed in \code{dblflt}:
+
+\[
+x_0 = cx + dx \cdot X,\qquad y_0 = cy + dy \cdot Y,
+\]
+
+and the orbit update follows the same real-form recurrence using expansion
+operations. Cached squares are typically maintained as \code{dblflt}:
+
+\[
+zrsqr = x^2,\quad zisqr = y^2.
+\]
+
+\subsubsection{Escape test}
+The implementations compares only the leading component (e.g., \code{head}) for
+speed:
+
+\[
+zrsqr.\mathrm{head} + zisqr.\mathrm{head} < 4.
+\]
+
+This approach is fast but can misclassify points extremely near the boundary. A
+fully robust bailout can incorporate both components (or a conservative bound).
+
+\subsection{Kernel: \code{mandel\_2x\_double}}
+\label{sec:mandel-2x-double}
+
+\subsubsection{Numeric type: double-double expansion}
+This variant uses a double-double type \code{dbldbl} representing:
+
+\[
+a \approx a_{\mathrm{hi}} + a_{\mathrm{lo}},
+\]
+
+with both components in double precision, yielding \(\sim\)106 bits of precision
+in favorable cases. This approach enables deeper zoom while retaining a
+structure similar to the float-float kernel.
+
+\subsubsection{Mapping, orbit update, and escape test}
+
+The kernel computes the same affine mapping and iterates the same recurrence,
+but with double-double arithmetic. The escape predicate also uses the leading
+component for speed.
+
+\subsection{Kernel: \code{mandel\_4x\_float}}
+\label{sec:mandel-4x-float}
+
+\subsubsection{Numeric type: quad-float (4-term expansion)}
+
+This variant uses a four-float expansion type \code{GQF::gqf\_real}
+(\cref{subsec:ep-higher-prec}):
+
+\[
+a \approx a_0 + a_1 + a_2 + a_3,
+\]
+
+with decreasing-magnitude components. Pixel coordinates and constants are lifted
+into this type (e.g., \code{make\_qf(X,0,0,0)}), then the affine mapping and
+orbit update are performed in quad-float arithmetic.  The implementation of this
+numeric type is also based on Andrew Thall's work \cite{andrew-thall-dblflt}
+and the QD library by Hida, Li, and Bailey \cite{Hida2001QD},
+with some minor changes specific to \FractalShark{}.
+
+\subsubsection{Orbit update and escape test}
+The update implements:
+
+\[
+x \leftarrow x^2 - y^2 + x_0,\qquad y \leftarrow 2xy + y_0,
+\]
+
+using quad-float operations (including specialized square and power-of-two
+multiply helpers). The escape test can be performed in the full quad-float type:
+
+\[
+zrsqr + zisqr \le 4.
+\]
+
+\subsection{Kernel: \code{mandel\_4x\_double}}
+\label{sec:mandel-4x-double}
+
+\subsubsection{Numeric type: quad-double (4-term expansion)}
+This variant uses a four-double expansion type \code{GQD::gqd\_real}
+(\cref{subsec:ep-higher-prec}):
+\[
+a \approx a_0 + a_1 + a_2 + a_3,\qquad a_k\in\mathbb{R}_{double}.
+\]
+It supports very deep zoom rendering with high numerical stability.
+
+\subsubsection{Mapping, orbit update, and escape test}
+The affine mapping and orbit update are evaluated in quad-double arithmetic. A
+literal bailout constant (e.g., \code{4.0}) is promoted via overloads, so the
+escape compare remains a full-precision comparison in the quad-double domain.
+
+\subsection{Kernel: \code{mandel\_hdr\_float}}
+\label{sec:mandel-hdr-float}
+
+\subsubsection{Numeric type: HDR-normalized expansion}
+This variant uses an HDR wrapper around an expansion type
+(\cref{subsec:ep-cudadblflt}), e.g.:
+
+\[
+\code{HDRFloat<CudaDblflt<dblflt>>}.
+\]
+
+This implementation has no practical value because precision is limited by the
+base expansion type; however, it serves as a testbed for HDR arithmetic in the
+Mandelbrot context.  Thus, this kernel is primarily of academic interest.
+
+\subsubsection{Reduction and stable comparisons}
+
+The kernel frequently calls \code{HdrReduce()} on intermediate values. These
+reductions are part of the numeric contract: norms and comparisons are assumed
+to be applied to reduced/normalized values, enabling specialized comparators
+without repeatedly materializing primitive scalars.
+
+Instead of testing \(x^2+y^2 < 4\) in primitive form, the kernel maintains:
+
+\[
+zsq\_sum = zrsqr + zisqr
+\]
+
+and checks escape via a reduced comparator:
+
+\begin{verbatim}
+while (zsq_sum.compareToBothPositiveReduced(Four) < 0)
+\end{verbatim}
+
+This directly supports escape-time Mandelbrot rendering in HDR arithmetic while
+keeping comparisons meaningful and stable.
+
+\section{Iteration chunking via \code{iteration\_precision}}
+\label{sec:chunking}
+
+A few of the base kernels just described (\cref{sec:mandel-base-kernels}), which exclude linear approximation or
+perturbation, are templated on an integer \code{iteration\_precision}
+(\(1,2,4,8,16\)) and unroll multiple Mandelbrot steps inside the loop:
+
+\begin{itemize}
+  \item Each loop iteration performs \code{iteration\_precision} updates.
+  \item The counter \code{iter} increases by that amount.
+  \item The maximum iteration \code{n\_iterations} is adjusted so \code{iter}
+        does not exceed the requested limit.
+\end{itemize}
+
+This approach reduces loop overhead. The trade-off is that the escape predicate
+is typically checked only once per chunk; therefore the reported escape
+iteration can be larger than the true first-escape iteration by up to
+\code{iteration\_precision - 1}. For strict escape iteration counts (e.g., for
+continuous/smooth coloring based on the first bailout), use a chunk size of 1 or
+insert bailout checks within the unrolled body.
+
+This optimization was mainly explored for educational purposes; in practice, the
+benefit is small compared to other optimizations such as perturbation (\cref{sec:perturbation-concept}) and linear
+approximation (\cref{sec:approx-accel}).
+

@@ -240,8 +240,7 @@ unsigned long WINAPI DrawingThread(void *) { /////////////////////////////
         }
 
         // Render the fractal and draw it after rendering is complete.
-        gFractal->CalcFractal(true);
-        gFractal->DrawFractal(RendererIndex::Renderer0);
+        gFractal->EnqueueRender().Wait();
 
         // Find a new target
         gFractal->FindInterestingLocation(&nextView);

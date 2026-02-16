@@ -2,6 +2,7 @@
 
 #include "HighPrecision.h"
 #include "ItersMemoryContainer.h"
+#include "GPU_Types.h"
 #include <stdint.h>
 #include <thread>
 
@@ -44,7 +45,7 @@ public:
     IterTypeFull m_PaletteRotate; // Used to shift the palette
     int m_PaletteDepthIndex; // 0, 1, 2
     int m_PaletteAuxDepth;
-    std::vector<uint16_t> *m_PalR[FractalPaletteType::Num], *m_PalG[FractalPaletteType::Num], *m_PalB[FractalPaletteType::Num];
+    const std::vector<Color16> *m_PalInterleaved[FractalPaletteType::Num];
     FractalPaletteType m_WhichPalette;
     std::vector<uint32_t> m_PalIters[FractalPaletteType::Num];
     ItersMemoryContainer m_CurIters;

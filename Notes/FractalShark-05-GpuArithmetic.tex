@@ -1,0 +1,1020 @@
+\section{GPU reference orbit backend}
+\label{subsec:ref-orbit-gpu}
+
+In many numerical algorithms, correctness and stability depend on arithmetic
+precision far exceeding that of standard IEEE~754 floating-point formats. The
+Mandelbrot reference orbits is a canonical example: small rounding errors
+introduced early in the iteration can grow exponentially, eventually corrupting
+orbit classification, perturbation terms, or bailout logic. While
+arbitrary-precision libraries like MPIR can provide the required accuracy
+(\cref{sec:ref-orbit-calc}), their
+performance is often insufficient when reference orbits must be computed
+repeatedly or at very high precision. This creates a fundamental tension between
+numerical fidelity and throughput.
+
+To resolve this tension, high-precision arithmetic operations---in particular
+multiplication (\cref{sec:ntt-multiply}), addition, and subtraction (\cref{sec:hp-add}) of large significands---must be
+implemented with both mathematical rigor and architectural efficiency. Addition
+and subtraction are dominated by carry propagation across hundreds or thousands
+of limbs, while multiplication scales quadratically unless asymptotically faster
+algorithms are employed. For precisions relevant to deep zoom reference orbits,
+naive limb-by-limb multiplication quickly becomes the dominant cost,
+overwhelming all other parts of the computation.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{gpu-reference-orbit.png}
+  \caption{View \#30 rendered at zoom factor \(10^{114,514}\) using the GPU
+  reference orbit backend.  Requires ~73s to render on RTX 5090.}
+  \label{fig:gpu-reference-orbit}
+\end{figure}
+
+\subsection{Why Fast Multiplication Matters for Reference Orbits}
+
+Generating many fractal reference orbits typically involves iterating a
+recurrence relation (e.g.\ $z_{n+1} = f(z_n)$) at very high precision, often for
+thousands of iterations per reference point. Each iteration requires multiple
+high-precision multiplications and additions, and the total cost grows linearly
+with iteration count and superlinearly with precision. Even modest speedups in
+the core arithmetic therefore compound dramatically over the full computation.
+
+By using an NTT-based multiplication strategy, large significand products can be
+computed in $O(n \log n)$ time instead of $O(n^2)$, shifting the performance
+profile of high-precision arithmetic into a regime where GPUs can be effectively
+utilized. When combined with carefully engineered carry propagation and
+normalization steps, this enables high-precision multiply/add/subtract
+operations that are fast enough to make reference orbit computation practical at
+scales that would otherwise be prohibitive.
+
+\subsection{System Architecture and Execution Context}
+\label{subsec:ref-orbit-architecture}
+
+The GPU reference orbit backend is a stateful, precision-specialized execution
+engine that computes authoritative Mandelbrot reference orbits entirely on the
+GPU. The backend advances the recurrence
+\[
+z_{n+1} \leftarrow z_n^2 + c
+\]
+at fixed high precision by executing multiple iterations per kernel invocation,
+while the CPU orchestrates invocation, result collection, and termination.
+
+\paragraph{Division of responsibility.}
+The design follows a strict separation of concerns. The CPU is responsible for
+selecting a supported precision, initializing GPU resources, invoking the kernel
+in bounded iteration batches, and accumulating emitted iteration records into
+\code{PerturbationResults}. The GPU owns all numerical state of the orbit,
+executes the high-precision arithmetic pipeline, detects escape and periodicity,
+and reports authoritative outcomes to the host.
+
+\paragraph{Persistent backend state.}
+Reference orbit computation is centered around a persistent \emph{combo} object
+(\code{HpSharkReferenceResults<SharkFloatParams>}) that encapsulates all state
+required to advance the orbit at a fixed precision. The combo contains:
+\begin{itemize}
+  \item high-precision orbit-related values (e.g.\ radius threshold and derivative terms),
+  \item persistent arithmetic pipeline state for multiplication
+        (\code{Multiply}, implementing NTT-based convolution) and
+        addition (\code{Add}, implementing parallel-prefix carry
+        propagation),
+  \item a fixed-size output mailbox
+        (\code{OutputIters}, \code{OutputIterCount},
+        \code{MaxOutputIters}\,=\,1024),
+  \item termination status (\code{PeriodicityStatus}),
+  \item and host-only launch and resource plumbing, including a device pointer to
+        the GPU-resident state, temporary device buffers, an associated CUDA
+        stream, and cached kernel argument arrays.
+\end{itemize}
+The combo is initialized once, reused across multiple kernel invocations, and
+destroyed only after the reference orbit computation completes.
+
+\paragraph{Batch-oriented kernel invocation.}
+Each call to \code{InvokeHpSharkReferenceKernel} launches a GPU kernel that
+advances the Mandelbrot recurrence by up to a specified number of iterations
+(\code{itersToRun}). Within a single invocation, the kernel performs multiple
+full iterations internally, combining high-precision squaring and addition on
+the GPU. As iterations progress, the kernel emits up to
+\code{MaxOutputIters} iteration records into the combo’s output mailbox and
+updates \code{OutputIterCount} accordingly.
+
+This batching strategy bounds kernel runtime, enables incremental streaming of
+orbit data back to the host, and allows long orbits to be computed without
+reinitializing GPU state.
+
+\paragraph{Termination and authority.}
+After each invocation, the host inspects the combo’s \code{PeriodicityStatus}
+and stops early if the GPU reports escape, detected periodicity, or an error
+condition, or if the total requested iteration budget has been reached. In this
+model, the GPU backend is authoritative: it owns the orbit state, performs all
+high-precision arithmetic exactly with respect to the fixed significand
+precision, and determines orbit outcomes without CPU-side recomputation or
+correction.
+
+\paragraph{Precision specialization.}
+The entire lifecycle of a reference orbit computation is specialized by
+\code{SharkFloatParams}. Precision is selected once at startup via
+\code{DispatchByPrecision} and remains fixed for the lifetime of the combo
+object. This ensures that kernel code, shared-memory usage, and arithmetic
+pipelines are fully specialized for the chosen precision, at the cost of
+supporting a finite, enumerated set of precisions.
+
+\medskip
+
+This architectural structure defines the execution context for the remainder of
+this section. Subsequent subsections describe the internal arithmetic pipelines
+used within each kernel invocation, including NTT-based multiplication,
+high-precision addition, carry propagation, and normalization, and explain how
+these components are organized to maintain correctness and performance within
+the bounded-chunk execution model.
+
+\subsection{High-Precision Floating-Point Addition on the GPU}
+\label{sec:hp-add}
+
+While high-precision multiplication (\cref{sec:ntt-multiply}) dominates the asymptotic cost of many
+arbitrary-precision algorithms, addition and subtraction remain critical in
+practice. In iterative computations such as reference orbit generation, each
+iteration performs multiple additions and subtractions on large significands,
+often regardless of whether multiplication is required. At precisions of
+hundreds or thousands of limbs, even these ostensibly simple operations become
+nontrivial due to long-range carry and borrow propagation.
+
+A naive limbwise implementation resolves carries sequentially: a carry-out from
+limb $i$ must be fully determined before limb $i+1$ can be finalized. This
+introduces strict serial dependence and $O(N)$ latency, making naive carry
+handling fundamentally incompatible with massively parallel GPU architectures.
+Without reformulation, carry propagation quickly becomes a synchronization
+bottleneck that erodes the benefits of fast high-precision multiplication.
+
+\subsubsection{Numerical Representation}
+
+We represent a high-precision floating-point number as
+\begin{equation}
+x = s_x \cdot 2^{e_x} \cdot \sum_{i=0}^{N-1} d_i \, 2^{-w i},
+\end{equation}
+where $s_x \in \{-1,+1\}$ is the sign, $e_x \in \mathbb{Z}$ is a shared exponent,
+$d_i \in \{0,\dots,2^w-1\}$ are fixed-width limbs, $w$ is the limb bit width
+(typically $32$ or $64$), and $N$ is the limb count. Arithmetic is performed on
+the limb array, while the exponent is tracked separately. The mantissa is thus
+treated as a fixed-point integer scaled by an implicit radix $2^{-w}$.
+
+\subsubsection{Problem Statement and Exponent Alignment}
+
+Given two high-precision floating-point numbers
+\[
+x = s_x \cdot 2^{e_x} \cdot M_x, \qquad
+y = s_y \cdot 2^{e_y} \cdot M_y,
+\]
+the objective is to compute
+\[
+z = x + y
+\]
+exactly, or under a well-defined rounding mode, using GPU-parallel execution.
+
+Assuming without loss of generality that $e_x \ge e_y$, we define
+\[
+\Delta = e_x - e_y
+\]
+and align the mantissas by shifting
+\begin{equation}
+M_y' = M_y \cdot 2^{-\Delta}.
+\end{equation}
+If $\Delta \ge Nw$, the contribution of $y$ is below the representable precision
+and the operation degenerates to $z \approx x$. Otherwise, both mantissas are
+expressed at the shared exponent $e = e_x$.
+
+\subsubsection{Signed Limbwise Accumulation}
+
+After alignment, addition and subtraction are unified by introducing signed limb
+arrays
+\[
+a_i = s_x \cdot d_i^{(x)}, \qquad
+b_i = s_y \cdot d_i^{(y')}.
+\]
+The raw limbwise sum is then
+\begin{equation}
+t_i = a_i + b_i,
+\end{equation}
+which may lie outside the canonical range $[0,2^w)$. This computation is
+embarrassingly parallel and maps directly to GPU threads, with each thread
+computing one or more limb sums independently.
+
+\subsubsection{Carry Structure and Prefix Reformulation}
+
+Each intermediate sum $t_i$ can be decomposed as
+\begin{equation}
+t_i = r_i + c_i \cdot 2^w,
+\end{equation}
+where
+\[
+r_i = t_i \bmod 2^w, \qquad
+c_i = \left\lfloor \frac{t_i}{2^w} \right\rfloor.
+\]
+The carry $c_i$ contributes to limb $i+1$, inducing a dependency chain that is
+sequential in the worst case.
+
+To parallelize this process, carry propagation is reformulated as a prefix
+problem. Each limb defines a carry transfer operator
+\begin{equation}
+T_i(x) = x + c_i,
+\end{equation}
+where $x$ is the incoming carry from lower-order limbs. The total carry entering
+limb $i$ is given by the prefix composition
+\begin{equation}
+C_i = (T_{i-1} \circ T_{i-2} \circ \cdots \circ T_0)(0).
+\end{equation}
+Because the operator composition
+\[
+(T_a \circ T_b)(x) = x + c_b + c_a
+\]
+is associative, carry propagation reduces to a parallel prefix sum over the
+carry values $\{c_i\}$, generalizing classical carry-lookahead techniques to
+arbitrary-precision arithmetic.
+
+\subsubsection{Single-Pass Parallel Prefix on the GPU}
+
+On GPUs, conventional multi-pass prefix scans incur excessive global
+synchronization or kernel-launch overhead. Instead, we employ a single-pass
+parallel prefix formulation with decoupled look-back
+\cite{merrill2016single}. Each thread block computes its local carry prefix
+independently, while a lightweight look-back mechanism resolves inter-block
+dependencies only when required.
+
+This approach allows blocks to make forward progress without global barriers,
+stalling only when an upstream carry must be observed. Long carry chains, while
+possible, are rare in practice and are handled efficiently when they occur. The
+resulting carry propagation exhibits near-linear throughput with logarithmic
+critical path length, making it well-suited to large limb counts.
+
+\subsubsection{Finalization and Normalization}
+
+The corrected result limbs are obtained as
+\begin{equation}
+d_i^{(z)} = (r_i + C_i) \bmod 2^w.
+\end{equation}
+A carry beyond the most significant limb increments the exponent,
+\[
+d_N^{(z)} \neq 0 \;\Rightarrow\; e \leftarrow e + 1,
+\]
+while leading-zero cancellation triggers renormalization and a corresponding
+decrement of the exponent.
+
+\subsubsection{Correctness and Complexity}
+
+The algorithm is mathematically equivalent to exact integer addition of aligned
+mantissas,
+\[
+z = 2^e \cdot (M_x + M_y'),
+\]
+and the prefix formulation preserves the strict associativity of integer
+addition. All operations are integer-valued and deterministic, yielding
+bitwise-identical results across executions.
+
+For $N$ limbs, the algorithm performs $O(N)$ work with $O(\log N)$ span and
+$O(N)$ global memory traffic, making it asymptotically optimal for high-precision
+addition on massively parallel architectures.
+
+\paragraph{Comparison with MPIR/GMP Serial Carry Propagation}
+
+Conventional high-precision libraries such as MPIR and GMP implement addition
+using strictly serial carry propagation. After exponent alignment, limbs are
+processed sequentially from least to most significant, with each carry-out
+immediately applied to the next limb. This approach is optimal for scalar CPUs:
+it minimizes memory traffic, exploits tight data locality, and benefits from
+branch prediction and instruction-level parallelism. For moderate precisions,
+the constant factors are small and the simplicity of the algorithm dominates.
+
+However, the serial carry dependency enforces an $O(N)$ critical path that
+fundamentally limits parallelism. Even when vector instructions are used to
+accelerate limbwise addition, the carry chain itself remains sequential and
+cannot be overlapped across independent execution units. As a result, MPIR/GMP
+addition scales primarily in throughput with clock frequency rather than in
+latency with available parallel resources.
+
+In contrast, the GPU-oriented formulation presented here trades a modest
+increase in algorithmic complexity for a dramatic reduction in critical path
+length. By expressing carry propagation as an associative prefix operation and
+resolving dependencies using a single-pass, decoupled look-back scheme, the
+effective span is reduced from $O(N)$ to $O(\log N)$. This shift aligns the
+algorithm with the strengths of massively parallel architectures, allowing
+thousands of threads to participate in carry resolution while preserving exact
+arithmetic semantics.
+
+Importantly, the GPU approach does not outperform MPIR/GMP for small limb
+counts, where launch overhead and synchronization dominate. Its advantage
+emerges at large precisions, where serial carry latency becomes comparable to
+or exceeds the cost of multiplication. In this regime, parallel carry
+propagation is essential for sustaining end-to-end performance in
+high-precision iterative workloads.
+
+\paragraph{Role of Merrill--Garland in Parallel Carry Propagation}
+
+The approach adopted here is closely informed by the work of
+\cite{merrill2016single} on single-pass parallel prefix scans with decoupled
+look-back. Their contribution is not a numerical
+algorithm per se, but a general execution strategy for evaluating long,
+associative prefix dependencies efficiently on GPUs.
+
+In the context of high-precision addition, carry propagation is naturally
+expressed as a prefix composition over per-limb transfer functions. However,
+naively mapping this formulation to a GPU using classical parallel scans would
+require multiple global synchronization phases or kernel launches, introducing
+significant overhead and limiting scalability. The Merrill--Garland framework
+addresses this by separating the computation into two logically distinct
+components: (1) local prefix evaluation within a thread block, and (2)
+resolution of inter-block dependencies through a lightweight, dynamically
+resolved look-back mechanism.
+
+Crucially, the decoupled look-back design allows blocks to proceed independently
+until a true dependency on an upstream block is encountered. This property
+aligns well with the statistical structure of carry propagation in large
+arbitrary-precision additions, where long carry chains are relatively rare and
+most limbs can be finalized without waiting on distant predecessors. The
+algorithm therefore achieves high average throughput while retaining correctness
+in worst-case carry scenarios.
+
+It is important to emphasize that Merrill--Garland does not prescribe how carry
+information should be represented, nor does it assume a particular numerical
+domain. In this work, their scan framework is specialized to the algebra of
+carry transfer functions arising from signed limbwise addition. The numerical
+semantics---exact integer arithmetic with deterministic behavior---remain
+entirely independent of the scan mechanism. In this sense, Merrill--Garland
+provides the parallel control structure, while the arithmetic formulation
+determines the correctness and stability of the result.
+
+By combining a mathematically exact carry formulation with a single-pass prefix
+execution model, the resulting algorithm bridges a gap between classical
+high-precision arithmetic and modern GPU execution. This synthesis enables
+carry-dominated operations, traditionally viewed as inherently serial, to scale
+efficiently on massively parallel hardware.
+
+\paragraph{Contrast with Blelloch-Style Parallel Prefix Scans}
+
+Classical parallel prefix algorithms, most notably the Blelloch
+scan \cite{Blelloch1990PrefixSums}, provide a
+well-established framework for evaluating associative operators with
+$O(\log N)$ depth and $O(N)$ work. Blelloch-style scans proceed in two distinct
+phases: an up-sweep (reduce) phase that computes partial aggregates over a
+balanced tree, followed by a down-sweep phase that distributes prefix values to
+all elements. This structure is well suited to SIMD and shared-memory parallel
+models and forms the basis of many CPU and GPU prefix implementations.
+
+However, on GPUs, Blelloch scans impose rigid global synchronization points
+between phases. When applied to large limb arrays, this typically requires
+either multiple kernel launches or explicit grid-wide synchronization barriers.
+As a result, the execution is dominated by synchronization latency rather than
+arithmetic throughput, particularly when the scan is embedded inside a larger
+iterative algorithm such as high-precision reference orbit computation.
+
+In contrast, the single-pass parallel prefix algorithm
+of \cite{merrill2016single} eliminates the global phase separation inherent in
+Blelloch scans. Instead of enforcing a strict up-sweep/down-sweep structure,
+each thread block computes its local prefix independently and resolves
+inter-block dependencies dynamically using a decoupled look-back mechanism. This
+allows blocks to make forward progress asynchronously and avoids global barriers
+in the common case.
+
+For high-precision carry propagation, this distinction is critical. Carry chains
+often terminate locally, and only a small fraction of limbs depend on distant
+predecessors. Blelloch-style scans nevertheless force all blocks to participate
+in every global synchronization phase, regardless of whether a true dependency
+exists. Merrill--Garland, by contrast, pays synchronization cost only when a
+carry must cross block boundaries, yielding substantially better utilization of
+GPU resources.
+
+From a numerical perspective, both approaches compute the same associative
+prefix over carry transfer operators and are therefore equally correct. The
+difference lies entirely in execution strategy. Blelloch scans provide a
+deterministic, phase-structured evaluation with predictable synchronization,
+while Merrill--Garland offers a latency-tolerant, demand-driven execution model
+that is better aligned with the irregular dependency structure of carry
+propagation in large arbitrary-precision additions.
+
+In this work, the Merrill--Garland formulation is preferred not because it
+changes the arithmetic, but because it minimizes synchronization on massively
+parallel hardware, allowing carry-dominated operations to scale to precisions
+where serial or multi-pass approaches become prohibitive.
+
+
+\subsubsection{Discussion}
+
+By expressing carry propagation as a parallel prefix problem and employing a
+single-pass, decoupled look-back strategy, high-precision floating-point
+addition becomes compatible with GPU execution. The formulation cleanly
+separates numerical correctness from execution strategy and composes naturally
+with NTT-based multiplication and fused arithmetic pipelines. As a result,
+fully high-precision arithmetic becomes practical for demanding workloads such
+as GPU-accelerated reference orbit computation.
+
+
+\subsection{Number Theoretic Transform and Multiply}
+\label{sec:ntt-multiply}
+
+High-precision floating-point multiplication ultimately reduces to multiplying
+two large integers (the significands), followed by normalization and exponent
+adjustment. A standard way to accelerate large-integer multiplication is to
+compute the convolution of digit-limbs using a fast transform. Over the reals,
+one would use an FFT; over modular arithmetic, the analogous tool is the
+\emph{Number Theoretic Transform} (NTT).
+
+\subsection{From Large-Integer Multiplication to Convolution}
+
+Let the two nonnegative integers to be multiplied be represented in base $B$ as
+
+\[
+A = \sum_{i=0}^{n-1} a_i B^i,\qquad
+C = \sum_{i=0}^{n-1} c_i B^i,
+\]
+
+with $0 \le a_i, c_i < B$. Their product is
+
+\[
+A\cdot C = \sum_{k=0}^{2n-2} \left(\sum_{i=0}^{k} a_i c_{k-i}\right) B^k.
+\]
+
+The coefficients
+
+\[
+s_k = \sum_{i=0}^{k} a_i c_{k-i}
+\]
+
+form the \emph{discrete convolution} of the sequences $(a_i)$ and $(c_i)$. If we
+can compute $(s_k)$ quickly, then we can recover the product (with subsequent
+carry propagation in base $B$).
+
+\subsection{NTT as an FFT Over a Finite Field}
+
+The NTT computes a discrete Fourier transform, but with all operations performed
+modulo a prime $p$ rather than over $\mathbb{C}$. Choose a prime modulus $p$ and
+an $N$-th primitive root of unity $\omega \in \mathbb{Z}_p$ such that
+
+\[
+\omega^N \equiv 1 \pmod p,\qquad
+\omega^k \not\equiv 1 \pmod p \text{ for } 0<k<N.
+\]
+
+Then the forward NTT of a length-$N$ sequence $x = (x_0,\dots,x_{N-1})$ is
+
+\[
+X_k = \sum_{j=0}^{N-1} x_j \,\omega^{jk} \pmod p,\qquad k=0,\dots,N-1,
+\]
+
+and the inverse NTT is
+
+\[
+x_j = N^{-1} \sum_{k=0}^{N-1} X_k \,\omega^{-jk} \pmod p,\qquad j=0,\dots,N-1,
+\]
+
+where $N^{-1}$ is the multiplicative inverse of $N$ modulo $p$.
+
+Just as with the complex FFT, the key property is that the transform diagonalizes convolution:
+
+\[
+\mathrm{NTT}(x \star y) \;=\; \mathrm{NTT}(x)\odot \mathrm{NTT}(y),
+\]
+
+where $\odot$ denotes pointwise multiplication and $\star$ denotes cyclic
+convolution modulo $x^N-1$. To compute the \emph{linear} convolution needed for
+multiplication, we pad both inputs with zeros to length $N \ge 2n$ so that the
+cyclic convolution coincides with the linear convolution.
+
+\subsection{Why a Special Prime Helps: \code{MagicPrime}}
+
+A practical NTT requires:
+
+\begin{enumerate}
+
+\item $N$ to be highly composite (typically a power of two) so that
+Cooley--Tukey style butterflies apply efficiently;
+
+\item a modulus $p$ such that $N \mid (p-1)$, guaranteeing the existence of an
+$N$-th primitive root of unity in $\mathbb{Z}_p$;
+
+\item fast modular multiplication on the target hardware (here, GPUs with
+efficient 64-bit integer operations).
+
+\end{enumerate}
+
+The prime used here, denoted \code{MagicPrime}, is chosen specifically to
+satisfy these constraints. The critical mathematical implication of using a
+prime modulus is that $\mathbb{Z}_p$ is a field, so every nonzero element has a
+multiplicative inverse and the NTT is well-defined and invertible when $\omega$
+exists.
+
+The most important structural requirement is:
+
+\[
+N \mid (p-1).
+\]
+
+When $N$ is a power of two, say $N = 2^m$, this becomes
+
+\[
+2^m \mid (p-1).
+\]
+
+Thus, the larger the power of two dividing $(p-1)$, the larger the supported
+transform sizes.
+
+\subsection{The ``Goldilocks'' Form and Power-of-Two Roots}
+
+A particularly convenient choice on 64-bit hardware is a prime of the form
+
+\[
+p = 2^{64} - 2^{32} + 1,
+\]
+
+often called a ``Goldilocks'' prime. (In the codebase this role is played by
+\code{MagicPrime}.) Two consequences make this form attractive:
+
+\paragraph{(1) Large power-of-two factor in $p-1$.}
+
+We have
+
+\[
+p - 1 = 2^{64} - 2^{32} = 2^{32}\left(2^{32}-1\right),
+\]
+
+so $2^{32}$ divides $(p-1)$. Therefore, for any $N = 2^m$ with $m \le 32$, there
+exists an $N$-th root of unity in $\mathbb{Z}_p$. This enables power-of-two NTTs
+up to length $2^{32}$ in principle (practically limited by memory and
+implementation constraints), which is ample for large-limb convolutions.
+
+\paragraph{(2) Efficient modular arithmetic with 64-bit operations.}
+
+While modular multiplication in $\mathbb{Z}_p$ conceptually involves products up
+to $p^2$, this modulus is engineered so reductions can be implemented
+efficiently using 64-bit and 128-bit intermediates and/or Montgomery reduction.
+The prime is close to $2^{64}$, which aligns well with native unsigned integer
+ranges, and its special structure admits reduction strategies that avoid slow
+division.
+
+\subsection{NTT-Based Multiplication at a High Level}
+
+Given limb sequences $(a_i)$ and $(c_i)$:
+
+\begin{enumerate}
+
+  \item Choose $N$ as a power of two with $N \ge 2n$, and choose a primitive
+  $N$-th root $\omega \in \mathbb{Z}_p$.
+
+  \item Zero-pad both sequences to length $N$ (interpreting limbs as elements of
+  $\mathbb{Z}_p$).
+
+  \item Compute $A_k = \mathrm{NTT}(a)_k$ and $C_k = \mathrm{NTT}(c)_k$.
+
+  \item Compute pointwise products $P_k = A_k \cdot C_k \pmod p$.
+
+  \item Compute $p_j = \mathrm{NTT}^{-1}(P)_j$ to obtain the convolution
+  coefficients modulo $p$.
+
+\end{enumerate}
+
+Finally, because the convolution coefficients are computed modulo $p$, we must
+ensure they represent the \emph{true integer} convolution values, not values
+wrapped modulo $p$. This is achieved by choosing the limb base $B$ and transform
+length $N$ so that each exact coefficient $s_k$ satisfies
+
+\[
+0 \le s_k < p,
+\]
+
+(or more generally, can be reconstructed from one or more moduli). With a single
+sufficiently large prime (as is typical with a 64-bit Goldilocks prime and
+appropriately sized limbs), the coefficients can be recovered directly and then
+normalized via carry propagation in base $B$.
+
+\medskip
+
+This section establishes the mathematical foundation: \code{MagicPrime} is
+selected so that large power-of-two NTTs exist (because $2^m \mid p-1$) and so
+that modular arithmetic is efficient on 64-bit GPU hardware. Subsequent sections
+will describe how this is specialized for high-precision floating-point
+significands, including limb packing, Montgomery-domain multiplication, twiddle
+scheduling, and normalization/carry handling.
+
+\subsection{NTT in \FractalShark{}}
+
+Fundamentally, the NTT implementation in \FractalShark{} is somewhat naive.  It
+doesn't make much effort at memory layout or optimized coalescing, which is
+likely costing it in performance.  This section describes how the NTT-based
+multiplication is realized in practice, following the structure of
+\FractalShark{}'s CUDA implementation. The overall goal is to compute the exact
+convolution of two large significand arrays using modular arithmetic modulo
+\code{MagicPrime}, and then to recover a canonical high-precision result via
+normalization and carry propagation.
+
+\subsubsection{Plan Construction and Parameter Selection}
+
+Before launching any GPU kernels, an NTT ``plan'' is constructed. The plan
+determines:
+
+\begin{itemize}
+
+  \item the coefficient bit-width $b$ used to pack the original 32-bit limbs
+  into NTT coefficients,
+
+  \item the packed coefficient length $L$,
+
+  \item the transform size $N$, chosen as a power of two with $N \ge 2L$.
+
+\end{itemize}
+
+Correctness requires that no convolution coefficient overflow the prime modulus.
+If the coefficients are bounded by $2^b$ and the transform length is $N$, then a
+conservative bound on the largest convolution term is
+
+\[
+\max_k s_k \;\le\; N \cdot 2^{2b}.
+\]
+
+The plan builder enforces
+
+\[
+2b + \log_2 N + \delta \;\le\; 64,
+\]
+
+for a small safety margin $\delta$, ensuring that all exact convolution values
+lie strictly below \code{MagicPrime}. This guarantees that the modular
+convolution coincides with the true integer convolution.
+
+\subsubsection{Roots of Unity and Montgomery Domain}
+
+The CUDA setup phase precomputes all roots of unity required for the radix--2
+NTT. For each stage $s$, a primitive $2^s$-th root $\omega_s$ and its inverse
+are generated, along with:
+
+\begin{itemize}
+
+  \item powers of a twist root $\psi^i$ and $\psi^{-i}$,
+
+  \item the modular inverse $N^{-1}$.
+
+\end{itemize}
+
+All constants are stored in Montgomery representation \cite{Montgomery1985Modular}. As a result, every
+modular multiplication inside the NTT butterflies is implemented as a Montgomery
+multiply, avoiding explicit modular reduction by division.
+
+\subsubsection{Packing, Twisting, and Forward NTT}
+
+The input significands are initially stored as arrays of 32-bit limbs. These are
+packed into base-$2^b$ coefficients
+
+\[
+A(x) = \sum_{i=0}^{L-1} a_i x^i,\qquad
+C(x) = \sum_{i=0}^{L-1} c_i x^i,
+\]
+
+with $0 \le a_i, c_i < 2^b$. During packing, each coefficient is:
+
+\begin{enumerate}
+
+  \item mapped into $\mathbb{Z}_p$,
+
+  \item multiplied by the twist factor $\psi^i$,
+
+  \item converted into Montgomery form.
+
+\end{enumerate}
+
+After packing, an in-place radix--2 forward NTT is performed. A bit-reversal
+permutation places coefficients into the correct order, followed by iterative
+butterfly stages:
+
+\[
+(u, v) \;\mapsto\; (u + \omega v,\; u - \omega v),
+\]
+
+with all operations performed modulo \code{MagicPrime}. A grid-stride loop is
+used so that threads collectively cover all $N$ coefficients, independent of the
+exact grid dimensions.
+
+\subsubsection{Multiway Pointwise Multiplication}
+
+In the transform domain, convolution reduces to pointwise multiplication. To
+amortize the cost of the NTT, the implementation computes three related
+convolutions simultaneously using a standard three-multiply decomposition.
+Conceptually, if
+
+\[
+X = X_r + iX_i,\qquad Y = Y_r + iY_i,
+\]
+
+then the products
+
+\[
+X_rY_r,\quad X_iY_i,\quad (X_r+X_i)(Y_r+Y_i)
+\]
+
+are sufficient to reconstruct both real and imaginary components. Accordingly,
+three frequency-domain products are computed per transform index:
+
+\[
+\widehat{XX}_k,\quad \widehat{YY}_k,\quad \widehat{XY}_k,
+\]
+
+each via a Montgomery modular multiplication modulo \code{MagicPrime}.
+
+\subsubsection{Inverse NTT and Untwisting}
+
+Following pointwise multiplication, inverse radix--2 NTTs are applied using the
+inverse roots of unity. The inverse transform yields coefficients still in
+Montgomery form and still containing the twist factor. These are corrected by:
+
+\begin{enumerate}
+\item multiplying by $\psi^{-i}$,
+\item multiplying by $N^{-1}$,
+\item converting out of Montgomery representation.
+\end{enumerate}
+
+After this step, the data represents the exact integer convolution coefficients in base $2^b$.
+
+\subsubsection{Unpacking and Normalization}
+
+The final stage converts the convolution coefficients back into the original
+limb representation. Base-$2^b$ digits are unpacked into wide accumulators
+(typically 128-bit), after which carry propagation and normalization are
+performed to produce a canonical high-precision result. This normalization step
+is handled separately and is optimized using parallel-prefix techniques as
+described in earlier sections.
+
+\medskip
+
+Together, these steps implement \FractalShark{}'s NTT-based multiplication
+pipeline: from high-precision significand limbs, through modular convolution in
+$\mathbb{Z}_{\code{MagicPrime}}$, and back to an exact, normalized
+high-precision product suitable for subsequent arithmetic in reference orbit
+computation.
+
+\subsection{Amortizing Synchronization via Simultaneous Products}
+
+In the presented GPU implementation, a dominant cost of large-scale NTT-based
+multiplication is not the modular arithmetic itself, but the required grid-wide
+synchronization. Each major phase of the pipeline— packing and twisting of
+inputs, forward NTT, pointwise multiplication, inverse NTT, and untwisting with
+normalization—requires that all threads observe a consistent global state. This
+is enforced using explicit grid-level barriers (e.g.,
+\code{cooperative\_groups::grid\_group::sync()}), whose latency grows with
+grid size and is largely independent of the amount of arithmetic performed
+between barriers.
+
+To reduce the amortized cost of these synchronization points, the implementation
+computes three related convolution products, $X\cdot Y$, $X^2$, and $Y^2$,
+within a single NTT pipeline. All three products share the same forward
+transforms, inverse transforms, twiddle scheduling, temporary buffers, and
+synchronization boundaries. As a result, the fixed cost of grid-wide
+coordination and memory visibility is incurred once, while producing three
+mathematically independent convolution results. The additional arithmetic
+required for the extra pointwise products consists only of a small number of
+Montgomery multiplications per frequency index and is negligible compared to the
+cost of global synchronization and memory traffic.
+
+At the code level, this strategy is realized by a fused front-end that packs the
+input limb arrays, applies twist factors, and converts values into Montgomery
+form while producing multiple frequency-domain streams in a single pass. A
+single grid-stride pointwise multiplication phase then computes the three
+products concurrently. These are followed by a single multiway inverse radix--2
+NTT, after which a unified untwisting, scaling by $N^{-1}$, and conversion out
+of Montgomery representation are performed. Explicit grid-wide barriers appear
+only at true phase boundaries, serving as producer--consumer separators between
+global-memory stages rather than as fine-grained synchronization.
+
+This design is well matched to the target workload. In high-precision reference
+orbit computation, both cross terms and squared terms arise naturally and
+repeatedly. By folding these operations into a single multiway NTT, the
+implementation reduces the total number of kernel phases and synchronization
+events, increases arithmetic intensity per barrier, and improves overall GPU
+utilization. Consequently, the effective performance of the multiplication
+pipeline is governed primarily by arithmetic throughput and memory bandwidth,
+rather than by synchronization overhead.
+
+\subsection{Usage in \FractalShark{}}
+The key design is a persistent \emph{combo} object returned by initialization:
+
+\begin{enumerate}
+  \item \code{InitHpSharkReferenceKernel}: allocates device/host state for the reference orbit and sets
+        \((c_x,c_y)\), max radius, and launch configuration.
+  \item \code{InvokeHpSharkReferenceKernel}: advances the orbit in bounded batches of at most
+        \(\code{MaxOutputIters}\), storing results in \code{OutputIters}.
+  \item \code{ShutdownHpSharkReferenceKernel}: frees persistent resources.
+\end{enumerate}
+
+Because the precision must be fixed at compile time for the \code{
+SharkFloatParams} specialization, \code{DispatchByPrecision} rounds the
+requested precision to a power of two and chooses from a fixed set (\(\{256,512,
+\dots,524288\}\) bits). Each invocation appends the emitted \code{OutputIters}
+records into the CPU-side \code{PerturbationResults}. Periodicity and escape
+are reported through \code{PeriodicityStatus} and handled similarly to the CPU
+paths.
+
+\subsection{High-Precision Floating-Point Representation}
+\label{subsec:hpfloat-model}
+
+The GPU reference orbit backend operates on a custom high-precision
+floating-point format implemented by the \code{HpSharkFloat} family of types.
+This format is intentionally \emph{not} IEEE~754--compatible. Instead, it is
+designed to support exact arithmetic on large significands, deterministic
+behavior across CPU and GPU backends, and efficient execution on massively
+parallel architectures.
+
+Conceptually, an \code{HpSharkFloat} value represents a real number of the
+form
+\[
+x = s \cdot M \cdot 2^E,
+\]
+where $s \in \{-1,+1\}$ is the sign, $M$ is a nonnegative integer significand,
+and $E$ is a signed integer exponent. The sign, significand, and exponent are
+tracked independently, and no implicit normalization or rounding is performed
+during arithmetic operations.
+
+\paragraph{Significand representation.}
+The significand $M$ is stored as a fixed-size array of 32-bit limbs. The number
+of limbs is determined at compile time by the
+\code{SharkFloatParams} specialization and remains constant throughout the
+lifetime of the computation. As a result, precision is explicit and static:
+all arithmetic kernels operate on limb arrays of identical size, and no dynamic
+reallocation or precision growth occurs during iteration.
+
+The significand represents a nonnegative integer magnitude. Negative values are
+handled by explicit sign logic rather than two’s-complement arithmetic, which
+simplifies carry propagation and normalization.
+
+\paragraph{Exponent handling and deferred normalization.}
+The exponent $E$ is maintained separately from the significand and updated
+explicitly by arithmetic kernels. In contrast to IEEE~754 arithmetic,
+normalization is not performed eagerly after every operation. Intermediate
+results may remain temporarily denormalized, with exponent adjustments and
+carry propagation deferred until well-defined normalization phases.
+
+This separation is essential for GPU execution. Immediate normalization would
+introduce serial dependencies and global synchronization at every arithmetic
+step, whereas deferred normalization allows large batches of arithmetic to be
+performed in parallel before a single, optimized carry-propagation pass.
+
+\paragraph{Normalization and canonical form.}
+A value is considered to be in canonical form when:
+\begin{itemize}
+  \item the significand has been fully carry-propagated,
+  \item the most significant limb is nonzero (except for the zero value),
+  \item the exponent reflects the exact binary scaling of the significand.
+\end{itemize}
+Normalization is implemented as a separate phase and is optimized using
+parallel-prefix carry propagation techniques, as described in earlier
+sections.
+
+\paragraph{Rounding, exceptional values, and determinism.}
+No rounding is performed during addition, subtraction, or multiplication. All
+operations are exact with respect to the fixed significand size. If an
+intermediate result were to exceed the representable precision, this would
+constitute a logic error rather than silently rounded behavior.
+
+The format does not represent NaNs, infinities, or subnormal values. These
+concepts are unnecessary for reference orbit computation, where arithmetic
+ranges are structurally controlled and exceptional conditions (such as escape)
+are handled at the algorithmic level.
+
+Because the precision is fixed, arithmetic is exact, and no data-dependent
+rounding occurs, the \code{HpSharkFloat} model provides deterministic,
+bitwise-reproducible results across runs and across CPU and GPU backends,
+subject only to correct synchronization.
+
+\paragraph{Implications for reference orbit computation.}
+This floating-point model is best viewed as high-precision integer arithmetic
+with an explicit exponent rather than as an extension of IEEE floating-point.
+The design directly enables NTT-based multiplication, parallel carry
+propagation, and predictable numerical behavior at extreme precisions, making
+it well suited for authoritative reference orbit generation on the GPU.
+
+
+\section{Checksum-Guided Debugging via Host--Device Cross-Validation}
+\label{sec:checksums}
+
+Correctness bugs in GPU high-precision arithmetic are notoriously difficult to
+localize: a single off-by-one carry, lane-misaligned shuffle, or missing
+synchronization can corrupt results far downstream, often without an obvious
+local symptom. To shorten the feedback loop, we instrument the arithmetic
+pipeline (\cref{sec:hp-add,sec:ntt-multiply}) with lightweight \emph{stage checksums} that can be computed on the GPU,
+computed independently on the host reference implementation, and compared to
+pinpoint the first divergence. This converts a diffuse ``wrong final answer''
+into a small set of candidate stages, dramatically reducing the search space
+during development.  These checksums are disabled in production builds to avoid
+any performance impact but can be enabled selectively during debugging.
+
+\subsection{Stage Checksums as Homomorphic Summaries}
+
+Let $A \in (\mathbb{Z}/2^w\mathbb{Z})^N$ denote a limb array representing an
+intermediate mantissa or scratch buffer (e.g., aligned addends, raw limbwise
+sums, carry descriptors, normalized limbs). We associate to each such array a
+64-bit checksum
+\begin{equation}
+  H(A) \in \{0,1\}^{64},
+\end{equation}
+computed deterministically over the ordered limb sequence. In our implementation
+we employ 64-bit rolling checksums (e.g., CRC-64 or Fletcher-64) because they are
+(1) inexpensive relative to high-precision arithmetic, (2) order-sensitive, and
+(3) easily reducible in parallel.
+
+Each \emph{debug checkpoint} records a tuple
+\begin{equation}
+  S_k = \bigl(\code{Purpose}_k,\, \code{Depth}_k,\, \code{CallIndex}_k,\,
+  \code{Conv}_k,\, H(A_k)\bigr),
+\end{equation}
+where $\code{Purpose}$ identifies which logical stage or buffer is being
+summarized (e.g., \code{ADigits}, \code{BDigits}, \code{FinalAdd1},
+\code{Result\_offsetXX}, etc.), and the remaining metadata disambiguates
+dynamic execution contexts such as recursion depth or multiple invocations of
+the same primitive within a larger operation. This metadata ensures that host
+and device checkpoints can be matched without ambiguity even when the same
+kernel path is exercised repeatedly in a pipeline.
+
+\subsection{Parallel Computation with Order Preservation}
+
+The checksum must match between host and device, so the GPU computation must be
+\emph{equivalent} to the sequential definition. This requires two properties:
+\begin{enumerate}
+  \item \textbf{Deterministic segmentation}: the array is partitioned into
+  contiguous chunks assigned to threads in a deterministic manner.
+  \item \textbf{Order-preserving reduction}: partial checksums are combined in
+  the same left-to-right order as the sequential traversal.
+\end{enumerate}
+
+To make this concrete, consider a checksum family whose internal state can be
+represented as a small tuple (e.g., for Fletcher-64, $(s_1,s_2)$ with implicit
+length). Each thread processes a contiguous chunk $A[\ell:r)$ and produces a
+local state $\sigma_j$. To recover the global checksum, we require an
+associative \emph{combine} operator $\oplus$ such that
+\begin{equation}
+  \sigma(A[0:n)) \;=\; \sigma(A[0:k)) \;\oplus\; \sigma(A[k:n)).
+\end{equation}
+Associativity enables hierarchical reduction, while order preservation requires
+that the reduction tree respects the left-to-right concatenation order. On the
+GPU, we implement this reduction hierarchically:
+\begin{enumerate}
+  \item Each thread computes $\sigma_j$ for its chunk.
+  \item Within each warp, we compute an order-preserving prefix/reduction using
+  warp shuffles and $\oplus$.
+  \item Warp results are combined in increasing warp order to form a per-block
+  checksum.
+  \item Block results are reduced across the grid using repeated pairwise
+  left-to-right combinations, yielding a single 64-bit checksum.
+\end{enumerate}
+This structure ensures that the device result is \emph{definitionally identical}
+to the host's sequential traversal, modulo the checksum's arithmetic rules.
+
+\subsection{Host Reference and Cross-Comparison}
+
+On the host, we compute the same checksum $H(A_k)$ over the corresponding
+reference buffers produced by the MPIR/GMP-based implementation (or a trusted
+CPU implementation). Because both sides share the identical stage labeling
+(\code{Purpose}, \code{Depth}, \code{CallIndex}, \code{Conv}), we can
+compare checkpoint sequences as keyed records:
+\begin{equation}
+  \Delta_k \;=\;
+  \bigl(H_{\mathrm{gpu}}(A_k) \stackrel{?}{=} H_{\mathrm{host}}(A_k)\bigr).
+\end{equation}
+
+A mismatch at checkpoint $k$ implies that the first divergence occurred at or
+before the computation that produces $A_k$. By inserting checkpoints at
+strategically chosen boundaries (e.g., after exponent alignment, after signed
+limbwise accumulation, after carry resolution, after normalization), we obtain a
+coarse-to-fine localization mechanism. In practice this behaves like a binary
+search over the pipeline: we start with a small number of high-level checkpoints
+and then refine around the earliest failing stage by adding more granular
+summaries (e.g., per-buffer or per-substep).
+
+\subsection{Practical Debugging Workflow}
+
+The checksum mechanism supports a fast iterative workflow:
+\begin{enumerate}
+  \item \textbf{Instrument}: enable checksum capture for selected stages and
+  record the resulting $(\code{key}, H)$ tuples from GPU execution.
+  \item \textbf{Replay on host}: run the corresponding host reference path over
+  the same inputs, generating the same keyed tuples.
+  \item \textbf{Diff}: locate the earliest key for which
+  $H_{\mathrm{gpu}} \ne H_{\mathrm{host}}$.
+  \item \textbf{Refine}: insert additional checkpoints in the immediate
+  neighborhood of the first mismatch (e.g., split ``carry propagation'' into
+  descriptor publish, look-back resolution, digit transfer, and final writeback).
+\end{enumerate}
+
+This approach is especially effective for bugs that only manifest at scale:
+race conditions, mis-specified synchronization, and rare carry-chain corner
+cases. Even when the final numerical error is small or intermittent, checksum
+mismatches provide a crisp and reproducible signature of divergence.
+
+\subsection{Why Checksums Help for High-Precision Arithmetic}
+
+High-precision arithmetic pipelines are composed of large, structured arrays
+whose semantics evolve across stages (aligned limbs $\rightarrow$ raw sums
+$\rightarrow$ carry-resolved digits $\rightarrow$ normalized mantissa). A
+checksum provides a compact witness of correctness for each stage without
+requiring full array dumps or expensive per-element comparisons. While a checksum
+does not identify the exact index of the first wrong limb, it reliably answers a
+more valuable question during early debugging: \emph{which transformation first
+produced an incorrect state?} Once localized, targeted assertions, partial dumps,
+or reduced test cases can isolate the exact defect with far less effort.
+
+Taken together, stage checksums act as a low-overhead correctness scaffold that
+bridges device execution and a trusted host reference, enabling rapid fault
+localization in complex GPU high-precision arithmetic kernels.
+
+

@@ -7,8 +7,25 @@ public:
     WaitCursor();
     ~WaitCursor();
 
-    WaitCursor &operator=(const WaitCursor &) = delete;
-    WaitCursor &operator=(WaitCursor &&) = delete;
+    WaitCursor &operator=(const WaitCursor &other) {
+        if (this == &other) {
+            return *this;
+        }
+
+        m_hCursor = other.m_hCursor;
+    }
+
+    WaitCursor &
+    operator=(WaitCursor &&other)
+    {
+        if (this == &other) {
+            return *this;
+        }
+
+        m_hCursor = other.m_hCursor;
+        return *this;
+    }
+
     WaitCursor(const WaitCursor &) = delete;
     WaitCursor(WaitCursor &&) = delete;
 

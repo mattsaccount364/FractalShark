@@ -37,10 +37,10 @@ FractalPalette::InitializeAllPalettes()
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, 0, max_val);
         PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
     };
 
-    auto PatrioticPaletteGen = [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
+    auto PatrioticPaletteGen= [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
         SetThreadDescription(GetCurrentThread(), L"Fractal::PatrioticPaletteGen");
         int depth_total = (int)(1 << Depth);
 
@@ -60,15 +60,15 @@ FractalPalette::InitializeAllPalettes()
         const auto BG = (int)(((double)0x31 / (double)0xFF) * max_val);
         const auto BB = (int)(((double)0x61 / (double)0xFF) * max_val);
 
-        m_PalR[WhichPalette][PaletteIndex].push_back(static_cast<uint16_t>(max_val));
-        m_PalG[WhichPalette][PaletteIndex].push_back(static_cast<uint16_t>(max_val));
-        m_PalB[WhichPalette][PaletteIndex].push_back(static_cast<uint16_t>(max_val));
+        m_PalInterleaved[WhichPalette][PaletteIndex].push_back(
+            {static_cast<uint16_t>(max_val), static_cast<uint16_t>(max_val),
+             static_cast<uint16_t>(max_val), 0});
 
         PalTransition(WhichPalette, PaletteIndex, depth_total, RR, RG, RB);
         PalTransition(WhichPalette, PaletteIndex, depth_total, BR, BG, BB);
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, max_val);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
     };
 
     auto SummerPaletteGen = [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
@@ -85,7 +85,7 @@ FractalPalette::InitializeAllPalettes()
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val * 2 / 3, 0);
         PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
     };
 
     for (size_t i = 0; i < FractalPaletteType::Num; i++) {
@@ -137,39 +137,36 @@ FractalPalette::InitializeAllPalettes()
 // total_length = number of elements in pal.
 // e.g. unsigned char pal[256];
 //   total_length == 256
-void
-FractalPalette::PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int val2)
-{
-    double delta = (double)((double)(val2 - val1)) / length;
-    for (int i = 0; i < length; i++) {
-        double result = ((double)val1 + (double)delta * (i + 1));
-        pal.push_back((unsigned short)result);
-    }
-}
-
 // Transitions to the color specified.
 // Allows for nice smooth palettes.
 // length must be > 0
-// Returns index immediately following the last index we filled here
-// Returns -1 if we are at the end.
 void
 FractalPalette::PalTransition(size_t WhichPalette, size_t PaletteIndex, int length, int r, int g, int b)
 {
-    int curR, curB, curG;
-    if (!m_PalR[WhichPalette][PaletteIndex].empty()) {
-        curR = m_PalR[WhichPalette][PaletteIndex][m_PalR[WhichPalette][PaletteIndex].size() - 1];
-        curG = m_PalG[WhichPalette][PaletteIndex][m_PalG[WhichPalette][PaletteIndex].size() - 1];
-        curB = m_PalB[WhichPalette][PaletteIndex][m_PalB[WhichPalette][PaletteIndex].size() - 1];
+    int curR, curG, curB;
+    auto &pal = m_PalInterleaved[WhichPalette][PaletteIndex];
+    if (!pal.empty()) {
+        curR = pal.back().r;
+        curG = pal.back().g;
+        curB = pal.back().b;
     } else {
         curR = 0;
         curG = 0;
         curB = 0;
     }
 
-    // This code will fill out the palettes to the very end.
-    PalIncrease(m_PalR[WhichPalette][PaletteIndex], length, curR, r);
-    PalIncrease(m_PalG[WhichPalette][PaletteIndex], length, curG, g);
-    PalIncrease(m_PalB[WhichPalette][PaletteIndex], length, curB, b);
+    double deltaR = (double)(r - curR) / length;
+    double deltaG = (double)(g - curG) / length;
+    double deltaB = (double)(b - curB) / length;
+
+    for (int i = 0; i < length; i++) {
+        Color16 c;
+        c.r = static_cast<uint16_t>(curR + deltaR * (i + 1));
+        c.g = static_cast<uint16_t>(curG + deltaG * (i + 1));
+        c.b = static_cast<uint16_t>(curB + deltaB * (i + 1));
+        c.a = 0;
+        pal.push_back(c);
+    }
 }
 
 void
@@ -309,10 +306,8 @@ FractalPalette::CreateNewRandomPalette()
 
         srand((unsigned int)rtime);
 
-        // Force a reallocation of the vectors to trigger re-initialization in the GPU
-        std::vector<uint16_t>{}.swap(m_PalR[FractalPaletteType::Random][PaletteIndex]);
-        std::vector<uint16_t>{}.swap(m_PalG[FractalPaletteType::Random][PaletteIndex]);
-        std::vector<uint16_t>{}.swap(m_PalB[FractalPaletteType::Random][PaletteIndex]);
+        // Force a reallocation to trigger re-initialization in the GPU
+        std::vector<Color16>{}.swap(m_PalInterleaved[FractalPaletteType::Random][PaletteIndex]);
 
         const int m = 5;
         auto firstR = genNextColor(m);
@@ -376,7 +371,7 @@ FractalPalette::CreateNewRandomPalette()
         PalTransition(FractalPaletteType::Random, PaletteIndex, depth_total, 0, 0, 0);
 
         m_PalIters[FractalPaletteType::Random][PaletteIndex] =
-            (uint32_t)m_PalR[FractalPaletteType::Random][PaletteIndex].size();
+            (uint32_t)m_PalInterleaved[FractalPaletteType::Random][PaletteIndex].size();
     };
 
     std::vector<std::unique_ptr<std::thread>> threads;
@@ -410,22 +405,10 @@ FractalPalette::GetAuxDepth() const
     return m_PaletteAuxDepth;
 }
 
-const uint16_t *
-FractalPalette::GetCurrentPalR() const
+const Color16 *
+FractalPalette::GetCurrentPalInterleaved() const
 {
-    return m_PalR[m_WhichPalette][m_PaletteDepthIndex].data();
-}
-
-const uint16_t *
-FractalPalette::GetCurrentPalG() const
-{
-    return m_PalG[m_WhichPalette][m_PaletteDepthIndex].data();
-}
-
-const uint16_t *
-FractalPalette::GetCurrentPalB() const
-{
-    return m_PalB[m_WhichPalette][m_PaletteDepthIndex].data();
+    return m_PalInterleaved[m_WhichPalette][m_PaletteDepthIndex].data();
 }
 
 uint32_t
@@ -434,22 +417,10 @@ FractalPalette::GetCurrentNumColors() const
     return m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
 }
 
-std::vector<uint16_t> *
-FractalPalette::GetPalR(size_t whichPalette)
+const std::vector<Color16> *
+FractalPalette::GetPalInterleaved(size_t whichPalette) const
 {
-    return m_PalR[whichPalette];
-}
-
-std::vector<uint16_t> *
-FractalPalette::GetPalG(size_t whichPalette)
-{
-    return m_PalG[whichPalette];
-}
-
-std::vector<uint16_t> *
-FractalPalette::GetPalB(size_t whichPalette)
-{
-    return m_PalB[whichPalette];
+    return m_PalInterleaved[whichPalette];
 }
 
 const std::vector<uint32_t> &

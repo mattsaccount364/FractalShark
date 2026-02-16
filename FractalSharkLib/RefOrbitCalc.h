@@ -2,6 +2,7 @@
 
 #include "HDRFloat.h"
 #include "Vectors.h"
+#include <mutex>
 #include <variant>
 #include <vector>
 #include <type_traits>
@@ -386,6 +387,12 @@ private:
     std::vector<AwesomeVariantUniquePtr> m_C;
 
     mutable AwesomeVariant m_LastUsedRefOrbit;
+
+    // Serializes access to m_C, m_LastUsedRefOrbit, and perturbation result
+    // creation/lookup.  Acquired at public entry points; internal helpers
+    // (GetUsefulPerturbationResultsMutable, GetUsefulPerturbationResultsConst,
+    // PushbackResults) are always called within a locked scope.
+    mutable std::mutex m_PerturbationMutex;
 
     // Helper to strip const and reference qualifiers
     template <typename T>

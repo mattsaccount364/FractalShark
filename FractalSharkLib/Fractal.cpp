@@ -58,26 +58,11 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
 
     // Create the control-key-down/mouse-movement-monitoring thread.
     if (hWnd != nullptr) {
-        m_AbortThreadQuitFlag = false;
-        m_UseSensoCursor = UseSensoCursor;
         m_hWnd = hWnd;
-
-        DWORD threadID;
-        m_CheckForAbortThread =
-            (HANDLE)CreateThread(nullptr, 0, CheckForAbortThread, this, 0, &threadID);
-        if (m_CheckForAbortThread == nullptr) {
-        }
+        m_AbortMonitor = std::make_unique<AbortMonitor>(UseSensoCursor);
     } else {
-        m_AbortThreadQuitFlag = false;
-        m_UseSensoCursor = false;
         m_hWnd = nullptr;
-
-        m_CheckForAbortThread = nullptr;
     }
-
-    m_AsyncRenderThreadCommand = { AsyncRenderThreadCommand::State::Idle, RendererIndex::Renderer0 };
-    m_AsyncRenderThreadFinish = false;
-    m_AsyncRenderThread = std::make_unique<std::thread>(DrawAsyncGpuFractalThreadStatic, this);
 
     srand((unsigned int)time(nullptr));
 
@@ -100,6 +85,9 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
 
     // Allocate the iterations array.
     InitializeMemory();
+
+    // Initialize the render thread pool
+    m_RenderPool = std::make_unique<RenderThreadPool>(this, m_hWnd);
 }
 
 void
@@ -109,9 +97,11 @@ Fractal::InitializeMemory()
     m_FractalSavesInProgress.clear();
 
     // Set up new memory.
+    // 1 for m_CurIters + NumRenderers for pool workers + 2 spare for PngParallelSave
+    static constexpr size_t NumContainers = 1 + NumRenderers + 2;
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
     m_ItersMemoryStorage.clear();
-    for (size_t i = 0; i < 3; i++) {
+    for (size_t i = 0; i < NumContainers; i++) {
         const size_t total_aa = GetGpuAntialiasing();
         ItersMemoryContainer container(GetIterType(), m_ScrnWidth, m_ScrnHeight, total_aa);
         m_ItersMemoryStorage.push_back(std::move(container));
@@ -125,7 +115,7 @@ Fractal::InitializeMemory()
 }
 
 uint32_t
-Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse)
+Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryContainer &itersMemory)
 {
     if (RequiresUseLocalColor()) {
         return 0;
@@ -138,22 +128,18 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse)
     auto &renderer = GetRenderer(idx);
     uint32_t res;
     if (GetIterType() == IterTypeEnum::Bits32) {
-        res = renderer.InitializeMemory<uint32_t>((uint32_t)m_CurIters.m_Width,
-                                             (uint32_t)m_CurIters.m_Height,
-                                             (uint32_t)m_CurIters.m_Antialiasing,
-                                             m_Palette.GetCurrentPalR(),
-                                             m_Palette.GetCurrentPalG(),
-                                             m_Palette.GetCurrentPalB(),
+        res = renderer.InitializeMemory<uint32_t>((uint32_t)itersMemory.m_Width,
+                                             (uint32_t)itersMemory.m_Height,
+                                             (uint32_t)itersMemory.m_Antialiasing,
+                                             m_Palette.GetCurrentPalInterleaved(),
                                              m_Palette.GetCurrentNumColors(),
                                              m_Palette.GetAuxDepth(),
                                              expectedReuse);
     } else {
-        res = renderer.InitializeMemory<uint64_t>((uint32_t)m_CurIters.m_Width,
-                                             (uint32_t)m_CurIters.m_Height,
-                                             (uint32_t)m_CurIters.m_Antialiasing,
-                                             m_Palette.GetCurrentPalR(),
-                                             m_Palette.GetCurrentPalG(),
-                                             m_Palette.GetCurrentPalB(),
+        res = renderer.InitializeMemory<uint64_t>((uint32_t)itersMemory.m_Width,
+                                             (uint32_t)itersMemory.m_Height,
+                                             (uint32_t)itersMemory.m_Antialiasing,
+                                             m_Palette.GetCurrentPalInterleaved(),
                                              m_Palette.GetCurrentNumColors(),
                                              m_Palette.GetAuxDepth(),
                                              expectedReuse);
@@ -170,7 +156,30 @@ void
 Fractal::ReturnIterMemory(ItersMemoryContainer &&to_return)
 {
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
+
+    // Discard containers with stale dimensions (from before a resize)
+    if (to_return.m_OutputWidth != m_ScrnWidth ||
+        to_return.m_OutputHeight != m_ScrnHeight) {
+        return;
+    }
+
     m_ItersMemoryStorage.push_back(std::move(to_return));
+}
+
+ItersMemoryContainer
+Fractal::AcquireItersMemory()
+{
+    std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
+    for (;;) {
+        if (!m_ItersMemoryStorage.empty()) {
+            auto container = std::move(m_ItersMemoryStorage.back());
+            m_ItersMemoryStorage.pop_back();
+            return container;
+        }
+        lock.unlock();
+        Sleep(100);
+        lock.lock();
+    }
 }
 
 void
@@ -198,27 +207,16 @@ Fractal::SetCurItersMemory()
 void
 Fractal::Uninitialize(void)
 {
-
-    {
-        std::lock_guard lk(m_AsyncRenderThreadMutex);
-        m_AsyncRenderThreadCommand.state = AsyncRenderThreadCommand::State::Finish;
-        m_AsyncRenderThreadFinish = true;
-    }
-    m_AsyncRenderThreadCV.notify_one();
-
-    if (m_AsyncRenderThread != nullptr) {
-        m_AsyncRenderThread->join();
+    // Shutdown the render thread pool first
+    if (m_RenderPool) {
+        m_RenderPool->Shutdown();
+        m_RenderPool.reset();
     }
 
     CleanupThreads(true);
 
-    // Get rid of the abort thread, but only if we actually used it.
-    if (m_CheckForAbortThread != nullptr) {
-        m_AbortThreadQuitFlag = true;
-        if (WaitForSingleObject(m_CheckForAbortThread, INFINITE) != WAIT_OBJECT_0) {
-            std::wcerr << L"Error waiting for abort thread!" << std::endl;
-        }
-    }
+    // Get rid of the abort thread, if we created one.
+    m_AbortMonitor.reset();
 
     for (auto &thread : m_DrawThreads) {
         {
@@ -678,7 +676,7 @@ Fractal::ApproachTarget(void)
             // Stop _before_ saving the image, otherwise we will get a
             // corrupt render mixed in with good ones.
             // It's corrupt because it's incomplete!
-            if (m_StopCalculating == true) {
+            if (GetStopCalculating()) {
                 _wunlink(temp2); // Delete placeholder
                 break;
             }
@@ -768,7 +766,7 @@ Fractal::FindInterestingLocation(RECT *rect)
             yMaxFinal = yMax;
         }
 
-        if (m_StopCalculating == true) {
+        if (GetStopCalculating()) {
             break;
         }
     }
@@ -1065,18 +1063,13 @@ Fractal::RequiresUseLocalColor() const
 void
 Fractal::CalcFractal(bool drawFractal)
 {
-    CalcFractal(RendererIndex::Renderer0, drawFractal);
+    CalcContext ctx{m_Ptz, m_CurIters};
+    CalcFractal(RendererIndex::Renderer0, drawFractal, ctx);
 }
 
 void
-Fractal::CalcFractal(RendererIndex idx, bool drawFractal)
+Fractal::CalcFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
-    // if (m_glContextAsync->GetRepaint() == false)
-    //{
-    //     DrawFractal(RendererIndex::Renderer0);
-    //     return;
-    // }
-
     ScopedBenchmarkStopper stopper(m_BenchmarkData.m_Overall);
 
     // Bypass this function if the screen is too small.
@@ -1085,15 +1078,33 @@ Fractal::CalcFractal(RendererIndex idx, bool drawFractal)
     }
 
     if (GetIterType() == IterTypeEnum::Bits32) {
-        CalcFractalTypedIter<uint32_t>(idx, drawFractal);
+        CalcFractalTypedIter<uint32_t>(idx, drawFractal, ctx);
     } else {
-        CalcFractalTypedIter<uint64_t>(idx, drawFractal);
+        CalcFractalTypedIter<uint64_t>(idx, drawFractal, ctx);
     }
+}
+
+RenderJobHandle
+Fractal::EnqueueRender()
+{
+    if (m_RenderPool) {
+        return m_RenderPool->EnqueueCurrentState();
+    }
+    return RenderJobHandle{};
+}
+
+RenderJobHandle
+Fractal::EnqueueRender(const PointZoomBBConverter &ptz)
+{
+    if (m_RenderPool) {
+        return m_RenderPool->EnqueueCurrentState(ptz);
+    }
+    return RenderJobHandle{};
 }
 
 template <typename IterType>
 void
-Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal)
+Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
     // Test crash dump
     //{volatile int x = 5;
@@ -1102,11 +1113,10 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal)
     //}
 
     // Reset the flag should it be set.
-    m_StopCalculating = false;
+    ResetStopCalculating();
 
     // Do nothing if nothing has changed
-    if (ChangedIsDirty() == false || (m_glContextAsync && m_glContextAsync->GetRepaint() == false)) {
-        DrawFractal(idx);
+    if (ChangedIsDirty() == false) {
         return;
     }
 
@@ -1114,77 +1124,77 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal)
     // Note: This accounts for "Auto" being selected via the GetRenderAlgorithm call.
     switch (GetRenderAlgorithm().Algorithm) {
         case RenderAlgorithmEnum::CpuHigh:
-            CalcCpuHDR<IterType, HighPrecision, double>();
+            CalcCpuHDR<IterType, HighPrecision, double>(ctx);
             break;
         case RenderAlgorithmEnum::CpuHDR32:
-            CalcCpuHDR<IterType, HDRFloat<float>, float>();
+            CalcCpuHDR<IterType, HDRFloat<float>, float>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu32PerturbedBLAHDR:
-            CalcCpuPerturbationFractalBLA<IterType, HDRFloat<float>, float>();
+            CalcCpuPerturbationFractalBLA<IterType, HDRFloat<float>, float>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR:
-            CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::Disable>();
+            CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::Disable>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR:
-            CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::SimpleCompression>();
+            CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::SimpleCompression>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR:
-            CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>();
+            CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR:
-            CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>();
+            CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu64:
-            CalcCpuHDR<IterType, double, double>();
+            CalcCpuHDR<IterType, double, double>(ctx);
             break;
         case RenderAlgorithmEnum::CpuHDR64:
-            CalcCpuHDR<IterType, HDRFloat<double>, double>();
+            CalcCpuHDR<IterType, HDRFloat<double>, double>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu64PerturbedBLA:
-            CalcCpuPerturbationFractalBLA<IterType, double, double>();
+            CalcCpuPerturbationFractalBLA<IterType, double, double>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu64PerturbedBLAHDR:
-            CalcCpuPerturbationFractalBLA<IterType, HDRFloat<double>, double>();
+            CalcCpuPerturbationFractalBLA<IterType, HDRFloat<double>, double>(ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x64:
-            CalcGpuFractal<IterType, double>(idx, drawFractal);
+            CalcGpuFractal<IterType, double>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu2x64:
-            CalcGpuFractal<IterType, MattDbldbl>(idx, drawFractal);
+            CalcGpuFractal<IterType, MattDbldbl>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu4x64:
-            CalcGpuFractal<IterType, MattQDbldbl>(idx, drawFractal);
+            CalcGpuFractal<IterType, MattQDbldbl>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x32:
-            CalcGpuFractal<IterType, float>(idx, drawFractal);
+            CalcGpuFractal<IterType, float>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu2x32:
-            CalcGpuFractal<IterType, MattDblflt>(idx, drawFractal);
+            CalcGpuFractal<IterType, MattDblflt>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu4x32:
-            CalcGpuFractal<IterType, MattQFltflt>(idx, drawFractal);
+            CalcGpuFractal<IterType, MattQFltflt>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx32:
-            CalcGpuFractal<IterType, HDRFloat<double>>(idx, drawFractal);
+            CalcGpuFractal<IterType, HDRFloat<double>>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x32PerturbedScaled:
-            CalcGpuPerturbationFractalScaledBLA<IterType, double, double, float, float>(idx, drawFractal);
+            CalcGpuPerturbationFractalScaledBLA<IterType, double, double, float, float>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx32PerturbedScaled:
-            CalcGpuPerturbationFractalScaledBLA<IterType, HDRFloat<float>, float, float, float>(idx, drawFractal);
+            CalcGpuPerturbationFractalScaledBLA<IterType, HDRFloat<float>, float, float, float>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x64PerturbedBLA:
-            CalcGpuPerturbationFractalBLA<IterType, double, double>(idx, drawFractal);
+            CalcGpuPerturbationFractalBLA<IterType, double, double>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu2x32PerturbedScaled:
             // TODO
             // CalcGpuPerturbationFractalBLA<IterType, double, double>(idx, drawFractal);
             break;
         case RenderAlgorithmEnum::GpuHDRx32PerturbedBLA:
-            CalcGpuPerturbationFractalBLA<IterType, HDRFloat<float>, float>(idx, drawFractal);
+            CalcGpuPerturbationFractalBLA<IterType, HDRFloat<float>, float>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx64PerturbedBLA:
-            CalcGpuPerturbationFractalBLA<IterType, HDRFloat<double>, double>(idx, drawFractal);
+            CalcGpuPerturbationFractalBLA<IterType, HDRFloat<double>, double>(idx, drawFractal, ctx);
             break;
 
             // LAV2
@@ -1193,222 +1203,222 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal)
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
 
         case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
 
         case RenderAlgorithmEnum::Gpu1x64PerturbedLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO>,
-                PerturbExtras::Disable>(idx, drawFractal);
+                PerturbExtras::Disable>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO:
             CalcGpuPerturbationFractalLAv2<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO>,
-                PerturbExtras::SimpleCompression>(idx, drawFractal);
+                PerturbExtras::SimpleCompression>(idx, drawFractal, ctx);
             break;
         default:
             break;
@@ -1423,7 +1433,7 @@ Fractal::UsePaletteType(FractalPaletteType type)
 {
     m_Palette.UsePaletteType(type);
     for (size_t i = 0; i < NumRenderers; i++) {
-        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true);
+        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
             MessageBoxCudaError(err);
             return;
@@ -1448,7 +1458,7 @@ Fractal::UsePalette(int depth)
 {
     m_Palette.UsePalette(depth);
     for (size_t i = 0; i < NumRenderers; i++) {
-        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true);
+        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
             MessageBoxCudaError(err);
             return;
@@ -1461,7 +1471,7 @@ Fractal::UseNextPaletteDepth()
 {
     m_Palette.UseNextPaletteDepth();
     for (size_t i = 0; i < NumRenderers; i++) {
-        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true);
+        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
             MessageBoxCudaError(err);
             return;
@@ -1474,7 +1484,7 @@ Fractal::SetPaletteAuxDepth(int32_t depth)
 {
     m_Palette.SetPaletteAuxDepth(depth);
     for (size_t i = 0; i < NumRenderers; i++) {
-        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true);
+        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
             MessageBoxCudaError(err);
             return;
@@ -1487,7 +1497,7 @@ Fractal::UseNextPaletteAuxDepth(int32_t inc)
 {
     m_Palette.UseNextPaletteAuxDepth(inc);
     for (size_t i = 0; i < NumRenderers; i++) {
-        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true);
+        auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
             MessageBoxCudaError(err);
             return;
@@ -1523,55 +1533,6 @@ FractalPalette &
 Fractal::GetPalette()
 {
     return m_Palette;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Redraws the fractal using OpenGL calls.
-// Note that coordinates here are weird, so we have to make a few tweaks to
-// get the image oriented right side up. In particular, the line which reads:
-//       glVertex2i (px, m_ScrnHeight - py);
-//////////////////////////////////////////////////////////////////////////////
-void
-Fractal::DrawFractal(RendererIndex idx)
-{
-    {
-        std::unique_lock lk(m_AsyncRenderThreadMutex);
-
-        m_AsyncRenderThreadCV.wait(
-            lk, [&] { return m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Idle; });
-
-        m_AsyncRenderThreadCommand = { AsyncRenderThreadCommand::State::Start, idx };
-    }
-
-    m_AsyncRenderThreadCV.notify_one();
-
-    if (m_BypassGpu == false) {
-        uint32_t result = GetRenderer(idx).SyncComputeStream();
-        if (result) {
-            MessageBoxCudaError(result);
-        }
-    } else {
-        std::cerr << "Bypassing GPU in effect: No GPU synchronization performed." << std::endl;
-    }
-
-    {
-        std::unique_lock lk(m_AsyncRenderThreadMutex);
-
-        m_AsyncRenderThreadCV.wait(
-            lk, [&] { return m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Idle; });
-
-        m_AsyncRenderThreadCommand.state = AsyncRenderThreadCommand::State::SyncDone;
-    }
-
-    m_AsyncRenderThreadCV.notify_one();
-
-    {
-        std::unique_lock lk(m_AsyncRenderThreadMutex);
-
-        m_AsyncRenderThreadCV.wait(lk, [&] { return m_AsyncRenderThreadFinish; });
-
-        m_AsyncRenderThreadFinish = false;
-    }
 }
 
 template <typename IterType>
@@ -1618,7 +1579,7 @@ Fractal::DrawGlFractal(RendererIndex idx, bool LocalColor, bool lastIter)
             return;
         }
 
-        result = renderer.SyncStream(true);
+        result = renderer.SyncComputeStream();
         if (result) {
             MessageBoxCudaError(result);
             return;
@@ -1704,19 +1665,19 @@ Fractal::DrawGlFractal(RendererIndex idx, bool LocalColor, bool lastIter)
 void
 Fractal::SetRepaint(bool repaint)
 {
-    m_glContextAsync->SetRepaint(repaint);
+    m_Repaint = repaint;
 }
 
 bool
 Fractal::GetRepaint() const
 {
-    return m_glContextAsync->GetRepaint();
+    return m_Repaint;
 }
 
 void
 Fractal::ToggleRepainting()
 {
-    m_glContextAsync->ToggleRepaint();
+    m_Repaint = !m_Repaint;
 }
 
 static inline void
@@ -1828,9 +1789,7 @@ Fractal::DrawFractalThread(size_t index, Fractal *fractal)
 
             const size_t totalAA = fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
             uint32_t palIters = fractal->m_Palette.GetCurrentNumColors();
-            const uint16_t *palR = fractal->m_Palette.GetCurrentPalR();
-            const uint16_t *palG = fractal->m_Palette.GetCurrentPalG();
-            const uint16_t *palB = fractal->m_Palette.GetCurrentPalB();
+            const Color16 *pal = fractal->m_Palette.GetCurrentPalInterleaved();
             size_t basicFactor = 65536 / NumIterations;
             if (basicFactor == 0) {
                 basicFactor = 1;
@@ -1842,9 +1801,9 @@ Fractal::DrawFractalThread(size_t index, Fractal *fractal)
 
                     if (fractal->m_Palette.GetPaletteType() != FractalPaletteType::Basic) {
                         auto palIndex = shiftedIters % palIters;
-                        acc_r += palR[palIndex];
-                        acc_g += palG[palIndex];
-                        acc_b += palB[palIndex];
+                        acc_r += pal[palIndex].r;
+                        acc_g += pal[palIndex].g;
+                        acc_b += pal[palIndex].b;
                     } else {
                         acc_r += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
                         acc_g += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
@@ -1934,92 +1893,6 @@ Fractal::DrawFractalThread(size_t index, Fractal *fractal)
     }
 }
 
-void
-Fractal::DrawAsyncGpuFractalThread()
-{
-    m_glContextAsync = std::make_unique<OpenGlContext>(m_hWnd);
-    if (!m_glContextAsync->IsValid()) {
-        return;
-    }
-
-    auto lambda = [&]<typename IterType>(RendererIndex rendererIdx, bool lastIter) -> bool {
-        m_glContextAsync->glResetViewDim(m_ScrnWidth, m_ScrnHeight);
-
-        if (m_glContextAsync->GetRepaint() == false) {
-            m_glContextAsync->DrawGlBox();
-            return false;
-        }
-
-        const bool LocalColor = RequiresUseLocalColor();
-        DrawGlFractal<IterType>(rendererIdx, LocalColor, lastIter);
-        return false;
-    };
-
-    for (;;) {
-        RendererIndex rendererIdx;
-        {
-            std::unique_lock lk(m_AsyncRenderThreadMutex);
-
-            m_AsyncRenderThreadCV.wait(lk, [&] {
-                return m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Start ||
-                       m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Finish;
-            });
-
-            if (m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::Finish) {
-                break;
-            }
-
-            rendererIdx = m_AsyncRenderThreadCommand.rendererIdx;
-            m_AsyncRenderThreadCommand.state = AsyncRenderThreadCommand::State::Idle;
-        }
-
-        m_AsyncRenderThreadCV.notify_one();
-
-        for (size_t i = 0;; i++) {
-            // Setting the timeout lower works fine but puts more load on the GPU
-            static constexpr auto set_time = std::chrono::milliseconds(1000);
-
-            std::unique_lock lk(m_AsyncRenderThreadMutex);
-            auto doneearly = m_AsyncRenderThreadCV.wait_for(lk, set_time, [&] {
-                return m_AsyncRenderThreadCommand.state == AsyncRenderThreadCommand::State::SyncDone;
-            });
-
-            m_AsyncRenderThreadCommand.state = AsyncRenderThreadCommand::State::Idle;
-
-            bool err;
-
-            if (GetIterType() == IterTypeEnum::Bits32) {
-                err = lambda.template operator()<uint32_t>(rendererIdx, doneearly);
-            } else {
-                err = lambda.template operator()<uint64_t>(rendererIdx, doneearly);
-            }
-
-            if (err) {
-                std::wcerr << L"Unexpected error in DrawAsyncGpuFractalThread 1" << std::endl;
-                break;
-            }
-
-            if (doneearly) {
-                break;
-            }
-        }
-
-        {
-            std::unique_lock lk(m_AsyncRenderThreadMutex);
-            m_AsyncRenderThreadFinish = true;
-        }
-
-        m_AsyncRenderThreadCV.notify_one();
-    }
-
-    m_glContextAsync = nullptr;
-}
-
-void
-Fractal::DrawAsyncGpuFractalThreadStatic(Fractal *fractal)
-{
-    fractal->DrawAsyncGpuFractalThread();
-}
 
 void
 Fractal::FillCoord(const HighPrecision &src, MattQFltflt &dest)
@@ -2105,13 +1978,13 @@ Fractal::FillCoord(const HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &d
 
 template <class T>
 void
-Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2)
+Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2, const PointZoomBBConverter &ptz)
 {
-    HighPrecision src_dy = m_Ptz.GetDeltaY(m_ScrnHeight, GetGpuAntialiasing());
-    HighPrecision src_dx = m_Ptz.GetDeltaX(m_ScrnWidth, GetGpuAntialiasing());
+    HighPrecision src_dy = ptz.GetDeltaY(m_ScrnHeight, GetGpuAntialiasing());
+    HighPrecision src_dx = ptz.GetDeltaX(m_ScrnWidth, GetGpuAntialiasing());
 
-    FillCoord(m_Ptz.GetMinX(), cx2);
-    FillCoord(m_Ptz.GetMinY(), cy2);
+    FillCoord(ptz.GetMinX(), cx2);
+    FillCoord(ptz.GetMinY(), cy2);
     FillCoord(src_dx, dx2);
     FillCoord(src_dy, dy2);
 }
@@ -2789,12 +2662,12 @@ Fractal::ZoomToFoundFeature()
 
 template <typename IterType, class T>
 void
-Fractal::CalcGpuFractal(RendererIndex idx, bool drawFractal)
+Fractal::CalcGpuFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
     T cx2{}, cy2{}, dx2{}, dy2{};
-    FillGpuCoords<T>(cx2, cy2, dx2, dy2);
+    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
 
-    uint32_t err = InitializeGPUMemory(idx, true);
+    uint32_t err = InitializeGPUMemory(idx, true, ctx.ItersMemory);
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -2808,26 +2681,22 @@ Fractal::CalcGpuFractal(RendererIndex idx, bool drawFractal)
     if (err) {
         MessageBoxCudaError(err);
     }
-
-    if (drawFractal) {
-        DrawFractal(idx);
-    }
 }
 
 template <typename IterType>
 void
-Fractal::CalcCpuPerturbationFractal()
+Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
 {
     auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
                                                                      double,
                                                                      double,
                                                                      PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
+                                                                     RefOrbitCalc::Extras::None>(ctx.Ptz);
 
-    const auto &maxX = m_Ptz.GetMaxX();
-    const auto &minX = m_Ptz.GetMinX();
-    const auto &maxY = m_Ptz.GetMaxY();
-    const auto &minY = m_Ptz.GetMinY();
+    const auto &maxX = ctx.Ptz.GetMaxX();
+    const auto &minX = ctx.Ptz.GetMinX();
+    const auto &maxY = ctx.Ptz.GetMaxY();
+    const auto &minY = ctx.Ptz.GetMinY();
 
     HighPrecision hiDx{(maxX - minX) / HighPrecision{m_ScrnWidth * GetGpuAntialiasing()}};
     HighPrecision hiDy{(maxY - minY) / HighPrecision{m_ScrnHeight * GetGpuAntialiasing()}};
@@ -2965,7 +2834,7 @@ Fractal::CalcCpuPerturbationFractal()
                     ++iter;
                 }
 
-                m_CurIters.SetItersArrayValSlow(x, y, iter);
+                ctx.ItersMemory.SetItersArrayValSlow(x, y, iter);
             }
         }
     };
@@ -2977,8 +2846,6 @@ Fractal::CalcCpuPerturbationFractal()
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
         threads[cur_thread]->join();
     }
-
-    DrawFractal(RendererIndex::Renderer0);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -2991,12 +2858,12 @@ Fractal::CalcCpuPerturbationFractal()
 //////////////////////////////////////////////////////////////////////////////
 template <typename IterType, class T, class SubType>
 void
-Fractal::CalcCpuHDR()
+Fractal::CalcCpuHDR(CalcContext &ctx)
 {
-    const auto &maxX = m_Ptz.GetMaxX();
-    const auto &minX = m_Ptz.GetMinX();
-    const auto &maxY = m_Ptz.GetMaxY();
-    const auto &minY = m_Ptz.GetMinY();
+    const auto &maxX = ctx.Ptz.GetMaxX();
+    const auto &minX = ctx.Ptz.GetMinX();
+    const auto &maxY = ctx.Ptz.GetMaxY();
+    const auto &minY = ctx.Ptz.GetMinY();
 
     const T dx = T((maxX - minX) / HighPrecision{m_ScrnWidth * GetGpuAntialiasing()});
     const T dy = T((maxY - minY) / HighPrecision{m_ScrnHeight * GetGpuAntialiasing()});
@@ -3057,7 +2924,7 @@ Fractal::CalcCpuHDR()
                 cx += dx;
                 // HdrReduce(cx);
 
-                m_CurIters.SetItersArrayValSlow(x, y, i);
+                ctx.ItersMemory.SetItersArrayValSlow(x, y, i);
             }
         }
     };
@@ -3069,24 +2936,22 @@ Fractal::CalcCpuHDR()
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
         threads[cur_thread]->join();
     }
-
-    DrawFractal(RendererIndex::Renderer0);
 }
 
 template <typename IterType, class T, class SubType>
 void
-Fractal::CalcCpuPerturbationFractalBLA()
+Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
 {
-    const auto &maxX = m_Ptz.GetMaxX();
-    const auto &minX = m_Ptz.GetMinX();
-    const auto &maxY = m_Ptz.GetMaxY();
-    const auto &minY = m_Ptz.GetMinY();
+    const auto &maxX = ctx.Ptz.GetMaxX();
+    const auto &minX = ctx.Ptz.GetMinX();
+    const auto &maxY = ctx.Ptz.GetMaxY();
+    const auto &minY = ctx.Ptz.GetMinY();
 
     auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
                                                                      T,
                                                                      SubType,
                                                                      PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
+                                                                     RefOrbitCalc::Extras::None>(ctx.Ptz);
 
     BLAS<IterType, T> blas(*results);
     blas.Init((IterType)results->GetCountOrbitEntries(), results->GetMaxRadius());
@@ -3314,7 +3179,7 @@ Fractal::CalcCpuPerturbationFractalBLA()
                     ++iter;
                 }
 
-                m_CurIters.SetItersArrayValSlow(x, y, iter);
+                ctx.ItersMemory.SetItersArrayValSlow(x, y, iter);
             }
         }
     };
@@ -3326,13 +3191,11 @@ Fractal::CalcCpuPerturbationFractalBLA()
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
         threads[cur_thread]->join();
     }
-
-    DrawFractal(RendererIndex::Renderer0);
 }
 
 template <typename IterType, class SubType, PerturbExtras PExtras>
 void
-Fractal::CalcCpuPerturbationFractalLAV2()
+Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
 {
     using T = HDRFloat<SubType>;
     using TComplex = HDRFloatComplex<SubType>;
@@ -3341,7 +3204,7 @@ Fractal::CalcCpuPerturbationFractalLAV2()
                                                          T,
                                                          SubType,
                                                          PExtras,
-                                                         RefOrbitCalc::Extras::IncludeLAv2>(m_Ptz);
+                                                         RefOrbitCalc::Extras::IncludeLAv2>(ctx.Ptz);
 
     if (results->GetLaReference() == nullptr || results->GetOrbitData() == nullptr) {
         std::wcerr << L"Oops - a null pointer deref" << std::endl;
@@ -3350,10 +3213,10 @@ Fractal::CalcCpuPerturbationFractalLAV2()
 
     auto &LaReference = *results->GetLaReference();
 
-    const auto &maxX = m_Ptz.GetMaxX();
-    const auto &minX = m_Ptz.GetMinX();
-    const auto &maxY = m_Ptz.GetMaxY();
-    const auto &minY = m_Ptz.GetMinY();
+    const auto &maxX = ctx.Ptz.GetMaxX();
+    const auto &minX = ctx.Ptz.GetMinX();
+    const auto &maxY = ctx.Ptz.GetMaxY();
+    const auto &minY = ctx.Ptz.GetMinY();
 
     T dx = T((maxX - minX) / HighPrecision(m_ScrnWidth * GetGpuAntialiasing()));
     HdrReduce(dx);
@@ -3518,7 +3381,7 @@ Fractal::CalcCpuPerturbationFractalLAV2()
                     }
                 }
 
-                m_CurIters.SetItersArrayValSlow(x, y, iterations);
+                ctx.ItersMemory.SetItersArrayValSlow(x, y, iterations);
             }
         }
     };
@@ -3530,21 +3393,19 @@ Fractal::CalcCpuPerturbationFractalLAV2()
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
         threads[cur_thread]->join();
     }
-
-    DrawFractal(RendererIndex::Renderer0);
 }
 
 template <typename IterType, class T, class SubType>
 void
-Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal)
+Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
     auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
                                                                      T,
                                                                      SubType,
                                                                      PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
+                                                                     RefOrbitCalc::Extras::None>(ctx.Ptz);
 
-    uint32_t err = InitializeGPUMemory(idx, true);
+    uint32_t err = InitializeGPUMemory(idx, true, ctx.ItersMemory);
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -3556,10 +3417,10 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal)
     T cx2{}, cy2{}, dx2{}, dy2{};
     T centerX2{}, centerY2{};
 
-    FillGpuCoords<T>(cx2, cy2, dx2, dy2);
+    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
 
-    HighPrecision centerX = results->GetHiX() - m_Ptz.GetMinX();
-    HighPrecision centerY = results->GetHiY() - m_Ptz.GetMaxY();
+    HighPrecision centerX = results->GetHiX() - ctx.Ptz.GetMinX();
+    HighPrecision centerY = results->GetHiY() - ctx.Ptz.GetMaxY();
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
@@ -3590,10 +3451,6 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal)
                                                GetNumIterations<IterType>(),
                                                m_IterationPrecision);
 
-    if (drawFractal) {
-        DrawFractal(idx);
-    }
-
     if (result) {
         MessageBoxCudaError(result);
     }
@@ -3601,7 +3458,7 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal)
 
 template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
 void
-Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal)
+Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
 
     using T = RenderAlg::MainType;
@@ -3626,7 +3483,7 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal)
     // TODO pass perturb results via InitializeGPUMemory
     // Currently: keep this up here so it frees existing memory
     // before generating the new orbit.
-    auto err = InitializeGPUMemory(idx, results != nullptr);
+    auto err = InitializeGPUMemory(idx, results != nullptr, ctx.ItersMemory);
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -3637,7 +3494,7 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal)
                                                                ConditionalSubType,
                                                                PExtras,
                                                                RefOrbitMode,
-                                                               T>(m_Ptz);
+                                                               T>(ctx.Ptz);
 
     // Reference orbit is always required for LAv2
     // The LaReference is not required when running perturbation only
@@ -3668,10 +3525,10 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal)
     T cx2{}, cy2{}, dx2{}, dy2{};
     T centerX2{}, centerY2{};
 
-    FillGpuCoords<T>(cx2, cy2, dx2, dy2);
+    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
 
-    HighPrecision centerX = results->GetHiX() - m_Ptz.GetMinX();
-    HighPrecision centerY = results->GetHiY() - m_Ptz.GetMaxY();
+    HighPrecision centerX = results->GetHiX() - ctx.Ptz.GetMinX();
+    HighPrecision centerY = results->GetHiY() - ctx.Ptz.GetMaxY();
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
@@ -3684,27 +3541,23 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal)
         MessageBoxCudaError(result);
         return;
     }
-
-    if (drawFractal) {
-        DrawFractal(idx);
-    }
 }
 
 template <typename IterType, class T, class SubType, class T2, class SubType2>
 void
-Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal)
+Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
     auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
                                                                      T,
                                                                      SubType,
                                                                      PerturbExtras::Bad,
-                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
+                                                                     RefOrbitCalc::Extras::None>(ctx.Ptz);
     auto *results2 =
         m_RefOrbit
             .CopyUsefulPerturbationResults<IterType, T, PerturbExtras::Bad, T2, PerturbExtras::Bad>(
                 *results);
 
-    uint32_t err = InitializeGPUMemory(idx, true);
+    uint32_t err = InitializeGPUMemory(idx, true, ctx.ItersMemory);
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -3716,10 +3569,10 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal
     T cx2{}, cy2{}, dx2{}, dy2{};
     T centerX2{}, centerY2{};
 
-    FillGpuCoords<T>(cx2, cy2, dx2, dy2);
+    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
 
-    HighPrecision centerX = results->GetHiX() - m_Ptz.GetMinX();
-    HighPrecision centerY = results->GetHiY() - m_Ptz.GetMaxY();
+    HighPrecision centerX = results->GetHiX() - ctx.Ptz.GetMinX();
+    HighPrecision centerY = results->GetHiY() - ctx.Ptz.GetMaxY();
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
@@ -3757,10 +3610,6 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal
                                                           centerY2,
                                                           GetNumIterations<IterType>(),
                                                           m_IterationPrecision);
-
-    if (drawFractal) {
-        DrawFractal(idx);
-    }
 
     if (result) {
         MessageBoxCudaError(result);
@@ -4258,48 +4107,16 @@ Fractal::GpuBypassed() const
 }
 
 bool
-Fractal::IsDownControl(void)
-{
-    return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000);
-    // return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000) &&
-    //     ((m_hWnd != nullptr && GetForegroundWindow() == m_hWnd) ||
-    //     (m_hWnd == nullptr));
-};
-
-void
-Fractal::CheckForAbort(void)
-{
-    POINT pt;
-    GetCursorPos(&pt);
-    int OrgX = pt.x;
-    int OrgY = pt.y;
-
-    for (;;) {
-        if (m_AbortThreadQuitFlag == true) {
-            break;
-        }
-
-        Sleep(250);
-
-        if (IsDownControl()) {
-            m_StopCalculating = true;
-        }
-
-        if (m_UseSensoCursor == true) {
-            GetCursorPos(&pt);
-
-            if (abs(pt.x - OrgX) >= 5 || abs(pt.y - OrgY) >= 5) {
-                OrgX = pt.x; // Reset to current location.
-                OrgY = pt.y;
-                m_StopCalculating = true;
-            }
-        }
+Fractal::GetStopCalculating() const {
+    if (m_AbortMonitor) {
+        return m_AbortMonitor->GetStopCalculating();
     }
+    return false;
 }
 
-unsigned long WINAPI
-Fractal::CheckForAbortThread(void *fractal)
-{
-    ((Fractal *)fractal)->CheckForAbort();
-    return 0;
+void
+Fractal::ResetStopCalculating() {
+    if (m_AbortMonitor) {
+        m_AbortMonitor->ResetStopCalculating();
+    }
 }

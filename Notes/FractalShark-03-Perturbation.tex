@@ -1,0 +1,482 @@
+\section{Perturbation Rendering of the Mandelbrot Set}
+\label{sec:perturbation-concept}
+
+Rendering the Mandelbrot set (\cref{sec:mandelbrot-intro}) at extreme zoom levels presents a fundamental
+numerical challenge. As the image is magnified, the parameters \(c\) associated
+with individual pixels differ by increasingly small amounts, while the number
+of iterations required to determine escape behavior typically grows. Accurately
+tracking these orbits therefore requires both high numerical precision and a
+large number of iterations, making naive per-pixel evaluation prohibitively
+expensive.
+
+Perturbation provides a mathematical and algorithmic framework
+\cite{Martin2013Perturbation,HeilandAllen2013Perturbation,Wikibooks_Perturbation}
+that addresses
+this challenge by exploiting the strong coherence between nearby orbits. Rather
+than evaluating each pixel independently at full precision, perturbation
+separates the computation into a shared high-precision component and many
+pixel-local low-precision components. This section introduces the perturbation
+approach and explains how it enables efficient deep-zoom Mandelbrot rendering.
+
+\subsection{Baseline iteration and its limitations}
+
+The Mandelbrot set is defined by the iteration
+\begin{equation}
+z_{n+1} = z_n^2 + c, \qquad z_0 = 0,
+\end{equation}
+where \(c \in \mathbb{C}\) is the parameter associated with a pixel and the orbit
+\(\{z_n\}\) is iterated until either escape is detected or a maximum iteration
+count is reached.
+
+At modest zoom levels, this iteration can be evaluated accurately using standard
+floating-point arithmetic. At deep zoom levels, however, the differences between
+nearby parameters \(c\) may be many orders of magnitude smaller than the values
+of \(z_n\) encountered during iteration. In such regimes, rounding error and
+loss of significance make fixed-precision arithmetic unreliable. While arbitrary
+precision arithmetic can restore accuracy, applying it independently to every
+pixel scales poorly.
+
+\subsection{Coherence of nearby orbits}
+
+A key observation underlying perturbation is that nearby parameters generate
+orbits that remain close for many iterations. In a typical image tile, all pixel
+parameters \(c\) lie within a small neighborhood of a central value. Their
+orbits therefore share a common large-scale structure, differing only by small
+corrections that grow gradually over time.
+
+Perturbation makes this structure explicit by selecting a single
+\emph{reference parameter} and expressing all nearby orbits relative to it. This
+transforms the problem from one of many independent high-precision computations
+into one of a single high-precision computation plus many low-precision updates.
+
+\subsection{Reference orbit}
+
+Let \(c_\star\) denote a reference parameter, typically chosen as the center of
+the image region. Its orbit is computed using sufficiently high precision to
+serve as a reliable baseline:
+\begin{equation}
+z_{n+1}^\star = (z_n^\star)^2 + c_\star, \qquad z_0^\star = 0.
+\end{equation}
+The sequence \(\{z_n^\star\}\) is stored and reused for all pixels within the
+region. Because this orbit underpins the evaluation of many pixels, its
+accuracy is critical.
+
+\subsection{Perturbation as a mixed-precision decomposition}
+\label{subsec:perturbation-mixed-precision}
+
+For a nearby pixel parameter \(c = c_\star + \Delta c\), the orbit can be written
+as a small deviation from the reference orbit:
+\begin{equation}
+z_n = z_n^\star + \Delta z_n.
+\end{equation}
+Substituting this expression into the Mandelbrot recurrence yields an exact
+update rule for the deviation:
+\begin{equation}
+\Delta z_{n+1}
+= 2 z_n^\star \Delta z_n + (\Delta z_n)^2 + \Delta c.
+\label{eq:perturb-exact}
+\end{equation}
+No approximation has been introduced: as long as the reference orbit is computed
+accurately, this formulation preserves the exact Mandelbrot dynamics.
+
+This decomposition has an important numerical consequence. The reference orbit
+\(z_n^\star\) typically grows in magnitude and requires arbitrary precision to be
+represented accurately at deep zoom. In contrast, the deviation \(\Delta z_n\)
+remains small for many iterations and can usually be evolved using much lower
+precision arithmetic. Perturbation therefore reorganizes the computation into a
+mixed-precision pipeline: expensive high-precision arithmetic is concentrated in
+a single shared orbit, while the majority of per-pixel work is performed using
+lower precision with significantly higher throughput.
+
+\subsection{Real-valued formulation for implementation}
+
+For practical implementation, particularly on GPUs, it is convenient to express
+the perturbation update in real arithmetic. Writing
+\begin{align*}
+z_n^\star &= x_n^\star + i y_n^\star, \\
+\Delta z_n &= \Delta x_n + i \Delta y_n, \\
+\Delta c &= \Delta c_x + i \Delta c_y,
+\end{align*}
+and expanding \cref{eq:perturb-exact} yields
+\begin{align}
+\Delta x_{n+1}
+&= 2(x_n^\star \Delta x_n - y_n^\star \Delta y_n)
+   + (\Delta x_n^2 - \Delta y_n^2)
+   + \Delta c_x, \\
+\Delta y_{n+1}
+&= 2(x_n^\star \Delta y_n + y_n^\star \Delta x_n)
+   + 2 \Delta x_n \Delta y_n
+   + \Delta c_y.
+\end{align}
+These equations map directly onto scalar arithmetic and can be evaluated
+efficiently in parallel for many pixels.
+
+\subsection{Reconstruction and escape testing}
+
+Although perturbation evolves only the deviation \(\Delta z_n\), escape-time
+rendering requires testing the magnitude of the full orbit value. At each
+iteration, the current iterate is reconstructed as
+\begin{equation}
+z_n = z_n^\star + \Delta z_n,
+\end{equation}
+and the standard Mandelbrot bailout condition is applied:
+\begin{equation}
+|z_n|^2 \ge 4.
+\end{equation}
+The iteration at which this condition is first satisfied determines the pixel’s
+escape time.
+
+\subsection{Numerical stability and rebasing}
+
+Perturbation remains efficient only while the deviation \(\Delta z_n\) remains
+small relative to the reference orbit. As the deviation grows, numerical
+cancellation and loss of significance may occur. Practical implementations
+therefore employ \emph{rebasing} \cite{Zhuoran2023ReferenceCompression,HeilandAllen2022DeepZoom},
+in which the current deviation
+is folded into the reference state and perturbation continues relative to this
+new baseline. This process preserves accuracy while maintaining numerical
+stability.
+
+\subsection{Relation to other acceleration techniques}
+
+Perturbation preserves the exact dynamics of the Mandelbrot map and forms the
+foundation of many advanced deep-zoom rendering techniques. It can be used by
+itself (\cref{sec:perturb-only}) or combined with additional approximations, such as bilinear approximation
+(\cref{sec:bilinear-approx}) or linear approximation (\cref{sec:la-v2-perturb}),
+to skip multiple iterations at once. In all cases, perturbation provides
+the conceptual framework that makes efficient deep-zoom Mandelbrot rendering
+possible.
+
+\paragraph{Terminology note: HDR scalar representation.}
+In this work, the term \emph{HDR} refers to a \emph{high-dynamic-range} numeric
+representation that pairs a fixed-precision mantissa (float or double) with an
+explicitly managed integer exponent (see below for the full description).  When the GPU reference-orbit kernel or
+perturbation pipeline needs lightweight control-flow decisions---periodicity
+detection, escape testing, magnitude comparisons---it converts the full
+arbitrary-precision state into an HDR value via a lossy reduction step
+(\code{ToHDRFloat}).  The resulting HDR value preserves a wide exponent range,
+sufficient to compare magnitudes spanning many orders of magnitude, but carries
+only the fixed mantissa precision of the underlying float type rather than the
+full arbitrary-precision mantissa.  The use of the term HDR here is purely
+numerical and is unrelated to high-dynamic-range imaging.
+
+\section{Perturbation-only Mandelbrot rendering (without linear approximation)}
+\label{sec:perturb-only}
+
+This kernel can render the Mandelbrot set using \emph{perturbation alone}, i.e.,
+without taking any LA v2 linear-approximation steps. The same CUDA entry point
+\code{mandel\_1xHDR\_float\_perturb\_lav2<IterType,T,SubType,Mode,PExtras>} is
+used; the behavior is selected at compile time via \code{LAv2Mode}. In
+particular, when \code{Mode} includes only the perturbation path (e.g.\
+\code{LAv2Mode::PO}), the kernel skips the LA stage traversal and runs only the
+perturbation loop against a stored reference orbit (\cref{sec:ref-orbit-calc}).
+
+\subsection{Rendering objective}
+\label{sec:perturb-only-goal}
+
+The goal remains standard escape-time rendering for
+\[
+z_{n+1} = z_n^2 + c,\qquad z_0=0,
+\]
+with bailout \(|z|^2 \ge 4\). For each pixel, the kernel computes the parameter
+\(c\), iterates until escape or \code{n\_iterations}, and stores the resulting
+iteration count in \code{OutputIterMatrix[idx]}.
+
+In perturbation rendering, the expensive high-precision orbit evaluation for
+each pixel is avoided by reusing a \emph{reference orbit} computed at a
+reference parameter \(c_\star\), then evolving only the \emph{delta orbit} for
+nearby pixels.
+
+\subsection{Reference orbit and delta formulation}
+\label{sec:perturb-only-deltas}
+
+Let the reference parameter be \(c_\star\), with stored reference orbit
+\(\{z_n^\star\}\) satisfying
+\[
+z_{n+1}^\star = (z_n^\star)^2 + c_\star,\qquad z_0^\star=0.
+\]
+For a pixel parameter \(c\) near \(c_\star\), define the parameter delta
+\[
+\Delta c \stackrel{\mathrm{def}}{=} c - c_\star,
+\]
+and the orbit delta
+\[
+\Delta z_n \stackrel{\mathrm{def}}{=} z_n - z_n^\star.
+\]
+Substituting \(z_n = z_n^\star + \Delta z_n\) into the Mandelbrot recurrence
+yields the \emph{exact} delta recurrence:
+\begin{align}
+\Delta z_{n+1}
+&= (z_n^\star + \Delta z_n)^2 + (c_\star + \Delta c) - \left((z_n^\star)^2 + c_\star\right) \\
+&= 2 z_n^\star\,\Delta z_n + (\Delta z_n)^2 + \Delta c.
+\end{align}
+Perturbation uses this recurrence directly: it is not a linearization. The work
+per iteration is reduced because \(z_n^\star\) is fetched from storage rather
+than recomputed in high precision.
+
+\subsection{Pixel parameter delta \texorpdfstring{$\Delta c$}{Delta c}}
+\label{sec:perturb-only-deltac}
+
+For each pixel \((X,Y)\), the kernel constructs a delta parameter relative to a
+chosen reference center (sign conventions incorporate the image mapping):
+\begin{align}
+\Delta c_x &= dx \cdot X - \code{centerX}, \\
+\Delta c_y &= -dy \cdot Y - \code{centerY},
+\end{align}
+and stores this as \code{DeltaSub0} (with scalar components \code{DeltaSub0X},
+\code{DeltaSub0Y}). The perturbation state starts at
+\[
+\Delta z_0 = 0,
+\]
+so \code{DeltaSubN} is initialized to zero.
+
+\subsection{Perturbation recurrence used in the kernel}
+\label{sec:perturb-only-update}
+
+Writing the reference sample as \(z^\star = x^\star + i y^\star\) and the delta
+as \(\Delta z = \Delta x + i \Delta y\), the delta recurrence can be expressed
+in a factored form convenient for implementation:
+\begin{equation}
+\Delta z \leftarrow \Delta z \cdot (2 z^\star + \Delta z) + \Delta c.
+\label{eq:perturb-factor}
+\end{equation}
+This identity is equivalent to
+\(\Delta z_{n+1} = 2 z_n^\star \Delta z_n + (\Delta z_n)^2 + \Delta c\), because
+\(\Delta z\cdot(2z^\star+\Delta z) = 2z^\star\Delta z + (\Delta z)^2\).
+
+The kernel implements \cref{eq:perturb-factor} in real arithmetic by forming
+the sums
+\[
+(2x^\star + \Delta x),\qquad (2y^\star + \Delta y),
+\]
+then updating:
+\begin{align}
+\Delta x' &= \Delta x\,(2x^\star + \Delta x) - \Delta y\,(2y^\star + \Delta y) + \Delta c_x, \\
+\Delta y' &= \Delta x\,(2y^\star + \Delta y) + \Delta y\,(2x^\star + \Delta x) + \Delta c_y.
+\end{align}
+Note that both right-hand sides use the \emph{pre-update} values of
+\(\Delta x\) and \(\Delta y\).  In the code, these originals are saved as
+\code{DeltaSubNXOrig} and \code{DeltaSubNYOrig} before either component is
+overwritten.  The intermediate quantities correspond to:
+\begin{verbatim}
+tempSum1 = 2*zy + DeltaSubNYOrig;  // (2 y^\star + \Delta y)
+tempSum2 = 2*zx + DeltaSubNXOrig;  // (2 x^\star + \Delta x)
+\end{verbatim}
+followed by the real/imag updates. For extended or HDR types (\cref{sec:hdr-float}), the kernel routes
+the same math through type-specialized implementations
+(\code{T::custom\_perturb2} / \code{T::custom\_perturb3}) to keep the inner loop
+tight and to enforce the type's reduction/normalization rules.
+
+\subsection{Reconstructing the absolute orbit for escape testing}
+\label{sec:perturb-only-reconstruct}
+
+Perturbation evolves \(\Delta z_n\), but escape-time rendering requires a
+bailout test on the absolute orbit \(z_n\). Each iteration reconstructs:
+\[
+z_n \approx z_n^\star + \Delta z_n,
+\]
+using the stored reference sample \(z_n^\star\) and the current delta. In the
+kernel, this appears as:
+\[
+x = x^\star + \Delta x,\qquad y = y^\star + \Delta y.
+\]
+The bailout test is then performed on
+\[
+|z|^2 = x^2 + y^2,
+\]
+with the canonical threshold \(4\). For HDR and related types, the norm and the
+comparison are performed on reduced values using specialized reduced
+comparators to keep the escape decision stable at deep zoom.
+
+\subsection{Reference index management and rebasing}
+\label{sec:perturb-only-rebase}
+
+The perturbation loop advances a reference-orbit index \code{RefIteration} in
+lockstep with \code{iter}, fetching \(z^\star\) samples from \code{Perturb}. The
+kernel includes a \emph{rebasing} mechanism that resets the delta
+representation when it becomes ill-conditioned. Conceptually, if the delta
+becomes comparable to or larger than the reconstructed orbit, the decomposition
+\(z = z^\star + \Delta z\) stops being numerically advantageous. In that case,
+the kernel folds the delta into the base by setting:
+\[
+\Delta z \leftarrow z,\qquad \text{and restart the reference index.}
+\]
+Operationally, the code compares the reconstructed orbit magnitude proxy
+against the delta magnitude proxy, and also rebasing if the reference index
+reaches the end of the stored orbit samples (to avoid out-of-range sampling).
+After rebasing, perturbation continues from the new base representation.
+
+This mechanism keeps the perturbation method usable across a wide range of
+pixels and iteration depths while preserving the core rendering objective:
+compute escape-time using a stable bailout on the reconstructed orbit.
+
+\subsection{Using \code{LAv2Mode} to select perturbation-only execution}
+\label{sec:perturb-only-mode}
+
+The kernel is structured as two compile-time phases:
+\begin{itemize}
+\item an LA v2 phase guarded by \code{Mode == Full || Mode == LAO},
+\item a perturbation phase guarded by \code{Mode == Full || Mode == PO}.
+\end{itemize}
+Therefore, perturbation-only rendering is achieved by instantiating the kernel
+with a mode that includes only the perturbation path (e.g.\ \code{LAv2Mode::PO}).
+In this configuration:
+\begin{itemize}
+\item \code{DeltaSub0} is computed from the pixel location,
+\item \code{DeltaSubN} remains initialized to \(\Delta z_0 = 0\),
+\item the kernel runs the perturbation loop, reconstructing \(z\) each step for
+      bailout tests,
+\item the final escape-time count is written to \code{OutputIterMatrix}.
+\end{itemize}
+This provides a complete Mandelbrot renderer based purely on reference-orbit
+perturbation, without relying on any linear-approximation hierarchy.
+After all pixels are computed, the antialiasing and reduction passes
+(\cref{subsec:antialiasing,subsec:reduction}) extract the final colour
+image and iteration statistics.
+
+
+\section{Approximation-Based Orbit Acceleration}
+\label{sec:approx-accel}
+
+At deep zoom, the cost of iterating high-precision types for every pixel can be
+dominant. The remaining components described below are still in service of the
+same rendering goal: compute escape-time for \(z_{n+1}=z_n^2+c\), but by reusing
+a \emph{reference orbit} and evolving \emph{deltas} for nearby pixels.
+
+\subsection{Bilinear approximation (BLA) for orbit deltas}
+\label{sec:bilinear-approx}
+
+Bilinear approximation \cite{Thompson2023BLA} precomputes composable linear
+maps that advance the perturbation delta by multiple iterations at once,
+avoiding per-step evaluation when the linearization error remains small.
+
+\subsubsection{Reference orbit and delta formulation}
+Let the reference parameter be \(c_\star\) with orbit
+(see \cref{sec:perturbation-concept} for the general perturbation framework):
+\[
+z_{n+1}^\star = (z_n^\star)^2 + c_\star,\qquad z_0^\star=0.
+\]
+For a nearby pixel parameter \(c = c_\star + \Delta c\), define:
+\[
+\Delta z_n \stackrel{\mathrm{def}}{=} z_n - z_n^\star,\qquad
+\Delta c \stackrel{\mathrm{def}}{=} c - c_\star.
+\]
+Expanding the recurrence gives:
+\begin{align}
+\Delta z_{n+1}
+&= (z_n^\star + \Delta z_n)^2 + (c_\star + \Delta c) - \left((z_n^\star)^2 + c_\star\right)\\
+&= 2 z_n^\star\,\Delta z_n + (\Delta z_n)^2 + \Delta c.
+\end{align}
+When \(\Delta z_n\) remains small, the quadratic term can be neglected,
+yielding a linearized update:
+\begin{equation}
+\Delta z_{n+1} \approx A_n\,\Delta z_n + B_n\,\Delta c,\qquad
+A_n = 2z_n^\star,\quad B_n = 1.
+\end{equation}
+BLA generalizes this into precomputed multi-step maps that \emph{jump} multiple
+iterations while maintaining an explicit validity bound.
+
+\subsubsection{What \code{BLA<T>} stores}
+A \code{BLA<T>} instance stores two complex coefficients:
+\[
+A = A_x + iA_y,\qquad B = B_x + iB_y,
+\]
+plus:
+\begin{itemize}
+  \item \code{r2}: a squared-radius validity bound used during lookup,
+  \item \code{l}: the number of Mandelbrot iterations summarized by this step.
+\end{itemize}
+These objects exist to accelerate \emph{escape-time evaluation} by evolving
+\(\Delta z\) cheaply for many pixels, then reconstructing \(z \approx z^\star +
+\Delta z\) to perform bailout checks consistent with Mandelbrot rendering.
+
+\subsubsection{Applying a step: complex multiply-add}
+The method \code{getValue} (taking arguments \code{RealDeltaSubN},
+\code{ImagDeltaSubN}, \code{RealDeltaSub0}, \code{ImagDeltaSub0})
+applies:
+\[
+\Delta z \leftarrow A\,\Delta z + B\,\Delta c,
+\]
+expanded into real arithmetic:
+\begin{align}
+\Re(\Delta z') &= A_x \Re(\Delta z) - A_y \Im(\Delta z) + B_x \Re(\Delta c) - B_y \Im(\Delta c), \\
+\Im(\Delta z') &= A_x \Im(\Delta z) + A_y \Re(\Delta z) + B_x \Im(\Delta c) + B_y \Re(\Delta c).
+\end{align}
+
+\subsubsection{Composing steps to build longer jumps}
+If a first step maps \(\Delta z \mapsto A_1\Delta z + B_1\Delta c\) and a second maps
+\(\Delta z' \mapsto A_2\Delta z' + B_2\Delta c\), the composition is:
+\[
+A_{\text{new}} = A_2 A_1,\qquad B_{\text{new}} = A_2 B_1 + B_2.
+\]
+In the code (\code{BLA.h}), these two steps are passed as the parameters
+\code{x} and \code{y} to \code{getNewA} and \code{getNewB}, corresponding to
+step~1 and step~2 respectively.
+This supports a hierarchy of step sizes (often powers of two) for quickly
+advancing delta orbits while rendering the escape-time field.
+
+\subsubsection{GPU lookup: selecting a valid aligned step}
+A GPU-side helper such as \code{GPU\_BLAS} stores the hierarchy and selects a
+step that is both \emph{aligned} with the current iteration index and
+\emph{valid} under the current bound check (typically comparing a computed
+squared-magnitude proxy \code{z2} against \code{r2}). When a step is valid, the
+renderer can advance the orbit by \code{l} iterations at a cost far below
+performing \code{l} full high-precision Mandelbrot updates.
+
+\subsection{LA v2 linear approximation with perturbation (HDR kernel)}
+\label{sec:la-v2-perturb}
+
+This kernel family combines staged linear-approximation steps \cite{Imagina} with a
+perturbation finisher loop against a stored reference orbit
+(see \cref{sec:perturb-only} for the perturbation-only variant). The rendering
+objective remains escape-time Mandelbrot evaluation; the kernel accelerates
+that evaluation by evolving deltas and periodically reconstructing \(z\) to
+perform bailout checks.
+
+\subsubsection{Parameter delta per pixel}
+Each pixel constructs a parameter offset \(\Delta c\) relative to a selected
+reference center (sign conventions may incorporate the image \(Y\)-flip):
+\begin{align}
+\Delta c_x &= dx\cdot X - \code{centerX}, \\
+\Delta c_y &= -dy\cdot Y - \code{centerY},
+\end{align}
+and packs \(\Delta c=\Delta c_x+i\Delta c_y\) into \code{DeltaSub0}.
+
+\subsubsection{Delta state and reconstruction}
+The kernel maintains \(\Delta z_n\) in \code{DeltaSubN} and reconstructs an
+absolute orbit estimate using the stored reference orbit sample
+\(z_j^\star\):
+\[
+z \approx z_j^\star + \Delta z.
+\]
+Escape-time rendering then proceeds by applying approximation steps when valid,
+or performing perturbation updates otherwise, while periodically testing the
+bailout condition on the reconstructed \(z\).
+
+\subsubsection{Perturbation update}
+Given a reference sample \(z^\star=x^\star+iy^\star\) and \(\Delta z=\Delta
+x+i\Delta y\), the perturbation form is:
+\[
+\Delta z \leftarrow \Delta z\cdot(2z^\star+\Delta z) + \Delta c.
+\]
+In real arithmetic, with temporaries corresponding to \((2x^\star+\Delta x)\)
+and \((2y^\star+\Delta y)\), this yields:
+\begin{align}
+\Delta x' &= \Delta x\,(2x^\star+\Delta x) - \Delta y\,(2y^\star+\Delta y) + \Delta c_x, \\
+\Delta y' &= \Delta x\,(2y^\star+\Delta y) + \Delta y\,(2x^\star+\Delta x) + \Delta c_y,
+\end{align}
+where both right-hand sides use the pre-update values of \(\Delta x\) and
+\(\Delta y\) (the code saves these as \code{DeltaSubNXOrig} and
+\code{DeltaSubNYOrig}).
+
+\subsubsection{Escape test}
+After updating \(\Delta z\), reconstruct \(z\approx z^\star+\Delta z\) and test:
+\[
+|z|^2 = x^2+y^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
+\]
+For HDR/expanded types, norms and comparisons are performed using reduced values
+and specialized reduced comparators, preserving meaningful bailout decisions at
+deep zoom.
+
+
+

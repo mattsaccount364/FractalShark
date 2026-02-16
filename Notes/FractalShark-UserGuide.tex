@@ -127,7 +127,7 @@ choice and triggers any necessary reconfiguration.
 
   \item \emph{Recalculate, Reuse Reference} (command): Forces an immediate
   re-render using the current settings, reusing the existing reference orbit if
-  possible.
+  possible.  See \cref{subsec:recalculation-commands} for details.
 
   \item \emph{Toggle Repainting}: Enables or disables progressive
   repainting while a render is in progress. When disabled, no recalculation
@@ -383,7 +383,7 @@ choice and triggers any necessary reconfiguration.
       \item \emph{64-Bit Iterations} (radio): Uses 64-bit iteration counters (larger range).
     \end{itemize}
 
-  \item \emph{Perturbation} (radio group submenu): Controls perturbation rendering and related reference-orbit management. \FractalShark{} supports perturbation-based rendering driven by a high-precision reference orbit. Menu options in this area control how the reference orbit is computed and reused. GPU-accelerated reference orbits are intended for extremely deep zooms and may be slower than CPU computation at modest precision levels. They are marked as experimental and should be used accordingly.
+  \item \emph{Perturbation} (radio group submenu): Controls perturbation rendering and related reference-orbit management. \FractalShark{} supports perturbation-based rendering driven by a high-precision reference orbit. Menu options in this area control how the reference orbit is computed and reused. GPU-accelerated reference orbits are intended for extremely deep zooms and may be slower than CPU computation at modest precision levels. They are marked as experimental (\cref{subsec:experimental-debug}) and should be used accordingly.
     \begin{itemize}
       \item \emph{Clear Perturbation References -- All} (command): Clears all cached perturbation references.
       \item \emph{Clear Perturbation References -- Med} (command): Clears medium-class cached references.
@@ -529,6 +529,7 @@ choice and triggers any necessary reconfiguration.
 \end{figure}
 
 \subsection{Recalculation Commands}
+\label{subsec:recalculation-commands}
 
 Commands such as \emph{Recalculate} or \emph{Recalculate, Reuse Reference} trigger
 an immediate re-render of the current view. These commands do not change any
@@ -539,15 +540,17 @@ perturbation pass, which is significantly faster when the view center has not
 changed.
 
 \subsection{Experimental and Debug Options}
+\label{subsec:experimental-debug}
 
 Some menu entries expose experimental features, debugging aids, or partially
 implemented functionality. These options may be unstable, incomplete, or
 subject to removal. \FractalShark{} is an experimental research project rather than
 a polished end-user application. Users should expect occasional crashes,
 rendering failures, or unresponsive behavior when exercising less common menu
-options.
+options.  See also \cref{subsec:practical-usage}.
 
 \subsection{Practical Usage Notes}
+\label{subsec:practical-usage}
 
 \begin{itemize}
   \item There is currently no reliable way to cancel a long-running render once
@@ -613,8 +616,9 @@ Holding \texttt{Ctrl} may abort either autozoom variant (the abort mechanism is
 not part of the key handler and is implemented elsewhere).
 
 \paragraph{Recalculation and benchmarking.}
-Several keys force a recalculation; uppercase forms often clear cached results
-first.
+Several keys force a recalculation (see also
+\cref{subsec:recalculation-commands}); uppercase forms often clear cached
+results first.
 \begin{itemize}
   \item \texttt{i}: Force recalculation and show the current position (copies details to clipboard).
   \item \texttt{I} (\texttt{Shift+i}): Clear \emph{medium-res} perturbation results, then recalc and show position.
@@ -677,7 +681,7 @@ These keys scale the maximum iteration count aggressively for quick exploration:
   \item \textbf{Right-click}: Open the popup menu at the cursor position.
   \item \textbf{Shift+F10 / Menu key}: Also opens the popup menu (Windows context-menu invocation).
   \item \textbf{Alt + left-click drag} (windowed mode): Drag the window by treating the client area as a caption.
-  \item Mouse wheel: Zoom in/out (scroll up zooms in; scroll down zooms out).
+  \item \textbf{Mouse wheel}: Zoom in/out (scroll up zooms in; scroll down zooms out).
 \end{itemize}
 
 \paragraph{Feature Finder.}
@@ -724,6 +728,7 @@ about though.
 \end{itemize}
 
 \section{Kernel List}
+\label{sec:kernel-list}
 
 This section simply lists all the CUDA kernels in \FractalShark{}.
 

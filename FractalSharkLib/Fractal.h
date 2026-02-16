@@ -157,8 +157,8 @@ public:
 
     // Drawing functions
     bool RequiresUseLocalColor() const;
-    void CalcFractal();
-    void CalcFractal(RendererIndex idx);
+    void CalcFractal(bool drawFractal);
+    void CalcFractal(RendererIndex idx, bool drawFractal);
     void DrawFractal(RendererIndex idx);
 
     template <typename IterType> void DrawGlFractal(RendererIndex idx, bool LocalColor, bool LastIter);
@@ -288,7 +288,7 @@ private:
         return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow));
     }
 
-    template <typename IterType> void CalcFractalTypedIter(RendererIndex idx);
+    template <typename IterType> void CalcFractalTypedIter(RendererIndex idx, bool drawFractal);
 
     static void DrawFractalThread(size_t index, Fractal *fractal);
 
@@ -307,7 +307,7 @@ private:
 
     template <typename IterType> void CalcAutoFractal();
 
-    template <typename IterType, class T> void CalcGpuFractal(RendererIndex idx, bool drawFractal = true);
+    template <typename IterType, class T> void CalcGpuFractal(RendererIndex idx, bool drawFractal);
 
     template <typename IterType> void CalcCpuPerturbationFractal();
 
@@ -326,13 +326,13 @@ private:
     void CalcCpuPerturbationFractalLAV2();
 
     template <typename IterType, class T, class SubType>
-    void CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal = true);
+    void CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal);
 
     template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
-    void CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal = true);
+    void CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal);
 
     template <typename IterType, class T, class SubType, class T2, class SubType2>
-    void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal = true);
+    void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal);
 
     template <PngParallelSave::Type Typ>
     int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);
@@ -404,7 +404,7 @@ private:
 
     FractalPalette m_Palette;
 
-    uint32_t InitializeGPUMemory(RendererIndex idx, bool expectedReuse = true);
+    uint32_t InitializeGPUMemory(RendererIndex idx, bool expectedReuse);
 
     void InitializeMemory();
     void SetCurItersMemory();

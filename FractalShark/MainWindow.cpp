@@ -1795,7 +1795,7 @@ MainWindow::PaintAsNecessary()
     }
 
     if (gFractal != nullptr) {
-        gFractal->CalcFractal();
+        gFractal->CalcFractal(true);
     }
 }
 

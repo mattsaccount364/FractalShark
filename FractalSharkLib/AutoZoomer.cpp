@@ -85,7 +85,7 @@ AutoZoomer::Run()
         m_Fractal.m_Ptz = startPtzCentered;
         m_Fractal.SquareCurrentView();
 
-        //CalcFractal();
+        //CalcFractal(true);
 
         // Compute total animation steps.
         // Each ZoomInPlace(-1/22) step multiplies the zoom factor by 1.1.
@@ -141,7 +141,7 @@ AutoZoomer::Run()
                 m_Fractal.SetNumIterations<IterTypeFull>(iterCounts[i]);
             }
 
-            m_Fractal.CalcFractal();
+            m_Fractal.CalcFractal(true);
 
             if (m_Fractal.m_StopCalculating)
                 break;
@@ -325,7 +325,7 @@ AutoZoomer::Run()
             PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY};
 
             m_Fractal.RecenterViewCalc(newPtz);
-            m_Fractal.CalcFractal();
+            m_Fractal.CalcFractal(true);
 
             if (numAtMax > 500)
                 break;

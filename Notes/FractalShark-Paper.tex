@@ -202,9 +202,10 @@ iteration counts to colors, apply palettes, and perform anti-aliasing
 Across these base kernels, the primary variation is the numeric representation
 used for the orbit arithmetic: from IEEE-754 \code{float}/\code{double} up
 through expansion types (float-float, double-double, quad-float, quad-double)
-and HDR-normalized formats (\cref{sec:extended-precision-types}).The shared objective remains the same: compute the
+and HDR-normalized formats (\cref{sec:extended-precision-types}). The shared objective remains the same: compute the
 escape-time for the Mandelbrot iteration as accurately and efficiently as needed
-for a desired zoom depth.
+for a desired zoom depth.  A complete listing of all CUDA kernels is given in
+\cref{sec:kernel-list}.
 
 Each kernel variant renders the same Mandelbrot escape-time field; the only
 difference is the numeric type used for mapping and orbit iteration. The
@@ -3935,11 +3936,11 @@ mapping itself is controlled by the palette system implemented in
 \paragraph{Palette types.}
 Five palettes are available, enumerated by
 \code{FractalPaletteType}:
-\texttt{Basic} (placeholder),
-\texttt{Default} (rainbow transitions R$\to$Y$\to$G$\to$C$\to$B$\to$M),
-\texttt{Patriotic} (red/blue),
-\texttt{Summer} (red/green/cyan/white), and
-\texttt{Random} (procedurally generated).
+\code{Basic} (placeholder),
+\code{Default} (rainbow transitions R$\to$Y$\to$G$\to$C$\to$B$\to$M),
+\code{Patriotic} (red/blue),
+\code{Summer} (red/green/cyan/white), and
+\code{Random} (procedurally generated).
 Palette data is pre-generated on the CPU (using smooth colour
 transitions via \code{PalTransition}) and uploaded to the GPU as an
 array of \code{Color16} values.

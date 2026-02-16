@@ -101,36 +101,49 @@ AutoZoomer::Run()
             (zoomRatio > HighPrecision{1})
                 ? static_cast<int64_t>(std::ceil(logRatio / logZoomPerStep))
                 : 1;
-        int64_t curStep = 0;
 
         // Linearly interpolate iterations from current to perturbation target
         const IterTypeFull startIters = m_Fractal.GetNumIterations<IterTypeFull>();
         const IterTypeFull targetIters = results->GetMaxIterations();
         const bool shouldInterpolateIters = startIters < targetIters;
 
-        for (;;) {
+        // Pre-compute all zoom viewports
+        std::vector<PointZoomBBConverter> zoomSteps;
+        zoomSteps.reserve(totalSteps);
+        {
+            PointZoomBBConverter stepPtz = m_Fractal.m_Ptz;
+            for (int64_t i = 0; i < totalSteps; ++i) {
+                stepPtz.ZoomInPlace(-1.0 / 22.0);
+                zoomSteps.push_back(stepPtz);
+            }
+        }
+
+        // Pre-compute iteration counts
+        std::vector<IterTypeFull> iterCounts;
+        if (shouldInterpolateIters) {
+            iterCounts.reserve(totalSteps);
+            for (int64_t i = 0; i < totalSteps; ++i) {
+                iterCounts.push_back(
+                    startIters + (targetIters - startIters) * (i + 1) / totalSteps);
+            }
+        }
+
+        for (int64_t i = 0; i < totalSteps; ++i) {
             {
                 MSG msg;
                 PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
             }
 
-            m_Fractal.m_Ptz.ZoomInPlace(-1.0 / 22.0);
+            m_Fractal.m_Ptz = zoomSteps[i];
             m_Fractal.m_ChangedWindow = true;
-            ++curStep;
 
             if (shouldInterpolateIters) {
-                const IterTypeFull interpolatedIters =
-                    startIters + (targetIters - startIters) * curStep / totalSteps;
-                m_Fractal.SetNumIterations<IterTypeFull>(interpolatedIters);
+                m_Fractal.SetNumIterations<IterTypeFull>(iterCounts[i]);
             }
 
             m_Fractal.CalcFractal();
 
             if (m_Fractal.m_StopCalculating)
-                break;
-
-            // Stop when we reach the target zoom depth
-            if (curStep >= totalSteps)
                 break;
         }
 

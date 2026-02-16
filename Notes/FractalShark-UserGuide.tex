@@ -165,6 +165,35 @@ choice and triggers any necessary reconfiguration.
   event of a CUDA initialization failure, switching to a CPU algorithm followed
   by a recalculation may restore a usable image.
 
+  Algorithm names follow a systematic convention:
+  \begin{description}
+    \item[\textrm{N}x\textrm{BB}] Precision type: \emph{N} is the number of
+    components and \emph{BB} is the component bit-width.
+    \texttt{1x32}~=~single float, \texttt{2x32}~=~double-float
+    (\cref{subsec:ep-dblflt}), \texttt{1x64}~=~double,
+    \texttt{2x64}~=~double-double, \texttt{4x32}/\texttt{4x64}~=~quad
+    types (\cref{subsec:ep-higher-prec}).
+    \item[HDR] High Dynamic Range: the type is wrapped in
+    \code{HDRFloat} (\cref{sec:hdr-float}) for extended exponent range,
+    required at deep zooms.
+    \item[RC] Reference Compression: the reference orbit is stored in
+    compressed form (\cref{sec:ref-compression-zhuoran}).
+    \item[Perturbation / Perturb] Per-pixel perturbation from a
+    reference orbit (\cref{sec:perturbation-concept}).
+    \item[BLA] Bilinear Approximation v1 (\cref{sec:bilinear-approx}).
+    \item[LAv2] Linear Approximation v2 (\cref{sec:la-v2-perturb}),
+    the primary deep-zoom rendering path.
+    \item[Scaled] An alternative perturbation formulation using a
+    rescaled delta; partially broken.
+    \item[LA only / Perturb only] Testing modes that run only one
+    stage of the pipeline in isolation.
+  \end{description}
+  For example, \emph{HDRx2x32 GPU -- RC LAv2} means: GPU kernel using
+  a 2$\times$32-bit (double-float) type wrapped in HDR, with reference
+  compression and the LAv2 full pipeline.  Individual algorithm entries
+  below are not further annotated because their names are
+  self-documenting given this convention.
+
     \begin{itemize}
       \item \emph{Help} (command): Displays help for algorithm selection and
       related concepts (e.g., what LAv2 (\cref{sec:la-v2-perturb}), BLA
@@ -209,9 +238,16 @@ choice and triggers any necessary reconfiguration.
         \begin{itemize}
           \item \emph{Multithreaded (Default)} (radio): Uses multithreaded LA processing.
           \item \emph{Single Threaded} (radio): Uses single-threaded LA processing.
-          \item \emph{Max Accuracy (Default)} (command): \textit{[TODO: unclear behavior/description]}
-          \item \emph{Max Performance (Accuracy Loss)} (command): \textit{[TODO: unclear behavior/description]}
-          \item \emph{Min Memory} (command): \textit{[TODO: unclear behavior/description]}
+          \item \emph{Max Accuracy (Default)} (command): Resets all LA threshold
+          and period-detection exponents to their conservative defaults.  Produces the
+          most accurate linear approximation at the cost of longer computation.
+          \item \emph{Max Performance (Accuracy Loss)} (command): Increases the LA
+          threshold scale exponents by~12 relative to defaults, allowing the
+          approximation to accept looser tolerances.  This speeds up LA computation
+          but may introduce visible artifacts at some locations.
+          \item \emph{Min Memory} (command): Increases the period-detection threshold
+          exponents by~3, causing the period detector to accept matches more eagerly.
+          This reduces the number of stored LA stages and lowers memory consumption.
         \end{itemize}
 
       \item \emph{CPU-Only} (submenu): CPU renderers and CPU-driven perturbation variants.
@@ -233,12 +269,16 @@ choice and triggers any necessary reconfiguration.
 
       \item \emph{Low-Zoom Depth} (submenu): GPU renderers intended for relatively modest zoom depths and lower precision requirements.
         \begin{itemize}
-          \item \emph{Iteration Precision} (radio group submenu): Selects the iteration precision mode used by low-zoom GPU paths.
+          \item \emph{Iteration Precision} (radio group submenu): Controls a
+          rendering quality multiplier for low-zoom GPU paths.  The multiplier
+          value (1, 4, 8, or~16) affects internal sampling density per pixel.
+          Higher values produce smoother results at the cost of proportionally
+          more computation.
             \begin{itemize}
-              \item \emph{4x (fast)} (radio)
-              \item \emph{3x} (radio)
-              \item \emph{2x} (radio)
-              \item \emph{1x (better quality)} (radio)
+              \item \emph{4x (fast)} (radio): Multiplier~16 (fastest, lowest quality).
+              \item \emph{3x} (radio): Multiplier~8.
+              \item \emph{2x} (radio): Multiplier~4.
+              \item \emph{1x (better quality)} (radio): Multiplier~1 (slowest, highest quality).
             \end{itemize}
 
           \item \emph{1x32 GPU} (radio)
@@ -372,7 +412,13 @@ choice and triggers any necessary reconfiguration.
       (generation~5) with periodicity checking.  Only enabled when perturbation
       support is available.
 
-      \item \emph{GPU-Accelerated (see README)} (command): Selects or enables a GPU-accelerated perturbation path. \textit{[TODO: clarify whether this is a mode toggle, a mode selection, or a one-shot action]}
+      \item \emph{GPU-Accelerated (see README)} (radio): Selects the
+      GPU-accelerated perturbation path, which offloads high-precision
+      reference-orbit computation to the GPU via the \code{HpSharkFloat}
+      pipeline.  This is a mode selection (radio button), not a one-shot
+      action.  Intended for extremely deep zooms where CPU-based reference
+      computation is prohibitively slow; may be slower than CPU at modest
+      precision levels.  See \cref{subsec:ref-orbit-gpu} for details.
 
       \item \emph{Clear and Reload Reference Orbits} (command): Clears reference-orbit state and reloads it from persistent storage.
       \item \emph{Save Reference Orbits} (command): Saves reference-orbit state to persistent storage.
@@ -380,11 +426,15 @@ choice and triggers any necessary reconfiguration.
 
   \item \emph{Palette Color Depth} (submenu): Controls palette selection, palette bit depth, and optional palette rotation. Some entries may be enabled only when palette rotation support is available.
     \begin{itemize}
-      \item \emph{Basic} (radio): \textit{[TODO: clarify palette type ``Basic'']}
-      \item \emph{Default} (radio)
-      \item \emph{Patriotic} (radio)
-      \item \emph{Summer} (radio)
-      \item \emph{Random} (radio)
+      \item \emph{Basic} (radio): Placeholder palette type; not currently
+      generated.  Selecting it produces a black image.
+      \item \emph{Default} (radio): Rainbow palette cycling through
+      red$\to$yellow$\to$green$\to$cyan$\to$blue$\to$magenta$\to$black.
+      \item \emph{Patriotic} (radio): Red-and-blue palette.
+      \item \emph{Summer} (radio): Red/green/cyan/white warm-tone palette.
+      \item \emph{Random} (radio): Procedurally generated random palette;
+      each selection produces the same random sequence (seed is fixed).
+      Use \emph{Create Random Palette} to generate a fresh one.
 
       \item \emph{Create Random Palette} (command): Generates a new random palette.
 
@@ -395,7 +445,11 @@ choice and triggers any necessary reconfiguration.
       \item \emph{16-bit} (radio)
       \item \emph{20-bit} (radio)
 
-      \item \emph{Palette Rotation} (command): \textit{[TODO: clarify whether this is a toggle or a one-shot action; enabled only when rotation is supported]}
+      \item \emph{Palette Rotation} (command): Enters an interactive rotation
+      mode.  The palette shifts by 10~units per frame while the image redraws
+      continuously.  Moving the mouse more than 5~pixels from the starting
+      position exits the mode and resets the palette to its original state.
+      Useful for quickly previewing how different colour offsets look.
     \end{itemize}
 
   \item \emph{Memory Management} (submenu): Controls memory-limit policy and whether reference orbit data is automatically saved.
@@ -416,7 +470,10 @@ choice and triggers any necessary reconfiguration.
   \item \emph{Save} (submenu): Output and benchmarking commands.
     \begin{itemize}
       \item \emph{Save Location...} (command): Saves the current location/view parameters.
-      \item \emph{Save High Res Bitmap} (command): Saves a high-resolution bitmap render. \textit{[TODO: clarify how resolution is selected]}
+      \item \emph{Save High Res Bitmap} (command): Saves a high-resolution
+      bitmap render.  The output resolution matches the current window
+      dimensions (or a scaled multiple thereof).  A file-save dialog is
+      presented to choose the output path.
       \item \emph{Save Iterations as Text} (command): Saves iteration counts in a text format.
       \item \emph{Save Bitmap Image} (command): Saves the current bitmap image.
 

@@ -4,7 +4,7 @@ This section simply has some development notes that were posted over time.
 
 \subsection{2026-2-14 News --- Version 0.51}
 
-Version \texttt{0.51} introduces the \textbf{Feature Finder} (\cref{sec:feature-finder}), a major new tool
+Version \code{0.51} introduces the \textbf{Feature Finder} (\cref{sec:feature-finder}), a major new tool
 for exploring the Mandelbrot set, along with several usability improvements.
 
 \begin{itemize}
@@ -36,7 +36,7 @@ for exploring the Mandelbrot set, along with several usability improvements.
 
 \item \textbf{Under the hood.}  Extended the derivative math in the
   linear-approximation pipeline so the feature finder works at extreme depths.
-  Improved precision tracking during zoom.  Added a \texttt{.clang-format}
+  Improved precision tracking during zoom.  Added a \code{.clang-format}
   configuration for consistent code formatting.
 \end{itemize}
 
@@ -61,9 +61,9 @@ device and falls back to CPU-only rendering, with a warning message.
   existing CPU/MPIR multithreaded approach.
 
   \item \textbf{High-precision arithmetic pipeline on GPU.} Includes a full
-  multiply/add/subtract pipeline (\cref{sec:hp-add,sec:ntt-multiply}), a Number Theoretic Transform (NTT)
-  implementation, parallel-prefix carry propagation, and HDR-style exponent
-  tracking.
+  multiply/add/subtract pipeline (\cref{sec:hp-add,sec:ntt-multiply}), a
+  Number Theoretic Transform (NTT) implementation, parallel-prefix carry
+  propagation, and HDR-style exponent tracking.
 
   \item \textbf{Interoperability and correctness.} Supports conversion between
   MPIR and the GPU high-precision float format and adds manually-run test
@@ -166,9 +166,9 @@ effectively to CUDA but that's TBD.  It will be at least several months more
 work at my current rate (a few hours on the weekends) to achieve a first-cut 
 CUDA implementation.
 
-\subsubsection{NTT-based high-precision multiply (magic prime $2^{64} - 2^{32} + 1$)}
+\subsubsection{NTT-based high-precision multiply (magic prime \texorpdfstring{$2^{64} - 2^{32} + 1$}{2\^{}64 - 2\^{}32 + 1})}
 
-AI-generated slop follows in this subsection.  It looks accurate.
+The following summary is a lightly edited draft.
 
 I'm experimenting with an NTT implementation over the 64-bit ``magic'' prime $p 
 = 2^{64} - 2^{32} + 1$. This prime is NTT-friendly: it admits $2^{32}$-th roots 
@@ -239,7 +239,7 @@ while keeping occupancy higher than the recursive Karatsuba path.
 
 \subsection{2025-07-28 News --- Version 0.46}
 
-Version \texttt{0.46} was published as a pre-release, focusing on refactoring,
+Version \code{0.46} was published as a pre-release, focusing on refactoring,
 reference compression experimentation, save-file compatibility, and test infrastructure.
 
 \begin{itemize}
@@ -334,12 +334,12 @@ this checksumming strategy to work reliably was a real pain but it's a lot
 easier to debug than just getting a result that says ``wrong answer.''
 
 For additional validation, it's initializing all dynamically-allocated CUDA 
-global memory with a \texttt{0xCDCDCDCD} pattern, so if the implementation 
+global memory with a \code{0xCDCDCDCD} pattern, so if the implementation 
 misses a byte, or overwrites something incorrectly, the checksum immediately 
 captures it and makes it clear where the problem occurred.  This is not default 
-CUDA behavior so I just put in a \texttt{memset}.  This approach also helps 
+CUDA behavior so I just put in a \code{memset}.  This approach also helps 
 ensure that I have clear definitions for how many digits are being processed at 
-each point in the calculation, since CUDA doesn't have nice \texttt{std::vector}
+each point in the calculation, since CUDA doesn't have nice \code{std::vector}
  or related containers.
 
 One annoying thing I hit is slow compilation times.  It's using templates 
@@ -449,10 +449,10 @@ performance problem.  It also keeps a sign separately.
 
 \item The application I'm using to test this has a bunch of cases to verify 
 that it's producing correct results.  It generates pseudo-random numbers with 
-many \texttt{0xFFF...} limbs, zero-limbs, and related, to force carries/
+many \code{0xFFF...} limbs, zero-limbs, and related, to force carries/
 borrows.  The test program compares all results against my own Karatsuba CPU-
 based implementation I can use as a reference, and more importantly, the MPIR 
-implementation (\texttt{mpf\_mul}) for correctness.
+implementation (\code{mpf\_mul}) for correctness.
 
 \item I've got MPIR to GPU and GPU to MPIR conversion capability, so it's easy 
 to translate formats as needed.
@@ -519,7 +519,7 @@ Happy to answer questions etc.
 
 \subsection{2024-03-31 News --- Version 0.44}
 
-Version \texttt{0.44} represents a substantial internal refactor emphasizing memory management, allocator control, and reference-orbit performance.
+Version \code{0.44} represents a substantial internal refactor emphasizing memory management, allocator control, and reference-orbit performance.
 
 \begin{itemize}
 
@@ -534,7 +534,7 @@ Version \texttt{0.44} represents a substantial internal refactor emphasizing mem
   \item Introduced a custom file-backed \textbf{bump allocator} (\cref{sec:disk_backed_growable_vectors}) with stable
   interior pointers.
 
-  \item Extended \texttt{GrowableVector} to support allocator-style usage
+  \item Extended \code{GrowableVector} to support allocator-style usage
   without increasing committed memory.
   
   \item Updated reference orbit and linear approximation save-file formats.
@@ -585,7 +585,7 @@ Version \texttt{0.44} represents a substantial internal refactor emphasizing mem
 
 \subsection{2024-02-24 News --- Version 0.42}
 
-Version \texttt{0.42} introduced major improvements to linear approximation performance, benchmarking, and configurability.
+Version \code{0.42} introduced major improvements to linear approximation performance, benchmarking, and configurability.
 
 \begin{itemize}
   \item Added \textbf{multithreaded linear approximation table generation}.
@@ -625,7 +625,7 @@ This release corrected a prior precision regression and restored high-accuracy d
 
 \subsection{2023-12 News --- Version 0.32}
 
-Version \texttt{0.32} focused on usability, correctness, and incremental architectural cleanup.
+Version \code{0.32} focused on usability, correctness, and incremental architectural cleanup.
 
 \begin{itemize}
   \item Added \textbf{progressive rendering}, allowing partial image updates
@@ -641,7 +641,7 @@ Version \texttt{0.32} focused on usability, correctness, and incremental archite
 
 \subsection{2023-12-09 News --- Version 0.31}
 
-Version \texttt{0.31} expanded the set of available rendering algorithms and
+Version \code{0.31} expanded the set of available rendering algorithms and
 substantially improved default performance at shallow and mid-depth zooms.
 
 \begin{itemize}
@@ -758,11 +758,11 @@ unhandled exceptions.
 
 \subsection{2023-09-16 News --- Version 0.2}
 
-Version \texttt{0.2} introduced a major algorithmic milestone: the integration
+Version \code{0.2} introduced a major algorithmic milestone: the integration
 of Imagina's linear approximation implementation as a CUDA kernel.
 
 \begin{itemize}
-  \item Added Imagina-based linear approximation (\texttt{LAv2}), now the
+  \item Added Imagina-based linear approximation (\code{LAv2}), now the
   default rendering algorithm.
   \item Resolved known correctness bugs in the new approximation path.
   \item Fixed a major performance regression caused by an earlier implementation oversight.
@@ -776,7 +776,7 @@ the new approach dominates once meaningful magnification is reached.
 
 \subsection{2023-07-22 News --- Version 0.11}
 
-Version \texttt{0.11} was released with a focus on performance improvements and
+Version \code{0.11} was released with a focus on performance improvements and
 improved diagnostics.
 
 \begin{itemize}

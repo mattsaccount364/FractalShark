@@ -24,16 +24,16 @@ The most common interactions are:
   \item \textbf{Right-click}: Open the popup menu at the mouse cursor.
   \item \textbf{Left-click and drag}: Zoom into a rectangular region.
         By default the zoom rectangle preserves the window aspect ratio;
-        holding \texttt{Shift} while dragging allows a free-form
+        holding \code{Shift} while dragging allows a free-form
         (non-square) selection.
   \item \textbf{Mouse wheel}: Scroll forward to zoom in at the cursor;
         scroll backward to zoom out from the center.
   \item \textbf{Keyboard shortcuts}:
     \begin{itemize}
-      \item \texttt{z}: Zoom in at the mouse cursor.
-      \item \texttt{Shift+Z}: Zoom out slightly.
-      \item \texttt{b}: Return to the previous view.
-      \item \texttt{- / =}: Decrease or increase the iteration limit.
+      \item \code{z}: Zoom in at the mouse cursor.
+      \item \code{Shift+Z}: Zoom out slightly.
+      \item \code{b}: Return to the previous view.
+      \item \code{- / =}: Decrease or increase the iteration limit.
     \end{itemize}
 \end{itemize}
 
@@ -78,27 +78,27 @@ choice and triggers any necessary reconfiguration.
       and a whole-screen scan variant.  See
       \cref{sec:feature-finder} for the underlying algorithm.
         \begin{itemize}
-          \item \emph{Direct} (\texttt{n}) (command): Runs the feature finder at
+          \item \emph{Direct} (\code{n}) (command): Runs the feature finder at
           the mouse cursor using direct iteration.  Best for shallow zooms where
           no perturbation data is needed.
-          \item \emph{DirectScan} (\texttt{N}) (command): Runs direct-iteration
+          \item \emph{DirectScan} (\code{N}) (command): Runs direct-iteration
           feature finding on a $12\times12$ grid across the entire viewport,
           locating multiple features at once.
-          \item \emph{PT} (\texttt{m}) (command): Runs the feature finder at the
+          \item \emph{PT} (\code{m}) (command): Runs the feature finder at the
           mouse cursor using perturbation theory (\cref{sec:perturbation-concept}).
           Requires a reference orbit and works at deeper zooms than Direct.
-          \item \emph{PTScan} (\texttt{M}) (command): Runs perturbation-theory
+          \item \emph{PTScan} (\code{M}) (command): Runs perturbation-theory
           feature finding on a $12\times12$ grid across the viewport.
-          \item \emph{LA} (\texttt{,}) (command): Runs the feature finder at the
+          \item \emph{LA} (\code{,}) (command): Runs the feature finder at the
           mouse cursor using linear approximation (\cref{sec:la-v2-perturb}).
           Works at extreme zoom depths where PT alone would be too slow.
-          \item \emph{LAScan} (\texttt{<}) (command): Runs linear-approximation
+          \item \emph{LAScan} (\code{<}) (command): Runs linear-approximation
           feature finding on a $12\times12$ grid across the viewport.
-          \item \emph{Zoom to Found Feature} (\texttt{.}) (command): Zooms into
+          \item \emph{Zoom to Found Feature} (\code{.}) (command): Zooms into
           the most recently found feature.  If the feature has only been located
           at low precision, a high-precision GMP refinement pass is performed
           automatically before zooming.
-          \item \emph{Clear All Found Features} (\texttt{>}) (command): Removes
+          \item \emph{Clear All Found Features} (\code{>}) (command): Removes
           all found-feature overlays (lines and circles drawn on the fractal).
         \end{itemize}
       When a feature is found, a line is drawn from the search origin to the
@@ -109,7 +109,7 @@ choice and triggers any necessary reconfiguration.
 
   \item \emph{Built-In Views} (submenu): Loads a predefined view/location used
   for demonstrations, debugging, or performance testing.  Up to 31 views are
-  defined in the source (\texttt{FractalViewPresets.cpp}).
+  defined in the source (\code{FractalViewPresets.cpp}).
     \begin{itemize}
       \item \emph{Help} (command): Pops up a message box that simply says this
       submenu contains built-in test views.
@@ -169,9 +169,9 @@ choice and triggers any necessary reconfiguration.
   \begin{description}
     \item[\textrm{N}x\textrm{BB}] Precision type: \emph{N} is the number of
     components and \emph{BB} is the component bit-width.
-    \texttt{1x32}~=~single float, \texttt{2x32}~=~double-float
-    (\cref{subsec:ep-dblflt}), \texttt{1x64}~=~double,
-    \texttt{2x64}~=~double-double, \texttt{4x32}/\texttt{4x64}~=~quad
+    \code{1x32}~=~single float, \code{2x32}~=~double-float
+    (\cref{subsec:ep-dblflt}), \code{1x64}~=~double,
+    \code{2x64}~=~double-double, \code{4x32}/\code{4x64}~=~quad
     types (\cref{subsec:ep-higher-prec}).
     \item[HDR] High Dynamic Range: the type is wrapped in
     \code{HDRFloat} (\cref{sec:hdr-float}) for extended exponent range,
@@ -383,7 +383,14 @@ choice and triggers any necessary reconfiguration.
       \item \emph{64-Bit Iterations} (radio): Uses 64-bit iteration counters (larger range).
     \end{itemize}
 
-  \item \emph{Perturbation} (radio group submenu): Controls perturbation rendering and related reference-orbit management. \FractalShark{} supports perturbation-based rendering driven by a high-precision reference orbit. Menu options in this area control how the reference orbit is computed and reused. GPU-accelerated reference orbits are intended for extremely deep zooms and may be slower than CPU computation at modest precision levels. They are marked as experimental (\cref{subsec:experimental-debug}) and should be used accordingly.
+  \item \emph{Perturbation} (radio group submenu): Controls perturbation
+    rendering and related reference-orbit management.  \FractalShark{} supports
+    perturbation-based rendering driven by a high-precision reference orbit.
+    Menu options in this area control how the reference orbit is computed and
+    reused.  GPU-accelerated reference orbits are intended for extremely deep
+    zooms and may be slower than CPU computation at modest precision levels.
+    They are marked as experimental (\cref{subsec:experimental-debug}) and
+    should be used accordingly.
     \begin{itemize}
       \item \emph{Clear Perturbation References -- All} (command): Clears all cached perturbation references.
       \item \emph{Clear Perturbation References -- Med} (command): Clears medium-class cached references.
@@ -424,12 +431,14 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Save Reference Orbits} (command): Saves reference-orbit state to persistent storage.
     \end{itemize}
 
-  \item \emph{Palette Color Depth} (submenu): Controls palette selection, palette bit depth, and optional palette rotation. Some entries may be enabled only when palette rotation support is available.
+  \item \emph{Palette Color Depth} (submenu): Controls palette selection,
+    palette bit depth, and optional palette rotation.  Some entries may be
+    enabled only when palette rotation support is available.
     \begin{itemize}
       \item \emph{Basic} (radio): Placeholder palette type; not currently
       generated.  Selecting it produces a black image.
       \item \emph{Default} (radio): Rainbow palette cycling through
-      red$\to$yellow$\to$green$\to$cyan$\to$blue$\to$magenta$\to$black.
+      red, yellow, green, cyan, blue, magenta, and black.
       \item \emph{Patriotic} (radio): Red-and-blue palette.
       \item \emph{Summer} (radio): Red/green/cyan/white warm-tone palette.
       \item \emph{Random} (radio): Procedurally generated random palette;
@@ -452,10 +461,14 @@ choice and triggers any necessary reconfiguration.
       Useful for quickly previewing how different colour offsets look.
     \end{itemize}
 
-  \item \emph{Memory Management} (submenu): Controls memory-limit policy and whether reference orbit data is automatically saved.
+  \item \emph{Memory Management} (submenu): Controls memory-limit policy and
+    whether reference orbit data is automatically saved.
     \begin{itemize}
-      \item \emph{Enable Auto-Save Orbit (delete when done, default)} (radio): Automatically saves orbit data temporarily and deletes it when no longer needed.
-      \item \emph{Enable Auto-Save Orbit (keep files)} (radio): Automatically saves orbit data and retains files on disk.
+      \item \emph{Enable Auto-Save Orbit (delete when done, default)} (radio):
+      Automatically saves orbit data temporarily and deletes it when no longer
+      needed.
+      \item \emph{Enable Auto-Save Orbit (keep files)} (radio): Automatically
+      saves orbit data and retains files on disk.
       \item \emph{Disable Auto-Save Orbit} (radio): Disables automatic orbit saving.
 
       \item \emph{Remove Memory Limits} (radio): Disables memory limiting behavior.
@@ -558,7 +571,7 @@ options.  See also \cref{subsec:practical-usage}.
   \item Some menu options may be temporarily disabled depending on the current
   render state or selected algorithm.
   \item If the application exits unexpectedly, a Windows minidump
-  (\texttt{.dmp}) file may be generated in the same directory as the
+  (\code{.dmp}) file may be generated in the same directory as the
   executable.  These dumps can be loaded in Visual Studio or WinDbg for
   post-mortem debugging.
 \end{itemize}
@@ -579,40 +592,40 @@ to the \emph{current mouse position} (converted into client coordinates at the
 time the key is pressed), which makes them feel similar to context-menu actions.
 
 Unless otherwise noted, shortcuts are \emph{case-sensitive} in the sense that
-uppercase variants are invoked by holding \texttt{Shift}.  Many actions also
+uppercase variants are invoked by holding \code{Shift}.  Many actions also
 explicitly clear cached perturbation results prior to recomputation, trading
 additional work for correctness or a ``clean'' run.
 
 \paragraph{Navigation and view control.}
 \begin{itemize}
-  \item \texttt{z}: Zoom in by a fixed amount, centered at the mouse cursor.
-  \item \texttt{Z} (\texttt{Shift+z}): Zoom out by a fixed amount, centered at the mouse cursor.
-  \item \texttt{c}: Center the view at the mouse cursor (no forced reference recomputation).
-  \item \texttt{C} (\texttt{Shift+c}): Center the view and clear all perturbation results first.
-  \item \texttt{b}: Go back to the previous view.
-  \item \texttt{r}: Square the current view (aspect normalization).
-  \item \texttt{R} (\texttt{Shift+r}): Clear all perturbation results, then square the current view.
+  \item \code{z}: Zoom in by a fixed amount, centered at the mouse cursor.
+  \item \code{Z} (\code{Shift+z}): Zoom out by a fixed amount, centered at the mouse cursor.
+  \item \code{c}: Center the view at the mouse cursor (no forced reference recomputation).
+  \item \code{C} (\code{Shift+c}): Center the view and clear all perturbation results first.
+  \item \code{b}: Go back to the previous view.
+  \item \code{r}: Square the current view (aspect normalization).
+  \item \code{R} (\code{Shift+r}): Clear all perturbation results, then square the current view.
   \item Mouse \textbf{left-click and drag}: Zoom into a dragged rectangle.
-        Holding \texttt{Shift} while dragging disables aspect-ratio enforcement.
+        Holding \code{Shift} while dragging disables aspect-ratio enforcement.
 \end{itemize}
 
 \paragraph{Autozoom (experimental / buggy).}
 \label{par:autozoom}
 
 \begin{itemize}
-  \item \texttt{a}: Autozoom using the ``Feature'' heuristic.  Forces the
-        \texttt{GpuHDRx32PerturbedLAv2} render algorithm, centres on the
+  \item \code{a}: Autozoom using the ``Feature'' heuristic.  Forces the
+        \code{GpuHDRx32PerturbedLAv2} render algorithm, centres on the
         perturbation reference point, computes a target zoom depth from the
         reference orbit's maximum radius, and zooms in incrementally while
         linearly interpolating the iteration count toward the reference orbit's
         target.
-  \item \texttt{A} (\texttt{Shift+a}): Autozoom using the ``Default''
+  \item \code{A} (\code{Shift+a}): Autozoom using the ``Default''
         heuristic.  First centres on the mouse position, then iteratively picks
         a zoom target via a weighted geometric mean of iteration counts
         (favouring high-iteration, centre-proximate pixels) and zooms by a
         factor of~3 each step.
 \end{itemize}
-Holding \texttt{Ctrl} may abort either autozoom variant (the abort mechanism is
+Holding \code{Ctrl} may abort either autozoom variant (the abort mechanism is
 not part of the key handler and is implemented elsewhere).
 
 \paragraph{Recalculation and benchmarking.}
@@ -620,15 +633,15 @@ Several keys force a recalculation (see also
 \cref{subsec:recalculation-commands}); uppercase forms often clear cached
 results first.
 \begin{itemize}
-  \item \texttt{i}: Force recalculation and show the current position (copies details to clipboard).
-  \item \texttt{I} (\texttt{Shift+i}): Clear \emph{medium-res} perturbation results, then recalc and show position.
-  \item \texttt{o}: Force recalculation and show the current position.
-  \item \texttt{O} (\texttt{Shift+o}): Clear \emph{all} perturbation results, then recalc and show position.
-  \item \texttt{p}: Force recalculation and show the current position.
-  \item \texttt{P} (\texttt{Shift+p}): Clear \emph{LA-only} perturbation results, then recalc and show position.
+  \item \code{i}: Force recalculation and show the current position (copies details to clipboard).
+  \item \code{I} (\code{Shift+i}): Clear \emph{medium-res} perturbation results, then recalc and show position.
+  \item \code{o}: Force recalculation and show the current position.
+  \item \code{O} (\code{Shift+o}): Clear \emph{all} perturbation results, then recalc and show position.
+  \item \code{p}: Force recalculation and show the current position.
+  \item \code{P} (\code{Shift+p}): Clear \emph{LA-only} perturbation results, then recalc and show position.
 \end{itemize}
-\emph{Note:} The in-application hotkey dialog groups \texttt{i/I}, \texttt{o/O},
-\texttt{p/P}, and \texttt{r/R} under ``Recalculating and Benchmarking'' with
+\emph{Note:} The in-application hotkey dialog groups \code{i/I}, \code{o/O},
+\code{p/P}, and \code{r/R} under ``Recalculating and Benchmarking'' with
 slightly different wording.  The authoritative behavior is the code path: these
 keys primarily differ by which cached perturbation result class is cleared
 before forcing recomputation.
@@ -637,14 +650,14 @@ before forcing recomputation.
 These keys adjust compression error exponents and then repaint, typically after
 clearing cached perturbation results.
 \begin{itemize}
-  \item \texttt{e}: Clear all perturbation results, reset compression error exponents to defaults,
+  \item \code{e}: Clear all perturbation results, reset compression error exponents to defaults,
         and repaint.
-  \item \texttt{q}: Clear all perturbation results; \emph{increase} intermediate compression error
+  \item \code{q}: Clear all perturbation results; \emph{increase} intermediate compression error
         exponent by a step (more error, less memory).
-  \item \texttt{Q} (\texttt{Shift+q}): Clear all perturbation results; \emph{decrease} intermediate compression
+  \item \code{Q} (\code{Shift+q}): Clear all perturbation results; \emph{decrease} intermediate compression
         error exponent by a step (less error, more memory).
-  \item \texttt{w}: Clear all perturbation results; \emph{increase} low-error compression exponent by a step.
-  \item \texttt{W} (\texttt{Shift+w}): Clear all perturbation results; \emph{decrease} low-error compression exponent by a step.
+  \item \code{w}: Clear all perturbation results; \emph{increase} low-error compression exponent by a step.
+  \item \code{W} (\code{Shift+w}): Clear all perturbation results; \emph{decrease} low-error compression exponent by a step.
 \end{itemize}
 \emph{Practical interpretation:} increasing the error exponent generally favors
 memory reduction and speed at the expense of fidelity in reconstructed reference
@@ -655,25 +668,25 @@ These keys adjust linear-approximation thresholds and period-detection threshold
 After changing parameters, \FractalShark{} clears LA-only perturbation results and
 forces a recalc.
 \begin{itemize}
-  \item \texttt{h}: Increase LA threshold scale exponents (less accurate / faster per-pixel).
-  \item \texttt{H} (\texttt{Shift+h}): Decrease LA threshold scale exponents (more accurate / slower per-pixel).
-  \item \texttt{j}: Increase LA period-detection threshold exponents.
-  \item \texttt{J} (\texttt{Shift+j}): Decrease LA period-detection threshold exponents.
+  \item \code{h}: Increase LA threshold scale exponents (less accurate / faster per-pixel).
+  \item \code{H} (\code{Shift+h}): Decrease LA threshold scale exponents (more accurate / slower per-pixel).
+  \item \code{j}: Increase LA period-detection threshold exponents.
+  \item \code{J} (\code{Shift+j}): Decrease LA period-detection threshold exponents.
 \end{itemize}
 
 \paragraph{Palettes.}
 \begin{itemize}
-  \item \texttt{d}: Advance to the next palette lookup-table depth and redraw.
-  \item \texttt{D} (\texttt{Shift+d}): Create a new random palette, select it, and redraw.
-  \item \texttt{t}: Increase auxiliary palette depth (cycling auxiliary palette behavior) and redraw.
-  \item \texttt{T} (\texttt{Shift+t}): Decrease auxiliary palette depth and redraw.
+  \item \code{d}: Advance to the next palette lookup-table depth and redraw.
+  \item \code{D} (\code{Shift+d}): Create a new random palette, select it, and redraw.
+  \item \code{t}: Increase auxiliary palette depth (cycling auxiliary palette behavior) and redraw.
+  \item \code{T} (\code{Shift+t}): Decrease auxiliary palette depth and redraw.
 \end{itemize}
 
 \paragraph{Iteration count.}
 These keys scale the maximum iteration count aggressively for quick exploration:
 \begin{itemize}
-  \item \texttt{=} : Multiply max iterations by 24.
-  \item \texttt{-} : Multiply max iterations by $2/3$.
+  \item \code{=} : Multiply max iterations by 24.
+  \item \code{-} : Multiply max iterations by $2/3$.
 \end{itemize}
 
 \paragraph{Window manipulation and menu invocation.}
@@ -690,14 +703,14 @@ position, or scan the entire viewport.  See \cref{sec:feature-finder}
 for the algorithm details and \cref{sec:ui-popup-menu} for the
 corresponding menu items under \emph{Navigate $\to$ Feature Finder}.
 \begin{itemize}
-  \item \texttt{n}: Find the nearest feature using direct iteration (single point at cursor).
-  \item \texttt{N} (\texttt{Shift+n}): Scan the viewport on a $12\times12$ grid using direct iteration.
-  \item \texttt{m}: Find the nearest feature using perturbation theory (single point at cursor).
-  \item \texttt{M} (\texttt{Shift+m}): Scan the viewport on a $12\times12$ grid using perturbation theory.
-  \item \texttt{,}: Find the nearest feature using linear approximation (single point at cursor).
-  \item \texttt{<} (\texttt{Shift+,}): Scan the viewport on a $12\times12$ grid using linear approximation.
-  \item \texttt{.}: Zoom to the most recently found feature (refines to high precision first if needed).
-  \item \texttt{>} (\texttt{Shift+.}): Clear all found-feature overlays.
+  \item \code{n}: Find the nearest feature using direct iteration (single point at cursor).
+  \item \code{N} (\code{Shift+n}): Scan the viewport on a $12\times12$ grid using direct iteration.
+  \item \code{m}: Find the nearest feature using perturbation theory (single point at cursor).
+  \item \code{M} (\code{Shift+m}): Scan the viewport on a $12\times12$ grid using perturbation theory.
+  \item \code{,}: Find the nearest feature using linear approximation (single point at cursor).
+  \item \code{<} (\code{Shift+,}): Scan the viewport on a $12\times12$ grid using linear approximation.
+  \item \code{.}: Zoom to the most recently found feature (refines to high precision first if needed).
+  \item \code{>} (\code{Shift+.}): Clear all found-feature overlays.
 \end{itemize}
 
 \paragraph{Responsiveness note.}
@@ -717,10 +730,10 @@ but is very fast, since it does no perturbation. The images it produces are not
 precise, and often leave out the fine detail; however, it's fun to play with 
 when zooming in on a specific point.
 
-\item The most interesting reference orbit calculation is at \texttt{
-AddPerturbationReferencePointMT3}. It includes a ``bad'' calculation which is 
-used for the ``scaled'' CUDA kernels. The multithreaded approach handily beats 
-the single-threaded implementation on my CPU in all scenarios.
+\item The most interesting reference orbit calculation is at
+\code{AddPerturbation\-ReferencePointMT3}. It includes a ``bad'' calculation
+which is used for the ``scaled'' CUDA kernels. The multithreaded approach
+handily beats the single-threaded implementation on my CPU in all scenarios.
 
 \item There are CPU renderers, but they were mostly to learn/debug more easily, 
 and aren't optimized heavily. They're much easier to understand and reason 
@@ -736,51 +749,51 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
 
 \item \textbf{Mandelbrot base kernels} (\cref{sec:mandel-base-kernels})
   \begin{itemize}
-    \item \texttt{mandel\_1x\_float}
-    \item \texttt{mandel\_1x\_double}
-    \item \texttt{mandel\_2x\_float}
-    \item \texttt{mandel\_2x\_double}
-    \item \texttt{mandel\_4x\_float}
-    \item \texttt{mandel\_4x\_double}
-    \item \texttt{mandel\_hdr\_float}
+    \item \code{mandel\_1x\_float}
+    \item \code{mandel\_1x\_double}
+    \item \code{mandel\_2x\_float}
+    \item \code{mandel\_2x\_double}
+    \item \code{mandel\_4x\_float}
+    \item \code{mandel\_4x\_double}
+    \item \code{mandel\_hdr\_float}
   \end{itemize}
 
 \item \textbf{Mandelbrot perturbation kernels}
   \begin{itemize}
-    \item \texttt{mandel\_1x\_double\_perturb\_bla}
-    \item \texttt{mandel\_1xHDR\_float\_perturb\_bla} (\cref{sec:bilinear-approx})
-    \item \texttt{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
+    \item \code{mandel\_1x\_double\_perturb\_bla}
+    \item \code{mandel\_1xHDR\_float\_perturb\_bla} (\cref{sec:bilinear-approx})
+    \item \code{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
   \end{itemize}
 
 \item \textbf{High-precision reference kernels} (\cref{subsec:ref-orbit-gpu})
   \begin{itemize}
-    \item \texttt{HpSharkReferenceGpuKernel}
-    \item \texttt{HpSharkReferenceGpuLoop}
+    \item \code{HpSharkReferenceGpuKernel}
+    \item \code{HpSharkReferenceGpuLoop}
   \end{itemize}
 
 \item \textbf{Utility kernels}
   \begin{itemize}
-    \item \texttt{antialiasing\_kernel}
-    \item \texttt{max\_reduce}
-    \item \texttt{max\_kernel}
+    \item \code{antialiasing\_kernel}
+    \item \code{max\_reduce}
+    \item \code{max\_kernel}
   \end{itemize}
 
 \item \textbf{Addition kernels} (\cref{sec:hp-add})
   \begin{itemize}
-    \item \texttt{AddKernel}
-    \item \texttt{AddKernelTestLoop}
+    \item \code{AddKernel}
+    \item \code{AddKernelTestLoop}
   \end{itemize}
 
 \item \textbf{Multiplication (NTT) kernels} (\cref{sec:ntt-multiply})
   \begin{itemize}
-    \item \texttt{MultiplyKernelNTT}
-    \item \texttt{MultiplyKernelNTTTestLoop}
+    \item \code{MultiplyKernelNTT}
+    \item \code{MultiplyKernelNTTTestLoop}
   \end{itemize}
 
 \item \textbf{Disabled kernels}
   \begin{itemize}
-    \item \texttt{mandel\_2x\_float\_perturb\_setup}
-    \item \texttt{mandel\_2x\_float\_perturb}
+    \item \code{mandel\_2x\_float\_perturb\_setup}
+    \item \code{mandel\_2x\_float\_perturb}
   \end{itemize}
 
 \end{itemize}
@@ -789,15 +802,15 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
 
 \begin{itemize}
 
-\item All the per-pixel CUDA kernels are in \texttt{gpu\_render.cu}. The two
-most interesting are probably \texttt{mandel\_1xHDR\_float\_perturb\_bla} and
-\texttt {mandel\_1xHDR\_float\_perturb\_lav2}, which are the ones I've spent the
+\item All the per-pixel CUDA kernels are in \code{gpu\_render.cu}. The two
+most interesting are probably \code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_bla} and
+\code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_lav2}, which are the ones I've spent the
 most time on lately. For better performance at low zoom levels, you could look
-at \texttt{mandel\_1x\_float\_perturb}, which leaves out linear approximation
-and just does straight perturbation up to $\sim 10^{30}$, which corresponds with
-the 32-bit float exponent range.
+at \code{mandel\_1x\_float\_perturb}, which leaves out linear approximation
+and just does straight perturbation up to $\sim 10^{30}$, which corresponds
+with the 32-bit float exponent range.
 
-\item The \texttt{mandel\_1x\_float} (\cref{sec:mandel-1x-float}) is the classic 32-bit float Mandelbrot and 
+\item The \code{mandel\_1x\_float} (\cref{sec:mandel-1x-float}) is the classic 32-bit float Mandelbrot and 
 is screaming fast on a GPU. This one is optimized with fused multiply-add for 
 fun even though it's kind of useless because you can barely zoom in before you 
 get pixellation.

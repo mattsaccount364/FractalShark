@@ -9,6 +9,9 @@
 \usepackage{amssymb}
 \usepackage{graphicx}
 
+% --- Tables ---
+\usepackage{tabularx}
+
 % --- Layout ---
 \usepackage{geometry}
 \geometry{a4paper, margin=1in}
@@ -62,7 +65,7 @@ admits more than one notation the table lists the canonical form first
 and notes the section-local variant.
 
 \begin{center}
-\begin{tabular}{lll}
+\begin{tabularx}{\textwidth}{llX}
 \hline
 \textbf{Symbol} & \textbf{Meaning} & \textbf{Notes} \\
 \hline
@@ -80,7 +83,7 @@ $n$          & iteration index               & \\
 $p$          & period                        & \\
 $N$          & limb count (multi-precision)  & \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{center}
 
 \clearpage

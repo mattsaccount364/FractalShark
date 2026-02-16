@@ -601,7 +601,7 @@ explicitly managed integer exponent (see below for the full description).  When 
 perturbation pipeline needs lightweight control-flow decisions---periodicity
 detection, escape testing, magnitude comparisons---it converts the full
 arbitrary-precision state into an HDR value via a lossy reduction step
-(\texttt{ToHDRFloat}).  The resulting HDR value preserves a wide exponent range,
+(\code{ToHDRFloat}).  The resulting HDR value preserves a wide exponent range,
 sufficient to compare magnitudes spanning many orders of magnitude, but carries
 only the fixed mantissa precision of the underlying float type rather than the
 full arbitrary-precision mantissa.  The use of the term HDR here is purely
@@ -812,6 +812,7 @@ For perturbation rendering with linear approximation, the delta values need
 both extended precision \emph{and} wide dynamic range.  This is achieved by
 combining \code{CudaDblflt} with the HDR wrapper
 (\cref{sec:hdr-float}):
+\begingroup\footnotesize
 \[
   \code{HDRFloat<CudaDblflt<dblflt>>} \;=\;
     \underbrace{\text{2$\times$32-bit mantissa}}_{\sim\text{48 bits}}
@@ -819,6 +820,7 @@ combining \code{CudaDblflt} with the HDR wrapper
     \underbrace{\text{int32 exponent}}_{\text{wide dynamic range}}
     \;=\; \text{12 bytes total.}
 \]
+\endgroup
 The \code{Reduce()} method on \code{HDRFloat} normalizes the two float
 components relative to the shared exponent by extracting and aligning their
 IEEE~754 exponent fields.  A \code{DoubleTo2x32Converter} utility handles
@@ -868,7 +870,7 @@ The complete precision hierarchy available for per-pixel computation in
 \FractalShark{}, from lowest to highest:
 
 \begin{center}
-\begin{tabular}{llrl}
+\begin{tabularx}{\textwidth}{llrX}
 \hline
 \textbf{Type} & \textbf{Components} & \textbf{Effective bits} & \textbf{Practical role} \\
 \hline
@@ -880,7 +882,7 @@ The complete precision hierarchy available for per-pixel computation in
 \code{GQD::gqd\_real}       & 4$\times$fp64 & ${\sim}212$ & academic \\
 MPIR / \code{HpSharkFloat}  & $N$ limbs     & arbitrary   & reference orbit only \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{center}
 
 Any of these types can be combined with the \code{HDRFloat} exponent wrapper
@@ -892,7 +894,7 @@ rendering uses either \code{float}, \code{double}, or
 \section{Reference Orbit Calculation}
 \label{sec:ref-orbit-calc}
 
-This section describes how \texttt{RefOrbitCalc} constructs (and optionally 
+This section describes how \code{RefOrbitCalc} constructs (and optionally 
 reuses) a high-precision \emph{reference orbit} for perturbation rendering (\cref{sec:perturbation-concept}) of 
 the quadratic map
 
@@ -907,49 +909,53 @@ footprint against recomputation.
 \subsection{High-level pipeline and dispatch}
 \label{subsec:ref-orbit-pipeline}
 
-A reference orbit is stored in a \texttt{PerturbationResults<IterType,T,PExtras>}
+A reference orbit is stored in a \code{PerturbationResults<IterType,T,PExtras>}
 instance, where:
 
 \begin{itemize}
-  \item \texttt{IterType} is the iteration index type (\texttt{uint32\_t} or \texttt{uint64\_t}).
-  \item \texttt{T} is the low-precision numeric type used for downstream perturbation math (e.g.\ \texttt{float},
-        \texttt{double}, \texttt{HDRFloat<...>}).
-  \item \texttt{PExtras} selects the storage format for per-iteration orbit data:
-        uncompressed (\texttt{Disable}), a lightweight compressor (\texttt{SimpleCompression}),
-        or additional diagnostic bookkeeping (e.g.\ \texttt{Bad}).
+  \item \code{IterType} is the iteration index type (\code{uint32\_t} or \code{uint64\_t}).
+  \item \code{T} is the low-precision numeric type used for downstream perturbation math (e.g.\ \code{float},
+        \code{double}, \code{HDRFloat<...>}).
+  \item \code{PExtras} selects the storage format for per-iteration orbit data:
+        uncompressed (\code{Disable}), a lightweight compressor (\code{SimpleCompression}),
+        or additional diagnostic bookkeeping (e.g.\ \code{Bad}).
 \end{itemize}
 
-Orbit construction is initiated through \texttt{AddPerturbationReferencePoint()}, which:
+Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, which:
 
 \begin{enumerate}
-  \item Picks an initial guess \((c_x,c_y)\) (center of the current view if unset).
-  \item Chooses an algorithm (\texttt{ST}, \texttt{MT}, reuse-based hybrids, or \texttt{GPU}) based on
-        \texttt{m\_PerturbationAlg} and zoom factor heuristics.
-  \item Allocates a new \texttt{PerturbationResults} slot, initializes metadata and bounds, and runs the chosen
-        orbit kernel until escape, periodicity detection, or the maximum iteration count is reached.
+  \item Picks an initial guess \((c_x,c_y)\) (center of the current view
+        if unset).
+  \item Chooses an algorithm (\code{ST}, \code{MT}, reuse-based hybrids,
+        or \code{GPU}) based on \code{m\_PerturbationAlg} and zoom factor
+        heuristics.
+  \item Allocates a new \code{PerturbationResults} slot, initializes
+        metadata and bounds, and runs the chosen orbit kernel until escape,
+        periodicity detection, or the maximum iteration count is reached.
 \end{enumerate}
 
-To control memory pressure, \texttt{OptimizeMemory()} monitors process commit 
+To control memory pressure, \code{OptimizeMemory()} monitors process commit 
 usage and opportunistically drops cached orbits that are not of the currently 
 demanded variant type when the working set exceeds a configurable threshold.
 
 \subsection{Single-threaded authoritative orbit}
 \label{subsec:ref-orbit-st}
 
-The single-threaded path (\texttt{AddPerturbationReferencePointST}) computes 
-the authoritative orbit directly using MPIR/GMP \texttt{mpf\_t} for the 
-recurrence, while simultaneously emitting a low-precision shadow copy \((\hat{x}
-_n,\hat{y}_n)\in T^2\) for downstream work (compression, bailout checks, 
-periodicity tests).
+The single-threaded path
+(\code{AddPerturbationReferencePointST})
+computes the authoritative orbit directly using MPIR/GMP \code{mpf\_t} for
+the recurrence, while simultaneously emitting a low-precision shadow copy
+\((\hat{x}_n,\hat{y}_n)\in T^2\) for downstream work (compression, bailout
+checks, periodicity tests).
 
 \paragraph{State and initialization.}
 
 Given a selected reference parameter \(c = c_x + i c_y\), the implementation:
 
 \begin{itemize}
-  \item Initializes \texttt{mpf\_t} temporaries for \(x,y,x^2\), and scratch products.
+  \item Initializes \code{mpf\_t} temporaries for \(x,y,x^2\), and scratch products.
   \item Sets the initial iterate \((x_0,y_0) = (c_x,c_y)\) (this code uses the common convention \(z_0=c\)).
-  \item Computes low-precision cast values \(\hat{c}_x,\hat{c}_y \in T\) either via \texttt{mpf\_get\_d} for
+  \item Computes low-precision cast values \(\hat{c}_x,\hat{c}_y \in T\) either via \code{mpf\_get\_d} for
         native float/double, or via a mantissa/exponent extraction for extended formats.
 \end{itemize}
 
@@ -961,7 +967,7 @@ Writing \(z_n = x_n + i y_n\), one iteration evaluates
 \end{align}
 The implementation uses:
 \begin{itemize}
-  \item \texttt{mpf\_mul} and \texttt{mpf\_sub}/\texttt{mpf\_add} for the high-precision update.
+  \item \code{mpf\_mul} and \code{mpf\_sub}/\code{mpf\_add} for the high-precision update.
   \item A low-precision snapshot \((\hat{x}_n,\hat{y}_n)\) acquired once per iteration for storage/compression,
         periodicity heuristics, and bailout checks.
 \end{itemize}
@@ -974,7 +980,7 @@ The bailout threshold is evaluated in low precision using
   \|\hat{z}_n + \hat{c}\|^2 = (\hat{x}_n + \hat{c}_x)^2 + (\hat{y}_n + \hat{c}_y)^2 > 256,
 \end{equation}
 
-which matches the code's use of \texttt{TwoFiftySix} and avoids a high-precision
+which matches the code's use of \code{TwoFiftySix} and avoids a high-precision
 norm each step.  Here \(\hat{x}_n\) and \(\hat{y}_n\) are the low-precision
 shadows of the orbit state captured \emph{before} the high-precision recurrence
 update (i.e.\ they represent the current \(z_n\), not the just-computed
@@ -995,7 +1001,7 @@ Several modes enable periodicity detection. The implementation tracks the comple
 \end{equation}
 Mathematically \(d_0 = \partial z_0/\partial c = 0\), since \(z_0=0\).
 Because the implementation begins its loop at \(z_1=c\) (folding in the
-first iteration), the code variable \texttt{dzdcX} is initialized to~$1$,
+first iteration), the code variable \code{dzdcX} is initialized to~$1$,
 which corresponds to \(d_1=1\) in the recurrence above.
 
 with \(d_n = d_{x,n} + i d_{y,n}\). Expanding into real and imaginary parts yields:
@@ -1018,7 +1024,7 @@ and define a detection threshold
   n_3 = 2\,R_{\max}\,r_0,
 \end{equation}
 
-where \(R_{\max}\) is the maximum perturbation radius stored in \texttt{results}
+where \(R_{\max}\) is the maximum perturbation radius stored in \code{results}
 . If \(n_2 < n_3\), the orbit is marked as \emph{maybe periodic} and the
 reference loop terminates early (unless periodicity detection is disabled).
 Otherwise, \((d_{x,n},d_{y,n})\) is advanced using the update above.
@@ -1092,18 +1098,18 @@ empirically.
 Two orthogonal storage decisions are made while iterating:
 
 \begin{enumerate}
-  \item \textbf{Orbit storage} for perturbation use (\texttt{PExtras}):
+  \item \textbf{Orbit storage} for perturbation use (\code{PExtras}):
   \begin{itemize}
-    \item \texttt{Disable}: store every \((\hat{x}_n,\hat{y}_n)\) uncompressed.
-    \item \texttt{SimpleCompression}: store a compressed subset of iterations using an error exponent
-          determined by \texttt{Fractal::CompressionError}.
-    \item \texttt{Bad}: store orbit values plus underflow/diagnostic flags.
+    \item \code{Disable}: store every \((\hat{x}_n,\hat{y}_n)\) uncompressed.
+    \item \code{SimpleCompression}: store a compressed subset of iterations using an error exponent
+          determined by \code{Fractal::CompressionError}.
+    \item \code{Bad}: store orbit values plus underflow/diagnostic flags.
   \end{itemize}
-  \item \textbf{Reuse storage} for intermediate-precision regeneration (\texttt{ReuseMode}):
+  \item \textbf{Reuse storage} for intermediate-precision regeneration (\code{ReuseMode}):
   \begin{itemize}
-    \item \texttt{SaveForReuse1/2}: store uncompressed \texttt{mpf\_t} reuse entries.
-    \item \texttt{SaveForReuse3}: store an intermediate-compressed reuse stream.
-    \item \texttt{SaveForReuse4}: store a maximally-compressed intermediate reuse stream.
+    \item \code{SaveForReuse1/2}: store uncompressed \code{mpf\_t} reuse entries.
+    \item \code{SaveForReuse3}: store an intermediate-compressed reuse stream.
+    \item \code{SaveForReuse4}: store a maximally-compressed intermediate reuse stream.
   \end{itemize}
 \end{enumerate}
 
@@ -1208,7 +1214,8 @@ Only when accumulated drift causes the perturbation to exceed the fixed accuracy
 orbit need to be computed.
 
 In the single-thread execution path (beginning at
-\texttt{AddPerturbationReferencePointST}), this construction is performed sequentially using the cached authoritative
+\code{AddPerturbation\-ReferencePointST}), this construction is performed
+sequentially using the cached authoritative
 orbit samples $\{z^{(0)}_n\}$ as coefficients.
 No approximation beyond finite-precision rounding is introduced; the intermediate orbit is mathematically equivalent
 to directly iterating $f_{c_1}$, subject only to the chosen precision bound.
@@ -1250,17 +1257,17 @@ potentially impacting performance.
 
 \subsubsection{SaveForReuse Modes}
 
-Both \texttt{SaveForReuse1} and \texttt{SaveForReuse2} correspond to the mathematical framework described above.
+Both \code{SaveForReuse1} and \code{SaveForReuse2} correspond to the mathematical framework described above.
 They differ only in execution strategy.
 
 \paragraph{SaveForReuse1.}
-In \texttt{SaveForReuse1}, the authoritative orbit samples $\{z^{(0)}_n\}$ are stored after initial computation and reused
+In \code{SaveForReuse1}, the authoritative orbit samples $\{z^{(0)}_n\}$ are stored after initial computation and reused
 whenever intermediate reference orbits are constructed.
 This avoids recomputation of~\eqref{eq:authoritative_orbit} and ensures that all perturbative steps are driven by the same
 authoritative data.
 
 \paragraph{SaveForReuse2.}
-\texttt{SaveForReuse2} is a multithreaded optimization of the same procedure.
+\code{SaveForReuse2} is a multithreaded optimization of the same procedure.
 It performs the identical perturbation recurrences
 \eqref{eq:intermediate_perturbation} and \eqref{eq:pixel_perturbation}, using the same authoritative orbit samples and
 producing the same intermediate and per-pixel results.
@@ -1269,12 +1276,12 @@ The distinction lies solely in how data is staged, reused, and synchronized acro
 \paragraph{Equivalence.}
 From a mathematical standpoint,
 \[
-\texttt{SaveForReuse1} \;\equiv\; \texttt{SaveForReuse2}.
+\code{SaveForReuse1} \;\equiv\; \code{SaveForReuse2}.
 \]
 Both modes define the same authoritative orbit, the same intermediate reference
 orbits, and the same per-pixel perturbation orbits.
 Any differences are strictly implementation-level optimizations and do not affect numerical results.
-\texttt{SaveForReuse3} and \texttt{SaveForReuse4} are addressed in a subsequent section.
+\code{SaveForReuse3} and \code{SaveForReuse4} are addressed in a subsequent section.
 
 \subsection{Reference Compression}
 \label{sec:ref-compression-zhuoran}
@@ -1613,7 +1620,7 @@ that requires reference compression to complete.
 \section{Multi-threaded Reference Orbit Acceleration}
 \label{subsec:ref-orbit-mt}
 
-The \texttt{MT3} reference-orbit path accelerates the high-cost MPIR arithmetic
+The \code{MT3} reference-orbit path accelerates the high-cost MPIR arithmetic
 of the single-threaded authoritative orbit (\cref{subsec:ref-orbit-st}) by
 decomposing each iteration across multiple CPU threads.  The design targets
 independent, high-latency big-integer operations that naturally overlap in the
@@ -1639,15 +1646,15 @@ reference orbit computation.
 
 \paragraph{Lock-free handoff with prefetch.}
 Inter-thread communication is implemented using a minimal lock-free mailbox
-(\texttt{ThreadPtrs<T>}) consisting of atomic \texttt{In} and \texttt{Out}
+(\code{ThreadPtrs<T>}) consisting of atomic \code{In} and \code{Out}
 pointers.  The protocol proceeds as follows:
 \begin{enumerate}
-  \item The producer publishes a work pointer by storing it into \texttt{In}.
+  \item The producer publishes a work pointer by storing it into \code{In}.
   \item The worker spins until it atomically claims the pointer, prefetches the
         referenced MPIR operands, executes the required arithmetic, and then
-        publishes the same pointer via \texttt{Out}.
+        publishes the same pointer via \code{Out}.
   \item The producer spins until it retrieves the completed pointer from
-        \texttt{Out}, after which the computed results are consumed.
+        \code{Out}, after which the computed results are consumed.
 \end{enumerate}
 To reduce cache-miss latency when operating on large MPIR limb arrays, worker
 threads explicitly prefetch both MPIR metadata and limb data using a fixed
@@ -1661,7 +1668,7 @@ The relative effectiveness of single-threaded and multi-threaded reference-orbit
 evaluation depends strongly on the active precision, which in practice is
 closely correlated with zoom level and MPIR limb count.  Consequently, the
 implementation supports both execution modes and selects between them
-automatically when \texttt{PerturbationAlg::Auto} is enabled.
+automatically when \code{PerturbationAlg::Auto} is enabled.
 
 At lower precision (small limb counts), overall performance is often dominated
 by fixed overheads such as synchronization, atomic mailbox operations, thread
@@ -1680,21 +1687,21 @@ memory latency.  Beyond a hardware- and workload-dependent threshold,
 multi-threaded reference-orbit computation consistently outperforms the
 single-threaded path, with speedups increasing as precision grows.
 
-To exploit this behavior without requiring manual tuning, the \texttt{Auto}
+To exploit this behavior without requiring manual tuning, the \code{Auto}
 selection mode chooses the perturbation algorithm based on the current zoom
 factor as a proxy for required precision.  At moderate zoom levels, it favors
 single-threaded periodicity detection to avoid unnecessary parallel overhead.
-At higher zoom levels, it transitions to the \texttt{MTPeriodicity3} path, where
+At higher zoom levels, it transitions to the \code{MTPeriodicity3} path, where
 parallel MPIR arithmetic becomes advantageous.  For extreme zoom, a hybrid
 multi-threaded perturbation strategy (e.g.,
-\texttt{MTPeriodicity3PerturbMTHighMTMed3}) is selected to maintain throughput at
+\code{MTPeriodicity3PerturbMTHighMTMed3}) is selected to maintain throughput at
 very high precision, acknowledging that some configurations remain
 experimental.
 
 Overall, single-threaded and multi-threaded reference-orbit evaluation are
 treated as complementary strategies rather than a strict hierarchy: fewer limbs
 favor single-thread execution, while increasing precision increasingly favors
-multi-threaded decomposition, with \texttt{Auto} providing an adaptive runtime
+multi-threaded decomposition, with \code{Auto} providing an adaptive runtime
 selection mechanism.
 
 
@@ -1762,22 +1769,24 @@ while the CPU orchestrates invocation, result collection, and termination.
 The design follows a strict separation of concerns. The CPU is responsible for
 selecting a supported precision, initializing GPU resources, invoking the kernel
 in bounded iteration batches, and accumulating emitted iteration records into
-\texttt{PerturbationResults}. The GPU owns all numerical state of the orbit,
+\code{PerturbationResults}. The GPU owns all numerical state of the orbit,
 executes the high-precision arithmetic pipeline, detects escape and periodicity,
 and reports authoritative outcomes to the host.
 
 \paragraph{Persistent backend state.}
 Reference orbit computation is centered around a persistent \emph{combo} object
-(\texttt{HpSharkReferenceResults<SharkFloatParams>}) that encapsulates all state
+(\code{HpSharkReferenceResults<SharkFloatParams>}) that encapsulates all state
 required to advance the orbit at a fixed precision. The combo contains:
 \begin{itemize}
   \item high-precision orbit-related values (e.g.\ radius threshold and derivative terms),
   \item persistent arithmetic pipeline state for multiplication
-        (\texttt{Multiply}, implementing NTT-based convolution) and addition
-        (\texttt{Add}, implementing parallel-prefix carry propagation),
-  \item a fixed-size output mailbox (\texttt{OutputIters} and
-        \texttt{OutputIterCount}) with \texttt{MaxOutputIters}=1024,
-  \item termination status (\texttt{PeriodicityStatus}),
+        (\code{Multiply}, implementing NTT-based convolution) and
+        addition (\code{Add}, implementing parallel-prefix carry
+        propagation),
+  \item a fixed-size output mailbox
+        (\code{OutputIters}, \code{OutputIterCount},
+        \code{MaxOutputIters}\,=\,1024),
+  \item termination status (\code{PeriodicityStatus}),
   \item and host-only launch and resource plumbing, including a device pointer to
         the GPU-resident state, temporary device buffers, an associated CUDA
         stream, and cached kernel argument arrays.
@@ -1786,20 +1795,20 @@ The combo is initialized once, reused across multiple kernel invocations, and
 destroyed only after the reference orbit computation completes.
 
 \paragraph{Batch-oriented kernel invocation.}
-Each call to \texttt{InvokeHpSharkReferenceKernel} launches a GPU kernel that
+Each call to \code{InvokeHpSharkReferenceKernel} launches a GPU kernel that
 advances the Mandelbrot recurrence by up to a specified number of iterations
-(\texttt{itersToRun}). Within a single invocation, the kernel performs multiple
+(\code{itersToRun}). Within a single invocation, the kernel performs multiple
 full iterations internally, combining high-precision squaring and addition on
 the GPU. As iterations progress, the kernel emits up to
-\texttt{MaxOutputIters} iteration records into the combo’s output mailbox and
-updates \texttt{OutputIterCount} accordingly.
+\code{MaxOutputIters} iteration records into the combo’s output mailbox and
+updates \code{OutputIterCount} accordingly.
 
 This batching strategy bounds kernel runtime, enables incremental streaming of
 orbit data back to the host, and allows long orbits to be computed without
 reinitializing GPU state.
 
 \paragraph{Termination and authority.}
-After each invocation, the host inspects the combo’s \texttt{PeriodicityStatus}
+After each invocation, the host inspects the combo’s \code{PeriodicityStatus}
 and stops early if the GPU reports escape, detected periodicity, or an error
 condition, or if the total requested iteration budget has been reached. In this
 model, the GPU backend is authoritative: it owns the orbit state, performs all
@@ -1809,8 +1818,8 @@ correction.
 
 \paragraph{Precision specialization.}
 The entire lifecycle of a reference orbit computation is specialized by
-\texttt{SharkFloatParams}. Precision is selected once at startup via
-\texttt{DispatchByPrecision} and remains fixed for the lifetime of the combo
+\code{SharkFloatParams}. Precision is selected once at startup via
+\code{DispatchByPrecision} and remains fixed for the lifetime of the combo
 object. This ensures that kernel code, shared-memory usage, and arithmetic
 pipelines are fully specialized for the chosen precision, at the cost of
 supporting a finite, enumerated set of precisions.
@@ -2173,7 +2182,7 @@ convolution modulo $x^N-1$. To compute the \emph{linear} convolution needed for
 multiplication, we pad both inputs with zeros to length $N \ge 2n$ so that the
 cyclic convolution coincides with the linear convolution.
 
-\subsection{Why a Special Prime Helps: \texttt{MagicPrime}}
+\subsection{Why a Special Prime Helps: \code{MagicPrime}}
 
 A practical NTT requires:
 
@@ -2190,7 +2199,7 @@ efficient 64-bit integer operations).
 
 \end{enumerate}
 
-The prime used here, denoted \texttt{MagicPrime}, is chosen specifically to
+The prime used here, denoted \code{MagicPrime}, is chosen specifically to
 satisfy these constraints. The critical mathematical implication of using a
 prime modulus is that $\mathbb{Z}_p$ is a field, so every nonzero element has a
 multiplicative inverse and the NTT is well-defined and invertible when $\omega$
@@ -2220,7 +2229,7 @@ p = 2^{64} - 2^{32} + 1,
 \]
 
 often called a ``Goldilocks'' prime. (In the codebase this role is played by
-\texttt{MagicPrime}.) Two consequences make this form attractive:
+\code{MagicPrime}.) Two consequences make this form attractive:
 
 \paragraph{(1) Large power-of-two factor in $p-1$.}
 
@@ -2281,7 +2290,7 @@ normalized via carry propagation in base $B$.
 
 \medskip
 
-This section establishes the mathematical foundation: \texttt{MagicPrime} is
+This section establishes the mathematical foundation: \code{MagicPrime} is
 selected so that large power-of-two NTTs exist (because $2^m \mid p-1$) and so
 that modular arithmetic is efficient on 64-bit GPU hardware. Subsequent sections
 will describe how this is specialized for high-precision floating-point
@@ -2296,7 +2305,7 @@ likely costing it in performance.  This section describes how the NTT-based
 multiplication is realized in practice, following the structure of
 \FractalShark{}'s CUDA implementation. The overall goal is to compute the exact
 convolution of two large significand arrays using modular arithmetic modulo
-\texttt{MagicPrime}, and then to recover a canonical high-precision result via
+\code{MagicPrime}, and then to recover a canonical high-precision result via
 normalization and carry propagation.
 
 \subsubsection{Plan Construction and Parameter Selection}
@@ -2330,7 +2339,7 @@ The plan builder enforces
 \]
 
 for a small safety margin $\delta$, ensuring that all exact convolution values
-lie strictly below \texttt{MagicPrime}. This guarantees that the modular
+lie strictly below \code{MagicPrime}. This guarantees that the modular
 convolution coincides with the true integer convolution.
 
 \subsubsection{Roots of Unity and Montgomery Domain}
@@ -2381,7 +2390,7 @@ butterfly stages:
 (u, v) \;\mapsto\; (u + \omega v,\; u - \omega v),
 \]
 
-with all operations performed modulo \texttt{MagicPrime}. A grid-stride loop is
+with all operations performed modulo \code{MagicPrime}. A grid-stride loop is
 used so that threads collectively cover all $N$ coefficients, independent of the
 exact grid dimensions.
 
@@ -2409,7 +2418,7 @@ three frequency-domain products are computed per transform index:
 \widehat{XX}_k,\quad \widehat{YY}_k,\quad \widehat{XY}_k,
 \]
 
-each via a Montgomery modular multiplication modulo \texttt{MagicPrime}.
+each via a Montgomery modular multiplication modulo \code{MagicPrime}.
 
 \subsubsection{Inverse NTT and Untwisting}
 
@@ -2438,7 +2447,7 @@ described in earlier sections.
 
 Together, these steps implement \FractalShark{}'s NTT-based multiplication
 pipeline: from high-precision significand limbs, through modular convolution in
-$\mathbb{Z}_{\texttt{MagicPrime}}$, and back to an exact, normalized
+$\mathbb{Z}_{\code{MagicPrime}}$, and back to an exact, normalized
 high-precision product suitable for subsequent arithmetic in reference orbit
 computation.
 
@@ -2450,7 +2459,7 @@ synchronization. Each major phase of the pipeline— packing and twisting of
 inputs, forward NTT, pointwise multiplication, inverse NTT, and untwisting with
 normalization—requires that all threads observe a consistent global state. This
 is enforced using explicit grid-level barriers (e.g.,
-\texttt{cooperative\_groups::grid\_group::sync()}), whose latency grows with
+\code{cooperative\_groups::grid\_group::sync()}), whose latency grows with
 grid size and is largely independent of the amount of arithmetic performed
 between barriers.
 
@@ -2488,32 +2497,32 @@ rather than by synchronization overhead.
 The key design is a persistent \emph{combo} object returned by initialization:
 
 \begin{enumerate}
-  \item \texttt{InitHpSharkReferenceKernel}: allocates device/host state for the reference orbit and sets
+  \item \code{InitHpSharkReferenceKernel}: allocates device/host state for the reference orbit and sets
         \((c_x,c_y)\), max radius, and launch configuration.
-  \item \texttt{InvokeHpSharkReferenceKernel}: advances the orbit in bounded batches of at most
-        \(\texttt{MaxOutputIters}\), storing results in \texttt{OutputIters}.
-  \item \texttt{ShutdownHpSharkReferenceKernel}: frees persistent resources.
+  \item \code{InvokeHpSharkReferenceKernel}: advances the orbit in bounded batches of at most
+        \(\code{MaxOutputIters}\), storing results in \code{OutputIters}.
+  \item \code{ShutdownHpSharkReferenceKernel}: frees persistent resources.
 \end{enumerate}
 
-Because the precision must be fixed at compile time for the \texttt{
-SharkFloatParams} specialization, \texttt{DispatchByPrecision} rounds the
+Because the precision must be fixed at compile time for the \code{
+SharkFloatParams} specialization, \code{DispatchByPrecision} rounds the
 requested precision to a power of two and chooses from a fixed set (\(\{256,512,
-\dots,524288\}\) bits). Each invocation appends the emitted \texttt{OutputIters}
-records into the CPU-side \texttt{PerturbationResults}. Periodicity and escape
-are reported through \texttt{PeriodicityStatus} and handled similarly to the CPU
+\dots,524288\}\) bits). Each invocation appends the emitted \code{OutputIters}
+records into the CPU-side \code{PerturbationResults}. Periodicity and escape
+are reported through \code{PeriodicityStatus} and handled similarly to the CPU
 paths.
 
-\subsection{High-Precision Floating-Point Representation in \FractalShark{}}
+\subsection{High-Precision Floating-Point Representation}
 \label{subsec:hpfloat-model}
 
 The GPU reference orbit backend operates on a custom high-precision
-floating-point format implemented by the \texttt{HpSharkFloat} family of types.
+floating-point format implemented by the \code{HpSharkFloat} family of types.
 This format is intentionally \emph{not} IEEE~754--compatible. Instead, it is
 designed to support exact arithmetic on large significands, deterministic
 behavior across CPU and GPU backends, and efficient execution on massively
 parallel architectures.
 
-Conceptually, an \texttt{HpSharkFloat} value represents a real number of the
+Conceptually, an \code{HpSharkFloat} value represents a real number of the
 form
 \[
 x = s \cdot M \cdot 2^E,
@@ -2526,7 +2535,7 @@ during arithmetic operations.
 \paragraph{Significand representation.}
 The significand $M$ is stored as a fixed-size array of 32-bit limbs. The number
 of limbs is determined at compile time by the
-\texttt{SharkFloatParams} specialization and remains constant throughout the
+\code{SharkFloatParams} specialization and remains constant throughout the
 lifetime of the computation. As a result, precision is explicit and static:
 all arithmetic kernels operate on limb arrays of identical size, and no dynamic
 reallocation or precision growth occurs during iteration.
@@ -2570,7 +2579,7 @@ ranges are structurally controlled and exceptional conditions (such as escape)
 are handled at the algorithmic level.
 
 Because the precision is fixed, arithmetic is exact, and no data-dependent
-rounding occurs, the \texttt{HpSharkFloat} model provides deterministic,
+rounding occurs, the \code{HpSharkFloat} model provides deterministic,
 bitwise-reproducible results across runs and across CPU and GPU backends,
 subject only to correct synchronization.
 
@@ -2612,12 +2621,12 @@ we employ 64-bit rolling checksums (e.g., CRC-64 or Fletcher-64) because they ar
 
 Each \emph{debug checkpoint} records a tuple
 \begin{equation}
-  S_k = \bigl(\texttt{Purpose}_k,\, \texttt{Depth}_k,\, \texttt{CallIndex}_k,\,
-  \texttt{Conv}_k,\, H(A_k)\bigr),
+  S_k = \bigl(\code{Purpose}_k,\, \code{Depth}_k,\, \code{CallIndex}_k,\,
+  \code{Conv}_k,\, H(A_k)\bigr),
 \end{equation}
-where $\texttt{Purpose}$ identifies which logical stage or buffer is being
-summarized (e.g., \texttt{ADigits}, \texttt{BDigits}, \texttt{FinalAdd1},
-\texttt{Result\_offsetXX}, etc.), and the remaining metadata disambiguates
+where $\code{Purpose}$ identifies which logical stage or buffer is being
+summarized (e.g., \code{ADigits}, \code{BDigits}, \code{FinalAdd1},
+\code{Result\_offsetXX}, etc.), and the remaining metadata disambiguates
 dynamic execution contexts such as recursion depth or multiple invocations of
 the same primitive within a larger operation. This metadata ensures that host
 and device checkpoints can be matched without ambiguity even when the same
@@ -2662,7 +2671,7 @@ to the host's sequential traversal, modulo the checksum's arithmetic rules.
 On the host, we compute the same checksum $H(A_k)$ over the corresponding
 reference buffers produced by the MPIR/GMP-based implementation (or a trusted
 CPU implementation). Because both sides share the identical stage labeling
-(\texttt{Purpose}, \texttt{Depth}, \texttt{CallIndex}, \texttt{Conv}), we can
+(\code{Purpose}, \code{Depth}, \code{CallIndex}, \code{Conv}), we can
 compare checkpoint sequences as keyed records:
 \begin{equation}
   \Delta_k \;=\;
@@ -2683,7 +2692,7 @@ summaries (e.g., per-buffer or per-substep).
 The checksum mechanism supports a fast iterative workflow:
 \begin{enumerate}
   \item \textbf{Instrument}: enable checksum capture for selected stages and
-  record the resulting $(\texttt{key}, H)$ tuples from GPU execution.
+  record the resulting $(\code{key}, H)$ tuples from GPU execution.
   \item \textbf{Replay on host}: run the corresponding host reference path over
   the same inputs, generating the same keyed tuples.
   \item \textbf{Diff}: locate the earliest key for which
@@ -2735,13 +2744,13 @@ At iteration \(n\), the high-precision state \((x_n, y_n)\) is available in the
 multiplication output registers/structures. The periodicity checker converts
 these values into a reduced high-dynamic-range scalar format,
 \(\mathrm{HDR}(\cdot)\), via a lossy but monotone extraction
-(\texttt{ToHDRFloat}) and stores the resulting pair in a per-iteration trace
+(\code{ToHDRFloat}) and stores the resulting pair in a per-iteration trace
 buffer:
 
 \begin{equation}
   \widehat{x}_n \leftarrow \mathrm{HDR}(x_n), \quad
   \widehat{y}_n \leftarrow \mathrm{HDR}(y_n), \quad
-  \texttt{OutputIters}[n] \leftarrow (\widehat{x}_n, \widehat{y}_n).
+  \code{OutputIters}[n] \leftarrow (\widehat{x}_n, \widehat{y}_n).
 \end{equation}
 
 This trace is used both for downstream diagnostics and to provide a compact,
@@ -2772,8 +2781,8 @@ Writing \(z_n = x_n + i y_n\) and introducing the shorthand
   d_{y,n+1} &= 2\,(x_n\, d_{y,n} + y_n\, d_{x,n}). \label{eq:dzdc-imag}
 \end{align}
 
-In our implementation, the derivative accumulators \texttt{dzdcX} and
-\texttt{dzdcY} are stored in the same high-precision float type used by the
+In our implementation, the derivative accumulators \code{dzdcX} and
+\code{dzdcY} are stored in the same high-precision float type used by the
 orbit state, but the periodicity decision itself is performed on reduced HDR
 magnitudes to minimize overhead:
 
@@ -2783,7 +2792,7 @@ magnitudes to minimize overhead:
 \end{equation}
 
 where hats denote reduced HDR representations after a normalization/reduction
-step (\texttt{HdrReduce}) to ensure stable comparisons.
+step (\code{HdrReduce}) to ensure stable comparisons.
 
 The checker uses a sufficient condition of the form
 
@@ -2792,7 +2801,7 @@ The checker uses a sufficient condition of the form
   \label{eq:periodicity-ineq}
 \end{equation}
 
-where \(R\) is a problem-dependent bound (stored as \texttt{RadiusY} in the
+where \(R\) is a problem-dependent bound (stored as \code{RadiusY} in the
 reference structure). Intuitively, \eqref{eq:periodicity-ineq} compares the
 current orbit magnitude against a scaled sensitivity radius implied by the
 derivative growth: when the orbit state becomes small relative to the local
@@ -2806,8 +2815,8 @@ Concretely, the device computes
   n_3 \leftarrow 2\,R\,r_0,
 \end{equation}
 
-and terminates when \(n_2 < n_3\), setting \texttt{PeriodicityStatus =
-PeriodFound} and recording \texttt{OutputIterCount = n+1}.
+and terminates when \(n_2 < n_3\), setting \code{PeriodicityStatus =
+PeriodFound} and recording \code{OutputIterCount = n+1}.
 
 \paragraph{Escape test.}
 We additionally apply a conventional escape-radius test in the same reduced
@@ -2824,8 +2833,8 @@ the checker evaluates
   \|\widehat{z}_n + \widehat{c}\|_2^2
   = (\widehat{x}_n + \widehat{c}_x)^2 + (\widehat{y}_n + \widehat{c}_y)^2,
 \end{equation}
-and declares \texttt{Escaped} when this value exceeds a fixed threshold
-(\texttt{256.0} in the current implementation). As with the periodicity
+and declares \code{Escaped} when this value exceeds a fixed threshold
+(\code{256.0} in the current implementation). As with the periodicity
 criterion, all comparisons are performed on reduced positive HDR values to avoid
 high-precision control-flow costs on the device.
 
@@ -2833,14 +2842,14 @@ high-precision control-flow costs on the device.
 Periodicity checking is invoked once per iteration at the top of the reference
 step, before launching the high-precision multiplication and addition kernels
 that compute \(z_{n+1}\). In the current design, a single distinguished thread
-(\texttt{block 0, thread 0}) executes the checker and updates the shared
-termination flag stored in the global \texttt{reference} structure. The kernel
+(\code{block 0, thread 0}) executes the checker and updates the shared
+termination flag stored in the global \code{reference} structure. The kernel
 then executes a cooperative-grid barrier:
 \begin{equation}
-  \texttt{grid.sync()},
+  \code{grid.sync()},
 \end{equation}
-ensuring that (i) all blocks observe a consistent \texttt{PeriodicityStatus} and
-(ii) any updates to \texttt{dzdcX}, \texttt{dzdcY}, and the trace buffer are
+ensuring that (i) all blocks observe a consistent \code{PeriodicityStatus} and
+(ii) any updates to \code{dzdcX}, \code{dzdcY}, and the trace buffer are
 visible before subsequent work proceeds. If termination is requested, the
 iteration loop exits immediately; otherwise, the kernel proceeds into the
 multiply-add pipeline that produces the next high-precision state.
@@ -2848,7 +2857,7 @@ multiply-add pipeline that produces the next high-precision state.
 This organization isolates the control-intensive termination logic from the
 throughput-oriented NTT multiplication and carry-propagating addition stages,
 while maintaining deterministic, grid-wide early-exit behavior. The only global
-synchronization introduced by periodicity checking is the single \texttt{grid.sync()}
+synchronization introduced by periodicity checking is the single \code{grid.sync()}
 already required by the cooperative multi-block arithmetic pipeline, making the
 incremental overhead of periodicity checking negligible relative to the cost of
 high-precision multiplication at large precisions.
@@ -2930,8 +2939,8 @@ than recomputed in high precision.
 For each pixel \((X,Y)\), the kernel constructs a delta parameter relative to a
 chosen reference center (sign conventions incorporate the image mapping):
 \begin{align}
-\Delta c_x &= dx \cdot X - \texttt{centerX}, \\
-\Delta c_y &= -dy \cdot Y - \texttt{centerY},
+\Delta c_x &= dx \cdot X - \code{centerX}, \\
+\Delta c_y &= -dy \cdot Y - \code{centerY},
 \end{align}
 and stores this as \code{DeltaSub0} (with scalar components \code{DeltaSub0X},
 \code{DeltaSub0Y}). The perturbation state starts at
@@ -3097,7 +3106,8 @@ These objects exist to accelerate \emph{escape-time evaluation} by evolving
 \Delta z\) to perform bailout checks consistent with Mandelbrot rendering.
 
 \subsubsection{Applying a step: complex multiply-add}
-The method \code{getValue(RealDeltaSubN, ImagDeltaSubN, RealDeltaSub0, ImagDeltaSub0)}
+The method \code{getValue} (taking arguments \code{RealDeltaSubN},
+\code{ImagDeltaSubN}, \code{RealDeltaSub0}, \code{ImagDeltaSub0})
 applies:
 \[
 \Delta z \leftarrow A\,\Delta z + B\,\Delta c,
@@ -3142,8 +3152,8 @@ perform bailout checks.
 Each pixel constructs a parameter offset \(\Delta c\) relative to a selected
 reference center (sign conventions may incorporate the image \(Y\)-flip):
 \begin{align}
-\Delta c_x &= dx\cdot X - \texttt{centerX}, \\
-\Delta c_y &= -dy\cdot Y - \texttt{centerY},
+\Delta c_x &= dx\cdot X - \code{centerX}, \\
+\Delta c_y &= -dy\cdot Y - \code{centerY},
 \end{align}
 and packs \(\Delta c=\Delta c_x+i\Delta c_y\) into \code{DeltaSub0}.
 
@@ -3214,7 +3224,7 @@ interactive debugging, and reuse of authoritative reference orbits across progra
 invocations.
 
 To address these requirements, we implement a
-\texttt{GrowableVector<EltT>} abstraction that combines (i) a fixed,
+\code{GrowableVector<EltT>} abstraction that combines (i) a fixed,
 virtually-contiguous address range reserved up front and (ii) incremental growth
 within that range by committing additional pages on demand. Growth is performed
 in place, so the base address never changes and no copying is required as
@@ -3222,11 +3232,11 @@ capacity increases. The abstraction supports two complementary backing modes:
 
 \begin{enumerate}
   \item \textbf{Anonymous (pagefile-backed) growth.} A large virtual region is
-  reserved once via \texttt{VirtualAlloc(..., MEM\_RESERVE, ...)} and pages are
+  reserved once via \code{VirtualAlloc(..., MEM\_RESERVE, ...)} and pages are
   subsequently committed within that region using
-  \texttt{VirtualAlloc(base, bytes, MEM\_COMMIT, ...)}. Because each commit
+  \code{VirtualAlloc(base, bytes, MEM\_COMMIT, ...)}. Because each commit
   targets the original base address, successful growth preserves
-  \texttt{m\_Data} and does not require relocation.
+  \code{m\_Data} and does not require relocation.
 
   \item \textbf{File-backed (disk-backed) growth.} The reserved address range is
   backed by a disk file and mapped into the process using a section object. In
@@ -3244,12 +3254,12 @@ At initialization time, the vector establishes an address anchor:
 \begin{itemize}
   \item In anonymous mode, the anchor is created by reserving a large region
   (typically sized to a fraction of physical memory, or an explicit override)
-  and recording the returned base pointer \texttt{m\_Data}.
+  and recording the returned base pointer \code{m\_Data}.
   \item In file-backed mode, the anchor is created by mapping a section at a
   base address and thereafter requiring all remaps/extends to preserve that base.
 \end{itemize}
 
-Growth proceeds by increasing the logical capacity \texttt{m\_CapacityInElts}
+Growth proceeds by increasing the logical capacity \code{m\_CapacityInElts}
 without moving data. In anonymous mode, this corresponds to committing
 additional pages within the reserved region. In file-backed mode, it corresponds
 to extending the underlying section and allowing the view to cover the expanded
@@ -3262,8 +3272,8 @@ base address and treating any base-address change as a hard error.
 
 When a filename is provided (or a temporary filename is generated), the vector
 opens or creates a backing file and constructs a section object over it. We use
-native NT section APIs (e.g., \texttt{NtCreateSection},
-\texttt{NtMapViewOfSection}, and \texttt{NtExtendSection}) to obtain a
+native NT section APIs (e.g., \code{NtCreateSection},
+\code{NtMapViewOfSection}, and \code{NtExtendSection}) to obtain a
 reserve-style mapping suitable for later extension.
 
 Conceptually, the pipeline is:
@@ -3275,7 +3285,7 @@ Conceptually, the pipeline is:
   protection. For growable vectors, the section is configured so that the view
   can be reserved and later extended.
   \item \textbf{Map a view to establish the base address.} The first mapping
-  produces the stable anchor pointer \texttt{m\_Data}. Subsequent growth must
+  produces the stable anchor pointer \code{m\_Data}. Subsequent growth must
   preserve this base.
   \item \textbf{Extend on demand.} When capacity increases, the section is
   extended to the new byte size. Because the base mapping remains fixed, all
@@ -3286,7 +3296,7 @@ This approach has two key practical benefits:
 \begin{itemize}
   \item \textbf{Stable pointers with large logical capacity.} The program may
   reserve and grow to very large capacities (hundreds of GiB or more) without
-  the pointer invalidation inherent in \texttt{realloc}-style strategies.
+  the pointer invalidation inherent in \code{realloc}-style strategies.
   \item \textbf{Reduced peak commit pressure.} The OS can keep most of the
   logical buffer non-resident until touched; pages are faulted in as accessed
   and can be evicted back to disk under memory pressure. This is particularly
@@ -3299,15 +3309,15 @@ This approach has two key practical benefits:
 
 The vector supports multiple policies that control whether data is persisted:
 \begin{itemize}
-  \item \textbf{Persistent save (\texttt{EnableWithSave}).} Upon \texttt{Trim()},
+  \item \textbf{Persistent save (\code{EnableWithSave}).} Upon \code{Trim()},
   the backing file is truncated to match the used size, ensuring the on-disk
   representation reflects the logical content exactly.
-  \item \textbf{Temporary file-backed (\texttt{EnableWithoutSave}).} Upon
-  \texttt{Trim()}, the view can be remapped to match the used size while
+  \item \textbf{Temporary file-backed (\code{EnableWithoutSave}).} Upon
+  \code{Trim()}, the view can be remapped to match the used size while
   \emph{reusing the same base address}. This reduces the mapped span without
   sacrificing pointer stability, and the file is automatically deleted when the
   handle closes.
-  \item \textbf{Anonymous (\texttt{DontSave}).} Trimming is a logical operation
+  \item \textbf{Anonymous (\code{DontSave}).} Trimming is a logical operation
   (used size changes) while the reserved region remains as the stable anchor.
 \end{itemize}
 
@@ -3315,7 +3325,7 @@ The vector supports multiple policies that control whether data is persisted:
 \label{sec:heap_uses_growable_vector}
 
 The custom heap allocator builds its arena on top of the same
-\texttt{GrowableVector<uint8\_t>} abstraction. The heap is initialized by
+\code{GrowableVector<uint8\_t>} abstraction. The heap is initialized by
 creating a file-backed growable vector for the heap arena and committing an
 initial chunk of memory. When the allocator needs more space, it expands the
 arena by growing the underlying vector in-place and then updating the heap's
@@ -3488,11 +3498,12 @@ and the candidate is marked as refined.
 
 \paragraph{Parallel orbit evaluation.}
 The high-precision forward evaluation
-(\code{EvaluateCriticalOrbitAndDerivs}) must perform several large
+(\code{Evaluate\-Critical\-Orbit\-And\-Derivs}) must perform several large
 \code{mpf\_mul} operations per iteration.  To overlap these, the code spawns
 seven spin-based worker threads (four for derivative-precision products,
 three for coordinate-precision products).  Workers spin on per-slot
-\code{std::atomic<uint64\_t>} generation counters; the main thread
+\code{std::atomic\allowbreak<uint64\_t>} generation counters;
+the main thread
 publishes operand pointers, bumps the generation, and spin-waits on a
 matching done counter.  Each slot is cache-line-aligned (\code{alignas(64)})
 to avoid false sharing.

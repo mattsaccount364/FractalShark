@@ -346,7 +346,9 @@ a \emph{reference orbit} and evolving \emph{deltas} for nearby pixels.
 \subsection{Bilinear approximation (BLA) for orbit deltas}
 \label{sec:bilinear-approx}
 
-Bilinear approximation \cite{Thompson2023BLA} precomputes composable linear
+Bilinear approximation, originated by Heiland-Allen in Kalles
+Fraktaler~2+ \cite{KallesFraktaler} and described in detail by
+Thompson \cite{Thompson2023BLA}, precomputes composable linear
 maps that advance the perturbation delta by multiple iterations at once,
 avoiding per-step evaluation when the linearization error remains small.
 
@@ -426,7 +428,8 @@ performing \code{l} full high-precision Mandelbrot updates.
 \subsection{LA v2 linear approximation with perturbation (HDR kernel)}
 \label{sec:la-v2-perturb}
 
-This kernel family combines staged linear-approximation steps \cite{Imagina} with a
+This kernel family combines staged linear-approximation steps introduced by
+Zhuoran in the Imagina viewer \cite{Imagina} with a
 perturbation finisher loop against a stored reference orbit
 (see \cref{sec:perturb-only} for the perturbation-only variant). The rendering
 objective remains escape-time Mandelbrot evaluation; the kernel accelerates
@@ -478,5 +481,483 @@ For HDR/expanded types, norms and comparisons are performed using reduced values
 and specialized reduced comparators, preserving meaningful bailout decisions at
 deep zoom.
 
+\subsubsection{LA coefficient model}
+\label{sec:la-coeff-model}
+
+The LA v2 algorithm approximates the perturbation delta after multiple
+iterations as a linear function of two quantities: a nonlinearly transformed
+input perturbation and the parameter offset.  Concretely, each LA entry stores
+a reference orbit value \(z_\mathrm{ref}\) together with two complex
+coefficients \code{ZCoeff} and \code{CCoeff}.  Application proceeds in two
+stages:
+\begin{enumerate}
+  \item \textbf{Prepare} (nonlinear).  Given the current perturbation
+        \(\Delta z\), compute
+        \begin{equation}
+        \tilde{\Delta z} = \Delta z\cdot(2\,z_\mathrm{ref} + \Delta z).
+        \label{eq:la-prepare}
+        \end{equation}
+        This retains the quadratic term at the entry's reference point and
+        corresponds to one exact perturbation step (without the
+        \(+\Delta c\) contribution).  The Prepare step also checks the
+        validity condition
+        \(\lVert\tilde{\Delta z}\rVert_\infty < \code{LAThreshold}\);
+        if this fails the LA entry is unusable and the kernel falls back
+        to a finer stage or to direct perturbation.
+
+  \item \textbf{Evaluate} (linear).  The output perturbation after the
+        iterations covered by this LA entry is
+        \begin{equation}
+        \Delta z_\mathrm{out}
+          = \code{ZCoeff}\cdot\tilde{\Delta z}
+          + \code{CCoeff}\cdot\Delta c.
+        \label{eq:la-evaluate}
+        \end{equation}
+\end{enumerate}
+In the code, \code{LAInfoDeep::Prepare} implements~\cref{eq:la-prepare}
+and \code{LAInfoDeep::Evaluate} implements~\cref{eq:la-evaluate}.
+
+The initial conditions, set in the \code{LAInfoDeep} constructor, are
+\[
+\code{ZCoeff}_0 = 1,\qquad \code{CCoeff}_0 = 1.
+\]
+The initial \(\code{CCoeff}_0 = 1\) accounts for the single \(+\Delta c\)
+contribution implicit in combining the Prepare step with one perturbation
+iteration: \(\Delta z_\mathrm{next} = \tilde{\Delta z} + \Delta c\), so
+\(\Delta z_\mathrm{out} = 1\cdot\tilde{\Delta z} + 1\cdot\Delta c\).
+
+\subsubsection{Step-forward recurrence}
+\label{sec:la-step-forward}
+
+Each call to \code{LAInfoDeep::Step} absorbs one additional reference-orbit
+iteration into an LA entry by appending a linearized perturbation step.
+Starting from the exact perturbation recurrence (dropping the quadratic
+\((\Delta z)^2\) term for subsequent iterations after Prepare):
+\[
+\Delta z_{n+1} \approx 2\,z_n^\star\,\Delta z_n + \Delta c,
+\]
+and substituting the LA model
+\(\Delta z_n \approx \code{ZCoeff}_k\cdot\tilde{\Delta z}
+                    + \code{CCoeff}_k\cdot\Delta c\), we obtain
+\begin{align}
+\Delta z_{n+1}
+  &\approx 2\,z_n^\star\bigl(
+      \code{ZCoeff}_k\cdot\tilde{\Delta z}
+    + \code{CCoeff}_k\cdot\Delta c
+    \bigr) + \Delta c \\
+  &= \bigl(2\,z_n^\star\cdot\code{ZCoeff}_k\bigr)\,\tilde{\Delta z}
+   + \bigl(2\,z_n^\star\cdot\code{CCoeff}_k + 1\bigr)\,\Delta c.
+\end{align}
+Reading off the coefficients gives the step-forward recurrence:
+\begin{equation}
+\code{ZCoeff}_{k+1} = 2\,z_n^\star\cdot\code{ZCoeff}_k,\qquad
+\code{CCoeff}_{k+1} = 2\,z_n^\star\cdot\code{CCoeff}_k + 1.
+\label{eq:la-step}
+\end{equation}
+
+\paragraph{Connection to the orbit derivative.}
+The \code{CCoeff} recurrence
+\(C_{k+1} = 2\,z_n^\star\,C_k + 1\) with \(C_0 = 1\)
+is identical in form to the orbit derivative recurrence
+\(d_{n+1} = 2\,z_n\,d_n + 1\) with \(d_0 = 0\)
+(\cref{subsec:ref-orbit-periodicity}), offset by one step.
+This is not a coincidence: \code{CCoeff} accumulates the total
+sensitivity \(\partial z_n / \partial c\) of the orbit position to
+changes in the parameter, which is exactly the orbit derivative.  The
+\(+1\) in each step reflects the direct \(+\Delta c\) contribution from
+the Mandelbrot recurrence \(z_{n+1} = z_n^2 + c\).
+
+\subsubsection{Validity threshold}
+\label{sec:la-threshold}
+
+The linearization underlying the step-forward recurrence introduces error
+whenever the neglected quadratic term \((\Delta z)^2\) is non-negligible.
+To control this, each LA entry tracks a validity threshold
+\code{LAThreshold} that bounds how large the prepared perturbation
+\(\tilde{\Delta z}\) may be.  Each step tightens the bound:
+\begin{equation}
+\code{LAThreshold}_{k+1}
+  = \min\!\bigl(
+      \code{LAThreshold}_k,\;
+      \lVert z^\star\rVert_\infty \,/\,
+      \lVert\code{ZCoeff}_k\rVert_\infty
+      \;\cdot\;\code{LAThresholdScale}
+    \bigr),
+\label{eq:la-threshold}
+\end{equation}
+where \(\lVert\cdot\rVert_\infty\) is the Chebyshev (max-component) norm,
+\(\lVert a + bi \rVert_\infty = \max(|a|, |b|)\), and
+\code{LAThresholdScale} is a tunable parameter (default \(2^{-24}\)).
+The \(\min\) ensures the threshold can only decrease as more iterations are
+absorbed, reflecting the accumulation of linearization error.
+
+\paragraph{Parameter-offset threshold (\code{LAThresholdC}).}
+A companion threshold \code{LAThresholdC} controls validity with respect
+to the parameter offset \(\Delta c\).  It follows the same monotonically
+decreasing pattern but is normalized by \(\lVert\code{CCoeff}\rVert\):
+\begin{equation}
+\code{LAThresholdC}_{k+1}
+  = \min\!\bigl(
+      \code{LAThresholdC}_k,\;
+      \lVert z^\star\rVert_\infty \,/\,
+      \lVert\code{CCoeff}_k\rVert_\infty
+      \;\cdot\;\code{LAThresholdCScale}
+    \bigr).
+\label{eq:la-threshold-c}
+\end{equation}
+Before entering a stage's LA loop, the kernel checks whether the pixel's
+parameter offset is within the stage's validity range:
+\[
+\lVert \Delta c \rVert_\infty \ge \code{LAThresholdC}
+  \quad\Longrightarrow\quad
+  \text{skip this stage entirely.}
+\]
+This gate avoids wasting work on LA steps that would immediately fail the
+Prepare validity check.  It is the \code{isLAStageInvalid} test in the
+code.
+
+\subsubsection{Composing LA entries}
+\label{sec:la-composite}
+
+Two consecutive LA entries can be merged into a single entry covering their
+combined iteration span.  If LA\(_1\) covers iterations \([a,b)\) with
+coefficients \((\code{ZCoeff}_1, \code{CCoeff}_1)\) and reference
+\(z_\mathrm{ref,1}\), and LA\(_2\) covers \([b,c)\) with
+\((\code{ZCoeff}_2, \code{CCoeff}_2)\) and reference \(z_\mathrm{ref,2}\),
+then composing them requires one linearized Prepare step at the boundary
+(dropping the quadratic term):
+\begin{align}
+\code{ZCoeff}_\mathrm{comp}
+  &= 2\,z_\mathrm{ref,2}\cdot\code{ZCoeff}_1\cdot\code{ZCoeff}_2,
+  \label{eq:la-comp-z} \\
+\code{CCoeff}_\mathrm{comp}
+  &= 2\,z_\mathrm{ref,2}\cdot\code{CCoeff}_1\cdot\code{ZCoeff}_2
+   + \code{CCoeff}_2.
+  \label{eq:la-comp-c}
+\end{align}
+This is analogous to BLA composition (\cref{sec:bilinear-approx}):
+the \code{ZCoeff} factors multiply and the \code{CCoeff} factors compose
+as an affine chain.  The factor \(2\,z_\mathrm{ref,2}\) accounts for
+the linearized Prepare step at the junction between the two entries.
+
+\paragraph{Threshold propagation during composition.}
+The composite thresholds are \emph{not} simply the minimum of the two
+entries' thresholds.  The computation proceeds in two stages.  First,
+one Step-like tightening is applied at the junction point:
+\begin{align}
+T_\mathrm{junc}
+  &= \min\!\bigl(
+       \code{LAThreshold}_1,\;
+       \lVert z_\mathrm{ref,2} \rVert_\infty
+       \,/\, \lVert \code{ZCoeff}_1 \rVert_\infty
+       \cdot \code{LAThresholdScale}
+     \bigr),
+\label{eq:la-comp-thresh-junc}
+\\
+T_{C,\mathrm{junc}}
+  &= \min\!\bigl(
+       \code{LAThresholdC}_1,\;
+       \lVert z_\mathrm{ref,2} \rVert_\infty
+       \,/\, \lVert \code{CCoeff}_1 \rVert_\infty
+       \cdot \code{LAThresholdCScale}
+     \bigr).
+\end{align}
+Then the intermediate product
+\(Z' = 2\,z_\mathrm{ref,2} \cdot \code{ZCoeff}_1\) is formed
+(this is the ZCoeff \emph{before} multiplication by \code{ZCoeff}\(_2\)).
+The second entry's threshold is rescaled by this amplification:
+\begin{align}
+\code{LAThreshold}_\mathrm{comp}
+  &= \min\!\bigl(
+       T_\mathrm{junc},\;
+       \code{LAThreshold}_2 \,/\, \lVert Z' \rVert_\infty
+     \bigr),
+\\
+\code{LAThresholdC}_\mathrm{comp}
+  &= \min\!\bigl(
+       T_{C,\mathrm{junc}},\;
+       \code{LAThreshold}_2 \,/\, \lVert C' \rVert_\infty
+     \bigr),
+\end{align}
+where \(C' = 2\,z_\mathrm{ref,2} \cdot \code{CCoeff}_1\).
+The rescaling by \(\lVert Z' \rVert_\infty\) accounts for the fact that
+the prepared perturbation entering LA\(_2\) is amplified by the first
+entry's coefficients; the second entry's threshold must be correspondingly
+tightened.
+
+In the code, \code{LAInfoDeep::Composite} implements this operation and
+is used by \code{CreateNewLAStage} to build higher-level stages from
+lower-level ones.
+
+\subsubsection{Period-aligned stage hierarchy}
+\label{sec:la-stage-hierarchy}
+
+The power of LA v2 comes from aligning the approximation hierarchy with
+the reference orbit's periodic structure.
+The construction, implemented in \code{LAReference::CreateLAFromOrbit}
+and \code{CreateNewLAStage}, proceeds as follows:
+\begin{enumerate}
+  \item \textbf{Period detection (stage~0).}  The algorithm scans the
+        reference orbit, accumulating LA coefficients via the step-forward
+        recurrence (\cref{eq:la-step}).  At each step~\(k\), a
+        \emph{period-detection test} is evaluated; when the test fires,
+        a period boundary is recorded and the accumulated
+        coefficients are stored as one stage-0 LA entry.  Each stage-0
+        entry therefore covers approximately one period \(p\) of the
+        reference orbit.
+
+        Two period-detection methods are available (the choice is a
+        run-time parameter, \code{DetectionMethod}):
+        \begin{itemize}
+          \item \textbf{Method~1 (minimum-magnitude).}  The algorithm
+                tracks
+                \[
+                \code{MinMag}_k = \min_{0 \le j \le k}
+                  \lVert z_j^\star \rVert_\infty.
+                \]
+                A period is detected at step~\(k\) when
+                \begin{equation}
+                \lVert z_k^\star \rVert_\infty
+                  < \code{MinMag}_{k-1}
+                    \cdot \code{Stage0PeriodDetectionThreshold2}.
+                \label{eq:period-detect-minmag}
+                \end{equation}
+                Intuitively, if the orbit revisits a neighborhood
+                smaller than any previously seen, it is nearly periodic.
+                This is the default method.
+
+          \item \textbf{Method~2 (coefficient ratio).}  A period is
+                detected when the threshold tightening at the current
+                step exceeds a fraction of the existing threshold:
+                \begin{equation}
+                \frac{\lVert z_k^\star \rVert_\infty}
+                     {\lVert \code{ZCoeff}_k \rVert_\infty}
+                \cdot \code{LAThresholdScale}
+                < \code{LAThreshold}_k
+                  \cdot \code{Stage0PeriodDetectionThreshold}.
+                \label{eq:period-detect-coeff}
+                \end{equation}
+                This variant reuses the threshold machinery directly.
+        \end{itemize}
+        For higher stages (stage~1 and above), the same tests are
+        applied during the Composite pass, with separate threshold
+        constants \code{PeriodDetectionThreshold2} and
+        \code{PeriodDetectionThreshold} (typically looser than the
+        stage-0 variants).
+
+  \item \textbf{Recursive composition (stages~1, 2, \ldots).}
+        \code{CreateNewLAStage} builds the next stage by composing
+        consecutive entries from the previous stage using the Composite
+        operation (\cref{eq:la-comp-z,eq:la-comp-c}).  Period detection
+        is applied again at this level, so each stage-1 entry covers
+        many periods, each stage-2 entry covers many stage-1 entries,
+        and so on.  Construction repeats until no further period is
+        detected.
+
+  \item \textbf{Fallback for aperiodic orbits.}  If no period is
+        detected within the first \code{lowBound} iterations, the
+        algorithm synthesizes an artificial period as
+        \(\lfloor M^{1/k}\rfloor\) (where \(M\) is the total iteration
+        count and \(k\) is derived from \code{periodDivisor}) and
+        proceeds with that period length.  This ensures LA v2 provides
+        some acceleration even for non-periodic reference orbits,
+        though the skip lengths will be shorter.
+
+  \item \textbf{Subdivision of large periods.}  If a true period
+        \emph{is} detected but exceeds a threshold (64~entries at
+        stage~0, or \(64 \times\) the previous stage's step length at
+        higher stages), it is too large for efficient LA traversal.
+        The algorithm discards the detected entry and restarts with a
+        synthetic logarithmic subdivision of the detected period,
+        using the same \(\lfloor p^{1/k}\rfloor\) formula applied to
+        the period~\(p\) instead of the total iteration count.
+        This keeps each stage's entry count manageable.
+\end{enumerate}
+
+The key insight is that near a mini-Mandelbrot copy, the orbit nearly
+repeats every \(p\) iterations, so the linear approximation remains valid
+across an entire period---the threshold barely tightens.  A single
+stage-0 LA entry can therefore skip \(p\) iterations, and higher-stage
+entries skip \(k\cdot p\) or more.
+
+The GPU kernel (\code{LAKernel.cuh}) exploits this by descending through
+stages from coarsest to finest.  In the inner loop (lines 101--120),
+successive LA steps advance the iteration counter by the entry's
+\code{StepLength} each time---typically covering the vast majority of
+total iterations via the linear path.  Only when the LA threshold is
+exceeded does the kernel fall through to the perturbation loop, which
+handles a typically small fraction of remaining iterations.
+
+Within the LA evaluation loop, a \emph{rebasing} check is performed after
+each step: if
+\(\lVert \Delta z \rVert_\infty > \lVert z \rVert_\infty\)
+(the perturbation has grown larger than the reconstructed orbit), the
+kernel sets \(\Delta z \leftarrow z\) and restarts the macro-iteration
+counter at entry~0 of the current stage.  This mirrors the rebasing
+mechanism in perturbation-only rendering (\cref{sec:perturb-only-rebase}).
+
+\subsubsection{Attractor transformation (AT)}
+\label{sec:attractor-transform}
+
+When the pixel lies deep inside a mini-Mandelbrot copy, the LA hierarchy
+enables a further optimization: the \emph{attractor transformation}.
+Rather than iterating the perturbation against a stored reference orbit,
+the AT maps the pixel into a coordinate system where plain Mandelbrot
+iteration \(w_{n+1} = w_n^2 + c_w\) (with no reference orbit) reproduces
+the orbit's behavior at the scale of one full period per iteration.
+
+\paragraph{Construction.}
+The AT is constructed from the topmost LA stage's first entry (call it
+LA\(_0\) with coefficients \code{ZCoeff}, \code{CCoeff} and the
+\emph{next} entry's reference \(z_\mathrm{ref,next}\)).  The
+transformation parameters are:
+\begin{align}
+\code{AT.ZCoeff}   &= \code{ZCoeff}, \\
+\code{AT.CCoeff}   &= \code{ZCoeff} \cdot \code{CCoeff}, \\
+\code{AT.InvZCoeff}&= 1 \,/\, \code{AT.ZCoeff}, \\
+\code{AT.RefC}     &= z_\mathrm{ref,next} \cdot \code{ZCoeff}
+  \quad\text{(converted to low precision)}, \\
+\code{AT.SqrEscapeRadius} &= \min\bigl(
+      \lVert\code{ZCoeff}\rVert^2 \cdot \code{LAThreshold},\;
+      2^{256}\bigr), \\
+\code{AT.ThresholdC} &= \min\bigl(
+      \code{LAThresholdC},\;
+      2^{256} \,/\, \lVert\code{AT.CCoeff}\rVert_\infty\bigr).
+\end{align}
+
+\paragraph{Usability check.}
+The AT is declared usable when two conditions hold:
+\begin{enumerate}
+  \item The pixel radius (squared) scaled by the CCoeff amplification
+        exceeds the reference magnitude:
+        \[
+        R^2 \cdot \lVert\code{AT.CCoeff}\rVert^2 \cdot 2^{32}
+          > \lVert\code{AT.RefC}\rVert^2.
+        \]
+  \item The transformed escape radius exceeds the standard bailout:
+        \(\code{AT.SqrEscapeRadius} > 4\).
+\end{enumerate}
+If the AT is unusable (e.g.\ because the zoom is too shallow or the
+LA entry's threshold is too tight), the kernel falls back to the
+normal LA stage traversal.
+
+\paragraph{Evaluation.}
+For each pixel with parameter offset \(\Delta c\), the kernel transforms
+to AT space:
+\[
+c_w = \Delta c \cdot \code{AT.CCoeff} + \code{AT.RefC},
+\]
+then iterates the standard Mandelbrot recurrence
+\(w_{n+1} = w_n^2 + c_w\) with bailout
+\(|w|^2 \ge \code{AT.SqrEscapeRadius}\).  Crucially, no reference-orbit
+lookups are needed---just scalar iteration.  Each AT iteration corresponds
+to \code{StepLength} original Mandelbrot iterations (one full period).
+
+After AT termination (escape or max-iteration), the kernel transforms
+back to perturbation space:
+\[
+\Delta z = w \cdot \code{AT.InvZCoeff},
+\]
+and resumes with the LA stage traversal or perturbation loop for the
+remaining iterations.
+
+\paragraph{Significance.}
+The AT provides a dramatic speedup when applicable.  At deep zoom near
+a period-\(p\) mini-Mandelbrot, the AT reduces the effective iteration
+count from \(N\) to roughly \(N/p\), with each iteration being a simple
+scalar multiply-add rather than a reference-orbit lookup plus
+perturbation.  The AT is essentially the observation that the
+Mandelbrot set is self-similar at mini-copies, and this self-similarity
+can be made computationally explicit.
+
+\subsubsection{Precision selection per stage}
+\label{sec:la-dp-conversion}
+
+When the LA coefficients and thresholds for a stage remain comfortably
+within double-precision range, the stage can be evaluated using
+\code{double} arithmetic instead of the full HDR (high-dynamic-range)
+representation.  During LA construction, each stage is tested: if
+\(\code{LAThreshold} > 2^{-768}\) and
+\(\code{LAThresholdC} > 2^{-768}\) (or, equivalently, the zoom radius
+exceeds \(2^{-896}\)), the stage's \code{LAInfo<HRReal>} entries are
+converted in-place to \code{LAInfo<double>} via
+\code{ConvertStageToDouble}.  A per-stage flag
+\code{UseDoublePrecision} records this choice.
+
+During evaluation, the kernel dispatches double-precision arithmetic for
+flagged stages and HDR arithmetic for the rest.  Since the inner stages
+(closest to the reference orbit) are the most likely to require HDR
+precision, while outer stages (covering many periods) often fit in
+double, this hybrid approach concentrates the expensive HDR work where
+it is needed.  Similarly, the perturbation tail loop may use
+double precision when flagged by \code{DoublePrecisionPT}.
+
+\subsubsection{Derivative propagation through LA steps}
+\label{sec:la-derivatives}
+
+For distance-estimation coloring, the kernel must propagate the orbit
+derivatives \(\partial z / \partial z_0\) (denoted \code{dzdz}) and
+\(\partial z / \partial c\) (denoted \code{dzdc}) through LA steps, not
+just the perturbation delta.  Given a single LA step with coefficients
+\((\code{ZCoeff}, \code{CCoeff})\) and reference \(z_\mathrm{ref}\), the
+derivative updates are:
+\begin{align}
+\code{dzdz}' &= \code{dzdz}
+  \;\cdot\; 2\,(\Delta z + z_\mathrm{ref})
+  \;\cdot\; \code{ZCoeff},
+\label{eq:la-dzdz}
+\\
+\code{dzdc}' &= \code{dzdc}
+  \;\cdot\; 2\,(\Delta z + z_\mathrm{ref})
+  \;\cdot\; \code{ZCoeff}
+  \;+\; \code{CCoeff} \cdot S,
+\label{eq:la-dzdc}
+\end{align}
+where \(S\) is a scaling factor used to keep the derivative magnitudes
+within representable range (rescaled periodically during evaluation).
+The factor \(2\,(\Delta z + z_\mathrm{ref})\) is the derivative of the
+Prepare step, and \code{ZCoeff} propagates through the linearized
+iterations.  These updates are applied \emph{before}
+\code{Evaluate} updates \(\Delta z\) itself, so \(\Delta z\) in the
+formulas above is the pre-step value.
+
+\subsubsection{Comparison with BLA}
+\label{sec:la-vs-bla}
+
+BLA (\cref{sec:bilinear-approx}) and LA v2 share the same underlying
+linear-map form \(\Delta z \mapsto A\,\Delta z + B\,\Delta c\), but
+differ in hierarchy design and accuracy:
+\begin{itemize}
+  \item \textbf{Hierarchy structure.}  BLA builds a generic binary tree
+        of composed steps at power-of-two granularity (levels
+        \(1, 2, 4, 8, \ldots\)), agnostic of the orbit's dynamics.
+        LA v2 builds a multi-stage hierarchy aligned to the orbit's
+        detected period, so each stage-0 entry covers one period and
+        higher stages cover multiples of the period.
+
+  \item \textbf{Period awareness.}  BLA has no notion of periodicity;
+        it treats the reference orbit as an opaque sequence.  LA v2
+        explicitly detects the period and exploits the fact that near a
+        periodic point, the orbit nearly repeats---making the linear
+        approximation accurate over the entire period and enabling much
+        larger skip lengths.
+
+  \item \textbf{Prepare step.}  BLA applies a purely linear map at every
+        step.  LA v2 applies a nonlinear Prepare step
+        (\cref{eq:la-prepare}) that retains the quadratic term at each
+        entry's reference point, then linearizes only the subsequent
+        iterations.  This provides better accuracy per LA step.
+
+  \item \textbf{Kernel structure.}  The BLA kernel interleaves single
+        perturbation steps with greedy BLA lookups: do one perturbation
+        step, scan the hierarchy for the longest valid BLA skip, apply
+        it, and repeat.  The LA v2 kernel is two-phase: first descend
+        through LA stages (applying period-length jumps in the inner
+        loop), then fall through to perturbation for the tail.
+\end{itemize}
+In practice, LA v2's period alignment enables it to skip a much larger
+fraction of total iterations via the linear path compared with BLA's
+generic power-of-two hierarchy, particularly at deep zooms where the
+view is dominated by a mini-Mandelbrot copy with a well-defined period.
 
 

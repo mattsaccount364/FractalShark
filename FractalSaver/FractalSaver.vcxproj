@@ -74,7 +74,7 @@
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <WarningLevel>Level4</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Debug;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>

@@ -171,6 +171,25 @@ private:
 
     static C Div(const C &a, const C &b);
 
+    // Promote any scalar (float, double, HDRFloat<float>, etc.) to HDRFloat<double>.
+    template <class V>
+    static HDRFloat<double> PromoteToHdrD(const V &v) {
+        if constexpr (std::is_arithmetic_v<V>) {
+            return HDRFloat<double>(static_cast<double>(v));
+        } else {
+            return HDRFloat<double>(v.exp, static_cast<double>(v.mantissa));
+        }
+    }
+
+    // Demote HDRFloat<double> back to the FeatureFinder's scalar type T.
+    static T DemoteToT(const HDRFloat<double> &h) {
+        if constexpr (std::is_arithmetic_v<T>) {
+            return static_cast<T>(static_cast<double>(h));
+        } else {
+            return T(h.exp, static_cast<SubType>(h.mantissa));
+        }
+    }
+
     bool Evaluate_AtPeriod(const PerturbationResults<IterType, T, PExtras> &results,
                            RuntimeDecompressor<IterType, T, PExtras> &dec,
                            const C &c,

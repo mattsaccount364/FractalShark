@@ -1278,22 +1278,25 @@ typename FeatureFinder<IterType, T, PExtras>::C
 FeatureFinder<IterType, T, PExtras>::Div(const C &a, const C &b)
 {
     // a / b = a * conj(b) / |b|^2
-    const T br = b.getRe();
-    const T bi = b.getIm();
-    T denom = br * br + bi * bi;
+    // Always promote to HDRFloat<double> to avoid |b|^2 overflow.
+    using H = HDRFloat<double>;
+    const H br = PromoteToHdrD(b.getRe());
+    const H bi = PromoteToHdrD(b.getIm());
+    H denom = br * br + bi * bi;
     HdrReduce(denom);
 
-    // If denom is 0, caller is hosed; keep it explicit.
-    if (HdrCompareToBothPositiveReducedLE(denom, T{})) {
+    if (HdrCompareToBothPositiveReducedLE(denom, H{})) {
         return C{};
     }
 
-    // a * conj(b)
-    const T ar = a.getRe();
-    const T ai = a.getIm();
-    const T rr = (ar * br + ai * bi) / denom;
-    const T ii = (ai * br - ar * bi) / denom;
-    return C(rr, ii);
+    const H ar = PromoteToHdrD(a.getRe());
+    const H ai = PromoteToHdrD(a.getIm());
+    H rr = (ar * br + ai * bi) / denom;
+    HdrReduce(rr);
+    H ii = (ai * br - ar * bi) / denom;
+    HdrReduce(ii);
+
+    return C(DemoteToT(rr), DemoteToT(ii));
 }
 
 template <class IterType, class T, PerturbExtras PExtras>
@@ -1438,32 +1441,32 @@ HighPrecision
 FeatureFinder<IterType, T, PExtras>::ComputeIntrinsicRadius_HP(const C &zcoeff, const C &dzdc) const
 {
     // Imagina: Scale = 1 / |zcoeff * dzdc|; radius = Scale * 4
-    // We compute: |w| = sqrt(norm_squared(w)) with w = zcoeff*dzdc
-    const T one = HdrReduce(T{1.0});
-    const T four = HdrReduce(T{4.0});
+    // Always promote to HDRFloat<double> to avoid overflow in the product.
+    using H = HDRFloat<double>;
+    const H zr = PromoteToHdrD(zcoeff.getRe());
+    const H zi = PromoteToHdrD(zcoeff.getIm());
+    const H dr = PromoteToHdrD(dzdc.getRe());
+    const H di = PromoteToHdrD(dzdc.getIm());
 
-    C w = zcoeff * dzdc;
-    w.Reduce();
+    H wr = zr * dr - zi * di;
+    HdrReduce(wr);
+    H wi = zr * di + zi * dr;
+    HdrReduce(wi);
 
-    T w2 = w.norm_squared(); // |w|^2
+    H w2 = wr * wr + wi * wi;
     HdrReduce(w2);
 
-    if (HdrCompareToBothPositiveReducedLE(w2, T{})) {
-        // Degenerate; return 0 so caller can fall back to something else if desired
+    if (HdrCompareToBothPositiveReducedLE(w2, H{})) {
         return HighPrecision{0};
     }
 
-    T absW = HdrSqrt(w2); // |w|
+    H absW = HdrSqrt(w2);
     HdrReduce(absW);
 
-    T scale = one / absW; // 1/|w|
-    HdrReduce(scale);
+    H radius = H{4.0} / absW;
+    HdrReduce(radius);
 
-    T radT = scale * four; // 4/|w|
-    HdrReduce(radT);
-
-    // Stay in HighPrecision for storage/zoom
-    return HighPrecision{radT};
+    return HighPrecision{radius};
 }
 
 // Build a complex scalar (s + 0i) reduced.
@@ -2332,34 +2335,45 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     }
 
     {
-        C w = zcoeff * dzdc;
-        w.Reduce();
-
-        T w2 = w.norm_squared();
-        HdrReduce(w2);
-
-        if (!HdrCompareToBothPositiveReducedGT(w2, T{})) {
-            std::cout << "Rejected: zero w in candidate store\n";
-            feature.ClearCandidate();
-            return false;
-        }
-
         int scaleExp2 = 0;
         mp_bitcnt_t prec_bits = cX_hp.precisionInBits();
 
         {
-            T absW = HdrSqrt(w2);
+            // Always promote to HDRFloat<double> to avoid overflow in the product.
+            using H = HDRFloat<double>;
+            const H zr = PromoteToHdrD(zcoeff.getRe());
+            const H zi = PromoteToHdrD(zcoeff.getIm());
+            const H dr = PromoteToHdrD(dzdc.getRe());
+            const H di = PromoteToHdrD(dzdc.getIm());
+
+            H wr = zr * dr - zi * di;
+            HdrReduce(wr);
+            H wi = zr * di + zi * dr;
+            HdrReduce(wi);
+
+            H w2 = wr * wr + wi * wi;
+            HdrReduce(w2);
+
+            if (!HdrCompareToBothPositiveReducedGT(w2, H{})) {
+                std::cout << "Rejected: zero w in candidate store\n";
+                feature.ClearCandidate();
+                return false;
+            }
+
+            H absW = HdrSqrt(w2);
             HdrReduce(absW);
 
-            T scaleT = HdrReduce(T{1.0}) / absW;
-            HdrReduce(scaleT);
+            H scaleH = H{1.0} / absW;
+            HdrReduce(scaleH);
 
-            HighPrecision scaleHP{scaleT};
+            HighPrecision scaleHP{scaleH};
             long exp_long;
             double mant;
             scaleHP.frexp(mant, exp_long);
             scaleExp2 = (int)exp_long;
+        }
 
+        {
             const int bitsFromScale = std::max(0, -scaleExp2);
             const int marginBits = 256;
 

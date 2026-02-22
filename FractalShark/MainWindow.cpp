@@ -1381,7 +1381,7 @@ MainWindow::MenuLoadEnterLocation()
     HighPrecision maxX = gFractal->GetMaxX();
     HighPrecision maxY = gFractal->GetMaxY();
 
-    PointZoomBBConverter pz{minX, minY, maxX, maxY};
+    PointZoomBBConverter pz{minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled};
     values.real = pz.GetPtX().str();
     values.imag = pz.GetPtY().str();
     values.zoom = pz.GetZoomFactor().str();
@@ -1508,7 +1508,7 @@ MainWindow::MenuLoadEnterLocation()
     HighPrecision imagHP(values.imag);
     HighPrecision zoomHP(values.zoom);
 
-    PointZoomBBConverter pz2{realHP, imagHP, zoomHP};
+    PointZoomBBConverter pz2{realHP, imagHP, zoomHP, PointZoomBBConverter::TestMode::Enabled};
     gFractal->RecenterViewCalc(pz2);
     gFractal->SetNumIterations<IterTypeFull>(values.num_iterations);
     PaintAsNecessary();

@@ -1,15 +1,16 @@
 ﻿#include "stdafx.h"
 #include "PointZoomBBConverter.h"
 
-PointZoomBBConverter::PointZoomBBConverter()
-    : m_MinX{}, m_MinY{}, m_MaxX{}, m_MaxY{}, m_PtX{}, m_PtY{}, m_ZoomFactor{}
+PointZoomBBConverter::PointZoomBBConverter(TestMode testMode)
+    : m_MinX{}, m_MinY{}, m_MaxX{}, m_MaxY{}, m_PtX{}, m_PtY{}, m_ZoomFactor{}, m_Test{testMode}
 {
 }
 
 PointZoomBBConverter::PointZoomBBConverter(HighPrecision ptX,
                                            HighPrecision ptY,
-                                           HighPrecision zoomFactor)
-    : m_PtX(ptX), m_PtY(ptY), m_ZoomFactor(zoomFactor)
+                                           HighPrecision zoomFactor,
+                                           TestMode testMode)
+    : m_PtX(ptX), m_PtY(ptY), m_ZoomFactor(zoomFactor), m_Test{testMode}
 {
 
     m_MinX = ptX - (HighPrecision{Factor} / m_ZoomFactor);
@@ -25,9 +26,11 @@ PointZoomBBConverter::PointZoomBBConverter(HighPrecision ptX,
 PointZoomBBConverter::PointZoomBBConverter(HighPrecision minX,
                                            HighPrecision minY,
                                            HighPrecision maxX,
-                                           HighPrecision maxY)
+                                           HighPrecision maxY,
+                                           TestMode testMode)
     : m_MinX{minX}, m_MinY{minY}, m_MaxX{maxX}, m_MaxY{maxY}, m_PtX{(minX + maxX) / HighPrecision(2)},
-      m_PtY{(minY + maxY) / HighPrecision(2)}, m_Radius{(maxY - minY) / HighPrecision(2)}
+      m_PtY{(minY + maxY) / HighPrecision(2)}, m_Radius{(maxY - minY) / HighPrecision(2)},
+      m_Test{testMode}
 {
     auto deltaY = m_MaxY - m_MinY;
 
@@ -119,7 +122,7 @@ PointZoomBBConverter::SetPrecision(uint64_t precInBits)
 void
 PointZoomBBConverter::SetDebugStrings(const HighPrecision *deltaY)
 {
-    if constexpr (m_Test) {
+    if (m_Test == TestMode::Enabled) {
         if (m_MinX.precisionInBits() < 1000)
             m_MinXStr = m_MinX.str();
         if (m_MinY.precisionInBits() < 1000)
@@ -193,7 +196,7 @@ PointZoomBBConverter::ZoomedRecentered(const HighPrecision &calcX,
     newMaxY.addFrom(calcY, halfH);
 
     PointZoomBBConverter centered{
-        std::move(newMinX), std::move(newMinY), std::move(newMaxX), std::move(newMaxY)};
+        std::move(newMinX), std::move(newMinY), std::move(newMaxX), std::move(newMaxY), m_Test};
     return centered.ZoomedAtCenter(scale);
 }
 
@@ -264,7 +267,7 @@ PointZoomBBConverter::ZoomedTowardPoint(const HighPrecision &calcX,
     newMaxY.addFrom(m_MaxY, tmp);
 
     return PointZoomBBConverter{
-        std::move(newMinX), std::move(newMinY), std::move(newMaxX), std::move(newMaxY)};
+        std::move(newMinX), std::move(newMinY), std::move(newMaxX), std::move(newMaxY), m_Test};
 }
 
 void
@@ -382,7 +385,8 @@ PointZoomBBConverter::Recentered(const HighPrecision &calcX,
     return PointZoomBBConverter{calcX - width / two,
                                 calcY - height / two,
                                 calcX + width / two,
-                                calcY + height / two};
+                                calcY + height / two,
+                                m_Test};
 }
 
 HighPrecision
@@ -445,7 +449,7 @@ PointZoomBBConverter::ZoomDivisor(double divisor)
     // zoomFactor ∝ 1/deltaY, deltaY shrinks by Factor => zoomFactor grows
     m_ZoomFactor *= hf;
 
-    if constexpr (m_Test) {
+    if (m_Test == TestMode::Enabled) {
         HighPrecision deltaY{HighPrecision::SetPrecision::True, prec};
         deltaY.subFrom(m_MaxY, m_MinY);
         SetDebugStrings(&deltaY);

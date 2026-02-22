@@ -446,7 +446,7 @@ Fractal::RecenterViewScreen(RECT rect)
 
     // Set m_PerturbationGuessCalc<X|Y> = ... above.
 
-    m_Ptz = PointZoomBBConverter{newMinX, newMinY, newMaxX, newMaxY};
+    m_Ptz = PointZoomBBConverter{newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
 
     SetPrecision();
     SquareCurrentView();
@@ -592,7 +592,7 @@ Fractal::View(size_t view, bool includeMsgBox)
         m_LAParameters.SetDefaults(LAParameters::LADefaults::MaxPerf);
     }
 
-    PointZoomBBConverter convert{preset.minX, preset.minY, preset.maxX, preset.maxY};
+    PointZoomBBConverter convert{preset.minX, preset.minY, preset.maxX, preset.maxY, PointZoomBBConverter::TestMode::Enabled};
     RecenterViewCalc(convert);
 }
 
@@ -645,7 +645,8 @@ Fractal::ApproachTarget(void)
         deltaYMax = (MaxY - curMaxY) / HighPrecision{75.0};
 
         m_Ptz = PointZoomBBConverter{
-            curMinX + deltaXMin, curMinY + deltaYMin, curMaxX + deltaXMax, curMaxY + deltaYMax};
+            curMinX + deltaXMin, curMinY + deltaYMin, curMaxX + deltaXMax, curMaxY + deltaYMax,
+            PointZoomBBConverter::TestMode::Enabled};
 
         {
             HighPrecision result = ((HighPrecision)incIters * (HighPrecision)i);
@@ -2576,7 +2577,7 @@ Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFa
         const HighPrecision ptX = feature.GetFoundX();
         const HighPrecision ptY = feature.GetFoundY();
 
-        PointZoomBBConverter ptz(ptX, ptY, *zoomFactor);
+        PointZoomBBConverter ptz(ptX, ptY, *zoomFactor, PointZoomBBConverter::TestMode::Enabled);
         if (ptz.Degenerate())
             return false;
 
@@ -3975,7 +3976,7 @@ Fractal::GetRenderDetails(std::string &shortStr, std::string &longStr) const
     s = setupSS(maxY);
     const auto smaxY = std::string(s.begin(), s.end());
 
-    const PointZoomBBConverter pz{minX, minY, maxX, maxY};
+    const PointZoomBBConverter pz{minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled};
     s = setupSS(pz.GetPtX());
     const auto ptXStr = std::string(s.begin(), s.end());
 

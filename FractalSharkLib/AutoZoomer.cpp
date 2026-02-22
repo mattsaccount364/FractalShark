@@ -81,7 +81,7 @@ AutoZoomer::Run()
         HighPrecision origZoom = m_Fractal.m_Ptz.GetZoomFactor();
 
         // Center on the perturbation point at the original zoom
-        PointZoomBBConverter startPtzCentered{guessX, guessY, origZoom};
+        PointZoomBBConverter startPtzCentered{guessX, guessY, origZoom, PointZoomBBConverter::TestMode::Enabled};
         m_Fractal.m_Ptz = startPtzCentered;
         m_Fractal.SquareCurrentView();
 
@@ -348,7 +348,7 @@ AutoZoomer::Run()
             HighPrecision newMaxX = guessX + width / Divisor;
             HighPrecision newMaxY = guessY + height / Divisor;
 
-            PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY};
+            PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
 
             m_Fractal.RecenterViewCalc(newPtz);
             auto handle = m_Fractal.EnqueueRender();

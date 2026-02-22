@@ -29,10 +29,10 @@ struct MainWindow::SavedLocation {
         std::getline(infile, description);
 
         // Construct after successful parse
-        ptz = PointZoomBBConverter(minX, minY, maxX, maxY);
+        ptz = PointZoomBBConverter(minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled);
     }
 
-    PointZoomBBConverter ptz{};
+    PointZoomBBConverter ptz{PointZoomBBConverter::TestMode::Enabled};
     size_t width = 0, height = 0;
     IterTypeFull num_iterations = 0;
     uint32_t antialiasing = 0;

@@ -366,7 +366,7 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate()
 
     // Reduce precision to something semi-sane
     const bool requiresReuse = false;
-    PointZoomBBConverter ptz{ curMinX, curMinY, curMaxX, curMaxY };
+    PointZoomBBConverter ptz{ curMinX, curMinY, curMaxX, curMaxY, PointZoomBBConverter::TestMode::Enabled };
     auto precInBits = PrecisionCalculator::GetPrecision(ptz, requiresReuse);
     ptz.SetPrecision(precInBits);
 
@@ -399,7 +399,7 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate()
         curMaxY += deltaYMax;
         curIters += (double)incIters;
 
-        ptz = PointZoomBBConverter{ curMinX, curMinY, curMaxX, curMaxY };
+        ptz = PointZoomBBConverter{ curMinX, curMinY, curMaxX, curMaxY, PointZoomBBConverter::TestMode::Enabled };
 
         sprintf(outputImageFilename, "output-%06zd", i);
 
@@ -561,7 +561,7 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
 
         filename = fileprefix + filename;
 
-        PointZoomBBConverter ptz{ minX, minY, maxX, maxY };
+        PointZoomBBConverter ptz{ minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled };
         auto prec = PrecisionCalculator::GetPrecision(ptz, requiresReuse);
         fractal->SetPrecision(prec);
 

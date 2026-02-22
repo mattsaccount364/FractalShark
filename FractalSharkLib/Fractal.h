@@ -383,7 +383,7 @@ private:
 
     // Describes the exact spot within the fractal
     // we are currently looking at.
-    PointZoomBBConverter m_Ptz;
+    PointZoomBBConverter m_Ptz{PointZoomBBConverter::TestMode::Enabled};
     bool m_ChangedWindow;
 
     // Holds the dimensions of the window onto which we are drawing.

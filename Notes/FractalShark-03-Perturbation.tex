@@ -519,12 +519,18 @@ and \code{LAInfoDeep::Evaluate} implements~\cref{eq:la-evaluate}.
 
 The initial conditions, set in the \code{LAInfoDeep} constructor, are
 \[
-\code{ZCoeff}_0 = 1,\qquad \code{CCoeff}_0 = 1.
+\code{ZCoeff}_0 = 1,\qquad \code{CCoeff}_0 = 1,\qquad
+\code{LAThreshold}_0 = 1,\qquad \code{LAThresholdC}_0 = 1,\qquad
+\code{MinMag}_0 = 4.
 \]
 The initial \(\code{CCoeff}_0 = 1\) accounts for the single \(+\Delta c\)
 contribution implicit in combining the Prepare step with one perturbation
 iteration: \(\Delta z_\mathrm{next} = \tilde{\Delta z} + \Delta c\), so
 \(\Delta z_\mathrm{out} = 1\cdot\tilde{\Delta z} + 1\cdot\Delta c\).
+The thresholds start at~1 (no restriction) and tighten monotonically as
+iterations are absorbed.  \code{MinMag} starts at~4 (the bailout radius
+squared), ensuring any orbit value below the bailout can trigger
+period detection.
 
 \subsubsection{Step-forward recurrence}
 \label{sec:la-step-forward}
@@ -639,6 +645,8 @@ This is analogous to BLA composition (\cref{sec:bilinear-approx}):
 the \code{ZCoeff} factors multiply and the \code{CCoeff} factors compose
 as an affine chain.  The factor \(2\,z_\mathrm{ref,2}\) accounts for
 the linearized Prepare step at the junction between the two entries.
+The composite's reference is set to \(z_\mathrm{ref,1}\), since the
+composite's Prepare step operates at the first entry's starting point.
 
 \paragraph{Threshold propagation during composition.}
 The composite thresholds are \emph{not} simply the minimum of the two
@@ -781,12 +789,26 @@ stage-0 LA entry can therefore skip \(p\) iterations, and higher-stage
 entries skip \(k\cdot p\) or more.
 
 The GPU kernel (\code{LAKernel.cuh}) exploits this by descending through
-stages from coarsest to finest.  In the inner loop (lines 101--120),
+stages from coarsest to finest.  In the inner loop,
 successive LA steps advance the iteration counter by the entry's
 \code{StepLength} each time---typically covering the vast majority of
 total iterations via the linear path.  Only when the LA threshold is
 exceeded does the kernel fall through to the perturbation loop, which
 handles a typically small fraction of remaining iterations.
+
+\paragraph{Inter-stage fallback via \code{NextStageLAIndex}.}
+Each LA entry stores, alongside its \code{StepLength}, a field
+\code{NextStageLAIndex} that records the iteration offset into the
+\emph{next finer} stage where this entry's span begins.  When a
+Prepare check fails at stage~\(s\), the kernel does not simply
+restart from entry~0 of stage~\(s-1\); instead, it resumes at
+macro-iteration index \code{NextStageLAIndex}, which points to the
+correct position within stage~\(s-1\)'s entry array.  This avoids
+redundant re-traversal of entries in the finer stage that precede the
+current iteration.  The kernel's outer loop decrements
+\code{CurrentLAStage} and the inner loop initializes its entry index~\(j\)
+from the stored \code{RefIteration}, which was set to
+\code{NextStageLAIndex} when the previous stage's step failed.
 
 Within the LA evaluation loop, a \emph{rebasing} check is performed after
 each step: if
@@ -807,9 +829,14 @@ iteration \(w_{n+1} = w_n^2 + c_w\) (with no reference orbit) reproduces
 the orbit's behavior at the scale of one full period per iteration.
 
 \paragraph{Construction.}
-The AT is constructed from the topmost LA stage's first entry (call it
-LA\(_0\) with coefficients \code{ZCoeff}, \code{CCoeff} and the
-\emph{next} entry's reference \(z_\mathrm{ref,next}\)).  The
+The AT is constructed from the first entry of a stage's LA array.
+The algorithm iterates from the topmost (coarsest) stage downward,
+attempting to construct an AT at each level.  The first stage whose
+AT passes the usability check (\cref{sec:at-usability} below) is
+selected; if no stage produces a usable AT, the optimization is
+disabled for this reference.  For the selected stage, let the first
+entry have coefficients \code{ZCoeff}, \code{CCoeff} and let the
+\emph{next} entry's reference be \(z_\mathrm{ref,next}\).  The
 transformation parameters are:
 \begin{align}
 \code{AT.ZCoeff}   &= \code{ZCoeff}, \\
@@ -826,6 +853,7 @@ transformation parameters are:
 \end{align}
 
 \paragraph{Usability check.}
+\label{sec:at-usability}
 The AT is declared usable when two conditions hold:
 \begin{enumerate}
   \item The pixel radius (squared) scaled by the CCoeff amplification

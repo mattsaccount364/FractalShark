@@ -40,7 +40,7 @@ RecommendedSettings::RecommendedSettings(uint64_t precisionInBits,
                                          RenderAlgorithm renderAlg,
                                          IterTypeFull numIterations)
     : PrecisionInBits(precisionInBits),
-      m_PointZoomBBConverter{std::make_unique<PointZoomBBConverter>(orbitX, orbitY, zoomFactor)},
+      m_PointZoomBBConverter{std::make_unique<PointZoomBBConverter>(orbitX, orbitY, zoomFactor, PointZoomBBConverter::TestMode::Enabled)},
       RenderAlg(renderAlg), NumIterations(numIterations)
 {
 
@@ -59,7 +59,7 @@ RecommendedSettings::RecommendedSettings(uint64_t precisionInBits,
                                          RenderAlgorithm renderAlg,
                                          IterTypeFull numIterations)
     : PrecisionInBits{precisionInBits},
-      m_PointZoomBBConverter{std::make_unique<PointZoomBBConverter>(minX, minY, maxX, maxY)},
+      m_PointZoomBBConverter{std::make_unique<PointZoomBBConverter>(minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled)},
       RenderAlg(renderAlg), NumIterations(numIterations)
 {
 

@@ -68,7 +68,6 @@ constexpr static bool EnableGpuHDRx32PerturbedLAv2 = ForceEnable;
 constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = Default;
 constexpr static bool EnableGpuHDRx64PerturbedLAv2 = Default;
 
-//#define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block, 0, cudaStreamPerThread
 #define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block, 0, m_ComputeStream
 
 __device__

@@ -549,7 +549,8 @@ ViewPresetResult GetViewPreset(
                     "14450398185250200679605256634126597456745127797239460706353701273687357748723790008"
                     "03048871769715838343188429884448168047502526959137438527676581470700198935881581817"
                     "257151228400345298806207917216983888129443335080070098504609614366e+00"},
-                HighPrecision{"5.10950250472583381635e+6710"}};
+                HighPrecision{"5.10950250472583381635e+6710"},
+                PointZoomBBConverter::TestMode::Enabled};
 
             result.minX = convert.GetMinX();
             result.minY = convert.GetMinY();
@@ -1140,7 +1141,8 @@ ViewPresetResult GetViewPreset(
                               "2602258574689237558180672414305416362841285284232472179206525520835146101"
                               "8314092467920454966337318708594490924170564252580135863982080855021645197"
                               "51503113713282571658615520780020827777231498937"},
-                HighPrecision{"1.4e301"}};
+                HighPrecision{"1.4e301"},
+                PointZoomBBConverter::TestMode::Enabled};
 
             result.minX = convert.GetMinX();
             result.minY = convert.GetMinY();
@@ -1175,7 +1177,8 @@ ViewPresetResult GetViewPreset(
                 HighPrecision{"-0."
                               "5775708389036038428051089822018505586755517284582553171583789528957369098"
                               "3215542361901805676878083"},
-                HighPrecision{"4.98201309068883908096e+44"}};
+                HighPrecision{"4.98201309068883908096e+44"},
+                PointZoomBBConverter::TestMode::Enabled};
 
             result.minX = convert.GetMinX();
             result.minY = convert.GetMinY();
@@ -1803,7 +1806,8 @@ ViewPresetResult GetViewPreset(
             // 32-bit + perturbation only
             PointZoomBBConverter convert{HighPrecision{"3.56992006738525396399695724115347205e-01"},
                                          HighPrecision{"6.91411005282446050826514373514151521e-02"},
-                                         HighPrecision{"1e19"}};
+                                         HighPrecision{"1e19"},
+                                         PointZoomBBConverter::TestMode::Enabled};
 
             result.minX = convert.GetMinX();
             result.minY = convert.GetMinY();
@@ -1959,7 +1963,8 @@ ViewPresetResult GetViewPreset(
             MpfNormalize(mpfY);
 
             PointZoomBBConverter convert{
-                HighPrecision{mpfX}, HighPrecision{mpfY}, HighPrecision{"1.36733731087e+114514"}};
+                HighPrecision{mpfX}, HighPrecision{mpfY}, HighPrecision{"1.36733731087e+114514"},
+                PointZoomBBConverter::TestMode::Enabled};
 
             result.minX = convert.GetMinX();
             result.minY = convert.GetMinY();
@@ -1998,7 +2003,8 @@ ViewPresetResult GetViewPreset(
                     "44486830974939107198675154068766991630158718697745868953539773063408259270654961802"
                     "67868663306898577037289686648909313180741633832426249149484817243073477944835354714"
                     "45542e-03"},
-                HighPrecision{"1.73231758582480130207e+715"}};
+                HighPrecision{"1.73231758582480130207e+715"},
+                PointZoomBBConverter::TestMode::Enabled};
 
             result.minX = convert.GetMinX();
             result.minY = convert.GetMinY();
@@ -2017,7 +2023,8 @@ ViewPresetResult GetViewPreset(
             // maxX = HighPrecision{ "1.5" };
             // maxY = HighPrecision{ "1.5" };
 
-            PointZoomBBConverter convert{HighPrecision{"0"}, HighPrecision{"0"}, HighPrecision{"1"}};
+            PointZoomBBConverter convert{HighPrecision{"0"}, HighPrecision{"0"}, HighPrecision{"1"},
+                                         PointZoomBBConverter::TestMode::Enabled};
 
             result.minX = convert.GetMinX();
             result.minY = convert.GetMinY();

@@ -3198,7 +3198,7 @@ RefOrbitCalc::SaveOrbitResults(std::wstring imagFilename) const
         auto minY = m_Fractal.GetMinY();
         auto maxY = m_Fractal.GetMaxY();
 
-        PointZoomBBConverter zoomConverter{minX, minY, maxX, maxY};
+        PointZoomBBConverter zoomConverter{minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled};
 
         const double radiusY{double{maxY - minY} / double{2.0}};
         orbitX = zoomConverter.GetPtX();

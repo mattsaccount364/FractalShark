@@ -6,17 +6,21 @@ class PointZoomBBConverter {
 public:
     static constexpr auto Factor = 2;
 
-    PointZoomBBConverter();
+    enum class TestMode { Enabled, Disabled };
+
+    PointZoomBBConverter(TestMode testMode);
     PointZoomBBConverter(
         HighPrecision ptX,
         HighPrecision ptY,
-        HighPrecision zoomFactor);
+        HighPrecision zoomFactor,
+        TestMode testMode);
 
     PointZoomBBConverter(
         HighPrecision minX,
         HighPrecision minY,
         HighPrecision maxX,
-        HighPrecision maxY);
+        HighPrecision maxY,
+        TestMode testMode);
 
     const HighPrecision &GetMinX() const;
     const HighPrecision &GetMinY() const;
@@ -74,5 +78,5 @@ private:
     std::string m_RadiusStr;
     std::string m_DeltaYStr;
 
-    static constexpr bool m_Test = false;
+    TestMode m_Test;
 };

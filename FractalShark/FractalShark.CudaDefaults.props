@@ -33,13 +33,12 @@
       <!--
         Flags rationale:
         - allow unsupported compiler: using a newer MSVC toolset than CUDA checks allow
-        - default stream per thread: avoids accidental cross-thread sync on legacy default stream
         - relaxed constexpr: needed for heavy constexpr/template use in device code
         - threads=0: let nvcc parallelize compilation
         - suppress diagnostic 177: silence a known noisy warning in this codebase/toolchain
         - host flags: MSVC preprocessor conformance + bigobj, passed via -Xcompiler
       -->
-      <AdditionalOptions>-allow-unsupported-compiler -std=c++20 --default-stream per-thread --expt-relaxed-constexpr --threads=0 -diag-suppress=177 -Xcompiler="/Zc:preprocessor /bigobj" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-allow-unsupported-compiler -std=c++20 --expt-relaxed-constexpr --threads=0 -diag-suppress=177 -Xcompiler="/Zc:preprocessor /bigobj" %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
 
@@ -69,7 +68,7 @@
         - extra device vectorization: helps in some 64-bit / carry-heavy kernels
         - same compiler override + host flag handling as Debug
       -->
-      <AdditionalOptions>-allow-unsupported-compiler -std=c++20 --threads=0 --default-stream per-thread --expt-relaxed-constexpr -diag-suppress=177 -Xcompiler="/Zc:preprocessor /bigobj" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-allow-unsupported-compiler -std=c++20 --threads=0 --expt-relaxed-constexpr -diag-suppress=177 -Xcompiler="/Zc:preprocessor /bigobj" %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
 

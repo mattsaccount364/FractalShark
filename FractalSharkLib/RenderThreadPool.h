@@ -24,7 +24,7 @@ struct RenderWorkItem {
     uint64_t SequenceNumber;
 
     // Location / zoom
-    PointZoomBBConverter Ptz;
+    PointZoomBBConverter Ptz{PointZoomBBConverter::TestMode::Enabled};
 
     // Algorithm
     RenderAlgorithm Algorithm;

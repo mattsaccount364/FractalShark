@@ -23,7 +23,7 @@ private:
 
 public:
     template<class T2, class SubType2, PerturbExtras OtherPExtras>
-    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras> &other);
+    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras> &other, cudaStream_t stream);
     __host__ GPU_LAReference(const GPU_LAReference &other);
     __host__ GPU_LAReference(GPU_LAReference &&other);
     __host__ GPU_LAReference();
@@ -62,6 +62,8 @@ private:
     bool AllocHostLA;
     bool AllocHostLAStages;
 
+    cudaStream_t m_Stream;
+
 
 public:
     CUDA_CRAP bool isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const;
@@ -79,7 +81,8 @@ template<typename IterType, class Float, class SubType>
 template<class T2, class SubType2, PerturbExtras OtherPExtras>
 __host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPExtras>(
-    const LAReference<IterType, T2, SubType2, OtherPExtras> &other) :
+    const LAReference<IterType, T2, SubType2, OtherPExtras> &other,
+    cudaStream_t stream) :
     UseAT{ other.UseAT() },
     AT{ other.GetAT() },
     LAStageCount{ other.GetLAStageCount() },
@@ -91,13 +94,14 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     LAStages{},
     NumLAStages{},
     AllocHostLA{},
-    AllocHostLAStages{} {
+    AllocHostLAStages{},
+    m_Stream{ stream } {
 
     GPU_LAInfoDeep<IterType, Float, SubType> *tempLAs;
     LAStageInfo<IterType> *tempLAStages;
 
     const auto LAMemToAllocate = other.GetLAs().GetSize() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
-    m_Err = cudaMalloc(&tempLAs, LAMemToAllocate);
+    m_Err = cudaMallocAsync(&tempLAs, LAMemToAllocate, stream);
     if (m_Err != cudaSuccess) {
         AllocHostLA = true;
         m_Err = cudaMallocHost(&tempLAs, LAMemToAllocate);
@@ -110,7 +114,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     NumLAs = other.GetLAs().GetSize();
 
     const auto LAStageMemoryToAllocate = other.GetLAStages().GetSize() * sizeof(LAStageInfo<IterType>);
-    m_Err = cudaMalloc(&tempLAStages, LAStageMemoryToAllocate);
+    m_Err = cudaMallocAsync(&tempLAStages, LAStageMemoryToAllocate, stream);
     if (m_Err != cudaSuccess) {
         AllocHostLAStages = true;
         m_Err = cudaMallocHost(&tempLAStages, LAStageMemoryToAllocate);
@@ -143,10 +147,11 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
             GPU_LAInfoDeep<IterType, Float, SubType>,
             LAInfoDeep<IterType, Float, SubType, OtherPExtras>>();
 
-        m_Err = cudaMemcpy(LAs,
+        m_Err = cudaMemcpyAsync(LAs,
             other.GetLAs().GetData(),
             sizeof(GPU_LAInfoDeep<IterType, Float, SubType>) * other.GetLAs().GetSize(),
-            cudaMemcpyDefault);
+            cudaMemcpyDefault,
+            stream);
         if (m_Err != cudaSuccess) {
             return;
         }
@@ -160,10 +165,11 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     //    m_LAStages[i] = other.m_LAStages[i];
     //}
 
-    m_Err = cudaMemcpy(LAStages,
+    m_Err = cudaMemcpyAsync(LAStages,
         other.GetLAStages().GetData(),
         sizeof(LAStageInfo<IterType>) * other.GetLAStages().GetSize(),
-        cudaMemcpyDefault);
+        cudaMemcpyDefault,
+        stream);
     if (m_Err != cudaSuccess) {
         return;
     }
@@ -177,7 +183,7 @@ GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference() {
             if (AllocHostLA) {
                 cudaFreeHost(LAs);
             } else {
-                cudaFree(LAs);
+                cudaFreeAsync(LAs, m_Stream);
             }
 
             LAs = nullptr;
@@ -187,7 +193,7 @@ GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference() {
             if (AllocHostLAStages) {
                 cudaFreeHost(LAStages);
             } else {
-                cudaFree(LAStages);
+                cudaFreeAsync(LAStages, m_Stream);
             }
 
             LAStages = nullptr;
@@ -209,7 +215,8 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference()
     LAStages{},
     NumLAStages{},
     AllocHostLA{},
-    AllocHostLAStages{} {
+    AllocHostLAStages{},
+    m_Stream{} {
 }
 
 template<typename IterType, class Float, class SubType>
@@ -227,6 +234,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference &&oth
     NumLAStages = other.NumLAStages;
     AllocHostLA = other.AllocHostLA;
     AllocHostLAStages = other.AllocHostLAStages;
+    m_Stream = other.m_Stream;
 
     other.UseAT = false;
     other.AT = ATInfo<IterType, Float, SubType>{};
@@ -240,6 +248,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference &&oth
     other.NumLAStages = 0;
     other.AllocHostLA = false;
     other.AllocHostLAStages = false;
+    other.m_Stream = nullptr;
 }
 
 template<typename IterType, class Float, class SubType>
@@ -256,7 +265,8 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(const GPU_LAReference
     LAStages{ other.LAStages },
     NumLAStages{ other.NumLAStages },
     AllocHostLA{ other.AllocHostLA },
-    AllocHostLAStages{ other.AllocHostLAStages } {
+    AllocHostLAStages{ other.AllocHostLAStages },
+    m_Stream{ other.m_Stream } {
 }
 
 template<typename IterType, class Float, class SubType>

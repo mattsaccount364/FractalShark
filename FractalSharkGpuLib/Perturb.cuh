@@ -22,7 +22,8 @@ public:
         IterType PeriodMaybeZero,
         Type OrbitXLow,
         Type OrbitYLow,
-        const GPUReferenceIter<Other, PExtras> *in_iters)
+        const GPUReferenceIter<Other, PExtras> *in_iters,
+        cudaStream_t stream)
         : FullOrbit{},
         OrbitSize(CompressedOrbitSize),
         UncompressedItersInOrbit(UncompressedOrbitSize),
@@ -31,7 +32,8 @@ public:
         OrbitYLow(OrbitYLow),
         err(cudaSuccess),
         own(true),
-        AllocHost(false) {
+        AllocHost(false),
+        m_Stream(stream) {
 
         check_size<HDRFloat<float>, 8>();
         check_size<HDRFloat<double>, 16>();
@@ -53,7 +55,7 @@ public:
 
         GPUReferenceIter<Type, PExtras> *tempIters;
         AllocHost = false;
-        err = cudaMalloc(&tempIters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>));
+        err = cudaMallocAsync(&tempIters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>), stream);
         if (err != cudaSuccess) {
             AllocHost = true;
             err = cudaMallocHost(&tempIters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>));
@@ -66,7 +68,7 @@ public:
         FullOrbit = tempIters;
 
         // Cast to void -- it's logically const
-        cudaMemcpy((void *)FullOrbit, in_iters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>), cudaMemcpyDefault);
+        cudaMemcpyAsync((void *)FullOrbit, in_iters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>), cudaMemcpyDefault, stream);
 
         //err = cudaMemAdvise(m_FullOrbit,
         //    size * sizeof(GPUReferenceIter<Type>),
@@ -87,7 +89,8 @@ public:
         OrbitXLow{ other.OrbitXLow },
         OrbitYLow{ other.OrbitYLow },
         own{},
-        AllocHost{ other.AllocHost } {
+        AllocHost{ other.AllocHost },
+        m_Stream{ other.m_Stream } {
     }
 
     // funny semantics, copy doesn't own the pointers.
@@ -101,6 +104,7 @@ public:
         OrbitYLow = other.OrbitYLow;
         own = false;
         AllocHost = other.AllocHost;
+        m_Stream = other.m_Stream;
     }
 
     uint32_t CheckValid() const {
@@ -115,7 +119,7 @@ public:
         if (own) {
             if (FullOrbit != nullptr) {
                 if (!AllocHost) {
-                    cudaFree((void *)FullOrbit);
+                    cudaFreeAsync((void *)FullOrbit, m_Stream);
                 } else {
                     cudaFreeHost((void *)FullOrbit);
                 }
@@ -312,5 +316,6 @@ private:
     cudaError_t err;
     bool own;
     bool AllocHost;
+    cudaStream_t m_Stream;
 };
 

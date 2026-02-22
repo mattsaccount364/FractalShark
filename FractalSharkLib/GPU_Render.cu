@@ -203,15 +203,15 @@ void GPURenderer::ClearLocals() {
 template<typename IterType>
 void GPURenderer::ClearMemory() {
     if (OutputIterMatrix != nullptr) {
-        cudaMemset(OutputIterMatrix, 0, N_cu * sizeof(IterType));
+        cudaMemsetAsync(OutputIterMatrix, 0, N_cu * sizeof(IterType), m_ComputeStream);
     }
     
     if (OutputReductionResults != nullptr) {
-        cudaMemset(OutputReductionResults, 0, sizeof(IterType));
+        cudaMemsetAsync(OutputReductionResults, 0, sizeof(IterType), m_ComputeStream);
     }
     
     if (OutputColorMatrix.aa_colors != nullptr) {
-        cudaMemset(OutputColorMatrix.aa_colors, 0, N_color_cu * sizeof(Color16));
+        cudaMemsetAsync(OutputColorMatrix.aa_colors, 0, N_color_cu * sizeof(Color16), m_ComputeStream);
     }
 }
 
@@ -433,7 +433,8 @@ uint32_t GPURenderer::InitializePerturb(
             Perturb1->GetPeriodMaybeZero(),
             Perturb1->GetOrbitXLow(),
             Perturb1->GetOrbitYLow(),
-            Perturb1->GetFullOrbit()
+            Perturb1->GetFullOrbit(),
+            m_ComputeStream
         };
 
         auto result = CudaResults1->CheckValid();
@@ -454,7 +455,8 @@ uint32_t GPURenderer::InitializePerturb(
             Perturb2->GetPeriodMaybeZero(),
             Perturb2->GetOrbitXLow(),
             Perturb2->GetOrbitYLow(),
-            Perturb2->GetFullOrbit()
+            Perturb2->GetFullOrbit(),
+            m_ComputeStream
         };
 
         auto result = CudaResults2->CheckValid();
@@ -469,7 +471,7 @@ uint32_t GPURenderer::InitializePerturb(
     }
 
     if (InstallLA && LaReferenceHost != nullptr) {
-        auto *LaReferenceCuda = new GPU_LAReference<IterType, T1, SubType>{ *LaReferenceHost };
+        auto *LaReferenceCuda = new GPU_LAReference<IterType, T1, SubType>{ *LaReferenceHost, m_ComputeStream };
         auto result = LaReferenceCuda->CheckValid();
         if (result != 0) {
             ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
@@ -1309,7 +1311,8 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
         float_perturb->GetPeriodMaybeZero(),
         float_perturb->GetOrbitXLow(),
         float_perturb->GetOrbitYLow(),
-        float_perturb->GetFullOrbit());
+        float_perturb->GetFullOrbit(),
+        m_ComputeStream);
 
     result = cudaResults.CheckValid();
     if (result != 0) {
@@ -1322,7 +1325,8 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
         float_perturb->GetPeriodMaybeZero(),
         double_perturb->GetOrbitXLow(),
         double_perturb->GetOrbitYLow(),
-        double_perturb->GetFullOrbit());
+        double_perturb->GetFullOrbit(),
+        m_ComputeStream);
 
     result = cudaResultsDouble.CheckValid();
     if (result != 0) {
@@ -1447,7 +1451,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 perturb->GetPeriodMaybeZero(),
                 perturb->GetOrbitXLow(),
                 perturb->GetOrbitYLow(),
-                perturb->GetFullOrbit());
+                perturb->GetFullOrbit(),
+                m_ComputeStream);
 
             result = cudaResults.CheckValid();
             if (result != 0) {
@@ -1455,7 +1460,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
             }
 
             auto Run = [&]<int32_t LM2>() -> uint32_t {
-                GPU_BLAS<IterType, HDRFloat<float>, BLA<HDRFloat<float>>, LM2> gpu_blas(blas->m_B);
+                GPU_BLAS<IterType, HDRFloat<float>, BLA<HDRFloat<float>>, LM2> gpu_blas(blas->m_B, m_ComputeStream);
                 result = gpu_blas.CheckValid();
                 if (result != 0) {
                     return result;
@@ -1482,7 +1487,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 perturb->GetPeriodMaybeZero(),
                 perturb->GetOrbitXLow(),
                 perturb->GetOrbitYLow(),
-                perturb->GetFullOrbit());
+                perturb->GetFullOrbit(),
+                m_ComputeStream);
 
             result = cudaResults.CheckValid();
             if (result != 0) {
@@ -1490,7 +1496,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
             }
 
             auto Run = [&]<int32_t LM2>() -> uint32_t {
-                GPU_BLAS<IterType, HDRFloat<double>, BLA<HDRFloat<double>>, LM2> gpu_blas(blas->m_B);
+                GPU_BLAS<IterType, HDRFloat<double>, BLA<HDRFloat<double>>, LM2> gpu_blas(blas->m_B, m_ComputeStream);
                 result = gpu_blas.CheckValid();
                 if (result != 0) {
                     return result;
@@ -1517,7 +1523,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 perturb->GetPeriodMaybeZero(),
                 perturb->GetOrbitXLow(),
                 perturb->GetOrbitYLow(),
-                perturb->GetFullOrbit());
+                perturb->GetFullOrbit(),
+                m_ComputeStream);
 
             result = cudaResults.CheckValid();
             if (result != 0) {
@@ -1525,7 +1532,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
             }
 
             auto Run = [&]<int32_t LM2>() -> uint32_t {
-                GPU_BLAS<IterType, double, BLA<double>, LM2> gpu_blas(blas->m_B);
+                GPU_BLAS<IterType, double, BLA<double>, LM2> gpu_blas(blas->m_B, m_ComputeStream);
                 result = gpu_blas.CheckValid();
                 if (result != 0) {
                     return result;

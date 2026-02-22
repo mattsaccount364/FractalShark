@@ -9,7 +9,7 @@ class BLAS;
 template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
 class GPU_BLAS {
 public:
-    GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>> &B);
+    GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>> &B, cudaStream_t stream);
     ~GPU_BLAS();
 
     GPU_BLAS(const GPU_BLAS &other);
@@ -43,6 +43,8 @@ protected:
     static constexpr size_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     cudaError_t m_Err;
+
+    cudaStream_t m_Stream;
 
     const bool m_Owned;
 };

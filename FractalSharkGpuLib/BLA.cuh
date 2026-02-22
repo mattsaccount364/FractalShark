@@ -113,19 +113,20 @@ template class BLA<HDRFloat<double>>;
 ////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
-GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>> &B)
+GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>> &B, cudaStream_t stream)
     : m_B(nullptr),
+    m_BMem(nullptr),
     m_Err(),
+    m_Stream(stream),
     m_Owned(true) {
 
     GPUBLA_TYPE **tempB;
-    m_Err = cudaMallocManaged(&tempB, m_NumLevels * sizeof(GPUBLA_TYPE *), cudaMemAttachGlobal);
+    m_Err = cudaMallocAsync(&tempB, m_NumLevels * sizeof(GPUBLA_TYPE *), stream);
     if (m_Err != cudaSuccess) {
         return;
     }
 
     m_B = tempB;
-    cudaMemset(m_B, 0, m_NumLevels * sizeof(GPUBLA_TYPE *));
 
     size_t total = 0;
 
@@ -133,46 +134,55 @@ GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const std::vector<std::vector<
         total += sizeof(GPUBLA_TYPE) * B[i].size();
     }
 
-    m_Err = cudaMallocManaged(&m_BMem, total);
+    m_Err = cudaMallocAsync(&m_BMem, total, stream);
     if (m_Err != cudaSuccess) {
         return;
     }
 
+    // Build pointer array on host, then copy to device
+    std::vector<GPUBLA_TYPE *> hostB(m_NumLevels, nullptr);
     size_t curTotal = 0;
     for (size_t i = 0; i < B.size(); i++) {
-        m_B[i] = &m_BMem[curTotal];
+        hostB[i] = &m_BMem[curTotal];
         curTotal += B[i].size();
 
-        cudaMemcpy(m_B[i],
+        cudaMemcpyAsync(hostB[i],
             B[i].data(),
             sizeof(GPUBLA_TYPE) * B[i].size(),
-            cudaMemcpyDefault);
+            cudaMemcpyDefault,
+            stream);
     }
+
+    cudaMemcpyAsync(m_B, hostB.data(),
+        m_NumLevels * sizeof(GPUBLA_TYPE *),
+        cudaMemcpyDefault,
+        stream);
 }
 
 template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
 GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::~GPU_BLAS() {
     if (m_Owned) {
         if (m_BMem != nullptr) {
-            cudaFree(m_BMem);
+            cudaFreeAsync(m_BMem, m_Stream);
             m_BMem = nullptr;
         }
 
         if (m_B != nullptr) {
-            cudaFree(m_B);
+            cudaFreeAsync(m_B, m_Stream);
             m_B = nullptr;
         }
     }
 }
 
 template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
-GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const GPU_BLAS &other) : m_Owned(false) {
+GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const GPU_BLAS &other) : m_Owned(false), m_Stream(other.m_Stream) {
     if (this == &other) {
         return;
     }
 
     m_BMem = other.m_BMem;
     m_B = other.m_B;
+    m_Err = other.m_Err;
     //for (size_t i = 0; i < m_NumLevels; i++) {
     //    m_B[i] = other.m_B[i];
     //}

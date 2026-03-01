@@ -31,7 +31,6 @@
 #include "RefOrbitCalc.h"
 #include "WPngImage\WPngImage.hh"
 
-#include "DrawThreadSync.h"
 #include "PointZoomBBConverter.h"
 #include "RenderThreadPool.h"
 
@@ -168,10 +167,21 @@ public:
     // Async render pool: enqueue current state for rendering.
     // Returns a handle that can optionally be waited on.
     RenderJobHandle EnqueueRender();
-    RenderJobHandle EnqueueRender(const PointZoomBBConverter &ptz);
-    RenderThreadPool *GetRenderPool() { return m_RenderPool.get(); }
+    RenderJobHandle EnqueueRender(const PointZoomBBConverter &ptz,
+                                  bool supersedable = true);
 
-    template <typename IterType> void DrawGlFractal(RendererIndex idx, bool LocalColor, bool LastIter);
+    // Enqueue a command that mutates Fractal state on a worker thread,
+    // then renders.  Keeps the UI thread responsive and race-free.
+    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd);
+    RenderJobHandle EnqueueCommand(const PointZoomBBConverter &ptz,
+                                   std::function<void(Fractal &)> cmd,
+                                   bool supersedable = true);
+
+    // Enqueue a mutation-only command: executes under the lock but does
+    // NOT trigger CalcFractal or frame production.
+    RenderJobHandle EnqueueMutation(std::function<void(Fractal &)> cmd);
+
+    RenderThreadPool *GetRenderPool() { return m_RenderPool.get(); }
 
     void SetRepaint(bool repaint);
     bool GetRepaint() const;
@@ -307,8 +317,6 @@ private:
 
     template <typename IterType> void CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
-    static void DrawFractalThread(size_t index, Fractal *fractal);
-
     void FillCoord(const HighPrecision &src, MattQFltflt &dest);
     void FillCoord(const HighPrecision &src, MattQDbldbl &dest);
     void FillCoord(const HighPrecision &src, MattDbldbl &dest);
@@ -363,10 +371,6 @@ private:
     RefOrbitCalc m_RefOrbit;
     std::vector<std::unique_ptr<FeatureSummary>> m_FeatureSummaries;
 
-
-    std::unique_ptr<uint16_t[]> m_DrawOutBytes;
-    std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;
-    std::vector<std::unique_ptr<DrawThreadSync>> m_DrawThreads;
 
     std::vector<std::unique_ptr<PngParallelSave>> m_FractalSavesInProgress;
 
@@ -432,9 +436,6 @@ private:
     ItersMemoryContainer m_CurIters;
     std::mutex m_ItersMemoryStorageLock;
     std::vector<ItersMemoryContainer> m_ItersMemoryStorage;
-
-    static constexpr size_t BrokenMaxFractalSize = 1; // TODO
-    BYTE m_ProcessPixelRow[BrokenMaxFractalSize];
 
     // Reference compression
     int32_t m_CompressionExp[static_cast<size_t>(CompressionError::Num)];

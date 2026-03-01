@@ -311,24 +311,32 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
         case 'C':
         case 'c':
             if (shiftDown) {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                // ClearPerturbationResults is included in the command
+                gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
+                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                    f.CenterAtPoint(x, y);
+                });
+            } else {
+                MenuCenterView(mousePt.x, mousePt.y);
             }
-            MenuCenterView(mousePt.x, mousePt.y);
             break;
 
         case 'E':
         case 'e':
-            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-            gFractal->DefaultCompressionErrorExp(Fractal::CompressionError::Low);
-            gFractal->DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([](Fractal &f) {
+                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                f.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
+                f.DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
+            });
             break;
 
         case 'n': {
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::Direct);
+            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::Direct);
+            });
             break;
         }
 
@@ -336,7 +344,9 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::DirectScan);
+            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::DirectScan);
+            });
             break;
         }
 
@@ -344,7 +354,9 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::PT);
+            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::PT);
+            });
             break;
         }
 
@@ -352,7 +364,9 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::PTScan);
+            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::PTScan);
+            });
             break;
         }
 
@@ -360,7 +374,9 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::LA);
+            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::LA);
+            });
             break;
         }
 
@@ -368,123 +384,132 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             POINT pt;
             ::GetCursorPos(&pt);
             ::ScreenToClient(hWnd, &pt);
-            gFractal->TryFindPeriodicPoint(pt.x, pt.y, FeatureFinderMode::LAScan);
+            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::LAScan);
+            });
             break;
         }
 
         case '.': {
-            bool ret = gFractal->ZoomToFoundFeature();
-            if (ret) {
-                PaintAsNecessary();
-            }
+            gFractal->EnqueueCommand([](Fractal &f) {
+                f.ZoomToFoundFeature();
+            });
+            break;
         }
 
         case '>': {
-            gFractal->ClearAllFoundFeatures();
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([](Fractal &f) {
+                f.ClearAllFoundFeatures();
+            });
             break;
         }
 
         case 'H':
         case 'h': {
-            auto &laParameters = gFractal->GetLAParameters();
-            if (shiftDown) {
-                laParameters.AdjustLAThresholdScaleExponent(-1);
-                laParameters.AdjustLAThresholdCScaleExponent(-1);
-            } else {
-                laParameters.AdjustLAThresholdScaleExponent(1);
-                laParameters.AdjustLAThresholdCScaleExponent(1);
-            }
-            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-            gFractal->ForceRecalc();
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                auto &laParameters = f.GetLAParameters();
+                if (shiftDown) {
+                    laParameters.AdjustLAThresholdScaleExponent(-1);
+                    laParameters.AdjustLAThresholdCScaleExponent(-1);
+                } else {
+                    laParameters.AdjustLAThresholdScaleExponent(1);
+                    laParameters.AdjustLAThresholdCScaleExponent(1);
+                }
+                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+                f.ForceRecalc();
+            });
             break;
         }
 
         case 'J':
         case 'j': {
-            auto &laParameters = gFractal->GetLAParameters();
-            if (shiftDown) {
-                laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
-                laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
-            } else {
-                laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
-                laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
-            }
-            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-            gFractal->ForceRecalc();
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                auto &laParameters = f.GetLAParameters();
+                if (shiftDown) {
+                    laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
+                    laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
+                } else {
+                    laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
+                    laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
+                }
+                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+                f.ForceRecalc();
+            });
             break;
         }
 
         case 'I':
         case 'i':
-            if (shiftDown) {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-            }
-            gFractal->ForceRecalc();
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                if (shiftDown) {
+                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+                }
+                f.ForceRecalc();
+            });
             MenuGetCurPos();
             break;
 
         case 'O':
         case 'o':
-            if (shiftDown) {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-            }
-            gFractal->ForceRecalc();
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                if (shiftDown) {
+                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                }
+                f.ForceRecalc();
+            });
             MenuGetCurPos();
             break;
 
         case 'P':
         case 'p':
-            if (shiftDown) {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-            }
-            gFractal->ForceRecalc();
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                if (shiftDown) {
+                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+                }
+                f.ForceRecalc();
+            });
             MenuGetCurPos();
             break;
 
         case 'q':
         case 'Q':
-            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-            if (shiftDown) {
-                gFractal->DecCompressionError(Fractal::CompressionError::Intermediate, 10);
-            } else {
-                gFractal->IncCompressionError(Fractal::CompressionError::Intermediate, 10);
-            }
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                if (shiftDown) {
+                    f.DecCompressionError(Fractal::CompressionError::Intermediate, 10);
+                } else {
+                    f.IncCompressionError(Fractal::CompressionError::Intermediate, 10);
+                }
+            });
             break;
 
         case 'R':
         case 'r':
-            if (shiftDown) {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-            }
-            MenuSquareView();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                if (shiftDown) {
+                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                }
+                f.SquareCurrentView();
+            });
             break;
 
         case 'T':
         case 't':
-            if (shiftDown) {
-                gFractal->UseNextPaletteAuxDepth(-1);
-            } else {
-                gFractal->UseNextPaletteAuxDepth(1);
-            }
-            gFractal->EnqueueRender();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                f.UseNextPaletteAuxDepth(shiftDown ? -1 : 1);
+            });
             break;
 
         case 'W':
         case 'w':
-            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-            if (shiftDown) {
-                gFractal->DecCompressionError(Fractal::CompressionError::Low, 1);
-            } else {
-                gFractal->IncCompressionError(Fractal::CompressionError::Low, 1);
-            }
-            PaintAsNecessary();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                if (shiftDown) {
+                    f.DecCompressionError(Fractal::CompressionError::Low, 1);
+                } else {
+                    f.IncCompressionError(Fractal::CompressionError::Low, 1);
+                }
+            });
             break;
 
         case 'Z':
@@ -498,13 +523,14 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
 
         case 'D':
         case 'd': {
-            if (shiftDown) {
-                gFractal->CreateNewFractalPalette();
-                gFractal->UsePaletteType(FractalPaletteType::Random);
-            } else {
-                gFractal->UseNextPaletteDepth();
-            }
-            gFractal->EnqueueRender();
+            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
+                if (shiftDown) {
+                    f.CreateNewFractalPalette();
+                    f.UsePaletteType(FractalPaletteType::Random);
+                } else {
+                    f.UseNextPaletteDepth();
+                }
+            });
             break;
         }
 
@@ -630,10 +656,11 @@ MainWindow::ActivateSavedOrbit(size_t index)
     const auto num_iterations = gSavedLocations[index].num_iterations;
     const auto antialiasing = gSavedLocations[index].antialiasing;
 
-    gFractal->RecenterViewCalc(ptz);
-    gFractal->SetNumIterations<IterTypeFull>(num_iterations);
-    gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([ptz, num_iterations, antialiasing](Fractal &f) {
+        f.RecenterViewCalc(ptz);
+        f.SetNumIterations<IterTypeFull>(num_iterations);
+        f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
+    });
 }
 
 void
@@ -732,8 +759,11 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 
         case WM_SIZE: {
             if (gFractal) {
-                gFractal->ResetDimensions(LOWORD(lParam), HIWORD(lParam));
-                PaintAsNecessary();
+                auto w = LOWORD(lParam);
+                auto h = HIWORD(lParam);
+                gFractal->EnqueueCommand([w, h](Fractal &f) {
+                    f.ResetDimensions(w, h);
+                });
             }
             return 0;
         }
@@ -830,10 +860,14 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 newView.bottom = GET_Y_LPARAM(lParam);
             }
 
-            if (gFractal && gFractal->RecenterViewScreen(newView)) {
-                if (maintainAspect)
-                    gFractal->SquareCurrentView();
-                PaintAsNecessary();
+            if (gFractal) {
+                gFractal->EnqueueCommand(
+                    [newView, maintainAspect](Fractal &f) {
+                        if (f.RecenterViewScreen(newView)) {
+                            if (maintainAspect)
+                                f.SquareCurrentView();
+                        }
+                    });
             }
 
             return 0;
@@ -928,16 +962,15 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             ScreenToClient(hWnd, &pt);
 
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
-                // Wheel FORWARD → ZOOM IN
-                // Negative factor shrinks the bounding box in ZoomTowardPoint()
-                gFractal->ZoomTowardPoint(pt.x, pt.y, -0.3);
+                gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+                    f.ZoomTowardPoint(x, y, -0.3);
+                });
             } else {
-                // Wheel BACKWARD → ZOOM OUT
-                // Smaller zoom factor expands the view
-                gFractal->ZoomAtCenter(0.3);
+                gFractal->EnqueueCommand([](Fractal &f) {
+                    f.ZoomAtCenter(0.3);
+                });
             }
 
-            PaintAsNecessary();
             return 0;
         }
 
@@ -957,7 +990,6 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 
         case WM_CHAR: {
             HandleKeyDown(message, wParam, lParam);
-            PaintAsNecessary();
             return 0;
         }
 
@@ -971,51 +1003,57 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 void
 MainWindow::MenuGoBack()
 {
-    if (gFractal->Back() == true) {
-        PaintAsNecessary();
-    }
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.Back();
+    });
 }
 
 void
 MainWindow::MenuStandardView(size_t i)
 {
-    gFractal->View(i);
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([i](Fractal &f) {
+        f.View(i);
+    });
 }
 
 void
 MainWindow::MenuSquareView()
 {
-    gFractal->SquareCurrentView();
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.SquareCurrentView();
+    });
 }
 
 void
 MainWindow::MenuCenterView(int x, int y)
 {
-    gFractal->CenterAtPoint(x, y);
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([x, y](Fractal &f) {
+        f.CenterAtPoint(x, y);
+    });
 }
 
 void
 MainWindow::MenuZoomIn(POINT mousePt)
 {
-    gFractal->ZoomRecentered(mousePt.x, mousePt.y, -.45);
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
+        f.ZoomRecentered(x, y, -.45);
+    });
 }
 
 void
 MainWindow::MenuZoomOut(POINT mousePt)
 {
-    gFractal->ZoomRecentered(mousePt.x, mousePt.y, 1);
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
+        f.ZoomRecentered(x, y, 1);
+    });
 }
 
 void
 MainWindow::MenuRepainting()
 {
-    gFractal->ToggleRepainting();
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ToggleRepainting();
+    });
 }
 
 void
@@ -1062,7 +1100,11 @@ MainWindow::MenuWindowed(bool square)
         if (gFractal) {
             RECT rt;
             GetClientRect(hWnd, &rt);
-            gFractal->ResetDimensions(rt.right, rt.bottom);
+            auto w = rt.right;
+            auto h = rt.bottom;
+            gFractal->EnqueueCommand([w, h](Fractal &f) {
+                f.ResetDimensions(w, h);
+            });
         }
     } else {
         int width = GetSystemMetrics(SM_CXSCREEN);
@@ -1086,34 +1128,37 @@ MainWindow::MenuWindowed(bool square)
         if (gFractal) {
             RECT rt;
             GetClientRect(hWnd, &rt);
-            gFractal->ResetDimensions(rt.right, rt.bottom);
+            auto w = rt.right;
+            auto h = rt.bottom;
+            gFractal->EnqueueCommand([w, h](Fractal &f) {
+                f.ResetDimensions(w, h);
+            });
         }
     }
-
-    PaintAsNecessary();
 }
 
 void
 MainWindow::MenuMultiplyIterations(double factor)
 {
-    if (gFractal->GetIterType() == IterTypeEnum::Bits32) {
-        uint64_t curIters = gFractal->GetNumIterations<uint32_t>();
-        curIters = (uint64_t)((double)curIters * (double)factor);
-        gFractal->SetNumIterations<uint32_t>(curIters);
-    } else {
-        uint64_t curIters = gFractal->GetNumIterations<uint64_t>();
-        curIters = (uint64_t)((double)curIters * (double)factor);
-        gFractal->SetNumIterations<uint64_t>(curIters);
-    }
-
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([factor](Fractal &f) {
+        if (f.GetIterType() == IterTypeEnum::Bits32) {
+            uint64_t curIters = f.GetNumIterations<uint32_t>();
+            curIters = (uint64_t)((double)curIters * factor);
+            f.SetNumIterations<uint32_t>(curIters);
+        } else {
+            uint64_t curIters = f.GetNumIterations<uint64_t>();
+            curIters = (uint64_t)((double)curIters * factor);
+            f.SetNumIterations<uint64_t>(curIters);
+        }
+    });
 }
 
 void
 MainWindow::MenuResetIterations()
 {
-    gFractal->ResetNumIterations();
-    PaintAsNecessary();
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ResetNumIterations();
+    });
 }
 
 void
@@ -1189,42 +1234,47 @@ MainWindow::MenuPaletteRotation()
     GetCursorPos(&OrgPos);
 
     for (;;) {
-        gFractal->RotateFractalPalette(10);
-        gFractal->EnqueueRender();
+        gFractal->EnqueueCommand([](Fractal &f) {
+            f.RotateFractalPalette(10);
+        }).Wait();
         GetCursorPos(&CurPos);
         if (abs(CurPos.x - OrgPos.x) > 5 || abs(CurPos.y - OrgPos.y) > 5) {
             break;
         }
     }
 
-    gFractal->ResetFractalPalette();
-    gFractal->EnqueueRender();
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ResetFractalPalette();
+    });
 }
 
 void
 MainWindow::MenuPaletteType(FractalPaletteType type)
 {
-    gFractal->UsePaletteType(type);
-    if (type == FractalPaletteType::Default) {
-        gFractal->UsePalette(8);
-        gFractal->SetPaletteAuxDepth(0);
-    }
-    gFractal->EnqueueRender();
+    gFractal->EnqueueCommand([type](Fractal &f) {
+        f.UsePaletteType(type);
+        if (type == FractalPaletteType::Default) {
+            f.UsePalette(8);
+            f.SetPaletteAuxDepth(0);
+        }
+    });
 }
 
 void
 MainWindow::MenuPaletteDepth(int depth)
 {
-    gFractal->UsePalette(depth);
-    gFractal->EnqueueRender();
+    gFractal->EnqueueCommand([depth](Fractal &f) {
+        f.UsePalette(depth);
+    });
 }
 
 void
 MainWindow::MenuCreateNewPalette()
 {
-    gFractal->CreateNewFractalPalette();
-    gFractal->UsePaletteType(FractalPaletteType::Random);
-    gFractal->EnqueueRender();
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.CreateNewFractalPalette();
+        f.UsePaletteType(FractalPaletteType::Random);
+    });
 }
 
 void
@@ -1509,26 +1559,39 @@ MainWindow::MenuLoadEnterLocation()
     HighPrecision zoomHP(values.zoom);
 
     PointZoomBBConverter pz2{realHP, imagHP, zoomHP, PointZoomBBConverter::TestMode::Enabled};
-    gFractal->RecenterViewCalc(pz2);
-    gFractal->SetNumIterations<IterTypeFull>(values.num_iterations);
-    PaintAsNecessary();
+    auto numIters = values.num_iterations;
+    gFractal->EnqueueCommand([pz2 = std::move(pz2), numIters](Fractal &f) {
+        f.RecenterViewCalc(pz2);
+        f.SetNumIterations<IterTypeFull>(numIters);
+    });
 }
 
 void
 MainWindow::MenuSaveBMP()
 {
+    // Save must read m_CurIters directly, so drain the render pool first
+    // to ensure no workers are active, then call synchronously.
+    if (auto *pool = gFractal->GetRenderPool()) {
+        pool->Drain();
+    }
     gFractal->SaveCurrentFractal(L"", true);
 }
 
 void
 MainWindow::MenuSaveHiResBMP()
 {
+    if (auto *pool = gFractal->GetRenderPool()) {
+        pool->Drain();
+    }
     gFractal->SaveHiResFractal(L"");
 }
 
 void
 MainWindow::MenuSaveItersAsText()
 {
+    if (auto *pool = gFractal->GetRenderPool()) {
+        pool->Drain();
+    }
     gFractal->SaveItersAsText(L"");
 }
 
@@ -1557,21 +1620,18 @@ MainWindow::LoadRefOrbit(CompressToDisk compressToDisk,
                          ImaginaSettings loadSettings,
                          std::wstring filename)
 {
+    gFractal->EnqueueCommand(
+        [compressToDisk, loadSettings, filename = std::move(filename)](Fractal &f) {
+            RecommendedSettings settings{};
+            f.LoadRefOrbit(&settings, compressToDisk, loadSettings, filename);
 
-    RecommendedSettings settings{};
-    gFractal->LoadRefOrbit(&settings, compressToDisk, loadSettings, filename);
-
-    PaintAsNecessary();
-
-    // Restore only "Auto".  If the savefile changes our iteration type
-    // to 64-bit, just leave it.  The "Auto" concept is kind of weird in
-    // this context.
-    if (settings.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
-        const bool success = gFractal->SetRenderAlgorithm(settings.GetRenderAlgorithm());
-        if (!success) {
-            std::wcerr << L"Warning: Could not set render algorithm to AUTO." << std::endl;
-        }
-    }
+            if (settings.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
+                const bool success = f.SetRenderAlgorithm(settings.GetRenderAlgorithm());
+                if (!success) {
+                    std::wcerr << L"Warning: Could not set render algorithm to AUTO." << std::endl;
+                }
+            }
+        });
 }
 
 void
@@ -1634,7 +1694,9 @@ MainWindow::MenuSaveImag(CompressToDisk compression)
         return;
     }
 
-    gFractal->SaveRefOrbit(compression, filename);
+    gFractal->EnqueueCommand([compression, filename = std::move(filename)](Fractal &f) {
+        f.SaveRefOrbit(compression, filename);
+    });
 }
 
 void
@@ -1657,7 +1719,12 @@ MainWindow::MenuDiffImag()
         return;
     }
 
-    gFractal->DiffRefOrbits(CompressToDisk::MaxCompressionImagina, outFile, filename1, filename2);
+    gFractal->EnqueueCommand(
+        [outFile = std::move(outFile),
+         filename1 = std::move(filename1),
+         filename2 = std::move(filename2)](Fractal &f) {
+            f.DiffRefOrbits(CompressToDisk::MaxCompressionImagina, outFile, filename1, filename2);
+        });
 }
 
 void
@@ -1795,7 +1862,7 @@ MainWindow::PaintAsNecessary()
     }
 
     if (gFractal != nullptr) {
-        gFractal->EnqueueRender();
+        gFractal->EnqueueCommand([](Fractal &) {});
     }
 }
 

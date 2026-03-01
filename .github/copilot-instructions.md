@@ -50,6 +50,8 @@ msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platfo
 Release\HpSharkFloatTest.exe
 ```
 
+**CrummyTest** (in `FractalSharkLib/CrummyTest.cpp`) is a functional test suite invoked from the application's right-click menu (IDM_BASICTEST). It tests rendering algorithms, reference orbit save/load, compression variants, and window resizing. CrummyTest calls `Drain()` then uses the **direct rendering path** (`CalcFractal(true)` → `SaveCurrentFractal`), not the render pool. Tests include `TestBasic`, `TestReferenceSave`, `TestVariedCompression`, `TestImaginaLoad`, `TestPerturbedPerturb`, `TestWindowResize`, and `TestGrowableVector`.
+
 ## Architecture
 
 ### Template-Heavy Design
@@ -135,6 +137,42 @@ Three main acceleration layers, selected via `LAv2Mode` enum:
 - **`GrowableVector<EltT>`** — Growable array with stable virtual addresses (no reallocation/copy). Uses `VirtualAlloc` reserve-and-commit: reserves a large virtual region up front, then commits pages incrementally. Also supports file-backed (disk-mapped) mode for persistence and low commit overhead. Used for orbit storage, metadata streams, and the custom heap arena. Critical for multi-billion-element reference orbits.
 
 - **`PointZoomBBConverter`** — Manages screen-pixel ↔ complex-plane coordinate transforms. All internal quantities (centre, bounding box, zoom factor) stored as `HighPrecision` (MPIR `mpf_t`) for meaningful precision at extreme zoom depths. Computes per-pixel deltas at full precision, then down-converts to the kernel's working type.
+
+### Render Thread Pool and Command Queue
+
+`RenderThreadPool` owns 4 worker threads and a GL consumer thread. UI actions never mutate `Fractal` state directly — they enqueue lambdas that execute on worker threads under `m_CalcFractalMutex`, eliminating UI↔worker data races.
+
+**Three enqueue APIs** (on both `RenderThreadPool` and `Fractal`):
+
+| API | Mutation | Render | Use case |
+|-----|----------|--------|----------|
+| `EnqueueCommand(lambda)` | ✅ | ✅ | UI zoom, pan, palette, recalc |
+| `EnqueueCommand(ptz, lambda)` | ✅ | ✅ (at given Ptz) | AutoZoomer pipeline with iteration interpolation |
+| `EnqueueMutation(lambda)` | ✅ | ❌ | Settings changes (algorithm, precision, perturbation type) |
+| `EnqueueRender()` / `EnqueueRender(ptz)` | ❌ | ✅ | Re-render current state, AutoZoomer pipeline |
+
+**Queue superseding**: When a new render is enqueued, earlier queued supersedable renders are discarded (only the latest view matters during rapid input). A generation counter also skips stale in-flight renders before they acquire GPU resources. AutoZoomer pipeline items are marked `Supersedable = false` to prevent skipping animation frames.
+
+**`Drain()`**: Waits for all in-flight work to complete. Used by `CrummyTest` and `AutoZoomer` Default/Max heuristic before calling `CalcFractal(true)` directly.
+
+### Two Rendering Paths
+
+`CalcFractal` is called from two distinct paths with different iteration data flow:
+
+1. **Render pool path** (normal UI rendering): Worker acquires its own `ItersMemoryContainer` from a pool. GPU results stay in `workerIters`, get copied to a `RenderFrame` via `ProduceFrame` → `RenderCurrent`, displayed by the GL consumer. `m_CurIters` is **not** updated.
+
+2. **Direct path** (`CalcFractal(true)` — CrummyTest, AutoZoomer Default/Max, save operations): Uses `m_CurIters` directly via `CalcContext{m_Ptz, m_CurIters}`. The `drawFractal=true` parameter triggers a GPU→CPU iter copy at the end of `CalcFractalTypedIter` so `m_CurIters` has the results. **Must call `Drain()` first** to ensure no pool workers are active.
+
+**Critical rule**: Operations that read `m_CurIters` (saving images, AutoZoom iteration analysis) must use the direct path, not `EnqueueCommand`. `EnqueueCommand` renders to `workerIters` which is returned to the pool — `m_CurIters` never sees the data.
+
+### MPIR Allocator Lifecycle
+
+MPIR memory allocation is controlled via `mp_set_memory_functions` (process-global). Two custom allocators exist:
+
+- **`MPIRBoundedAllocator`** — Fixed 4×1MB stack-like blocks per thread (TLS). Used for short-lived temporaries in `CalcCpuHDR` and reference orbit computation.
+- **`MPIRBumpAllocator`** — `GrowableVector`-backed, grows dynamically. Used for `SaveForReuse` orbit data that persists after computation.
+
+**Critical rule**: All MPIR objects (`mpf_t`, `HighPrecision`) allocated under a custom allocator **must be destroyed before `ShutdownTls()`**. After `ShutdownTls()`, `TlsInitialized = false` causes `mpf_clear` → `NewFree` to fall back to the default allocator (HeapCpp), which crashes on pointers from the custom allocator. **Use `{ }` scope blocks** to ensure stack-local MPIR objects are destroyed while TLS is still active.
 
 ### Feature Finder
 

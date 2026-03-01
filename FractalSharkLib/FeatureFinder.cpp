@@ -2133,12 +2133,13 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
                                                              cand->scaleExp2_for_mpf);
 
     // Commit only the refined coordinates + period.
-    // residual2/intrinsicRadius can be filled later by a measurement pass.
+    // Preserve existing intrinsicRadius if present — the refinement
+    // improves coordinates but doesn't recompute intrinsic radius.
     feature.SetFound(cX_hp,
                      cY_hp,
                      (IterType)period,
-                     HDRFloat<double>{},
-                     /*intrinsicRadius*/ HighPrecision{0});
+                     feature.GetResidual2(),
+                     feature.GetIntrinsicRadius());
     feature.SetRefined();
 
     // Optionally keep candidate (or clear it)

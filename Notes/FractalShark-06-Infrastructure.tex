@@ -849,6 +849,140 @@ or histogram equalization).  They exist primarily for diagnostic
 interest and as infrastructure that could support future coloring
 enhancements.
 
+
+% ===========================================================================
+\section{Render Thread Pool and Command Queue}
+\label{sec:render-thread-pool}
+% ===========================================================================
+
+The UI thread must remain responsive while fractal rendering proceeds.
+\FractalShark{} achieves this through a \emph{command-queue} architecture:
+the UI thread never mutates \code{Fractal} state directly.  Instead it wraps
+mutations in lambdas and enqueues them into a work queue consumed by a pool of
+worker threads.
+
+\subsection{Architecture}
+
+\code{RenderThreadPool} owns four worker threads (one per GPU renderer) and a
+dedicated OpenGL consumer thread.  The work queue is a \code{std::deque} of
+\code{RenderWorkItem} structs, each containing:
+
+\begin{itemize}
+  \item An optional \code{Command} lambda (\code{std::function<void(Fractal\&)>})
+        executed under \code{m\_CalcFractalMutex} before rendering.
+  \item An optional \code{Ptz} (coordinates) for the render; if absent, the
+        worker snapshots the live \code{m\_Ptz} after command execution.
+  \item Snapshotted algorithm, iteration count, dimensions, and dirty flags.
+  \item A \code{CompletionPromise} signalled when the job finishes, enabling
+        callers to \code{Wait()} if needed.
+\end{itemize}
+
+Workers execute a simple loop: dequeue an item, acquire a renderer and
+\code{ItersMemoryContainer} from their respective pools, lock
+\code{m\_CalcFractalMutex}, execute any command lambda, snapshot state, call
+\code{CalcFractal}, then produce frames for the GL consumer.
+
+\subsection{Enqueue APIs}
+
+Three enqueue variants serve distinct purposes:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lccX}
+\hline
+\textbf{API} & \textbf{Mutates} & \textbf{Renders} & \textbf{Use case} \\
+\hline
+\code{EnqueueCommand} & yes & yes & UI zoom, pan, palette changes, recalc \\
+\code{EnqueueMutation} & yes & no  & Settings (algorithm, precision, perturbation type) \\
+\code{EnqueueRender}   & no  & yes & Re-render current state; AutoZoomer pipeline \\
+\hline
+\end{tabularx}
+\end{center}
+
+\code{EnqueueMutation} skips sequence-number assignment, renderer acquisition,
+\code{CalcFractal}, and frame production.  Its fast path only acquires
+\code{m\_CalcFractalMutex}, executes the lambda, and signals the promise.
+
+\subsection{Queue Superseding and Generation Counter}
+
+Rapid user input (e.g.\ holding a zoom key) can enqueue many renders of which
+only the latest matters.  Two mechanisms discard stale work:
+
+\begin{enumerate}
+  \item \textbf{Queue-level superseding.}  When a new render item is enqueued,
+        all earlier \emph{supersedable} render items still in the queue are
+        removed.  Tombstone frames are pushed for their sequence numbers so the
+        GL consumer can advance.  Mutations and non-supersedable items
+        (AutoZoomer animation frames) are preserved.
+
+  \item \textbf{Generation counter.}  Each supersedable enqueue increments a
+        monotonic counter and stamps the item.  Workers check the counter
+        \emph{before} acquiring a renderer: if a newer item has been enqueued
+        since dequeue, the stale item is skipped with a tombstone.  This catches
+        items that were already dequeued but not yet processing.
+\end{enumerate}
+
+AutoZoomer's pipelined animation frames set \code{Supersedable = false} so they
+are never discarded.
+
+\subsection{Two Rendering Paths}
+\label{subsec:two-render-paths}
+
+\code{CalcFractal} is invoked from two distinct paths with different iteration
+data flow:
+
+\paragraph{Render pool path (normal UI rendering).}
+A worker acquires a private \code{ItersMemoryContainer} from a pool.  GPU
+results are extracted via \code{RenderCurrent} into a \code{RenderFrame} and
+forwarded to the GL consumer thread for texture upload.  The shared
+\code{m\_CurIters} is \emph{not} updated.
+
+\paragraph{Direct path (\code{CalcFractal(true)}).}
+Used by \code{CrummyTest}, \code{AutoZoomer} Default/Max heuristic, and save
+operations.  The caller constructs
+\code{CalcContext\{m\_Ptz,\;m\_CurIters\}} so GPU results are written directly
+into \code{m\_CurIters}.  The \code{drawFractal = true} flag triggers a
+GPU\(\to\)CPU iteration copy at the end of \code{CalcFractalTypedIter} via
+\code{RenderCurrent}.
+
+\textbf{Critical rule.}  Any code that reads \code{m\_CurIters} (saving images,
+analysing iteration data) must use the direct path and call
+\code{RenderThreadPool::Drain()} first to ensure no pool workers are active.
+The pool path writes to \code{workerIters} which is returned to the pool---\code{m\_CurIters} never sees that data.
+
+\subsection{MPIR Allocator Lifecycle}
+\label{subsec:mpir-allocator-lifecycle}
+
+MPIR memory allocation is controlled by a process-global function-pointer
+triple installed via \code{mp\_set\_memory\_functions}.  Two custom allocators
+are used to reduce allocation overhead during reference-orbit computation:
+
+\begin{itemize}
+  \item \textbf{\code{MPIRBoundedAllocator}} --- four $1\,\mathrm{MB}$
+        stack-like blocks per thread (thread-local storage).  Allocs bump
+        downward; frees decrement a per-block counter.  Used for short-lived
+        temporaries in \code{CalcCpuHDR} and single-threaded reference-orbit
+        paths.
+  \item \textbf{\code{MPIRBumpAllocator}} --- backed by
+        \code{GrowableVector<uint8\_t>}, grows dynamically.  Freed memory is
+        recycled via a small LIFO cache.  Used for \code{SaveForReuse} orbit
+        data that persists after computation.
+\end{itemize}
+
+\textbf{Critical rule.}  All \code{mpf\_t} / \code{HighPrecision} objects
+allocated under a custom allocator must be destroyed \emph{before}
+\code{ShutdownTls()}.  After shutdown, \code{TlsInitialized} is false and
+\code{mpf\_clear} falls back to the default allocator, which cannot recognise
+pointers from the custom allocator.  Use \code{\{\,\}} scope blocks to ensure
+stack-local MPIR objects are destroyed while the allocator TLS is still active.
+
+\subsection{Shutdown}
+
+On application exit, \code{RenderThreadPool::Shutdown()} sets the shutdown flag,
+clears the work queue (signalling completion on discarded items), and joins all
+worker threads.  Workers exit immediately on seeing the shutdown flag, even if
+items remain in the queue.  In-progress \code{CalcFractal} calls check
+\code{m\_ShutdownFlag} during the GPU-wait loop and abort early.
+
 % -----------------------------------------------------------------
 \subsection{Coordinate management}
 \label{subsec:coordinates}

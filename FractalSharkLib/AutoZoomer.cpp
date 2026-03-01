@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "AutoZoomer.h"
+#include "FeatureSummary.h"
 #include "PerturbationResults.h"
 
 #include <cmath>
@@ -16,8 +17,8 @@ AutoZoomer::Run()
 {
     const HighPrecision Two = HighPrecision{2};
 
-    HighPrecision width = m_Fractal.m_Ptz.GetMaxX() - m_Fractal.m_Ptz.GetMinX();
-    HighPrecision height = m_Fractal.m_Ptz.GetMaxY() - m_Fractal.m_Ptz.GetMinY();
+    HighPrecision width = m_Fractal.GetMaxX() - m_Fractal.GetMinX();
+    HighPrecision height = m_Fractal.GetMaxY() - m_Fractal.GetMinY();
 
     HighPrecision guessX;
     HighPrecision guessY;
@@ -35,113 +36,26 @@ AutoZoomer::Run()
     if constexpr (h == Fractal::AutoZoomHeuristic::Feature) {
         std::cout << "Forcing GPU HDRx32 Perturbed LAv2 for AutoZoom(Feature) since it relies on "
                      "perturbation results to perform the zoom.\n";
-        const bool success = m_Fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
-        if (!success) {
-            std::cerr << "Error: could not set render algorithm for AutoZoom(Feature).\n";
+
+        FeatureZoomSetup setup;
+
+        m_Fractal.EnqueueMutation([&](Fractal &f) {
+            SetupFeatureZoom(f, setup);
+        }).Wait();
+
+        if (setup.Failed) {
             return;
         }
+
+        guessX = std::move(setup.GuessX);
+        guessY = std::move(setup.GuessY);
 
         Divisor = HighPrecision{3};
-
-        // Get existing perturbation results to extract reference point
-        using IterType = uint32_t;
-        using T = HDRFloat<float>;
-        using SubType = float;
-        constexpr PerturbExtras PExtras = PerturbExtras::Disable;
-
-        const auto *results =
-            m_Fractal.m_RefOrbit.GetUsefulPerturbationResults<IterType, T, SubType, PExtras,
-                                                    RefOrbitCalc::Extras::None>();
-        if (!results) {
-            std::cout << "AutoZoom(Feature): no perturbation results available.\n";
-            return;
-        }
-
-        // Zoom target is the perturbation reference point
-        guessX = results->GetHiX();
-        guessY = results->GetHiY();
-
-        // Compute target zoom factor from GetMaxRadius().
-        // maxRadius represents the convergence radius of the reference orbit.
-        const T maxRadius = results->GetMaxRadius();
-
-        if (maxRadius.getMantissa() == 0.0) {
-            std::cout << "AutoZoom(Feature): maxRadius is zero, cannot compute zoom depth.\n";
-            return;
-        }
-
-        // Convert HDRFloat maxRadius to HighPrecision
-        HighPrecision maxRadiusHP;
-        maxRadius.GetHighPrecision(maxRadiusHP);
-
-        // targetZoomFactor = PointZoomBBConverter::Factor / maxRadius
-        // This sets the view so its half-width equals maxRadius.
-        HighPrecision targetZoomFactor = HighPrecision{PointZoomBBConverter::Factor} / maxRadiusHP;
-
-        HighPrecision origZoom = m_Fractal.m_Ptz.GetZoomFactor();
-
-        // Center on the perturbation point at the original zoom
-        PointZoomBBConverter startPtzCentered{guessX, guessY, origZoom, PointZoomBBConverter::TestMode::Enabled};
-        m_Fractal.m_Ptz = startPtzCentered;
-        m_Fractal.SquareCurrentView();
-
-        //CalcFractal(true);
-
-        // Compute total animation steps.
-        // Each ZoomInPlace(-1/22) step multiplies the zoom factor by 1.1.
-        // Decompose the ratio via frexp to avoid double overflow for
-        // extreme zoom depths.
-        const HighPrecision zoomRatio = targetZoomFactor / origZoom;
-        double mantissa{};
-        long exp2{};
-        zoomRatio.frexp(mantissa, exp2);
-        const double logRatio = std::log(std::abs(mantissa)) + exp2 * std::log(2.0);
-        const double logZoomPerStep = std::log(1.1);
-        const int64_t totalSteps =
-            (zoomRatio > HighPrecision{1})
-                ? static_cast<int64_t>(std::ceil(logRatio / logZoomPerStep))
-                : 1;
-
-        // Linearly interpolate iterations from current to perturbation target
-        const IterTypeFull startIters = m_Fractal.GetNumIterations<IterTypeFull>();
-        const IterTypeFull targetIters = results->GetMaxIterations();
-        const bool shouldInterpolateIters = startIters < targetIters;
-
-        // Pre-compute all zoom viewports
-        std::vector<PointZoomBBConverter> zoomSteps;
-        zoomSteps.reserve(totalSteps);
-        {
-            PointZoomBBConverter stepPtz = m_Fractal.m_Ptz;
-            for (int64_t i = 0; i < totalSteps; ++i) {
-                stepPtz.ZoomInPlace(-1.0 / 22.0);
-                zoomSteps.push_back(stepPtz);
-            }
-        }
-
-        // Pre-compute iteration counts
-        std::vector<IterTypeFull> iterCounts;
-        if (shouldInterpolateIters) {
-            iterCounts.reserve(totalSteps);
-            for (int64_t i = 0; i < totalSteps; ++i) {
-                iterCounts.push_back(
-                    startIters + (targetIters - startIters) * (i + 1) / totalSteps);
-            }
-        }
-
-        // Pre-initialize all renderers' GPU memory before the zoom loop
-        // so that managed memory allocations don't conflict with in-flight kernels.
-        for (size_t r = 0; r < NumRenderers; ++r) {
-            auto err = m_Fractal.InitializeGPUMemory(static_cast<RendererIndex>(r), false, m_Fractal.m_CurIters);
-            if (err) {
-                m_Fractal.MessageBoxCudaError(err);
-                return;
-            }
-        }
 
         static constexpr size_t PipelineDepth = 4 * NumRenderers;
         std::vector<RenderJobHandle> handles(PipelineDepth);
 
-        for (int64_t i = 0; i < totalSteps; ++i) {
+        for (int64_t i = 0; i < setup.TotalSteps; ++i) {
             {
                 MSG msg;
                 PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
@@ -154,12 +68,16 @@ AutoZoomer::Run()
             size_t slot = i % PipelineDepth;
             handles[slot].Wait();
 
-            if (shouldInterpolateIters) {
-                m_Fractal.SetNumIterations<IterTypeFull>(iterCounts[i]);
+            if (setup.ShouldInterpolateIters) {
+                auto iters = setup.IterCounts[i];
+                handles[slot] = m_Fractal.EnqueueCommand(setup.ZoomSteps[i],
+                    [iters](Fractal &f) {
+                        f.SetNumIterations<IterTypeFull>(iters);
+                    },
+                    false);
+            } else {
+                handles[slot] = m_Fractal.EnqueueRender(setup.ZoomSteps[i], false);
             }
-
-            // Pass coordinates directly — avoids racing on m_Ptz
-            handles[slot] = m_Fractal.EnqueueRender(zoomSteps[i]);
         }
 
         // Drain all remaining in-flight renders
@@ -169,12 +87,23 @@ AutoZoomer::Run()
 
         // Update live state to final zoom position so the view doesn't
         // snap back to the original zoom after the loop completes.
-        if (!zoomSteps.empty()) {
-            m_Fractal.m_Ptz = zoomSteps.back();
+        if (!setup.ZoomSteps.empty()) {
+            m_Fractal.EnqueueCommand(
+                [ptz = setup.ZoomSteps.back()](Fractal &f) {
+                    f.RecenterViewCalc(ptz);
+                }).Wait();
         }
 
         return;
     } else {
+        // Default/Max heuristic: serial loop that analyzes CPU-side iteration
+        // data after each render. Must use CalcFractal(true) which writes to
+        // m_CurIters and does GPU→CPU iter copy, NOT EnqueueCommand which
+        // renders to a worker-acquired container that m_CurIters never sees.
+        if (auto *pool = m_Fractal.GetRenderPool()) {
+            pool->Drain();
+        }
+
         size_t retries = 0;
 
         for (;;) {
@@ -188,8 +117,8 @@ AutoZoomer::Run()
             double geometricMeanY = 0;
 
             if (retries >= 0) {
-                width = m_Fractal.m_Ptz.GetMaxX() - m_Fractal.m_Ptz.GetMinX();
-                height = m_Fractal.m_Ptz.GetMaxY() - m_Fractal.m_Ptz.GetMinY();
+                width = m_Fractal.GetMaxX() - m_Fractal.GetMinX();
+                height = m_Fractal.GetMaxY() - m_Fractal.GetMinY();
                 retries = 0;
             }
 
@@ -201,14 +130,14 @@ AutoZoomer::Run()
                 // ---------------- DEFAULT ----------------
                 if constexpr (h == Fractal::AutoZoomHeuristic::Default) {
 
-                    ULONG shiftWidth = (ULONG)m_Fractal.m_ScrnWidth / 8;
-                    ULONG shiftHeight = (ULONG)m_Fractal.m_ScrnHeight / 8;
+                    ULONG shiftWidth = (ULONG)m_Fractal.GetScrnWidth() / 8;
+                    ULONG shiftHeight = (ULONG)m_Fractal.GetScrnHeight() / 8;
 
                     RECT antiRect;
                     antiRect.left = shiftWidth;
-                    antiRect.right = (ULONG)m_Fractal.m_ScrnWidth - shiftWidth;
+                    antiRect.right = (ULONG)m_Fractal.GetScrnWidth() - shiftWidth;
                     antiRect.top = shiftHeight;
-                    antiRect.bottom = (ULONG)m_Fractal.m_ScrnHeight - shiftHeight;
+                    antiRect.bottom = (ULONG)m_Fractal.GetScrnHeight() - shiftHeight;
 
                     antiRect.left *= m_Fractal.GetGpuAntialiasing();
                     antiRect.right *= m_Fractal.GetGpuAntialiasing();
@@ -297,16 +226,16 @@ AutoZoomer::Run()
                     LONG targetY = -1;
                     size_t maxiter = 0;
 
-                    for (auto y = 0; y < m_Fractal.m_ScrnHeight * m_Fractal.GetGpuAntialiasing(); y++) {
-                        for (auto x = 0; x < m_Fractal.m_ScrnWidth * m_Fractal.GetGpuAntialiasing(); x++) {
+                    for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing(); y++) {
+                        for (auto x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing(); x++) {
                             auto curiter = ItersArray[y][x];
                             if (curiter > maxiter)
                                 maxiter = curiter;
                         }
                     }
 
-                    for (auto y = 0; y < m_Fractal.m_ScrnHeight * m_Fractal.GetGpuAntialiasing(); y++) {
-                        for (auto x = 0; x < m_Fractal.m_ScrnWidth * m_Fractal.GetGpuAntialiasing(); x++) {
+                    for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing(); y++) {
+                        for (auto x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing(); x++) {
                             auto curiter = ItersArray[y][x];
 
                             if (curiter == maxiter) {
@@ -326,7 +255,7 @@ AutoZoomer::Run()
                     guessY = m_Fractal.YFromScreenToCalc<true>(HighPrecision{targetY});
 
                     if (numAtLimit ==
-                        m_Fractal.m_ScrnWidth * m_Fractal.m_ScrnHeight * m_Fractal.GetGpuAntialiasing() * m_Fractal.GetGpuAntialiasing()) {
+                        m_Fractal.GetScrnWidth() * m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing() * m_Fractal.GetGpuAntialiasing()) {
                         std::wcerr << L"Flat screen! :(" << std::endl;
                         shouldBreak = true;
                         return;
@@ -351,8 +280,8 @@ AutoZoomer::Run()
             PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
 
             m_Fractal.RecenterViewCalc(newPtz);
-            auto handle = m_Fractal.EnqueueRender();
-            handle.Wait();
+            m_Fractal.ForceRecalc();
+            m_Fractal.CalcFractal(true);
 
             if (numAtMax > 500)
                 break;
@@ -368,3 +297,117 @@ AutoZoomer::Run()
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Default>();
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Max>();
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Feature>();
+
+void
+AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
+{
+    [[maybe_unused]] const bool success = f.SetRenderAlgorithm(
+        GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
+    if (!success) {
+        std::cerr << "Error: could not set render algorithm for AutoZoom(Feature).\n";
+        out.Failed = true;
+        return;
+    }
+
+    FeatureSummary *feature = f.ChooseClosestFeatureToMouse();
+    if (!feature) {
+        std::cout << "AutoZoom(Feature): no feature found. Use the feature finder first.\n";
+        out.Failed = true;
+        return;
+    }
+
+    if (!f.ZoomToFoundFeature(*feature, nullptr)) {
+        std::cout << "AutoZoom(Feature): feature refinement failed.\n";
+        out.Failed = true;
+        return;
+    }
+
+    out.GuessX = feature->GetFoundX();
+    out.GuessY = feature->GetFoundY();
+
+    HighPrecision targetZoomFactor = feature->ComputeZoomFactor(f.GetPtz());
+
+    std::cout << "AutoZoom(Feature): targetZoomFactor=";
+    {
+        double m; long e;
+        targetZoomFactor.frexp(m, e);
+        std::cout << m << " * 2^" << e;
+    }
+    std::cout << " origZoom=";
+    {
+        double m; long e;
+        f.GetPtz().GetZoomFactor().frexp(m, e);
+        std::cout << m << " * 2^" << e;
+    }
+    std::cout << " intrinsicRadius=";
+    {
+        double m; long e;
+        feature->GetIntrinsicRadius().frexp(m, e);
+        std::cout << m << " * 2^" << e;
+    }
+    std::cout << "\n";
+
+    if (targetZoomFactor <= HighPrecision{0}) {
+        std::cout << "AutoZoom(Feature): invalid target zoom factor.\n";
+        out.Failed = true;
+        return;
+    }
+
+    HighPrecision origZoom = f.GetPtz().GetZoomFactor();
+
+    PointZoomBBConverter startPtzCentered{
+        out.GuessX, out.GuessY, origZoom, PointZoomBBConverter::TestMode::Enabled};
+    // Direct assignment + SquareCurrentView instead of RecenterViewCalc.
+    // RecenterViewCalc calls SetPrecision() which resets MPIR precision to
+    // match the current (low) zoom depth, truncating the feature's
+    // high-precision coordinates.
+    f.m_Ptz = startPtzCentered;
+    f.SquareCurrentView();
+
+    const HighPrecision zoomRatio = targetZoomFactor / origZoom;
+    double mantissa{};
+    long exp2{};
+    zoomRatio.frexp(mantissa, exp2);
+    const double logRatio = std::log(std::abs(mantissa)) + exp2 * std::log(2.0);
+    const double logZoomPerStep = std::log(1.1);
+    out.TotalSteps =
+        (zoomRatio > HighPrecision{1})
+            ? static_cast<int64_t>(std::ceil(logRatio / logZoomPerStep))
+            : 1;
+
+    const IterTypeFull startIters = f.GetNumIterations<IterTypeFull>();
+    const IterTypeFull targetIters = feature->GetNumIterationsAtFind();
+    out.ShouldInterpolateIters = targetIters > 0 && startIters < targetIters;
+
+    std::cout << "AutoZoom(Feature): startIters=" << startIters
+              << " targetIters=" << targetIters
+              << " period=" << feature->GetPeriod()
+              << " totalSteps=" << out.TotalSteps
+              << " interpolate=" << out.ShouldInterpolateIters << "\n";
+
+    out.ZoomSteps.reserve(out.TotalSteps);
+    {
+        PointZoomBBConverter stepPtz = f.GetPtz();
+        for (int64_t i = 0; i < out.TotalSteps; ++i) {
+            stepPtz.ZoomInPlace(-1.0 / 22.0);
+            out.ZoomSteps.push_back(stepPtz);
+        }
+    }
+
+    if (out.ShouldInterpolateIters) {
+        out.IterCounts.reserve(out.TotalSteps);
+        for (int64_t i = 0; i < out.TotalSteps; ++i) {
+            out.IterCounts.push_back(
+                startIters + (targetIters - startIters) * (i + 1) / out.TotalSteps);
+        }
+    }
+
+    for (size_t r = 0; r < NumRenderers; ++r) {
+        auto err = f.InitializeGPUMemory(static_cast<RendererIndex>(r), false, f.m_CurIters);
+        if (err) {
+            f.MessageBoxCudaError(err);
+            out.Failed = true;
+            return;
+        }
+    }
+}

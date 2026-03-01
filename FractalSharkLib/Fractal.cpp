@@ -17,6 +17,7 @@
 #include "HDRFloatComplex.h"
 #include "LAInfoDeep.h"
 #include "LAReference.h"
+#include "ScopedMpir.h"
 
 #include "BenchmarkData.h"
 #include "CudaDblflt.h"
@@ -69,15 +70,6 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
     // Initialize the palette
     m_Palette.InitializeAllPalettes();
 
-    for (size_t i = 0; i < std::thread::hardware_concurrency(); i++) {
-        m_DrawThreads.emplace_back(std::make_unique<DrawThreadSync>(i, nullptr, m_DrawThreadAtomics));
-    }
-
-    for (size_t i = 0; i < m_DrawThreads.size(); i++) {
-        auto thread = std::make_unique<std::thread>(DrawFractalThread, i, this);
-        m_DrawThreads[i]->m_Thread = std::move(thread);
-    }
-
     // This one needs to be done before setting up the view.
     setupThread->join();
 
@@ -109,9 +101,6 @@ Fractal::InitializeMemory()
 
     m_CurIters = std::move(m_ItersMemoryStorage.back());
     m_ItersMemoryStorage.pop_back();
-
-    m_DrawThreadAtomics.resize(m_ScrnHeight);
-    m_DrawOutBytes = std::make_unique<GLushort[]>(m_ScrnWidth * m_ScrnHeight * 4); // RGBA
 }
 
 uint32_t
@@ -217,19 +206,6 @@ Fractal::Uninitialize(void)
 
     // Get rid of the abort thread, if we created one.
     m_AbortMonitor.reset();
-
-    for (auto &thread : m_DrawThreads) {
-        {
-            std::lock_guard lk(thread->m_DrawThreadMutex);
-            thread->m_DrawThreadReady = true;
-            thread->m_TimeToExit = true;
-        }
-        thread->m_DrawThreadCV.notify_one();
-    }
-
-    for (auto &thread : m_DrawThreads) {
-        thread->m_Thread->join();
-    }
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1089,16 +1065,45 @@ RenderJobHandle
 Fractal::EnqueueRender()
 {
     if (m_RenderPool) {
-        return m_RenderPool->EnqueueCurrentState();
+        return m_RenderPool->EnqueueCommand([](Fractal &) {});
     }
     return RenderJobHandle{};
 }
 
 RenderJobHandle
-Fractal::EnqueueRender(const PointZoomBBConverter &ptz)
+Fractal::EnqueueRender(const PointZoomBBConverter &ptz, bool supersedable)
 {
     if (m_RenderPool) {
-        return m_RenderPool->EnqueueCurrentState(ptz);
+        return m_RenderPool->EnqueueCommand(ptz, [](Fractal &) {}, supersedable);
+    }
+    return RenderJobHandle{};
+}
+
+RenderJobHandle
+Fractal::EnqueueCommand(std::function<void(Fractal &)> cmd)
+{
+    if (m_RenderPool) {
+        return m_RenderPool->EnqueueCommand(std::move(cmd));
+    }
+    return RenderJobHandle{};
+}
+
+RenderJobHandle
+Fractal::EnqueueCommand(const PointZoomBBConverter &ptz,
+                        std::function<void(Fractal &)> cmd,
+                        bool supersedable)
+{
+    if (m_RenderPool) {
+        return m_RenderPool->EnqueueCommand(ptz, std::move(cmd), supersedable);
+    }
+    return RenderJobHandle{};
+}
+
+RenderJobHandle
+Fractal::EnqueueMutation(std::function<void(Fractal &)> cmd)
+{
+    if (m_RenderPool) {
+        return m_RenderPool->EnqueueMutation(std::move(cmd));
     }
     return RenderJobHandle{};
 }
@@ -1143,7 +1148,7 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
             CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR:
-            CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>(ctx);
+            CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::SimpleCompression>(ctx);
             break;
         case RenderAlgorithmEnum::Cpu64:
             CalcCpuHDR<IterType, double, double>(ctx);
@@ -1425,6 +1430,30 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
             break;
     }
 
+    // For direct CalcFractal(drawFractal=true) callers (CrummyTest):
+    // Sync GPU and copy iteration results back to CPU memory so that
+    // SaveCurrentFractal / PngParallelSave can read the correct data.
+    // The render pool path does this via ProduceFrame → RenderCurrent instead.
+    if (drawFractal && !RequiresUseLocalColor() && !m_BypassGpu) {
+        auto &renderer = GetRenderer(idx);
+        renderer.SyncComputeStream();
+        ReductionResults gpuReductionResults;
+        if (GetIterType() == IterTypeEnum::Bits32) {
+            renderer.RenderCurrent<uint32_t>(
+                GetNumIterations<uint32_t>(),
+                ctx.ItersMemory.GetIters<uint32_t>(),
+                nullptr,
+                &gpuReductionResults);
+        } else {
+            renderer.RenderCurrent<uint64_t>(
+                GetNumIterations<uint64_t>(),
+                ctx.ItersMemory.GetIters<uint64_t>(),
+                nullptr,
+                &gpuReductionResults);
+        }
+        renderer.SyncComputeStream();
+    }
+
     // We are all updated now.
     ChangedMakeClean();
 }
@@ -1536,133 +1565,6 @@ Fractal::GetPalette()
     return m_Palette;
 }
 
-template <typename IterType>
-void
-Fractal::DrawGlFractal(RendererIndex idx, bool LocalColor, bool lastIter)
-{
-    ReductionResults gpuReductionResults;
-
-    if (LocalColor) {
-        for (auto &it : m_DrawThreadAtomics) {
-            it.store(0);
-        }
-
-        for (auto &thread : m_DrawThreads) {
-            {
-                std::lock_guard lk(thread->m_DrawThreadMutex);
-                thread->m_DrawThreadProcessed = false;
-                thread->m_DrawThreadReady = true;
-            }
-            thread->m_DrawThreadCV.notify_one();
-        }
-
-        for (auto &thread : m_DrawThreads) {
-            std::unique_lock lk(thread->m_DrawThreadMutex);
-            thread->m_DrawThreadCV.wait(lk, [&] { return thread->m_DrawThreadProcessed; });
-        }
-
-        // In case we need this we have it.
-        // m_CurIters.GetReductionResults(localReductionResults);
-    } else {
-        IterType *iter = nullptr;
-        if (lastIter) {
-            iter = m_CurIters.GetIters<IterType>();
-        }
-
-        auto &renderer = GetRenderer(idx);
-        auto result = renderer.RenderCurrent<IterType>(GetNumIterations<IterType>(),
-                                                  iter,
-                                                  m_CurIters.m_RoundedOutputColorMemory.get(),
-                                                  &gpuReductionResults);
-
-        if (result) {
-            MessageBoxCudaError(result);
-            return;
-        }
-
-        result = renderer.SyncComputeStream();
-        if (result) {
-            MessageBoxCudaError(result);
-            return;
-        }
-    }
-
-    GLuint texid;
-    glEnable(GL_TEXTURE_2D);
-    glGenTextures(1, &texid);
-    glBindTexture(GL_TEXTURE_2D, texid);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);  //Always set the base and max mipmap
-    // levels of a texture. glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-
-    // Change m_DrawOutBytes size if GL_RGBA is changed
-    if (LocalColor) {
-        glTexImage2D(GL_TEXTURE_2D,
-                     0,
-                     GL_RGBA16,
-                     (GLsizei)m_ScrnWidth,
-                     (GLsizei)m_ScrnHeight,
-                     0,
-                     GL_RGBA,
-                     GL_UNSIGNED_SHORT,
-                     m_DrawOutBytes.get());
-    } else {
-        // glTexImage2D(
-        //     GL_TEXTURE_2D, 0, GL_RGBA16,
-        //     (GLsizei)m_CurIters.m_RoundedOutputColorWidth,
-        //     (GLsizei)m_CurIters.m_RoundedOutputColorHeight,
-        //     0, GL_RGBA, GL_UNSIGNED_SHORT, m_CurIters.m_RoundedOutputColorMemory.get());
-
-        glTexImage2D(GL_TEXTURE_2D,
-                     0,
-                     GL_RGBA16,
-                     (GLsizei)m_CurIters.m_OutputWidth,
-                     (GLsizei)m_CurIters.m_OutputHeight,
-                     0,
-                     GL_RGBA,
-                     GL_UNSIGNED_SHORT,
-                     m_CurIters.m_RoundedOutputColorMemory.get());
-    }
-
-    glBegin(GL_QUADS);
-    glTexCoord2i(0, 0);
-    glVertex2i(0, (GLint)m_ScrnHeight);
-    glTexCoord2i(0, 1);
-    glVertex2i(0, 0);
-    glTexCoord2i(1, 1);
-    glVertex2i((GLint)m_ScrnWidth, 0);
-    glTexCoord2i(1, 0);
-    glVertex2i((GLint)m_ScrnWidth, (GLint)m_ScrnHeight);
-    glEnd();
-    glFlush();
-    glDeleteTextures(1, &texid);
-
-    DrawAllPerturbationResults(true);
-
-    // TODO it'd be nice to do something like these but the message loop is now
-    // on the other (main) thread.   Hmm  maybe a mistake after all to have this
-    // separate thread
-    //{
-    //    MSG msg;
-    //    PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
-    //}
-
-    //// Throw away any messages
-    //{
-    //    MSG msg;
-    //    while (PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE)) {
-    //        GetMessage(&msg, nullptr, 0, 0);
-    //    }
-    //}
-
-    // while (GetMessage(&msg, nullptr, 0, 0) > 0)
-    //{
-    //     TranslateMessage(&msg);
-    //     DispatchMessage(&msg);
-    // }
-}
-
 void
 Fractal::SetRepaint(bool repaint)
 {
@@ -1758,140 +1660,6 @@ Fractal::DrawAllPerturbationResults(bool LeaveScreen)
     }
 
     glFlush();
-}
-
-
-void
-Fractal::DrawFractalThread(size_t index, Fractal *fractal)
-{
-    SetThreadDescription(GetCurrentThread(), L"Fractal Draw Thread");
-    DrawThreadSync &sync = *fractal->m_DrawThreads[index].get();
-
-    constexpr size_t BytesPerPixel = 4;
-    IterTypeFull maxPossibleIters;
-
-    for (;;) {
-        // Wait until main() sends data
-        std::unique_lock lk(sync.m_DrawThreadMutex);
-
-        sync.m_DrawThreadCV.wait(lk, [&] { return sync.m_DrawThreadReady; });
-
-        if (sync.m_TimeToExit) {
-            break;
-        }
-
-        maxPossibleIters = fractal->GetMaxIterationsRT();
-
-        sync.m_DrawThreadReady = false;
-
-        auto lambda = [&](auto **ItersArray, auto NumIterations) {
-            size_t acc_r, acc_g, acc_b;
-            size_t outputIndex = 0;
-
-            const size_t totalAA = fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
-            uint32_t palIters = fractal->m_Palette.GetCurrentNumColors();
-            const Color16 *pal = fractal->m_Palette.GetCurrentPalInterleaved();
-            size_t basicFactor = 65536 / NumIterations;
-            if (basicFactor == 0) {
-                basicFactor = 1;
-            }
-
-            const auto GetBasicColor =
-                [&](size_t numIters, size_t &acc_r, size_t &acc_g, size_t &acc_b) {
-                    auto shiftedIters = (numIters >> fractal->m_Palette.GetAuxDepth());
-
-                    if (fractal->m_Palette.GetPaletteType() != FractalPaletteType::Basic) {
-                        auto palIndex = shiftedIters % palIters;
-                        acc_r += pal[palIndex].r;
-                        acc_g += pal[palIndex].g;
-                        acc_b += pal[palIndex].b;
-                    } else {
-                        acc_r += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
-                        acc_g += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
-                        acc_b += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
-                    }
-                };
-
-            const size_t maxIters = NumIterations;
-            for (size_t output_y = 0; output_y < fractal->m_ScrnHeight; output_y++) {
-                if (sync.m_DrawThreadAtomics[output_y] != 0) {
-                    continue;
-                }
-
-                uint64_t expected = 0;
-                if (sync.m_DrawThreadAtomics[output_y].compare_exchange_strong(expected, 1llu) ==
-                    false) {
-                    continue;
-                }
-
-                outputIndex = output_y * fractal->m_ScrnWidth * BytesPerPixel;
-
-                for (size_t output_x = 0; output_x < fractal->m_ScrnWidth; output_x++) {
-                    if (fractal->GetGpuAntialiasing() == 1) {
-                        acc_r = 0;
-                        acc_g = 0;
-                        acc_b = 0;
-
-                        const size_t input_x = output_x;
-                        const size_t input_y = output_y;
-                        size_t numIters = ItersArray[input_y][input_x];
-
-                        if (numIters < maxIters) {
-                            numIters += fractal->m_Palette.GetPaletteRotation();
-                            if (numIters >= maxPossibleIters) {
-                                numIters = maxPossibleIters - 1;
-                            }
-
-                            GetBasicColor(numIters, acc_r, acc_g, acc_b);
-                        }
-                    } else {
-                        acc_r = 0;
-                        acc_g = 0;
-                        acc_b = 0;
-
-                        for (size_t input_x = output_x * fractal->GetGpuAntialiasing();
-                             input_x < (output_x + 1) * fractal->GetGpuAntialiasing();
-                             input_x++) {
-                            for (size_t input_y = output_y * fractal->GetGpuAntialiasing();
-                                 input_y < (output_y + 1) * fractal->GetGpuAntialiasing();
-                                 input_y++) {
-
-                                size_t numIters = ItersArray[input_y][input_x];
-                                if (numIters < maxIters) {
-                                    numIters += fractal->m_Palette.GetPaletteRotation();
-                                    if (numIters >= maxPossibleIters) {
-                                        numIters = maxPossibleIters - 1;
-                                    }
-
-                                    GetBasicColor(numIters, acc_r, acc_g, acc_b);
-                                }
-                            }
-                        }
-
-                        acc_r /= totalAA;
-                        acc_g /= totalAA;
-                        acc_b /= totalAA;
-                    }
-
-                    fractal->m_DrawOutBytes[outputIndex] = (GLushort)acc_r;
-                    fractal->m_DrawOutBytes[outputIndex + 1] = (GLushort)acc_g;
-                    fractal->m_DrawOutBytes[outputIndex + 2] = (GLushort)acc_b;
-                    fractal->m_DrawOutBytes[outputIndex + 3] = 255;
-                    outputIndex += 4;
-                }
-            }
-        };
-
-        if (fractal->GetIterType() == IterTypeEnum::Bits32) {
-            lambda(fractal->m_CurIters.GetItersArray<uint32_t>(), fractal->GetNumIterations<uint32_t>());
-        } else {
-            lambda(fractal->m_CurIters.GetItersArray<uint64_t>(), fractal->GetNumIterations<uint64_t>());
-        }
-
-        sync.m_DrawThreadProcessed = true;
-        lk.unlock();
-        sync.m_DrawThreadCV.notify_one();
-    }
 }
 
 
@@ -2866,76 +2634,104 @@ Fractal::CalcCpuHDR(CalcContext &ctx)
     const auto &maxY = ctx.Ptz.GetMaxY();
     const auto &minY = ctx.Ptz.GetMinY();
 
-    const T dx = T((maxX - minX) / HighPrecision{m_ScrnWidth * GetGpuAntialiasing()});
-    const T dy = T((maxY - minY) / HighPrecision{m_ScrnHeight * GetGpuAntialiasing()});
-
-    const size_t num_threads = std::thread::hardware_concurrency();
-    std::deque<std::atomic_uint64_t> atomics;
-    std::vector<std::unique_ptr<std::thread>> threads;
-    atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
-    threads.reserve(num_threads);
-
-    const T Four{4};
-    const T Two{2};
-
-    auto one_thread = [&]() {
-        SetThreadDescription(GetCurrentThread(), L"CalcCpuHDR thread");
-
-        for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
-            if (atomics[y] != 0) {
-                continue;
-            }
-
-            uint64_t expected = 0;
-            if (atomics[y].compare_exchange_strong(expected, 1llu) == false) {
-                continue;
-            }
-
-            T cx = T{minX};
-
-            // This is kind of kludgy.  We cast the integer y to a float.
-            T cy = T{T{maxY} - dy * T{static_cast<float>(y)}};
-            T zx, zy;
-            T zx2, zy2;
-            T sum;
-            unsigned int i;
-
-            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
-                // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
-                // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
-                zx = cx;
-                zy = cy;
-                for (i = 0; i < GetNumIterations<IterType>(); i++) { // x^2+2*I*x*y-y^2
-                    zx2 = zx * zx;
-                    zy2 = zy * zy;
-                    sum = zx2 + zy2;
-                    HdrReduce(sum);
-                    if (HdrCompareToBothPositiveReducedGT(sum, Four))
-                        break;
-
-                    zy = Two * zx * zy;
-                    zx = zx2 - zy2;
-
-                    zx += cx;
-                    zy += cy;
-
-                    HdrReduce(zx);
-                    HdrReduce(zy);
-                }
-                cx += dx;
-                // HdrReduce(cx);
-
-                ctx.ItersMemory.SetItersArrayValSlow(x, y, i);
-            }
-        }
-    };
-
-    for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
-        threads.push_back(std::make_unique<std::thread>(one_thread));
+    // Use bounded allocator for HighPrecision temporaries to avoid
+    // per-iteration heap alloc/free overhead from MPIR operator overloads.
+    constexpr bool usesHighPrecision = std::is_same_v<T, HighPrecision>;
+    std::unique_ptr<MPIRBoundedAllocator> boundedAllocator;
+    if constexpr (usesHighPrecision) {
+        boundedAllocator = std::make_unique<MPIRBoundedAllocator>();
+        boundedAllocator->InitScopedAllocators();
+        boundedAllocator->InitTls();
     }
 
-    for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
-        threads[cur_thread]->join();
+    {
+        // Scoped block: all T locals must be destroyed before
+        // ShutdownTls() so mpf_clear dispatches to the bounded
+        // allocator, not the restored default allocator.
+        const T dx = T((maxX - minX) / HighPrecision{m_ScrnWidth * GetGpuAntialiasing()});
+        const T dy = T((maxY - minY) / HighPrecision{m_ScrnHeight * GetGpuAntialiasing()});
+
+        const size_t num_threads = std::thread::hardware_concurrency();
+        std::deque<std::atomic_uint64_t> atomics;
+        std::vector<std::unique_ptr<std::thread>> threads;
+        atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
+        threads.reserve(num_threads);
+
+        const T Four{4};
+        const T Two{2};
+
+        auto one_thread = [&]() {
+            SetThreadDescription(GetCurrentThread(), L"CalcCpuHDR thread");
+
+            if constexpr (usesHighPrecision) {
+                MPIRBoundedAllocator::InitTls();
+            }
+
+            for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
+                if (atomics[y] != 0) {
+                    continue;
+                }
+
+                uint64_t expected = 0;
+                if (atomics[y].compare_exchange_strong(expected, 1llu) == false) {
+                    continue;
+                }
+
+                T cx = T{minX};
+
+                // This is kind of kludgy.  We cast the integer y to a float.
+                T cy = T{T{maxY} - dy * T{static_cast<float>(y)}};
+                T zx, zy;
+                T zx2, zy2;
+                T sum;
+                unsigned int i;
+
+                for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
+                    // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
+                    // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
+                    zx = cx;
+                    zy = cy;
+                    for (i = 0; i < GetNumIterations<IterType>(); i++) { // x^2+2*I*x*y-y^2
+                        zx2 = zx * zx;
+                        zy2 = zy * zy;
+                        sum = zx2 + zy2;
+                        HdrReduce(sum);
+                        if (HdrCompareToBothPositiveReducedGT(sum, Four))
+                            break;
+
+                        zy = Two * zx * zy;
+                        zx = zx2 - zy2;
+
+                        zx += cx;
+                        zy += cy;
+
+                        HdrReduce(zx);
+                        HdrReduce(zy);
+                    }
+                    cx += dx;
+                    // HdrReduce(cx);
+
+                    ctx.ItersMemory.SetItersArrayValSlow(x, y, i);
+                }
+            }
+
+            if constexpr (usesHighPrecision) {
+                MPIRBoundedAllocator::ShutdownTls();
+            }
+        };
+
+        for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
+            threads.push_back(std::make_unique<std::thread>(one_thread));
+        }
+
+        for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
+            threads[cur_thread]->join();
+        }
+    }
+
+    if constexpr (usesHighPrecision) {
+        MPIRBoundedAllocator::ShutdownTls();
+        // ~MPIRBoundedAllocator restores mp_set_memory_functions
     }
 }
 

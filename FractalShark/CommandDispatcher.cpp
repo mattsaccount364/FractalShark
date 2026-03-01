@@ -92,19 +92,10 @@ CommandDispatcher::HandleAlgCommand(int wmId)
     if (!e)
         return false;
 
-    const bool success = w_.gFractal->SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(e->alg));
-    if (!success) {
-        // The selection may not be accepted (e.g., GPU not working).
-        const auto selectedAlg = w_.gFractal->GetRenderAlgorithm();
-        const auto selectedWmid = FindCmdForAlg(selectedAlg.Algorithm);
-        if (selectedWmid >= 0) {
-            wmId = selectedWmid;
-        }
-    }
-
-    // NEW: no global "current render algorithm id" + no post-build radio pass.
-    // Your menu state provider is now the source of truth.
-    // So: nothing to do here other than apply the change.
+    auto alg = GetRenderAlgorithmTupleEntry(e->alg);
+    w_.gFractal->EnqueueMutation([alg](Fractal &f) {
+        [[maybe_unused]] const bool success = f.SetRenderAlgorithm(alg);
+    });
 
     return true;
 }
@@ -142,8 +133,11 @@ CommandDispatcher::BuildTable()
     auto makeDoPeriodic = []<FeatureFinderMode mode>() {
         return [](MainWindow &w) {
             const POINT pt = w.GetSafeMenuPtClient();
-            w.gFractal->TryFindPeriodicPoint(pt.x, pt.y, mode);
-            w.PaintAsNecessary();
+            auto x = pt.x;
+            auto y = pt.y;
+            w.gFractal->EnqueueCommand([x, y](Fractal &f) {
+                f.TryFindPeriodicPoint(x, y, mode);
+            });
         };
     };
 
@@ -173,13 +167,14 @@ CommandDispatcher::BuildTable()
     table_.emplace(IDM_FEATUREFINDER_LASCAN,
                    makeDoPeriodic.operator()<FeatureFinderMode::LAScan>());
     table_.emplace(IDM_FEATUREFINDER_ZOOM, +[](MainWindow &w) {
-        if (w.gFractal->ZoomToFoundFeature()) {
-            w.PaintAsNecessary();
-        }
+        w.gFractal->EnqueueCommand([](Fractal &f) {
+            f.ZoomToFoundFeature();
+        });
     });
     table_.emplace(IDM_FEATUREFINDER_CLEAR, +[](MainWindow &w) {
-        w.gFractal->ClearAllFoundFeatures();
-        w.PaintAsNecessary();
+        w.gFractal->EnqueueCommand([](Fractal &f) {
+            f.ClearAllFoundFeatures();
+        });
     });
 
     table_.emplace(IDM_REPAINTING, +[](MainWindow &w) { w.MenuRepainting(); });
@@ -191,26 +186,26 @@ CommandDispatcher::BuildTable()
     // GPU AA
     table_.emplace(
         IDM_GPUANTIALIASING_1X,
-        +[](MainWindow &w) { w.gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1); }); });
     table_.emplace(
         IDM_GPUANTIALIASING_4X,
-        +[](MainWindow &w) { w.gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2); }); });
     table_.emplace(
         IDM_GPUANTIALIASING_9X,
-        +[](MainWindow &w) { w.gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3); }); });
     table_.emplace(
         IDM_GPUANTIALIASING_16X,
-        +[](MainWindow &w) { w.gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4); }); });
 
     // Iteration precision
     table_.emplace(
-        IDM_ITERATIONPRECISION_1X, +[](MainWindow &w) { w.gFractal->SetIterationPrecision(1); });
+        IDM_ITERATIONPRECISION_1X, +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(1); }); });
     table_.emplace(
-        IDM_ITERATIONPRECISION_2X, +[](MainWindow &w) { w.gFractal->SetIterationPrecision(4); });
+        IDM_ITERATIONPRECISION_2X, +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(4); }); });
     table_.emplace(
-        IDM_ITERATIONPRECISION_3X, +[](MainWindow &w) { w.gFractal->SetIterationPrecision(8); });
+        IDM_ITERATIONPRECISION_3X, +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(8); }); });
     table_.emplace(
-        IDM_ITERATIONPRECISION_4X, +[](MainWindow &w) { w.gFractal->SetIterationPrecision(16); });
+        IDM_ITERATIONPRECISION_4X, +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(16); }); });
 
     // Algorithm help
     table_.emplace(IDM_HELP_ALG, +[](MainWindow &w) { w.MenuAlgHelp(); });
@@ -218,28 +213,33 @@ CommandDispatcher::BuildTable()
     // LA toggles / presets
     table_.emplace(
         IDM_LA_SINGLETHREADED, +[](MainWindow &w) {
-            auto &p = w.gFractal->GetLAParameters();
-            p.SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
+            });
         });
     table_.emplace(
         IDM_LA_MULTITHREADED, +[](MainWindow &w) {
-            auto &p = w.gFractal->GetLAParameters();
-            p.SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
+            });
         });
     table_.emplace(
         IDM_LA_SETTINGS_1, +[](MainWindow &w) {
-            auto &p = w.gFractal->GetLAParameters();
-            p.SetDefaults(LAParameters::LADefaults::MaxAccuracy);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxAccuracy);
+            });
         });
     table_.emplace(
         IDM_LA_SETTINGS_2, +[](MainWindow &w) {
-            auto &p = w.gFractal->GetLAParameters();
-            p.SetDefaults(LAParameters::LADefaults::MaxPerf);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxPerf);
+            });
         });
     table_.emplace(
         IDM_LA_SETTINGS_3, +[](MainWindow &w) {
-            auto &p = w.gFractal->GetLAParameters();
-            p.SetDefaults(LAParameters::LADefaults::MinMemory);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MinMemory);
+            });
         });
 
     // Tests / benchmarks
@@ -271,9 +271,9 @@ CommandDispatcher::BuildTable()
     table_.emplace(IDM_DECREASEITERATIONS, +[](MainWindow &w) { w.MenuMultiplyIterations(2.0 / 3.0); });
     table_.emplace(IDM_RESETITERATIONS, +[](MainWindow &w) { w.MenuResetIterations(); });
     table_.emplace(
-        IDM_32BIT_ITERATIONS, +[](MainWindow &w) { w.gFractal->SetIterType(IterTypeEnum::Bits32); });
+        IDM_32BIT_ITERATIONS, +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetIterType(IterTypeEnum::Bits32); }); });
     table_.emplace(
-        IDM_64BIT_ITERATIONS, +[](MainWindow &w) { w.gFractal->SetIterType(IterTypeEnum::Bits64); });
+        IDM_64BIT_ITERATIONS, +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetIterType(IterTypeEnum::Bits64); }); });
 
     // Perturbation UI
     table_.emplace(
@@ -284,79 +284,100 @@ CommandDispatcher::BuildTable()
         });
     table_.emplace(
         IDM_PERTURB_CLEAR_ALL, +[](MainWindow &w) {
-            w.gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            });
         });
     table_.emplace(
         IDM_PERTURB_CLEAR_MED, +[](MainWindow &w) {
-            w.gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+            });
         });
     table_.emplace(
         IDM_PERTURB_CLEAR_HIGH, +[](MainWindow &w) {
-            w.gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
+            });
         });
 
     table_.emplace(
         IDM_PERTURBATION_AUTO,
-        +[](MainWindow &w) { w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto); }); });
     table_.emplace(
         IDM_PERTURBATION_SINGLETHREAD,
-        +[](MainWindow &w) { w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST); }); });
     table_.emplace(
         IDM_PERTURBATION_MULTITHREAD,
-        +[](MainWindow &w) { w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT); }); });
     table_.emplace(
         IDM_PERTURBATION_SINGLETHREAD_PERIODICITY, +[](MainWindow &w) {
-            w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
+            });
         });
     table_.emplace(
         IDM_PERTURBATION_MULTITHREAD2_PERIODICITY, +[](MainWindow &w) {
-            w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+            });
         });
     table_.emplace(
         IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED, +[](MainWindow &w) {
-            w.gFractal->SetPerturbationAlg(
-                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
+            });
         });
     table_.emplace(
         IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED1, +[](MainWindow &w) {
-            w.gFractal->SetPerturbationAlg(
-                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
+            });
         });
     table_.emplace(
         IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED2, +[](MainWindow &w) {
-            w.gFractal->SetPerturbationAlg(
-                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
+            });
         });
     table_.emplace(
         IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED3, +[](MainWindow &w) {
-            w.gFractal->SetPerturbationAlg(
-                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+            });
         });
     table_.emplace(
         IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED4, +[](MainWindow &w) {
-            w.gFractal->SetPerturbationAlg(
-                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
+            });
         });
     table_.emplace(
         IDM_PERTURBATION_MULTITHREAD5_PERIODICITY, +[](MainWindow &w) {
-            w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
+            w.gFractal->EnqueueMutation([](Fractal &f) {
+                f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
+            });
         });
     table_.emplace(
         IDM_PERTURBATION_GPU,
-        +[](MainWindow &w) { w.gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU); }); });
 
-    table_.emplace(IDM_PERTURBATION_SAVE, +[](MainWindow &w) { w.gFractal->SavePerturbationOrbits(); });
-    table_.emplace(IDM_PERTURBATION_LOAD, +[](MainWindow &w) { w.gFractal->LoadPerturbationOrbits(); });
+    table_.emplace(IDM_PERTURBATION_SAVE, +[](MainWindow &w) {
+        w.gFractal->EnqueueMutation([](Fractal &f) { f.SavePerturbationOrbits(); });
+    });
+    table_.emplace(IDM_PERTURBATION_LOAD, +[](MainWindow &w) {
+        w.gFractal->EnqueueMutation([](Fractal &f) { f.LoadPerturbationOrbits(); });
+    });
 
     table_.emplace(
         IDM_PERTURB_AUTOSAVE_ON,
-        +[](MainWindow &w) { w.gFractal->SetResultsAutosave(AddPointOptions::EnableWithSave); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::EnableWithSave); }); });
     table_.emplace(
         IDM_PERTURB_AUTOSAVE_ON_DELETE,
-        +[](MainWindow &w) { w.gFractal->SetResultsAutosave(AddPointOptions::EnableWithoutSave); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::EnableWithoutSave); }); });
     table_.emplace(
         IDM_PERTURB_AUTOSAVE_OFF,
-        +[](MainWindow &w) { w.gFractal->SetResultsAutosave(AddPointOptions::DontSave); });
+        +[](MainWindow &w) { w.gFractal->EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::DontSave); }); });
 
     // Memory limit toggle
     table_.emplace(IDM_MEMORY_LIMIT_0, +[](MainWindow &w) { w.gJobObj = nullptr; });

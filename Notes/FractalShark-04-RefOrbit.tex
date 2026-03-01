@@ -444,7 +444,7 @@ A convenient test is
 
 where \(\lVert \cdot \rVert\) may be \(\ell_\infty\), \(\ell_2\), or another cheap norm
 (consistent between compression and decompression), and \(\varepsilon\) is a
-user-controlled tolerance.  Whenever the test fails, we emit a waypoint at \(n\)
+user-controlled tolerance.  Whenever the error exceeds the threshold, we emit a waypoint at \(n\)
 and \emph{reset} the low-precision state to the authoritative value:
 
 \begin{equation}

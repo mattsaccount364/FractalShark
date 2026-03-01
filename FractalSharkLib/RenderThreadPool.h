@@ -8,9 +8,11 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -23,8 +25,9 @@ struct RenderWorkItem {
     // Monotonic sequence number assigned at enqueue time
     uint64_t SequenceNumber;
 
-    // Location / zoom
-    PointZoomBBConverter Ptz{PointZoomBBConverter::TestMode::Enabled};
+    // Location / zoom.  If set, the worker uses this Ptz instead of
+    // snapshotting from the live Fractal state after command execution.
+    std::optional<PointZoomBBConverter> Ptz;
 
     // Algorithm
     RenderAlgorithm Algorithm;
@@ -49,6 +52,26 @@ struct RenderWorkItem {
     // Back-pointer to Fractal for reference orbit access (not snapshotted).
     // Potential race deferred to future work.
     Fractal *FractalPtr;
+
+    // Pre-render command: executed by the worker under m_CalcFractalMutex
+    // before CalcFractal.  Use this to mutate Fractal state from the worker
+    // thread instead of the UI thread, avoiding data races.
+    // When set, the worker re-snapshots state after executing the command.
+    std::function<void(Fractal &)> Command;
+
+    // When true, the worker only executes the Command (under the lock)
+    // and skips CalcFractal / GPU / frame production entirely.
+    // Used for settings changes that take effect on the next render.
+    bool MutationOnly = false;
+
+    // When true (default), this render item can be superseded by a newer
+    // enqueue — the older queued item is discarded.  Set to false for
+    // pipelined renders (AutoZoomer) that must all execute.
+    bool Supersedable = true;
+
+    // Generation number stamped at enqueue time.  Workers skip items
+    // whose generation is older than the latest enqueued supersedable item.
+    uint64_t EnqueueGeneration = 0;
 
     // Promise to signal job completion
     std::shared_ptr<std::promise<void>> CompletionPromise;
@@ -174,14 +197,28 @@ public:
     // Captures a snapshot of render state at call time.
     RenderJobHandle Enqueue(const RenderWorkItem &item);
 
-    // Convenience: snapshot current Fractal state and enqueue.
-    RenderJobHandle EnqueueCurrentState();
+    // Enqueue a command that mutates Fractal state, then renders.
+    // The command lambda runs on a worker thread under m_CalcFractalMutex.
+    // After the command, the worker snapshots state and renders.
+    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd);
 
-    // Enqueue with explicit Ptz (coordinates come from caller, not m_Ptz).
-    RenderJobHandle EnqueueCurrentState(const PointZoomBBConverter &ptz);
+    // Enqueue a command with explicit Ptz.  The command runs first, then the
+    // provided Ptz is used for the render (not the live m_Ptz).
+    RenderJobHandle EnqueueCommand(const PointZoomBBConverter &ptz,
+                                   std::function<void(Fractal &)> cmd,
+                                   bool supersedable = true);
+
+    // Enqueue a mutation-only command: executes the lambda under the lock
+    // but does NOT trigger CalcFractal or frame production.
+    // Use for settings changes that take effect on the next render.
+    RenderJobHandle EnqueueMutation(std::function<void(Fractal &)> cmd);
 
     // Shutdown the pool and join all threads.
     void Shutdown();
+
+    // Wait for all queued and in-flight work items to complete.
+    // Returns once no workers are processing and the queue is empty.
+    void Drain();
 
 private:
     static constexpr size_t NumWorkers = NumRenderers;
@@ -213,10 +250,12 @@ private:
     void PushTombstone(uint64_t sequenceNumber);
 
     // Run CalcFractal under m_CalcFractalMutex with state save/restore.
+    // If item.Command is set, executes it first, then re-snapshots state.
     // Swaps workerIters into m_CurIters, sets Ptz and dirty flags from the
     // work item, calls CalcFractal, then restores everything.  Exception-safe.
-    void RunCalcFractal(Fractal *fractal,
-                        const RenderWorkItem &item,
+    // Returns false if dimensions mismatch after command execution.
+    bool RunCalcFractal(Fractal *fractal,
+                        RenderWorkItem &item,
                         RendererIndex rendererIdx,
                         ItersMemoryContainer &workerIters);
 
@@ -270,4 +309,14 @@ private:
 
     // Shutdown flag
     std::atomic<bool> m_ShutdownFlag;
+
+    // In-flight job tracking for Drain()
+    std::atomic<size_t> m_InFlightCount{0};
+    std::mutex m_DrainMutex;
+    std::condition_variable m_DrainCV;
+
+    // Generation counter for skipping stale in-flight renders.
+    // Only incremented for supersedable items.  Non-atomic: single
+    // writer (UI thread), multi-reader (workers) — safe on x64.
+    uint64_t m_EnqueueGeneration = 0;
 };

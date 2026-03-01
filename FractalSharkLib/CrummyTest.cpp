@@ -14,14 +14,21 @@ CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {}
 void
 CrummyTest::TestAll()
 {
+    // Drain any in-flight render pool work before running tests.
+    // CrummyTest calls CalcFractal(true) directly, bypassing the pool,
+    // so we must ensure no workers are active to avoid data races.
+    if (auto *pool = m_Fractal.GetRenderPool()) {
+        pool->Drain();
+    }
+
     TestWindowResize();
-    // TestBasic();
-    // TestReferenceSave();
-    // TestVariedCompression();
-    // TestImaginaLoad();
-    // TestStringConversion();
-    // TestPerturbedPerturb();
-    // TestGrowableVector();
+    TestBasic();
+    TestReferenceSave();
+    TestVariedCompression();
+    TestImaginaLoad();
+    TestStringConversion();
+    TestPerturbedPerturb();
+    TestGrowableVector();
 }
 
 void
@@ -1018,6 +1025,10 @@ void CrummyTest::TestWindowResize()
 void
 CrummyTest::TestReallyHardView27()
 {
+    if (auto *pool = m_Fractal.GetRenderPool()) {
+        pool->Drain();
+    }
+
     const wchar_t *dirName = L"ReallyHardView27";
     TestPreReq(dirName);
 
@@ -1116,6 +1127,10 @@ CrummyTest::TestReallyHardView27()
 void
 CrummyTest::Benchmark(RefOrbitCalc::PerturbationResultType type)
 {
+    if (auto *pool = m_Fractal.GetRenderPool()) {
+        pool->Drain();
+    }
+
     static constexpr size_t NumIterations = 5;
 
     if (m_Fractal.GetRepaint() == false) {

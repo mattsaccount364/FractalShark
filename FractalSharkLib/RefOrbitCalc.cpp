@@ -1782,40 +1782,45 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3 ThreadReused");
             InitTls();
 
-            SimpleIntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
-                *results, IntermediateCompressionErrorExp};
+            {
+                // Scoped block: compressors must be destroyed before ShutdownTls()
+                // so mpf_clear() dispatches to the bump allocator (still active),
+                // not the HeapCpp fallback (which would crash on bump-allocated ptrs).
+                SimpleIntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
+                    *results, IntermediateCompressionErrorExp};
 
-            MaxIntermediateOrbitCompressor<IterType, T, PExtras> maxIntermediateCompressor{
-                *results, IntermediateCompressionErrorExp};
+                MaxIntermediateOrbitCompressor<IterType, T, PExtras> maxIntermediateCompressor{
+                    *results, IntermediateCompressionErrorExp};
 
-            // Initialize to 1 because the array starts with a zero at the front
-            size_t index = 1;
+                // Initialize to 1 because the array starts with a zero at the front
+                size_t index = 1;
 
-            for (;;) {
-                ThreadReusedData *expected = ThreadMemory->In.load();
-                ThreadReusedData *ok = nullptr;
+                for (;;) {
+                    ThreadReusedData *expected = ThreadMemory->In.load();
+                    ThreadReusedData *ok = nullptr;
 
-                CheckStartCriteria;
+                    CheckStartCriteria;
 
-                // SaveForReuse1 shouldn't be done on this thread.
-                if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
-                    results->AddUncompressedReusedEntry(ok->zx, ok->zy, index);
-                } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
-                    intermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
-                } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-                    maxIntermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
-                } else {
-                    assert(false);
+                    // SaveForReuse1 shouldn't be done on this thread.
+                    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+                        results->AddUncompressedReusedEntry(ok->zx, ok->zy, index);
+                    } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
+                        intermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
+                    } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+                        maxIntermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
+                    } else {
+                        assert(false);
+                    }
+
+                    index++;
+
+                    // Give result back.
+                    CheckFinishCriteria;
                 }
 
-                index++;
-
-                // Give result back.
-                CheckFinishCriteria;
-            }
-
-            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-                maxIntermediateCompressor.CompleteResults();
+                if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+                    maxIntermediateCompressor.CompleteResults();
+                }
             }
 
             auto allocatorIndex = bumpAllocator->GetAllocatorIndex();

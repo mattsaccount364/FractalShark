@@ -1,10 +1,110 @@
 #include "stdafx.h"
 #include "RenderThreadPool.h"
 #include "Fractal.h"
+#include "FractalPalette.h"
 #include "GPU_Render.h"
 
 #include <algorithm>
 #include <chrono>
+
+// Convert iteration counts to Color16 values for CPU render algorithms.
+// Mirrors the logic from Fractal::DrawFractalThread but writes to the
+// ItersMemoryContainer's m_RoundedOutputColorMemory buffer.
+static void ColorizeCpuIterations(
+    ItersMemoryContainer &iters,
+    const FractalPalette &palette,
+    IterTypeFull numIterations,
+    IterTypeEnum iterType,
+    uint32_t gpuAntialiasing) {
+
+    if (!iters.m_RoundedOutputColorMemory) {
+        return;
+    }
+
+    const IterTypeFull maxPossibleIters = (iterType == IterTypeEnum::Bits32)
+        ? static_cast<IterTypeFull>(INT32_MAX - 1)
+        : static_cast<IterTypeFull>(INT64_MAX - 1);
+    const uint32_t palIters = palette.GetCurrentNumColors();
+    const Color16 *pal = palette.GetCurrentPalInterleaved();
+    const size_t totalAA = static_cast<size_t>(gpuAntialiasing) * gpuAntialiasing;
+    const auto paletteType = palette.GetPaletteType();
+    const auto auxDepth = palette.GetAuxDepth();
+    const auto paletteRotation = palette.GetPaletteRotation();
+
+    size_t basicFactor = 65536 / numIterations;
+    if (basicFactor == 0) {
+        basicFactor = 1;
+    }
+
+    const size_t outW = iters.m_OutputWidth;
+    const size_t outH = iters.m_OutputHeight;
+
+    auto GetBasicColor = [&](size_t numIters, size_t &acc_r, size_t &acc_g, size_t &acc_b) {
+        auto shiftedIters = (numIters >> auxDepth);
+        if (paletteType != FractalPaletteType::Basic) {
+            auto palIndex = shiftedIters % palIters;
+            acc_r += pal[palIndex].r;
+            acc_g += pal[palIndex].g;
+            acc_b += pal[palIndex].b;
+        } else {
+            acc_r += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
+            acc_g += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
+            acc_b += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
+        }
+    };
+
+    auto colorize = [&](auto **ItersArray, auto NumIterations) {
+        const auto maxIters = NumIterations;
+        for (size_t output_y = 0; output_y < outH; output_y++) {
+            for (size_t output_x = 0; output_x < outW; output_x++) {
+                size_t acc_r = 0, acc_g = 0, acc_b = 0;
+
+                if (gpuAntialiasing == 1) {
+                    size_t numIters = ItersArray[output_y][output_x];
+                    if (numIters < maxIters) {
+                        numIters += paletteRotation;
+                        if (numIters >= maxPossibleIters) {
+                            numIters = maxPossibleIters - 1;
+                        }
+                        GetBasicColor(numIters, acc_r, acc_g, acc_b);
+                    }
+                } else {
+                    for (size_t iy = output_y * gpuAntialiasing;
+                         iy < (output_y + 1) * gpuAntialiasing; iy++) {
+                        for (size_t ix = output_x * gpuAntialiasing;
+                             ix < (output_x + 1) * gpuAntialiasing; ix++) {
+                            size_t numIters = ItersArray[iy][ix];
+                            if (numIters < maxIters) {
+                                numIters += paletteRotation;
+                                if (numIters >= maxPossibleIters) {
+                                    numIters = maxPossibleIters - 1;
+                                }
+                                GetBasicColor(numIters, acc_r, acc_g, acc_b);
+                            }
+                        }
+                    }
+                    acc_r /= totalAA;
+                    acc_g /= totalAA;
+                    acc_b /= totalAA;
+                }
+
+                size_t idx = output_y * outW + output_x;
+                iters.m_RoundedOutputColorMemory[idx].r = static_cast<uint16_t>(acc_r);
+                iters.m_RoundedOutputColorMemory[idx].g = static_cast<uint16_t>(acc_g);
+                iters.m_RoundedOutputColorMemory[idx].b = static_cast<uint16_t>(acc_b);
+                iters.m_RoundedOutputColorMemory[idx].a = 65535;
+            }
+        }
+    };
+
+    if (iterType == IterTypeEnum::Bits32) {
+        colorize(iters.GetItersArray<uint32_t>(),
+                 static_cast<uint32_t>(numIterations));
+    } else {
+        colorize(iters.GetItersArray<uint64_t>(),
+                 static_cast<uint64_t>(numIterations));
+    }
+}
 
 // ============================================================================
 // RendererPool
@@ -224,11 +324,44 @@ RenderJobHandle RenderThreadPool::Enqueue(const RenderWorkItem &item) {
     RenderWorkItem workItem = item;
     workItem.CompletionPromise = std::move(promise);
 
+    std::vector<uint64_t> tombstoneSeqs;
+
     {
         std::lock_guard lk(m_WorkQueueMutex);
         workItem.SequenceNumber = m_NextSequenceNumber++;
+
+        // Supersede: when a new render arrives, discard earlier queued
+        // renders that it replaces (e.g., rapid zoom — only last matters).
+        // Keep mutations and non-supersedable items (AutoZoomer pipeline).
+        if (!workItem.MutationOnly) {
+            for (auto it = m_WorkQueue.begin(); it != m_WorkQueue.end(); ) {
+                if (it->Supersedable && !it->MutationOnly) {
+                    tombstoneSeqs.push_back(it->SequenceNumber);
+                    if (it->CompletionPromise) {
+                        try { it->CompletionPromise->set_value(); } catch (...) {}
+                    }
+                    it = m_WorkQueue.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
+        // Stamp generation for in-flight superseding.
+        // Only supersedable items advance the counter.
+        if (workItem.Supersedable) {
+            workItem.EnqueueGeneration = ++m_EnqueueGeneration;
+        }
+
         m_WorkQueue.push_back(std::move(workItem));
     }
+
+    // Push tombstones for superseded sequences outside the work queue
+    // lock to avoid nested locking with the FrameQueue mutex.
+    for (auto seq : tombstoneSeqs) {
+        PushTombstone(seq);
+    }
+
     m_WorkQueueCV.notify_one();
 
     return RenderJobHandle(std::move(future));
@@ -255,14 +388,52 @@ RenderWorkItem RenderThreadPool::SnapshotCurrentState() const {
     return item;
 }
 
-RenderJobHandle RenderThreadPool::EnqueueCurrentState() {
-    return Enqueue(SnapshotCurrentState());
+RenderJobHandle RenderThreadPool::EnqueueCommand(std::function<void(Fractal &)> cmd) {
+    RenderWorkItem item{};
+    item.Command = std::move(cmd);
+    item.FractalPtr = m_Fractal;
+    // Dirty flags will be set after the command re-snapshots.
+    item.ChangedWindow = true;
+    item.ChangedScrn = true;
+    item.ChangedIterations = true;
+    return Enqueue(item);
 }
 
-RenderJobHandle RenderThreadPool::EnqueueCurrentState(const PointZoomBBConverter &ptz) {
-    auto item = SnapshotCurrentState();
+RenderJobHandle RenderThreadPool::EnqueueCommand(
+    const PointZoomBBConverter &ptz,
+    std::function<void(Fractal &)> cmd,
+    bool supersedable) {
+    RenderWorkItem item{};
+    item.Command = std::move(cmd);
     item.Ptz = ptz;
+    item.Supersedable = supersedable;
+    item.FractalPtr = m_Fractal;
+    item.ChangedWindow = true;
+    item.ChangedScrn = true;
+    item.ChangedIterations = true;
     return Enqueue(item);
+}
+
+RenderJobHandle RenderThreadPool::EnqueueMutation(std::function<void(Fractal &)> cmd) {
+    auto promise = std::make_shared<std::promise<void>>();
+    auto future = promise->get_future().share();
+
+    RenderWorkItem workItem{};
+    workItem.Command = std::move(cmd);
+    workItem.MutationOnly = true;
+    workItem.FractalPtr = m_Fractal;
+    workItem.CompletionPromise = std::move(promise);
+    // No sequence number — mutations don't produce frames.
+    // Assigning one would create a gap that hangs the GL consumer
+    // on WaitForFrameExact for a frame that never arrives.
+
+    {
+        std::lock_guard lk(m_WorkQueueMutex);
+        m_WorkQueue.push_back(std::move(workItem));
+    }
+    m_WorkQueueCV.notify_one();
+
+    return RenderJobHandle(std::move(future));
 }
 
 void RenderThreadPool::PushTombstone(uint64_t sequenceNumber) {
@@ -275,6 +446,17 @@ void RenderThreadPool::PushTombstone(uint64_t sequenceNumber) {
 void RenderThreadPool::Shutdown() {
     if (m_ShutdownFlag.exchange(true)) {
         return; // Already shut down
+    }
+
+    // Discard all queued work — exit takes priority.
+    {
+        std::lock_guard lk(m_WorkQueueMutex);
+        for (auto &item : m_WorkQueue) {
+            if (item.CompletionPromise) {
+                try { item.CompletionPromise->set_value(); } catch (...) {}
+            }
+        }
+        m_WorkQueue.clear();
     }
 
     // Wake up all workers
@@ -294,24 +476,37 @@ void RenderThreadPool::Shutdown() {
     }
 }
 
+void RenderThreadPool::Drain() {
+    std::unique_lock lk(m_DrainMutex);
+    m_DrainCV.wait(lk, [this] {
+        std::lock_guard qlk(m_WorkQueueMutex);
+        return m_WorkQueue.empty() && m_InFlightCount.load() == 0;
+    });
+}
+
 bool RenderThreadPool::DequeueWorkItem(RenderWorkItem &item) {
     std::unique_lock lk(m_WorkQueueMutex);
     m_WorkQueueCV.wait(lk, [this] {
         return m_ShutdownFlag.load() || !m_WorkQueue.empty();
     });
 
-    if (m_ShutdownFlag.load() && m_WorkQueue.empty()) {
+    // Exit immediately on shutdown — don't process remaining items.
+    if (m_ShutdownFlag.load()) {
         return false;
     }
 
     item = std::move(m_WorkQueue.front());
     m_WorkQueue.pop_front();
+    // Increment in-flight count while queue lock is held to prevent
+    // Drain() TOCTOU: without this, Drain() could see empty queue +
+    // zero in-flight between pop and the old increment site.
+    m_InFlightCount.fetch_add(1);
     return true;
 }
 
-void RenderThreadPool::RunCalcFractal(
+bool RenderThreadPool::RunCalcFractal(
     Fractal *fractal,
-    const RenderWorkItem &item,
+    RenderWorkItem &item,
     RendererIndex rendererIdx,
     ItersMemoryContainer &workerIters) {
 
@@ -321,13 +516,52 @@ void RenderThreadPool::RunCalcFractal(
     // Worker B's flags between set and read, causing B to skip computation
     // and produce a final frame from stale GPU data.
     std::lock_guard lk(m_CalcFractalMutex);
+
+    // Execute pre-render command if present.
+    if (item.Command) {
+        item.Command(*fractal);
+
+        // Re-snapshot state after the command has mutated Fractal.
+        auto fresh = SnapshotCurrentState();
+        // Preserve SequenceNumber, CompletionPromise, and FractalPtr from
+        // the original item; copy everything else from the fresh snapshot.
+        // If the caller supplied an explicit Ptz (via optional), keep it.
+        if (!item.Ptz.has_value()) {
+            item.Ptz = fresh.Ptz;
+        }
+        item.Algorithm = fresh.Algorithm;
+        item.IterType = fresh.IterType;
+        item.NumIterations = fresh.NumIterations;
+        item.IterationPrecision = fresh.IterationPrecision;
+        item.ScrnWidth = fresh.ScrnWidth;
+        item.ScrnHeight = fresh.ScrnHeight;
+        item.GpuAntialiasing = fresh.GpuAntialiasing;
+        item.ChangedWindow = fresh.ChangedWindow;
+        item.ChangedScrn = fresh.ChangedScrn;
+        item.ChangedIterations = fresh.ChangedIterations;
+
+        // Re-acquire ItersMemoryContainer if dimensions changed.
+        if (workerIters.m_OutputWidth != item.ScrnWidth ||
+            workerIters.m_OutputHeight != item.ScrnHeight) {
+            fractal->ReturnIterMemory(std::move(workerIters));
+            workerIters = fractal->AcquireItersMemory();
+        }
+    }
+
+    // Dimension check (covers both command and non-command items).
+    if (workerIters.m_OutputWidth != item.ScrnWidth ||
+        workerIters.m_OutputHeight != item.ScrnHeight) {
+        return false;
+    }
+
     fractal->m_ChangedWindow = item.ChangedWindow;
     fractal->m_ChangedScrn = item.ChangedScrn;
     fractal->m_ChangedIterations = item.ChangedIterations;
 
     // Ptz and ItersMemory travel through CalcContext — no swap needed.
-    CalcContext ctx{item.Ptz, workerIters};
+    CalcContext ctx{*item.Ptz, workerIters};
     fractal->CalcFractal(rendererIdx, false, ctx);
+    return true;
 }
 
 void RenderThreadPool::WaitForGpuAndProduceProgressiveFrames(
@@ -351,11 +585,13 @@ void RenderThreadPool::WaitForGpuAndProduceProgressiveFrames(
     for (;;) {
         std::unique_lock lk(workerMutex);
         auto computeDone = workerCV.wait_for(lk, ProgressiveDrawInterval, [&] {
-            return renderer.IsComputeDone() || m_ShutdownFlag.load();
+            return renderer.IsComputeDone() || m_ShutdownFlag.load()
+                || fractal->GetStopCalculating();
         });
         lk.unlock();
 
-        if (m_ShutdownFlag.load()) {
+        if (m_ShutdownFlag.load() || fractal->GetStopCalculating()) {
+            renderer.SyncComputeStream();
             break;
         }
 
@@ -418,6 +654,47 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
             break;
         }
 
+        // Mutation-only fast path: execute command under lock, no render.
+        if (item.MutationOnly) {
+            // Scope guard: always decrement in-flight count on exit,
+            // even if the command throws (prevents Drain() deadlock).
+            struct DecrementGuard {
+                RenderThreadPool &pool;
+                ~DecrementGuard() {
+                    pool.m_InFlightCount.fetch_sub(1);
+                    pool.m_DrainCV.notify_all();
+                }
+            } guard{*this};
+
+            {
+                std::lock_guard lk(m_CalcFractalMutex);
+                if (item.Command) {
+                    item.Command(*item.FractalPtr);
+                }
+            }
+            if (item.CompletionPromise) {
+                try {
+                    item.CompletionPromise->set_value();
+                } catch (...) {
+                }
+            }
+            continue;
+        }
+
+        // Skip stale in-flight renders: if a newer supersedable item was
+        // enqueued since this one, this render's output will never be seen.
+        // Check before acquiring renderer/memory (expensive).
+        if (item.Supersedable &&
+            item.EnqueueGeneration < m_EnqueueGeneration) {
+            PushTombstone(item.SequenceNumber);
+            if (item.CompletionPromise) {
+                try { item.CompletionPromise->set_value(); } catch (...) {}
+            }
+            m_InFlightCount.fetch_sub(1);
+            m_DrainCV.notify_all();
+            continue;
+        }
+
         RendererIndex rendererIdx = m_RendererPool.Acquire();
         Fractal *fractal = item.FractalPtr;
         auto &renderer = fractal->GetRenderer(rendererIdx);
@@ -428,18 +705,26 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
         bool finalFramePushed = false;
 
         try {
-            if (workerIters.m_OutputWidth != item.ScrnWidth ||
-                workerIters.m_OutputHeight != item.ScrnHeight) {
+            if (!RunCalcFractal(fractal, item, rendererIdx, workerIters)) {
                 PushTombstone(item.SequenceNumber);
                 finalFramePushed = true;
             } else {
-                RunCalcFractal(fractal, item, rendererIdx, workerIters);
+                // For CPU algorithms, convert iteration counts to colors.
+                if (item.Algorithm.UseLocalColor) {
+                    ColorizeCpuIterations(
+                        workerIters,
+                        fractal->GetPalette(),
+                        item.NumIterations,
+                        item.IterType,
+                        item.GpuAntialiasing);
+                }
 
                 WaitForGpuAndProduceProgressiveFrames(
                     fractal, renderer, item, rendererIdx,
                     workerIters, workerMutex, workerCV);
 
                 bool pushed = !m_ShutdownFlag.load() &&
+                              !fractal->GetStopCalculating() &&
                               ProduceFrame(item, rendererIdx, workerIters, true);
                 if (!pushed) {
                     PushTombstone(item.SequenceNumber);
@@ -468,6 +753,9 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
 
         // Release the renderer back to the pool
         m_RendererPool.Release(rendererIdx);
+
+        m_InFlightCount.fetch_sub(1);
+        m_DrainCV.notify_all();
     }
 }
 

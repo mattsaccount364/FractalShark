@@ -445,7 +445,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
                     f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
                 }
                 f.ForceRecalc();
-            });
+            }).Wait();
             MenuGetCurPos();
             break;
 
@@ -456,7 +456,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
                     f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
                 }
                 f.ForceRecalc();
-            });
+            }).Wait();
             MenuGetCurPos();
             break;
 
@@ -467,7 +467,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
                     f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
                 }
                 f.ForceRecalc();
-            });
+            }).Wait();
             MenuGetCurPos();
             break;
 

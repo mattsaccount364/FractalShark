@@ -1040,6 +1040,7 @@ Fractal::RequiresUseLocalColor() const
 void
 Fractal::CalcFractal(bool drawFractal)
 {
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_Overall);
     CalcContext ctx{m_Ptz, m_CurIters};
     CalcFractal(RendererIndex::Renderer0, drawFractal, ctx);
 }
@@ -1047,8 +1048,6 @@ Fractal::CalcFractal(bool drawFractal)
 void
 Fractal::CalcFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
-    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_Overall);
-
     // Bypass this function if the screen is too small.
     if (m_ScrnHeight == 0 || m_ScrnWidth == 0) {
         return;
@@ -1432,6 +1431,7 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
                 &gpuReductionResults);
         }
         renderer.SyncComputeStream();
+        m_BenchmarkData.m_PerPixel.StopTimer();
     }
 
     // We are all updated now.
@@ -2423,7 +2423,7 @@ Fractal::CalcGpuFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx)
     }
 
     auto &renderer = GetRenderer(idx);
-    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_PerPixel);
+    m_BenchmarkData.m_PerPixel.StartTimer();
     err = renderer.Render(
         GetRenderAlgorithm(), cx2, cy2, dx2, dy2, GetNumIterations<IterType>(), m_IterationPrecision);
 
@@ -3215,7 +3215,7 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal, Calc
     BLAS<IterType, T> blas(*results);
     blas.Init(results->GetCountOrbitEntries(), results->GetMaxRadius());
 
-    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_PerPixel);
+    m_BenchmarkData.m_PerPixel.StartTimer();
     result = renderer.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
                                                &gpu_results,
                                                &blas,
@@ -3310,7 +3310,7 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal, Cal
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_PerPixel);
+    m_BenchmarkData.m_PerPixel.StartTimer();
     auto result = renderer.RenderPerturbLAv2<IterType, T, SubType, Mode, PExtras>(
         GetRenderAlgorithm(), cx2, cy2, dx2, dy2, centerX2, centerY2, GetNumIterations<IterType>());
 
@@ -3375,7 +3375,7 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal
         return;
     }
 
-    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_PerPixel);
+    m_BenchmarkData.m_PerPixel.StartTimer();
     auto result = renderer.RenderPerturbBLAScaled<IterType, T>(GetRenderAlgorithm(),
                                                           &gpu_results,
                                                           &gpu_results2,

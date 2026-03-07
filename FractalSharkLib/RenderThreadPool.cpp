@@ -687,6 +687,8 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
         bool finalFramePushed = false;
 
         try {
+            fractal->m_BenchmarkData.m_Overall.StartTimer();
+
             if (!RunCalcFractal(fractal, item, rendererIdx, workerIters)) {
                 PushTombstone(item.SequenceNumber);
                 finalFramePushed = true;
@@ -705,6 +707,8 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
                     fractal, renderer, item, rendererIdx,
                     workerIters, workerMutex, workerCV);
 
+                fractal->m_BenchmarkData.m_PerPixel.StopTimer();
+
                 bool pushed = !m_ShutdownFlag.load() &&
                               !fractal->GetStopCalculating() &&
                               ProduceFrame(item, rendererIdx, workerIters, true);
@@ -713,6 +717,8 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
                 }
                 finalFramePushed = true;
             }
+
+            fractal->m_BenchmarkData.m_Overall.StopTimer();
         } catch (...) {
             // Exception during processing — fall through to cleanup.
         }

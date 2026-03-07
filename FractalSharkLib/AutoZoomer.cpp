@@ -99,9 +99,15 @@ AutoZoomer::Run()
         // Update live state to final zoom position so the view doesn't
         // snap back to the original zoom after the loop completes.
         if (!setup.ZoomSteps.empty()) {
+            auto targetIters = setup.ShouldInterpolateIters
+                ? setup.IterCounts.back()
+                : m_Fractal.GetNumIterations<IterTypeFull>();
             m_Fractal.EnqueueCommand(
-                [ptz = setup.ZoomSteps.back()](Fractal &f) {
-                    f.RecenterViewCalc(ptz);
+                [ptz = setup.ZoomSteps.back(), targetIters](Fractal &f) {
+                    f.m_Ptz = ptz;
+                    f.SquareCurrentView();
+                    f.SetPrecision();
+                    f.SetNumIterations<IterTypeFull>(targetIters);
                 }).Wait();
         }
 

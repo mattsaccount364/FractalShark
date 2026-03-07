@@ -176,9 +176,9 @@ operations:
 \hline
 \textbf{Function} & \textbf{Operation} & \textbf{Max relative error} \\
 \hline
-\code{add\_dblflt(a, b)} & $a + b$  & ${\sim}2^{-104.7}$ \\
-\code{sub\_dblflt(a, b)} & $a - b$  & ${\sim}2^{-104.7}$ \\
-\code{mul\_dblflt(a, b)} & $a \times b$  & ${\sim}2^{-103.9}$ \\
+\code{add\_dblflt(a, b)} & $a + b$  & $O(u^2) \approx 2^{-48}$ \\
+\code{sub\_dblflt(a, b)} & $a - b$  & $O(u^2) \approx 2^{-48}$ \\
+\code{mul\_dblflt(a, b)} & $a \times b$  & $O(u^2) \approx 2^{-47}$ \\
 \code{sqr\_dblflt(a)}    & $a^2$         & optimized via $2 \cdot \mathtt{head} \cdot \mathtt{tail}$ \\
 \code{mul\_dblflt2x(a,b)}& $2ab$         & multiply then shift \\
 \hline
@@ -270,7 +270,7 @@ The complete precision hierarchy available for per-pixel computation in
 \code{dblflt}               & 2$\times$fp32 & ${\sim}48$  & practical sweet spot \\
 \code{double}               & 1$\times$fp64 & ${\sim}53$  & standard; slow on consumer GPUs \\
 \code{dbldbl}               & 2$\times$fp64 & ${\sim}104$ & academic \\
-\code{GQF::gqf\_real}       & 4$\times$fp32 & ${\sim}112$ & academic \\
+\code{GQF::gqf\_real}       & 4$\times$fp32 & ${\sim}96$  & academic \\
 \code{GQD::gqd\_real}       & 4$\times$fp64 & ${\sim}212$ & academic \\
 MPIR / \code{HpSharkFloat}  & $N$ limbs     & arbitrary   & reference orbit only \\
 \hline

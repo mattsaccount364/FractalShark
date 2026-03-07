@@ -75,6 +75,7 @@ AutoZoomer::Run()
                     [ptz = std::move(ptz), iters](Fractal &f) {
                         f.m_Ptz = ptz;
                         f.SquareCurrentView();
+                        f.SetPrecision();
                         f.SetNumIterations<IterTypeFull>(iters);
                     },
                     false);
@@ -84,6 +85,7 @@ AutoZoomer::Run()
                     [ptz = std::move(ptz)](Fractal &f) {
                         f.m_Ptz = ptz;
                         f.SquareCurrentView();
+                        f.SetPrecision();
                     },
                     false);
             }

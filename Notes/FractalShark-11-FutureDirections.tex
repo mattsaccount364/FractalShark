@@ -1,0 +1,331 @@
+% ============================================================
+%  Chapter 11 – Further Techniques and Future Directions
+% ============================================================
+
+\section{Further Techniques and Future Directions}
+\label{sec:future-directions}
+
+The techniques described in this section are not implemented in
+\FractalShark{} but represent important developments in the deep-zoom
+Mandelbrot rendering community.  They are documented here for
+completeness and to provide context for potential future work.  Each
+subsection describes the technique, gives key formulas, and notes how it
+relates to \FractalShark{}'s existing algorithms.
+
+% -----------------------------------------------------------
+\subsection{Glitch Detection and Correction}
+\label{subsec:glitch-detection}
+
+Some deep-zoom renderers that lack per-pixel rebasing encounter
+\emph{glitches}---pixels whose perturbation approximation has broken
+down, producing visually incorrect results.  The standard remedy in
+such renderers is a multi-pass detect-and-correct workflow.
+
+The \emph{Pauldelbrot criterion} formalises glitch detection: a pixel is
+considered glitched if, at some iteration~$n$,
+\begin{equation}
+  |z_n^\star| < |\Delta z_n|
+  \label{eq:pauldelbrot-criterion}
+\end{equation}
+holds---that is, the magnitude of the reference orbit drops below the
+perturbation delta, indicating that the reference is a poor fit.  The
+correction procedure is to scan the rendered image for such pixels,
+compute a new reference orbit centred on a glitched location, and
+re-render only the affected region.  This process repeats until no
+glitches remain and requires multi-reference orbit support
+(\cref{subsec:multi-reference}).
+
+\FractalShark{} sidesteps this workflow entirely by using
+\emph{rebasing} (\cref{sec:perturb-only-rebase}): whenever
+$|\Delta z_n| > |z_n|$ during iteration, the perturbation is reset by
+folding the delta back into the reference and restarting the reference
+index.  Rebasing corrects the instability per-pixel, on-the-fly, as
+each pixel iterates---eliminating the need for post-render glitch
+detection and multi-pass re-rendering.  In practice, rebasing is a more
+direct and efficient solution: the problematic condition is handled
+immediately at the point it occurs, rather than detected after the fact
+and corrected in a separate pass.  Details of the glitch phenomenon and
+related strategies are discussed in
+\cite{HeilandAllen2013Perturbation} and \cite{HeilandAllen2022DeepZoom}.
+
+% -----------------------------------------------------------
+\subsection{Series Approximation (SA)}
+\label{subsec:series-approx}
+
+Series Approximation was the original technique for skipping iterations
+in perturbation-based Mandelbrot rendering, introduced alongside
+perturbation theory itself~\cite{Martin2013Perturbation}.  It has since
+been largely superseded by linear approximation methods---both BLA
+(\cref{sec:bilinear-approx}) and LA~v2
+(\cref{sec:la-v2-perturb})---which are simpler, more robust, and faster
+in practice.  SA is documented here for historical context.
+
+SA constructs a polynomial $P(\Delta c)$ that approximates the
+perturbation $\Delta z_N$ after $N$~iterations, so that each pixel can
+skip those iterations with a single polynomial evaluation.  Starting
+from the perturbation recurrence
+\begin{equation}
+  \Delta z_{n+1} = 2\,z_n^\star\,\Delta z_n + (\Delta z_n)^2 + \Delta c,
+  \label{eq:sa-perturb-recurrence}
+\end{equation}
+one expands $\Delta z_n$ as a power series in $\Delta c$:
+\[
+  \Delta z_n = A_n\,\Delta c + B_n\,(\Delta c)^2
+             + C_n\,(\Delta c)^3 + \cdots
+\]
+Substituting into \cref{eq:sa-perturb-recurrence} and matching powers of
+$\Delta c$ yields recurrences for the coefficients:
+\begin{align}
+  A_{n+1} &= 2\,z_n^\star\,A_n + 1,
+    \label{eq:sa-A} \\
+  B_{n+1} &= 2\,z_n^\star\,B_n + A_n^2,
+    \label{eq:sa-B} \\
+  C_{n+1} &= 2\,z_n^\star\,C_n + 2\,A_n\,B_n,
+    \label{eq:sa-C}
+\end{align}
+with higher-order terms following the same pattern.  Note that
+\cref{eq:sa-A} is identical to the \code{CCoeff} recurrence used in
+LA~v2 (\cref{sec:la-step-forward})---this is not a coincidence; both
+capture the partial derivative $\partial z_n / \partial c$.
+
+\paragraph{Why linear approximation superseded SA.}
+SA and linear approximation (BLA, LA~v2) address the same
+problem---skipping iterations that would otherwise be computed one at a
+time---but they differ fundamentally in approach.  SA uses a
+higher-order polynomial in $\Delta c$: a single evaluation can skip many
+iterations, but the polynomial has no built-in validity bound and can
+diverge catastrophically when the approximation radius is exceeded.
+Renderers using SA must determine a safe skip count heuristically and
+fall back to full perturbation if the polynomial produces nonsense.
+
+Linear approximation, by contrast, uses first-order (linear)
+coefficients with explicit, precomputed validity thresholds
+(\cref{sec:la-threshold}).  BLA (\cref{sec:bilinear-approx}) builds a
+generic power-of-two hierarchy of composable linear maps, agnostic of
+the orbit's dynamics.  LA~v2 (\cref{sec:la-v2-perturb}) is more
+sophisticated: it aligns the approximation hierarchy with the detected
+period of the reference orbit, enabling each stage-0 entry to skip an
+entire period and higher stages to skip multiples of the period.  Both
+approaches degrade gracefully---when a validity threshold is
+exceeded, the kernel simply falls back to perturbation for a few
+iterations before attempting the next linear step.
+
+In practice, the linear approach is simpler to implement (no
+higher-order coefficient management), numerically more robust (bounded
+error by construction), and often faster (the period-aligned hierarchy
+in LA~v2 enables very large skip counts near periodic points without
+risk of polynomial divergence).  Optimised SA variants such as NanoMB1,
+NanoMB2, and Super Series Approximation (SSA)
+(\cite{KallesFraktaler}) narrow the gap but remain more complex than
+linear approximation for comparable or inferior performance.
+
+% -----------------------------------------------------------
+\subsection{Multi-Reference Orbit Strategies}
+\label{subsec:multi-reference}
+
+In renderers that use the glitch-detection workflow described in
+\cref{subsec:glitch-detection}, a single reference orbit may not serve
+all pixels well.  The multi-reference approach addresses this by
+computing reference orbits at multiple locations and assigning each pixel
+to the best available reference---the one that minimises $|\Delta z_n|$
+at the iteration where the perturbation is most stressed.
+
+Multi-reference rendering typically proceeds iteratively:
+\begin{enumerate}
+  \item Render the image with the primary reference orbit.
+  \item Detect glitched pixels (\cref{subsec:glitch-detection}).
+  \item Compute a new reference orbit centred on a glitched pixel's
+        location.
+  \item Re-render only the glitched pixels using the new reference.
+  \item Repeat until no glitches remain.
+\end{enumerate}
+
+Because \FractalShark{} uses per-pixel rebasing
+(\cref{sec:perturb-only-rebase}) rather than post-render glitch
+detection, the motivation for multi-reference rendering is
+substantially weaker: rebasing handles individual pixel instabilities
+during iteration, avoiding the need for a separate detection-and-correction
+pass.  Multi-reference strategies are primarily relevant to renderers
+that lack rebasing and must instead rely on choosing a globally
+well-suited reference for each region of the image.  The approach is
+discussed in \cite{HeilandAllen2022DeepZoom}.
+
+% -----------------------------------------------------------
+\subsection{Smooth (Continuous) Iteration Count}
+\label{subsec:smooth-coloring}
+
+Standard escape-time coloring uses integer iteration counts, producing
+visible banding in the rendered image.  The \emph{smooth iteration
+count} eliminates this artifact by computing a fractional escape count.
+
+For the standard bailout radius $R = 2$ the smooth count is
+\begin{equation}
+  n_{\text{smooth}} = n + 1
+    - \frac{\log\!\bigl(\log|z_n|\bigr)}{\log 2},
+  \label{eq:smooth-iter}
+\end{equation}
+where $n$ is the integer iteration at escape and $z_n$ is the final
+orbit value.  The derivation rests on the potential function
+$G(c) = \lim_{k\to\infty} \log|z_k| / 2^k$, which is continuous across
+the exterior of the Mandelbrot set.  The escape time is related to the
+level set $G(c) = \log R / 2^n$; interpolating between successive
+iterates yields the fractional part.
+
+For a general bailout radius~$R$ (note that \FractalShark{} uses
+$R = 4$ in the per-pixel kernels and $R = 256$ in the reference orbit),
+the formula generalises to
+\begin{equation}
+  n_{\text{smooth}} = n + 1
+    - \frac{\log\!\bigl(\log|z_n|\bigr)}{\log 2}
+    + \frac{\log\!\bigl(\log R\bigr)}{\log 2}.
+  \label{eq:smooth-iter-general}
+\end{equation}
+
+This real-valued count can be used directly as a palette index,
+eliminating the modular-integer banding visible in \FractalShark{}'s
+current palette system (\cref{subsec:coloring}).  Implementation would
+require modifying the antialiasing kernel (\cref{subsec:antialiasing})
+to compute the fractional count from the final $|z_n|^2$ (already
+available in the output buffer) and using it for palette lookup.  A
+discussion of smooth coloring and other plotting algorithms appears in
+\cite{WikipediaPlottingAlgorithms}.
+
+% -----------------------------------------------------------
+\subsection{Distance Estimation}
+\label{subsec:distance-estimation}
+
+The exterior distance estimator gives the approximate Euclidean distance
+from a parameter~$c$ in the exterior of the Mandelbrot set to the
+boundary $\partial\mathcal{M}$:
+\begin{equation}
+  d(c) \;\approx\; \frac{|z_n|\,\log|z_n|}{|z'_n|},
+  \label{eq:distance-estimate}
+\end{equation}
+where $z'_n = \partial z_n / \partial c$ is the orbit derivative at the
+escape iteration.
+
+\FractalShark{} already computes $z'_n$: the perturbation pipeline
+tracks $d_n = \partial z_n / \partial c$ for periodicity detection
+(\cref{subsec:ref-orbit-periodicity}), and the LA~v2 kernel propagates
+\code{dzdz} and \code{dzdc} through approximation steps
+(\cref{sec:la-derivatives}).  The missing piece is the coloring
+integration—mapping the distance $d(c)$ to a colour rather than (or in
+addition to) the iteration count.
+
+Applications of the distance estimator include:
+\begin{itemize}
+  \item Anti-aliased boundary rendering, where pixels near $\partial
+        \mathcal{M}$ receive a smooth opacity falloff.
+  \item Resolution-independent thin-filament rendering, ensuring that
+        fine structures are visible regardless of pixel density.
+  \item 3D height-field visualisation, using $d(c)$ as a height value
+        to produce surface renders of the set.
+\end{itemize}
+
+Interior distance estimation is also possible—using the Koebe quarter
+theorem and conformal mapping to the unit disk—but is substantially more
+complex and requires detecting the attracting cycle first.  The
+interaction of perturbation rendering with distance estimation is
+discussed in \cite{HeilandAllen2013Perturbation}.
+
+% -----------------------------------------------------------
+\subsection{Interior Rendering}
+\label{subsec:interior-rendering}
+
+Points inside the Mandelbrot set—orbits that never escape—are
+traditionally rendered as a uniform black.  These points belong to
+\emph{hyperbolic components} (also called \emph{atom domains}), each
+characterised by the period~$p$ of its attracting cycle.
+
+Several interior coloring techniques exploit this structure:
+\begin{itemize}
+  \item \emph{Period-based coloring.}  Detect the period~$p$ of the
+        attracting cycle and assign a colour according to~$p$.  This
+        reveals the intricate structure of hyperbolic components.
+  \item \emph{Phase coloring.}  Use the argument
+        $\arg(z^\star)$ of the attracting fixed point~$z^\star$ to
+        produce smooth colour gradients within a single component.
+  \item \emph{Interior distance.}  Estimate how far the point lies from
+        the boundary of its component, analogous to the exterior
+        distance estimator (\cref{subsec:distance-estimation}).
+\end{itemize}
+
+Cycle detection during iteration can use Floyd's or Brent's
+cycle-finding algorithms, which detect periodicity with $O(1)$ extra
+memory.
+
+\FractalShark{}'s Feature Finder (\cref{sec:feature-finder}) already
+detects periods via Newton's method on the equation $z_p(c) = 0$; the
+same period information could be used for interior coloring if the
+detection logic were extended to run during rendering rather than as a
+separate offline tool.
+
+% -----------------------------------------------------------
+\subsection{Boundary Tracing}
+\label{subsec:boundary-tracing}
+
+In a typical Mandelbrot image, large contiguous regions share the same
+integer iteration count.  \emph{Boundary tracing} exploits this
+observation: instead of computing every pixel independently, the
+algorithm traces the contours between regions of different iteration
+counts and flood-fills the interiors.
+
+The procedure for each connected region of constant iteration count is:
+\begin{enumerate}
+  \item Identify a border pixel (one whose neighbour has a different
+        iteration count).
+  \item Follow the 4- or 8-connected border, recording the contour.
+  \item Fill all enclosed pixels with the shared iteration count,
+        skipping the per-pixel iteration entirely for interior pixels.
+\end{enumerate}
+
+The speedup depends on the fraction of the image occupied by large
+uniform regions; typical gains range from $10\times$ to $50\times$ for
+views dominated by the main cardioid or period-2 bulb.
+
+\paragraph{Trade-offs.}
+Boundary tracing is incompatible with smooth (continuous) coloring
+(\cref{subsec:smooth-coloring}), because smooth coloring produces
+continuously varying values with no discrete boundaries to trace.  The
+technique works well with integer escape-time coloring.
+
+Boundary tracing is orthogonal to perturbation and LA: it is a
+pixel-level optimisation applied \emph{after} per-pixel iteration counts
+are available for the border pixels; the per-pixel algorithm
+(perturbation, LA, etc.)\ is unchanged.  Fraktaler-3
+uses boundary tracing to achieve dramatic speedups.  An overview of the
+algorithm is given in \cite{WikipediaPlottingAlgorithms}.
+
+% -----------------------------------------------------------
+\subsection{Histogram Equalization}
+\label{subsec:histogram-equalization}
+
+At deep zooms, iteration count distributions are highly skewed: most
+pixels cluster around similar counts, with a long tail of rare high
+values.  Standard palette cycling maps iteration counts to colours via
+modular indexing, which wastes most of the colour palette on the
+infrequent tail values and compresses the visually dominant range into a
+narrow band.
+
+\emph{Histogram equalization} addresses this by redistributing the
+palette according to the actual distribution of iteration counts:
+\begin{enumerate}
+  \item Collect a histogram $H(k)$ of iteration counts across all
+        pixels.
+  \item Compute the cumulative distribution function
+        $\mathrm{CDF}(k) = \sum_{j \le k} H(j) \big/ \sum_j H(j)$.
+  \item Map each pixel's iteration count~$k$ to the colour at palette
+        index $\mathrm{CDF}(k)$.
+\end{enumerate}
+The effect is that all colours in the palette are utilised approximately
+equally, maximising visual contrast in the regions where most detail
+exists.
+
+\FractalShark{} already computes per-frame iteration statistics
+(minimum, maximum, sum) via the reduction kernel
+(\cref{subsec:reduction}); extending this to a full histogram would
+require a histogram kernel but is architecturally straightforward.  The
+technique is independent of the iteration algorithm and can be combined
+with smooth coloring (\cref{subsec:smooth-coloring}) for even better
+results.  A general discussion of histogram-based coloring appears in
+\cite{WikipediaPlottingAlgorithms}.

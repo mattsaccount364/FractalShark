@@ -152,6 +152,62 @@ A standard bailout uses \(|z_n|^2 \ge 4\), since \(|z|>2\) implies divergence:
 For each pixel, the stored value is the smallest \(n\) (or a bounded proxy) at
 which escape occurs, or the maximum iteration limit if escape never occurs.
 
+
+\subsection*{System architecture}
+\label{sec:system-architecture}
+
+At a high level, \FractalShark{}'s rendering pipeline transforms a view
+specification (centre, zoom, iteration limit) into a coloured image through
+a sequence of stages.  Most stages are implemented as CUDA kernels; the CPU
+orchestrates data flow between them and handles high-precision coordinate
+arithmetic.
+
+\begin{verbatim}
+  View parameters (centre, zoom, iterations)
+          |
+          v
+  Coordinate mapping            [PointZoomBBConverter]
+   (high-precision -> per-pixel deltas)
+          |
+          v
+  Reference orbit computation   [RefOrbitCalc]
+   (CPU: MPIR single/multi-thread,
+    GPU: HpSharkFloat NTT pipeline)
+          |
+          v
+  Linear approximation setup    [LAReference]
+   (period detection, LA/BLA coefficient tables)
+          |
+          v
+  Per-pixel perturbation (GPU)  [mandel_1xHDR_float_perturb_lav2]
+   (LA stage traversal -> perturbation tail -> escape test)
+          |
+          v
+  Antialiasing + coloring (GPU) [antialiasing_kernel]
+   (supersample averaging, palette lookup)
+          |
+          v
+  Display (OpenGL)              [RenderThreadPool GL consumer]
+\end{verbatim}
+
+The first two stages---coordinate mapping and reference orbit
+computation---dominate wall-clock time at extreme zoom depths, because
+the required arithmetic precision grows with the logarithm of the zoom
+factor.  Once the reference orbit is available, per-pixel perturbation
+on the GPU is comparatively fast: each pixel evolves only a low-precision
+delta relative to the shared reference
+(\cref{sec:perturbation-concept}), with linear approximation
+(\cref{sec:la-v2-perturb}) skipping the majority of iterations.
+
+Two rendering paths exist (\cref{subsec:two-render-paths}): the
+\emph{render pool path}, where worker threads each acquire a private
+iteration buffer and produce frames for the OpenGL consumer; and the
+\emph{direct path}, used by tests and save operations, which writes
+results into the shared \code{m\_CurIters} buffer.  The render thread
+pool (\cref{sec:render-thread-pool}) manages a command queue that
+serialises UI-driven mutations with rendering work, discarding stale
+renders when the user navigates faster than the GPU can complete them.
+
 \subsection*{Document roadmap}
 
 The remainder of this document is organized as follows:

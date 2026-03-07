@@ -189,7 +189,13 @@ All operations are built on fused multiply-add (\code{\_\_fmaf\_rn},
 \code{\_\_fmaf\_rd}) intrinsics, which compute $a \times b + c$ in a single
 rounding step.  This is essential for maintaining the head--tail invariant:
 intermediate products must be exact or correctly rounded before the correction
-term is computed.
+term is computed.  The error bounds listed above are the theoretical
+$O(u^2)$ bounds for compensated float arithmetic, where $u = 2^{-24}$ is
+the float unit roundoff.  Note that the source code comments in
+\code{dblflt.cuh} cite empirical error values of ${\sim}2^{-104.7}$;
+however, these measurements appear to have been inherited from the
+double-double (\code{dbldbl}) implementation (where they are consistent
+with $u = 2^{-53}$) and were not re-measured for the float-float variant.
 
 \subsection{\code{CudaDblflt} wrapper and \code{HDRFloat} integration}
 \label{subsec:ep-cudadblflt}

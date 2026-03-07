@@ -1,9 +1,14 @@
-\section{Additional Implementation Details}
+\section{Post-Iteration Processing}
 \label{sec:misc-details}
 %% ===================================================================
 
-This section collects several subsystems that, while individually
-straightforward, are essential to the complete rendering pipeline.
+After the per-pixel iteration kernels produce an array of escape-time
+counts, several post-processing stages transform this raw data into a
+final displayed image.  This section covers antialiasing (down-sampling
+from a supersampled buffer), the palette-based coloring system, and
+iteration-count statistics gathered via GPU reduction.  The subsequent
+section (\cref{sec:render-thread-pool}) describes the threading
+architecture that orchestrates these stages alongside the UI.
 
 % -----------------------------------------------------------------
 \subsection{Antialiasing via supersampling}

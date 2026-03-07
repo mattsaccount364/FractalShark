@@ -1,0 +1,185 @@
+% === Introduction and motivation ===
+
+This document describes the algorithms, data structures, and implementation
+of \FractalShark{}, a high-performance, GPU-accelerated Mandelbrot set
+renderer designed for extreme deep-zoom exploration.  \FractalShark{}
+combines perturbation theory with linear approximation, NTT-based
+high-precision GPU arithmetic, and optimized reference-orbit computation to
+enable interactive navigation at zoom depths exceeding $10^{10000}$.  Its
+Feature Finder automatically locates high-period periodic points, enabling
+targeted exploration of deeply embedded structures without manual search.
+
+The project has evolved through extensive experimentation with numerical
+precision, memory management, and GPU kernel design.  As a result, this
+document serves a dual purpose: it is both \emph{technical documentation}
+of the algorithms and architecture underlying \FractalShark{}, and a
+\emph{research notebook} recording the design rationale, tradeoffs, and
+lessons learned during development.  Where relevant, we note alternative
+approaches that were considered or attempted, and explain why the current
+design was chosen.
+
+The presentation proceeds from high-level goals and mathematical background
+through the individual subsystems---rendering kernels, perturbation
+pipelines, reference-orbit computation, GPU arithmetic, and the Feature
+Finder---and concludes with infrastructure details and development history.
+
+\section{\FractalShark{} Overview}
+\label{sec:goal}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{mandelbrot.png}
+  \caption{The Mandelbrot set.}
+  \label{fig:mandelbrot}
+\end{figure}
+
+\FractalShark{} is an interactive Mandelbrot set renderer focused on
+\textbf{extreme deep-zoom exploration}, numerical correctness, and
+algorithmic experimentation.  It supports zoom depths ranging from
+conventional views to magnifications exceeding $10^{10000}$, while
+exposing internal rendering choices and precision tradeoffs to the user.
+
+\paragraph{Interactive navigation and view control.}
+\FractalShark{} provides direct mouse-driven navigation, including centering
+the view at an arbitrary point, zooming in and out at the cursor location,
+stepping backward through navigation history, and invoking automatic zoom
+modes.  Window management options allow toggling between windowed and
+full-screen modes, including square-aspect rendering for precise analysis.
+
+\paragraph{Built-in views for demonstration and validation.}
+The application includes an extensive set of built-in views covering a wide
+range of numerical regimes: GPU precision limits, high-period locations,
+known hard points, historical bug cases, regression tests, and ultra-deep
+zoom demonstrations.  These views serve both as showcases of capability and
+as repeatable test cases for performance and correctness.
+
+\paragraph{Explicit algorithm selection and transparency.}
+A central design goal of \FractalShark{} is to make rendering algorithms
+explicit and selectable.  Users may rely on an automatic algorithm selector
+or manually choose among many rendering paths (see \cref{subsec:ref-orbit-mt-tradeoff} for automatic selection), including:
+\begin{itemize}
+  \item GPU-based low-zoom renderers with selectable iteration precision and
+        multiple numeric formats (single-, dual-, and quad-limb 32- and 64-bit
+        variants, as well as deeper representations discussed subsequently);
+        see \cref{sec:mandel-base-kernels}.
+  \item Scaled perturbation algorithms for extending low-precision arithmetic
+        to deeper zooms (\cref{sec:perturbation-concept}).
+  \item Bilinear approximation (BLA v1) perturbation paths (\cref{sec:bilinear-approx}).
+  \item Linear approximation (LAv2) pipelines, including full rendering,
+        linear-approximation-only, and perturbation-only variants
+        (\cref{sec:la-v2-perturb}).
+  \item Reference-compression–aware algorithms, including Imagina-compatible
+        ``max'' compression formats (\cref{subsec:ref-orbit-compression-reuse}).
+  \item CPU-only algorithms for very high precision, verification, and
+        fallback scenarios.
+\end{itemize}
+
+Many of these modes are exposed explicitly for testing and comparison, and
+not all are intended as default or production-quality paths.
+
+\paragraph{Linear approximation configuration.}
+Linear approximation behavior can be configured for multithreaded or
+single-threaded execution and tuned via presets that prioritize accuracy,
+performance, or memory usage.  These controls reflect ongoing development
+and experimentation with LA parameter tradeoffs.
+
+\paragraph{Image quality and coloring.}
+\FractalShark{} supports GPU antialiasing at multiple sample levels and a
+flexible palette system (\cref{subsec:antialiasing,subsec:coloring}).  Palettes may be selected from predefined themes,
+generated randomly, and rendered at configurable color depths.  Some palette
+features are intentionally limited or disabled where they are known to be
+incomplete.
+
+\paragraph{Iteration limits and precision control.}
+Users can dynamically adjust iteration limits, switch between 32-bit and
+64-bit iteration counters, and modify shallow-zoom iteration precision.
+These controls are primarily relevant for low-zoom or testing scenarios and
+are not universally applicable to all rendering algorithms.
+
+\paragraph{Perturbation and reference-orbit management.}
+\FractalShark{} places strong emphasis on reference-orbit reuse and
+perturbation-based rendering (\cref{sec:ref-orbit-calc}).  It supports multiple perturbation strategies
+(single-threaded, multithreaded, periodicity-assisted (\cref{sec:hp-periodicity}), and experimental GPU
+variants), along with tools to clear, inspect, save, reload, and reuse
+reference orbits.  Automatic and manual reference-orbit persistence is
+supported via file-backed storage (\cref{sec:disk_backed_growable_vectors}).
+
+\paragraph{Memory management and scalability.}
+To enable extreme zoom depths without exhausting system memory, \FractalShark{}
+employs file-backed storage, optional reference compression, configurable
+memory limits, and automatic cleanup policies.  These mechanisms are closely
+tied to recent allocator and reference-orbit refactors discussed in the
+project development history.
+
+\paragraph{Diagnostics, benchmarking, and testing.}
+The application includes facilities for displaying detailed rendering
+parameters, running repeatable benchmarks, executing regression tests, and
+comparing reference orbits (including Imagina-compatible formats).  These
+features reflect \FractalShark{}'s dual role as both a visualization tool and a
+development platform.
+
+\paragraph{Data export and interoperability.}
+\FractalShark{} can save rendered images, high-resolution bitmaps, iteration
+counts, and reference orbits in multiple text and compressed formats.  It
+supports loading external reference orbits and matching Imagina-compatible
+data for cross-tool validation.
+
+\medskip
+\noindent
+Overall, \FractalShark{} functions as both a \textbf{deep-zoom Mandelbrot
+explorer} and a \textbf{research and experimentation platform} for
+high-precision fractal rendering, prioritizing transparency, correctness, and
+performance.  It is not intended as a polished end-user application, but rather
+as an experimental platform for exploring and validating advanced fractal
+rendering algorithms.
+
+\section{The Mandelbrot set and escape-time rendering}
+\label{sec:mandelbrot-intro}
+
+The Mandelbrot set \(M\subset\mathbb{C}\) \cite{Mandelbrot1980Fractal} is defined as the set of complex
+parameters \(c\) for which the orbit of
+\begin{equation}
+z_{n+1} = z_n^2 + c,\qquad z_0 = 0
+\end{equation}
+remains bounded. A common rendering method is \emph{escape-time}: iterate until
+the orbit magnitude exceeds a bailout threshold, or until a maximum iteration
+count is reached.
+
+A standard bailout uses \(|z_n|^2 \ge 4\), since \(|z|>2\) implies divergence:
+\begin{equation}
+|z_n|^2 = \Re(z_n)^2 + \Im(z_n)^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
+\end{equation}
+For each pixel, the stored value is the smallest \(n\) (or a bounded proxy) at
+which escape occurs, or the maximum iteration limit if escape never occurs.
+
+\subsection*{Document roadmap}
+
+The remainder of this document is organized as follows:
+\begin{itemize}
+  \item \textbf{Direct rendering kernels and numeric types.}
+        The GPU escape-time kernels and the fixed-point and floating-point
+        numeric representations they operate on
+        (\cref{sec:mandel-base-kernels,sec:hdr-float,sec:extended-precision-types}).
+  \item \textbf{Perturbation theory and approximation-based acceleration.}
+        Scaled perturbation, bilinear approximation (BLA), and the LAv2
+        pipeline that together enable deep-zoom rendering from a single
+        reference orbit
+        (\cref{sec:perturbation-concept,sec:bilinear-approx,sec:la-v2-perturb}).
+  \item \textbf{Reference orbit computation.}
+        CPU and GPU backends for computing the high-precision reference orbits
+        required by perturbation methods (\cref{sec:ref-orbit-calc}).
+  \item \textbf{GPU high-precision arithmetic.}
+        NTT-based multiplication, parallel carry propagation, and the
+        memory layout underlying GPU-side arbitrary-precision computation
+        (\cref{subsec:ref-orbit-gpu,sec:hp-add,sec:ntt-multiply}).
+  \item \textbf{Feature Finder.}
+        Periodic-point detection via Newton's method, period scanning, and
+        automatic deep-zoom target selection (\cref{sec:feature-finder}).
+  \item \textbf{Rendering pipeline and memory infrastructure.}
+        Antialiasing, coloring, file-backed growable vectors, and the overall
+        render orchestration (\cref{sec:misc-details,sec:render-thread-pool,sec:disk_backed_growable_vectors}).
+  \item \textbf{Appendices.}
+        A user guide covering the menu interface and keyboard shortcuts, and
+        a development history recording implementation milestones and design
+        decisions.
+\end{itemize}

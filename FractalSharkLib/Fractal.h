@@ -167,14 +167,10 @@ public:
     // Async render pool: enqueue current state for rendering.
     // Returns a handle that can optionally be waited on.
     RenderJobHandle EnqueueRender();
-    RenderJobHandle EnqueueRender(const PointZoomBBConverter &ptz,
-                                  bool supersedable = true);
 
     // Enqueue a command that mutates Fractal state on a worker thread,
     // then renders.  Keeps the UI thread responsive and race-free.
-    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd);
-    RenderJobHandle EnqueueCommand(const PointZoomBBConverter &ptz,
-                                   std::function<void(Fractal &)> cmd,
+    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd,
                                    bool supersedable = true);
 
     // Enqueue a mutation-only command: executes under the lock but does

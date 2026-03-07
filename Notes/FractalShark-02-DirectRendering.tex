@@ -1,0 +1,228 @@
+\section{Pixel-to-parameter mapping}
+\label{sec:mapping}
+
+Each CUDA thread computes a pixel coordinate \((X,Y)\) and maps it to a complex
+parameter \(c = x_0 + i y_0\). A typical kernel starts with:
+\begin{verbatim}
+int X = blockIdx.x * blockDim.x + threadIdx.x;
+int Y = blockIdx.y * blockDim.y + threadIdx.y;
+if (X >= width || Y >= height) return;
+size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
+\end{verbatim}
+
+\subsection{Thread-to-pixel mapping}
+A 2D CUDA grid of 2D blocks covers the image. Each thread is responsible for one
+pixel. The bounds check prevents out-of-range threads from writing.
+
+\subsection{Y-axis convention}
+The expression \code{height - Y - 1} flips \(Y\). This is common when the image
+buffer uses a top-left origin but the complex-plane mapping assumes a
+bottom-left origin (or vice versa).
+
+\subsection{Affine map into the complex plane}
+The parameter \(c\) is computed by an affine transform:
+
+\begin{align}
+x_0 &= cx + dx \cdot X, \\
+y_0 &= cy + dy \cdot Y,
+\end{align}
+
+where \code{cx,cy} anchor the plane (e.g., the coordinate at pixel \((0,0)\)),
+and \code{dx,dy} are per-pixel increments. Different kernels compute these
+expressions in different numeric types; the intent is always the same: map each
+pixel to its associated complex parameter \(c\).
+
+
+\section{Mandelbrot recurrence in real arithmetic}
+\label{sec:real-form}
+
+Writing \(z = x + i y\) and \(c = x_0 + i y_0\), the iteration becomes:
+
+\begin{align}
+x_{n+1} &= x_n^2 - y_n^2 + x_0, \\
+y_{n+1} &= 2 x_n y_n + y_0.
+\end{align}
+
+The escape test is:
+
+\begin{equation}
+x_n^2 + y_n^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
+\end{equation}
+
+Many kernels cache squares:
+\[
+zrsqr = x^2,\quad zisqr = y^2,
+\]
+so that \(x^2-y^2\) and \(x^2+y^2\) can be formed cheaply as \code{zrsqr - zisqr}
+and \code{zrsqr + zisqr}. This is especially valuable when \(x\) and \(y\) are
+represented by multi-component expansion types.
+
+
+\section{Mandelbrot base kernels}
+\label{sec:mandel-base-kernels}
+
+The goal of these kernels in \FractalShark{} is to \emph{render the Mandelbrot set}
+by computing an \emph{escape-time} iteration count (\cref{sec:mandelbrot-intro}) per pixel over a 2D image
+grid efficiently. Each CUDA thread evaluates a single complex parameter \(c\)
+corresponding to one pixel (\cref{sec:mapping}), iterates the Mandelbrot recurrence (\cref{sec:real-form}), and stores the
+iteration count into an output buffer. Separate (or fused) stages can map
+iteration counts to colors, apply palettes, and perform anti-aliasing
+(\cref{subsec:coloring,subsec:antialiasing}).
+
+Across these base kernels, the primary variation is the numeric representation
+used for the orbit arithmetic: from IEEE-754 \code{float}/\code{double} up
+through expansion types (float-float, double-double, quad-float, quad-double)
+and HDR-normalized formats (\cref{sec:extended-precision-types}). The shared objective remains the same: compute the
+escape-time for the Mandelbrot iteration as accurately and efficiently as needed
+for a desired zoom depth.  A complete listing of all CUDA kernels is given in
+\cref{sec:kernel-list}.
+
+Each kernel variant renders the same Mandelbrot escape-time field; the only
+difference is the numeric type used for mapping and orbit iteration. The
+following sections describe how each type realizes the same recurrence and
+escape test.  This set of kernels does not use linear approximation or
+perturbation; they simply evaluate the Mandelbrot iteration directly in the
+chosen numeric format.
+
+Throughout, \code{IterType} is the integer type used to store the escape-time
+iteration count (e.g., \code{uint32\_t} or \code{uint64\_t}).
+
+\subsection{Common structure}
+
+Every base kernel follows the same algorithmic template:
+\begin{enumerate}
+  \item Map pixel \((X,Y)\) to a complex parameter \(c = x_0 + i\,y_0\)
+        via the affine mapping described in \cref{sec:mapping}.
+  \item Initialize \(x = y = 0\) (or equivalently \(z_0 = 0\)).
+  \item Iterate the real-arithmetic Mandelbrot recurrence (\cref{sec:real-form}):
+        \[
+          x \leftarrow x^2 - y^2 + x_0,\qquad y \leftarrow 2xy + y_0.
+        \]
+  \item After each iteration (or chunk of iterations), test \(x^2 + y^2 \ge 4\).
+  \item Store the escape iteration count into the output buffer.
+\end{enumerate}
+The only variation across the seven kernel variants is the numeric type used for
+all arithmetic and the associated precision--performance tradeoff.
+
+\subsection{Kernel variants}
+
+\Cref{tab:base-kernels} summarizes the seven base kernels. All double- and
+quad-limb float/double expansion types are based on work by Andrew
+Thall~\cite{andrew-thall-dblflt}, which builds on Dekker's
+double-double technique~\cite{Dekker1971DoubleDouble}. The quad-component
+types also draw on the QD library by Hida, Li, and
+Bailey~\cite{Hida2001QD}. The implementations are modified in
+\FractalShark{} to support both \code{float} and \code{double} base types.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Mandelbrot base kernel variants.}
+\label{tab:base-kernels}
+\begin{tabularx}{\textwidth}{l r X}
+\hline
+\textbf{Kernel} & \textbf{Bits} & \textbf{Type and notes} \\
+\hline
+\label{sec:mandel-1x-float}%
+\code{mandel\_1x\_float}
+  & 24
+  & IEEE-754 \code{float}.
+    Highest throughput; uses FMA intrinsics
+    (\code{\_\_fmaf\_rd}) to reduce intermediate rounding. \\[4pt]
+\label{sec:mandel-1x-double}%
+\code{mandel\_1x\_double}
+  & 53
+  & IEEE-754 \code{double}.
+    FP64 throughput is often much lower than FP32 on
+    consumer GPUs. \\[4pt]
+\label{sec:mandel-2x-float}%
+\code{mandel\_2x\_float}
+  & ${\sim}48$
+  & \code{dblflt} (\cref{subsec:ep-dblflt}), a float-float expansion
+    ($a_\mathrm{hi}+a_\mathrm{lo}$).
+    Leading-component escape test for speed. \\[4pt]
+\label{sec:mandel-2x-double}%
+\code{mandel\_2x\_double}
+  & ${\sim}106$
+  & \code{dbldbl} (\cref{subsec:ep-dblflt}), a double-double expansion.
+    Leading-component escape test for speed. \\[4pt]
+\label{sec:mandel-4x-float}%
+\code{mandel\_4x\_float}
+  & ${\sim}96$
+  & \code{GQF::gqf\_real} (\cref{subsec:ep-higher-prec}), a four-float
+    expansion ($a_0+a_1+a_2+a_3$).
+    Full-precision escape test. \\[4pt]
+\label{sec:mandel-4x-double}%
+\code{mandel\_4x\_double}
+  & ${\sim}212$
+  & \code{GQD::gqd\_real} (\cref{subsec:ep-higher-prec}), a four-double
+    expansion.
+    Full-precision escape test. Deepest non-HDR zoom. \\[4pt]
+\label{sec:mandel-hdr-float}%
+\code{mandel\_hdr\_float}
+  & ${\sim}48$
+  & \code{HDRFloat<CudaDblflt<dblflt>>} (\cref{subsec:ep-cudadblflt}).
+    HDR wrapper around float-float expansion; uses
+    \code{HdrReduce()} normalization and a reduced comparator
+    for escape test. Primarily a testbed. \\
+\hline
+\end{tabularx}
+\end{table}
+
+\paragraph{FMA intrinsics.}
+The \code{mandel\_1x\_float} kernel illustrates how fused multiply-add can
+implement the recurrence directly:
+\begin{verbatim}
+ytemp = __fmaf_rd(-y, y, x0);     // x0 - y^2
+xtemp = __fmaf_rd(x, x, ytemp);   // x^2 - y^2 + x0
+xtemp2 = 2.0f * x;
+y = __fmaf_rd(xtemp2, y, y0);     // 2xy + y0
+x = xtemp;
+\end{verbatim}
+The \code{\_rd} suffix selects round-downward; \code{\_rn} (round-to-nearest)
+or plain \code{fmaf} may be substituted when strict rounding mode is not required.
+
+\paragraph{Leading-component escape test.}
+The two-limb expansion kernels (\code{mandel\_2x\_float},
+\code{mandel\_2x\_double}) compare only the leading component
+(\code{head}) against the bailout:
+\[
+  zrsqr.\mathrm{head} + zisqr.\mathrm{head} < 4.
+\]
+This is fast but can misclassify points extremely near the boundary; a fully
+robust test would incorporate both components.
+
+\paragraph{HDR normalization and reduced comparator.}
+The \code{mandel\_hdr\_float} kernel calls \code{HdrReduce()} on intermediate
+values so that norms and comparisons operate on normalized representations.
+Escape is tested via:
+\begin{verbatim}
+while (zsq_sum.compareToBothPositiveReduced(Four) < 0)
+\end{verbatim}
+This keeps comparisons meaningful and stable in HDR arithmetic.
+
+
+\section{Iteration chunking via \code{iteration\_precision}}
+\label{sec:chunking}
+
+A few of the base kernels just described (\cref{sec:mandel-base-kernels}), which exclude linear approximation or
+perturbation, are templated on an integer \code{iteration\_precision}
+(\(1,2,4,8,16\)) and unroll multiple Mandelbrot steps inside the loop:
+
+\begin{itemize}
+  \item Each loop iteration performs \code{iteration\_precision} updates.
+  \item The counter \code{iter} increases by that amount.
+  \item The maximum iteration \code{n\_iterations} is adjusted so \code{iter}
+        does not exceed the requested limit.
+\end{itemize}
+
+This approach reduces loop overhead. The trade-off is that the escape predicate
+is typically checked only once per chunk; therefore the reported escape
+iteration can be larger than the true first-escape iteration by up to
+\code{iteration\_precision - 1}. For strict escape iteration counts (e.g., for
+continuous/smooth coloring based on the first bailout), use a chunk size of 1 or
+insert bailout checks within the unrolled body.
+
+This optimization was mainly explored for educational purposes; in practice, the
+benefit is small compared to other optimizations such as perturbation (\cref{sec:perturbation-concept}) and linear
+approximation (\cref{sec:approx-accel}).

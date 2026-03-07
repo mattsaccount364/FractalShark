@@ -35,7 +35,9 @@
 
 \begin{document}
 
-\vspace*{\fill}
+\maketitle
+
+\vspace{1em}
 
 \begin{center}
 \textit{These notes are a work-in-progress summary of
@@ -45,10 +47,6 @@ inconsistencies.  That said, I've made some effort to review and correct it, so
 it should be better than nothing.  I'll remove this warning once I'm better
 satisfied with the content.}
 \end{center}
-
-\vspace*{\fill}
-
-\maketitle
 
 \makeatletter
 \renewcommand\numberline[1]{#1\enspace}
@@ -83,6 +81,32 @@ $n$          & iteration index               & \\
 $p$          & period                        & \\
 $N$          & limb count (multi-precision)  & \\
 \hline
+\multicolumn{3}{l}{\textbf{Real / imaginary component convention}} \\
+\hline
+$x_n,\; y_n$     & components of $z_n = x_n + i\,y_n$
+                  & similarly $x_n^\star, y_n^\star$ for $z_n^\star$ \\
+$\Delta x_n,\; \Delta y_n$ & components of $\Delta z_n$
+                  & $\Delta c_x, \Delta c_y$ for $\Delta c$ \\
+$d_{x,n},\; d_{y,n}$ & components of $d_n$
+                  & \\
+\hline
+\multicolumn{3}{l}{\textbf{Linear approximation (LA)}} \\
+\hline
+$z_\mathrm{ref}$ & reference orbit value at an LA entry & distinct from the global $z_n^\star$ \\
+$\tilde{\Delta z}$ & prepared perturbation
+                  & output of the nonlinear Prepare step (\cref{sec:la-coeff-model}) \\
+\code{ZCoeff},\; \code{CCoeff} & LA linear coefficients
+                  & $\Delta z_\mathrm{out} \approx
+                     \code{ZCoeff}\cdot\tilde{\Delta z}
+                   + \code{CCoeff}\cdot\Delta c$ \\
+\hline
+\multicolumn{3}{l}{\textbf{Feature Finder}} \\
+\hline
+$F(c) = z_p(c)$  & root-finding objective
+                  & $p$-fold iterate of the critical point \\
+$w_n$             & \code{zcoeff} product $\prod_{k=0}^{n-1} 2\,z_k$
+                  & intrinsic scale of a mini-brot \\
+\hline
 \end{tabularx}
 \end{center}
 
@@ -90,26 +114,45 @@ $N$          & limb count (multi-precision)  & \\
 
 
 % ============================================================
-% User guide (practical usage information first)
+% Introduction
 % ============================================================
-\input{FractalShark-00-UserGuide}
+\input{FractalShark-01-Introduction}
 
 % ============================================================
-% Main technical content (numbered files in reading order)
+% Part I: Rendering Algorithms
 % ============================================================
-\input{FractalShark-01-Foundations}
-\input{FractalShark-02-NumericTypes}
-\input{FractalShark-03-Perturbation}
-\input{FractalShark-04-RefOrbit}
-\input{FractalShark-05-GpuArithmetic}
-\input{FractalShark-06-Infrastructure}
+\part{Rendering Algorithms}
+
+\input{FractalShark-02-DirectRendering}
+\input{FractalShark-03-NumericTypes}
+\input{FractalShark-04-Perturbation}
+\input{FractalShark-05-Approximation}
 
 % ============================================================
-% Appendix: development notes
+% Part II: Reference Orbit Computation
+% ============================================================
+\part{Reference Orbit Computation}
+
+\input{FractalShark-06-RefOrbit}
+\input{FractalShark-07-GpuArithmetic}
+
+% ============================================================
+% Part III: Supporting Infrastructure
+% ============================================================
+\part{Supporting Infrastructure}
+
+\input{FractalShark-08-FeatureFinder}
+\input{FractalShark-09-RenderPipeline}
+\input{FractalShark-10-MemorySystem}
+
+% ============================================================
+% Appendices
 % ============================================================
 \appendix
+\part{Appendices}
 
-\input{FractalShark-07-DevNotes}
+\input{FractalShark-A1-UserGuide}
+\input{FractalShark-A2-DevNotes}
 
 \phantomsection
 \addcontentsline{toc}{section}{References}

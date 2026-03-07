@@ -12,7 +12,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <thread>
 #include <vector>
 
@@ -25,9 +24,8 @@ struct RenderWorkItem {
     // Monotonic sequence number assigned at enqueue time
     uint64_t SequenceNumber;
 
-    // Location / zoom.  If set, the worker uses this Ptz instead of
-    // snapshotting from the live Fractal state after command execution.
-    std::optional<PointZoomBBConverter> Ptz;
+    // Location / zoom — always snapshotted from m_Ptz after command execution.
+    PointZoomBBConverter Ptz{PointZoomBBConverter::TestMode::Enabled};
 
     // Algorithm
     RenderAlgorithm Algorithm;
@@ -200,12 +198,7 @@ public:
     // Enqueue a command that mutates Fractal state, then renders.
     // The command lambda runs on a worker thread under m_CalcFractalMutex.
     // After the command, the worker snapshots state and renders.
-    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd);
-
-    // Enqueue a command with explicit Ptz.  The command runs first, then the
-    // provided Ptz is used for the render (not the live m_Ptz).
-    RenderJobHandle EnqueueCommand(const PointZoomBBConverter &ptz,
-                                   std::function<void(Fractal &)> cmd,
+    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd,
                                    bool supersedable = true);
 
     // Enqueue a mutation-only command: executes the lambda under the lock

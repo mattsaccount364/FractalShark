@@ -388,24 +388,11 @@ RenderWorkItem RenderThreadPool::SnapshotCurrentState() const {
     return item;
 }
 
-RenderJobHandle RenderThreadPool::EnqueueCommand(std::function<void(Fractal &)> cmd) {
-    RenderWorkItem item{};
-    item.Command = std::move(cmd);
-    item.FractalPtr = m_Fractal;
-    // Dirty flags will be set after the command re-snapshots.
-    item.ChangedWindow = true;
-    item.ChangedScrn = true;
-    item.ChangedIterations = true;
-    return Enqueue(item);
-}
-
 RenderJobHandle RenderThreadPool::EnqueueCommand(
-    const PointZoomBBConverter &ptz,
     std::function<void(Fractal &)> cmd,
     bool supersedable) {
     RenderWorkItem item{};
     item.Command = std::move(cmd);
-    item.Ptz = ptz;
     item.Supersedable = supersedable;
     item.FractalPtr = m_Fractal;
     item.ChangedWindow = true;
@@ -521,14 +508,9 @@ bool RenderThreadPool::RunCalcFractal(
     if (item.Command) {
         item.Command(*fractal);
 
-        // Re-snapshot state after the command has mutated Fractal.
+        // Re-snapshot all state after the command has mutated Fractal.
         auto fresh = SnapshotCurrentState();
-        // Preserve SequenceNumber, CompletionPromise, and FractalPtr from
-        // the original item; copy everything else from the fresh snapshot.
-        // If the caller supplied an explicit Ptz (via optional), keep it.
-        if (!item.Ptz.has_value()) {
-            item.Ptz = fresh.Ptz;
-        }
+        item.Ptz = fresh.Ptz;
         item.Algorithm = fresh.Algorithm;
         item.IterType = fresh.IterType;
         item.NumIterations = fresh.NumIterations;
@@ -559,7 +541,7 @@ bool RenderThreadPool::RunCalcFractal(
     fractal->m_ChangedIterations = item.ChangedIterations;
 
     // Ptz and ItersMemory travel through CalcContext — no swap needed.
-    CalcContext ctx{*item.Ptz, workerIters};
+    CalcContext ctx{item.Ptz, workerIters};
     fractal->CalcFractal(rendererIdx, false, ctx);
     return true;
 }

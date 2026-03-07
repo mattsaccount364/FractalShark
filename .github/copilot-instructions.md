@@ -147,9 +147,8 @@ Three main acceleration layers, selected via `LAv2Mode` enum:
 | API | Mutation | Render | Use case |
 |-----|----------|--------|----------|
 | `EnqueueCommand(lambda)` | ✅ | ✅ | UI zoom, pan, palette, recalc |
-| `EnqueueCommand(ptz, lambda)` | ✅ | ✅ (at given Ptz) | AutoZoomer pipeline with iteration interpolation |
 | `EnqueueMutation(lambda)` | ✅ | ❌ | Settings changes (algorithm, precision, perturbation type) |
-| `EnqueueRender()` / `EnqueueRender(ptz)` | ❌ | ✅ | Re-render current state, AutoZoomer pipeline |
+| `EnqueueRender()` | ❌ | ✅ | Re-render current state |
 
 **Queue superseding**: When a new render is enqueued, earlier queued supersedable renders are discarded (only the latest view matters during rapid input). A generation counter also skips stale in-flight renders before they acquire GPU resources. AutoZoomer pipeline items are marked `Supersedable = false` to prevent skipping animation frames.
 

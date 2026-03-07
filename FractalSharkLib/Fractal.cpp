@@ -1071,30 +1071,10 @@ Fractal::EnqueueRender()
 }
 
 RenderJobHandle
-Fractal::EnqueueRender(const PointZoomBBConverter &ptz, bool supersedable)
+Fractal::EnqueueCommand(std::function<void(Fractal &)> cmd, bool supersedable)
 {
     if (m_RenderPool) {
-        return m_RenderPool->EnqueueCommand(ptz, [](Fractal &) {}, supersedable);
-    }
-    return RenderJobHandle{};
-}
-
-RenderJobHandle
-Fractal::EnqueueCommand(std::function<void(Fractal &)> cmd)
-{
-    if (m_RenderPool) {
-        return m_RenderPool->EnqueueCommand(std::move(cmd));
-    }
-    return RenderJobHandle{};
-}
-
-RenderJobHandle
-Fractal::EnqueueCommand(const PointZoomBBConverter &ptz,
-                        std::function<void(Fractal &)> cmd,
-                        bool supersedable)
-{
-    if (m_RenderPool) {
-        return m_RenderPool->EnqueueCommand(ptz, std::move(cmd), supersedable);
+        return m_RenderPool->EnqueueCommand(std::move(cmd), supersedable);
     }
     return RenderJobHandle{};
 }

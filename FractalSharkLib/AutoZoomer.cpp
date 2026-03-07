@@ -70,13 +70,22 @@ AutoZoomer::Run()
 
             if (setup.ShouldInterpolateIters) {
                 auto iters = setup.IterCounts[i];
-                handles[slot] = m_Fractal.EnqueueCommand(setup.ZoomSteps[i],
-                    [iters](Fractal &f) {
+                auto ptz = setup.ZoomSteps[i];
+                handles[slot] = m_Fractal.EnqueueCommand(
+                    [ptz = std::move(ptz), iters](Fractal &f) {
+                        f.m_Ptz = ptz;
+                        f.SquareCurrentView();
                         f.SetNumIterations<IterTypeFull>(iters);
                     },
                     false);
             } else {
-                handles[slot] = m_Fractal.EnqueueRender(setup.ZoomSteps[i], false);
+                auto ptz = setup.ZoomSteps[i];
+                handles[slot] = m_Fractal.EnqueueCommand(
+                    [ptz = std::move(ptz)](Fractal &f) {
+                        f.m_Ptz = ptz;
+                        f.SquareCurrentView();
+                    },
+                    false);
             }
         }
 

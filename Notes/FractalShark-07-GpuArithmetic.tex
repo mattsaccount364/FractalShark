@@ -885,7 +885,7 @@ propagation, and predictable numerical behavior at extreme precisions, making
 it well suited for authoritative reference orbit generation on the GPU.
 
 
-\section{Checksum-Guided Debugging via Host--Device Cross-Validation}
+\subsection{Checksum-Guided Debugging via Host--Device Cross-Validation}
 \label{sec:checksums}
 
 Correctness bugs in GPU high-precision arithmetic are notoriously difficult to
@@ -899,7 +899,7 @@ into a small set of candidate stages, dramatically reducing the search space
 during development.  These checksums are disabled in production builds to avoid
 any performance impact but can be enabled selectively during debugging.
 
-\subsection{Stage Checksums as Homomorphic Summaries}
+\subsubsection{Stage Checksums as Homomorphic Summaries}
 
 Let $A \in (\mathbb{Z}/2^w\mathbb{Z})^N$ denote a limb array representing an
 intermediate mantissa or scratch buffer (e.g., aligned addends, raw limbwise
@@ -926,7 +926,7 @@ the same primitive within a larger operation. This metadata ensures that host
 and device checkpoints can be matched without ambiguity even when the same
 kernel path is exercised repeatedly in a pipeline.
 
-\subsection{Parallel Computation with Order Preservation}
+\subsubsection{Parallel Computation with Order Preservation}
 
 The checksum must match between host and device, so the GPU computation must be
 \emph{equivalent} to the sequential definition. This requires two properties:
@@ -960,7 +960,7 @@ GPU, we implement this reduction hierarchically:
 This structure ensures that the device result is \emph{definitionally identical}
 to the host's sequential traversal, modulo the checksum's arithmetic rules.
 
-\subsection{Host Reference and Cross-Comparison}
+\subsubsection{Host Reference and Cross-Comparison}
 
 On the host, we compute the same checksum $H(A_k)$ over the corresponding
 reference buffers produced by the MPIR/GMP-based implementation (or a trusted
@@ -981,7 +981,7 @@ search over the pipeline: we start with a small number of high-level checkpoints
 and then refine around the earliest failing stage by adding more granular
 summaries (e.g., per-buffer or per-substep).
 
-\subsection{Practical Debugging Workflow}
+\subsubsection{Practical Debugging Workflow}
 
 The checksum mechanism supports a fast iterative workflow:
 \begin{enumerate}
@@ -1001,7 +1001,7 @@ race conditions, mis-specified synchronization, and rare carry-chain corner
 cases. Even when the final numerical error is small or intermittent, checksum
 mismatches provide a crisp and reproducible signature of divergence.
 
-\subsection{Why Checksums Help for High-Precision Arithmetic}
+\subsubsection{Why Checksums Help for High-Precision Arithmetic}
 
 High-precision arithmetic pipelines are composed of large, structured arrays
 whose semantics evolve across stages (aligned limbs $\rightarrow$ raw sums

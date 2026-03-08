@@ -431,6 +431,7 @@ private:
 
     ItersMemoryContainer m_CurIters;
     std::mutex m_ItersMemoryStorageLock;
+    std::condition_variable m_ItersMemoryStorageCV;
     std::vector<ItersMemoryContainer> m_ItersMemoryStorage;
 
     // Reference compression

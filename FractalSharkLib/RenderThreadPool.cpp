@@ -55,11 +55,20 @@ static void ColorizeCpuIterations(
 
     auto colorize = [&](auto **ItersArray, auto NumIterations) {
         const auto maxIters = NumIterations;
-        for (size_t output_y = 0; output_y < outH; output_y++) {
-            for (size_t output_x = 0; output_x < outW; output_x++) {
-                size_t acc_r = 0, acc_g = 0, acc_b = 0;
 
-                if (gpuAntialiasing == 1) {
+        auto writePixel = [&](size_t output_x, size_t output_y,
+                              size_t acc_r, size_t acc_g, size_t acc_b) {
+            size_t idx = output_y * outW + output_x;
+            iters.m_RoundedOutputColorMemory[idx].r = static_cast<uint16_t>(acc_r);
+            iters.m_RoundedOutputColorMemory[idx].g = static_cast<uint16_t>(acc_g);
+            iters.m_RoundedOutputColorMemory[idx].b = static_cast<uint16_t>(acc_b);
+            iters.m_RoundedOutputColorMemory[idx].a = 65535;
+        };
+
+        if (gpuAntialiasing == 1) {
+            for (size_t output_y = 0; output_y < outH; output_y++) {
+                for (size_t output_x = 0; output_x < outW; output_x++) {
+                    size_t acc_r = 0, acc_g = 0, acc_b = 0;
                     size_t numIters = ItersArray[output_y][output_x];
                     if (numIters < maxIters) {
                         numIters += paletteRotation;
@@ -68,7 +77,13 @@ static void ColorizeCpuIterations(
                         }
                         GetBasicColor(numIters, acc_r, acc_g, acc_b);
                     }
-                } else {
+                    writePixel(output_x, output_y, acc_r, acc_g, acc_b);
+                }
+            }
+        } else {
+            for (size_t output_y = 0; output_y < outH; output_y++) {
+                for (size_t output_x = 0; output_x < outW; output_x++) {
+                    size_t acc_r = 0, acc_g = 0, acc_b = 0;
                     for (size_t iy = output_y * gpuAntialiasing;
                          iy < (output_y + 1) * gpuAntialiasing; iy++) {
                         for (size_t ix = output_x * gpuAntialiasing;
@@ -86,13 +101,8 @@ static void ColorizeCpuIterations(
                     acc_r /= totalAA;
                     acc_g /= totalAA;
                     acc_b /= totalAA;
+                    writePixel(output_x, output_y, acc_r, acc_g, acc_b);
                 }
-
-                size_t idx = output_y * outW + output_x;
-                iters.m_RoundedOutputColorMemory[idx].r = static_cast<uint16_t>(acc_r);
-                iters.m_RoundedOutputColorMemory[idx].g = static_cast<uint16_t>(acc_g);
-                iters.m_RoundedOutputColorMemory[idx].b = static_cast<uint16_t>(acc_b);
-                iters.m_RoundedOutputColorMemory[idx].a = 65535;
             }
         }
     };
@@ -522,17 +532,17 @@ bool RenderThreadPool::RunCalcFractal(
         item.ChangedScrn = fresh.ChangedScrn;
         item.ChangedIterations = fresh.ChangedIterations;
 
-        // Re-acquire ItersMemoryContainer if dimensions changed.
-        if (workerIters.m_OutputWidth != item.ScrnWidth ||
-            workerIters.m_OutputHeight != item.ScrnHeight) {
-            fractal->ReturnIterMemory(std::move(workerIters));
-            workerIters = fractal->AcquireItersMemory();
-        }
+        // Always re-acquire ItersMemoryContainer after command execution.
+        // The command may have changed dimensions, antialiasing, iter type,
+        // or anything else that invalidates the pre-acquired container.
+        fractal->ReturnIterMemory(std::move(workerIters));
+        workerIters = fractal->AcquireItersMemory();
     }
 
-    // Dimension check (covers both command and non-command items).
+    // Dimension/AA check (covers both command and non-command items).
     if (workerIters.m_OutputWidth != item.ScrnWidth ||
-        workerIters.m_OutputHeight != item.ScrnHeight) {
+        workerIters.m_OutputHeight != item.ScrnHeight ||
+        workerIters.m_Antialiasing != item.GpuAntialiasing) {
         return false;
     }
 

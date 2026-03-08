@@ -371,7 +371,34 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
     }
 
     HighPrecision origZoom = f.GetPtz().GetZoomFactor();
+    const IterTypeFull startIters = f.GetNumIterations<IterTypeFull>();
+    const IterTypeFull targetIters = feature->GetNumIterationsAtFind();
 
+    // Pre-compute reference orbit at the TARGET zoom depth.
+    // Clear existing results and render at the destination so the ref orbit
+    // has a tight enough radius for the entire zoom animation.
+    {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+
+        PointZoomBBConverter targetPtz{
+            out.GuessX, out.GuessY, targetZoomFactor, PointZoomBBConverter::TestMode::Enabled};
+        f.m_Ptz = targetPtz;
+        f.SquareCurrentView();
+        f.SetPrecision();
+        if (targetIters > 0) {
+            f.SetNumIterations<IterTypeFull>(targetIters);
+        }
+        f.ForceRecalc();
+
+        std::cout << "AutoZoom(Feature): pre-computing ref orbit at target zoom...\n";
+        f.CalcFractal(false);
+        std::cout << "AutoZoom(Feature): ref orbit ready.\n";
+
+        // Restore starting iteration count
+        f.SetNumIterations<IterTypeFull>(startIters);
+    }
+
+    // Set starting position for zoom animation
     PointZoomBBConverter startPtzCentered{
         out.GuessX, out.GuessY, origZoom, PointZoomBBConverter::TestMode::Enabled};
     // Direct assignment + SquareCurrentView instead of RecenterViewCalc.
@@ -392,8 +419,6 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
             ? static_cast<int64_t>(std::ceil(logRatio / logZoomPerStep))
             : 1;
 
-    const IterTypeFull startIters = f.GetNumIterations<IterTypeFull>();
-    const IterTypeFull targetIters = feature->GetNumIterationsAtFind();
     out.ShouldInterpolateIters = targetIters > 0 && startIters < targetIters;
 
     std::cout << "AutoZoom(Feature): startIters=" << startIters

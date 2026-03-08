@@ -1976,8 +1976,7 @@ ViewPresetResult GetViewPreset(
         }
 
         case 31: {
-            // If you want to see where precision runs out with the perturbation reuse.  This
-            // coordinate is close to #14.
+            // Near #11, nice way to check feature finder at some depth
             PointZoomBBConverter convert{
                 HighPrecision{
                     "-1."

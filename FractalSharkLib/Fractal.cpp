@@ -146,29 +146,28 @@ Fractal::ReturnIterMemory(ItersMemoryContainer &&to_return)
 {
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
 
-    // Discard containers with stale dimensions (from before a resize)
+    // Discard containers with stale dimensions or antialiasing (from before a resize/AA change)
     if (to_return.m_OutputWidth != m_ScrnWidth ||
-        to_return.m_OutputHeight != m_ScrnHeight) {
+        to_return.m_OutputHeight != m_ScrnHeight ||
+        to_return.m_Antialiasing != m_GpuAntialiasing) {
         return;
     }
 
     m_ItersMemoryStorage.push_back(std::move(to_return));
+    lock.unlock();
+    m_ItersMemoryStorageCV.notify_one();
 }
 
 ItersMemoryContainer
 Fractal::AcquireItersMemory()
 {
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
-    for (;;) {
-        if (!m_ItersMemoryStorage.empty()) {
-            auto container = std::move(m_ItersMemoryStorage.back());
-            m_ItersMemoryStorage.pop_back();
-            return container;
-        }
-        lock.unlock();
-        Sleep(100);
-        lock.lock();
-    }
+    m_ItersMemoryStorageCV.wait(lock, [this] {
+        return !m_ItersMemoryStorage.empty();
+    });
+    auto container = std::move(m_ItersMemoryStorage.back());
+    m_ItersMemoryStorage.pop_back();
+    return container;
 }
 
 void
@@ -2583,7 +2582,7 @@ Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
                     ++iter;
                 }
 
-                ctx.ItersMemory.SetItersArrayValSlow(x, y, iter);
+                ctx.ItersMemory.GetItersArray<IterType>()[y][x] = static_cast<IterType>(iter);
             }
         }
     };
@@ -2691,7 +2690,7 @@ Fractal::CalcCpuHDR(CalcContext &ctx)
                     cx += dx;
                     // HdrReduce(cx);
 
-                    ctx.ItersMemory.SetItersArrayValSlow(x, y, i);
+                    ctx.ItersMemory.GetItersArray<IterType>()[y][x] = static_cast<IterType>(i);
                 }
             }
 
@@ -2956,7 +2955,7 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
                     ++iter;
                 }
 
-                ctx.ItersMemory.SetItersArrayValSlow(x, y, iter);
+                ctx.ItersMemory.GetItersArray<IterType>()[y][x] = static_cast<IterType>(iter);
             }
         }
     };
@@ -3158,7 +3157,7 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
                     }
                 }
 
-                ctx.ItersMemory.SetItersArrayValSlow(x, y, iterations);
+                ctx.ItersMemory.GetItersArray<IterType>()[y][x] = static_cast<IterType>(iterations);
             }
         }
     };

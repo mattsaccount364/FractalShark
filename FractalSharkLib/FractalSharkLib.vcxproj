@@ -25,6 +25,7 @@
     <ClInclude Include="FeatureSummary.h" />
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="FractalViewPresets.h" />
+    <ClInclude Include="LargeCoords32.h" />
     <ClInclude Include="RenderThreadPool.h" />
     <ClInclude Include="CrummyTest.h" />
     <ClInclude Include="GPU_BLAS.h" />
@@ -37,7 +38,7 @@
     <ClInclude Include="Introspection.h" />
     <ClInclude Include="ItersMemoryContainer.h" />
     <ClInclude Include="LAReference.h" />
-    <ClInclude Include="LargeCoords.h" />
+    <ClInclude Include="LargeCoords30.h" />
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="OrbitParameterPack.h" />
     <ClInclude Include="PerturbationResults.h" />

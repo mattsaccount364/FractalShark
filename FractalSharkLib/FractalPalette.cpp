@@ -385,6 +385,8 @@ FractalPalette::CreateNewRandomPalette()
     for (auto &it : threads) {
         it->join();
     }
+
+    ++m_PaletteGeneration;
 }
 
 IterTypeFull
@@ -415,6 +417,12 @@ uint32_t
 FractalPalette::GetCurrentNumColors() const
 {
     return m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
+}
+
+uint64_t
+FractalPalette::GetPaletteGeneration() const
+{
+    return m_PaletteGeneration;
 }
 
 const std::vector<Color16> *

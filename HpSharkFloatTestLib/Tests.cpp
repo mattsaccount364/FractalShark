@@ -7,6 +7,7 @@
 #include "DebugChecksumHost.h"
 #include "ReferenceAdd.h"
 #include "ReferenceNTT2.h"
+#include "ReferenceReferenceOrbit.h"
 #include "Tests.h"
 
 #include <algorithm>
@@ -794,6 +795,22 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
             // HpSharkReferenceResultsToFile<SharkFloatParams>("HpSharkPerfResults.txt", *combo);
 
+            // CPU HpSharkFloat-based reference orbit (calls MultiplyHelperFFT2 + AddHelper)
+            ReferenceOrbitResult<SharkFloatParams> cpuRefOrbitResult;
+            if constexpr (HpShark::TestReferenceImpl) {
+                DebugHostCombo<SharkFloatParams> debugHostCombo;
+
+                BenchmarkTimer cpuRefTimer;
+                {
+                    ScopedBenchmarkStopper cpuRefStopper{cpuRefTimer};
+                    cpuRefOrbitResult = ReferenceOrbitHelper<SharkFloatParams>(
+                        xNum.get(), yNum.get(), hdrRadiusY, numIters, debugHostCombo);
+                }
+
+                std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs() << " ms, iters="
+                          << cpuRefOrbitResult.IterationsExecuted << std::endl;
+            }
+
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 if (hpSharkReferenceOrbit.size() != hostReferenceOrbit.size()) {
                     std::cout << "Error: Host and GPU reference orbit size mismatch: host="
@@ -838,6 +855,61 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     if (orbitMatch) {
                         std::cout << "Host and GPU reference orbit match, length="
                                   << hostReferenceOrbit.size() << std::endl;
+                    }
+                }
+
+                // Compare CPU HpSharkFloat-based reference orbit against MPIR host orbit
+                if constexpr (HpShark::TestReferenceImpl) {
+                    if (cpuRefOrbitResult.Orbit.size() != hostReferenceOrbit.size()) {
+                        std::cout << "Error: MPIR host and CPU ref orbit size mismatch: mpir="
+                                  << hostReferenceOrbit.size()
+                                  << " cpuRef=" << cpuRefOrbitResult.Orbit.size() << std::endl;
+                        DebugBreak();
+                    } else {
+                        bool cpuOrbitMatch = true;
+                        for (size_t i = 0; i < hostReferenceOrbit.size(); ++i) {
+                            auto hostValX = hostReferenceOrbit[i].x;
+                            auto hostValY = hostReferenceOrbit[i].y;
+                            auto cpuValX = cpuRefOrbitResult.Orbit[i].x;
+                            auto cpuValY = cpuRefOrbitResult.Orbit[i].y;
+
+                            HdrReduce(hostValX);
+                            HdrReduce(hostValY);
+                            HdrReduce(cpuValX);
+                            HdrReduce(cpuValY);
+
+                            if (hostValX != cpuValX || hostValY != cpuValY) {
+                                std::cout
+                                    << "Error: MPIR host and CPU ref orbit mismatch at idx " << i
+                                    << ": mpir.x=" << hostValX.ToString<false>()
+                                    << " mpir.y=" << hostValY.ToString<false>()
+                                    << " cpu.x=" << cpuValX.ToString<false>()
+                                    << " cpu.y=" << cpuValY.ToString<false>() << std::endl;
+                                cpuOrbitMatch = false;
+                                DebugBreak();
+                                break;
+                            }
+                        }
+                        if (cpuOrbitMatch) {
+                            std::cout << "MPIR host and CPU ref orbit match, length="
+                                      << hostReferenceOrbit.size() << std::endl;
+                        }
+                    }
+
+                    // Compare periodicity results
+                    if (cpuRefOrbitResult.PeriodResult != hostPeriodicityResult) {
+                        std::cout << "Error: CPU ref periodicity mismatch: mpir="
+                                  << PeriodicityStrResult(hostPeriodicityResult)
+                                  << " cpuRef=" << PeriodicityStrResult(cpuRefOrbitResult.PeriodResult)
+                                  << std::endl;
+                        DebugBreak();
+                    }
+
+                    if (cpuRefOrbitResult.IterationsExecuted != hostIterationsExecuted) {
+                        std::cout << "Error: CPU ref iteration count mismatch: mpir="
+                                  << hostIterationsExecuted
+                                  << " cpuRef=" << cpuRefOrbitResult.IterationsExecuted << std::endl;
+                        DebugBreak();
                     }
                 }
 
@@ -1646,6 +1718,24 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     }
 
     DebugGpuCombo debugGpuCombo{};
+
+    // Test CPU reference implementation (HpSharkFloat-based, calls MultiplyHelperFFT2 + AddHelper)
+    if constexpr (HpShark::TestReferenceImpl) {
+        DebugHostCombo<SharkFloatParams> debugHostCombo;
+        typename SharkFloatParams::Float emptyRadius{};
+
+        auto cpuResult = ReferenceOrbitHelper<SharkFloatParams>(
+            &aNum, &bNum, emptyRadius, 1, debugHostCombo);
+
+        if (cpuResult.IterationsExecuted != 1) {
+            std::cout << "Error: CPU reference orbit executed " << cpuResult.IterationsExecuted
+                      << " iterations, expected 1" << std::endl;
+        }
+
+        std::cout << "CPU reference orbit: " << cpuResult.IterationsExecuted << " iterations"
+                  << std::endl;
+    }
+
     if constexpr (HpShark::TestGpu) {
         BenchmarkTimer timer;
 
@@ -3013,7 +3103,7 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
 {
 // TODO: this is kind of cheesy, it'd be nice to share the test
 // view parameters in FractalShark with the test in some reasonable way
-#include "..\FractalSharkLib\LargeCoords.h"
+#include "..\FractalSharkLib\LargeCoords30.h"
 
     using SharkFloatParams = SharkParams7;
 

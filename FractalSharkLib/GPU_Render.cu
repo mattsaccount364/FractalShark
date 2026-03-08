@@ -227,6 +227,7 @@ uint32_t GPURenderer::InitializeMemory(
     const Color16 *palInterleaved,
     uint32_t palIters,
     uint32_t paletteAuxDepth,
+    uint64_t paletteGeneration,
     bool expectedReuse) {
     if (Pals.palette_aux_depth != paletteAuxDepth) {
         Pals.palette_aux_depth = paletteAuxDepth;
@@ -254,8 +255,9 @@ uint32_t GPURenderer::InitializeMemory(
         }
     }
 
-    // Re-do palettes only.
-    if (Pals.cached_hostPalInterleaved != palInterleaved) {
+    // Re-do palettes if pointer or generation changed.
+    if (Pals.cached_hostPalInterleaved != palInterleaved ||
+        Pals.cached_paletteGeneration != paletteGeneration) {
 
         ResetPalettesOnly();
 
@@ -286,6 +288,8 @@ uint32_t GPURenderer::InitializeMemory(
             ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
             return err;
         }
+
+        Pals.cached_paletteGeneration = paletteGeneration;
     }
 
     if ((m_Width == antialias_width) &&
@@ -399,6 +403,7 @@ uint32_t GPURenderer::InitializeMemory<uint32_t>(
     const Color16 *palInterleaved,
     uint32_t palIters,
     uint32_t paletteAuxDepth,
+    uint64_t paletteGeneration,
     bool expectedReuse);
 
 template
@@ -409,6 +414,7 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
     const Color16 *palInterleaved,
     uint32_t palIters,
     uint32_t paletteAuxDepth,
+    uint64_t paletteGeneration,
     bool expectedReuse);
 
 template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>

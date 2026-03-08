@@ -8,7 +8,7 @@ ViewPresetResult GetViewPreset(
     int32_t defaultCompressionExpLow,
     int32_t defaultCompressionExpIntermediate) {
 
-    constexpr auto MaxPrecisionLame = 500000;
+    constexpr auto MaxPrecisionLame = 1000000;
     HighPrecision::defaultPrecisionInBits(MaxPrecisionLame);
 
     ViewPresetResult result;
@@ -1952,7 +1952,7 @@ ViewPresetResult GetViewPreset(
 
         case 30: {
 
-#include "LargeCoords.h"
+#include "LargeCoords30.h"
 
             mpf_t mpfX, mpfY;
 
@@ -2012,6 +2012,24 @@ ViewPresetResult GetViewPreset(
             // UsePalette(6); // Not part of ViewPresetResult
             result.numIterations = 69120000;
             result.gpuAntialiasing = 4;
+            break;
+        }
+
+        case 32: {
+
+#include "LargeCoords32.h"
+
+            PointZoomBBConverter convert{HighPrecision{strX},
+                                         HighPrecision{strY},
+                                         HighPrecision{"1.60610174675e+244240"},
+                                         PointZoomBBConverter::TestMode::Enabled};
+
+            result.minX = convert.GetMinX();
+            result.minY = convert.GetMinY();
+            result.maxX = convert.GetMaxX();
+            result.maxY = convert.GetMaxY();
+            /// SetNumIterations<IterTypeFull>(700'000);
+            result.numIterations = 5'806'285'824;
             break;
         }
 

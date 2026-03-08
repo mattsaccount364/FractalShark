@@ -127,6 +127,7 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryC
                                              m_Palette.GetCurrentPalInterleaved(),
                                              m_Palette.GetCurrentNumColors(),
                                              m_Palette.GetAuxDepth(),
+                                             m_Palette.GetPaletteGeneration(),
                                              expectedReuse);
     } else {
         res = renderer.InitializeMemory<uint64_t>((uint32_t)itersMemory.m_Width,
@@ -135,6 +136,7 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryC
                                              m_Palette.GetCurrentPalInterleaved(),
                                              m_Palette.GetCurrentNumColors(),
                                              m_Palette.GetAuxDepth(),
+                                             m_Palette.GetPaletteGeneration(),
                                              expectedReuse);
     }
 

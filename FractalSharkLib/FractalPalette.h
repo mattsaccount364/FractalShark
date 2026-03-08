@@ -32,6 +32,7 @@ public:
     // Data access for GPU upload and drawing
     const Color16 *GetCurrentPalInterleaved() const;
     uint32_t GetCurrentNumColors() const;
+    uint64_t GetPaletteGeneration() const;
 
     // Access palette arrays for PngParallelSave
     const std::vector<Color16> *GetPalInterleaved(size_t whichPalette) const;
@@ -51,4 +52,5 @@ private:
     IterTypeFull m_PaletteRotate;
     int m_PaletteDepthIndex;
     int m_PaletteAuxDepth;
+    uint64_t m_PaletteGeneration = 0;
 };

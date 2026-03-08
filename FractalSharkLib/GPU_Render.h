@@ -96,6 +96,7 @@ public:
         const Color16 *palInterleaved,
         uint32_t palIters,
         uint32_t paletteAuxDepth,
+        uint64_t paletteGeneration,
         bool expectedReuse);
 
     template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>

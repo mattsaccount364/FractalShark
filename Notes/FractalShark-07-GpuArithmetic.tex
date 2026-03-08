@@ -29,6 +29,16 @@ overwhelming all other parts of the computation.
   \label{fig:gpu-reference-orbit}
 \end{figure}
 
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{view32.png}
+  \caption{View \#32 rendered at zoom factor \(10^{244,240}\), roughly twice
+  the exponent depth of View~\#30.  Reaching this depth exercises both the
+  NTT multiplication pipeline and the high-precision addition/subtraction
+  kernels at full scale.}
+  \label{fig:view32}
+\end{figure}
+
 \subsection{Why Fast Multiplication Matters for Reference Orbits}
 
 Generating many fractal reference orbits typically involves iterating a

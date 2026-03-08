@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 template <class SharkFloatParams> struct DebugHostCombo;
@@ -15,6 +16,8 @@ template <class SharkFloatParams> struct ReferenceOrbitResult {
     std::vector<typename SharkFloatParams::ReferenceIterT> Orbit;
     uint64_t IterationsExecuted;
     PeriodicityResult PeriodResult;
+    HpSharkFloat<SharkFloatParams> FinalZReal;
+    HpSharkFloat<SharkFloatParams> FinalZImag;
 };
 
 // Computes a full Mandelbrot reference orbit on the CPU using
@@ -27,7 +30,7 @@ template <class SharkFloatParams> struct ReferenceOrbitResult {
 // Periodicity detection and escape checking are included when
 // SharkFloatParams::EnablePeriodicity is true.
 template <class SharkFloatParams>
-ReferenceOrbitResult<SharkFloatParams>
+std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>>
 ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                      const HpSharkFloat<SharkFloatParams> *cImag,
                      const typename SharkFloatParams::Float &radiusY,

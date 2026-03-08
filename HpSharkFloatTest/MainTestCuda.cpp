@@ -43,8 +43,10 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Performance Sub-kernels";
         case BasicCorrectnessMode::PerfSweep:
             return "Performance Sweep";
-        case BasicCorrectnessMode::PerfSingle:
-            return "Performance Single";
+        case BasicCorrectnessMode::PerfSingleView30:
+            return "Performance Single View30";
+        case BasicCorrectnessMode::PerfSingleView32:
+            return "Performance Single View32";
         case BasicCorrectnessMode::Correctness_P1_to_P5:
             return "Correctness (Params1..5)";
         default:
@@ -67,6 +69,7 @@ constexpr int kMultiplyPerf = 13000;
 constexpr int kFullPerf = 14000;
 
 constexpr int kPerfView30 = 16020;
+constexpr int kPerfView32 = 16030;
 constexpr int kPerfView5 = 16010;
 
 constexpr int kPerfSweepStart = 1000;
@@ -252,30 +255,6 @@ RunCorrectnessTest(BasicCorrectnessMode mode)
 // -----------------------------------------------------------------------------
 // Performance modes (split into smaller dispatchable functions)
 // -----------------------------------------------------------------------------
-static int
-RunPerfFullSingle(const HpShark::LaunchParams &launchParams, int numIters, int internalTestLoopCount)
-{
-    bool res = true;
-    TestTracker Tests;
-
-    int numBlocks = launchParams.NumBlocks;
-    int numThreads = launchParams.ThreadsPerBlock;
-
-    res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-        Tests, numBlocks, numThreads, TestIds::kPerfView30, numIters, internalTestLoopCount);
-    if (!ContinueAfterFailure(res))
-        return 0;
-
-    if (PressKey() == 'q')
-        return 0;
-
-    res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-        Tests, numBlocks, numThreads, TestIds::kPerfView5, numIters, internalTestLoopCount);
-    if (!ContinueAfterFailure(res))
-        return 0;
-
-    return 1;
-}
 
 static int
 RunPerfFullSweep(int numIters, int internalTestLoopCount)
@@ -315,6 +294,12 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
             return 0;
         testBaseLocal += 100;
 
+        res = TestFullReferencePerfView32<Operator::ReferenceOrbit>(
+            Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
+        if (!ContinueAfterFailure(res))
+            return 0;
+        testBaseLocal += 100;
+
         res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
             Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
         if (!ContinueAfterFailure(res))
@@ -330,7 +315,8 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 {
     // Only run for perf modes.
     if (mode != BasicCorrectnessMode::PerfSub && mode != BasicCorrectnessMode::PerfSweep &&
-        mode != BasicCorrectnessMode::PerfSingle) {
+        mode != BasicCorrectnessMode::PerfSingleView30 &&
+        mode != BasicCorrectnessMode::PerfSingleView32) {
         return 1;
     }
 
@@ -368,9 +354,27 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         return 1;
     }
 
-    if (mode == BasicCorrectnessMode::PerfSingle) {
-        if (!RunPerfFullSingle(
-                launchParams, numIters, internalTestLoopCount))
+    if (mode == BasicCorrectnessMode::PerfSingleView30) {
+        TestTracker Tests;
+        auto res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
+            Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
+            TestIds::kPerfView30, numIters, internalTestLoopCount);
+        if (!ContinueAfterFailure(res))
+            return 0;
+
+        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+            Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
+            TestIds::kPerfView5, numIters, internalTestLoopCount);
+        if (!ContinueAfterFailure(res))
+            return 0;
+    }
+
+    if (mode == BasicCorrectnessMode::PerfSingleView32) {
+        TestTracker Tests;
+        auto res = TestFullReferencePerfView32<Operator::ReferenceOrbit>(
+            Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
+            TestIds::kPerfView32, numIters, internalTestLoopCount);
+        if (!ContinueAfterFailure(res))
             return 0;
     }
 
@@ -424,39 +428,26 @@ main(int, char **)
     bool interactiveMode = false; // becomes true after any user input, making later prompts wait forever
 
     // Mode prompt: keep default consistent with the enum value
-    const int defaultModeInt = static_cast<int>(BasicCorrectnessMode::PerfSingle);
+    const int defaultModeInt = static_cast<int>(BasicCorrectnessMode::PerfSingleView30);
     std::ostringstream modePrompt;
 
-    /*
-    enum class BasicCorrectnessMode : int {
-    Error = 0,
-    Correctness_P1 = 1, // Params1 only
-    PerfSub = 2,        // Individual add/multiply kernels, not the full one
-    PerfSweep = 3,      // Sweep blocks/threads
-    PerfSingle = 4,
-    PerfSingleAdd = 5,
-    PerfSingleMultiply = 6,
-    PerfSingleRef = 7,       // Single block/thread config (DEFAULT)
-    Correctness_P1_to_P5 = 8 // Params1..5
-};
-
-*/
     modePrompt << "Mode? Default=" << defaultModeInt << " "
                << "1=Correctness(P1)" << std::endl
                << "2=PerfSub" << std::endl
                << "3=PerfSweep" << std::endl
-               << "4=PerfSingle" << std::endl
-               << "5=PerfSingleAdd" << std::endl
-               << "6=PerfSingleMultiply" << std::endl
-               << "7=PerfSingleRef" << std::endl
-               << "8=Correctness(P1..P5)" << std::endl
+               << "4=PerfSingle View30" << std::endl
+               << "5=PerfSingle View32" << std::endl
+               << "6=PerfSingleAdd" << std::endl
+               << "7=PerfSingleMultiply" << std::endl
+               << "8=PerfSingleRef (broken currently)" << std::endl
+               << "9=Correctness(P1..P5)" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
     int rawMode =
         PromptIntWithTimeout(modePrompt.str(), defaultModeInt, kTimeoutInSec, interactiveMode).value;
 
-    BasicCorrectnessMode mode = BasicCorrectnessMode::PerfSingle;
+    BasicCorrectnessMode mode = BasicCorrectnessMode::PerfSingleView30;
     switch (rawMode) {
         case 1:
             mode = BasicCorrectnessMode::Correctness_P1;
@@ -468,18 +459,21 @@ main(int, char **)
             mode = BasicCorrectnessMode::PerfSweep;
             break;
         case 4:
-            mode = BasicCorrectnessMode::PerfSingle;
+            mode = BasicCorrectnessMode::PerfSingleView30;
             break;
         case 5:
-            mode = BasicCorrectnessMode::PerfSingleAdd;
+            mode = BasicCorrectnessMode::PerfSingleView32;
             break;
         case 6:
-            mode = BasicCorrectnessMode::PerfSingleMultiply;
+            mode = BasicCorrectnessMode::PerfSingleAdd;
             break;
         case 7:
-            mode = BasicCorrectnessMode::PerfSingleRef;
+            mode = BasicCorrectnessMode::PerfSingleMultiply;
             break;
         case 8:
+            mode = BasicCorrectnessMode::PerfSingleRef;
+            break;
+        case 9:
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
         default:
@@ -508,7 +502,8 @@ main(int, char **)
 
         case BasicCorrectnessMode::PerfSub:
         case BasicCorrectnessMode::PerfSweep:
-        case BasicCorrectnessMode::PerfSingle:
+        case BasicCorrectnessMode::PerfSingleView30:
+        case BasicCorrectnessMode::PerfSingleView32:
             RunPerfModes(mode, kTimeoutInSec, interactiveMode);
             break;
 

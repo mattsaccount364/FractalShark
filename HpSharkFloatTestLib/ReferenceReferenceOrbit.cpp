@@ -1,4 +1,4 @@
-﻿#include "ReferenceReferenceOrbit.h"
+#include "ReferenceReferenceOrbit.h"
 #include "DbgHeap.h"
 #include "DebugChecksumHost.h"
 #include "HpSharkFloat.h"
@@ -26,7 +26,7 @@
 //
 
 template <class SharkFloatParams>
-ReferenceOrbitResult<SharkFloatParams>
+std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>>
 ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                      const HpSharkFloat<SharkFloatParams> *cImag,
                      const typename SharkFloatParams::Float &radiusY,
@@ -35,9 +35,9 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
 {
     using HdrType = typename SharkFloatParams::Float;
 
-    ReferenceOrbitResult<SharkFloatParams> result;
-    result.IterationsExecuted = 0;
-    result.PeriodResult = PeriodicityResult::Unknown;
+    auto result = std::make_unique<ReferenceOrbitResult<SharkFloatParams>>();
+    result->IterationsExecuted = 0;
+    result->PeriodResult = PeriodicityResult::Unknown;
 
     // Current z value (real, imaginary) — starts at c, same as GPU init.
     auto zReal = std::make_unique<HpSharkFloat<SharkFloatParams>>(*cReal);
@@ -75,7 +75,7 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
             HdrType double_zy = zImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
 
             // Store orbit point
-            result.Orbit.push_back({double_zx, double_zy});
+            result->Orbit.push_back({double_zx, double_zy});
 
             HdrReduce(dzdcX);
             auto dzdcX1 = HdrAbs(dzdcX);
@@ -96,8 +96,10 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                result.IterationsExecuted = i + 1;
-                result.PeriodResult = PeriodicityResult::PeriodFound;
+                result->IterationsExecuted = i + 1;
+                result->PeriodResult = PeriodicityResult::PeriodFound;
+                result->FinalZReal = *zReal;
+                result->FinalZImag = *zImag;
                 return result;
             } else {
                 auto dzdcXOrig = dzdcX;
@@ -111,15 +113,17 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
             HdrType zn_size = tempZX * tempZX + tempZY * tempZY;
 
             if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
-                result.IterationsExecuted = i + 1;
-                result.PeriodResult = PeriodicityResult::Escaped;
+                result->IterationsExecuted = i + 1;
+                result->PeriodResult = PeriodicityResult::Escaped;
+                result->FinalZReal = *zReal;
+                result->FinalZImag = *zImag;
                 return result;
             }
         } else {
             // No periodicity — still store orbit point for comparison
             HdrType double_zx = zReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
             HdrType double_zy = zImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-            result.Orbit.push_back({double_zx, double_zy});
+            result->Orbit.push_back({double_zx, double_zy});
         }
 
         //
@@ -150,10 +154,12 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
         *zReal = *newZReal;
         *zImag = *newZImag;
 
-        result.IterationsExecuted = i + 1;
-        result.PeriodResult = PeriodicityResult::Continue;
+        result->IterationsExecuted = i + 1;
+        result->PeriodResult = PeriodicityResult::Continue;
     }
 
+    result->FinalZReal = *zReal;
+    result->FinalZImag = *zImag;
     return result;
 }
 
@@ -161,7 +167,8 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
 // Explicit instantiation
 //
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template ReferenceOrbitResult<SharkFloatParams> ReferenceOrbitHelper<SharkFloatParams>(              \
+    template std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>>                                    \
+    ReferenceOrbitHelper<SharkFloatParams>(                                                             \
         const HpSharkFloat<SharkFloatParams> *,                                                        \
         const HpSharkFloat<SharkFloatParams> *,                                                        \
         const typename SharkFloatParams::Float &,                                                      \

@@ -50,3 +50,11 @@ bool TestFullReferencePerfView30(TestTracker &Tests,
                                  int testBase,
                                  int numIters,
                                  int internalTestLoopCount);
+
+template <Operator sharkOperator>
+bool TestFullReferencePerfView32(TestTracker &Tests,
+                                 int numBlocks,
+                                 int numThreads,
+                                 int testBase,
+                                 int numIters,
+                                 int internalTestLoopCount);

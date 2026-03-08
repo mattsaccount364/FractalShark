@@ -1,4 +1,4 @@
-﻿#include "BenchmarkTimer.h"
+#include "BenchmarkTimer.h"
 #include "DbgHeap.h"
 #include "HpSharkFloat.h"
 #include "TestTracker.h"
@@ -491,7 +491,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
     std::vector<typename SharkFloatParams::ReferenceIterT> hostReferenceOrbit;
 
-    if constexpr (HpShark::TestBenchmarkAgainstHost) {
+    if constexpr (HpShark::TestMPIRImpl) {
         ScopedBenchmarkStopper hostStopper{hostTimer};
 
         using HdrType = SharkFloatParams::Float;
@@ -668,7 +668,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 }
             }
 
-            if constexpr (HpShark::TestBenchmarkAgainstHost) {
+            if constexpr (HpShark::TestMPIRImpl) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 3;
                 testSucceeded &= CheckDiff(
@@ -709,7 +709,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 }
             }
 
-            if constexpr (HpShark::TestBenchmarkAgainstHost) {
+            if constexpr (HpShark::TestMPIRImpl) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
                 testSucceeded &= CheckDiff(
@@ -796,7 +796,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             // HpSharkReferenceResultsToFile<SharkFloatParams>("HpSharkPerfResults.txt", *combo);
 
             // CPU HpSharkFloat-based reference orbit (calls MultiplyHelperFFT2 + AddHelper)
-            ReferenceOrbitResult<SharkFloatParams> cpuRefOrbitResult;
+            std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>> cpuRefOrbitResult;
             if constexpr (HpShark::TestReferenceImpl) {
                 DebugHostCombo<SharkFloatParams> debugHostCombo;
 
@@ -808,10 +808,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 }
 
                 std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs() << " ms, iters="
-                          << cpuRefOrbitResult.IterationsExecuted << std::endl;
+                          << cpuRefOrbitResult->IterationsExecuted << std::endl;
             }
 
-            if constexpr (HpShark::TestBenchmarkAgainstHost) {
+            if constexpr (HpShark::TestMPIRImpl) {
                 if (hpSharkReferenceOrbit.size() != hostReferenceOrbit.size()) {
                     std::cout << "Error: Host and GPU reference orbit size mismatch: host="
                               << hostReferenceOrbit.size() << " gpu=" << hpSharkReferenceOrbit.size()
@@ -860,18 +860,18 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 // Compare CPU HpSharkFloat-based reference orbit against MPIR host orbit
                 if constexpr (HpShark::TestReferenceImpl) {
-                    if (cpuRefOrbitResult.Orbit.size() != hostReferenceOrbit.size()) {
+                    if (cpuRefOrbitResult->Orbit.size() != hostReferenceOrbit.size()) {
                         std::cout << "Error: MPIR host and CPU ref orbit size mismatch: mpir="
                                   << hostReferenceOrbit.size()
-                                  << " cpuRef=" << cpuRefOrbitResult.Orbit.size() << std::endl;
+                                  << " cpuRef=" << cpuRefOrbitResult->Orbit.size() << std::endl;
                         DebugBreak();
                     } else {
                         bool cpuOrbitMatch = true;
                         for (size_t i = 0; i < hostReferenceOrbit.size(); ++i) {
                             auto hostValX = hostReferenceOrbit[i].x;
                             auto hostValY = hostReferenceOrbit[i].y;
-                            auto cpuValX = cpuRefOrbitResult.Orbit[i].x;
-                            auto cpuValY = cpuRefOrbitResult.Orbit[i].y;
+                            auto cpuValX = cpuRefOrbitResult->Orbit[i].x;
+                            auto cpuValY = cpuRefOrbitResult->Orbit[i].y;
 
                             HdrReduce(hostValX);
                             HdrReduce(hostValY);
@@ -897,18 +897,73 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     }
 
                     // Compare periodicity results
-                    if (cpuRefOrbitResult.PeriodResult != hostPeriodicityResult) {
+                    if (cpuRefOrbitResult->PeriodResult != hostPeriodicityResult) {
                         std::cout << "Error: CPU ref periodicity mismatch: mpir="
                                   << PeriodicityStrResult(hostPeriodicityResult)
-                                  << " cpuRef=" << PeriodicityStrResult(cpuRefOrbitResult.PeriodResult)
+                                  << " cpuRef=" << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult)
                                   << std::endl;
                         DebugBreak();
                     }
 
-                    if (cpuRefOrbitResult.IterationsExecuted != hostIterationsExecuted) {
+                    if (cpuRefOrbitResult->IterationsExecuted != hostIterationsExecuted) {
                         std::cout << "Error: CPU ref iteration count mismatch: mpir="
                                   << hostIterationsExecuted
-                                  << " cpuRef=" << cpuRefOrbitResult.IterationsExecuted << std::endl;
+                                  << " cpuRef=" << cpuRefOrbitResult->IterationsExecuted << std::endl;
+                        DebugBreak();
+                    }
+                }
+
+                // Direct CPU ref orbit vs GPU orbit comparison
+                if constexpr (HpShark::TestReferenceImpl) {
+                    if (cpuRefOrbitResult->Orbit.size() != hpSharkReferenceOrbit.size()) {
+                        std::cout << "Error: CPU ref and GPU orbit size mismatch: cpuRef="
+                                  << cpuRefOrbitResult->Orbit.size()
+                                  << " gpu=" << hpSharkReferenceOrbit.size() << std::endl;
+                        DebugBreak();
+                    } else {
+                        bool cpuGpuOrbitMatch = true;
+                        for (size_t i = 0; i < cpuRefOrbitResult->Orbit.size(); ++i) {
+                            auto cpuValX = cpuRefOrbitResult->Orbit[i].x;
+                            auto cpuValY = cpuRefOrbitResult->Orbit[i].y;
+                            auto gpuValX = hpSharkReferenceOrbit[i].x;
+                            auto gpuValY = hpSharkReferenceOrbit[i].y;
+
+                            HdrReduce(cpuValX);
+                            HdrReduce(cpuValY);
+                            HdrReduce(gpuValX);
+                            HdrReduce(gpuValY);
+
+                            if (cpuValX != gpuValX || cpuValY != gpuValY) {
+                                std::cout
+                                    << "Error: CPU ref and GPU orbit mismatch at idx " << i
+                                    << ": cpu.x=" << cpuValX.ToString<false>()
+                                    << " cpu.y=" << cpuValY.ToString<false>()
+                                    << " gpu.x=" << gpuValX.ToString<false>()
+                                    << " gpu.y=" << gpuValY.ToString<false>() << std::endl;
+                                cpuGpuOrbitMatch = false;
+                                DebugBreak();
+                                break;
+                            }
+                        }
+                        if (cpuGpuOrbitMatch) {
+                            std::cout << "CPU ref and GPU orbit match, length="
+                                      << cpuRefOrbitResult->Orbit.size() << std::endl;
+                        }
+                    }
+
+                    // Direct CPU ref vs GPU periodicity/iteration comparison
+                    if (cpuRefOrbitResult->PeriodResult != combo->PeriodicityStatus) {
+                        std::cout << "Error: CPU ref vs GPU periodicity mismatch: cpuRef="
+                                  << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult)
+                                  << " gpu=" << PeriodicityStrResult(combo->PeriodicityStatus)
+                                  << std::endl;
+                        DebugBreak();
+                    }
+
+                    if (cpuRefOrbitResult->IterationsExecuted != totalExecutedIters) {
+                        std::cout << "Error: CPU ref vs GPU iteration count mismatch: cpuRef="
+                                  << cpuRefOrbitResult->IterationsExecuted
+                                  << " gpu=" << totalExecutedIters << std::endl;
                         DebugBreak();
                     }
                 }
@@ -1720,6 +1775,7 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     DebugGpuCombo debugGpuCombo{};
 
     // Test CPU reference implementation (HpSharkFloat-based, calls MultiplyHelperFFT2 + AddHelper)
+    // Pattern matches TestCoreAdd/TestCoreMultiply: call CPU ref, then CheckAgainstHost vs MPIR.
     if constexpr (HpShark::TestReferenceImpl) {
         DebugHostCombo<SharkFloatParams> debugHostCombo;
         typename SharkFloatParams::Float emptyRadius{};
@@ -1727,13 +1783,30 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         auto cpuResult = ReferenceOrbitHelper<SharkFloatParams>(
             &aNum, &bNum, emptyRadius, 1, debugHostCombo);
 
-        if (cpuResult.IterationsExecuted != 1) {
-            std::cout << "Error: CPU reference orbit executed " << cpuResult.IterationsExecuted
-                      << " iterations, expected 1" << std::endl;
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "CPU ref orbit result X: " << cpuResult->FinalZReal.ToString() << std::endl;
+            std::cout << "CPU ref orbit result X hex: " << cpuResult->FinalZReal.ToHexString() << std::endl;
+            std::cout << "CPU ref orbit result Y: " << cpuResult->FinalZImag.ToString() << std::endl;
+            std::cout << "CPU ref orbit result Y hex: " << cpuResult->FinalZImag.ToHexString() << std::endl;
         }
 
-        std::cout << "CPU reference orbit: " << cpuResult.IterationsExecuted << " iterations"
-                  << std::endl;
+        bool testSucceeded = true;
+        constexpr auto numTerms = 2;
+        testSucceeded &= CheckAgainstHost<SharkFloatParams, Operator::ReferenceOrbit>(
+            launchParams, Tests, testNum, numTerms,
+            "ReferenceOrbitX", mpfHostResultX, cpuResult->FinalZReal);
+
+        testSucceeded &= CheckAgainstHost<SharkFloatParams, Operator::ReferenceOrbit>(
+            launchParams, Tests, testNum, numTerms,
+            "ReferenceOrbitY", mpfHostResultY, cpuResult->FinalZImag);
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            if (!testSucceeded) {
+                std::cout << "Custom High Precision failed" << std::endl;
+            } else {
+                std::cout << "Custom High Precision succeeded" << std::endl;
+            }
+        }
     }
 
     if constexpr (HpShark::TestGpu) {
@@ -2968,7 +3041,8 @@ TestBinaryOperatorPerf(const HpShark::LaunchParams &launchParams,
             }
             break;
 
-        case BasicCorrectnessMode::PerfSingle:
+        case BasicCorrectnessMode::PerfSingleView30:
+        case BasicCorrectnessMode::PerfSingleView32:
         case BasicCorrectnessMode::PerfSingleAdd:
         case BasicCorrectnessMode::PerfSingleMultiply:
         case BasicCorrectnessMode::PerfSingleRef:
@@ -3199,6 +3273,106 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     mpf_clear(mpfRadiusY);
     mpf_clear(mpfTwo);
 
+    return true;
+}
+
+template <Operator sharkOperator>
+bool
+TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
+                            [[maybe_unused]] int numBlocks,
+                            [[maybe_unused]] int numThreads,
+                            [[maybe_unused]] int testBase,
+                            [[maybe_unused]] int numIters,
+                            [[maybe_unused]] int internalTestLoopCount)
+{
+#include "..\FractalSharkLib\LargeCoords32.h"
+
+    using SharkFloatParams = SharkParams9;
+
+    HpShark::LaunchParams launchParams{numBlocks, numThreads};
+    static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
+
+    mpf_set_default_prec(
+        HpSharkFloat<SharkFloatParams>::DefaultMpirBits); // Set precision for MPIR floating point
+
+    const char *num1 = strX;
+    const char *num2 = strY;
+    const char *num3 = "0";
+    // radiusY ≈ 2 / zoom, zoom = 1.60610174675e+244240
+    const char *radiusYStr = "1.24525e-244240";
+    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 30'000'000;
+    constexpr auto expectedPeriod = -1; // Unknown, expected between 26-28M
+    const auto expectedResult = PeriodicityResult::PeriodFound;
+
+    mpf_t mpfX;
+    mpf_t mpfY;
+    mpf_t mpfZ;
+    mpf_t mpfRadiusY;
+
+    mpf_init(mpfX);
+    mpf_init(mpfY);
+    mpf_init(mpfZ);
+    mpf_init(mpfRadiusY);
+
+    auto res = mpf_set_str(mpfX, num1, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfX" << std::endl;
+    }
+
+    res = mpf_set_str(mpfY, num2, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfY" << std::endl;
+    }
+
+    res = mpf_set_str(mpfZ, num3, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfZ" << std::endl;
+    }
+
+    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfRadiusY" << std::endl;
+    }
+
+    MpfNormalize(mpfX);
+    MpfNormalize(mpfY);
+    MpfNormalize(mpfZ);
+    MpfNormalize(mpfRadiusY);
+
+    // Convert mpfX/mpfY/mpfZ back to strings
+    auto convertedMpfX =
+        MpfToString<SharkFloatParams>(mpfX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+    auto convertedMpfY =
+        MpfToString<SharkFloatParams>(mpfY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+    auto convertedMpfZ =
+        MpfToString<SharkFloatParams>(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+
+    using HdrType = typename SharkFloatParams::Float;
+    const HdrType hdrRadiusY{mpfRadiusY};
+
+    for (int i = 0; i < numIters; i++) {
+        int testNum = testBase + i;
+
+        TestPerf<SharkFloatParams, sharkOperator>(launchParams,
+                                                   Tests,
+                                                   testNum,
+                                                   convertedMpfX.c_str(),
+                                                   convertedMpfY.c_str(),
+                                                   convertedMpfZ.c_str(),
+                                                   radiusYStr,
+                                                   mpfX,
+                                                   mpfY,
+                                                   mpfZ,
+                                                   hdrRadiusY,
+                                                   maxIters,
+                                                   expectedPeriod,
+                                                   expectedResult);
+    }
+
+    mpf_clear(mpfX);
+    mpf_clear(mpfY);
+    mpf_clear(mpfZ);
+    mpf_clear(mpfRadiusY);
     return true;
 }
 
@@ -3513,6 +3687,12 @@ TestAllBinaryOp(int testBase)
                                                                        int numIters,                    \
                                                                        int internalTestLoopCount);      \
     template bool TestFullReferencePerfView30<Operator::ReferenceOrbit>(TestTracker &,                  \
+                                                                        int numBlocks,                  \
+                                                                        int numThreads,                 \
+                                                                        int testBase,                   \
+                                                                        int numIters,                   \
+                                                                        int internalTestLoopCount);     \
+    template bool TestFullReferencePerfView32<Operator::ReferenceOrbit>(TestTracker &,                  \
                                                                         int numBlocks,                  \
                                                                         int numThreads,                 \
                                                                         int testBase,                   \

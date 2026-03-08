@@ -29,11 +29,12 @@ enum class BasicCorrectnessMode : int {
     Correctness_P1 = 1, // Params1 only
     PerfSub = 2,        // Individual add/multiply kernels, not the full one
     PerfSweep = 3,      // Sweep blocks/threads
-    PerfSingle = 4,
+    PerfSingleView30 = 4,
     PerfSingleAdd = 5,
     PerfSingleMultiply = 6,
     PerfSingleRef = 7,       // Single block/thread config (DEFAULT)
-    Correctness_P1_to_P5 = 8 // Params1..5
+    Correctness_P1_to_P5 = 8, // Params1..5
+    PerfSingleView32 = 9
 };
 
 namespace HpShark {
@@ -91,12 +92,12 @@ static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
 static constexpr bool TestCorrectness = Debug;
 static constexpr bool TestInfiniteCorrectness = true;
 static constexpr auto TestForceSameSign = false;
-static constexpr bool TestBenchmarkAgainstHost = false;
+static constexpr bool TestMPIRImpl = false;
 static constexpr bool TestInitCudaMemory = true;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
 // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool TestReferenceImpl = true;
+static constexpr bool TestReferenceImpl = false;
 
 constexpr uint32_t
 ceil_pow2_u32(uint32_t v)

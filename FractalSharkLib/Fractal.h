@@ -48,6 +48,7 @@
 
 template <typename IterType, class T, class SubType, PerturbExtras PExtras> class LAReference;
 
+class FeatureFinderOrchestrator;
 class FeatureSummary;
 struct ItersMemoryContainer;
 
@@ -58,6 +59,7 @@ public:
     friend class BenchmarkData;
     friend class AutoZoomer;
     friend class RenderThreadPool;
+    friend class FeatureFinderOrchestrator;
 
     Fractal(int width, int height, HWND hWnd, bool UseSensoCursor, uint64_t commitLimitInBytes);
     ~Fractal();
@@ -269,12 +271,6 @@ public:
 
     void TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
 
-    template<typename IterType>
-    void TryFindPeriodicPointIterType(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
-
-    template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
-    void TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
-
     HighPrecision ComputeZoomFactorForFeature(const FeatureSummary &feature) const;
 
     void ClearAllFoundFeatures();
@@ -365,7 +361,7 @@ private:
 
     // Member Variables
     RefOrbitCalc m_RefOrbit;
-    std::vector<std::unique_ptr<FeatureSummary>> m_FeatureSummaries;
+    std::unique_ptr<FeatureFinderOrchestrator> m_FeatureOrchestrator;
 
 
     std::vector<std::unique_ptr<PngParallelSave>> m_FractalSavesInProgress;

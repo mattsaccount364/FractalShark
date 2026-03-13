@@ -707,6 +707,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
         hostTimer.StopTimer();
 
         std::cout << "Host iter time: " << hostTimer.GetDeltaInMs() << " ms" << std::endl;
+        std::cout << "Host periodicity: " << PeriodicityStrResult(hostPeriodicityResult)
+                  << ", iters=" << hostIterationsExecuted << std::endl;
     }
 
     if constexpr (HpShark::TestGpu) {
@@ -901,6 +903,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs() << " ms, iters="
                           << cpuRefOrbitResult->IterationsExecuted << std::endl;
+                std::cout << "CPU ref periodicity: "
+                          << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult) << std::endl;
             }
 
             if constexpr (HpShark::TestMPIRImpl) {
@@ -1005,61 +1009,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     }
                 }
 
-                // Direct CPU ref orbit vs GPU orbit comparison
-                if constexpr (HpShark::TestReferenceImpl) {
-                    if (cpuRefOrbitResult->Orbit.size() != hpSharkReferenceOrbit.size()) {
-                        std::cout << "Error: CPU ref and GPU orbit size mismatch: cpuRef="
-                                  << cpuRefOrbitResult->Orbit.size()
-                                  << " gpu=" << hpSharkReferenceOrbit.size() << std::endl;
-                        DebugBreak();
-                    } else {
-                        bool cpuGpuOrbitMatch = true;
-                        for (size_t i = 0; i < cpuRefOrbitResult->Orbit.size(); ++i) {
-                            auto cpuValX = cpuRefOrbitResult->Orbit[i].x;
-                            auto cpuValY = cpuRefOrbitResult->Orbit[i].y;
-                            auto gpuValX = hpSharkReferenceOrbit[i].x;
-                            auto gpuValY = hpSharkReferenceOrbit[i].y;
-
-                            HdrReduce(cpuValX);
-                            HdrReduce(cpuValY);
-                            HdrReduce(gpuValX);
-                            HdrReduce(gpuValY);
-
-                            if (cpuValX != gpuValX || cpuValY != gpuValY) {
-                                std::cout
-                                    << "Error: CPU ref and GPU orbit mismatch at idx " << i
-                                    << ": cpu.x=" << cpuValX.ToString<false>()
-                                    << " cpu.y=" << cpuValY.ToString<false>()
-                                    << " gpu.x=" << gpuValX.ToString<false>()
-                                    << " gpu.y=" << gpuValY.ToString<false>() << std::endl;
-                                cpuGpuOrbitMatch = false;
-                                DebugBreak();
-                                break;
-                            }
-                        }
-                        if (cpuGpuOrbitMatch) {
-                            std::cout << "CPU ref and GPU orbit match, length="
-                                      << cpuRefOrbitResult->Orbit.size() << std::endl;
-                        }
-                    }
-
-                    // Direct CPU ref vs GPU periodicity/iteration comparison
-                    if (cpuRefOrbitResult->PeriodResult != combo->PeriodicityStatus) {
-                        std::cout << "Error: CPU ref vs GPU periodicity mismatch: cpuRef="
-                                  << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult)
-                                  << " gpu=" << PeriodicityStrResult(combo->PeriodicityStatus)
-                                  << std::endl;
-                        DebugBreak();
-                    }
-
-                    if (cpuRefOrbitResult->IterationsExecuted != totalExecutedIters) {
-                        std::cout << "Error: CPU ref vs GPU iteration count mismatch: cpuRef="
-                                  << cpuRefOrbitResult->IterationsExecuted
-                                  << " gpu=" << totalExecutedIters << std::endl;
-                        DebugBreak();
-                    }
-                }
-
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
                 testSucceeded &= CheckDiff(
@@ -1084,6 +1033,61 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 std::cout << "Periodicity status: " << PeriodicityStrResult(combo->PeriodicityStatus)
                           << std::endl;
                 std::cout << "Output iteration: " << totalExecutedIters << std::endl;
+            }
+
+            // Direct CPU ref orbit vs GPU orbit comparison (independent of TestMPIRImpl)
+            if constexpr (HpShark::TestReferenceImpl) {
+                if (cpuRefOrbitResult->Orbit.size() != hpSharkReferenceOrbit.size()) {
+                    std::cout << "Error: CPU ref and GPU orbit size mismatch: cpuRef="
+                              << cpuRefOrbitResult->Orbit.size()
+                              << " gpu=" << hpSharkReferenceOrbit.size() << std::endl;
+                    DebugBreak();
+                } else {
+                    bool cpuGpuOrbitMatch = true;
+                    for (size_t i = 0; i < cpuRefOrbitResult->Orbit.size(); ++i) {
+                        auto cpuValX = cpuRefOrbitResult->Orbit[i].x;
+                        auto cpuValY = cpuRefOrbitResult->Orbit[i].y;
+                        auto gpuValX = hpSharkReferenceOrbit[i].x;
+                        auto gpuValY = hpSharkReferenceOrbit[i].y;
+
+                        HdrReduce(cpuValX);
+                        HdrReduce(cpuValY);
+                        HdrReduce(gpuValX);
+                        HdrReduce(gpuValY);
+
+                        if (cpuValX != gpuValX || cpuValY != gpuValY) {
+                            std::cout
+                                << "Error: CPU ref and GPU orbit mismatch at idx " << i
+                                << ": cpu.x=" << cpuValX.ToString<false>()
+                                << " cpu.y=" << cpuValY.ToString<false>()
+                                << " gpu.x=" << gpuValX.ToString<false>()
+                                << " gpu.y=" << gpuValY.ToString<false>() << std::endl;
+                            cpuGpuOrbitMatch = false;
+                            DebugBreak();
+                            break;
+                        }
+                    }
+                    if (cpuGpuOrbitMatch) {
+                        std::cout << "CPU ref and GPU orbit match, length="
+                                  << cpuRefOrbitResult->Orbit.size() << std::endl;
+                    }
+                }
+
+                // Direct CPU ref vs GPU periodicity/iteration comparison
+                if (cpuRefOrbitResult->PeriodResult != combo->PeriodicityStatus) {
+                    std::cout << "Error: CPU ref vs GPU periodicity mismatch: cpuRef="
+                              << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult)
+                              << " gpu=" << PeriodicityStrResult(combo->PeriodicityStatus)
+                              << std::endl;
+                    DebugBreak();
+                }
+
+                if (cpuRefOrbitResult->IterationsExecuted != totalExecutedIters) {
+                    std::cout << "Error: CPU ref vs GPU iteration count mismatch: cpuRef="
+                              << cpuRefOrbitResult->IterationsExecuted
+                              << " gpu=" << totalExecutedIters << std::endl;
+                    DebugBreak();
+                }
             }
 
             if (expectedPeriod != -1 && static_cast<uint64_t>(expectedPeriod) <= numIters) {

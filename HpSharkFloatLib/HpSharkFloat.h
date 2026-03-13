@@ -98,7 +98,7 @@ static constexpr bool TestInitCudaMemory = true;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
 // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool TestReferenceImpl = false;
+static constexpr bool TestReferenceImpl = true;
 
 constexpr uint32_t
 ceil_pow2_u32(uint32_t v)

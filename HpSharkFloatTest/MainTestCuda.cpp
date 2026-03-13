@@ -47,6 +47,8 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Performance Single View30";
         case BasicCorrectnessMode::PerfSingleView32:
             return "Performance Single View32";
+        case BasicCorrectnessMode::PerfSingleView5:
+            return "Performance Single View5";
         case BasicCorrectnessMode::Correctness_P1_to_P5:
             return "Correctness (Params1..5)";
         default:
@@ -316,7 +318,8 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
     // Only run for perf modes.
     if (mode != BasicCorrectnessMode::PerfSub && mode != BasicCorrectnessMode::PerfSweep &&
         mode != BasicCorrectnessMode::PerfSingleView30 &&
-        mode != BasicCorrectnessMode::PerfSingleView32) {
+        mode != BasicCorrectnessMode::PerfSingleView32 &&
+        mode != BasicCorrectnessMode::PerfSingleView5) {
         return 1;
     }
 
@@ -361,8 +364,11 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
             TestIds::kPerfView30, numIters, internalTestLoopCount);
         if (!ContinueAfterFailure(res))
             return 0;
+    }
 
-        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+    if (mode == BasicCorrectnessMode::PerfSingleView5) {
+        TestTracker Tests;
+        auto res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
             Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
             TestIds::kPerfView5, numIters, internalTestLoopCount);
         if (!ContinueAfterFailure(res))
@@ -437,10 +443,11 @@ main(int, char **)
                << "3=PerfSweep" << std::endl
                << "4=PerfSingle View30" << std::endl
                << "5=PerfSingle View32" << std::endl
-               << "6=PerfSingleAdd" << std::endl
-               << "7=PerfSingleMultiply" << std::endl
-               << "8=PerfSingleRef (broken currently)" << std::endl
-               << "9=Correctness(P1..P5)" << std::endl
+               << "6=PerfSingle View5" << std::endl
+               << "7=PerfSingleAdd" << std::endl
+               << "8=PerfSingleMultiply" << std::endl
+               << "9=PerfSingleRef (broken currently)" << std::endl
+               << "10=Correctness(P1..P5)" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
@@ -465,15 +472,18 @@ main(int, char **)
             mode = BasicCorrectnessMode::PerfSingleView32;
             break;
         case 6:
-            mode = BasicCorrectnessMode::PerfSingleAdd;
+            mode = BasicCorrectnessMode::PerfSingleView5;
             break;
         case 7:
-            mode = BasicCorrectnessMode::PerfSingleMultiply;
+            mode = BasicCorrectnessMode::PerfSingleAdd;
             break;
         case 8:
-            mode = BasicCorrectnessMode::PerfSingleRef;
+            mode = BasicCorrectnessMode::PerfSingleMultiply;
             break;
         case 9:
+            mode = BasicCorrectnessMode::PerfSingleRef;
+            break;
+        case 10:
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
         default:
@@ -504,6 +514,7 @@ main(int, char **)
         case BasicCorrectnessMode::PerfSweep:
         case BasicCorrectnessMode::PerfSingleView30:
         case BasicCorrectnessMode::PerfSingleView32:
+        case BasicCorrectnessMode::PerfSingleView5:
             RunPerfModes(mode, kTimeoutInSec, interactiveMode);
             break;
 

@@ -34,7 +34,8 @@ enum class BasicCorrectnessMode : int {
     PerfSingleMultiply = 6,
     PerfSingleRef = 7,       // Single block/thread config (DEFAULT)
     Correctness_P1_to_P5 = 8, // Params1..5
-    PerfSingleView32 = 9
+    PerfSingleView32 = 9,
+    PerfSingleView5 = 10
 };
 
 namespace HpShark {
@@ -92,7 +93,7 @@ static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
 static constexpr bool TestCorrectness = Debug;
 static constexpr bool TestInfiniteCorrectness = true;
 static constexpr auto TestForceSameSign = false;
-static constexpr bool TestMPIRImpl = false;
+static constexpr bool TestMPIRImpl = true;
 static constexpr bool TestInitCudaMemory = true;
 
 // True to compare against the full host-side reference implementation, false is MPIR only

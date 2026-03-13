@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <assert.h>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <gmp.h>
@@ -19,6 +20,7 @@
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <thread>
 #include <vector>
 
 #include "KernelInvoke.h"
@@ -52,6 +54,80 @@ struct IntSignCombo {
     bool Negative;
     int32_t Exponent;
     std::vector<uint32_t> Digits;
+};
+
+// Helpers for multithreaded MPIR squaring in the reference orbit loop.
+// Two helper threads each perform one high-precision squaring (x² and y²)
+// while the main thread computes xy concurrently.
+struct MpfSquaringHelper {
+    enum class State : int { Idle = 0, Working = 1, Done = 2, Shutdown = 3 };
+
+    // Separate cache lines to avoid false sharing between the two helpers.
+    struct alignas(64) HelperContext {
+        std::atomic<int> state{static_cast<int>(State::Idle)};
+        mpf_ptr result;
+        mpf_srcptr operandA;
+        mpf_srcptr operandB;
+    };
+
+    HelperContext helpers[2];
+    std::thread threads[2];
+
+    static void HelperThreadFunc(HelperContext &ctx) {
+        for (;;) {
+            int s;
+            while ((s = ctx.state.load(std::memory_order_acquire)) !=
+                   static_cast<int>(State::Working)) {
+                if (s == static_cast<int>(State::Shutdown)) {
+                    return;
+                }
+                YieldProcessor();
+            }
+
+            mpf_mul(ctx.result, ctx.operandA, ctx.operandB);
+
+            ctx.state.store(static_cast<int>(State::Done), std::memory_order_release);
+        }
+    }
+
+    void Start() {
+        for (int i = 0; i < 2; ++i) {
+            threads[i] = std::thread{HelperThreadFunc, std::ref(helpers[i])};
+        }
+    }
+
+    void Dispatch() {
+        for (int i = 0; i < 2; ++i) {
+            int expected = static_cast<int>(State::Idle);
+            bool ok = helpers[i].state.compare_exchange_strong(
+                expected, static_cast<int>(State::Working), std::memory_order_release);
+            assert(ok);
+            (void)ok;
+        }
+    }
+
+    void WaitForDone() {
+        for (int i = 0; i < 2; ++i) {
+            while (helpers[i].state.load(std::memory_order_acquire) !=
+                   static_cast<int>(State::Done)) {
+                YieldProcessor();
+            }
+            helpers[i].state.store(static_cast<int>(State::Idle), std::memory_order_release);
+        }
+    }
+
+    void ShutdownHelpers() {
+        for (int i = 0; i < 2; ++i) {
+            int expected = static_cast<int>(State::Idle);
+            bool ok = helpers[i].state.compare_exchange_strong(
+                expected, static_cast<int>(State::Shutdown), std::memory_order_release);
+            assert(ok);
+            (void)ok;
+        }
+        for (int i = 0; i < 2; ++i) {
+            threads[i].join();
+        }
+    }
 };
 
 template <class SharkFloatParams, Operator sharkOperator>
@@ -510,6 +586,17 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
         // hostReferenceOrbit.push_back({HdrType{0}, HdrType{0}}); // Initial value
 
+        MpfSquaringHelper squaringHelper;
+        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+            squaringHelper.helpers[0].result = xSquared;
+            squaringHelper.helpers[0].operandA = recurrenceX;
+            squaringHelper.helpers[0].operandB = recurrenceX;
+            squaringHelper.helpers[1].result = ySquared;
+            squaringHelper.helpers[1].operandA = recurrenceY;
+            squaringHelper.helpers[1].operandB = recurrenceY;
+            squaringHelper.Start();
+        }
+
         for (int i = 0; i < numIters; ++i) {
             if constexpr (sharkOperator == Operator::Add) {
                 mpf_sub(mpfHostResultXY1, mpfX, mpfY);
@@ -579,9 +666,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     }
                 }
 
-                mpf_mul(xSquared, recurrenceX, recurrenceX); // x^2
-                mpf_mul(ySquared, recurrenceY, recurrenceY); // y^2
-                mpf_mul(twoXY, recurrenceX, recurrenceY);    // xy
+                squaringHelper.Dispatch();
+                mpf_mul(twoXY, recurrenceX, recurrenceY);    // xy (main thread, concurrent with helpers)
+                squaringHelper.WaitForDone();
+
                 mpf_mul_ui(twoXY, twoXY, 2);                 // 2xy
                 mpf_sub(tempX, xSquared, ySquared);          // x^2 - y^2
                 mpf_add(recurrenceX, tempX, mpfX);           // x^2 - y^2 + a
@@ -605,6 +693,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 std::cerr << "Unknown operator in TestPerf" << std::endl;
                 return;
             }
+        }
+
+        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+            squaringHelper.ShutdownHelpers();
         }
 
         if (hostPeriodicityResult == PeriodicityResult::Unknown) {

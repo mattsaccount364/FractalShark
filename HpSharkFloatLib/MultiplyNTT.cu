@@ -1,4 +1,4 @@
-﻿#include "MultiplyNTT.h"
+#include "MultiplyNTT.h"
 
 #include <cuda_runtime.h>
 #include <curand.h>
@@ -763,7 +763,7 @@ MontgomeryPow(cooperative_groups::grid_group &grid,
     return x;
 }
 
-enum class Multiway { OneWay, TwoWay, ThreeWay };
+enum class Multiway { OneWay, TwoWay, ThreeWay, FourWay };
 
 // Grid-stride in-place bit-reversal permutation (uint64 elements).
 // Safe without atomics: each index participates in exactly one swap pair (i, j=rev(i));
@@ -775,13 +775,15 @@ BitReverseInplace64_GridStride(cooperative_groups::grid_group &grid,
                                uint64_t *SharkRestrict A,
                                uint64_t *SharkRestrict B,
                                uint64_t *SharkRestrict C,
+                               uint64_t *SharkRestrict D,
                                uint32_t N,
                                uint32_t stages)
 {
     // Compile-time selection of which arrays to process
     constexpr bool DoA = true;
     constexpr bool DoB = (OneTwoThree != Multiway::OneWay);
-    constexpr bool DoC = (OneTwoThree == Multiway::ThreeWay);
+    constexpr bool DoC = (OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay);
+    constexpr bool DoD = (OneTwoThree == Multiway::FourWay);
 
     const uint32_t gsz = static_cast<uint32_t>(grid.size());
     const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
@@ -812,6 +814,8 @@ BitReverseInplace64_GridStride(cooperative_groups::grid_group &grid,
             swap_one(B, i, j);
         if constexpr (DoC)
             swap_one(C, i, j);
+        if constexpr (DoD)
+            swap_one(D, i, j);
     };
 
     // Grid-stride loop, unrolled by 4 when possible.
@@ -877,6 +881,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                     uint64_t *__restrict A,
                     uint64_t *__restrict B,
                     uint64_t *__restrict C,
+                    uint64_t *__restrict D,
                     uint32_t N,
                     uint32_t stages,
                     const uint64_t *__restrict s_stages,
@@ -909,10 +914,11 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 
     const uint32_t tiles = (N + TS - 1u) / TS;
 
-    // Carve tile base from shared_data (A/B/C live in shared)
+    // Carve tile base from shared_data (A/B/C/D live in shared)
     auto *const s_dataA = reinterpret_cast<uint64_t *>(shared_data) + stages;
     auto *const s_dataB = s_dataA + TS;
     auto *const s_dataC = s_dataB + TS;
+    [[maybe_unused]] auto *const s_dataD = s_dataC + TS;
 
     // ----------------------------------------------------------------------
     // Shared twiddle cache for the *first few stages* (e.g. first 6).
@@ -925,8 +931,9 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     [[maybe_unused]] constexpr uint32_t MaxCachedTwiddles =
         (1u << MaxCachedStages) - 1; // = 63 // static assert on shared memory usage
 
-    // Reserve shared space for cached twiddles after C.
-    auto *const s_twiddles_cached = s_dataC + TS; // needs +MaxCachedTwiddles uint64_t in smem
+    // Reserve shared space for cached twiddles after the last tile buffer.
+    auto *const s_twiddles_cached =
+        (OneTwoThree == Multiway::FourWay) ? (s_dataD + TS) : (s_dataC + TS);
 
     // Only cache for precomputed-table mode, and only up to S1.
     const uint32_t cachedStages =
@@ -952,16 +959,21 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 
         // Load tiles into shared memory
         if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
-                      OneTwoThree == Multiway::ThreeWay) {
+                      OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay) {
             cg::memcpy_async(block, s_dataA, &A[tile * TS], len * sizeof(uint64_t));
         }
 
-        if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
+        if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay ||
+                      OneTwoThree == Multiway::FourWay) {
             cg::memcpy_async(block, s_dataB, &B[tile * TS], len * sizeof(uint64_t));
         }
 
-        if constexpr (OneTwoThree == Multiway::ThreeWay) {
+        if constexpr (OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay) {
             cg::memcpy_async(block, s_dataC, &C[tile * TS], len * sizeof(uint64_t));
+        }
+
+        if constexpr (OneTwoThree == Multiway::FourWay) {
+            cg::memcpy_async(block, s_dataD, &D[tile * TS], len * sizeof(uint64_t));
         }
 
         cg::wait(block);
@@ -1052,6 +1064,37 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                     s_dataC[i0] = AddP(U3, t3);
                     s_dataC[i1] = SubP(U3, t3);
                 }
+
+                if constexpr (OneTwoThree == Multiway::FourWay) {
+                    const uint64_t U1 = s_dataA[i0];
+                    const uint64_t V1 = s_dataA[i1];
+
+                    const uint64_t U2 = s_dataB[i0];
+                    const uint64_t V2 = s_dataB[i1];
+
+                    const uint64_t U3 = s_dataC[i0];
+                    const uint64_t V3 = s_dataC[i1];
+
+                    const uint64_t U4 = s_dataD[i0];
+                    const uint64_t V4 = s_dataD[i1];
+
+                    const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
+                    const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
+                    const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, V3, wj);
+                    const uint64_t t4 = MontgomeryMul(grid, block, debugCombo, V4, wj);
+
+                    s_dataA[i0] = AddP(U1, t1);
+                    s_dataA[i1] = SubP(U1, t1);
+
+                    s_dataB[i0] = AddP(U2, t2);
+                    s_dataB[i1] = SubP(U2, t2);
+
+                    s_dataC[i0] = AddP(U3, t3);
+                    s_dataC[i1] = SubP(U3, t3);
+
+                    s_dataD[i0] = AddP(U4, t4);
+                    s_dataD[i1] = SubP(U4, t4);
+                }
             }
 
             // Original per-stage barrier
@@ -1061,16 +1104,21 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
         // Store tiles back to global
         for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
             if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
-                          OneTwoThree == Multiway::ThreeWay) {
+                          OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay) {
                 A[tile * TS + t] = s_dataA[t];
             }
 
-            if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
+            if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay ||
+                          OneTwoThree == Multiway::FourWay) {
                 B[tile * TS + t] = s_dataB[t];
             }
 
-            if constexpr (OneTwoThree == Multiway::ThreeWay) {
+            if constexpr (OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay) {
                 C[tile * TS + t] = s_dataC[t];
+            }
+
+            if constexpr (OneTwoThree == Multiway::FourWay) {
+                D[tile * TS + t] = s_dataD[t];
             }
         }
     }
@@ -1082,9 +1130,9 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 // -----------------------------------------------------------------------------
 // Per-warp, per-stage micro-tile processor.
 // Handles:
-//   - Mode = OneWay / TwoWay / ThreeWay
+//   - Mode = OneWay / TwoWay / ThreeWay / FourWay
 //   - UseMontPow = true/false (recurrence vs precomputed twiddles)
-//   - microTileWidth = 4 (OneWay) or 2 (Two/ThreeWay)
+//   - microTileWidth = 4 (OneWay) or 2 (Two/Three/FourWay)
 // Updates jChunkIndex, tasksRemaining, blockIndex, blockDataBaseIndex,
 // and (when UseMontPow) currentTwiddle.
 // -----------------------------------------------------------------------------
@@ -1096,6 +1144,7 @@ ProcessTile(cooperative_groups::grid_group &grid,
             uint64_t *SharkRestrict A,
             uint64_t *SharkRestrict B,
             uint64_t *SharkRestrict C,
+            uint64_t *SharkRestrict D,
             const uint64_t *SharkRestrict stageTwiddlesForStage,
             const uint32_t halfSpan,
             const uint32_t warpSize,
@@ -1119,17 +1168,19 @@ ProcessTile(cooperative_groups::grid_group &grid,
     const uint32_t tileWidth =
         (microTileWidth == 4) ? std::min<uint32_t>(4u, span) : std::min<uint32_t>(2u, span);
 
-    // Helper: load A/B/C for a given jIndex
-    auto loadABC = [&](uint32_t jIndex,
-                       bool &inRange,
-                       uint32_t &idxUpper,
-                       uint32_t &idxLower,
-                       uint64_t &aUpper,
-                       uint64_t &aLower,
-                       uint64_t &bUpper,
-                       uint64_t &bLower,
-                       uint64_t &cUpper,
-                       uint64_t &cLower) {
+    // Helper: load A/B/C/D for a given jIndex
+    auto loadABCD = [&](uint32_t jIndex,
+                        bool &inRange,
+                        uint32_t &idxUpper,
+                        uint32_t &idxLower,
+                        uint64_t &aUpper,
+                        uint64_t &aLower,
+                        uint64_t &bUpper,
+                        uint64_t &bLower,
+                        uint64_t &cUpper,
+                        uint64_t &cLower,
+                        uint64_t &dUpper,
+                        uint64_t &dLower) {
         inRange = (jIndex < halfSpan);
         if (!inRange)
             return;
@@ -1143,9 +1194,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
         if constexpr (Mode != Multiway::OneWay) {
             bUpper = B[idxUpper];
             bLower = B[idxLower];
-            if constexpr (Mode == Multiway::ThreeWay) {
+            if constexpr (Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
                 cUpper = C[idxUpper];
                 cLower = C[idxLower];
+            }
+            if constexpr (Mode == Multiway::FourWay) {
+                dUpper = D[idxUpper];
+                dLower = D[idxLower];
             }
         }
     };
@@ -1162,6 +1217,8 @@ ProcessTile(cooperative_groups::grid_group &grid,
                               uint64_t bLower,
                               uint64_t cUpper,
                               uint64_t cLower,
+                              uint64_t dUpper,
+                              uint64_t dLower,
                               uint64_t twiddle) {
         if constexpr (Mode == Multiway::OneWay) {
             const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
@@ -1174,7 +1231,7 @@ ProcessTile(cooperative_groups::grid_group &grid,
             A[idxLower] = SubP(aUpper, tA);
             B[idxUpper] = AddP(bUpper, tB);
             B[idxLower] = SubP(bUpper, tB); // subtract from *upper* (Bu), not Bl
-        } else {                            // ThreeWay
+        } else if constexpr (Mode == Multiway::ThreeWay) {
             const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
             const uint64_t tB = MontgomeryMul(grid, block, debugCombo, bLower, twiddle);
             const uint64_t tC = MontgomeryMul(grid, block, debugCombo, cLower, twiddle);
@@ -1184,6 +1241,19 @@ ProcessTile(cooperative_groups::grid_group &grid,
             B[idxLower] = SubP(bUpper, tB); // same pattern
             C[idxUpper] = AddP(cUpper, tC);
             C[idxLower] = SubP(cUpper, tC); // same pattern
+        } else { // FourWay
+            const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
+            const uint64_t tB = MontgomeryMul(grid, block, debugCombo, bLower, twiddle);
+            const uint64_t tC = MontgomeryMul(grid, block, debugCombo, cLower, twiddle);
+            const uint64_t tD = MontgomeryMul(grid, block, debugCombo, dLower, twiddle);
+            A[idxUpper] = AddP(aUpper, tA);
+            A[idxLower] = SubP(aUpper, tA);
+            B[idxUpper] = AddP(bUpper, tB);
+            B[idxLower] = SubP(bUpper, tB);
+            C[idxUpper] = AddP(cUpper, tC);
+            C[idxLower] = SubP(cUpper, tC);
+            D[idxUpper] = AddP(dUpper, tD);
+            D[idxLower] = SubP(dUpper, tD);
         }
     };
 
@@ -1201,8 +1271,9 @@ ProcessTile(cooperative_groups::grid_group &grid,
     uint64_t aUpper0 = 0, aLower0 = 0;
     uint64_t bUpper0 = 0, bLower0 = 0;
     uint64_t cUpper0 = 0, cLower0 = 0;
+    uint64_t dUpper0 = 0, dLower0 = 0;
 
-    loadABC(jIndex0,
+    loadABCD(jIndex0,
             inRange0,
             indexUpper0,
             indexLower0,
@@ -1211,7 +1282,9 @@ ProcessTile(cooperative_groups::grid_group &grid,
             bUpper0,
             bLower0,
             cUpper0,
-            cLower0);
+            cLower0,
+            dUpper0,
+            dLower0);
 
     uint64_t twiddle0 = 0;
     if (inRange0) {
@@ -1228,12 +1301,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
     uint64_t aUpper1 = 0, aLower1 = 0;
     uint64_t bUpper1 = 0, bLower1 = 0;
     uint64_t cUpper1 = 0, cLower1 = 0;
+    uint64_t dUpper1 = 0, dLower1 = 0;
     uint64_t twiddle1 = 0;
 
     if (tileWidth >= 2) {
         const uint32_t jIndex1 = jIndex0 + warpSize;
 
-        loadABC(jIndex1,
+        loadABCD(jIndex1,
                 inRange1,
                 indexUpper1,
                 indexLower1,
@@ -1242,7 +1316,9 @@ ProcessTile(cooperative_groups::grid_group &grid,
                 bUpper1,
                 bLower1,
                 cUpper1,
-                cLower1);
+                cLower1,
+                dUpper1,
+                dLower1);
 
         if constexpr (UseMontPow) {
             twiddle1 = MontgomeryMul(grid, block, debugCombo, twiddle0, twiddleStrideWarp);
@@ -1257,16 +1333,18 @@ ProcessTile(cooperative_groups::grid_group &grid,
     uint64_t aUpper2 = 0, aLower2 = 0;
     uint64_t bUpper2 = 0, bLower2 = 0;
     uint64_t cUpper2 = 0, cLower2 = 0;
+    uint64_t dUpper2 = 0, dLower2 = 0;
     uint32_t indexUpper3 = 0, indexLower3 = 0;
     uint64_t aUpper3 = 0, aLower3 = 0;
     uint64_t bUpper3 = 0, bLower3 = 0;
     uint64_t cUpper3 = 0, cLower3 = 0;
+    uint64_t dUpper3 = 0, dLower3 = 0;
     uint64_t twiddle2 = 0, twiddle3 = 0;
 
     if constexpr (microTileWidth == 4) {
         if (tileWidth >= 3) {
             const uint32_t jIndex2 = jIndex0 + 2u * warpSize;
-            loadABC(jIndex2,
+            loadABCD(jIndex2,
                     inRange2,
                     indexUpper2,
                     indexLower2,
@@ -1275,7 +1353,9 @@ ProcessTile(cooperative_groups::grid_group &grid,
                     bUpper2,
                     bLower2,
                     cUpper2,
-                    cLower2);
+                    cLower2,
+                    dUpper2,
+                    dLower2);
 
             if constexpr (!UseMontPow) {
                 if (inRange2) {
@@ -1285,7 +1365,7 @@ ProcessTile(cooperative_groups::grid_group &grid,
         }
         if (tileWidth >= 4) {
             const uint32_t jIndex3 = jIndex0 + 3u * warpSize;
-            loadABC(jIndex3,
+            loadABCD(jIndex3,
                     inRange3,
                     indexUpper3,
                     indexLower3,
@@ -1294,7 +1374,9 @@ ProcessTile(cooperative_groups::grid_group &grid,
                     bUpper3,
                     bLower3,
                     cUpper3,
-                    cLower3);
+                    cLower3,
+                    dUpper3,
+                    dLower3);
 
             if constexpr (!UseMontPow) {
                 if (inRange3) {
@@ -1316,13 +1398,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
     // ---- compute/store: position 0 ----
     if (inRange0) {
         applyButterfly(
-            indexUpper0, indexLower0, aUpper0, aLower0, bUpper0, bLower0, cUpper0, cLower0, twiddle0);
+            indexUpper0, indexLower0, aUpper0, aLower0, bUpper0, bLower0, cUpper0, cLower0, dUpper0, dLower0, twiddle0);
     }
 
     // ---- compute/store: position 1 ----
     if (tileWidth >= 2 && inRange1) {
         applyButterfly(
-            indexUpper1, indexLower1, aUpper1, aLower1, bUpper1, bLower1, cUpper1, cLower1, twiddle1);
+            indexUpper1, indexLower1, aUpper1, aLower1, bUpper1, bLower1, cUpper1, cLower1, dUpper1, dLower1, twiddle1);
     }
 
     // ---- compute/store: positions 2 & 3 (OneWay only) ----
@@ -1336,6 +1418,8 @@ ProcessTile(cooperative_groups::grid_group &grid,
                            bLower2,
                            cUpper2,
                            cLower2,
+                           dUpper2,
+                           dLower2,
                            twiddle2);
         }
         if (tileWidth >= 4 && inRange3) {
@@ -1347,6 +1431,8 @@ ProcessTile(cooperative_groups::grid_group &grid,
                            bLower3,
                            cUpper3,
                            cLower3,
+                           dUpper3,
+                           dLower3,
                            twiddle3);
         }
     }
@@ -1390,11 +1476,12 @@ ProcessTile(cooperative_groups::grid_group &grid,
 }
 
 // -----------------------------------------------------------------------------
-// Unified 1-way / 3-way radix-2 NTT with warp-strided twiddles,
+// Unified 1-way / 4-way radix-2 NTT with warp-strided twiddles,
 // early shared-memory microkernel, and Phase-2 static contiguous striping.
 // Multiway::OneWay  : operates on A only (matches 1-way behavior)
 // Multiway::TwoWay  : operates on A, B
 // Multiway::ThreeWay: operates on A, B, C in lockstep
+// Multiway::FourWay : operates on A, B, C, D in lockstep
 // -----------------------------------------------------------------------------
 template <class SharkFloatParams, Multiway OneTwoThree, bool Inverse>
 static __device__ SharkForceInlineReleaseOnly void
@@ -1406,6 +1493,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                      uint64_t *SharkRestrict A,
                      uint64_t *SharkRestrict B,
                      uint64_t *SharkRestrict C,
+                     uint64_t *SharkRestrict D,
                      const RootTables &rootTables)
 {
     uint32_t transformSize = rootTables.N;
@@ -1456,6 +1544,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                                                                                   A,
                                                                                   nullptr,
                                                                                   nullptr,
+                                                                                  nullptr,
                                                                                   transformSize,
                                                                                   numStages,
                                                                                   sharedStageRoots,
@@ -1468,6 +1557,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                                                                                   debugCombo,
                                                                                   A,
                                                                                   B,
+                                                                                  nullptr,
                                                                                   nullptr,
                                                                                   transformSize,
                                                                                   numStages,
@@ -1482,10 +1572,25 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                                                                                     A,
                                                                                     B,
                                                                                     C,
+                                                                                    nullptr,
                                                                                     transformSize,
                                                                                     numStages,
                                                                                     sharedStageRoots,
                                                                                     stageTwiddleTable);
+    } else if constexpr (OneTwoThree == Multiway::FourWay) {
+        firstLargeStage =
+            SmallRadixPhase1_SM<SharkFloatParams, Multiway::FourWay, TileSizeLog2>(shared_data,
+                                                                                   grid,
+                                                                                   block,
+                                                                                   debugCombo,
+                                                                                   A,
+                                                                                   B,
+                                                                                   C,
+                                                                                   D,
+                                                                                   transformSize,
+                                                                                   numStages,
+                                                                                   sharedStageRoots,
+                                                                                   stageTwiddleTable);
     }
 
     // =========================
@@ -1557,6 +1662,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                     A,
                     B,
                     C,
+                    D,
                     stageTwiddlesForStage,
                     halfSpan,
                     warpSize,
@@ -1784,6 +1890,7 @@ UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group &grid,
 
 // Grid-strided version: minimize distinct loops, add grid.sync between phases.
 // A once -> (XX1, XX2, XY1), then B once -> (YY1, YY2, XY2)
+// When EnableNewtonRaphson, also NTTs dzdcR/dzdcI and replicates W0-W3 product pairs.
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 PackTwistFwdNTT_Fused_AB_ToSixOutputs(
@@ -1796,13 +1903,25 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
     const HpSharkFloat<SharkFloatParams> &inB,
     const SharkNTT::RootTables &roots,
     uint64_t *carryPropagationSync,
-    // six outputs (Montgomery domain, length SharkFloatParams::NTTPlan.N)
+    // six orbit outputs (Montgomery domain, length SharkFloatParams::NTTPlan.N)
     uint64_t *SharkRestrict tempDigitsXX1,
     uint64_t *SharkRestrict tempDigitsXX2,
     uint64_t *SharkRestrict tempDigitsYY1,
     uint64_t *SharkRestrict tempDigitsYY2,
     uint64_t *SharkRestrict tempDigitsXY1,
-    uint64_t *SharkRestrict tempDigitsXY2)
+    uint64_t *SharkRestrict tempDigitsXY2,
+    // NR inputs (nullptr when NR disabled; never dereferenced thanks to if constexpr)
+    const HpSharkFloat<SharkFloatParams> *inDzdcReal,
+    const HpSharkFloat<SharkFloatParams> *inDzdcImag,
+    // NR product pair buffers (8 total, nullptr when NR disabled)
+    uint64_t *SharkRestrict tempDigitsW0_1,
+    uint64_t *SharkRestrict tempDigitsW0_2,
+    uint64_t *SharkRestrict tempDigitsW1_1,
+    uint64_t *SharkRestrict tempDigitsW1_2,
+    uint64_t *SharkRestrict tempDigitsW2_1,
+    uint64_t *SharkRestrict tempDigitsW2_2,
+    uint64_t *SharkRestrict tempDigitsW3_1,
+    uint64_t *SharkRestrict tempDigitsW3_2)
 {
     const uint32_t N = static_cast<uint32_t>(SharkFloatParams::NTTPlan.N);
     const uint32_t L = static_cast<uint32_t>(SharkFloatParams::NTTPlan.L);
@@ -1834,6 +1953,31 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
         } else {
             tempDigitsYY1[i] = zero_m;
         }
+
+        // NR: pack+twist dzdcR → W0_1, dzdcI → W1_1 (used as forward-NTT scratch)
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const uint64_t psi_i = roots.psi_pows[i];
+
+            if (i < L) {
+                const uint64_t coeffDR = ReadBitsSimple(
+                    *inDzdcReal, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
+                const uint64_t cmodDR = coeffDR % MagicPrime;
+                const uint64_t xmDR = ToMontgomery(grid, block, debugGlobalState, cmodDR);
+                tempDigitsW0_1[i] = MontgomeryMul(grid, block, debugGlobalState, xmDR, psi_i);
+            } else {
+                tempDigitsW0_1[i] = zero_m;
+            }
+
+            if (i < L) {
+                const uint64_t coeffDI = ReadBitsSimple(
+                    *inDzdcImag, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
+                const uint64_t cmodDI = coeffDI % MagicPrime;
+                const uint64_t xmDI = ToMontgomery(grid, block, debugGlobalState, cmodDI);
+                tempDigitsW1_1[i] = MontgomeryMul(grid, block, debugGlobalState, xmDI, psi_i);
+            } else {
+                tempDigitsW1_1[i] = zero_m;
+            }
+        }
     }
 
     //
@@ -1862,25 +2006,53 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
     }
 
     // A: forward NTT (grid-wide helpers)
-    BitReverseInplace64_GridStride<Multiway::TwoWay>(grid,
-                                                     block,
-                                                     tempDigitsXX1,
-                                                     tempDigitsYY1,
-                                                     nullptr,
-                                                     N,
-                                                     (uint32_t)SharkFloatParams::NTTPlan.stages);
+    // When NR is enabled, process all 4 transforms (A, B, dzdcR, dzdcI) in FourWay
+    // to share the same grid.sync() calls within the NTT butterfly stages.
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        BitReverseInplace64_GridStride<Multiway::FourWay>(grid,
+                                                          block,
+                                                          tempDigitsXX1,
+                                                          tempDigitsYY1,
+                                                          tempDigitsW0_1,
+                                                          tempDigitsW1_1,
+                                                          N,
+                                                          (uint32_t)SharkFloatParams::NTTPlan.stages);
+    } else {
+        BitReverseInplace64_GridStride<Multiway::TwoWay>(grid,
+                                                         block,
+                                                         tempDigitsXX1,
+                                                         tempDigitsYY1,
+                                                         nullptr,
+                                                         nullptr,
+                                                         N,
+                                                         (uint32_t)SharkFloatParams::NTTPlan.stages);
+    }
 
     grid.sync();
 
-    NTTRadix2_GridStride<SharkFloatParams, Multiway::TwoWay, false>(shared_data,
-                                                                    grid,
-                                                                    block,
-                                                                    debugGlobalState,
-                                                                    carryPropagationSync,
-                                                                    tempDigitsXX1,
-                                                                    tempDigitsYY1,
-                                                                    nullptr,
-                                                                    roots);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        NTTRadix2_GridStride<SharkFloatParams, Multiway::FourWay, false>(shared_data,
+                                                                         grid,
+                                                                         block,
+                                                                         debugGlobalState,
+                                                                         carryPropagationSync,
+                                                                         tempDigitsXX1,
+                                                                         tempDigitsYY1,
+                                                                         tempDigitsW0_1,
+                                                                         tempDigitsW1_1,
+                                                                         roots);
+    } else {
+        NTTRadix2_GridStride<SharkFloatParams, Multiway::TwoWay, false>(shared_data,
+                                                                        grid,
+                                                                        block,
+                                                                        debugGlobalState,
+                                                                        carryPropagationSync,
+                                                                        tempDigitsXX1,
+                                                                        tempDigitsYY1,
+                                                                        nullptr,
+                                                                        nullptr,
+                                                                        roots);
+    }
 
     if constexpr (HpShark::DebugChecksums) {
         grid.sync();
@@ -1913,6 +2085,29 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
         const uint64_t vB = tempDigitsYY1[i];
         tempDigitsYY2[i] = vB;
         tempDigitsXY2[i] = vB;
+
+        // NR: replicate spectra into W0-W3 product pairs.
+        // W0_1 currently holds NTT(dzdcR), W1_1 holds NTT(dzdcI) — read before overwriting.
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const uint64_t vDR = tempDigitsW0_1[i]; // NTT(dzdcR)
+            const uint64_t vDI = tempDigitsW1_1[i]; // NTT(dzdcI)
+
+            // W0: zR * dzdcR
+            tempDigitsW0_1[i] = vA;  // NTT(zR)
+            tempDigitsW0_2[i] = vDR; // NTT(dzdcR)
+
+            // W1: zI * dzdcI
+            tempDigitsW1_1[i] = vB;  // NTT(zI)
+            tempDigitsW1_2[i] = vDI; // NTT(dzdcI)
+
+            // W2: zI * dzdcR
+            tempDigitsW2_1[i] = vB;  // NTT(zI)
+            tempDigitsW2_2[i] = vDR; // NTT(dzdcR)
+
+            // W3: zR * dzdcI
+            tempDigitsW3_1[i] = vA;  // NTT(zR)
+            tempDigitsW3_2[i] = vDI; // NTT(dzdcI)
+        }
     }
 }
 
@@ -2072,7 +2267,35 @@ static_assert(HpShark::AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto CarryInsOffset =                                                                     \
         SubtractionOffset6 + 1 * NewN * TestMultiplier +                                                \
         CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* requires 3xNewN 79 */                 \
-    constexpr auto CarryInsEnd = CarryInsOffset + 3 * NewN + CalcAlign16Bytes64BitIndex(3 * NewN);
+    constexpr auto CarryInsEnd = CarryInsOffset + 3 * NewN + CalcAlign16Bytes64BitIndex(3 * NewN);      \
+    /* NR derivative product scratch offsets (W0-W3, only used when EnableNewtonRaphson) */             \
+    constexpr auto Z0_offsetW0 = CarryInsEnd;                                                          \
+    constexpr auto Z0_offsetW1 = Z0_offsetW0 + 4 * NewN * TestMultiplier +                             \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 86 */        \
+    constexpr auto Z0_offsetW2 = Z0_offsetW1 + 4 * NewN * TestMultiplier +                             \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 90 */        \
+    constexpr auto Z0_offsetW3 = Z0_offsetW2 + 4 * NewN * TestMultiplier +                             \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 94 */        \
+    constexpr auto Z2_offsetW0 = Z0_offsetW3 + 4 * NewN * TestMultiplier +                             \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 98 */        \
+    constexpr auto Z2_offsetW1 = Z2_offsetW0 + 4 * NewN * TestMultiplier +                             \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 102 */       \
+    constexpr auto Z2_offsetW2 = Z2_offsetW1 + 4 * NewN * TestMultiplier +                             \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 106 */       \
+    constexpr auto Z2_offsetW3 = Z2_offsetW2 + 4 * NewN * TestMultiplier +                             \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 110 */       \
+    constexpr auto Result_offsetW0 = Z2_offsetW3 + 4 * NewN * TestMultiplier +                         \
+                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 114 */   \
+    constexpr auto Result_offsetW1 = Result_offsetW0 + 4 * NewN * TestMultiplier +                     \
+                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 118 */   \
+    constexpr auto Result_offsetW2 = Result_offsetW1 + 4 * NewN * TestMultiplier +                     \
+                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 122 */   \
+    constexpr auto Result_offsetW3 = Result_offsetW2 + 4 * NewN * TestMultiplier +                     \
+                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 126 */   \
+    constexpr auto NR_CarryInsOffset = Result_offsetW3 + 4 * NewN * TestMultiplier +                   \
+                                       CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 130 */ \
+    constexpr auto NR_CarryInsEnd = NR_CarryInsOffset + 4 * NewN +                                     \
+                                    CalcAlign16Bytes64BitIndex(4 * NewN); /* 134 */
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
@@ -2082,6 +2305,14 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                      HpSharkFloat<SharkFloatParams> *outXY,
                      const HpSharkFloat<SharkFloatParams> &inA,
                      const HpSharkFloat<SharkFloatParams> &inB,
+                     // NR inputs (nullptr when NR disabled; never dereferenced)
+                     const HpSharkFloat<SharkFloatParams> *inDzdcReal,
+                     const HpSharkFloat<SharkFloatParams> *inDzdcImag,
+                     HpSharkFloat<SharkFloatParams> *outW0,
+                     HpSharkFloat<SharkFloatParams> *outW1,
+                     HpSharkFloat<SharkFloatParams> *outW2,
+                     HpSharkFloat<SharkFloatParams> *outW3,
+                     // existing params continue:
                      const SharkNTT::RootTables &roots,
                      cg::grid_group &grid,
                      cg::thread_block &block,
@@ -2100,7 +2331,20 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                      uint64_t *CarryPropagationBuffer2,
                      uint64_t *CarryPropagationSync,
                      uint64_t *CarryPropagationSync2,
-                     uint32_t Ddigits)
+                     uint32_t Ddigits,
+                     // NR temp buffers (nullptr when NR disabled)
+                     uint64_t *tempDigitsW0_1,
+                     uint64_t *tempDigitsW0_2,
+                     uint64_t *tempDigitsW1_1,
+                     uint64_t *tempDigitsW1_2,
+                     uint64_t *tempDigitsW2_1,
+                     uint64_t *tempDigitsW2_2,
+                     uint64_t *tempDigitsW3_1,
+                     uint64_t *tempDigitsW3_2,
+                     uint64_t *Final128_W0,
+                     uint64_t *Final128_W1,
+                     uint64_t *Final128_W2,
+                     uint64_t *Final128_W3)
 {
     PackTwistFwdNTT_Fused_AB_ToSixOutputs<SharkFloatParams>(shared_data,
                                                             grid,
@@ -2116,7 +2360,17 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                                                             tempDigitsYY1,
                                                             tempDigitsYY2,
                                                             tempDigitsXY1,
-                                                            tempDigitsXY2);
+                                                            tempDigitsXY2,
+                                                            inDzdcReal,
+                                                            inDzdcImag,
+                                                            tempDigitsW0_1,
+                                                            tempDigitsW0_2,
+                                                            tempDigitsW1_1,
+                                                            tempDigitsW1_2,
+                                                            tempDigitsW2_1,
+                                                            tempDigitsW2_2,
+                                                            tempDigitsW3_1,
+                                                            tempDigitsW3_2);
 
     // Note: no grid.sync.  The last operation done in the prior function
     // is grid-wide and the next loop operates on the same data per-thread
@@ -2138,6 +2392,25 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
         const uint64_t aXY = tempDigitsXY1[i];
         const uint64_t bXY = tempDigitsXY2[i];
         tempDigitsXY1[i] = SharkNTT::MontgomeryMul(grid, block, debugGlobalState, aXY, bXY);
+
+        // NR pointwise multiplies — same loop, no new sync
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const uint64_t aW0 = tempDigitsW0_1[i];
+            const uint64_t bW0 = tempDigitsW0_2[i];
+            tempDigitsW0_1[i] = SharkNTT::MontgomeryMul(grid, block, debugGlobalState, aW0, bW0);
+
+            const uint64_t aW1 = tempDigitsW1_1[i];
+            const uint64_t bW1 = tempDigitsW1_2[i];
+            tempDigitsW1_1[i] = SharkNTT::MontgomeryMul(grid, block, debugGlobalState, aW1, bW1);
+
+            const uint64_t aW2 = tempDigitsW2_1[i];
+            const uint64_t bW2 = tempDigitsW2_2[i];
+            tempDigitsW2_1[i] = SharkNTT::MontgomeryMul(grid, block, debugGlobalState, aW2, bW2);
+
+            const uint64_t aW3 = tempDigitsW3_1[i];
+            const uint64_t bW3 = tempDigitsW3_2[i];
+            tempDigitsW3_1[i] = SharkNTT::MontgomeryMul(grid, block, debugGlobalState, aW3, bW3);
+        }
     }
 
     grid.sync();
@@ -2149,8 +2422,22 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
         tempDigitsXX1,
         tempDigitsYY1,
         tempDigitsXY1,
+        nullptr,
         (uint32_t)SharkFloatParams::NTTPlan.N,
         (uint32_t)SharkFloatParams::NTTPlan.stages);
+
+    // NR inverse bit-reverse (no sync inside — independent buffers, same sync point)
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::FourWay>(
+            grid,
+            block,
+            tempDigitsW0_1,
+            tempDigitsW1_1,
+            tempDigitsW2_1,
+            tempDigitsW3_1,
+            (uint32_t)SharkFloatParams::NTTPlan.N,
+            (uint32_t)SharkFloatParams::NTTPlan.stages);
+    }
 
     if constexpr (HpShark::DebugChecksums) {
         grid.sync();
@@ -2174,7 +2461,23 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
         tempDigitsXX1,
         tempDigitsYY1,
         tempDigitsXY1,
+        nullptr,
         roots);
+
+    // NR inverse NTT (FourWay — has its own internal grid.sync() per stage)
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::FourWay, true>(
+            shared_data,
+            grid,
+            block,
+            debugGlobalState,
+            CarryPropagationSync,
+            tempDigitsW0_1,
+            tempDigitsW1_1,
+            tempDigitsW2_1,
+            tempDigitsW3_1,
+            roots);
+    }
 
     // --- After inverse NTTs (XX1 / YY1 / XY1 are in Montgomery domain) ---
     grid.sync(); // make sure prior writes (inv-NTT) are visible
@@ -2186,6 +2489,26 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                                                            /* XX1 */ tempDigitsXX1,
                                                            /* YY1 */ tempDigitsYY1,
                                                            /* XY1 */ tempDigitsXY1);
+
+    // NR untwist (same sync point — grid-strided, no internal sync)
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        using namespace SharkNTT;
+        const uint64_t Ninvm = roots.Ninvm_mont;
+        for (size_t i = grank; i < N; i += gsize) {
+            const uint64_t psi_inv_i = roots.psi_inv_pows[i];
+
+            auto untwist_one = [&](uint64_t *buf) {
+                uint64_t v = MontgomeryMul(grid, block, debugGlobalState, buf[i], psi_inv_i);
+                v = MontgomeryMul(grid, block, debugGlobalState, v, Ninvm);
+                buf[i] = FromMontgomery(grid, block, debugGlobalState, v);
+            };
+
+            untwist_one(tempDigitsW0_1);
+            untwist_one(tempDigitsW1_1);
+            untwist_one(tempDigitsW2_1);
+            untwist_one(tempDigitsW3_1);
+        }
+    }
 
     if constexpr (HpShark::DebugChecksums) {
         grid.sync();
@@ -2213,6 +2536,75 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                                                            Final128_YY,
                                                            Final128_XY,
                                                            Ddigits);
+
+    // NR unpack — UnpackPrimeToFinal128_3Way includes a trailing grid.sync().
+    // Call it a second time for 3 of the 4 NR channels, then handle the 4th inline.
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        SharkNTT::UnpackPrimeToFinal128_3Way<SharkFloatParams>(grid,
+                                                               block,
+                                                               tempDigitsW0_1,
+                                                               tempDigitsW1_1,
+                                                               tempDigitsW2_1,
+                                                               Final128_W0,
+                                                               Final128_W1,
+                                                               Final128_W2,
+                                                               Ddigits);
+        // W3: inline 1-way unpack (same logic as a single channel of UnpackPrimeToFinal128)
+        {
+            using namespace SharkNTT;
+            const uint64_t HALF = (MagicPrime - 1ull) >> 1;
+            const int Imax = min(SharkFloatParams::NTTPlan.N, 2 * SharkFloatParams::NTTPlan.L - 1);
+            auto ceil_div_u64 = [](uint64_t a, uint32_t b) -> uint64_t {
+                return (a + (uint64_t)b - 1ull) / (uint64_t)b;
+            };
+            auto add32_local = [](uint64_t &lo, uint64_t &hi, uint32_t add32) {
+                if (!add32) return;
+                uint64_t old = lo; lo += (uint64_t)add32;
+                if (lo < old) hi += 1ull;
+            };
+            auto sub32_local = [](uint64_t &lo, uint64_t &hi, uint32_t sub32) {
+                if (!sub32) return;
+                uint64_t old = lo; lo = old - (uint64_t)sub32;
+                if (old < (uint64_t)sub32) hi -= 1ull;
+            };
+            for (size_t j = grank; j < Ddigits; j += gsize) {
+                uint64_t w3_lo = 0ull, w3_hi = 0ull;
+                for (int t = 0; t < 4; ++t) {
+                    if ((int)j - t < 0) continue;
+                    const uint64_t k = (uint64_t)((int)j - t);
+                    const uint64_t i_lo = ceil_div_u64(32ull * k, (uint32_t)SharkFloatParams::NTTPlan.b);
+                    const uint64_t i_hi_raw = ceil_div_u64(32ull * (k + 1ull), (uint32_t)SharkFloatParams::NTTPlan.b);
+                    uint64_t i_hi = (i_hi_raw == 0 ? 0 : (i_hi_raw - 1ull));
+                    if ((int64_t)i_lo > (int64_t)(Imax - 1)) continue;
+                    if (i_hi > (uint64_t)(Imax - 1)) i_hi = (uint64_t)(Imax - 1);
+                    if (i_lo > i_hi) continue;
+                    for (uint64_t iu = i_lo; iu <= i_hi; ++iu) {
+                        const int i = (int)iu;
+                        const uint64_t sBits = (uint64_t)i * (uint64_t)SharkFloatParams::NTTPlan.b;
+                        const int r = (int)(sBits & 31);
+                        const uint64_t lsh = (r ? (64 - r) : 64);
+                        const uint64_t v = tempDigitsW3_1[i];
+                        if (v) {
+                            const bool neg = (v > HALF);
+                            const uint64_t mag64 = neg ? (MagicPrime - v) : v;
+                            const uint64_t lo64 = r ? (mag64 << r) : mag64;
+                            const uint64_t hi64 = r ? (mag64 >> lsh) : 0ull;
+                            const uint32_t d0 = (uint32_t)(lo64 & 0xffffffffu);
+                            const uint32_t d1 = (uint32_t)((lo64 >> 32) & 0xffffffffu);
+                            const uint32_t d2 = (uint32_t)(hi64 & 0xffffffffu);
+                            const uint32_t d3 = (uint32_t)((hi64 >> 32) & 0xffffffffu);
+                            const uint32_t dt = (t == 0) ? d0 : (t == 1) ? d1 : (t == 2) ? d2 : d3;
+                            if (!neg) add32_local(w3_lo, w3_hi, dt);
+                            else      sub32_local(w3_lo, w3_hi, dt);
+                        }
+                    }
+                }
+                Final128_W3[2 * j + 0] = w3_lo;
+                Final128_W3[2 * j + 1] = w3_hi;
+            }
+            grid.sync();
+        }
+    }
 
     grid.sync(); // subsequent phases depend on Final128_* fully written
 
@@ -2286,6 +2678,70 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                                                             resultYY,
                                                             resultXY);
 #endif
+
+    // NR normalize: carry-propagate W0-W3 products.
+    // Reuse Normalize_GridStride_3WayV2 for W0/W1/W2, then a separate pass for W3.
+    // The orbit normalize above does a final grid.sync() internally, so buffers are safe to reuse.
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        // W products have addFactorOfTwo = 1 (like XY) since they include ×2 factor
+        const auto addFactorOfTwoW = 1;
+
+        // W product signs: XOR of input signs
+        outW0->SetNegative(inDzdcReal->GetNegative() ^ inA.GetNegative());   // dzdcR × zR
+        outW1->SetNegative(inDzdcImag->GetNegative() ^ inB.GetNegative());   // dzdcI × zI
+        outW2->SetNegative(inDzdcReal->GetNegative() ^ inB.GetNegative());   // dzdcR × zI
+        outW3->SetNegative(inDzdcImag->GetNegative() ^ inA.GetNegative());   // dzdcI × zR
+
+        // Each W product has a unique input exponent pair, so we normalize
+        // one at a time using 3WayV2 with the product duplicated in all 3 slots.
+        // NOTE: This adds grid.syncs (one per normalize call). A future
+        // optimization could add a flexible normalize that takes per-product
+        // exponent pairs.
+
+        uint64_t *resultW0 = tempDigitsW0_1;
+        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
+            block, debugGlobalState, debugStates,
+            *outW0, *outW0, *outW0,
+            *inDzdcReal, inA,       // W0 = dzdcR × zR
+            Final128_W0, Final128_W0, Final128_W0,
+            Ddigits, addFactorOfTwoW, addFactorOfTwoW, addFactorOfTwoW,
+            CarryPropagationBuffer2, CarryPropagationBuffer,
+            CarryPropagationSync, CarryPropagationSync2,
+            resultW0, resultW0, resultW0);
+
+        uint64_t *resultW1 = tempDigitsW1_1;
+        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
+            block, debugGlobalState, debugStates,
+            *outW1, *outW1, *outW1,
+            *inDzdcImag, inB,       // W1 = dzdcI × zI
+            Final128_W1, Final128_W1, Final128_W1,
+            Ddigits, addFactorOfTwoW, addFactorOfTwoW, addFactorOfTwoW,
+            CarryPropagationBuffer2, CarryPropagationBuffer,
+            CarryPropagationSync, CarryPropagationSync2,
+            resultW1, resultW1, resultW1);
+
+        uint64_t *resultW2 = tempDigitsW2_1;
+        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
+            block, debugGlobalState, debugStates,
+            *outW2, *outW2, *outW2,
+            *inDzdcReal, inB,       // W2 = dzdcR × zI
+            Final128_W2, Final128_W2, Final128_W2,
+            Ddigits, addFactorOfTwoW, addFactorOfTwoW, addFactorOfTwoW,
+            CarryPropagationBuffer2, CarryPropagationBuffer,
+            CarryPropagationSync, CarryPropagationSync2,
+            resultW2, resultW2, resultW2);
+
+        uint64_t *resultW3 = tempDigitsW3_1;
+        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
+            block, debugGlobalState, debugStates,
+            *outW3, *outW3, *outW3,
+            *inDzdcImag, inA,       // W3 = dzdcI × zR
+            Final128_W3, Final128_W3, Final128_W3,
+            Ddigits, addFactorOfTwoW, addFactorOfTwoW, addFactorOfTwoW,
+            CarryPropagationBuffer2, CarryPropagationBuffer,
+            CarryPropagationSync, CarryPropagationSync2,
+            resultW3, resultW3, resultW3);
+    }
 }
 
 template <class SharkFloatParams>
@@ -2296,6 +2752,13 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
                              HpSharkFloat<SharkFloatParams> *SharkRestrict OutXX,
                              HpSharkFloat<SharkFloatParams> *SharkRestrict OutXY,
                              HpSharkFloat<SharkFloatParams> *SharkRestrict OutYY,
+                             // NR derivative inputs / outputs (nullptr when NR disabled)
+                             const HpSharkFloat<SharkFloatParams> *SharkRestrict DzdcReal,
+                             const HpSharkFloat<SharkFloatParams> *SharkRestrict DzdcImag,
+                             HpSharkFloat<SharkFloatParams> *SharkRestrict OutW0,
+                             HpSharkFloat<SharkFloatParams> *SharkRestrict OutW1,
+                             HpSharkFloat<SharkFloatParams> *SharkRestrict OutW2,
+                             HpSharkFloat<SharkFloatParams> *SharkRestrict OutW3,
                              cg::grid_group &grid,
                              cg::thread_block &block,
                              uint64_t *SharkRestrict tempProducts)
@@ -2304,6 +2767,15 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     extern __shared__ uint64_t shared_data[];
 
     DefineTempProductsOffsets();
+
+    // Verify scratch offsets fit within allocated frame
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        static_assert(NR_CarryInsEnd <= HpShark::CalculateNTTFrameSize<SharkFloatParams>(),
+                      "NR scratch offsets exceed NTT frame size");
+    } else {
+        static_assert(CarryInsEnd <= HpShark::CalculateNTTFrameSize<SharkFloatParams>(),
+                      "Scratch offsets exceed NTT frame size");
+    }
 
     // TODO: indexes
     auto *SharkRestrict debugGlobalState =
@@ -2443,6 +2915,35 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     uint64_t *CarryPropagationSync = &tempProducts[0];
     uint64_t *CarryPropagationSync2 = &tempProducts[16];
 
+    // NR temp buffers — use offsets from DefineTempProductsOffsets() macro
+    uint64_t *tempDigitsW0_1 = nullptr;
+    uint64_t *tempDigitsW0_2 = nullptr;
+    uint64_t *tempDigitsW1_1 = nullptr;
+    uint64_t *tempDigitsW1_2 = nullptr;
+    uint64_t *tempDigitsW2_1 = nullptr;
+    uint64_t *tempDigitsW2_2 = nullptr;
+    uint64_t *tempDigitsW3_1 = nullptr;
+    uint64_t *tempDigitsW3_2 = nullptr;
+    uint64_t *Final128_W0 = nullptr;
+    uint64_t *Final128_W1 = nullptr;
+    uint64_t *Final128_W2 = nullptr;
+    uint64_t *Final128_W3 = nullptr;
+
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        tempDigitsW0_1 = &tempProducts[Z0_offsetW0];
+        tempDigitsW0_2 = &tempProducts[Z2_offsetW0];
+        tempDigitsW1_1 = &tempProducts[Z0_offsetW1];
+        tempDigitsW1_2 = &tempProducts[Z2_offsetW1];
+        tempDigitsW2_1 = &tempProducts[Z0_offsetW2];
+        tempDigitsW2_2 = &tempProducts[Z2_offsetW2];
+        tempDigitsW3_1 = &tempProducts[Z0_offsetW3];
+        tempDigitsW3_2 = &tempProducts[Z2_offsetW3];
+        Final128_W0 = &tempProducts[Result_offsetW0];
+        Final128_W1 = &tempProducts[Result_offsetW1];
+        Final128_W2 = &tempProducts[Result_offsetW2];
+        Final128_W3 = &tempProducts[Result_offsetW3];
+    }
+
     // XX = A^2
     RunNTT_3Way_Multiply<SharkFloatParams>(shared_data,
                                            OutXX,
@@ -2450,6 +2951,12 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
                                            OutXY,
                                            *A,
                                            *B,
+                                           DzdcReal,
+                                           DzdcImag,
+                                           OutW0,
+                                           OutW1,
+                                           OutW2,
+                                           OutW3,
                                            roots,
                                            grid,
                                            block,
@@ -2468,7 +2975,19 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
                                            CarryPropagationBuffer2,
                                            CarryPropagationSync,
                                            CarryPropagationSync2,
-                                           Ddigits);
+                                           Ddigits,
+                                           tempDigitsW0_1,
+                                           tempDigitsW0_2,
+                                           tempDigitsW1_1,
+                                           tempDigitsW1_2,
+                                           tempDigitsW2_1,
+                                           tempDigitsW2_2,
+                                           tempDigitsW3_1,
+                                           tempDigitsW3_2,
+                                           Final128_W0,
+                                           Final128_W1,
+                                           Final128_W2,
+                                           Final128_W3);
 
     grid.sync();
 }
@@ -2599,6 +3118,12 @@ MultiplyHelperNTT(HpSharkComboResults<SharkFloatParams> *SharkRestrict combo,
                                                    &combo->ResultX2,
                                                    &combo->Result2XY,
                                                    &combo->ResultY2,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->DzdcReal : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->DzdcImag : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW0 : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW1 : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW2 : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW3 : nullptr,
                                                    grid,
                                                    block,
                                                    tempProducts);

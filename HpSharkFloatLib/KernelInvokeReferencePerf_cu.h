@@ -64,6 +64,19 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     combo->OutputIterCount = 0;
     combo->MaxRuntimeIters = 0; // Set below
 
+    // NR state initialization
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        // DzdcReal/DzdcImag default-constructed to zero (HpSharkFloat default ctor)
+        // d2 initialized to zero
+        combo->d2Real = typename SharkFloatParams::Float{};
+        combo->d2Imag = typename SharkFloatParams::Float{};
+
+        // Construct One constant for derivative add (+1)
+        combo->Add.One.template FromHDRFloat<typename SharkFloatParams::SubType>(
+            HDRFloat<typename SharkFloatParams::SubType>{
+                typename SharkFloatParams::SubType(1.0)});
+    }
+
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
     constexpr size_t BytesToAllocate =
@@ -365,7 +378,65 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     }
 }
 
-#define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
+// GPU-accelerated drop-in replacement for EvaluateCriticalOrbitAndDerivs.
+// Same logical interface: takes c (mpf), period, outputs z_p, dzdc_p, d2 (mpf/HDRFloat).
+// Handles mpf <-> HpSharkFloat conversion and GPU kernel launch internally.
+template <class SharkFloatParams>
+void EvaluateCriticalOrbitAndDerivs_GPU(
+    const mpf_t cReal,
+    const mpf_t cImag,
+    uint64_t period,
+    mpf_t outZReal,
+    mpf_t outZImag,
+    mpf_t outDzdcReal,
+    mpf_t outDzdcImag,
+    HDRFloat<double> &outD2Real,
+    HDRFloat<double> &outD2Imag)
+{
+    static_assert(SharkFloatParams::EnableNewtonRaphson,
+                  "EvaluateCriticalOrbitAndDerivs_GPU requires EnableNewtonRaphson");
+
+    constexpr int precBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
+    HpShark::LaunchParams launchParams{2, 32};
+    typename SharkFloatParams::Float hdrRadiusY{1.0f};
+
+    // Convert c from mpf to HpSharkFloat
+    HpSharkFloat<SharkFloatParams> hpCR{};
+    HpSharkFloat<SharkFloatParams> hpCI{};
+    hpCR.MpfToHpGpu(cReal, precBits, InjectNoiseInLowOrder::Disable);
+    hpCI.MpfToHpGpu(cImag, precBits, InjectNoiseInLowOrder::Disable);
+
+    // Init GPU combo
+    auto combo = InitHpSharkReferenceKernel<SharkFloatParams>(
+        launchParams, hdrRadiusY, hpCR, hpCI);
+
+    // Set z=0, dzdc=0, d2=0 for NR evaluation
+    combo->Multiply.A = HpSharkFloat<SharkFloatParams>{};
+    combo->Multiply.B = HpSharkFloat<SharkFloatParams>{};
+    combo->Multiply.DzdcReal = HpSharkFloat<SharkFloatParams>{};
+    combo->Multiply.DzdcImag = HpSharkFloat<SharkFloatParams>{};
+    combo->d2Real = typename SharkFloatParams::Float{};
+    combo->d2Imag = typename SharkFloatParams::Float{};
+    combo->MaxRuntimeIters = period;
+
+    // Launch kernel
+    InvokeHpSharkReferenceKernel<SharkFloatParams>(launchParams, *combo, period);
+
+    // Convert results back to mpf
+    combo->Multiply.A.HpGpuToMpf(outZReal);
+    combo->Multiply.B.HpGpuToMpf(outZImag);
+    combo->Multiply.DzdcReal.HpGpuToMpf(outDzdcReal);
+    combo->Multiply.DzdcImag.HpGpuToMpf(outDzdcImag);
+
+    // d2 already in HDRFloat
+    outD2Real = HDRFloat<double>(combo->d2Real);
+    outD2Imag = HDRFloat<double>(combo->d2Imag);
+
+    // Cleanup
+    ShutdownHpSharkReferenceKernel<SharkFloatParams>(launchParams, *combo, nullptr);
+}
+
+#define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)\
     template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>                                 \
     InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,             \
                                                  const typename SharkFloatParams::Float hdrRadiusY,     \
@@ -383,7 +454,11 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     template void ShutdownHpSharkReferenceKernel<SharkFloatParams>(                                     \
         const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
-        DebugGpuCombo *debugCombo);
+        DebugGpuCombo *debugCombo);                                                                     \
+    template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(                                  \
+        const mpf_t, const mpf_t, uint64_t,                                                             \
+        mpf_t, mpf_t, mpf_t, mpf_t,                                                                    \
+        HDRFloat<double> &, HDRFloat<double> &);
 
 // #define ExplicitlyInstantiate(SharkFloatParams)
 // ExplicitlyInstantiateHpSharkReference(SharkFloatParams)

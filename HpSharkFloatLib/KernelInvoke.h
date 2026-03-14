@@ -88,4 +88,17 @@ void InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                 HpSharkAddComboResults<SharkFloatParams> &combo,
                                 DebugGpuCombo *debugCombo);
 
+// GPU-accelerated drop-in replacement for EvaluateCriticalOrbitAndDerivs.
+template <class SharkFloatParams>
+void EvaluateCriticalOrbitAndDerivs_GPU(
+    const mpf_t cReal,
+    const mpf_t cImag,
+    uint64_t period,
+    mpf_t outZReal,
+    mpf_t outZImag,
+    mpf_t outDzdcReal,
+    mpf_t outDzdcImag,
+    HDRFloat<double> &outD2Real,
+    HDRFloat<double> &outD2Imag);
+
 } // namespace HpShark

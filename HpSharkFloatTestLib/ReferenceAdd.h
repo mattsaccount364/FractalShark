@@ -9,6 +9,10 @@ template <class SharkFloatParams> struct HpSharkFloat;
 
 // x_(n + 1) = x_n * x_n - y_n * y_n + a
 // y_(n + 1) = 2 * x_n * y_n + b
+//
+// When SharkFloatParams::EnableNewtonRaphson is true, also computes:
+//   OutDzdcReal = W0 - W1 + 1.0
+//   OutDzdcImag = W2 + W3
 
 template <class SharkFloatParams>
 void AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
@@ -18,21 +22,10 @@ void AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
                const HpSharkFloat<SharkFloatParams> *E_B,
                HpSharkFloat<SharkFloatParams> *OutXY1,
                HpSharkFloat<SharkFloatParams> *OutXY2,
+               const HpSharkFloat<SharkFloatParams> *W0,
+               const HpSharkFloat<SharkFloatParams> *W1,
+               const HpSharkFloat<SharkFloatParams> *W2,
+               const HpSharkFloat<SharkFloatParams> *W3,
+               HpSharkFloat<SharkFloatParams> *OutDzdcReal,
+               HpSharkFloat<SharkFloatParams> *OutDzdcImag,
                DebugHostCombo<SharkFloatParams> &debugHostCombo);
-
-template <class SharkFloatParams>
-void AddHelperNR(
-    const HpSharkFloat<SharkFloatParams> *X2,
-    const HpSharkFloat<SharkFloatParams> *Y2,
-    const HpSharkFloat<SharkFloatParams> *CR,
-    const HpSharkFloat<SharkFloatParams> *TwoXY,
-    const HpSharkFloat<SharkFloatParams> *CI,
-    const HpSharkFloat<SharkFloatParams> *W0,
-    const HpSharkFloat<SharkFloatParams> *W1,
-    const HpSharkFloat<SharkFloatParams> *W2,
-    const HpSharkFloat<SharkFloatParams> *W3,
-    HpSharkFloat<SharkFloatParams> *OutZReal,
-    HpSharkFloat<SharkFloatParams> *OutZImag,
-    HpSharkFloat<SharkFloatParams> *OutDzdcReal,
-    HpSharkFloat<SharkFloatParams> *OutDzdcImag,
-    DebugHostCombo<SharkFloatParams> &debugHostCombo);

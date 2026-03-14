@@ -26,16 +26,20 @@
 
 enum class BasicCorrectnessMode : int {
     Error = 0,
-    Correctness_P1 = 1, // Params1 only
-    PerfSub = 2,        // Individual add/multiply kernels, not the full one
-    PerfSweep = 3,      // Sweep blocks/threads
+    Correctness_P1 = 1,
+    PerfSub = 2,
+    PerfSweep = 3,
     PerfSingleView30 = 4,
-    PerfSingleAdd = 5,
-    PerfSingleMultiply = 6,
-    PerfSingleRef = 7,       // Single block/thread config (DEFAULT)
-    Correctness_P1_to_P5 = 8, // Params1..5
-    PerfSingleView32 = 9,
-    PerfSingleView5 = 10
+    PerfSingleView32 = 5,
+    PerfSingleView5 = 6,
+    PerfSingleAdd = 7,
+    PerfSingleMultiply = 8,
+    PerfSingleNRAdd = 9,
+    PerfSingleNRMultiply = 10,
+    PerfSingleRef = 11,
+    Correctness_P1_to_P5 = 12,
+    PerfSingleNRView5 = 13,
+    PerfSingleNRView30 = 14
 };
 
 namespace HpShark {
@@ -98,7 +102,7 @@ static constexpr bool TestInitCudaMemory = true;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
 // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool TestReferenceImpl = true;
+static constexpr bool TestReferenceImpl = false;
 
 constexpr uint32_t
 ceil_pow2_u32(uint32_t v)
@@ -178,9 +182,11 @@ struct GenericSharkFloatParams {
 // recursively then we need this to be at 500.
 static constexpr auto ScratchMemoryCopies = 256llu;
 
-// Number of arrays of digits on each frame
+// Number of arrays of digits on each frame (non-NR baseline)
 static constexpr auto ScratchMemoryArraysForMultiply = 96;
+static constexpr auto ScratchMemoryArraysForMultiplyNR = 224;
 static constexpr auto ScratchMemoryArraysForAdd = 64;
+static constexpr auto ScratchMemoryArraysForAddNR = 128;
 
 // Additional space per frame:
 static constexpr auto AdditionalUInt64PerFrame = 256;
@@ -208,8 +214,10 @@ template <class SharkFloatParams>
 static constexpr auto
 CalculateKaratsubaFrameSize()
 {
-    constexpr auto retval =
-        ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto arrays = SharkFloatParams::EnableNewtonRaphson
+                                ? ScratchMemoryArraysForMultiplyNR
+                                : ScratchMemoryArraysForMultiply;
+    constexpr auto retval = arrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
     constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
     return retval + alignAt16BytesConstant;
 }
@@ -218,8 +226,10 @@ template <class SharkFloatParams>
 static constexpr auto
 CalculateNTTFrameSize()
 {
-    constexpr auto retval =
-        ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto arrays = SharkFloatParams::EnableNewtonRaphson
+                                ? ScratchMemoryArraysForMultiplyNR
+                                : ScratchMemoryArraysForMultiply;
+    constexpr auto retval = arrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
     constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
     return retval + alignAt16BytesConstant;
 }
@@ -237,7 +247,10 @@ template <class SharkFloatParams>
 static constexpr auto
 CalculateAddFrameSize()
 {
-    return ScratchMemoryArraysForAdd * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto arrays = SharkFloatParams::EnableNewtonRaphson
+                                ? ScratchMemoryArraysForAddNR
+                                : ScratchMemoryArraysForAdd;
+    return arrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
 }
 
 static constexpr auto LowPrec = 32;
@@ -552,6 +565,14 @@ template <class SharkFloatParams> struct alignas(16) HpSharkComboResults {
     alignas(16) HpSharkFloat<SharkFloatParams> ResultX2;
     alignas(16) HpSharkFloat<SharkFloatParams> Result2XY;
     alignas(16) HpSharkFloat<SharkFloatParams> ResultY2;
+
+    // NR derivative: dz/dc inputs and multiply outputs (gated by EnableNewtonRaphson)
+    alignas(16) HpSharkFloat<SharkFloatParams> DzdcReal;
+    alignas(16) HpSharkFloat<SharkFloatParams> DzdcImag;
+    alignas(16) HpSharkFloat<SharkFloatParams> ResultW0;   // dzdcR * 2zR
+    alignas(16) HpSharkFloat<SharkFloatParams> ResultW1;   // dzdcI * 2zI
+    alignas(16) HpSharkFloat<SharkFloatParams> ResultW2;   // dzdcR * 2zI
+    alignas(16) HpSharkFloat<SharkFloatParams> ResultW3;   // dzdcI * 2zR
 };
 
 template <class SharkFloatParams> struct HpSharkAddComboResults {
@@ -562,6 +583,11 @@ template <class SharkFloatParams> struct HpSharkAddComboResults {
     alignas(16) HpSharkFloat<SharkFloatParams> E_B;
     alignas(16) HpSharkFloat<SharkFloatParams> Result1_A_B_C;
     alignas(16) HpSharkFloat<SharkFloatParams> Result2_D_E;
+
+    // NR derivative add outputs (gated by EnableNewtonRaphson)
+    alignas(16) HpSharkFloat<SharkFloatParams> One;             // constant 1.0 for dzdc +1
+    alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcReal;  // W0 - W1 + 1
+    alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcImag;  // W2 + W3
 };
 
 template <class SharkFloatParams> struct HpSharkReferenceResults {
@@ -572,6 +598,8 @@ template <class SharkFloatParams> struct HpSharkReferenceResults {
     alignas(16) PeriodicityResult PeriodicityStatus;
     alignas(16) typename SharkFloatParams::Float dzdcX;
     alignas(16) typename SharkFloatParams::Float dzdcY;
+    alignas(16) typename SharkFloatParams::Float d2Real;
+    alignas(16) typename SharkFloatParams::Float d2Imag;
     alignas(16) uint64_t OutputIterCount;
     alignas(16) uint64_t MaxRuntimeIters;
 

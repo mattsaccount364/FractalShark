@@ -47,6 +47,8 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
 
 // Newton-Raphson inner loop: iterates z = z^2 + c for `period`
 // steps, tracking both z_p and dz/dc_p using HpSharkFloat arithmetic.
+// Also accumulates d2 (second derivative) in SharkFloatParams::Float
+// (HDRFloat), matching production EvaluateCriticalOrbitAndDerivsST.
 template <class SharkFloatParams>
 void EvaluateOrbitAndDerivative(
     const HpSharkFloat<SharkFloatParams> *cReal,
@@ -56,4 +58,6 @@ void EvaluateOrbitAndDerivative(
     HpSharkFloat<SharkFloatParams> *outZImag,
     HpSharkFloat<SharkFloatParams> *outDzdcReal,
     HpSharkFloat<SharkFloatParams> *outDzdcImag,
+    typename SharkFloatParams::Float *outD2Real,
+    typename SharkFloatParams::Float *outD2Imag,
     DebugHostCombo<SharkFloatParams> &debugHostCombo);

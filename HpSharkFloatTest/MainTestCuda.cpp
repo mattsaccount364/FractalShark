@@ -49,6 +49,14 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Performance Single View32";
         case BasicCorrectnessMode::PerfSingleView5:
             return "Performance Single View5";
+        case BasicCorrectnessMode::PerfSingleNRView5:
+            return "Performance Single NR View5";
+        case BasicCorrectnessMode::PerfSingleNRView30:
+            return "Performance Single NR View30";
+        case BasicCorrectnessMode::PerfSingleNRAdd:
+            return "Performance Single NR Add";
+        case BasicCorrectnessMode::PerfSingleNRMultiply:
+            return "Performance Single NR Multiply";
         case BasicCorrectnessMode::Correctness_P1_to_P5:
             return "Correctness (Params1..5)";
         default:
@@ -446,8 +454,12 @@ main(int, char **)
                << "6=PerfSingle View5" << std::endl
                << "7=PerfSingleAdd" << std::endl
                << "8=PerfSingleMultiply" << std::endl
-               << "9=PerfSingleRef (broken currently)" << std::endl
-               << "10=Correctness(P1..P5)" << std::endl
+               << "9=PerfSingleNRAdd" << std::endl
+               << "10=PerfSingleNRMultiply" << std::endl
+               << "11=PerfSingleRef (broken currently)" << std::endl
+               << "12=Correctness(P1..P5)" << std::endl
+               << "13=NR View5" << std::endl
+               << "14=NR View30" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
@@ -481,10 +493,22 @@ main(int, char **)
             mode = BasicCorrectnessMode::PerfSingleMultiply;
             break;
         case 9:
-            mode = BasicCorrectnessMode::PerfSingleRef;
+            mode = BasicCorrectnessMode::PerfSingleNRAdd;
             break;
         case 10:
+            mode = BasicCorrectnessMode::PerfSingleNRMultiply;
+            break;
+        case 11:
+            mode = BasicCorrectnessMode::PerfSingleRef;
+            break;
+        case 12:
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
+            break;
+        case 13:
+            mode = BasicCorrectnessMode::PerfSingleNRView5;
+            break;
+        case 14:
+            mode = BasicCorrectnessMode::PerfSingleNRView30;
             break;
         default:
             std::cout << "Invalid mode " << rawMode << " (valid: 0..4). "
@@ -529,6 +553,38 @@ main(int, char **)
             RunPerfBasicOp<Operator::ReferenceOrbit>(
                 TestIds::kFullPerf, mode, kTimeoutInSec, interactiveMode);
             break;
+
+        case BasicCorrectnessMode::PerfSingleNRAdd: {
+            TestTracker Tests;
+            auto res = TestSingleNRAdd<SharkParamsNR7>(Tests, 0);
+            if (!ContinueAfterFailure(res))
+                return 0;
+            break;
+        }
+
+        case BasicCorrectnessMode::PerfSingleNRMultiply: {
+            TestTracker Tests;
+            auto res = TestSingleNRMultiply<SharkParamsNR7>(Tests, 0);
+            if (!ContinueAfterFailure(res))
+                return 0;
+            break;
+        }
+
+        case BasicCorrectnessMode::PerfSingleNRView5: {
+            TestTracker Tests;
+            auto res = TestNewtonRaphsonView5<SharkParamsNR7>(Tests, 0);
+            if (!ContinueAfterFailure(res))
+                return 0;
+            break;
+        }
+
+        case BasicCorrectnessMode::PerfSingleNRView30: {
+            TestTracker Tests;
+            auto res = TestNewtonRaphsonView30<SharkParamsNR7>(Tests, 0);
+            if (!ContinueAfterFailure(res))
+                return 0;
+            break;
+        }
 
         default:
             break;

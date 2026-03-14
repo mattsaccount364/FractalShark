@@ -54,12 +54,54 @@ ReferenceHelper(cg::grid_group &grid,
     // B = Z_imaginary
     //
 
+    // d2 accumulation (HDRFloat, matches production EvaluateCriticalOrbitAndDerivsST)
+    // Must run BEFORE multiply/add — uses OLD z/dzdc values from previous iteration.
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        if (block.group_index().x == 0 && block.thread_index().x == 0) {
+            using HdrType = typename SharkFloatParams::Float;
+
+            HdrType zr = reference->Multiply.A.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            HdrType zi = reference->Multiply.B.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            HdrType dzr = reference->Multiply.DzdcReal.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            HdrType dzi = reference->Multiply.DzdcImag.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+
+            // dzdc²
+            HdrType dz2r = dzr * dzr - dzi * dzi;
+            HdrReduce(dz2r);
+            HdrType dz2i = HdrType{2.0f} * (dzr * dzi);
+            HdrReduce(dz2i);
+
+            // z * d2
+            HdrType zd2r = zr * reference->d2Real - zi * reference->d2Imag;
+            HdrReduce(zd2r);
+            HdrType zd2i = zr * reference->d2Imag + zi * reference->d2Real;
+            HdrReduce(zd2i);
+
+            // d2 = 2*(dzdc² + z*d2)
+            HdrType sumr = dz2r + zd2r;
+            HdrReduce(sumr);
+            HdrType sumi = dz2i + zd2i;
+            HdrReduce(sumi);
+            reference->d2Real = HdrType{2.0f} * sumr;
+            reference->d2Imag = HdrType{2.0f} * sumi;
+        }
+    }
+
+    // Note: no synchronization needed here because d2 is only read/written by
+    // block 0 thread 0, and multiply does not depend on d2.
+
     MultiplyHelperNTTV2Separates<SharkFloatParams>(reference->Multiply.Roots,
                                                    &reference->Multiply.A,
                                                    &reference->Multiply.B,
                                                    &reference->Multiply.ResultX2,
                                                    &reference->Multiply.Result2XY,
                                                    &reference->Multiply.ResultY2,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.DzdcReal : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.DzdcImag : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW0 : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW1 : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW2 : nullptr,
+                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW3 : nullptr,
                                                    grid,
                                                    block,
                                                    tempData);
@@ -80,7 +122,15 @@ ReferenceHelper(cg::grid_group &grid,
         &reference->Add.E_B,            // constant C_imaginary
         &reference->Multiply.A,         // Real result = Z_real
         &reference->Multiply.B,         // Imaginary result = Z_imaginary
-        tempData);
+        tempData,
+        // NR params
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW0 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW1 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW2 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW3 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Add.One : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.DzdcReal : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.DzdcImag : nullptr);
 
     return PeriodicityResult::Continue;
 }

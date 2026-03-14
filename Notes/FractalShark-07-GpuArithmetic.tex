@@ -130,11 +130,90 @@ supporting a finite, enumerated set of precisions.
 \medskip
 
 This architectural structure defines the execution context for the remainder of
-this section. Subsequent subsections describe the internal arithmetic pipelines
-used within each kernel invocation, including NTT-based multiplication,
-high-precision addition, carry propagation, and normalization, and explain how
-these components are organized to maintain correctness and performance within
-the bounded-chunk execution model.
+this section. We begin with the underlying \code{HpSharkFloat}
+representation and then describe the internal arithmetic pipelines used within
+each kernel invocation, including high-precision addition, NTT-based
+multiplication, carry propagation, and normalization, explaining how these
+components are organized to maintain correctness and performance within the
+bounded-chunk execution model.
+
+\subsection{High-Precision Floating-Point Representation}
+\label{subsec:hpfloat-model}
+
+The GPU reference orbit backend operates on a custom high-precision
+floating-point format implemented by the \code{HpSharkFloat} family of types.
+This format is intentionally \emph{not} IEEE~754--compatible. Instead, it is
+designed to support exact arithmetic on large significands, deterministic
+behavior across CPU and GPU backends, and efficient execution on massively
+parallel architectures.
+
+Conceptually, an \code{HpSharkFloat} value represents a real number of the
+form
+\[
+x = s \cdot M \cdot 2^E,
+\]
+where $s \in \{-1,+1\}$ is the sign, $M$ is a nonnegative integer significand,
+and $E$ is a signed integer exponent. The sign, significand, and exponent are
+tracked independently, and no implicit normalization or rounding is performed
+during arithmetic operations.
+
+\paragraph{Significand representation.}
+The significand $M$ is stored as a fixed-size array of 32-bit limbs. The number
+of limbs is determined at compile time by the
+\code{SharkFloatParams} specialization and remains constant throughout the
+lifetime of the computation. As a result, precision is explicit and static:
+all arithmetic kernels operate on limb arrays of identical size, and no dynamic
+reallocation or precision growth occurs during iteration.
+
+The significand represents a nonnegative integer magnitude. Negative values are
+handled by explicit sign logic rather than two’s-complement arithmetic, which
+simplifies carry propagation and normalization.
+
+\paragraph{Exponent handling and deferred normalization.}
+The exponent $E$ is maintained separately from the significand and updated
+explicitly by arithmetic kernels. In contrast to IEEE~754 arithmetic,
+normalization is not performed eagerly after every operation. Intermediate
+results may remain temporarily denormalized, with exponent adjustments and
+carry propagation deferred until well-defined normalization phases.
+
+This separation is essential for GPU execution. Immediate normalization would
+introduce serial dependencies and global synchronization at every arithmetic
+step, whereas deferred normalization allows large batches of arithmetic to be
+performed in parallel before a single, optimized carry-propagation pass.
+
+\paragraph{Normalization and canonical form.}
+A value is considered to be in canonical form when:
+\begin{itemize}
+  \item the significand has been fully carry-propagated,
+  \item the most significant limb is nonzero (except for the zero value),
+  \item the exponent reflects the exact binary scaling of the significand.
+\end{itemize}
+Normalization is implemented as a separate phase and is optimized using
+parallel-prefix carry propagation techniques, as described later in this
+section.
+
+\paragraph{Rounding, exceptional values, and determinism.}
+No rounding is performed during addition, subtraction, or multiplication. All
+operations are exact with respect to the fixed significand size. If an
+intermediate result were to exceed the representable precision, this would
+constitute a logic error rather than silently rounded behavior.
+
+The format does not represent NaNs, infinities, or subnormal values. These
+concepts are unnecessary for reference orbit computation, where arithmetic
+ranges are structurally controlled and exceptional conditions (such as escape)
+are handled at the algorithmic level.
+
+Because the precision is fixed, arithmetic is exact, and no data-dependent
+rounding occurs, the \code{HpSharkFloat} model provides deterministic,
+bitwise-reproducible results across runs and across CPU and GPU backends,
+subject only to correct synchronization.
+
+\paragraph{Implications for reference orbit computation.}
+This floating-point model is best viewed as high-precision integer arithmetic
+with an explicit exponent rather than as an extension of IEEE floating-point.
+The design directly enables NTT-based multiplication, parallel carry
+propagation, and predictable numerical behavior at extreme precisions, making
+it well suited for authoritative reference orbit generation on the GPU.
 
 \subsection{High-Precision Floating-Point Addition on the GPU}
 \label{sec:hp-add}
@@ -153,6 +232,15 @@ introduces strict serial dependence and $O(N)$ latency, making naive carry
 handling fundamentally incompatible with massively parallel GPU architectures.
 Without reformulation, carry propagation quickly becomes a synchronization
 bottleneck that erodes the benefits of fast high-precision multiplication.
+
+In \FractalShark{}'s current reference-orbit pipeline, this add/subtract path
+is retained primarily for architectural reasons rather than because isolated
+high-precision addition is an overwhelming GPU speedup. Carry propagation
+remains an expensive, synchronization-heavy part of the computation. Keeping
+the operation on the GPU nevertheless preserves an all-on-device reference-orbit
+pipeline: the orbit state stays resident, and a single kernel invocation can
+execute multiple full iterations internally instead of returning to the CPU
+after each iteration for the add/subtract step and then restarting the kernel.
 
 \subsubsection{Numerical Representation}
 
@@ -207,59 +295,33 @@ which may lie outside the canonical range $[0,2^w)$. This computation is
 embarrassingly parallel and maps directly to GPU threads, with each thread
 computing one or more limb sums independently.
 
-\subsubsection{Carry Structure and Prefix Reformulation}
+\subsubsection{Carry Propagation via Function Composition}
 
-Each intermediate sum $t_i$ can be decomposed as
-\begin{equation}
-t_i = r_i + c_i \cdot 2^w,
-\end{equation}
-where
-\[
-r_i = t_i \bmod 2^w, \qquad
-c_i = \left\lfloor \frac{t_i}{2^w} \right\rfloor.
-\]
-The carry $c_i$ contributes to limb $i+1$, inducing a dependency chain that is
-sequential in the worst case.
+Each intermediate sum $t_i = a_i + b_i$ produces a base value $r_i = t_i \bmod 2^w$. However, because $a_i$ and $b_i$ are signed, an incoming carry into limb $i$ may trigger further overflow or underflow, modifying the carry-out. This dependency is captured by a \emph{transfer function} $f_i: S \to S$ over the state space of possible carries $S = \{-1, 0, +1\}$. For each limb $i$, the function $f_i$ is constructed by simulating the carry arithmetic for all three possible input carries: $f_i(c_{\text{in}})$ returns the carry-out $c_{\text{out}}$ that limb $i$ would produce when receiving $c_{\text{in}}$.
 
-To parallelize this process, carry propagation is reformulated as a prefix
-problem. Each limb defines a carry transfer operator
+The total carry $C_i$ entering limb $i$ is the result of applying the composed transfer functions of all lower-order limbs to the initial carry (zero):
 \begin{equation}
-T_i(x) = x + c_i,
+C_i = (f_{i-1} \circ f_{i-2} \circ \cdots \circ f_0)(0).
 \end{equation}
-where $x$ is the incoming carry from lower-order limbs. The total carry entering
-limb $i$ is given by the prefix composition
-\begin{equation}
-C_i = (T_{i-1} \circ T_{i-2} \circ \cdots \circ T_0)(0).
-\end{equation}
-Because the operator composition
-\[
-(T_a \circ T_b)(x) = x + c_b + c_a
-\]
-is associative, carry propagation reduces to a parallel prefix sum over the
-carry values $\{c_i\}$, generalizing classical carry-lookahead techniques to
-arbitrary-precision arithmetic.
+Function composition is associative --- $(f_c \circ f_b) \circ f_a = f_c \circ (f_b \circ f_a)$ for all $f_a, f_b, f_c$ --- so the transfer functions form a monoid under composition with the identity map as the unit. This allows carry propagation to be computed using a parallel prefix scan, generalizing classical carry-lookahead logic to signed arbitrary-precision arithmetic.
+
+\paragraph{Three-stream batching.}
+The full add pipeline requires carry propagation for three independent streams simultaneously: two candidate results for the $A - B + C$ computation (corresponding to the two possible sign-comparison outcomes), and one result for the $D + E$ term. Rather than running three separate scans, the implementation packs all three transfer functions into a single 18-bit struct (\code{PPTransfer3}): three streams $\times$ three input carries $\times$ two bits per output, stored in a \code{uint64\_t}. Composition and prefix operations act on the packed representation, so a single scan pass resolves carries for all three streams at once.
 
 \subsubsection{Single-Pass Parallel Prefix on the GPU}
 
-On GPUs, conventional multi-pass prefix scans incur excessive global
-synchronization or kernel-launch overhead. Instead, we employ a single-pass
-parallel prefix formulation with decoupled look-back
-\cite{merrill2016single}. Each thread block computes its local carry prefix
-independently, while a lightweight look-back mechanism resolves inter-block
-dependencies only when required.
+To evaluate these prefixes efficiently, we employ a single-pass parallel prefix formulation with decoupled look-back \cite{merrill2016single}. The state of each transfer function $f_i$ is encoded compactly in a bit-packed table of the three possible carry inputs, and composition is evaluated directly on those encoded states.
 
-This approach allows blocks to make forward progress without global barriers,
-stalling only when an upstream carry must be observed. Long carry chains, while
-possible, are rare in practice and are handled efficiently when they occur. The
-resulting carry propagation exhibits near-linear throughput with logarithmic
-critical path length, making it well-suited to large limb counts.
+Each thread block computes the local prefix composition of its assigned limb range independently. A lightweight look-back mechanism then resolves inter-block dependencies by querying the aggregate transfer functions of preceding blocks. This design decouples the propagation of the global carry from the strict left-to-right execution order required for prefix consumption. A block can publish its aggregate transfer function immediately upon completion, allowing downstream blocks to accumulate it even if intermediate blocks are still waiting for their own incoming prefixes. In Merrill--Garland terms, a small amount of redundant look-back work is used to hide the latency of global prefix propagation while keeping the scan single-pass and work-efficient.
 
 \subsubsection{Finalization and Normalization}
 
-The corrected result limbs are obtained as
+Once the prefix scan completes, each stream yields the resolved carry $C_i$ at every limb position, and the corrected result limbs are
 \begin{equation}
 d_i^{(z)} = (r_i + C_i) \bmod 2^w.
 \end{equation}
+In the $A - B + C$ pipeline, the two candidate streams (\code{extResultTrue} and \code{extResultFalse}) correspond to the two speculative magnitude-ordering hypotheses used to evaluate the three-way sum. Both are fully carry-propagated, and the kernel selects the correct branch by comparing their final carry accumulators; this determines which hypothesis was correct, while the sign itself comes from the precomputed branch state. The third stream ($D + E$) is unconditionally accepted.
+
 A carry beyond the most significant limb increments the exponent,
 \[
 d_N^{(z)} \neq 0 \;\Rightarrow\; e \leftarrow e + 1,
@@ -274,13 +336,15 @@ mantissas,
 \[
 z = 2^e \cdot (M_x + M_y'),
 \]
-and the prefix formulation preserves the strict associativity of integer
-addition. All operations are integer-valued and deterministic, yielding
+and the scan operates over associative transfer-function composition, with each
+transfer encoding the exact carry effect of its limb. All operations are integer-valued and deterministic, yielding
 bitwise-identical results across executions.
 
-For $N$ limbs, the algorithm performs $O(N)$ work with $O(\log N)$ span and
-$O(N)$ global memory traffic, making it asymptotically optimal for high-precision
-addition on massively parallel architectures.
+For $N$ limbs, the algorithm performs $O(N)$ work with $O(N)$ global memory
+traffic. Its practical advantage comes from the single-pass,
+communication-avoiding structure: local prefix work is done once per block, and
+the extra look-back work is confined to resolving inter-block dependencies
+without requiring a separate global scan pass.
 
 \paragraph{Comparison with MPIR/GMP Serial Carry Propagation}
 
@@ -300,13 +364,13 @@ addition scales primarily in throughput with clock frequency rather than in
 latency with available parallel resources.
 
 In contrast, the GPU-oriented formulation presented here trades a modest
-increase in algorithmic complexity for a dramatic reduction in critical path
-length. By expressing carry propagation as an associative prefix operation and
-resolving dependencies using a single-pass, decoupled look-back scheme, the
-effective span is reduced from $O(N)$ to $O(\log N)$. This shift aligns the
-algorithm with the strengths of massively parallel architectures, allowing
-thousands of threads to participate in carry resolution while preserving exact
-arithmetic semantics.
+increase in algorithmic complexity for a much more parallel dependency
+structure. By expressing carry propagation as an associative prefix operation
+and resolving dependencies using a single-pass, decoupled look-back scheme, the
+implementation avoids separate global scan passes and allows many partitions to
+make progress concurrently. This shift aligns the algorithm with the strengths
+of massively parallel architectures while preserving exact arithmetic
+semantics.
 
 Importantly, the GPU approach does not outperform MPIR/GMP for small limb
 counts, where launch overhead and synchronization dominate. Its advantage
@@ -333,13 +397,12 @@ components: (1) local prefix evaluation within a thread block, and (2)
 resolution of inter-block dependencies through a lightweight, dynamically
 resolved look-back mechanism.
 
-Crucially, the decoupled look-back design allows blocks to proceed independently
-until a true dependency on an upstream block is encountered. This property
-aligns well with the statistical structure of carry propagation in large
-arbitrary-precision additions, where long carry chains are relatively rare and
-most limbs can be finalized without waiting on distant predecessors. The
-algorithm therefore achieves high average throughput while retaining correctness
-in worst-case carry scenarios.
+Crucially, the decoupled look-back design allows blocks to complete their local
+scan work independently and wait only when an unresolved upstream prefix is
+actually needed. This property aligns well with the statistical structure of
+carry propagation in large arbitrary-precision additions, where long carry
+chains are relatively rare. The algorithm therefore achieves high average
+throughput while retaining correctness in worst-case carry scenarios.
 
 It is important to emphasize that Merrill--Garland does not prescribe how carry
 information should be represented, nor does it assume a particular numerical
@@ -423,7 +486,7 @@ two large integers (the significands), followed by normalization and exponent
 adjustment. A standard way to accelerate large-integer multiplication is to
 compute the convolution of digit-limbs using a fast transform. Over the reals,
 one would use an FFT; over modular arithmetic, the analogous tool is the
-\emph{Number Theoretic Transform} (NTT).
+\emph{Number Theoretic Transform} (NTT) \cite{NTT_Wikipedia,NTT_BeginnerGuide2024}.
 
 \subsection{From Large-Integer Multiplication to Convolution}
 
@@ -797,103 +860,6 @@ utilization. Consequently, the effective performance of the multiplication
 pipeline is governed primarily by arithmetic throughput and memory bandwidth,
 rather than by synchronization overhead.
 
-\subsection{Usage in \FractalShark{}}
-The key design is a persistent \emph{combo} object returned by initialization:
-
-\begin{enumerate}
-  \item \code{InitHpSharkReferenceKernel}: allocates device/host state for the reference orbit and sets
-        \((c_x,c_y)\), max radius, and launch configuration.
-  \item \code{InvokeHpSharkReferenceKernel}: advances the orbit in bounded batches of at most
-        \(\code{MaxOutputIters}\), storing results in \code{OutputIters}.
-  \item \code{ShutdownHpSharkReferenceKernel}: frees persistent resources.
-\end{enumerate}
-
-Because the precision must be fixed at compile time for the \code{
-SharkFloatParams} specialization, \code{DispatchByPrecision} rounds the
-requested precision to a power of two and chooses from a fixed set (\(\{256,512,
-\dots,524288\}\) bits). Each invocation appends the emitted \code{OutputIters}
-records into the CPU-side \code{PerturbationResults}. Periodicity and escape
-are reported through \code{PeriodicityStatus} and handled similarly to the CPU
-paths.
-
-\subsection{High-Precision Floating-Point Representation}
-\label{subsec:hpfloat-model}
-
-The GPU reference orbit backend operates on a custom high-precision
-floating-point format implemented by the \code{HpSharkFloat} family of types.
-This format is intentionally \emph{not} IEEE~754--compatible. Instead, it is
-designed to support exact arithmetic on large significands, deterministic
-behavior across CPU and GPU backends, and efficient execution on massively
-parallel architectures.
-
-Conceptually, an \code{HpSharkFloat} value represents a real number of the
-form
-\[
-x = s \cdot M \cdot 2^E,
-\]
-where $s \in \{-1,+1\}$ is the sign, $M$ is a nonnegative integer significand,
-and $E$ is a signed integer exponent. The sign, significand, and exponent are
-tracked independently, and no implicit normalization or rounding is performed
-during arithmetic operations.
-
-\paragraph{Significand representation.}
-The significand $M$ is stored as a fixed-size array of 32-bit limbs. The number
-of limbs is determined at compile time by the
-\code{SharkFloatParams} specialization and remains constant throughout the
-lifetime of the computation. As a result, precision is explicit and static:
-all arithmetic kernels operate on limb arrays of identical size, and no dynamic
-reallocation or precision growth occurs during iteration.
-
-The significand represents a nonnegative integer magnitude. Negative values are
-handled by explicit sign logic rather than two’s-complement arithmetic, which
-simplifies carry propagation and normalization.
-
-\paragraph{Exponent handling and deferred normalization.}
-The exponent $E$ is maintained separately from the significand and updated
-explicitly by arithmetic kernels. In contrast to IEEE~754 arithmetic,
-normalization is not performed eagerly after every operation. Intermediate
-results may remain temporarily denormalized, with exponent adjustments and
-carry propagation deferred until well-defined normalization phases.
-
-This separation is essential for GPU execution. Immediate normalization would
-introduce serial dependencies and global synchronization at every arithmetic
-step, whereas deferred normalization allows large batches of arithmetic to be
-performed in parallel before a single, optimized carry-propagation pass.
-
-\paragraph{Normalization and canonical form.}
-A value is considered to be in canonical form when:
-\begin{itemize}
-  \item the significand has been fully carry-propagated,
-  \item the most significant limb is nonzero (except for the zero value),
-  \item the exponent reflects the exact binary scaling of the significand.
-\end{itemize}
-Normalization is implemented as a separate phase and is optimized using
-parallel-prefix carry propagation techniques, as described in earlier
-sections.
-
-\paragraph{Rounding, exceptional values, and determinism.}
-No rounding is performed during addition, subtraction, or multiplication. All
-operations are exact with respect to the fixed significand size. If an
-intermediate result were to exceed the representable precision, this would
-constitute a logic error rather than silently rounded behavior.
-
-The format does not represent NaNs, infinities, or subnormal values. These
-concepts are unnecessary for reference orbit computation, where arithmetic
-ranges are structurally controlled and exceptional conditions (such as escape)
-are handled at the algorithmic level.
-
-Because the precision is fixed, arithmetic is exact, and no data-dependent
-rounding occurs, the \code{HpSharkFloat} model provides deterministic,
-bitwise-reproducible results across runs and across CPU and GPU backends,
-subject only to correct synchronization.
-
-\paragraph{Implications for reference orbit computation.}
-This floating-point model is best viewed as high-precision integer arithmetic
-with an explicit exponent rather than as an extension of IEEE floating-point.
-The design directly enables NTT-based multiplication, parallel carry
-propagation, and predictable numerical behavior at extreme precisions, making
-it well suited for authoritative reference orbit generation on the GPU.
-
 
 \subsection{Checksum-Guided Debugging via Host--Device Cross-Validation}
 \label{sec:checksums}
@@ -1027,4 +993,26 @@ Taken together, stage checksums act as a low-overhead correctness scaffold that
 bridges device execution and a trusted host reference, enabling rapid fault
 localization in complex GPU high-precision arithmetic kernels.
 
+\subsection{Usage in \FractalShark{}}
+At the application layer, the GPU reference orbit backend is exposed through
+the persistent \emph{combo} object described earlier and a simple three-stage
+lifecycle:
 
+\begin{enumerate}
+  \item \code{InitHpSharkReferenceKernel}: allocates persistent device/host
+        state and binds the orbit parameters and launch configuration.
+  \item \code{InvokeHpSharkReferenceKernel}: advances the orbit in bounded
+        batches of at most \(\code{MaxOutputIters}\), streaming results through
+        \code{OutputIters}.
+  \item \code{ShutdownHpSharkReferenceKernel}: frees the persistent resources.
+\end{enumerate}
+
+Because the precision must be fixed at compile time for the \code{
+SharkFloatParams} specialization, \code{DispatchByPrecision} rounds the
+requested precision to a power of two and chooses from a fixed supported set
+(\(\{256,512,\dots,524288\}\) bits). Each invocation appends the emitted
+\code{OutputIters} records into the CPU-side \code{PerturbationResults}, while
+periodicity and escape are reported through \code{PeriodicityStatus}. From the
+rest of \FractalShark{}'s perspective, the backend therefore appears as a
+batch-driven, fixed-precision reference-orbit engine whose internal arithmetic
+machinery remains encapsulated behind this host-facing lifecycle.

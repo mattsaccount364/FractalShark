@@ -23,13 +23,11 @@ PeriodicityChecker(cg::grid_group &grid,
     auto *gpuReferenceIters = reference->OutputIters;
     constexpr auto MaxOutputIters = HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
 
-    using HdrType = typename SharkFloatParams::Float;
-
     // Now lets do periodicity checking and store the results
     // Note: first iteration (current overall iteration == 0) requires Out_A_B_C
     // and Out_D_E to be initialized to 0.
-    HdrType double_zx = Out_A_B_C->ToHDRFloat<SharkFloatParams::SubType>(0);
-    HdrType double_zy = Out_D_E->ToHDRFloat<SharkFloatParams::SubType>(0);
+    typename SharkFloatParams::Float double_zx = Out_A_B_C->ToHDRFloat<SharkFloatParams::SubType>(0);
+    typename SharkFloatParams::Float double_zy = Out_D_E->ToHDRFloat<SharkFloatParams::SubType>(0);
 
     gpuReferenceIters[currentLocalIteration].x = double_zx;
     gpuReferenceIters[currentLocalIteration].y = double_zy;
@@ -57,13 +55,13 @@ PeriodicityChecker(cg::grid_group &grid,
     HdrReduce(double_zy);
     auto zyCopy1 = HdrAbs(double_zy);
 
-    HdrType n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
+    typename SharkFloatParams::Float n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-    const HdrType HighTwo{2.0f};
-    const HdrType HighOne{1.0f};
-    const HdrType TwoFiftySix{256.0f};
+    const typename SharkFloatParams::Float HighTwo{2.0f};
+    const typename SharkFloatParams::Float HighOne{1.0f};
+    const typename SharkFloatParams::Float TwoFiftySix{256.0f};
 
-    HdrType r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
+    typename SharkFloatParams::Float r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
     auto n3 = radiusY * r0 * HighTwo;
     HdrReduce(n3);
 
@@ -77,9 +75,9 @@ PeriodicityChecker(cg::grid_group &grid,
         *dzdcY = HighTwo * (double_zx * *dzdcY + double_zy * dzdcXOrig);
     }
 
-    HdrType tempZX = double_zx + *cx_cast;
-    HdrType tempZY = double_zy + *cy_cast;
-    HdrType zn_size = tempZX * tempZX + tempZY * tempZY;
+    typename SharkFloatParams::Float tempZX = double_zx + *cx_cast;
+    typename SharkFloatParams::Float tempZY = double_zy + *cy_cast;
+    typename SharkFloatParams::Float zn_size = tempZX * tempZX + tempZY * tempZY;
 
     if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
 

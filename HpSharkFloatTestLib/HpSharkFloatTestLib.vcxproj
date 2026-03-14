@@ -139,6 +139,7 @@
     <ClInclude Include="ReferenceNTT2.h" />
     <ClInclude Include="ReferenceReferenceOrbit.h" />
     <ClInclude Include="ShowMostEfficientSizes.h" />
+    <ClInclude Include="TestNewtonRaphson.h" />
     <ClInclude Include="Tests.h" />
     <ClInclude Include="TestTracker.h" />
   </ItemGroup>
@@ -154,6 +155,7 @@
     <ClCompile Include="ReferenceNTT2.cpp" />
     <ClCompile Include="ReferenceReferenceOrbit.cpp" />
     <ClCompile Include="ShowMostEfficientSizes.cpp" />
+    <ClCompile Include="TestNewtonRaphson.cpp" />
     <ClCompile Include="Tests.cpp" />
     <ClCompile Include="TestTracker.cpp" />
   </ItemGroup>

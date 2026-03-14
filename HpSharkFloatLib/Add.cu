@@ -582,7 +582,15 @@ static __device__ void AddHelperSeparates(
     const HpSharkFloat<SharkFloatParams> *E_B,
     HpSharkFloat<SharkFloatParams> *Out_A_B_C,
     HpSharkFloat<SharkFloatParams> *Out_D_E,
-    uint64_t *tempData)
+    uint64_t *tempData,
+    // NR params (only used when EnableNewtonRaphson)
+    const HpSharkFloat<SharkFloatParams> *W0 = nullptr,
+    const HpSharkFloat<SharkFloatParams> *W1 = nullptr,
+    const HpSharkFloat<SharkFloatParams> *W2 = nullptr,
+    const HpSharkFloat<SharkFloatParams> *W3 = nullptr,
+    const HpSharkFloat<SharkFloatParams> *One = nullptr,
+    HpSharkFloat<SharkFloatParams> *Out_DzdcReal = nullptr,
+    HpSharkFloat<SharkFloatParams> *Out_DzdcImag = nullptr)
 {
     extern __shared__ uint64_t shared_data[];
 
@@ -990,6 +998,141 @@ static __device__ void AddHelperSeparates(
         grid.sync();
     } else {
         grid.sync();
+    }
+
+    // --- NR: Newton-Raphson derivative outputs (W0 - W1 + One, W2 + W3) ---
+    // TODO: merge orbit + NR into single pass for zero-new-sync GPU implementation.
+    // Currently processes NR sequentially after orbit, reusing the same scratch buffers
+    // (extResultTrue/False, final128_DE, carry1-6, globalSync1/2).
+    // Orbit data is already committed to Out_A_B_C / Out_D_E above.
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        if (W0 != nullptr) {
+            const auto *ext_W0 = W0->Digits;
+            const auto *ext_W1 = W1->Digits;
+            const auto *ext_W2 = W2->Digits;
+            const auto *ext_W3 = W3->Digits;
+            const auto *ext_One = One->Digits;
+
+            // Signs: W0 - W1 + One (ABC pattern)
+            const bool nrIsNegW0 = W0->GetNegative();
+            const bool nrIsNegW1 = !W1->GetNegative();  // subtracted
+            const bool nrIsNegOne = One->GetNegative();
+            // Signs: W2 + W3 (DE pattern)
+            const bool nrIsNegW2 = W2->GetNegative();
+            const bool nrIsNegW3 = W3->GetNegative();
+
+            // Extended normalization for NR inputs
+            bool nrNormW0Zero = false, nrNormW1Zero = false, nrNormOneZero = false;
+            bool nrNormW2Zero = false, nrNormW3Zero = false;
+
+            int32_t nrExpW0 = W0->Exponent, nrExpW1 = W1->Exponent, nrExpOne = One->Exponent;
+            int32_t nrExpW2 = W2->Exponent, nrExpW3 = W3->Exponent;
+
+            int32_t nrShiftW0, nrShiftW1, nrShiftOne, nrShiftW2, nrShiftW3;
+
+            ExtendedNormalizeShiftIndexAll<SharkFloatParams>(
+                ext_W0, ext_W1, ext_One, ext_W2, ext_W3,
+                numActualDigits, numActualDigitsPlusGuard,
+                nrExpW0, nrExpW1, nrExpOne, nrExpW2, nrExpW3,
+                nrNormW0Zero, nrNormW1Zero, nrNormOneZero, nrNormW2Zero, nrNormW3Zero,
+                nrShiftW0, nrShiftW1, nrShiftOne, nrShiftW2, nrShiftW3);
+
+            // NR effective exponents
+            const int32_t nrEffW0 = nrNormW0Zero ? -100'000'000 : nrExpW0 + bias;
+            const int32_t nrEffW1 = nrNormW1Zero ? -100'000'000 : nrExpW1 + bias;
+            const int32_t nrEffOne = nrNormOneZero ? -100'000'000 : nrExpOne + bias;
+            const int32_t nrEffW2 = nrNormW2Zero ? -100'000'000 : nrExpW2 + bias;
+            const int32_t nrEffW3 = nrNormW3Zero ? -100'000'000 : nrExpW3 + bias;
+
+            // NR 3-way magnitude comparison for W0, W1, One
+            const auto nrThreeWay = CompareMagnitudes3Way(
+                nrEffW0, nrEffW1, nrEffOne,
+                numActualDigits, numActualDigitsPlusGuard,
+                nrShiftW0, nrShiftW1, nrShiftOne,
+                ext_W0, ext_W1, ext_One);
+
+            // NR 2-way magnitude comparison for W2, W3
+            const bool nrW2Bigger = CompareMagnitudes2Way(
+                nrEffW2, nrEffW3,
+                numActualDigits, numActualDigitsPlusGuard,
+                nrShiftW2, nrShiftW3,
+                ext_W2, ext_W3);
+
+            // Phase1 ABC: W0 - W1 + One (reuses extResultTrue/False scratch)
+            int32_t nrOutExpTrue = 0, nrOutExpFalse = 0;
+            bool nrSignTrue = false, nrSignFalse = false;
+
+            Phase1_ABC<SharkFloatParams, CallIndex>(
+                block, grid, idx,
+                nrThreeWay,
+                nrIsNegW0, nrIsNegW1, nrIsNegOne,
+                numActualDigitsPlusGuard, numActualDigits,
+                ext_W0, ext_W1, ext_One,
+                nrShiftW0, nrShiftW1, nrShiftOne,
+                nrEffW0, nrEffW1, nrEffOne,
+                bias,
+                nrSignTrue, nrSignFalse,
+                nrOutExpTrue, nrOutExpFalse,
+                extResultTrue, extResultFalse,
+                debugStates);
+
+            // Phase1 DE: W2 + W3 (reuses final128_DE scratch)
+            int32_t nrOutExpDE = 0;
+            Phase1_DE<SharkFloatParams, CallIndex>(
+                block, grid, idx,
+                nrW2Bigger,
+                nrIsNegW2, nrIsNegW3,
+                numActualDigitsPlusGuard, numActualDigits,
+                ext_W2, ext_W3,
+                nrShiftW2, nrShiftW3,
+                nrEffW2, nrEffW3,
+                nrExpW2, nrExpW3,
+                nrOutExpDE,
+                final128_DE,
+                debugStates);
+
+            // Carry propagation (reuses carry1-6 and globalSync1/2)
+            int32_t nrCarryTrue = 0, nrCarryFalse = 0, nrCarryDE = 0;
+
+            if constexpr (!SharkFloatParams::DisableCarryPropagation) {
+                CarryPropagation_ABC_PPv5<SharkFloatParams>(
+                    globalSync1, globalSync2,
+                    shared_data, idx, numActualDigitsPlusGuard,
+                    extResultTrue, extResultFalse, final128_DE,
+                    carry1, carry2, carry3, carry4, carry5, carry6,
+                    nrCarryTrue, nrCarryFalse, nrCarryDE,
+                    block, grid, debugGlobalState);
+            }
+
+            grid.sync();
+
+            // Branch selection and normalize+copy for NR outputs
+            const bool nrSameDE = (W2->GetNegative() == W3->GetNegative());
+            const bool nrUseTrueBranch = (nrCarryTrue >= nrCarryFalse);
+            const bool nrDeSign = nrSameDE
+                ? W2->GetNegative()
+                : (nrW2Bigger ? W2->GetNegative() : W3->GetNegative());
+
+            if (nrUseTrueBranch) {
+                NormalizeAndCopyResult<SharkFloatParams>(grid.size(),
+                    idx, numActualDigits, numActualDigitsPlusGuard,
+                    nrOutExpTrue, nrOutExpDE,
+                    nrCarryTrue, nrCarryDE,
+                    extResultTrue, final128_DE,
+                    Out_DzdcReal, Out_DzdcImag,
+                    nrSignTrue, nrDeSign);
+            } else {
+                NormalizeAndCopyResult<SharkFloatParams>(grid.size(),
+                    idx, numActualDigits, numActualDigitsPlusGuard,
+                    nrOutExpFalse, nrOutExpDE,
+                    nrCarryFalse, nrCarryDE,
+                    extResultFalse, final128_DE,
+                    Out_DzdcReal, Out_DzdcImag,
+                    nrSignFalse, nrDeSign);
+            }
+
+            grid.sync();
+        }
     }
 }
 

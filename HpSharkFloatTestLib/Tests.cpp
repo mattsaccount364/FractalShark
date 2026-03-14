@@ -3752,8 +3752,169 @@ TestAllBinaryOp(int testBase)
     return Tests.CheckAllTestsPassed();
 }
 
+template <class SharkFloatParams>
+bool
+TestNewtonRaphsonView5(TestTracker &Tests,
+                       int testBase)
+{
+    // View5 coordinates (same as TestFullReferencePerfView5)
+    const char *cRealStr = "-5."
+        "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
+        "29972505947379718e-01";
+    const char *cImagStr = "-5."
+        "77570838903603842805108982201850558675551728458255317158378952895736909832155423"
+        "61901805676878083e-01";
+
+    constexpr uint64_t expectedPeriod = 16045;
+
+    mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+
+    // Initialize c in MPIR
+    mpf_t mpfCReal, mpfCImag;
+    mpf_init(mpfCReal);
+    mpf_init(mpfCImag);
+    mpf_set_str(mpfCReal, cRealStr, 10);
+    mpf_set_str(mpfCImag, cImagStr, 10);
+
+    // MPIR reference: compute z_p and dz/dc_p
+    mpf_t refZR, refZI, refDzdcR, refDzdcI;
+    mpf_init(refZR); mpf_init(refZI);
+    mpf_init(refDzdcR); mpf_init(refDzdcI);
+
+    // Temporaries for intermediate results
+    mpf_t tmp1, tmp2;
+    mpf_init(tmp1); mpf_init(tmp2);
+
+    // Dedicated temps for new values computed from old z
+    mpf_t newZR, newZI, newDzdcR, newDzdcI;
+    mpf_init(newZR); mpf_init(newZI);
+    mpf_init(newDzdcR); mpf_init(newDzdcI);
+
+    // z = 0, dz/dc = 0
+    mpf_set_ui(refZR, 0);
+    mpf_set_ui(refZI, 0);
+    mpf_set_ui(refDzdcR, 0);
+    mpf_set_ui(refDzdcI, 0);
+
+    for (uint64_t i = 0; i < expectedPeriod; ++i) {
+        // Both derivative and orbit use the OLD z values.
+        // Compute into newXxx temps, then copy back.
+
+        // Derivative: dz/dc_{n+1} = 2 * z_n * dz/dc_n + 1
+        //   newDzdcR = 2*(zR*dzdcR - zI*dzdcI) + 1
+        //   newDzdcI = 2*(zR*dzdcI + zI*dzdcR)
+        mpf_mul(tmp1, refZR, refDzdcR);     // zR * dzdcR
+        mpf_mul(tmp2, refZI, refDzdcI);     // zI * dzdcI
+        mpf_sub(newDzdcR, tmp1, tmp2);      // zR*dzdcR - zI*dzdcI
+        mpf_mul_ui(newDzdcR, newDzdcR, 2);  // *2
+        mpf_add_ui(newDzdcR, newDzdcR, 1);  // +1
+
+        mpf_mul(tmp1, refZR, refDzdcI);     // zR * dzdcI
+        mpf_mul(tmp2, refZI, refDzdcR);     // zI * dzdcR
+        mpf_add(newDzdcI, tmp1, tmp2);      // zR*dzdcI + zI*dzdcR
+        mpf_mul_ui(newDzdcI, newDzdcI, 2);  // *2
+
+        // Orbit: z_{n+1} = z_n^2 + c
+        //   newZR = zR^2 - zI^2 + cR
+        //   newZI = 2*zR*zI + cI
+        mpf_mul(tmp1, refZR, refZR);        // zR^2
+        mpf_mul(tmp2, refZI, refZI);        // zI^2
+        mpf_sub(newZR, tmp1, tmp2);         // zR^2 - zI^2
+        mpf_add(newZR, newZR, mpfCReal);    // + cR
+
+        mpf_mul(tmp1, refZR, refZI);        // zR*zI
+        mpf_mul_ui(tmp1, tmp1, 2);          // 2*zR*zI
+        mpf_add(newZI, tmp1, mpfCImag);     // + cI
+
+        // Update z and dz/dc simultaneously
+        mpf_set(refZR, newZR);
+        mpf_set(refZI, newZI);
+        mpf_set(refDzdcR, newDzdcR);
+        mpf_set(refDzdcI, newDzdcI);
+    }
+
+    // Convert c from MPIR to HpSharkFloat
+    auto cReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto cImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    cReal->MpfToHpGpu(
+        mpfCReal, HpSharkFloat<SharkFloatParams>::DefaultPrecBits,
+        InjectNoiseInLowOrder::Disable);
+    cImag->MpfToHpGpu(
+        mpfCImag, HpSharkFloat<SharkFloatParams>::DefaultPrecBits,
+        InjectNoiseInLowOrder::Disable);
+
+    // Run HpSharkFloat inner loop
+    DebugHostCombo<SharkFloatParams> debugHostCombo;
+
+    auto hpZReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto hpZImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto hpDzdcReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto hpDzdcImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+
+    EvaluateOrbitAndDerivative<SharkFloatParams>(
+        cReal.get(), cImag.get(),
+        expectedPeriod,
+        hpZReal.get(), hpZImag.get(),
+        hpDzdcReal.get(), hpDzdcImag.get(),
+        debugHostCombo);
+
+    // Convert HpSharkFloat results to MPIR for comparison
+    mpf_t hpResultZR, hpResultZI, hpResultDzdcR, hpResultDzdcI;
+    mpf_init(hpResultZR); mpf_init(hpResultZI);
+    mpf_init(hpResultDzdcR); mpf_init(hpResultDzdcI);
+
+    hpZReal->HpGpuToMpf(hpResultZR);
+    hpZImag->HpGpuToMpf(hpResultZI);
+    hpDzdcReal->HpGpuToMpf(hpResultDzdcR);
+    hpDzdcImag->HpGpuToMpf(hpResultDzdcI);
+
+    // Compute differences
+    mpf_t diffZR, diffZI, diffDzdcR, diffDzdcI;
+    mpf_init(diffZR); mpf_init(diffZI);
+    mpf_init(diffDzdcR); mpf_init(diffDzdcI);
+
+    mpf_sub(diffZR, refZR, hpResultZR);
+    mpf_sub(diffZI, refZI, hpResultZI);
+    mpf_sub(diffDzdcR, refDzdcR, hpResultDzdcR);
+    mpf_sub(diffDzdcI, refDzdcI, hpResultDzdcI);
+
+    // Log results
+    std::cout << "Newton-Raphson inner loop test "
+              << "(View5, period=" << expectedPeriod << "):"
+              << std::endl;
+
+    char buf[256];
+    gmp_snprintf(buf, sizeof(buf), "  z_p real diff:    %+.20Fe", diffZR);
+    std::cout << buf << std::endl;
+    gmp_snprintf(buf, sizeof(buf), "  z_p imag diff:    %+.20Fe", diffZI);
+    std::cout << buf << std::endl;
+    gmp_snprintf(buf, sizeof(buf), "  dz/dc real diff:  %+.20Fe", diffDzdcR);
+    std::cout << buf << std::endl;
+    gmp_snprintf(buf, sizeof(buf), "  dz/dc imag diff:  %+.20Fe", diffDzdcI);
+    std::cout << buf << std::endl;
+
+    Tests.MarkSuccess(nullptr, testBase, "NR_InnerLoop_ZReal");
+    Tests.MarkSuccess(nullptr, testBase + 1, "NR_InnerLoop_ZImag");
+    Tests.MarkSuccess(nullptr, testBase + 2, "NR_InnerLoop_DzdcReal");
+    Tests.MarkSuccess(nullptr, testBase + 3, "NR_InnerLoop_DzdcImag");
+
+    // Cleanup
+    mpf_clear(mpfCReal); mpf_clear(mpfCImag);
+    mpf_clear(refZR); mpf_clear(refZI);
+    mpf_clear(refDzdcR); mpf_clear(refDzdcI);
+    mpf_clear(tmp1); mpf_clear(tmp2);
+    mpf_clear(newZR); mpf_clear(newZI);
+    mpf_clear(newDzdcR); mpf_clear(newDzdcI);
+    mpf_clear(hpResultZR); mpf_clear(hpResultZI);
+    mpf_clear(hpResultDzdcR); mpf_clear(hpResultDzdcI);
+    mpf_clear(diffZR); mpf_clear(diffZI);
+    mpf_clear(diffDzdcR); mpf_clear(diffDzdcI);
+
+    return Tests.CheckAllTestsPassed();
+}
+
 // Explicitly instantiate TestAllBinaryOp
-#define ADD_KERNEL(SharkFloatParams)                                                                    \
+#define ADD_KERNEL(SharkFloatParams)\
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);                       \
     template bool TestBinaryOperatorPerf<Operator::Add>(const HpShark::LaunchParams &,                  \
                                                         int testBase,                                   \
@@ -3801,3 +3962,5 @@ TestAllBinaryOp(int testBase)
     REFERENCE_KERNEL(SharkFloatParams)
 
 ExplicitInstantiateAll();
+
+template bool TestNewtonRaphsonView5<SharkParamsNR7>(TestTracker &, int);

@@ -58,3 +58,7 @@ bool TestFullReferencePerfView32(TestTracker &Tests,
                                  int testBase,
                                  int numIters,
                                  int internalTestLoopCount);
+
+template <class SharkFloatParams>
+bool TestNewtonRaphsonView5(TestTracker &Tests,
+                            int testBase);

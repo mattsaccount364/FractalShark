@@ -120,11 +120,19 @@ MakeFixedParams_NP()
 }
 
 static std::vector<std::string>
+MakeFixedParams_NR()
+{
+    return {"SharkParamsNR7"};
+}
+
+static std::vector<std::string>
 MakeFixedParams_All()
 {
     auto v = MakeFixedParams_P();
     auto np = MakeFixedParams_NP();
+    auto nr = MakeFixedParams_NR();
     v.insert(v.end(), np.begin(), np.end());
+    v.insert(v.end(), nr.begin(), nr.end());
     return v;
 }
 
@@ -392,7 +400,8 @@ main()
         std::cout << "=== Explicit Instantiation File Generator (C++17) ===\n\n";
         std::cout << "Fixed parameter set:\n"
                      "  SharkParams1..SharkParams12\n"
-                     "  SharkParamsNP1..SharkParamsNP12\n\n";
+                     "  SharkParamsNP1..SharkParamsNP12\n"
+                     "  SharkParamsNR* (Newton-Raphson)\n\n";
         std::cout << "Default: for each hard-coded batch, generates 2 .cu files (P and NP).\n"
                      "Optional: merge P+NP into *_P.cu and emit an empty *_NP.cu stub.\n\n";
 
@@ -423,6 +432,11 @@ main()
 
         const auto paramsP = MakeFixedParams_P();
         const auto paramsNP = MakeFixedParams_NP();
+        const auto paramsNR = MakeFixedParams_NR();
+
+        // Include NR params with P (NR types have periodicity enabled)
+        auto paramsPWithNR = paramsP;
+        paramsPWithNR.insert(paramsPWithNR.end(), paramsNR.begin(), paramsNR.end());
 
         // Emit per-batch .cu files (P/NP)
         std::cout << "\n--- Generating batch instantiation .cu files ---\n";
@@ -434,14 +448,15 @@ main()
 
             if (mergeIntoP) {
                 WriteTextFile(outDir / cuNameP,
-                              MakeBatchCpp_CombinedParamLists(batch, paramsP, paramsNP),
+                              MakeBatchCpp_CombinedParamLists(batch, paramsPWithNR, paramsNP),
                               overwrite);
 
                 WriteTextFile(outDir / cuNameNP, MakeEmptyNpStub(batch), overwrite);
             } else {
-                WriteTextFile(outDir / cuNameP,
-                              MakeBatchCpp_ParamList(batch, "P (SharkParams1..12)", paramsP),
-                              overwrite);
+                WriteTextFile(
+                    outDir / cuNameP,
+                    MakeBatchCpp_ParamList(batch, "P (SharkParams1..12, SharkParamsNR*)", paramsPWithNR),
+                    overwrite);
 
                 WriteTextFile(outDir / cuNameNP,
                               MakeBatchCpp_ParamList(batch, "NP (SharkParamsNP1..12)", paramsNP),

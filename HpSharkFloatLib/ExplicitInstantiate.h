@@ -162,7 +162,8 @@
     ExplicitlyInstantiate(SharkParams9);                                                                \
     ExplicitlyInstantiate(SharkParams10);                                                               \
     ExplicitlyInstantiate(SharkParams11);                                                               \
-    ExplicitlyInstantiate(SharkParams12);
+    ExplicitlyInstantiate(SharkParams12);                                                               \
+    ExplicitlyInstantiate(SharkParamsNR7);
 
 #ifdef ENABLE_BASIC_CORRECTNESS
 #define ComicalCorrectness()                                                                            \

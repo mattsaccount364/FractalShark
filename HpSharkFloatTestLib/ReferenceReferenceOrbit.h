@@ -11,6 +11,14 @@ template <class SharkFloatParams> struct HpSharkFloat;
 // Forward declaration — defined in HpSharkFloat.h
 enum class PeriodicityResult;
 
+// Result of a Newton-Raphson period-refinement step.
+template <class SharkFloatParams> struct NewtonRaphsonResult {
+    HpSharkFloat<SharkFloatParams> RefinedCReal;
+    HpSharkFloat<SharkFloatParams> RefinedCImag;
+    uint32_t NewtonIterations;
+    bool Converged;
+};
+
 // Result of a CPU reference orbit computation.
 template <class SharkFloatParams> struct ReferenceOrbitResult {
     std::vector<typename SharkFloatParams::ReferenceIterT> Orbit;
@@ -36,3 +44,16 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                      const typename SharkFloatParams::Float &radiusY,
                      uint64_t maxIters,
                      DebugHostCombo<SharkFloatParams> &debugHostCombo);
+
+// Newton-Raphson inner loop: iterates z = z^2 + c for `period`
+// steps, tracking both z_p and dz/dc_p using HpSharkFloat arithmetic.
+template <class SharkFloatParams>
+void EvaluateOrbitAndDerivative(
+    const HpSharkFloat<SharkFloatParams> *cReal,
+    const HpSharkFloat<SharkFloatParams> *cImag,
+    uint64_t period,
+    HpSharkFloat<SharkFloatParams> *outZReal,
+    HpSharkFloat<SharkFloatParams> *outZImag,
+    HpSharkFloat<SharkFloatParams> *outDzdcReal,
+    HpSharkFloat<SharkFloatParams> *outDzdcImag,
+    DebugHostCombo<SharkFloatParams> &debugHostCombo);

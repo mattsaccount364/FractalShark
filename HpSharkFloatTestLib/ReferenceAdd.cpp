@@ -1353,6 +1353,35 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     }
 }
 
+template <class SharkFloatParams>
+void
+AddHelperNR(const HpSharkFloat<SharkFloatParams> *X2,
+            const HpSharkFloat<SharkFloatParams> *Y2,
+            const HpSharkFloat<SharkFloatParams> *CR,
+            const HpSharkFloat<SharkFloatParams> *TwoXY,
+            const HpSharkFloat<SharkFloatParams> *CI,
+            const HpSharkFloat<SharkFloatParams> *W0,
+            const HpSharkFloat<SharkFloatParams> *W1,
+            const HpSharkFloat<SharkFloatParams> *W2,
+            const HpSharkFloat<SharkFloatParams> *W3,
+            HpSharkFloat<SharkFloatParams> *OutZReal,
+            HpSharkFloat<SharkFloatParams> *OutZImag,
+            HpSharkFloat<SharkFloatParams> *OutDzdcReal,
+            HpSharkFloat<SharkFloatParams> *OutDzdcImag,
+            DebugHostCombo<SharkFloatParams> &debugHostCombo)
+{
+    // Orbit: OutZReal = X2 - Y2 + CR, OutZImag = TwoXY + CI
+    AddHelper(X2, Y2, CR, TwoXY, CI, OutZReal, OutZImag, debugHostCombo);
+
+    // Derivative: OutDzdcReal = W0 - W1 + 1.0, OutDzdcImag = W2 + W3
+    HpSharkFloat<SharkFloatParams> one{};
+    one.template FromHDRFloat<typename SharkFloatParams::SubType>(
+        HDRFloat<typename SharkFloatParams::SubType>{
+            typename SharkFloatParams::SubType(1.0)});
+
+    AddHelper(W0, W1, &one, W2, W3, OutDzdcReal, OutDzdcImag, debugHostCombo);
+}
+
 //
 // Explicit instantiation macro (assumes ExplicitInstantiateAll is defined elsewhere)
 //
@@ -1367,3 +1396,19 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
                                               DebugHostCombo<SharkFloatParams> &debugHostCombo);
 
 ExplicitInstantiateAll();
+
+// NR-specific function — only instantiated for NR-enabled param types
+template void AddHelperNR<SharkParamsNR7>(const HpSharkFloat<SharkParamsNR7> *,
+                                          const HpSharkFloat<SharkParamsNR7> *,
+                                          const HpSharkFloat<SharkParamsNR7> *,
+                                          const HpSharkFloat<SharkParamsNR7> *,
+                                          const HpSharkFloat<SharkParamsNR7> *,
+                                          const HpSharkFloat<SharkParamsNR7> *,
+                                          const HpSharkFloat<SharkParamsNR7> *,
+                                          const HpSharkFloat<SharkParamsNR7> *,
+                                          const HpSharkFloat<SharkParamsNR7> *,
+                                          HpSharkFloat<SharkParamsNR7> *,
+                                          HpSharkFloat<SharkParamsNR7> *,
+                                          HpSharkFloat<SharkParamsNR7> *,
+                                          HpSharkFloat<SharkParamsNR7> *,
+                                          DebugHostCombo<SharkParamsNR7> &);

@@ -121,7 +121,8 @@ is_pow2_u32(uint32_t v)
     return v && ((v & (v - 1u)) == 0u);
 }
 
-template <int32_t pNumDigits, bool Periodicity> struct GenericSharkFloatParams {
+template <int32_t pNumDigits, bool Periodicity, bool NewtonRaphson = false>
+struct GenericSharkFloatParams {
     using Float = HDRFloat<float>; // TODO hardcoded
     using SubType = float;         // TODO hardcoded
 
@@ -148,6 +149,7 @@ template <int32_t pNumDigits, bool Periodicity> struct GenericSharkFloatParams {
     // If these are set to false they produce wrong answers but can be useful
     // to confirm source of performance issues.
     static constexpr auto EnablePeriodicity = Periodicity;
+    static constexpr auto EnableNewtonRaphson = NewtonRaphson;
     static constexpr bool DisableAllAdditions = false;
     static constexpr bool DisableSubtraction = false;
     static constexpr bool DisableCarryPropagation = false;
@@ -284,6 +286,9 @@ using SharkParams9 = HpShark::GenericSharkFloatParams<65536, true>;
 using SharkParams10 = HpShark::GenericSharkFloatParams<131072, true>;
 using SharkParams11 = HpShark::GenericSharkFloatParams<262144, true>;
 using SharkParams12 = HpShark::GenericSharkFloatParams<524288, true>;
+
+// Newton-Raphson enabled params (periodicity + NR derivative tracking)
+using SharkParamsNR7 = HpShark::GenericSharkFloatParams<16384, true, true>;
 
 enum class InjectNoiseInLowOrder { Disable, Enable };
 

@@ -773,7 +773,164 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
     SharkNTT::DestroyRoots<SharkFloatParams>(false, roots);
 }
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+//==================================================================================================
+//                          MultiplyHelperNR (prime backend, 7 products)
+//==================================================================================================
+
+template <class SharkFloatParams>
+void
+MultiplyHelperNR(
+    const HpSharkFloat<SharkFloatParams> *zReal,
+    const HpSharkFloat<SharkFloatParams> *zImag,
+    const HpSharkFloat<SharkFloatParams> *dzdcReal,
+    const HpSharkFloat<SharkFloatParams> *dzdcImag,
+    HpSharkFloat<SharkFloatParams> *OutX2,
+    HpSharkFloat<SharkFloatParams> *Out2XY,
+    HpSharkFloat<SharkFloatParams> *OutY2,
+    HpSharkFloat<SharkFloatParams> *OutW0,
+    HpSharkFloat<SharkFloatParams> *OutW1,
+    HpSharkFloat<SharkFloatParams> *OutW2,
+    HpSharkFloat<SharkFloatParams> *OutW3,
+    DebugHostCombo<SharkFloatParams> &debugCombo)
+{
+    using namespace SharkNTT;
+
+    // Verify power of 2
+    static_assert(SharkFloatParams::GlobalNumUint32 > 0 &&
+                      (SharkFloatParams::GlobalNumUint32 & (SharkFloatParams::GlobalNumUint32 - 1)) == 0,
+                  "GlobalNumUint32 must be a power of 2");
+
+    // --------- Plan and tables ---------
+    PlanPrime plan =
+        BuildPlanPrime(SharkFloatParams::GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
+    PrintPlan(plan);
+
+    assert(plan.ok && "Prime plan build failed (check b/N headroom constraints)");
+    assert(plan.N >= 2 * plan.L && "No-wrap condition violated: need N >= 2*L");
+    assert((PHI % (2ull * (uint64_t)plan.N)) == 0ull);
+
+    // Compute Final128 digit budget once
+    const uint32_t Ddigits = ((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u;
+
+    // ---- Single allocation for entire core path ----
+    const size_t buf_count = (size_t)2 * (size_t)plan.N     // X + Y
+                             + (size_t)2 * (size_t)Ddigits; // Final128 (lo,hi per 32-bit slot)
+    std::unique_ptr<uint64_t[]> buffer(new uint64_t[buf_count]);
+
+    // Slice buffer into spans
+    size_t off = 0;
+    std::span<uint64_t> X{buffer.get() + off, (size_t)plan.N};
+    off += (size_t)plan.N;
+    std::span<uint64_t> Y{buffer.get() + off, (size_t)plan.N};
+    off += (size_t)plan.N;
+    std::span<uint64_t> Final128{buffer.get() + off, (size_t)2 * Ddigits};
+    off += (size_t)2 * Ddigits;
+
+    RootTables roots;
+    BuildRoots<SharkFloatParams>(plan.N, plan.stages, roots);
+
+    // Verify constants and roots
+    [[maybe_unused]] const bool constants_ok = VerifyMontgomeryConstants<SharkFloatParams>(
+        SharkNTT::MagicPrime, SharkNTT::MagicPrimeInv, SharkNTT::R2);
+    assert(constants_ok && "Montgomery constants verification failed");
+    VerifyNTTRoots<SharkFloatParams>(roots, plan);
+
+    // Simplified convolution lambda: full NTT pipeline without debug checksum tracking.
+    auto run_conv = [&](HpSharkFloat<SharkFloatParams> *out,
+                        const HpSharkFloat<SharkFloatParams> &inA,
+                        const HpSharkFloat<SharkFloatParams> &inB,
+                        int addFactorOfTwo,
+                        bool isNegative) {
+        // 1) Pack (into X and Y)
+        PackBase2bPrime_NoAlloc(debugCombo, inA, plan, X);
+        PackBase2bPrime_NoAlloc(debugCombo, inB, plan, Y);
+
+        // 2) Twist by ψ^i
+        for (int i = 0; i < plan.N; ++i) {
+            X[(size_t)i] = MontgomeryMul(debugCombo, X[(size_t)i], roots.psi_pows[(size_t)i]);
+        }
+
+        for (int i = 0; i < plan.N; ++i) {
+            Y[(size_t)i] = MontgomeryMul(debugCombo, Y[(size_t)i], roots.psi_pows[(size_t)i]);
+        }
+
+        // 3) Forward NTT (in place)
+        BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+        BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+
+        NTTRadix2<SharkFloatParams, false>(
+            debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
+        NTTRadix2<SharkFloatParams, false>(
+            debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
+
+        // 4) Pointwise multiply (X *= Y)
+        for (int i = 0; i < plan.N; ++i)
+            X[(size_t)i] = MontgomeryMul(debugCombo, X[(size_t)i], Y[(size_t)i]);
+
+        // 5) Inverse NTT (in place on X)
+        BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+
+        NTTRadix2<SharkFloatParams, true>(
+            debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
+
+        // 6) Untwist + scale by N^{-1} (write back into X)
+        for (int i = 0; i < plan.N; ++i) {
+            uint64_t v = MontgomeryMul(debugCombo, X[(size_t)i], roots.psi_inv_pows[(size_t)i]);
+            X[(size_t)i] = MontgomeryMul(debugCombo, v, roots.Ninvm_mont);
+        }
+
+        // 7) Convert out of Montgomery: reuse Y as normal-domain buffer
+        for (int i = 0; i < plan.N; ++i)
+            Y[(size_t)i] = FromMontgomery(debugCombo, X[(size_t)i]);
+
+        // 8) Unpack -> Final128 -> Normalize
+        UnpackPrimeToFinal128(Y.data(), plan, Final128.data(), Ddigits);
+
+        out->SetNegative(isNegative);
+        Normalize<SharkFloatParams>(*out, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
+    };
+
+    // ---- Orbit products ----
+
+    // XX = zR²
+    const auto noAdditionalFactorOfTwo = 0;
+    const auto squaresNegative = false;
+    run_conv(OutX2, *zReal, *zReal, noAdditionalFactorOfTwo, squaresNegative);
+
+    // YY = zI²
+    run_conv(OutY2, *zImag, *zImag, noAdditionalFactorOfTwo, squaresNegative);
+
+    // 2XY = 2 * zR * zI
+    const auto includeAdditionalFactorOfTwo = 1;
+    const auto Out2XYIsNegative = (zReal->GetNegative() ^ zImag->GetNegative());
+    run_conv(Out2XY, *zReal, *zImag, includeAdditionalFactorOfTwo, Out2XYIsNegative);
+
+    // ---- Derivative products (all ×2 via additionalFactorOfTwo=1) ----
+
+    // W0 = dzdcR * 2zR
+    run_conv(OutW0, *dzdcReal, *zReal,
+             includeAdditionalFactorOfTwo,
+             dzdcReal->GetNegative() ^ zReal->GetNegative());
+
+    // W1 = dzdcI * 2zI
+    run_conv(OutW1, *dzdcImag, *zImag,
+             includeAdditionalFactorOfTwo,
+             dzdcImag->GetNegative() ^ zImag->GetNegative());
+
+    // W2 = dzdcR * 2zI
+    run_conv(OutW2, *dzdcReal, *zImag,
+             includeAdditionalFactorOfTwo,
+             dzdcReal->GetNegative() ^ zImag->GetNegative());
+
+    // W3 = dzdcI * 2zR
+    run_conv(OutW3, *dzdcImag, *zReal,
+             includeAdditionalFactorOfTwo,
+             dzdcImag->GetNegative() ^ zReal->GetNegative());
+
+    SharkNTT::DestroyRoots<SharkFloatParams>(false, roots);
+}
+
+#define ExplicitlyInstantiate(SharkFloatParams)\
     template void MultiplyHelperFFT2<SharkFloatParams>(const HpSharkFloat<SharkFloatParams> *,          \
                                                        const HpSharkFloat<SharkFloatParams> *,          \
                                                        HpSharkFloat<SharkFloatParams> *,                \
@@ -782,3 +939,17 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                                        DebugHostCombo<SharkFloatParams> &);
 
 ExplicitInstantiateAll();
+
+// NR-specific function — only instantiated for NR-enabled param types
+template void MultiplyHelperNR<SharkParamsNR7>(const HpSharkFloat<SharkParamsNR7> *,
+                                                const HpSharkFloat<SharkParamsNR7> *,
+                                                const HpSharkFloat<SharkParamsNR7> *,
+                                                const HpSharkFloat<SharkParamsNR7> *,
+                                                HpSharkFloat<SharkParamsNR7> *,
+                                                HpSharkFloat<SharkParamsNR7> *,
+                                                HpSharkFloat<SharkParamsNR7> *,
+                                                HpSharkFloat<SharkParamsNR7> *,
+                                                HpSharkFloat<SharkParamsNR7> *,
+                                                HpSharkFloat<SharkParamsNR7> *,
+                                                HpSharkFloat<SharkParamsNR7> *,
+                                                DebugHostCombo<SharkParamsNR7> &);

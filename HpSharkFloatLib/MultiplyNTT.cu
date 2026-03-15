@@ -2768,13 +2768,16 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
 
     DefineTempProductsOffsets();
 
-    // Verify scratch offsets fit within allocated frame
+    // Verify scratch offsets fit within allocated memory
+    // (offsets include AdditionalUInt64Global prefix; compare against total allocation)
+    constexpr auto TotalAlloc =
+        HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>();
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        static_assert(NR_CarryInsEnd <= HpShark::CalculateNTTFrameSize<SharkFloatParams>(),
-                      "NR scratch offsets exceed NTT frame size");
+        static_assert(NR_CarryInsEnd <= TotalAlloc,
+                      "NR scratch offsets exceed total allocation");
     } else {
-        static_assert(CarryInsEnd <= HpShark::CalculateNTTFrameSize<SharkFloatParams>(),
-                      "Scratch offsets exceed NTT frame size");
+        static_assert(CarryInsEnd <= TotalAlloc,
+                      "Scratch offsets exceed total allocation");
     }
 
     // TODO: indexes
@@ -2848,7 +2851,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
             debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(
             debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 47,
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 80,
                       "Unexpected number of purposes");
     }
 

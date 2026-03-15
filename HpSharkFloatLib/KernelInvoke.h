@@ -4,6 +4,8 @@
 #include <memory>
 #include <mpir.h>
 
+#include "HDRFloat.h"
+
 namespace HpShark {
 struct LaunchParams;
 }

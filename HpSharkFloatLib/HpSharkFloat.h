@@ -27,19 +27,20 @@
 enum class BasicCorrectnessMode : int {
     Error = 0,
     Correctness_P1 = 1,
-    PerfSub = 2,
-    PerfSweep = 3,
-    PerfSingleView30 = 4,
-    PerfSingleView32 = 5,
-    PerfSingleView5 = 6,
-    PerfSingleAdd = 7,
-    PerfSingleMultiply = 8,
-    PerfSingleNRAdd = 9,
-    PerfSingleNRMultiply = 10,
-    PerfSingleRef = 11,
-    Correctness_P1_to_P5 = 12,
-    PerfSingleNRView5 = 13,
-    PerfSingleNRView30 = 14
+    Correctness_NR = 2,
+    PerfSub = 3,
+    PerfSweep = 4,
+    PerfSingleView30 = 5,
+    PerfSingleView32 = 6,
+    PerfSingleView5 = 7,
+    PerfSingleAdd = 8,
+    PerfSingleMultiply = 9,
+    PerfSingleNRAdd = 10,
+    PerfSingleNRMultiply = 11,
+    PerfSingleRef = 12,
+    Correctness_P1_to_P5 = 13,
+    PerfSingleNRView5 = 14,
+    PerfSingleNRView30 = 15
 };
 
 namespace HpShark {
@@ -300,8 +301,19 @@ using SharkParams10 = HpShark::GenericSharkFloatParams<131072, true>;
 using SharkParams11 = HpShark::GenericSharkFloatParams<262144, true>;
 using SharkParams12 = HpShark::GenericSharkFloatParams<524288, true>;
 
-// Newton-Raphson enabled params (periodicity + NR derivative tracking)
-using SharkParamsNR7 = HpShark::GenericSharkFloatParams<16384, true, true>;
+// Newton-Raphson enabled params (NR derivative tracking, NO periodicity detection)
+using SharkParamsNR1 = HpShark::GenericSharkFloatParams<256, false, true>;
+using SharkParamsNR2 = HpShark::GenericSharkFloatParams<512, false, true>;
+using SharkParamsNR3 = HpShark::GenericSharkFloatParams<1024, false, true>;
+using SharkParamsNR4 = HpShark::GenericSharkFloatParams<2048, false, true>;
+using SharkParamsNR5 = HpShark::GenericSharkFloatParams<4096, false, true>;
+using SharkParamsNR6 = HpShark::GenericSharkFloatParams<8192, false, true>;
+using SharkParamsNR7 = HpShark::GenericSharkFloatParams<16384, false, true>;
+using SharkParamsNR8 = HpShark::GenericSharkFloatParams<32768, false, true>;
+using SharkParamsNR9 = HpShark::GenericSharkFloatParams<65536, false, true>;
+using SharkParamsNR10 = HpShark::GenericSharkFloatParams<131072, false, true>;
+using SharkParamsNR11 = HpShark::GenericSharkFloatParams<262144, false, true>;
+using SharkParamsNR12 = HpShark::GenericSharkFloatParams<524288, false, true>;
 
 enum class InjectNoiseInLowOrder { Disable, Enable };
 
@@ -584,7 +596,11 @@ template <class SharkFloatParams> struct HpSharkAddComboResults {
     alignas(16) HpSharkFloat<SharkFloatParams> Result1_A_B_C;
     alignas(16) HpSharkFloat<SharkFloatParams> Result2_D_E;
 
-    // NR derivative add outputs (gated by EnableNewtonRaphson)
+    // NR derivative add inputs and outputs (gated by EnableNewtonRaphson)
+    alignas(16) HpSharkFloat<SharkFloatParams> W0;              // dzdcR * 2zR (input from multiply)
+    alignas(16) HpSharkFloat<SharkFloatParams> W1;              // dzdcI * 2zI
+    alignas(16) HpSharkFloat<SharkFloatParams> W2;              // dzdcR * 2zI
+    alignas(16) HpSharkFloat<SharkFloatParams> W3;              // dzdcI * 2zR
     alignas(16) HpSharkFloat<SharkFloatParams> One;             // constant 1.0 for dzdc +1
     alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcReal;  // W0 - W1 + 1
     alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcImag;  // W2 + W3

@@ -122,7 +122,11 @@ MakeFixedParams_NP()
 static std::vector<std::string>
 MakeFixedParams_NR()
 {
-    return {"SharkParamsNR7"};
+    std::vector<std::string> v;
+    v.reserve(12);
+    for (int i = 1; i <= 12; ++i)
+        v.push_back("SharkParamsNR" + std::to_string(i));
+    return v;
 }
 
 static std::vector<std::string>
@@ -204,7 +208,11 @@ InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launch
 template void ShutdownHpSharkReferenceKernel<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams,
     HpSharkReferenceResults<SharkFloatParams> &combo,
-    DebugGpuCombo *debugCombo);)";
+    DebugGpuCombo *debugCombo);
+template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
+    const mpf_t, const mpf_t, uint64_t,
+    mpf_t, mpf_t, mpf_t, mpf_t,
+    HDRFloat<double> &, HDRFloat<double> &);)";
 
         b.push_back(
             Batch{"HpSharkReference", "..\\KernelInvokeReferencePerf_cu.h", templates, "HpShark"});

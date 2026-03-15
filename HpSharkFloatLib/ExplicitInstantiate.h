@@ -163,7 +163,18 @@
     ExplicitlyInstantiate(SharkParams10);                                                               \
     ExplicitlyInstantiate(SharkParams11);                                                               \
     ExplicitlyInstantiate(SharkParams12);                                                               \
-    ExplicitlyInstantiate(SharkParamsNR7);
+    ExplicitlyInstantiate(SharkParamsNR1);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR2);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR3);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR4);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR5);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR6);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR7);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR8);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR9);                                                              \
+    ExplicitlyInstantiate(SharkParamsNR10);                                                             \
+    ExplicitlyInstantiate(SharkParamsNR11);                                                             \
+    ExplicitlyInstantiate(SharkParamsNR12);
 
 #ifdef ENABLE_BASIC_CORRECTNESS
 #define ComicalCorrectness()                                                                            \

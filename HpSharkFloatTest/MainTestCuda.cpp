@@ -39,6 +39,8 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Error";
         case BasicCorrectnessMode::Correctness_P1:
             return "Correctness (Params1)";
+        case BasicCorrectnessMode::Correctness_NR:
+            return "Correctness NR";
         case BasicCorrectnessMode::PerfSub:
             return "Performance Sub-kernels";
         case BasicCorrectnessMode::PerfSweep:
@@ -447,19 +449,20 @@ main(int, char **)
 
     modePrompt << "Mode? Default=" << defaultModeInt << " "
                << "1=Correctness(P1)" << std::endl
-               << "2=PerfSub" << std::endl
-               << "3=PerfSweep" << std::endl
-               << "4=PerfSingle View30" << std::endl
-               << "5=PerfSingle View32" << std::endl
-               << "6=PerfSingle View5" << std::endl
-               << "7=PerfSingleAdd" << std::endl
-               << "8=PerfSingleMultiply" << std::endl
-               << "9=PerfSingleNRAdd" << std::endl
-               << "10=PerfSingleNRMultiply" << std::endl
-               << "11=PerfSingleRef (broken currently)" << std::endl
-               << "12=Correctness(P1..P5)" << std::endl
-               << "13=NR View5" << std::endl
-               << "14=NR View30" << std::endl
+               << "2=Correctness NR" << std::endl
+               << "3=PerfSub" << std::endl
+               << "4=PerfSweep" << std::endl
+               << "5=PerfSingle View30" << std::endl
+               << "6=PerfSingle View32" << std::endl
+               << "7=PerfSingle View5" << std::endl
+               << "8=PerfSingleAdd" << std::endl
+               << "9=PerfSingleMultiply" << std::endl
+               << "10=PerfSingleNRAdd" << std::endl
+               << "11=PerfSingleNRMultiply" << std::endl
+               << "12=PerfSingleRef (broken currently)" << std::endl
+               << "13=Correctness(P1..P5)" << std::endl
+               << "14=NR View5" << std::endl
+               << "15=NR View30" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
@@ -472,42 +475,45 @@ main(int, char **)
             mode = BasicCorrectnessMode::Correctness_P1;
             break;
         case 2:
-            mode = BasicCorrectnessMode::PerfSub;
+            mode = BasicCorrectnessMode::Correctness_NR;
             break;
         case 3:
-            mode = BasicCorrectnessMode::PerfSweep;
+            mode = BasicCorrectnessMode::PerfSub;
             break;
         case 4:
-            mode = BasicCorrectnessMode::PerfSingleView30;
+            mode = BasicCorrectnessMode::PerfSweep;
             break;
         case 5:
-            mode = BasicCorrectnessMode::PerfSingleView32;
+            mode = BasicCorrectnessMode::PerfSingleView30;
             break;
         case 6:
-            mode = BasicCorrectnessMode::PerfSingleView5;
+            mode = BasicCorrectnessMode::PerfSingleView32;
             break;
         case 7:
-            mode = BasicCorrectnessMode::PerfSingleAdd;
+            mode = BasicCorrectnessMode::PerfSingleView5;
             break;
         case 8:
-            mode = BasicCorrectnessMode::PerfSingleMultiply;
+            mode = BasicCorrectnessMode::PerfSingleAdd;
             break;
         case 9:
-            mode = BasicCorrectnessMode::PerfSingleNRAdd;
+            mode = BasicCorrectnessMode::PerfSingleMultiply;
             break;
         case 10:
-            mode = BasicCorrectnessMode::PerfSingleNRMultiply;
+            mode = BasicCorrectnessMode::PerfSingleNRAdd;
             break;
         case 11:
-            mode = BasicCorrectnessMode::PerfSingleRef;
+            mode = BasicCorrectnessMode::PerfSingleNRMultiply;
             break;
         case 12:
-            mode = BasicCorrectnessMode::Correctness_P1_to_P5;
+            mode = BasicCorrectnessMode::PerfSingleRef;
             break;
         case 13:
-            mode = BasicCorrectnessMode::PerfSingleNRView5;
+            mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
         case 14:
+            mode = BasicCorrectnessMode::PerfSingleNRView5;
+            break;
+        case 15:
             mode = BasicCorrectnessMode::PerfSingleNRView30;
             break;
         default:
@@ -533,6 +539,15 @@ main(int, char **)
         case BasicCorrectnessMode::Correctness_P1_to_P5:
             RunCorrectnessTest(mode);
             break;
+
+        case BasicCorrectnessMode::Correctness_NR: {
+            do {
+                if (!CorrectnessTests<SharkParamsNR1>()) {
+                    if (!ContinueAfterFailure(false)) return 0;
+                }
+            } while (HpShark::TestInfiniteCorrectness);
+            break;
+        }
 
         case BasicCorrectnessMode::PerfSub:
         case BasicCorrectnessMode::PerfSweep:

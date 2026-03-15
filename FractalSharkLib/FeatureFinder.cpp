@@ -10,6 +10,8 @@
 #include "FeatureSummary.h"
 #include "FloatComplex.h"
 #include "HighPrecision.h"
+#include "HpSharkFloat.h"
+#include "KernelInvoke.h"
 #include "LAInfoDeep.h"
 #include "LAReference.h"
 #include "PerturbationResults.h"
@@ -782,6 +784,36 @@ ComputeHalleyStep_mpf_coord_from_deriv(
 }
 
 // ------------------------------------------------------------
+// Dispatch GPU NR inner loop by precision.
+// Rounds coord_prec to the nearest supported SharkParamsNR limb count.
+// ------------------------------------------------------------
+template <typename F>
+static inline void
+DispatchNRByPrecision(mp_bitcnt_t coord_prec, F &&f)
+{
+    uint32_t numLimbs = static_cast<uint32_t>((coord_prec + 31) / 32);
+    uint32_t p = 256;
+    while (p < numLimbs && p < 524288)
+        p <<= 1;
+
+    switch (p) {
+        case 256:    f.template operator()<SharkParamsNR1>(); break;
+        case 512:    f.template operator()<SharkParamsNR2>(); break;
+        case 1024:   f.template operator()<SharkParamsNR3>(); break;
+        case 2048:   f.template operator()<SharkParamsNR4>(); break;
+        case 4096:   f.template operator()<SharkParamsNR5>(); break;
+        case 8192:   f.template operator()<SharkParamsNR6>(); break;
+        case 16384:  f.template operator()<SharkParamsNR7>(); break;
+        case 32768:  f.template operator()<SharkParamsNR8>(); break;
+        case 65536:  f.template operator()<SharkParamsNR9>(); break;
+        case 131072: f.template operator()<SharkParamsNR10>(); break;
+        case 262144: f.template operator()<SharkParamsNR11>(); break;
+        case 524288: f.template operator()<SharkParamsNR12>(); break;
+        default:     throw std::invalid_argument("Unsupported NR precision");
+    }
+}
+
+// ------------------------------------------------------------
 // Imagina-style Newton/Halley polish for periodic point
 //
 // Goal:
@@ -822,6 +854,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     // Compile-time enable, runtime gating below.
     constexpr bool UseHalley = true;
     constexpr bool UseFullPrecDerivatives = false;
+    constexpr bool UseGpuForInnerLoop = true;
 
     // Gate: require rho^2 < 2^-k (k bigger => more conservative)
     // With rho^2 = |z|^2*|d2|^2 / |dzdc|^4.
@@ -916,24 +949,34 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
         std::cout << "  Refinement iter " << it << std::endl;
 
-        // Full forward eval at current c (option 2: d2 in HDRFloat)
-        EvaluateCriticalOrbitAndDerivs<IterType, T>(c_coord,
-                                                    period,
-                                                    z_coord,
-                                                    dzdc_deriv,
-                                                    d2r_hdr,
-                                                    d2i_hdr,
-                                                    z_deriv,
-                                                    tmpB_d,
-                                                    tmpZ_coord,
-                                                    tr_d,
-                                                    ti_d,
-                                                    t1_d,
-                                                    t2_d,
-                                                    tr_c,
-                                                    ti_c,
-                                                    t1_c,
-                                                    t2_c);
+        // Full forward eval at current c
+        if constexpr (UseGpuForInnerLoop) {
+            DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
+                HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
+                    c_coord.re, c_coord.im, period,
+                    z_coord.re, z_coord.im,
+                    dzdc_deriv.re, dzdc_deriv.im,
+                    d2r_hdr, d2i_hdr);
+            });
+        } else {
+            EvaluateCriticalOrbitAndDerivs<IterType, T>(c_coord,
+                                                        period,
+                                                        z_coord,
+                                                        dzdc_deriv,
+                                                        d2r_hdr,
+                                                        d2i_hdr,
+                                                        z_deriv,
+                                                        tmpB_d,
+                                                        tmpZ_coord,
+                                                        tr_d,
+                                                        ti_d,
+                                                        t1_d,
+                                                        t2_d,
+                                                        tr_c,
+                                                        ti_c,
+                                                        t1_c,
+                                                        t2_c);
+        }
 
         // ------------------------------------------------------------
         // Build norms needed for: (a) Halley gate, (b) err estimate.
@@ -1052,23 +1095,33 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     // ---------------- Imagina final correction pass ----------------
     // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
     {
-        EvaluateCriticalOrbitAndDerivs<IterType, T>(c_coord,
-                                                    period,
-                                                    z_coord,
-                                                    dzdc_deriv,
-                                                    d2r_hdr,
-                                                    d2i_hdr,
-                                                    z_deriv,
-                                                    tmpB_d,
-                                                    tmpZ_coord,
-                                                    tr_d,
-                                                    ti_d,
-                                                    t1_d,
-                                                    t2_d,
-                                                    tr_c,
-                                                    ti_c,
-                                                    t1_c,
-                                                    t2_c);
+        if constexpr (UseGpuForInnerLoop) {
+            DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
+                HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
+                    c_coord.re, c_coord.im, period,
+                    z_coord.re, z_coord.im,
+                    dzdc_deriv.re, dzdc_deriv.im,
+                    d2r_hdr, d2i_hdr);
+            });
+        } else {
+            EvaluateCriticalOrbitAndDerivs<IterType, T>(c_coord,
+                                                        period,
+                                                        z_coord,
+                                                        dzdc_deriv,
+                                                        d2r_hdr,
+                                                        d2i_hdr,
+                                                        z_deriv,
+                                                        tmpB_d,
+                                                        tmpZ_coord,
+                                                        tr_d,
+                                                        ti_d,
+                                                        t1_d,
+                                                        t2_d,
+                                                        tr_c,
+                                                        ti_c,
+                                                        t1_c,
+                                                        t2_c);
+        }
 
         if (ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
                 step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {

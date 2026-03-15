@@ -1,4 +1,4 @@
-﻿#include "HpSharkFloat.h"
+#include "HpSharkFloat.h"
 #include "DebugChecksum.h"
 
 #include <cuda.h>
@@ -726,7 +726,7 @@ static __device__ void AddHelperSeparates(
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_offsetYY>(debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_Add1>(debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_Add2>(debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 47, "Unexpected number of purposes");
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 80, "Unexpected number of purposes");
 
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::ADigits, uint32_t>(
             debugStates, grid, block, A_X2->Digits, NewN);
@@ -1153,6 +1153,13 @@ static __device__ void AddHelper (
         &combo->E_B,
         &combo->Result1_A_B_C,
         &combo->Result2_D_E,
-        tempData);
+        tempData,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->W0 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->W1 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->W2 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->W3 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->One : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->ResultDzdcReal : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->ResultDzdcImag : nullptr);
 }
 

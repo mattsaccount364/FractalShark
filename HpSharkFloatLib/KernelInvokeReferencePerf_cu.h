@@ -393,22 +393,24 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     HDRFloat<double> &outD2Real,
     HDRFloat<double> &outD2Imag)
 {
-    static_assert(SharkFloatParams::EnableNewtonRaphson,
-                  "EvaluateCriticalOrbitAndDerivs_GPU requires EnableNewtonRaphson");
+    if constexpr (!SharkFloatParams::EnableNewtonRaphson) {
+        // NR not enabled for this type — no-op
+        return;
+    }
 
     constexpr int precBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
     HpShark::LaunchParams launchParams{2, 32};
     typename SharkFloatParams::Float hdrRadiusY{1.0f};
 
-    // Convert c from mpf to HpSharkFloat
-    HpSharkFloat<SharkFloatParams> hpCR{};
-    HpSharkFloat<SharkFloatParams> hpCI{};
-    hpCR.MpfToHpGpu(cReal, precBits, InjectNoiseInLowOrder::Disable);
-    hpCI.MpfToHpGpu(cImag, precBits, InjectNoiseInLowOrder::Disable);
+    // Convert c from mpf to HpSharkFloat (heap-allocated for large types)
+    auto hpCR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto hpCI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    hpCR->MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&cReal[0]), precBits, InjectNoiseInLowOrder::Disable);
+    hpCI->MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&cImag[0]), precBits, InjectNoiseInLowOrder::Disable);
 
     // Init GPU combo
     auto combo = InitHpSharkReferenceKernel<SharkFloatParams>(
-        launchParams, hdrRadiusY, hpCR, hpCI);
+        launchParams, hdrRadiusY, *hpCR, *hpCI);
 
     // Set z=0, dzdc=0, d2=0 for NR evaluation
     combo->Multiply.A = HpSharkFloat<SharkFloatParams>{};
@@ -417,16 +419,42 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     combo->Multiply.DzdcImag = HpSharkFloat<SharkFloatParams>{};
     combo->d2Real = typename SharkFloatParams::Float{};
     combo->d2Imag = typename SharkFloatParams::Float{};
+    // Reset periodicity dzdc to 0 so the periodicity checker doesn't
+    // immediately trigger PeriodFound when z=0.
+    combo->dzdcX = typename SharkFloatParams::Float{};
+    combo->dzdcY = typename SharkFloatParams::Float{};
+    combo->PeriodicityStatus = PeriodicityResult::Continue;
     combo->MaxRuntimeIters = period;
+
+    // Push updated combo to device (init only copied the original; we modified z/dzdc/d2/c)
+    {
+        cudaError_t res = cudaMemcpy(
+            combo->comboGpu, combo.get(),
+            sizeof(HpSharkReferenceResults<SharkFloatParams>),
+            cudaMemcpyHostToDevice);
+        if (res != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemcpy(combo H2D for NR) failed: " << cudaGetErrorString(res);
+            throw std::runtime_error(oss.str());
+        }
+    }
 
     // Launch kernel
     InvokeHpSharkReferenceKernel<SharkFloatParams>(launchParams, *combo, period);
 
+    // Debug: check what happened
+    std::cout << "  GPU NR wrapper: PeriodicityStatus="
+              << static_cast<int>(combo->PeriodicityStatus)
+              << " OutputIterCount=" << combo->OutputIterCount
+              << " DzdcReal exponent=" << combo->Multiply.DzdcReal.Exponent
+              << std::endl;
+
     // Convert results back to mpf
-    combo->Multiply.A.HpGpuToMpf(outZReal);
-    combo->Multiply.B.HpGpuToMpf(outZImag);
-    combo->Multiply.DzdcReal.HpGpuToMpf(outDzdcReal);
-    combo->Multiply.DzdcImag.HpGpuToMpf(outDzdcImag);
+    // Note: mpf_t params decay to __mpf_struct*; cast back for HpGpuToMpf(mpf_t &)
+    combo->Multiply.A.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZReal[0]));
+    combo->Multiply.B.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZImag[0]));
+    combo->Multiply.DzdcReal.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outDzdcReal[0]));
+    combo->Multiply.DzdcImag.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outDzdcImag[0]));
 
     // d2 already in HDRFloat
     outD2Real = HDRFloat<double>(combo->d2Real);

@@ -24,6 +24,10 @@
     const HpShark::LaunchParams &launchParams, \
     HpSharkReferenceResults<SharkFloatParams> &combo, \
     DebugGpuCombo *debugCombo); \
+    template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>( \
+    const mpf_t, const mpf_t, uint64_t, \
+    mpf_t, mpf_t, mpf_t, mpf_t, \
+    HDRFloat<double> &, HDRFloat<double> &); \
     /* end */
 
 namespace HpShark {
@@ -39,7 +43,18 @@ ExplicitlyInstantiate(SharkParams9);
 ExplicitlyInstantiate(SharkParams10);
 ExplicitlyInstantiate(SharkParams11);
 ExplicitlyInstantiate(SharkParams12);
+ExplicitlyInstantiate(SharkParamsNR1);
+ExplicitlyInstantiate(SharkParamsNR2);
+ExplicitlyInstantiate(SharkParamsNR3);
+ExplicitlyInstantiate(SharkParamsNR4);
+ExplicitlyInstantiate(SharkParamsNR5);
+ExplicitlyInstantiate(SharkParamsNR6);
 ExplicitlyInstantiate(SharkParamsNR7);
+ExplicitlyInstantiate(SharkParamsNR8);
+ExplicitlyInstantiate(SharkParamsNR9);
+ExplicitlyInstantiate(SharkParamsNR10);
+ExplicitlyInstantiate(SharkParamsNR11);
+ExplicitlyInstantiate(SharkParamsNR12);
 } // namespace HpShark
 
 #undef ExplicitlyInstantiate

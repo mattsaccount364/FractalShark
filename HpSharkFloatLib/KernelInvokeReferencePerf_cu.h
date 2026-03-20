@@ -426,8 +426,17 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     combo->PeriodicityStatus = PeriodicityResult::Continue;
     combo->MaxRuntimeIters = period;
 
-    // Push updated combo to device (init only copied the original; we modified z/dzdc/d2/c)
+    // Push updated combo to device (init only copied the original; we modified z/dzdc/d2/c).
+    // IMPORTANT: CopyRootsToCuda already wrote device root pointers to comboGpu->Multiply.Roots.
+    // The full H→D copy below would overwrite them with the host's stale copy.
+    // Save the device roots, do the copy, then restore.
     {
+        SharkNTT::RootTables savedRoots;
+        cudaMemcpy(&savedRoots,
+                   &combo->comboGpu->Multiply.Roots,
+                   sizeof(SharkNTT::RootTables),
+                   cudaMemcpyDeviceToHost);
+
         cudaError_t res = cudaMemcpy(
             combo->comboGpu, combo.get(),
             sizeof(HpSharkReferenceResults<SharkFloatParams>),
@@ -437,6 +446,11 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
             oss << "cudaMemcpy(combo H2D for NR) failed: " << cudaGetErrorString(res);
             throw std::runtime_error(oss.str());
         }
+
+        cudaMemcpy(&combo->comboGpu->Multiply.Roots,
+                   &savedRoots,
+                   sizeof(SharkNTT::RootTables),
+                   cudaMemcpyHostToDevice);
     }
 
     // Launch kernel

@@ -2,13 +2,21 @@
 \label{sec:misc-details}
 %% ===================================================================
 
-After the per-pixel iteration kernels produce an array of escape-time
-counts, several post-processing stages transform this raw data into a
-final displayed image.  This section covers antialiasing (down-sampling
-from a supersampled buffer), the palette-based coloring system, and
-iteration-count statistics gathered via GPU reduction.  The subsequent
-section (\cref{sec:render-thread-pool}) describes the threading
-architecture that orchestrates these stages alongside the UI.
+The per-pixel iteration kernels produce a buffer of raw escape-time
+counts---integers that record how many iterations each pixel survived
+before escaping.  These counts are not directly displayable: they must
+be mapped to colours, and the resulting image must be antialiased to
+suppress the severe spatial aliasing that arises at deep zooms (where
+intricate fractal features routinely fall below pixel scale).  Without
+careful post-processing, the visual output would be a noisy, jagged
+approximation of the underlying mathematics.
+
+This section covers the three main post-iteration stages:
+antialiasing via GPU supersampling (\cref{subsec:antialiasing}), the
+palette-based coloring system (\cref{subsec:coloring}), and
+iteration-count statistics gathered via parallel GPU reduction.  The
+subsequent section (\cref{sec:render-thread-pool}) describes the
+threading architecture that orchestrates these stages alongside the UI.
 
 % -----------------------------------------------------------------
 \subsection{Antialiasing via supersampling}

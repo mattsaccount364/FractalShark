@@ -602,6 +602,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                         DebugStatePurpose step2Y,
                         DebugStatePurpose step3,
                         DebugStatePurpose step4,
+                        DebugStatePurpose step4b,
                         DebugStatePurpose step5>(HpSharkFloat<SharkFloatParams> *out,
                                                  const HpSharkFloat<SharkFloatParams> &inA,
                                                  const HpSharkFloat<SharkFloatParams> &inB,
@@ -699,6 +700,16 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         // std::fill_n(Final128.data(), Final128.size(), 0ull);
         UnpackPrimeToFinal128(Y.data(), plan, Final128.data(), Ddigits);
 
+        if constexpr (HpShark::DebugChecksums) {
+            const auto &debugUnpackState = GetCurrentDebugState<SharkFloatParams, step4b>(
+                debugStates, Final128.data(), 2 * Ddigits);
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "After unpack, debugUnpackState checksum: " << debugUnpackState.GetStr()
+                          << "\n";
+            }
+        }
+
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << std::endl;
             std::cout << "=== Final128 Dump ===" << std::endl;
@@ -739,6 +750,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Z3XX,
                                  DebugStatePurpose::Z2_Perm1,
                                  DebugStatePurpose::Z2_Perm4,
+                                 DebugStatePurpose::UnpackXX,
                                  DebugStatePurpose::Final128XX>(
         OutXX, *A, *A, noAdditionalFactorOfTwo, squaresNegative);
 
@@ -755,6 +767,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Z3YY,
                                  DebugStatePurpose::Z2_Perm2,
                                  DebugStatePurpose::Z2_Perm5,
+                                 DebugStatePurpose::UnpackYY,
                                  DebugStatePurpose::Final128YY>(
         OutYY, *B, *B, noAdditionalFactorOfTwo, squaresNegative);
 
@@ -773,6 +786,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Z3XY,
                                  DebugStatePurpose::Z2_Perm3,
                                  DebugStatePurpose::Z2_Perm6,
+                                 DebugStatePurpose::UnpackXY,
                                  DebugStatePurpose::Final128XY>(
         OutXY, *A, *B, includeAdditionalFactorOfTwo, OutXYIsNegative);
 
@@ -782,6 +796,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         run_conv.template operator()<DebugStatePurpose::Z0W0, DebugStatePurpose::Z1W0,
                                      DebugStatePurpose::Z2W0, DebugStatePurpose::Z3W0,
                                      DebugStatePurpose::Z2_PermW0, DebugStatePurpose::Z2_PermW0b,
+                                     DebugStatePurpose::UnpackW0,
                                      DebugStatePurpose::Final128W0>(
             OutW0, *dzdcReal, *A, includeAdditionalFactorOfTwo,
             dzdcReal->GetNegative() ^ A->GetNegative());
@@ -790,6 +805,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         run_conv.template operator()<DebugStatePurpose::Z0W1, DebugStatePurpose::Z1W1,
                                      DebugStatePurpose::Z2W1, DebugStatePurpose::Z3W1,
                                      DebugStatePurpose::Z2_PermW1, DebugStatePurpose::Z2_PermW1b,
+                                     DebugStatePurpose::UnpackW1,
                                      DebugStatePurpose::Final128W1>(
             OutW1, *dzdcImag, *B, includeAdditionalFactorOfTwo,
             dzdcImag->GetNegative() ^ B->GetNegative());
@@ -798,6 +814,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         run_conv.template operator()<DebugStatePurpose::Z0W2, DebugStatePurpose::Z1W2,
                                      DebugStatePurpose::Z2W2, DebugStatePurpose::Z3W2,
                                      DebugStatePurpose::Z2_PermW2, DebugStatePurpose::Z2_PermW2b,
+                                     DebugStatePurpose::UnpackW2,
                                      DebugStatePurpose::Final128W2>(
             OutW2, *dzdcReal, *B, includeAdditionalFactorOfTwo,
             dzdcReal->GetNegative() ^ B->GetNegative());
@@ -806,6 +823,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         run_conv.template operator()<DebugStatePurpose::Z0W3, DebugStatePurpose::Z1W3,
                                      DebugStatePurpose::Z2W3, DebugStatePurpose::Z3W3,
                                      DebugStatePurpose::Z2_PermW3, DebugStatePurpose::Z2_PermW3b,
+                                     DebugStatePurpose::UnpackW3,
                                      DebugStatePurpose::Final128W3>(
             OutW3, *dzdcImag, *A, includeAdditionalFactorOfTwo,
             dzdcImag->GetNegative() ^ A->GetNegative());

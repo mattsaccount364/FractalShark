@@ -40,7 +40,10 @@ CalcAlign16Bytes32BitIndex(uint64_t Thirty2BitIndex)
 
 namespace SharkNTT {
 
-template <class SharkFloatParams>
+template <class SharkFloatParams,
+          DebugStatePurpose purposeXX = DebugStatePurpose::Final128XX,
+          DebugStatePurpose purposeYY = DebugStatePurpose::Final128YY,
+          DebugStatePurpose purposeXY = DebugStatePurpose::Final128XY>
 static __device__ SharkForceInlineReleaseOnly void
 FinalizeNormalize(cooperative_groups::grid_group &grid,
                   cooperative_groups::thread_block &block,
@@ -135,12 +138,91 @@ FinalizeNormalize(cooperative_groups::grid_group &grid,
 
     if constexpr (HpShark::DebugChecksums) {
         grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XX, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, purposeXX, uint32_t>(
             debugStates, grid, block, outXX.Digits, SharkFloatParams::GlobalNumUint32);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128YY, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, purposeYY, uint32_t>(
             debugStates, grid, block, outYY.Digits, SharkFloatParams::GlobalNumUint32);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XY, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, purposeXY, uint32_t>(
             debugStates, grid, block, outXY.Digits, SharkFloatParams::GlobalNumUint32);
+        grid.sync();
+    } else {
+        grid.sync();
+    }
+}
+
+// ---- N-channel FinalizeNormalize ----
+// Takes pre-computed exponent sums and arrays of pointers for each channel.
+template <class SharkFloatParams, int NumChannels>
+static __device__ SharkForceInlineReleaseOnly void
+FinalizeNormalizeNWay(cooperative_groups::grid_group &grid,
+                      cooperative_groups::thread_block &block,
+                      DebugState<SharkFloatParams> *debugStates,
+                      HpSharkFloat<SharkFloatParams> **outs,
+                      const int32_t *baseExponents,
+                      const uint32_t Ddigits,
+                      const int32_t *addTwos,
+                      uint64_t *SharkRestrict workspace,
+                      uint64_t *SharkRestrict *results,
+                      const DebugStatePurpose *purposes)
+{
+    const int T_all = static_cast<int>(grid.size());
+    const auto tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+
+    // Scan for highest-nonzero per channel; compute shifts/exponents (single thread)
+    if (tid == 0) {
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            int h = -1;
+            for (int i = Ddigits - 1; i >= 0; --i) {
+                if (static_cast<uint32_t>(results[ch][i]) != 0u) {
+                    h = i;
+                    break;
+                }
+            }
+
+            int shift = 0;
+            int32_t exp = baseExponents[ch];
+            if (h >= 0) {
+                const int significant = h + 1;
+                shift = significant - SharkFloatParams::GlobalNumUint32;
+                if (shift < 0)
+                    shift = 0;
+                exp = baseExponents[ch] + 32 * shift + addTwos[ch];
+            }
+
+            outs[ch]->Exponent = exp;
+            workspace[ch] = static_cast<uint64_t>(shift);
+            workspace[NumChannels + ch] = static_cast<uint64_t>(h < 0);
+        }
+    }
+    grid.sync();
+
+    int shifts[NumChannels];
+    bool zeros[NumChannels];
+#pragma unroll
+    for (int ch = 0; ch < NumChannels; ++ch) {
+        shifts[ch] = static_cast<int>(workspace[ch]);
+        zeros[ch] = (workspace[NumChannels + ch] != 0);
+    }
+
+    // Grid-stride write the GlobalNumUint32-digit windows
+    for (int i = tid; i < SharkFloatParams::GlobalNumUint32; i += T_all) {
+#pragma unroll
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            outs[ch]->Digits[i] = zeros[ch]
+                                      ? 0u
+                                      : ((shifts[ch] + i < static_cast<int>(Ddigits))
+                                             ? static_cast<uint32_t>(results[ch][shifts[ch] + i])
+                                             : 0u);
+        }
+    }
+
+    if constexpr (HpShark::DebugChecksums) {
+        grid.sync();
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            StoreCurrentDebugState<SharkFloatParams, uint32_t>(
+                debugStates, grid, block, purposes[ch],
+                outs[ch]->Digits, SharkFloatParams::GlobalNumUint32);
+        }
         grid.sync();
     } else {
         grid.sync();
@@ -151,7 +233,142 @@ FinalizeNormalize(cooperative_groups::grid_group &grid,
 #include "MultiplyNTT_NormalizeV1.h"
 #include "MultiplyNTT_NormalizeWarpTiledV2.h"
 
-template <class SharkFloatParams>
+// ---- N-channel Normalize_GridStride ----
+// Fused normalize for NumChannels products sharing all grid.sync() barriers.
+template <class SharkFloatParams, int NumChannels>
+static __device__ inline void
+Normalize_GridStride_NWay(cooperative_groups::grid_group &grid,
+                          cooperative_groups::thread_block &block,
+                          DebugGlobalCount<SharkFloatParams> *debugGlobalState,
+                          DebugState<SharkFloatParams> *debugStates,
+                          HpSharkFloat<SharkFloatParams> **outs,
+                          const int32_t *baseExponents,
+                          uint64_t **final128s,
+                          const uint32_t Ddigits,
+                          const int32_t *addTwos,
+                          uint64_t *SharkRestrict CarryPropagationBuffer2,
+                          uint64_t *SharkRestrict CarryPropagationBuffer,
+                          uint64_t *globalSync1,
+                          uint64_t *globalSync2,
+                          uint64_t **results,
+                          const DebugStatePurpose *purposes)
+{
+#ifdef TEST_SMALL_NORMALIZE_WARP
+    const int warpSz = block.dim_threads().x;
+#else
+    constexpr int warpSz = 32;
+#endif
+    (void)warpSz;
+
+    const int T_all = static_cast<int>(grid.size());
+    const auto tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+    const int totalThreads = T_all;
+
+    auto *cur = CarryPropagationBuffer;
+    auto *next = CarryPropagationBuffer2;
+
+    // init cur/next = 0 (need at most NumChannels*(Ddigits+1) entries)
+    const int carryBufLen = static_cast<int>(Ddigits) * NumChannels + NumChannels;
+    for (int i = tid; i < carryBufLen; i += totalThreads) {
+        cur[i] = 0;
+        next[i] = 0;
+    }
+
+    *globalSync1 = 0;
+    *globalSync2 = 0;
+
+    grid.sync();
+
+    // Phase 1: Extract digits and carries from final128 buffers
+    for (int index = tid; index < static_cast<int>(Ddigits); index += totalThreads) {
+        const auto indexT2 = 2 * index;
+
+#pragma unroll
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            const uint64_t lo = final128s[ch][indexT2];
+            const uint64_t hi = final128s[ch][indexT2 + 1];
+            const uint32_t dig = static_cast<uint32_t>(lo & 0xffffffffu);
+            const uint64_t carry = (lo >> 32) | (hi << 32);
+
+            results[ch][index] = dig;
+            cur[index * NumChannels + NumChannels + ch] = carry;
+        }
+    }
+
+    grid.sync();
+
+    // Phase 2: First carry propagation round
+    for (int index = tid; index < static_cast<int>(Ddigits); index += totalThreads) {
+#pragma unroll
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            const uint64_t carryIn = cur[index * NumChannels + ch];
+            const uint64_t inDig = results[ch][index];
+            const uint64_t fullDig = inDig + carryIn;
+            const uint64_t c0 = (fullDig < inDig) ? 1ull : 0ull;
+
+            results[ch][index] = fullDig & 0xffffffffu;
+            next[index * NumChannels + NumChannels + ch] = (fullDig >> 32) | (c0 << 32);
+        }
+    }
+
+    grid.sync();
+
+    // Phase 3: Second carry propagation round (produces 0-or-1 carries)
+    for (int index = tid; index < static_cast<int>(Ddigits); index += totalThreads) {
+        bool anyCarry = false;
+
+#pragma unroll
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            const uint64_t carryIn = next[index * NumChannels + ch];
+            next[index * NumChannels + ch] = 0;
+
+            const uint64_t inDig = results[ch][index];
+            const uint64_t fullDig = inDig + carryIn;
+
+            results[ch][index] = fullDig & 0xffffffffu;
+            const uint64_t carryOut = fullDig >> 32;
+            cur[index * NumChannels + NumChannels + ch] = carryOut;
+
+            if (carryOut != 0) {
+                anyCarry = true;
+            }
+        }
+
+        if (anyCarry) {
+            *globalSync2 = 1;
+        }
+    }
+
+    grid.sync();
+
+    const auto globalResult = *globalSync2;
+
+    if (globalResult != 0) {
+        // Reuse final128 buffers as PP scratch (they are consumed above).
+        auto *digitXfer = reinterpret_cast<DigitTransfer<NumChannels> *>(final128s[0]);
+        auto *scanTemp = reinterpret_cast<DigitTransfer<NumChannels> *>(final128s[1]);
+        auto *carryInMask = reinterpret_cast<uint32_t *>(final128s[2]);
+
+        ParallelPrefixNormalize<SharkFloatParams, NumChannels>(
+            grid, block, cur, Ddigits, results, digitXfer, scanTemp, carryInMask);
+    }
+
+    FinalizeNormalizeNWay<SharkFloatParams, NumChannels>(grid,
+                                                        block,
+                                                        debugStates,
+                                                        outs,
+                                                        baseExponents,
+                                                        Ddigits,
+                                                        addTwos,
+                                                        CarryPropagationBuffer2,
+                                                        results,
+                                                        purposes);
+}
+
+template <class SharkFloatParams,
+          DebugStatePurpose purposeXX = DebugStatePurpose::Final128XX,
+          DebugStatePurpose purposeYY = DebugStatePurpose::Final128YY,
+          DebugStatePurpose purposeXY = DebugStatePurpose::Final128XY>
 static __device__ inline void
 Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
                             cooperative_groups::thread_block &block,
@@ -431,7 +648,7 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
     }
 #endif
 
-    FinalizeNormalize<SharkFloatParams>(grid,
+    FinalizeNormalize<SharkFloatParams, purposeXX, purposeYY, purposeXY>(grid,
                                         block,
                                         debugStates,
                                         outXX,
@@ -1729,6 +1946,112 @@ ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &Z0_OutDigits, int64_t q, in
 //  - SharkFloatParams::NTTPlan.b is the limb bit-width (<=32).
 //  - MagicPrime, HALF, etc., follow your existing defs.
 //
+// N-channel unpack: processes NumChannels products in one call with one trailing grid.sync().
+template <class SharkFloatParams, int NumChannels>
+static __device__ SharkForceInlineReleaseOnly void
+UnpackPrimeToFinal128_NWay(cooperative_groups::grid_group &grid,
+                           cooperative_groups::thread_block &block,
+                           const uint64_t *SharkRestrict const *inputs,
+                           uint64_t *SharkRestrict const *outputs,
+                           uint32_t Ddigits)
+{
+    using namespace SharkNTT;
+
+    const size_t gsize = grid.size();
+    const auto grank = block.thread_index().x + block.group_index().x * blockDim.x;
+
+    auto ceil_div_u64 = [](uint64_t a, uint32_t b) -> uint64_t {
+        return (a + (uint64_t)b - 1ull) / (uint64_t)b;
+    };
+
+    auto add32_local = [](uint64_t &lo, uint64_t &hi, uint32_t add32) {
+        if (!add32)
+            return;
+        uint64_t old = lo;
+        lo += (uint64_t)add32;
+        if (lo < old)
+            hi += 1ull;
+    };
+    auto sub32_local = [](uint64_t &lo, uint64_t &hi, uint32_t sub32) {
+        if (!sub32)
+            return;
+        uint64_t old = lo;
+        uint64_t dif = old - (uint64_t)sub32;
+        lo = dif;
+        if (old < (uint64_t)sub32)
+            hi -= 1ull;
+    };
+
+    const uint64_t HALF = (SharkNTT::MagicPrime - 1ull) >> 1;
+    const int Imax =
+        min(SharkFloatParams::NTTPlan.N, 2 * SharkFloatParams::NTTPlan.L - 1);
+
+    for (size_t j = grank; j < Ddigits; j += gsize) {
+        uint64_t accum_lo[NumChannels];
+        uint64_t accum_hi[NumChannels];
+#pragma unroll
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            accum_lo[ch] = 0ull;
+            accum_hi[ch] = 0ull;
+        }
+
+        for (int t = 0; t < 4; ++t) {
+            if ((int)j - t < 0)
+                continue;
+            const uint64_t k = (uint64_t)((int)j - t);
+            const uint64_t i_lo = ceil_div_u64(32ull * k, (uint32_t)SharkFloatParams::NTTPlan.b);
+            const uint64_t i_hi_raw =
+                ceil_div_u64(32ull * (k + 1ull), (uint32_t)SharkFloatParams::NTTPlan.b);
+            uint64_t i_hi = (i_hi_raw == 0 ? 0 : (i_hi_raw - 1ull));
+            if ((int64_t)i_lo > (int64_t)(Imax - 1))
+                continue;
+            if (i_hi > (uint64_t)(Imax - 1))
+                i_hi = (uint64_t)(Imax - 1);
+            if (i_lo > i_hi)
+                continue;
+
+            for (uint64_t iu = i_lo; iu <= i_hi; ++iu) {
+                const int i = (int)iu;
+                const uint64_t sBits = (uint64_t)i * (uint64_t)SharkFloatParams::NTTPlan.b;
+                const int r = (int)(sBits & 31);
+                const uint64_t lsh = (r ? (64 - r) : 64);
+
+#pragma unroll
+                for (int ch = 0; ch < NumChannels; ++ch) {
+                    const uint64_t v = inputs[ch][i];
+                    if (v) {
+                        const bool neg = (v > HALF);
+                        const uint64_t mag64 = neg ? (SharkNTT::MagicPrime - v) : v;
+
+                        const uint64_t lo64 = r ? (mag64 << r) : mag64;
+                        const uint64_t hi64 = r ? (mag64 >> lsh) : 0ull;
+
+                        const uint32_t d0 = (uint32_t)(lo64 & 0xffffffffu);
+                        const uint32_t d1 = (uint32_t)((lo64 >> 32) & 0xffffffffu);
+                        const uint32_t d2 = (uint32_t)(hi64 & 0xffffffffu);
+                        const uint32_t d3 = (uint32_t)((hi64 >> 32) & 0xffffffffu);
+
+                        const uint32_t dt = (t == 0) ? d0 : (t == 1) ? d1 : (t == 2) ? d2 : d3;
+                        if (!neg)
+                            add32_local(accum_lo[ch], accum_hi[ch], dt);
+                        else
+                            sub32_local(accum_lo[ch], accum_hi[ch], dt);
+                    }
+                }
+            }
+        }
+
+#pragma unroll
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            outputs[ch][2 * j + 0] = accum_lo[ch];
+            outputs[ch][2 * j + 1] = accum_hi[ch];
+        }
+    }
+
+    grid.sync();
+}
+
+// Backward-compatible 3-way wrapper
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group &grid,
@@ -2000,6 +2323,30 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
             DebugStatePurpose::Z1YY, debugStates[static_cast<int>(DebugStatePurpose::Z0YY)]);
         debugStates[static_cast<int>(DebugStatePurpose::Z1XY)].Reset(
             DebugStatePurpose::Z1XY, debugStates[static_cast<int>(DebugStatePurpose::Z0YY)]);
+
+        // NR: dzdcR and dzdcI after packing (before forward NTT butterfly)
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0W0, uint64_t>(
+                debugStates, grid, block, tempDigitsW0_1, SharkFloatParams::NTTPlan.N);
+            // Z1W0 = zR (same as Z0XX); Z0W2 = dzdcR (same as Z0W0)
+            debugStates[static_cast<int>(DebugStatePurpose::Z1W0)].Reset(
+                DebugStatePurpose::Z1W0, debugStates[static_cast<int>(DebugStatePurpose::Z0XX)]);
+            debugStates[static_cast<int>(DebugStatePurpose::Z0W2)].Reset(
+                DebugStatePurpose::Z0W2, debugStates[static_cast<int>(DebugStatePurpose::Z0W0)]);
+            debugStates[static_cast<int>(DebugStatePurpose::Z1W2)].Reset(
+                DebugStatePurpose::Z1W2, debugStates[static_cast<int>(DebugStatePurpose::Z0YY)]);
+
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0W1, uint64_t>(
+                debugStates, grid, block, tempDigitsW1_1, SharkFloatParams::NTTPlan.N);
+            // Z1W1 = zI (same as Z0YY); Z0W3 = dzdcI (same as Z0W1)
+            debugStates[static_cast<int>(DebugStatePurpose::Z1W1)].Reset(
+                DebugStatePurpose::Z1W1, debugStates[static_cast<int>(DebugStatePurpose::Z0YY)]);
+            debugStates[static_cast<int>(DebugStatePurpose::Z0W3)].Reset(
+                DebugStatePurpose::Z0W3, debugStates[static_cast<int>(DebugStatePurpose::Z0W1)]);
+            debugStates[static_cast<int>(DebugStatePurpose::Z1W3)].Reset(
+                DebugStatePurpose::Z1W3, debugStates[static_cast<int>(DebugStatePurpose::Z0XX)]);
+        }
+
         grid.sync();
     } else {
         grid.sync();
@@ -2069,6 +2416,34 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
             DebugStatePurpose::Z3YY, debugStates[static_cast<int>(DebugStatePurpose::Z2YY)]);
         debugStates[static_cast<int>(DebugStatePurpose::Z3XY)].Reset(
             DebugStatePurpose::Z3XY, debugStates[static_cast<int>(DebugStatePurpose::Z2YY)]);
+
+        // NR: dzdcR and dzdcI after forward NTT butterfly
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2W0, uint64_t>(
+                debugStates, grid, block, tempDigitsW0_1, SharkFloatParams::NTTPlan.N);
+            // Z3W0 = zR after NTT (second operand of W0=dzdcR*zR)
+            debugStates[static_cast<int>(DebugStatePurpose::Z3W0)].Reset(
+                DebugStatePurpose::Z3W0, debugStates[static_cast<int>(DebugStatePurpose::Z2XX)]);
+            // Z2W2 = dzdcR after NTT (same first operand as W0)
+            debugStates[static_cast<int>(DebugStatePurpose::Z2W2)].Reset(
+                DebugStatePurpose::Z2W2, debugStates[static_cast<int>(DebugStatePurpose::Z2W0)]);
+            // Z3W2 = zI after NTT (second operand of W2=dzdcR*zI)
+            debugStates[static_cast<int>(DebugStatePurpose::Z3W2)].Reset(
+                DebugStatePurpose::Z3W2, debugStates[static_cast<int>(DebugStatePurpose::Z2YY)]);
+
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2W1, uint64_t>(
+                debugStates, grid, block, tempDigitsW1_1, SharkFloatParams::NTTPlan.N);
+            // Z3W1 = zI after NTT (second operand of W1=dzdcI*zI)
+            debugStates[static_cast<int>(DebugStatePurpose::Z3W1)].Reset(
+                DebugStatePurpose::Z3W1, debugStates[static_cast<int>(DebugStatePurpose::Z2YY)]);
+            // Z2W3 = dzdcI after NTT (same first operand as W1)
+            debugStates[static_cast<int>(DebugStatePurpose::Z2W3)].Reset(
+                DebugStatePurpose::Z2W3, debugStates[static_cast<int>(DebugStatePurpose::Z2W1)]);
+            // Z3W3 = zR after NTT (second operand of W3=dzdcI*zR)
+            debugStates[static_cast<int>(DebugStatePurpose::Z3W3)].Reset(
+                DebugStatePurpose::Z3W3, debugStates[static_cast<int>(DebugStatePurpose::Z2XX)]);
+        }
+
         grid.sync();
     } else {
         grid.sync();
@@ -2196,6 +2571,25 @@ StoreCurrentDebugState(DebugState<SharkFloatParams> *SharkRestrict debugStates,
         UseConvolutionHere, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
+// Runtime-purpose overload for N-channel normalize
+template <class SharkFloatParams, typename ArrayType>
+static __device__ SharkForceInlineReleaseOnly void
+StoreCurrentDebugState(DebugState<SharkFloatParams> *SharkRestrict debugStates,
+                       cooperative_groups::grid_group &grid,
+                       cooperative_groups::thread_block &block,
+                       DebugStatePurpose purpose,
+                       const ArrayType *arrayToChecksum,
+                       size_t arraySize)
+{
+    const auto CurPurpose = static_cast<int32_t>(purpose);
+    constexpr auto RecursionDepth = 0;
+    constexpr auto UseConvolutionHere = UseConvolution::No;
+    constexpr auto CallIndex = 0;
+
+    debugStates[CurPurpose].Reset(
+        UseConvolutionHere, grid, block, arrayToChecksum, arraySize, purpose, RecursionDepth, CallIndex);
+}
+
 // Look for CalculateNTTFrameSize
 // and make sure the number of NewN arrays we're using here fits within that limit.
 // The list here should go up to ScratchMemoryArraysForMultiply.
@@ -2292,10 +2686,10 @@ static_assert(HpShark::AdditionalUInt64PerFrame == 256, "See below");
                                      CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 122 */   \
     constexpr auto Result_offsetW3 = Result_offsetW2 + 4 * NewN * TestMultiplier +                     \
                                      CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 126 */   \
-    constexpr auto NR_CarryInsOffset = Result_offsetW3 + 4 * NewN * TestMultiplier +                   \
-                                       CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 130 */ \
-    constexpr auto NR_CarryInsEnd = NR_CarryInsOffset + 4 * NewN +                                     \
-                                    CalcAlign16Bytes64BitIndex(4 * NewN); /* 134 */
+    /* NR carry buffers are merged into the main 7-way carry buffers (dynamically allocated). */        \
+    /* End of NR scratch is after Result_offsetW3.                                          */          \
+    constexpr auto NR_ScratchEnd = Result_offsetW3 + 4 * NewN * TestMultiplier +                       \
+                                   CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 130 */
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
@@ -2447,6 +2841,19 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
             debugStates, grid, block, tempDigitsYY1, SharkFloatParams::NTTPlan.N);
         StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm3, uint64_t>(
             debugStates, grid, block, tempDigitsXY1, SharkFloatParams::NTTPlan.N);
+
+        // NR: W0-W3 after inverse bit-reverse
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_PermW0, uint64_t>(
+                debugStates, grid, block, tempDigitsW0_1, SharkFloatParams::NTTPlan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_PermW1, uint64_t>(
+                debugStates, grid, block, tempDigitsW1_1, SharkFloatParams::NTTPlan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_PermW2, uint64_t>(
+                debugStates, grid, block, tempDigitsW2_1, SharkFloatParams::NTTPlan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_PermW3, uint64_t>(
+                debugStates, grid, block, tempDigitsW3_1, SharkFloatParams::NTTPlan.N);
+        }
+
         grid.sync();
     } else {
         grid.sync();
@@ -2518,6 +2925,19 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
             debugStates, grid, block, tempDigitsYY1, SharkFloatParams::NTTPlan.N);
         StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm6, uint64_t>(
             debugStates, grid, block, tempDigitsXY1, SharkFloatParams::NTTPlan.N);
+
+        // NR: W0-W3 after untwist
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_PermW0b, uint64_t>(
+                debugStates, grid, block, tempDigitsW0_1, SharkFloatParams::NTTPlan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_PermW1b, uint64_t>(
+                debugStates, grid, block, tempDigitsW1_1, SharkFloatParams::NTTPlan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_PermW2b, uint64_t>(
+                debugStates, grid, block, tempDigitsW2_1, SharkFloatParams::NTTPlan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_PermW3b, uint64_t>(
+                debugStates, grid, block, tempDigitsW3_1, SharkFloatParams::NTTPlan.N);
+        }
+
         grid.sync();
     } else {
         grid.sync();
@@ -2526,87 +2946,53 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     // The helper does a final grid.sync() internally.
     // At this point, tempDigitsXX1/YY1/XY1 are back in the normal domain (not Montgomery).
 
-    // 8) Unpack (fused 3-way) -> Final128 -> Normalize
-    SharkNTT::UnpackPrimeToFinal128_3Way<SharkFloatParams>(grid,
-                                                           block,
-                                                           tempDigitsXX1,
-                                                           tempDigitsYY1,
-                                                           tempDigitsXY1,
-                                                           Final128_XX,
-                                                           Final128_YY,
-                                                           Final128_XY,
-                                                           Ddigits);
-
-    // NR unpack — UnpackPrimeToFinal128_3Way includes a trailing grid.sync().
-    // Call it a second time for 3 of the 4 NR channels, then handle the 4th inline.
+    // 8) Unpack -> Final128
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        // 7-way: all products in one call, one trailing grid.sync()
+        const uint64_t *unpackInputs[7] = {
+            tempDigitsXX1, tempDigitsYY1, tempDigitsXY1,
+            tempDigitsW0_1, tempDigitsW1_1, tempDigitsW2_1, tempDigitsW3_1};
+        uint64_t *unpackOutputs[7] = {
+            Final128_XX, Final128_YY, Final128_XY,
+            Final128_W0, Final128_W1, Final128_W2, Final128_W3};
+        SharkNTT::UnpackPrimeToFinal128_NWay<SharkFloatParams, 7>(
+            grid, block, unpackInputs, unpackOutputs, Ddigits);
+    } else {
         SharkNTT::UnpackPrimeToFinal128_3Way<SharkFloatParams>(grid,
                                                                block,
-                                                               tempDigitsW0_1,
-                                                               tempDigitsW1_1,
-                                                               tempDigitsW2_1,
-                                                               Final128_W0,
-                                                               Final128_W1,
-                                                               Final128_W2,
+                                                               tempDigitsXX1,
+                                                               tempDigitsYY1,
+                                                               tempDigitsXY1,
+                                                               Final128_XX,
+                                                               Final128_YY,
+                                                               Final128_XY,
                                                                Ddigits);
-        // W3: inline 1-way unpack (same logic as a single channel of UnpackPrimeToFinal128)
-        {
-            using namespace SharkNTT;
-            const uint64_t HALF = (MagicPrime - 1ull) >> 1;
-            const int Imax = min(SharkFloatParams::NTTPlan.N, 2 * SharkFloatParams::NTTPlan.L - 1);
-            auto ceil_div_u64 = [](uint64_t a, uint32_t b) -> uint64_t {
-                return (a + (uint64_t)b - 1ull) / (uint64_t)b;
-            };
-            auto add32_local = [](uint64_t &lo, uint64_t &hi, uint32_t add32) {
-                if (!add32) return;
-                uint64_t old = lo; lo += (uint64_t)add32;
-                if (lo < old) hi += 1ull;
-            };
-            auto sub32_local = [](uint64_t &lo, uint64_t &hi, uint32_t sub32) {
-                if (!sub32) return;
-                uint64_t old = lo; lo = old - (uint64_t)sub32;
-                if (old < (uint64_t)sub32) hi -= 1ull;
-            };
-            for (size_t j = grank; j < Ddigits; j += gsize) {
-                uint64_t w3_lo = 0ull, w3_hi = 0ull;
-                for (int t = 0; t < 4; ++t) {
-                    if ((int)j - t < 0) continue;
-                    const uint64_t k = (uint64_t)((int)j - t);
-                    const uint64_t i_lo = ceil_div_u64(32ull * k, (uint32_t)SharkFloatParams::NTTPlan.b);
-                    const uint64_t i_hi_raw = ceil_div_u64(32ull * (k + 1ull), (uint32_t)SharkFloatParams::NTTPlan.b);
-                    uint64_t i_hi = (i_hi_raw == 0 ? 0 : (i_hi_raw - 1ull));
-                    if ((int64_t)i_lo > (int64_t)(Imax - 1)) continue;
-                    if (i_hi > (uint64_t)(Imax - 1)) i_hi = (uint64_t)(Imax - 1);
-                    if (i_lo > i_hi) continue;
-                    for (uint64_t iu = i_lo; iu <= i_hi; ++iu) {
-                        const int i = (int)iu;
-                        const uint64_t sBits = (uint64_t)i * (uint64_t)SharkFloatParams::NTTPlan.b;
-                        const int r = (int)(sBits & 31);
-                        const uint64_t lsh = (r ? (64 - r) : 64);
-                        const uint64_t v = tempDigitsW3_1[i];
-                        if (v) {
-                            const bool neg = (v > HALF);
-                            const uint64_t mag64 = neg ? (MagicPrime - v) : v;
-                            const uint64_t lo64 = r ? (mag64 << r) : mag64;
-                            const uint64_t hi64 = r ? (mag64 >> lsh) : 0ull;
-                            const uint32_t d0 = (uint32_t)(lo64 & 0xffffffffu);
-                            const uint32_t d1 = (uint32_t)((lo64 >> 32) & 0xffffffffu);
-                            const uint32_t d2 = (uint32_t)(hi64 & 0xffffffffu);
-                            const uint32_t d3 = (uint32_t)((hi64 >> 32) & 0xffffffffu);
-                            const uint32_t dt = (t == 0) ? d0 : (t == 1) ? d1 : (t == 2) ? d2 : d3;
-                            if (!neg) add32_local(w3_lo, w3_hi, dt);
-                            else      sub32_local(w3_lo, w3_hi, dt);
-                        }
-                    }
-                }
-                Final128_W3[2 * j + 0] = w3_lo;
-                Final128_W3[2 * j + 1] = w3_hi;
-            }
-            grid.sync();
-        }
     }
 
     grid.sync(); // subsequent phases depend on Final128_* fully written
+
+    // Post-unpack checksums (before normalize)
+    if constexpr (HpShark::DebugChecksums) {
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::UnpackXX, uint64_t>(
+            debugStates, grid, block, Final128_XX, 2 * Ddigits);
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::UnpackYY, uint64_t>(
+            debugStates, grid, block, Final128_YY, 2 * Ddigits);
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::UnpackXY, uint64_t>(
+            debugStates, grid, block, Final128_XY, 2 * Ddigits);
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::UnpackW0, uint64_t>(
+                debugStates, grid, block, Final128_W0, 2 * Ddigits);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::UnpackW1, uint64_t>(
+                debugStates, grid, block, Final128_W1, 2 * Ddigits);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::UnpackW2, uint64_t>(
+                debugStates, grid, block, Final128_W2, 2 * Ddigits);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::UnpackW3, uint64_t>(
+                debugStates, grid, block, Final128_W3, 2 * Ddigits);
+        }
+
+        grid.sync();
+    }
 
     outXX->SetNegative(false);
     outYY->SetNegative(false);
@@ -2626,121 +3012,113 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     uint64_t *resultYY = tempDigitsYY1; /* device buffer length 2*SharkFloatParams::GlobalNumUint32 */
     uint64_t *resultXY = tempDigitsXY1; /* device buffer length 2*SharkFloatParams::GlobalNumUint32 */
 
-    // ---- Single fused normalize for XX, YY, XY ----
-    // #define FORCE_ORIGINAL_NORMALIZE
-
-#ifdef FORCE_ORIGINAL_NORMALIZE
-    SharkNTT::Normalize_GridStride_3WayV1<SharkFloatParams>(
-        grid,
-        block,
-        debugGlobalState,
-        debugStates,
-        /* outXX */ *outXX,
-        /* outYY */ *outYY,
-        /* outXY */ *outXY,
-        /* inA   */ inA,
-        /* inB   */ inB,
-        /* Final128_XX */ Final128_XX,
-        /* Final128_YY */ Final128_YY,
-        /* Final128_XY */ Final128_XY,
-        /* Ddigits     */ Ddigits,
-        /* addTwoXX    */ addFactorOfTwoXX,
-        /* addTwoYY    */ addFactorOfTwoYY,
-        /* addTwoXY    */ addFactorOfTwoXY,
-        /* shared_data      */ CarryPropagationBuffer2,
-        /* block_carry_outs */ CarryPropagationBuffer,
-        /* globalCarryCheck */ CarryPropagationSync,
-        /* resultXX scratch */ resultXX,
-        /* resultYY scratch */ resultYY,
-        /* resultXY scratch */ resultXY);
-#else
-    SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
-                                                            block,
-                                                            debugGlobalState,
-                                                            debugStates,
-                                                            *outXX,
-                                                            *outYY,
-                                                            *outXY,
-                                                            inA,
-                                                            inB,
-                                                            Final128_XX,
-                                                            Final128_YY,
-                                                            Final128_XY,
-                                                            Ddigits,
-                                                            addFactorOfTwoXX,
-                                                            addFactorOfTwoYY,
-                                                            addFactorOfTwoXY,
-                                                            CarryPropagationBuffer2,
-                                                            CarryPropagationBuffer,
-                                                            CarryPropagationSync,
-                                                            CarryPropagationSync2,
-                                                            resultXX,
-                                                            resultYY,
-                                                            resultXY);
-#endif
-
-    // NR normalize: carry-propagate W0-W3 products.
-    // Reuse Normalize_GridStride_3WayV2 for W0/W1/W2, then a separate pass for W3.
-    // The orbit normalize above does a final grid.sync() internally, so buffers are safe to reuse.
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        // W products have addFactorOfTwo = 1 (like XY) since they include ×2 factor
-        const auto addFactorOfTwoW = 1;
-
         // W product signs: XOR of input signs
         outW0->SetNegative(inDzdcReal->GetNegative() ^ inA.GetNegative());   // dzdcR × zR
         outW1->SetNegative(inDzdcImag->GetNegative() ^ inB.GetNegative());   // dzdcI × zI
         outW2->SetNegative(inDzdcReal->GetNegative() ^ inB.GetNegative());   // dzdcR × zI
         outW3->SetNegative(inDzdcImag->GetNegative() ^ inA.GetNegative());   // dzdcI × zR
 
-        // Each W product has a unique input exponent pair, so we normalize
-        // one at a time using 3WayV2 with the product duplicated in all 3 slots.
-        // NOTE: This adds grid.syncs (one per normalize call). A future
-        // optimization could add a flexible normalize that takes per-product
-        // exponent pairs.
-
+        // All 7 products in one fused 7-way normalize call.
+        // This fixes the aliased-buffer bug in the old 4x3-way approach.
         uint64_t *resultW0 = tempDigitsW0_1;
-        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
-            block, debugGlobalState, debugStates,
-            *outW0, *outW0, *outW0,
-            *inDzdcReal, inA,       // W0 = dzdcR × zR
-            Final128_W0, Final128_W0, Final128_W0,
-            Ddigits, addFactorOfTwoW, addFactorOfTwoW, addFactorOfTwoW,
-            CarryPropagationBuffer2, CarryPropagationBuffer,
-            CarryPropagationSync, CarryPropagationSync2,
-            resultW0, resultW0, resultW0);
-
         uint64_t *resultW1 = tempDigitsW1_1;
-        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
-            block, debugGlobalState, debugStates,
-            *outW1, *outW1, *outW1,
-            *inDzdcImag, inB,       // W1 = dzdcI × zI
-            Final128_W1, Final128_W1, Final128_W1,
-            Ddigits, addFactorOfTwoW, addFactorOfTwoW, addFactorOfTwoW,
-            CarryPropagationBuffer2, CarryPropagationBuffer,
-            CarryPropagationSync, CarryPropagationSync2,
-            resultW1, resultW1, resultW1);
-
         uint64_t *resultW2 = tempDigitsW2_1;
-        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
-            block, debugGlobalState, debugStates,
-            *outW2, *outW2, *outW2,
-            *inDzdcReal, inB,       // W2 = dzdcR × zI
-            Final128_W2, Final128_W2, Final128_W2,
-            Ddigits, addFactorOfTwoW, addFactorOfTwoW, addFactorOfTwoW,
-            CarryPropagationBuffer2, CarryPropagationBuffer,
-            CarryPropagationSync, CarryPropagationSync2,
-            resultW2, resultW2, resultW2);
-
         uint64_t *resultW3 = tempDigitsW3_1;
+
+        HpSharkFloat<SharkFloatParams> *outs7[7] = {
+            outXX, outYY, outXY, outW0, outW1, outW2, outW3};
+        uint64_t *final128s7[7] = {
+            Final128_XX, Final128_YY, Final128_XY,
+            Final128_W0, Final128_W1, Final128_W2, Final128_W3};
+        uint64_t *results7[7] = {
+            resultXX, resultYY, resultXY,
+            resultW0, resultW1, resultW2, resultW3};
+        int32_t exps7[7] = {
+            inA.Exponent + inA.Exponent,               // XX
+            inB.Exponent + inB.Exponent,               // YY
+            inA.Exponent + inB.Exponent,               // XY
+            inDzdcReal->Exponent + inA.Exponent,       // W0 = dzdcR × zR
+            inDzdcImag->Exponent + inB.Exponent,       // W1 = dzdcI × zI
+            inDzdcReal->Exponent + inB.Exponent,       // W2 = dzdcR × zI
+            inDzdcImag->Exponent + inA.Exponent,       // W3 = dzdcI × zR
+        };
+        int32_t addTwos7[7] = {0, 0, 1, 1, 1, 1, 1};
+        DebugStatePurpose purposes7[7] = {
+            DebugStatePurpose::Final128XX, DebugStatePurpose::Final128YY,
+            DebugStatePurpose::Final128XY,
+            DebugStatePurpose::Final128W0, DebugStatePurpose::Final128W1,
+            DebugStatePurpose::Final128W2, DebugStatePurpose::Final128W3};
+
+        SharkNTT::Normalize_GridStride_NWay<SharkFloatParams, 7>(grid,
+                                                                  block,
+                                                                  debugGlobalState,
+                                                                  debugStates,
+                                                                  outs7,
+                                                                  exps7,
+                                                                  final128s7,
+                                                                  Ddigits,
+                                                                  addTwos7,
+                                                                  CarryPropagationBuffer2,
+                                                                  CarryPropagationBuffer,
+                                                                  CarryPropagationSync,
+                                                                  CarryPropagationSync2,
+                                                                  results7,
+                                                                  purposes7);
+    } else {
+        // Non-NR: existing 3-way call (unchanged)
+        // ---- Single fused normalize for XX, YY, XY ----
+        // #define FORCE_ORIGINAL_NORMALIZE
+
+#ifdef FORCE_ORIGINAL_NORMALIZE
+        SharkNTT::Normalize_GridStride_3WayV1<SharkFloatParams>(
+            grid,
+            block,
+            debugGlobalState,
+            debugStates,
+            /* outXX */ *outXX,
+            /* outYY */ *outYY,
+            /* outXY */ *outXY,
+            /* inA   */ inA,
+            /* inB   */ inB,
+            /* Final128_XX */ Final128_XX,
+            /* Final128_YY */ Final128_YY,
+            /* Final128_XY */ Final128_XY,
+            /* Ddigits     */ Ddigits,
+            /* addTwoXX    */ addFactorOfTwoXX,
+            /* addTwoYY    */ addFactorOfTwoYY,
+            /* addTwoXY    */ addFactorOfTwoXY,
+            /* shared_data      */ CarryPropagationBuffer2,
+            /* block_carry_outs */ CarryPropagationBuffer,
+            /* globalCarryCheck */ CarryPropagationSync,
+            /* resultXX scratch */ resultXX,
+            /* resultYY scratch */ resultYY,
+            /* resultXY scratch */ resultXY);
+#else
         SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
-            block, debugGlobalState, debugStates,
-            *outW3, *outW3, *outW3,
-            *inDzdcImag, inA,       // W3 = dzdcI × zR
-            Final128_W3, Final128_W3, Final128_W3,
-            Ddigits, addFactorOfTwoW, addFactorOfTwoW, addFactorOfTwoW,
-            CarryPropagationBuffer2, CarryPropagationBuffer,
-            CarryPropagationSync, CarryPropagationSync2,
-            resultW3, resultW3, resultW3);
+                                                                block,
+                                                                debugGlobalState,
+                                                                debugStates,
+                                                                *outXX,
+                                                                *outYY,
+                                                                *outXY,
+                                                                inA,
+                                                                inB,
+                                                                Final128_XX,
+                                                                Final128_YY,
+                                                                Final128_XY,
+                                                                Ddigits,
+                                                                addFactorOfTwoXX,
+                                                                addFactorOfTwoYY,
+                                                                addFactorOfTwoXY,
+                                                                CarryPropagationBuffer2,
+                                                                CarryPropagationBuffer,
+                                                                CarryPropagationSync,
+                                                                CarryPropagationSync2,
+                                                                resultXX,
+                                                                resultYY,
+                                                                resultXY);
+#endif
     }
 }
 
@@ -2773,7 +3151,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     constexpr auto TotalAlloc =
         HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>();
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        static_assert(NR_CarryInsEnd <= TotalAlloc,
+        static_assert(NR_ScratchEnd <= TotalAlloc,
                       "NR scratch offsets exceed total allocation");
     } else {
         static_assert(CarryInsEnd <= TotalAlloc,
@@ -2851,7 +3229,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
             debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(
             debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 80,
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 87,
                       "Unexpected number of purposes");
     }
 
@@ -2909,11 +3287,20 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     uint64_t *Final128_XY = buffer + off; // (size_t)2 * Ddigits
     off += (size_t)2 * Ddigits;
 
+    // Carry buffers: 7-way for NR (7*Ddigits+7 per buffer), 3-way otherwise (6*Ddigits)
+    const size_t carryBufEntries = [&]() -> size_t {
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            return static_cast<size_t>(7) * Ddigits + 7;
+        } else {
+            return static_cast<size_t>(6) * Ddigits;
+        }
+    }();
+
     uint64_t *CarryPropagationBuffer = buffer + off;
-    off += 6 * Ddigits;
+    off += carryBufEntries;
 
     uint64_t *CarryPropagationBuffer2 = buffer + off;
-    off += 6 * Ddigits;
+    off += carryBufEntries;
 
     uint64_t *CarryPropagationSync = &tempProducts[0];
     uint64_t *CarryPropagationSync2 = &tempProducts[16];
@@ -2941,10 +3328,17 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
         tempDigitsW2_2 = &tempProducts[Z2_offsetW2];
         tempDigitsW3_1 = &tempProducts[Z0_offsetW3];
         tempDigitsW3_2 = &tempProducts[Z2_offsetW3];
-        Final128_W0 = &tempProducts[Result_offsetW0];
-        Final128_W1 = &tempProducts[Result_offsetW1];
-        Final128_W2 = &tempProducts[Result_offsetW2];
-        Final128_W3 = &tempProducts[Result_offsetW3];
+
+        // NR Final128 buffers need 2*Ddigits entries each (not 4*NewN from macro,
+        // which is too small: 4*NewN < 2*Ddigits for some limb counts).
+        Final128_W0 = buffer + off;
+        off += (size_t)2 * Ddigits;
+        Final128_W1 = buffer + off;
+        off += (size_t)2 * Ddigits;
+        Final128_W2 = buffer + off;
+        off += (size_t)2 * Ddigits;
+        Final128_W3 = buffer + off;
+        off += (size_t)2 * Ddigits;
     }
 
     // XX = A^2

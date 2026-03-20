@@ -38,9 +38,6 @@ where $z_p$ denotes the $p$-fold iterate of the critical point.
 
 Locating these nuclei is useful for several reasons:
 \begin{itemize}
-\item \textbf{Reference orbit placement.}  A reference orbit (\cref{sec:ref-orbit-calc}) centered at a
-  nucleus is exactly periodic, eliminating long-term drift and improving the
-  accuracy of perturbation-based rendering (\cref{sec:perturbation-concept}) nearby.
 \item \textbf{Automatic navigation.}  Given a user click, the finder can snap
   to the nearest mini-brot center and report its period and intrinsic size,
   enabling one-click deep-zoom targeting.
@@ -132,7 +129,20 @@ Finding a period-$p$ nucleus amounts to solving $F(c)=0$ where
 F(c) \;=\; z_p(c),\qquad
 z_0 = 0,\quad z_{n+1} = z_n^2 + c.
 \end{equation}
-Newton's method produces the update
+The algorithm decomposes into two nested loops: an \emph{outer loop} that
+updates the candidate~$c$ via Newton's method, and an \emph{inner loop} that
+evaluates $F(c)$ and its derivatives by iterating the critical orbit for
+$p$~steps.  The outer loop is inherently sequential---each Newton step
+depends on the previous one---but the inner loop is the computational
+bottleneck and is amenable to GPU acceleration
+(\cref{subsec:ff-inner-gpu}).
+
+\subsubsection{Outer loop: Newton step}
+\label{subsubsec:ff-outer}
+
+Given the outputs of the inner loop---$z_p$, $\partial z_p/\partial c$, and
+optionally $\partial^2 z_p/\partial c^2$---Newton's method produces the
+update
 \begin{equation}\label{eq:ff-newton-step}
 \Delta c \;=\; \frac{F(c)}{F'(c)}
          \;=\; \frac{z_p}{\partial z_p / \partial c},
@@ -144,27 +154,9 @@ the complex division expands to:
 \Delta c_x &= \frac{z_x\,d_x + z_y\,d_y}{d_x^2 + d_y^2}, \\[4pt]
 \Delta c_y &= \frac{z_y\,d_x - z_x\,d_y}{d_x^2 + d_y^2}.
 \end{align}
-Because $z_{n+1}=z_n^2+c$, the derivative satisfies the linear recurrence
-\begin{equation}\label{eq:ff-dzdc-recurrence}
-\frac{\partial z_{n+1}}{\partial c}
-  = 2\,z_n\,\frac{\partial z_n}{\partial c} + 1,
-\qquad \frac{\partial z_0}{\partial c} = 0,
-\end{equation}
-so both $z_n$ and $\partial z_n/\partial c$ are available at the end of a
-single forward pass of $p$~iterations.
-
-\paragraph{The \code{zcoeff} product.}
-In addition to $\partial z_p/\partial c$, the code tracks a multiplicative
-coefficient
-\begin{equation}\label{eq:ff-zcoeff}
-w_n = \prod_{k=0}^{n-1} 2\,z_k,
-\end{equation}
-with the convention $w_0=1$.  This product satisfies
-$\partial z_n/\partial c = w_n + \text{lower-order terms}$ and is used later
-to compute the intrinsic scale of the mini-brot (see
-\cref{subsec:ff-intrinsic-radius}).  In the code it is updated as
-\code{zcoeff *= 2*z} at each iteration, matching the recurrence for the
-leading factor of the derivative.
+(When the Halley gate is satisfied, a higher-order step using
+$\partial^2 z_p/\partial c^2$ replaces the Newton step; see
+\cref{subsec:ff-halley}.)
 
 \paragraph{Convergence.}
 Standard Newton--Raphson converges quadratically near a simple root.  The
@@ -193,6 +185,315 @@ relative to the local stretching factor $|\partial z/\partial c|$, which is
 a hallmark of near-periodic behavior.  A dynamic tightening mechanism
 (implemented in the \code{PeriodicityPP} helper) progressively shrinks the
 effective $R^2$ during the scan to reduce false triggers.
+
+\subsubsection{Inner loop: forward evaluation}
+\label{subsubsec:ff-inner}
+
+Each Newton step requires evaluating $F(c) = z_p(c)$ and its first two
+derivatives at the current guess~$c$.  This is done by iterating the
+critical orbit from $z_0 = 0$ for exactly $p$~steps, accumulating three
+quantities simultaneously at \emph{different precision levels}:
+
+\begin{enumerate}
+\item \textbf{Orbit} ($z$) --- \emph{coordinate precision} (\code{mpf\_t},
+  hundreds to tens of thousands of bits):
+  $z_{n+1} = z_n^2 + c$.
+\item \textbf{First derivative} ($\partial z/\partial c$, written
+  $\mathit{dzdc}$) --- \emph{derivative precision} (\code{mpf\_t}, a
+  reduced precision $P_d \le P_c$; see \cref{subsec:ff-mixed-prec}):
+  $\mathit{dzdc}_{n+1} = 2\,z_n \cdot \mathit{dzdc}_n + 1$.
+\item \textbf{Second derivative} ($\partial^2 z/\partial c^2$, written
+  $d2$) --- \emph{low precision} (\code{HDRFloat<double>}, ${\sim}53$-bit
+  mantissa with wide exponent range):
+  $d2_{n+1} = 2\bigl(\mathit{dzdc}_n^{\,2} + z_n \cdot d2_n\bigr)$.
+\end{enumerate}
+
+\noindent
+Initial conditions: $z_0 = 0$, $\;\mathit{dzdc}_0 = 0$, $\;d2_0 = 0$.
+
+The second derivative is deliberately kept at low precision because it is
+only used for the Halley correction factor
+(\cref{subsec:ff-halley}), where ${\sim}53$~bits suffice
+to provide the cubic-convergence benefit during early iterations.
+The $z$ and $\mathit{dzdc}$ values are truncated to ${\sim}53$-bit
+\code{HDRFloat} before entering the $d2$ recurrence---the $d2$
+computation never touches the high-precision \code{mpf\_t}
+representation.
+
+After $p$~iterations the outputs $z_p$, $\mathit{dzdc}_p$, and $d2_p$ are
+returned to the outer loop.
+
+\paragraph{Real/imaginary expansion.}
+To implement the inner loop with ordinary (real-valued) arithmetic, write
+\[
+z = x + i\,y,\qquad
+\mathit{dzdc} = dx + i\,dy,\qquad
+d2 = d2x + i\,d2y,\qquad
+c = c_x + i\,c_y.
+\]
+Each iteration step then consists of the following scalar operations.
+
+\medskip\noindent
+\textbf{Orbit}\quad ($z \leftarrow z^2 + c$):
+\begin{equation}\label{eq:ff-orbit-ri}
+\boxed{\begin{aligned}
+x_{n+1} &= x_n^2 - y_n^2 + c_x, \\
+y_{n+1} &= 2\,x_n\,y_n + c_y.
+\end{aligned}}
+\end{equation}
+
+\noindent
+\textbf{First derivative}\quad ($\mathit{dzdc} \leftarrow 2\,z\cdot\mathit{dzdc} + 1$):
+\begin{equation}\label{eq:ff-dzdc-ri}
+\boxed{\begin{aligned}
+dx_{n+1} &= 2\,x_n \cdot dx_n - 2\,y_n \cdot dy_n + 1, \\
+dy_{n+1} &= 2\,x_n \cdot dy_n + 2\,y_n \cdot dx_n.
+\end{aligned}}
+\end{equation}
+
+\noindent
+\textbf{Second derivative}\quad
+($d2 \leftarrow 2\,(\mathit{dzdc}^{\,2} + z \cdot d2)$):
+\begin{equation}\label{eq:ff-d2-ri}
+\boxed{\begin{aligned}
+d2x_{n+1} &= 2\,dx_n^2 - 2\,dy_n^2
+              + 2\,x_n \cdot d2x_n - 2\,y_n \cdot d2y_n, \\
+d2y_{n+1} &= 4\,dx_n \cdot dy_n
+              + 2\,x_n \cdot d2y_n + 2\,y_n \cdot d2x_n.
+\end{aligned}}
+\end{equation}
+
+\noindent
+Each line is a sequence of multiplies, adds, and subtracts on real-valued
+scalars---no complex arithmetic library is required.  Note that
+\emph{within} a single iteration, the orbit update uses $x_n$,~$y_n$ (the
+old values), the $\mathit{dzdc}$ update uses $x_n$,~$y_n$ and the old
+$dx_n$,~$dy_n$, and the $d2$ update uses the old $x_n$,~$y_n$,
+$dx_n$,~$dy_n$, $d2x_n$,~$d2y_n$.  The $d2$ recurrence must therefore be
+evaluated \emph{before} the orbit and $\mathit{dzdc}$ values are
+overwritten (or all old values must be saved).
+
+\paragraph{Operation count.}
+Not all operations are equally expensive.  The orbit and first-derivative
+recurrences use high-precision \code{mpf\_t} arithmetic, where each
+$N$-limb multiply costs $O(N \log N)$ (NTT-based) and each add/subtract
+costs $O(N)$.  The second derivative uses ${\sim}53$-bit
+\code{HDRFloat} arithmetic---a handful of \code{double} operations per
+iteration, negligible by comparison.
+
+Counting real-valued scalar operations from
+\cref{eq:ff-orbit-ri,eq:ff-dzdc-ri,eq:ff-d2-ri}, each iteration requires:
+
+\begin{center}
+\small
+\begin{tabular}{llccc}
+\hline
+\textbf{Recurrence} & \textbf{Precision} &
+  \textbf{Muls} & $\boldsymbol{\times 2}$ & \textbf{Add/subs} \\
+\hline
+Orbit ($z^2 + c$) & coord &
+  3 & 1 & 3 \\
+$\mathit{dzdc}$ ($2z \cdot \mathit{dzdc} + 1$) & deriv &
+  4 & 2 & 3 \\
+$d2$ ($2(\mathit{dzdc}^2 {+} z {\cdot} d2)$) & ${\sim}53$-bit HDR &
+  7 & 3 & 5 \\
+\hline
+\textbf{HP total} & &
+  \textbf{7} & \textbf{3} & \textbf{6} \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent
+``Muls'' are full $N \times N$ multiplications (\code{mpf\_mul}, $O(N \log
+N)$ each)---the dominant cost.  ``$\times 2$'' denotes scaling by~two
+(\code{mpf\_mul\_ui} on CPU, \code{addTwos} normalization on GPU), which is
+$O(N)$ like an addition.  ``Add/subs'' includes all additions,
+subtractions, and constant additions ($+1$, $+c_x$, $+c_y$), each $O(N)$.
+The ``HP total'' row counts only the high-precision (coord and deriv)
+operations; the $d2$ row contributes only cheap ${\sim}53$-bit work.
+
+\noindent
+In the expanded equations each $\mathit{dzdc}$ and $d2$ term carries an
+explicit factor of~2 (e.g.\ $2\,x \cdot dx$).  In the implementation
+the~$\times 2$ is \emph{not} applied per-term: on the CPU the factor is
+pre-applied to the operands ($2x$, $2y$ via \code{mpf\_mul\_ui}), and all
+four derivative products share these two scaled operands.  On the GPU the
+multiply kernel produces the raw products and the $\times 2$ is folded
+into the normalization step (\code{addTwos}).  Either way the total is
+4~full multiplies plus 2~$\times 2$ operations for $\mathit{dzdc}$.
+
+\noindent
+Concretely, the orbit contributes 3~multiplies at coordinate precision
+($x^2$, $y^2$, $x \cdot y$) plus 3~add/subs ($x^2 - y^2$, $+c_x$,
+$+c_y$) and one~$\times 2$ ($2 \cdot xy$).  The derivative contributes
+4~multiplies at derivative precision ($x \cdot dx$, $y \cdot dy$,
+$x \cdot dy$, $y \cdot dx$) plus 3~add/subs (one subtraction, one
+addition, $+1$) and two~$\times 2$ (scaling $x$ and $y$ by~2 before
+multiplying, or equivalently scaling the products after).
+
+\noindent
+The 7~high-precision multiplies are \emph{independent} of one another
+within a single iteration and can all execute in parallel.  This is
+exactly why the multi-threaded CPU evaluator dispatches them to
+7~spin-based worker threads (\cref{subsec:ff-threading}), and why the
+GPU backend can batch them as simultaneous NTT launches
+(\cref{subsec:ff-inner-gpu}).  The $d2$ computation runs on the main
+thread (or a single GPU thread) concurrently with the high-precision
+work, using truncated ${\sim}53$-bit copies of~$z$ and $\mathit{dzdc}$,
+and completes long before the \code{mpf\_mul} workers finish.
+
+\paragraph{The \code{zcoeff} product.}
+In addition to $\partial z_p/\partial c$, the code tracks a multiplicative
+coefficient
+\begin{equation}\label{eq:ff-zcoeff}
+w_n = \prod_{k=0}^{n-1} 2\,z_k,
+\end{equation}
+with the convention $w_0=1$.  This product satisfies
+$\partial z_n/\partial c = w_n + \text{lower-order terms}$ and is used later
+to compute the intrinsic scale of the mini-brot (see
+\cref{subsec:ff-intrinsic-radius}).  In the code it is updated as
+\code{zcoeff *= 2*z} at each iteration, matching the recurrence for the
+leading factor of the derivative.
+
+\subsubsection{GPU acceleration of the inner loop}
+\label{subsec:ff-inner-gpu}
+
+The inner loop's 7~high-precision multiplies per iteration are the
+dominant cost of the entire Newton--Raphson procedure.  At deep zooms,
+where the coordinate precision reaches thousands of 32-bit limbs, each
+multiply is an $O(N \log N)$ NTT-based operation.  (The 6~additional
+multiplies for the second derivative are ${\sim}53$-bit \code{HDRFloat}
+operations and contribute negligible cost.)
+
+A naive GPU approach would compute the 4~NR derivative products in a
+\emph{separate} kernel launch from the 3~orbit products, doubling the
+number of grid-wide synchronization barriers per iteration.  Because
+barrier latency on a cooperative grid is largely independent of the
+arithmetic performed between barriers, this would roughly halve the
+effective throughput.
+
+\FractalShark{}'s implementation avoids this penalty entirely: the
+NR derivative products are \emph{interleaved} into the same multiply and
+add kernel calls that already exist for the orbit-only reference orbit
+computation, reusing the same barriers with zero additional
+synchronization overhead.
+
+\paragraph{Per-iteration structure.}
+Each iteration of \code{ReferenceHelper} (in
+\code{KernelHpSharkReferenceOrbit\_cu.h}) proceeds in three phases:
+
+\begin{enumerate}
+\item \textbf{$d2$ accumulation (HDRFloat).}
+  A single GPU thread (block~0, thread~0) computes the second derivative
+  update (\cref{eq:ff-d2-ri}) in ${\sim}53$-bit \code{HDRFloat}
+  arithmetic, using truncated copies of the current $z$ and
+  $\mathit{dzdc}$.  This runs \emph{before} the multiply kernel and
+  requires no synchronization: the $d2$ values are private to one thread
+  and the multiply does not depend on them.
+
+\item \textbf{Multiply kernel} (\code{MultiplyHelperNTTV2Separates}).
+  Computes all 7~products in a single cooperative-grid launch:
+  \begin{center}
+  \small
+  \begin{tabular}{lll}
+  \hline
+  \textbf{Product} & \textbf{Operands} & \textbf{Purpose} \\
+  \hline
+  XX & $x \times x$ & orbit: $x^2$ \\
+  YY & $y \times y$ & orbit: $y^2$ \\
+  XY & $x \times y$ & orbit: $x \cdot y$ \\
+  W0 & $dx \times x$ & $\mathit{dzdc}$: $dx \cdot x$ \\
+  W1 & $dy \times y$ & $\mathit{dzdc}$: $dy \cdot y$ \\
+  W2 & $dx \times y$ & $\mathit{dzdc}$: $dx \cdot y$ \\
+  W3 & $dy \times x$ & $\mathit{dzdc}$: $dy \cdot x$ \\
+  \hline
+  \end{tabular}
+  \end{center}
+
+\item \textbf{Add kernel} (\code{AddHelperSeparates}).
+  Combines the 7~products into 4~results (2~orbit $+$ 2~derivative):
+  \begin{center}
+  \small
+  \begin{tabular}{ll}
+  \hline
+  \textbf{Output} & \textbf{Computation} \\
+  \hline
+  $x_{n+1}$ & $\text{XX} - \text{YY} + c_x$ \\
+  $y_{n+1}$ & $2 \cdot \text{XY} + c_y$ \\
+  $dx_{n+1}$ & $2 \cdot \text{W0} - 2 \cdot \text{W1} + 1$ \\
+  $dy_{n+1}$ & $2 \cdot \text{W2} + 2 \cdot \text{W3}$ \\
+  \hline
+  \end{tabular}
+  \end{center}
+\end{enumerate}
+
+\paragraph{Barrier reuse in the multiply kernel.}
+The NTT-based multiply pipeline
+(\cref{sec:ntt-multiply}) requires grid-wide barriers between each
+major phase: packing/twisting, forward NTT, pointwise multiply, inverse
+NTT, unpacking, and normalization.  When NR is enabled, the forward and
+inverse NTT passes use \code{FourWay} mode---processing
+$x$, $y$, $dx$, $dy$ through the \emph{same} butterfly stages
+with the \emph{same} internal barriers.  The pointwise multiply
+phase computes all 7~products in a \emph{single} grid-strided loop with
+one trailing barrier.  Unpacking and normalization are handled by
+\code{NWay<7>} variants that process all 7~results in one pass.
+
+The result: \textbf{the multiply kernel executes the same number of
+\code{grid.sync()} barriers whether NR is enabled or not.}  The NR
+products add only a small amount of pointwise Montgomery arithmetic
+per frequency index---negligible compared to the barrier and memory
+costs.
+
+\paragraph{Barrier reuse in the add kernel.}
+The add kernel computes the orbit results ($x^2 - y^2 + c_x$ and
+$2xy + c_y$) via three-operand addition with magnitude comparison,
+sign selection, carry propagation (parallel prefix scan), and
+normalization.  When NR is enabled, the W0--W3 arrays are passed
+alongside the orbit arrays into the \emph{same} function calls:
+\code{Phase1\_ABC} handles both $\text{XX} - \text{YY} + c_x$ and
+$\text{W0} - \text{W1} + 1$ in one pass;
+\code{Phase1\_DE} handles both $2\text{XY} + c_y$ and
+$\text{W2} + \text{W3}$ in one pass;
+\code{CarryPropagation\_ABC\_PPv5} resolves carries for all
+6~streams (3~orbit $+$ 3~NR) simultaneously.
+
+Again, \textbf{no additional barriers are introduced.}  The NR arrays
+are separate buffers processed in parallel with the orbit arrays
+between the same synchronization points.
+
+\paragraph{The \code{addTwos} mechanism.}
+The factor of~2 in the expanded equations
+(\cref{eq:ff-orbit-ri,eq:ff-dzdc-ri})---$2xy$,
+$2\,x \cdot dx$, etc.---is \emph{not} applied as a separate
+multiply-by-two pass.  Instead, the normalize phase of the multiply
+kernel applies it via an \code{addTwos} exponent adjustment array:
+\[
+\code{addTwos[7]} = \{0,\; 0,\; 1,\; 1,\; 1,\; 1,\; 1\},
+\]
+where a value of~1 shifts the result exponent by one bit (equivalent to
+$\times 2$).  The orbit products XX and YY are not scaled; XY and all
+four W products receive the $\times 2$.  This matches the distributed
+form of the equations: each derivative product appears with a factor
+of~2 already absorbed.
+
+\paragraph{Summary: zero-overhead NR derivatives.}
+The orbit-only reference orbit kernel computes 3~multiplies and
+2~add-results per iteration.  Enabling NR adds 4~more multiplies and
+2~more add-results, but these are folded into the existing pipeline
+without any new kernel launches or synchronization barriers.  The GPU
+thread utilization improves (more arithmetic per barrier), and the
+total barrier count per iteration---the dominant performance
+factor---is \emph{unchanged}.
+
+\medskip
+\noindent
+The outer Newton loop (typically ${\sim}10$--$30$ iterations) remains on
+the host; only the inner loop---$p$ iterations of high-precision
+arithmetic per Newton step---moves to the GPU.  For large $p$ and $N$
+the total arithmetic volume scales as $O(p \cdot N \log N)$ per Newton
+step, making the GPU's throughput advantage decisive.
 
 \subsection{Halley's method}
 \label{subsec:ff-halley}
@@ -241,26 +542,13 @@ The numerator $N = 2\,F\,F'$ is a complex product, and the final step
 $\Delta_H = N / D$ is a complex division as in \cref{eq:ff-newton-step}.
 
 \paragraph{Second derivative recurrence.}
-Differentiating \cref{eq:ff-dzdc-recurrence} once more gives
-\begin{equation}\label{eq:ff-d2zdc2}
-\frac{\partial^2 z_{n+1}}{\partial c^2}
-  = 2\left(\frac{\partial z_n}{\partial c}\right)^{\!2}
-  + 2\,z_n\,\frac{\partial^2 z_n}{\partial c^2},
-\qquad \frac{\partial^2 z_0}{\partial c^2} = 0.
-\end{equation}
-Writing $d_n = d_x + i\,d_y$ for $\partial z_n/\partial c$ and
-$e_n = e_x + i\,e_y$ for $\partial^2 z_n/\partial c^2$:
-\begin{align}
-e_{x,n+1} &= 2\,(d_x^2 - d_y^2) + 2\,(x_n\,e_x - y_n\,e_y), \\
-e_{y,n+1} &= 2\,(2\,d_x\,d_y) + 2\,(x_n\,e_y + y_n\,e_x).
-\end{align}
-The first term is a complex squaring of $d_n$; the second is a complex product
-$z_n \cdot e_n$.
-In the code this quantity is carried as a pair of \code{HDRFloat<double>}
-values (real and imaginary parts), which provide a wide exponent range at low
-mantissa precision.  The coordinate-precision quantities $z$ and
-$\partial z/\partial c$ are stored in \code{mpf\_t}, while
-$\partial^2 z/\partial c^2$ remains in HDR throughout the forward
+The second derivative $d2 = \partial^2 z/\partial c^2$ is computed by the
+inner loop (\cref{subsubsec:ff-inner}) using the recurrence in
+\cref{eq:ff-d2-ri}.  In the code this quantity is carried as a pair of
+\code{HDRFloat<double>} values (real and imaginary parts), which provide a
+wide exponent range at low mantissa precision.  The coordinate-precision
+quantities $z$ and $\partial z/\partial c$ are stored in \code{mpf\_t},
+while $\partial^2 z/\partial c^2$ remains in HDR throughout the forward
 evaluation.  When the Halley step is actually computed, the HDR second
 derivative is promoted to \code{mpf\_t} at coordinate precision.
 
@@ -458,54 +746,31 @@ as a \code{HighPrecision} value in \code{FeatureSummary} and can be used by
 the renderer to set an appropriate zoom level or to determine the additional
 bits of precision needed to render the component's interior.
 
-\subsection{Threading model and GPU prospects}
+\subsection{Threading model}
 \label{subsec:ff-threading}
 
-\paragraph{Current multi-threaded implementation.}
+\paragraph{Multi-threaded CPU implementation.}
 The dominant cost of the Feature Finder is the forward evaluation
-\code{EvaluateCriticalOrbitAndDerivs}, which iterates $z_{n+1}=z_n^2+c$ and
-the derivative $\partial z_p/\partial c$ for $p$ iterations at high precision
-using GMP \code{mpf\_t} arithmetic.  Each iteration requires several
-independent high-precision multiplies: three at coordinate precision
-($z_{\mathrm{re}}^2$, $z_{\mathrm{im}}^2$, $z_{\mathrm{re}} \cdot
-z_{\mathrm{im}}$) and four at derivative precision (the complex product
-$\mathrm{dzdc} \cdot 2z$).  Because these multiplies are independent within a
-single iteration, \FractalShark{} dispatches them to a pool of seven spin-based
-worker threads (\code{NWORK~=~7}).  Synchronization uses cache-line-aligned
-(\code{alignas(64)}) generation counters with atomic acquire/release
-semantics---no mutexes or condition variables---so the main thread and workers
-coordinate with minimal latency.  The main thread composes the results after
-each batch completes and advances to the next iteration.
+\code{EvaluateCriticalOrbitAndDerivs}, which performs the inner loop
+described in \cref{subsubsec:ff-inner} at high precision using GMP
+\code{mpf\_t} arithmetic.  Because the 7~high-precision multiplies within
+each iteration are independent (\cref{subsec:ff-inner-gpu}),
+\FractalShark{} dispatches them to a pool of seven spin-based worker
+threads (\code{NWORK~=~7})---one worker per multiply.
+Synchronization uses cache-line-aligned (\code{alignas(64)}) generation
+counters with atomic acquire/release semantics---no mutexes or condition
+variables---so the main thread and workers coordinate with minimal latency.
+The main thread composes the results after each batch completes and
+advances to the next iteration.
 
 A single-threaded fallback (\code{EvaluateCriticalOrbitAndDerivsST}) with
 identical logic is also provided.
 
-The Newton outer loop in \code{FindPeriodicPoint\_Common} is inherently
-sequential: each Newton step $c \leftarrow c - z_p / (\partial z_p / \partial
-c)$ depends on the preceding evaluation's output, so successive steps cannot
-overlap.
+The Newton outer loop (\cref{subsubsec:ff-outer}) in
+\code{FindPeriodicPoint\_Common} is inherently sequential: each Newton step
+$c \leftarrow c - z_p / (\partial z_p / \partial c)$ depends on the
+preceding evaluation's output, so successive steps cannot overlap.
 
-\paragraph{GPU acceleration via \code{HpSharkFloat}.}
-The arithmetic bottleneck that motivates the seven-worker CPU pool is the same
-bottleneck that the GPU reference orbit backend (\cref{subsec:ref-orbit-gpu})
-already addresses: high-precision multiplication at thousands of limbs.
-\FractalShark{}'s existing \code{HpSharkFloat} pipeline performs NTT-based
-multiplication on the GPU and has demonstrated roughly $10\times$ speedups over
-multithreaded MPIR at 16384 limbs.
-
-A natural extension would replace the CPU \code{mpf\_mul} calls inside the
-forward evaluation with GPU kernel launches through the same
-\code{HpSharkFloat} infrastructure.  The host would continue to drive the
-Newton outer loop, but each forward evaluation---$p$ iterations of $z=z^2+c$
-plus the derivative recurrence---would execute as GPU work.  This mirrors the
-architecture of the reference orbit GPU backend, where the host orchestrates
-iteration batches and the GPU performs the heavy arithmetic.
-
-At high periods and deep zooms (thousands of 32-bit limbs), the per-multiply
-GPU advantage would dominate the overall wall-clock time.  The Newton loop
-typically converges in tens of steps, each requiring $p$ high-precision
-multiplies, so the total arithmetic volume scales as $O(p \cdot N \log N)$ per
-Newton step (where $N$ is the limb count).  For large $p$ and $N$, offloading
-this to the GPU would yield substantial speedups over both the single-threaded
-and seven-worker CPU implementations.
+GPU acceleration of the inner loop via the \code{HpSharkFloat} backend is
+discussed in \cref{subsec:ff-inner-gpu}.
 

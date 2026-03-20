@@ -2,10 +2,32 @@
 \section{Approximation-Based Orbit Acceleration}
 \label{sec:approx-accel}
 
-At deep zoom, the cost of iterating high-precision types for every pixel can be
-dominant. The remaining components described below are still in service of the
-same rendering goal: compute escape-time for \(z_{n+1}=z_n^2+c\), but by reusing
-a \emph{reference orbit} and evolving \emph{deltas} for nearby pixels.
+Perturbation theory (\cref{sec:perturbation-concept}) reduces the
+precision required for per-pixel iteration, but it does not reduce the
+\emph{number} of iterations: every pixel still executes the perturbation
+recurrence for up to~$p$ steps, where $p$ is the reference orbit length.
+At deep zooms $p$ can reach billions, making per-pixel cost linear
+in~$p$---and this cost is multiplied by every pixel on screen.
+
+Approximation methods attack this remaining bottleneck by \emph{skipping}
+large blocks of iterations entirely.  Instead of stepping through the
+perturbation recurrence one iteration at a time, they precompute linear
+maps that advance the perturbation delta by many iterations in a single
+evaluation.  \FractalShark{} implements two progressively more aggressive
+strategies:
+\begin{itemize}
+\item \textbf{Bilinear Approximation (BLA)}
+  (\cref{sec:bilinear-approx})---precomputes composable two-term linear
+  maps from the reference orbit, skipping iterations where the
+  linearization error remains bounded.
+\item \textbf{Linear Approximation v2 (LA)}
+  (\cref{sec:la-v2})---precomputes staged linear-approximation
+  coefficients that can skip entire sections of the orbit in one
+  evaluation, achieving larger skips at the cost of more complex
+  coefficient management.
+\end{itemize}
+Both techniques preserve the perturbation framework's mixed-precision
+advantage while reducing per-pixel work from $O(p)$ to a fraction of~$p$.
 
 \subsection{Bilinear approximation (BLA) for orbit deltas}
 \label{sec:bilinear-approx}

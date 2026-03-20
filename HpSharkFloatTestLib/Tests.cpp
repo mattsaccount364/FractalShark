@@ -1280,6 +1280,12 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
             const auto &host = debugResultsHost[i];
             const auto &cuda = debugGpuCombo.States[i];
 
+            // Skip entries that were never written on either side
+            // (e.g., NR debug slots when running non-NR types)
+            if (!host.Initialized && cuda.Initialized != 1) {
+                continue;
+            }
+
             const auto maxHostArraySize =
                 std::max(host.ArrayToChecksum32.size(), host.ArrayToChecksum64.size());
 
@@ -1422,20 +1428,30 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
                           const HpSharkFloat<SharkFloatParams> &eNum,
                           const mpf_t &mpfHostResultXY1,
                           const mpf_t &mpfHostResultXY2,
+                          const mpf_t &mpfA,
+                          const mpf_t &mpfB,
+                          const mpf_t &mpfC,
+                          const mpf_t &mpfD,
                           DebugHostCombo<SharkFloatParams> &debugHostCombo) -> bool {
         auto hostAddResult1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
         auto hostAddResult2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto hostDzdcReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto hostDzdcImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
-        AddHelper<SharkFloatParams>(&aNum,
-                                    &bNum,
-                                    &cNum,
-                                    &dNum,
-                                    &eNum,
-                                    hostAddResult1.get(),
-                                    hostAddResult2.get(),
-                                    nullptr, nullptr, nullptr, nullptr,
-                                    nullptr, nullptr,
-                                    debugHostCombo);
+        // When NR enabled, pass NR params in the SAME call so checksums cover both
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            AddHelper<SharkFloatParams>(&aNum, &bNum, &cNum, &dNum, &eNum,
+                                        hostAddResult1.get(), hostAddResult2.get(),
+                                        &aNum, &bNum, &cNum, &dNum,  // W0=A, W1=B, W2=C, W3=D
+                                        hostDzdcReal.get(), hostDzdcImag.get(),
+                                        debugHostCombo);
+        } else {
+            AddHelper<SharkFloatParams>(&aNum, &bNum, &cNum, &dNum, &eNum,
+                                        hostAddResult1.get(), hostAddResult2.get(),
+                                        nullptr, nullptr, nullptr, nullptr,
+                                        nullptr, nullptr,
+                                        debugHostCombo);
+        }
 
         auto OutputAdd = [&](const char *desc,
                              [[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
@@ -1466,6 +1482,32 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
                                                                  "ReferenceHighPrecisionV2XY2",
                                                                  mpfHostResultXY2,
                                                                  *hostAddResult2);
+
+        // NR: check CPU-ref NR outputs against MPIR (same pattern as orbit above)
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            mpf_t mpfExpDzdcReal, mpfExpDzdcImag;
+            mpf_init(mpfExpDzdcReal);
+            mpf_init(mpfExpDzdcImag);
+
+            // DzdcReal = W0 - W1 + 1 = A - B + 1
+            mpf_sub(mpfExpDzdcReal, mpfA, mpfB);
+            mpf_add_ui(mpfExpDzdcReal, mpfExpDzdcReal, 1);
+
+            // DzdcImag = W2 + W3 = C + D
+            mpf_add(mpfExpDzdcImag, mpfC, mpfD);
+
+            constexpr auto numTermsNRReal = 3;
+            constexpr auto numTermsNRImag = 2;
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+                launchParams, Tests, testNum + 200, numTermsNRReal,
+                "NR DzdcReal", mpfExpDzdcReal, *hostDzdcReal);
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+                launchParams, Tests, testNum + 201, numTermsNRImag,
+                "NR DzdcImag", mpfExpDzdcImag, *hostDzdcImag);
+
+            mpf_clear(mpfExpDzdcReal);
+            mpf_clear(mpfExpDzdcImag);
+        }
 
         return res;
     };
@@ -1563,6 +1605,10 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
                                          eNum,
                                          mpfHostResultXY1,
                                          mpfHostResultXY2,
+                                         mpfA,
+                                         mpfB,
+                                         mpfC,
+                                         mpfD,
                                          debugHostCombo);
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -1609,53 +1655,10 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        if constexpr (HpShark::TestReferenceImpl) {
-            DebugHostCombo<SharkFloatParams> debugHostComboNR{};
-
-            auto hostAddResult1NR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostAddResult2NR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostDzdcReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostDzdcImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-
-            // Reuse A as W0, B as W1, C as W2, D as W3
-            AddHelper<SharkFloatParams>(&aNum,
-                                        &bNum,
-                                        &cNum,
-                                        &dNum,
-                                        &eNum,
-                                        hostAddResult1NR.get(),
-                                        hostAddResult2NR.get(),
-                                        &aNum, &bNum, &cNum, &dNum,
-                                        hostDzdcReal.get(),
-                                        hostDzdcImag.get(),
-                                        debugHostComboNR);
-
-            // Expected: OutDzdcReal = W0 - W1 + 1 = A - B + 1
-            // Expected: OutDzdcImag = W2 + W3 = C + D
-            mpf_t mpfExpectedDzdcReal, mpfExpectedDzdcImag;
-            mpf_init(mpfExpectedDzdcReal);
-            mpf_init(mpfExpectedDzdcImag);
-
-            mpf_sub(mpfExpectedDzdcReal, mpfA, mpfB);
-            mpf_add_ui(mpfExpectedDzdcReal, mpfExpectedDzdcReal, 1);
-
-            mpf_add(mpfExpectedDzdcImag, mpfC, mpfD);
-
-            constexpr auto numTermsNRReal = 3;
-            constexpr auto numTermsNRImag = 2;
-            bool nrRes = true;
-            nrRes &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum + 200, numTermsNRReal,
-                "NR DzdcReal", mpfExpectedDzdcReal, *hostDzdcReal);
-            nrRes &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum + 201, numTermsNRImag,
-                "NR DzdcImag", mpfExpectedDzdcImag, *hostDzdcImag);
-
-            mpf_clear(mpfExpectedDzdcReal);
-            mpf_clear(mpfExpectedDzdcImag);
-        }
-    }
+    // NR output verification is handled by:
+    // 1. Checksums: TestHostAdd calls AddHelper with NR params using same debugHostCombo,
+    //    ChecksumsCheck compares against GPU debug states (FinalAddDzdc1/2/3, Result_AddDzdc1/2)
+    // 2. GPU vs MPIR: CheckGPUResult for DzdcReal/DzdcImag (in TestGpu block above)
 
     // Clean up MPIR variables
     mpf_clear(mpfHostResultXX);
@@ -1684,18 +1687,55 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
     const auto &mpfA = mpfInputX[0];
     const auto &mpfB = mpfInputX[1];
 
+    // NR derivative inputs: use inputX[2] as dzdcR, negate it for dzdcI
+    // This ensures dzdcR != A, dzdcI != B, and all W products are distinct from orbit products
+    auto dzdcRNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto dzdcINum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    mpf_t mpfDzdcR, mpfDzdcI;
+    mpf_init(mpfDzdcR);
+    mpf_init(mpfDzdcI);
+
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        assert(mpfInputLen >= 3);
+        dzdcRNum->DeepCopySameDevice(inputX[2]);
+        dzdcINum->DeepCopySameDevice(inputX[2]);
+        dzdcINum->Negate();
+        mpf_set(mpfDzdcR, mpfInputX[2]);
+        mpf_neg(mpfDzdcI, mpfInputX[2]);
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "NR test inputs:" << std::endl;
+            std::cout << "  A = " << aNum.ToString() << std::endl;
+            std::cout << "  B = " << bNum.ToString() << std::endl;
+            std::cout << "  dzdcR = " << dzdcRNum->ToString() << std::endl;
+            std::cout << "  dzdcI = " << dzdcINum->ToString() << std::endl;
+            std::cout << "  inputX[2] = " << inputX[2].ToString() << std::endl;
+            std::cout << "  mpfDzdcR = " << MpfToString<SharkFloatParams>(mpfDzdcR, 64) << std::endl;
+        }
+    }
+
     auto TestHostKaratsuba = [](const HpShark::LaunchParams &launchParams,
                                 TestTracker &Tests,
                                 int testNum,
                                 const HpSharkFloat<SharkFloatParams> &aNum,
                                 const HpSharkFloat<SharkFloatParams> &bNum,
+                                const HpSharkFloat<SharkFloatParams> *dzdcRNum,
+                                const HpSharkFloat<SharkFloatParams> *dzdcINum,
                                 const mpf_t &mpfHostResultXX,
                                 const mpf_t &mpfHostResultXY1,
                                 const mpf_t &mpfHostResultYY,
+                                const mpf_t &mpfA,
+                                const mpf_t &mpfB,
+                                const mpf_t &mpfDzdcR,
+                                const mpf_t &mpfDzdcI,
                                 DebugHostCombo<SharkFloatParams> &debugHostCombo) -> bool {
         auto hostKaratsubaOutXXV2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
         auto hostKaratsubaOutXYV2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
         auto hostKaratsubaOutYYV2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto hostW0 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto hostW1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto hostW2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto hostW3 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
         auto OutputV2 = [&](std::string alg,
                             [[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
@@ -1706,14 +1746,24 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
         };
 
         if constexpr (sharkOperator == Operator::MultiplyNTT) {
-            MultiplyHelperFFT2<SharkFloatParams>(&aNum,
-                                                 &bNum,
-                                                 hostKaratsubaOutXXV2.get(),
-                                                 hostKaratsubaOutXYV2.get(),
-                                                 hostKaratsubaOutYYV2.get(),
-                                                 nullptr, nullptr,
-                                                 nullptr, nullptr, nullptr, nullptr,
-                                                 debugHostCombo);
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                MultiplyHelperFFT2<SharkFloatParams>(&aNum, &bNum,
+                                                     hostKaratsubaOutXXV2.get(),
+                                                     hostKaratsubaOutXYV2.get(),
+                                                     hostKaratsubaOutYYV2.get(),
+                                                     dzdcRNum, dzdcINum,
+                                                     hostW0.get(), hostW1.get(),
+                                                     hostW2.get(), hostW3.get(),
+                                                     debugHostCombo);
+            } else {
+                MultiplyHelperFFT2<SharkFloatParams>(&aNum, &bNum,
+                                                     hostKaratsubaOutXXV2.get(),
+                                                     hostKaratsubaOutXYV2.get(),
+                                                     hostKaratsubaOutYYV2.get(),
+                                                     nullptr, nullptr,
+                                                     nullptr, nullptr, nullptr, nullptr,
+                                                     debugHostCombo);
+            }
 
             OutputV2("FFT XX", *hostKaratsubaOutXXV2);
             OutputV2("FFT XY", *hostKaratsubaOutXYV2);
@@ -1756,6 +1806,32 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
                                                                          "ReferenceHighPrecisionV2YY",
                                                                          mpfHostResultYY,
                                                                          *hostKaratsubaOutYYV2);
+
+        // NR: check CPU-ref W0-W3 against MPIR (same pattern as orbit above)
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            mpf_t mpfW0, mpfW1, mpfW2, mpfW3;
+            mpf_init(mpfW0); mpf_init(mpfW1);
+            mpf_init(mpfW2); mpf_init(mpfW3);
+
+            // W0 = 2*dzdcR*A, W1 = 2*dzdcI*B
+            // W2 = 2*dzdcR*B, W3 = 2*dzdcI*A
+            mpf_mul(mpfW0, mpfDzdcR, mpfA); mpf_mul_ui(mpfW0, mpfW0, 2);
+            mpf_mul(mpfW1, mpfDzdcI, mpfB); mpf_mul_ui(mpfW1, mpfW1, 2);
+            mpf_mul(mpfW2, mpfDzdcR, mpfB); mpf_mul_ui(mpfW2, mpfW2, 2);
+            mpf_mul(mpfW3, mpfDzdcI, mpfA); mpf_mul_ui(mpfW3, mpfW3, 2);
+
+            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
+                launchParams, Tests, testNum + 100, numTerms, "NR W0", mpfW0, *hostW0);
+            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
+                launchParams, Tests, testNum + 101, numTerms, "NR W1", mpfW1, *hostW1);
+            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
+                launchParams, Tests, testNum + 102, numTerms, "NR W2", mpfW2, *hostW2);
+            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
+                launchParams, Tests, testNum + 103, numTerms, "NR W3", mpfW3, *hostW3);
+
+            mpf_clear(mpfW0); mpf_clear(mpfW1);
+            mpf_clear(mpfW2); mpf_clear(mpfW3);
+        }
 
         return res;
     };
@@ -1819,8 +1895,8 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
 
         // Set NR inputs when enabled
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            combo->DzdcReal = aNum;  // reuse A as dzdcR
-            combo->DzdcImag = bNum;  // reuse B as dzdcI
+            combo->DzdcReal = *dzdcRNum;
+            combo->DzdcImag = *dzdcINum;
         }
 
         HpShark::InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(
@@ -1854,9 +1930,15 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
                                           testNum,
                                           aNum,
                                           bNum,
+                                          dzdcRNum.get(),
+                                          dzdcINum.get(),
                                           mpfHostResultXX,
                                           mpfHostResultXY1,
                                           mpfHostResultYY,
+                                          mpfA,
+                                          mpfB,
+                                          mpfDzdcR,
+                                          mpfDzdcI,
                                           debugHostCombo);
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -1890,10 +1972,10 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
             mpf_init(mpfGpuW0); mpf_init(mpfGpuW1);
             mpf_init(mpfGpuW2); mpf_init(mpfGpuW3);
 
-            mpf_mul(mpfGpuW0, mpfA, mpfA); mpf_mul_ui(mpfGpuW0, mpfGpuW0, 2);
-            mpf_mul(mpfGpuW1, mpfB, mpfB); mpf_mul_ui(mpfGpuW1, mpfGpuW1, 2);
-            mpf_mul(mpfGpuW2, mpfA, mpfB); mpf_mul_ui(mpfGpuW2, mpfGpuW2, 2);
-            mpf_mul(mpfGpuW3, mpfB, mpfA); mpf_mul_ui(mpfGpuW3, mpfGpuW3, 2);
+            mpf_mul(mpfGpuW0, mpfDzdcR, mpfA); mpf_mul_ui(mpfGpuW0, mpfGpuW0, 2);
+            mpf_mul(mpfGpuW1, mpfDzdcI, mpfB); mpf_mul_ui(mpfGpuW1, mpfGpuW1, 2);
+            mpf_mul(mpfGpuW2, mpfDzdcR, mpfB); mpf_mul_ui(mpfGpuW2, mpfGpuW2, 2);
+            mpf_mul(mpfGpuW3, mpfDzdcI, mpfA); mpf_mul_ui(mpfGpuW3, mpfGpuW3, 2);
 
             testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
                 launchParams, Tests, testNum + 100, numTerms, "GPU NR W0", mpfGpuW0, *gpuResultW0);
@@ -1909,60 +1991,13 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
         }
     }
 
+    // NR CPU-ref output verification against MPIR
+    // (checksums are now handled by unified TestHostKaratsuba call above)
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         if constexpr (HpShark::TestReferenceImpl) {
-            DebugHostCombo<SharkFloatParams> debugHostComboNR{};
-
-            auto hostKaratsubaOutXXNR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostKaratsubaOutXYNR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostKaratsubaOutYYNR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostW0 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostW1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostW2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto hostW3 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-
-            // Reuse A as dzdcR, B as dzdcI
-            MultiplyHelperFFT2<SharkFloatParams>(&aNum,
-                                                 &bNum,
-                                                 hostKaratsubaOutXXNR.get(),
-                                                 hostKaratsubaOutXYNR.get(),
-                                                 hostKaratsubaOutYYNR.get(),
-                                                 &aNum, &bNum,
-                                                 hostW0.get(), hostW1.get(), hostW2.get(), hostW3.get(),
-                                                 debugHostComboNR);
-
-            // MPIR references: W0 = 2*dzdcR*A = 2*A*A, W1 = 2*dzdcI*B = 2*B*B,
-            //                  W2 = 2*dzdcR*B = 2*A*B, W3 = 2*dzdcI*A = 2*B*A
-            mpf_t mpfW0, mpfW1, mpfW2, mpfW3;
-            mpf_init(mpfW0);
-            mpf_init(mpfW1);
-            mpf_init(mpfW2);
-            mpf_init(mpfW3);
-
-            mpf_mul(mpfW0, mpfA, mpfA);
-            mpf_mul_ui(mpfW0, mpfW0, 2);
-            mpf_mul(mpfW1, mpfB, mpfB);
-            mpf_mul_ui(mpfW1, mpfW1, 2);
-            mpf_mul(mpfW2, mpfA, mpfB);
-            mpf_mul_ui(mpfW2, mpfW2, 2);
-            mpf_mul(mpfW3, mpfB, mpfA);
-            mpf_mul_ui(mpfW3, mpfW3, 2);
-
-            constexpr auto numTermsNR = 2;
-            bool nrRes = true;
-            nrRes &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 100, numTermsNR, "NR W0", mpfW0, *hostW0);
-            nrRes &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 101, numTermsNR, "NR W1", mpfW1, *hostW1);
-            nrRes &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 102, numTermsNR, "NR W2", mpfW2, *hostW2);
-            nrRes &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 103, numTermsNR, "NR W3", mpfW3, *hostW3);
-
-            mpf_clear(mpfW0);
-            mpf_clear(mpfW1);
-            mpf_clear(mpfW2);
-            mpf_clear(mpfW3);
+            // W0-W3 are in hostW0..W3 inside the lambda — but they're out of scope.
+            // The GPU vs MPIR comparison (CheckGPUResult) is in the TestGpu block above.
+            // The CPU-ref vs GPU comparison is via checksums (ChecksumsCheck above).
         }
     }
 
@@ -1971,6 +2006,8 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
     mpf_clear(mpfHostResultXY1);
     mpf_clear(mpfHostResultXY2);
     mpf_clear(mpfHostResultYY);
+    mpf_clear(mpfDzdcR);
+    mpf_clear(mpfDzdcI);
 }
 
 template <class SharkFloatParams>

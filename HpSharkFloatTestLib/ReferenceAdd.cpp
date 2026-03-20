@@ -205,18 +205,19 @@ GetShiftedNormalizedDigit(const uint32_t *ext,
                           const int32_t diff,
                           const int32_t idx)
 {
-    // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
     const int32_t wordShift = diff / 32;
     const int32_t bitShift = diff % 32;
+    const int32_t lowerIdx = idx + wordShift;
+    const int32_t upperIdx = idx + wordShift + 1;
     const uint32_t lower =
-        (idx + wordShift < numActualDigitsPlusGuard)
+        (lowerIdx >= 0 && lowerIdx < numActualDigitsPlusGuard)
             ? GetNormalizedDigit(
-                  ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift)
+                  ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, lowerIdx)
             : 0;
     const uint32_t upper =
-        (idx + wordShift + 1 < numActualDigitsPlusGuard)
+        (upperIdx >= 0 && upperIdx < numActualDigitsPlusGuard)
             ? GetNormalizedDigit(
-                  ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift + 1)
+                  ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, upperIdx)
             : 0;
     if (bitShift == 0)
         return lower;
@@ -1089,9 +1090,11 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
         extW2 = W2->Digits;
         extW3 = W3->Digits;
 
-        IsNegativeNR_A = W0->GetNegative();
-        IsNegativeNR_B = !W1->GetNegative(); // W0 - W1 + One
-        IsNegativeNR_C = nrOne.GetNegative();
+        // NR ABC inputs: One - W1 + W0 = W0 - W1 + One (reordered so
+        // fallthrough to C in CompareMagnitudes3Way selects W0, not One)
+        IsNegativeNR_A = nrOne.GetNegative();       // One (A)
+        IsNegativeNR_B = !W1->GetNegative();        // -W1 (B, subtracted)
+        IsNegativeNR_C = W0->GetNegative();         // W0 (C)
         IsNegativeNR_D = W2->GetNegative();
         IsNegativeNR_E = W3->GetNegative();
     }
@@ -1342,17 +1345,19 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     ThreeWayLargestOrdering nrOrdering{};
 
     if constexpr (NR) {
-        nrOrdering = CompareMagnitudes3Way(effExpW0,
+        // NR 3-way magnitude comparison: A=One, B=W1, C=W0
+        // Must match the ABCInputs ordering below (extA=One, extB=W1, extC=W0)
+        nrOrdering = CompareMagnitudes3Way(effExpOne,
                                            effExpW1,
-                                           effExpOne,
+                                           effExpW0,
                                            numActualDigits,
                                            numActualDigitsPlusGuard,
-                                           shiftW0LeftToGetMsb,
-                                           shiftW1LeftToGetMsb,
                                            shiftOneLeftToGetMsb,
-                                           extW0,
+                                           shiftW1LeftToGetMsb,
+                                           shiftW0LeftToGetMsb,
+                                           extOne,
                                            extW1,
-                                           extOne);
+                                           extW0);
     }
 
     // --- Phase 1: A - B + C ---
@@ -1378,9 +1383,9 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     ABCOutputs nrABCOut{false, false, 0, 0, nullptr, nullptr};
     if constexpr (NR) {
         nrABC = {IsNegativeNR_A, IsNegativeNR_B, IsNegativeNR_C,
-                 extW0, extW1, extOne,
-                 shiftW0LeftToGetMsb, shiftW1LeftToGetMsb, shiftOneLeftToGetMsb,
-                 effExpW0, effExpW1, effExpOne,
+                 extOne, extW1, extW0,
+                 shiftOneLeftToGetMsb, shiftW1LeftToGetMsb, shiftW0LeftToGetMsb,
+                 effExpOne, effExpW1, effExpW0,
                  nrOrdering};
         nrABCOut = {nrOutSignTrue, nrOutSignFalse,
                     nrOutExponentTrue, nrOutExponentFalse,

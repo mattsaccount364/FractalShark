@@ -185,7 +185,7 @@ static constexpr auto ScratchMemoryCopies = 256llu;
 
 // Number of arrays of digits on each frame (non-NR baseline)
 static constexpr auto ScratchMemoryArraysForMultiply = 96;
-static constexpr auto ScratchMemoryArraysForMultiplyNR = 224;
+static constexpr auto ScratchMemoryArraysForMultiplyNR = 240;
 static constexpr auto ScratchMemoryArraysForAdd = 64;
 static constexpr auto ScratchMemoryArraysForAddNR = 128;
 

@@ -53,6 +53,22 @@ InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
         }
     }
 
+    // Zero the debug checksum region so stale data from previous kernels
+    // doesn't cause false mismatches.  The rest of the buffer stays 0xCD
+    // to catch unintended reads.
+    if constexpr (HpShark::DebugChecksums) {
+        err = cudaMemset(
+            &d_tempProducts[HpShark::AdditionalChecksumsOffset],
+            0,
+            SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw));
+        if (err != cudaSuccess) {
+            std::ostringstream oss;
+            oss << "cudaMemset(debug checksum region) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+
     HpSharkComboResults<SharkFloatParams> *comboGpu;
     err = cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
     if (err != cudaSuccess) {

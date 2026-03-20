@@ -37,7 +37,32 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
     result->IterationsExecuted = 0;
     result->PeriodResult = PeriodicityResult::Unknown;
 
-    // Current z value (real, imaginary) — starts at c, same as GPU init.
+    // For NR types, use EvaluateOrbitAndDerivative which properly computes derivatives.
+    // The basic orbit loop can't handle NR because the multiply/add pipelines require
+    // valid NR inputs (not zeros) when EnableNewtonRaphson is true.
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        auto outZReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto outZImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto outDzdcReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto outDzdcImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        typename SharkFloatParams::Float outD2Real{};
+        typename SharkFloatParams::Float outD2Imag{};
+
+        EvaluateOrbitAndDerivative<SharkFloatParams>(
+            cReal, cImag, maxIters + 1,
+            outZReal.get(), outZImag.get(),
+            outDzdcReal.get(), outDzdcImag.get(),
+            &outD2Real, &outD2Imag,
+            debugHostCombo);
+
+        result->FinalZReal = *outZReal;
+        result->FinalZImag = *outZImag;
+        result->IterationsExecuted = maxIters;
+        result->PeriodResult = PeriodicityResult::Continue;
+        return result;
+    }
+
+    // Non-NR: basic orbit loop (z = z^2 + c)
     auto zReal = std::make_unique<HpSharkFloat<SharkFloatParams>>(*cReal);
     auto zImag = std::make_unique<HpSharkFloat<SharkFloatParams>>(*cImag);
 
@@ -152,8 +177,8 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                                     cImag,
                                     newZReal.get(),
                                     newZImag.get(),
-                                     nullptr, nullptr, nullptr, nullptr,
-                                     nullptr, nullptr,
+                                    nullptr, nullptr, nullptr, nullptr,
+                                    nullptr, nullptr,
                                     debugHostCombo);
 
         // Update z for next iteration

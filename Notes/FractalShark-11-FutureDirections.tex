@@ -5,12 +5,18 @@
 \section{Further Techniques and Future Directions}
 \label{sec:future-directions}
 
-The techniques described in this section are not implemented in
-\FractalShark{} but represent important developments in the deep-zoom
-Mandelbrot rendering community.  They are documented here for
-completeness and to provide context for potential future work.  Each
-subsection describes the technique, gives key formulas, and notes how it
-relates to \FractalShark{}'s existing algorithms.
+The deep-zoom Mandelbrot rendering community has developed a rich
+collection of techniques that complement or extend the algorithms
+implemented in \FractalShark{}.  Understanding these methods is valuable
+for two reasons: several of them directly influenced \FractalShark{}'s
+design choices (e.g.\ the decision to use rebasing rather than
+glitch correction, or linear approximation rather than series
+approximation), and others represent promising avenues for future
+improvement.
+
+Each subsection below describes a technique, gives its key formulas, and
+explains how it relates to---and differs from---\FractalShark{}'s current
+approach.
 
 % -----------------------------------------------------------
 \subsection{Glitch Detection and Correction}

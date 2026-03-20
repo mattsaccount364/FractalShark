@@ -207,6 +207,27 @@ Phase1_ABC(cg::thread_block &block,
            uint64_t *SharkRestrict extResultTrue,  // result limbs for X_gtY == true
            uint64_t *SharkRestrict extResultFalse, // result limbs for X_gtY == false
 
+           // NR params (only used when EnableNewtonRaphson)
+           const ThreeWayLargestOrdering nrOrdering,
+           const bool nrIsNegA,
+           const bool nrIsNegB,
+           const bool nrIsNegC,
+           const uint32_t *SharkRestrict nrExtA,
+           const uint32_t *SharkRestrict nrExtB,
+           const uint32_t *SharkRestrict nrExtC,
+           const int32_t nrShiftA,
+           const int32_t nrShiftB,
+           const int32_t nrShiftC,
+           const int32_t nrEffExpA,
+           const int32_t nrEffExpB,
+           const int32_t nrEffExpC,
+           bool &nrOutSignTrue,
+           bool &nrOutSignFalse,
+           int32_t &nrOutExpTrue,
+           int32_t &nrOutExpFalse,
+           uint64_t *SharkRestrict nrExtResultTrue,
+           uint64_t *SharkRestrict nrExtResultFalse,
+
            DebugState<SharkFloatParams> *SharkRestrict debugStates)
 {
     outSignTrue = false;
@@ -297,6 +318,58 @@ Phase1_ABC(cg::thread_block &block,
                 ;
     }
 
+    // NR setup: same pattern as orbit but with NR variables
+    const uint32_t *SharkRestrict nrExtX = nullptr;
+    const uint32_t *SharkRestrict nrExtY = nullptr;
+    const uint32_t *SharkRestrict nrExtZ = nullptr;
+    bool nrsX = false, nrsY = false, nrsZ = false;
+    int32_t nrShX = 0, nrShY = 0, nrShZ = 0, nrDiffY = 0, nrDiffZ = 0;
+
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        nrOutSignTrue = false;
+        nrOutSignFalse = false;
+
+        int32_t nrBaseExp;
+        switch (nrOrdering) {
+            case ThreeWayLargestOrdering::A_GT_AllOthers: nrBaseExp = nrEffExpA; break;
+            case ThreeWayLargestOrdering::B_GT_AllOthers: nrBaseExp = nrEffExpB; break;
+            case ThreeWayLargestOrdering::C_GT_AllOthers: nrBaseExp = nrEffExpC; break;
+            default:
+                assert(false);
+                for (;;)
+                    ;
+        }
+
+        int32_t nrDiffA = nrBaseExp - nrEffExpA;
+        int32_t nrDiffB = nrBaseExp - nrEffExpB;
+        int32_t nrDiffC = nrBaseExp - nrEffExpC;
+
+        switch (nrOrdering) {
+            case ThreeWayLargestOrdering::A_GT_AllOthers:
+                nrExtX = nrExtA; nrsX = nrIsNegA; nrShX = nrShiftA;
+                nrExtY = nrExtB; nrsY = nrIsNegB; nrShY = nrShiftB; nrDiffY = nrDiffB;
+                nrExtZ = nrExtC; nrsZ = nrIsNegC; nrShZ = nrShiftC; nrDiffZ = nrDiffC;
+                break;
+            case ThreeWayLargestOrdering::B_GT_AllOthers:
+                nrExtX = nrExtB; nrsX = nrIsNegB; nrShX = nrShiftB;
+                nrExtY = nrExtA; nrsY = nrIsNegA; nrShY = nrShiftA; nrDiffY = nrDiffA;
+                nrExtZ = nrExtC; nrsZ = nrIsNegC; nrShZ = nrShiftC; nrDiffZ = nrDiffC;
+                break;
+            case ThreeWayLargestOrdering::C_GT_AllOthers:
+                nrExtX = nrExtC; nrsX = nrIsNegC; nrShX = nrShiftC;
+                nrExtY = nrExtA; nrsY = nrIsNegA; nrShY = nrShiftA; nrDiffY = nrDiffA;
+                nrExtZ = nrExtB; nrsZ = nrIsNegB; nrShZ = nrShiftB; nrDiffZ = nrDiffB;
+                break;
+            default:
+                assert(false);
+                for (;;)
+                    ;
+        }
+
+        nrOutExpTrue = nrBaseExp - bias;
+        nrOutExpFalse = nrBaseExp - bias;
+    }
+
     // 6) single pass: two calls per digit, grid-stride version
     {
         int32_t stride = grid.size();
@@ -311,6 +384,20 @@ Phase1_ABC(cg::thread_block &block,
             extResultTrue[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/true, outSignTrue);
             // always-false branch
             extResultFalse[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/false, outSignFalse);
+
+            // NR: same computation with NR inputs and NR output buffers
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                uint64_t nrXi = GetNormalizedDigit(nrExtX, actualDigits, numActualDigitsPlusGuard, nrShX, i);
+                uint64_t nrYi = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    nrExtY, actualDigits, numActualDigitsPlusGuard, nrShY, nrDiffY, i);
+                uint64_t nrZi = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    nrExtZ, actualDigits, numActualDigitsPlusGuard, nrShZ, nrDiffZ, i);
+
+                nrExtResultTrue[i] = CoreThreeWayAdd(nrXi, nrsX, nrYi, nrsY, nrZi, nrsZ,
+                                                     /*X_gtY=*/true, nrOutSignTrue);
+                nrExtResultFalse[i] = CoreThreeWayAdd(nrXi, nrsX, nrYi, nrsY, nrZi, nrsZ,
+                                                      /*X_gtY=*/false, nrOutSignFalse);
+            }
         }
     }
 
@@ -657,6 +744,8 @@ PPeval_transfer(const PPTransfer3 &t, int streamIdx, int32_t c_in)
 //    c_mid = a(stream, c_in)
 //    c_out = b(stream, c_mid)
 // r is their composition.
+// NumStreams defaults to 3 (orbit only); 6 when NR is enabled.
+template<int NumStreams = 3>
 __device__ SharkForceInlineReleaseOnly static PPTransfer3
 PPcompose_transfer(const PPTransfer3 &a, const PPTransfer3 &b)
 {
@@ -664,7 +753,7 @@ PPcompose_transfer(const PPTransfer3 &a, const PPTransfer3 &b)
     r.bits = 0ull;
 
 #pragma unroll
-    for (int streamIdx = 0; streamIdx < 3; ++streamIdx) {
+    for (int streamIdx = 0; streamIdx < NumStreams; ++streamIdx) {
 #pragma unroll
         for (int c_in = -1; c_in <= 1; ++c_in) {
             const int32_t cmid = PPeval_transfer(a, streamIdx, c_in);
@@ -730,7 +819,7 @@ PPset_field_constexpr(uint64_t bits, int streamIdx, int c_in, int c_out)
 {
     // c_in ∈ {-1,0,1} -> stateIdx ∈ {0,1,2}
     const int stateIdx = c_in + 1;
-    const int fieldIdx = streamIdx * 3 + stateIdx; // 0..8
+    const int fieldIdx = streamIdx * 3 + stateIdx; // 0..8 (or 0..17 for 6 streams)
     const uint64_t shift = static_cast<uint64_t>(fieldIdx) * 2ull;
     const uint64_t mask = 0x3ull << shift;
     const uint64_t enc = static_cast<uint64_t>((c_out + 1) & 0x3); // encode {-1,0,1}→{0,1,2}
@@ -738,19 +827,61 @@ PPset_field_constexpr(uint64_t bits, int streamIdx, int c_in, int c_out)
 }
 
 // C++17/20 constexpr builder: runs entirely at compile time.
+// NumStreams defaults to 3 (orbit only); 6 when NR is enabled.
+template<int NumStreams = 3>
 constexpr PPTransfer3
 make_PPIdentity()
 {
     uint64_t bits = 0ull;
 
     // C++17 constexpr allows loops; everything here is integral / literal.
-    for (int s = 0; s < 3; ++s) {
+    for (int s = 0; s < NumStreams; ++s) {
         for (int c = -1; c <= 1; ++c) {
             bits = PPset_field_constexpr(bits, s, c, c); // identity: f(c) = c
         }
     }
 
     return PPTransfer3{bits};
+}
+
+// Warp-shuffle helpers for PPTransfer3, handling 32-bit or 64-bit PP bit widths.
+template<int NumStreams>
+__device__ SharkForceInlineReleaseOnly static PPTransfer3
+shfl_up_pp(unsigned mask, PPTransfer3 val, int offset)
+{
+    if constexpr (NumStreams <= 3) {
+        return PPTransfer3{static_cast<uint64_t>(__shfl_up_sync(mask, static_cast<uint32_t>(val.bits), offset))};
+    } else {
+        uint32_t lo = __shfl_up_sync(mask, static_cast<uint32_t>(val.bits & 0xFFFFFFFFu), offset);
+        uint32_t hi = __shfl_up_sync(mask, static_cast<uint32_t>(val.bits >> 32), offset);
+        return PPTransfer3{(static_cast<uint64_t>(hi) << 32) | lo};
+    }
+}
+
+template<int NumStreams>
+__device__ SharkForceInlineReleaseOnly static PPTransfer3
+shfl_down_pp(unsigned mask, PPTransfer3 val, int offset)
+{
+    if constexpr (NumStreams <= 3) {
+        return PPTransfer3{static_cast<uint64_t>(__shfl_down_sync(mask, static_cast<uint32_t>(val.bits), offset))};
+    } else {
+        uint32_t lo = __shfl_down_sync(mask, static_cast<uint32_t>(val.bits & 0xFFFFFFFFu), offset);
+        uint32_t hi = __shfl_down_sync(mask, static_cast<uint32_t>(val.bits >> 32), offset);
+        return PPTransfer3{(static_cast<uint64_t>(hi) << 32) | lo};
+    }
+}
+
+template<int NumStreams>
+__device__ SharkForceInlineReleaseOnly static PPTransfer3
+shfl_pp(unsigned mask, PPTransfer3 val, int srcLane)
+{
+    if constexpr (NumStreams <= 3) {
+        return PPTransfer3{static_cast<uint64_t>(__shfl_sync(mask, static_cast<uint32_t>(val.bits), srcLane))};
+    } else {
+        uint32_t lo = __shfl_sync(mask, static_cast<uint32_t>(val.bits & 0xFFFFFFFFu), srcLane);
+        uint32_t hi = __shfl_sync(mask, static_cast<uint32_t>(val.bits >> 32), srcLane);
+        return PPTransfer3{(static_cast<uint64_t>(hi) << 32) | lo};
+    }
 }
 
 template <class SharkFloatParams>
@@ -1756,6 +1887,19 @@ CarryPropagation_ABC_PPv5(
     int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
     int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
     int32_t &carryAcc_DE,                   // out: final unsigned carry
+    // NR carry params (only used when EnableNewtonRaphson)
+    uint64_t *SharkRestrict nrExtResultTrue,
+    uint64_t *SharkRestrict nrExtResultFalse,
+    uint64_t *SharkRestrict nrFinal128_DE,
+    uint32_t *SharkRestrict nrCur1,
+    uint32_t *SharkRestrict nrNext1,
+    uint32_t *SharkRestrict nrCur2,
+    uint32_t *SharkRestrict nrNext2,
+    uint32_t *SharkRestrict nrCur3,
+    uint32_t *SharkRestrict nrNext3,
+    int32_t &nrCarryAcc_True,
+    int32_t &nrCarryAcc_False,
+    int32_t &nrCarryAcc_DE,
     cg::thread_block &block,
     cg::grid_group &grid,
     DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
@@ -1784,20 +1928,28 @@ CarryPropagation_ABC_PPv5(
     }
 #endif
 
+    constexpr int NumStreams = SharkFloatParams::EnableNewtonRaphson ? 6 : 3;
+
+    using DescType = std::conditional_t<(NumStreams > 3), uint64_t, uint32_t>;
+
     // Store (publish) descriptor. No atomic needed: single writer per desc[k].
     // Release-publish as membar + store (ptxas-safe on sm_120).
-    auto store_desc_u32 = [](uint32_t *addr, uint32_t v) {
-        asm volatile("membar.gl;\n\t"
-                     "st.global.u32 [%0], %1;\n\t"
-                     :
-                     : "l"(addr), "r"(v)
-                     : "memory");
+    auto store_desc = [](DescType *addr, DescType v) {
+        if constexpr (sizeof(DescType) == 8) {
+            asm volatile("membar.gl;\n\tst.global.u64 [%0], %1;\n\t" :: "l"(addr), "l"(v) : "memory");
+        } else {
+            asm volatile("membar.gl;\n\tst.global.u32 [%0], %1;\n\t" :: "l"(addr), "r"(v) : "memory");
+        }
     };
 
     // L2-cached load (cg) (bypass L1). Safe for polling.
-    auto load_desc_u32 = [](const uint32_t *addr) -> uint32_t {
-        uint32_t v;
-        asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(v) : "l"(addr));
+    auto load_desc = [](const DescType *addr) -> DescType {
+        DescType v;
+        if constexpr (sizeof(DescType) == 8) {
+            asm volatile("ld.global.cg.u64 %0, [%1];" : "=l"(v) : "l"(addr));
+        } else {
+            asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(v) : "l"(addr));
+        }
         return v;
     };
 
@@ -1824,6 +1976,21 @@ CarryPropagation_ABC_PPv5(
         cur1[i] = 0;
         cur2[i] = 0;
         cur3[i] = 0;
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const uint64_t nrLimbT = nrExtResultTrue[i];
+            const uint64_t nrLimbF = nrExtResultFalse[i];
+            const uint64_t nrLimbD = nrFinal128_DE[i];
+            nrExtResultTrue[i] = static_cast<uint32_t>(nrLimbT);
+            nrExtResultFalse[i] = static_cast<uint32_t>(nrLimbF);
+            nrFinal128_DE[i] = static_cast<uint32_t>(nrLimbD);
+            nrNext1[i + 1] = static_cast<uint32_t>(nrLimbT >> 32);
+            nrNext2[i + 1] = static_cast<uint32_t>(nrLimbF >> 32);
+            nrNext3[i + 1] = static_cast<uint32_t>(nrLimbD >> 32);
+            nrCur1[i] = 0;
+            nrCur2[i] = 0;
+            nrCur3[i] = 0;
+        }
     }
 
     // Reset counters and tail carry slots.
@@ -1842,6 +2009,15 @@ CarryPropagation_ABC_PPv5(
         next1[0] = 0;
         next2[0] = 0;
         next3[0] = 0;
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            nrCur1[numActualDigitsPlusGuard] = 0;
+            nrCur2[numActualDigitsPlusGuard] = 0;
+            nrCur3[numActualDigitsPlusGuard] = 0;
+            nrNext1[0] = 0;
+            nrNext2[0] = 0;
+            nrNext3[0] = 0;
+        }
     }
     grid.sync();
 
@@ -1865,6 +2041,12 @@ CarryPropagation_ABC_PPv5(
         AddHiPhase(numActualDigitsPlusGuard, extResultTrue, next1, cur1, i);
         AddHiPhase(numActualDigitsPlusGuard, extResultFalse, next2, cur2, i);
         AddHiPhase(numActualDigitsPlusGuard, final128_DE, next3, cur3, i);
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            AddHiPhase(numActualDigitsPlusGuard, nrExtResultTrue, nrNext1, nrCur1, i);
+            AddHiPhase(numActualDigitsPlusGuard, nrExtResultFalse, nrNext2, nrCur2, i);
+            AddHiPhase(numActualDigitsPlusGuard, nrFinal128_DE, nrNext3, nrCur3, i);
+        }
     }
 
     // --------------------------------------------------------------------
@@ -1880,29 +2062,40 @@ CarryPropagation_ABC_PPv5(
 
     // Descriptor in next1[0..numParts)
     enum : uint32_t { FLAG_X = 0u, FLAG_A = 1u, FLAG_P = 2u };
-    constexpr uint32_t FLAG_SHIFT = 30u;
-    constexpr uint32_t FLAG_MASK = 3u << FLAG_SHIFT;
-    constexpr uint32_t BITS_MASK = ~FLAG_MASK;
 
-    constexpr uint32_t PP_BITS_USED = 18u;
-    constexpr uint32_t PP_BITS_MASK = (1u << PP_BITS_USED) - 1u;
+    constexpr uint64_t PP_BITS_USED = NumStreams * 3 * 2;
+    constexpr uint64_t PP_BITS_MASK = (1ULL << PP_BITS_USED) - 1ULL;
 
-    auto pack_desc = [](uint32_t flag, uint32_t bitsLow) -> uint32_t {
-        return ((flag & 3u) << FLAG_SHIFT) | (bitsLow & BITS_MASK);
+    constexpr int DescFlagShift = static_cast<int>(PP_BITS_USED);
+    constexpr DescType DescFlagMask = DescType(3) << DescFlagShift;
+    constexpr DescType DescBitsMask = ~DescFlagMask;
+
+    auto pack_desc = [](uint32_t flag, uint64_t bitsLow) -> DescType {
+        return (DescType(flag & 3) << DescFlagShift) | DescType(bitsLow & PP_BITS_MASK);
     };
-    auto unpack_flag = [](uint32_t w) -> uint32_t { return w >> FLAG_SHIFT; };
-    auto unpack_bits = [](uint32_t w) -> uint32_t { return w & BITS_MASK; };
+    auto unpack_flag = [](DescType w) -> uint32_t { return static_cast<uint32_t>(w >> DescFlagShift); };
+    auto unpack_bits = [](DescType w) -> uint64_t { return static_cast<uint64_t>(w) & PP_BITS_MASK; };
+
+    auto shfl_desc = [](unsigned mask, DescType w, int srcLane) -> DescType {
+        if constexpr (sizeof(DescType) == 8) {
+            uint32_t lo = __shfl_sync(mask, static_cast<uint32_t>(w & 0xFFFFFFFFu), srcLane);
+            uint32_t hi = __shfl_sync(mask, static_cast<uint32_t>(w >> 32), srcLane);
+            return (static_cast<DescType>(hi) << 32) | lo;
+        } else {
+            return static_cast<DescType>(__shfl_sync(mask, static_cast<uint32_t>(w), srcLane));
+        }
+    };
 
     // x ∘ y (apply y then x) using PPcompose_transfer(a,b)=b∘a
     auto compose_x_after_y = [](const PPTransfer3 &x, const PPTransfer3 &y) -> PPTransfer3 {
-        return PPcompose_transfer(y, x); // == x ∘ y
+        return PPcompose_transfer<NumStreams>(y, x); // == x ∘ y
     };
 
-    uint32_t *SharkRestrict desc = next1;
+    DescType *SharkRestrict desc = reinterpret_cast<DescType *>(next1);
 
     // Init desc to X (grid-wide)
     for (int32_t i = tid; i < numParts; i += totalThreads) {
-        desc[i] = pack_desc(FLAG_X, 0u);
+        desc[i] = pack_desc(FLAG_X, 0ull);
     }
     grid.sync();
 
@@ -1914,36 +2107,55 @@ CarryPropagation_ABC_PPv5(
     const int warpActiveCount = 32; // launch guarantees
 
     // Shared scratch (tiny; shared_data assumed large enough).
-    // Layout: warpAgg[numWarps], warpPref[numWarps], broadcast[2]
-    // broadcast[0] : u32 for procId / exclPart / etc
-    // broadcast[1] : u32 for P_active
+    // Layout: warpAgg[numWarps], warpPref[numWarps], broadcast[2+]
+    // With NumStreams>3, warpAgg/warpPref need 64-bit storage per warp.
+    using PPStorageType = std::conditional_t<(NumStreams > 3), uint64_t, uint32_t>;
+    constexpr int PPStorageWords = sizeof(PPStorageType) / sizeof(uint32_t); // 1 or 2
     uint32_t *smem = reinterpret_cast<uint32_t *>(shared_data);
-    uint32_t *warpAgg = smem;                  // [numWarps]
-    uint32_t *warpPref = smem + numWarps;      // [numWarps]
-    uint32_t *broadcast = smem + 2 * numWarps; // [>=2]
+    PPStorageType *warpAgg = reinterpret_cast<PPStorageType *>(smem);
+    PPStorageType *warpPref = reinterpret_cast<PPStorageType *>(smem + numWarps * PPStorageWords);
+    uint32_t *broadcast = smem + 2 * numWarps * PPStorageWords;
 
     // --------------------------------------------------------------------
-    // Helper: per-digit transfer for a single digit index (for all 3 streams).
-    // (Keeping your working version as requested.)
+    // Helper: per-digit transfer for a single digit index (for all streams).
     // --------------------------------------------------------------------
     auto build_digit_transfer = [&](int iDigit) -> PPTransfer3 {
         PPTransfer3 t{};
         t.bits = 0ull;
 #pragma unroll
-        for (int streamIdx = 0; streamIdx < 3; ++streamIdx) {
+        for (int streamIdx = 0; streamIdx < NumStreams; ++streamIdx) {
 #pragma unroll
             for (int c_in = -1; c_in <= 1; ++c_in) {
-                const uint32_t d = (streamIdx == 0)   ? static_cast<uint32_t>(extResultTrue[iDigit])
-                                   : (streamIdx == 1) ? static_cast<uint32_t>(extResultFalse[iDigit])
-                                                      : static_cast<uint32_t>(final128_DE[iDigit]);
+                uint32_t d;
+                int32_t cur_val;
+                if constexpr (NumStreams > 3) {
+                    if (streamIdx >= 3) {
+                        d = (streamIdx == 3)   ? static_cast<uint32_t>(nrExtResultTrue[iDigit])
+                            : (streamIdx == 4) ? static_cast<uint32_t>(nrExtResultFalse[iDigit])
+                                               : static_cast<uint32_t>(nrFinal128_DE[iDigit]);
+                        cur_val = (streamIdx == 3)   ? static_cast<int32_t>(nrCur1[iDigit])
+                                  : (streamIdx == 4) ? static_cast<int32_t>(nrCur2[iDigit])
+                                                     : static_cast<int32_t>(nrCur3[iDigit]);
+                    } else {
+                        d = (streamIdx == 0)   ? static_cast<uint32_t>(extResultTrue[iDigit])
+                            : (streamIdx == 1) ? static_cast<uint32_t>(extResultFalse[iDigit])
+                                               : static_cast<uint32_t>(final128_DE[iDigit]);
+                        cur_val = (streamIdx == 0)   ? static_cast<int32_t>(cur1[iDigit])
+                                  : (streamIdx == 1) ? static_cast<int32_t>(cur2[iDigit])
+                                                     : static_cast<int32_t>(cur3[iDigit]);
+                    }
+                } else {
+                    d = (streamIdx == 0)   ? static_cast<uint32_t>(extResultTrue[iDigit])
+                        : (streamIdx == 1) ? static_cast<uint32_t>(extResultFalse[iDigit])
+                                           : static_cast<uint32_t>(final128_DE[iDigit]);
+                    cur_val = (streamIdx == 0)   ? static_cast<int32_t>(cur1[iDigit])
+                              : (streamIdx == 1) ? static_cast<int32_t>(cur2[iDigit])
+                                                 : static_cast<int32_t>(cur3[iDigit]);
+                }
 
-                const int32_t cur = (streamIdx == 0)   ? static_cast<int32_t>(cur1[iDigit])
-                                    : (streamIdx == 1) ? static_cast<int32_t>(cur2[iDigit])
-                                                       : static_cast<int32_t>(cur3[iDigit]);
-
-                const int32_t in = cur + c_in;
+                const int32_t in = cur_val + c_in;
                 const int64_t sum = (int64_t)d + (int64_t)in;
-                const int32_t c_out = (int32_t)(sum >> 32); // expected in [-1,1]
+                const int32_t c_out = (int32_t)(sum >> 32);
                 PPset_field(t.bits, streamIdx, c_in, c_out);
             }
         }
@@ -1989,7 +2201,7 @@ CarryPropagation_ABC_PPv5(
         const bool hasDigit = ((int)threadIdx.x < partLen);
 
         // Per-thread transfer (identity if out-of-range)
-        PPTransfer3 myT = hasDigit ? build_digit_transfer(iDigit) : make_PPIdentity();
+        PPTransfer3 myT = hasDigit ? build_digit_transfer(iDigit) : make_PPIdentity<NumStreams>();
 
         // ----------------------------
         // Intra-warp inclusive scan (digit order): inclWarp = T_lane ∘ ... ∘ T_0
@@ -1997,8 +2209,7 @@ CarryPropagation_ABC_PPv5(
         PPTransfer3 inclWarp = myT;
 #pragma unroll
         for (int offset = 1; offset < 32; offset <<= 1) {
-            const uint32_t yBits = __shfl_up_sync(warpMask, (uint32_t)inclWarp.bits, offset);
-            const PPTransfer3 y{(uint64_t)(yBits & PP_BITS_MASK)};
+            const PPTransfer3 y = shfl_up_pp<NumStreams>(warpMask, inclWarp, offset);
             if (lane >= offset && (lane - offset) < warpActiveCount) {
                 inclWarp = compose_x_after_y(inclWarp, y);
             }
@@ -2006,7 +2217,7 @@ CarryPropagation_ABC_PPv5(
 
         // Warp aggregate is lane 31's inclusive (identity padding makes this correct for tails).
         if (lane == 31) {
-            warpAgg[warpId] = (uint32_t)(inclWarp.bits & PP_BITS_MASK);
+            warpAgg[warpId] = static_cast<PPStorageType>(inclWarp.bits & PP_BITS_MASK);
         }
         __syncthreads();
 
@@ -2019,45 +2230,44 @@ CarryPropagation_ABC_PPv5(
             if (lane < numWarps) {
                 const uint32_t m = (numWarps == 32) ? 0xFFFF'FFFFu : ((1u << (uint32_t)numWarps) - 1u);
 
-                PPTransfer3 x{(uint64_t)(warpAgg[lane] & PP_BITS_MASK)};
+                PPTransfer3 x{static_cast<uint64_t>(warpAgg[lane]) & PP_BITS_MASK};
 
 #pragma unroll
                 for (int offset = 1; offset < 32; offset <<= 1) {
                     if (offset >= numWarps)
                         break;
 
-                    const uint32_t yBits = __shfl_up_sync(m, (uint32_t)x.bits, offset);
-                    const PPTransfer3 y{(uint64_t)(yBits & PP_BITS_MASK)};
+                    const PPTransfer3 y = shfl_up_pp<NumStreams>(m, x, offset);
                     if (lane >= offset) {
                         x = compose_x_after_y(x, y);
                     }
                 }
 
                 // Exclusive prefix for each warp: pref[0]=I, pref[w]=inclusive[w-1]
-                const uint32_t prevBits = __shfl_up_sync(m, (uint32_t)x.bits, 1);
+                const PPTransfer3 prevPP = shfl_up_pp<NumStreams>(m, x, 1);
                 const PPTransfer3 pref =
-                    (lane == 0) ? make_PPIdentity() : PPTransfer3{(uint64_t)(prevBits & PP_BITS_MASK)};
-                warpPref[lane] = (uint32_t)(pref.bits & PP_BITS_MASK);
+                    (lane == 0) ? make_PPIdentity<NumStreams>() : PPTransfer3{prevPP.bits & PP_BITS_MASK};
+                warpPref[lane] = static_cast<PPStorageType>(pref.bits & PP_BITS_MASK);
 
                 // Full partition aggregate in warpAgg[0]
                 if (lane == numWarps - 1) {
-                    warpAgg[0] = (uint32_t)(x.bits & PP_BITS_MASK);
+                    warpAgg[0] = static_cast<PPStorageType>(x.bits & PP_BITS_MASK);
                 }
             }
         }
         __syncthreads();
 
-        const PPTransfer3 aggPart{(uint64_t)(warpAgg[0] & PP_BITS_MASK)};
+        const PPTransfer3 aggPart{static_cast<uint64_t>(warpAgg[0]) & PP_BITS_MASK};
 
         // Publish aggregate descriptor A
         if (threadIdx.x == 0) {
-            store_desc_u32(&desc[partIdx], pack_desc(FLAG_A, (uint32_t)aggPart.bits & PP_BITS_MASK));
+            store_desc(&desc[partIdx], pack_desc(FLAG_A, aggPart.bits & PP_BITS_MASK));
         }
 
         // ----------------------------
         // DLB lookback across partitions (warp 0 only): compute exclPart = E_i
         // ----------------------------
-        PPTransfer3 exclPart = make_PPIdentity();
+        PPTransfer3 exclPart = make_PPIdentity<NumStreams>();
 
         if (warpId == 0) {
             int32_t j = partIdx - 1;
@@ -2065,11 +2275,11 @@ CarryPropagation_ABC_PPv5(
             while (j >= 0) {
                 const int32_t k = j - lane;
 
-                uint32_t w = 0u;
+                DescType w = DescType(0);
                 if (k >= 0) {
                     int spin = 0;
                     do {
-                        w = load_desc_u32(&desc[k]);
+                        w = load_desc(&desc[k]);
                         if (unpack_flag(w) != FLAG_X)
                             break;
                         if (++spin > 64) {
@@ -2085,21 +2295,19 @@ CarryPropagation_ABC_PPv5(
 
                 if (pMask) {
                     const int pLane = __ffs(pMask) - 1;
-                    const uint32_t wP = __shfl_sync(warpMask, w, pLane);
-                    const PPTransfer3 prefK{(uint64_t)(unpack_bits(wP) & PP_BITS_MASK)};
+                    const DescType wP = shfl_desc(warpMask, w, pLane);
+                    const PPTransfer3 prefK{unpack_bits(wP) & PP_BITS_MASK};
 
-                    PPTransfer3 my = make_PPIdentity();
+                    PPTransfer3 my = make_PPIdentity<NumStreams>();
                     if (lane < pLane) {
                         if ((aMask >> lane) & 1u) {
-                            my = PPTransfer3{(uint64_t)(unpack_bits(w) & PP_BITS_MASK)};
+                            my = PPTransfer3{unpack_bits(w) & PP_BITS_MASK};
                         }
                     }
 
 #pragma unroll
                     for (int offset = 1; offset < 32; offset <<= 1) {
-                        const uint32_t partnerBits =
-                            __shfl_down_sync(warpMask, (uint32_t)my.bits, offset);
-                        const PPTransfer3 partner{(uint64_t)(partnerBits & PP_BITS_MASK)};
+                        const PPTransfer3 partner = shfl_down_pp<NumStreams>(warpMask, my, offset);
                         if ((lane + offset) < 32) {
                             my = compose_x_after_y(my, partner);
                         }
@@ -2113,16 +2321,14 @@ CarryPropagation_ABC_PPv5(
                 }
 
                 if (aMask) {
-                    PPTransfer3 my = make_PPIdentity();
+                    PPTransfer3 my = make_PPIdentity<NumStreams>();
                     if ((aMask >> lane) & 1u) {
-                        my = PPTransfer3{(uint64_t)(unpack_bits(w) & PP_BITS_MASK)};
+                        my = PPTransfer3{unpack_bits(w) & PP_BITS_MASK};
                     }
 
 #pragma unroll
                     for (int offset = 1; offset < 32; offset <<= 1) {
-                        const uint32_t partnerBits =
-                            __shfl_down_sync(warpMask, (uint32_t)my.bits, offset);
-                        const PPTransfer3 partner{(uint64_t)(partnerBits & PP_BITS_MASK)};
+                        const PPTransfer3 partner = shfl_down_pp<NumStreams>(warpMask, my, offset);
                         if ((lane + offset) < 32) {
                             my = compose_x_after_y(my, partner);
                         }
@@ -2139,15 +2345,16 @@ CarryPropagation_ABC_PPv5(
 
         // Broadcast exclPart (lane0 of warp0) to CTA via shared
         if (threadIdx.x == 0) {
-            broadcast[0] = (uint32_t)(exclPart.bits & PP_BITS_MASK);
+            reinterpret_cast<PPStorageType *>(broadcast)[0] =
+                static_cast<PPStorageType>(exclPart.bits & PP_BITS_MASK);
         }
         __syncthreads();
-        exclPart = PPTransfer3{(uint64_t)(broadcast[0] & PP_BITS_MASK)};
+        exclPart = PPTransfer3{static_cast<uint64_t>(reinterpret_cast<PPStorageType *>(broadcast)[0]) & PP_BITS_MASK};
 
         // Publish inclusive prefix P_i = A_i ∘ E_i
         if (threadIdx.x == 0) {
-            const PPTransfer3 inclPart = PPcompose_transfer(exclPart, aggPart);
-            store_desc_u32(&desc[partIdx], pack_desc(FLAG_P, (uint32_t)inclPart.bits & PP_BITS_MASK));
+            const PPTransfer3 inclPart = PPcompose_transfer<NumStreams>(exclPart, aggPart);
+            store_desc(&desc[partIdx], pack_desc(FLAG_P, inclPart.bits & PP_BITS_MASK));
         }
 
         // ----------------------------
@@ -2158,12 +2365,19 @@ CarryPropagation_ABC_PPv5(
         const int32_t seed2 = PPeval_transfer(exclPart, 1, 0);
         const int32_t seed3 = PPeval_transfer(exclPart, 2, 0);
 
-        // Intra-warp exclusive prefix transfer: exclWarp = T_{lane-1} ∘ ... ∘ T_0
-        const uint32_t prevBitsD = __shfl_up_sync(warpMask, (uint32_t)inclWarp.bits, 1);
-        const PPTransfer3 exclWarp =
-            (lane == 0) ? make_PPIdentity() : PPTransfer3{(uint64_t)(prevBitsD & PP_BITS_MASK)};
+        int32_t seed4 = 0, seed5 = 0, seed6 = 0;
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            seed4 = PPeval_transfer(exclPart, 3, 0);
+            seed5 = PPeval_transfer(exclPart, 4, 0);
+            seed6 = PPeval_transfer(exclPart, 5, 0);
+        }
 
-        const PPTransfer3 warpPre{(uint64_t)(warpPref[warpId] & PP_BITS_MASK)};
+        // Intra-warp exclusive prefix transfer: exclWarp = T_{lane-1} ∘ ... ∘ T_0
+        const PPTransfer3 prevPPD = shfl_up_pp<NumStreams>(warpMask, inclWarp, 1);
+        const PPTransfer3 exclWarp =
+            (lane == 0) ? make_PPIdentity<NumStreams>() : PPTransfer3{prevPPD.bits & PP_BITS_MASK};
+
+        const PPTransfer3 warpPre{static_cast<uint64_t>(warpPref[warpId]) & PP_BITS_MASK};
         const PPTransfer3 prefixBeforeDigit = compose_x_after_y(exclWarp, warpPre);
 
         if (hasDigit) {
@@ -2187,6 +2401,29 @@ CarryPropagation_ABC_PPv5(
                 const int64_t sum = (int64_t)(uint32_t)final128_DE[iDigit] + (int64_t)in3;
                 final128_DE[iDigit] = (uint32_t)sum;
             }
+
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                const int32_t c4_in = PPeval_transfer(prefixBeforeDigit, 3, seed4);
+                const int32_t c5_in = PPeval_transfer(prefixBeforeDigit, 4, seed5);
+                const int32_t c6_in = PPeval_transfer(prefixBeforeDigit, 5, seed6);
+
+                const int32_t in4 = c4_in + (int32_t)nrCur1[iDigit];
+                const int32_t in5 = c5_in + (int32_t)nrCur2[iDigit];
+                const int32_t in6 = c6_in + (int32_t)nrCur3[iDigit];
+
+                {
+                    const int64_t sum = (int64_t)(uint32_t)nrExtResultTrue[iDigit] + (int64_t)in4;
+                    nrExtResultTrue[iDigit] = (uint32_t)sum;
+                }
+                {
+                    const int64_t sum = (int64_t)(uint32_t)nrExtResultFalse[iDigit] + (int64_t)in5;
+                    nrExtResultFalse[iDigit] = (uint32_t)sum;
+                }
+                {
+                    const int64_t sum = (int64_t)(uint32_t)nrFinal128_DE[iDigit] + (int64_t)in6;
+                    nrFinal128_DE[iDigit] = (uint32_t)sum;
+                }
+            }
         }
     }
 
@@ -2201,11 +2438,11 @@ CarryPropagation_ABC_PPv5(
 
         if (numParts > 0) {
             const int32_t last = numParts - 1;
-            uint32_t wLast;
+            DescType wLast;
 
             int spin = 0;
             do {
-                wLast = load_desc_u32(&desc[last]);
+                wLast = load_desc(&desc[last]);
                 if (unpack_flag(wLast) == FLAG_P)
                     break;
                 if (++spin > 64) {
@@ -2214,10 +2451,23 @@ CarryPropagation_ABC_PPv5(
                 }
             } while (true);
 
-            const PPTransfer3 inclLast{(uint64_t)(unpack_bits(wLast) & PP_BITS_MASK)};
+            const PPTransfer3 inclLast{unpack_bits(wLast) & PP_BITS_MASK};
             c1_N = PPeval_transfer(inclLast, 0, 0);
             c2_N = PPeval_transfer(inclLast, 1, 0);
             c3_N = PPeval_transfer(inclLast, 2, 0);
+
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                int32_t c4_N = PPeval_transfer(inclLast, 3, 0);
+                int32_t c5_N = PPeval_transfer(inclLast, 4, 0);
+                int32_t c6_N = PPeval_transfer(inclLast, 5, 0);
+                nrCur1[N] = (uint32_t)(c4_N + (int32_t)nrCur1[N]);
+                nrCur2[N] = (uint32_t)(c5_N + (int32_t)nrCur2[N]);
+                nrCur3[N] = (uint32_t)(c6_N + (int32_t)nrCur3[N]);
+            }
+        } else {
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                // numParts == 0: no carries to propagate for NR either
+            }
         }
 
         cur1[N] = (uint32_t)(c1_N + (int32_t)cur1[N]);
@@ -2234,4 +2484,10 @@ CarryPropagation_ABC_PPv5(
     carryAcc_ABC_True = (int32_t)cur1[numDigits];
     carryAcc_ABC_False = (int32_t)cur2[numDigits];
     carryAcc_DE = (int32_t)cur3[numDigits];
+
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        nrCarryAcc_True = (int32_t)nrCur1[numDigits];
+        nrCarryAcc_False = (int32_t)nrCur2[numDigits];
+        nrCarryAcc_DE = (int32_t)nrCur3[numDigits];
+    }
 }

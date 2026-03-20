@@ -64,6 +64,23 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
         throw std::runtime_error(oss.str());
     }
 
+    // Zero the debug checksum region so stale data from previous kernels
+    // doesn't cause false mismatches.
+    if constexpr (HpShark::DebugChecksums) {
+        err = cudaMemset(
+            &g_extResult[HpShark::AdditionalChecksumsOffset],
+            0,
+            SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw));
+        if (err != cudaSuccess) {
+            cudaFree(g_extResult);
+            cudaFree(comboResults);
+            std::ostringstream oss;
+            oss << "cudaMemset(debug checksum region) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
+
     // Prepare kernel arguments
     void *kernelArgs[] = {(void *)&comboResults, (void *)&g_extResult};
 

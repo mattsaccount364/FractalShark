@@ -1,17 +1,26 @@
 \section{Reference Orbit Calculation}
 \label{sec:ref-orbit-calc}
 
-This section describes how \code{RefOrbitCalc} constructs (and optionally 
-reuses) a high-precision \emph{reference orbit} for perturbation rendering (\cref{sec:perturbation-concept}) of 
-the quadratic map
-
+The reference orbit is the single most expensive computation in
+deep-zoom Mandelbrot rendering.  Perturbation theory
+(\cref{sec:perturbation-concept}) allows every pixel to be rendered at
+low precision, but it requires one orbit---the \emph{reference
+orbit}---to be computed at the full precision of the zoom depth.  At
+extreme magnifications this means iterating
 \begin{equation}
   z_{n+1} = z_n^2 + c,\qquad z,c\in\mathbb{C},
 \end{equation}
+for potentially \emph{billions} of steps, with each step carried out at
+\emph{thousands} of bits of precision.  The resulting orbit may contain
+tens of billions of elements and occupy tens of gigabytes of memory.
+Computing it efficiently, compressing it to fit in RAM, and reusing it
+across multiple renders at different perturbation precisions are
+therefore critical to the overall performance of the system.
 
-with an implementation that supports single-threaded CPU, multi-threaded CPU,
-and GPU backends, plus several storage/compression modes that trade memory
-footprint against recomputation.
+This section describes how \code{RefOrbitCalc} orchestrates reference
+orbit computation across three backends---single-threaded CPU,
+multi-threaded CPU, and GPU---and the storage and compression modes that
+trade memory footprint against recomputation.
 
 \subsection{High-level pipeline and dispatch}
 \label{subsec:ref-orbit-pipeline}

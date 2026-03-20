@@ -1,6 +1,20 @@
 \section{Pixel-to-parameter mapping}
 \label{sec:mapping}
 
+Before any fractal iteration can begin, every pixel on screen must be
+assigned a complex parameter~$c$.  At moderate zoom depths this mapping is
+a trivial affine transform, but at the extreme magnifications targeted by
+\FractalShark{}---$10^{10{,}000}$ and beyond---the pixel-to-parameter
+conversion becomes a precision-critical operation.  Adjacent pixels may
+differ by $10^{-\text{thousands}}$, yet the mapping must be accurate to
+the last bit if the downstream perturbation pipeline is to produce correct
+results.  The transform is therefore computed at full arbitrary precision
+(\code{HighPrecision}) on the host, with only the final per-pixel offsets
+projected down to the kernel's working type.
+
+This section describes how CUDA threads index pixels, how the coordinate
+system is oriented, and how the affine map is parameterized.
+
 Each CUDA thread computes a pixel coordinate \((X,Y)\) and maps it to a complex
 parameter \(c = x_0 + i y_0\). A typical kernel starts with:
 \begin{verbatim}

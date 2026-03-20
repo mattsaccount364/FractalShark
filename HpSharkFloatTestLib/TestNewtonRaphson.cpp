@@ -219,80 +219,88 @@ RunNewtonRaphsonTest(
 
     bool allWithinTolerance = true;
     uint32_t hpConvergedIter = maxNewtonIters;
+    double totalCpuMs = 0.0;
 
     // ========== Lockstep Newton refinement ==========
     for (uint32_t it = 0; it < maxNewtonIters; ++it) {
         std::cout << "  " << testName << " Newton iter " << it << std::endl;
 
-        // Convert c -> HpSharkFloat
-        hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
-        hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
-
-        // HpSharkFloat inner loop -> z_p, dzdc_p, d2
+        // CPU-ref inner loop (only if TestReferenceImpl)
         typename SharkFloatParams::Float hpD2r{}, hpD2i{};
-        EvaluateOrbitAndDerivative<SharkFloatParams>(
-            hpCR.get(), hpCI.get(), period,
-            hpZR.get(), hpZI.get(), hpDzdcR.get(), hpDzdcI.get(),
-            &hpD2r, &hpD2i,
-            debugHostCombo);
+        if constexpr (HpShark::TestReferenceImpl) {
+            hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
+            hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
 
-        // Convert HP results -> MPIR for Newton step
-        hpZR->HpGpuToMpf(zR);
-        hpZI->HpGpuToMpf(zI);
-        hpDzdcR->HpGpuToMpf(dzdcR);
-        hpDzdcI->HpGpuToMpf(dzdcI);
+            BenchmarkTimer cpuTimer;
+            EvaluateOrbitAndDerivative<SharkFloatParams>(
+                hpCR.get(), hpCI.get(), period,
+                hpZR.get(), hpZI.get(), hpDzdcR.get(), hpDzdcI.get(),
+                &hpD2r, &hpD2i,
+                debugHostCombo);
+            const double cpuMs = static_cast<double>(cpuTimer.GetDeltaInMs());
+            totalCpuMs += cpuMs;
+            std::cout << "    CPU inner loop: " << cpuMs << " ms" << std::endl;
 
-        // MPIR reference inner loop with same c value
+            hpZR->HpGpuToMpf(zR);
+            hpZI->HpGpuToMpf(zI);
+            hpDzdcR->HpGpuToMpf(dzdcR);
+            hpDzdcI->HpGpuToMpf(dzdcI);
+        }
+
+        // MPIR reference inner loop
         HDRFloat<double> mpirD2r{}, mpirD2i{};
         RunMpirOrbitWithD2(cR, cI, period,
             mpirZR, mpirZI, mpirDzdcR, mpirDzdcI,
             mpirD2r, mpirD2i);
 
-        // Per-iteration comparison
-        mpf_sub(iterDiffZR, zR, mpirZR);
-        mpf_sub(iterDiffZI, zI, mpirZI);
-        mpf_sub(iterDiffDzdcR, dzdcR, mpirDzdcR);
-        mpf_sub(iterDiffDzdcI, dzdcI, mpirDzdcI);
+        // Per-iteration CPU vs MPIR comparison (only if TestReferenceImpl)
+        if constexpr (HpShark::TestReferenceImpl) {
+            mpf_sub(iterDiffZR, zR, mpirZR);
+            mpf_sub(iterDiffZI, zI, mpirZI);
+            mpf_sub(iterDiffDzdcR, dzdcR, mpirDzdcR);
+            mpf_sub(iterDiffDzdcI, dzdcI, mpirDzdcI);
 
-        char buf[256];
-        gmp_snprintf(buf, sizeof(buf), "    iter %u z_real diff:    %+.6Fe", it, iterDiffZR);
-        std::cout << buf << std::endl;
-        gmp_snprintf(buf, sizeof(buf), "    iter %u z_imag diff:    %+.6Fe", it, iterDiffZI);
-        std::cout << buf << std::endl;
-        gmp_snprintf(buf, sizeof(buf), "    iter %u dzdc_real diff: %+.6Fe", it, iterDiffDzdcR);
-        std::cout << buf << std::endl;
-        gmp_snprintf(buf, sizeof(buf), "    iter %u dzdc_imag diff: %+.6Fe", it, iterDiffDzdcI);
-        std::cout << buf << std::endl;
+            char buf[256];
+            gmp_snprintf(buf, sizeof(buf), "    iter %u z_real diff:    %+.6Fe", it, iterDiffZR);
+            std::cout << buf << std::endl;
+            gmp_snprintf(buf, sizeof(buf), "    iter %u z_imag diff:    %+.6Fe", it, iterDiffZI);
+            std::cout << buf << std::endl;
+            gmp_snprintf(buf, sizeof(buf), "    iter %u dzdc_real diff: %+.6Fe", it, iterDiffDzdcR);
+            std::cout << buf << std::endl;
+            gmp_snprintf(buf, sizeof(buf), "    iter %u dzdc_imag diff: %+.6Fe", it, iterDiffDzdcI);
+            std::cout << buf << std::endl;
 
-        // d2 comparison (log only, convert HP to HDRFloat<double>)
-        HDRFloat<double> hpD2rD = hpD2r;
-        HDRFloat<double> hpD2iD = hpD2i;
-        std::cout << "    iter " << it
-                  << " d2r HP=" << hpD2rD.ToString<false>()
-                  << " MPIR=" << mpirD2r.ToString<false>() << std::endl;
-        std::cout << "    iter " << it
-                  << " d2i HP=" << hpD2iD.ToString<false>()
-                  << " MPIR=" << mpirD2i.ToString<false>() << std::endl;
+            HDRFloat<double> hpD2rD = hpD2r;
+            HDRFloat<double> hpD2iD = hpD2i;
+            std::cout << "    iter " << it
+                      << " d2r HP=" << hpD2rD.ToString<false>()
+                      << " MPIR=" << mpirD2r.ToString<false>() << std::endl;
+            std::cout << "    iter " << it
+                      << " d2i HP=" << hpD2iD.ToString<false>()
+                      << " MPIR=" << mpirD2i.ToString<false>() << std::endl;
+        }
 
-        // Check per-iteration tolerance for z and dzdc
-        auto checkIterTolerance = [&](mpf_t diff, mpf_t ref) {
-            mpf_abs(absDiff, diff);
-            mpf_abs(absRef, ref);
-            if (mpf_sgn(absRef) == 0) {
-                return mpf_cmp(absDiff, tolerance) <= 0;
-            } else {
-                mpf_div(relError, absDiff, absRef);
-                return mpf_cmp(relError, tolerance) <= 0;
-            }
-        };
+        // Check per-iteration tolerance for CPU-ref vs MPIR (only if TestReferenceImpl)
+        if constexpr (HpShark::TestReferenceImpl) {
+            auto checkIterTolerance = [&](mpf_t diff, mpf_t ref) {
+                mpf_abs(absDiff, diff);
+                mpf_abs(absRef, ref);
+                if (mpf_sgn(absRef) == 0) {
+                    return mpf_cmp(absDiff, tolerance) <= 0;
+                } else {
+                    mpf_div(relError, absDiff, absRef);
+                    return mpf_cmp(relError, tolerance) <= 0;
+                }
+            };
 
-        if (!checkIterTolerance(iterDiffZR, mpirZR)) allWithinTolerance = false;
-        if (!checkIterTolerance(iterDiffZI, mpirZI)) allWithinTolerance = false;
-        if (!checkIterTolerance(iterDiffDzdcR, mpirDzdcR)) allWithinTolerance = false;
-        if (!checkIterTolerance(iterDiffDzdcI, mpirDzdcI)) allWithinTolerance = false;
+            if (!checkIterTolerance(iterDiffZR, mpirZR)) allWithinTolerance = false;
+            if (!checkIterTolerance(iterDiffZI, mpirZI)) allWithinTolerance = false;
+            if (!checkIterTolerance(iterDiffDzdcR, mpirDzdcR)) allWithinTolerance = false;
+            if (!checkIterTolerance(iterDiffDzdcI, mpirDzdcI)) allWithinTolerance = false;
+        }
 
-        // Check |dzdc| != 0
-        HDRFloat<double> dzr_h(dzdcR), dzi_h(dzdcI);
+        // Newton step uses MPIR results (authoritative ground truth)
+        HDRFloat<double> dzr_h(mpirDzdcR), dzi_h(mpirDzdcI);
         HdrReduce(dzr_h); HdrReduce(dzi_h);
         HDRFloat<double> dzdcNorm = dzr_h.square() + dzi_h.square();
         HdrReduce(dzdcNorm);
@@ -301,20 +309,19 @@ RunNewtonRaphsonTest(
             break;
         }
 
-        // Newton step: step = z / dzdc (using HP values)
-        if (!ComputeNewtonStep(zR, zI, dzdcR, dzdcI, stepR, stepI, denom, t1, t2)) {
+        if (!ComputeNewtonStep(mpirZR, mpirZI, mpirDzdcR, mpirDzdcI, stepR, stepI, denom, t1, t2)) {
             std::cout << "    break: denom==0" << std::endl;
             break;
         }
 
-        // c = c - step
+        // c = c - step (MPIR trajectory)
         mpf_sub(cR, cR, stepR);
         mpf_sub(cI, cI, stepI);
 
-        // Imagina convergence check (using HP d2)
+        // Imagina convergence check (using MPIR d2)
         HDRFloat<double> err{};
         const int e = ComputeImaginaError(
-            stepR, stepI, hpD2r, hpD2i, dzdcNorm,
+            stepR, stepI, mpirD2r, mpirD2i, dzdcNorm,
             normStep, t1, t2, err);
 
         std::cout << "    err=" << err.ToString<false>() << " e=" << e
@@ -325,8 +332,8 @@ RunNewtonRaphsonTest(
         }
     }
 
-    // Final correction pass (one more Newton step after convergence)
-    {
+    // Final correction pass (only if TestReferenceImpl)
+    if constexpr (HpShark::TestReferenceImpl) {
         hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
         hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
 
@@ -528,9 +535,14 @@ RunNewtonRaphsonTest(
 
     // ========== Report results ==========
     std::cout << testName << ": CPU-ref converged in " << hpConvergedIter << " iters" << std::endl;
+    std::cout << testName << ": CPU-ref total inner loop time: " << totalCpuMs << " ms" << std::endl;
     if constexpr (HpShark::TestGpu) {
         std::cout << testName << ": GPU converged in " << gpuConvergedIter << " iters" << std::endl;
-        std::cout << testName << ": GPU time: " << gpuTimer.GetDeltaInMs() << " ms" << std::endl;
+        const double gpuMs = static_cast<double>(gpuTimer.GetDeltaInMs());
+        std::cout << testName << ": GPU total inner loop time: " << gpuMs << " ms" << std::endl;
+        if (totalCpuMs > 0 && gpuMs > 0) {
+            std::cout << testName << ": Speedup (CPU/GPU): " << (totalCpuMs / gpuMs) << "x" << std::endl;
+        }
     }
     std::cout << testName << ": per-iteration z/dzdc tolerance "
               << (allWithinTolerance ? "PASS" : "FAIL") << std::endl;

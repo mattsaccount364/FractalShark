@@ -108,11 +108,36 @@ Phase1_DE(cg::thread_block &block,
           const int32_t newEExponent,
           int32_t &outExponent_DE,
           uint64_t *final128, // the extended result digits
+
+          // NR params (only used when EnableNewtonRaphson)
+          const bool nrDIsBiggerMagnitude,
+          const bool nrIsNegD,
+          const bool nrIsNegE,
+          const uint32_t *SharkRestrict nrExtD,
+          const uint32_t *SharkRestrict nrExtE,
+          const int32_t nrShiftD,
+          const int32_t nrShiftE,
+          const int32_t nrEffExpD,
+          const int32_t nrEffExpE,
+          const int32_t nrNewDExponent,
+          const int32_t nrNewEExponent,
+          int32_t &nrOutExponent_DE,
+          uint64_t *SharkRestrict nrFinal128_DE,
+
           DebugState<SharkFloatParams> *debugStates)
 {
     const bool sameSignDE = (IsNegativeD == IsNegativeE);
     const int32_t diffDE = DIsBiggerMagnitude ? (effExpD - effExpE) : (effExpE - effExpD);
     outExponent_DE = DIsBiggerMagnitude ? newDExponent : newEExponent;
+
+    // NR setup
+    bool nrSameSignDE = false;
+    int32_t nrDiffDE = 0;
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        nrSameSignDE = (nrIsNegD == nrIsNegE);
+        nrDiffDE = nrDIsBiggerMagnitude ? (nrEffExpD - nrEffExpE) : (nrEffExpE - nrEffExpD);
+        nrOutExponent_DE = nrDIsBiggerMagnitude ? nrNewDExponent : nrNewEExponent;
+    }
 
     // --- Each thread computes its aligned limb.
     for (int32_t i = idx; i < numActualDigitsPlusGuard; i += blockDim.x * gridDim.x) {
@@ -175,6 +200,28 @@ Phase1_DE(cg::thread_block &block,
 
         // Write preliminary result (without carry/borrow propagation) to global temporary.
         final128[i] = prelim;
+
+        // NR: same computation with NR inputs and NR output buffer
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            uint64_t nrAlignedA = 0, nrAlignedB = 0;
+            GetCorrespondingLimbs<SharkFloatParams>(
+                nrExtD, numActualDigits, numActualDigitsPlusGuard,
+                nrExtE, numActualDigits, numActualDigitsPlusGuard,
+                nrShiftD, nrShiftE, nrDIsBiggerMagnitude, nrDiffDE, i,
+                nrAlignedA, nrAlignedB);
+
+            uint64_t nrPrelim;
+            if (nrSameSignDE) {
+                nrPrelim = nrAlignedA + nrAlignedB;
+            } else if (nrDIsBiggerMagnitude) {
+                nrPrelim = static_cast<uint64_t>(
+                    static_cast<int64_t>(nrAlignedA) - static_cast<int64_t>(nrAlignedB));
+            } else {
+                nrPrelim = static_cast<uint64_t>(
+                    static_cast<int64_t>(nrAlignedB) - static_cast<int64_t>(nrAlignedA));
+            }
+            nrFinal128_DE[i] = nrPrelim;
+        }
     }
 
     if constexpr (HpShark::DebugChecksums) {
@@ -661,7 +708,7 @@ CarryPropagationPPTry1Buggy_DE(
                 s_p[n - 1] = 1;
             }
         } else {
-            // Upsweep phase (reduce) – corrected operator (note the order of operands)
+            // Upsweep phase (reduce) ï¿½ corrected operator (note the order of operands)
             if (block.thread_index().x == 0 && block.group_index().x == 0) {
                 for (int32_t d = 1; d < n; d *= 2) {
                     // Process every segment of 2*d elements.
@@ -807,7 +854,7 @@ CarryPropagationPPTry1Buggy_DE(
         const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
 
         // --- Downsweep phase using custom operator ---
-        // Parallel Hillis–Steele inclusive scan using CombineBorrow.
+        // Parallel Hillisï¿½Steele inclusive scan using CombineBorrow.
         // Note: 'I' is the identity for our CombineBorrow operator; for our encoding, we take I = 2.
         // (Assumes numActualDigitsPlusGuard is <= the number of elements in s_g.)
         for (int32_t d = 1; d < numActualDigitsPlusGuard; d *= 2) {

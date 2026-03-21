@@ -6,6 +6,7 @@
 #include "HighPrecision.h"
 #include "HpSharkFloat.h"
 #include "KernelInvoke.h"
+#include "MpirOrbitEval.h"
 #include "ReferenceAdd.h"
 #include "ReferenceNTT2.h"
 #include "ReferenceReferenceOrbit.h"
@@ -17,88 +18,33 @@
 #include <memory>
 #include <string>
 
-// Run MPIR orbit for `period` iterations, computing z_p, dzdc_p, and d2.
-// d2 is accumulated in HDRFloat (low precision), matching production.
-// outZR/outZI/outDzdcR/outDzdcI must be pre-initialized via mpf_init.
+// Wrapper around shared MT orbit eval for the test benchmark.
 static void RunMpirOrbitWithD2(
     mpf_t cR, mpf_t cI, uint64_t period,
     mpf_t outZR, mpf_t outZI,
     mpf_t outDzdcR, mpf_t outDzdcI,
     HDRFloat<double> &d2r_out, HDRFloat<double> &d2i_out)
 {
+    const mp_bitcnt_t prec = mpf_get_prec(cR);
 
-    mpf_set_ui(outZR, 0);
-    mpf_set_ui(outZI, 0);
-    mpf_set_ui(outDzdcR, 0);
-    mpf_set_ui(outDzdcI, 0);
+    mpf_complex c_coord;
+    mpf_complex_init(c_coord, prec);
+    mpf_set(c_coord.re, cR); mpf_set(c_coord.im, cI);
 
-    mpf_t t1, t2, newZR, newZI, newDzdcR, newDzdcI;
-    mpf_init(t1); mpf_init(t2);
-    mpf_init(newZR); mpf_init(newZI);
-    mpf_init(newDzdcR); mpf_init(newDzdcI);
+    mpf_complex z_coord, dzdc_deriv;
+    mpf_complex_init(z_coord, prec);
+    mpf_complex_init(dzdc_deriv, prec);
 
-    HDRFloat<double> d2r{}, d2i{};
+    EvaluateCriticalOrbitAndDerivsMT(
+        c_coord, period, z_coord, dzdc_deriv,
+        d2r_out, d2i_out, prec, prec);
 
-    for (uint64_t i = 0; i < period; ++i) {
-        // d2 update using current z_n and dzdc_n (before orbit update)
-        {
-            HDRFloat<double> zr_h(outZR), zi_h(outZI);
-            HDRFloat<double> dzr_h(outDzdcR), dzi_h(outDzdcI);
+    mpf_set(outZR, z_coord.re); mpf_set(outZI, z_coord.im);
+    mpf_set(outDzdcR, dzdc_deriv.re); mpf_set(outDzdcI, dzdc_deriv.im);
 
-            // dzdc^2
-            HDRFloat<double> dz2r = dzr_h * dzr_h - dzi_h * dzi_h;
-            HdrReduce(dz2r);
-            HDRFloat<double> dz2i = HDRFloat<double>{2.0} * (dzr_h * dzi_h);
-            HdrReduce(dz2i);
-
-            // z * d2
-            HDRFloat<double> zd2r = zr_h * d2r - zi_h * d2i;
-            HdrReduce(zd2r);
-            HDRFloat<double> zd2i = zr_h * d2i + zi_h * d2r;
-            HdrReduce(zd2i);
-
-            // d2 = 2 * (dzdc^2 + z * d2)
-            HDRFloat<double> sumr = dz2r + zd2r;
-            HDRFloat<double> sumi = dz2i + zd2i;
-            HdrReduce(sumr);
-            HdrReduce(sumi);
-
-            d2r = HDRFloat<double>{2.0} * sumr;
-            d2i = HDRFloat<double>{2.0} * sumi;
-        }
-
-        // Derivative: dzdc_{n+1} = 2 * z_n * dzdc_n + 1
-        mpf_mul(t1, outZR, outDzdcR);
-        mpf_mul(t2, outZI, outDzdcI);
-        mpf_sub(newDzdcR, t1, t2);
-        mpf_mul_ui(newDzdcR, newDzdcR, 2);
-        mpf_add_ui(newDzdcR, newDzdcR, 1);
-
-        mpf_mul(t1, outZR, outDzdcI);
-        mpf_mul(t2, outZI, outDzdcR);
-        mpf_add(newDzdcI, t1, t2);
-        mpf_mul_ui(newDzdcI, newDzdcI, 2);
-
-        // Orbit: z_{n+1} = z_n^2 + c
-        mpf_mul(t1, outZR, outZR);
-        mpf_mul(t2, outZI, outZI);
-        mpf_sub(newZR, t1, t2);
-        mpf_add(newZR, newZR, cR);
-
-        mpf_mul(t1, outZR, outZI);
-        mpf_mul_ui(t1, t1, 2);
-        mpf_add(newZI, t1, cI);
-
-        mpf_set(outZR, newZR); mpf_set(outZI, newZI);
-        mpf_set(outDzdcR, newDzdcR); mpf_set(outDzdcI, newDzdcI);
-    }
-
-    d2r_out = d2r;
-    d2i_out = d2i;
-
-    mpf_clear(t1); mpf_clear(t2);
-    mpf_clear(newZR); mpf_clear(newZI);
-    mpf_clear(newDzdcR); mpf_clear(newDzdcI);
+    mpf_complex_clear(z_coord);
+    mpf_complex_clear(dzdc_deriv);
+    mpf_complex_clear(c_coord);
 }
 
 // Compute Newton step: step = z / dzdc (complex division via separate reals).

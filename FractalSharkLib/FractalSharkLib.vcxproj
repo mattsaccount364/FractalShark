@@ -76,6 +76,9 @@
     <ClCompile Include="FeatureFinderOrchestrator.cpp" />
     <ClCompile Include="FeatureSummary.cpp" />
     <ClCompile Include="Fractal.cpp" />
+    <ClCompile Include="MpirOrbitEval.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="RenderThreadPool.cpp" />
     <ClCompile Include="FractalViewPresets.cpp" />
     <ClCompile Include="CrummyTest.cpp" />

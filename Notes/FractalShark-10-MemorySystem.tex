@@ -53,6 +53,54 @@ capacity increases. The abstraction supports two complementary backing modes:
 \subsection{Stable-address growth via reserve-and-commit}
 \label{sec:reserve_commit}
 
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    cell/.style={draw, minimum width=0.55cm, minimum height=0.7cm, font=\tiny},
+    committed/.style={cell, fill=blue!20},
+    reserved/.style={cell, fill=gray!10, pattern=north east lines, pattern color=gray!30},
+    label/.style={font=\scriptsize},
+]
+  % Reserved region
+  \foreach \i in {0,...,19} {
+    \ifnum\i<12
+      \node[committed] (c\i) at (\i*0.6, 0) {};
+    \else
+      \node[reserved] (c\i) at (\i*0.6, 0) {};
+    \fi
+  }
+
+  % Base pointer
+  \draw[<-, thick] (c0.south) -- ++(0, -0.6) node[below, label] {\code{m\_Data} (stable)};
+
+  % Capacity marker
+  \draw[<->, thick, blue!70!black] (c0.north west) ++(0,0.15) -- ++(7.2, 0)
+    node[midway, above, label, blue!70!black] {Committed pages (in use)};
+
+  % Reserved marker
+  \draw[<->, thick, gray] (c12.north west) ++(0,0.15) -- ++(4.8, 0)
+    node[midway, above, label, gray] {Reserved (uncommitted)};
+
+  % Growth arrow
+  \draw[->, thick, orange, dashed] (c11.east) ++(0.1, -0.35) -- ++(1.4, 0)
+    node[right, label, orange] {Growth: commit more pages};
+
+  % Total region bracket
+  \draw[decorate, decoration={brace, amplitude=5pt, mirror}, thick]
+    (c0.south west) ++(0, -1.2) -- ++(12.0, 0)
+    node[midway, below=5pt, label] {Virtual address reservation (no reallocation)};
+\end{tikzpicture}
+\caption[\code{GrowableVector} reserve-and-commit memory layout]{\code{GrowableVector} reserve-and-commit memory layout.
+  A large virtual region is reserved at initialization, establishing a
+  stable base pointer \code{m\_Data}.  Pages are committed incrementally
+  as the vector grows (blue, left).  The reserved-but-uncommitted
+  region (hatched, right) consumes no physical memory until needed.
+  Because the base address never changes, all previously returned
+  pointers remain valid across growth operations.}
+\label{fig:growable-vector}
+\end{figure}
+
 At initialization time, the vector establishes an address anchor:
 \begin{itemize}
   \item In anonymous mode, the anchor is created by reserving a large region

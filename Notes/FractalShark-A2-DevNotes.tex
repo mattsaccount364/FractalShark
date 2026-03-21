@@ -60,10 +60,11 @@ device and falls back to CPU-only rendering, with a warning message.
   an experimental CUDA reference-orbit calculator (\cref{subsec:ref-orbit-gpu}) intended to complement the
   existing CPU/MPIR multithreaded approach.
 
-  \item \textbf{High-precision arithmetic pipeline on GPU.} Includes a full
-  multiply/add/subtract pipeline (\cref{sec:hp-add,sec:ntt-multiply}), a
-  Number Theoretic Transform (NTT) implementation, parallel-prefix carry
-  propagation, and HDR-style exponent tracking.
+  \item \textbf{High-precision arithmetic pipeline on GPU.}
+  Includes a full multiply/add/subtract pipeline
+  (\cref{sec:hp-add,sec:ntt-multiply}), a Number Theoretic Transform
+  (NTT) implementation, parallel-prefix carry propagation, and
+  HDR-style exponent tracking.
 
   \item \textbf{Interoperability and correctness.} Supports conversion between
   MPIR and the GPU high-precision float format and adds manually-run test

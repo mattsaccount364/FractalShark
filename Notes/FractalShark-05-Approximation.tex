@@ -29,6 +29,96 @@ strategies:
 Both techniques preserve the perturbation framework's mixed-precision
 advantage while reducing per-pixel work from $O(p)$ to a fraction of~$p$.
 
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    scale=0.75,
+    dot/.style={circle, fill, inner sep=1.2pt},
+    arr/.style={->, thick},
+]
+  % Common iteration axis ticks
+  \foreach \x in {0,1,...,16} {
+    \draw[gray!40] (\x, -0.1) -- (\x, 0.1);
+  }
+  \node[font=\scriptsize, below, gray] at (0, -0.15) {$0$};
+  \node[font=\scriptsize, below, gray] at (4, -0.15) {$p$};
+  \node[font=\scriptsize, below, gray] at (8, -0.15) {$2p$};
+  \node[font=\scriptsize, below, gray] at (12, -0.15) {$3p$};
+  \node[font=\scriptsize, below, gray] at (16, -0.15) {$4p$};
+  \draw[->, gray] (-0.3, 0) -- (17, 0)
+    node[right, font=\scriptsize] {iteration $n$};
+
+  % --- Row 1: Perturbation (step by step) ---
+  \node[font=\scriptsize, anchor=east, orange!70!black] at (-0.5, 1.0)
+    {Perturbation};
+  \foreach \x in {0,1,...,15} {
+    \pgfmathtruncatemacro{\xn}{\x+1}
+    \draw[arr, orange!70!black, thin] (\x, 1.0) -- (\xn, 1.0);
+  }
+  \foreach \x in {0,1,...,16} {
+    \node[dot, orange!70!black] at (\x, 1.0) {};
+  }
+  \node[orange!70!black, font=\scriptsize] at (8, 0.5)
+    {$4p$ evaluations};
+
+  % --- Row 2: BLA (variable-length skips) ---
+  \node[font=\scriptsize, anchor=east, green!50!black] at (-0.5, 2.8)
+    {BLA};
+  % Variable skip lengths — shorter near orbit inflection, longer on smooth stretches
+  \draw[arr, green!50!black, thick, bend left=30] (0, 2.6) to (2, 2.6);
+  \draw[arr, green!50!black, thick, bend left=30] (2, 2.6) to (4, 2.6);
+  \draw[arr, green!50!black, thick, bend left=30] (4, 2.6) to (5, 2.6);
+  \draw[arr, green!50!black, thick, bend left=30] (5, 2.6) to (8, 2.6);
+  \draw[arr, green!50!black, thick, bend left=30] (8, 2.6) to (9, 2.6);
+  \draw[arr, green!50!black, thick, bend left=30] (9, 2.6) to (12, 2.6);
+  \draw[arr, green!50!black, thick, bend left=30] (12, 2.6) to (13, 2.6);
+  \draw[arr, green!50!black, thick, bend left=30] (13, 2.6) to (16, 2.6);
+  \foreach \x in {0,2,4,5,8,9,12,13,16} {
+    \node[dot, green!50!black] at (\x, 2.6) {};
+  }
+  \node[green!50!black, font=\scriptsize] at (8, 2.0)
+    {${\sim}9$ evaluations (skip length varies with $|\Delta z|$)};
+
+  % --- Row 3: LA v2 (period-aligned staged skips) ---
+  \node[font=\scriptsize, anchor=east, red!60!black] at (-0.5, 4.6)
+    {LA v2};
+  % Stage 0 entries: each skips one full period
+  \draw[arr, red!60!black, thick, bend left=22] (0, 4.4) to (4, 4.4);
+  \draw[arr, red!60!black, thick, bend left=22] (4, 4.4) to (8, 4.4);
+  \draw[arr, red!60!black, thick, bend left=22] (8, 4.4) to (12, 4.4);
+  \draw[arr, red!60!black, thick, bend left=22] (12, 4.4) to (16, 4.4);
+  \foreach \x in {0,4,8,12,16} {
+    \node[dot, red!60!black] at (\x, 4.4) {};
+  }
+  \node[red!60!black, font=\scriptsize] at (8, 3.8)
+    {4 evaluations (stage-0: one period $p$ per step)};
+
+  % Higher stage annotation
+  \draw[arr, red!60!black, very thick, bend left=15, dashed]
+    (0, 5.4) to (8, 5.4);
+  \draw[arr, red!60!black, very thick, bend left=15, dashed]
+    (8, 5.4) to (16, 5.4);
+  \foreach \x in {0,8,16} {
+    \node[dot, red!60!black] at (\x, 5.4) {};
+  }
+  \node[red!60!black, font=\scriptsize] at (8, 5.0)
+    {2 evaluations (stage-1: $2p$ per step)};
+\end{tikzpicture}
+\caption[Iteration skipping: perturbation vs.\ BLA vs.\ LA]{%
+  Per-pixel iteration strategies for a reference orbit of period~$p$,
+  shown over $4p$~iterations.
+  \emph{Perturbation} (orange) evaluates every iteration: $4p$~steps.
+  \emph{BLA} (green) precomputes composable linear maps whose valid
+  step length varies with the local linearization error---shorter near
+  orbit inflection points, longer on smooth stretches.
+  \emph{LA~v2} (red, solid) aligns its approximation hierarchy with
+  the orbit period: each stage-0 entry skips exactly one period~$p$,
+  reducing cost to ${\sim}4$ evaluations.  Higher stages (red, dashed)
+  compose stage-0 entries to skip multiples of~$p$ in a single step.}
+\label{fig:approx-skipping}
+\end{figure}
+
 \subsection{Bilinear approximation (BLA) for orbit deltas}
 \label{sec:bilinear-approx}
 
@@ -71,8 +161,9 @@ These objects exist to accelerate \emph{escape-time evaluation} by evolving
 \Delta z\) to perform bailout checks consistent with Mandelbrot rendering.
 
 \subsubsection{Applying a step: complex multiply-add}
-The method \code{getValue} (taking arguments \code{RealDeltaSubN},
-\code{ImagDeltaSubN}, \code{RealDeltaSub0}, \code{ImagDeltaSub0})
+The method \code{getValue} (taking arguments
+\code{Real\-Delta\-SubN}, \code{Imag\-Delta\-SubN},
+\code{Real\-Delta\-Sub0}, \code{Imag\-Delta\-Sub0})
 applies:
 \[
 \Delta z \leftarrow A\,\Delta z + B\,\Delta c,
@@ -214,8 +305,8 @@ and \code{LAInfoDeep::Evaluate} implements~\cref{eq:la-evaluate}.
 
 The initial conditions, set in the \code{LAInfoDeep} constructor, are
 \[
-\code{ZCoeff}_0 = 1,\qquad \code{CCoeff}_0 = 1,\qquad
-\code{LAThreshold}_0 = 1,\qquad \code{LAThresholdC}_0 = 1,\qquad
+\code{ZCoeff}_0 = 1,\quad \code{CCoeff}_0 = 1,\quad
+\code{LAThreshold}_0 = 1,\quad \code{LAThresholdC}_0 = 1,\quad
 \code{MinMag}_0 = 4.
 \]
 The initial \(\code{CCoeff}_0 = 1\) accounts for the single \(+\Delta c\)
@@ -417,10 +508,10 @@ lower-level ones.
 \subsubsection{Period-aligned stage hierarchy}
 \label{sec:la-stage-hierarchy}
 
-The power of LA v2 comes from aligning the approximation hierarchy with
-the reference orbit's periodic structure.
-The construction, implemented in \code{LAReference::CreateLAFromOrbit}
-and \code{CreateNewLAStage}, proceeds as follows:
+The power of LA v2 comes from aligning the approximation hierarchy
+with the reference orbit's periodic structure.  The construction,
+implemented in \code{LAReference::\allowbreak CreateLAFromOrbit} and
+\code{Create\-New\-LA\-Stage}, proceeds as follows:
 \begin{enumerate}
   \item \textbf{Period detection (stage~0).}  The algorithm scans the
         reference orbit, accumulating LA coefficients via the step-forward
@@ -454,14 +545,14 @@ and \code{CreateNewLAStage}, proceeds as follows:
           \item \textbf{Method~2 (coefficient ratio).}  A period is
                 detected when the threshold tightening at the current
                 step exceeds a fraction of the existing threshold:
-                \begin{equation}
+                \begin{multline}
                 \frac{\lVert z_k^\star \rVert_\infty}
                      {\lVert \code{ZCoeff}_k \rVert_\infty}
-                \cdot \code{LAThresholdScale}
+                \cdot \code{LAThresholdScale} \\
                 < \code{LAThreshold}_k
                   \cdot \code{Stage0PeriodDetectionThreshold}.
                 \label{eq:period-detect-coeff}
-                \end{equation}
+                \end{multline}
                 This variant reuses the threshold machinery directly.
         \end{itemize}
         For higher stages (stage~1 and above), the same tests are

@@ -24,7 +24,7 @@ overwhelming all other parts of the computation.
 \begin{figure}[!htbp]
   \centering
   \includegraphics[width=0.9\linewidth]{gpu-reference-orbit.png}
-  \caption{View \#30 rendered at zoom factor \(10^{114,514}\) using the GPU
+  \caption[View \#30 at zoom $10^{114{,}514}$ via GPU backend]{View \#30 rendered at zoom factor \(10^{114,514}\) using the GPU
   reference orbit backend.  Requires ~73s to render on RTX 5090.}
   \label{fig:gpu-reference-orbit}
 \end{figure}
@@ -32,7 +32,7 @@ overwhelming all other parts of the computation.
 \begin{figure}[!htbp]
   \centering
   \includegraphics[width=0.9\linewidth]{view32.png}
-  \caption{View \#32 rendered at zoom factor \(10^{244,240}\), roughly twice
+  \caption[View \#32 at zoom $10^{244{,}240}$]{View \#32 rendered at zoom factor \(10^{244,240}\), roughly twice
   the exponent depth of View~\#30.  Reaching this depth exercises both the
   NTT multiplication pipeline and the high-precision addition/subtraction
   kernels at full scale.}
@@ -86,9 +86,9 @@ required to advance the orbit at a fixed precision. The combo contains:
         (\code{Multiply}, implementing NTT-based convolution) and
         addition (\code{Add}, implementing parallel-prefix carry
         propagation),
-  \item a fixed-size output mailbox
-        (\code{OutputIters}, \code{OutputIterCount},
-        \code{MaxOutputIters}\,=\,1024),
+  \item a fixed-size output mailbox (\code{OutputIters},
+        \code{Output\-Iter\-Count},
+        \code{Max\-Output\-Iters}\,=\,1024),
   \item termination status (\code{PeriodicityStatus}),
   \item and host-only launch and resource plumbing, including a device pointer to
         the GPU-resident state, temporary device buffers, an associated CUDA
@@ -666,9 +666,9 @@ scheduling, and normalization/carry handling.
 
 \subsection{NTT in \FractalShark{}}
 
-Fundamentally, the NTT implementation in \FractalShark{} is somewhat naive.  It
-doesn't make much effort at memory layout or optimized coalescing, which is
-likely costing it in performance.  This section describes how the NTT-based
+Fundamentally, the NTT implementation in \FractalShark{} does not prioritize
+memory layout or optimized coalescing, which likely leaves performance on the
+table.  This section describes how the NTT-based
 multiplication is realized in practice, following the structure of
 \FractalShark{}'s CUDA implementation. The overall goal is to compute the exact
 convolution of two large significand arrays using modular arithmetic modulo

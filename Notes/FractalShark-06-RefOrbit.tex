@@ -42,9 +42,9 @@ Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, 
 \begin{enumerate}
   \item Picks an initial guess \((c_x,c_y)\) (center of the current view
         if unset).
-  \item Chooses an algorithm (\code{ST}, \code{MT}, reuse-based hybrids,
-        or \code{GPU}) based on \code{m\_PerturbationAlg} and zoom factor
-        heuristics.
+  \item Chooses an algorithm (\code{ST}, \code{MT}, reuse-based
+        hybrids, or~\code{GPU}) based on
+        \code{m\_Perturbation\-Alg} and zoom factor heuristics.
   \item Allocates a new \code{PerturbationResults} slot, initializes
         metadata and bounds, and runs the chosen orbit kernel until escape,
         periodicity detection, or the maximum iteration count is reached.
@@ -58,9 +58,10 @@ demanded variant type when the working set exceeds a configurable threshold.
 \label{subsec:ref-orbit-st}
 
 The single-threaded path
-(\code{AddPerturbationReferencePointST})
-computes the authoritative orbit directly using MPIR/GMP \cite{MPIR_Library} \code{mpf\_t} for
-the recurrence, while simultaneously emitting a low-precision shadow copy
+(\code{Add\allowbreak Perturbation\allowbreak Reference\allowbreak Point\allowbreak ST})
+computes the authoritative orbit directly using
+MPIR/GMP~\cite{MPIR_Library} \code{mpf\_t} for the recurrence, while
+simultaneously emitting a low-precision shadow copy
 \((\hat{x}_n,\hat{y}_n)\in T^2\) for downstream work (compression, bailout
 checks, periodicity tests).
 
@@ -330,7 +331,7 @@ Only when accumulated drift causes the perturbation to exceed the fixed accuracy
 orbit need to be computed.
 
 In the single-thread execution path (beginning at
-\code{AddPerturbation\-ReferencePointST}), this construction is performed
+\code{Add\-Perturbation\-Reference\-Point\-ST}), this construction is performed
 sequentially using the cached authoritative
 orbit samples $\{z^{(0)}_n\}$ as coefficients.
 No approximation beyond finite-precision rounding is introduced; the intermediate orbit is mathematically equivalent
@@ -723,7 +724,7 @@ that requires reference compression to complete.
 \begin{figure}[!htbp]
   \centering
   \includegraphics[width=0.9\linewidth]{view27-1-quadrillion.png}
-  \caption{View \#27, a period ~28-billion point rendered at 1 quadrillion
+  \caption[View \#27 at 1 quadrillion iterations]{View \#27, a period ~28-billion point rendered at 1 quadrillion
   iterations per pixel, requires reference compression to render on most
   hardware because of its memory requirements.  This render takes ~6h with an
   RTX 4090 and AMD 5950X and 128GB RAM with the multi-threaded reference orbit

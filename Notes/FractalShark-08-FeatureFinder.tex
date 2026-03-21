@@ -189,6 +189,64 @@ effective $R^2$ during the scan to reduce false triggers.
 \subsubsection{Inner loop: forward evaluation}
 \label{subsubsec:ff-inner}
 
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    box/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.7cm,
+                align=center, font=\small},
+    outerbox/.style={box, fill=blue!8},
+    innerbox/.style={box, fill=orange!10},
+    precbox/.style={font=\scriptsize\itshape, text=gray},
+    every edge/.style={draw, ->},
+]
+  % Outer loop
+  \node[outerbox] (init) {Initial guess $c$};
+  \node[outerbox, below=0.5cm of init] (inner) {Inner loop\\(evaluate $z_p$, $\mathit{dzdc}_p$, $d2_p$)};
+  \node[outerbox, below=0.5cm of inner] (step) {Newton step\\$c \leftarrow c - z_p/\mathit{dzdc}_p$};
+  \node[outerbox, below=0.5cm of step] (conv) {Converged?};
+  \node[outerbox, below=0.5cm of conv] (done) {Return $c^*$};
+
+  \draw[->] (init) -- (inner);
+  \draw[->] (inner) -- (step);
+  \draw[->] (step) -- (conv);
+  \draw[->] (conv) -- node[right, font=\scriptsize] {yes} (done);
+  \draw[->] (conv.west) -- ++(-1.5,0) |- node[near start, left, font=\scriptsize] {no} (inner.west);
+
+  % Inner loop detail
+  \node[innerbox, right=2.5cm of inner, yshift=1.0cm] (orbit) {$z \leftarrow z^2 + c$};
+  \node[precbox, right=0.1cm of orbit.east] {coord};
+  \node[innerbox, below=0.3cm of orbit] (dzdc) {$\mathit{dzdc} \leftarrow 2z \cdot \mathit{dzdc} + 1$};
+  \node[precbox, right=0.1cm of dzdc.east] {deriv};
+  \node[innerbox, below=0.3cm of dzdc] (d2) {$d2 \leftarrow 2(\mathit{dzdc}^2 + z \cdot d2)$};
+  \node[precbox, right=0.1cm of d2.east] {${\sim}53$-bit};
+
+  \node[font=\scriptsize, above=0.15cm of orbit] {Repeat $p$ times:};
+
+  \begin{scope}[on background layer]
+    \node[draw, dashed, rounded corners, fill=orange!4,
+          fit=(orbit)(dzdc)(d2), inner xsep=6pt, inner ysep=10pt,
+          label={[font=\scriptsize\bfseries]above:Inner loop (GPU-amenable)}] (innerfit) {};
+  \end{scope}
+
+  \draw[->, dashed] (inner.east) -- (innerfit.west);
+
+  % Outer loop label
+  \begin{scope}[on background layer]
+    \node[draw, dotted, rounded corners, fill=blue!3,
+          fit=(init)(done)(conv), inner xsep=8pt, inner ysep=8pt,
+          label={[font=\scriptsize\bfseries]above:Outer loop (CPU)}] {};
+  \end{scope}
+\end{tikzpicture}
+\caption[Newton--Raphson two-level loop structure]{Newton--Raphson two-level loop structure.  The outer loop
+  (left) updates the candidate~$c$ via Newton steps on the CPU.  Each
+  step calls the inner loop (right), which iterates $p$~times to
+  evaluate $z_p$, $\mathit{dzdc}_p$, and $d2_p$ at three different
+  precision levels.  The inner loop is the computational bottleneck and
+  the target for GPU acceleration.}
+\label{fig:newton-loops}
+\end{figure}
+
 Each Newton step requires evaluating $F(c) = z_p(c)$ and its first two
 derivatives at the current guess~$c$.  This is done by iterating the
 critical orbit from $z_0 = 0$ for exactly $p$~steps, accumulating three
@@ -380,8 +438,9 @@ computation, reusing the same barriers with zero additional
 synchronization overhead.
 
 \paragraph{Per-iteration structure.}
-Each iteration of \code{ReferenceHelper} (in
-\code{KernelHpSharkReferenceOrbit\_cu.h}) proceeds in three phases:
+Each iteration of \code{ReferenceHelper}
+(in \code{Kernel\-Hp\-Shark\-Reference\-Orbit\_cu.h})
+proceeds in three phases:
 
 \begin{enumerate}
 \item \textbf{$d2$ accumulation (HDRFloat).}
@@ -494,6 +553,78 @@ the host; only the inner loop---$p$ iterations of high-precision
 arithmetic per Newton step---moves to the GPU.  For large $p$ and $N$
 the total arithmetic volume scales as $O(p \cdot N \log N)$ per Newton
 step, making the GPU's throughput advantage decisive.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    phase/.style={draw, rounded corners, minimum width=2.2cm, minimum height=0.6cm,
+                  align=center, font=\scriptsize},
+    orbit/.style={phase, fill=blue!12},
+    nr/.style={phase, fill=orange!15},
+    barrier/.style={draw, red!70!black, line width=1.5pt, dashed},
+    barrlbl/.style={font=\tiny\bfseries, red!70!black},
+    prod/.style={font=\tiny, align=center},
+]
+  % Phase labels across top
+  \node[font=\small\bfseries] at (0, 2.7) {Pack/Twist};
+  \node[font=\small\bfseries] at (2.8, 2.7) {Forward NTT};
+  \node[font=\small\bfseries] at (5.6, 2.7) {Pointwise mul};
+  \node[font=\small\bfseries] at (8.4, 2.7) {Inverse NTT};
+  \node[font=\small\bfseries] at (11.2, 2.7) {Normalize};
+
+  % Orbit row
+  \node[orbit] (p1o) at (0, 1.5) {$x, y$};
+  \node[orbit] (p2o) at (2.8, 1.5) {FourWay};
+  \node[orbit] (p3o) at (5.6, 1.5) {XX, YY, XY};
+  \node[orbit] (p4o) at (8.4, 1.5) {ThreeWay};
+  \node[orbit] (p5o) at (11.2, 1.5) {7-way};
+
+  % NR row
+  \node[nr] (p1n) at (0, 0.5) {$dx, dy$};
+  \node[nr] (p2n) at (2.8, 0.5) {(shared)};
+  \node[nr] (p3n) at (5.6, 0.5) {W0--W3};
+  \node[nr] (p4n) at (8.4, 0.5) {FourWay};
+  \node[nr] (p5n) at (11.2, 0.5) {(shared)};
+
+  % Arrows
+  \foreach \i/\j in {p1o/p2o, p2o/p3o, p3o/p4o, p4o/p5o} \draw[->] (\i) -- (\j);
+  \foreach \i/\j in {p1n/p2n, p2n/p3n, p3n/p4n, p4n/p5n} \draw[->] (\i) -- (\j);
+
+  % Barriers
+  \foreach \x in {1.4, 4.2, 7.0, 9.8} {
+    \draw[barrier] (\x, 0.0) -- (\x, 2.2);
+    \node[barrlbl] at (\x, -0.2) {sync};
+  }
+
+  % Row labels
+  \node[font=\scriptsize, blue!70!black, rotate=90] at (-1.3, 1.5) {Orbit};
+  \node[font=\scriptsize, orange!70!black, rotate=90] at (-1.3, 0.5) {NR deriv};
+
+  % Add kernel below
+  \draw[->] (p5o.south) -- ++(0, -0.5) coordinate (addstart);
+  \draw[->] (p5n.south) -- ++(0, -0.5);
+
+  \node[orbit, minimum width=4cm] (addo) at (9.0, -1.0)
+    {$x^2{-}y^2{+}c_x$,\; $2xy{+}c_y$};
+  \node[nr, minimum width=4cm] (addn) at (9.0, -1.8)
+    {W0${-}$W1${+}$1,\; W2${+}$W3};
+
+  \node[font=\small\bfseries] at (5.5, -1.4) {Add kernel};
+  \draw[barrier] (7.0, -2.3) -- (7.0, -0.5);
+  \node[barrlbl] at (7.0, -2.5) {sync (shared)};
+
+  \draw[->] (addo) -- ++(2, 0) node[right, font=\scriptsize] {$x_{n+1}, y_{n+1}$};
+  \draw[->] (addn) -- ++(2, 0) node[right, font=\scriptsize] {$dx_{n+1}, dy_{n+1}$};
+\end{tikzpicture}
+\caption[GPU multiply+add pipeline with shared barriers]{GPU multiply+add pipeline for one iteration.  The orbit
+  products (blue, top) and NR derivative products (orange, bottom) flow
+  through the \emph{same} NTT pipeline phases, sharing all grid-wide
+  barriers (red dashed lines).  The add kernel similarly interleaves
+  orbit and NR combines.  Enabling NR adds arithmetic between barriers
+  but introduces no new synchronization points.}
+\label{fig:ntt-pipeline}
+\end{figure}
 
 \subsection{Halley's method}
 \label{subsec:ff-halley}

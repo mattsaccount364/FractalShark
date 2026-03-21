@@ -105,7 +105,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\HpSharkFloatLib;..\FractalSharkLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       </ClCompile>
     <Link>
       <SubSystem>
@@ -122,7 +122,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\HpSharkFloatLib;..\FractalSharkLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       </ClCompile>
     <Link>
       <SubSystem>
@@ -156,6 +156,9 @@
     <ClCompile Include="ReferenceReferenceOrbit.cpp" />
     <ClCompile Include="ShowMostEfficientSizes.cpp" />
     <ClCompile Include="TestNewtonRaphson.cpp" />
+    <ClCompile Include="..\FractalSharkLib\MpirOrbitEval.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="Tests.cpp" />
     <ClCompile Include="TestTracker.cpp" />
   </ItemGroup>

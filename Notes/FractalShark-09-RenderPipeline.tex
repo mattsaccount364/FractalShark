@@ -149,7 +149,8 @@ exist in the fractal-rendering community:
     yielding distinctive visual effects.
 \end{itemize}
 \FractalShark{} currently implements only the palette-indexed method.
-Integrating smooth iteration counts would be straightforward and would
+Integrating smooth iteration counts is feasible with minimal additional
+complexity and would
 pair naturally with the existing palette infrastructure; distance
 estimation would leverage derivative data that the perturbation
 pipeline already maintains.
@@ -200,6 +201,42 @@ worker threads.
 
 \subsection{Architecture}
 
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    box/.style={draw, rounded corners, minimum height=0.7cm, align=center,
+                font=\small},
+    ui/.style={box, fill=green!10, minimum width=2.0cm},
+    queue/.style={box, fill=yellow!12, minimum width=2.0cm},
+    worker/.style={box, fill=blue!10, minimum width=2.0cm},
+    gl/.style={box, fill=purple!10, minimum width=2.0cm},
+]
+  \node[ui] (ui) {UI thread};
+  \node[queue, right=0.7cm of ui] (eq) {Work queue};
+  \node[worker, right=0.7cm of eq] (w) {Workers\\{\scriptsize($\times 4$)}};
+  \node[worker, right=0.7cm of w] (calc) {\code{CalcFractal}};
+  \node[gl, right=0.7cm of calc] (frame) {ProduceFrame};
+  \node[gl, below=0.5cm of frame] (glc) {GL consumer};
+
+  \draw[->] (ui) -- node[above, font=\scriptsize] {enqueue} (eq);
+  \draw[->] (eq) -- node[above, font=\scriptsize] {dequeue} (w);
+  \draw[->] (w) -- node[above, font=\scriptsize] {render} (calc);
+  \draw[->] (calc) -- node[above, font=\scriptsize] {} (frame);
+  \draw[->] (frame) -- (glc);
+
+  \draw[->, dashed, gray] (eq.south) -- ++(0,-0.5) node[below, font=\scriptsize, gray, align=center] {supersede\\stale items};
+\end{tikzpicture}
+\caption[Render thread pool data flow]{Render thread pool data flow.
+  The UI thread enqueues command+render work items.  Worker threads
+  dequeue, execute the command lambda under a mutex, call
+  \code{CalcFractal} to render into a private
+  \code{Iters\-Memory\-Container}, then produce a frame for the OpenGL
+  consumer thread.  Stale items in the queue are superseded by newer
+  enqueues.}
+\label{fig:render-pipeline}
+\end{figure}
+
 \code{RenderThreadPool} owns four worker threads (one per GPU renderer) and a
 dedicated OpenGL consumer thread.  The work queue is a \code{std::deque} of
 \code{RenderWorkItem} structs, each containing:
@@ -235,9 +272,10 @@ Three enqueue variants serve distinct purposes:
 \end{tabularx}
 \end{center}
 
-\code{EnqueueMutation} skips sequence-number assignment, renderer acquisition,
-\code{CalcFractal}, and frame production.  Its fast path only acquires
-\code{m\_CalcFractalMutex}, executes the lambda, and signals the promise.
+\code{Enqueue\-Mutation} skips sequence-number assignment, renderer
+acquisition, \code{Calc\-Fractal}, and frame production.  Its fast
+path only acquires the calc-fractal mutex, executes the lambda, and
+signals the promise.
 
 \subsection{Queue Superseding and Generation Counter}
 
@@ -281,10 +319,10 @@ into \code{m\_CurIters}.  The \code{drawFractal = true} flag triggers a
 GPU\(\to\)CPU iteration copy at the end of \code{CalcFractalTypedIter} via
 \code{RenderCurrent}.
 
-\textbf{Critical rule.}  Any code that reads \code{m\_CurIters} (saving images,
+\textbf{Invariant.}  Any code that reads \code{m\_CurIters} (saving images,
 analysing iteration data) must use the direct path and call
 \code{RenderThreadPool::Drain()} first to ensure no pool workers are active.
-The pool path writes to \code{workerIters} which is returned to the pool---\code{m\_CurIters} never sees that data.
+The pool path writes to \code{workerIters}, which is returned to the pool---\code{m\_CurIters} never sees that data.
 
 \subsection{MPIR Allocator Lifecycle}
 \label{subsec:mpir-allocator-lifecycle}
@@ -305,12 +343,13 @@ are used to reduce allocation overhead during reference-orbit computation:
         data that persists after computation.
 \end{itemize}
 
-\textbf{Critical rule.}  All \code{mpf\_t} / \code{HighPrecision} objects
+\textbf{Lifetime constraint.}  All \code{mpf\_t} / \code{HighPrecision} objects
 allocated under a custom allocator must be destroyed \emph{before}
 \code{ShutdownTls()}.  After shutdown, \code{TlsInitialized} is false and
 \code{mpf\_clear} falls back to the default allocator, which cannot recognise
-pointers from the custom allocator.  Use \code{\{\,\}} scope blocks to ensure
-stack-local MPIR objects are destroyed while the allocator TLS is still active.
+pointers from the custom allocator.  Enclosing \code{mpf\_t} variables in
+\code{\{\,\}} scope blocks ensures they are destroyed while the allocator TLS
+is still active.
 
 \subsection{Shutdown}
 

@@ -113,7 +113,7 @@ sophisticated: it aligns the approximation hierarchy with the detected
 period of the reference orbit, enabling each stage-0 entry to skip an
 entire period and higher stages to skip multiples of the period.  Both
 approaches degrade gracefully---when a validity threshold is
-exceeded, the kernel simply falls back to perturbation for a few
+exceeded, the kernel falls back to perturbation for a few
 iterations before attempting the next linear step.
 
 In practice, the linear approach is simpler to implement (no
@@ -330,7 +330,7 @@ exists.
 \FractalShark{} already computes per-frame iteration statistics
 (minimum, maximum, sum) via the reduction kernel
 (\cref{subsec:reduction}); extending this to a full histogram would
-require a histogram kernel but is architecturally straightforward.  The
+require a histogram kernel but presents no architectural obstacles.  The
 technique is independent of the iteration algorithm and can be combined
 with smooth coloring (\cref{subsec:smooth-coloring}) for even better
 results.  A general discussion of histogram-based coloring appears in

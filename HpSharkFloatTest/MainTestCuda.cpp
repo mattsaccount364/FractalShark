@@ -22,6 +22,7 @@
 #include <sstream>
 #include <stdarg.h>
 #include <string>
+#include <vector>
 
 #define NOMINMAX
 #include <windows.h> // Sleep()
@@ -349,6 +350,11 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
     const int numIters = iters.value;
     const int internalTestLoopCount = loops.value;
 
+    // MPIR threading option for view modes
+    auto mtPrompt = PromptIntWithTimeout(
+        "MPIR threading? 0=MT(default), 1=ST:", 0, timeoutInSec, interactiveMode);
+    const bool useMT = (mtPrompt.value == 0);
+
     // If PerfSub is selected, run the operator perf suite first.
     if (mode == BasicCorrectnessMode::PerfSub) {
         bool res = true;
@@ -376,7 +382,7 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         TestTracker Tests;
         auto res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
             Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
-            TestIds::kPerfView30, numIters, internalTestLoopCount);
+            TestIds::kPerfView30, numIters, internalTestLoopCount, useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
@@ -385,7 +391,7 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         TestTracker Tests;
         auto res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
             Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
-            TestIds::kPerfView5, numIters, internalTestLoopCount);
+            TestIds::kPerfView5, numIters, internalTestLoopCount, useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
@@ -394,33 +400,54 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         TestTracker Tests;
         auto res = TestFullReferencePerfView32<Operator::ReferenceOrbit>(
             Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
-            TestIds::kPerfView32, numIters, internalTestLoopCount);
+            TestIds::kPerfView32, numIters, internalTestLoopCount, useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
         TestTracker Tests;
-        auto res = TestNewtonRaphsonView5<SharkParamsNR7>(
-            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount));
-        if (!ContinueAfterFailure(res))
-            return 0;
+        std::vector<PerfTimingResult> timings;
+        timings.reserve(numIters);
+        for (int i = 0; i < numIters; i++) {
+            PerfTimingResult timing;
+            auto res = TestNewtonRaphsonView5<SharkParamsNR7>(
+                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, &timing);
+            timings.push_back(timing);
+            if (!ContinueAfterFailure(res))
+                return 0;
+        }
+        PrintPerfSummaryTable("NR_View5", useMT, timings, "MPIR");
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView30) {
         TestTracker Tests;
-        auto res = TestNewtonRaphsonView30<SharkParamsNR7>(
-            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount));
-        if (!ContinueAfterFailure(res))
-            return 0;
+        std::vector<PerfTimingResult> timings;
+        timings.reserve(numIters);
+        for (int i = 0; i < numIters; i++) {
+            PerfTimingResult timing;
+            auto res = TestNewtonRaphsonView30<SharkParamsNR7>(
+                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, &timing);
+            timings.push_back(timing);
+            if (!ContinueAfterFailure(res))
+                return 0;
+        }
+        PrintPerfSummaryTable("NR_View30", useMT, timings, "MPIR");
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView32) {
         TestTracker Tests;
-        auto res = TestNewtonRaphsonView32<SharkParamsNR9>(
-            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount));
-        if (!ContinueAfterFailure(res))
-            return 0;
+        std::vector<PerfTimingResult> timings;
+        timings.reserve(numIters);
+        for (int i = 0; i < numIters; i++) {
+            PerfTimingResult timing;
+            auto res = TestNewtonRaphsonView32<SharkParamsNR9>(
+                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, &timing);
+            timings.push_back(timing);
+            if (!ContinueAfterFailure(res))
+                return 0;
+        }
+        PrintPerfSummaryTable("NR_View32", useMT, timings, "MPIR");
     }
 
     if (mode == BasicCorrectnessMode::PerfSweep) {

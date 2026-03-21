@@ -299,3 +299,116 @@ void EvaluateCriticalOrbitAndDerivsMT(
     mpf_complex_clear(tmpB_deriv);
     mpf_complex_clear(tmpZ_coord);
 }
+
+// ============================================================
+// Single-threaded MPIR orbit evaluation
+// Same math as MT but all multiplies sequential (no worker threads).
+// ============================================================
+
+void EvaluateCriticalOrbitAndDerivsST(
+    const mpf_complex &c_coord,
+    uint64_t period,
+    mpf_complex &z_coord,
+    mpf_complex &dzdc_deriv,
+    HDRFloat<double> &d2r_hdr,
+    HDRFloat<double> &d2i_hdr,
+    mp_bitcnt_t deriv_prec,
+    mp_bitcnt_t coord_prec)
+{
+    // Scratch temporaries
+    mpf_complex z_deriv, tmpB_deriv, tmpZ_coord;
+    mpf_complex_init(z_deriv, deriv_prec);
+    mpf_complex_init(tmpB_deriv, deriv_prec);
+    mpf_complex_init(tmpZ_coord, coord_prec);
+
+    mpf_t tr_d, ti_d, t1_d, t2_d, tr_c, ti_c, t1_c, t2_c;
+    mpf_init2(tr_d, deriv_prec); mpf_init2(ti_d, deriv_prec);
+    mpf_init2(t1_d, deriv_prec); mpf_init2(t2_d, deriv_prec);
+    mpf_init2(tr_c, coord_prec); mpf_init2(ti_c, coord_prec);
+    mpf_init2(t1_c, coord_prec); mpf_init2(t2_c, coord_prec);
+
+    // Initialize state
+    mpf_set_ui(z_coord.re, 0);
+    mpf_set_ui(z_coord.im, 0);
+    mpf_set_ui(dzdc_deriv.re, 0);
+    mpf_set_ui(dzdc_deriv.im, 0);
+
+    using T = HDRFloat<double>;
+    T local_d2r{}, local_d2i{};
+    T zr, zi, dzr, dzi;
+    T dz2r, dz2i, zd2r, zd2i, sumr, sumi;
+
+    for (uint64_t i = 0; i < period; ++i) {
+        // Round z from coord_prec -> deriv_prec
+        mpf_set(z_deriv.re, z_coord.re);
+        mpf_set(z_deriv.im, z_coord.im);
+
+        // d2 update (HDRFloat): d2 <- 2*(dzdc^2 + z*d2)
+        zr = T(mpf_get_d(z_deriv.re));
+        zi = T(mpf_get_d(z_deriv.im));
+        dzr = T(mpf_get_d(dzdc_deriv.re));
+        dzi = T(mpf_get_d(dzdc_deriv.im));
+
+        {
+            const T dzr2 = dzr * dzr;
+            const T dzi2 = dzi * dzi;
+            dz2r = dzr2 - dzi2;
+            HdrReduce(dz2r);
+            dz2i = T{2.0} * (dzr * dzi);
+            HdrReduce(dz2i);
+        }
+
+        {
+            zd2r = zr * local_d2r - zi * local_d2i;
+            HdrReduce(zd2r);
+            zd2i = zr * local_d2i + zi * local_d2r;
+            HdrReduce(zd2i);
+        }
+
+        sumr = dz2r + zd2r;
+        sumi = dz2i + zd2i;
+        HdrReduce(sumr);
+        HdrReduce(sumi);
+
+        local_d2r = T{2.0} * sumr;
+        local_d2i = T{2.0} * sumi;
+
+        // dzdc update (mpf, deriv_prec): dzdc <- 2*z*dzdc + 1
+        mpf_mul_ui(tmpB_deriv.re, z_deriv.re, 2);
+        mpf_mul_ui(tmpB_deriv.im, z_deriv.im, 2);
+
+        mpf_mul(t1_d, dzdc_deriv.re, tmpB_deriv.re);
+        mpf_mul(t2_d, dzdc_deriv.im, tmpB_deriv.im);
+        mpf_sub(tr_d, t1_d, t2_d);
+
+        mpf_mul(t1_d, dzdc_deriv.re, tmpB_deriv.im);
+        mpf_mul(t2_d, dzdc_deriv.im, tmpB_deriv.re);
+        mpf_add(ti_d, t1_d, t2_d);
+
+        mpf_set(dzdc_deriv.re, tr_d);
+        mpf_set(dzdc_deriv.im, ti_d);
+        mpf_add_ui(dzdc_deriv.re, dzdc_deriv.re, 1);
+
+        // Orbit update (mpf, coord_prec): z <- z^2 + c
+        mpf_mul(t1_c, z_coord.re, z_coord.re);
+        mpf_mul(t2_c, z_coord.im, z_coord.im);
+        mpf_sub(tr_c, t1_c, t2_c);
+
+        mpf_mul(t1_c, z_coord.re, z_coord.im);
+        mpf_mul_ui(ti_c, t1_c, 2);
+
+        mpf_add(z_coord.re, tr_c, c_coord.re);
+        mpf_add(z_coord.im, ti_c, c_coord.im);
+    }
+
+    d2r_hdr = HDRFloat<double>(local_d2r);
+    d2i_hdr = HDRFloat<double>(local_d2i);
+
+    mpf_clear(tr_d); mpf_clear(ti_d);
+    mpf_clear(t1_d); mpf_clear(t2_d);
+    mpf_clear(tr_c); mpf_clear(ti_c);
+    mpf_clear(t1_c); mpf_clear(t2_c);
+    mpf_complex_clear(z_deriv);
+    mpf_complex_clear(tmpB_deriv);
+    mpf_complex_clear(tmpZ_coord);
+}

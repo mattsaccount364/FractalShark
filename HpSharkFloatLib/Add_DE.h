@@ -866,7 +866,7 @@ CarryPropagationPPTry1Buggy_DE(
                 // Compute the inclusive scan value at index i.
                 uint32_t combined = (i >= d) ? CombineBorrow(prev, cur) : cur;
                 // Write this back to s_g[i]. (It is ok if the update is not strictly
-                // barrier-synchronized between iterations, as long as we put an overall __syncthreads()
+                // barrier-synchronized between iterations, as long as we put an overall sync
                 // after each step.)
                 s_g[i] = combined;
             }

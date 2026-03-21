@@ -2023,6 +2023,9 @@ CarryPropagation_ABC_PPv5(
 
     // --------------------------------------------------------------------
     // Phase 1: add per-digit incoming hi parts, write cur[i+1]
+    // + Init desc[] to FLAG_X
+    // + Allocate processor ID (atomicAdd)
+    // All merged into one pass before a single grid.sync().
     // --------------------------------------------------------------------
     for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
         auto AddHiPhase = [](int32_t N, uint64_t *extResult, uint32_t *next, uint32_t *cur, int32_t ii) {
@@ -2093,12 +2096,13 @@ CarryPropagation_ABC_PPv5(
 
     DescType *SharkRestrict desc = reinterpret_cast<DescType *>(next1);
 
-    // Init desc to X (grid-wide)
+    // Init desc to X (merged into same pass as Phase 1 — next1 has been zeroed by AddHiPhase,
+    // now overwrite the descriptor prefix with FLAG_X)
     for (int32_t i = tid; i < numParts; i += totalThreads) {
         desc[i] = pack_desc(FLAG_X, 0ull);
     }
-    grid.sync();
 
+    // Allocate processor ID (merged — no separate grid.sync needed)
     const int lane = (int)(threadIdx.x & 31);
     const int warpId = (int)(threadIdx.x >> 5);
     const int numWarps = (int)((blockDim.x + 31) >> 5);
@@ -2106,19 +2110,34 @@ CarryPropagation_ABC_PPv5(
     const uint32_t warpMask = 0xFFFF'FFFFu;
     const int warpActiveCount = 32; // launch guarantees
 
-    // Shared scratch (tiny; shared_data assumed large enough).
-    // Layout: warpAgg[numWarps], warpPref[numWarps], broadcast[2+]
-    // With NumStreams>3, warpAgg/warpPref need 64-bit storage per warp.
+    // Shared scratch
     using PPStorageType = std::conditional_t<(NumStreams > 3), uint64_t, uint32_t>;
-    constexpr int PPStorageWords = sizeof(PPStorageType) / sizeof(uint32_t); // 1 or 2
+    constexpr int PPStorageWords = sizeof(PPStorageType) / sizeof(uint32_t);
     uint32_t *smem = reinterpret_cast<uint32_t *>(shared_data);
     PPStorageType *warpAgg = reinterpret_cast<PPStorageType *>(smem);
     PPStorageType *warpPref = reinterpret_cast<PPStorageType *>(smem + numWarps * PPStorageWords);
     uint32_t *broadcast = smem + 2 * numWarps * PPStorageWords;
 
-    // --------------------------------------------------------------------
-    // Helper: per-digit transfer for a single digit index (for all streams).
-    // --------------------------------------------------------------------
+    int32_t procId = 0;
+    if (threadIdx.x == 0) {
+        procId = (int32_t)atomicAdd(&globalSync2[0], 1u);
+        broadcast[0] = (uint32_t)procId;
+    }
+    block.sync();
+    procId = (int32_t)broadcast[0];
+
+    // Single merged grid.sync: Phase 1 complete + desc[] initialized + all procIds allocated
+    grid.sync();
+
+    int32_t P_active = 1;
+    if (threadIdx.x == 0) {
+        P_active = (int32_t)globalSync2[0];
+        broadcast[1] = (uint32_t)P_active;
+    }
+    block.sync();
+    P_active = (int32_t)broadcast[1];
+
+    // Per-digit transfer function (for all streams).
     auto build_digit_transfer = [&](int iDigit) -> PPTransfer3 {
         PPTransfer3 t{};
         t.bits = 0ull;
@@ -2163,31 +2182,6 @@ CarryPropagation_ABC_PPv5(
     };
 
     // --------------------------------------------------------------------
-    // Discover active processors (paper-style "dynamic processor IDs")
-    // globalSync2[0] : allocator counter
-    // globalSync2[1] : max procId seen
-    // After a grid.sync, P_active = max+1 and is stable.
-    // --------------------------------------------------------------------
-    int32_t procId = 0;
-    if (threadIdx.x == 0) {
-        procId = (int32_t)atomicAdd(&globalSync2[0], 1u);
-        broadcast[0] = (uint32_t)procId;
-    }
-    __syncthreads();
-    procId = (int32_t)broadcast[0];
-
-    // Ensure all CTAs have contributed to maxProcId
-    grid.sync();
-
-    int32_t P_active = 1;
-    if (threadIdx.x == 0) {
-        P_active = (int32_t)globalSync2[0]; // number of active CTAs that incremented
-        broadcast[1] = (uint32_t)P_active;
-    }
-    __syncthreads();
-    P_active = (int32_t)broadcast[1];
-
-    // --------------------------------------------------------------------
     // Paper-style striped assignment over ACTIVE processors:
     //   partIdx = procId + t*P_active
     // --------------------------------------------------------------------
@@ -2219,7 +2213,7 @@ CarryPropagation_ABC_PPv5(
         if (lane == 31) {
             warpAgg[warpId] = static_cast<PPStorageType>(inclWarp.bits & PP_BITS_MASK);
         }
-        __syncthreads();
+        block.sync();
 
         // ----------------------------
         // Warp 0 scans warp aggregates over lanes [0..numWarps-1]
@@ -2255,7 +2249,7 @@ CarryPropagation_ABC_PPv5(
                 }
             }
         }
-        __syncthreads();
+        block.sync();
 
         const PPTransfer3 aggPart{static_cast<uint64_t>(warpAgg[0]) & PP_BITS_MASK};
 
@@ -2348,7 +2342,7 @@ CarryPropagation_ABC_PPv5(
             reinterpret_cast<PPStorageType *>(broadcast)[0] =
                 static_cast<PPStorageType>(exclPart.bits & PP_BITS_MASK);
         }
-        __syncthreads();
+        block.sync();
         exclPart = PPTransfer3{static_cast<uint64_t>(reinterpret_cast<PPStorageType *>(broadcast)[0]) & PP_BITS_MASK};
 
         // Publish inclusive prefix P_i = A_i ∘ E_i

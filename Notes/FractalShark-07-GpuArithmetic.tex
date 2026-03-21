@@ -419,7 +419,114 @@ high-precision arithmetic and modern GPU execution. This synthesis enables
 carry-dominated operations, traditionally viewed as inherently serial, to scale
 efficiently on massively parallel hardware.
 
-\paragraph{Contrast with Blelloch-Style Parallel Prefix Scans}
+\paragraph{Background: parallel prefix scans.}
+A \emph{parallel prefix scan} (also called a \emph{prefix sum} or
+\emph{scan}) is a fundamental parallel primitive: given an array of
+$N$~elements and an associative binary operator~$\oplus$, compute the
+running ``total'' at every position:
+\[
+y_i = x_0 \oplus x_1 \oplus \cdots \oplus x_i, \qquad i = 0, \ldots, N-1.
+\]
+When~$\oplus$ is ordinary addition, this is the classical prefix sum
+$(y_0, y_1, \ldots) = (x_0,\; x_0{+}x_1,\; x_0{+}x_1{+}x_2, \ldots)$.
+The key insight is that \emph{any} associative operator works---including
+function composition.  For carry propagation, each $x_i$ is a transfer
+function $f_i$ mapping an incoming carry to an outgoing carry, and
+$\oplus$ is function composition.  The prefix scan therefore computes,
+for every limb~$i$, the composed effect of all preceding limbs' carry
+behavior---exactly the information needed to resolve the final carry at
+each position.
+
+A sequential prefix scan is trivially $O(N)$ work and $O(N)$ depth
+(left to right).  A \emph{parallel} prefix scan achieves $O(N)$ work in
+$O(\log N)$ depth by exploiting the associativity of~$\oplus$ to
+evaluate sub-ranges independently and compose the results.  On a GPU,
+the challenge is implementing this efficiently without excessive
+synchronization.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    scale=0.72,
+    blk/.style={draw, rounded corners=2pt, minimum width=0.9cm,
+                minimum height=0.5cm, font=\scriptsize, align=center},
+    barr/.style={draw, red!70!black, line width=1.5pt, dashed},
+    barrlbl/.style={font=\tiny\bfseries, red!70!black},
+    arr/.style={->, thick, gray!70!black},
+]
+  % === TOP PANEL: Hierarchical (PPv3) ===
+  \node[font=\small\bfseries] at (6.5, 8.5)
+    {(a) Hierarchical scan (PPv3) --- 3 global barriers};
+
+  % Block row
+  \foreach \i/\lbl in {0/CTA 0, 1/CTA 1, 2/CTA 2, 3/CTA 3, 4/CTA 4, 5/CTA 5} {
+    \node[blk, fill=blue!15] (b\i) at (2.2*\i, 7.5) {\lbl};
+  }
+  \node[font=\tiny, gray] at (6.5, 7.0) {Step 1: each CTA scans its local chunk};
+
+  % Barrier 1
+  \draw[barr] (-0.8, 6.5) -- (12.0, 6.5);
+  \node[barrlbl] at (12.5, 6.5) {sync 1};
+
+  % Global scan by CTA 0
+  \node[blk, fill=orange!20, minimum width=6cm] (gscan) at (5.5, 5.8)
+    {CTA 0 scans all aggregates};
+  \foreach \i in {0,...,5} {
+    \draw[arr] (b\i.south) -- (gscan.north -| b\i.south);
+  }
+
+  % Barrier 2
+  \draw[barr] (-0.8, 5.1) -- (12.0, 5.1);
+  \node[barrlbl] at (12.5, 5.1) {sync 2};
+
+  % Apply prefix back
+  \foreach \i/\lbl in {0/apply, 1/apply, 2/apply, 3/apply, 4/apply, 5/apply} {
+    \node[blk, fill=green!12] (a\i) at (2.2*\i, 4.4) {\lbl};
+    \draw[arr] (gscan.south -| a\i.north) -- (a\i.north);
+  }
+  \node[font=\tiny, gray] at (6.5, 3.8)
+    {Step 3: each CTA applies global prefix to local results};
+
+  % Barrier 3
+  \draw[barr] (-0.8, 3.3) -- (12.0, 3.3);
+  \node[barrlbl] at (12.5, 3.3) {sync 3};
+
+  % === BOTTOM PANEL: Decoupled look-back (PPv5) ===
+  \node[font=\small\bfseries] at (6.5, 2.2)
+    {(b) Decoupled look-back (PPv5) --- no global barriers};
+
+  % Blocks working independently at staggered times
+  \foreach \i/\xoff in {0/0, 1/0.6, 2/1.0, 3/0.3, 4/1.4, 5/0.8} {
+    \pgfmathsetmacro{\ybase}{0.7}
+    \node[blk, fill=blue!15] (d\i) at (2.2*\i, \ybase) {CTA \i};
+  }
+
+  % Look-back arrows (only some blocks need them)
+  \draw[arr, orange!70!black, bend right=20] (d1.south west) to
+    node[below, font=\tiny, orange!70!black] {look-back} (d0.south east);
+  \draw[arr, orange!70!black, bend right=20] (d3.south west) to (d2.south east);
+  \draw[arr, orange!70!black, bend right=15] (d5.south west) to (d4.south east);
+
+  \node[font=\tiny, gray, align=center] at (6.5, -0.3)
+    {Blocks proceed independently; look-back resolves\\inter-block
+     dependencies on demand (no global barrier)};
+\end{tikzpicture}
+\caption[Hierarchical vs.\ decoupled look-back parallel prefix]{%
+  Two parallel prefix scan strategies for GPU carry propagation.
+  \emph{(a)}~The hierarchical approach (PPv3) requires three global
+  \code{grid.sync()} barriers: after local scans, after the global
+  aggregate scan (performed by CTA~0 alone), and after applying the
+  global prefix back to each CTA's local results.
+  \emph{(b)}~The decoupled look-back approach (PPv5) eliminates global
+  barriers entirely: each CTA publishes its aggregate as soon as its
+  local scan completes and resolves upstream dependencies via a
+  lightweight look-back that queries only the nearest unresolved
+  predecessor.}
+\label{fig:prefix-scan-comparison}
+\end{figure}
+
+\paragraph{Contrast with Blelloch-style parallel prefix scans.}
 
 Classical parallel prefix algorithms, most notably the Blelloch
 scan \cite{Blelloch1990PrefixSums}, provide a
@@ -465,6 +572,19 @@ In this work, the Merrill--Garland formulation is preferred not because it
 changes the arithmetic, but because it minimizes synchronization on massively
 parallel hardware, allowing carry-dominated operations to scale to precisions
 where serial or multi-pass approaches become prohibitive.
+
+\paragraph{Historical note: hierarchical scan implementation.}
+An earlier carry propagation implementation
+(\code{CarryPropagation\_ABC\_PPv3} in \code{Add\_ABC.h}) uses a
+classical hierarchical parallel prefix scan: each CTA computes a local
+inclusive scan of its chunk's transfer functions, publishes its
+aggregate, then CTA~0 scans the per-CTA aggregates, and finally each
+CTA incorporates the global prefix.  This requires three explicit
+\code{grid.sync()} barriers within the scan alone (local$\to$publish,
+global scan, apply prefix), in addition to the barriers before and
+after the scan.  The implementation is retained in the codebase for
+reference but is not used in production; the decoupled look-back
+approach (PPv5) replaces it with fewer barriers and better scaling.
 
 
 \subsubsection{Discussion}
@@ -858,7 +978,10 @@ implementation reduces the total number of kernel phases and synchronization
 events, increases arithmetic intensity per barrier, and improves overall GPU
 utilization. Consequently, the effective performance of the multiplication
 pipeline is governed primarily by arithmetic throughput and memory bandwidth,
-rather than by synchronization overhead.
+rather than by synchronization overhead.  A concrete application of this
+principle appears in \cref{subsec:ff-inner-gpu}, where Newton--Raphson
+derivative products are interleaved into the orbit-multiplication pipeline
+with zero additional synchronization cost.
 
 
 \subsection{Checksum-Guided Debugging via Host--Device Cross-Validation}

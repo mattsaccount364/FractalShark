@@ -5,6 +5,7 @@
 #include "TestVerbose.h"
 
 #include "DebugChecksumHost.h"
+#include "PerfTimingResult.h"
 #include "ReferenceAdd.h"
 #include "ReferenceNTT2.h"
 #include "ReferenceReferenceOrbit.h"
@@ -484,7 +485,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
          const typename SharkFloatParams::Float &hdrRadiusY,
          uint64_t numIters,
          int64_t expectedPeriod,
-         PeriodicityResult expectedResult)
+         PeriodicityResult expectedResult,
+         bool useMT = true,
+         PerfTimingResult *timingOut = nullptr)
 {
 
     // Print the original input values
@@ -593,7 +596,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             squaringHelper.helpers[1].result = ySquared;
             squaringHelper.helpers[1].operandA = recurrenceY;
             squaringHelper.helpers[1].operandB = recurrenceY;
-            squaringHelper.Start();
+            if (useMT) {
+                squaringHelper.Start();
+            }
         }
 
         for (int i = 0; i < numIters; ++i) {
@@ -665,9 +670,16 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     }
                 }
 
-                squaringHelper.Dispatch();
-                mpf_mul(twoXY, recurrenceX, recurrenceY);    // xy (main thread, concurrent with helpers)
-                squaringHelper.WaitForDone();
+                if (useMT) {
+                    squaringHelper.Dispatch();
+                    mpf_mul(twoXY, recurrenceX, recurrenceY);    // xy (main thread, concurrent with helpers)
+                    squaringHelper.WaitForDone();
+                } else {
+                    // ST: all multiplies sequential
+                    mpf_mul(xSquared, recurrenceX, recurrenceX);
+                    mpf_mul(ySquared, recurrenceY, recurrenceY);
+                    mpf_mul(twoXY, recurrenceX, recurrenceY);
+                }
 
                 mpf_mul_ui(twoXY, twoXY, 2);                 // 2xy
                 mpf_sub(tempX, xSquared, ySquared);          // x^2 - y^2
@@ -695,7 +707,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
         }
 
         if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-            squaringHelper.ShutdownHelpers();
+            if (useMT) {
+                squaringHelper.ShutdownHelpers();
+            }
         }
 
         if (hostPeriodicityResult == PeriodicityResult::Unknown) {
@@ -708,6 +722,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
         std::cout << "Host iter time: " << hostTimer.GetDeltaInMs() << " ms" << std::endl;
         std::cout << "Host periodicity: " << PeriodicityStrResult(hostPeriodicityResult)
                   << ", iters=" << hostIterationsExecuted << std::endl;
+        if (timingOut) {
+            timingOut->hostMs = static_cast<double>(hostTimer.GetDeltaInMs());
+        }
     }
 
     if constexpr (HpShark::TestGpu) {
@@ -874,6 +891,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+                if (timingOut) {
+                    timingOut->gpuMs = static_cast<double>(timer.GetDeltaInMs());
+                }
 
                 if (timer.GetDeltaInMs() != 0) {
                     std::cout << "Ratio: "
@@ -902,6 +922,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs() << " ms, iters="
                           << cpuRefOrbitResult->IterationsExecuted << std::endl;
+                if (timingOut) {
+                    timingOut->cpuRefMs = static_cast<double>(cpuRefTimer.GetDeltaInMs());
+                }
                 std::cout << "CPU ref periodicity: "
                           << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult) << std::endl;
             }
@@ -3388,7 +3411,8 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
                            [[maybe_unused]] int numThreads,
                            [[maybe_unused]] int testBase,
                            [[maybe_unused]] int numIters,
-                           [[maybe_unused]] int internalTestLoopCount)
+                           [[maybe_unused]] int internalTestLoopCount,
+                           [[maybe_unused]] bool useMT)
 {
     HpShark::LaunchParams launchParams{numBlocks, numThreads};
 
@@ -3459,10 +3483,14 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
 
     const typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
 
+    std::vector<PerfTimingResult> timings;
+    timings.reserve(numIters);
+
     // TODO: SharkFloatParams is more precision than we need
     for (int i = 0; i < numIters; i++) {
         int testNum = testBase + i;
 
+        PerfTimingResult timing;
         TestPerf<SharkFloatParams, sharkOperator>(launchParams,
                                                   Tests,
                                                   testNum,
@@ -3476,8 +3504,13 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
                                                   hdrRadiusY,
                                                   maxIters,
                                                   expectedPeriod,
-                                                  expectedResult);
+                                                  expectedResult,
+                                                  useMT,
+                                                  &timing);
+        timings.push_back(timing);
     }
+
+    PrintPerfSummaryTable("View5", useMT, timings);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -3493,7 +3526,8 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
                             [[maybe_unused]] int numThreads,
                             [[maybe_unused]] int testBase,
                             [[maybe_unused]] int numIters,
-                            [[maybe_unused]] int internalTestLoopCount)
+                            [[maybe_unused]] int internalTestLoopCount,
+                            [[maybe_unused]] bool useMT)
 {
 // TODO: this is kind of cheesy, it'd be nice to share the test
 // view parameters in FractalShark with the test in some reasonable way
@@ -3568,8 +3602,12 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
     HdrReduce(hdrRadiusY);
 
+    std::vector<PerfTimingResult> timings;
+    timings.reserve(numIters);
+
     for (int i = 0; i < numIters; i++) {
         int testNum = testBase + i;
+        PerfTimingResult timing;
         TestPerf<SharkFloatParams, sharkOperator>(launchParams,
                                                   Tests,
                                                   testNum,
@@ -3583,8 +3621,13 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
                                                   hdrRadiusY,
                                                   maxIters,
                                                   expectedPeriod,
-                                                  expectedResult);
+                                                  expectedResult,
+                                                  useMT,
+                                                  &timing);
+        timings.push_back(timing);
     }
+
+    PrintPerfSummaryTable("View30", useMT, timings);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -3602,7 +3645,8 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
                             [[maybe_unused]] int numThreads,
                             [[maybe_unused]] int testBase,
                             [[maybe_unused]] int numIters,
-                            [[maybe_unused]] int internalTestLoopCount)
+                            [[maybe_unused]] int internalTestLoopCount,
+                            [[maybe_unused]] bool useMT)
 {
 #include "..\FractalSharkLib\LargeCoords32.h"
 
@@ -3668,9 +3712,13 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
 
     const typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
 
+    std::vector<PerfTimingResult> timings;
+    timings.reserve(numIters);
+
     for (int i = 0; i < numIters; i++) {
         int testNum = testBase + i;
 
+        PerfTimingResult timing;
         TestPerf<SharkFloatParams, sharkOperator>(launchParams,
                                                    Tests,
                                                    testNum,
@@ -3684,8 +3732,13 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
                                                    hdrRadiusY,
                                                    maxIters,
                                                    expectedPeriod,
-                                                   expectedResult);
+                                                   expectedResult,
+                                                   useMT,
+                                                   &timing);
+        timings.push_back(timing);
     }
+
+    PrintPerfSummaryTable("View32", useMT, timings);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -4003,19 +4056,22 @@ TestAllBinaryOp(int testBase)
                                                                        int numThreads,                  \
                                                                        int testBase,                    \
                                                                        int numIters,                    \
-                                                                       int internalTestLoopCount);      \
+                                                                       int internalTestLoopCount,       \
+                                                                       bool useMT);                     \
     template bool TestFullReferencePerfView30<Operator::ReferenceOrbit>(TestTracker &,                  \
                                                                         int numBlocks,                  \
                                                                         int numThreads,                 \
                                                                         int testBase,                   \
                                                                         int numIters,                   \
-                                                                        int internalTestLoopCount);     \
+                                                                        int internalTestLoopCount,      \
+                                                                        bool useMT);                    \
     template bool TestFullReferencePerfView32<Operator::ReferenceOrbit>(TestTracker &,                  \
                                                                         int numBlocks,                  \
                                                                         int numThreads,                 \
                                                                         int testBase,                   \
                                                                         int numIters,                   \
-                                                                        int internalTestLoopCount);
+                                                                        int internalTestLoopCount,      \
+                                                                        bool useMT);
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
     ADD_KERNEL(SharkFloatParams)                                                                        \

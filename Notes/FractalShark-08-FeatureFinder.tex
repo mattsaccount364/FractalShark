@@ -548,11 +548,17 @@ factor---is \emph{unchanged}.
 
 \medskip
 \noindent
-The outer Newton loop (typically ${\sim}10$--$30$ iterations) remains on
-the host; only the inner loop---$p$ iterations of high-precision
-arithmetic per Newton step---moves to the GPU.  For large $p$ and $N$
-the total arithmetic volume scales as $O(p \cdot N \log N)$ per Newton
-step, making the GPU's throughput advantage decisive.
+The outer Newton loop (typically ${\sim}10$--$30$ iterations) runs on
+the host; the inner loop---$p$ iterations of high-precision
+arithmetic per Newton step---runs on the GPU.  The host reads back
+$z_p$, $\mathit{dzdc}_p$, and $d2_p$ after each $p$-iteration batch,
+computes the Newton/Halley step, updates~$c$, and relaunches the inner
+loop.  For large $p$ and $N$ the total arithmetic volume scales as
+$O(p \cdot N \log N)$ per Newton step, making the GPU's throughput
+advantage decisive.  The dispatch function
+\code{DispatchGpuNRByPrecision} rounds the coordinate precision to
+the nearest supported \code{SharkParamsNR} limb count (256 through
+524\,288) and invokes the corresponding GPU kernel.
 
 \begin{figure}[!htbp]
 \centering
@@ -902,6 +908,8 @@ The Newton outer loop (\cref{subsubsec:ff-outer}) in
 $c \leftarrow c - z_p / (\partial z_p / \partial c)$ depends on the
 preceding evaluation's output, so successive steps cannot overlap.
 
-GPU acceleration of the inner loop via the \code{HpSharkFloat} backend is
-discussed in \cref{subsec:ff-inner-gpu}.
+GPU acceleration of the inner loop via the \code{HpSharkFloat} backend
+is described in \cref{subsec:ff-inner-gpu}; this path is fully
+implemented and dispatches through \code{DispatchGpuNRByPrecision}
+in \code{FeatureFinder.cpp}.
 

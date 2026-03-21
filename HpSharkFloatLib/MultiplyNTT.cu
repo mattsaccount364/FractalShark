@@ -980,7 +980,7 @@ MontgomeryPow(cooperative_groups::grid_group &grid,
     return x;
 }
 
-enum class Multiway { OneWay, TwoWay, ThreeWay, FourWay };
+enum class Multiway { OneWay, TwoWay, ThreeWay, FourWay, SevenWay };
 
 // Grid-stride in-place bit-reversal permutation (uint64 elements).
 // Safe without atomics: each index participates in exactly one swap pair (i, j=rev(i));
@@ -994,13 +994,20 @@ BitReverseInplace64_GridStride(cooperative_groups::grid_group &grid,
                                uint64_t *SharkRestrict C,
                                uint64_t *SharkRestrict D,
                                uint32_t N,
-                               uint32_t stages)
+                               uint32_t stages,
+                               uint64_t *SharkRestrict E = nullptr,
+                               uint64_t *SharkRestrict F = nullptr,
+                               uint64_t *SharkRestrict G = nullptr)
 {
     // Compile-time selection of which arrays to process
     constexpr bool DoA = true;
     constexpr bool DoB = (OneTwoThree != Multiway::OneWay);
-    constexpr bool DoC = (OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay);
-    constexpr bool DoD = (OneTwoThree == Multiway::FourWay);
+    constexpr bool DoC = (OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay ||
+                          OneTwoThree == Multiway::SevenWay);
+    constexpr bool DoD = (OneTwoThree == Multiway::FourWay || OneTwoThree == Multiway::SevenWay);
+    constexpr bool DoE = (OneTwoThree == Multiway::SevenWay);
+    constexpr bool DoF = (OneTwoThree == Multiway::SevenWay);
+    constexpr bool DoG = (OneTwoThree == Multiway::SevenWay);
 
     const uint32_t gsz = static_cast<uint32_t>(grid.size());
     const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
@@ -1033,6 +1040,12 @@ BitReverseInplace64_GridStride(cooperative_groups::grid_group &grid,
             swap_one(C, i, j);
         if constexpr (DoD)
             swap_one(D, i, j);
+        if constexpr (DoE)
+            swap_one(E, i, j);
+        if constexpr (DoF)
+            swap_one(F, i, j);
+        if constexpr (DoG)
+            swap_one(G, i, j);
     };
 
     // Grid-stride loop, unrolled by 4 when possible.
@@ -1347,9 +1360,9 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 // -----------------------------------------------------------------------------
 // Per-warp, per-stage micro-tile processor.
 // Handles:
-//   - Mode = OneWay / TwoWay / ThreeWay / FourWay
+//   - Mode = OneWay / TwoWay / ThreeWay / FourWay / SevenWay
 //   - UseMontPow = true/false (recurrence vs precomputed twiddles)
-//   - microTileWidth = 4 (OneWay) or 2 (Two/Three/FourWay)
+//   - microTileWidth = 4 (OneWay) or 2 (Two/Three/Four/SevenWay)
 // Updates jChunkIndex, tasksRemaining, blockIndex, blockDataBaseIndex,
 // and (when UseMontPow) currentTwiddle.
 // -----------------------------------------------------------------------------
@@ -1376,7 +1389,11 @@ ProcessTile(cooperative_groups::grid_group &grid,
             // twiddle state (for UseMontPow == true):
             uint64_t &currentTwiddle,
             const uint64_t twiddleStrideWarp,
-            const uint64_t laneTwiddleBase)
+            const uint64_t laneTwiddleBase,
+            // SevenWay extra arrays (nullptr for other modes)
+            uint64_t *SharkRestrict E = nullptr,
+            uint64_t *SharkRestrict F = nullptr,
+            uint64_t *SharkRestrict G = nullptr)
 {
     // Tile cannot cross block boundary or our assigned range
     const uint32_t roomInBlock = numJChunks - jChunkIndex;
@@ -1385,7 +1402,7 @@ ProcessTile(cooperative_groups::grid_group &grid,
     const uint32_t tileWidth =
         (microTileWidth == 4) ? std::min<uint32_t>(4u, span) : std::min<uint32_t>(2u, span);
 
-    // Helper: load A/B/C/D for a given jIndex
+    // Helper: load A/B/C/D/E/F/G for a given jIndex
     auto loadABCD = [&](uint32_t jIndex,
                         bool &inRange,
                         uint32_t &idxUpper,
@@ -1397,7 +1414,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
                         uint64_t &cUpper,
                         uint64_t &cLower,
                         uint64_t &dUpper,
-                        uint64_t &dLower) {
+                        uint64_t &dLower,
+                        uint64_t &eUpper,
+                        uint64_t &eLower,
+                        uint64_t &fUpper,
+                        uint64_t &fLower,
+                        uint64_t &gUpper,
+                        uint64_t &gLower) {
         inRange = (jIndex < halfSpan);
         if (!inRange)
             return;
@@ -1411,13 +1434,22 @@ ProcessTile(cooperative_groups::grid_group &grid,
         if constexpr (Mode != Multiway::OneWay) {
             bUpper = B[idxUpper];
             bLower = B[idxLower];
-            if constexpr (Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
+            if constexpr (Mode == Multiway::ThreeWay || Mode == Multiway::FourWay ||
+                          Mode == Multiway::SevenWay) {
                 cUpper = C[idxUpper];
                 cLower = C[idxLower];
             }
-            if constexpr (Mode == Multiway::FourWay) {
+            if constexpr (Mode == Multiway::FourWay || Mode == Multiway::SevenWay) {
                 dUpper = D[idxUpper];
                 dLower = D[idxLower];
+            }
+            if constexpr (Mode == Multiway::SevenWay) {
+                eUpper = E[idxUpper];
+                eLower = E[idxLower];
+                fUpper = F[idxUpper];
+                fLower = F[idxLower];
+                gUpper = G[idxUpper];
+                gLower = G[idxLower];
             }
         }
     };
@@ -1436,6 +1468,12 @@ ProcessTile(cooperative_groups::grid_group &grid,
                               uint64_t cLower,
                               uint64_t dUpper,
                               uint64_t dLower,
+                              uint64_t eUpper,
+                              uint64_t eLower,
+                              uint64_t fUpper,
+                              uint64_t fLower,
+                              uint64_t gUpper,
+                              uint64_t gLower,
                               uint64_t twiddle) {
         if constexpr (Mode == Multiway::OneWay) {
             const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
@@ -1447,7 +1485,7 @@ ProcessTile(cooperative_groups::grid_group &grid,
             A[idxUpper] = AddP(aUpper, tA);
             A[idxLower] = SubP(aUpper, tA);
             B[idxUpper] = AddP(bUpper, tB);
-            B[idxLower] = SubP(bUpper, tB); // subtract from *upper* (Bu), not Bl
+            B[idxLower] = SubP(bUpper, tB);
         } else if constexpr (Mode == Multiway::ThreeWay) {
             const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
             const uint64_t tB = MontgomeryMul(grid, block, debugCombo, bLower, twiddle);
@@ -1455,10 +1493,10 @@ ProcessTile(cooperative_groups::grid_group &grid,
             A[idxUpper] = AddP(aUpper, tA);
             A[idxLower] = SubP(aUpper, tA);
             B[idxUpper] = AddP(bUpper, tB);
-            B[idxLower] = SubP(bUpper, tB); // same pattern
+            B[idxLower] = SubP(bUpper, tB);
             C[idxUpper] = AddP(cUpper, tC);
-            C[idxLower] = SubP(cUpper, tC); // same pattern
-        } else { // FourWay
+            C[idxLower] = SubP(cUpper, tC);
+        } else if constexpr (Mode == Multiway::FourWay) {
             const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
             const uint64_t tB = MontgomeryMul(grid, block, debugCombo, bLower, twiddle);
             const uint64_t tC = MontgomeryMul(grid, block, debugCombo, cLower, twiddle);
@@ -1471,6 +1509,28 @@ ProcessTile(cooperative_groups::grid_group &grid,
             C[idxLower] = SubP(cUpper, tC);
             D[idxUpper] = AddP(dUpper, tD);
             D[idxLower] = SubP(dUpper, tD);
+        } else { // SevenWay
+            const uint64_t tA = MontgomeryMul(grid, block, debugCombo, aLower, twiddle);
+            const uint64_t tB = MontgomeryMul(grid, block, debugCombo, bLower, twiddle);
+            const uint64_t tC = MontgomeryMul(grid, block, debugCombo, cLower, twiddle);
+            const uint64_t tD = MontgomeryMul(grid, block, debugCombo, dLower, twiddle);
+            const uint64_t tE = MontgomeryMul(grid, block, debugCombo, eLower, twiddle);
+            const uint64_t tF = MontgomeryMul(grid, block, debugCombo, fLower, twiddle);
+            const uint64_t tG = MontgomeryMul(grid, block, debugCombo, gLower, twiddle);
+            A[idxUpper] = AddP(aUpper, tA);
+            A[idxLower] = SubP(aUpper, tA);
+            B[idxUpper] = AddP(bUpper, tB);
+            B[idxLower] = SubP(bUpper, tB);
+            C[idxUpper] = AddP(cUpper, tC);
+            C[idxLower] = SubP(cUpper, tC);
+            D[idxUpper] = AddP(dUpper, tD);
+            D[idxLower] = SubP(dUpper, tD);
+            E[idxUpper] = AddP(eUpper, tE);
+            E[idxLower] = SubP(eUpper, tE);
+            F[idxUpper] = AddP(fUpper, tF);
+            F[idxLower] = SubP(fUpper, tF);
+            G[idxUpper] = AddP(gUpper, tG);
+            G[idxLower] = SubP(gUpper, tG);
         }
     };
 
@@ -1489,6 +1549,9 @@ ProcessTile(cooperative_groups::grid_group &grid,
     uint64_t bUpper0 = 0, bLower0 = 0;
     uint64_t cUpper0 = 0, cLower0 = 0;
     uint64_t dUpper0 = 0, dLower0 = 0;
+    uint64_t eUpper0 = 0, eLower0 = 0;
+    uint64_t fUpper0 = 0, fLower0 = 0;
+    uint64_t gUpper0 = 0, gLower0 = 0;
 
     loadABCD(jIndex0,
             inRange0,
@@ -1501,7 +1564,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
             cUpper0,
             cLower0,
             dUpper0,
-            dLower0);
+            dLower0,
+            eUpper0,
+            eLower0,
+            fUpper0,
+            fLower0,
+            gUpper0,
+            gLower0);
 
     uint64_t twiddle0 = 0;
     if (inRange0) {
@@ -1519,6 +1588,9 @@ ProcessTile(cooperative_groups::grid_group &grid,
     uint64_t bUpper1 = 0, bLower1 = 0;
     uint64_t cUpper1 = 0, cLower1 = 0;
     uint64_t dUpper1 = 0, dLower1 = 0;
+    uint64_t eUpper1 = 0, eLower1 = 0;
+    uint64_t fUpper1 = 0, fLower1 = 0;
+    uint64_t gUpper1 = 0, gLower1 = 0;
     uint64_t twiddle1 = 0;
 
     if (tileWidth >= 2) {
@@ -1535,7 +1607,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
                 cUpper1,
                 cLower1,
                 dUpper1,
-                dLower1);
+                dLower1,
+                eUpper1,
+                eLower1,
+                fUpper1,
+                fLower1,
+                gUpper1,
+                gLower1);
 
         if constexpr (UseMontPow) {
             twiddle1 = MontgomeryMul(grid, block, debugCombo, twiddle0, twiddleStrideWarp);
@@ -1551,11 +1629,17 @@ ProcessTile(cooperative_groups::grid_group &grid,
     uint64_t bUpper2 = 0, bLower2 = 0;
     uint64_t cUpper2 = 0, cLower2 = 0;
     uint64_t dUpper2 = 0, dLower2 = 0;
+    uint64_t eUpper2 = 0, eLower2 = 0;
+    uint64_t fUpper2 = 0, fLower2 = 0;
+    uint64_t gUpper2 = 0, gLower2 = 0;
     uint32_t indexUpper3 = 0, indexLower3 = 0;
     uint64_t aUpper3 = 0, aLower3 = 0;
     uint64_t bUpper3 = 0, bLower3 = 0;
     uint64_t cUpper3 = 0, cLower3 = 0;
     uint64_t dUpper3 = 0, dLower3 = 0;
+    uint64_t eUpper3 = 0, eLower3 = 0;
+    uint64_t fUpper3 = 0, fLower3 = 0;
+    uint64_t gUpper3 = 0, gLower3 = 0;
     uint64_t twiddle2 = 0, twiddle3 = 0;
 
     if constexpr (microTileWidth == 4) {
@@ -1572,7 +1656,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
                     cUpper2,
                     cLower2,
                     dUpper2,
-                    dLower2);
+                    dLower2,
+                    eUpper2,
+                    eLower2,
+                    fUpper2,
+                    fLower2,
+                    gUpper2,
+                    gLower2);
 
             if constexpr (!UseMontPow) {
                 if (inRange2) {
@@ -1593,7 +1683,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
                     cUpper3,
                     cLower3,
                     dUpper3,
-                    dLower3);
+                    dLower3,
+                    eUpper3,
+                    eLower3,
+                    fUpper3,
+                    fLower3,
+                    gUpper3,
+                    gLower3);
 
             if constexpr (!UseMontPow) {
                 if (inRange3) {
@@ -1615,13 +1711,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
     // ---- compute/store: position 0 ----
     if (inRange0) {
         applyButterfly(
-            indexUpper0, indexLower0, aUpper0, aLower0, bUpper0, bLower0, cUpper0, cLower0, dUpper0, dLower0, twiddle0);
+            indexUpper0, indexLower0, aUpper0, aLower0, bUpper0, bLower0, cUpper0, cLower0, dUpper0, dLower0, eUpper0, eLower0, fUpper0, fLower0, gUpper0, gLower0, twiddle0);
     }
 
     // ---- compute/store: position 1 ----
     if (tileWidth >= 2 && inRange1) {
         applyButterfly(
-            indexUpper1, indexLower1, aUpper1, aLower1, bUpper1, bLower1, cUpper1, cLower1, dUpper1, dLower1, twiddle1);
+            indexUpper1, indexLower1, aUpper1, aLower1, bUpper1, bLower1, cUpper1, cLower1, dUpper1, dLower1, eUpper1, eLower1, fUpper1, fLower1, gUpper1, gLower1, twiddle1);
     }
 
     // ---- compute/store: positions 2 & 3 (OneWay only) ----
@@ -1637,6 +1733,12 @@ ProcessTile(cooperative_groups::grid_group &grid,
                            cLower2,
                            dUpper2,
                            dLower2,
+                           eUpper2,
+                           eLower2,
+                           fUpper2,
+                           fLower2,
+                           gUpper2,
+                           gLower2,
                            twiddle2);
         }
         if (tileWidth >= 4 && inRange3) {
@@ -1650,6 +1752,12 @@ ProcessTile(cooperative_groups::grid_group &grid,
                            cLower3,
                            dUpper3,
                            dLower3,
+                           eUpper3,
+                           eLower3,
+                           fUpper3,
+                           fLower3,
+                           gUpper3,
+                           gLower3,
                            twiddle3);
         }
     }
@@ -1693,12 +1801,13 @@ ProcessTile(cooperative_groups::grid_group &grid,
 }
 
 // -----------------------------------------------------------------------------
-// Unified 1-way / 4-way radix-2 NTT with warp-strided twiddles,
+// Unified 1-way / 7-way radix-2 NTT with warp-strided twiddles,
 // early shared-memory microkernel, and Phase-2 static contiguous striping.
-// Multiway::OneWay  : operates on A only (matches 1-way behavior)
-// Multiway::TwoWay  : operates on A, B
-// Multiway::ThreeWay: operates on A, B, C in lockstep
-// Multiway::FourWay : operates on A, B, C, D in lockstep
+// Multiway::OneWay   : operates on A only
+// Multiway::TwoWay   : operates on A, B
+// Multiway::ThreeWay : operates on A, B, C in lockstep
+// Multiway::FourWay  : operates on A, B, C, D in lockstep
+// Multiway::SevenWay : operates on A, B, C, D, E, F, G in lockstep
 // -----------------------------------------------------------------------------
 template <class SharkFloatParams, Multiway OneTwoThree, bool Inverse>
 static __device__ SharkForceInlineReleaseOnly void
@@ -1711,7 +1820,10 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                      uint64_t *SharkRestrict B,
                      uint64_t *SharkRestrict C,
                      uint64_t *SharkRestrict D,
-                     const RootTables &rootTables)
+                     const RootTables &rootTables,
+                     uint64_t *SharkRestrict E = nullptr,
+                     uint64_t *SharkRestrict F = nullptr,
+                     uint64_t *SharkRestrict G = nullptr)
 {
     uint32_t transformSize = rootTables.N;
     uint32_t numStages = rootTables.stages;
@@ -1808,6 +1920,36 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                                                                                    numStages,
                                                                                    sharedStageRoots,
                                                                                    stageTwiddleTable);
+    } else if constexpr (OneTwoThree == Multiway::SevenWay) {
+        // SevenWay hybrid: run Phase 1 separately (ThreeWay for orbit + FourWay for NR derivatives)
+        // then fuse for Phase 2 only (where grid.sync() per stage is the bottleneck).
+        firstLargeStage =
+            SmallRadixPhase1_SM<SharkFloatParams, Multiway::ThreeWay, TileSizeLog2>(shared_data,
+                                                                                     grid,
+                                                                                     block,
+                                                                                     debugCombo,
+                                                                                     A,
+                                                                                     B,
+                                                                                     C,
+                                                                                     nullptr,
+                                                                                     transformSize,
+                                                                                     numStages,
+                                                                                     sharedStageRoots,
+                                                                                     stageTwiddleTable);
+        // NR derivatives: reuse same shared memory tiles (ThreeWay data is back in global)
+        [[maybe_unused]] const auto firstLargeStageNR =
+            SmallRadixPhase1_SM<SharkFloatParams, Multiway::FourWay, TileSizeLog2>(shared_data,
+                                                                                    grid,
+                                                                                    block,
+                                                                                    debugCombo,
+                                                                                    D,
+                                                                                    E,
+                                                                                    F,
+                                                                                    G,
+                                                                                    transformSize,
+                                                                                    numStages,
+                                                                                    sharedStageRoots,
+                                                                                    stageTwiddleTable);
     }
 
     // =========================
@@ -1892,7 +2034,10 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                     blockDataBaseIndex,
                     currentTwiddle,
                     twiddleStrideWarp,
-                    laneTwiddleBase);
+                    laneTwiddleBase,
+                    E,
+                    F,
+                    G);
             }
         }
 
@@ -2809,26 +2954,29 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
 
     grid.sync();
 
-    // 5) Inverse NTT (in place on Z0_OutDigits)
-    SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::ThreeWay>(
-        grid,
-        block,
-        tempDigitsXX1,
-        tempDigitsYY1,
-        tempDigitsXY1,
-        nullptr,
-        (uint32_t)SharkFloatParams::NTTPlan.N,
-        (uint32_t)SharkFloatParams::NTTPlan.stages);
-
-    // NR inverse bit-reverse (no sync inside — independent buffers, same sync point)
+    // 5) Inverse bit-reverse + NTT (in place)
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::FourWay>(
+        // Fused SevenWay: all 7 transforms (XX,YY,XY + W0-W3) share grid.sync() barriers
+        SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::SevenWay>(
             grid,
             block,
+            tempDigitsXX1,
+            tempDigitsYY1,
+            tempDigitsXY1,
             tempDigitsW0_1,
+            (uint32_t)SharkFloatParams::NTTPlan.N,
+            (uint32_t)SharkFloatParams::NTTPlan.stages,
             tempDigitsW1_1,
             tempDigitsW2_1,
-            tempDigitsW3_1,
+            tempDigitsW3_1);
+    } else {
+        SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::ThreeWay>(
+            grid,
+            block,
+            tempDigitsXX1,
+            tempDigitsYY1,
+            tempDigitsXY1,
+            nullptr,
             (uint32_t)SharkFloatParams::NTTPlan.N,
             (uint32_t)SharkFloatParams::NTTPlan.stages);
     }
@@ -2859,35 +3007,38 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
         grid.sync();
     }
 
-    SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::ThreeWay, true>(
-        shared_data,
-        grid,
-        block,
-        debugGlobalState,
-        CarryPropagationSync,
-        tempDigitsXX1,
-        tempDigitsYY1,
-        tempDigitsXY1,
-        nullptr,
-        roots);
-
-    // NR inverse NTT (FourWay — has its own internal grid.sync() per stage)
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::FourWay, true>(
+        // Fused SevenWay inverse NTT: all 7 transforms share Phase 2 grid.sync() barriers
+        SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::SevenWay, true>(
             shared_data,
             grid,
             block,
             debugGlobalState,
             CarryPropagationSync,
+            tempDigitsXX1,
+            tempDigitsYY1,
+            tempDigitsXY1,
             tempDigitsW0_1,
+            roots,
             tempDigitsW1_1,
             tempDigitsW2_1,
-            tempDigitsW3_1,
+            tempDigitsW3_1);
+    } else {
+        SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::ThreeWay, true>(
+            shared_data,
+            grid,
+            block,
+            debugGlobalState,
+            CarryPropagationSync,
+            tempDigitsXX1,
+            tempDigitsYY1,
+            tempDigitsXY1,
+            nullptr,
             roots);
     }
 
-    // --- After inverse NTTs (XX1 / YY1 / XY1 are in Montgomery domain) ---
-    grid.sync(); // make sure prior writes (inv-NTT) are visible
+    // After inverse NTT: the last Phase 2 stage already ended with grid.sync(),
+    // so all NTT output writes are visible. No additional sync needed before untwist.
 
     UntwistScaleFromMont_3Way_GridStride<SharkFloatParams>(grid,
                                                            block,

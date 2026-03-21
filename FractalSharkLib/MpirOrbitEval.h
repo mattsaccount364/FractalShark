@@ -38,3 +38,14 @@ void EvaluateCriticalOrbitAndDerivsMT(
     mp_bitcnt_t deriv_prec,
     mp_bitcnt_t coord_prec);
 
+// Single-threaded MPIR orbit: same math as MT but all multiplies sequential.
+void EvaluateCriticalOrbitAndDerivsST(
+    const mpf_complex &c_coord,
+    uint64_t period,
+    mpf_complex &z_coord,
+    mpf_complex &dzdc_deriv,
+    HDRFloat<double> &d2r_hdr,
+    HDRFloat<double> &d2i_hdr,
+    mp_bitcnt_t deriv_prec,
+    mp_bitcnt_t coord_prec);
+

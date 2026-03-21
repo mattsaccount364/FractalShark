@@ -178,7 +178,9 @@ level set $G(c) = \log R / 2^n$; interpolating between successive
 iterates yields the fractional part.
 
 For a general bailout radius~$R$ (note that \FractalShark{} uses
-$R = 4$ in the per-pixel kernels and $R = 256$ in the reference orbit),
+different squared-bailout thresholds in different contexts: $|z|^2 > 4$
+in direct rendering kernels, $|z|^2 > 256$ in perturbation and
+reference orbit paths, and $|z|^2 > 4096$ in the Feature Finder),
 the formula generalises to
 \begin{equation}
   n_{\text{smooth}} = n + 1

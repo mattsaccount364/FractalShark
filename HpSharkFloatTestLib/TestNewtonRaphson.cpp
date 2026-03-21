@@ -7,6 +7,7 @@
 #include "HpSharkFloat.h"
 #include "KernelInvoke.h"
 #include "MpirOrbitEval.h"
+#include "PerfTimingResult.h"
 #include "ReferenceAdd.h"
 #include "ReferenceNTT2.h"
 #include "ReferenceReferenceOrbit.h"
@@ -18,12 +19,13 @@
 #include <memory>
 #include <string>
 
-// Wrapper around shared MT orbit eval for the test benchmark.
+// Wrapper around shared ST/MT orbit eval for the test benchmark.
 static void RunMpirOrbitWithD2(
     mpf_t cR, mpf_t cI, uint64_t period,
     mpf_t outZR, mpf_t outZI,
     mpf_t outDzdcR, mpf_t outDzdcI,
-    HDRFloat<double> &d2r_out, HDRFloat<double> &d2i_out)
+    HDRFloat<double> &d2r_out, HDRFloat<double> &d2i_out,
+    bool useMT)
 {
     const mp_bitcnt_t prec = mpf_get_prec(cR);
 
@@ -35,9 +37,15 @@ static void RunMpirOrbitWithD2(
     mpf_complex_init(z_coord, prec);
     mpf_complex_init(dzdc_deriv, prec);
 
-    EvaluateCriticalOrbitAndDerivsMT(
-        c_coord, period, z_coord, dzdc_deriv,
-        d2r_out, d2i_out, prec, prec);
+    if (useMT) {
+        EvaluateCriticalOrbitAndDerivsMT(
+            c_coord, period, z_coord, dzdc_deriv,
+            d2r_out, d2i_out, prec, prec);
+    } else {
+        EvaluateCriticalOrbitAndDerivsST(
+            c_coord, period, z_coord, dzdc_deriv,
+            d2r_out, d2i_out, prec, prec);
+    }
 
     mpf_set(outZR, z_coord.re); mpf_set(outZI, z_coord.im);
     mpf_set(outDzdcR, dzdc_deriv.re); mpf_set(outDzdcI, dzdc_deriv.im);
@@ -114,7 +122,9 @@ RunNewtonRaphsonTest(
     mpf_t mpfCImag,
     uint64_t period,
     const HpShark::LaunchParams &launchParams,
-    uint64_t iterCountOverride = 0)
+    uint64_t iterCountOverride = 0,
+    bool useMT = true,
+    PerfTimingResult *timingOut = nullptr)
 {
     // If iterCountOverride is non-zero and less than period, perf-only mode:
     // run one pass, no convergence attempts.
@@ -178,9 +188,9 @@ RunNewtonRaphsonTest(
 
     bool allWithinTolerance = true;
     uint32_t hpConvergedIter = maxNewtonIters;
-    double totalCpuMs = 0.0;
-    double totalMpirMs = 0.0;
-    double totalGpuMs = 0.0;
+
+    // Per-iteration time tracking for summary table
+    std::vector<PerfTimingResult> perIterTimings;
 
     // GPU comparison temporaries
     mpf_t gpuZR, gpuZI, gpuDzdcR, gpuDzdcI;
@@ -191,6 +201,8 @@ RunNewtonRaphsonTest(
     for (uint32_t it = 0; it < maxNewtonIters; ++it) {
         std::cout << "  " << testName << " Newton iter " << it << std::endl;
 
+        PerfTimingResult iterTiming;
+
         // ---- MPIR inner loop (always, ground truth) ----
         HDRFloat<double> mpirD2r{}, mpirD2i{};
         {
@@ -198,10 +210,10 @@ RunNewtonRaphsonTest(
             mpirTimer.StartTimer();
             RunMpirOrbitWithD2(cR, cI, period,
                 mpirZR, mpirZI, mpirDzdcR, mpirDzdcI,
-                mpirD2r, mpirD2i);
+                mpirD2r, mpirD2i, useMT);
             mpirTimer.StopTimer();
             const double mpirMs = static_cast<double>(mpirTimer.GetDeltaInMs());
-            totalMpirMs += mpirMs;
+            iterTiming.hostMs = mpirMs;
             std::cout << "    MPIR inner loop: " << mpirMs << " ms" << std::endl;
         }
 
@@ -220,7 +232,7 @@ RunNewtonRaphsonTest(
                 debugHostCombo);
             cpuTimer.StopTimer();
             const double cpuMs = static_cast<double>(cpuTimer.GetDeltaInMs());
-            totalCpuMs += cpuMs;
+            iterTiming.cpuRefMs = cpuMs;
             std::cout << "    CPU-ref inner loop: " << cpuMs << " ms" << std::endl;
 
             hpZR->HpGpuToMpf(zR);
@@ -251,7 +263,7 @@ RunNewtonRaphsonTest(
                     launchParams);
                 gpuTimer.StopTimer();
                 const double gpuMs = static_cast<double>(gpuTimer.GetDeltaInMs());
-                totalGpuMs += gpuMs;
+                iterTiming.gpuMs = gpuMs;
                 std::cout << "    GPU inner loop: " << gpuMs << " ms" << std::endl;
             }
 
@@ -286,6 +298,8 @@ RunNewtonRaphsonTest(
             if (!checkIterTolerance(iterDiffDzdcR, mpirDzdcR)) allWithinTolerance = false;
             if (!checkIterTolerance(iterDiffDzdcI, mpirDzdcI)) allWithinTolerance = false;
         }
+
+        perIterTimings.push_back(iterTiming);
 
         // Newton step uses MPIR results (authoritative ground truth)
         HDRFloat<double> dzr_h(mpirDzdcR), dzi_h(mpirDzdcI);
@@ -346,23 +360,21 @@ RunNewtonRaphsonTest(
     // ========== Report results ==========
     std::cout << "\n" << testName << " RESULTS:" << std::endl;
     std::cout << testName << ": MPIR converged in " << hpConvergedIter << " iters" << std::endl;
-    std::cout << testName << ": MPIR total inner loop time: " << totalMpirMs << " ms" << std::endl;
-    if constexpr (HpShark::TestReferenceImpl) {
-        std::cout << testName << ": CPU-ref total inner loop time: " << totalCpuMs << " ms" << std::endl;
-    }
-    if constexpr (HpShark::TestGpu) {
-        std::cout << testName << ": GPU total inner loop time: " << totalGpuMs << " ms" << std::endl;
-        if (totalMpirMs > 0 && totalGpuMs > 0) {
-            std::cout << testName << ": Speedup MPIR/GPU: " << (totalMpirMs / totalGpuMs) << "x" << std::endl;
-        }
-        if (totalCpuMs > 0 && totalGpuMs > 0) {
-            std::cout << testName << ": Speedup CPU-ref/GPU: " << (totalCpuMs / totalGpuMs) << "x" << std::endl;
-        }
-    }
     std::cout << testName << ": per-iteration z/dzdc tolerance "
               << (allWithinTolerance ? "PASS" : "FAIL") << std::endl;
 
-    {
+    // Populate timing output for caller (when running in a loop)
+    if (timingOut && !perIterTimings.empty()) {
+        *timingOut = perIterTimings[0];
+    }
+
+    // Only print the summary table when not being called in a loop (caller prints it)
+    if (!timingOut) {
+        PrintPerfSummaryTable(testName, useMT, perIterTimings, "MPIR");
+    }
+
+    // In perf-only mode, skip convergence test (it's expected not to converge)
+    if (!perfOnly) {
         std::string convName = std::string(testName) + "_Convergence";
         if (hpConvergedIter < maxNewtonIters) {
             Tests.MarkSuccess(nullptr, testBase + 0, convName);
@@ -407,7 +419,9 @@ bool
 TestNewtonRaphsonView5(TestTracker &Tests,
                        int testBase,
                        const HpShark::LaunchParams &launchParams,
-                       uint64_t iterCountOverride)
+                       uint64_t iterCountOverride,
+                       bool useMT,
+                       PerfTimingResult *timingOut)
 {
     const char *cRealStr = "-5."
         "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
@@ -427,7 +441,7 @@ TestNewtonRaphsonView5(TestTracker &Tests,
     mpf_set_str(mpfCImag, cImagStr, 10);
 
     bool result = RunNewtonRaphsonTest<SharkFloatParams>(
-        Tests, testBase, "NR_View5", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride);
+        Tests, testBase, "NR_View5", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride, useMT, timingOut);
 
     mpf_clear(mpfCReal); mpf_clear(mpfCImag);
     return result;
@@ -438,7 +452,9 @@ bool
 TestNewtonRaphsonView30(TestTracker &Tests,
                         int testBase,
                         const HpShark::LaunchParams &launchParams,
-                        uint64_t iterCountOverride)
+                        uint64_t iterCountOverride,
+                        bool useMT,
+                        PerfTimingResult *timingOut)
 {
 #include "..\FractalSharkLib\LargeCoords30.h"
 
@@ -451,7 +467,7 @@ TestNewtonRaphsonView30(TestTracker &Tests,
     Hex64StringToMpf_Exact(strYHex, mpfCImag);
 
     bool result = RunNewtonRaphsonTest<SharkFloatParams>(
-        Tests, testBase, "NR_View30", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride);
+        Tests, testBase, "NR_View30", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride, useMT, timingOut);
 
     mpf_clear(mpfCReal); mpf_clear(mpfCImag);
     return result;
@@ -462,7 +478,9 @@ bool
 TestNewtonRaphsonView32(TestTracker &Tests,
                         int testBase,
                         const HpShark::LaunchParams &launchParams,
-                        uint64_t iterCountOverride)
+                        uint64_t iterCountOverride,
+                        bool useMT,
+                        PerfTimingResult *timingOut)
 {
 #include "..\FractalSharkLib\LargeCoords32.h"
 
@@ -477,15 +495,15 @@ TestNewtonRaphsonView32(TestTracker &Tests,
     mpf_set_str(mpfCImag, strY, 10);
 
     bool result = RunNewtonRaphsonTest<SharkFloatParams>(
-        Tests, testBase, "NR_View32", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride);
+        Tests, testBase, "NR_View32", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride, useMT, timingOut);
 
     mpf_clear(mpfCReal); mpf_clear(mpfCImag);
     return result;
 }
 
-template bool TestNewtonRaphsonView5<SharkParamsNR7>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t);
-template bool TestNewtonRaphsonView30<SharkParamsNR7>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t);
-template bool TestNewtonRaphsonView32<SharkParamsNR9>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t);
+template bool TestNewtonRaphsonView5<SharkParamsNR7>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, PerfTimingResult *);
+template bool TestNewtonRaphsonView30<SharkParamsNR7>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, PerfTimingResult *);
+template bool TestNewtonRaphsonView32<SharkParamsNR9>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, PerfTimingResult *);
 
 // ========== Single-iteration NR Multiply test ==========
 template <class SharkFloatParams>

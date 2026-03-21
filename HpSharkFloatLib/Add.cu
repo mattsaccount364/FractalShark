@@ -165,11 +165,14 @@ GetExtLimb (
 // It then adjusts the stored exponent accordingly and returns the shift offset.
 //
 
-/// Compute the left‐shift needed to bring each MSB to the top, for five operands.
+/// Compute the left-shift needed to bring each MSB to the top.
+/// For NR types, processes all 10 arrays (5 orbit + 5 NR) in one scan.
+/// Uses a two-tier approach:
+///   Tier 1: Quick top-limb check — if top limb is non-zero, MSD found in O(1).
+///   Tier 2: Warp-parallel scan via __ballot_sync for remaining arrays (32 limbs/tile).
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 ExtendedNormalizeShiftIndexAll(
-    // inputs: five little‐endian extended arrays (length numActualDigitsPlusGuard)
     const uint32_t *SharkRestrict extA,
     const uint32_t *SharkRestrict extB,
     const uint32_t *SharkRestrict extC,
@@ -177,62 +180,118 @@ ExtendedNormalizeShiftIndexAll(
     const uint32_t *SharkRestrict extE,
     int32_t actualDigits,
     int32_t numActualDigitsPlusGuard,
-
-    // in/out: stored exponents
-    int32_t &expA,
-    int32_t &expB,
-    int32_t &expC,
-    int32_t &expD,
-    int32_t &expE,
-
-    // out: “is zero?” flags
-    bool &isZeroA,
-    bool &isZeroB,
-    bool &isZeroC,
-    bool &isZeroD,
-    bool &isZeroE,
-
-    // out: left‐shift amounts
-    int32_t &shiftA,
-    int32_t &shiftB,
-    int32_t &shiftC,
-    int32_t &shiftD,
-    int32_t &shiftE
+    int32_t &expA, int32_t &expB, int32_t &expC, int32_t &expD, int32_t &expE,
+    bool &isZeroA, bool &isZeroB, bool &isZeroC, bool &isZeroD, bool &isZeroE,
+    int32_t &shiftA, int32_t &shiftB, int32_t &shiftC, int32_t &shiftD, int32_t &shiftE,
+    // NR inputs (only accessed when EnableNewtonRaphson; pass nullptr otherwise)
+    const uint32_t *SharkRestrict extNR0 = nullptr,
+    const uint32_t *SharkRestrict extNR1 = nullptr,
+    const uint32_t *SharkRestrict extNR2 = nullptr,
+    const uint32_t *SharkRestrict extNR3 = nullptr,
+    const uint32_t *SharkRestrict extNR4 = nullptr,
+    int32_t *expNR0 = nullptr, int32_t *expNR1 = nullptr,
+    int32_t *expNR2 = nullptr, int32_t *expNR3 = nullptr, int32_t *expNR4 = nullptr,
+    bool *isZeroNR0 = nullptr, bool *isZeroNR1 = nullptr,
+    bool *isZeroNR2 = nullptr, bool *isZeroNR3 = nullptr, bool *isZeroNR4 = nullptr,
+    int32_t *shiftNR0 = nullptr, int32_t *shiftNR1 = nullptr,
+    int32_t *shiftNR2 = nullptr, int32_t *shiftNR3 = nullptr, int32_t *shiftNR4 = nullptr
 ) {
-    // initialize msd indices to “not found”
     int32_t msdA = -1, msdB = -1, msdC = -1, msdD = -1, msdE = -1;
+    int32_t msdNR0 = -1, msdNR1 = -1, msdNR2 = -1, msdNR3 = -1, msdNR4 = -1;
 
-    // scan downward once
-    for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
-        // 1) grab all five limbs up front (no data‐dep between them)
-        const uint32_t limbA = GetExtLimb(extA, actualDigits, numActualDigitsPlusGuard, i);
-        const uint32_t limbB = GetExtLimb(extB, actualDigits, numActualDigitsPlusGuard, i);
-        const uint32_t limbC = GetExtLimb(extC, actualDigits, numActualDigitsPlusGuard, i);
-        const uint32_t limbD = GetExtLimb(extD, actualDigits, numActualDigitsPlusGuard, i);
-        const uint32_t limbE = GetExtLimb(extE, actualDigits, numActualDigitsPlusGuard, i);
+    const int32_t topIdx = actualDigits - 1;
 
-        // 2) now update each msd only if we haven’t found it yet
-        if (msdA < 0 && limbA != 0) msdA = i;
-        if (msdB < 0 && limbB != 0) msdB = i;
-        if (msdC < 0 && limbC != 0) msdC = i;
-        if (msdD < 0 && limbD != 0) msdD = i;
-        if (msdE < 0 && limbE != 0) msdE = i;
+    // ---- Tier 1: Quick top-limb check ----
+    // NTT multiply normalizes MSB near the top, so Digits[N-1] is almost always non-zero.
+    if (extA[topIdx] != 0) msdA = topIdx;
+    if (extB[topIdx] != 0) msdB = topIdx;
+    if (extC[topIdx] != 0) msdC = topIdx;
+    if (extD[topIdx] != 0) msdD = topIdx;
+    if (extE[topIdx] != 0) msdE = topIdx;
 
-        // 3) exit early once all five are found
-        if (msdA >= 0 && msdB >= 0 && msdC >= 0 && msdD >= 0 && msdE >= 0)
-            break;
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        if (extNR0[topIdx] != 0) msdNR0 = topIdx;
+        if (extNR1[topIdx] != 0) msdNR1 = topIdx;
+        if (extNR2[topIdx] != 0) msdNR2 = topIdx;
+        if (extNR3[topIdx] != 0) msdNR3 = topIdx;
+        if (extNR4[topIdx] != 0) msdNR4 = topIdx;
     }
 
-    // handle zero‐cases
+    bool allFound = (msdA >= 0 && msdB >= 0 && msdC >= 0 && msdD >= 0 && msdE >= 0);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        allFound = allFound &&
+            (msdNR0 >= 0 && msdNR1 >= 0 && msdNR2 >= 0 && msdNR3 >= 0 && msdNR4 >= 0);
+    }
+
+    // ---- Tier 2: Warp-parallel scan for any remaining unfound MSDs ----
+    if (!allFound) {
+        const int lane = threadIdx.x & 31;
+        const unsigned fullMask = 0xffff'ffff;
+        const int32_t numTiles = (actualDigits + 31) / 32;
+
+        for (int32_t tile = 0; tile < numTiles; ++tile) {
+            const int32_t idxFromTop = tile * 32 + lane;
+            const int32_t i = topIdx - idxFromTop;
+            const bool inBounds = (i >= 0);
+
+            // Load one limb per lane; zero if MSD already found or out of bounds
+            const uint32_t lA = (inBounds && msdA < 0) ? extA[i] : 0;
+            const uint32_t lB = (inBounds && msdB < 0) ? extB[i] : 0;
+            const uint32_t lC = (inBounds && msdC < 0) ? extC[i] : 0;
+            const uint32_t lD = (inBounds && msdD < 0) ? extD[i] : 0;
+            const uint32_t lE = (inBounds && msdE < 0) ? extE[i] : 0;
+
+            // Always call __ballot_sync (all lanes must participate).
+            // Only update MSD from the result if not yet found.
+            const unsigned maskA = __ballot_sync(fullMask, lA != 0);
+            const unsigned maskB = __ballot_sync(fullMask, lB != 0);
+            const unsigned maskC = __ballot_sync(fullMask, lC != 0);
+            const unsigned maskD = __ballot_sync(fullMask, lD != 0);
+            const unsigned maskE = __ballot_sync(fullMask, lE != 0);
+
+            if (msdA < 0 && maskA != 0) msdA = topIdx - (tile * 32 + (__ffs(maskA) - 1));
+            if (msdB < 0 && maskB != 0) msdB = topIdx - (tile * 32 + (__ffs(maskB) - 1));
+            if (msdC < 0 && maskC != 0) msdC = topIdx - (tile * 32 + (__ffs(maskC) - 1));
+            if (msdD < 0 && maskD != 0) msdD = topIdx - (tile * 32 + (__ffs(maskD) - 1));
+            if (msdE < 0 && maskE != 0) msdE = topIdx - (tile * 32 + (__ffs(maskE) - 1));
+
+            allFound = (msdA >= 0 && msdB >= 0 && msdC >= 0 && msdD >= 0 && msdE >= 0);
+
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                const uint32_t lNR0 = (inBounds && msdNR0 < 0) ? extNR0[i] : 0;
+                const uint32_t lNR1 = (inBounds && msdNR1 < 0) ? extNR1[i] : 0;
+                const uint32_t lNR2 = (inBounds && msdNR2 < 0) ? extNR2[i] : 0;
+                const uint32_t lNR3 = (inBounds && msdNR3 < 0) ? extNR3[i] : 0;
+                const uint32_t lNR4 = (inBounds && msdNR4 < 0) ? extNR4[i] : 0;
+
+                const unsigned mNR0 = __ballot_sync(fullMask, lNR0 != 0);
+                const unsigned mNR1 = __ballot_sync(fullMask, lNR1 != 0);
+                const unsigned mNR2 = __ballot_sync(fullMask, lNR2 != 0);
+                const unsigned mNR3 = __ballot_sync(fullMask, lNR3 != 0);
+                const unsigned mNR4 = __ballot_sync(fullMask, lNR4 != 0);
+
+                if (msdNR0 < 0 && mNR0 != 0) msdNR0 = topIdx - (tile * 32 + (__ffs(mNR0) - 1));
+                if (msdNR1 < 0 && mNR1 != 0) msdNR1 = topIdx - (tile * 32 + (__ffs(mNR1) - 1));
+                if (msdNR2 < 0 && mNR2 != 0) msdNR2 = topIdx - (tile * 32 + (__ffs(mNR2) - 1));
+                if (msdNR3 < 0 && mNR3 != 0) msdNR3 = topIdx - (tile * 32 + (__ffs(mNR3) - 1));
+                if (msdNR4 < 0 && mNR4 != 0) msdNR4 = topIdx - (tile * 32 + (__ffs(mNR4) - 1));
+
+                allFound = allFound &&
+                    (msdNR0 >= 0 && msdNR1 >= 0 && msdNR2 >= 0 && msdNR3 >= 0 && msdNR4 >= 0);
+            }
+
+            if (allFound) break;
+        }
+    }
+
     isZeroA = (msdA < 0);
     isZeroB = (msdB < 0);
     isZeroC = (msdC < 0);
     isZeroD = (msdD < 0);
     isZeroE = (msdE < 0);
 
-    // common bias: highest bit index in full ext array
     const int32_t totalExtBits = numActualDigitsPlusGuard * 32;
-    auto computeShift = [&](const uint32_t *ext, int32_t &msd, bool &isz, int32_t &exp, int32_t &outShift) {
+    auto computeShift = [&](const uint32_t *ext, int32_t msd, bool isz, int32_t &exp, int32_t &outShift) {
         if (isz) {
             outShift = 0;
         } else {
@@ -243,13 +302,27 @@ ExtendedNormalizeShiftIndexAll(
             exp -= L;
             outShift = L;
         }
-        };
+    };
 
     computeShift(extA, msdA, isZeroA, expA, shiftA);
     computeShift(extB, msdB, isZeroB, expB, shiftB);
     computeShift(extC, msdC, isZeroC, expC, shiftC);
     computeShift(extD, msdD, isZeroD, expD, shiftD);
     computeShift(extE, msdE, isZeroE, expE, shiftE);
+
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        *isZeroNR0 = (msdNR0 < 0);
+        *isZeroNR1 = (msdNR1 < 0);
+        *isZeroNR2 = (msdNR2 < 0);
+        *isZeroNR3 = (msdNR3 < 0);
+        *isZeroNR4 = (msdNR4 < 0);
+
+        computeShift(extNR0, msdNR0, *isZeroNR0, *expNR0, *shiftNR0);
+        computeShift(extNR1, msdNR1, *isZeroNR1, *expNR1, *shiftNR1);
+        computeShift(extNR2, msdNR2, *isZeroNR2, *expNR2, *shiftNR2);
+        computeShift(extNR3, msdNR3, *isZeroNR3, *expNR3, *shiftNR3);
+        computeShift(extNR4, msdNR4, *isZeroNR4, *expNR4, *shiftNR4);
+    }
 }
 
 // New helper: Computes the aligned digit for the normalized value on the fly.
@@ -802,33 +875,43 @@ static __device__ void AddHelperSeparates(
     int32_t shiftDLeftToGetMsb;
     int32_t shiftELeftToGetMsb;
 
+    // NR variable declarations (always present, populated only for NR types)
+    const uint32_t *ext_W0 = nullptr;
+    const uint32_t *ext_W1 = nullptr;
+    const uint32_t *ext_W2 = nullptr;
+    const uint32_t *ext_W3 = nullptr;
+    const uint32_t *ext_One = nullptr;
+    bool nrNormW0Zero = false, nrNormW1Zero = false, nrNormOneZero = false;
+    bool nrNormW2Zero = false, nrNormW3Zero = false;
+    int32_t nrExpW0 = 0, nrExpW1 = 0, nrExpOne = 0, nrExpW2 = 0, nrExpW3 = 0;
+    int32_t nrShiftW0 = 0, nrShiftW1 = 0, nrShiftOne = 0, nrShiftW2 = 0, nrShiftW3 = 0;
+
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        ext_W0 = W0->Digits;
+        ext_W1 = W1->Digits;
+        ext_W2 = W2->Digits;
+        ext_W3 = W3->Digits;
+        ext_One = One->Digits;
+        nrExpW0 = W0->Exponent;
+        nrExpW1 = W1->Exponent;
+        nrExpOne = One->Exponent;
+        nrExpW2 = W2->Exponent;
+        nrExpW3 = W3->Exponent;
+    }
+
+    // Single call: orbit + NR (NR arrays are nullptr/defaults for non-NR types,
+    // and if constexpr inside the function skips NR processing)
     ExtendedNormalizeShiftIndexAll<SharkFloatParams>(
-        ext_A_X2,
-        ext_B_Y2,
-        ext_C_A,
-        ext_D_2X,
-        ext_E_B,
-        numActualDigits,
-        numActualDigitsPlusGuard,
+        ext_A_X2, ext_B_Y2, ext_C_A, ext_D_2X, ext_E_B,
+        numActualDigits, numActualDigitsPlusGuard,
+        newAExponent, newBExponent, newCExponent, newDExponent, newEExponent,
+        normA_isZero, normB_isZero, normC_isZero, normD_isZero, normE_isZero,
+        shiftALeftToGetMsb, shiftBLeftToGetMsb, shiftCLeftToGetMsb, shiftDLeftToGetMsb, shiftELeftToGetMsb,
+        ext_One, ext_W1, ext_W0, ext_W2, ext_W3,
+        &nrExpOne, &nrExpW1, &nrExpW0, &nrExpW2, &nrExpW3,
+        &nrNormOneZero, &nrNormW1Zero, &nrNormW0Zero, &nrNormW2Zero, &nrNormW3Zero,
+        &nrShiftOne, &nrShiftW1, &nrShiftW0, &nrShiftW2, &nrShiftW3);
 
-        newAExponent,
-        newBExponent,
-        newCExponent,
-        newDExponent,
-        newEExponent,
-
-        normA_isZero,
-        normB_isZero,
-        normC_isZero,
-        normD_isZero,
-        normE_isZero,
-
-        shiftALeftToGetMsb,
-        shiftBLeftToGetMsb,
-        shiftCLeftToGetMsb,
-        shiftDLeftToGetMsb,
-        shiftELeftToGetMsb
-    );
 
     // --- Compute Effective Exponents ---
     const auto bias = (SharkFloatParams::GlobalNumUint32 * 32 - 32);
@@ -870,30 +953,14 @@ static __device__ void AddHelperSeparates(
         ext_E_B);
 
     // --- NR normalization, effective exponents, and magnitude comparison ---
-    const uint32_t *ext_W0 = nullptr;
-    const uint32_t *ext_W1 = nullptr;
-    const uint32_t *ext_W2 = nullptr;
-    const uint32_t *ext_W3 = nullptr;
-    const uint32_t *ext_One = nullptr;
-
+    // --- NR signs, effective exponents, and magnitude comparison ---
     bool nrIsNegW0 = false, nrIsNegW1 = false, nrIsNegOne = false;
     bool nrIsNegW2 = false, nrIsNegW3 = false;
-
-    bool nrNormW0Zero = false, nrNormW1Zero = false, nrNormOneZero = false;
-    bool nrNormW2Zero = false, nrNormW3Zero = false;
-    int32_t nrExpW0 = 0, nrExpW1 = 0, nrExpOne = 0, nrExpW2 = 0, nrExpW3 = 0;
-    int32_t nrShiftW0 = 0, nrShiftW1 = 0, nrShiftOne = 0, nrShiftW2 = 0, nrShiftW3 = 0;
     int32_t nrEffW0 = 0, nrEffW1 = 0, nrEffOne = 0, nrEffW2 = 0, nrEffW3 = 0;
     ThreeWayLargestOrdering nrThreeWay{};
     bool nrW2Bigger = false;
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        ext_W0 = W0->Digits;
-        ext_W1 = W1->Digits;
-        ext_W2 = W2->Digits;
-        ext_W3 = W3->Digits;
-        ext_One = One->Digits;
-
         // Signs: One - W1 + W0 = W0 - W1 + One (reordered so fallthrough
         // to C in CompareMagnitudes3Way selects W0, not tiny One)
         nrIsNegW0 = W0->GetNegative();         // C position (W0, as-is)
@@ -902,19 +969,6 @@ static __device__ void AddHelperSeparates(
         // Signs: W2 + W3 (DE pattern, unchanged)
         nrIsNegW2 = W2->GetNegative();
         nrIsNegW3 = W3->GetNegative();
-
-        nrExpW0 = W0->Exponent;
-        nrExpW1 = W1->Exponent;
-        nrExpOne = One->Exponent;
-        nrExpW2 = W2->Exponent;
-        nrExpW3 = W3->Exponent;
-
-        ExtendedNormalizeShiftIndexAll<SharkFloatParams>(
-            ext_W0, ext_W1, ext_One, ext_W2, ext_W3,
-            numActualDigits, numActualDigitsPlusGuard,
-            nrExpW0, nrExpW1, nrExpOne, nrExpW2, nrExpW3,
-            nrNormW0Zero, nrNormW1Zero, nrNormOneZero, nrNormW2Zero, nrNormW3Zero,
-            nrShiftW0, nrShiftW1, nrShiftOne, nrShiftW2, nrShiftW3);
 
         // NR effective exponents
         nrEffW0 = nrNormW0Zero ? -100'000'000 : nrExpW0 + bias;

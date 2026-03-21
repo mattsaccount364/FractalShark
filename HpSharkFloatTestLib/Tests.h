@@ -41,7 +41,8 @@ bool TestFullReferencePerfView5(TestTracker &Tests,
                                 int numThreads,
                                 int testBase,
                                 int numIters,
-                                int internalTestLoopCount);
+                                int internalTestLoopCount,
+                                bool useMT = true);
 
 template <Operator sharkOperator>
 bool TestFullReferencePerfView30(TestTracker &Tests,
@@ -49,7 +50,8 @@ bool TestFullReferencePerfView30(TestTracker &Tests,
                                  int numThreads,
                                  int testBase,
                                  int numIters,
-                                 int internalTestLoopCount);
+                                 int internalTestLoopCount,
+                                 bool useMT = true);
 
 template <Operator sharkOperator>
 bool TestFullReferencePerfView32(TestTracker &Tests,
@@ -57,6 +59,7 @@ bool TestFullReferencePerfView32(TestTracker &Tests,
                                  int numThreads,
                                  int testBase,
                                  int numIters,
-                                 int internalTestLoopCount);
+                                 int internalTestLoopCount,
+                                 bool useMT = true);
 
 #include "TestNewtonRaphson.h"

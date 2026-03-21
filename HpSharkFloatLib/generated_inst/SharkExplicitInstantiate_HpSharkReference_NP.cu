@@ -27,7 +27,8 @@
     template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>( \
     const mpf_t, const mpf_t, uint64_t, \
     mpf_t, mpf_t, mpf_t, mpf_t, \
-    HDRFloat<double> &, HDRFloat<double> &); \
+    HDRFloat<double> &, HDRFloat<double> &, \
+    const HpShark::LaunchParams &); \
     /* end */
 
 namespace HpShark {

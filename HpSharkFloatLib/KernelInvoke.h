@@ -101,6 +101,7 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     mpf_t outDzdcReal,
     mpf_t outDzdcImag,
     HDRFloat<double> &outD2Real,
-    HDRFloat<double> &outD2Imag);
+    HDRFloat<double> &outD2Imag,
+    const HpShark::LaunchParams &externalLaunchParams = {0, 0});
 
 } // namespace HpShark

@@ -30,17 +30,21 @@ enum class BasicCorrectnessMode : int {
     Correctness_NR = 2,
     PerfSub = 3,
     PerfSweep = 4,
-    PerfSingleView30 = 5,
-    PerfSingleView32 = 6,
-    PerfSingleView5 = 7,
-    PerfSingleAdd = 8,
-    PerfSingleMultiply = 9,
-    PerfSingleNRAdd = 10,
-    PerfSingleNRMultiply = 11,
-    PerfSingleRef = 12,
-    Correctness_P1_to_P5 = 13,
-    PerfSingleNRView5 = 14,
-    PerfSingleNRView30 = 15
+    // Non-NR perf views
+    PerfSingleView5 = 5,
+    PerfSingleView30 = 6,
+    PerfSingleView32 = 7,
+    // NR perf views
+    PerfSingleNRView5 = 8,
+    PerfSingleNRView30 = 9,
+    PerfSingleNRView32 = 10,
+    // Operator perf
+    PerfSingleAdd = 11,
+    PerfSingleMultiply = 12,
+    PerfSingleRef = 13,
+    PerfSingleNRAdd = 14,
+    PerfSingleNRMultiply = 15,
+    Correctness_P1_to_P5 = 16
 };
 
 namespace HpShark {

@@ -212,7 +212,8 @@ template void ShutdownHpSharkReferenceKernel<SharkFloatParams>(
 template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
     const mpf_t, const mpf_t, uint64_t,
     mpf_t, mpf_t, mpf_t, mpf_t,
-    HDRFloat<double> &, HDRFloat<double> &);)";
+    HDRFloat<double> &, HDRFloat<double> &,
+    const HpShark::LaunchParams &);)";
 
         b.push_back(
             Batch{"HpSharkReference", "..\\KernelInvokeReferencePerf_cu.h", templates, "HpShark"});

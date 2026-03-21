@@ -391,7 +391,8 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     mpf_t outDzdcReal,
     mpf_t outDzdcImag,
     HDRFloat<double> &outD2Real,
-    HDRFloat<double> &outD2Imag)
+    HDRFloat<double> &outD2Imag,
+    const HpShark::LaunchParams &externalLaunchParams = {0, 0})
 {
     if constexpr (!SharkFloatParams::EnableNewtonRaphson) {
         // NR not enabled for this type — no-op
@@ -399,7 +400,11 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     }
 
     constexpr int precBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
-    HpShark::LaunchParams launchParams{2, 32};
+    // Use external launch params if provided (non-zero), otherwise default
+    HpShark::LaunchParams launchParams =
+        (externalLaunchParams.NumBlocks != 0 || externalLaunchParams.ThreadsPerBlock != 0)
+            ? externalLaunchParams
+            : HpShark::LaunchParams{2, 32};
     typename SharkFloatParams::Float hdrRadiusY{1.0f};
 
     // Convert c from mpf to HpSharkFloat (heap-allocated for large types)
@@ -500,7 +505,8 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(                                  \
         const mpf_t, const mpf_t, uint64_t,                                                             \
         mpf_t, mpf_t, mpf_t, mpf_t,                                                                    \
-        HDRFloat<double> &, HDRFloat<double> &);
+        HDRFloat<double> &, HDRFloat<double> &,                                                         \
+        const HpShark::LaunchParams &);
 
 // #define ExplicitlyInstantiate(SharkFloatParams)
 // ExplicitlyInstantiateHpSharkReference(SharkFloatParams)

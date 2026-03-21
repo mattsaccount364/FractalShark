@@ -45,67 +45,97 @@ pixel scales poorly.
     scale=0.85,
     every node/.style={font=\small},
 ]
-  % Image tile
+  % Image tile with pixel grid
   \draw[thick] (0,0) rectangle (5,5);
   \node[font=\scriptsize, above] at (2.5, 5) {Image tile (parameter plane)};
 
+  % Faint pixel grid
+  \foreach \x in {0.5,1,...,4.5} {
+    \draw[gray!15] (\x, 0) -- (\x, 5);
+    \draw[gray!15] (0, \x) -- (5, \x);
+  }
+
+  % Concentric distance rings labeled with R fractions
+  \draw[green!60!black, dashed] (2.5, 2.5) circle (0.6);
+  \node[green!60!black, font=\tiny, anchor=south west] at (2.9, 3.0) {$\tfrac{1}{4}R$};
+  \draw[orange!70!black, dashed] (2.5, 2.5) circle (1.4);
+  \node[orange!70!black, font=\tiny, anchor=south west] at (3.4, 3.7) {$\tfrac{1}{2}R$};
+  \draw[red!60!black, dashed] (2.5, 2.5) circle (2.2);
+  \node[red!60!black, font=\tiny, anchor=south west] at (4.0, 4.4) {$R$};
+
   % Reference point at center
-  \fill[blue!70!black] (2.5, 2.5) circle (3pt);
-  \node[blue!70!black, font=\scriptsize, below left] at (2.3, 2.4) {$c_\star$};
+  \fill[blue!70!black] (2.5, 2.5) circle (4pt);
+  \node[blue!70!black, font=\scriptsize, below=4pt] at (2.5, 2.5) {$c_\star$};
 
-  % Nearby pixels at various distances
-  \fill[orange!80!black] (2.8, 2.7) circle (2pt);
-  \node[orange!80!black, font=\tiny, right] at (2.85, 2.7) {$c_1$};
+  % Close pixels (small delta) — green tint
+  \fill[green!60!black] (2.9, 2.8) circle (2pt);
+  \fill[green!60!black] (2.1, 2.9) circle (2pt);
+  \fill[green!60!black] (2.7, 2.1) circle (2pt);
 
-  \fill[orange!80!black] (3.4, 3.2) circle (2pt);
-  \node[orange!80!black, font=\tiny, right] at (3.45, 3.2) {$c_2$};
+  % Medium pixels
+  \fill[orange!80!black] (1.5, 3.5) circle (2pt);
+  \fill[orange!80!black] (3.6, 1.5) circle (2pt);
+  \fill[orange!80!black] (3.5, 3.7) circle (2pt);
 
-  \fill[red!70!black] (4.2, 4.0) circle (2pt);
-  \node[red!70!black, font=\tiny, right] at (4.25, 4.0) {$c_3$};
+  % Far pixels (large delta) — red tint
+  \fill[red!70!black] (0.5, 4.5) circle (2pt);
+  \fill[red!70!black] (4.5, 0.5) circle (2pt);
+  \fill[red!70!black] (4.5, 4.2) circle (2pt);
 
-  % Delta arrows
-  \draw[<->, orange!80!black, thick] (2.5, 2.5) -- (2.8, 2.7)
-    node[midway, above, font=\tiny] {small $\Delta c$};
-  \draw[<->, orange!80!black] (2.5, 2.5) -- (3.4, 3.2);
-  \draw[<->, red!70!black, thick] (2.5, 2.5) -- (4.2, 4.0)
-    node[midway, above left, font=\tiny] {large $\Delta c$};
-
-  % Right side: delta magnitude bar chart
-  \begin{scope}[xshift=7cm, yshift=0.5cm]
-    \draw[->, gray] (0, 0) -- (0, 4.5) node[above, font=\scriptsize] {$|\Delta z_n|$};
+  % Right side: delta magnitude vs distance
+  \begin{scope}[xshift=7cm, yshift=0.3cm]
+    \draw[->, gray] (0, 0) -- (0, 4.2)
+      node[above, font=\scriptsize] {$|\Delta z_n|$};
     \draw[->, gray] (0, 0) -- (4.5, 0)
-      node[right, font=\scriptsize] {distance from $c_\star$};
+      node[right, font=\scriptsize] {$|\Delta c|$};
 
-    % Bars for each pixel
-    \fill[orange!40] (0.5, 0) rectangle (1.2, 0.5);
-    \node[font=\tiny, below] at (0.85, 0) {$c_1$};
+    % R tick marks on x-axis
+    \draw[green!60!black] (1.0, -0.1) -- (1.0, 0.1);
+    \node[green!60!black, font=\tiny, below] at (1.0, -0.1) {$\tfrac{1}{4}R$};
+    \draw[orange!70!black] (2.0, -0.1) -- (2.0, 0.1);
+    \node[orange!70!black, font=\tiny, below] at (2.0, -0.1) {$\tfrac{1}{2}R$};
+    \draw[red!60!black] (3.8, -0.1) -- (3.8, 0.1);
+    \node[red!60!black, font=\tiny, below] at (3.8, -0.1) {$R$};
 
-    \fill[orange!60] (1.7, 0) rectangle (2.4, 1.5);
-    \node[font=\tiny, below] at (2.05, 0) {$c_2$};
+    % Roughly linear growth curve
+    \draw[thick, blue!60!black]
+      plot[smooth, domain=0:3.8] (\x, {0.8*\x});
 
-    \fill[red!50] (2.9, 0) rectangle (3.6, 3.2);
-    \node[font=\tiny, below] at (3.25, 0) {$c_3$};
+    % Example pixels on curve
+    \fill[green!60!black] (1.0, 0.8) circle (2.5pt);
+    \node[green!60!black, font=\tiny, above left] at (1.0, 0.8)
+      {$\tfrac{1}{4}R$};
+
+    \fill[orange!80!black] (2.0, 1.6) circle (2.5pt);
+    \node[orange!80!black, font=\tiny, above left] at (2.0, 1.6)
+      {$\tfrac{1}{2}R$};
+
+    \fill[red!70!black] (3.8, 3.04) circle (2.5pt);
+    \node[red!70!black, font=\tiny, above left] at (3.8, 3.04)
+      {$R$};
 
     % Precision boundary
-    \draw[dashed, green!50!black, thick] (-0.2, 2.0) -- (4.3, 2.0);
-    \node[green!50!black, font=\tiny, right] at (4.3, 2.0) {low-prec limit};
+    \draw[dashed, purple!60!black, thick] (-0.2, 2.0) -- (4.3, 2.0);
+    \node[purple!60!black, font=\tiny, right, align=left] at (4.3, 2.0)
+      {precision\\limit};
   \end{scope}
 
-  % Labels
+  % Bottom labels
   \node[blue!70!black, font=\scriptsize, align=center] at (2.5, -0.5)
-    {Reference: high precision};
-  \node[orange!70!black, font=\scriptsize, align=center] at (8.5, -0.5)
-    {Delta grows with distance from $c_\star$};
+    {$R = \code{MaxRadius}$ (view half-height)};
+  \node[font=\scriptsize, align=center] at (8.5, -0.5)
+    {Per-pixel $|\Delta z_n|$ grows with $|\Delta c|$};
 \end{tikzpicture}
 \caption[Perturbation decomposition: spatial delta growth]{%
   Perturbation decomposition.  The reference orbit at $c_\star$
   (blue, center) is computed once at full precision.  Each pixel's
-  perturbation delta $\Delta z_n$ is proportional to its spatial
-  distance $|\Delta c| = |c - c_\star|$ from the reference.
-  Pixels close to $c_\star$ (e.g.\ $c_1$) have small deltas
-  computable at low precision; pixels far from $c_\star$ (e.g.\
-  $c_3$) have larger deltas that may require rebasing to a closer
-  reference point.}
+  perturbation delta $\Delta z_n$ grows with both the spatial distance
+  $|\Delta c|$ from the reference and the number of iterations elapsed.
+  Dashed circles mark fractions of $R = \code{MaxRadius}$, the view
+  half-height in the parameter plane.  When $|\Delta z_n|$ exceeds the
+  working precision (purple line), the pixel must be \emph{rebased}
+  to recover accuracy---a common occurrence even for pixels well
+  inside the view.}
 \label{fig:perturbation-delta}
 \end{figure}
 

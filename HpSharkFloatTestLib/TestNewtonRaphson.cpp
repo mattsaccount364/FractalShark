@@ -112,9 +112,22 @@ RunNewtonRaphsonTest(
     const char *testName,
     mpf_t mpfCReal,
     mpf_t mpfCImag,
-    uint64_t period)
+    uint64_t period,
+    const HpShark::LaunchParams &launchParams,
+    uint64_t iterCountOverride = 0)
 {
-    constexpr uint32_t maxNewtonIters = 32;
+    // If iterCountOverride is non-zero and less than period, perf-only mode:
+    // run one pass, no convergence attempts.
+    const bool perfOnly = (iterCountOverride > 0 && iterCountOverride < period);
+    if (perfOnly) {
+        std::cout << testName << ": PERF-ONLY mode, iteration count " << iterCountOverride
+                  << " (period " << period << ")" << std::endl;
+        period = iterCountOverride;
+    } else {
+        std::cout << testName << ": Convergence mode, period " << period << " iterations" << std::endl;
+    }
+
+    const uint32_t maxNewtonIters = perfOnly ? 1 : 32;
     const int precBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
     const int targetExp = precBits * 2;
 
@@ -166,64 +179,93 @@ RunNewtonRaphsonTest(
     bool allWithinTolerance = true;
     uint32_t hpConvergedIter = maxNewtonIters;
     double totalCpuMs = 0.0;
+    double totalMpirMs = 0.0;
+    double totalGpuMs = 0.0;
+
+    // GPU comparison temporaries
+    mpf_t gpuZR, gpuZI, gpuDzdcR, gpuDzdcI;
+    mpf_init(gpuZR); mpf_init(gpuZI);
+    mpf_init(gpuDzdcR); mpf_init(gpuDzdcI);
 
     // ========== Lockstep Newton refinement ==========
     for (uint32_t it = 0; it < maxNewtonIters; ++it) {
         std::cout << "  " << testName << " Newton iter " << it << std::endl;
 
-        // CPU-ref inner loop (only if TestReferenceImpl)
+        // ---- MPIR inner loop (always, ground truth) ----
+        HDRFloat<double> mpirD2r{}, mpirD2i{};
+        {
+            BenchmarkTimer mpirTimer;
+            mpirTimer.StartTimer();
+            RunMpirOrbitWithD2(cR, cI, period,
+                mpirZR, mpirZI, mpirDzdcR, mpirDzdcI,
+                mpirD2r, mpirD2i);
+            mpirTimer.StopTimer();
+            const double mpirMs = static_cast<double>(mpirTimer.GetDeltaInMs());
+            totalMpirMs += mpirMs;
+            std::cout << "    MPIR inner loop: " << mpirMs << " ms" << std::endl;
+        }
+
+        // ---- CPU-ref inner loop (if TestReferenceImpl) ----
         typename SharkFloatParams::Float hpD2r{}, hpD2i{};
         if constexpr (HpShark::TestReferenceImpl) {
             hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
             hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
 
             BenchmarkTimer cpuTimer;
+            cpuTimer.StartTimer();
             EvaluateOrbitAndDerivative<SharkFloatParams>(
                 hpCR.get(), hpCI.get(), period,
                 hpZR.get(), hpZI.get(), hpDzdcR.get(), hpDzdcI.get(),
                 &hpD2r, &hpD2i,
                 debugHostCombo);
+            cpuTimer.StopTimer();
             const double cpuMs = static_cast<double>(cpuTimer.GetDeltaInMs());
             totalCpuMs += cpuMs;
-            std::cout << "    CPU inner loop: " << cpuMs << " ms" << std::endl;
+            std::cout << "    CPU-ref inner loop: " << cpuMs << " ms" << std::endl;
 
             hpZR->HpGpuToMpf(zR);
             hpZI->HpGpuToMpf(zI);
             hpDzdcR->HpGpuToMpf(dzdcR);
             hpDzdcI->HpGpuToMpf(dzdcI);
+
+            // CPU-ref vs MPIR comparison
+            mpf_sub(iterDiffZR, zR, mpirZR);
+            mpf_sub(iterDiffDzdcR, dzdcR, mpirDzdcR);
+            char buf[256];
+            gmp_snprintf(buf, sizeof(buf), "    CPU iter %u z_real diff:    %+.6Fe", it, iterDiffZR);
+            std::cout << buf << std::endl;
+            gmp_snprintf(buf, sizeof(buf), "    CPU iter %u dzdc_real diff: %+.6Fe", it, iterDiffDzdcR);
+            std::cout << buf << std::endl;
         }
 
-        // MPIR reference inner loop
-        HDRFloat<double> mpirD2r{}, mpirD2i{};
-        RunMpirOrbitWithD2(cR, cI, period,
-            mpirZR, mpirZI, mpirDzdcR, mpirDzdcI,
-            mpirD2r, mpirD2i);
+        // ---- GPU inner loop (if TestGpu) — same c as MPIR ----
+        if constexpr (HpShark::TestGpu) {
+            HDRFloat<double> gpuD2r{}, gpuD2i{};
+            {
+                BenchmarkTimer gpuTimer;
+                gpuTimer.StartTimer();
+                HpShark::EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
+                    cR, cI, period,
+                    gpuZR, gpuZI, gpuDzdcR, gpuDzdcI,
+                    gpuD2r, gpuD2i,
+                    launchParams);
+                gpuTimer.StopTimer();
+                const double gpuMs = static_cast<double>(gpuTimer.GetDeltaInMs());
+                totalGpuMs += gpuMs;
+                std::cout << "    GPU inner loop: " << gpuMs << " ms" << std::endl;
+            }
 
-        // Per-iteration CPU vs MPIR comparison (only if TestReferenceImpl)
-        if constexpr (HpShark::TestReferenceImpl) {
-            mpf_sub(iterDiffZR, zR, mpirZR);
-            mpf_sub(iterDiffZI, zI, mpirZI);
-            mpf_sub(iterDiffDzdcR, dzdcR, mpirDzdcR);
-            mpf_sub(iterDiffDzdcI, dzdcI, mpirDzdcI);
-
+            // GPU vs MPIR comparison (same c, reuse MPIR results from above)
+            mpf_t gpuDiffZR, gpuDiffDzdcR;
+            mpf_init(gpuDiffZR); mpf_init(gpuDiffDzdcR);
+            mpf_sub(gpuDiffZR, gpuZR, mpirZR);
+            mpf_sub(gpuDiffDzdcR, gpuDzdcR, mpirDzdcR);
             char buf[256];
-            gmp_snprintf(buf, sizeof(buf), "    iter %u z_real diff:    %+.6Fe", it, iterDiffZR);
+            gmp_snprintf(buf, sizeof(buf), "    GPU iter %u z_real diff:    %+.6Fe", it, gpuDiffZR);
             std::cout << buf << std::endl;
-            gmp_snprintf(buf, sizeof(buf), "    iter %u z_imag diff:    %+.6Fe", it, iterDiffZI);
+            gmp_snprintf(buf, sizeof(buf), "    GPU iter %u dzdc_real diff: %+.6Fe", it, gpuDiffDzdcR);
             std::cout << buf << std::endl;
-            gmp_snprintf(buf, sizeof(buf), "    iter %u dzdc_real diff: %+.6Fe", it, iterDiffDzdcR);
-            std::cout << buf << std::endl;
-            gmp_snprintf(buf, sizeof(buf), "    iter %u dzdc_imag diff: %+.6Fe", it, iterDiffDzdcI);
-            std::cout << buf << std::endl;
-
-            HDRFloat<double> hpD2rD = hpD2r;
-            HDRFloat<double> hpD2iD = hpD2i;
-            std::cout << "    iter " << it
-                      << " d2r HP=" << hpD2rD.ToString<false>()
-                      << " MPIR=" << mpirD2r.ToString<false>() << std::endl;
-            std::cout << "    iter " << it
-                      << " d2i HP=" << hpD2iD.ToString<false>()
-                      << " MPIR=" << mpirD2i.ToString<false>() << std::endl;
+            mpf_clear(gpuDiffZR); mpf_clear(gpuDiffDzdcR);
         }
 
         // Check per-iteration tolerance for CPU-ref vs MPIR (only if TestReferenceImpl)
@@ -301,199 +343,25 @@ RunNewtonRaphsonTest(
         }
     }
 
-    // ========== GPU Newton refinement (if TestGpu enabled) ==========
-    uint32_t gpuConvergedIter = maxNewtonIters;
-    mpf_t gpuCR, gpuCI;
-    mpf_init(gpuCR); mpf_init(gpuCI);
-    mpf_set(gpuCR, mpfCReal); mpf_set(gpuCI, mpfCImag);
-    BenchmarkTimer gpuTimer, cpuRefTimer;
-    bool gpuAllWithinTolerance = true;
-
-    if constexpr (HpShark::TestGpu) {
-        HpShark::LaunchParams launchParams{2, 32};
-        typename SharkFloatParams::Float hdrRadiusY{1.0f};
-
-        auto gpuInitCR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto gpuInitCI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        gpuInitCR->MpfToHpGpu(mpfCReal, precBits, InjectNoiseInLowOrder::Disable);
-        gpuInitCI->MpfToHpGpu(mpfCImag, precBits, InjectNoiseInLowOrder::Disable);
-
-        auto combo = HpShark::InitHpSharkReferenceKernel<SharkFloatParams>(
-            launchParams, hdrRadiusY, *gpuInitCR, *gpuInitCI);
-
-        mpf_t gpuZR, gpuZI, gpuDzdcR, gpuDzdcI;
-        mpf_init(gpuZR); mpf_init(gpuZI);
-        mpf_init(gpuDzdcR); mpf_init(gpuDzdcI);
-
-        mpf_t gpuMpirZR, gpuMpirZI, gpuMpirDzdcR, gpuMpirDzdcI;
-        mpf_init(gpuMpirZR); mpf_init(gpuMpirZI);
-        mpf_init(gpuMpirDzdcR); mpf_init(gpuMpirDzdcI);
-
-        mpf_t gpuIterDiffZR, gpuIterDiffZI, gpuIterDiffDzdcR, gpuIterDiffDzdcI;
-        mpf_init(gpuIterDiffZR); mpf_init(gpuIterDiffZI);
-        mpf_init(gpuIterDiffDzdcR); mpf_init(gpuIterDiffDzdcI);
-
-        for (uint32_t it = 0; it < maxNewtonIters; ++it) {
-            std::cout << "  " << testName << " GPU Newton iter " << it << std::endl;
-
-            {
-                ScopedBenchmarkStopper s{gpuTimer};
-
-                // Update combo with current c, reset z/dzdc/d2
-                auto tmpCR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-                auto tmpCI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-                tmpCR->MpfToHpGpu(gpuCR, precBits, InjectNoiseInLowOrder::Disable);
-                tmpCI->MpfToHpGpu(gpuCI, precBits, InjectNoiseInLowOrder::Disable);
-
-                combo->Multiply.A = HpSharkFloat<SharkFloatParams>{};  // z = 0
-                combo->Multiply.B = HpSharkFloat<SharkFloatParams>{};
-                combo->Add.C_A = *tmpCR;  // c_real
-                combo->Add.E_B = *tmpCI;  // c_imag
-                combo->Multiply.DzdcReal = HpSharkFloat<SharkFloatParams>{};
-                combo->Multiply.DzdcImag = HpSharkFloat<SharkFloatParams>{};
-                combo->d2Real = typename SharkFloatParams::Float{};
-                combo->d2Imag = typename SharkFloatParams::Float{};
-                combo->PeriodicityStatus = PeriodicityResult::Unknown;
-                combo->MaxRuntimeIters = period;
-
-                HpShark::InvokeHpSharkReferenceKernel<SharkFloatParams>(
-                    launchParams, *combo, period);
-            }
-
-            // Read GPU results
-            combo->Multiply.A.HpGpuToMpf(gpuZR);
-            combo->Multiply.B.HpGpuToMpf(gpuZI);
-            combo->Multiply.DzdcReal.HpGpuToMpf(gpuDzdcR);
-            combo->Multiply.DzdcImag.HpGpuToMpf(gpuDzdcI);
-
-            // MPIR reference for GPU comparison
-            HDRFloat<double> gpuMpirD2r{}, gpuMpirD2i{};
-            RunMpirOrbitWithD2(gpuCR, gpuCI, period,
-                gpuMpirZR, gpuMpirZI, gpuMpirDzdcR, gpuMpirDzdcI,
-                gpuMpirD2r, gpuMpirD2i);
-
-            // GPU vs MPIR per-iteration diff
-            mpf_sub(gpuIterDiffZR, gpuZR, gpuMpirZR);
-            mpf_sub(gpuIterDiffZI, gpuZI, gpuMpirZI);
-            mpf_sub(gpuIterDiffDzdcR, gpuDzdcR, gpuMpirDzdcR);
-            mpf_sub(gpuIterDiffDzdcI, gpuDzdcI, gpuMpirDzdcI);
-
-            {
-                char dbuf[256];
-                gmp_snprintf(dbuf, sizeof(dbuf), "    GPU iter %u z_real diff:    %+.6Fe", it, gpuIterDiffZR);
-                std::cout << dbuf << std::endl;
-                gmp_snprintf(dbuf, sizeof(dbuf), "    GPU iter %u z_imag diff:    %+.6Fe", it, gpuIterDiffZI);
-                std::cout << dbuf << std::endl;
-                gmp_snprintf(dbuf, sizeof(dbuf), "    GPU iter %u dzdc_real diff: %+.6Fe", it, gpuIterDiffDzdcR);
-                std::cout << dbuf << std::endl;
-                gmp_snprintf(dbuf, sizeof(dbuf), "    GPU iter %u dzdc_imag diff: %+.6Fe", it, gpuIterDiffDzdcI);
-                std::cout << dbuf << std::endl;
-            }
-
-            auto gpuCheckIterTolerance = [&](mpf_t diff, mpf_t ref) {
-                mpf_abs(absDiff, diff);
-                mpf_abs(absRef, ref);
-                if (mpf_sgn(absRef) == 0) {
-                    return mpf_cmp(absDiff, tolerance) <= 0;
-                } else {
-                    mpf_div(relError, absDiff, absRef);
-                    return mpf_cmp(relError, tolerance) <= 0;
-                }
-            };
-
-            if (!gpuCheckIterTolerance(gpuIterDiffZR, gpuMpirZR)) gpuAllWithinTolerance = false;
-            if (!gpuCheckIterTolerance(gpuIterDiffZI, gpuMpirZI)) gpuAllWithinTolerance = false;
-            if (!gpuCheckIterTolerance(gpuIterDiffDzdcR, gpuMpirDzdcR)) gpuAllWithinTolerance = false;
-            if (!gpuCheckIterTolerance(gpuIterDiffDzdcI, gpuMpirDzdcI)) gpuAllWithinTolerance = false;
-
-            // Check |dzdc| != 0
-            HDRFloat<double> gdzr(gpuDzdcR), gdzi(gpuDzdcI);
-            HdrReduce(gdzr); HdrReduce(gdzi);
-            HDRFloat<double> gdzdcNorm = gdzr.square() + gdzi.square();
-            HdrReduce(gdzdcNorm);
-            if (gdzdcNorm.getMantissa() == 0.0) break;
-
-            // Newton step
-            if (!ComputeNewtonStep(gpuZR, gpuZI, gpuDzdcR, gpuDzdcI,
-                                   stepR, stepI, denom, t1, t2))
-                break;
-
-            mpf_sub(gpuCR, gpuCR, stepR);
-            mpf_sub(gpuCI, gpuCI, stepI);
-
-            // Convergence
-            HDRFloat<double> gpuD2r = combo->d2Real;
-            HDRFloat<double> gpuD2i = combo->d2Imag;
-            HDRFloat<double> gpuErr{};
-            const int ge = ComputeImaginaError(
-                stepR, stepI, gpuD2r, gpuD2i, gdzdcNorm,
-                normStep, t1, t2, gpuErr);
-
-            std::cout << "    GPU err=" << gpuErr.ToString<false>() << " e=" << ge << std::endl;
-            if (-ge >= targetExp) {
-                gpuConvergedIter = it;
-                break;
-            }
-        }
-
-        // GPU final correction
-        {
-            auto tmpCR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            auto tmpCI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-            tmpCR->MpfToHpGpu(gpuCR, precBits, InjectNoiseInLowOrder::Disable);
-            tmpCI->MpfToHpGpu(gpuCI, precBits, InjectNoiseInLowOrder::Disable);
-
-            combo->Multiply.A = HpSharkFloat<SharkFloatParams>{};
-            combo->Multiply.B = HpSharkFloat<SharkFloatParams>{};
-            combo->Add.C_A = *tmpCR;
-            combo->Add.E_B = *tmpCI;
-            combo->Multiply.DzdcReal = HpSharkFloat<SharkFloatParams>{};
-            combo->Multiply.DzdcImag = HpSharkFloat<SharkFloatParams>{};
-            combo->d2Real = typename SharkFloatParams::Float{};
-            combo->d2Imag = typename SharkFloatParams::Float{};
-            combo->MaxRuntimeIters = period;
-
-            HpShark::InvokeHpSharkReferenceKernel<SharkFloatParams>(
-                launchParams, *combo, period);
-
-            combo->Multiply.A.HpGpuToMpf(gpuZR);
-            combo->Multiply.B.HpGpuToMpf(gpuZI);
-            combo->Multiply.DzdcReal.HpGpuToMpf(gpuDzdcR);
-            combo->Multiply.DzdcImag.HpGpuToMpf(gpuDzdcI);
-
-            if (ComputeNewtonStep(gpuZR, gpuZI, gpuDzdcR, gpuDzdcI,
-                                  stepR, stepI, denom, t1, t2)) {
-                mpf_sub(gpuCR, gpuCR, stepR);
-                mpf_sub(gpuCI, gpuCI, stepI);
-            }
-        }
-
-        mpf_clear(gpuZR); mpf_clear(gpuZI);
-        mpf_clear(gpuDzdcR); mpf_clear(gpuDzdcI);
-        mpf_clear(gpuMpirZR); mpf_clear(gpuMpirZI);
-        mpf_clear(gpuMpirDzdcR); mpf_clear(gpuMpirDzdcI);
-        mpf_clear(gpuIterDiffZR); mpf_clear(gpuIterDiffZI);
-        mpf_clear(gpuIterDiffDzdcR); mpf_clear(gpuIterDiffDzdcI);
-
-        HpShark::ShutdownHpSharkReferenceKernel<SharkFloatParams>(
-            launchParams, *combo, nullptr);
-    }
-
     // ========== Report results ==========
-    std::cout << testName << ": CPU-ref converged in " << hpConvergedIter << " iters" << std::endl;
-    std::cout << testName << ": CPU-ref total inner loop time: " << totalCpuMs << " ms" << std::endl;
+    std::cout << "\n" << testName << " RESULTS:" << std::endl;
+    std::cout << testName << ": MPIR converged in " << hpConvergedIter << " iters" << std::endl;
+    std::cout << testName << ": MPIR total inner loop time: " << totalMpirMs << " ms" << std::endl;
+    if constexpr (HpShark::TestReferenceImpl) {
+        std::cout << testName << ": CPU-ref total inner loop time: " << totalCpuMs << " ms" << std::endl;
+    }
     if constexpr (HpShark::TestGpu) {
-        std::cout << testName << ": GPU converged in " << gpuConvergedIter << " iters" << std::endl;
-        const double gpuMs = static_cast<double>(gpuTimer.GetDeltaInMs());
-        std::cout << testName << ": GPU total inner loop time: " << gpuMs << " ms" << std::endl;
-        if (totalCpuMs > 0 && gpuMs > 0) {
-            std::cout << testName << ": Speedup (CPU/GPU): " << (totalCpuMs / gpuMs) << "x" << std::endl;
+        std::cout << testName << ": GPU total inner loop time: " << totalGpuMs << " ms" << std::endl;
+        if (totalMpirMs > 0 && totalGpuMs > 0) {
+            std::cout << testName << ": Speedup MPIR/GPU: " << (totalMpirMs / totalGpuMs) << "x" << std::endl;
+        }
+        if (totalCpuMs > 0 && totalGpuMs > 0) {
+            std::cout << testName << ": Speedup CPU-ref/GPU: " << (totalCpuMs / totalGpuMs) << "x" << std::endl;
         }
     }
     std::cout << testName << ": per-iteration z/dzdc tolerance "
               << (allWithinTolerance ? "PASS" : "FAIL") << std::endl;
 
-    // Check CPU-ref convergence
     {
         std::string convName = std::string(testName) + "_Convergence";
         if (hpConvergedIter < maxNewtonIters) {
@@ -517,78 +385,9 @@ RunNewtonRaphsonTest(
         }
     }
 
-    // Check GPU convergence (if enabled)
-    if constexpr (HpShark::TestGpu) {
-        std::string gpuConvName = std::string(testName) + "_GpuConvergence";
-        if (gpuConvergedIter < maxNewtonIters) {
-            Tests.MarkSuccess(nullptr, testBase + 2, gpuConvName);
-        } else {
-            Tests.MarkFailed(nullptr, testBase + 2, gpuConvName,
-                             "GPU did not converge", "maxNewtonIters");
-        }
-
-        // Compare GPU refined c* vs CPU-ref refined c*
-        mpf_t diffGpuCR, diffGpuCI;
-        mpf_init(diffGpuCR); mpf_init(diffGpuCI);
-        mpf_sub(diffGpuCR, gpuCR, cR);
-        mpf_sub(diffGpuCI, gpuCI, cI);
-
-        char buf[256];
-        gmp_snprintf(buf, sizeof(buf), "  GPU vs CPU-ref c_real diff: %+.6Fe", diffGpuCR);
-        std::cout << buf << std::endl;
-        gmp_snprintf(buf, sizeof(buf), "  GPU vs CPU-ref c_imag diff: %+.6Fe", diffGpuCI);
-        std::cout << buf << std::endl;
-
-        // testBase+3: GPU vs MPIR per-iteration tolerance
-        {
-            std::string gpuMpirTolName = std::string(testName) + "_GpuVsMpirTolerance";
-            char tolStr[256];
-            gmp_snprintf(tolStr, sizeof(tolStr), "2^-%d", toleranceBits);
-            std::cout << testName << ": GPU per-iteration z/dzdc tolerance "
-                      << (gpuAllWithinTolerance ? "PASS" : "FAIL") << std::endl;
-            if (gpuAllWithinTolerance) {
-                Tests.MarkSuccess(nullptr, testBase + 3, gpuMpirTolName);
-            } else {
-                Tests.MarkFailed(nullptr, testBase + 3, gpuMpirTolName,
-                                 "GPU per-iteration diff exceeded tolerance", tolStr);
-            }
-        }
-
-        // testBase+4: GPU vs CPU-ref final c* tolerance
-        {
-            std::string gpuCTolName = std::string(testName) + "_GpuVsCpuRefC";
-            bool cWithinTolerance = true;
-
-            auto cToleranceCheck = [&](mpf_t diff, mpf_t ref) {
-                mpf_abs(absDiff, diff);
-                mpf_abs(absRef, ref);
-                if (mpf_sgn(absRef) == 0) {
-                    return mpf_cmp(absDiff, tolerance) <= 0;
-                } else {
-                    mpf_div(relError, absDiff, absRef);
-                    return mpf_cmp(relError, tolerance) <= 0;
-                }
-            };
-
-            if (!cToleranceCheck(diffGpuCR, cR)) cWithinTolerance = false;
-            if (!cToleranceCheck(diffGpuCI, cI)) cWithinTolerance = false;
-
-            char tolStr[256];
-            gmp_snprintf(tolStr, sizeof(tolStr), "2^-%d", toleranceBits);
-            if (cWithinTolerance) {
-                Tests.MarkSuccess(nullptr, testBase + 4, gpuCTolName);
-            } else {
-                Tests.MarkFailed(nullptr, testBase + 4, gpuCTolName,
-                                 "GPU vs CPU-ref c* diff exceeded tolerance", tolStr);
-            }
-        }
-
-        mpf_clear(diffGpuCR); mpf_clear(diffGpuCI);
-    }
 
     // Cleanup
     mpf_clear(cR); mpf_clear(cI);
-    mpf_clear(gpuCR); mpf_clear(gpuCI);
     mpf_clear(zR); mpf_clear(zI);
     mpf_clear(dzdcR); mpf_clear(dzdcI);
     mpf_clear(stepR); mpf_clear(stepI); mpf_clear(denom);
@@ -606,7 +405,9 @@ RunNewtonRaphsonTest(
 template <class SharkFloatParams>
 bool
 TestNewtonRaphsonView5(TestTracker &Tests,
-                       int testBase)
+                       int testBase,
+                       const HpShark::LaunchParams &launchParams,
+                       uint64_t iterCountOverride)
 {
     const char *cRealStr = "-5."
         "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
@@ -626,7 +427,7 @@ TestNewtonRaphsonView5(TestTracker &Tests,
     mpf_set_str(mpfCImag, cImagStr, 10);
 
     bool result = RunNewtonRaphsonTest<SharkFloatParams>(
-        Tests, testBase, "NR_View5", mpfCReal, mpfCImag, expectedPeriod);
+        Tests, testBase, "NR_View5", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride);
 
     mpf_clear(mpfCReal); mpf_clear(mpfCImag);
     return result;
@@ -635,7 +436,9 @@ TestNewtonRaphsonView5(TestTracker &Tests,
 template <class SharkFloatParams>
 bool
 TestNewtonRaphsonView30(TestTracker &Tests,
-                        int testBase)
+                        int testBase,
+                        const HpShark::LaunchParams &launchParams,
+                        uint64_t iterCountOverride)
 {
 #include "..\FractalSharkLib\LargeCoords30.h"
 
@@ -648,14 +451,41 @@ TestNewtonRaphsonView30(TestTracker &Tests,
     Hex64StringToMpf_Exact(strYHex, mpfCImag);
 
     bool result = RunNewtonRaphsonTest<SharkFloatParams>(
-        Tests, testBase, "NR_View30", mpfCReal, mpfCImag, expectedPeriod);
+        Tests, testBase, "NR_View30", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride);
 
     mpf_clear(mpfCReal); mpf_clear(mpfCImag);
     return result;
 }
 
-template bool TestNewtonRaphsonView5<SharkParamsNR7>(TestTracker &, int);
-template bool TestNewtonRaphsonView30<SharkParamsNR7>(TestTracker &, int);
+template <class SharkFloatParams>
+bool
+TestNewtonRaphsonView32(TestTracker &Tests,
+                        int testBase,
+                        const HpShark::LaunchParams &launchParams,
+                        uint64_t iterCountOverride)
+{
+#include "..\FractalSharkLib\LargeCoords32.h"
+
+    constexpr uint64_t expectedPeriod = 27'209'300;
+
+    mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+
+    mpf_t mpfCReal, mpfCImag;
+    mpf_init(mpfCReal);
+    mpf_init(mpfCImag);
+    mpf_set_str(mpfCReal, strX, 10);
+    mpf_set_str(mpfCImag, strY, 10);
+
+    bool result = RunNewtonRaphsonTest<SharkFloatParams>(
+        Tests, testBase, "NR_View32", mpfCReal, mpfCImag, expectedPeriod, launchParams, iterCountOverride);
+
+    mpf_clear(mpfCReal); mpf_clear(mpfCImag);
+    return result;
+}
+
+template bool TestNewtonRaphsonView5<SharkParamsNR7>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t);
+template bool TestNewtonRaphsonView30<SharkParamsNR7>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t);
+template bool TestNewtonRaphsonView32<SharkParamsNR9>(TestTracker &, int, const HpShark::LaunchParams &, uint64_t);
 
 // ========== Single-iteration NR Multiply test ==========
 template <class SharkFloatParams>

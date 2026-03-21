@@ -55,6 +55,8 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Performance Single NR View5";
         case BasicCorrectnessMode::PerfSingleNRView30:
             return "Performance Single NR View30";
+        case BasicCorrectnessMode::PerfSingleNRView32:
+            return "Performance Single NR View32";
         case BasicCorrectnessMode::PerfSingleNRAdd:
             return "Performance Single NR Add";
         case BasicCorrectnessMode::PerfSingleNRMultiply:
@@ -329,7 +331,10 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
     if (mode != BasicCorrectnessMode::PerfSub && mode != BasicCorrectnessMode::PerfSweep &&
         mode != BasicCorrectnessMode::PerfSingleView30 &&
         mode != BasicCorrectnessMode::PerfSingleView32 &&
-        mode != BasicCorrectnessMode::PerfSingleView5) {
+        mode != BasicCorrectnessMode::PerfSingleView5 &&
+        mode != BasicCorrectnessMode::PerfSingleNRView5 &&
+        mode != BasicCorrectnessMode::PerfSingleNRView30 &&
+        mode != BasicCorrectnessMode::PerfSingleNRView32) {
         return 1;
     }
 
@@ -394,6 +399,30 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
             return 0;
     }
 
+    if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
+        TestTracker Tests;
+        auto res = TestNewtonRaphsonView5<SharkParamsNR7>(
+            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount));
+        if (!ContinueAfterFailure(res))
+            return 0;
+    }
+
+    if (mode == BasicCorrectnessMode::PerfSingleNRView30) {
+        TestTracker Tests;
+        auto res = TestNewtonRaphsonView30<SharkParamsNR7>(
+            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount));
+        if (!ContinueAfterFailure(res))
+            return 0;
+    }
+
+    if (mode == BasicCorrectnessMode::PerfSingleNRView32) {
+        TestTracker Tests;
+        auto res = TestNewtonRaphsonView32<SharkParamsNR9>(
+            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount));
+        if (!ContinueAfterFailure(res))
+            return 0;
+    }
+
     if (mode == BasicCorrectnessMode::PerfSweep) {
         if (!RunPerfFullSweep(numIters, internalTestLoopCount))
             return 0;
@@ -444,7 +473,7 @@ main(int, char **)
     bool interactiveMode = false; // becomes true after any user input, making later prompts wait forever
 
     // Mode prompt: keep default consistent with the enum value
-    const int defaultModeInt = static_cast<int>(BasicCorrectnessMode::PerfSingleView30);
+    const int defaultModeInt = static_cast<int>(BasicCorrectnessMode::PerfSingleView5);
     std::ostringstream modePrompt;
 
     modePrompt << "Mode? Default=" << defaultModeInt << " "
@@ -452,70 +481,45 @@ main(int, char **)
                << "2=Correctness NR" << std::endl
                << "3=PerfSub" << std::endl
                << "4=PerfSweep" << std::endl
-               << "5=PerfSingle View30" << std::endl
-               << "6=PerfSingle View32" << std::endl
-               << "7=PerfSingle View5" << std::endl
-               << "8=PerfSingleAdd" << std::endl
-               << "9=PerfSingleMultiply" << std::endl
-               << "10=PerfSingleNRAdd" << std::endl
-               << "11=PerfSingleNRMultiply" << std::endl
-               << "12=PerfSingleRef (broken currently)" << std::endl
-               << "13=Correctness(P1..P5)" << std::endl
-               << "14=NR View5" << std::endl
-               << "15=NR View30" << std::endl
+               << "--- Non-NR Perf Views ---" << std::endl
+               << "5=PerfSingle View5" << std::endl
+               << "6=PerfSingle View30" << std::endl
+               << "7=PerfSingle View32" << std::endl
+               << "--- NR Perf Views ---" << std::endl
+               << "8=NR View5" << std::endl
+               << "9=NR View30" << std::endl
+               << "10=NR View32" << std::endl
+               << "--- Operators ---" << std::endl
+               << "11=PerfSingleAdd" << std::endl
+               << "12=PerfSingleMultiply" << std::endl
+               << "13=PerfSingleRef (broken currently)" << std::endl
+               << "14=PerfSingleNRAdd" << std::endl
+               << "15=PerfSingleNRMultiply" << std::endl
+               << "16=Correctness(P1..P5)" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
     int rawMode =
         PromptIntWithTimeout(modePrompt.str(), defaultModeInt, kTimeoutInSec, interactiveMode).value;
 
-    BasicCorrectnessMode mode = BasicCorrectnessMode::PerfSingleView30;
+    BasicCorrectnessMode mode = BasicCorrectnessMode::PerfSingleView5;
     switch (rawMode) {
-        case 1:
-            mode = BasicCorrectnessMode::Correctness_P1;
-            break;
-        case 2:
-            mode = BasicCorrectnessMode::Correctness_NR;
-            break;
-        case 3:
-            mode = BasicCorrectnessMode::PerfSub;
-            break;
-        case 4:
-            mode = BasicCorrectnessMode::PerfSweep;
-            break;
-        case 5:
-            mode = BasicCorrectnessMode::PerfSingleView30;
-            break;
-        case 6:
-            mode = BasicCorrectnessMode::PerfSingleView32;
-            break;
-        case 7:
-            mode = BasicCorrectnessMode::PerfSingleView5;
-            break;
-        case 8:
-            mode = BasicCorrectnessMode::PerfSingleAdd;
-            break;
-        case 9:
-            mode = BasicCorrectnessMode::PerfSingleMultiply;
-            break;
-        case 10:
-            mode = BasicCorrectnessMode::PerfSingleNRAdd;
-            break;
-        case 11:
-            mode = BasicCorrectnessMode::PerfSingleNRMultiply;
-            break;
-        case 12:
-            mode = BasicCorrectnessMode::PerfSingleRef;
-            break;
-        case 13:
-            mode = BasicCorrectnessMode::Correctness_P1_to_P5;
-            break;
-        case 14:
-            mode = BasicCorrectnessMode::PerfSingleNRView5;
-            break;
-        case 15:
-            mode = BasicCorrectnessMode::PerfSingleNRView30;
-            break;
+        case 1:  mode = BasicCorrectnessMode::Correctness_P1; break;
+        case 2:  mode = BasicCorrectnessMode::Correctness_NR; break;
+        case 3:  mode = BasicCorrectnessMode::PerfSub; break;
+        case 4:  mode = BasicCorrectnessMode::PerfSweep; break;
+        case 5:  mode = BasicCorrectnessMode::PerfSingleView5; break;
+        case 6:  mode = BasicCorrectnessMode::PerfSingleView30; break;
+        case 7:  mode = BasicCorrectnessMode::PerfSingleView32; break;
+        case 8:  mode = BasicCorrectnessMode::PerfSingleNRView5; break;
+        case 9:  mode = BasicCorrectnessMode::PerfSingleNRView30; break;
+        case 10: mode = BasicCorrectnessMode::PerfSingleNRView32; break;
+        case 11: mode = BasicCorrectnessMode::PerfSingleAdd; break;
+        case 12: mode = BasicCorrectnessMode::PerfSingleMultiply; break;
+        case 13: mode = BasicCorrectnessMode::PerfSingleRef; break;
+        case 14: mode = BasicCorrectnessMode::PerfSingleNRAdd; break;
+        case 15: mode = BasicCorrectnessMode::PerfSingleNRMultiply; break;
+        case 16: mode = BasicCorrectnessMode::Correctness_P1_to_P5; break;
         default:
             std::cout << "Invalid mode " << rawMode << " (valid: 0..4). "
                       << "Exiting.\n";
@@ -554,6 +558,9 @@ main(int, char **)
         case BasicCorrectnessMode::PerfSingleView30:
         case BasicCorrectnessMode::PerfSingleView32:
         case BasicCorrectnessMode::PerfSingleView5:
+        case BasicCorrectnessMode::PerfSingleNRView5:
+        case BasicCorrectnessMode::PerfSingleNRView30:
+        case BasicCorrectnessMode::PerfSingleNRView32:
             RunPerfModes(mode, kTimeoutInSec, interactiveMode);
             break;
 
@@ -580,22 +587,6 @@ main(int, char **)
         case BasicCorrectnessMode::PerfSingleNRMultiply: {
             TestTracker Tests;
             auto res = TestSingleNRMultiply<SharkParamsNR7>(Tests, 0);
-            if (!ContinueAfterFailure(res))
-                return 0;
-            break;
-        }
-
-        case BasicCorrectnessMode::PerfSingleNRView5: {
-            TestTracker Tests;
-            auto res = TestNewtonRaphsonView5<SharkParamsNR7>(Tests, 0);
-            if (!ContinueAfterFailure(res))
-                return 0;
-            break;
-        }
-
-        case BasicCorrectnessMode::PerfSingleNRView30: {
-            TestTracker Tests;
-            auto res = TestNewtonRaphsonView30<SharkParamsNR7>(Tests, 0);
             if (!ContinueAfterFailure(res))
                 return 0;
             break;

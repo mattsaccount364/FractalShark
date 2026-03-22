@@ -926,9 +926,13 @@ After this step, the data represents the exact integer convolution coefficients 
 The final stage converts the convolution coefficients back into the original
 limb representation. Base-$2^b$ digits are unpacked into wide accumulators
 (typically 128-bit), after which carry propagation and normalization are
-performed to produce a canonical high-precision result. This normalization step
-is handled separately and is optimized using parallel-prefix techniques as
-described in earlier sections.
+performed to produce a canonical high-precision result.  Carry propagation
+proceeds in two phases: first, two rounds of simple ripple carry reduce
+the wide accumulator values into 32-bit limbs with small residual carries
+(0~or~1), bringing the data into the standard form expected by the
+parallel prefix scan.  If any residual carries remain, the same
+decoupled-look-back parallel prefix scan used for addition
+(\cref{sec:hp-add}) resolves them.
 
 \medskip
 

@@ -251,7 +251,8 @@ Normalize_GridStride_NWay(cooperative_groups::grid_group &grid,
                           uint64_t *globalSync1,
                           uint64_t *globalSync2,
                           uint64_t **results,
-                          const DebugStatePurpose *purposes)
+                          const DebugStatePurpose *purposes,
+                          uint64_t *SharkRestrict shared_data)
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
     const int warpSz = block.dim_threads().x;
@@ -346,11 +347,18 @@ Normalize_GridStride_NWay(cooperative_groups::grid_group &grid,
     if (globalResult != 0) {
         // Reuse final128 buffers as PP scratch (they are consumed above).
         auto *digitXfer = reinterpret_cast<DigitTransfer<NumChannels> *>(final128s[0]);
-        auto *scanTemp = reinterpret_cast<DigitTransfer<NumChannels> *>(final128s[1]);
+        auto *descBuf = reinterpret_cast<uint32_t *>(final128s[1]);
         auto *carryInMask = reinterpret_cast<uint32_t *>(final128s[2]);
 
-        ParallelPrefixNormalize<SharkFloatParams, NumChannels>(
-            grid, block, cur, Ddigits, results, digitXfer, scanTemp, carryInMask);
+        constexpr bool DLB = true;
+
+        if constexpr (DLB) {
+            ParallelPrefixNormalize_DLB<SharkFloatParams, NumChannels>(
+                shared_data, grid, block, cur, Ddigits, results, digitXfer, descBuf, carryInMask);
+        } else {
+            ParallelPrefixNormalize<SharkFloatParams, NumChannels>(
+                grid, block, cur, Ddigits, results, digitXfer, descBuf, carryInMask);
+        }
     }
 
     FinalizeNormalizeNWay<SharkFloatParams, NumChannels>(grid,
@@ -370,7 +378,8 @@ template <class SharkFloatParams,
           DebugStatePurpose purposeYY = DebugStatePurpose::Final128YY,
           DebugStatePurpose purposeXY = DebugStatePurpose::Final128XY>
 static __device__ inline void
-Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
+Normalize_GridStride_3WayV2(uint64_t *shared_data,
+                            cooperative_groups::grid_group &grid,
                             cooperative_groups::thread_block &block,
                             DebugGlobalCount<SharkFloatParams> *debugGlobalState,
                             DebugState<SharkFloatParams> *debugStates,
@@ -643,8 +652,17 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
         // Use the "front" of CarryPropagationBuffer2 as carryInMask (3 bits per entry).
         auto *carryInMask = reinterpret_cast<uint32_t *>(final128YY);
 
-        ParallelPrefixNormalize3WayV3<SharkFloatParams>(
-            grid, block, cur, Ddigits, resultXX, resultYY, resultXY, digitXfer, scanTemp, carryInMask);
+        ParallelPrefixNormalize3WayV3<SharkFloatParams>(shared_data,
+                                                        grid,
+                                                        block,
+                                                        cur,
+                                                        Ddigits,
+                                                        resultXX,
+                                                        resultYY,
+                                                        resultXY,
+                                                        digitXfer,
+                                                        scanTemp,
+                                                        carryInMask);
     }
 #endif
 
@@ -2010,34 +2028,41 @@ NTTRadix2_GridStride(uint64_t *shared_data,
             uint32_t blockDataBaseIndex = blockIndex * butterflySpan;
             size_t tasksRemaining = warpTaskEnd - warpTaskBegin;
 
-            constexpr int microTileWidth = (OneTwoThree == Multiway::OneWay ? 4 : 2);
+            if constexpr (OneTwoThree == Multiway::SevenWay) {
+                constexpr int microTileWidth = 2;
+                // Save state for second pass
+                uint32_t blockIndex2 = blockIndex;
+                uint32_t jChunkIndex2 = jChunkIndex;
+                uint32_t blockDataBaseIndex2 = blockDataBaseIndex;
+                size_t tasksRemaining2 = tasksRemaining;
+                uint64_t currentTwiddle2 = currentTwiddle;
 
-            // ------------- process our contiguous slice -------------
-            while (tasksRemaining) {
-                ProcessTile<SharkFloatParams, OneTwoThree, UseMontPow, microTileWidth>(
-                    grid,
-                    block,
-                    debugCombo,
-                    A,
-                    B,
-                    C,
-                    D,
-                    stageTwiddlesForStage,
-                    halfSpan,
-                    warpSize,
-                    numJChunks,
-                    laneIndex,
-                    butterflySpan,
-                    blockIndex,
-                    jChunkIndex,
-                    tasksRemaining,
-                    blockDataBaseIndex,
-                    currentTwiddle,
-                    twiddleStrideWarp,
-                    laneTwiddleBase,
-                    E,
-                    F,
-                    G);
+                // Pass 1: ThreeWay on A, B, C
+                while (tasksRemaining) {
+                    ProcessTile<SharkFloatParams, Multiway::ThreeWay, UseMontPow, microTileWidth>(
+                        grid, block, debugCombo, A, B, C, nullptr,
+                        stageTwiddlesForStage, halfSpan, warpSize, numJChunks, laneIndex,
+                        butterflySpan, blockIndex, jChunkIndex, tasksRemaining,
+                        blockDataBaseIndex, currentTwiddle, twiddleStrideWarp, laneTwiddleBase);
+                }
+
+                // Pass 2: FourWay on D, E, F, G
+                while (tasksRemaining2) {
+                    ProcessTile<SharkFloatParams, Multiway::FourWay, UseMontPow, microTileWidth>(
+                        grid, block, debugCombo, D, E, F, G,
+                        stageTwiddlesForStage, halfSpan, warpSize, numJChunks, laneIndex,
+                        butterflySpan, blockIndex2, jChunkIndex2, tasksRemaining2,
+                        blockDataBaseIndex2, currentTwiddle2, twiddleStrideWarp, laneTwiddleBase);
+                }
+            } else {
+                constexpr int microTileWidth = (OneTwoThree == Multiway::OneWay ? 4 : 2);
+                while (tasksRemaining) {
+                    ProcessTile<SharkFloatParams, OneTwoThree, UseMontPow, microTileWidth>(
+                        grid, block, debugCombo, A, B, C, D,
+                        stageTwiddlesForStage, halfSpan, warpSize, numJChunks, laneIndex,
+                        butterflySpan, blockIndex, jChunkIndex, tasksRemaining,
+                        blockDataBaseIndex, currentTwiddle, twiddleStrideWarp, laneTwiddleBase);
+                }
             }
         }
 
@@ -2758,57 +2783,15 @@ static_assert(HpShark::AdditionalUInt64PerFrame == 256, "See below");
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 16 */        \
     constexpr auto Z2_offsetYY = Z2_offsetXY + 4 * NewN * TestMultiplier +                              \
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 20 */        \
-    constexpr auto Z1_temp_offsetXX = Z2_offsetYY + 4 * NewN * TestMultiplier +                         \
-                                      CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 24 */   \
-    constexpr auto Z1_temp_offsetXY = Z1_temp_offsetXX + 4 * NewN * TestMultiplier +                    \
-                                      CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 28 */   \
-    constexpr auto Z1_temp_offsetYY = Z1_temp_offsetXY + 4 * NewN * TestMultiplier +                    \
-                                      CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 32 */   \
-    constexpr auto Z1_offsetXX = Z1_temp_offsetYY + 4 * NewN * TestMultiplier +                         \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 36 */        \
-    constexpr auto Z1_offsetXY = Z1_offsetXX + 4 * NewN * TestMultiplier +                              \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 40 */        \
-    constexpr auto Z1_offsetYY = Z1_offsetXY + 4 * NewN * TestMultiplier +                              \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 44 */        \
-    constexpr auto Convolution_offsetXX =                                                               \
-        Z1_offsetYY + 4 * NewN * TestMultiplier +                                                       \
-        CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 48 */                                 \
-    constexpr auto Convolution_offsetXY =                                                               \
-        Convolution_offsetXX + 4 * NewN * TestMultiplier +                                              \
-        CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 52 */                                 \
-    constexpr auto Convolution_offsetYY =                                                               \
-        Convolution_offsetXY + 4 * NewN * TestMultiplier +                                              \
-        CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 56 */                                 \
-    constexpr auto Result_offsetXX = Convolution_offsetYY + 4 * NewN * TestMultiplier +                 \
-                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 60 */    \
-    constexpr auto Result_offsetXY = Result_offsetXX + 4 * NewN * TestMultiplier +                      \
-                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 64 */    \
-    constexpr auto Result_offsetYY = Result_offsetXY + 4 * NewN * TestMultiplier +                      \
-                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 68 */    \
-    constexpr auto XDiff_offset = Result_offsetYY + 2 * NewN * TestMultiplier +                         \
-                                  CalcAlign16Bytes64BitIndex(2 * NewN * TestMultiplier); /* 70 */       \
-    constexpr auto YDiff_offset = XDiff_offset + 1 * NewN * TestMultiplier +                            \
-                                  CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 71 */       \
-    constexpr auto GlobalCarryOffset = YDiff_offset + 1 * NewN * TestMultiplier +                       \
-                                       CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 72 */  \
-    constexpr auto SubtractionOffset1 = GlobalCarryOffset + 1 * NewN * TestMultiplier +                 \
-                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 73 */ \
-    constexpr auto SubtractionOffset2 = SubtractionOffset1 + 1 * NewN * TestMultiplier +                \
-                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 74 */ \
-    constexpr auto SubtractionOffset3 = SubtractionOffset2 + 1 * NewN * TestMultiplier +                \
-                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 75 */ \
-    constexpr auto SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier +                \
-                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 76 */ \
-    constexpr auto SubtractionOffset5 = SubtractionOffset4 + 1 * NewN * TestMultiplier +                \
-                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 77 */ \
-    constexpr auto SubtractionOffset6 = SubtractionOffset5 + 1 * NewN * TestMultiplier +                \
-                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 78 */ \
-    constexpr auto CarryInsOffset =                                                                     \
-        SubtractionOffset6 + 1 * NewN * TestMultiplier +                                                \
-        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* requires 3xNewN 79 */                 \
-    constexpr auto CarryInsEnd = CarryInsOffset + 3 * NewN + CalcAlign16Bytes64BitIndex(3 * NewN);      \
+    /* NTT path: skip Karatsuba intermediates (dead code for NTT).                                    \
+       For NR: W offsets must start after the runtime NTT buffers (~82*NewN).                          \
+       For non-NR: orbit Z0/Z2 only (24*NewN). */                                                     \
+    constexpr auto NTT_OrbitEnd = SharkFloatParams::EnableNewtonRaphson                                \
+        ? (GlobalsDoneOffset + 82 * NewN * TestMultiplier)                                             \
+        : (Z2_offsetYY + 4 * NewN * TestMultiplier +                                                   \
+           CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier));\
     /* NR derivative product scratch offsets (W0-W3, only used when EnableNewtonRaphson) */             \
-    constexpr auto Z0_offsetW0 = CarryInsEnd;                                                          \
+    constexpr auto Z0_offsetW0 = NTT_OrbitEnd;                                                          \
     constexpr auto Z0_offsetW1 = Z0_offsetW0 + 4 * NewN * TestMultiplier +                             \
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 86 */        \
     constexpr auto Z0_offsetW2 = Z0_offsetW1 + 4 * NewN * TestMultiplier +                             \
@@ -2822,19 +2805,10 @@ static_assert(HpShark::AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto Z2_offsetW2 = Z2_offsetW1 + 4 * NewN * TestMultiplier +                             \
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 106 */       \
     constexpr auto Z2_offsetW3 = Z2_offsetW2 + 4 * NewN * TestMultiplier +                             \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 110 */       \
-    constexpr auto Result_offsetW0 = Z2_offsetW3 + 4 * NewN * TestMultiplier +                         \
-                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 114 */   \
-    constexpr auto Result_offsetW1 = Result_offsetW0 + 4 * NewN * TestMultiplier +                     \
-                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 118 */   \
-    constexpr auto Result_offsetW2 = Result_offsetW1 + 4 * NewN * TestMultiplier +                     \
-                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 122 */   \
-    constexpr auto Result_offsetW3 = Result_offsetW2 + 4 * NewN * TestMultiplier +                     \
-                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 126 */   \
-    /* NR carry buffers are merged into the main 7-way carry buffers (dynamically allocated). */        \
-    /* End of NR scratch is after Result_offsetW3.                                          */          \
-    constexpr auto NR_ScratchEnd = Result_offsetW3 + 4 * NewN * TestMultiplier +                       \
-                                   CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 130 */
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);               \
+    /* NR scratch ends after Z2_W3 (Result_offsetW* were Karatsuba-only dead code, removed) */        \
+    constexpr auto NR_ScratchEnd = Z2_offsetW3 + 4 * NewN * TestMultiplier +                          \
+                                   CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);/* 130 */
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
@@ -3215,7 +3189,8 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                                                                   CarryPropagationSync,
                                                                   CarryPropagationSync2,
                                                                   results7,
-                                                                  purposes7);
+                                                                  purposes7,
+                                                                  shared_data);
     } else {
         // Non-NR: existing 3-way call (unchanged)
         // ---- Single fused normalize for XX, YY, XY ----
@@ -3246,7 +3221,8 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
             /* resultYY scratch */ resultYY,
             /* resultXY scratch */ resultXY);
 #else
-        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(grid,
+        SharkNTT::Normalize_GridStride_3WayV2<SharkFloatParams>(shared_data,
+                                                                grid,
                                                                 block,
                                                                 debugGlobalState,
                                                                 debugStates,
@@ -3305,7 +3281,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
         static_assert(NR_ScratchEnd <= TotalAlloc,
                       "NR scratch offsets exceed total allocation");
     } else {
-        static_assert(CarryInsEnd <= TotalAlloc,
+        static_assert(NTT_OrbitEnd <= TotalAlloc,
                       "Scratch offsets exceed total allocation");
     }
 

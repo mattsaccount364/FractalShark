@@ -339,16 +339,25 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         return 1;
     }
 
-    auto iters = PromptIntWithTimeout("NumIters? Default 5", 5, timeoutInSec, interactiveMode);
+    const bool isNRMode = (mode == BasicCorrectnessMode::PerfSingleNRView5 ||
+                           mode == BasicCorrectnessMode::PerfSingleNRView30 ||
+                           mode == BasicCorrectnessMode::PerfSingleNRView32);
+
     auto loops =
-        PromptIntWithTimeout("CUDA iteration count? Default 1000", 1000, timeoutInSec, interactiveMode);
+        PromptIntWithTimeout("CUDA iteration count? Default 1000 (NR: 0=convergence)", 1000, timeoutInSec, interactiveMode);
+    const int internalTestLoopCount = loops.value;
+
+    // NumIters: skip for NR convergence mode (internalTestLoopCount == 0)
+    int numIters = 1;
+    if (!(isNRMode && internalTestLoopCount == 0)) {
+        auto iters = PromptIntWithTimeout("NumIters? Default 5", 5, timeoutInSec, interactiveMode);
+        numIters = iters.value;
+    }
+
     auto numBlocks = PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
     auto numThreads =
         PromptIntWithTimeout("NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
     const HpShark::LaunchParams launchParams{numBlocks.value, numThreads.value};
-
-    const int numIters = iters.value;
-    const int internalTestLoopCount = loops.value;
 
     // MPIR threading option for view modes
     auto mtPrompt = PromptIntWithTimeout(
@@ -407,47 +416,26 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
         TestTracker Tests;
-        std::vector<PerfTimingResult> timings;
-        timings.reserve(numIters);
-        for (int i = 0; i < numIters; i++) {
-            PerfTimingResult timing;
-            auto res = TestNewtonRaphsonView5<SharkParamsNR7>(
-                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, &timing);
-            timings.push_back(timing);
-            if (!ContinueAfterFailure(res))
-                return 0;
-        }
-        PrintPerfSummaryTable("NR_View5", useMT, timings, "MPIR");
+        auto res = TestNewtonRaphsonView5<SharkParamsNR7>(
+            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
+        if (!ContinueAfterFailure(res))
+            return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView30) {
         TestTracker Tests;
-        std::vector<PerfTimingResult> timings;
-        timings.reserve(numIters);
-        for (int i = 0; i < numIters; i++) {
-            PerfTimingResult timing;
-            auto res = TestNewtonRaphsonView30<SharkParamsNR7>(
-                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, &timing);
-            timings.push_back(timing);
-            if (!ContinueAfterFailure(res))
-                return 0;
-        }
-        PrintPerfSummaryTable("NR_View30", useMT, timings, "MPIR");
+        auto res = TestNewtonRaphsonView30<SharkParamsNR7>(
+            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
+        if (!ContinueAfterFailure(res))
+            return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView32) {
         TestTracker Tests;
-        std::vector<PerfTimingResult> timings;
-        timings.reserve(numIters);
-        for (int i = 0; i < numIters; i++) {
-            PerfTimingResult timing;
-            auto res = TestNewtonRaphsonView32<SharkParamsNR9>(
-                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, &timing);
-            timings.push_back(timing);
-            if (!ContinueAfterFailure(res))
-                return 0;
-        }
-        PrintPerfSummaryTable("NR_View32", useMT, timings, "MPIR");
+        auto res = TestNewtonRaphsonView32<SharkParamsNR9>(
+            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
+        if (!ContinueAfterFailure(res))
+            return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSweep) {

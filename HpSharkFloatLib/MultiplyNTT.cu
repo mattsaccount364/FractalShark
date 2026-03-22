@@ -268,17 +268,20 @@ Normalize_GridStride_NWay(cooperative_groups::grid_group &grid,
     auto *cur = CarryPropagationBuffer;
     auto *next = CarryPropagationBuffer2;
 
-    // init cur/next = 0 (need at most NumChannels*(Ddigits+1) entries)
-    const int carryBufLen = static_cast<int>(Ddigits) * NumChannels + NumChannels;
-    for (int i = tid; i < carryBufLen; i += totalThreads) {
-        cur[i] = 0;
-        next[i] = 0;
+    // Only cur[0..NumChannels-1] and next[0..NumChannels-1] need zeroing:
+    // Phase 2 reads cur[0..N-1] for index=0 (no predecessor carry),
+    // Phase 3 reads next[0..N-1] for index=0. Everything else is overwritten
+    // by the previous phase before being read.
+    // tid=0 processes index=0 in Phase 2, so same-thread write→read, no sync needed.
+    if (tid == 0) {
+#pragma unroll
+        for (int ch = 0; ch < NumChannels; ++ch) {
+            cur[ch] = 0;
+            next[ch] = 0;
+        }
+        *globalSync1 = 0;
+        *globalSync2 = 0;
     }
-
-    *globalSync1 = 0;
-    *globalSync2 = 0;
-
-    grid.sync();
 
     // Phase 1: Extract digits and carries from final128 buffers
     for (int index = tid; index < static_cast<int>(Ddigits); index += totalThreads) {
@@ -424,25 +427,26 @@ Normalize_GridStride_3WayV2(uint64_t *shared_data,
     auto *cur = CarryPropagationBuffer;
     auto *next = CarryPropagationBuffer2;
 
-    // init cur/next = 0 (length Ddigits+1 to include high slot)
-    for (int i = tid; i <= Ddigits * 6; i += totalThreads) {
-        cur[i] = 0;
-        next[i] = 0;
+    // Only cur[0..2] and next[0..2] need zeroing (carry-in for digit 0).
+    // tid=0 processes index=0 in Phase 2 → same-thread write→read, no sync needed.
+    if (tid == 0) {
+        cur[0] = 0; cur[1] = 0; cur[2] = 0;
+        next[0] = 0; next[1] = 0; next[2] = 0;
     }
 
     // We run the tile chain in a single warp for now (warp 0) so that tile
     // carries are propagated correctly and in order. Other warps do nothing.
     uint64_t prevGlobalSync1 = std::numeric_limits<uint64_t>::max();
-    *globalSync1 = 0;
-    *globalSync2 = 0;
+    if (tid == 0) {
+        *globalSync1 = 0;
+        *globalSync2 = 0;
+    }
 
     auto swap2 = [](uint64_t *&a, uint64_t *&b) {
         auto *t = a;
         a = b;
         b = t;
     };
-
-    grid.sync();
 
     for (int index = tid; index < Ddigits; index += totalThreads) {
         uint64_t carry_loXX = 0;
@@ -1120,6 +1124,198 @@ NTTRadix2(cooperative_groups::grid_group &grid,
     }
 }
 
+// ---------------------------------------------------------------------------
+// Per-tile helper: load from global → butterfly stages → store to global.
+// Templated on Mode so the compiler dead-strips unused array paths.
+// ---------------------------------------------------------------------------
+template <class SharkFloatParams, Multiway Mode, uint32_t TS_log, bool UseMontPow>
+static __device__ inline void
+ProcessOneTile_Phase1_SM(
+    cooperative_groups::thread_block &block,
+    cooperative_groups::grid_group &grid,
+    DebugGlobalCount<SharkFloatParams> *debugCombo,
+    uint64_t *s_dataA,
+    uint64_t *s_dataB,
+    uint64_t *s_dataC,
+    uint64_t *s_dataD,
+    uint64_t *__restrict A,
+    uint64_t *__restrict B,
+    uint64_t *__restrict C,
+    uint64_t *__restrict D,
+    const uint64_t *s_twiddles_cached,
+    const uint64_t *__restrict stage_twiddles,
+    const uint64_t *s_stages,
+    uint32_t tile,
+    uint32_t TS,
+    uint32_t len,
+    uint32_t S1,
+    uint32_t cachedStages)
+{
+    namespace cg = cooperative_groups;
+
+    const uint32_t tid = block.thread_index().x;
+    const uint32_t step = block.size();
+
+    // Load tiles into shared memory
+    if constexpr (Mode == Multiway::OneWay || Mode == Multiway::TwoWay ||
+                  Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
+        cg::memcpy_async(block, s_dataA, &A[tile * TS], len * sizeof(uint64_t));
+    }
+
+    if constexpr (Mode == Multiway::TwoWay || Mode == Multiway::ThreeWay ||
+                  Mode == Multiway::FourWay) {
+        cg::memcpy_async(block, s_dataB, &B[tile * TS], len * sizeof(uint64_t));
+    }
+
+    if constexpr (Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
+        cg::memcpy_async(block, s_dataC, &C[tile * TS], len * sizeof(uint64_t));
+    }
+
+    if constexpr (Mode == Multiway::FourWay) {
+        cg::memcpy_async(block, s_dataD, &D[tile * TS], len * sizeof(uint64_t));
+    }
+
+    cg::wait(block);
+    block.sync();
+
+    // Stages s=1..S1 — single set of loops; reuse the same syncs for all arrays
+    for (uint32_t s = 1; s <= S1; ++s) {
+        const uint32_t m = 1u << s;
+        const uint32_t half = m >> 1;
+        const uint64_t w_m = s_stages[s - 1];
+
+        const uint32_t tw_base = half - 1u;
+
+        const uint32_t total_pairs = (len >> 1);
+
+        const bool useSharedTwiddles = (!UseMontPow && s <= cachedStages && cachedStages > 0u);
+
+        const uint64_t *SharkRestrict twiddleBaseForStage =
+            useSharedTwiddles ? (s_twiddles_cached + tw_base) : (stage_twiddles + tw_base);
+
+        for (uint32_t p = tid; p < total_pairs; p += step) {
+            const uint32_t group = p / half;
+            const uint32_t j = p - group * half; // p % half
+            const uint32_t i0 = group * m + j;
+            const uint32_t i1 = i0 + half;
+
+            uint64_t wj;
+            if constexpr (UseMontPow) {
+                wj = MontgomeryPow(grid, block, debugCombo, w_m, j);
+            } else {
+                wj = twiddleBaseForStage[j];
+            }
+
+            // ---- A (shared) ----
+            if constexpr (Mode == Multiway::OneWay) {
+                const uint64_t U1 = s_dataA[i0];
+                const uint64_t V1 = s_dataA[i1];
+
+                const uint64_t t = MontgomeryMul(grid, block, debugCombo, V1, wj);
+
+                s_dataA[i0] = AddP(U1, t);
+                s_dataA[i1] = SubP(U1, t);
+            }
+
+            if constexpr (Mode == Multiway::TwoWay) {
+                const uint64_t U1 = s_dataA[i0];
+                const uint64_t V1 = s_dataA[i1];
+
+                const uint64_t U2 = s_dataB[i0];
+                const uint64_t V2 = s_dataB[i1];
+
+                const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
+                const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
+
+                s_dataA[i0] = AddP(U1, t1);
+                s_dataA[i1] = SubP(U1, t1);
+
+                s_dataB[i0] = AddP(U2, t2);
+                s_dataB[i1] = SubP(U2, t2);
+            }
+
+            if constexpr (Mode == Multiway::ThreeWay) {
+                const uint64_t U1 = s_dataA[i0];
+                const uint64_t V1 = s_dataA[i1];
+
+                const uint64_t U2 = s_dataB[i0];
+                const uint64_t V2 = s_dataB[i1];
+
+                const uint64_t U3 = s_dataC[i0];
+                const uint64_t V3 = s_dataC[i1];
+
+                const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
+                const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
+                const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, V3, wj);
+
+                s_dataA[i0] = AddP(U1, t1);
+                s_dataA[i1] = SubP(U1, t1);
+
+                s_dataB[i0] = AddP(U2, t2);
+                s_dataB[i1] = SubP(U2, t2);
+
+                s_dataC[i0] = AddP(U3, t3);
+                s_dataC[i1] = SubP(U3, t3);
+            }
+
+            if constexpr (Mode == Multiway::FourWay) {
+                const uint64_t U1 = s_dataA[i0];
+                const uint64_t V1 = s_dataA[i1];
+
+                const uint64_t U2 = s_dataB[i0];
+                const uint64_t V2 = s_dataB[i1];
+
+                const uint64_t U3 = s_dataC[i0];
+                const uint64_t V3 = s_dataC[i1];
+
+                const uint64_t U4 = s_dataD[i0];
+                const uint64_t V4 = s_dataD[i1];
+
+                const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
+                const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
+                const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, V3, wj);
+                const uint64_t t4 = MontgomeryMul(grid, block, debugCombo, V4, wj);
+
+                s_dataA[i0] = AddP(U1, t1);
+                s_dataA[i1] = SubP(U1, t1);
+
+                s_dataB[i0] = AddP(U2, t2);
+                s_dataB[i1] = SubP(U2, t2);
+
+                s_dataC[i0] = AddP(U3, t3);
+                s_dataC[i1] = SubP(U3, t3);
+
+                s_dataD[i0] = AddP(U4, t4);
+                s_dataD[i1] = SubP(U4, t4);
+            }
+        }
+
+        // Original per-stage barrier
+        block.sync();
+    }
+
+    // Store tiles back to global
+    for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
+        if constexpr (Mode == Multiway::OneWay || Mode == Multiway::TwoWay ||
+                      Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
+            A[tile * TS + t] = s_dataA[t];
+        }
+
+        if constexpr (Mode == Multiway::TwoWay || Mode == Multiway::ThreeWay ||
+                      Mode == Multiway::FourWay) {
+            B[tile * TS + t] = s_dataB[t];
+        }
+
+        if constexpr (Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
+            C[tile * TS + t] = s_dataC[t];
+        }
+
+        if constexpr (Mode == Multiway::FourWay) {
+            D[tile * TS + t] = s_dataD[t];
+        }
+    }
+}
+
 template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TS_log>
 static __device__ inline uint32_t
 SmallRadixPhase1_SM(uint64_t *shared_data,
@@ -1133,7 +1329,10 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                     uint32_t N,
                     uint32_t stages,
                     const uint64_t *__restrict s_stages,
-                    const uint64_t *__restrict stage_twiddles)
+                    const uint64_t *__restrict stage_twiddles,
+                    uint64_t *__restrict E = nullptr,
+                    uint64_t *__restrict F = nullptr,
+                    uint64_t *__restrict G = nullptr)
 {
     namespace cg = cooperative_groups;
 
@@ -1181,7 +1380,9 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 
     // Reserve shared space for cached twiddles after the last tile buffer.
     auto *const s_twiddles_cached =
-        (OneTwoThree == Multiway::FourWay) ? (s_dataD + TS) : (s_dataC + TS);
+        (OneTwoThree == Multiway::FourWay || OneTwoThree == Multiway::SevenWay)
+            ? (s_dataD + TS)
+            : (s_dataC + TS);
 
     // Only cache for precomputed-table mode, and only up to S1.
     const uint32_t cachedStages =
@@ -1198,176 +1399,27 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
         }
     }
 
-    const uint32_t tid = block.thread_index().x;
-    const uint32_t step = block.size();
-
     for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
         const bool is_last = (tile == tiles - 1);
         const uint32_t len = is_last ? tail_len : TS; // divisible by 2^S1
 
-        // Load tiles into shared memory
-        if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
-                      OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay) {
-            cg::memcpy_async(block, s_dataA, &A[tile * TS], len * sizeof(uint64_t));
-        }
-
-        if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay ||
-                      OneTwoThree == Multiway::FourWay) {
-            cg::memcpy_async(block, s_dataB, &B[tile * TS], len * sizeof(uint64_t));
-        }
-
-        if constexpr (OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay) {
-            cg::memcpy_async(block, s_dataC, &C[tile * TS], len * sizeof(uint64_t));
-        }
-
-        if constexpr (OneTwoThree == Multiway::FourWay) {
-            cg::memcpy_async(block, s_dataD, &D[tile * TS], len * sizeof(uint64_t));
-        }
-
-        cg::wait(block);
-        block.sync();
-
-        // Stages s=1..S1 — single set of loops; reuse the same syncs for all three
-        for (uint32_t s = 1; s <= S1; ++s) {
-            const uint32_t m = 1u << s;
-            const uint32_t half = m >> 1;
-            const uint64_t w_m = s_stages[s - 1];
-
-            // base into flattened stage_twiddles for this stage:
-            // stage s has 'half' twiddles; they live at indices [tw_base .. tw_base + half-1]
-            // with tw_base = sum_{t=1}^{s-1} 2^(t-1) = 2^(s-1) - 1 = half - 1
-            const uint32_t tw_base = half - 1u;
-
-            const uint32_t total_pairs = (len >> 1);
-
-            // For stages we cached, point into shared twiddle cache;
-            // otherwise, fall back to global stage_twiddles.
-            const bool useSharedTwiddles = (!UseMontPow && s <= cachedStages && cachedTwiddles > 0u);
-
-            const uint64_t *SharkRestrict twiddleBaseForStage =
-                useSharedTwiddles ? (s_twiddles_cached + tw_base) : (stage_twiddles + tw_base);
-
-            for (uint32_t p = tid; p < total_pairs; p += step) {
-                const uint32_t group = p / half;
-                const uint32_t j = p - group * half; // p % half
-                const uint32_t i0 = group * m + j;
-                const uint32_t i1 = i0 + half;
-
-                uint64_t wj;
-                if constexpr (UseMontPow) {
-                    wj = MontgomeryPow(grid, block, debugCombo, w_m, j);
-                } else {
-                    // from shared cache for s <= cachedStages, else from global
-                    wj = twiddleBaseForStage[j];
-                }
-
-                // ---- A (shared) ----
-                if constexpr (OneTwoThree == Multiway::OneWay) {
-                    const uint64_t U1 = s_dataA[i0];
-                    const uint64_t V1 = s_dataA[i1];
-
-                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, V1, wj);
-
-                    s_dataA[i0] = AddP(U1, t);
-                    s_dataA[i1] = SubP(U1, t);
-                }
-
-                if constexpr (OneTwoThree == Multiway::TwoWay) {
-                    const uint64_t U1 = s_dataA[i0];
-                    const uint64_t V1 = s_dataA[i1];
-
-                    const uint64_t U2 = s_dataB[i0];
-                    const uint64_t V2 = s_dataB[i1];
-
-                    const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
-                    const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
-
-                    s_dataA[i0] = AddP(U1, t1);
-                    s_dataA[i1] = SubP(U1, t1);
-
-                    s_dataB[i0] = AddP(U2, t2);
-                    s_dataB[i1] = SubP(U2, t2);
-                }
-
-                if constexpr (OneTwoThree == Multiway::ThreeWay) {
-                    const uint64_t U1 = s_dataA[i0];
-                    const uint64_t V1 = s_dataA[i1];
-
-                    const uint64_t U2 = s_dataB[i0];
-                    const uint64_t V2 = s_dataB[i1];
-
-                    const uint64_t U3 = s_dataC[i0];
-                    const uint64_t V3 = s_dataC[i1];
-
-                    const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
-                    const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
-                    const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, V3, wj);
-
-                    s_dataA[i0] = AddP(U1, t1);
-                    s_dataA[i1] = SubP(U1, t1);
-
-                    s_dataB[i0] = AddP(U2, t2);
-                    s_dataB[i1] = SubP(U2, t2);
-
-                    s_dataC[i0] = AddP(U3, t3);
-                    s_dataC[i1] = SubP(U3, t3);
-                }
-
-                if constexpr (OneTwoThree == Multiway::FourWay) {
-                    const uint64_t U1 = s_dataA[i0];
-                    const uint64_t V1 = s_dataA[i1];
-
-                    const uint64_t U2 = s_dataB[i0];
-                    const uint64_t V2 = s_dataB[i1];
-
-                    const uint64_t U3 = s_dataC[i0];
-                    const uint64_t V3 = s_dataC[i1];
-
-                    const uint64_t U4 = s_dataD[i0];
-                    const uint64_t V4 = s_dataD[i1];
-
-                    const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
-                    const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
-                    const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, V3, wj);
-                    const uint64_t t4 = MontgomeryMul(grid, block, debugCombo, V4, wj);
-
-                    s_dataA[i0] = AddP(U1, t1);
-                    s_dataA[i1] = SubP(U1, t1);
-
-                    s_dataB[i0] = AddP(U2, t2);
-                    s_dataB[i1] = SubP(U2, t2);
-
-                    s_dataC[i0] = AddP(U3, t3);
-                    s_dataC[i1] = SubP(U3, t3);
-
-                    s_dataD[i0] = AddP(U4, t4);
-                    s_dataD[i1] = SubP(U4, t4);
-                }
-            }
-
-            // Original per-stage barrier
+        if constexpr (OneTwoThree == Multiway::SevenWay) {
+            // Pass 1: ThreeWay on A, B, C
+            ProcessOneTile_Phase1_SM<SharkFloatParams, Multiway::ThreeWay, TS_log, UseMontPow>(
+                block, grid, debugCombo, s_dataA, s_dataB, s_dataC, nullptr,
+                A, B, C, nullptr, s_twiddles_cached, stage_twiddles, s_stages,
+                tile, TS, len, S1, cachedStages);
             block.sync();
-        }
-
-        // Store tiles back to global
-        for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
-            if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
-                          OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay) {
-                A[tile * TS + t] = s_dataA[t];
-            }
-
-            if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay ||
-                          OneTwoThree == Multiway::FourWay) {
-                B[tile * TS + t] = s_dataB[t];
-            }
-
-            if constexpr (OneTwoThree == Multiway::ThreeWay || OneTwoThree == Multiway::FourWay) {
-                C[tile * TS + t] = s_dataC[t];
-            }
-
-            if constexpr (OneTwoThree == Multiway::FourWay) {
-                D[tile * TS + t] = s_dataD[t];
-            }
+            // Pass 2: FourWay on D, E, F, G
+            ProcessOneTile_Phase1_SM<SharkFloatParams, Multiway::FourWay, TS_log, UseMontPow>(
+                block, grid, debugCombo, s_dataA, s_dataB, s_dataC, s_dataD,
+                D, E, F, G, s_twiddles_cached, stage_twiddles, s_stages,
+                tile, TS, len, S1, cachedStages);
+        } else {
+            ProcessOneTile_Phase1_SM<SharkFloatParams, OneTwoThree, TS_log, UseMontPow>(
+                block, grid, debugCombo, s_dataA, s_dataB, s_dataC, s_dataD,
+                A, B, C, D, s_twiddles_cached, stage_twiddles, s_stages,
+                tile, TS, len, S1, cachedStages);
         }
     }
 
@@ -1939,35 +1991,23 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                                                                                    sharedStageRoots,
                                                                                    stageTwiddleTable);
     } else if constexpr (OneTwoThree == Multiway::SevenWay) {
-        // SevenWay hybrid: run Phase 1 separately (ThreeWay for orbit + FourWay for NR derivatives)
-        // then fuse for Phase 2 only (where grid.sync() per stage is the bottleneck).
+        // SevenWay: interleaved ThreeWay + FourWay per tile in a single call
         firstLargeStage =
-            SmallRadixPhase1_SM<SharkFloatParams, Multiway::ThreeWay, TileSizeLog2>(shared_data,
+            SmallRadixPhase1_SM<SharkFloatParams, Multiway::SevenWay, TileSizeLog2>(shared_data,
                                                                                      grid,
                                                                                      block,
                                                                                      debugCombo,
                                                                                      A,
                                                                                      B,
                                                                                      C,
-                                                                                     nullptr,
+                                                                                     D,
                                                                                      transformSize,
                                                                                      numStages,
                                                                                      sharedStageRoots,
-                                                                                     stageTwiddleTable);
-        // NR derivatives: reuse same shared memory tiles (ThreeWay data is back in global)
-        [[maybe_unused]] const auto firstLargeStageNR =
-            SmallRadixPhase1_SM<SharkFloatParams, Multiway::FourWay, TileSizeLog2>(shared_data,
-                                                                                    grid,
-                                                                                    block,
-                                                                                    debugCombo,
-                                                                                    D,
-                                                                                    E,
-                                                                                    F,
-                                                                                    G,
-                                                                                    transformSize,
-                                                                                    numStages,
-                                                                                    sharedStageRoots,
-                                                                                    stageTwiddleTable);
+                                                                                     stageTwiddleTable,
+                                                                                     E,
+                                                                                     F,
+                                                                                     G);
     }
 
     // =========================

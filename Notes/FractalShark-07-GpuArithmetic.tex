@@ -870,41 +870,46 @@ with $0 \le a_i, c_i < 2^b$. During packing, each coefficient is:
 \end{enumerate}
 
 After packing, an in-place radix--2 forward NTT is performed using the
-decimation-in-time (DIT) formulation.  This requires a
-\emph{bit-reversal permutation} as a preprocessing step: each element at
-index~$i$ is swapped with the element at index~$\mathrm{bitrev}(i)$,
-where $\mathrm{bitrev}$ reverses the $\log_2 N$ least-significant bits of
-the index.  The permutation ensures that the iterative butterfly stages
-can read and write elements at naturally strided offsets, enabling
-coalesced memory access patterns on the GPU.
+decimation-in-time (DIT) formulation.  DIT requires the input to be in
+\emph{bit-reversed} order: each element at index~$i$ must appear at
+index~$\mathrm{bitrev}(i)$, where $\mathrm{bitrev}$ reverses the
+$\log_2 N$ least-significant bits.  This ensures that the iterative
+butterfly stages can read and write elements at naturally strided
+offsets, enabling coalesced memory access patterns on the GPU.
 
-In \FractalShark{}'s implementation, the bit-reversal is performed
-in-place across all active arrays simultaneously
-(\code{BitReverseInplace64\_GridStride} with \code{FourWay} or
-\code{SevenWay} mode), so that a single grid-strided pass permutes all
-input arrays before any butterfly work begins.  Each thread computes
-$j = \mathrm{bitrev}(i)$ via the hardware \code{\_\_brev} intrinsic and
-swaps elements $i$ and $j$ (with the $i < j$ guard ensuring each pair is
-swapped exactly once).
+\FractalShark{} fuses the forward bit-reversal into the packing step:
+rather than writing packed/twisted coefficients to position~$i$ and then
+performing a separate permutation pass, the packing kernel computes
+$j = \mathrm{bitrev}(i)$ via the hardware \code{\_\_brev} intrinsic
+and scatter-writes each coefficient directly to position~$j$.
+This eliminates one full random-access permutation pass over the
+$N$-element array, saving both memory traffic and a
+\code{grid.sync()} barrier.
+
+For the inverse NTT, a separate in-place bit-reversal is still
+performed via \code{BitReverseInplace64\_GridStride}, which
+permutes all active arrays simultaneously (\code{SevenWay} when NR is
+enabled, \code{ThreeWay} otherwise).  Each thread swaps
+elements $i$ and $\mathrm{bitrev}(i)$ (with the $i < j$ guard ensuring
+each pair is swapped exactly once).
 
 \paragraph{DIT vs.\ DIF and the bit-reversal tradeoff.}
 The DIT formulation requires bit-reversal on the \emph{input}; the
 alternative decimation-in-frequency (DIF) formulation produces output in
 bit-reversed order, requiring the permutation \emph{after} the
 transform.  A mixed strategy---DIT for the forward transform and DIF for
-the inverse (or vice versa)---can cancel the two permutations entirely,
-since the bit-reversed output of the forward transform is already in the
-correct input order for a DIF inverse.  This ``self-sorting'' approach
-eliminates two global-memory permutation passes per multiply (one forward,
-one inverse), each of which involves random-access swaps across the full
-$N$-element array.
+the inverse (or vice versa)---can cancel the remaining inverse
+permutation entirely, since the bit-reversed output of the forward
+transform would already be in the correct input order for a DIF inverse.
+This ``self-sorting'' approach would eliminate the last standalone
+permutation pass.
 
 \FractalShark{} currently uses DIT for both forward and inverse
-transforms, incurring an explicit bit-reversal permutation before each.
-Adopting a DIT/DIF mixed strategy is a potential optimization that would
-remove these permutation passes and their associated memory traffic,
-at the cost of a different butterfly indexing pattern in the inverse
-transform.
+transforms; the forward bit-reversal has been fused into packing, but
+the inverse still incurs a separate permutation.  Adopting a DIT/DIF
+mixed strategy would remove this remaining pass and its associated
+memory traffic, at the cost of a different butterfly indexing pattern in
+the inverse transform.
 
 After bit-reversal, iterative butterfly stages are applied:
 

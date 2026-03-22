@@ -77,10 +77,9 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                 typename SharkFloatParams::SubType(1.0)});
     }
 
-    // Prepare kernel arguments
-    // Allocate memory for carryOuts and cumulativeCarries
+    // Allocate scratch memory: max of NTT and Add frame sizes (both share this allocation).
     constexpr size_t BytesToAllocate =
-        (HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>()) *
+        (HpShark::AdditionalUInt64Global + HpShark::CalculateMaxFrameSize<SharkFloatParams>()) *
         sizeof(uint64_t);
     {
         cudaError_t cudaErr = cudaMalloc(&combo->d_tempProducts, BytesToAllocate);
@@ -255,9 +254,14 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                 throw std::runtime_error(oss.str());
             }
         }
-        cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize,
-                           prop.persistingL2CacheMaxSize); /* Set aside max possible size of L2 cache for
-                                                              persisting accesses */
+        // Set L2 persisting cache to cover our actual working set, not the full L2.
+        const size_t workingSetBytes =
+            sizeof(HpSharkReferenceResults<SharkFloatParams>) + BytesToAllocate;
+        const size_t persistingSize =
+            (workingSetBytes < static_cast<size_t>(prop.persistingL2CacheMaxSize))
+                ? workingSetBytes
+                : static_cast<size_t>(prop.persistingL2CacheMaxSize);
+        cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, persistingSize);
 
         auto setAccess = [&](void *ptr, size_t num_bytes) {
             cudaStreamAttrValue stream_attribute; // Stream level attributes data structure
@@ -286,7 +290,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
         };
 
         setAccess(combo->comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>));
-        setAccess(combo->d_tempProducts, 32 * SharkFloatParams::GlobalNumUint32 * sizeof(uint64_t));
+        setAccess(combo->d_tempProducts, BytesToAllocate);
     }
 
     return combo;

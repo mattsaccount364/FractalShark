@@ -2783,32 +2783,11 @@ static_assert(HpShark::AdditionalUInt64PerFrame == 256, "See below");
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 16 */        \
     constexpr auto Z2_offsetYY = Z2_offsetXY + 4 * NewN * TestMultiplier +                              \
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 20 */        \
-    /* NTT path: skip Karatsuba intermediates (dead code for NTT).                                    \
-       For NR: W offsets must start after the runtime NTT buffers (~82*NewN).                          \
-       For non-NR: orbit Z0/Z2 only (24*NewN). */                                                     \
-    constexpr auto NTT_OrbitEnd = SharkFloatParams::EnableNewtonRaphson                                \
-        ? (GlobalsDoneOffset + 82 * NewN * TestMultiplier)                                             \
-        : (Z2_offsetYY + 4 * NewN * TestMultiplier +                                                   \
-           CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier));\
-    /* NR derivative product scratch offsets (W0-W3, only used when EnableNewtonRaphson) */             \
-    constexpr auto Z0_offsetW0 = NTT_OrbitEnd;                                                          \
-    constexpr auto Z0_offsetW1 = Z0_offsetW0 + 4 * NewN * TestMultiplier +                             \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 86 */        \
-    constexpr auto Z0_offsetW2 = Z0_offsetW1 + 4 * NewN * TestMultiplier +                             \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 90 */        \
-    constexpr auto Z0_offsetW3 = Z0_offsetW2 + 4 * NewN * TestMultiplier +                             \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 94 */        \
-    constexpr auto Z2_offsetW0 = Z0_offsetW3 + 4 * NewN * TestMultiplier +                             \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 98 */        \
-    constexpr auto Z2_offsetW1 = Z2_offsetW0 + 4 * NewN * TestMultiplier +                             \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 102 */       \
-    constexpr auto Z2_offsetW2 = Z2_offsetW1 + 4 * NewN * TestMultiplier +                             \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 106 */       \
-    constexpr auto Z2_offsetW3 = Z2_offsetW2 + 4 * NewN * TestMultiplier +                             \
-                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);               \
-    /* NR scratch ends after Z2_W3 (Result_offsetW* were Karatsuba-only dead code, removed) */        \
-    constexpr auto NR_ScratchEnd = Z2_offsetW3 + 4 * NewN * TestMultiplier +                          \
-                                   CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);/* 130 */
+    /* NTT path: orbit Z0/Z2 are the only macro-allocated buffers.                                     \
+       NR W and all other buffers are in the runtime layout. */                                         \
+    constexpr auto NTT_OrbitEnd = Z2_offsetYY + 4 * NewN * TestMultiplier +                            \
+                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);
+
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
@@ -3274,16 +3253,11 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     DefineTempProductsOffsets();
 
     // Verify scratch offsets fit within allocated memory
-    // (offsets include AdditionalUInt64Global prefix; compare against total allocation)
+    // NR W buffers are now in the runtime layout (not macro offsets), so NTT_OrbitEnd covers both.
     constexpr auto TotalAlloc =
         HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>();
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        static_assert(NR_ScratchEnd <= TotalAlloc,
-                      "NR scratch offsets exceed total allocation");
-    } else {
-        static_assert(NTT_OrbitEnd <= TotalAlloc,
-                      "Scratch offsets exceed total allocation");
-    }
+    static_assert(NTT_OrbitEnd <= TotalAlloc,
+                  "Scratch offsets exceed total allocation");
 
     // TODO: indexes
     auto *SharkRestrict debugGlobalState =
@@ -3378,41 +3352,37 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     const auto Ddigits =
         (((2 * SharkFloatParams::NTTPlan.L - 2) * SharkFloatParams::NTTPlan.b + 64) + 31) / 32 + 2;
 
-    const auto LameHackBufferSizeWhatShouldItBe = std::max(Ddigits, SharkFloatParams::NTTPlan.N);
+    // Each NTT buffer must be large enough for both NTT transforms (NTTPlan.N)
+    // AND Final128 reuse (2*Ddigits), since "2" buffers are reused as Final128 after pointwise multiply.
+    const uint32_t twoDdigits = static_cast<uint32_t>(2 * Ddigits);
+    const uint32_t nttN = SharkFloatParams::NTTPlan.N;
+    const auto LameHackBufferSizeWhatShouldItBe = (twoDdigits > nttN) ? twoDdigits : nttN;
 
     // ---- Single allocation for entire core path ----
     uint64_t *buffer = &tempProducts[GlobalsDoneOffset];
 
-    // TODO: Assert or something somewhere
-    // const size_t buf_count = (size_t)2 * (size_t)SharkFloatParams::NTTPlan.N     // Z0_OutDigits +
-    // Z2_OutDigits
-    //                         + (size_t)2 * (size_t)Ddigits; // Final128 (lo,hi per 32-bit slot)
-
     // Slice buffer into spans
     size_t off = 0;
-    uint64_t *tempDigitsXX1 = buffer + off; // SharkFloatParams::NTTPlan.N
+    uint64_t *tempDigitsXX1 = buffer + off;
     off += LameHackBufferSizeWhatShouldItBe;
-    uint64_t *tempDigitsXX2 = buffer + off; // SharkFloatParams::NTTPlan.N
-    off += LameHackBufferSizeWhatShouldItBe;
-
-    uint64_t *tempDigitsYY1 = buffer + off; // SharkFloatParams::NTTPlan.N
-    off += LameHackBufferSizeWhatShouldItBe;
-    uint64_t *tempDigitsYY2 = buffer + off; // SharkFloatParams::NTTPlan.N
+    uint64_t *tempDigitsXX2 = buffer + off;
     off += LameHackBufferSizeWhatShouldItBe;
 
-    uint64_t *tempDigitsXY1 = buffer + off; // SharkFloatParams::NTTPlan.N
+    uint64_t *tempDigitsYY1 = buffer + off;
     off += LameHackBufferSizeWhatShouldItBe;
-    uint64_t *tempDigitsXY2 = buffer + off; // SharkFloatParams::NTTPlan.N
+    uint64_t *tempDigitsYY2 = buffer + off;
     off += LameHackBufferSizeWhatShouldItBe;
 
-    uint64_t *Final128_XX = buffer + off; // (size_t)2 * Ddigits
-    off += (size_t)2 * Ddigits;
+    uint64_t *tempDigitsXY1 = buffer + off;
+    off += LameHackBufferSizeWhatShouldItBe;
+    uint64_t *tempDigitsXY2 = buffer + off;
+    off += LameHackBufferSizeWhatShouldItBe;
 
-    uint64_t *Final128_YY = buffer + off; // (size_t)2 * Ddigits
-    off += (size_t)2 * Ddigits;
-
-    uint64_t *Final128_XY = buffer + off; // (size_t)2 * Ddigits
-    off += (size_t)2 * Ddigits;
+    // Final128 buffers: reuse the "2" buffers (dead after pointwise multiply).
+    // The "2" buffers are >= 2*Ddigits due to LameHack sizing above.
+    uint64_t *Final128_XX = tempDigitsXX2;
+    uint64_t *Final128_YY = tempDigitsYY2;
+    uint64_t *Final128_XY = tempDigitsXY2;
 
     // Carry buffers: 7-way for NR (7*Ddigits+7 per buffer), 3-way otherwise (6*Ddigits)
     const size_t carryBufEntries = [&]() -> size_t {
@@ -3432,7 +3402,8 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     uint64_t *CarryPropagationSync = &tempProducts[0];
     uint64_t *CarryPropagationSync2 = &tempProducts[16];
 
-    // NR temp buffers — use offsets from DefineTempProductsOffsets() macro
+    // NR temp buffers — allocated from runtime layout (not macro offsets)
+    // so they're at LameHack size and "2" buffers can serve as Final128_W*.
     uint64_t *tempDigitsW0_1 = nullptr;
     uint64_t *tempDigitsW0_2 = nullptr;
     uint64_t *tempDigitsW1_1 = nullptr;
@@ -3447,25 +3418,28 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     uint64_t *Final128_W3 = nullptr;
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        tempDigitsW0_1 = &tempProducts[Z0_offsetW0];
-        tempDigitsW0_2 = &tempProducts[Z2_offsetW0];
-        tempDigitsW1_1 = &tempProducts[Z0_offsetW1];
-        tempDigitsW1_2 = &tempProducts[Z2_offsetW1];
-        tempDigitsW2_1 = &tempProducts[Z0_offsetW2];
-        tempDigitsW2_2 = &tempProducts[Z2_offsetW2];
-        tempDigitsW3_1 = &tempProducts[Z0_offsetW3];
-        tempDigitsW3_2 = &tempProducts[Z2_offsetW3];
+        tempDigitsW0_1 = buffer + off;
+        off += LameHackBufferSizeWhatShouldItBe;
+        tempDigitsW0_2 = buffer + off;
+        off += LameHackBufferSizeWhatShouldItBe;
+        tempDigitsW1_1 = buffer + off;
+        off += LameHackBufferSizeWhatShouldItBe;
+        tempDigitsW1_2 = buffer + off;
+        off += LameHackBufferSizeWhatShouldItBe;
+        tempDigitsW2_1 = buffer + off;
+        off += LameHackBufferSizeWhatShouldItBe;
+        tempDigitsW2_2 = buffer + off;
+        off += LameHackBufferSizeWhatShouldItBe;
+        tempDigitsW3_1 = buffer + off;
+        off += LameHackBufferSizeWhatShouldItBe;
+        tempDigitsW3_2 = buffer + off;
+        off += LameHackBufferSizeWhatShouldItBe;
 
-        // NR Final128 buffers need 2*Ddigits entries each (not 4*NewN from macro,
-        // which is too small: 4*NewN < 2*Ddigits for some limb counts).
-        Final128_W0 = buffer + off;
-        off += (size_t)2 * Ddigits;
-        Final128_W1 = buffer + off;
-        off += (size_t)2 * Ddigits;
-        Final128_W2 = buffer + off;
-        off += (size_t)2 * Ddigits;
-        Final128_W3 = buffer + off;
-        off += (size_t)2 * Ddigits;
+        // NR Final128: reuse "2" buffers (dead after pointwise multiply, >= 2*Ddigits)
+        Final128_W0 = tempDigitsW0_2;
+        Final128_W1 = tempDigitsW1_2;
+        Final128_W2 = tempDigitsW2_2;
+        Final128_W3 = tempDigitsW3_2;
     }
 
     // XX = A^2

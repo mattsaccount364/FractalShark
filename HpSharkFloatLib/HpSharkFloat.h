@@ -102,12 +102,12 @@ static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
 static constexpr bool TestCorrectness = Debug;
 static constexpr bool TestInfiniteCorrectness = true;
 static constexpr auto TestForceSameSign = false;
-static constexpr bool TestMPIRImpl = true;
+static constexpr bool TestMPIRImpl = Debug;
 static constexpr bool TestInitCudaMemory = true;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
 // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool TestReferenceImpl = false;
+static constexpr bool TestReferenceImpl = Debug;
 
 constexpr uint32_t
 ceil_pow2_u32(uint32_t v)
@@ -189,9 +189,9 @@ static constexpr auto ScratchMemoryCopies = 256llu;
 
 // Number of arrays of digits on each frame (non-NR baseline)
 static constexpr auto ScratchMemoryArraysForMultiply = 64;
-static constexpr auto ScratchMemoryArraysForMultiplyNR = 120;
-static constexpr auto ScratchMemoryArraysForAdd = 64;
-static constexpr auto ScratchMemoryArraysForAddNR = 128;
+static constexpr auto ScratchMemoryArraysForMultiplyNR = 90;
+static constexpr auto ScratchMemoryArraysForAdd = 40;
+static constexpr auto ScratchMemoryArraysForAddNR = 76;
 
 // Additional space per frame:
 static constexpr auto AdditionalUInt64PerFrame = 256;
@@ -256,6 +256,16 @@ CalculateAddFrameSize()
                                 ? ScratchMemoryArraysForAddNR
                                 : ScratchMemoryArraysForAdd;
     return arrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+}
+
+// Returns the maximum of NTT and Add frame sizes (both share the same scratch allocation).
+template <class SharkFloatParams>
+static constexpr auto
+CalculateMaxFrameSize()
+{
+    constexpr auto ntt = CalculateNTTFrameSize<SharkFloatParams>();
+    constexpr auto add = CalculateAddFrameSize<SharkFloatParams>();
+    return (ntt > add) ? ntt : add;
 }
 
 static constexpr auto LowPrec = 32;

@@ -625,6 +625,11 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
             Y[(size_t)i] = MontgomeryMul(debugCombo, Y[(size_t)i], roots.psi_pows[(size_t)i]);
         }
 
+        // 3) Forward NTT (in place)
+        BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+        BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+
+        // Checksum after twist+bitreverse (matches GPU scatter-write pack order)
         if constexpr (HpShark::DebugChecksums) {
             const auto &debugXState =
                 GetCurrentDebugState<SharkFloatParams, step1X>(debugStates, X.data(), (size_t)plan.N);
@@ -632,14 +637,10 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                 GetCurrentDebugState<SharkFloatParams, step1Y>(debugStates, Y.data(), (size_t)plan.N);
 
             if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "After twist, debugXState checksum: " << debugXState.GetStr() << "\n";
-                std::cout << "After twist, debugYState checksum: " << debugYState.GetStr() << "\n";
+                std::cout << "After twist+bitrev, debugXState checksum: " << debugXState.GetStr() << "\n";
+                std::cout << "After twist+bitrev, debugYState checksum: " << debugYState.GetStr() << "\n";
             }
         }
-
-        // 3) Forward NTT (in place)
-        BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
-        BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
 
         NTTRadix2<SharkFloatParams, false>(
             debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);

@@ -91,7 +91,7 @@ Per-pixel perturbation computation uses these types, from lowest to highest prec
 | `dblflt` | 2×fp32 | ~48 | practical sweet spot on GPU |
 | `double` | 1×fp64 | ~53 | standard; slow on consumer GPUs |
 | `dbldbl` | 2×fp64 | ~104 | academic |
-| `GQF::gqf_real` | 4×fp32 | ~112 | academic |
+| `GQF::gqf_real` | 4×fp32 | ~96 | academic |
 | `GQD::gqd_real` | 4×fp64 | ~212 | academic |
 | MPIR / `HpSharkFloat` | N limbs | arbitrary | reference orbit only |
 
@@ -182,13 +182,17 @@ MPIR memory allocation is controlled via `mp_set_memory_functions` (process-glob
 
 Three evaluation backends are available for Phase A: direct iteration, perturbation theory, and linear approximation — so the finder works at any zoom depth. Influenced by the Imagina fractal viewer's periodic-point finder.
 
+**GPU Newton-Raphson inner loop**: The Phase B inner loop (iterating z=z²+c plus dzdc and d2 derivatives for p steps) is fully implemented on the GPU via the `HpSharkFloat` backend. The 4 NR derivative products (W0–W3) are interleaved into the same multiply and add kernel calls as the 3 orbit products, sharing all grid-wide barriers with zero additional synchronization overhead. `DispatchGpuNRByPrecision` in `FeatureFinder.cpp` dispatches to the appropriate `SharkParamsNR` type (256 through 524288 limbs). The `addTwos` array applies the ×2 factor during multiply normalization.
+
 ### GPU High-Precision Arithmetic (HpSharkFloatLib)
 
 The GPU reference orbit backend in `HpSharkFloatLib/` implements:
 
 - **NTT-based multiplication**: Number Theoretic Transform over the "magic prime" `2^64 - 2^32 + 1` (Goldilocks form enabling efficient modular reduction). Pipeline: packing → twisting → forward NTT → pointwise multiply (Montgomery domain) → inverse NTT → untwisting → unpacking/normalization. Multiple products are batched simultaneously to amortize GPU synchronization.
 
-- **High-precision addition**: Parallel prefix carry propagation on GPU — signed limbwise accumulation followed by single-pass parallel prefix scan for carry resolution and normalization.
+- **High-precision addition**: Parallel prefix carry propagation on GPU — signed limbwise accumulation followed by single-pass parallel prefix scan with decoupled look-back (Merrill–Garland) for carry resolution and normalization. Three carry streams (A−B+C true branch, false branch, D+E) are packed into a single `PPTransfer3` struct and resolved in one scan. An earlier hierarchical scan implementation (`CarryPropagation_ABC_PPv3`) is retained for reference but not used in production.
+
+- **Multiply normalization carry propagation**: Uses the same decoupled-look-back parallel prefix scan as addition. Two rounds of ripple carry first reduce wide accumulators into standard form, then the DLB prefix scan resolves any residual carries.
 
 - **Checksum-guided debugging**: Stage checksums (homomorphic summaries) are computed at each pipeline stage on both host and device, then cross-compared to isolate GPU kernel bugs. This pattern is used throughout HpSharkFloat development for correctness validation.
 

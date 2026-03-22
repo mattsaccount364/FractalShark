@@ -2423,17 +2423,22 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
 
     const uint64_t zero_m = ToMontgomeryConstexpr(0ull);
 
-    // -------------------- Phase A: pack+twist with tail zero (grid-stride) --------------------
+    // Bit-reversal shift for scatter-write (eliminates standalone BitReverse pass)
+    const uint32_t brShift = 32u - static_cast<uint32_t>(SharkFloatParams::NTTPlan.stages);
+
+    // -------------------- Phase A: pack+twist with scatter-write to bit-reversed positions ----------
     for (size_t i = grank; i < (size_t)N; i += gsize) {
+        const uint32_t rev_i = __brev(static_cast<uint32_t>(i)) >> brShift;
+
         if (i < L) {
             const uint64_t coeff = ReadBitsSimple(
                 inA, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
-            const uint64_t cmod = coeff % MagicPrime; // match original
+            const uint64_t cmod = coeff % MagicPrime;
             const uint64_t xm = ToMontgomery(grid, block, debugGlobalState, cmod);
-            const uint64_t psik = roots.psi_pows[i]; // Montgomery domain
-            tempDigitsXX1[i] = MontgomeryMul(grid, block, debugGlobalState, xm, psik);
+            const uint64_t psik = roots.psi_pows[i];
+            tempDigitsXX1[rev_i] = MontgomeryMul(grid, block, debugGlobalState, xm, psik);
         } else {
-            tempDigitsXX1[i] = zero_m;
+            tempDigitsXX1[rev_i] = zero_m;
         }
 
         if (i < L) {
@@ -2441,13 +2446,12 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
                 inB, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
             const uint64_t cmodB = coeffB % MagicPrime;
             const uint64_t xmB = ToMontgomery(grid, block, debugGlobalState, cmodB);
-            const uint64_t psiB = roots.psi_pows[i]; // Montgomery domain
-            tempDigitsYY1[i] = MontgomeryMul(grid, block, debugGlobalState, xmB, psiB);
+            const uint64_t psiB = roots.psi_pows[i];
+            tempDigitsYY1[rev_i] = MontgomeryMul(grid, block, debugGlobalState, xmB, psiB);
         } else {
-            tempDigitsYY1[i] = zero_m;
+            tempDigitsYY1[rev_i] = zero_m;
         }
 
-        // NR: pack+twist dzdcR → W0_1, dzdcI → W1_1 (used as forward-NTT scratch)
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             const uint64_t psi_i = roots.psi_pows[i];
 
@@ -2456,9 +2460,9 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
                     *inDzdcReal, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
                 const uint64_t cmodDR = coeffDR % MagicPrime;
                 const uint64_t xmDR = ToMontgomery(grid, block, debugGlobalState, cmodDR);
-                tempDigitsW0_1[i] = MontgomeryMul(grid, block, debugGlobalState, xmDR, psi_i);
+                tempDigitsW0_1[rev_i] = MontgomeryMul(grid, block, debugGlobalState, xmDR, psi_i);
             } else {
-                tempDigitsW0_1[i] = zero_m;
+                tempDigitsW0_1[rev_i] = zero_m;
             }
 
             if (i < L) {
@@ -2466,9 +2470,9 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
                     *inDzdcImag, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
                 const uint64_t cmodDI = coeffDI % MagicPrime;
                 const uint64_t xmDI = ToMontgomery(grid, block, debugGlobalState, cmodDI);
-                tempDigitsW1_1[i] = MontgomeryMul(grid, block, debugGlobalState, xmDI, psi_i);
+                tempDigitsW1_1[rev_i] = MontgomeryMul(grid, block, debugGlobalState, xmDI, psi_i);
             } else {
-                tempDigitsW1_1[i] = zero_m;
+                tempDigitsW1_1[rev_i] = zero_m;
             }
         }
     }
@@ -2522,30 +2526,8 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(
         grid.sync();
     }
 
-    // A: forward NTT (grid-wide helpers)
-    // When NR is enabled, process all 4 transforms (A, B, dzdcR, dzdcI) in FourWay
-    // to share the same grid.sync() calls within the NTT butterfly stages.
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        BitReverseInplace64_GridStride<Multiway::FourWay>(grid,
-                                                          block,
-                                                          tempDigitsXX1,
-                                                          tempDigitsYY1,
-                                                          tempDigitsW0_1,
-                                                          tempDigitsW1_1,
-                                                          N,
-                                                          (uint32_t)SharkFloatParams::NTTPlan.stages);
-    } else {
-        BitReverseInplace64_GridStride<Multiway::TwoWay>(grid,
-                                                         block,
-                                                         tempDigitsXX1,
-                                                         tempDigitsYY1,
-                                                         nullptr,
-                                                         nullptr,
-                                                         N,
-                                                         (uint32_t)SharkFloatParams::NTTPlan.stages);
-    }
-
-    grid.sync();
+    // Forward bit-reverse merged into pack phase (scatter-write to rev_i).
+    // Data is already in bit-reversed order — proceed directly to forward NTT.
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         NTTRadix2_GridStride<SharkFloatParams, Multiway::FourWay, false>(shared_data,

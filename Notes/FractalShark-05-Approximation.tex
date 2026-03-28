@@ -126,8 +126,8 @@ advantage while reducing per-pixel work from $O(p)$ to a fraction of~$p$.
 \subsection{Bilinear approximation (BLA) for orbit deltas}
 \label{sec:bilinear-approx}
 
-Bilinear approximation, \reviewme{external}{introduced by Zhuoran in the Imagina
-viewer}~\cite{Imagina} and described in detail by
+Bilinear approximation, introduced by Zhuoran in the Imagina
+viewer~\cite{Imagina}and described in detail by
 Thompson \cite{Thompson2023BLA}, precomputes composable linear
 maps that advance the perturbation delta by multiple iterations at once,
 avoiding per-step evaluation when the linearization error remains small
@@ -199,7 +199,7 @@ squared-magnitude proxy \code{z2} against \code{r2}). When a step is valid, the
 renderer can advance the orbit by \code{l} iterations at a cost far below
 performing \code{l} full high-precision Mandelbrot updates.
 
-\subsection{LA v2 linear approximation with perturbation (HDR kernel)}
+\subsection{LA~v2 linear approximation with perturbation (HDR kernel)}
 \label{sec:la-v2-perturb}
 
 This kernel family combines staged linear-approximation steps introduced by
@@ -258,7 +258,7 @@ deep zoom.
 \subsubsection{LA coefficient model}
 \label{sec:la-coeff-model}
 
-The LA v2 algorithm approximates the perturbation delta after multiple
+The LA~v2 algorithm approximates the perturbation delta after multiple
 iterations as a linear function of two quantities: a nonlinearly transformed
 input perturbation and the parameter offset.  Concretely, each LA entry stores
 a reference orbit value \(z_\mathrm{ref}\) together with two complex
@@ -335,7 +335,7 @@ Starting from the exact perturbation recurrence (dropping the quadratic
 \]
 and substituting the LA model
 \(\Delta z_n \approx \code{ZCoeff}_k\cdot\tilde{\Delta z}
-                    + \code{CCoeff}_k\cdot\Delta c\), we obtain
+                    + \code{CCoeff}_k\cdot\Delta c\), one obtains
 \begin{align}
 \Delta z_{n+1}
   &\approx 2\,z_n^\star\bigl(
@@ -394,7 +394,7 @@ To control this, each LA entry tracks a validity threshold
 \end{equation}
 where \(\lVert\cdot\rVert_\infty\) is the Chebyshev (max-component) norm,
 \(\lVert a + bi \rVert_\infty = \max(|a|, |b|)\), and
-\reviewme{heuristic}{\code{LAThresholdScale} is an empirically chosen tunable parameter (default \(2^{-24}\)); no formal derivation is known}.
+\code{LAThresholdScale} is an empirically chosen tunable parameter (default \(2^{-24}\)); no formal derivation is known.
 The \(\min\) in \eqref{eq:la-threshold} ensures the threshold can only decrease as more iterations are
 absorbed, reflecting the accumulation of linearization error.
 
@@ -513,7 +513,7 @@ lower-level ones.
 \subsubsection{Period-aligned stage hierarchy}
 \label{sec:la-stage-hierarchy}
 
-The power of LA v2 comes from aligning the approximation hierarchy
+The power of LA~v2 comes from aligning the approximation hierarchy
 with the reference orbit's periodic structure.  The construction,
 implemented in \code{LAReference::\allowbreak CreateLAFromOrbit} and
 \code{Create\-New\-LA\-Stage}, proceeds as follows:
@@ -580,7 +580,7 @@ implemented in \code{LAReference::\allowbreak CreateLAFromOrbit} and
         algorithm synthesizes an artificial period as
         \(\lfloor M^{1/k}\rfloor\) (where \(M\) is the total iteration
         count and \(k\) is derived from \code{periodDivisor}) and
-        proceeds with that period length.  This ensures LA v2 provides
+        proceeds with that period length.  This ensures LA~v2 provides
         some acceleration even for non-periodic reference orbits,
         though the skip lengths will be shorter.
 
@@ -795,26 +795,26 @@ Each line is a chained complex multiply expanded into four real products.
 \subsubsection{Comparison with BLA}
 \label{sec:la-vs-bla}
 
-BLA (\cref{sec:bilinear-approx}) and LA v2 share the same underlying
+BLA (\cref{sec:bilinear-approx}) and LA~v2 share the same underlying
 linear-map form \(\Delta z \mapsto A\,\Delta z + B\,\Delta c\), but
 differ in hierarchy design and accuracy:
 \begin{itemize}
   \item \textbf{Hierarchy structure.}  BLA builds a generic binary tree
         of composed steps at power-of-two granularity (levels
         \(1, 2, 4, 8, \ldots\)), agnostic of the orbit's dynamics.
-        LA v2 builds a multi-stage hierarchy aligned to the orbit's
+        LA~v2 builds a multi-stage hierarchy aligned to the orbit's
         detected period, so each stage-0 entry covers one period and
         higher stages cover multiples of the period.
 
   \item \textbf{Period awareness.}  BLA has no notion of periodicity;
-        it treats the reference orbit as an opaque sequence.  LA v2
+        it treats the reference orbit as an opaque sequence.  LA~v2
         explicitly detects the period and exploits the fact that near a
         periodic point, the orbit nearly repeats---making the linear
         approximation accurate over the entire period and enabling much
         larger skip lengths.
 
   \item \textbf{Prepare step.}  BLA applies a purely linear map at every
-        step.  LA v2 applies a nonlinear Prepare step
+        step.  LA~v2 applies a nonlinear Prepare step
         (\cref{eq:la-prepare}) that retains the quadratic term at each
         entry's reference point, then linearizes only the subsequent
         iterations.  This provides better accuracy per LA step.
@@ -822,11 +822,11 @@ differ in hierarchy design and accuracy:
   \item \textbf{Kernel structure.}  The BLA kernel interleaves single
         perturbation steps with greedy BLA lookups: do one perturbation
         step, scan the hierarchy for the longest valid BLA skip, apply
-        it, and repeat.  The LA v2 kernel is two-phase: first descend
+        it, and repeat.  The LA~v2 kernel is two-phase: first descend
         through LA stages (applying period-length jumps in the inner
         loop), then fall through to perturbation for the tail.
 \end{itemize}
-In practice, LA v2's period alignment enables it to skip a much larger
+In practice, LA~v2's period alignment enables it to skip a much larger
 fraction of total iterations via the linear path compared with BLA's
 generic power-of-two hierarchy, particularly at deep zooms where the
 view is dominated by a mini-Mandelbrot copy with a well-defined period.

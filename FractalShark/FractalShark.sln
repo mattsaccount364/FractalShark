@@ -5,10 +5,6 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSaver", "..\FractalSaver\FractalSaver.vcxproj", "{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalShark", "Fractals.vcxproj", "{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}"
-	ProjectSection(ProjectDependencies) = postProject
-		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C} = {9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}
-		{E46D1897-0F30-3518-ED23-26ED5FF35747} = {E46D1897-0F30-3518-ED23-26ED5FF35747}
-	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalTray", "..\FractalTray\FractalTray.vcxproj", "{B7468E51-1CF3-4959-B1C8-394EA78CE79C}"
 EndProject

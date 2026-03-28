@@ -23,6 +23,7 @@ approach and explains how it enables efficient deep-zoom Mandelbrot rendering.
 The Mandelbrot set is defined by the iteration
 \begin{equation}
 z_{n+1} = z_n^2 + c, \qquad z_0 = 0,
+\label{eq:mandelbrot-iter}
 \end{equation}
 where \(c \in \mathbb{C}\) is the parameter associated with a pixel and the orbit
 \(\{z_n\}\) is iterated until either escape is detected or a maximum iteration
@@ -158,6 +159,7 @@ the image region. Its orbit is computed using sufficiently high precision to
 serve as a reliable baseline:
 \begin{equation}
 z_{n+1}^\star = (z_n^\star)^2 + c_\star, \qquad z_0^\star = 0.
+\label{eq:ref-orbit-recurrence}
 \end{equation}
 The sequence \(\{z_n^\star\}\) is stored and reused for all pixels within the
 region. Because this orbit underpins the evaluation of many pixels, its
@@ -170,6 +172,7 @@ For a nearby pixel parameter \(c = c_\star + \Delta c\), the orbit can be writte
 as a small deviation from the reference orbit:
 \begin{equation}
 z_n = z_n^\star + \Delta z_n.
+\label{eq:perturb-decomposition}
 \end{equation}
 Substituting this expression into the Mandelbrot recurrence yields an exact
 update rule for the deviation:
@@ -218,13 +221,13 @@ efficiently in parallel for many pixels.
 Although perturbation evolves only the deviation \(\Delta z_n\), escape-time
 rendering requires testing the magnitude of the full orbit value. At each
 iteration, the current iterate is reconstructed as
-\begin{equation}
+\[
 z_n = z_n^\star + \Delta z_n,
-\end{equation}
+\]
 and the standard Mandelbrot bailout condition is applied:
-\begin{equation}
+\[
 |z_n|^2 \ge 4.
-\end{equation}
+\]
 The iteration at which this condition is first satisfied determines the pixel's
 escape time.
 
@@ -266,7 +269,7 @@ numerical and is unrelated to high-dynamic-range imaging.
 \label{sec:perturb-only}
 
 This kernel can render the Mandelbrot set using \emph{perturbation alone}, i.e.,
-without taking any LA v2 linear-approximation steps. The same CUDA entry point
+without taking any LA~v2 linear-approximation steps. The same CUDA entry point
 \code{mandel\_1xHDR\_float\_perturb\_lav2<IterType,T,SubType,Mode,PExtras>} is
 used; the behavior is selected at compile time via \code{LAv2Mode}. In
 particular, when \code{Mode} includes only the perturbation path (e.g.\
@@ -402,7 +405,7 @@ compute escape-time using a stable bailout on the reconstructed orbit.
 
 The kernel is structured as two compile-time phases:
 \begin{itemize}
-\item an LA v2 phase guarded by \code{Mode == Full || Mode == LAO},
+\item an LA~v2 phase guarded by \code{Mode == Full || Mode == LAO},
 \item a perturbation phase guarded by \code{Mode == Full || Mode == PO}.
 \end{itemize}
 Therefore, perturbation-only rendering is achieved by instantiating the kernel

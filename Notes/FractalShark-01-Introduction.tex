@@ -14,9 +14,9 @@ precision, memory management, and GPU kernel design.  As a result, this
 document serves a dual purpose: it is both \emph{technical documentation}
 of the algorithms and architecture underlying \FractalShark{}, and a
 \emph{research notebook} recording the design rationale, tradeoffs, and
-lessons learned during development.  Where relevant, we note alternative
-approaches that were considered or attempted, and explain why the current
-design was chosen.
+lessons learned during development.  Where relevant, alternative
+approaches that were considered or attempted are noted, along with
+explanations of why the current design was chosen.
 
 The presentation proceeds from high-level goals and mathematical background
 through the individual subsystems---rendering kernels, perturbation
@@ -162,7 +162,7 @@ a sequence of stages.  Most stages are implemented as CUDA kernels; the CPU
 orchestrates data flow between them and handles high-precision coordinate
 arithmetic.
 
-\begin{verbatim}
+\begin{lstlisting}[language={},basicstyle=\ttfamily\small,columns=flexible]
   View parameters (centre, zoom, iterations)
           |
           v
@@ -188,7 +188,7 @@ arithmetic.
           |
           v
   Display (OpenGL)              [RenderThreadPool GL consumer]
-\end{verbatim}
+\end{lstlisting}
 
 The first two stages---coordinate mapping and reference orbit
 computation---dominate wall-clock time at extreme zoom depths, because

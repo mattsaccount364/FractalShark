@@ -1,7 +1,7 @@
 \section{Disk-Backed Growable Vectors with Stable Virtual Addresses}
 \label{sec:disk_backed_growable_vectors}
 
-High-resolution Mandelbrot rendering and reference-orbit techniques (\cref{sec:ref-orbit-calc}) impose
+High-resolution Mandelbrot rendering, perturbation theory (\cref{sec:perturbation-concept}), and reference-orbit computation (\cref{sec:ref-orbit-calc}) impose
 extreme demands on memory management. At deep zoom levels, a single authoritative
 reference orbit may contain tens of billions of elements; for example, an orbit
 with $2.7\times10^{10}$ iterations already implies a logical memory footprint far
@@ -9,7 +9,7 @@ beyond what can be held resident in RAM, even with compact per-iteration storage
 At this scale, both the cost of allocation and the cost of relocation become
 dominant design constraints.
 
-Several subsystems in \FractalShark{}—including orbit logging, metadata streams,
+Several subsystems in \FractalShark{}—including orbit logging (see the compressed orbit format in \cref{subsec:ref-orbit-compression-reuse}), metadata streams,
 debug outputs, and the custom heap allocator—require \emph{growable} storage
 while simultaneously maintaining \emph{stable virtual addresses} for previously
 returned pointers. This requirement arises naturally when the program hands out
@@ -19,14 +19,14 @@ would require copying large amounts of data, which is computationally
 infeasible at multi-billion-element scales.
 
 In addition to scale and pointer stability, persistence is a first-class
-concern. Reference orbits are expensive to compute but comparatively cheap to
+concern. Reference orbits are expensive to compute (\cref{subsec:ref-orbit-gpu}) but comparatively cheap to
 reuse. If orbit data can be left resident on disk and later reloaded simply by
 mapping the same backing file back into the process address space, recomputation
 can be avoided entirely. This enables efficient multi-pass rendering workflows,
 interactive debugging, and reuse of authoritative reference orbits across program
 invocations.
 
-To address these requirements, we implement a
+To address these requirements, \FractalShark{} provides a
 \code{GrowableVector<EltT>} abstraction that combines (i) a fixed,
 virtually-contiguous address range reserved up front and (ii) incremental growth
 within that range by committing additional pages on demand. Growth is performed
@@ -47,7 +47,7 @@ capacity increases. The abstraction supports two complementary backing modes:
   only as accessed, substantially reducing peak commit requirements when the
   logical capacity greatly exceeds physical memory. When persistence is enabled,
   the same backing file can later be remapped to recover the stored data without
-  recomputation.
+  recomputation, directly supporting the orbit-reuse strategy described in \cref{subsec:ref-orbit-reuse}.
 \end{enumerate}
 
 \subsection{Stable-address growth via reserve-and-commit}
@@ -122,7 +122,7 @@ base address and treating any base-address change as a hard error.
 \label{sec:file_backed_mapping}
 
 When a filename is provided (or a temporary filename is generated), the vector
-opens or creates a backing file and constructs a section object over it. We use
+opens or creates a backing file and constructs a section object over it. The implementation uses
 native NT section APIs (e.g., \code{NtCreateSection},
 \code{NtMapViewOfSection}, and \code{NtExtendSection}) to obtain a
 reserve-style mapping suitable for later extension.
@@ -233,7 +233,7 @@ sparse sections, or fallback allocators that relax the stable-address requiremen
 in exchange for broader compatibility.
 
 The preceding chapters have covered the full rendering pipeline from iteration
-kernels through memory management.  The next chapter surveys alternative and
+kernels through memory management.  The next chapter (\cref{sec:future-directions}) surveys alternative and
 complementary techniques that informed \FractalShark{}'s design choices and
 that represent promising directions for future work.
 

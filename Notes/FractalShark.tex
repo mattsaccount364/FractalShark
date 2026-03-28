@@ -94,38 +94,9 @@ recently and is getting better.}
 \subsection*{Items Flagged for Review}
 \label{sec:review-items}
 
-The following items are marked {\color{red!70!black}\bfseries in bold
-red} in the text with numbered margin tags.  Comment out
-\verb|\newcommand{\DraftMode}{}| in the preamble to produce a clean PDF.
-
-\begin{center}
-\small
-\begin{tabularx}{\textwidth}{clclX}
-\hline
-\textbf{\#} & \textbf{Page} & \textbf{Cat.} & \textbf{Section} & \textbf{What to check} \\
-\hline
-1  & \pageref{review:1}  & perf      & \S3  & ``32:1 slower than fp32'' --- verify for target GPUs \\
-2  & \pageref{review:2}  & perf      & \S3  & ``faster than fp64 in principle'' --- benchmark needed \\
-3  & \pageref{review:3}  & external  & \S5  & BLA attribution to Imagina/Zhuoran --- verify accuracy \\
-4  & \pageref{review:4}  & heuristic & \S5  & \code{LAThresholdScale} default $2^{-24}$ --- empirical, no derivation \\
-5  & \pageref{review:5}  & heuristic & \S6  & Periodicity detection formula $n_2 < n_3$ --- empirical, no derivation \\
-6  & \pageref{review:6}  & rationale & \S6  & Expanded-form choice rationale --- is this still accurate? \\
-7  & \pageref{review:7}  & perf      & \S6  & ``typically outperforms single-threaded'' --- benchmark? \\
-8  & \pageref{review:8}  & external  & \S11 & External algorithm descriptions --- check against sources \\
-9  & \pageref{review:9}  & rationale & \S12 & Rebasing vs.\ glitch --- verify rationale \\
-10 & \pageref{review:10} & rationale & \S12 & LA~v2 vs.\ SA --- verify rationale \\
-11 & \pageref{review:11} & rationale & \S12 & NTT vs.\ Karatsuba --- verify rationale \\
-\hline
-\end{tabularx}
-\end{center}
-
-\vspace{0.5em}
-\noindent
-\textbf{Categories:}
-\textit{perf}~= performance claim without data;
-\textit{heuristic}~= tuning parameter without derivation;
-\textit{rationale}~= design decision justification;
-\textit{external}~= claim about third-party software.
+No items are currently flagged for review.  Use \verb|\reviewme{category}{text}|
+in chapter files to flag new items; they will appear here automatically.
+Comment out \verb|\newcommand{\DraftMode}{}| in the preamble to produce a clean PDF.
 \clearpage
 \fi
 \renewcommand\numberline[1]{#1\enspace}

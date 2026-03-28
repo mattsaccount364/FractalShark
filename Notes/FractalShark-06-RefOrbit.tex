@@ -9,6 +9,7 @@ orbit}---to be computed at the full precision of the zoom depth.  At
 extreme magnifications this means iterating
 \begin{equation}
   z_{n+1} = z_n^2 + c,\qquad z,c\in\mathbb{C},
+  \label{eq:mandelbrot-recurrence}
 \end{equation}
 for potentially \emph{billions} of steps, with each step carried out at
 \emph{thousands} of bits of precision.  The resulting orbit may contain
@@ -79,8 +80,8 @@ Given a selected reference parameter \(c = c_x + i c_y\), the implementation:
 \paragraph{Recurrence.}
 Writing \(z_n = x_n + i y_n\), one iteration evaluates
 \begin{align}
-  x_{n+1} &= x_n^2 - y_n^2 + c_x, \\
-  y_{n+1} &= 2 x_n y_n + c_y.
+  x_{n+1} &= x_n^2 - y_n^2 + c_x, \label{eq:st-recurrence-real} \\
+  y_{n+1} &= 2 x_n y_n + c_y. \label{eq:st-recurrence-imag}
 \end{align}
 The implementation uses:
 \begin{itemize}
@@ -95,6 +96,7 @@ The bailout threshold is evaluated in low precision using
 
 \begin{equation}
   \|\hat{z}_n + \hat{c}\|^2 = (\hat{x}_n + \hat{c}_x)^2 + (\hat{y}_n + \hat{c}_y)^2 > 256,
+  \label{eq:bailout-test}
 \end{equation}
 
 which matches the code's use of \code{TwoFiftySix} and avoids a high-precision
@@ -115,6 +117,7 @@ Several modes enable periodicity detection. The implementation tracks the comple
 \(\frac{\partial z_n}{\partial c}\) in low precision:
 \begin{equation}
   d_{n+1} = 2 z_n d_n + 1,\qquad d_0 = 0.
+  \label{eq:dzdc-def}
 \end{equation}
 Mathematically \(d_0 = \partial z_0/\partial c = 0\), since \(z_0=0\).
 Because the implementation begins its loop at \(z_1=c\) (folding in the
@@ -124,21 +127,23 @@ which corresponds to \(d_1=1\) in the recurrence above.
 with \(d_n = d_{x,n} + i d_{y,n}\). Expanding into real and imaginary parts yields:
 
 \begin{align}
-  d_{x,n+1} &= 2(x_n d_{x,n} - y_n d_{y,n}) + 1, \\
-  d_{y,n+1} &= 2(x_n d_{y,n} + y_n d_{x,n}).
+  d_{x,n+1} &= 2(x_n d_{x,n} - y_n d_{y,n}) + 1, \label{eq:st-dzdc-real} \\
+  d_{y,n+1} &= 2(x_n d_{y,n} + y_n d_{x,n}). \label{eq:st-dzdc-imag}
 \end{align}
 
-\reviewme{heuristic}{The code applies an empirically chosen radius-based heuristic (no formal derivation is known)}: let
+The code applies an empirically chosen radius-based heuristic (no formal derivation is known): let
 
 \begin{equation}
   n_2 = \max(|\hat{x}_n|,|\hat{y}_n|),\qquad
   r_0 = \max(|d_{x,n}|,|d_{y,n}|),
+  \label{eq:periodicity-norms}
 \end{equation}
 
 and define a detection threshold
 
 \begin{equation}
   n_3 = 2\,R_{\max}\,r_0,
+  \label{eq:periodicity-threshold}
 \end{equation}
 
 where \(R_{\max}\) is the maximum perturbation radius stored in \code{results}
@@ -203,9 +208,9 @@ terms and alters the way cancellation and rounding effects manifest in
 finite-precision arithmetic.
 
 In all cases, \FractalShark{} uses the expanded form despite the advantages offered
-by the factored form. \reviewme{rationale}{This choice simplifies reasoning about numerical behavior,
+by the factored form. This choice simplifies reasoning about numerical behavior,
 ensures that all arithmetic paths are exercised, and maintains consistency with
-the perturbation update form used elsewhere in the codebase.}  For better
+the perturbation update form used elsewhere in the codebase.  For better
 performance it likely makes sense to implement both forms and compare their behavior
 empirically.
 
@@ -253,7 +258,7 @@ The earlier perturbation sections
 (\cref{sec:perturbation-concept,sec:perturb-only})
 write the reference orbit and parameter as
 \(z_n^\star\) and \(c_\star\).
-Here we use the indexed notation
+The following uses the indexed notation
 \(z^{(0)}_n\) and \(c_0\) instead, so that the superscript can
 distinguish the authoritative level~\(0\) from intermediate
 levels~\(1,2,\ldots\) in the reuse hierarchy.
@@ -292,7 +297,7 @@ z_n(c) = z^{(0)}_n + \Delta z_n,
 where $\Delta z_n$ represents the perturbation relative to the authoritative orbit.
 Substituting into the defining recurrence yields the exact perturbation equation
 \begin{align}
-\Delta z_0 &= 0, \\
+\Delta z_0 &= 0, \label{eq:perturbation-init} \\
 \Delta z_{n+1}
 &= 2 z^{(0)}_n \Delta z_n + (\Delta z_n)^2 + \Delta c.
 \label{eq:perturbation_exact}
@@ -424,7 +429,7 @@ Let the (authoritative) high-precision reference orbit be
 z_n^{\mathrm{HP}} \in \mathbb{C}
 \)
 for \(n=0,\dots,N\).
-During compression and decompression we also maintain a low-precision surrogate
+During compression and decompression, the implementation also maintains a low-precision surrogate
 \(
 \hat z_n \in \mathbb{C}
 \)
@@ -454,11 +459,12 @@ A convenient test is
 
 where \(\lVert \cdot \rVert\) may be \(\ell_\infty\), \(\ell_2\), or another cheap norm
 (consistent between compression and decompression), and \(\varepsilon\) is a
-user-controlled tolerance.  Whenever the error exceeds the threshold, we emit a waypoint at \(n\)
+user-controlled tolerance.  Whenever the error exceeds the threshold, the compressor emits a waypoint at \(n\)
 and \emph{reset} the low-precision state to the authoritative value:
 
 \begin{equation}
   \text{if waypoint at } n:\qquad \hat z_n \leftarrow z_n^{\mathrm{HP}}.
+  \label{eq:waypoint-reset}
 \end{equation}
 
 Between waypoints, the compressor stores nothing, relying on \(\hat z\)-iteration
@@ -480,6 +486,7 @@ hard resets:
 \begin{equation}
   \hat z_{n+1} = \hat z_n^2 + c \quad\text{(low precision)},\qquad
   \text{and if } n = n_k:\ \hat z_n \leftarrow w_k.
+  \label{eq:decompress-replay}
 \end{equation}
 
 If the decompressor uses the same low-precision arithmetic, the same recurrence,
@@ -507,6 +514,7 @@ Choose a \emph{base} (reference) iteration \(r\) and represent subsequent states
 
 \begin{equation}
   z_n = z_r + \Delta z_n, \qquad n \ge r,
+  \label{eq:self-ref-perturbation}
 \end{equation}
 
 where \(z_r\) is treated as a reference and \(\Delta z_n\) is (ideally) small.
@@ -524,6 +532,7 @@ compressor may begin emitting waypoints that store \(\Delta z_n\) rather than
 
 \begin{equation}
   w_k = \Delta z_{n_k} \quad\text{(instead of } z_{n_k}\text{)}.
+  \label{eq:pert-waypoint-payload}
 \end{equation}
 
 \paragraph{Rebasing synchronization.}
@@ -571,6 +580,7 @@ decompressor can compute the current error at \(m\) directly:
 \begin{equation}
   e_m = z_m^{\mathrm{HP}} - \tilde z_m
   \quad\text{(or the analogous difference in the perturbation representation).}
+  \label{eq:waypoint-error}
 \end{equation}
 
 Assuming the dominant source of \(e_m\) is accumulated from the previous segment,
@@ -668,10 +678,11 @@ waypoints
 \{(i_k, z_{i_k})\}_{k=0}^{K-1}
 \),
 where \(i_k\) denotes the uncompressed iteration index and \(z_{i_k}\) the saved
-state.  Given a request for an arbitrary iteration \(n\), we locate the nearest
+state.  Given a request for an arbitrary iteration \(n\), the decompressor locates the nearest
 preceding waypoint
 \begin{equation}
   k^\star = \max\{k \mid i_k \le n\},
+  \label{eq:waypoint-search}
 \end{equation}
 using a binary search over the waypoint indices in
 \(\mathcal{O}(\log K)\) time.  Reconstruction then proceeds by replaying the
@@ -680,6 +691,7 @@ low-precision recurrence forward from that anchor for
 \begin{equation}
   z_{t+1} \leftarrow z_t^2 + c,
   \qquad t = i_{k^\star}, \dots, n-1,
+  \label{eq:replay-recurrence}
 \end{equation}
 with the same reduction/normalization operations used during compression.  This
 provides efficient, bounded-cost random access suitable for linear approximation
@@ -706,8 +718,8 @@ from older anchors.
 \paragraph{Combined complexity and practical behavior.}
 This hybrid design yields the desirable properties of both approaches:
 \begin{align}
-  \text{sequential access} &: \quad \mathcal{O}(1)\ \text{amortized per iteration}, \\
-  \text{random access} &: \quad \mathcal{O}(\log K + \Delta),
+  \text{sequential access} &: \quad \mathcal{O}(1)\ \text{amortized per iteration}, \label{eq:sequential-complexity} \\
+  \text{random access} &: \quad \mathcal{O}(\log K + \Delta), \label{eq:random-access-complexity}
 \end{align}
 where \(\Delta\) is the distance from the nearest preceding waypoint.  In typical
 compressed references, \(\Delta\) is small relative to the full orbit length,
@@ -756,6 +768,7 @@ serialization.  Once the squared terms are returned, the real component update
 is completed as
 \begin{equation}
   x_{n+1} = x_n^2 - y_n^2 + c_x.
+  \label{eq:mt-real-update}
 \end{equation}
 This decomposition exposes substantial instruction-level and thread-level
 parallelism while preserving the exact arithmetic semantics required for
@@ -801,8 +814,8 @@ concurrent execution increasingly effective.  Overlapping independent
 operations, such as the simultaneous computation of \(x_n^2\) and \(y_n^2\),
 yields substantial gains, while explicit limb prefetching further mitigates
 memory latency.  Beyond a hardware- and workload-dependent threshold,
-\reviewme{perf}{multi-threaded reference-orbit computation typically outperforms the
-single-threaded path in practice, with speedups increasing as precision grows}.
+multi-threaded reference-orbit computation can outperform the
+single-threaded path in practice, with speedups increasing as precision grows.
 
 To exploit this behavior without requiring manual tuning, the \code{Auto}
 selection mode chooses the perturbation algorithm based on the current zoom
@@ -849,6 +862,7 @@ buffer:
   \widehat{x}_n \leftarrow \mathrm{HDR}(x_n), \quad
   \widehat{y}_n \leftarrow \mathrm{HDR}(y_n), \quad
   \code{OutputIters}[n] \leftarrow (\widehat{x}_n, \widehat{y}_n).
+  \label{eq:hdr-extraction}
 \end{equation}
 
 This trace is used both for downstream diagnostics and to provide a compact,
@@ -856,7 +870,7 @@ device-side record of the authoritative orbit prefix.
 
 \paragraph{Derivative-based periodicity criterion.}
 
-In addition to the orbit state, we propagate the complex derivative
+In addition to the orbit state, the computation propagates the complex derivative
 \(
 \frac{dz}{dc}
 \)
@@ -879,7 +893,7 @@ Writing \(z_n = x_n + i y_n\) and introducing the shorthand
   d_{y,n+1} &= 2\,(x_n\, d_{y,n} + y_n\, d_{x,n}). \label{eq:dzdc-imag}
 \end{align}
 
-In our implementation, the derivative accumulators \code{dzdcX} and
+In this implementation, the derivative accumulators \code{dzdcX} and
 \code{dzdcY} are stored in the same high-precision float type used by the
 orbit state, but the periodicity decision itself is performed on reduced HDR
 magnitudes to minimize overhead:
@@ -887,6 +901,7 @@ magnitudes to minimize overhead:
 \begin{equation}
   \|z_n\|_\infty \approx \max(|\widehat{x}_n|, |\widehat{y}_n|), \qquad
   \left\|\frac{dz_n}{dc}\right\|_\infty \approx \max(|\widehat{d x}_n|, |\widehat{d y}_n|),
+  \label{eq:reduced-norms}
 \end{equation}
 
 where hats denote reduced HDR representations after a normalization/reduction
@@ -911,6 +926,7 @@ Concretely, the device computes
   n_2 \leftarrow \max(|\widehat{x}_n|, |\widehat{y}_n|), \quad
   r_0 \leftarrow \max(|\widehat{d x}_n|, |\widehat{d y}_n|), \quad
   n_3 \leftarrow 2\,R\,r_0,
+  \label{eq:gpu-periodicity-vars}
 \end{equation}
 
 and terminates when \(n_2 < n_3\), setting \code{PeriodicityStatus =
@@ -930,6 +946,7 @@ the checker evaluates
 \begin{equation}
   \|\widehat{z}_n + \widehat{c}\|_2^2
   = (\widehat{x}_n + \widehat{c}_x)^2 + (\widehat{y}_n + \widehat{c}_y)^2,
+  \label{eq:gpu-escape-norm}
 \end{equation}
 and declares \code{Escaped} when this value exceeds a fixed threshold
 (\code{256.0} in the current implementation). As with the periodicity
@@ -945,6 +962,7 @@ termination flag stored in the global \code{reference} structure. The kernel
 then executes a cooperative-grid barrier:
 \begin{equation}
   \code{grid.sync()},
+  \label{eq:grid-sync}
 \end{equation}
 ensuring that (i) all blocks observe a consistent \code{PeriodicityStatus} and
 (ii) any updates to \code{dzdcX}, \code{dzdcY}, and the trace buffer are

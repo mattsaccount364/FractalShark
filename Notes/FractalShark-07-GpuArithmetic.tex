@@ -131,7 +131,7 @@ supporting a finite, enumerated set of precisions.
 \medskip
 
 This architectural structure defines the execution context for the remainder of
-this section. We begin with the underlying \code{HpSharkFloat}
+this section. The discussion begins with the underlying \code{HpSharkFloat}
 representation and then describe the internal arithmetic pipelines used within
 each kernel invocation, including high-precision addition, NTT-based
 multiplication, carry propagation, and normalization, explaining how these
@@ -245,7 +245,7 @@ after each iteration for the add/subtract step and then restarting the kernel.
 
 \subsubsection{Numerical Representation}
 
-We represent a high-precision floating-point number as
+A high-precision floating-point number is represented as
 \begin{equation}
 x = s_x \cdot 2^{e_x} \cdot \sum_{i=0}^{N-1} d_i \, 2^{-w i},
 \end{equation}
@@ -268,7 +268,7 @@ z = x + y
 \]
 exactly, or under a well-defined rounding mode, using GPU-parallel execution.
 
-Assuming without loss of generality that $e_x \ge e_y$, we define
+Assuming without loss of generality that $e_x \ge e_y$, one defines
 \[
 \Delta = e_x - e_y
 \]
@@ -311,7 +311,7 @@ The full add pipeline requires carry propagation for three independent streams s
 
 \subsubsection{Single-Pass Parallel Prefix on the GPU}
 
-To evaluate these prefixes efficiently, we employ a single-pass parallel prefix formulation with decoupled look-back \cite{merrill2016single}. The state of each transfer function $f_i$ is encoded compactly in a bit-packed table of the three possible carry inputs, and composition is evaluated directly on those encoded states.
+To evaluate these prefixes efficiently, the implementation employs a single-pass parallel prefix formulation with decoupled look-back \cite{merrill2016single}. The state of each transfer function $f_i$ is encoded compactly in a bit-packed table of the three possible carry inputs, and composition is evaluated directly on those encoded states.
 
 Each thread block computes the local prefix composition of its assigned limb range independently. A lightweight look-back mechanism then resolves inter-block dependencies by querying the aggregate transfer functions of preceding blocks. This design decouples the propagation of the global carry from the strict left-to-right execution order required for prefix consumption. A block can publish its aggregate transfer function immediately upon completion, allowing downstream blocks to accumulate it even if intermediate blocks are still waiting for their own incoming prefixes. In Merrill--Garland terms, a small amount of redundant look-back work is used to hide the latency of global prefix propagation while keeping the scan single-pass and work-efficient.
 
@@ -632,8 +632,8 @@ The coefficients
 s_k = \sum_{i=0}^{k} a_i c_{k-i}
 \]
 
-form the \emph{discrete convolution} of the sequences $(a_i)$ and $(c_i)$. If we
-can compute $(s_k)$ quickly, then we can recover the product (with subsequent
+form the \emph{discrete convolution} of the sequences $(a_i)$ and $(c_i)$. If
+$(s_k)$ can be computed quickly, the product can be recovered (with subsequent
 carry propagation in base $B$).
 
 \subsection{NTT as an FFT Over a Finite Field}
@@ -669,7 +669,7 @@ Just as with the complex FFT, the transform diagonalises convolution:
 
 where $\odot$ denotes pointwise multiplication and $\star$ denotes cyclic
 convolution modulo $x^N-1$. To compute the \emph{linear} convolution needed for
-multiplication, we pad both inputs with zeros to length $N \ge 2n$ so that the
+multiplication, both inputs are padded with zeros to length $N \ge 2n$ so that the
 cyclic convolution coincides with the linear convolution.
 
 \subsection{Why a Special Prime Helps: \code{MagicPrime}}
@@ -723,7 +723,7 @@ often called a ``Goldilocks'' prime. (In the codebase this role is played by
 
 \paragraph{(1) Large power-of-two factor in $p-1$.}
 
-We have
+Note that
 
 \[
 p - 1 = 2^{64} - 2^{32} = 2^{32}\left(2^{32}-1\right),
@@ -764,8 +764,8 @@ Given limb sequences $(a_i)$ and $(c_i)$:
 
 \end{enumerate}
 
-Finally, because the convolution coefficients are computed modulo $p$, we must
-ensure they represent the \emph{true integer} convolution values, not values
+Finally, because the convolution coefficients are computed modulo $p$, it is
+necessary to ensure they represent the \emph{true integer} convolution values, not values
 wrapped modulo $p$. This is achieved by choosing the limb base $B$ and transform
 length $N$ so that each exact coefficient $s_k$ satisfies
 
@@ -1079,7 +1079,7 @@ with zero additional synchronization cost.
 Correctness bugs in GPU high-precision arithmetic are difficult to
 localize: a single off-by-one carry, lane-misaligned shuffle, or missing
 synchronization can corrupt results far downstream, often without an obvious
-local symptom. To shorten the feedback loop, we instrument the arithmetic
+local symptom. To shorten the feedback loop, the implementation instruments the arithmetic
 pipeline (\cref{sec:hp-add,sec:ntt-multiply}) with lightweight \emph{stage checksums} that can be computed on the GPU,
 computed independently on the host reference implementation, and compared to
 pinpoint the first divergence. This converts a diffuse ``wrong final answer''
@@ -1091,13 +1091,13 @@ any performance impact but can be enabled selectively during debugging.
 
 Let $A \in (\mathbb{Z}/2^w\mathbb{Z})^N$ denote a limb array representing an
 intermediate mantissa or scratch buffer (e.g., aligned addends, raw limbwise
-sums, carry descriptors, normalized limbs). We associate to each such array a
+sums, carry descriptors, normalized limbs). Each such array is associated with a
 64-bit checksum
 \begin{equation}
   H(A) \in \{0,1\}^{64},
 \end{equation}
-computed deterministically over the ordered limb sequence. In our implementation
-we employ 64-bit rolling checksums (e.g., CRC-64 or Fletcher-64) because they are
+computed deterministically over the ordered limb sequence. In the current implementation,
+64-bit rolling checksums are employed(e.g., CRC-64 or Fletcher-64) because they are
 (1) inexpensive relative to high-precision arithmetic, (2) order-sensitive, and
 (3) easily reducible in parallel.
 
@@ -1128,17 +1128,17 @@ The checksum must match between host and device, so the GPU computation must be
 To make this concrete, consider a checksum family whose internal state can be
 represented as a small tuple (e.g., for Fletcher-64, $(s_1,s_2)$ with implicit
 length). Each thread processes a contiguous chunk $A[\ell:r)$ and produces a
-local state $\sigma_j$. To recover the global checksum, we require an
+local state $\sigma_j$. To recover the global checksum, an
 associative \emph{combine} operator $\oplus$ such that
 \begin{equation}
   \sigma(A[0:n)) \;=\; \sigma(A[0:k)) \;\oplus\; \sigma(A[k:n)).
 \end{equation}
 Associativity enables hierarchical reduction, while order preservation requires
 that the reduction tree respects the left-to-right concatenation order. On the
-GPU, we implement this reduction hierarchically:
+GPU, this reduction is implemented hierarchically:
 \begin{enumerate}
   \item Each thread computes $\sigma_j$ for its chunk.
-  \item Within each warp, we compute an order-preserving prefix/reduction using
+  \item Within each warp, an order-preserving prefix/reduction is computed using
   warp shuffles and $\oplus$.
   \item Warp results are combined in increasing warp order to form a per-block
   checksum.
@@ -1150,10 +1150,10 @@ to the host's sequential traversal, modulo the checksum's arithmetic rules.
 
 \subsubsection{Host Reference and Cross-Comparison}
 
-On the host, we compute the same checksum $H(A_k)$ over the corresponding
+On the host, the same checksum $H(A_k)$ is computed over the corresponding
 reference buffers produced by the MPIR/GMP-based implementation (or a trusted
 CPU implementation). Because both sides share the identical stage labeling
-(\code{Purpose}, \code{Depth}, \code{CallIndex}, \code{Conv}), we can
+(\code{Purpose}, \code{Depth}, \code{CallIndex}, \code{Conv}), it is possible to
 compare checkpoint sequences as keyed records:
 \begin{equation}
   \Delta_k \;=\;
@@ -1163,9 +1163,9 @@ compare checkpoint sequences as keyed records:
 A mismatch at checkpoint $k$ implies that the first divergence occurred at or
 before the computation that produces $A_k$. By inserting checkpoints at
 strategically chosen boundaries (e.g., after exponent alignment, after signed
-limbwise accumulation, after carry resolution, after normalization), we obtain a
+limbwise accumulation, after carry resolution, after normalization), this yields a
 coarse-to-fine localization mechanism. In practice this behaves like a binary
-search over the pipeline: we start with a small number of high-level checkpoints
+search over the pipeline: the process starts with a small number of high-level checkpoints
 and then refine around the earliest failing stage by adding more granular
 summaries (e.g., per-buffer or per-substep).
 

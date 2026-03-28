@@ -3,8 +3,10 @@
 % ============================================================
 
 \section{Further Techniques and Future Directions}%
-\reviewme{external}{Descriptions of external algorithms in this chapter are based on cited sources and may not reflect the latest versions of those tools.}
 \label{sec:future-directions}
+
+Descriptions of external algorithms in this chapter are based on cited
+sources and may not reflect the latest versions of those tools.
 
 The deep-zoom Mandelbrot rendering community has developed a rich
 collection of techniques that complement or extend the algorithms
@@ -391,3 +393,16 @@ technique is independent of the iteration algorithm and can be combined
 with smooth coloring (\cref{subsec:smooth-coloring}) for even better
 results.  A general discussion of histogram-based coloring appears in
 \cite{WikipediaPlottingAlgorithms}.
+
+The techniques surveyed in this chapter represent a broader landscape of
+fractal rendering optimisations beyond those currently implemented in
+\FractalShark{}.  Of the approaches discussed, rebasing (over glitch
+correction), linear approximation (over series approximation), and
+NTT-based multiplication (over Karatsuba) have directly shaped the
+system's present architecture, as detailed in the preceding chapters.
+The remaining techniques---smooth colouring, distance estimation,
+interior rendering, boundary tracing, and histogram
+equalisation---represent practical extensions that could be integrated
+into the existing pipeline without fundamental architectural changes.
+\Cref{sec:conclusion} summarises the overall design and reflects on the
+decisions that connect these subsystems into a coherent whole.

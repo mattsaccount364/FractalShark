@@ -102,7 +102,7 @@ static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
 static constexpr bool TestCorrectness = Debug;
 static constexpr bool TestInfiniteCorrectness = true;
 static constexpr auto TestForceSameSign = false;
-static constexpr bool TestMPIRImpl = Debug;
+static constexpr bool TestMPIRImpl = true; // Debug;
 static constexpr bool TestInitCudaMemory = true;
 
 // True to compare against the full host-side reference implementation, false is MPIR only

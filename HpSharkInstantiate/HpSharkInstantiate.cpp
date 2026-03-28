@@ -460,45 +460,44 @@ main()
             WriteTextFile(outDir / allIncName, MakeInc(MakeFixedParams_All()), overwrite);
         }
 
-        const bool mergeIntoP =
-            AskYesNo("Merge P+NP instantiations into the _P file? (emit _NP as stub)", false);
-
         const auto paramsP = MakeFixedParams_P();
         const auto paramsNP = MakeFixedParams_NP();
         const auto paramsNR = MakeFixedParams_NR();
         const auto paramsDbl = MakeFixedParams_Dbl();
         const auto paramsDbf = MakeFixedParams_Dbf();
 
-        // Include NR + Dbl + Dbf params with P
-        auto paramsPWithAll = paramsP;
-        paramsPWithAll.insert(paramsPWithAll.end(), paramsNR.begin(), paramsNR.end());
-        paramsPWithAll.insert(paramsPWithAll.end(), paramsDbl.begin(), paramsDbl.end());
-        paramsPWithAll.insert(paramsPWithAll.end(), paramsDbf.begin(), paramsDbf.end());
-
-        // Emit per-batch .cu files (P/NP)
+        // Emit per-batch .cu files split by param family for parallel compilation.
         std::cout << "\n--- Generating batch instantiation .cu files ---\n";
         const auto batches = GetBatches();
 
         for (const auto &batch : batches) {
-            const std::string cuNameP = cppBase + "_" + batch.batchName + "_P.cu";
-            const std::string cuNameNP = cppBase + "_" + batch.batchName + "_NP.cu";
+            // Generate separate files per param family for better parallel compilation.
+            // Each file has ~12 instantiations instead of ~48, allowing MSBuild to
+            // compile them in parallel across CPU cores.
+            WriteTextFile(
+                outDir / (cppBase + "_" + batch.batchName + "_P.cu"),
+                MakeBatchCpp_ParamList(batch, "P (SharkParams1..12, float SubType)", paramsP),
+                overwrite);
 
-            if (mergeIntoP) {
-                WriteTextFile(outDir / cuNameP,
-                              MakeBatchCpp_CombinedParamLists(batch, paramsPWithAll, paramsNP),
-                              overwrite);
+            WriteTextFile(
+                outDir / (cppBase + "_" + batch.batchName + "_NR.cu"),
+                MakeBatchCpp_ParamList(batch, "NR (SharkParamsNR1..12, float SubType)", paramsNR),
+                overwrite);
 
-                WriteTextFile(outDir / cuNameNP, MakeEmptyNpStub(batch), overwrite);
-            } else {
-                WriteTextFile(
-                    outDir / cuNameP,
-                    MakeBatchCpp_ParamList(batch, "P (SharkParams1..12, SharkParamsNR*)", paramsPWithAll),
-                    overwrite);
+            WriteTextFile(
+                outDir / (cppBase + "_" + batch.batchName + "_Dbl.cu"),
+                MakeBatchCpp_ParamList(batch, "Dbl (SharkParamsDbl1..12, double SubType)", paramsDbl),
+                overwrite);
 
-                WriteTextFile(outDir / cuNameNP,
-                              MakeBatchCpp_ParamList(batch, "NP (SharkParamsNP1..12)", paramsNP),
-                              overwrite);
-            }
+            WriteTextFile(
+                outDir / (cppBase + "_" + batch.batchName + "_Dbf.cu"),
+                MakeBatchCpp_ParamList(batch, "Dbf (SharkParamsDbf1..12, CudaDblflt SubType)", paramsDbf),
+                overwrite);
+
+            WriteTextFile(
+                outDir / (cppBase + "_" + batch.batchName + "_NP.cu"),
+                MakeBatchCpp_ParamList(batch, "NP (SharkParamsNP1..12)", paramsNP),
+                overwrite);
         }
 
         std::cout << "\nDone.\n";

@@ -98,16 +98,34 @@
   <ItemGroup>
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_NP.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_NR.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_Dbl.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_AddKernels_Dbf.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_NP.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_NR.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_Dbl.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkFloat_Conversions_Dbf.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_NP.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_NR.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_Dbl.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_Dbf.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_NP.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_NR.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_Dbl.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_Dbf.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_NP.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_NR.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_Dbl.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_Dbf.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_NP.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_NR.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_Dbl.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_Dbf.cu" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{E46D1897-0F30-3518-ED23-26ED5FF35747}</ProjectGuid>

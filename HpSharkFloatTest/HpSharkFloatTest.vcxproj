@@ -102,9 +102,13 @@
   <ItemGroup>
     <ProjectReference Include="..\HpSharkFloatLib\HpSharkFloatLib.vcxproj">
       <Project>{e46d1897-0f30-3518-ed23-26ed5ff35747}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
     </ProjectReference>
     <ProjectReference Include="..\HpSharkFloatTestLib\HpSharkFloatTestLib.vcxproj">
       <Project>{106e4540-2cc3-4079-9188-89d67b2fe9e7}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

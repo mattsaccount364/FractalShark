@@ -31,6 +31,7 @@ advantage while reducing per-pixel work from $O(p)$ to a fraction of~$p$.
 
 \begin{figure}[!htbp]
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
     >=Stealth,
     scale=0.75,
@@ -104,18 +105,21 @@ advantage while reducing per-pixel work from $O(p)$ to a fraction of~$p$.
   }
   \node[red!60!black, font=\scriptsize] at (8, 5.0)
     {2 evaluations (stage-1: $2p$ per step)};
-\end{tikzpicture}
+\end{tikzpicture}%
+}% end resizebox
 \caption[Iteration skipping: perturbation vs.\ BLA vs.\ LA]{%
+  \sloppy
   Per-pixel iteration strategies for a reference orbit of period~$p$,
   shown over $4p$~iterations.
   \emph{Perturbation} (orange) evaluates every iteration: $4p$~steps.
   \emph{BLA} (green) precomputes composable linear maps whose valid
-  step length varies with the local linearization error---shorter near
-  orbit inflection points, longer on smooth stretches.
+  step length varies with the local linearization error---shorter
+  near orbit inflection points, longer on smooth stretches.
   \emph{LA~v2} (red, solid) aligns its approximation hierarchy with
-  the orbit period: each stage-0 entry skips exactly one period~$p$,
-  reducing cost to ${\sim}4$ evaluations.  Higher stages (red, dashed)
-  compose stage-0 entries to skip multiples of~$p$ in a single step.}
+  the orbit period: each stage-0 entry skips exactly one
+  period~$p$, reducing cost to ${\sim}4$~evaluations.  Higher
+  stages (red, dashed) compose stage-0 entries to skip multiples
+  of~$p$ in a single step.}
 \label{fig:approx-skipping}
 \end{figure}
 

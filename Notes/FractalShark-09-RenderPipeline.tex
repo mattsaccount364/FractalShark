@@ -277,26 +277,26 @@ orbit access).  The struct comprises several categories of fields:
         coordinates are re-snapshotted after command execution so that
         any mutations (pan, zoom) are reflected.
   \item \textbf{Render configuration.}  \code{Algorithm},
-        \code{IterType}, \code{NumIterations},
-        \code{IterationPrecision}, \code{ScrnWidth},
-        \code{ScrnHeight}, and \code{GpuAntialiasing} are
+        \code{Iter\-Type}, \code{Num\-Iterations},
+        \code{Iteration\-Precision}, \code{Scrn\-Width},
+        \code{Scrn\-Height}, and \code{Gpu\-Anti\-aliasing} are
         snapshotted from the \code{Fractal} at enqueue time.
-        Three dirty flags (\code{ChangedWindow},
-        \code{ChangedScrn}, \code{ChangedIterations}) are always
-        set to \code{true} in the snapshot so that
-        \code{CalcFractal} does not skip computation due to stale
-        clean flags from a prior render.
+        Three dirty flags (\code{Changed\-Window},
+        \code{Changed\-Scrn}, \code{Changed\-Iterations}) are
+        always set to \code{true} in the snapshot so that
+        \code{Calc\-Fractal} does not skip computation due to
+        stale clean flags from a prior render.
   \item \textbf{Command and control.}  An optional
         \code{Command} lambda is executed under the calc-fractal
         mutex before rendering.  \code{MutationOnly} items skip the
         GPU pipeline entirely.  \code{Supersedable} controls whether
         a newer enqueue may discard this item.
   \item \textbf{Completion signalling.}  A
-        \code{std::shared\_ptr<std::promise<void>{}>}
-        (\code{CompletionPromise}) is signalled when the job
+        \code{std::shared\_ptr<std::promise<void>\hspace{0pt}>}
+        (called \code{Completion\-Promise}) is signalled when the job
         finishes, whether by successful rendering, superseding, or
         error.  Callers may wait via the returned
-        \code{RenderJobHandle}.
+        \code{Render\-Job\-Handle}.
 \end{itemize}
 
 \subsection{ItersMemoryContainer Pool}
@@ -472,8 +472,8 @@ The pool path writes to \code{workerIters}, which is returned to the pool---\cod
 \paragraph{Data-flow trace.}
 In the pool path, the data-flow sequence proceeds as follows:
 \begin{enumerate}
-  \item The worker thread calls \code{AcquireItersMemory} to obtain a
-        private \code{ItersMemoryContainer} from the pool.
+  \item The worker thread calls \code{Acquire\-Iters\-Memory} to obtain a
+        private \code{Iters\-Memory\-Container} from the pool.
   \item \code{RunCalcFractal} passes this container through a
         \code{CalcContext} and invokes \code{CalcFractal}, which
         dispatches GPU iteration kernels.  GPU results remain in
@@ -489,10 +489,10 @@ In the pool path, the data-flow sequence proceeds as follows:
         (\code{AcquireFrameBuffer}), and pushes a
         \code{RenderFrame} to the \code{FrameCompletionQueue}.
   \item The GL consumer thread dequeues the frame in sequence
-        order via \code{TryPopNextInOrder}, uploads the
+        order via \code{Try\-Pop\-Next\-In\-Order}, uploads the
         \code{Color16} data as a \code{GL\_RGBA16} texture, draws
         a textured quad, and returns the buffer to the pool via
-        \code{ReleaseFrameBuffer}.
+        \code{Release\-Frame\-Buffer}.
 \end{enumerate}
 In the direct path, step~1 is replaced by constructing a
 \code{CalcContext} around \code{m\_CurIters}; steps~3--5 are
@@ -682,11 +682,11 @@ Two additive padding constants control the final value:
 \begin{itemize}
   \item \textbf{Standard precision.}
         $\text{bits} = |\text{exp}| + 120$
-        (\code{AuthoritativeMinExtraPrecisionInBits}).
+        (\code{Authoritative\-Min\-Extra\-Precision\-In\-Bits}).
         The 120-bit padding provides roughly 36 decimal guard digits
-        beyond the last significant bit of the per-pixel delta, which
-        suffices for single-use reference orbit computation and
-        coordinate arithmetic.
+        beyond the last significant bit of the per-pixel delta,
+        which suffices for single-use reference orbit computation
+        and coordinate arithmetic.
   \item \textbf{Reuse precision.}
         $\text{bits} = |\text{exp}| + 800$
         (\code{AuthoritativeReuseExtraPrecisionInBits}).

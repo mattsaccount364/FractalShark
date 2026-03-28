@@ -57,13 +57,13 @@ demanded variant type when the working set exceeds a configurable threshold.
 \subsection{Single-threaded authoritative orbit}
 \label{subsec:ref-orbit-st}
 
-The single-threaded path
-(\code{Add\allowbreak Perturbation\allowbreak Reference\allowbreak Point\allowbreak ST})
+The single-threaded path,
+\code{Add\-Perturbation\-Reference\-Point\-ST},
 computes the authoritative orbit directly using
 MPIR/GMP~\cite{MPIR_Library} \code{mpf\_t} for the recurrence, while
 simultaneously emitting a low-precision shadow copy
-\((\hat{x}_n,\hat{y}_n)\in T^2\) for downstream work (compression, bailout
-checks, periodicity tests).
+\((\hat{x}_n,\hat{y}_n)\in T^2\) for downstream work (compression,
+bailout checks, periodicity tests).
 
 \paragraph{State and initialization.}
 

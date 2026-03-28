@@ -162,13 +162,13 @@ extreme zoom levels while remaining compatible with GPU execution models.
 % Column labels
 \node[font=\tiny, gray, rotate=90, anchor=south] at (-1.3, 1.4)
   {fp32-based};
-\node[font=\tiny, gray, rotate=90, anchor=south] at (4.7, 1.4)
+\node[font=\tiny, gray, rotate=90, anchor=south] at (5.4, 1.4)
   {fp64-based};
 
 % HDRFloat<T> wrapper
 \begin{scope}[on background layer]
   \node[draw, dashed, rounded corners=6pt, orange!70!black, thick,
-        inner xsep=10pt, inner ysep=8pt,
+        inner xsep=16pt, inner ysep=8pt,
         fit=(float)(double)(gqf)(gqd)] (hdrbox) {};
   \node[font=\scriptsize, orange!70!black, anchor=south east]
     at (hdrbox.north east) {\code{HDRFloat<T>} wrapper};

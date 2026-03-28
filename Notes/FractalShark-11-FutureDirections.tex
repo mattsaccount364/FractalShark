@@ -21,6 +21,7 @@ design choices at a glance.
 
 \begin{figure}[!htbp]
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
   every node/.style={font=\small},
   problem/.style={draw, rounded corners, fill=blue!8, minimum width=3.8cm,
@@ -62,7 +63,8 @@ design choices at a glance.
 \draw[arr] (p3.south west) ++(0.3,0) -- (a3.north);
 \draw[arr] (p3.south east) ++(-0.3,0) -- (b3.north);
 
-\end{tikzpicture}
+\end{tikzpicture}%
+}% end resizebox
 \caption[Algorithm design decisions]{Three principal design decisions
   in \FractalShark{}.  Shaded boxes indicate the chosen approach;
   italic annotations note the key trade-off in each case.}

@@ -429,14 +429,16 @@ running ``total'' at every position:
 y_i = x_0 \oplus x_1 \oplus \cdots \oplus x_i, \qquad i = 0, \ldots, N-1.
 \]
 When~$\oplus$ is ordinary addition, this is the classical prefix sum
-$(y_0, y_1, \ldots) = (x_0,\; x_0{+}x_1,\; x_0{+}x_1{+}x_2, \ldots)$.
-The relevant property is that \emph{any} associative operator works---including
-function composition.  For carry propagation, each $x_i$ is a transfer
-function $f_i$ mapping an incoming carry to an outgoing carry, and
-$\oplus$ is function composition.  The prefix scan therefore computes,
-for every limb~$i$, the composed effect of all preceding limbs' carry
-behavior---exactly the information needed to resolve the final carry at
-each position.
+\[
+(y_0, y_1, \ldots) = (x_0,\; x_0{+}x_1,\; x_0{+}x_1{+}x_2, \ldots).
+\]
+The relevant property is that \emph{any} associative operator
+works---including function composition.  For carry propagation,
+each~$x_i$ is a transfer function~$f_i$ mapping an incoming carry to an
+outgoing carry, and $\oplus$~is function composition.  The prefix scan
+therefore computes, for every limb~$i$, the composed effect of all
+preceding limbs' carry behavior---exactly the information needed to
+resolve the final carry at each position.
 
 A sequential prefix scan is trivially $O(N)$ work and $O(N)$ depth
 (left to right).  A \emph{parallel} prefix scan achieves $O(N)$ work in

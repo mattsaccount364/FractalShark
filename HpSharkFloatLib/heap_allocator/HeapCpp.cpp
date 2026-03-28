@@ -594,8 +594,9 @@ HeapCpp::Expand(size_t deltaSizeBytes)
     // allocates heap memory, it would re-enter Expand via malloc → HeapCpp.
     static thread_local bool expanding = false;
     if (expanding) {
-        return false;
+        HeapPanic("Expand: recursion detected — GrowableVector error path allocated heap");
     }
+    expanding = true;
     expanding = true;
 
     const auto growSizeBytes = std::max(size_t(GrowByAmtBytes), deltaSizeBytes * 2);

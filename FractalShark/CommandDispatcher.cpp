@@ -452,6 +452,12 @@ CommandDispatcher::BuildTable()
     table_.emplace(
         IDM_LOAD_REFORBIT_IMAG_MAX_SAVED,
         +[](MainWindow &w) { w.MenuLoadImagDyn(ImaginaSettings::UseSaved); });
+    table_.emplace(
+        IDM_LOAD_IMAGINA_DLG,
+        +[](MainWindow &w) { w.MenuLoadImag(ImaginaSettings::ConvertToCurrent, CompressToDisk::MaxCompressionImagina); });
+    table_.emplace(
+        IDM_LOAD_IMAGINA_DLG_SAVED,
+        +[](MainWindow &w) { w.MenuLoadImag(ImaginaSettings::UseSaved, CompressToDisk::MaxCompressionImagina); });
 
     // Help / exit
     table_.emplace(IDM_SHOWHOTKEYS, +[](MainWindow &w) { w.MenuShowHotkeys(); });

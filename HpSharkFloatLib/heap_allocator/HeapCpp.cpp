@@ -590,12 +590,22 @@ HeapCpp::Expand(size_t deltaSizeBytes)
 {
     // Mutex must be held
 
+    // Guard against infinite recursion: if GrowableVector's error path
+    // allocates heap memory, it would re-enter Expand via malloc → HeapCpp.
+    static thread_local bool expanding = false;
+    if (expanding) {
+        return false;
+    }
+    expanding = true;
+
     const auto growSizeBytes = std::max(size_t(GrowByAmtBytes), deltaSizeBytes * 2);
     const auto actual_size = (growSizeBytes + 0xFFF) & ~0xFFF;
 
     void *new_end = (char *)Heap.end + actual_size;
 
     Growable->GrowVectorByAmount(actual_size);
+
+    expanding = false;
 
     node_t *wild = GetWilderness();
 

@@ -130,10 +130,11 @@ is_pow2_u32(uint32_t v)
     return v && ((v & (v - 1u)) == 0u);
 }
 
-template <int32_t pNumDigits, bool Periodicity, bool NewtonRaphson = false>
+template <int32_t pNumDigits, bool Periodicity, bool NewtonRaphson = false,
+          typename SubTypeT = float>
 struct GenericSharkFloatParams {
-    using Float = HDRFloat<float>; // TODO hardcoded
-    using SubType = float;         // TODO hardcoded
+    using Float = HDRFloat<SubTypeT>;
+    using SubType = SubTypeT;
 
     // TODO: this is fucked up, fix it so we don't round to next power of two
     static constexpr bool SharkUsePow2SizesOnly = false;
@@ -329,6 +330,34 @@ using SharkParamsNR10 = HpShark::GenericSharkFloatParams<131072, false, true>;
 using SharkParamsNR11 = HpShark::GenericSharkFloatParams<262144, false, true>;
 using SharkParamsNR12 = HpShark::GenericSharkFloatParams<524288, false, true>;
 
+// Production sizes with double SubType
+using SharkParamsDbl1 = HpShark::GenericSharkFloatParams<256, true, false, double>;
+using SharkParamsDbl2 = HpShark::GenericSharkFloatParams<512, true, false, double>;
+using SharkParamsDbl3 = HpShark::GenericSharkFloatParams<1024, true, false, double>;
+using SharkParamsDbl4 = HpShark::GenericSharkFloatParams<2048, true, false, double>;
+using SharkParamsDbl5 = HpShark::GenericSharkFloatParams<4096, true, false, double>;
+using SharkParamsDbl6 = HpShark::GenericSharkFloatParams<8192, true, false, double>;
+using SharkParamsDbl7 = HpShark::GenericSharkFloatParams<16384, true, false, double>;
+using SharkParamsDbl8 = HpShark::GenericSharkFloatParams<32768, true, false, double>;
+using SharkParamsDbl9 = HpShark::GenericSharkFloatParams<65536, true, false, double>;
+using SharkParamsDbl10 = HpShark::GenericSharkFloatParams<131072, true, false, double>;
+using SharkParamsDbl11 = HpShark::GenericSharkFloatParams<262144, true, false, double>;
+using SharkParamsDbl12 = HpShark::GenericSharkFloatParams<524288, true, false, double>;
+
+// Production sizes with CudaDblflt<dblflt> SubType
+using SharkParamsDbf1 = HpShark::GenericSharkFloatParams<256, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf2 = HpShark::GenericSharkFloatParams<512, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf3 = HpShark::GenericSharkFloatParams<1024, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf4 = HpShark::GenericSharkFloatParams<2048, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf5 = HpShark::GenericSharkFloatParams<4096, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf6 = HpShark::GenericSharkFloatParams<8192, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf7 = HpShark::GenericSharkFloatParams<16384, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf8 = HpShark::GenericSharkFloatParams<32768, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf9 = HpShark::GenericSharkFloatParams<65536, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf10 = HpShark::GenericSharkFloatParams<131072, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf11 = HpShark::GenericSharkFloatParams<262144, true, false, CudaDblflt<dblflt>>;
+using SharkParamsDbf12 = HpShark::GenericSharkFloatParams<524288, true, false, CudaDblflt<dblflt>>;
+
 enum class InjectNoiseInLowOrder { Disable, Enable };
 
 // Struct to hold both integer and fractional parts of the high-precision number
@@ -431,8 +460,10 @@ template <class SubType>
 CUDA_CRAP_BOTH HDRFloat<SubType>
 HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp) const
 {
-    static_assert(std::is_same<SubType, float>::value || std::is_same<SubType, double>::value,
-                  "ToHDRFloat: SubType must be float or double");
+    static_assert(std::is_same_v<SubType, float> ||
+                  std::is_same_v<SubType, double> ||
+                  std::is_same_v<SubType, CudaDblflt<dblflt>>,
+                  "ToHDRFloat: SubType must be float, double, or CudaDblflt<dblflt>");
 
     // CLZ helpers (host/device friendly)
     auto clz32 = [](uint32_t v) -> int {
@@ -457,35 +488,42 @@ HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp) const
 
     // Zero fast-path
     if (hiIdx < 0) {
-        return HDRFloat<SubType>(SubType(0));
+        return HDRFloat<SubType>{};
     }
 
     // Form a 64-bit "window" from the top two 32-bit limbs.
-    // Layout: [hi32 | lo32] -> bits 63..32 are hi32; bits 31..0 are lo32.
     const uint32_t hi32 = Digits[hiIdx];
     const uint32_t lo32 = (hiIdx > 0) ? Digits[hiIdx - 1] : 0u;
     const uint64_t window64 = (uint64_t(hi32) << 32) | uint64_t(lo32);
 
     // Absolute (unbiased) binary exponent p = floor(log2(|this|))
-    // msb in the hi32 limb:
-    const int msb32 = 31 - clz32(hi32);   // 0..31
-    const int32_t p = hiIdx * 32 + msb32; // absolute MSB index in |this|
-
-    // Within the 64-bit window, the MSB is at 32 + msb32 (since hi32 is in the top half).
-    const int msbInWindow = 32 + msb32; // 32..63
-
-    // Normalize mantissa into [1,2): m = window64 / 2^(msbInWindow)
-    SubType mant = SubType(window64) / std::ldexp(SubType(1), msbInWindow);
-    if (IsNegative)
-        mant = -mant;
+    const int msb32 = 31 - clz32(hi32);
+    const int32_t p = hiIdx * 32 + msb32;
+    const int msbInWindow = 32 + msb32;
 
     // Combine with any external binary scaling tracked by the caller/type.
     const int32_t finalExp = p + extraExp + Exponent;
 
-    // Build & normalize HDRFloat
-    HDRFloat<SubType> out(finalExp, mant);
-    HdrReduce(out); // ensure mantissa is in canonical range and exponent adjusted
-    return out;
+    if constexpr (std::is_same_v<SubType, CudaDblflt<dblflt>>) {
+        // Convert via double, then construct HDRFloat<CudaDblflt> from HDRFloat<double>.
+        // The HDRFloat constructor handles double → CudaDblflt conversion.
+        double mant_d = static_cast<double>(window64) /
+                        static_cast<double>(1ull << msbInWindow);
+        if (IsNegative)
+            mant_d = -mant_d;
+        HDRFloat<double> temp(finalExp, mant_d);
+        HdrReduce(temp);
+        return HDRFloat<CudaDblflt<dblflt>>(temp);
+    } else {
+        // Normalize mantissa into [1,2): m = window64 / 2^(msbInWindow)
+        SubType mant = SubType(window64) / std::ldexp(SubType(1), msbInWindow);
+        if (IsNegative)
+            mant = -mant;
+
+        HDRFloat<SubType> out(finalExp, mant);
+        HdrReduce(out);
+        return out;
+    }
 }
 
 // Build an HpSharkFloat<Params> from HDRFloat<SubType> (SubType = double or float).

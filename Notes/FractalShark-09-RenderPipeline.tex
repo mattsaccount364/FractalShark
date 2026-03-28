@@ -47,7 +47,7 @@ continues issuing iteration work on its own default stream
 compilation flag in \code{CudaDefaults.props}).
 
 \paragraph{Kernel template.}
-\begin{verbatim}
+\begin{lstlisting}
 template<typename IterType,
          uint32_t Antialiasing,
          bool ScaledColor>
@@ -59,7 +59,7 @@ __global__ void antialiasing_kernel(
     int local_color_width,
     int local_color_height,
     IterType n_iterations);
-\end{verbatim}
+\end{lstlisting}
 The \code{ScaledColor} flag selects between raw and scaled palette
 indexing.  Pixels whose iteration count equals \code{n\_iterations}
 (the Mandelbrot-set interior) are left black.
@@ -256,6 +256,151 @@ Workers execute a simple loop: dequeue an item, acquire a renderer and
 \code{m\_CalcFractalMutex}, execute any command lambda, snapshot state, call
 \code{CalcFractal}, then produce frames for the GL consumer.
 
+\subsection{Work Item Structure}
+\label{subsec:work-item-struct}
+
+Each \code{RenderWorkItem} encapsulates a complete, self-contained
+description of a rendering job.  Workers read exclusively from the work
+item's fields, never from live \code{Fractal} members (with the
+exception of the \code{FractalPtr} back-pointer used for reference
+orbit access).  The struct comprises several categories of fields:
+
+\begin{itemize}
+  \item \textbf{Identity.}  A monotonic \code{SequenceNumber}
+        (assigned at enqueue time) uniquely identifies the job and
+        determines the display order in the GL consumer.  The
+        \code{EnqueueGeneration} counter enables stale-render
+        detection (\cref{subsec:two-render-paths}).
+  \item \textbf{Coordinates.}  A \code{PointZoomBBConverter Ptz}
+        snapshot captures the view centre, bounding box, and zoom
+        factor.  If a \code{Command} lambda is present, the
+        coordinates are re-snapshotted after command execution so that
+        any mutations (pan, zoom) are reflected.
+  \item \textbf{Render configuration.}  \code{Algorithm},
+        \code{IterType}, \code{NumIterations},
+        \code{IterationPrecision}, \code{ScrnWidth},
+        \code{ScrnHeight}, and \code{GpuAntialiasing} are
+        snapshotted from the \code{Fractal} at enqueue time.
+        Three dirty flags (\code{ChangedWindow},
+        \code{ChangedScrn}, \code{ChangedIterations}) are always
+        set to \code{true} in the snapshot so that
+        \code{CalcFractal} does not skip computation due to stale
+        clean flags from a prior render.
+  \item \textbf{Command and control.}  An optional
+        \code{Command} lambda is executed under the calc-fractal
+        mutex before rendering.  \code{MutationOnly} items skip the
+        GPU pipeline entirely.  \code{Supersedable} controls whether
+        a newer enqueue may discard this item.
+  \item \textbf{Completion signalling.}  A
+        \code{std::shared\_ptr<std::promise<void>{}>}
+        (\code{CompletionPromise}) is signalled when the job
+        finishes, whether by successful rendering, superseding, or
+        error.  Callers may wait via the returned
+        \code{RenderJobHandle}.
+\end{itemize}
+
+\subsection{ItersMemoryContainer Pool}
+\label{subsec:iters-pool}
+
+Each worker requires a private \code{ItersMemoryContainer} to hold
+iteration results without contending on \code{m\_CurIters}.  A pool
+of pre-allocated containers resides in
+\code{Fractal::m\_ItersMemoryStorage}, guarded by a mutex and
+condition variable.
+
+\paragraph{Acquisition.}
+\code{AcquireItersMemory} blocks under
+\code{m\_ItersMemoryStorageLock} until the pool is non-empty, then
+moves the back element out of the vector.  Because the pool is
+initially seeded with enough containers for all workers, blocking
+occurs only transiently---when all workers are active and no
+container has yet been returned.
+
+\paragraph{Return and validation.}
+\code{ReturnIterMemory} checks that the container's dimensions and
+antialiasing factor still match the current screen configuration.
+Stale containers (from before a resize or antialiasing change) are
+silently discarded rather than returned, which prevents a subsequent
+worker from inheriting a mis-sized buffer.  Valid containers are
+pushed back onto the vector and the condition variable is notified.
+
+\paragraph{Worker-to-shared swap.}
+After a successful render, the worker swaps its private
+\code{ItersMemoryContainer} into \code{m\_CurIters} under the
+calc-fractal mutex (if dimensions match).  This ensures that
+facilities requiring CPU-side iteration data
+(\code{SaveCurrentFractal}, \code{FindInterestingLocation}) see the
+most recently completed render without requiring a separate direct-path
+call.  If dimensions do not match---e.g.\ a resize occurred between
+enqueue and completion---the swap is skipped and the old
+\code{m\_CurIters} is retained.
+
+\subsection{Mutex Ordering and Deadlock Prevention}
+\label{subsec:mutex-ordering}
+
+The pool architecture introduces several mutexes with overlapping
+lifetimes.  The following lock-ordering discipline is maintained to
+prevent deadlock:
+\begin{enumerate}
+  \item \code{m\_WorkQueueMutex} --- protects the work queue and
+        sequence counter.
+  \item \code{m\_CalcFractalMutex} --- serialises
+        \code{CalcFractal} calls and shared \code{Fractal} state
+        access.
+  \item \code{RendererPool::m\_Mutex} --- guards renderer
+        checkout/return.
+  \item \code{m\_ItersMemoryStorageLock} --- guards the
+        \code{ItersMemoryContainer} pool.
+  \item \code{m\_BufferPoolMutex} --- guards the \code{Color16}
+        frame-buffer pool.
+  \item \code{FrameCompletionQueue::m\_Mutex} --- guards the
+        completed-frame queue.
+  \item \code{m\_DrainMutex} --- guards the drain condition
+        variable.
+\end{enumerate}
+Tombstone frames are pushed \emph{outside} the work-queue lock to
+avoid a nested lock between \code{m\_WorkQueueMutex} and the
+\code{FrameCompletionQueue} mutex.  The in-flight counter
+\code{m\_InFlightCount} is incremented atomically inside
+\code{DequeueWorkItem} while the work-queue lock is still held,
+closing a TOCTOU window in which \code{Drain()} could observe an
+empty queue with zero in-flight count between pop and the
+increment.
+
+\subsection{Compute Stream and Display Stream Interaction}
+\label{subsec:stream-interaction}
+
+Each \code{GPURenderer} maintains two CUDA streams: a
+\emph{compute stream} on which iteration kernels are launched,
+and a \emph{display stream} (\code{m\_Stream1}) used by the
+antialiasing and colour-extraction kernels
+(\cref{subsec:antialiasing}).  The two-stream design permits
+overlapped execution:
+
+\begin{itemize}
+  \item \textbf{Progressive frames.}
+        \code{ProduceFrame} with \code{isFinal\!=\!false}
+        synchronises on the display stream only
+        (\code{SyncDisplayStream}), allowing the compute stream to
+        continue issuing iteration work.  The antialiasing kernel
+        reads whatever partial results have been written to the
+        iteration buffer so far, producing a visually useful but
+        incomplete image.
+  \item \textbf{Final frames.}
+        \code{ProduceFrame} with \code{isFinal\!=\!true}
+        synchronises on the compute stream
+        (\code{SyncComputeStream}) to guarantee that all iteration
+        kernels have completed before colour extraction.
+  \item \textbf{Compute-done notification.}
+        Workers register a per-worker mutex/CV pair via
+        \code{SetComputeDoneNotification}.  A CUDA host callback
+        enqueued on the compute stream (\code{EnqueueComputeDoneCallback})
+        sets an atomic flag and notifies the CV when all compute work
+        finishes.  \code{WaitForGpuAndProduceProgressiveFrames}
+        polls this flag with a one-second timeout, emitting
+        progressive frames at each interval until the callback fires.
+\end{itemize}
+
 \subsection{Enqueue APIs}
 
 Three enqueue variants serve distinct purposes:
@@ -323,6 +468,66 @@ GPU\(\to\)CPU iteration copy at the end of \code{CalcFractalTypedIter} via
 analysing iteration data) must use the direct path and call
 \code{RenderThreadPool::Drain()} first to ensure no pool workers are active.
 The pool path writes to \code{workerIters}, which is returned to the pool---\code{m\_CurIters} never sees that data.
+
+\paragraph{Data-flow trace.}
+In the pool path, the data-flow sequence proceeds as follows:
+\begin{enumerate}
+  \item The worker thread calls \code{AcquireItersMemory} to obtain a
+        private \code{ItersMemoryContainer} from the pool.
+  \item \code{RunCalcFractal} passes this container through a
+        \code{CalcContext} and invokes \code{CalcFractal}, which
+        dispatches GPU iteration kernels.  GPU results remain in
+        device memory until extraction.
+  \item \code{WaitForGpuAndProduceProgressiveFrames} polls the
+        compute-done callback; while waiting, it periodically
+        calls \code{ProduceFrame(isFinal\!=\!false)} to emit
+        progressive (partial) frames.
+  \item On compute completion, \code{ProduceFrame(isFinal\!=\!true)}
+        calls \code{RenderCurrent} to run the antialiasing and
+        colour-mapping kernels, copies the resulting \code{Color16}
+        buffer from the GPU into a pooled frame buffer
+        (\code{AcquireFrameBuffer}), and pushes a
+        \code{RenderFrame} to the \code{FrameCompletionQueue}.
+  \item The GL consumer thread dequeues the frame in sequence
+        order via \code{TryPopNextInOrder}, uploads the
+        \code{Color16} data as a \code{GL\_RGBA16} texture, draws
+        a textured quad, and returns the buffer to the pool via
+        \code{ReleaseFrameBuffer}.
+\end{enumerate}
+In the direct path, step~1 is replaced by constructing a
+\code{CalcContext} around \code{m\_CurIters}; steps~3--5 are
+replaced by an in-line \code{RenderCurrent} call at the end of
+\code{CalcFractalTypedIter} that copies iteration data back to
+CPU memory (the \code{drawFractal = true} branch).
+
+\paragraph{Choosing between paths.}
+The pool path is the default for all interactive rendering.  Its
+private \code{ItersMemoryContainer} avoids write contention on
+\code{m\_CurIters} and allows the GL consumer to display frames
+without blocking the next render.  The direct path should be used
+only when the caller requires CPU-side access to the final
+iteration buffer---specifically for image saving
+(\code{SaveCurrentFractal}), regression testing
+(\code{CrummyTest}), and the AutoZoomer's heuristic analysis
+modes that inspect iteration data.  Any such call must be preceded
+by \code{Drain()} to ensure that no pool worker is concurrently
+modifying shared state.
+
+\paragraph{Performance implications.}
+The pool path enables pipeline parallelism: while the GL consumer
+uploads frame~$n$, a worker can already be computing frame~$n\!+\!1$.
+Progressive frames provide visual feedback during long GPU
+computations at the cost of one additional \code{RenderCurrent}
+call per progress interval (default: 1\,s).  Progressive frames
+synchronise via the display stream rather than the compute stream,
+so the iteration kernels continue executing concurrently
+(\cref{subsec:antialiasing}).
+
+The direct path is inherently serial: the caller blocks until
+\code{CalcFractal} completes, synchronises the compute stream
+twice (once for iteration kernels, once for \code{RenderCurrent}),
+and only then returns control.  It should therefore be avoided in
+latency-sensitive UI code paths.
 
 \subsection{MPIR Allocator Lifecycle}
 \label{subsec:mpir-allocator-lifecycle}
@@ -401,6 +606,62 @@ $\Delta y = (y_{\max}-y_{\min})/(H \cdot k)$ at full
 kernel's working type (e.g.\ \code{double}, \code{HDRFloat}) for
 per-thread coordinate calculation on the GPU.
 
+\paragraph{Down-conversion via \code{FillGpuCoords}.}
+The \code{FillGpuCoords} template bridges the arbitrary-precision
+coordinate system and the GPU kernel's working type.  It invokes
+\code{GetDeltaX} and \code{GetDeltaY} to obtain the per-pixel deltas
+at full \code{HighPrecision}, then calls \code{FillCoord} four times
+to convert $(x_{\min},\; y_{\min},\; \Delta x,\; \Delta y)$ into the
+kernel's type parameter~\code{T}.  Type-specific overloads of
+\code{FillCoord} handle the conversion:
+\begin{itemize}
+  \item \textbf{\code{double} / \code{float}.}  A single
+        \code{Convert<HighPrecision, T>} truncation.  Sufficient when the
+        per-pixel delta exceeds the machine epsilon of the target type
+        (roughly $2^{-52}$ for \code{double}, $2^{-23}$ for \code{float}).
+  \item \textbf{\code{MattDbldbl} / \code{MattDblflt}.}  A two-component
+        head--tail split: the head stores the leading-order truncation
+        and the tail stores the residual $(\text{src} - \text{head})$,
+        effectively doubling the mantissa width.
+  \item \textbf{Quad types (\code{MattQDbldbl}, \code{MattQFltflt}).}
+        Four successive residual subtractions extend the effective mantissa
+        to roughly $4\times$ the width of the scalar type.
+  \item \textbf{\code{HDRFloat<T>}.}  Direct cast from
+        \code{HighPrecision} followed by \code{HdrReduce}, which
+        normalises the mantissa--exponent representation so that the
+        mantissa lies in $[0.5,1)$.
+\end{itemize}
+Because the conversion is applied identically to both the bounding-box
+origin and the per-pixel delta, the GPU kernel can reconstruct any
+pixel's complex-plane coordinate as
+$c_{\text{px}} = x_{\min} + \text{px}\cdot\Delta x$ using only the
+working type, with no further access to arbitrary-precision quantities.
+
+\paragraph{The antialiasing factor in delta computation.}
+\label{par:aa-delta}
+The antialiasing factor~$k$ (\code{GpuAntialiasing}) enters the
+per-pixel delta as a divisor in the denominator:
+\[
+  \Delta x = \frac{x_{\max} - x_{\min}}{W \cdot k}, \qquad
+  \Delta y = \frac{y_{\max} - y_{\min}}{H \cdot k}.
+\]
+Multiplying the effective resolution by~$k$ shrinks the step size so
+that $k^2$ sub-pixel samples are computed per output pixel.  Within
+\code{PointZoomBBConverter}, the screen-to-complex conversion
+functions \code{XFromScreenToCalc} and \code{YFromScreenToCalc}
+accept \code{antialiasing} as a parameter and compute the origin
+offset consistently:
+\[
+  \text{OriginX} = \frac{W \cdot k}{x_{\max} - x_{\min}}
+                   \cdot (-x_{\min}),
+\]
+ensuring that screen coordinate $(0,0)$ maps to $(x_{\min}, y_{\max})$
+regardless of the supersampling level.  The factor~$k$ therefore
+propagates through the entire coordinate chain without special-case
+logic: the iteration kernels operate on a
+$(W\!\cdot\! k) \times (H\!\cdot\! k)$ grid, and the antialiasing
+kernel (\cref{subsec:antialiasing}) down-samples the result.
+
 \paragraph{Zoom operations.}
 Zooming recomputes the bounding box around the current centre:
 $x'_{\min} = c_x - r/d$, $x'_{\max} = c_x + r/d$ (and similarly
@@ -408,6 +669,57 @@ for~$y$), where $d$ is the zoom divisor.  All intermediate arithmetic
 is performed at the working precision of the \code{HighPrecision}
 members, which is dynamically adjusted via \code{SetPrecision} as
 the zoom deepens.
+
+\paragraph{Precision selection heuristics.}
+\label{par:precision-heuristics}
+The function \code{PrecisionCalculator::GetPrecision} determines how
+many bits of mantissa the \code{HighPrecision} members require at a
+given zoom depth.  It converts the bounding-box deltas $\Delta x$ and
+$\Delta y$ to \code{HDRFloat<double>}, extracts the base-2 exponent
+of each (via \code{getExp} or \code{std::frexp}, depending on the
+numeric type), and takes the larger absolute exponent as the baseline.
+Two additive padding constants control the final value:
+\begin{itemize}
+  \item \textbf{Standard precision.}
+        $\text{bits} = |\text{exp}| + 120$
+        (\code{AuthoritativeMinExtraPrecisionInBits}).
+        The 120-bit padding provides roughly 36 decimal guard digits
+        beyond the last significant bit of the per-pixel delta, which
+        suffices for single-use reference orbit computation and
+        coordinate arithmetic.
+  \item \textbf{Reuse precision.}
+        $\text{bits} = |\text{exp}| + 800$
+        (\code{AuthoritativeReuseExtraPrecisionInBits}).
+        When \code{RequiresReuse} is true (the orbit will be
+        saved and reused across views), an additional 680 guard bits
+        ensure that the reference orbit remains accurate even after
+        recentring to a nearby coordinate.
+\end{itemize}
+\code{SetPrecision} propagates this value to every
+\code{HighPrecision} member of the converter---$x_{\min}$,
+$x_{\max}$, $y_{\min}$, $y_{\max}$, $c_x$, $c_y$, and
+$Z$---via \code{precisionInBits}, and also updates MPIR's default
+precision so that newly constructed \code{mpf\_t} temporaries inherit
+the same width.  Because this call reallocates the underlying limb
+arrays, it is performed once per zoom-level change rather than per
+frame.
+
+\paragraph{Maintaining \code{HighPrecision} throughout coordinate chains.}
+\label{par:hp-invariant}
+A deliberate design choice is that all coordinate quantities internal to
+\code{PointZoomBBConverter} remain as \code{HighPrecision}
+(\code{mpf\_t}) values throughout their lifecycle.  Zoom operations,
+recentring, aspect-ratio correction (\code{SquareAspectRatio}), and
+bounding-box recomputation all operate on the arbitrary-precision
+members directly, using MPIR's in-place arithmetic (e.g.\
+\code{subFrom}, \code{divFrom\_ui}, \code{mulFrom}).  Down-conversion
+to a finite-precision type occurs only at the final stage when
+\code{FillGpuCoords} prepares values for GPU upload (described
+above under ``Down-conversion'').  This architecture ensures that
+accumulated rounding errors from successive zoom and pan operations do
+not degrade coordinate accuracy: each operation is computed at the full
+working precision determined by \code{SetPrecision}, and only the
+final GPU-facing values are truncated.
 
 % -----------------------------------------------------------------
 \subsection{GPU memory allocation with host fallback}
@@ -449,3 +761,8 @@ Destructors inspect the allocation-tier flag and call the
 corresponding free function (\code{cudaFree} for device memory,
 \code{cudaFreeHost} for pinned host memory), ensuring correct
 resource release regardless of which tier was used.
+
+The tiered allocation strategy introduced here addresses one aspect of memory
+pressure.  The next chapter examines a complementary mechanism---disk-backed
+growable vectors---that manages the large reference-orbit buffers whose size
+can exceed available physical memory.

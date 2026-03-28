@@ -5,6 +5,7 @@
 
 #include "stdafx.h"
 
+#include "AbortMonitor.h"
 #include "Exceptions.h"
 #include "FeatureFinder.h"
 #include "FeatureSummary.h"
@@ -21,7 +22,9 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
+#include <string>
 #include <thread>
 
 // ------------------------------------------------------------
@@ -234,6 +237,145 @@ DispatchNRByPrecision(mp_bitcnt_t coord_prec, F &&f)
 }
 
 // ------------------------------------------------------------
+// NR Checkpoint helpers
+// ------------------------------------------------------------
+static const char *NRCheckpointFilename = "nr_checkpoint.txt";
+
+static void
+WriteNRCheckpoint(const mpf_complex &c, uint64_t period,
+                  mp_bitcnt_t coord_prec, uint32_t iteration,
+                  int scaleExp2,
+                  const mpf_complex &candidate_c,
+                  mpf_t sqrRadius,
+                  mpf_t intrinsicRadius,
+                  uint64_t numIterationsAtFind)
+{
+    std::ofstream f(NRCheckpointFilename, std::ios::trunc);
+    if (!f) return;
+
+    mp_exp_t exp_re, exp_im;
+    mp_exp_t cand_exp_re, cand_exp_im, rad_exp, ir_exp;
+    const size_t ndigits = static_cast<size_t>(coord_prec * 0.302) + 10;
+
+    char *str_re = mpf_get_str(nullptr, &exp_re, 10, ndigits, c.re);
+    char *str_im = mpf_get_str(nullptr, &exp_im, 10, ndigits, c.im);
+    char *cand_re = mpf_get_str(nullptr, &cand_exp_re, 10, ndigits, candidate_c.re);
+    char *cand_im = mpf_get_str(nullptr, &cand_exp_im, 10, ndigits, candidate_c.im);
+    char *rad_str = mpf_get_str(nullptr, &rad_exp, 10, ndigits, sqrRadius);
+    char *ir_str = mpf_get_str(nullptr, &ir_exp, 10, ndigits, intrinsicRadius);
+
+    f << period << "\n"
+      << coord_prec << "\n"
+      << scaleExp2 << "\n"
+      << iteration << "\n"
+      << exp_re << " " << (str_re ? str_re : "0") << "\n"
+      << exp_im << " " << (str_im ? str_im : "0") << "\n"
+      << cand_exp_re << " " << (cand_re ? cand_re : "0") << "\n"
+      << cand_exp_im << " " << (cand_im ? cand_im : "0") << "\n"
+      << rad_exp << " " << (rad_str ? rad_str : "0") << "\n"
+      << ir_exp << " " << (ir_str ? ir_str : "0") << "\n"
+      << numIterationsAtFind << "\n";
+
+    if (str_re) free(str_re);
+    if (str_im) free(str_im);
+    if (cand_re) free(cand_re);
+    if (cand_im) free(cand_im);
+    if (rad_str) free(rad_str);
+    if (ir_str) free(ir_str);
+}
+
+static bool
+TryReadNRCheckpoint(mpf_complex &c, uint64_t expected_period,
+                    mp_bitcnt_t expected_prec, uint32_t &out_iteration)
+{
+    std::ifstream f(NRCheckpointFilename);
+    if (!f) return false;
+
+    uint64_t file_period;
+    mp_bitcnt_t file_prec;
+    int file_scaleExp2;
+    uint32_t file_iter;
+    mp_exp_t exp_re, exp_im;
+    std::string digits_re, digits_im;
+
+    f >> file_period >> file_prec >> file_scaleExp2 >> file_iter
+      >> exp_re >> digits_re >> exp_im >> digits_im;
+    // Skip remaining fields (candidate, radius) — not needed here
+
+    if (!f || file_period != expected_period || file_prec != expected_prec) {
+        return false;
+    }
+
+    auto reconstruct_mpf = [](const std::string &digits, mp_exp_t exp) -> std::string {
+        if (digits.empty() || digits == "0")
+            return "0";
+        // mpf_get_str puts sign in the digit string; move it before "0."
+        if (digits[0] == '-') {
+            return "-0." + digits.substr(1) + "@" + std::to_string(exp);
+        }
+        return "0." + digits + "@" + std::to_string(exp);
+    };
+
+    std::string full_re = reconstruct_mpf(digits_re, exp_re);
+    std::string full_im = reconstruct_mpf(digits_im, exp_im);
+
+    mpf_set_str(c.re, full_re.c_str(), 10);
+    mpf_set_str(c.im, full_im.c_str(), 10);
+
+    out_iteration = file_iter;
+    return true;
+}
+
+// Public: read full checkpoint for orchestrator resume
+bool
+ReadFullNRCheckpoint(NRCheckpointData &out)
+{
+    std::ifstream f(NRCheckpointFilename);
+    if (!f) return false;
+
+    mp_exp_t exp_cre, exp_cim, exp_candre, exp_candim, exp_rad, exp_ir;
+    std::string d_cre, d_cim, d_candre, d_candim, d_rad, d_ir;
+
+    f >> out.period >> out.coord_prec >> out.scaleExp2 >> out.iteration
+      >> exp_cre >> d_cre >> exp_cim >> d_cim
+      >> exp_candre >> d_candre >> exp_candim >> d_candim
+      >> exp_rad >> d_rad
+      >> exp_ir >> d_ir
+      >> out.numIterationsAtFind;
+
+    if (!f) return false;
+
+    auto toHP = [](const std::string &digits, mp_exp_t exp) -> HighPrecision {
+        std::string s;
+        if (digits.empty() || digits == "0") {
+            s = "0";
+        } else if (digits[0] == '-') {
+            s = "-0." + digits.substr(1) + "@" + std::to_string(exp);
+        } else {
+            s = "0." + digits + "@" + std::to_string(exp);
+        }
+        HighPrecision hp;
+        hp = HighPrecision{s};
+        return hp;
+    };
+
+    out.c_re = toHP(d_cre, exp_cre);
+    out.c_im = toHP(d_cim, exp_cim);
+    out.cand_re = toHP(d_candre, exp_candre);
+    out.cand_im = toHP(d_candim, exp_candim);
+    out.sqrRadius = toHP(d_rad, exp_rad);
+    out.intrinsicRadius = toHP(d_ir, exp_ir);
+
+    return true;
+}
+
+void
+DeleteNRCheckpoint()
+{
+    std::remove(NRCheckpointFilename);
+}
+
+// ------------------------------------------------------------
 // Imagina-style Newton/Halley polish for periodic point
 //
 // Goal:
@@ -269,12 +411,14 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                     uint64_t period,
                     mp_bitcnt_t coord_prec,
                     int scaleExp2_for_deriv_choice, // exponent of Scale ≈ 1/|zcoeff*dzdc|
-                    uint32_t max_nr_iters)
+                    uint32_t max_nr_iters,
+                    bool useGpuForInnerLoop,
+                    mpf_t intrinsicRadius_mpf,
+                    uint64_t numIterationsAtFind)
 {
     // Compile-time enable, runtime gating below.
     constexpr bool UseHalley = true;
     constexpr bool UseFullPrecDerivatives = false;
-    constexpr bool UseGpuForInnerLoop = true;
 
     // Gate: require rho^2 < 2^-k (k bigger => more conservative)
     // With rho^2 = |z|^2*|d2|^2 / |dzdc|^4.
@@ -364,13 +508,25 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     // Imagina stop threshold: Precision*2 in exponent space
     const int targetExp = int(coord_prec) * 2;
 
-    uint32_t it = 0;
+    uint32_t startIter = 0;
+
+    // Check for NR checkpoint file — resume automatically if found.
+    {
+        uint32_t savedIter = 0;
+        if (TryReadNRCheckpoint(c_coord, period, coord_prec, savedIter)) {
+            std::cout << "RefinePeriodicPoint: resuming from checkpoint iter "
+                      << savedIter << std::endl;
+            startIter = savedIter + 1;
+        }
+    }
+
+    uint32_t it = startIter;
     for (; it < max_nr_iters; ++it) {
 
         std::cout << "  Refinement iter " << it << std::endl;
 
         // Full forward eval at current c
-        if constexpr (UseGpuForInnerLoop) {
+        if (useGpuForInnerLoop) {
             DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
                 HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
                     c_coord.re, c_coord.im, period,
@@ -473,6 +629,19 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         mpf_sub(c_coord.re, c_coord.re, step_coord.re);
         mpf_sub(c_coord.im, c_coord.im, step_coord.im);
 
+        // Write checkpoint after each step
+        WriteNRCheckpoint(c_coord, period, coord_prec, it,
+                          scaleExp2_for_deriv_choice, c0_coord, sqrRadius_coord,
+                          intrinsicRadius_mpf, numIterationsAtFind);
+
+        // Check for user abort (Ctrl held 3s sets flag, Escape cancels it).
+        // Checkpoint is already saved, so progress is preserved for resume.
+        if (AbortMonitor::GetStopCalculatingGlobal()) {
+            std::cout << "RefinePeriodicPoint: aborted at iter " << it
+                      << " (checkpoint saved)\n";
+            break;
+        }
+
         // ------------------------------------------------------------
         // Imagina error estimate (HDRFloat)
         //   err = |step|^4 * |d2|^2 / |dzdc|^2
@@ -499,7 +668,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     // ---------------- Imagina final correction pass ----------------
     // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
     {
-        if constexpr (UseGpuForInnerLoop) {
+        if (useGpuForInnerLoop) {
             DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
                 HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
                     c_coord.re, c_coord.im, period,
@@ -527,6 +696,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         mpf_set(c_coord.im, c0_coord.im);
         it = 0;
     }
+
+    // Keep checkpoint file — user can resume or re-refine later.
+    // The file is only overwritten by the next refinement run.
 
     // ---------------- cleanup ----------------
     mpf_clear(denom_c);
@@ -579,8 +751,11 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(
     HighPrecision &cY_hp,
     IterType period,
     mp_bitcnt_t coord_prec,
-    const T &sqrRadius_T,          // NEW: radius^2 in T-space
-    int scaleExp2_for_deriv) const // NEW: exponent of Scale≈1/|zcoeff*dzdc|
+    const T &sqrRadius_T,
+    int scaleExp2_for_deriv,
+    bool useGpuForInnerLoop,
+    const HighPrecision &intrinsicRadius,
+    uint64_t numIterationsAtFind) const
 {
     // ---- Convert inputs to MPF at coord_prec ----
     mpf_complex c;
@@ -599,27 +774,31 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(
     mpf_set(c0.im, c.im);
 
     // Convert sqrRadius_T (T-space) -> mpf_t at coord_prec
-    // We treat radius units consistently with your HP/T plane coordinates.
     mpf_t sqrRadius_mpf;
     mpf_init2(sqrRadius_mpf, coord_prec);
     {
-        // sqrRadius_T is a T (HDRFloat<double> etc).
-        // Convert to HighPrecision then to mpf.
         HighPrecision r2_hp{sqrRadius_T};
         mpf_set(sqrRadius_mpf, (mpf_srcptr)r2_hp.backend());
     }
+
+    // Convert intrinsicRadius to mpf for checkpoint persistence
+    mpf_t ir_mpf;
+    mpf_init2(ir_mpf, coord_prec);
+    mpf_set(ir_mpf, (mpf_srcptr)intrinsicRadius.backend());
 
     // ---- Run Imagina-style polish ----
     const uint32_t max_polish = 32;
 
     const uint32_t iters = RefinePeriodicPoint<IterType, T>(
-        c, c0, sqrRadius_mpf, (uint64_t)period, coord_prec, scaleExp2_for_deriv, max_polish);
+        c, c0, sqrRadius_mpf, (uint64_t)period, coord_prec, scaleExp2_for_deriv, max_polish,
+        useGpuForInnerLoop, ir_mpf, numIterationsAtFind);
 
     // ---- Write back ----
     cX_hp = HighPrecision{c.re};
     cY_hp = HighPrecision{c.im};
 
     // ---- Cleanup ----
+    mpf_clear(ir_mpf);
     mpf_clear(sqrRadius_mpf);
     mpf_complex_clear(c0);
     mpf_complex_clear(c);
@@ -1542,7 +1721,8 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(
 
 template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSummary &feature) const
+FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(
+    FeatureSummary &feature, bool useGpuForInnerLoop) const
 {
     auto *cand = feature.GetCandidate();
     if (!cand)
@@ -1571,7 +1751,10 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
                                                              period,
                                                              cand->mpfPrecBits,
                                                              /*sqrRadius_T*/ T{sqrRadius_hp},
-                                                             cand->scaleExp2_for_mpf);
+                                                             cand->scaleExp2_for_mpf,
+                                                             useGpuForInnerLoop,
+                                                             feature.GetIntrinsicRadius(),
+                                                             feature.GetNumIterationsAtFind());
 
     // Commit only the refined coordinates + period.
     // Preserve existing intrinsicRadius if present — the refinement

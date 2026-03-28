@@ -1,12 +1,12 @@
 \section{Perturbation Rendering of the Mandelbrot Set}
 \label{sec:perturbation-concept}
 
-Rendering the Mandelbrot set (\cref{sec:mandelbrot-intro}) at extreme zoom levels presents a fundamental
-numerical challenge. As the image is magnified, the parameters \(c\) associated
+Rendering the Mandelbrot set (\cref{sec:mandelbrot-intro}) at extreme zoom levels presents a
+numerical challenge.As the image is magnified, the parameters \(c\) associated
 with individual pixels differ by increasingly small amounts, while the number
 of iterations required to determine escape behavior typically grows. Accurately
 tracking these orbits therefore requires both high numerical precision and a
-large number of iterations, making naive per-pixel evaluation prohibitively
+large number of iterations, making naive per-pixel evaluation
 expensive.
 
 Perturbation provides a mathematical and algorithmic framework
@@ -140,7 +140,8 @@ pixel scales poorly.
 \end{figure}
 
 A key observation underlying perturbation is that nearby parameters generate
-orbits that remain close for many iterations. In a typical image tile, all pixel
+orbits that remain close for many iterations, as illustrated in
+\cref{fig:perturbation-delta}. In a typical image tile, all pixel
 parameters \(c\) lie within a small neighborhood of a central value. Their
 orbits therefore share a common large-scale structure, differing only by small
 corrections that grow gradually over time.
@@ -344,10 +345,10 @@ Note that both right-hand sides use the \emph{pre-update} values of
 \(\Delta x\) and \(\Delta y\).  In the code, these originals are saved as
 \code{DeltaSubNXOrig} and \code{DeltaSubNYOrig} before either component is
 overwritten.  The intermediate quantities correspond to:
-\begin{verbatim}
+\begin{lstlisting}
 tempSum1 = 2*zy + DeltaSubNYOrig;  // (2 y^\star + \Delta y)
 tempSum2 = 2*zx + DeltaSubNXOrig;  // (2 x^\star + \Delta x)
-\end{verbatim}
+\end{lstlisting}
 followed by the real/imag updates. For extended or HDR types (\cref{sec:hdr-float}), the kernel routes
 the same math through type-specialized implementations
 (\code{T::custom\_perturb2} / \code{T::custom\_perturb3}) to keep the inner loop
@@ -419,3 +420,8 @@ perturbation, without relying on any linear-approximation hierarchy.
 After all pixels are computed, the antialiasing and reduction passes
 (\cref{subsec:antialiasing,subsec:reduction}) extract the final colour
 image and iteration statistics.
+
+While perturbation theory drastically reduces per-pixel cost, the iteration
+count can still be enormous at extreme depths.  The next chapter introduces
+the linear approximation framework, which skips large blocks of iterations
+entirely by replacing them with a single linear map.

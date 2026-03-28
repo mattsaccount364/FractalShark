@@ -41,6 +41,10 @@
 #define IDM_FEATUREFINDER_LASCAN 40111
 #define IDM_FEATUREFINDER_ZOOM 40112
 #define IDM_FEATUREFINDER_CLEAR 40113
+#define IDM_AUTOZOOM_FILAMENT 40114
+#define IDM_FEATUREFINDER_RESUME 40115
+#define IDM_NR_INNERLOOP_GPU 40116
+#define IDM_NR_INNERLOOP_CPU 40117
 
 //
 // ---------------------------------------------------------------------------

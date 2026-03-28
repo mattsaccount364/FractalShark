@@ -16,9 +16,16 @@ public:
     void SetStopCalculating(bool value);
     void ResetStopCalculating();
 
+    static bool GetStopCalculatingGlobal();
+    static void ResetStopCalculatingGlobal();
+
+    static constexpr uint64_t AbortCheckInterval = 16384;
+
 private:
     void Run();
     static bool IsDownControl();
+
+    static AbortMonitor *s_Instance;
 
     std::thread m_Thread;
     std::atomic<bool> m_QuitFlag;

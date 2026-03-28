@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "RenderThreadPool.h"
+#include "Exceptions.h"
 #include "Fractal.h"
 #include "FractalPalette.h"
 #include "GPU_Render.h"
@@ -348,7 +349,7 @@ RenderJobHandle RenderThreadPool::Enqueue(const RenderWorkItem &item) {
                 if (it->Supersedable && !it->MutationOnly) {
                     tombstoneSeqs.push_back(it->SequenceNumber);
                     if (it->CompletionPromise) {
-                        try { it->CompletionPromise->set_value(); } catch (...) {}
+                        it->CompletionPromise->set_value();
                     }
                     it = m_WorkQueue.erase(it);
                 } else {
@@ -450,7 +451,7 @@ void RenderThreadPool::Shutdown() {
         std::lock_guard lk(m_WorkQueueMutex);
         for (auto &item : m_WorkQueue) {
             if (item.CompletionPromise) {
-                try { item.CompletionPromise->set_value(); } catch (...) {}
+                item.CompletionPromise->set_value();
             }
         }
         m_WorkQueue.clear();
@@ -665,10 +666,7 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
                 }
             }
             if (item.CompletionPromise) {
-                try {
-                    item.CompletionPromise->set_value();
-                } catch (...) {
-                }
+                item.CompletionPromise->set_value();
             }
             continue;
         }
@@ -680,7 +678,7 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
             item.EnqueueGeneration < m_EnqueueGeneration) {
             PushTombstone(item.SequenceNumber);
             if (item.CompletionPromise) {
-                try { item.CompletionPromise->set_value(); } catch (...) {}
+                item.CompletionPromise->set_value();
             }
             m_InFlightCount.fetch_sub(1);
             m_DrainCV.notify_all();
@@ -729,12 +727,31 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
             }
 
             fractal->m_BenchmarkData.m_Overall.StopTimer();
-        } catch (...) {
-            // Exception during processing — fall through to cleanup.
+        } catch (const FractalSharkSeriousException &e) {
+            auto msg = e.GetCallstack("Worker thread exception during CalcFractal");
+            std::cerr << msg << std::endl;
+            if (IsDebuggerPresent()) __debugbreak();
+        } catch (const std::exception &e) {
+            std::cerr << "Worker thread exception during CalcFractal: " << e.what() << std::endl;
+            if (IsDebuggerPresent()) __debugbreak();
         }
 
         if (!finalFramePushed) {
             PushTombstone(item.SequenceNumber);
+        }
+
+        // Swap the worker's iteration data into m_CurIters so that
+        // SaveCurrentFractal, AutoZoom analysis, FindInterestingLocation,
+        // etc. see the most recently completed render.  Only swap if
+        // m_CurIters has matching dimensions — otherwise the old container
+        // would be discarded by ReturnIterMemory, shrinking the pool.
+        if (finalFramePushed) {
+            std::lock_guard lk(m_CalcFractalMutex);
+            if (fractal->m_CurIters.m_OutputWidth == workerIters.m_OutputWidth &&
+                fractal->m_CurIters.m_OutputHeight == workerIters.m_OutputHeight &&
+                fractal->m_CurIters.m_Antialiasing == workerIters.m_Antialiasing) {
+                std::swap(fractal->m_CurIters, workerIters);
+            }
         }
 
         // Return the container to the pool
@@ -742,11 +759,7 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
 
         // Signal completion to any waiters
         if (item.CompletionPromise) {
-            try {
-                item.CompletionPromise->set_value();
-            } catch (...) {
-                // Promise may already be fulfilled or broken
-            }
+            item.CompletionPromise->set_value();
         }
 
         // Release the renderer back to the pool

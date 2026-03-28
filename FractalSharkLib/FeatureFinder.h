@@ -5,7 +5,23 @@
 
 #include "FeatureFinderMode.h"
 #include "FloatComplex.h"
+#include "HighPrecision.h"
 #include "PerturbationResultsHelpers.h"
+
+struct NRCheckpointData {
+    uint64_t period;
+    mp_bitcnt_t coord_prec;
+    int scaleExp2;
+    uint32_t iteration;
+    HighPrecision c_re, c_im;
+    HighPrecision cand_re, cand_im;
+    HighPrecision sqrRadius;
+    HighPrecision intrinsicRadius;
+    uint64_t numIterationsAtFind;
+};
+
+bool ReadFullNRCheckpoint(NRCheckpointData &out);
+void DeleteNRCheckpoint();
 
 template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;
 template <typename IterType, class T, PerturbExtras PExtras> class RuntimeDecompressor;
@@ -58,7 +74,7 @@ public:
                            LAReference<IterType, T, SubType, PExtras> &laRef,
                            FeatureSummary &feature) const;
 
-    bool RefinePeriodicPoint_HighPrecision(FeatureSummary &feature) const;
+    bool RefinePeriodicPoint_HighPrecision(FeatureSummary &feature, bool useGpuForInnerLoop) const;
 
 private:
     struct EvalState {
@@ -204,7 +220,10 @@ private:
                                          IterType period,
                                          mp_bitcnt_t coord_prec,
                                          const T &sqrRadius_T,
-                                         int scaleExp2_for_deriv) const;
+                                         int scaleExp2_for_deriv,
+                                         bool useGpuForInnerLoop,
+                                         const HighPrecision &intrinsicRadius,
+                                         uint64_t numIterationsAtFind) const;
 
 private:
     Params m_params{};

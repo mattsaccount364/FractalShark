@@ -66,7 +66,7 @@ VectorStaticInit()
     HMODULE hNtDll = GetModuleHandle(L"ntdll.dll");
 
     if (hNtDll == nullptr) {
-        throw FractalSharkSeriousException("Failed to get handle to ntdll.dll");
+        throw FractalSharkSeriousException("Failed to get handle to ntdll.dll", false);
     }
 
     fNtCreateSection = (myNtCreateSection)GetProcAddress(hNtDll, "NtCreateSection");
@@ -207,7 +207,7 @@ GrowableVector<EltT>::GrowableVector(AddPointOptions addPointOptions,
 
     auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {
-        throw FractalSharkSeriousException("Failed to get system memory");
+        throw FractalSharkSeriousException("Failed to get system memory", false);
     }
 
     if (HasSafeModeFlag_NoCRT()) {
@@ -317,10 +317,9 @@ GrowableVector<EltT>::CloseMapping()
             GlobalCallstacks->LogDeallocCallstack(m_Data);
             auto res = VirtualFree(m_Data, 0, MEM_RELEASE);
             if (res == FALSE) {
-                std::string err_str = "Failed to free memory: ";
-                auto code = GetLastError();
-                err_str += std::to_string(code);
-                throw FractalSharkSeriousException(err_str);
+                char buf[256];
+                snprintf(buf, sizeof(buf), "Failed to free memory: %lu", GetLastError());
+                throw FractalSharkSeriousException(buf, false);
             }
 
             m_Data = nullptr;
@@ -380,17 +379,18 @@ GrowableVector<EltT>::TrimEnableWithoutSave()
                                        MEM_RESERVE,
                                        PAGE_READWRITE);
     if (status2 > 0) {
-        std::string err_str = "Failed to map view of section: " + std::to_string(status2);
-        throw FractalSharkSeriousException(err_str);
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Failed to map view of section: %ld", status2);
+        throw FractalSharkSeriousException(buf, false);
     }
 
     if (originalData != m_Data) {
-        std::string err = "NtMapViewOfSection returned a different pointer :(";
-        err += std::to_string(reinterpret_cast<uint64_t>(m_Data));
-        err += " vs ";
-        err += std::to_string(reinterpret_cast<uint64_t>(originalData));
-        err += " :(";
-        throw FractalSharkSeriousException(err);
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+                 "NtMapViewOfSection returned a different pointer: %llu vs %llu",
+                 (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
+                 (unsigned long long)reinterpret_cast<uint64_t>(originalData));
+        throw FractalSharkSeriousException(buf, false);
     }
 }
 
@@ -490,17 +490,17 @@ GrowableVector<EltT>::InternalOpenFile()
             GUID guid;
             auto res = CoCreateGuid(&guid);
             if (res != S_OK) {
-                std::string err_str = "Failed to create GUID: ";
-                err_str += std::to_string(res);
-                throw FractalSharkSeriousException(err_str);
+                char buf[256];
+                snprintf(buf, sizeof(buf), "Failed to create GUID: %ld", (long)res);
+                throw FractalSharkSeriousException(buf, false);
             }
 
             wchar_t guid_str[40];
             auto res2 = StringFromGUID2(guid, guid_str, 40);
             if (res2 == 0) {
-                std::string err_str = "Failed to convert GUID to string: ";
-                err_str += std::to_string(res2);
-                throw FractalSharkSeriousException(err_str);
+                char buf[256];
+                snprintf(buf, sizeof(buf), "Failed to convert GUID to string: %d", res2);
+                throw FractalSharkSeriousException(buf, false);
             }
 
             // Generate a temporary filename to a non-existent file
@@ -513,9 +513,9 @@ GrowableVector<EltT>::InternalOpenFile()
         if (m_FileHandle == INVALID_HANDLE_VALUE) {
             m_FileHandle = nullptr;
             auto err = GetLastError();
-            std::string err_str = "Failed to open file for reading 2: ";
-            err_str += std::to_string(err);
-            throw FractalSharkSeriousException(err_str);
+            char buf[256];
+            snprintf(buf, sizeof(buf), "Failed to open file for reading 2: %lu", err);
+            throw FractalSharkSeriousException(buf, false);
         }
 
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
@@ -547,8 +547,9 @@ GrowableVector<EltT>::MutableFileResizeOpen(size_t capacity)
     // this call extend file, section and view size
     auto status = fNtExtendSection(m_MappedFile, &NewSize);
     if (status > 0) {
-        std::string err_str = "Failed to extend section: " + std::to_string(status);
-        throw FractalSharkSeriousException(err_str);
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Failed to extend section: %ld", status);
+        throw FractalSharkSeriousException(buf, false);
     }
 }
 
@@ -572,8 +573,9 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
         (lastError != 0 && lastError != ERROR_ALREADY_EXISTS)) {
 
         auto ret = GetLastError();
-        std::string err_str = "Failed to open file: " + std::to_string(ret);
-        throw FractalSharkSeriousException(err_str);
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Failed to open file: %lu", ret);
+        throw FractalSharkSeriousException(buf, false);
     }
 
     static_assert(sizeof(size_t) == sizeof(uint64_t), "!");
@@ -586,8 +588,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
     if (lastError == ERROR_ALREADY_EXISTS) {
         BOOL ret = GetFileSizeEx(m_FileHandle, &existing_file_size);
         if (ret == FALSE) {
-            std::string err_str = "Failed to get file size";
-            throw FractalSharkSeriousException(err_str);
+            throw FractalSharkSeriousException("Failed to get file size", false);
         }
 
         // Note: by using the file size to find the used size, the implication
@@ -674,8 +675,9 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
     // CloseHandle(hFile);
 
     if (status > 0) {
-        std::string err_str = "Failed to create section: " + std::to_string(status);
-        throw FractalSharkSeriousException(err_str);
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Failed to create section: %ld", status);
+        throw FractalSharkSeriousException(buf, false);
     }
 
     SIZE_T viewSize;
@@ -703,21 +705,21 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
                                  allocationType,
                                  sectionPageProtection);
     if (status > 0) {
-        std::string err_str = "Failed to map view of section: " + std::to_string(status);
-        throw FractalSharkSeriousException(err_str);
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Failed to map view of section: %ld", status);
+        throw FractalSharkSeriousException(buf, false);
     }
 
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
 
         // Debug check:
         if (OriginalData != nullptr && OriginalData != m_Data) {
-
-            std::string err = "NtMapViewOfSection returned a different pointer :(";
-            err += std::to_string(reinterpret_cast<uint64_t>(m_Data));
-            err += " vs ";
-            err += std::to_string(reinterpret_cast<uint64_t>(OriginalData));
-            err += " :(";
-            throw FractalSharkSeriousException(err);
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "NtMapViewOfSection returned a different pointer: %llu vs %llu",
+                     (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
+                     (unsigned long long)reinterpret_cast<uint64_t>(OriginalData));
+            throw FractalSharkSeriousException(buf, false);
         }
 
         // Convert m_CapacityInElts to LARGE_INTEGER NewSize:
@@ -727,8 +729,9 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
         // this call extend file, section and view size
         status = fNtExtendSection(m_MappedFile, &NewSize);
         if (status > 0) {
-            std::string err_str = "Failed to extend section: " + std::to_string(status);
-            throw FractalSharkSeriousException(err_str);
+            char buf[256];
+            snprintf(buf, sizeof(buf), "Failed to extend section: %ld", status);
+            throw FractalSharkSeriousException(buf, false);
         }
     }
 }
@@ -758,19 +761,19 @@ GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity)
         GlobalCallstacks->LogAllocCallstack(bytesCount, res);
 
         if (m_Data == nullptr) {
-            std::string err_str = "Failed to allocate memory: ";
             auto code = GetLastError();
-            err_str += std::to_string(code);
-            throw FractalSharkSeriousException(err_str);
+            char buf[256];
+            snprintf(buf, sizeof(buf), "Failed to allocate memory: %lu", code);
+            throw FractalSharkSeriousException(buf, false);
         } else if (m_Data != res) {
-            std::string err = "VirtualAlloc returned a different pointer :(";
-            err += std::to_string(reinterpret_cast<uint64_t>(m_Data));
-            err += " vs ";
-            err += std::to_string(reinterpret_cast<uint64_t>(res));
-            err += " :(.  Code: ";
             auto code = GetLastError();
-            err += std::to_string(code);
-            throw FractalSharkSeriousException(err);
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "VirtualAlloc returned a different pointer: %llu vs %llu. Code: %lu",
+                     (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
+                     (unsigned long long)reinterpret_cast<uint64_t>(res),
+                     code);
+            throw FractalSharkSeriousException(buf, false);
         }
 
         m_Data = static_cast<EltT *>(res);
@@ -789,11 +792,10 @@ GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes)
     GlobalCallstacks->LogReserveCallstack(new_reserved_bytes, res);
 
     if (res == nullptr) {
-        std::string err = "Failed to reserve memory: ";
         auto code = GetLastError();
-        err += std::to_string(code);
-
-        throw FractalSharkSeriousException(err);
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Failed to reserve memory: %lu", code);
+        throw FractalSharkSeriousException(buf, false);
     }
 
     m_Data = static_cast<EltT *>(res);

@@ -323,7 +323,7 @@ where $\Delta z^{(1)}_n$ is obtained by iterating
 \end{equation}
 in the intermediate precision format.
 
-Crucially, the cost of evaluating~\eqref{eq:intermediate_perturbation} is dramatically lower than that of recomputing
+The cost of evaluating~\eqref{eq:intermediate_perturbation} is substantially lower than that of recomputing
 the authoritative orbit~\eqref{eq:authoritative_orbit}.
 As a result, once an intermediate reference orbit has been established, it may be reused across many subsequent zoom
 or pan operations, as long as the view parameter remains within its validity radius.
@@ -414,7 +414,7 @@ time.  Additionally, when the reference orbit is large, it can consume
 significant amounts of memory.  The goal of \emph{reference compression} is to
 store this potentially-large reference orbit in a compact form that can be
 transmitted or cached, then \emph{reconstructed} efficiently with a guaranteed
-bounded reconstruction error. The key idea is to store only a sparse set of
+bounded reconstruction error. The approach stores only a sparse set of
 \emph{waypoints} and fill the gaps by recomputing intermediate iterations in
 reduced precision.  This section describes the approach.
 
@@ -646,7 +646,7 @@ of deep references across sessions, machines, or render nodes.
 \subsubsection{Supporting both random and sequential access patterns}
 \label{sec:refcomp-runtime-access}
 
-Reference-orbit consumers exhibit two fundamentally different access patterns.
+Reference-orbit consumers exhibit two different access patterns.
 On the one hand, perturbation-based evaluation and on-the-fly decompression
 naturally traverse the orbit sequentially, requesting
 \(z_0, z_1, z_2, \dots\) in order.  On the other hand, higher-level algorithms
@@ -801,8 +801,8 @@ concurrent execution increasingly effective.  Overlapping independent
 operations, such as the simultaneous computation of \(x_n^2\) and \(y_n^2\),
 yields substantial gains, while explicit limb prefetching further mitigates
 memory latency.  Beyond a hardware- and workload-dependent threshold,
-multi-threaded reference-orbit computation consistently outperforms the
-single-threaded path, with speedups increasing as precision grows.
+multi-threaded reference-orbit computation typically outperforms the
+single-threaded path in practice, with speedups increasing as precision grows.
 
 To exploit this behavior without requiring manual tuning, the \code{Auto}
 selection mode chooses the perturbation algorithm based on the current zoom
@@ -975,5 +975,7 @@ representations, the implementation avoids repeated large data transfers while
 preserving an early-termination mechanism that is both inexpensive and tightly
 integrated with the cooperative-grid execution model.
 
-
+The reference-orbit algorithms described above rely on high-precision arithmetic
+that must execute efficiently on the GPU.  The next chapter details the
+NTT-based arithmetic engine that provides this capability.
 

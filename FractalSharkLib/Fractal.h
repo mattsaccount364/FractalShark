@@ -91,7 +91,7 @@ public:
 
     void TestBasic();
 
-    enum class AutoZoomHeuristic { Default, Max, Feature };
+    enum class AutoZoomHeuristic { Default, Max, Feature, FilamentTip };
 
     template <AutoZoomHeuristic h> void AutoZoom();
 
@@ -278,6 +278,9 @@ public:
     bool ZoomToFoundFeature(FeatureSummary &feature,
                             const HighPrecision *zoomFactor);
     bool ZoomToFoundFeature();
+    void ResumeNRFromCheckpoint();
+    bool GetUseGpuForNRInnerLoop() const;
+    void SetUseGpuForNRInnerLoop(bool v);
 
 private:
     void Initialize(int width, int height, HWND hWnd, bool UseSensoCursor);

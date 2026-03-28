@@ -152,10 +152,13 @@ CommandDispatcher::BuildTable()
 
     table_.emplace(
         IDM_AUTOZOOM_DEFAULT,
-        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Feature>(); });
+        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>(); });
     table_.emplace(
         IDM_AUTOZOOM_MAX,
-        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>(); });
+        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>(); });
+    table_.emplace(
+        IDM_AUTOZOOM_FILAMENT,
+        +[](MainWindow &w) { w.gFractal->AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>(); });
     table_.emplace(IDM_FEATUREFINDER_DIRECT,
                    makeDoPeriodic.operator()<FeatureFinderMode::Direct>());
     table_.emplace(IDM_FEATUREFINDER_DIRECTSCAN,
@@ -174,6 +177,21 @@ CommandDispatcher::BuildTable()
     table_.emplace(IDM_FEATUREFINDER_CLEAR, +[](MainWindow &w) {
         w.gFractal->EnqueueCommand([](Fractal &f) {
             f.ClearAllFoundFeatures();
+        });
+    });
+    table_.emplace(IDM_FEATUREFINDER_RESUME, +[](MainWindow &w) {
+        w.gFractal->EnqueueCommand([](Fractal &f) {
+            f.ResumeNRFromCheckpoint();
+        });
+    });
+    table_.emplace(IDM_NR_INNERLOOP_GPU, +[](MainWindow &w) {
+        w.gFractal->EnqueueMutation([](Fractal &f) {
+            f.SetUseGpuForNRInnerLoop(true);
+        });
+    });
+    table_.emplace(IDM_NR_INNERLOOP_CPU, +[](MainWindow &w) {
+        w.gFractal->EnqueueMutation([](Fractal &f) {
+            f.SetUseGpuForNRInnerLoop(false);
         });
     });
 

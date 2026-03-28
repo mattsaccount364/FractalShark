@@ -19,8 +19,8 @@ The authoritative build process is defined in `.github/workflows/build.yml`.
 
 ```powershell
 # From repo root, using Developer Command Prompt or MSBuild on PATH:
-msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64
-msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Debug /p:Platform=x64
+msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Release /p:Platform=x64
+msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Debug /p:Platform=x64
 ```
 
 Only x64 builds are supported. x86 configurations in the solution are mapped to x64.
@@ -67,7 +67,7 @@ template<typename IterType, class T, class SubType, PerturbExtras PExtras>
 - `SubType`: lower-precision type for per-pixel perturbation
 - `PExtras`: compile-time enum controlling extra data collection
 
-Explicit template instantiation is done via macro patterns (see `RefOrbitCalcTemplates.h`, `HpSharkInstantiate` project) to manage compile times across 36+ type combinations.
+Explicit template instantiation is done via macro patterns (see `RefOrbitCalcTemplates.h`, `HpSharkInstantiate` project) to manage compile times across 36 `PerturbationResults` type combinations (2 `IterType` × 6 `T` × 3 `PExtras`, enumerated in `AwesomeVariant`) and 60 `SharkFloatParams` aliases (5 families × 12 precision levels from 256 to 524288 limbs).
 
 ### Perturbation Theory Rendering
 
@@ -182,7 +182,7 @@ MPIR memory allocation is controlled via `mp_set_memory_functions` (process-glob
 
 Three evaluation backends are available for Phase A: direct iteration, perturbation theory, and linear approximation — so the finder works at any zoom depth. Influenced by the Imagina fractal viewer's periodic-point finder.
 
-**GPU Newton-Raphson inner loop**: The Phase B inner loop (iterating z=z²+c plus dzdc and d2 derivatives for p steps) is fully implemented on the GPU via the `HpSharkFloat` backend. The 4 NR derivative products (W0–W3) are interleaved into the same multiply and add kernel calls as the 3 orbit products, sharing all grid-wide barriers with zero additional synchronization overhead. `DispatchGpuNRByPrecision` in `FeatureFinder.cpp` dispatches to the appropriate `SharkParamsNR` type (256 through 524288 limbs). The `addTwos` array applies the ×2 factor during multiply normalization.
+**GPU Newton-Raphson inner loop**: The Phase B inner loop (iterating z=z²+c plus dzdc and d2 derivatives for p steps) is fully implemented on the GPU via the `HpSharkFloat` backend. The 4 NR derivative products (W0–W3) are interleaved into the same multiply and add kernel calls as the 3 orbit products, sharing all grid-wide barriers with zero additional synchronization overhead. `DispatchNRByPrecision` in `FeatureFinder.cpp` dispatches to the appropriate `SharkParamsNR` type (256 through 524288 limbs). The `addTwos` array applies the ×2 factor during multiply normalization.
 
 ### GPU High-Precision Arithmetic (HpSharkFloatLib)
 
@@ -234,3 +234,50 @@ A `.clang-format` is configured for the project:
 
 - **Do not create git commits.** Leave all changes uncommitted for the user to review and commit manually.
 - **Do not make code changes in plan mode.** Plan mode is for analysis and planning only.
+
+## Notes Document (Notes/)
+
+The `Notes/` directory contains a LaTeX technical document (~7,500 lines, 141 pages, 13 chapters + 2 appendices) describing FractalShark's algorithms and architecture.
+
+### Build
+
+```powershell
+cd Notes
+pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
+# Run twice for cross-refs. Use -jobname=FractalShark_test if the PDF is locked.
+# bibtex FractalShark && pdflatex ... (twice more) for bibliography.
+```
+
+### Document Structure
+
+`FractalShark.tex` is the master file. It includes chapters via `\input{}`:
+
+| File | Topic |
+|---|---|
+| `FractalShark-01-Introduction.tex` | Overview, capabilities, template design |
+| `FractalShark-02-DirectRendering.tex` | GPU escape-time kernels, pixel mapping |
+| `FractalShark-03-NumericTypes.tex` | HDR float, extended-precision types |
+| `FractalShark-04-Perturbation.tex` | Perturbation theory, delta recurrence, rebasing |
+| `FractalShark-05-Approximation.tex` | BLA v1, LA v2, threshold propagation |
+| `FractalShark-06-RefOrbit.tex` | Reference orbit computation, compression, multi-threading |
+| `FractalShark-07-GpuArithmetic.tex` | NTT multiplication, carry propagation, Montgomery, checksums |
+| `FractalShark-08-FeatureFinder.tex` | Newton/Halley iteration, GPU NR inner loop |
+| `FractalShark-09-RenderPipeline.tex` | Antialiasing, coloring, thread pool, coordinate management |
+| `FractalShark-10-MemorySystem.tex` | GrowableVector, reserve/commit, file-backed storage |
+| `FractalShark-11-FutureDirections.tex` | Alternative techniques, design decision rationale |
+| `FractalShark-12-Conclusion.tex` | Summary, system architecture diagram |
+| `FractalShark-A1-UserGuide.tex` | Menu reference, keyboard shortcuts |
+| `FractalShark-A2-DevNotes.tex` | Development diary (informal) |
+
+Parts: I = Rendering Algorithms (§2–5), II = Reference Orbit Computation (§6–8), III = Supporting Infrastructure (§9–10), IV = Further Techniques (§11).
+
+### Writing Conventions
+
+- **Tone**: Formal third-person academic (research paper style) in chapters 1–12. Appendices A1/A2 are intentionally informal.
+- **No sensationalized language**: Avoid "dramatically", "crucially", "key insight", "notoriously", "massively parallel", etc. Let content speak for itself.
+- **Figures**: Use pure TikZ for diagrams (no external image files for diagrams). Use `\caption[short]{long}` format. Add `\cref{fig:...}` in surrounding prose.
+- **Equations**: Numbered equations should be referenced via `\eqref{}` or `\cref{eq:...}` in the text. Unnumbered display math (`\[...\]`) for equations only used at the point of definition.
+- **Cross-references**: Use `\cref{}` (cleveref) for all cross-references. Add forward-linking sentences at the end of each chapter.
+- **Code identifiers**: Use `\code{}` macro for inline code. Use `\begin{lstlisting}` (not `\begin{verbatim}`) for code blocks. `listings` package is configured in the preamble.
+- **Notation**: The notation table in `FractalShark.tex` (lines ~63–130) defines canonical symbols. New symbols should be added there if used across chapters.
+- **LA v2 formatting**: Use "LA~v2" (with non-breaking space) consistently, not "LAv2". Preserve "LAv2" only inside `\code{}` identifiers.

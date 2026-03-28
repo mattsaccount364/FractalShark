@@ -37,6 +37,13 @@ public:
     // it at the feature's computed intrinsic-radius zoom depth.
     bool ZoomToFoundFeature();
 
+    // Resume NR refinement from a saved checkpoint file.
+    // Creates a synthetic FeatureSummary and proceeds to Phase B + navigation.
+    bool ResumeFromCheckpoint();
+
+    bool GetUseGpuForNRInnerLoop() const { return m_UseGpuForNRInnerLoop; }
+    void SetUseGpuForNRInnerLoop(bool v) { m_UseGpuForNRInnerLoop = v; }
+
     const std::vector<std::unique_ptr<FeatureSummary>> &GetFeatureSummaries() const {
         return m_FeatureSummaries;
     }
@@ -54,4 +61,5 @@ private:
 
     Fractal &m_Fractal;
     std::vector<std::unique_ptr<FeatureSummary>> m_FeatureSummaries;
+    bool m_UseGpuForNRInnerLoop = true;
 };

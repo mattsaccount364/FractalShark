@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "AbortMonitor.h"
 #include "Fractal.h"
 #include "PerturbationResults.h"
 #include "RefOrbitCalc.h"
@@ -374,8 +375,7 @@ RefOrbitCalc::AddPerturbationReferencePoint(const PointZoomBBConverter &ptz)
             ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::GPU) {
 
-        if constexpr (std::is_same<T, HDRFloat<float>>::value) {
-            // GPU only supports HDRFloat<float> for now.
+        if constexpr (std::is_same_v<T, HDRFloat<float>>) {
             AddPerturbationReferencePointGPU<IterType,
                                              HDRFloat<float>,
                                              true,
@@ -383,11 +383,26 @@ RefOrbitCalc::AddPerturbationReferencePoint(const PointZoomBBConverter &ptz)
                                              PerturbExtras::Disable,
                                              ReuseMode::DontSaveForReuse>(
                 ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+        } else if constexpr (std::is_same_v<T, HDRFloat<double>>) {
+            AddPerturbationReferencePointGPU<IterType,
+                                             HDRFloat<double>,
+                                             true,
+                                             BenchmarkState,
+                                             PerturbExtras::Disable,
+                                             ReuseMode::DontSaveForReuse>(
+                ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+        } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>) {
+            AddPerturbationReferencePointGPU<IterType,
+                                             HDRFloat<CudaDblflt<dblflt>>,
+                                             true,
+                                             BenchmarkState,
+                                             PerturbExtras::Disable,
+                                             ReuseMode::DontSaveForReuse>(
+                ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
         } else {
             throw FractalSharkSeriousException(
-                "GPU perturbation algorithm only supports HDRFloat<float> type for now.  "
-                "This is a dumb limitation that I'd like to fix but for now, pick a "
-                "different combination.");
+                "GPU perturbation algorithm supports HDRFloat<float> and HDRFloat<double>. "
+                "Pick a different combination for other types.");
         }
     }
 }
@@ -521,6 +536,11 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
         mpf_set(zy, cy_mpf);
 
         for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
+            if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
+                AbortMonitor::GetStopCalculatingGlobal()) {
+                break;
+            }
+
             mpf_mul_2exp(zx2, zx, 1); // Multiply by 2
 
             T double_zx;
@@ -830,6 +850,11 @@ RefOrbitCalc::AddPerturbationReferencePointSTReuse(const PointZoomBBConverter &p
     const mpf_t *ReuseY = nullptr;
 
     for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
+        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
+            AbortMonitor::GetStopCalculatingGlobal()) {
+            break;
+        }
+
         if constexpr (Periodicity) {
             if constexpr (floatOrDouble) {
                 zxCopy = (T)mpf_get_d(zx);
@@ -1134,7 +1159,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     auto *ThreadZxMemory =
         (ThreadPtrs<ThreadZxData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
     if (ThreadZxMemory == nullptr) {
-        throw FractalSharkSeriousException("Memory allocation failure site " + std::to_string(__LINE__));
+        throw FractalSharkSeriousException("Memory allocation failure site: ThreadZxMemory (RefOrbitCalc ST)");
     }
 
     memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
@@ -1142,7 +1167,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     auto *ThreadZyMemory =
         (ThreadPtrs<ThreadZyData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
     if (ThreadZyMemory == nullptr) {
-        throw FractalSharkSeriousException("Memory allocation failure site " + std::to_string(__LINE__));
+        throw FractalSharkSeriousException("Memory allocation failure site: ThreadZyMemory (RefOrbitCalc ST)");
     }
 
     memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
@@ -1353,6 +1378,11 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
 
     bool RanOnce = false;
     for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
+        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
+            AbortMonitor::GetStopCalculatingGlobal()) {
+            break;
+        }
+
         threadZxdata->ReferenceIteration = RefIteration;
         threadZxdata->DeltaSubNXOrig = &DeltaSubNX;
         threadZxdata->DeltaSubNYOrig = &DeltaSubNY;
@@ -1661,8 +1691,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         auto *ThreadZxMemory =
             (ThreadPtrs<ThreadZxData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
         if (ThreadZxMemory == nullptr) {
-            throw FractalSharkSeriousException("Memory allocation failure site " +
-                                               std::to_string(__LINE__));
+            throw FractalSharkSeriousException("Memory allocation failure site: ThreadZxMemory (RefOrbitCalc MT)");
         }
 
         memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
@@ -1670,8 +1699,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         auto *ThreadZyMemory =
             (ThreadPtrs<ThreadZyData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
         if (ThreadZyMemory == nullptr) {
-            throw FractalSharkSeriousException("Memory allocation failure site " +
-                                               std::to_string(__LINE__));
+            throw FractalSharkSeriousException("Memory allocation failure site: ThreadZyMemory (RefOrbitCalc MT)");
         }
 
         memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
@@ -1679,8 +1707,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         auto *ThreadReusedMemory =
             (ThreadPtrs<ThreadReusedData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadReusedData>), 64);
         if (ThreadReusedMemory == nullptr) {
-            throw FractalSharkSeriousException("Memory allocation failure site " +
-                                               std::to_string(__LINE__));
+            throw FractalSharkSeriousException("Memory allocation failure site: ThreadReusedMemory (RefOrbitCalc MT)");
         }
 
         memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
@@ -1885,6 +1912,11 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             *results, m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low)};
 
         for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
+            if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
+                AbortMonitor::GetStopCalculatingGlobal()) {
+                break;
+            }
+
             // Start Zx squaring thread
             mpf_set(threadZxdata->zx, zx);
 
@@ -2205,6 +2237,108 @@ DispatchByPrecision(uint64_t prec, F &&f)
     }
 }
 
+template <class F>
+void
+DispatchByPrecisionDbl(uint64_t prec, F &&f)
+{
+    auto precRounded = prec;
+    if ((precRounded & (precRounded - 1)) != 0) {
+        uint32_t p = 1;
+        while (p < precRounded) {
+            p <<= 1;
+        }
+        precRounded = p;
+    }
+
+    if (precRounded < 256) {
+        precRounded = 256;
+    }
+
+    if (precRounded > 524288) {
+        throw std::invalid_argument("Unsupported precision");
+    }
+
+    switch (precRounded) {
+        case 256:
+            return DispatchOne<SharkParamsDbl1>(std::forward<F>(f));
+        case 512:
+            return DispatchOne<SharkParamsDbl2>(std::forward<F>(f));
+        case 1024:
+            return DispatchOne<SharkParamsDbl3>(std::forward<F>(f));
+        case 2048:
+            return DispatchOne<SharkParamsDbl4>(std::forward<F>(f));
+        case 4096:
+            return DispatchOne<SharkParamsDbl5>(std::forward<F>(f));
+        case 8192:
+            return DispatchOne<SharkParamsDbl6>(std::forward<F>(f));
+        case 16384:
+            return DispatchOne<SharkParamsDbl7>(std::forward<F>(f));
+        case 32768:
+            return DispatchOne<SharkParamsDbl8>(std::forward<F>(f));
+        case 65536:
+            return DispatchOne<SharkParamsDbl9>(std::forward<F>(f));
+        case 131072:
+            return DispatchOne<SharkParamsDbl10>(std::forward<F>(f));
+        case 262144:
+            return DispatchOne<SharkParamsDbl11>(std::forward<F>(f));
+        case 524288:
+            return DispatchOne<SharkParamsDbl12>(std::forward<F>(f));
+        default:
+            throw std::invalid_argument("Unsupported NumIters (double)");
+    }
+}
+
+template <class F>
+void
+DispatchByPrecisionDbf(uint64_t prec, F &&f)
+{
+    auto precRounded = prec;
+    if ((precRounded & (precRounded - 1)) != 0) {
+        uint32_t p = 1;
+        while (p < precRounded) {
+            p <<= 1;
+        }
+        precRounded = p;
+    }
+
+    if (precRounded < 256) {
+        precRounded = 256;
+    }
+
+    if (precRounded > 524288) {
+        throw std::invalid_argument("Unsupported precision");
+    }
+
+    switch (precRounded) {
+        case 256:
+            return DispatchOne<SharkParamsDbf1>(std::forward<F>(f));
+        case 512:
+            return DispatchOne<SharkParamsDbf2>(std::forward<F>(f));
+        case 1024:
+            return DispatchOne<SharkParamsDbf3>(std::forward<F>(f));
+        case 2048:
+            return DispatchOne<SharkParamsDbf4>(std::forward<F>(f));
+        case 4096:
+            return DispatchOne<SharkParamsDbf5>(std::forward<F>(f));
+        case 8192:
+            return DispatchOne<SharkParamsDbf6>(std::forward<F>(f));
+        case 16384:
+            return DispatchOne<SharkParamsDbf7>(std::forward<F>(f));
+        case 32768:
+            return DispatchOne<SharkParamsDbf8>(std::forward<F>(f));
+        case 65536:
+            return DispatchOne<SharkParamsDbf9>(std::forward<F>(f));
+        case 131072:
+            return DispatchOne<SharkParamsDbf10>(std::forward<F>(f));
+        case 262144:
+            return DispatchOne<SharkParamsDbf11>(std::forward<F>(f));
+        case 524288:
+            return DispatchOne<SharkParamsDbf12>(std::forward<F>(f));
+        default:
+            throw std::invalid_argument("Unsupported NumIters (CudaDblflt)");
+    }
+}
+
 template <typename IterType,
           class T,
           bool Periodicity,
@@ -2298,9 +2432,14 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
         m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
     };
 
-    // Dispatch by precision; the lambda above ignores the reference param because we now keep
-    // the persistent "combo" handle returned by Init, like the test does.
-    DispatchByPrecision(PrecInLimbs, lamb);
+    // Dispatch by precision and SubType.
+    if constexpr (std::is_same_v<T, HDRFloat<double>>) {
+        DispatchByPrecisionDbl(PrecInLimbs, lamb);
+    } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>) {
+        DispatchByPrecisionDbf(PrecInLimbs, lamb);
+    } else {
+        DispatchByPrecision(PrecInLimbs, lamb);
+    }
 
     results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
 
@@ -2948,6 +3087,21 @@ RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const
         int64_t extraPrecisionCached = 0;
         arg->GetIntermediatePrecision(deltaPrecisionCached, extraPrecisionCached);
 
+        // Build perturbation algorithm string with SubType for GPU path
+        std::string algStr = GetPerturbationAlgStr();
+        if (GetPerturbationAlg() == PerturbationAlg::GPU ||
+            GetPerturbationAlg() == PerturbationAlg::Auto) {
+            using ResultT = std::remove_pointer_t<std::decay_t<decltype(arg)>>;
+            using OrbitT = typename ResultT::Type;
+            if constexpr (std::is_same_v<OrbitT, HDRFloat<float>>) {
+                algStr += "<HDRFloat<float>>";
+            } else if constexpr (std::is_same_v<OrbitT, HDRFloat<double>>) {
+                algStr += "<HDRFloat<double>>";
+            } else if constexpr (std::is_same_v<OrbitT, HDRFloat<CudaDblflt<dblflt>>>) {
+                algStr += "<HDRFloat<CudaDblflt>>";
+            }
+        }
+
         details = {arg->GetPeriodMaybeZero(),
                    arg->GetCompressedOrUncompressedOrbitSize(),
                    arg->GetCountOrbitEntries(),
@@ -2959,7 +3113,7 @@ RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const
                    arg->GetBenchmarkOrbit(),
                    LAMilliseconds,
                    LASize,
-                   GetPerturbationAlgStr(),
+                   algStr,
                    arg->GetHiZoomFactor()};
     };
 

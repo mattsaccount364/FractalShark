@@ -18,9 +18,10 @@ GetCallStack(const std::stacktrace &stack)
     return result;
 }
 
-Cpp23ExceptionWithCallstack::Cpp23ExceptionWithCallstack(const char *msg)
-    : runtime_error{msg}, m_stacktrace{std::stacktrace::current(1 /*skipped frames*/)}
+Cpp23ExceptionWithCallstack::Cpp23ExceptionWithCallstack(const char *msg, bool captureStack)
+    : m_stacktrace{captureStack ? std::stacktrace::current(1) : std::stacktrace{}}
 {
+    strncpy_s(m_msg, msg, _TRUNCATE);
 }
 
 std::string

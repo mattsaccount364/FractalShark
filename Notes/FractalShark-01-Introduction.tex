@@ -29,11 +29,11 @@ Finder---and concludes with infrastructure details and development history.
 \begin{figure}[!htbp]
   \centering
   \includegraphics[width=0.9\linewidth]{mandelbrot.png}
-  \caption{The Mandelbrot set.}
+  \caption[The Mandelbrot set]{The Mandelbrot set.}
   \label{fig:mandelbrot}
 \end{figure}
 
-\FractalShark{} is an interactive Mandelbrot set renderer focused on
+\FractalShark{} is an interactive Mandelbrot set renderer (\cref{fig:mandelbrot}) focused on
 \textbf{extreme deep-zoom exploration}, numerical correctness, and
 algorithmic experimentation.  It supports zoom depths ranging from
 conventional views to magnifications exceeding $10^{10000}$, while
@@ -47,7 +47,7 @@ modes.  Window management options allow toggling between windowed and
 full-screen modes, including square-aspect rendering for precise analysis.
 
 \paragraph{Built-in views for demonstration and validation.}
-The application includes an extensive set of built-in views covering a wide
+The application includes a set of built-in views covering a wide
 range of numerical regimes: GPU precision limits, high-period locations,
 known hard points, historical bug cases, regression tests, and ultra-deep
 zoom demonstrations.  These views serve both as showcases of capability and
@@ -65,7 +65,7 @@ or manually choose among many rendering paths (see \cref{subsec:ref-orbit-mt-tra
   \item Scaled perturbation algorithms for extending low-precision arithmetic
         to deeper zooms (\cref{sec:perturbation-concept}).
   \item Bilinear approximation (BLA v1) perturbation paths (\cref{sec:bilinear-approx}).
-  \item Linear approximation (LAv2) pipelines, including full rendering,
+  \item Linear approximation (LA~v2) pipelines, including full rendering,
         linear-approximation-only, and perturbation-only variants
         (\cref{sec:la-v2-perturb}).
   \item Reference-compression–aware algorithms, including Imagina-compatible
@@ -217,7 +217,7 @@ The remainder of this document is organized as follows:
         numeric representations they operate on
         (\cref{sec:mandel-base-kernels,sec:hdr-float,sec:extended-precision-types}).
   \item \textbf{Perturbation theory and approximation-based acceleration.}
-        Scaled perturbation, bilinear approximation (BLA), and the LAv2
+        Scaled perturbation, bilinear approximation (BLA), and the LA~v2
         pipeline that together enable deep-zoom rendering from a single
         reference orbit
         (\cref{sec:perturbation-concept,sec:bilinear-approx,sec:la-v2-perturb}).
@@ -239,3 +239,237 @@ The remainder of this document is organized as follows:
         a development history recording implementation milestones and design
         decisions.
 \end{itemize}
+
+
+%% ===================================================================
+\section{Template design}
+\label{sec:template-design}
+%% ===================================================================
+
+\FractalShark{} makes pervasive use of C++ templates to select numeric
+types, iteration widths, and algorithmic variants at compile time rather
+than at run time.  Two considerations motivate this choice.  First,
+the inner loops of both reference-orbit computation and per-pixel
+perturbation execute billions of arithmetic operations; virtual dispatch
+or run-time branch mispredictions on every iteration would impose
+measurable overhead.  Second, encoding precision contracts in the type
+system allows the compiler to verify that high-precision reference data
+is never silently truncated when it is handed to a lower-precision
+perturbation kernel, catching a class of errors that would otherwise
+manifest only as subtle rendering artifacts.
+
+The template parameters fall into four largely orthogonal dimensions,
+described in the following subsections.
+
+
+\subsection{Iteration-counter width (\code{IterType})}
+\label{subsec:template-itertype}
+
+Every orbit and perturbation result is indexed by an iteration counter
+whose type is either \code{uint32\_t} or \code{uint64\_t}.  A 32-bit
+counter suffices for the vast majority of renders, supporting up to
+$2^{32}-1 \approx 4.3\times10^{9}$ iterations.  Certain ultra-deep
+locations, however, require iteration limits that exceed this range.
+Switching to a 64-bit counter doubles the per-element storage cost for
+every orbit and iteration buffer, so \FractalShark{} treats the counter
+width as a compile-time choice rather than unconditionally paying the
+wider cost.  The \code{IterType} parameter threads through
+\code{PerturbationResults}, \code{LAReference}, and the rendering
+kernels, ensuring that all components agree on the iteration index
+representation.
+
+
+\subsection{Reference-orbit type (\code{T})}
+\label{subsec:template-t}
+
+The parameter~\code{T} selects the numeric type used to store the
+reference orbit $\{z_n^\star\}$ and, by extension, the type in which the
+high-precision reference computation is performed.  It determines both
+the precision available during orbit iteration and the storage
+representation uploaded to the GPU for use by perturbation kernels.
+The principal choices are:
+
+\begin{itemize}
+  \item \code{float} and \code{double}---IEEE~754 single and double
+        precision, used at shallow zoom depths where the full mantissa
+        suffices to represent the orbit accurately.
+  \item \code{CudaDblflt<MattDblflt>}---a double-single representation
+        that pairs two 32-bit floats to obtain roughly double the
+        mantissa bits of \code{float} alone, with natively vectorisable
+        GPU arithmetic (\cref{sec:extended-precision-types}).
+  \item \code{HDRFloat<double>} and \code{HDRFloat<float>}---a
+        high-dynamic-range wrapper that adds an explicit exponent to the
+        mantissa, preventing underflow in the deep-zoom regime where
+        orbit values span hundreds of orders of magnitude
+        (\cref{sec:hdr-float}).
+  \item \code{HDRFloat<CudaDblflt<MattDblflt>>}---the composition of
+        the HDR exponent with the double-single mantissa, providing
+        both extended range and extended precision.
+  \item \code{HpSharkFloat<SharkFloatParams>}---the GPU-resident
+        arbitrary-precision type used for reference-orbit computation
+        at extreme zoom depths (\cref{subsec:ref-orbit-gpu}).
+\end{itemize}
+
+\noindent
+The type~\code{T} appears as the second template parameter of
+\code{PerturbationResults<IterType,\allowbreak T,\allowbreak PExtras>}
+and as the orbit-storage type inside \code{RefOrbitCalc}.
+
+
+\subsection{Perturbation subtype (\code{SubType})}
+\label{subsec:template-subtype}
+
+While~\code{T} governs the precision of the shared reference orbit,
+per-pixel perturbation operates at a lower precision because each
+pixel evolves only a small delta $\Delta z_n$ relative to $z_n^\star$.
+The \code{SubType} parameter selects this lower-precision type.  It
+is typically \code{float}, \code{double}, or
+\code{CudaDblflt<MattDblflt>}, and for HDR-wrapped references the
+corresponding \code{HDRFloat} variant.  The mapping from \code{T} to
+\code{SubType} is encoded by the \code{SubTypeChooser} trait: when
+\code{T} is a plain scalar the sub-type is the same scalar; when
+\code{T} is an \code{HDRFloat<S>} the sub-type extracts the
+underlying~\code{S}.
+
+\code{SubType} appears as an explicit template parameter on
+\code{LAReference<IterType,\allowbreak T,\allowbreak SubType,\allowbreak
+PExtras>} and is threaded into the perturbation kernels, where it
+controls the precision of the per-pixel inner loop.
+
+
+\subsection{Perturbation extras (\code{PExtras})}
+\label{subsec:template-pextras}
+
+The \code{PerturbExtras} enumeration is a compile-time flag attached to
+every \code{PerturbationResults} instantiation.  It controls whether the
+orbit stores auxiliary data beyond the orbit values themselves:
+
+\begin{itemize}
+  \item \code{Disable}---store only the orbit; no extra bookkeeping.
+  \item \code{Bad}---record \emph{glitch} information (iterations where
+        the perturbation approximation loses accuracy) alongside the
+        orbit, enabling downstream glitch-correction passes.
+  \item \code{SimpleCompression} and \code{MaxCompression}---store the
+        metadata required for reference-orbit compression
+        (\cref{sec:ref-compression-zhuoran}).
+\end{itemize}
+
+\noindent
+Making this a template parameter rather than a run-time flag eliminates
+the storage overhead of the auxiliary arrays in the common case where
+they are not needed, and allows the compiler to elide the associated
+bookkeeping code entirely.
+
+
+\subsection{Instantiation combinatorics}
+\label{subsec:template-combinatorics}
+
+The Cartesian product of the four dimensions yields a large number of
+potential type combinations.  With two \code{IterType} widths, six
+representative \code{T} values, and three commonly used
+\code{PExtras} settings (\code{Disable}, \code{Bad},
+\code{Simple\-Compression}), the \code{PerturbationResults} class
+alone accounts for $2\times 6\times 3 = 36$ concrete instantiations.
+This count is visible in the \code{AwesomeVariant} type alias defined
+in \code{RefOrbitCalc.h}, which enumerates all 36~alternatives as a
+\code{std::variant} so that perturbation results of any type
+combination can be stored and dispatched uniformly at run time.
+
+Additional template parameters (\code{SubType}, benchmark modes, reuse
+modes) on related classes further multiply the instantiation count.  The
+full set of explicit instantiations in
+\code{RefOrbitCalcTemplates.h} runs to several hundred
+macro-expanded declarations.
+
+
+\subsection{Explicit instantiation strategy}
+\label{subsec:template-explicit-inst}
+
+Because every translation unit that includes a template header would
+otherwise independently instantiate each specialisation it references,
+\FractalShark{} relies on \emph{explicit template instantiation} to
+centralise code generation and control compile times.
+
+For the perturbation pipeline, the header
+\code{RefOrbitCalcTemplates.h} defines a family of preprocessor macros
+(\code{InstantiateIsPerturbation\-Result\-UsefulHere},
+\code{InstantiateAddPerturbation\-Reference\-Point}, and others) that
+expand to explicit instantiation declarations for every supported
+\code{(IterType, T, SubType, PExtras)} combination.  Each macro accepts
+the type arguments, expands to the required \code{template} declaration,
+and is invoked once per combination immediately below its definition.
+This pattern confines the instantiation cost to a single translation
+unit while allowing other files to use only the declarations.
+
+For the GPU arithmetic subsystem, a separate code-generation tool
+(\code{HpShark\-Instantiate}) produces \code{.cu} files containing
+explicit instantiations of \code{HpSharkFloat}, the NTT multiply
+kernels, the reference-orbit GPU loop, and associated helper templates.
+The generator partitions the output into paired
+files---one for production parameter sets
+(\code{SharkParams1}\,--\,\code{12}),
+one for non-periodicity variants
+(\code{SharkParamsNP1}\,--\,\code{NP12})---and groups
+instantiations into named \emph{batches} (e.g.\
+\code{HpSharkFloat\_Conversions}, \code{MultiplyNTT},
+\code{HpSharkReference}) so that each batch compiles as an
+independent translation unit.  This decomposition enables parallel
+compilation and limits the peak memory consumption of the CUDA
+compiler.
+
+
+\subsection{The \code{SharkFloatParams} pattern}
+\label{subsec:template-sharkparams}
+
+The GPU high-precision arithmetic library takes the compile-time
+parameterisation one step further by encoding not just type choices but
+also \emph{algorithmic configuration} in a template parameter.
+The struct
+\code{GenericSharkFloatParams<pNumDigits,\allowbreak Periodicity,\allowbreak
+NewtonRaphson,\allowbreak SubTypeT>}
+bundles several \code{static constexpr} members that the CUDA compiler
+can fold into kernel code:
+
+\begin{itemize}
+  \item \code{GlobalNumUint32}---the number of 32-bit limbs in each
+        high-precision operand, derived from \code{pNumDigits}.  Because
+        the compiler knows this value at template instantiation time,
+        loop trip counts in the NTT multiply and carry-propagation
+        kernels are compile-time constants, enabling aggressive
+        unrolling and register allocation.
+  \item \code{EnablePeriodicity}---controls whether the reference-orbit
+        kernel checks for period detection at each iteration.  Disabling
+        it in the non-periodicity (\code{SharkParamsNP*}) and
+        Newton--Raphson (\code{SharkParamsNR*}) variants eliminates
+        the associated branch and storage overhead.
+  \item \code{EnableNewtonRaphson}---when set, the kernel additionally
+        tracks the derivative $d_n = \partial z_n/\partial c$ alongside
+        the orbit, allocating extra GPU scratch memory and executing the
+        derivative recurrence at each iteration.  This is required by
+        the Feature Finder's Newton's method solver
+        (\cref{sec:feature-finder}).
+  \item \code{NTTPlan}---a compile-time NTT plan computed by
+        \code{SharkNTT::BuildPlanPrime} from \code{GlobalNumUint32},
+        fixing the NTT transform length and modular-arithmetic
+        parameters at compile time.
+\end{itemize}
+
+\noindent
+Concrete aliases such as
+\code{SharkParams1}\,--\,\code{SharkParams12} fix
+\code{pNumDigits} to powers of two from $256$ through $524{,}288$
+(providing roughly $2{,}500$ to $5{,}000{,}000$ decimal digits of
+precision) with periodicity enabled and Newton--Raphson disabled.
+Additional alias families---\code{SharkParamsNP*} (no periodicity),
+\code{SharkParamsNR*} (Newton--Raphson enabled),
+\code{SharkParamsDbl*} (\code{double} sub-type), and
+\code{SharkParamsDbf*} (\code{CudaDblflt} sub-type)---provide the
+remaining feature-flag and sub-type permutations.  Each alias is
+independently instantiated by the code generator described in
+\cref{subsec:template-explicit-inst}, yielding $12\times 5 = 60$
+parameter-set instantiations per GPU kernel template.
+
+With this architectural overview in place, the following chapter turns
+to the rendering kernels themselves, beginning with the pixel-to-parameter
+mapping and the base escape-time iteration that all subsequent optimisations
+build upon.

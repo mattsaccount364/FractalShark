@@ -16,7 +16,58 @@ improvement.
 
 Each subsection below describes a technique, gives its key formulas, and
 explains how it relates to---and differs from---\FractalShark{}'s current
-approach.
+approach.  \Cref{fig:design-decisions} summarises the three principal
+design choices at a glance.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  problem/.style={draw, rounded corners, fill=blue!8, minimum width=3.8cm,
+                  minimum height=0.7cm, align=center},
+  option/.style={draw, rounded corners, minimum width=3.6cm,
+                 minimum height=0.6cm, align=center},
+  chosen/.style={option, fill=orange!15, line width=1pt},
+  why/.style={font=\scriptsize\itshape, text width=3.2cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick}
+]
+
+% --- Column 1: Numerical stability ---
+\node[problem] (p1) {Orbit approximation\\errors};
+\node[option,  below left =0.8cm and -0.1cm of p1]  (a1) {Glitch detection\\+ correction};
+\node[chosen,  below right=0.8cm and -0.1cm of p1]  (b1) {Rebasing};
+\node[why, below=0.15cm of a1] {multi-pass,\\post-hoc};
+\node[why, below=0.15cm of b1] {single-pass,\\inline};
+
+\draw[arr] (p1.south west) ++(0.3,0) -- (a1.north);
+\draw[arr] (p1.south east) ++(-0.3,0) -- (b1.north);
+
+% --- Column 2: Iteration skipping ---
+\node[problem, right=2.8cm of p1] (p2) {High iteration\\count};
+\node[option,  below left =0.8cm and -0.1cm of p2]  (a2) {Series Approx.\\(SA)};
+\node[chosen,  below right=0.8cm and -0.1cm of p2]  (b2) {Linear Approx.\\(LA~v2)};
+\node[why, below=0.15cm of a2] {Taylor series,\\divergence risk};
+\node[why, below=0.15cm of b2] {period-aligned,\\bounded error};
+
+\draw[arr] (p2.south west) ++(0.3,0) -- (a2.north);
+\draw[arr] (p2.south east) ++(-0.3,0) -- (b2.north);
+
+% --- Column 3: Multiplication ---
+\node[problem, right=2.8cm of p2] (p3) {$O(n^2)$\\multiplication};
+\node[option,  below left =0.8cm and -0.1cm of p3]  (a3) {Karatsuba /\\Toom--Cook};
+\node[chosen,  below right=0.8cm and -0.1cm of p3]  (b3) {NTT};
+\node[why, below=0.15cm of a3] {recursive,\\$O(n^{1.58})$};
+\node[why, below=0.15cm of b3] {GPU-parallel,\\$O(n\log n)$};
+
+\draw[arr] (p3.south west) ++(0.3,0) -- (a3.north);
+\draw[arr] (p3.south east) ++(-0.3,0) -- (b3.north);
+
+\end{tikzpicture}
+\caption[Algorithm design decisions]{Three principal design decisions
+  in \FractalShark{}.  Shaded boxes indicate the chosen approach;
+  italic annotations note the key trade-off in each case.}
+\label{fig:design-decisions}
+\end{figure}
 
 % -----------------------------------------------------------
 \subsection{Glitch Detection and Correction}

@@ -65,6 +65,7 @@ public:
 
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
+    using Type = T;
 
     template <class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;

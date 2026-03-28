@@ -304,6 +304,10 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             }
             break;
 
+        case 'S':
+            gFractal->AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
+            break;
+
         case 'b':
             MenuGoBack();
             break;

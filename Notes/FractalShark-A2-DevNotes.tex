@@ -11,19 +11,19 @@ for exploring the Mandelbrot set, along with several usability improvements.
 \item \textbf{Feature Finder.}  Move mouse near a feature, select feature
   finder, and \FractalShark{} will locate the nearest interesting feature---a
   mini-Mandelbrot or satellite bulb---using Newton's method (\cref{subsec:ff-newton}).  A line is drawn
-  from your cursor to the detected feature so you can see exactly where it is.
-  The finder works at any zoom depth.  Currently, you manually choose between
+  from the cursor to the detected feature, making its location visible.
+  The finder works at any zoom depth.  Currently, the user manually chooses between
   direct iteration, perturbation theory, and linear approximation depending on
-  how deep you are.  In the future, this choice will be automatic.
+  the current zoom depth.  In the future, this choice will be automatic.
 
 \item \textbf{Scan mode.}  Instead of a single click, scan mode surveys a grid
   of points across the screen and marks up to 144 discovered features with small
-  circles.  This gives you a quick overview of what is nearby before you decide
+  circles.  This provides a quick overview of what is nearby before deciding
   where to zoom next.
 
-\item \textbf{Auto-zoom to feature.}  Once a feature has been found you can tell
+\item \textbf{Auto-zoom to feature.}  Once a feature has been found the user can direct
   the program to zoom into it automatically.  The iteration count is ramped up
-  smoothly during the zoom so the image stays sharp as you approach the target.
+  smoothly during the zoom so the image stays sharp as the view approaches the target.
   This feature remains hacky and experimental but if it works it's fun to
   play with.
 
@@ -269,7 +269,7 @@ This page actually gets traffic occasionally, so I just wanted to post a short
 update.  Since last August, I've been working on a CUDA-based, high-precision 
 reference orbit implementation.  The objective is to beat \FractalShark{}'s 
 existing multithreaded reference-orbit performance at higher digit counts, at 
-least if you have a decent card.  Scroll down to ``[2025-6-15](\#2025-6-15)'' 
+least given a decent card.  Scroll down to ``[2025-6-15](\#2025-6-15)'' 
 for the latest information on this subject.
 
 Still fussing with it, with some delays because of vacation etc.  Having some 
@@ -279,7 +279,7 @@ expected.  The reference implementation is almost working the way I want.
 
 Worst case I could dump it and fallback to a series of regular A+B adds/
 subtracts but I'm pretty determined to make the optimized approach work.  TBD 
-if the performance actually pays off.  (Yes, I can hear you saying the 
+if the performance actually pays off.  (One might argue the 
 Mandelbrot multiplies/squares dominate the cost, but it's bugging me and fun to 
 play with).
 
@@ -724,7 +724,7 @@ unhandled exceptions.
   \item Adds reference-orbit save/load (no compression yet), useful for
   debugging deep spots.
   \item Notes a known bug manifesting in built-in View \#20 under a particular
-  configuration (64-bit iterations + default HDRx32 LAv2), with long render
+  configuration (64-bit iterations + default HDRx32 LA~v2), with long render
   times due to slow reference-orbit calculation.
 \end{itemize}
 
@@ -733,10 +733,10 @@ unhandled exceptions.
 
 \begin{itemize}
 
-  \item Significant LAv2 performance improvements (bug fixes); notes BLAv1 still
+  \item Significant LA~v2 performance improvements (bug fixes); notes BLAv1 still
   winning in some cases.
 
-  \item Fixes an LAv2 correctness bug; release note claims no known correctness
+  \item Fixes an LA~v2 correctness bug; release note claims no known correctness
   bugs remaining.
 
   \item \textbf{Performance data point.} Reports a minibrot example improving
@@ -748,12 +748,12 @@ unhandled exceptions.
 
 \subsection{2023-10-08 News --- Version 0.21}
 \begin{itemize}
-  \item Performance improvements to BLA and LAv2.
+  \item Performance improvements to BLA and LA~v2.
   \item Memory-usage improvements (commit size / virtual address space issues
   called out).
   \item Generates more CUDA kernels for older GPUs (system requirements
   unchanged).
-  \item Notes LAv2 is strong for many deep-zoom cases but still behind older BLA
+  \item Notes LA~v2 is strong for many deep-zoom cases but still behind older BLA
   in some shallower cases.
 \end{itemize}
 

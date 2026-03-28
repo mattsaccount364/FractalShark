@@ -31,6 +31,23 @@
 % --- Convenience for inline code that may need breaks ---
 \newcommand{\code}[1]{\texttt{#1}}
 
+% --- Code listings ---
+\usepackage{listings}
+\lstset{
+  language=C++,
+  basicstyle=\small\ttfamily,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape,
+  columns=flexible,
+  keepspaces=true,
+  breaklines=true,
+  frame=none,
+  aboveskip=0.5\medskipamount,
+  belowskip=0.5\medskipamount,
+  morekeywords={__global__,__device__,__host__,__fmaf_rd,__fmaf_rn,
+                blockIdx,blockDim,threadIdx,uint32_t,size_t}
+}
+
 \newcommand{\FractalShark}{\textit{FractalShark}}
 
 \title{\FractalShark{}: High-Performance Mandelbrot Rendering}
@@ -112,6 +129,17 @@ $F(c) = z_p(c)$  & root-finding objective
 $w_n$             & \code{zcoeff} product $\prod_{k=0}^{n-1} 2\,z_k$
                   & intrinsic scale of a mini-brot \\
 \hline
+\multicolumn{3}{l}{\textbf{Reference orbit internals (chapter~6)}} \\
+\hline
+$e_n$            & reconstruction error          & $z_n^{\mathrm{HP}} - \tilde{z}_n$ \\
+$\hat{z}_n$      & low-precision shadow orbit     & reduced-precision copy of $z_n^\star$ \\
+$z_n^{\mathrm{HP}}$ & high-precision orbit value   & full-precision authoritative orbit \\
+$R_{\max}$       & maximum perturbation radius    & stored in \code{PerturbationResults} \\
+\hline
+\multicolumn{3}{l}{\textbf{Feature Finder internals (chapter~8)}} \\
+\hline
+$d2_n$           & second orbit derivative        & $\partial^2 z_n / \partial c^2$;\; used in Halley iteration \\
+\hline
 \end{tabularx}
 \end{center}
 
@@ -156,6 +184,11 @@ $w_n$             & \code{zcoeff} product $\prod_{k=0}^{n-1} 2\,z_k$
 \part{Further Techniques}
 
 \input{FractalShark-11-FutureDirections}
+
+% ============================================================
+% Conclusion
+% ============================================================
+\input{FractalShark-12-Conclusion}
 
 % ============================================================
 % Appendices

@@ -1,0 +1,129 @@
+% ============================================================
+%  Conclusion
+% ============================================================
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This document has presented the algorithms, data structures, and
+engineering decisions underlying \FractalShark{}, a GPU-accelerated
+Mandelbrot set renderer capable of interactive exploration at zoom
+depths exceeding $10^{10000}$.  \Cref{fig:system-architecture}
+provides a high-level view of the pipeline.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  block/.style={draw, rounded corners, minimum height=0.65cm,
+                minimum width=2.2cm, align=center},
+  comp/.style={block, fill=blue!10},
+  io/.style={block, fill=orange!10},
+  infra/.style={block, fill=gray!12, dashed},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  label/.style={font=\scriptsize\bfseries, anchor=north west},
+  grp/.style={draw, dashed, rounded corners, inner sep=6pt, gray!70}
+]
+
+% --- Row 1: Input ---
+\node[io] (params) {View Parameters};
+\node[comp, right=0.6cm of params] (pzbb) {PointZoom-\\BBConverter};
+\node[comp, right=0.6cm of pzbb] (deltas) {Per-pixel\\deltas};
+
+\draw[arr] (params) -- (pzbb);
+\draw[arr] (pzbb) -- (deltas);
+
+% --- Row 2: Core computation ---
+\node[comp, below=1.0cm of params] (reforbit) {Reference Orbit\\(RefOrbitCalc)};
+\node[comp, right=0.6cm of reforbit] (la) {LA Setup\\(LAReference)};
+\node[comp, right=0.6cm of la] (perturb) {Perturbation\\Kernels};
+
+\draw[arr] (deltas) -- ++(0,-0.45) -| (perturb.north);
+\draw[arr] (reforbit) -- (la);
+\draw[arr] (la) -- (perturb);
+
+% --- Row 3: Output ---
+\node[comp, below=1.0cm of reforbit] (aa) {Antialiasing};
+\node[comp, right=0.6cm of aa] (color) {Palette\\Coloring};
+\node[io, right=0.6cm of color] (gl) {GL Display};
+
+\draw[arr] (perturb) -- ++(0,-0.45) -| (aa.north);
+\draw[arr] (aa) -- (color);
+\draw[arr] (color) -- (gl);
+
+% --- Side: GPU arithmetic ---
+\node[infra, left=0.6cm of reforbit] (gpu) {GPU Arith.\\(HpSharkFloat)};
+\draw[arr] (gpu) -- (reforbit);
+
+% --- Side: Feature Finder ---
+\node[infra, below=0.35cm of gpu] (ff) {Feature\\Finder};
+\draw[arr, dashed] (ff.east) -- ++(0.3,0) |- ([yshift=-2pt]reforbit.south west);
+
+% --- Side: Memory ---
+\node[infra, below=0.35cm of ff] (mem) {Growable-\\Vector};
+\draw[arr, dashed] (mem.east) -- ++(0.6,0) |- ([yshift=2pt]reforbit.south);
+
+% --- Group labels ---
+\begin{scope}[on background layer]
+  \node[grp, fit=(pzbb)(deltas)(perturb), label={[label]above left:Rendering}] {};
+  \node[grp, fit=(reforbit)(la), label={[label]above left:Ref.\ Orbit}] {};
+  \node[grp, fit=(gpu)(ff)(mem), label={[label]above left:Infrastructure}] {};
+\end{scope}
+
+\end{tikzpicture}
+\caption[End-to-end rendering pipeline]{High-level architecture of the
+  \FractalShark{} rendering pipeline.  Solid arrows denote the primary
+  data flow; dashed arrows indicate supporting subsystems.  Grouped
+  regions correspond to the document's Part structure.}
+\label{fig:system-architecture}
+\end{figure}
+
+The exposition began with the direct rendering kernelsthat map pixels
+to the complex parameter plane and evaluate the escape-time iteration
+(\cref{sec:mapping}), followed by the numeric type hierarchy---from
+native \code{float} through multi-limb \code{HpSharkFloat}---that
+provides the precision each stage requires (\cref{sec:hdr-float}).
+Building on this foundation, perturbation theory
+(\cref{sec:perturbation-concept}) reduces per-pixel work from
+arbitrary-precision arithmetic to lightweight floating-point deltas,
+and linear approximation (\cref{sec:approx-accel}) eliminates large
+blocks of iterations entirely by replacing them with a single
+matrix--vector product.
+
+The second half of the document addressed the computation of the
+reference orbit that perturbation demands
+(\cref{sec:ref-orbit-calc}), the NTT-based GPU arithmetic engine that
+accelerates it (\cref{subsec:ref-orbit-gpu}), and the Feature Finder
+that applies the same high-precision machinery to automatic detection
+of periodic points (\cref{sec:feature-finder}).  Supporting
+infrastructure---post-iteration processing and colour mapping
+(\cref{sec:misc-details}), together with the disk-backed growable
+vectors that manage large reference orbits
+(\cref{sec:disk_backed_growable_vectors})---completes the rendering
+pipeline.
+
+Several design decisions merit emphasis.  \FractalShark{} adopts
+\emph{rebasing} rather than glitch correction to handle loss of
+significance during perturbation iteration, avoiding the need for
+post-hoc detection and re-rendering of glitched pixels.  Linear
+approximation version~2 (LA~v2) was chosen over series approximation
+for its period-aligned skip structure, which enables longer effective
+jumps at deep zooms.  NTT-based multiplication was preferred over
+Karatsuba for the GPU arithmetic backend, as the former maps naturally
+to the highly parallel CUDA execution model.  Throughout the
+codebase, C++ template instantiation over a fixed parameter-set
+lattice allows the compiler to specialise kernels for each combination
+of precision, sub-type, and algorithmic mode while keeping the source
+generic.
+
+Taken together, these techniques form a layered architecture in which
+each subsystem can be understood, tested, and tuned independently.
+\cref{sec:future-directions} surveyed several alternative and
+complementary techniques---including series approximation, BLA,
+super-resolution, and histogram-based colouring---that represent
+natural extensions of the current design.
+
+\FractalShark{} remains under active development.  As new algorithmic
+ideas emerge from the deep-zoom rendering community and as GPU
+hardware continues to evolve, the architecture described here provides
+a foundation for continued experimentation and improvement.

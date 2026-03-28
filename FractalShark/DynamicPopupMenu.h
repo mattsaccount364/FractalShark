@@ -79,6 +79,7 @@ public:
         MemoryAutosave,
         MemoryLimit,
         IterationsWidth,
+        NRInnerLoopBackend,
     };
 
     // Simple enable/disable rules referenced by items.
@@ -91,6 +92,7 @@ public:
         EnableIfCpuActive,
         EnableIfPerturbationAvailable,
         EnableIfPaletteRotationSupported,
+        EnableIfNRCheckpointExists,
     };
 
     // Settings provider for menu state.

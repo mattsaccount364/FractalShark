@@ -136,10 +136,14 @@ public:
 
 #ifdef __CUDACC__
     // template<typename std::enable_if<std::is_same<T, dbldbl>::value, dbldbl>::type * = 0>
-    __device__ explicit
+    __host__ __device__ explicit
     operator double() const
     {
+#ifdef __CUDA_ARCH__
         return dblflt_to_double(d);
+#else
+        return (double)d.head + (double)d.tail;
+#endif
     }
 
     // Implements operator+ for CudaDblflt

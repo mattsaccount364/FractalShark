@@ -17,16 +17,129 @@ system is oriented, and how the affine map is parameterized.
 
 Each CUDA thread computes a pixel coordinate \((X,Y)\) and maps it to a complex
 parameter \(c = x_0 + i y_0\). A typical kernel starts with:
-\begin{verbatim}
+\begin{lstlisting}
 int X = blockIdx.x * blockDim.x + threadIdx.x;
 int Y = blockIdx.y * blockDim.y + threadIdx.y;
 if (X >= width || Y >= height) return;
 size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
-\end{verbatim}
+\end{lstlisting}
 
 \subsection{Thread-to-pixel mapping}
-A 2D CUDA grid of 2D blocks covers the image. Each thread is responsible for one
-pixel. The bounds check prevents out-of-range threads from writing.
+A 2D CUDA grid of 2D blocks covers the image (\cref{fig:cuda-grid-mapping}).
+Each thread is responsible for one pixel.
+The bounds check prevents out-of-range threads from writing.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    blockcell/.style={draw, minimum width=0.65cm, minimum height=0.65cm,
+                      inner sep=0pt},
+    threadcell/.style={draw, minimum width=0.3cm, minimum height=0.3cm,
+                       inner sep=0pt},
+]
+
+% ── CUDA grid: 3 x 2 blocks ──
+\node[font=\scriptsize\bfseries] at (0.75, 1.85) {CUDA grid};
+
+\foreach \bx in {0,1,2} {
+  \foreach \by in {0,1} {
+    \node[blockcell, fill=blue!8] (blk-\bx-\by)
+      at (\bx*0.75, -\by*0.75) {};
+  }
+}
+\node[blockcell, fill=orange!25, draw=orange!80!black, thick]
+  at (blk-1-1) {};
+
+\foreach \bx in {0,1,2} {
+  \node[font=\tiny] at (\bx*0.75, 1.15) {\bx};
+}
+\node[font=\scriptsize] at (0.75, 1.45) {\code{blockIdx.x}};
+\foreach \by in {0,1} {
+  \node[font=\tiny] at (-0.55, -\by*0.75) {\by};
+}
+\node[font=\scriptsize, rotate=90, anchor=south] at (-0.85, -0.375)
+  {\code{blockIdx.y}};
+
+% ── Expanded block (1,1): 4 x 4 threads ──
+\begin{scope}[shift={(0, -2.7)}]
+  \node[font=\scriptsize\bfseries, anchor=south] at (0.54, 1.55)
+    {Block $(1,\!1)$: $4\!\times\!4$ threads};
+
+  \foreach \tx in {0,...,3} {
+    \foreach \ty in {0,...,3} {
+      \node[threadcell, fill=orange!8] (thr-\tx-\ty)
+        at (\tx*0.36, -\ty*0.36) {};
+    }
+  }
+  \node[threadcell, fill=orange!50, draw=orange!80!black, thick]
+    at (thr-2-1) {};
+
+  \foreach \tx in {0,...,3} {
+    \node[font=\tiny] at (\tx*0.36, 1.05) {\tx};
+  }
+  \node[font=\tiny, anchor=south] at (0.54, 1.15)
+    {\code{threadIdx.x}};
+  \foreach \ty in {0,...,3} {
+    \node[font=\tiny] at (-0.3, -\ty*0.36) {\ty};
+  }
+  \node[font=\tiny, rotate=90, anchor=south] at (-0.55, -0.54)
+    {\code{threadIdx.y}};
+\end{scope}
+
+% Dashed arrow from grid block to expanded view
+\draw[->, dashed, orange!60, thick]
+  ([yshift=-2pt]blk-1-1.south) -- ++(0, -0.55);
+
+% ── Formula ──
+\node[draw, rounded corners=3pt, fill=gray!5, inner sep=5pt,
+      font=\scriptsize, text width=4.0cm, align=left]
+      (formula) at (5.0, -2.4) {
+  $X = 1 \cdot 4 + 2 = 6$\\[2pt]
+  $Y = 1 \cdot 4 + 1 = 5$\\[4pt]
+  \centering Pixel $(6,\; 5)$
+};
+
+% Arrow from expanded thread to formula
+\draw[->, thick] ([xshift=2pt]thr-2-1.east) -- (formula.west);
+
+% ── Complex plane ──
+\begin{scope}[shift={(9.2, -1.0)}]
+  \node[font=\scriptsize\bfseries] at (1.0, 1.8) {Complex plane};
+
+  \draw[->] (-0.3, -2.0) -- (2.4, -2.0)
+    node[right, font=\scriptsize] {Re};
+  \draw[->] (-0.2, -2.1) -- (-0.2, 1.5)
+    node[above, font=\scriptsize] {Im};
+
+  \draw[blue!25, fill=blue!3] (0.0, -1.7) rectangle (2.1, 1.2);
+  \node[font=\tiny, blue!40] at (1.05, 1.35) {image};
+
+  \fill[orange!80!black] (1.2, -0.1) circle (2.5pt);
+  \node[font=\scriptsize, orange!80!black, right] at (1.35, -0.1)
+    {$c = x_0 + iy_0$};
+
+  \draw[dashed, gray!50, thin] (1.2, -0.1) -- (1.2, -2.0);
+  \node[font=\tiny, gray, below] at (1.2, -2.05) {$x_0$};
+  \draw[dashed, gray!50, thin] (1.2, -0.1) -- (-0.2, -0.1);
+  \node[font=\tiny, gray, left] at (-0.25, -0.1) {$y_0$};
+\end{scope}
+
+% Arrow from formula to complex plane
+\draw[->, thick] (formula.east) -- (8.85, -2.4)
+  node[midway, above, font=\scriptsize] {affine map};
+
+\end{tikzpicture}
+\caption[CUDA thread-to-pixel-to-parameter mapping]{%
+  CUDA thread-to-pixel-to-parameter mapping.
+  A 2D grid of thread blocks (upper left) covers the image; each thread
+  computes its pixel coordinate via
+  \code{blockIdx}$\,\cdot\,$\code{blockDim}$\,+\,$\code{threadIdx}.
+  The highlighted thread in block~$(1,1)$ at local index~$(2,1)$ yields
+  pixel~$(6,5)$ (center), which an affine transform maps to complex
+  parameter $c = x_0 + i\,y_0$ (right).}
+\label{fig:cuda-grid-mapping}
+\end{figure}
 
 \subsection{Y-axis convention}
 The expression \code{height - Y - 1} flips \(Y\). This is common when the image
@@ -131,7 +244,7 @@ Bailey~\cite{Hida2001QD}. The implementations are modified in
 \begin{table}[!htbp]
 \centering
 \small
-\caption{Mandelbrot base kernel variants.}
+\caption[Mandelbrot base kernel variants]{Mandelbrot base kernel variants.}
 \label{tab:base-kernels}
 \begin{tabularx}{\textwidth}{l r X}
 \hline
@@ -186,13 +299,13 @@ Bailey~\cite{Hida2001QD}. The implementations are modified in
 \paragraph{FMA intrinsics.}
 The \code{mandel\_1x\_float} kernel illustrates how fused multiply-add can
 implement the recurrence directly:
-\begin{verbatim}
+\begin{lstlisting}
 ytemp = __fmaf_rd(-y, y, x0);     // x0 - y^2
 xtemp = __fmaf_rd(x, x, ytemp);   // x^2 - y^2 + x0
 xtemp2 = 2.0f * x;
 y = __fmaf_rd(xtemp2, y, y0);     // 2xy + y0
 x = xtemp;
-\end{verbatim}
+\end{lstlisting}
 The \code{\_rd} suffix selects round-downward; \code{\_rn} (round-to-nearest)
 or plain \code{fmaf} may be substituted when strict rounding mode is not required.
 
@@ -210,9 +323,9 @@ robust test would incorporate both components.
 The \code{mandel\_hdr\_float} kernel calls \code{HdrReduce()} on intermediate
 values so that norms and comparisons operate on normalized representations.
 Escape is tested via:
-\begin{verbatim}
+\begin{lstlisting}
 while (zsq_sum.compareToBothPositiveReduced(Four) < 0)
-\end{verbatim}
+\end{lstlisting}
 This keeps comparisons meaningful and stable in HDR arithmetic.
 
 
@@ -240,3 +353,7 @@ insert bailout checks within the unrolled body.
 This optimization was mainly explored for educational purposes; in practice, the
 benefit is small compared to other optimizations such as perturbation (\cref{sec:perturbation-concept}) and linear
 approximation (\cref{sec:approx-accel}).
+
+The kernels described above operate on standard IEEE~754 types.  The next
+chapter introduces the extended-precision and high-dynamic-range numeric types
+that \FractalShark{} employs when native precision is insufficient.

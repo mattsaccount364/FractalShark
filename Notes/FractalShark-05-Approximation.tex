@@ -126,7 +126,8 @@ Bilinear approximation, introduced by Zhuoran in the Imagina
 viewer~\cite{Imagina} and described in detail by
 Thompson \cite{Thompson2023BLA}, precomputes composable linear
 maps that advance the perturbation delta by multiple iterations at once,
-avoiding per-step evaluation when the linearization error remains small.
+avoiding per-step evaluation when the linearization error remains small
+(\cref{fig:approx-skipping}).
 
 \subsubsection{Reference orbit and delta formulation}
 The perturbation framework (\cref{sec:perturbation-concept}) decomposes
@@ -390,7 +391,7 @@ To control this, each LA entry tracks a validity threshold
 where \(\lVert\cdot\rVert_\infty\) is the Chebyshev (max-component) norm,
 \(\lVert a + bi \rVert_\infty = \max(|a|, |b|)\), and
 \code{LAThresholdScale} is a tunable parameter (default \(2^{-24}\)).
-The \(\min\) ensures the threshold can only decrease as more iterations are
+The \(\min\) in \eqref{eq:la-threshold} ensures the threshold can only decrease as more iterations are
 absorbed, reflecting the accumulation of linearization error.
 
 \paragraph{Parameter-offset threshold (\code{LAThresholdC}).}
@@ -408,7 +409,7 @@ decreasing pattern but is normalized by \(\lVert\code{CCoeff}\rVert\):
 \label{eq:la-threshold-c}
 \end{equation}
 Before entering a stage's LA loop, the kernel checks whether the pixel's
-parameter offset is within the stage's validity range:
+parameter offset satisfies the validity bound \eqref{eq:la-threshold-c}:
 \[
 \lVert \Delta c \rVert_\infty \ge \code{LAThresholdC}
   \quad\Longrightarrow\quad
@@ -590,7 +591,7 @@ implemented in \code{LAReference::\allowbreak CreateLAFromOrbit} and
         This keeps each stage's entry count manageable.
 \end{enumerate}
 
-The key insight is that near a mini-Mandelbrot copy, the orbit nearly
+The observation underlying this step is that near a mini-Mandelbrot copy, the orbit nearly
 repeats every \(p\) iterations, so the linear approximation remains valid
 across an entire period---the threshold barely tightens.  A single
 stage-0 LA entry can therefore skip \(p\) iterations, and higher-stage
@@ -685,7 +686,7 @@ c_w = \Delta c \cdot \code{AT.CCoeff} + \code{AT.RefC},
 \]
 then iterates the standard Mandelbrot recurrence
 \(w_{n+1} = w_n^2 + c_w\) with bailout
-\(|w|^2 \ge \code{AT.SqrEscapeRadius}\).  Crucially, no reference-orbit
+\(|w|^2 \ge \code{AT.SqrEscapeRadius}\).  No reference-orbit
 lookups are needed---just scalar iteration.  Each AT iteration corresponds
 to \code{StepLength} original Mandelbrot iterations (one full period).
 
@@ -710,7 +711,7 @@ and resumes with the LA stage traversal or perturbation loop for the
 remaining iterations.
 
 \paragraph{Significance.}
-The AT provides a dramatic speedup when applicable.  At deep zoom near
+The AT can provide a substantial speedup when applicable.  At deep zoom near
 a period-\(p\) mini-Mandelbrot, the AT reduces the effective iteration
 count from \(N\) to roughly \(N/p\), with each iteration being a simple
 scalar multiply-add rather than a reference-orbit lookup plus
@@ -765,7 +766,7 @@ where \(S\) is a scaling factor used to keep the derivative magnitudes
 within representable range (rescaled periodically during evaluation).
 The factor \(2\,(\Delta z + z_\mathrm{ref})\) is the derivative of the
 Prepare step, and \code{ZCoeff} propagates through the linearized
-iterations.  These updates are applied \emph{before}
+iterations.  The updates \eqref{eq:la-dzdz}--\eqref{eq:la-dzdc} are applied \emph{before}
 \code{Evaluate} updates \(\Delta z\) itself, so \(\Delta z\) in the
 formulas above is the pre-step value.
 
@@ -825,3 +826,8 @@ In practice, LA v2's period alignment enables it to skip a much larger
 fraction of total iterations via the linear path compared with BLA's
 generic power-of-two hierarchy, particularly at deep zooms where the
 view is dominated by a mini-Mandelbrot copy with a well-defined period.
+
+Both perturbation and linear approximation presuppose the existence of
+an accurate reference orbit.  The next chapter addresses how
+\FractalShark{} computes this orbit at the extreme precisions that
+deep-zoom rendering demands.

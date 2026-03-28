@@ -541,6 +541,7 @@ Fractal::AutoZoom()
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Default>();
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>();
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Feature>();
+template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
 
 //////////////////////////////////////////////////////////////////////////////
 // Resets the fractal to the standard view.
@@ -1414,6 +1415,15 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
             break;
     }
 
+    // If the user aborted during ref orbit computation (Ctrl held 3s),
+    // skip the GPU→CPU copy and return early.  The partial render is
+    // discarded by the worker (tombstone) because it also checks the
+    // abort flag before ProduceFrame.
+    if (GetStopCalculating()) {
+        ChangedMakeClean();
+        return;
+    }
+
     // For direct CalcFractal(drawFractal=true) callers (CrummyTest):
     // Sync GPU and copy iteration results back to CPU memory so that
     // SaveCurrentFractal / PngParallelSave can read the correct data.
@@ -1773,6 +1783,24 @@ Fractal::ZoomToFoundFeature()
     return m_FeatureOrchestrator->ZoomToFoundFeature();
 }
 
+void
+Fractal::ResumeNRFromCheckpoint()
+{
+    m_FeatureOrchestrator->ResumeFromCheckpoint();
+}
+
+bool
+Fractal::GetUseGpuForNRInnerLoop() const
+{
+    return m_FeatureOrchestrator->GetUseGpuForNRInnerLoop();
+}
+
+void
+Fractal::SetUseGpuForNRInnerLoop(bool v)
+{
+    m_FeatureOrchestrator->SetUseGpuForNRInnerLoop(v);
+}
+
 template <typename IterType, class T>
 void
 Fractal::CalcGpuFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx)
@@ -1805,6 +1833,8 @@ Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
                                                                      double,
                                                                      PerturbExtras::Disable,
                                                                      RefOrbitCalc::Extras::None>(ctx.Ptz);
+
+    if (GetStopCalculating()) return;
 
     const auto &maxX = ctx.Ptz.GetMaxX();
     const auto &minX = ctx.Ptz.GetMinX();
@@ -2094,6 +2124,8 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
                                                                      PerturbExtras::Disable,
                                                                      RefOrbitCalc::Extras::None>(ctx.Ptz);
 
+    if (GetStopCalculating()) return;
+
     BLAS<IterType, T> blas(*results);
     blas.Init((IterType)results->GetCountOrbitEntries(), results->GetMaxRadius());
 
@@ -2347,6 +2379,8 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
                                                          PExtras,
                                                          RefOrbitCalc::Extras::IncludeLAv2>(ctx.Ptz);
 
+    if (GetStopCalculating()) return;
+
     if (results->GetLaReference() == nullptr || results->GetOrbitData() == nullptr) {
         std::wcerr << L"Oops - a null pointer deref" << std::endl;
         return;
@@ -2546,6 +2580,8 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal, Calc
                                                                      PerturbExtras::Disable,
                                                                      RefOrbitCalc::Extras::None>(ctx.Ptz);
 
+    if (GetStopCalculating()) return;
+
     uint32_t err = InitializeGPUMemory(idx, true, ctx.ItersMemory);
     if (err) {
         MessageBoxCudaError(err);
@@ -2637,6 +2673,8 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal, Cal
                                                                RefOrbitMode,
                                                                T>(ctx.Ptz);
 
+    if (GetStopCalculating()) return;
+
     // Reference orbit is always required for LAv2
     // The LaReference is not required when running perturbation only
     if ((RefOrbitMode == RefOrbitCalc::Extras::IncludeLAv2 && results->GetLaReference() == nullptr) ||
@@ -2693,6 +2731,9 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal
                                                                      SubType,
                                                                      PerturbExtras::Bad,
                                                                      RefOrbitCalc::Extras::None>(ctx.Ptz);
+
+    if (GetStopCalculating()) return;
+
     auto *results2 =
         m_RefOrbit
             .CopyUsefulPerturbationResults<IterType, T, PerturbExtras::Bad, T2, PerturbExtras::Bad>(
@@ -3249,15 +3290,10 @@ Fractal::GpuBypassed() const
 
 bool
 Fractal::GetStopCalculating() const {
-    if (m_AbortMonitor) {
-        return m_AbortMonitor->GetStopCalculating();
-    }
-    return false;
+    return AbortMonitor::GetStopCalculatingGlobal();
 }
 
 void
 Fractal::ResetStopCalculating() {
-    if (m_AbortMonitor) {
-        m_AbortMonitor->ResetStopCalculating();
-    }
+    AbortMonitor::ResetStopCalculatingGlobal();
 }

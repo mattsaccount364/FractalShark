@@ -511,10 +511,10 @@ CrummyTest::TestImaginaLoad()
     auto processOnePair = [this, dirName](const auto &pair) {
         auto hInst = GetModuleHandle(nullptr);
 
-        auto throwErr = [](const std::string &msg) {
-            auto lastError = GetLastError();
-            std::string msgFull = msg + " Last error: " + std::to_string(lastError);
-            throw FractalSharkSeriousException(msgFull);
+        auto throwErr = [](const char *msg) {
+            char buf[256];
+            snprintf(buf, sizeof(buf), "%s Last error: %lu", msg, GetLastError());
+            throw FractalSharkSeriousException(buf);
         };
 
         // Load the Imagina resource

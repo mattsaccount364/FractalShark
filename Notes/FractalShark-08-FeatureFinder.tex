@@ -129,7 +129,7 @@ Finding a period-$p$ nucleus amounts to solving $F(c)=0$ where
 F(c) \;=\; z_p(c),\qquad
 z_0 = 0,\quad z_{n+1} = z_n^2 + c.
 \end{equation}
-The algorithm decomposes into two nested loops: an \emph{outer loop} that
+The algorithm decomposes the root-finding problem \eqref{eq:ff-Fc} into two nested loops: an \emph{outer loop} that
 updates the candidate~$c$ via Newton's method, and an \emph{inner loop} that
 evaluates $F(c)$ and its derivatives by iterating the critical orbit for
 $p$~steps.  The outer loop is inherently sequential---each Newton step
@@ -182,7 +182,7 @@ period.  The criterion used is: at iteration~$n$, if
 then $p = n$ is accepted as the candidate period, where $R$ is the search
 radius.  This test detects the moment the orbit passes close to the origin
 relative to the local stretching factor $|\partial z/\partial c|$, which is
-a hallmark of near-periodic behavior.  A dynamic tightening mechanism
+characteristic of near-periodic behavior.  A dynamic tightening mechanism
 (implemented in the \code{PeriodicityPP} helper) progressively shrinks the
 effective $R^2$ during the scan to reduce false triggers.
 
@@ -248,7 +248,8 @@ effective $R^2$ during the scan to reduce false triggers.
 \end{figure}
 
 Each Newton step requires evaluating $F(c) = z_p(c)$ and its first two
-derivatives at the current guess~$c$.  This is done by iterating the
+derivatives at the current guess~$c$, as shown in \cref{fig:newton-loops}.
+This is done by iterating the
 critical orbit from $z_0 = 0$ for exactly $p$~steps, accumulating three
 quantities simultaneously at \emph{different precision levels}:
 
@@ -556,7 +557,7 @@ computes the Newton/Halley step, updates~$c$, and relaunches the inner
 loop.  For large $p$ and $N$ the total arithmetic volume scales as
 $O(p \cdot N \log N)$ per Newton step, making the GPU's throughput
 advantage decisive.  The dispatch function
-\code{DispatchGpuNRByPrecision} rounds the coordinate precision to
+\code{DispatchNRByPrecision} rounds the coordinate precision to
 the nearest supported \code{SharkParamsNR} limb count (256 through
 524\,288) and invokes the corresponding GPU kernel.
 
@@ -668,7 +669,7 @@ convergence.  The Halley step for $F(c) = z_p(c)$ is
 \end{equation}
 where $F'=\partial z_p/\partial c$ and $F''=\partial^2 z_p/\partial c^2$.
 
-The denominator $D = 2(F')^2 - F\,F''$ involves a complex squaring and a
+To evaluate \eqref{eq:ff-halley-step}, the denominator $D = 2(F')^2 - F\,F''$ involves a complex squaring and a
 complex product.  Writing $F = f_x + i\,f_y$, $F' = f'_x + i\,f'_y$, and
 $F'' = f''_x + i\,f''_y$:
 \begin{align}
@@ -719,7 +720,7 @@ where $\Delta_N = F/F'$ is the Newton step and $\rho^2$ is the dimensionless
 ratio from \cref{eq:ff-halley-gate}.
 
 \paragraph{Why it works: error analysis of the correction factor.}
-Write the true second derivative as $F''$ and the 53-bit approximation as
+Starting from \eqref{eq:ff-halley-decomp}, write the true second derivative as$F''$ and the 53-bit approximation as
 $\hat{F}'' = F''(1 + \epsilon)$ where $|\epsilon| \lesssim 2^{-53}$.  The
 Halley step with the approximate $\hat{F}''$ is
 \[
@@ -872,7 +873,7 @@ of the mini-brot copy is characterized by
   \frac{1}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|},
 \end{equation}
 where $w_p = \prod_{k=0}^{p-1} 2\,z_k$ is the \code{zcoeff} product
-evaluated at $c^*$.  The code reports an \emph{intrinsic radius}
+\eqref{eq:ff-zcoeff} evaluated at $c^*$.The code reports an \emph{intrinsic radius}
 \begin{equation}\label{eq:ff-intrinsic-radius}
 r_{\mathrm{int}} = 4 \cdot \mathrm{Scale}
   = \frac{4}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|}.
@@ -910,6 +911,11 @@ preceding evaluation's output, so successive steps cannot overlap.
 
 GPU acceleration of the inner loop via the \code{HpSharkFloat} backend
 is described in \cref{subsec:ff-inner-gpu}; this path is fully
-implemented and dispatches through \code{DispatchGpuNRByPrecision}
+implemented and dispatches through \code{DispatchNRByPrecision}
 in \code{FeatureFinder.cpp}.
+
+With the core iteration algorithms and precision infrastructure now
+described, the next chapter turns to the post-iteration processing
+pipeline---antialiasing, colour mapping, and rendering orchestration---that
+transforms raw escape-time counts into the final displayed image.
 

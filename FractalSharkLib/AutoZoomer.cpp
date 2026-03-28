@@ -33,6 +33,10 @@ AutoZoomer::Run()
         Divisor = HighPrecision{32};
     }
 
+    if constexpr (h == Fractal::AutoZoomHeuristic::FilamentTip) {
+        Divisor = HighPrecision{8};
+    }
+
     if constexpr (h == Fractal::AutoZoomHeuristic::Feature) {
         std::cout << "Forcing GPU HDRx32 Perturbed LAv2 for AutoZoom(Feature) since it relies on "
                      "perturbation results to perform the zoom.\n";
@@ -113,15 +117,11 @@ AutoZoomer::Run()
 
         return;
     } else {
-        // Default/Max heuristic: serial loop that analyzes CPU-side iteration
-        // data after each render. Must use CalcFractal(true) which writes to
-        // m_CurIters and does GPU→CPU iter copy, NOT EnqueueCommand which
-        // renders to a worker-acquired container that m_CurIters never sees.
-        if (auto *pool = m_Fractal.GetRenderPool()) {
-            pool->Drain();
-        }
-
-        size_t retries = 0;
+        // Default/Max/FilamentTip heuristic: serial loop that analyzes CPU-side
+        // iteration data after each render.  Each step uses EnqueueCommand +
+        // Wait() so the frame is displayed by the GL consumer.  The
+        // workerIters ↔ m_CurIters swap in WorkerLoop keeps m_CurIters
+        // current for analysis.
 
         for (;;) {
             {
@@ -133,11 +133,8 @@ AutoZoomer::Run()
             double geometricMeanSum = 0;
             double geometricMeanY = 0;
 
-            if (retries >= 0) {
-                width = m_Fractal.GetMaxX() - m_Fractal.GetMinX();
-                height = m_Fractal.GetMaxY() - m_Fractal.GetMinY();
-                retries = 0;
-            }
+            width = m_Fractal.GetMaxX() - m_Fractal.GetMinX();
+            height = m_Fractal.GetMaxY() - m_Fractal.GetMinY();
 
             size_t numAtMax = 0;
             size_t numAtLimit = 0;
@@ -219,6 +216,7 @@ AutoZoomer::Run()
                     }
 
                     if (geometricMeanSum == 0) {
+                        std::wcerr << L"Flat screen (geometricMeanSum=0)! :(" << std::endl;
                         shouldBreak = true;
                         return;
                     }
@@ -278,6 +276,190 @@ AutoZoomer::Run()
                         return;
                     }
                 }
+
+                // ---------------- FILAMENT TIP ----------------
+                if constexpr (h == Fractal::AutoZoomHeuristic::FilamentTip) {
+
+                    const auto scrnW = static_cast<int>(m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing());
+                    const auto scrnH = static_cast<int>(m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing());
+
+                    // Pass 1: compute average iteration count
+                    double totalIters = 0;
+                    size_t pixelCount = 0;
+                    for (int y = 0; y < scrnH; y++) {
+                        for (int x = 0; x < scrnW; x++) {
+                            totalIters += ItersArray[y][x];
+                            pixelCount++;
+                        }
+                    }
+
+                    if (pixelCount == 0 || totalIters == 0) {
+                        shouldBreak = true;
+                        return;
+                    }
+
+                    const double avgIters = totalIters / pixelCount;
+
+                    // Candidates: any pixel above average, even barely.
+                    // Faint tips may be just slightly above background.
+                    const auto candidateThreshold =
+                        static_cast<size_t>(avgIters + 1);
+
+                    // Sample at multiple radii to handle fuzzy boundaries.
+                    // A tip has lower iters in most directions at most radii.
+                    static constexpr int dx8[] = { 0,  1, 1, 1, 0, -1, -1, -1};
+                    static constexpr int dy8[] = {-1, -1, 0, 1, 1,  1,  0, -1};
+                    static constexpr int radii[] = {4, 8, 16};
+                    static constexpr int numRadii = 3;
+
+                    const int margin = 18;
+
+                    double bestScore = -1.0;
+                    int bestX = scrnW / 2;
+                    int bestY = scrnH / 2;
+
+                    size_t dbgCandidates = 0;
+                    size_t dbgHighCountHist[9] = {};
+                    size_t dbgRunReject = 0;
+
+                    for (int y = margin; y < scrnH - margin; y++) {
+                        for (int x = margin; x < scrnW - margin; x++) {
+                            auto curiter = ItersArray[y][x];
+
+                            if (curiter < candidateThreshold)
+                                continue;
+
+                            dbgCandidates++;
+
+                            if (curiter >= NumIterations)
+                                numAtMax++;
+
+                            // Sample 8 directions at the largest radius.
+                            // Classify each direction as "high" (close to
+                            // center iter count) or "low" (below center).
+                            // Use center value minus 1 as the threshold:
+                            // a neighbor is "high" only if it's at least
+                            // as high as the center pixel (allowing for
+                            // the fuzzy, gradual iteration landscape).
+                            static constexpr int SampleR = 12;
+                            bool isHigh[8];
+                            int highCount = 0;
+                            const auto highThreshold = (curiter > 0) ? curiter - 1 : curiter;
+                            for (int d = 0; d < 8; d++) {
+                                int sx = x + dx8[d] * SampleR;
+                                int sy = y + dy8[d] * SampleR;
+                                if (sx < 0 || sx >= scrnW ||
+                                    sy < 0 || sy >= scrnH) {
+                                    isHigh[d] = false;
+                                    continue;
+                                }
+                                // "High" if neighbor is within 1 iteration
+                                // of center.  This is very strict — only
+                                // truly flat/equal neighbors count.
+                                isHigh[d] = (ItersArray[sy][sx] >= highThreshold);
+                                if (isHigh[d]) highCount++;
+                            }
+
+                            // A TIP has exactly 1-2 contiguous high
+                            // directions (the filament body behind it)
+                            // and the rest low.
+                            //
+                            // A BODY has 2 high directions on opposite
+                            // sides (along the filament axis) and low
+                            // on perpendicular sides.
+                            //
+                            // An INTERIOR has 5+ high directions.
+                            //
+                            // Count the longest contiguous run of "high"
+                            // directions (wrapping around the 8-ring).
+                            int maxRun = 0;
+                            int curRun = 0;
+                            for (int i = 0; i < 16; i++) {
+                                if (isHigh[i % 8]) {
+                                    curRun++;
+                                    if (curRun > maxRun) maxRun = curRun;
+                                } else {
+                                    curRun = 0;
+                                }
+                            }
+
+                            dbgHighCountHist[highCount]++;
+
+                            // Tip criterion:
+                            // - highCount 0: perfectly isolated peak (best tip)
+                            // - highCount 1-2: tip with filament behind it
+                            // - highCount 3: borderline, accept if contiguous
+                            // - highCount 4+: body or interior, reject
+                            if (highCount > 3)
+                                continue;
+                            // For highCount > 0, require contiguous run
+                            // (rejects bodies with opposing high groups)
+                            if (highCount > 0 && maxRun < highCount) {
+                                dbgRunReject++;
+                                continue;
+                            }
+
+                            // Tipness: fewer high neighbors = more tip-like
+                            // highCount 0 → tipness 1.0 (isolated peak)
+                            // highCount 3 → tipness 0.25
+                            double tipness = 1.0 - static_cast<double>(highCount) / 4.0;
+
+                            // Favor "boring" tips: low iteration count
+                            // relative to screen max.  Mini-brots have high
+                            // iters; plain filament tips have iters barely
+                            // above background.  Invert the elevation so
+                            // lower-iteration tips score higher.
+                            double numerator = static_cast<double>(curiter) - avgIters;
+                            double denominator = static_cast<double>(NumIterations) - avgIters;
+                            double rawElevation = (denominator > 0)
+                                ? log(1.0 + numerator) / log(1.0 + denominator)
+                                : 0.5;
+                            double elevation = 1.0 - rawElevation;
+
+                            // Prefer tips away from center (exploring outward)
+                            double ddx = static_cast<double>(x - scrnW / 2);
+                            double ddy = static_cast<double>(y - scrnH / 2);
+                            double maxDist = sqrt(
+                                static_cast<double>(scrnW * scrnW + scrnH * scrnH)) / 2.0;
+                            double distFromCenter = sqrt(ddx * ddx + ddy * ddy) / maxDist;
+
+                            double score = tipness * elevation *
+                                           (0.3 + 0.7 * distFromCenter);
+
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestX = x;
+                                bestY = y;
+                            }
+                        }
+                    }
+
+                    if (bestScore < 0) {
+                        std::wcerr << L"FilamentTip: no tip found. "
+                                   << L"candidates=" << dbgCandidates
+                                   << L" highHist=[";
+                        for (int i = 0; i <= 8; i++)
+                            std::wcerr << dbgHighCountHist[i] << (i < 8 ? L"," : L"");
+                        std::wcerr << L"] runReject=" << dbgRunReject
+                                   << L" avgIters=" << avgIters
+                                   << L" threshold=" << candidateThreshold
+                                   << std::endl;
+                        shouldBreak = true;
+                        return;
+                    }
+
+                    std::wcerr << L"FilamentTip: target (" << bestX << L"," << bestY
+                               << L") score=" << bestScore
+                               << L" numAtMax=" << numAtMax << std::endl;
+
+                    guessX = m_Fractal.XFromScreenToCalc<true>(HighPrecision{bestX});
+                    guessY = m_Fractal.YFromScreenToCalc<true>(HighPrecision{bestY});
+
+                    if (numAtMax > static_cast<size_t>(scrnW) * scrnH / 2) {
+                        shouldBreak = true;
+                        return;
+                    }
+                }
             };
 
             if (m_Fractal.GetIterType() == IterTypeEnum::Bits32) {
@@ -296,14 +478,14 @@ AutoZoomer::Run()
 
             PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
 
-            m_Fractal.RecenterViewCalc(newPtz);
-            m_Fractal.ForceRecalc();
-            m_Fractal.CalcFractal(true);
+            m_Fractal.EnqueueCommand([newPtz = std::move(newPtz)](Fractal &f) {
+                f.RecenterViewCalc(newPtz);
+            }, false).Wait();
 
-            if (numAtMax > 500)
-                break;
-
-            retries++;
+            if constexpr (h != Fractal::AutoZoomHeuristic::FilamentTip) {
+                if (numAtMax > 500)
+                    break;
+            }
 
             if (m_Fractal.GetStopCalculating())
                 break;
@@ -314,6 +496,7 @@ AutoZoomer::Run()
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Default>();
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Max>();
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Feature>();
+template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::FilamentTip>();
 
 void
 AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)

@@ -15,7 +15,7 @@ while simultaneously maintaining \emph{stable virtual addresses} for previously
 returned pointers. This requirement arises naturally when the program hands out
 interior pointers into a buffer (e.g., into an orbit record array or a heap
 arena). Any reallocation-and-copy strategy would invalidate those pointers and
-would require copying enormous amounts of data, which is computationally
+would require copying large amounts of data, which is computationally
 infeasible at multi-billion-element scales.
 
 In addition to scale and pointer stability, persistence is a first-class
@@ -114,7 +114,7 @@ Growth proceeds by increasing the logical capacity \code{m\_CapacityInElts}
 without moving data. In anonymous mode, this corresponds to committing
 additional pages within the reserved region. In file-backed mode, it corresponds
 to extending the underlying section and allowing the view to cover the expanded
-range. Critically, in both cases we \emph{never} allocate a second buffer and
+range. In both cases the implementation \emph{never} allocate a second buffer and
 copy: the address stability is enforced by explicitly requesting the existing
 base address and treating any base-address change as a hard error.
 
@@ -232,4 +232,8 @@ Possible approaches include explicit sparse-file usage, preallocation of large
 sparse sections, or fallback allocators that relax the stable-address requirement
 in exchange for broader compatibility.
 
+The preceding chapters have covered the full rendering pipeline from iteration
+kernels through memory management.  The next chapter surveys alternative and
+complementary techniques that informed \FractalShark{}'s design choices and
+that represent promising directions for future work.
 

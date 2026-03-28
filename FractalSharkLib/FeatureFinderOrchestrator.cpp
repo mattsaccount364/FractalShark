@@ -592,7 +592,7 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature, const Hig
                 extras = RefOrbitCalc::Extras::IncludeLAv2;
         }
 
-        if (!featureFinder->RefinePeriodicPoint_HighPrecision(feature)) {
+        if (!featureFinder->RefinePeriodicPoint_HighPrecision(feature, m_UseGpuForNRInnerLoop)) {
             return false;
         }
     }
@@ -688,4 +688,55 @@ FeatureFinderOrchestrator::ZoomToFoundFeature()
 
     const HighPrecision z = best->ComputeZoomFactor(m_Fractal.m_Ptz);
     return ZoomToFoundFeature(*best, &z);
+}
+
+bool
+FeatureFinderOrchestrator::ResumeFromCheckpoint()
+{
+    NRCheckpointData ckpt;
+    if (!ReadFullNRCheckpoint(ckpt)) {
+        std::cerr << "No valid NR checkpoint found.\n";
+        return false;
+    }
+
+    std::cout << "Resuming NR refinement: period=" << ckpt.period
+              << " prec=" << ckpt.coord_prec << " bits"
+              << " iter=" << ckpt.iteration << std::endl;
+
+    // Create a synthetic FeatureSummary with the candidate from the checkpoint
+    HighPrecision radius{ckpt.sqrRadius};
+    auto fs = std::make_unique<FeatureSummary>(
+        ckpt.cand_re, ckpt.cand_im, radius, FeatureFinderMode::Direct);
+
+    HDRFloat<double> residual2{}; // not stored in checkpoint, use default
+
+    fs->SetCandidate(
+        ckpt.cand_re,
+        ckpt.cand_im,
+        (IterTypeFull)ckpt.period,
+        residual2,
+        ckpt.sqrRadius,
+        ckpt.scaleExp2,
+        ckpt.coord_prec);
+
+    // Set intrinsic radius so ComputeZoomFactor works correctly
+    fs->SetFound(ckpt.cand_re, ckpt.cand_im, (IterTypeFull)ckpt.period,
+                 residual2, ckpt.intrinsicRadius);
+    fs->SetNumIterationsAtFind(ckpt.numIterationsAtFind);
+
+    // Restore the iteration limit that was active when the feature was found.
+    // Switch to 64-bit iteration type if the saved count exceeds 32-bit max.
+    if (ckpt.numIterationsAtFind > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+        m_Fractal.SetIterType(IterTypeEnum::Bits64);
+    }
+    m_Fractal.SetNumIterations<IterTypeFull>(ckpt.numIterationsAtFind);
+
+    m_FeatureSummaries.clear();
+    m_FeatureSummaries.emplace_back(std::move(fs));
+
+    // ZoomToFoundFeature will call RefinePeriodicPoint_HighPrecision,
+    // which will detect the checkpoint file and resume the NR iteration.
+    auto *feature = m_FeatureSummaries.back().get();
+    const HighPrecision z = feature->ComputeZoomFactor(m_Fractal.m_Ptz);
+    return ZoomToFoundFeature(*feature, &z);
 }

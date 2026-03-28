@@ -6,6 +6,8 @@
 #include "MainWindow.h"
 #include "resource.h"
 
+#include <sys/stat.h>
+
 using namespace FractalShark;
 
 MainWindowMenuState::MainWindowMenuState(const MainWindow &w) noexcept : w_(w), f_(*w.gFractal) {}
@@ -36,6 +38,11 @@ MainWindowMenuState::IsEnabled(DynamicPopupMenu::Rule rule) const noexcept
 
         case Rule::EnableIfPaletteRotationSupported:
             return false;
+
+        case Rule::EnableIfNRCheckpointExists: {
+            struct _stat st;
+            return (_stat("nr_checkpoint.txt", &st) == 0);
+        }
 
         default:
             // Never brick the UI due to an unknown rule
@@ -202,6 +209,10 @@ MainWindowMenuState::GetRadioSelection(DynamicPopupMenu::RadioGroup group) const
         case RG::IterationsWidth:
             return (f_.GetIterType() == IterTypeEnum::Bits32) ? IDM_32BIT_ITERATIONS
                                                               : IDM_64BIT_ITERATIONS;
+
+        case RG::NRInnerLoopBackend:
+            return f_.GetUseGpuForNRInnerLoop() ? IDM_NR_INNERLOOP_GPU
+                                                : IDM_NR_INNERLOOP_CPU;
 
         case RG::None:
         default:

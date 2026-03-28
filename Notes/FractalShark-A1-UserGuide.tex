@@ -102,7 +102,7 @@ choice and triggers any necessary reconfiguration.
           all found-feature overlays (lines and circles drawn on the fractal).
         \end{itemize}
       When a feature is found, a line is drawn from the search origin to the
-      detected nucleus so you can see where it is.  Scan modes are useful for
+      detected nucleus, making its location visible.  Scan modes are useful for
       surveying an entire view at a glance; single-point modes are faster and
       target the area near your cursor.
     \end{itemize}
@@ -131,8 +131,8 @@ choice and triggers any necessary reconfiguration.
 
   \item \emph{Toggle Repainting}: Enables or disables progressive
   repainting while a render is in progress. When disabled, no recalculation
-  takes place on window resize or related, which can be helpful if you want a
-  new window size but don't want to trigger a re-render.
+  takes place on window resize or related, which can be helpful when a new
+  window size is desired without triggering a re-render.
   \item \emph{Toggle Window Size}: Toggles between windowed and
   full-screen behavior.  The window stays at the same aspect ratio by default.
   \item \emph{Toggle Window Size (Square)}: Toggles an alternate sizing
@@ -181,22 +181,22 @@ choice and triggers any necessary reconfiguration.
     \item[Perturbation / Perturb] Per-pixel perturbation from a
     reference orbit (\cref{sec:perturbation-concept}).
     \item[BLA] Bilinear Approximation v1 (\cref{sec:bilinear-approx}).
-    \item[LAv2] Linear Approximation v2 (\cref{sec:la-v2-perturb}),
+    \item[LA~v2] Linear Approximation v2 (\cref{sec:la-v2-perturb}),
     the primary deep-zoom rendering path.
     \item[Scaled] An alternative perturbation formulation using a
     rescaled delta; partially broken.
     \item[LA only / Perturb only] Testing modes that run only one
     stage of the pipeline in isolation.
   \end{description}
-  For example, \emph{HDRx2x32 GPU -- RC LAv2} means: GPU kernel using
+  For example, \emph{HDRx2x32 GPU -- RC LA~v2} means: GPU kernel using
   a 2$\times$32-bit (double-float) type wrapped in HDR, with reference
-  compression and the LAv2 full pipeline.  Individual algorithm entries
+  compression and the LA~v2 full pipeline.  Individual algorithm entries
   below are not further annotated because their names are
   self-documenting given this convention.
 
     \begin{itemize}
       \item \emph{Help} (command): Displays help for algorithm selection and
-      related concepts (e.g., what LAv2 (\cref{sec:la-v2-perturb}), BLA
+      related concepts (e.g., what LA~v2 (\cref{sec:la-v2-perturb}), BLA
       (\cref{sec:bilinear-approx}), perturbation (\cref{sec:perturbation-concept}),
       and reference compression (\cref{subsec:ref-orbit-compression-reuse}) mean,
       and when to use each).
@@ -209,7 +209,7 @@ choice and triggers any necessary reconfiguration.
       system to choose the most appropriate algorithm based on current view
       parameters. The radio button for "Auto" will not be checked; instead, the
       actual algorithm in use will be checked.  Thus, selecting \emph{Auto} may
-      appear to have no effect but if you navigate the submenus you'll find the
+      appear to have no effect, but navigating the submenus reveals that the
       algorithm currently in use is checked.  This design allows users to see
       what algorithm is active.
 
@@ -220,13 +220,13 @@ choice and triggers any necessary reconfiguration.
         \item \emph{1x32 GPU -- Perturbation Only}: The default
               perturbation-only GPU renderer (\cref{sec:perturb-only}) for
               moderate zooms uses perturbation but no linear approximation.
-        \item \emph{1x32 GPU -- LAv2}: A bit deeper, no high-dynamic range
+        \item \emph{1x32 GPU -- LA~v2}: A bit deeper, no high-dynamic range
               floats but does use linear-approximation renderer and
               perturbation.
-        \item \emph{HDRx32 GPU -- LAv2}: Arbitrary depth (\cref{sec:la-v2-perturb,sec:hdr-float}), combines all known
+        \item \emph{HDRx32 GPU -- LA~v2}: Arbitrary depth (\cref{sec:la-v2-perturb,sec:hdr-float}), combines all known
               algorithmic optimizations.  This one can result in rendering
               artifacts at some deep locations due to numeric precision
-              limitations.  "Auto" mode can't tell, so if you see artifacts, try
+              limitations.  ``Auto'' mode cannot detect this, so if artifacts appear, try
               HDRx2x32 or HDRx64 variants instead.  View \#26 is an example of a
               point that fails with HDRx32 but works correctly with HDRx64.
 
@@ -261,10 +261,10 @@ choice and triggers any necessary reconfiguration.
           \item \emph{HDRx32 CPU -- Perturbation BLA} (radio)
           \item \emph{HDRx64 CPU -- Perturbation BLA} (radio)
 
-          \item \emph{HDRx32 CPU -- Perturbation LAv2} (radio)
-          \item \emph{HDRx64 CPU -- Perturbation LAv2} (radio)
-          \item \emph{HDRx32 RC CPU -- Perturbation LAv2} (radio)
-          \item \emph{HDRx64 RC CPU -- Perturbation LAv2} (radio)
+          \item \emph{HDRx32 CPU -- Perturbation LA~v2} (radio)
+          \item \emph{HDRx64 CPU -- Perturbation LA~v2} (radio)
+          \item \emph{HDRx32 RC CPU -- Perturbation LA~v2} (radio)
+          \item \emph{HDRx64 RC CPU -- Perturbation LA~v2} (radio)
         \end{itemize}
 
       \item \emph{Low-Zoom Depth} (submenu): GPU renderers intended for relatively modest zoom depths and lower precision requirements.
@@ -306,12 +306,12 @@ choice and triggers any necessary reconfiguration.
 
       \item \emph{LA Only (for testing)} (submenu): Test configurations that run only the linear-approximation portion of the pipeline.
         \begin{itemize}
-          \item \emph{1x32 GPU -- LAv2 -- LA only} (radio)
-          \item \emph{2x32 GPU -- LAv2 -- LA only} (radio)
-          \item \emph{1x64 GPU -- LAv2 -- LA only} (radio)
-          \item \emph{HDRx32 GPU -- LAv2 -- LA only} (radio)
-          \item \emph{HDRx2x32 GPU -- LAv2 -- LA only} (radio)
-          \item \emph{HDRx64 GPU -- LAv2 -- LA only} (radio)
+          \item \emph{1x32 GPU -- LA~v2 -- LA only} (radio)
+          \item \emph{2x32 GPU -- LA~v2 -- LA only} (radio)
+          \item \emph{1x64 GPU -- LA~v2 -- LA only} (radio)
+          \item \emph{HDRx32 GPU -- LA~v2 -- LA only} (radio)
+          \item \emph{HDRx2x32 GPU -- LA~v2 -- LA only} (radio)
+          \item \emph{HDRx64 GPU -- LA~v2 -- LA only} (radio)
         \end{itemize}
 
       \item \emph{Perturbation Only} (submenu): Test configurations that run only the perturbation portion of the pipeline.
@@ -326,12 +326,12 @@ choice and triggers any necessary reconfiguration.
 
       \item \emph{Reference Compression} (submenu): Algorithms using reference-orbit compression as part of the perturbation pipeline.
         \begin{itemize}
-          \item \emph{1x32 GPU -- RC LAv2} (radio)
-          \item \emph{2x32 GPU -- RC LAv2} (radio)
-          \item \emph{1x64 GPU -- RC LAv2} (radio)
-          \item \emph{HDRx32 GPU -- RC LAv2} (radio)
-          \item \emph{HDRx2x32 GPU -- RC LAv2} (radio)
-          \item \emph{HDRx64 GPU -- RC LAv2} (radio)
+          \item \emph{1x32 GPU -- RC LA~v2} (radio)
+          \item \emph{2x32 GPU -- RC LA~v2} (radio)
+          \item \emph{1x64 GPU -- RC LA~v2} (radio)
+          \item \emph{HDRx32 GPU -- RC LA~v2} (radio)
+          \item \emph{HDRx2x32 GPU -- RC LA~v2} (radio)
+          \item \emph{HDRx64 GPU -- RC LA~v2} (radio)
 
           \item \emph{Perturbation Only} (submenu): Reference-compressed perturbation-only variants.
             \begin{itemize}
@@ -345,23 +345,23 @@ choice and triggers any necessary reconfiguration.
 
           \item \emph{LA Only} (submenu): Reference-compressed LA-only variants.
             \begin{itemize}
-              \item \emph{1x32 GPU -- RC LAv2} (radio)
-              \item \emph{2x32 GPU -- RC LAv2} (radio)
-              \item \emph{1x64 GPU -- RC LAv2} (radio)
-              \item \emph{HDRx32 GPU -- RC LAv2} (radio)
-              \item \emph{HDRx2x32 GPU -- RC LAv2} (radio)
-              \item \emph{HDRx64 GPU -- RC LAv2} (radio)
+              \item \emph{1x32 GPU -- RC LA~v2} (radio)
+              \item \emph{2x32 GPU -- RC LA~v2} (radio)
+              \item \emph{1x64 GPU -- RC LA~v2} (radio)
+              \item \emph{HDRx32 GPU -- RC LA~v2} (radio)
+              \item \emph{HDRx2x32 GPU -- RC LA~v2} (radio)
+              \item \emph{HDRx64 GPU -- RC LA~v2} (radio)
             \end{itemize}
         \end{itemize}
 
-      \item \emph{LAv2 (Full Pipeline)} (radio entries): Main LAv2 renderers combining LA, perturbation, and reference handling.
+      \item \emph{LA~v2 (Full Pipeline)} (radio entries): Main LA~v2 renderers combining LA, perturbation, and reference handling.
         \begin{itemize}
-          \item \emph{1x32 GPU -- LAv2} (radio)
-          \item \emph{2x32 GPU -- LAv2} (radio)
-          \item \emph{1x64 GPU -- LAv2} (radio)
-          \item \emph{HDRx32 GPU -- LAv2} (radio)
-          \item \emph{HDRx2x32 GPU -- LAv2} (radio)
-          \item \emph{HDRx64 GPU -- LAv2} (radio)
+          \item \emph{1x32 GPU -- LA~v2} (radio)
+          \item \emph{2x32 GPU -- LA~v2} (radio)
+          \item \emph{1x64 GPU -- LA~v2} (radio)
+          \item \emph{HDRx32 GPU -- LA~v2} (radio)
+          \item \emph{HDRx2x32 GPU -- LA~v2} (radio)
+          \item \emph{HDRx64 GPU -- LA~v2} (radio)
         \end{itemize}
 
       \item \emph{Tests} (submenu): Development and diagnostic test actions.
@@ -515,7 +515,7 @@ choice and triggers any necessary reconfiguration.
     \begin{itemize}
       \item \emph{Load Location...} (command): Loads a previously saved location/view.
       \item \emph{Enter Location} (command): Manually enters a location/view
-      via a dialog where you type the real part, imaginary part, and zoom level.
+      via a dialog where the user enters the real part, imaginary part, and zoom level.
       \item \emph{Load Imagina Orbit (Match)...} (command): Loads an
       Imagina-format orbit file and matches it against the current view
       parameters (coordinates and precision) to validate compatibility.
@@ -640,11 +640,11 @@ results first.
   \item \code{p}: Force recalculation and show the current position.
   \item \code{P} (\code{Shift+p}): Clear \emph{LA-only} perturbation results, then recalc and show position.
 \end{itemize}
-\emph{Note:} The in-application hotkey dialog groups \code{i/I}, \code{o/O},
+(The in-application hotkey dialog groups \code{i/I}, \code{o/O},
 \code{p/P}, and \code{r/R} under ``Recalculating and Benchmarking'' with
 slightly different wording.  The authoritative behavior is the code path: these
 keys primarily differ by which cached perturbation result class is cleared
-before forcing recomputation.
+before forcing recomputation.)
 
 \paragraph{Reference compression tuning.}
 These keys adjust compression error exponents and then repaint, typically after
@@ -723,11 +723,11 @@ not as guaranteed real-time interaction during heavy computation.
 \subsection{Commentary}
 
 \begin{itemize}
-\item One fun thing you can try is running with LAv2 + ``LA only''. This 
+\item An interesting experiment is running with LA~v2 + ``LA only''. This 
 approach actually works pretty well once Linear Approximation kicks in at 
-deeper zooms --- it gives you an idea of what the actual image should look like 
+deeper zooms --- it provides a sense of what the actual image should look like 
 but is very fast, since it does no perturbation. The images it produces are not 
-precise, and often leave out the fine detail; however, it's fun to play with 
+precise, and often leave out the fine detail; however, the mode is enjoyable to play with 
 when zooming in on a specific point.
 
 \item The most interesting reference orbit calculation is at
@@ -736,7 +736,7 @@ which is used for the ``scaled'' CUDA kernels. The multithreaded approach
 handily beats the single-threaded implementation on my CPU in all scenarios.
 
 \item There are CPU renderers, but they were mostly to learn/debug more easily, 
-and aren't optimized heavily. They're much easier to understand and reason 
+and are not optimized heavily. They are much easier to understand and reason 
 about though.
 \end{itemize}
 
@@ -805,14 +805,14 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
 \item All the per-pixel CUDA kernels are in \code{gpu\_render.cu}. The two
 most interesting are probably \code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_bla} and
 \code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_lav2}, which are the ones I've spent the
-most time on lately. For better performance at low zoom levels, you could look
-at \code{mandel\_1x\_float\_perturb}, which leaves out linear approximation
+most time on lately. For better performance at low zoom levels, consider
+\code{mandel\_1x\_float\_perturb}, which leaves out linear approximation
 and just does straight perturbation up to $\sim 10^{30}$, which corresponds
 with the 32-bit float exponent range.
 
 \item The \code{mandel\_1x\_float} (\cref{sec:mandel-1x-float}) is the classic 32-bit float Mandelbrot and 
 is screaming fast on a GPU. This one is optimized with fused multiply-add for 
-fun even though it's kind of useless because you can barely zoom in before you 
-get pixellation.
+fun even though it is of limited practical use because one can barely zoom in before
+pixellation sets in.
 
 \end{itemize}

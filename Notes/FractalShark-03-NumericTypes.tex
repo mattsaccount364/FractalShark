@@ -10,7 +10,8 @@ at large magnitudes, while arbitrary-precision formats incur prohibitive
 computational cost when used per pixel.
 
 To address this gap, we employ a custom \emph{high dynamic range (HDR)}
-floating-point representation that explicitly separates scale and precision.
+floating-point representation that explicitly separates scale and precision
+(\cref{fig:type-hierarchy}).
 This representation is designed to preserve relative accuracy across a wide
 range of magnitudes while remaining efficient on GPUs.
 
@@ -103,7 +104,7 @@ Compared to standard floating-point formats, HDR arithmetic offers:
 
 Compared to arbitrary-precision libraries, it avoids dynamic memory allocation,
 irregular control flow, and large per-operation overheads, making it well suited
-for massively parallel execution on GPUs.
+for parallel execution on GPUs.
 
 \subsection{Summary}
 
@@ -113,6 +114,133 @@ explicitly separating scale and precision, it bridges the gap between standard
 floating-point arithmetic and full arbitrary-precision methods. In combination
 with perturbation, it enables accurate, high-performance rendering across
 extreme zoom levels while remaining compatible with GPU execution models.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    typebox/.style={draw, rounded corners=2pt, minimum height=0.55cm,
+                    minimum width=1.8cm, font=\scriptsize\ttfamily,
+                    fill=blue!8, align=center},
+    bitlabel/.style={font=\tiny, gray},
+]
+
+% ═══ Part (a): precision hierarchy ═══
+\node[font=\scriptsize\bfseries] at (1.6, 5.8) {(a) Precision hierarchy};
+
+% Row 0: native types
+\node[typebox] (float) at (0, 0) {float};
+\node[bitlabel, right=1pt] at (float.east) {24\,b};
+\node[typebox] (double) at (3.2, 0) {double};
+\node[bitlabel, right=1pt] at (double.east) {53\,b};
+
+% Row 1: 2-component
+\node[typebox] (dblflt) at (0, 1.4) {dblflt};
+\node[bitlabel, right=1pt] at (dblflt.east) {${\sim}$48\,b};
+\node[typebox] (dbldbl) at (3.2, 1.4) {dbldbl};
+\node[bitlabel, right=1pt] at (dbldbl.east) {${\sim}$104\,b};
+
+% Row 2: 4-component
+\node[typebox] (gqf) at (0, 2.8) {GQF};
+\node[bitlabel, right=1pt] at (gqf.east) {${\sim}$96\,b};
+\node[typebox] (gqd) at (3.2, 2.8) {GQD};
+\node[bitlabel, right=1pt] at (gqd.east) {${\sim}$212\,b};
+
+% Row 3: arbitrary precision
+\node[typebox, fill=gray!12, minimum width=3.0cm] (mpir) at (1.6, 4.2)
+  {MPIR / HpSharkFloat};
+\node[bitlabel, right=1pt] at (mpir.east) {arbitrary};
+
+% Arrows: increasing precision
+\draw[->, blue!40, thick] (float) -- (dblflt);
+\draw[->, blue!40, thick] (double) -- (dbldbl);
+\draw[->, blue!40, thick] (dblflt) -- (gqf);
+\draw[->, blue!40, thick] (dbldbl) -- (gqd);
+\draw[->, blue!40, thick] (gqf.north) -- ([xshift=-6pt]mpir.south west);
+\draw[->, blue!40, thick] (gqd.north) -- ([xshift=6pt]mpir.south east);
+
+% Column labels
+\node[font=\tiny, gray, rotate=90, anchor=south] at (-1.3, 1.4)
+  {fp32-based};
+\node[font=\tiny, gray, rotate=90, anchor=south] at (4.7, 1.4)
+  {fp64-based};
+
+% HDRFloat<T> wrapper
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=6pt, orange!70!black, thick,
+        inner xsep=10pt, inner ysep=8pt,
+        fit=(float)(double)(gqf)(gqd)] (hdrbox) {};
+  \node[font=\scriptsize, orange!70!black, anchor=south east]
+    at (hdrbox.north east) {\code{HDRFloat<T>} wrapper};
+\end{scope}
+
+% Precision arrow
+\draw[<-, thick, gray!50] (-1.8, -0.3) -- (-1.8, 4.5);
+\node[font=\tiny, gray, rotate=90, anchor=south] at (-2.1, 2.1)
+  {increasing precision};
+
+% ═══ Part (b): HDR representation ═══
+\begin{scope}[shift={(7.5, 0.5)}]
+  \node[font=\scriptsize\bfseries] at (2.0, 5.3)
+    {(b) HDR representation};
+
+  % IEEE 754 double
+  \node[font=\scriptsize, anchor=east] at (-0.1, 3.65)
+    {IEEE 754 \code{double}:};
+
+  \draw[fill=gray!20] (0, 3.3) rectangle (0.4, 4.0);
+  \node[font=\tiny, rotate=90] at (0.2, 3.65) {S};
+  \draw[fill=blue!15] (0.4, 3.3) rectangle (1.5, 4.0);
+  \node[font=\tiny] at (0.95, 3.65) {exp};
+  \draw[fill=blue!8] (1.5, 3.3) rectangle (4.0, 4.0);
+  \node[font=\tiny] at (2.75, 3.65) {mantissa};
+
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick]
+    (0, 3.15) -- (4.0, 3.15)
+    node[midway, below=5pt, font=\tiny]
+      {64 bits, tightly coupled};
+
+  % HDRFloat<T>
+  \node[font=\scriptsize, anchor=east] at (-0.1, 1.45)
+    {\code{HDRFloat<T>}:};
+
+  \draw[fill=orange!20, draw=orange!70!black, thick]
+    (0, 1.1) rectangle (1.5, 1.8);
+  \node[font=\tiny] at (0.75, 1.45) {int32 exp};
+
+  \node[font=\scriptsize] at (1.75, 1.45) {$+$};
+
+  \draw[fill=blue!12, draw=blue!60!black, thick]
+    (2.0, 1.1) rectangle (4.0, 1.8);
+  \node[font=\tiny] at (3.0, 1.45) {\code{T} mantissa};
+
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror},
+        thick, orange!70!black]
+    (0, 0.95) -- (1.5, 0.95)
+    node[midway, below=5pt, font=\tiny, orange!70!black] {range};
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror},
+        thick, blue!60!black]
+    (2.0, 0.95) -- (4.0, 0.95)
+    node[midway, below=5pt, font=\tiny, blue!60!black] {precision};
+
+  \node[font=\tiny, text width=3.5cm, align=center, gray] at (2.0, 0.1)
+    {decoupled: scale and precision\\vary independently};
+\end{scope}
+
+\end{tikzpicture}
+\caption[Numeric type hierarchy and HDR representation]{%
+  Numeric type hierarchy and HDR representation.
+  (a)~The precision hierarchy of floating-point types available in
+  \FractalShark{}, from native IEEE~754 types (bottom) through
+  multi-component expansion types to arbitrary-precision arithmetic (top).
+  The dashed outline indicates that any GPU-resident type may be wrapped by
+  \code{HDRFloat<T>} to provide wide dynamic range.
+  (b)~Comparison of the standard IEEE~754 \code{double} layout, where
+  exponent and mantissa share a fixed bit budget, with the
+  \code{HDRFloat<T>} representation, which stores an explicit integer
+  exponent separately from a fixed-precision mantissa of type~\code{T}.}
+\label{fig:type-hierarchy}
+\end{figure}
 
 
 \section{Extended-Precision Floating-Point Types for Perturbation}
@@ -248,7 +376,7 @@ Four \code{float} values (${\sim}96$-bit mantissa, ${\sim}29$ decimal digits)
 stored as a CUDA \code{float4} vector.  The implementation is adapted from the
 QD library by Bailey and Hida \cite{Hida2001QD} (Lawrence Berkeley National Laboratory) and
 resides in the \code{GQF} namespace with a \code{make\_qf()} constructor.
-Because it uses only fp32 ALUs, it can be faster than fp64-based alternatives
+Because it uses only fp32 ALUs, it can, in principle, be faster than fp64-based alternatives
 on consumer GPUs despite using four components.
 
 \paragraph{4\texorpdfstring{$\times$}{x}64 quad-double (\code{GQD::gqd\_real}).}
@@ -288,4 +416,8 @@ when wide dynamic range is also required.  In practice, the vast majority of
 rendering uses either \code{float}, \code{double}, or
 \code{HDRFloat<CudaDblflt<dblflt>>} as the perturbation delta type.
 
+The numeric types introduced here are put to use in the following chapter,
+which develops the perturbation framework that makes deep-zoom rendering
+practical by reducing per-pixel arithmetic from full precision to lightweight
+floating-point deltas.
 

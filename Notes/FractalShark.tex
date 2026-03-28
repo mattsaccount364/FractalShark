@@ -1,5 +1,26 @@
 \documentclass[12pt]{article}
 
+% --- Draft / final toggle ---
+% Comment out the next line to produce the final PDF (all review
+% annotations disappear and no extra packages are loaded).
+\newcommand{\DraftMode}{}
+
+% --- Review annotations (draft only) ---
+\ifdefined\DraftMode
+  \usepackage{xcolor}
+  \usepackage{marginnote}    % \marginnote{} for margin comments
+  \newcounter{reviewcount}
+  \newcommand{\reviewme}[2]{%
+    \stepcounter{reviewcount}%
+    \label{review:\thereviewcount}%
+    {\color{red!70!black}\bfseries #2}%
+    \marginnote{\raggedright\tiny\sffamily\color{red!80!black}%
+      \textbf{[\#\thereviewcount: #1]}}%
+  }
+\else
+  \newcommand{\reviewme}[2]{#2}% silent pass-through
+\fi
+
 % --- Encoding / fonts (fixes OT1 issues + improves monospace metrics) ---
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
@@ -61,15 +82,52 @@
 \vspace{1em}
 
 \begin{center}
-\textit{These notes are a work-in-progress summary of
-\FractalShark{} but are currently not in a well-edited or organized state.
-Moreover, much of it is presently AI-generated and thus may contain errors or
+\textit{These notes are a work-in-progress summary of \FractalShark{}. Moreover,
+much of it is presently AI-generated and thus may contain errors or
 inconsistencies.  That said, I've made some effort to review and correct it, so
 it should be better than nothing.  I'll remove this warning once I'm better
-satisfied with the content.}
+satisfied with the content.  This document has seen significant revisions
+recently and is getting better.}
 \end{center}
 
-\makeatletter
+\ifdefined\DraftMode
+\subsection*{Items Flagged for Review}
+\label{sec:review-items}
+
+The following items are marked {\color{red!70!black}\bfseries in bold
+red} in the text with numbered margin tags.  Comment out
+\verb|\newcommand{\DraftMode}{}| in the preamble to produce a clean PDF.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{clclX}
+\hline
+\textbf{\#} & \textbf{Page} & \textbf{Cat.} & \textbf{Section} & \textbf{What to check} \\
+\hline
+1  & \pageref{review:1}  & perf      & \S3  & ``32:1 slower than fp32'' --- verify for target GPUs \\
+2  & \pageref{review:2}  & perf      & \S3  & ``faster than fp64 in principle'' --- benchmark needed \\
+3  & \pageref{review:3}  & external  & \S5  & BLA attribution to Imagina/Zhuoran --- verify accuracy \\
+4  & \pageref{review:4}  & heuristic & \S5  & \code{LAThresholdScale} default $2^{-24}$ --- empirical, no derivation \\
+5  & \pageref{review:5}  & heuristic & \S6  & Periodicity detection formula $n_2 < n_3$ --- empirical, no derivation \\
+6  & \pageref{review:6}  & rationale & \S6  & Expanded-form choice rationale --- is this still accurate? \\
+7  & \pageref{review:7}  & perf      & \S6  & ``typically outperforms single-threaded'' --- benchmark? \\
+8  & \pageref{review:8}  & external  & \S11 & External algorithm descriptions --- check against sources \\
+9  & \pageref{review:9}  & rationale & \S12 & Rebasing vs.\ glitch --- verify rationale \\
+10 & \pageref{review:10} & rationale & \S12 & LA~v2 vs.\ SA --- verify rationale \\
+11 & \pageref{review:11} & rationale & \S12 & NTT vs.\ Karatsuba --- verify rationale \\
+\hline
+\end{tabularx}
+\end{center}
+
+\vspace{0.5em}
+\noindent
+\textbf{Categories:}
+\textit{perf}~= performance claim without data;
+\textit{heuristic}~= tuning parameter without derivation;
+\textit{rationale}~= design decision justification;
+\textit{external}~= claim about third-party software.
+\clearpage
+\fi
 \renewcommand\numberline[1]{#1\enspace}
 \makeatother
 

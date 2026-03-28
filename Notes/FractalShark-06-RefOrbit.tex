@@ -128,7 +128,7 @@ with \(d_n = d_{x,n} + i d_{y,n}\). Expanding into real and imaginary parts yiel
   d_{y,n+1} &= 2(x_n d_{y,n} + y_n d_{x,n}).
 \end{align}
 
-The code applies a radius-based heuristic: let
+\reviewme{heuristic}{The code applies an empirically chosen radius-based heuristic (no formal derivation is known)}: let
 
 \begin{equation}
   n_2 = \max(|\hat{x}_n|,|\hat{y}_n|),\qquad
@@ -203,9 +203,9 @@ terms and alters the way cancellation and rounding effects manifest in
 finite-precision arithmetic.
 
 In all cases, \FractalShark{} uses the expanded form despite the advantages offered
-by the factored form. This choice simplifies reasoning about numerical behavior,
+by the factored form. \reviewme{rationale}{This choice simplifies reasoning about numerical behavior,
 ensures that all arithmetic paths are exercised, and maintains consistency with
-the perturbation update form used elsewhere in the codebase.  For better
+the perturbation update form used elsewhere in the codebase.}  For better
 performance it likely makes sense to implement both forms and compare their behavior
 empirically.
 
@@ -801,8 +801,8 @@ concurrent execution increasingly effective.  Overlapping independent
 operations, such as the simultaneous computation of \(x_n^2\) and \(y_n^2\),
 yields substantial gains, while explicit limb prefetching further mitigates
 memory latency.  Beyond a hardware- and workload-dependent threshold,
-multi-threaded reference-orbit computation typically outperforms the
-single-threaded path in practice, with speedups increasing as precision grows.
+\reviewme{perf}{multi-threaded reference-orbit computation typically outperforms the
+single-threaded path in practice, with speedups increasing as precision grows}.
 
 To exploit this behavior without requiring manual tuning, the \code{Auto}
 selection mode chooses the perturbation algorithm based on the current zoom

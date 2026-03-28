@@ -2077,6 +2077,7 @@ InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::Disable);
 InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::Disable);
 InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::Disable);
 
+// Bare CudaDblflt needs CudaDblflt arithmetic fixes — disabled for now.
 // InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 // InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 
@@ -2086,6 +2087,8 @@ InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Disabl
 InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::Disable);
 InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::Disable);
 
+// HDRFloat<CudaDblflt> needs more HDRFloat utility functions (HdrAbs, HdrMaxReduced, etc.)
+// to accept CudaDblflt — disabled for now.
 // InstantiatePeriodicPointFinder(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 // InstantiatePeriodicPointFinder(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 //
@@ -2115,8 +2118,9 @@ InstantiatePeriodicPointFinder(uint64_t, double, PerturbExtras::SimpleCompressio
 InstantiatePeriodicPointFinder(uint32_t, float, PerturbExtras::SimpleCompression);
 InstantiatePeriodicPointFinder(uint64_t, float, PerturbExtras::SimpleCompression);
 
-//InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
-//InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+// Bare CudaDblflt needs CudaDblflt arithmetic fixes — disabled for now.
+// InstantiatePeriodicPointFinder(uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
 
 InstantiatePeriodicPointFinder(uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
 InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression);
@@ -2124,11 +2128,12 @@ InstantiatePeriodicPointFinder(uint64_t, HDRFloat<double>, PerturbExtras::Simple
 InstantiatePeriodicPointFinder(uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
 InstantiatePeriodicPointFinder(uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression);
 
-//InstantiatePeriodicPointFinder(uint32_t,
-//                               HDRFloat<CudaDblflt<MattDblflt>>,
-//                               PerturbExtras::SimpleCompression);
-//InstantiatePeriodicPointFinder(uint64_t,
-//                               HDRFloat<CudaDblflt<MattDblflt>>,
-//                               PerturbExtras::SimpleCompression);
+// HDRFloat<CudaDblflt> needs more HDRFloat utility functions — disabled for now.
+// InstantiatePeriodicPointFinder(uint32_t,
+//                                HDRFloat<CudaDblflt<MattDblflt>>,
+//                                PerturbExtras::SimpleCompression);
+// InstantiatePeriodicPointFinder(uint64_t,
+//                                HDRFloat<CudaDblflt<MattDblflt>>,
+//                                PerturbExtras::SimpleCompression);
 
 #undef InstantiatePeriodicPointFinder

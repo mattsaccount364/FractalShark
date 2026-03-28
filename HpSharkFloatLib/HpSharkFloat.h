@@ -316,7 +316,15 @@ using SharkParams10 = HpShark::GenericSharkFloatParams<131072, true>;
 using SharkParams11 = HpShark::GenericSharkFloatParams<262144, true>;
 using SharkParams12 = HpShark::GenericSharkFloatParams<524288, true>;
 
-// Newton-Raphson enabled params (NR derivative tracking, NO periodicity detection)
+// Newton-Raphson enabled params (NR derivative tracking, NO periodicity detection).
+// NOTE: These all use default SubType=float. The NR kernel's d2 accumulation
+// (Halley second derivative) uses SharkFloatParams::Float = HDRFloat<float>,
+// giving ~24-bit d2 precision. If the user renders with HDRFloat<double> or
+// HDRFloat<CudaDblflt>, the NR inner loop still computes d2 at float precision.
+// This causes Halley's method to degenerate to quadratic convergence after ~24
+// correct bits instead of ~53 — potentially costing one extra NR iteration.
+// Adding SharkParamsNRDbl/NRDbf variants would fix this at the cost of more
+// template instantiations and compile time. Left as a pending open question.
 using SharkParamsNR1 = HpShark::GenericSharkFloatParams<256, false, true>;
 using SharkParamsNR2 = HpShark::GenericSharkFloatParams<512, false, true>;
 using SharkParamsNR3 = HpShark::GenericSharkFloatParams<1024, false, true>;

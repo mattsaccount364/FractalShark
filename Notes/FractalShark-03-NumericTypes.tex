@@ -263,7 +263,7 @@ precision for accurate perturbation rendering.  In some cases,
 rendering artifacts appear because the per-pixel deltas lose significant bits
 during the perturbation recurrence.  Native \code{double} (53-bit mantissa)
 resolves these artifacts but incurs a substantial throughput penalty on consumer
-GPUs, where fp64 performance is often 32:1 slower than fp32.
+GPUs, where fp64 performance is \reviewme{perf}{often 32:1 slower than fp32}.
 
 The \textbf{2$\times$32 double-float} type bridges this gap: it provides
 ${\sim}48$~bits of effective mantissa using only fp32 arithmetic, delivering
@@ -376,8 +376,8 @@ Four \code{float} values (${\sim}96$-bit mantissa, ${\sim}29$ decimal digits)
 stored as a CUDA \code{float4} vector.  The implementation is adapted from the
 QD library by Bailey and Hida \cite{Hida2001QD} (Lawrence Berkeley National Laboratory) and
 resides in the \code{GQF} namespace with a \code{make\_qf()} constructor.
-Because it uses only fp32 ALUs, it can, in principle, be faster than fp64-based alternatives
-on consumer GPUs despite using four components.
+Because it uses only fp32 ALUs, \reviewme{perf}{it can, in principle, be faster than fp64-based alternatives
+on consumer GPUs} despite using four components.
 
 \paragraph{4\texorpdfstring{$\times$}{x}64 quad-double (\code{GQD::gqd\_real}).}
 Four \code{double} values (${\sim}212$-bit mantissa, ${\sim}64$ decimal

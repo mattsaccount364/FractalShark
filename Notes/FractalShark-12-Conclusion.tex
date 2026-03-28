@@ -2,7 +2,7 @@
 %  Conclusion
 % ============================================================
 
-\section{Conclusion}
+\section{Conclusion}%
 \label{sec:conclusion}
 
 This document has presented the algorithms, data structures, and
@@ -102,15 +102,15 @@ vectors that manage large reference orbits
 (\cref{sec:disk_backed_growable_vectors})---completes the rendering
 pipeline.
 
-Several design decisions merit emphasis.  \FractalShark{} adopts
+Several design decisions merit emphasis.  \reviewme{rationale}{\FractalShark{} adopts
 \emph{rebasing} rather than glitch correction to handle loss of
 significance during perturbation iteration, avoiding the need for
-post-hoc detection and re-rendering of glitched pixels.  Linear
+post-hoc detection and re-rendering of glitched pixels.}  \reviewme{rationale}{Linear
 approximation version~2 (LA~v2) was chosen over series approximation
 for its period-aligned skip structure, which enables longer effective
-jumps at deep zooms.  NTT-based multiplication was preferred over
+jumps at deep zooms.}  \reviewme{rationale}{NTT-based multiplication was preferred over
 Karatsuba for the GPU arithmetic backend, as the former maps naturally
-to the highly parallel CUDA execution model.  Throughout the
+to the highly parallel CUDA execution model.}Throughout the
 codebase, C++ template instantiation over a fixed parameter-set
 lattice allows the compiler to specialise kernels for each combination
 of precision, sub-type, and algorithmic mode while keeping the source

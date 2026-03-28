@@ -18,10 +18,15 @@ The authoritative build process is defined in `.github/workflows/build.yml`.
 ### Building
 
 ```powershell
-# From repo root, using Developer Command Prompt or MSBuild on PATH:
+# Full rebuild (required if .h, .cu, or .cuh files changed):
 msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Release /p:Platform=x64
 msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Debug /p:Platform=x64
+
+# Incremental build (safe only if ONLY .cpp files changed — no headers, no CUDA):
+msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64
 ```
+
+**Build rule**: If any `.h` file changed, do full rebuild (headers are shared between `.cpp` and `.cu` files). If only `.cpp` files changed, incremental is safe.
 
 Only x64 builds are supported. x86 configurations in the solution are mapped to x64.
 

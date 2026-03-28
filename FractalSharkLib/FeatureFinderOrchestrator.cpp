@@ -166,8 +166,11 @@ FeatureFinderOrchestrator::TryFindPeriodicPointIterType(size_t scrnX, size_t scr
             break;
 
         case RenderAlgorithmEnum::Gpu2x32PerturbedScaled:
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::Gpu2x32PerturbedScaled. ");
+            // CudaDblflt on host not supported — use double (1x64) for FeatureFinder.
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedBLA>,
+                PerturbExtras::Bad>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx32PerturbedBLA:
@@ -229,57 +232,46 @@ FeatureFinderOrchestrator::TryFindPeriodicPointIterType(size_t scrnX, size_t scr
             break;
 
         case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2>,
-            //    PerturbExtras::Disable>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::Gpu2x32PerturbedLAv2. ");
+            // CudaDblflt on host not supported — use double (1x64) for FeatureFinder.
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2>,
+                PerturbExtras::Disable>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO>,
-            //    PerturbExtras::Disable>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO>,
+                PerturbExtras::Disable>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO>,
-            //    PerturbExtras::Disable>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO>,
+                PerturbExtras::Disable>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2>,
-            //    PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2>,
+                PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO>,
-            //    PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO>,
+                PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO>,
-            //    PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO>,
+                PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::Gpu1x64PerturbedLAv2:
@@ -367,57 +359,47 @@ FeatureFinderOrchestrator::TryFindPeriodicPointIterType(size_t scrnX, size_t scr
             break;
 
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2>,
-            //    PerturbExtras::Disable>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2. ");
+            // CudaDblflt on host not supported — use HDRFloat<double> for FeatureFinder.
+            // GPU per-pixel rendering still uses CudaDblflt.
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2>,
+                PerturbExtras::Disable>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO>,
-            //    PerturbExtras::Disable>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO>,
+                PerturbExtras::Disable>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO>,
-            //    PerturbExtras::Disable>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO>,
+                PerturbExtras::Disable>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>,
-            //    PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2>,
+                PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO>,
-            //    PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO>,
+                PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO:
-            //TryFindPeriodicPointTemplate<
-            //    IterType,
-            //    RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO>,
-            //    PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
-            throw FractalSharkSeriousException("Unsupported Render Algorithm for TryFindPeriodicPoint: "
-                                               "RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO. ");
+            TryFindPeriodicPointTemplate<
+                IterType,
+                RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO>,
+                PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2:

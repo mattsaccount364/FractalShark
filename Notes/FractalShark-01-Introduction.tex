@@ -242,7 +242,7 @@ The remainder of this document is organized as follows:
 
 
 %% ===================================================================
-\section{Template design}
+\section{Template design}%
 \label{sec:template-design}
 %% ===================================================================
 
@@ -377,9 +377,8 @@ combination can be stored and dispatched uniformly at run time.
 
 Additional template parameters (\code{SubType}, benchmark modes, reuse
 modes) on related classes further multiply the instantiation count.  The
-full set of explicit instantiations in
-\code{RefOrbitCalcTemplates.h} runs to several hundred
-macro-expanded declarations.
+full set of explicit instantiations is available in
+\code{RefOrbitCalcTemplates.h}.
 
 
 \subsection{Explicit instantiation strategy}

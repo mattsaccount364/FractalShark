@@ -311,5 +311,5 @@ private:
     // Generation counter for skipping stale in-flight renders.
     // Only incremented for supersedable items.  Non-atomic: single
     // writer (UI thread), multi-reader (workers) — safe on x64.
-    uint64_t m_EnqueueGeneration = 0;
+    std::atomic<uint64_t> m_EnqueueGeneration = 0;
 };

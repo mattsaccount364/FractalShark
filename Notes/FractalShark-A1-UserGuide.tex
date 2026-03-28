@@ -72,6 +72,8 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Zoom Out} (command): Zooms out from the current view.
       \item \emph{Autozoom Feature} (command): See \cref{par:autozoom} for details.
       \item \emph{Autozoom Default} (command): See \cref{par:autozoom} for details.
+      \item \emph{Autozoom Filament Tip} (\code{s}) (command): Autozoom using the
+      ``FilamentTip'' heuristic.
       \item \emph{Feature Finder} (submenu): Locates nearby mini-Mandelbrot
       nuclei (periodic points) using Newton's method and optionally zooms to
       them.  Three evaluation back-ends are available, each in a single-point
@@ -100,11 +102,19 @@ choice and triggers any necessary reconfiguration.
           automatically before zooming.
           \item \emph{Clear All Found Features} (\code{>}) (command): Removes
           all found-feature overlays (lines and circles drawn on the fractal).
+          \item \emph{Resume NR Refinement} (command): Resumes
+          Newton--Raphson precision refinement from the most recent checkpoint,
+          useful when a prior refinement was interrupted or when additional
+          precision is desired.
+          \item \emph{NR Inner Loop: GPU / CPU} (radio): Selects
+          whether the Newton--Raphson inner loop (iterating the orbit and
+          derivatives for $p$~steps) executes on the GPU via
+          \code{HpSharkFloat} or falls back to CPU-based MPIR arithmetic.
         \end{itemize}
       When a feature is found, a line is drawn from the search origin to the
       detected nucleus, making its location visible.  Scan modes are useful for
       surveying an entire view at a glance; single-point modes are faster and
-      target the area near your cursor.
+      target the area near the cursor.
     \end{itemize}
 
   \item \emph{Built-In Views} (submenu): Loads a predefined view/location used
@@ -619,11 +629,12 @@ additional work for correctness or a ``clean'' run.
         reference orbit's maximum radius, and zooms in incrementally while
         linearly interpolating the iteration count toward the reference orbit's
         target.
-  \item \code{A} (\code{Shift+a}): Autozoom using the ``Default''
-        heuristic.  First centres on the mouse position, then iteratively picks
+  \item \code{A} (\code{Shift+a}): Centre the view at the mouse cursor, then
+        autozoom using the ``Default'' heuristic.  Iteratively picks
         a zoom target via a weighted geometric mean of iteration counts
         (favouring high-iteration, centre-proximate pixels) and zooms by a
         factor of~3 each step.
+  \item \code{s}: Autozoom using the ``FilamentTip'' heuristic.
 \end{itemize}
 Holding \code{Ctrl} may abort either autozoom variant (the abort mechanism is
 not part of the key handler and is implemented elsewhere).
@@ -633,12 +644,12 @@ Several keys force a recalculation (see also
 \cref{subsec:recalculation-commands}); uppercase forms often clear cached
 results first.
 \begin{itemize}
-  \item \code{i}: Force recalculation and show the current position (copies details to clipboard).
-  \item \code{I} (\code{Shift+i}): Clear \emph{medium-res} perturbation results, then recalc and show position.
-  \item \code{o}: Force recalculation and show the current position.
-  \item \code{O} (\code{Shift+o}): Clear \emph{all} perturbation results, then recalc and show position.
-  \item \code{p}: Force recalculation and show the current position.
-  \item \code{P} (\code{Shift+p}): Clear \emph{LA-only} perturbation results, then recalc and show position.
+  \item \code{i}: Force recalculation.
+  \item \code{I} (\code{Shift+i}): Clear \emph{medium-res} perturbation results, then recalculate.
+  \item \code{o}: Force recalculation.
+  \item \code{O} (\code{Shift+o}): Clear \emph{all} perturbation results, then recalculate.
+  \item \code{p}: Force recalculation.
+  \item \code{P} (\code{Shift+p}): Clear \emph{LA-only} perturbation results, then recalculate.
 \end{itemize}
 (The in-application hotkey dialog groups \code{i/I}, \code{o/O},
 \code{p/P}, and \code{r/R} under ``Recalculating and Benchmarking'' with
@@ -653,11 +664,11 @@ clearing cached perturbation results.
   \item \code{e}: Clear all perturbation results, reset compression error exponents to defaults,
         and repaint.
   \item \code{q}: Clear all perturbation results; \emph{increase} intermediate compression error
-        exponent by a step (more error, less memory).
+        exponent by 10 (more error, less memory).
   \item \code{Q} (\code{Shift+q}): Clear all perturbation results; \emph{decrease} intermediate compression
-        error exponent by a step (less error, more memory).
-  \item \code{w}: Clear all perturbation results; \emph{increase} low-error compression exponent by a step.
-  \item \code{W} (\code{Shift+w}): Clear all perturbation results; \emph{decrease} low-error compression exponent by a step.
+        error exponent by 10 (less error, more memory).
+  \item \code{w}: Clear all perturbation results; \emph{increase} low-error compression exponent by 1.
+  \item \code{W} (\code{Shift+w}): Clear all perturbation results; \emph{decrease} low-error compression exponent by 1.
 \end{itemize}
 \emph{Practical interpretation:} increasing the error exponent generally favors
 memory reduction and speed at the expense of fidelity in reconstructed reference

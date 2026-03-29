@@ -89,7 +89,7 @@
       </DataExecutionPrevention>
       <AdditionalDependencies>mpir.lib;cudart_static.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir);..\mpir\lib\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalOptions>/PDBALTPATH:%_PDB%
+      <AdditionalOptions>/WHOLEARCHIVE:FractalSharkGUILib.lib /PDBALTPATH:%_PDB%
  %(AdditionalOptions)</AdditionalOptions>
       <ForceSymbolReferences>
       </ForceSymbolReferences>
@@ -131,7 +131,7 @@
       </DataExecutionPrevention>
       <AdditionalDependencies>pgobootrun.lib;mpir.lib;cudart_static.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir);..\mpir\lib\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalOptions>/PDBALTPATH:%_PDB%
+      <AdditionalOptions>/WHOLEARCHIVE:FractalSharkGUILib.lib /PDBALTPATH:%_PDB%
  %(AdditionalOptions)</AdditionalOptions>
       <ForceSymbolReferences>
       </ForceSymbolReferences>
@@ -141,40 +141,7 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ConsoleWindow.cpp" />
-    <ClCompile Include="DynamicPopupMenu.cpp" />
-    <ClCompile Include="CommandDispatcher.cpp" />
-    <ClCompile Include="FractalShark.cpp">
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
-    </ClCompile>
-    <ClCompile Include="JobObject.cpp" />
-    <ClCompile Include="MainWindow.cpp" />
-    <ClCompile Include="MainWindowMenuState.cpp" />
-    <ClCompile Include="SplashWindow.cpp" />
-    <ClCompile Include="StdAfx.cpp">
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
     <ResourceCompile Include="FractalShark.rc" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\stdafx.h" />
-    <ClInclude Include="AlgCmds.h" />
-    <ClInclude Include="ConsoleWindow.h" />
-    <ClInclude Include="DynamicPopupMenu.h" />
-    <ClInclude Include="DynamicPopupTreeDef.h" />
-    <ClInclude Include="CommandDispatcher.h" />
-    <ClInclude Include="FractalShark.h" />
-    <ClInclude Include="JobObject.h" />
-    <ClInclude Include="MainWindow.h" />
-    <ClInclude Include="MainWindowMenuState.h" />
-    <ClInclude Include="MainWindowSavedLocation.h" />
-    <ClInclude Include="resource.h" />
-    <ClInclude Include="SplashWindow.h" />
-    <ClInclude Include="UniqueHMenu.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\Pics\Bing generated Fractal Shark.jpg" />
@@ -185,6 +152,11 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="FractalSharkGUILib.vcxproj">
+      <Project>{6672C084-EA20-4DA3-B55A-F160EDD33BC3}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\FractalSharkGpuLib\FractalSharkGpuLib.vcxproj">
       <Project>{9dfe26ef-c168-49ef-a26f-dc9fd82c8d4c}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>

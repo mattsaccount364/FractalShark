@@ -99,6 +99,9 @@ $d_n \equiv \partial z_n/\partial c$ & orbit derivative
 $c^*$        & nucleus of a hyperbolic component & distinct from $c_\star$ \\
 $n$          & iteration index               & \\
 $p$          & period                        & \\
+$n_{\text{smooth}}$ & smooth (fractional) iteration count
+             & $n_{\text{smooth}} = n - \log_2\!\log_2|z_n| + \mathrm{const}$;\;
+               continuous coloring \\
 $N$          & limb count (multi-precision)  & \\
 \hline
 \multicolumn{3}{l}{\textbf{Real / imaginary component convention}} \\
@@ -113,6 +116,8 @@ $d_{x,n},\; d_{y,n}$ & components of $d_n$
 \multicolumn{3}{l}{\textbf{Linear approximation (LA)}} \\
 \hline
 $z_\mathrm{ref}$ & reference orbit value at an LA entry & distinct from the global $z_n^\star$ \\
+$z_j^\star$  & reference orbit value at LA stage boundary $j$
+             & used when the LA hierarchy references specific stage entry points \\
 $\tilde{\Delta z}$ & prepared perturbation
                   & output of the nonlinear Prepare step (\cref{sec:la-coeff-model}) \\
 \code{ZCoeff},\; \code{CCoeff} & LA linear coefficients
@@ -126,12 +131,17 @@ $F(c) = z_p(c)$  & root-finding objective
                   & $p$-fold iterate of the critical point \\
 $w_n$             & \code{zcoeff} product $\prod_{k=0}^{n-1} 2\,z_k$
                   & intrinsic scale of a mini-brot \\
+$e_k$             & Newton iteration error at step $k$
+                  & $e_k = c_k - c^*$, where $c^*$ is the target nucleus \\
 \hline
 \multicolumn{3}{l}{\textbf{Reference orbit internals (chapter~6)}} \\
 \hline
 $e_n$            & reconstruction error          & $z_n^{\mathrm{HP}} - \tilde{z}_n$ \\
 $\hat{z}_n$      & low-precision shadow orbit     & reduced-precision copy of $z_n^\star$ \\
 $z_n^{\mathrm{HP}}$ & high-precision orbit value   & full-precision authoritative orbit \\
+$z_r$            & waypoint (rebasing) reference value
+                 & stored checkpoint from which intermediate iterations are replayed
+                   during orbit decompression \\
 $R_{\max}$       & maximum perturbation radius    & stored in \code{PerturbationResults} \\
 \hline
 \multicolumn{3}{l}{\textbf{Feature Finder internals (chapter~8)}} \\

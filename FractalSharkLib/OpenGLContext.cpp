@@ -50,7 +50,7 @@ EnsurePixelFormatSet(HWND hWnd, HDC hdc, int &outPixelFormat)
     PIXELFORMATDESCRIPTOR pfd{};
     pfd.nSize = sizeof(pfd);
     pfd.nVersion = 1;
-    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL; // (no double buffer per your code)
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
     pfd.iPixelType = PFD_TYPE_RGBA;
     pfd.cColorBits = 32;
     pfd.cAlphaBits = 8;
@@ -144,6 +144,26 @@ OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
     if (!MakeCurrent())
         return;
 
+    // Detect software-only renderer (e.g. Microsoft GDI Generic on RDP).
+    // PFD_GENERIC_FORMAT without PFD_GENERIC_ACCELERATED = pure software GL 1.1.
+    {
+        PIXELFORMATDESCRIPTOR actualPfd{};
+        actualPfd.nSize = sizeof(actualPfd);
+        DescribePixelFormat(m_hDC, pf, sizeof(actualPfd), &actualPfd);
+        m_IsSoftwareRenderer =
+            ((actualPfd.dwFlags & PFD_GENERIC_FORMAT) != 0) &&
+            ((actualPfd.dwFlags & PFD_GENERIC_ACCELERATED) == 0);
+
+        const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+        const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &m_MaxTextureSize);
+        std::cerr << "OpenGL renderer: " << (renderer ? renderer : "(null)")
+                  << ", version: " << (version ? version : "(null)")
+                  << ", max texture: " << m_MaxTextureSize
+                  << (m_IsSoftwareRenderer ? " [software]" : " [hardware]")
+                  << std::endl;
+    }
+
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glShadeModel(GL_FLAT);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -224,6 +244,26 @@ OpenGlContext::IsValid() const
     return m_Valid;
 }
 
+bool
+OpenGlContext::IsSoftwareRenderer() const
+{
+    return m_IsSoftwareRenderer;
+}
+
+GLint
+OpenGlContext::GetMaxTextureSize() const
+{
+    return m_MaxTextureSize;
+}
+
+void
+OpenGlContext::SwapBuffers()
+{
+    if (m_hDC) {
+        ::SwapBuffers(m_hDC);
+    }
+}
+
 void
 OpenGlContext::DrawGlBox()
 {
@@ -251,6 +291,7 @@ OpenGlContext::DrawGlBox()
     glEnd();
 
     glFlush();
+    SwapBuffers();
 }
 
 void
@@ -336,6 +377,7 @@ OpenGlContext::DrawFractalShark(HWND hWnd)
 
     glFlush();
     glFinish();
+    SwapBuffers();
 
     glDeleteTextures(1, &texid);
     glBindTexture(GL_TEXTURE_2D, 0);

@@ -63,9 +63,6 @@ private:
     void UnInit();
     void HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/);
 
-    static void create_minidump(struct _EXCEPTION_POINTERS *apExceptionInfo);
-    static LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS *apExceptionInfo);
-
     void DrawFractalShark();
 
     enum class OpenBoxType {

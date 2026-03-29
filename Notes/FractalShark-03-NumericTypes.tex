@@ -198,7 +198,7 @@ extreme zoom levels while remaining compatible with GPU execution models.
   \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick]
     (0, 3.15) -- (4.0, 3.15)
     node[midway, below=5pt, font=\tiny]
-      {64 bits, tightly coupled};
+      {64~bits, tightly coupled};
 
   % HDRFloat<T>
   \node[font=\scriptsize, anchor=east] at (-0.1, 1.45)
@@ -341,10 +341,10 @@ combining \code{CudaDblflt} with the HDR wrapper
 \begingroup\footnotesize
 \[
   \code{HDRFloat<CudaDblflt<dblflt>>} \;=\;
-    \underbrace{\text{2$\times$32-bit mantissa}}_{\sim\text{48 bits}}
+    \underbrace{\text{2$\times$32-bit mantissa}}_{\sim\text{48~bits}}
     \;+\;
     \underbrace{\text{int32 exponent}}_{\text{wide dynamic range}}
-    \;=\; \text{12 bytes total.}
+    \;=\; \text{12~bytes total.}
 \]
 \endgroup
 The \code{Reduce()} method on \code{HDRFloat} normalizes the two float
@@ -365,7 +365,7 @@ essential for typical rendering.
 
 \paragraph{2\texorpdfstring{$\times$}{x}64 double-double (\code{dbldbl}).}
 \code{MattDbldbl} pairs two \code{double} values (head + tail) for
-${\sim}104$~bits of mantissa in 16~bytes.  On GPUs this is less interesting
+${\sim}104$~bits of mantissa in 16~bytes.  On GPUs this type is less interesting
 than \code{dblflt} because it exercises the slow fp64 units---if fp64
 throughput is available, a single \code{double} is usually sufficient for
 perturbation, and if more precision is needed, the 4$\times$32 type avoids

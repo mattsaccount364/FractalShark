@@ -53,7 +53,7 @@ By using an NTT-based multiplication strategy, large significand products can be
 computed in $O(n \log n)$ time instead of $O(n^2)$, shifting the performance
 profile of high-precision arithmetic into a regime where GPUs can be effectively
 utilized. When combined with carefully engineered carry propagation and
-normalization steps, this enables high-precision multiply/add/subtract
+normalization steps, this approach enables high-precision multiply/add/subtract
 operations that are fast enough to make reference orbit computation practical at
 scales that would otherwise be prohibitive (\cref{fig:view32}).
 
@@ -400,7 +400,7 @@ resolved look-back mechanism.
 
 The decoupled look-back design allows blocks to complete their local
 scan work independently and wait only when an unresolved upstream prefix is
-actually needed. This property aligns well with the statistical structure of
+needed (\cref{fig:prefix-scan-comparison}). This propertyaligns well with the statistical structure of
 carry propagation in large arbitrary-precision additions, where long carry
 chains are relatively rare. The algorithm therefore achieves high average
 throughput while retaining correctness in worst-case carry scenarios.
@@ -428,7 +428,7 @@ running ``total'' at every position:
 \[
 y_i = x_0 \oplus x_1 \oplus \cdots \oplus x_i, \qquad i = 0, \ldots, N-1.
 \]
-When~$\oplus$ is ordinary addition, this is the classical prefix sum
+When~$\oplus$ is ordinary addition, this operation is the classical prefix sum
 \[
 (y_0, y_1, \ldots) = (x_0,\; x_0{+}x_1,\; x_0{+}x_1{+}x_2, \ldots).
 \]
@@ -549,7 +549,7 @@ iterative algorithm such as high-precision reference orbit computation.
 
 In contrast, the single-pass parallel prefix algorithm
 of \cite{merrill2016single} eliminates the global phase separation inherent in
-Blelloch scans (\cref{fig:prefix-scan-comparison}).Instead of enforcing a strict up-sweep/down-sweep structure,
+Blelloch scans (\cref{fig:prefix-scan-comparison}). Instead of enforcing a strict up-sweep/down-sweep structure,
 each thread block computes its local prefix independently and resolves
 inter-block dependencies dynamically using a decoupled look-back mechanism. This
 allows blocks to make forward progress asynchronously and avoids global barriers
@@ -783,7 +783,7 @@ normalized via carry propagation in base $B$.
 This section establishes the mathematical foundation: \code{MagicPrime} is
 selected so that large power-of-two NTTs exist (because $2^m \mid p-1$) and so
 that modular arithmetic is efficient on 64-bit GPU hardware. Subsequent sections
-will describe how this is specialized for high-precision floating-point
+will describe how this foundation is specialized for high-precision floating-point
 significands, including limb packing, Montgomery-domain multiplication, twiddle
 scheduling, and normalization/carry handling.
 

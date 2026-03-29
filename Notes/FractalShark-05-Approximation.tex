@@ -351,6 +351,7 @@ Reading off the coefficients gives the step-forward recurrence:
 \code{CCoeff}_{k+1} = 2\,z_n^\star\cdot\code{CCoeff}_k + 1.
 \label{eq:la-step}
 \end{equation}
+
 Expanding each complex product $2\,z_n^\star \cdot \code{ZCoeff}_k$
 (and similarly for \code{CCoeff}) into components:
 \begin{align}
@@ -483,9 +484,10 @@ T_{C,\mathrm{junc}}
        \cdot \code{LAThresholdCScale}
      \bigr).
 \end{align}
+
 Then the intermediate product
 \(Z' = 2\,z_\mathrm{ref,2} \cdot \code{ZCoeff}_1\) is formed
-(this is the ZCoeff \emph{before} multiplication by \code{ZCoeff}\(_2\)).
+(this product is the ZCoeff \emph{before} multiplication by \code{ZCoeff}\(_2\)).
 The second entry's threshold is rescaled by this amplification:
 \begin{align}
 \code{LAThreshold}_\mathrm{comp}
@@ -545,7 +547,7 @@ implemented in \code{LAReference::\allowbreak CreateLAFromOrbit} and
                 \end{equation}
                 Intuitively, if the orbit revisits a neighborhood
                 smaller than any previously seen, it is nearly periodic.
-                This is the default method.
+                This test is the default method.
 
           \item \textbf{Method~2 (coefficient ratio).}  A period is
                 detected when the threshold tightening at the current
@@ -616,7 +618,7 @@ Each LA entry stores, alongside its \code{StepLength}, a field
 Prepare check fails at stage~\(s\), the kernel does not simply
 restart from entry~0 of stage~\(s-1\); instead, it resumes at
 macro-iteration index \code{NextStageLAIndex}, which points to the
-correct position within stage~\(s-1\)'s entry array.  This avoids
+correct position within stage~\(s-1\)'s entry array.  This indirection avoids
 redundant re-traversal of entries in the finer stage that precede the
 current iteration.  The kernel's outer loop decrements
 \code{CurrentLAStage} and the inner loop initializes its entry index~\(j\)

@@ -157,7 +157,7 @@ which escape occurs, or the maximum iteration limit if escape never occurs.
 \label{sec:system-architecture}
 
 At a high level, \FractalShark{}'s rendering pipeline transforms a view
-specification (centre, zoom, iteration limit) into a coloured image through
+specification (center, zoom, iteration limit) into a colored image through
 a sequence of stages.  Most stages are implemented as CUDA kernels; the CPU
 orchestrates data flow between them and handles high-precision coordinate
 arithmetic.
@@ -223,7 +223,7 @@ The remainder of this document is organized as follows:
         (\cref{sec:perturbation-concept,sec:bilinear-approx,sec:la-v2-perturb}).
   \item \textbf{Reference orbit computation.}
         CPU and GPU backends for computing the high-precision reference orbits
-        required by perturbation methods (\cref{sec:ref-orbit-calc}).
+        required by perturbation theory (\cref{sec:ref-orbit-calc}).
   \item \textbf{GPU high-precision arithmetic.}
         NTT-based multiplication, parallel carry propagation, and the
         memory layout underlying GPU-side arbitrary-precision computation

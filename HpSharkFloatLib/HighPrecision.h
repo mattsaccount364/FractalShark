@@ -40,10 +40,16 @@ public:
         mpf_init(m_Data);
     }
 
+    // Max precision guard — must be at least MaxSharkLimbs * 32 bits (currently
+    // 524288 * 32 = 16,777,216).  Doubled for safety margin (NR coord_prec can
+    // exceed the raw limb count).  If you add larger SharkParams aliases in
+    // HpSharkFloat.h, update this constant.
+    static constexpr uint64_t MaxPrecisionBits = 64'000'000;
+
     void
     InitMpf2(uint64_t precisionInBits)
     {
-        if (precisionInBits > 1'000'000) {
+        if (precisionInBits > MaxPrecisionBits) {
             throw std::runtime_error("Requested precision is too high.  This is probably a bug..");
         }
 
@@ -377,7 +383,7 @@ public:
     static void
     defaultPrecisionInBits(uint64_t prec)
     {
-        if (prec > 1'000'000) {
+        if (prec > MaxPrecisionBits) {
             throw std::runtime_error("Requested precision is too high.  This is probably a bug..");
         }
 

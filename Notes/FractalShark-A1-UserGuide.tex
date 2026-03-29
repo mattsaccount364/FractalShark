@@ -472,7 +472,7 @@ choice and triggers any necessary reconfiguration.
       mode.  The palette shifts by 10~units per frame while the image redraws
       continuously.  Moving the mouse more than 5~pixels from the starting
       position exits the mode and resets the palette to its original state.
-      Useful for quickly previewing how different colour offsets look.
+      Useful for quickly previewing how different color offsets look.
     \end{itemize}
 
   \item \emph{Memory Management} (submenu): Controls memory-limit policy and
@@ -628,15 +628,15 @@ additional work for correctness or a ``clean'' run.
 
 \begin{itemize}
   \item \code{a}: Autozoom using the ``Feature'' heuristic.  Forces the
-        \code{GpuHDRx32PerturbedLAv2} render algorithm, centres on the
+        \code{GpuHDRx32PerturbedLAv2} render algorithm, centers on the
         perturbation reference point, computes a target zoom depth from the
         reference orbit's maximum radius, and zooms in incrementally while
         linearly interpolating the iteration count toward the reference orbit's
         target.
-  \item \code{A} (\code{Shift+a}): Centre the view at the mouse cursor, then
+  \item \code{A} (\code{Shift+a}): Center the view at the mouse cursor, then
         autozoom using the ``Default'' heuristic.  Iteratively picks
         a zoom target via a weighted geometric mean of iteration counts
-        (favouring high-iteration, centre-proximate pixels) and zooms by a
+        (favoring high-iteration, center-proximate pixels) and zooms by a
         factor of~3 each step.
   \item \code{S} (\code{Shift+s}): Autozoom using the ``FilamentTip'' heuristic.
 \end{itemize}

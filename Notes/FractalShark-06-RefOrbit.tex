@@ -6,7 +6,7 @@ deep-zoom Mandelbrot rendering.  Perturbation theory
 (\cref{sec:perturbation-concept}) allows every pixel to be rendered at
 low precision, but it requires one orbit---the \emph{reference
 orbit}---to be computed at the full precision of the zoom depth.  At
-extreme magnifications this means iterating
+extreme magnifications this requirement means iterating
 \begin{equation}
   z_{n+1} = z_n^2 + c,\qquad z,c\in\mathbb{C},
   \label{eq:mandelbrot-recurrence}
@@ -20,7 +20,7 @@ therefore critical to the overall performance of the system.
 
 This section describes how \code{RefOrbitCalc} orchestrates reference
 orbit computation across three backends---single-threaded CPU,
-multi-threaded CPU, and GPU---and the storage and compression modes that
+multithreaded CPU, and GPU---and the storage and compression modes that
 trade memory footprint against recomputation.
 
 \subsection{High-level pipeline and dispatch}
@@ -95,7 +95,7 @@ The implementation uses:
 The bailout threshold is evaluated in low precision using
 
 \begin{equation}
-  \|\hat{z}_n + \hat{c}\|^2 = (\hat{x}_n + \hat{c}_x)^2 + (\hat{y}_n + \hat{c}_y)^2 > 256,
+  \lVert\hat{z}_n + \hat{c}\rVert^2 = (\hat{x}_n + \hat{c}_x)^2 + (\hat{y}_n + \hat{c}_y)^2 > 256,
   \label{eq:bailout-test}
 \end{equation}
 
@@ -106,7 +106,7 @@ update (i.e.\ they represent the current \(z_n\), not the just-computed
 \(z_{n+1}\)).  The sum \(\hat{z}_n + \hat{c}\) is therefore a cheap proxy that
 avoids re-extracting a low-precision snapshot after the update.
 Note that the bailout here is different from the one used in
-the lower-precision kernels discussed previously; this is acceptable because the
+the lower-precision kernels discussed previously; this difference is acceptable because the
 reference orbit is used only for perturbation, not direct rendering.
 
 \subsection{Periodicity tracking via \texorpdfstring{$\partial z/\partial c$}{dz/dc}}
@@ -739,14 +739,14 @@ that requires reference compression to complete.
   \caption[View \#27 at 1 quadrillion iterations]{View \#27, a period ~28-billion point rendered at 1 quadrillion
   iterations per pixel, requires reference compression to render on most
   hardware because of its memory requirements.  This render takes ~6h with an
-  RTX 4090 and AMD 5950X and 128GB RAM with the multi-threaded reference orbit
+  RTX 4090 and AMD 5950X and 128GB RAM with the multithreaded reference orbit
   backend and is effectively the hardest point \FractalShark{} has likely ever
   rendered.}
   \label{fig:view27-1-quadrillion}
 \end{figure}
 
 
-\section{Multi-threaded Reference Orbit Acceleration}
+\section{Multithreaded Reference Orbit Acceleration}
 \label{subsec:ref-orbit-mt}
 
 The \code{MT3} reference-orbit path accelerates the high-cost MPIR arithmetic
@@ -794,7 +794,7 @@ precision, where memory latency can otherwise dominate execution time.
 \subsection{Precision-dependent single-thread versus multi-thread trade-offs}
 \label{subsec:ref-orbit-mt-tradeoff}
 
-The relative effectiveness of single-threaded and multi-threaded reference-orbit
+The relative effectiveness of single-threaded and multithreaded reference-orbit
 evaluation depends strongly on the active precision, which in practice is
 closely correlated with zoom level and MPIR limb count.  Consequently, the
 implementation supports both execution modes and selects between them
@@ -814,7 +814,7 @@ concurrent execution increasingly effective.  Overlapping independent
 operations, such as the simultaneous computation of \(x_n^2\) and \(y_n^2\),
 yields substantial gains, while explicit limb prefetching further mitigates
 memory latency.  Beyond a hardware- and workload-dependent threshold,
-multi-threaded reference-orbit computation can outperform the
+multithreaded reference-orbit computation can outperform the
 single-threaded path in practice, with speedups increasing as precision grows.
 
 To exploit this behavior without requiring manual tuning, the \code{Auto}
@@ -823,15 +823,15 @@ factor as a proxy for required precision.  At moderate zoom levels, it favors
 single-threaded periodicity detection to avoid unnecessary parallel overhead.
 At higher zoom levels, it transitions to the \code{MTPeriodicity3} path, where
 parallel MPIR arithmetic becomes advantageous.  For extreme zoom, a hybrid
-multi-threaded perturbation strategy (e.g.,
+multithreaded perturbation strategy (e.g.,
 \code{MTPeriodicity3PerturbMTHighMTMed3}) is selected to maintain throughput at
 very high precision, acknowledging that some configurations remain
 experimental.
 
-Overall, single-threaded and multi-threaded reference-orbit evaluation are
+Overall, single-threaded and multithreaded reference-orbit evaluation are
 treated as complementary strategies rather than a strict hierarchy: fewer limbs
 favor single-thread execution, while increasing precision increasingly favors
-multi-threaded decomposition, with \code{Auto} providing an adaptive runtime
+multithreaded decomposition, with \code{Auto} providing an adaptive runtime
 selection mechanism.
 
 
@@ -899,8 +899,8 @@ orbit state, but the periodicity decision itself is performed on reduced HDR
 magnitudes to minimize overhead:
 
 \begin{equation}
-  \|z_n\|_\infty \approx \max(|\widehat{x}_n|, |\widehat{y}_n|), \qquad
-  \left\|\frac{dz_n}{dc}\right\|_\infty \approx \max(|\widehat{d x}_n|, |\widehat{d y}_n|),
+  \lVert z_n\rVert_\infty \approx \max(|\widehat{x}_n|, |\widehat{y}_n|), \qquad
+  \left\lVert\frac{dz_n}{dc}\right\rVert_\infty \approx \max(|\widehat{d x}_n|, |\widehat{d y}_n|),
   \label{eq:reduced-norms}
 \end{equation}
 
@@ -910,7 +910,7 @@ step (\code{HdrReduce}) to ensure stable comparisons.
 The checker uses a sufficient condition of the form
 
 \begin{equation}
-  \|z_n\|_\infty < 2\,R\,\left\|\frac{dz_n}{dc}\right\|_\infty,
+  \lVert z_n\rVert_\infty < 2\,R\,\left\lVert\frac{dz_n}{dc}\right\rVert_\infty,
   \label{eq:periodicity-ineq}
 \end{equation}
 
@@ -944,7 +944,7 @@ and
 \),
 the checker evaluates
 \begin{equation}
-  \|\widehat{z}_n + \widehat{c}\|_2^2
+  \lVert\widehat{z}_n + \widehat{c}\rVert_2^2
   = (\widehat{x}_n + \widehat{c}_x)^2 + (\widehat{y}_n + \widehat{c}_y)^2,
   \label{eq:gpu-escape-norm}
 \end{equation}

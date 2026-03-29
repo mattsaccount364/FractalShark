@@ -92,7 +92,7 @@ considered glitched if, at some iteration~$n$,
 holds---that is, the magnitude of the reference orbit drops below the
 perturbation delta, indicating that the reference is a poor fit.  The
 correction procedure is to scan the rendered image for such pixels,
-compute a new reference orbit centred on a glitched location, and
+compute a new reference orbit centerd on a glitched location, and
 re-render only the affected region.  This process repeats until no
 glitches remain and requires multi-reference orbit support
 (\cref{subsec:multi-reference}).
@@ -147,7 +147,7 @@ $\Delta c$ yields recurrences for the coefficients:
 \end{align}
 with higher-order terms following the same pattern.  Note that
 \cref{eq:sa-A} is identical to the \code{CCoeff} recurrence used in
-LA~v2 (\cref{sec:la-step-forward})---this is not a coincidence; both
+LA~v2 (\cref{sec:la-step-forward})---this equivalence is not a coincidence; both
 capture the partial derivative $\partial z_n / \partial c$.
 
 \paragraph{Why linear approximation superseded SA.}
@@ -196,7 +196,7 @@ Multi-reference rendering typically proceeds iteratively:
 \begin{enumerate}
   \item Render the image with the primary reference orbit.
   \item Detect glitched pixels (\cref{subsec:glitch-detection}).
-  \item Compute a new reference orbit centred on a glitched pixel's
+  \item Compute a new reference orbit centerd on a glitched pixel's
         location.
   \item Re-render only the glitched pixels using the new reference.
   \item Repeat until no glitches remain.
@@ -273,7 +273,7 @@ tracks $d_n = \partial z_n / \partial c$ for periodicity detection
 (\cref{subsec:ref-orbit-periodicity}), and the LA~v2 kernel propagates
 \code{dzdz} and \code{dzdc} through approximation steps
 (\cref{sec:la-derivatives}).  The missing piece is the coloring
-integration—mapping the distance $d(c)$ to a colour rather than (or in
+integration—mapping the distance $d(c)$ to a color rather than (or in
 addition to) the iteration count.
 
 Applications of the distance estimator include:
@@ -304,11 +304,11 @@ characterised by the period~$p$ of its attracting cycle.
 Several interior coloring techniques exploit this structure:
 \begin{itemize}
   \item \emph{Period-based coloring.}  Detect the period~$p$ of the
-        attracting cycle and assign a colour according to~$p$.  This
+        attracting cycle and assign a color according to~$p$.  This
         reveals the intricate structure of hyperbolic components.
   \item \emph{Phase coloring.}  Use the argument
         $\arg(z^\star)$ of the attracting fixed point~$z^\star$ to
-        produce smooth colour gradients within a single component.
+        produce smooth color gradients within a single component.
   \item \emph{Interior distance.}  Estimate how far the point lies from
         the boundary of its component, analogous to the exterior
         distance estimator (\cref{subsec:distance-estimation}).
@@ -366,8 +366,8 @@ algorithm is given in \cite{WikipediaPlottingAlgorithms}.
 
 At deep zooms, iteration count distributions are highly skewed: most
 pixels cluster around similar counts, with a long tail of rare high
-values.  Standard palette cycling maps iteration counts to colours via
-modular indexing, which wastes most of the colour palette on the
+values.  Standard palette cycling maps iteration counts to colors via
+modular indexing, which wastes most of the color palette on the
 infrequent tail values and compresses the visually dominant range into a
 narrow band.
 
@@ -378,10 +378,10 @@ palette according to the actual distribution of iteration counts:
         pixels.
   \item Compute the cumulative distribution function
         $\mathrm{CDF}(k) = \sum_{j \le k} H(j) \big/ \sum_j H(j)$.
-  \item Map each pixel's iteration count~$k$ to the colour at palette
+  \item Map each pixel's iteration count~$k$ to the color at palette
         index $\mathrm{CDF}(k)$.
 \end{enumerate}
-The effect is that all colours in the palette are utilised approximately
+The effect is that all colors in the palette are utilised approximately
 equally, maximising visual contrast in the regions where most detail
 exists.
 
@@ -400,7 +400,7 @@ fractal rendering optimisations beyond those currently implemented in
 correction), linear approximation (over series approximation), and
 NTT-based multiplication (over Karatsuba) have directly shaped the
 system's present architecture, as detailed in the preceding chapters.
-The remaining techniques---smooth colouring, distance estimation,
+The remaining techniques---smooth coloring, distance estimation,
 interior rendering, boundary tracing, and histogram
 equalisation---represent practical extensions that could be integrated
 into the existing pipeline without fundamental architectural changes.

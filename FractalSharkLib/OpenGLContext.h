@@ -9,7 +9,9 @@ struct OpenGlContext {
     HGLRC m_hRC{};
     HDC m_hDC{};
     bool m_Valid{};
+    bool m_IsSoftwareRenderer{};
     bool m_Repainting{true};
+    GLint m_MaxTextureSize{};
     RECT m_CachedRect{};
 
 public:
@@ -17,10 +19,13 @@ public:
     ~OpenGlContext();
 
     bool MakeCurrent() noexcept;
+    void SwapBuffers();
 
     void glResetView();
     void glResetViewDim(size_t width, size_t height);
     bool IsValid() const;
+    bool IsSoftwareRenderer() const;
+    GLint GetMaxTextureSize() const;
     void DrawGlBox();
     void SetRepaint(bool repaint);
     bool GetRepaint() const;

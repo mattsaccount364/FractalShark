@@ -600,38 +600,155 @@ void RenderThreadPool::WaitForGpuAndProduceProgressiveFrames(
     }
 }
 
+static uint32_t
+NextPOT(uint32_t v)
+{
+    if (v == 0)
+        return 1;
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    return v + 1;
+}
+
 void RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &frame) {
     glContext.glResetViewDim(frame.OutputWidth, frame.OutputHeight);
 
-    GLuint texid;
-    glEnable(GL_TEXTURE_2D);
-    glGenTextures(1, &texid);
-    glBindTexture(GL_TEXTURE_2D, texid);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    if (glContext.IsSoftwareRenderer()) {
+        // GL 1.1-safe path: tile the frame into chunks that fit within
+        // GL_MAX_TEXTURE_SIZE (1024 on GDI Generic), RGBA8, power-of-two.
+        const GLint maxTex = glContext.GetMaxTextureSize();
+        if (maxTex <= 0)
+            return;
 
-    glTexImage2D(GL_TEXTURE_2D,
-                 0,
-                 GL_RGBA16,
-                 (GLsizei)frame.OutputWidth,
-                 (GLsizei)frame.OutputHeight,
-                 0,
-                 GL_RGBA,
-                 GL_UNSIGNED_SHORT,
-                 frame.ColorData.get());
+        const size_t frameW = frame.OutputWidth;
+        const size_t frameH = frame.OutputHeight;
+        const size_t tileW = static_cast<size_t>(maxTex);
+        const size_t tileH = static_cast<size_t>(maxTex);
+        const Color16 *src = frame.ColorData.get();
 
-    glBegin(GL_QUADS);
-    glTexCoord2i(0, 0);
-    glVertex2i(0, (GLint)frame.OutputHeight);
-    glTexCoord2i(0, 1);
-    glVertex2i(0, 0);
-    glTexCoord2i(1, 1);
-    glVertex2i((GLint)frame.OutputWidth, 0);
-    glTexCoord2i(1, 0);
-    glVertex2i((GLint)frame.OutputWidth, (GLint)frame.OutputHeight);
-    glEnd();
-    glFlush();
-    glDeleteTextures(1, &texid);
+        GLuint texid;
+        glEnable(GL_TEXTURE_2D);
+        glGenTextures(1, &texid);
+        glBindTexture(GL_TEXTURE_2D, texid);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glColor4f(1.f, 1.f, 1.f, 1.f);
+
+        // Reusable buffer for the largest possible tile (maxTex × maxTex × 4).
+        std::vector<uint8_t> rgba8(tileW * tileH * 4, 0);
+
+        for (size_t tileY = 0; tileY < frameH; tileY += tileH) {
+            for (size_t tileX = 0; tileX < frameW; tileX += tileW) {
+                // Actual pixel extent of this tile (may be smaller at edges).
+                const size_t tw = std::min(tileW, frameW - tileX);
+                const size_t th = std::min(tileH, frameH - tileY);
+
+                // Pad to POT, capped at maxTex.
+                const uint32_t potW = std::min(NextPOT(static_cast<uint32_t>(tw)),
+                                               static_cast<uint32_t>(maxTex));
+                const uint32_t potH = std::min(NextPOT(static_cast<uint32_t>(th)),
+                                               static_cast<uint32_t>(maxTex));
+
+                // Convert this tile's Color16 region to RGBA8.
+                // Zero-fill the buffer first for the POT padding region.
+                std::fill(rgba8.begin(),
+                          rgba8.begin() + static_cast<size_t>(potW) * potH * 4,
+                          uint8_t{0});
+
+                for (size_t y = 0; y < th; ++y) {
+                    for (size_t x = 0; x < tw; ++x) {
+                        const size_t srcIdx = (tileY + y) * frameW + (tileX + x);
+                        const size_t dstIdx = (y * potW + x) * 4;
+                        rgba8[dstIdx + 0] = static_cast<uint8_t>(src[srcIdx].r >> 8);
+                        rgba8[dstIdx + 1] = static_cast<uint8_t>(src[srcIdx].g >> 8);
+                        rgba8[dstIdx + 2] = static_cast<uint8_t>(src[srcIdx].b >> 8);
+                        rgba8[dstIdx + 3] = static_cast<uint8_t>(src[srcIdx].a >> 8);
+                    }
+                }
+
+                glTexImage2D(GL_TEXTURE_2D,
+                             0,
+                             GL_RGBA,
+                             static_cast<GLsizei>(potW),
+                             static_cast<GLsizei>(potH),
+                             0,
+                             GL_RGBA,
+                             GL_UNSIGNED_BYTE,
+                             rgba8.data());
+
+                // Tex coords: only the content region of the POT texture.
+                const GLfloat texMaxS =
+                    static_cast<GLfloat>(tw) / static_cast<GLfloat>(potW);
+                const GLfloat texMaxT =
+                    static_cast<GLfloat>(th) / static_cast<GLfloat>(potH);
+
+                // Screen-space quad for this tile. GL ortho has bottom-left
+                // origin, so Y increases upward. The frame data is stored
+                // with row 0 at the top (screen convention), but glResetViewDim
+                // sets gluOrtho2D(0, W, 0, H) with Y=0 at bottom. The existing
+                // quad mapping flips Y (texCoord 0,0 maps to vertex 0,H).
+                // Maintain the same flip per tile.
+                const GLint x0 = static_cast<GLint>(tileX);
+                const GLint x1 = static_cast<GLint>(tileX + tw);
+                const GLint y0 = static_cast<GLint>(frameH - tileY - th); // bottom
+                const GLint y1 = static_cast<GLint>(frameH - tileY);      // top
+
+                glBegin(GL_QUADS);
+                glTexCoord2f(0.0f, 0.0f);
+                glVertex2i(x0, y1);
+                glTexCoord2f(0.0f, texMaxT);
+                glVertex2i(x0, y0);
+                glTexCoord2f(texMaxS, texMaxT);
+                glVertex2i(x1, y0);
+                glTexCoord2f(texMaxS, 0.0f);
+                glVertex2i(x1, y1);
+                glEnd();
+            }
+        }
+
+        glDeleteTextures(1, &texid);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
+    } else {
+        // Hardware path: single RGBA16 texture with NPOT dimensions.
+        GLuint texid;
+        glEnable(GL_TEXTURE_2D);
+        glGenTextures(1, &texid);
+        glBindTexture(GL_TEXTURE_2D, texid);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        glTexImage2D(GL_TEXTURE_2D,
+                     0,
+                     GL_RGBA16,
+                     (GLsizei)frame.OutputWidth,
+                     (GLsizei)frame.OutputHeight,
+                     0,
+                     GL_RGBA,
+                     GL_UNSIGNED_SHORT,
+                     frame.ColorData.get());
+
+        glColor4f(1.f, 1.f, 1.f, 1.f);
+
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f);
+        glVertex2i(0, (GLint)frame.OutputHeight);
+        glTexCoord2f(0.0f, 1.0f);
+        glVertex2i(0, 0);
+        glTexCoord2f(1.0f, 1.0f);
+        glVertex2i((GLint)frame.OutputWidth, 0);
+        glTexCoord2f(1.0f, 0.0f);
+        glVertex2i((GLint)frame.OutputWidth, (GLint)frame.OutputHeight);
+        glEnd();
+
+        glDeleteTextures(1, &texid);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
+    }
 }
 
 void RenderThreadPool::WorkerLoop(size_t workerIndex) {
@@ -810,9 +927,12 @@ void RenderThreadPool::GlConsumerLoop() {
                 if (frame.IsFinal) {
                     // Draw perturbation overlay on final frames.
                     m_Fractal->DrawAllPerturbationResults(true);
+                    glContext->SwapBuffers();
                     nextExpectedSeqNum++;
                     break;
                 }
+
+                glContext->SwapBuffers();
             }
 
             // Block-wait for next frame for this exact sequence.

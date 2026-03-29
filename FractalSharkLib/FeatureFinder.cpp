@@ -698,7 +698,10 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     }
 
     // Keep checkpoint file — user can resume or re-refine later.
-    // The file is only overwritten by the next refinement run.
+    // Write final checkpoint after correction pass + accept/reject.
+    WriteNRCheckpoint(c_coord, period, coord_prec, it,
+                      scaleExp2_for_deriv_choice, c0_coord, sqrRadius_coord,
+                      intrinsicRadius_mpf, numIterationsAtFind);
 
     // ---------------- cleanup ----------------
     mpf_clear(denom_c);

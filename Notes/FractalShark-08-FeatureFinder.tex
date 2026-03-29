@@ -397,8 +397,8 @@ multiplying, or equivalently scaling the products after).
 
 \noindent
 The 7~high-precision multiplies are \emph{independent} of one another
-within a single iteration and can all execute in parallel.  This is
-exactly why the multi-threaded CPU evaluator dispatches them to
+within a single iteration and can all execute in parallel.  This independence is
+exactly whythe multithreaded CPU evaluator dispatches them to
 7~spin-based worker threads (\cref{subsec:ff-threading}), and why the
 GPU backend can batch them as simultaneous NTT launches
 (\cref{subsec:ff-inner-gpu}).  The $d2$ computation runs on the main
@@ -696,7 +696,7 @@ wide exponent range at low mantissa precision---\code{HDRFloat<double>}
 (${\sim}24$-bit) on the GPU path.  The coordinate-precision
 quantities $z$ and $\partial z/\partial c$ are stored in \code{mpf\_t},
 while $\partial^2 z/\partial c^2$ remains in HDR throughout the forward
-evaluation.  When the Halley step is actually computed, the HDR second
+evaluation.  When the Halley step is computed, the HDR second
 derivative is promoted to \code{mpf\_t} at coordinate precision.
 
 \paragraph{Halley gate.}
@@ -925,7 +925,7 @@ bits of precision needed to render the component's interior.
 \subsection{Threading model}
 \label{subsec:ff-threading}
 
-\paragraph{Multi-threaded CPU implementation.}
+\paragraph{Multithreaded CPU implementation.}
 The dominant cost of the Feature Finder is the forward evaluation
 \code{EvaluateCriticalOrbitAndDerivs}, which performs the inner loop
 described in \cref{subsubsec:ff-inner} at high precision using GMP
@@ -954,6 +954,6 @@ implemented and dispatches through
 
 With the core iteration algorithms and precision infrastructure now
 described, the next chapter turns to the post-iteration processing
-pipeline---antialiasing, colour mapping, and rendering orchestration---that
+pipeline---antialiasing, color mapping, and rendering orchestration---that
 transforms raw escape-time counts into the final displayed image.
 

@@ -156,7 +156,9 @@ struct GenericSharkFloatParams {
 
 #include "ExplicitInstantiate.h"
 
-// If you add a new one, search for one of the other types and copy/paste
+// If you add a new one, search for one of the other types and copy/paste.
+// NOTE: If you add sizes larger than 524288 limbs, also update
+// HighPrecisionT::MaxPrecisionBits in HighPrecision.h.
 using SharkParamsNP1 = HpShark::GenericSharkFloatParams<64, false>;
 using SharkParamsNP2 = HpShark::GenericSharkFloatParams<128, false>;
 using SharkParamsNP3 = HpShark::GenericSharkFloatParams<256, false>;

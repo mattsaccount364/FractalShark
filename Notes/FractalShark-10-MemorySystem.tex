@@ -191,7 +191,7 @@ relocating the heap.
 The implementation described above relies on Windows-specific virtual memory and
 section-mapping semantics, in particular the ability to reserve a virtually
 contiguous address range and to grow into that range while preserving a fixed
-base address. On Windows, this is achieved using native section objects backed by
+base address. On Windows, this guarantee is achieved using native section objects backed by
 ordinary (non-sparse) files whose size is explicitly extended as the logical
 capacity grows.
 
@@ -218,7 +218,7 @@ On other platforms, or in alternative designs, a \emph{large sparse file} may be
 a more appropriate backing store for growable, disk-backed vectors. Sparse files
 allow the logical file size to greatly exceed the actual disk space consumed,
 allocating physical blocks only for regions that are written. When combined with
-memory-mapped I/O, this can preserve the core advantages of the approach—stable
+memory-mapped I/O, this combination can preserve the core advantages of the approach—stable
 virtual addresses and low resident memory usage—while also minimizing disk space
 consumption for unused regions.
 

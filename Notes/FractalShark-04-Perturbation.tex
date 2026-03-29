@@ -396,7 +396,7 @@ against the delta magnitude proxy, and also rebasing if the reference index
 reaches the end of the stored orbit samples (to avoid out-of-range sampling).
 After rebasing, perturbation continues from the new base representation.
 
-This mechanism keeps the perturbation method usable across a wide range of
+This mechanism keeps perturbation theory usable across a wide range of
 pixels and iteration depths while preserving the core rendering objective:
 compute escape-time using a stable bailout on the reconstructed orbit.
 
@@ -421,7 +421,7 @@ In this configuration:
 This kernel provides a complete Mandelbrot renderer based purely on reference-orbit
 perturbation, without relying on any linear-approximation hierarchy.
 After all pixels are computed, the antialiasing and reduction passes
-(\cref{subsec:antialiasing,subsec:reduction}) extract the final colour
+(\cref{subsec:antialiasing,subsec:reduction}) extract the final color
 image and iteration statistics.
 
 While perturbation theory drastically reduces per-pixel cost, the iteration

@@ -762,6 +762,31 @@ corresponding free function (\code{cudaFree} for device memory,
 \code{cudaFreeHost} for pinned host memory), ensuring correct
 resource release regardless of which tier was used.
 
+% -----------------------------------------------------------------
+\subsection{Automatic algorithm selection}
+\label{subsec:auto-algorithm}
+
+When the user selects ``Auto'' mode
+(\code{RenderAlgorithmEnum::AUTO}), the system chooses a rendering
+algorithm based on the current zoom factor.  Four thresholds govern the
+selection:
+\begin{itemize}
+  \item \textbf{zoom $< 10^{4}$}: \code{Gpu1x32}---plain
+        single-precision iteration with no perturbation.
+  \item \textbf{$10^{4} \le \text{zoom} < 10^{9}$}:
+        \code{Gpu1x32PerturbedLAv2PO}---perturbation-only mode that
+        skips the linear-approximation stage traversal.
+  \item \textbf{$10^{9} \le \text{zoom} < 10^{34}$}:
+        \code{Gpu1x32PerturbedLAv2}---the full LA~v2 pipeline.
+  \item \textbf{zoom $\ge 10^{34}$}:
+        \code{GpuHDRx32PerturbedLAv2}---HDR arithmetic for extreme
+        zoom depths.
+\end{itemize}
+The $10^{34}$ boundary corresponds to the representable exponent range
+of 32-bit floating-point numbers.  If the HDRx32 variant produces
+visual artifacts at extreme depths, the user can manually select
+\code{HDRx2x32} or \code{HDRx64} for additional precision.
+
 The tiered allocation strategy introduced here addresses one aspect of memory
 pressure.  The next chapter examines a complementary mechanism---disk-backed
 growable vectors---that manages the large reference-orbit buffers whose size

@@ -4,6 +4,9 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 
+// Append a diagnostic line to FractalShark_gl.log.
+void GlLog(const char *msg);
+
 struct OpenGlContext {
     HWND m_hWnd{};
     HGLRC m_hRC{};

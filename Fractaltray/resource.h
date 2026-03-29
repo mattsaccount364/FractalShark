@@ -24,7 +24,6 @@
 #define IDC_RADIO_ALG_GPU               1011
 #define IDC_EDIT_RESX2                  1012
 #define IDC_EDIT_GPU_ANTIALIASING       1012
-#define WM_ICON_NOTIFY                  1200
 #define ID_EXIT                         32771
 #define ID_POPUP_EXIT                   32772
 #define ID_POPUP_RESTORE                32774

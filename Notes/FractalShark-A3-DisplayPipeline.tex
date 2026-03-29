@@ -1,0 +1,20 @@
+\section{OpenGL Display Pipeline}
+\label{subsec:opengl-display}
+
+The GL consumer thread inside \code{RenderThreadPool} dequeues completed
+frames from a \code{FrameCompletionQueue} and uploads each frame as an
+OpenGL texture.  Before any GL call is issued, the thread makes the
+shared context current on itself.
+
+Two rendering paths are supported.  The \emph{software path} targets
+GL~1.1--compatible drivers (including the GDI Generic fallback) by tiling
+the frame into power-of-two chunks that respect the
+\code{GL\_MAX\_TEXTURE\_SIZE} limit---typically 1024 on GDI Generic---and
+converting \code{Color16} pixels to RGBA8 before upload.  The
+\emph{hardware path} uploads the entire frame as a single
+non-power-of-two texture in RGBA16 format via \code{glTexImage2D},
+avoiding the tiling overhead entirely.
+
+Both paths flip the Y~axis during texture-coordinate generation to
+account for the mismatch between the top-left origin used by the
+frame buffer and the bottom-left origin expected by OpenGL.

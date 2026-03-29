@@ -1,603 +1,481 @@
-// FractalTrayDlg.cpp : implementation file
-//
-
 #include "stdafx.h"
-
-
-// --- MPIR/GMP include fence: avoid ASSERT macro collision with MFC ---
-#ifdef ASSERT
-#pragma push_macro("ASSERT")
-#undef ASSERT
-#define RESTORE_MFC_ASSERT
-#endif
-
-
-#include "FractalTray.h"
 #include "FractalTrayDlg.h"
-#include ".\fractaltraydlg.h"
+#include "resource.h"
 #include "PrecisionCalculator.h"
-
-#include <math.h>
-#include <io.h>
 #include "Fractal.h"
-//#include "..\cximage599a_full\CxImage\xImage.h"
 
 constexpr size_t PrecisionLimit = 50000;
-constexpr double DefaultScaleFactor = 75;
-constexpr int DefaultWidth = 3840;
-constexpr int DefaultHeight = 1600;
-//constexpr auto *fileprefix = L"\\\\192.168.4.1\\Archive\\Fractal Saves\\2023_10e4000\\";
-constexpr auto* fileprefix = L"\\\\192.168.4.1\\Archive\\Fractal Saves\\lav2\\";
-//constexpr auto* fileprefix = L"";
-constexpr int startAt = 0;
+constexpr auto *FilePrefix = L"\\\\192.168.4.1\\Archive\\Fractal Saves\\lav2\\";
+constexpr int StartAt = 0;
 
-void ConvertCStringToDest(const CString& str,
-    uint32_t* width,
-    uint32_t* height,
-    HighPrecision* minX,
-    HighPrecision* minY,
-    HighPrecision* maxX,
-    HighPrecision* maxY,
-    uint32_t* iters = nullptr,
-    uint32_t* gpuAntialiasing = nullptr,
-    std::wstring* filename = nullptr);
+// --- Utility functions ---
 
-CFractalTrayDlg* theActiveOne;
+static std::string NarrowString(const std::wstring &wide) {
+    std::string narrow;
+    narrow.reserve(wide.size());
+    for (wchar_t ch : wide) {
+        narrow.push_back(static_cast<char>(ch));
+    }
+    return narrow;
+}
 
-CFractalTrayDlg::CFractalTrayDlg(CWnd* pParent /*=nullptr*/)
-    : CDialog(CFractalTrayDlg::IDD, pParent)
-    , m_DestCoords(_T(""))
-    , m_ScaleFactor(DefaultScaleFactor)
-    , m_ResX(DefaultWidth)
-    , m_ResY(DefaultHeight)
-    , m_SourceCoords(_T("16384 6826 -4.118537200504413619167717528373266078184110970996216897856242118537200504413619167717528373266078184110970996216756329721 -1.5 3.118537200504413619167717528373266078184110970996216897856242118537200504413619167717528373266078184110970996216756329721 1.5 8192 2"))
-    , m_LocationFilename("locations.txt")
-    , m_Messages(_T(""))
-{
-    m_hIcon1 = AfxGetApp()->LoadIcon(IDR_FRACTALTRAY1);
-    m_hIcon2 = AfxGetApp()->LoadIcon(IDR_FRACTALTRAY2);
+static std::wstring WidenString(const std::string &narrow) {
+    return std::wstring(narrow.begin(), narrow.end());
+}
+
+static std::vector<std::string> TokenizeLine(const std::string &line) {
+    std::vector<std::string> tokens;
+    std::istringstream stream(line);
+    std::string token;
+    while (stream >> token) {
+        tokens.push_back(std::move(token));
+    }
+    return tokens;
+}
+
+struct FrameParams {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    HighPrecision minX, minY, maxX, maxY;
+    uint32_t iters = 0;
+    uint32_t gpuAntialiasing = 0;
+    std::wstring filename;
+};
+
+static FrameParams ParseFrameParams(const std::string &line) {
+    auto tokens = TokenizeLine(line);
+    FrameParams params;
+
+    if (tokens.size() >= 2) {
+        params.width = static_cast<uint32_t>(std::stoi(tokens[0]));
+        params.height = static_cast<uint32_t>(std::stoi(tokens[1]));
+    }
+    if (tokens.size() >= 6) {
+        params.minX = HighPrecision{tokens[2].c_str()};
+        params.minY = HighPrecision{tokens[3].c_str()};
+        params.maxX = HighPrecision{tokens[4].c_str()};
+        params.maxY = HighPrecision{tokens[5].c_str()};
+    }
+    if (tokens.size() >= 8) {
+        params.iters = static_cast<uint32_t>(std::stoi(tokens[6]));
+        params.gpuAntialiasing = static_cast<uint32_t>(std::stoi(tokens[7]));
+    }
+    if (tokens.size() >= 9) {
+        params.filename = WidenString(tokens[8]);
+    }
+    return params;
+}
+
+static std::wstring ExtractFilename(const std::string &line) {
+    auto tokens = TokenizeLine(line);
+    if (tokens.size() >= 9) {
+        return WidenString(tokens[8]);
+    }
+    return {};
+}
+
+// --- FractalTrayDialog ---
+
+FractalTrayDialog::FractalTrayDialog()
+    : m_SourceCoords(
+          L"16384 6826 "
+          L"-4.118537200504413619167717528373266078184110970996216897856242118537200504413619167717528373266078184110970996216756329721 "
+          L"-1.5 "
+          L"3.118537200504413619167717528373266078184110970996216897856242118537200504413619167717528373266078184110970996216756329721 "
+          L"1.5 8192 2") {
+}
+
+INT_PTR FractalTrayDialog::DoModal(HINSTANCE hInst) {
+    m_hInst = hInst;
+    return DialogBoxParam(
+        hInst,
+        MAKEINTRESOURCE(IDD_FRACTALTRAY_DIALOG),
+        nullptr,
+        StaticDlgProc,
+        reinterpret_cast<LPARAM>(this));
+}
+
+INT_PTR CALLBACK FractalTrayDialog::StaticDlgProc(
+    HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) {
+
+    FractalTrayDialog *self;
+    if (msg == WM_INITDIALOG) {
+        self = reinterpret_cast<FractalTrayDialog *>(lParam);
+        self->m_hDlg = hDlg;
+        SetWindowLongPtr(hDlg, DWLP_USER, reinterpret_cast<LONG_PTR>(self));
+    } else {
+        self = reinterpret_cast<FractalTrayDialog *>(
+            GetWindowLongPtr(hDlg, DWLP_USER));
+    }
+
+    if (self) {
+        return self->HandleMessage(msg, wParam, lParam);
+    }
+    return FALSE;
+}
+
+INT_PTR FractalTrayDialog::HandleMessage(
+    UINT msg, WPARAM wParam, LPARAM lParam) {
+
+    switch (msg) {
+    case WM_INITDIALOG:
+        return OnInitDialog();
+
+    case WM_PAINT:
+        if (IsIconic(m_hDlg)) {
+            OnPaintIconic();
+            return TRUE;
+        }
+        return FALSE;
+
+    case WM_SYSCOMMAND:
+        if (wParam == SC_MINIMIZE) {
+            ShowWindow(m_hDlg, SW_HIDE);
+            return TRUE;
+        }
+        return FALSE;
+
+    case WM_CLOSE:
+        OnClose();
+        return TRUE;
+
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDC_BUTTON_GENERATE:
+            OnGenerate();
+            return TRUE;
+        case ID_POPUP_RESTORE:
+            OnRestore();
+            return TRUE;
+        case ID_POPUP_EXIT:
+            OnExit();
+            return TRUE;
+        case IDCANCEL:
+            OnClose();
+            return TRUE;
+        case IDOK:
+            return TRUE;
+        }
+        break;
+
+    case WM_ICON_NOTIFY:
+        SetWindowLongPtr(m_hDlg, DWLP_MSGRESULT,
+                         OnTrayNotification(wParam, lParam));
+        return TRUE;
+
+    case WM_FINISHED_CALCULATING:
+        SetWindowLongPtr(m_hDlg, DWLP_MSGRESULT,
+                         OnFinishedCalculating());
+        return TRUE;
+
+    case WM_QUERYDRAGICON:
+        SetWindowLongPtr(m_hDlg, DWLP_MSGRESULT,
+                         reinterpret_cast<LONG_PTR>(m_hIconIdle));
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+BOOL FractalTrayDialog::OnInitDialog() {
+    m_hIconActive = LoadIcon(m_hInst, MAKEINTRESOURCE(IDR_FRACTALTRAY1));
+    m_hIconIdle = LoadIcon(m_hInst, MAKEINTRESOURCE(IDR_FRACTALTRAY2));
 
     TryLoadDestCoords();
+
+    SetDlgText(IDC_EDIT_SOURCECOORDS, m_SourceCoords);
+    SetDlgText(IDC_EDIT_DESTCOORDS, m_DestCoords);
+    SetDlgText(IDC_EDIT_SCALEFACTOR, std::format(L"{}", m_ScaleFactor));
+    SetDlgItemInt(m_hDlg, IDC_EDIT_RESX, m_ResX, FALSE);
+    SetDlgItemInt(m_hDlg, IDC_EDIT_RESY, m_ResY, FALSE);
+    SetDlgText(IDC_EDIT_MESSAGES, L"");
+
+    m_TrayIcon.Create(m_hDlg, WM_ICON_NOTIFY, L"FractalTray",
+                      m_hIconIdle, IDR_MENU_TRAY);
+
+    if (std::filesystem::exists(m_LocationFilename)) {
+        StartCalculation();
+        PostMessage(m_hDlg, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+
+        SendMessage(m_hDlg, WM_SETICON, ICON_BIG,
+                    reinterpret_cast<LPARAM>(m_hIconActive));
+        SendMessage(m_hDlg, WM_SETICON, ICON_SMALL,
+                    reinterpret_cast<LPARAM>(m_hIconActive));
+        m_TrayIcon.SetIcon(m_hIconActive);
+    } else {
+        SendMessage(m_hDlg, WM_SETICON, ICON_BIG,
+                    reinterpret_cast<LPARAM>(m_hIconIdle));
+        SendMessage(m_hDlg, WM_SETICON, ICON_SMALL,
+                    reinterpret_cast<LPARAM>(m_hIconIdle));
+        m_TrayIcon.SetIcon(m_hIconIdle);
+    }
+
+    m_TrayIcon.Show();
+    return TRUE;
 }
 
-// The idea here is that if the user has a location.txt file, we'll load it
-// and use it to populate the destination coordinates.  This way, the user
-// can just edit the location.txt file to change the destination coordinates
-// without having to use the GUI.
-void CFractalTrayDlg::TryLoadDestCoords() {
-    CStdioFile locationFile;
+void FractalTrayDialog::TryLoadDestCoords() {
+    std::ifstream file(m_LocationFilename);
+    if (!file.is_open()) return;
 
-    // Open the location file.
-    if (locationFile.Open(m_LocationFilename, CFile::modeRead | CFile::typeText) == 0) {
-        return;
-    }
+    std::string line;
+    if (!std::getline(file, line)) return;
 
-    CString line;
-    if (locationFile.ReadString(line) == FALSE) {
-        return;
-    }
-
-    std::wstring filename;
-
-    ConvertCStringToDest(
-        line,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        &filename);
-
+    auto filename = ExtractFilename(line);
     if (filename == L"FractalTrayDestination") {
-        m_DestCoords = line;
+        m_DestCoords = WidenString(line);
+        file.close();
 
-        locationFile.Close();
-
-        // Delete the location file so we don't keep loading it.
-        auto result = MessageBox(L"Do you want to delete the location file?", L"Delete location file?", MB_YESNO);
+        auto result = ::MessageBox(
+            m_hDlg,
+            L"Do you want to delete the location file?",
+            L"Delete location file?", MB_YESNO);
         if (result == IDYES) {
-            DeleteFile(m_LocationFilename);
+            std::filesystem::remove(m_LocationFilename);
         }
     }
 }
 
-void CFractalTrayDlg::DoDataExchange(CDataExchange* pDX)
-{
-    DDX_Text(pDX, IDC_EDIT_SOURCECOORDS, m_SourceCoords);
-    DDX_Text(pDX, IDC_EDIT_DESTCOORDS, m_DestCoords);
-    DDX_Text(pDX, IDC_EDIT_SCALEFACTOR, m_ScaleFactor);
-    DDX_Text(pDX, IDC_EDIT_RESX, m_ResX);
-    DDX_Text(pDX, IDC_EDIT_RESY, m_ResY);
-    DDX_Text(pDX, IDC_EDIT_MESSAGES, m_Messages);
-    CDialog::DoDataExchange(pDX);
+void FractalTrayDialog::OnPaintIconic() {
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(m_hDlg, &ps);
+
+    SendMessage(m_hDlg, WM_ICONERASEBKGND,
+                reinterpret_cast<WPARAM>(hdc), 0);
+
+    int cxIcon = GetSystemMetrics(SM_CXICON);
+    int cyIcon = GetSystemMetrics(SM_CYICON);
+    RECT rect;
+    GetClientRect(m_hDlg, &rect);
+    int x = (rect.right - rect.left - cxIcon + 1) / 2;
+    int y = (rect.bottom - rect.top - cyIcon + 1) / 2;
+
+    DrawIcon(hdc, x, y, m_hIconActive);
+    EndPaint(m_hDlg, &ps);
 }
 
-BEGIN_MESSAGE_MAP(CFractalTrayDlg, CDialog)
-    ON_WM_PAINT()
-    ON_WM_QUERYDRAGICON()
-    //}}AFX_MSG_MAP
-    ON_MESSAGE(WM_SYSCOMMAND, OnSysCommand)
-    ON_BN_CLICKED(IDC_BUTTON_GENERATE, OnBnClickedButtonGenerate)
-    ON_MESSAGE(WM_ICON_NOTIFY, OnTrayNotification)
-    ON_MESSAGE(WM_DESTROY, OnDestroy)
-    ON_MESSAGE(WM_FINISHED_CALCULATING, OnFinishedCalculating)
-    ON_COMMAND(ID_POPUP_RESTORE, OnRestore)
-    ON_COMMAND(ID_POPUP_EXIT, OnExit)
-END_MESSAGE_MAP()
-
-
-// CFractalTrayDlg message handlers
-
-BOOL CFractalTrayDlg::OnInitDialog()
-{
-    CDialog::OnInitDialog();
-
-    // TODO: Add extra initialization here
-    theActiveOne = this;
-
-    m_TrayIcon.Create(this, WM_ICON_NOTIFY, L"FractalTray",
-        GetIcon(FALSE), IDR_MENU_TRAY);
-
-    UpdateData(FALSE);
-    if (FileExists(m_LocationFilename.operator LPCWSTR()) == true)
-    {
-        m_ThreadParam.LocationFilename = &m_LocationFilename;
-        m_ThreadParam.stop = false;
-        m_ThreadParam.hWnd = m_hWnd;
-
-        m_Thread = CreateThread(nullptr, 0, CalcProc, &m_ThreadParam, 0, nullptr);
-        PostMessage(WM_SYSCOMMAND, SC_MINIMIZE, 0);
-
-        SetIcon(m_hIcon1, TRUE);      // Set big icon
-        SetIcon(m_hIcon1, FALSE);    // Set small icon
-        m_TrayIcon.SetIcon(m_hIcon1);
+void FractalTrayDialog::OnClose() {
+    if (m_CalcThread.joinable()) {
+        m_CalcThread.request_stop();
+        m_CalcThread.join();
     }
-    else
-    {
-        m_Thread = nullptr;
-        SetIcon(m_hIcon2, TRUE);      // Set big icon
-        SetIcon(m_hIcon2, FALSE);    // Set small icon
-        m_TrayIcon.SetIcon(m_hIcon2);
-    }
-
-    m_TrayIcon.ShowIcon();
-
-    //SetWindowPos (nullptr, 0, 0, 0, 0, SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
-
-    return TRUE;  // return TRUE  unless you set the focus to a control
+    m_TrayIcon.Remove();
+    EndDialog(m_hDlg, IDCANCEL);
 }
 
-// If you add a minimize button to your dialog, you will need the code below
-//  to draw the icon.  For MFC applications using the document \ view model,
-//  this is automatically done for you by the framework.
-
-LRESULT CFractalTrayDlg::OnSysCommand(WPARAM nID, LPARAM lParam)
-{
-    if (nID == SC_MINIMIZE)
-    {
-        ShowWindow(SW_HIDE);
-        return 0;
-    }
-    else
-    {
-        CDialog::OnSysCommand((UINT)nID, lParam);
-        return 0;
-    }
-}
-
-LRESULT CFractalTrayDlg::OnDestroy(WPARAM, LPARAM)
-{
-    if (m_Thread != nullptr)
-    {
-        m_ThreadParam.stop = true;
-        WaitForSingleObject(m_Thread, INFINITE);
-    }
-
-    //MessageBox ("!");
-
-    CDialog::OnDestroy();
-    return 0;
-}
-
-void CFractalTrayDlg::OnPaint()
-{
-    if (IsIconic())
-    {
-        CPaintDC dc(this); // device context for painting
-
-        SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
-
-        // Center icon in client rectangle
-        int cxIcon = GetSystemMetrics(SM_CXICON);
-        int cyIcon = GetSystemMetrics(SM_CYICON);
-        CRect rect;
-        GetClientRect(&rect);
-        int x = (rect.Width() - cxIcon + 1) / 2;
-        int y = (rect.Height() - cyIcon + 1) / 2;
-
-        // Draw the icon
-        dc.DrawIcon(x, y, m_hIcon1);
-    }
-    else
-    {
-        CDialog::OnPaint();
-    }
-}
-
-// The system calls this function to obtain the cursor to display while the user drags
-//  the minimized window.
-HCURSOR CFractalTrayDlg::OnQueryDragIcon()
-{
-    return static_cast<HCURSOR>(m_hIcon2);
-}
-
-void GetTokensFromString(const CString& str,
-    std::vector<std::wstring>& tokens,
-    std::vector<const wchar_t*>& tokens_wstr,
-    std::vector<std::string>& tokens_str) {
-    std::wstring dest_coords = str.operator LPCTSTR ();
-    dest_coords.erase(std::remove(dest_coords.begin(), dest_coords.end(), L'\n'), dest_coords.cend());
-    dest_coords.erase(std::remove(dest_coords.begin(), dest_coords.end(), L'\r'), dest_coords.cend());
-
-    std::wstringstream check1(dest_coords);
-    std::wstring intermediate;
-
-    // Tokenizing w.r.t. space ' '
-    size_t i = 0;
-    while (std::getline(check1, intermediate, L' '))
-    {
-        char temp[65535];
-        tokens.push_back(intermediate);
-        tokens_wstr.push_back(tokens[i].c_str());
-
-        sprintf(temp, "%ws", tokens[i].c_str());
-        tokens_str.push_back(temp);
-        i++;
-    }
-}
-
-void ConvertCStringToDest(const CString& str,
-    uint32_t* width,
-    uint32_t* height,
-    HighPrecision* minX,
-    HighPrecision* minY,
-    HighPrecision* maxX,
-    HighPrecision* maxY,
-    uint32_t* iters,
-    uint32_t* gpuAntialiasing,
-    std::wstring* filename) {
-
-    std::vector<std::wstring> tokens;
-    std::vector<const wchar_t*> tokens_wstr;
-    std::vector<std::string> tokens_str;
-    GetTokensFromString(str, tokens, tokens_wstr, tokens_str);
-
-    if (width != nullptr) {
-        *width = atoi(tokens_str[0].c_str());
-    }
-
-    if (height != nullptr) {
-        *height = atoi(tokens_str[1].c_str());
-    }
-
-    if (minX != nullptr) {
-        *minX = HighPrecision(tokens_str[2].c_str());
-    }
-
-    if (minY != nullptr) {
-        *minY = HighPrecision(tokens_str[3].c_str());
-    }
-
-    if (maxX != nullptr) {
-        *maxX = HighPrecision(tokens_str[4].c_str());
-    }
-
-    if (maxY != nullptr) {
-        *maxY = HighPrecision(tokens_str[5].c_str());
-    }
-
-    if (iters != nullptr) {
-        *iters = atoi(tokens_str[6].c_str());
-    }
-
-    if (gpuAntialiasing != nullptr) {
-        *gpuAntialiasing = atoi(tokens_str[7].c_str());
-    }
-
-    if (filename != nullptr) {
-        *filename = tokens_wstr[8];
-    }
-}
-
-void CFractalTrayDlg::OnBnClickedButtonGenerate()
-{
-    if (m_Thread != nullptr)
-    {
-        MessageBox(L"Can't generate a new location file while the current one is being processed.  Exit the program, delete the location.txt file, and restart.");
-        return;
-    }
-
-    UpdateData(TRUE);
-    CStdioFile locationFile(m_LocationFilename, CFile::modeCreate | CFile::modeWrite | CFile::typeText | CFile::shareDenyNone);
-
-    HighPrecision destMinX, destMinY, destMaxX, destMaxY;
-    HighPrecision curMinX, curMinY, curMaxX, curMaxY;
-    HighPrecision deltaXMin, deltaYMin, deltaXMax, deltaYMax;
-
-    uint32_t targetIters;
-    uint32_t sourceIters;
-    double curIters;
-
-    uint32_t destWidth;
-    uint32_t destHeight;
-    uint32_t srcWidth;
-    uint32_t srcHeight;
-
-    uint32_t gpuAntialiasing;
-
-    // Presumably 50k is enough
-    // TODO vary dynamically as zoom deepens
-    // TODO or just use float exp
-    HighPrecision::defaultPrecisionInBits(PrecisionLimit);
-
-    ConvertCStringToDest(
-        m_SourceCoords,
-        &srcWidth,
-        &srcHeight,
-        &curMinX,
-        &curMinY,
-        &curMaxX,
-        &curMaxY,
-        &sourceIters,
-        &gpuAntialiasing);
-    ConvertCStringToDest(
-        m_DestCoords,
-        &destWidth,
-        &destHeight,
-        &destMinX,
-        &destMinY,
-        &destMaxX,
-        &destMaxY,
-        &targetIters,
-        &gpuAntialiasing);
-
-    // Reduce precision to something semi-sane
-    const bool requiresReuse = false;
-    PointZoomBBConverter ptz{ curMinX, curMinY, curMaxX, curMaxY, PointZoomBBConverter::TestMode::Enabled };
-    auto precInBits = PrecisionCalculator::GetPrecision(ptz, requiresReuse);
-    ptz.SetPrecision(precInBits);
-
-    auto precInDigits = static_cast<uint64_t>(static_cast<double>(precInBits) / std::log10(2));
-
-    curIters = sourceIters;
-
-    int MaxFrames = HowManyFrames();
-    double incIters = (targetIters - curIters) / (double)MaxFrames;
-
-    /*CString debug;
-    debug.Format ("\"%s\" \"%s\" %d %lf %lf %d %d",
-       m_DestCoords, m_SourceCoords, m_NumFrames, m_ScaleFactor, incIters, baseIters, targetIters);
-    MessageBox (debug);*/
-
-    char outputImageFilename[256];
-    size_t i;
-    std::vector<std::wstring> final_file;
-    for (i = 0; i < MaxFrames; i++)
-    {
-        HighPrecision scaleFactor{ m_ScaleFactor };
-        deltaXMin = (destMinX - curMinX) / scaleFactor;
-        deltaYMin = (destMinY - curMinY) / scaleFactor;
-        deltaXMax = (destMaxX - curMaxX) / scaleFactor;
-        deltaYMax = (destMaxY - curMaxY) / scaleFactor;
-
-        curMinX += deltaXMin;
-        curMinY += deltaYMin;
-        curMaxX += deltaXMax;
-        curMaxY += deltaYMax;
-        curIters += (double)incIters;
-
-        ptz = PointZoomBBConverter{ curMinX, curMinY, curMaxX, curMaxY, PointZoomBBConverter::TestMode::Enabled };
-
-        sprintf(outputImageFilename, "output-%06zd", i);
-
-        std::stringstream ss;
-        ss << std::setprecision(precInDigits);
-        ss << m_ResX << " ";
-        ss << m_ResY << " ";
-        ss << curMinX << " ";
-        ss << curMinY << " ";
-        ss << curMaxX << " ";
-        ss << curMaxY << " ";
-        ss << curIters << " ";
-        ss << gpuAntialiasing << " ";
-        ss << std::string(outputImageFilename) << std::endl;
-
-        std::string s = ss.str();
-        const std::wstring outputString(s.begin(), s.end());
-        final_file.push_back(outputString);
-    }
-    std::reverse(final_file.begin(), final_file.end());
-
-    for (const auto& l : final_file) {
-        locationFile.WriteString(l.c_str());
-    }
-    locationFile.Close();
-}
-
-int CFractalTrayDlg::HowManyFrames(void)
-{
-    UpdateData(TRUE);
-
-    HighPrecision destMinX, destMinY, destMaxX, destMaxY;
-    HighPrecision deltaXMin, deltaYMin, deltaXMax, deltaYMax;
-    HighPrecision curMinX, curMinY, curMaxX, curMaxY;
-
-    uint32_t srcWidth, srcHeight;
-    uint32_t destWidth, destHeight;
-
-    ConvertCStringToDest(m_SourceCoords, &srcWidth, &srcHeight, &curMinX, &curMinY, &curMaxX, &curMaxY);
-    ConvertCStringToDest(m_DestCoords, &destWidth, &destHeight, &destMinX, &destMinY, &destMaxX, &destMaxY);
-
-    int i;
-    HighPrecision scaleFactor{ m_ScaleFactor };
-    HighPrecision point9{ 0.9 };
-    for (i = 0;; i++)
-    {
-        deltaXMin = (destMinX - curMinX) / scaleFactor;
-        deltaYMin = (destMinY - curMinY) / scaleFactor;
-        deltaXMax = (destMaxX - curMaxX) / scaleFactor;
-        deltaYMax = (destMaxY - curMaxY) / scaleFactor;
-
-        curMinX += deltaXMin;
-        curMinY += deltaYMin;
-        curMaxX += deltaXMax;
-        curMaxY += deltaYMax;
-
-        if (((destMaxX - destMinX) * (destMaxY - destMinY)) / ((curMaxX - curMinX) * (curMaxY - curMinY)) > point9)
-        {
-            break;
-        }
-    }
-
-    return i;
-}
-
-LRESULT CFractalTrayDlg::OnTrayNotification(WPARAM wParam, LPARAM lParam)
-{ // Delegate all the work back to the default implementation in CTrayIcon.
+LRESULT FractalTrayDialog::OnTrayNotification(WPARAM wParam, LPARAM lParam) {
     return m_TrayIcon.OnTrayNotification(wParam, lParam);
 }
 
-void CFractalTrayDlg::OnRestore()
-{
-    ShowWindow(SW_SHOW);
+void FractalTrayDialog::OnRestore() {
+    ShowWindow(m_hDlg, SW_SHOW);
 }
 
-void CFractalTrayDlg::OnExit()
-{
-    PostMessage(WM_CLOSE);
+void FractalTrayDialog::OnExit() {
+    PostMessage(m_hDlg, WM_CLOSE, 0, 0);
 }
 
-LRESULT CFractalTrayDlg::OnFinishedCalculating(WPARAM, LPARAM)
-{
-    m_TrayIcon.SetIcon(m_hIcon2);
-    SetIcon(m_hIcon2, TRUE);      // Set big icon
-    SetIcon(m_hIcon2, FALSE);    // Set small icon
-    m_Thread = nullptr;
+LRESULT FractalTrayDialog::OnFinishedCalculating() {
+    m_TrayIcon.SetIcon(m_hIconIdle);
+    SendMessage(m_hDlg, WM_SETICON, ICON_BIG,
+                reinterpret_cast<LPARAM>(m_hIconIdle));
+    SendMessage(m_hDlg, WM_SETICON, ICON_SMALL,
+                reinterpret_cast<LPARAM>(m_hIconIdle));
+    m_CalcThread = {};
     return 0;
 }
 
-DWORD WINAPI CalcProc(LPVOID lpParameter)
-{
-    CThreadParam* param = (CThreadParam*)lpParameter;
-    CStdioFile locationFile;
+// --- Frame generation ---
 
-    // Open the location file.
-    if (locationFile.Open(*param->LocationFilename, CFile::modeRead | CFile::typeText) == 0) {
-        PostMessage(param->hWnd, WM_FINISHED_CALCULATING, 0, 0);
-        return 1;
+void FractalTrayDialog::OnGenerate() {
+    if (m_CalcThread.joinable()) {
+        ::MessageBox(m_hDlg,
+            L"Can't generate a new location file while the current one is "
+            L"being processed. Exit the program, delete the location.txt "
+            L"file, and restart.",
+            L"FractalTray", MB_OK);
+        return;
     }
 
-    CString line;
-    uint32_t resX, resY;
-    HighPrecision minX, minY, maxX, maxY;
-    uint32_t numIters;
+    ReadControlsToMembers();
+
+    std::ofstream locationFile(m_LocationFilename);
+    if (!locationFile.is_open()) return;
+
+    HighPrecision::defaultPrecisionInBits(PrecisionLimit);
+
+    auto srcParams = ParseFrameParams(NarrowString(m_SourceCoords));
+    auto dstParams = ParseFrameParams(NarrowString(m_DestCoords));
+
     const bool requiresReuse = false;
+    PointZoomBBConverter ptz{
+        srcParams.minX, srcParams.minY, srcParams.maxX, srcParams.maxY,
+        PointZoomBBConverter::TestMode::Enabled};
+    auto precInBits = PrecisionCalculator::GetPrecision(ptz, requiresReuse);
+    ptz.SetPrecision(precInBits);
 
-    uint32_t gpuAntialiasing;
+    auto precInDigits = static_cast<int>(
+        static_cast<double>(precInBits) / std::log10(2.0));
 
-    std::wstring filename, filename_bmp, filename_png;
+    double curIters = srcParams.iters;
+    int maxFrames = CalculateFrameCount();
+    double incIters = (dstParams.iters - curIters) / static_cast<double>(maxFrames);
 
-    // default width/height:
-    Fractal* fractal = DEBUG_NEW Fractal(DefaultWidth, DefaultHeight, nullptr, false, 0);
+    HighPrecision curMinX = srcParams.minX;
+    HighPrecision curMinY = srcParams.minY;
+    HighPrecision curMaxX = srcParams.maxX;
+    HighPrecision curMaxY = srcParams.maxY;
 
-    for (int i = 0;; i++) {
-        if (param->stop == true) {
-            break;
-        }
+    std::vector<std::string> lines;
+    for (int i = 0; i < maxFrames; i++) {
+        HighPrecision scaleFactor{m_ScaleFactor};
+        HighPrecision deltaXMin = (dstParams.minX - curMinX) / scaleFactor;
+        HighPrecision deltaYMin = (dstParams.minY - curMinY) / scaleFactor;
+        HighPrecision deltaXMax = (dstParams.maxX - curMaxX) / scaleFactor;
+        HighPrecision deltaYMax = (dstParams.maxY - curMaxY) / scaleFactor;
 
-        if (locationFile.ReadString(line) == FALSE) {
-            break;
-        }
+        curMinX += deltaXMin;
+        curMinY += deltaYMin;
+        curMaxX += deltaXMax;
+        curMaxY += deltaYMax;
+        curIters += incIters;
 
-        if (startAt != 0 && i < startAt) {
-            continue;
-        }
+        auto outputFilename = std::format("output-{:06}", i);
 
-        ConvertCStringToDest(
-            line,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            &filename);
+        std::ostringstream ss;
+        ss << std::setprecision(precInDigits);
+        ss << m_ResX << " " << m_ResY << " ";
+        ss << curMinX << " " << curMinY << " ";
+        ss << curMaxX << " " << curMaxY << " ";
+        ss << curIters << " " << dstParams.gpuAntialiasing << " ";
+        ss << outputFilename << "\n";
 
-        filename_bmp = fileprefix + filename + std::wstring(L".bmp");
-        filename_png = fileprefix + filename + std::wstring(L".png");
+        lines.push_back(ss.str());
+    }
 
-        if (FileExists(filename) || FileExists(filename_png) || FileExists(filename_bmp)) {
+    std::ranges::reverse(lines);
+
+    for (const auto &line : lines) {
+        locationFile << line;
+    }
+}
+
+int FractalTrayDialog::CalculateFrameCount() {
+    ReadControlsToMembers();
+
+    HighPrecision::defaultPrecisionInBits(PrecisionLimit);
+
+    auto srcParams = ParseFrameParams(NarrowString(m_SourceCoords));
+    auto dstParams = ParseFrameParams(NarrowString(m_DestCoords));
+
+    HighPrecision curMinX = srcParams.minX;
+    HighPrecision curMinY = srcParams.minY;
+    HighPrecision curMaxX = srcParams.maxX;
+    HighPrecision curMaxY = srcParams.maxY;
+
+    HighPrecision scaleFactor{m_ScaleFactor};
+    HighPrecision threshold{0.9};
+
+    int frameCount;
+    for (frameCount = 0;; frameCount++) {
+        HighPrecision deltaXMin = (dstParams.minX - curMinX) / scaleFactor;
+        HighPrecision deltaYMin = (dstParams.minY - curMinY) / scaleFactor;
+        HighPrecision deltaXMax = (dstParams.maxX - curMaxX) / scaleFactor;
+        HighPrecision deltaYMax = (dstParams.maxY - curMaxY) / scaleFactor;
+
+        curMinX += deltaXMin;
+        curMinY += deltaYMin;
+        curMaxX += deltaXMax;
+        curMaxY += deltaYMax;
+
+        auto destArea =
+            (dstParams.maxX - dstParams.minX) * (dstParams.maxY - dstParams.minY);
+        auto curArea =
+            (curMaxX - curMinX) * (curMaxY - curMinY);
+
+        if (destArea / curArea > threshold) break;
+    }
+
+    return frameCount;
+}
+
+// --- Background calculation thread ---
+
+void FractalTrayDialog::StartCalculation() {
+    m_CalcThread = std::jthread([this](std::stop_token stopToken) {
+        RunCalculation(std::move(stopToken));
+    });
+}
+
+void FractalTrayDialog::RunCalculation(std::stop_token stopToken) {
+    std::ifstream locationFile(m_LocationFilename);
+    if (!locationFile.is_open()) {
+        PostMessage(m_hDlg, WM_FINISHED_CALCULATING, 0, 0);
+        return;
+    }
+
+    const bool requiresReuse = false;
+    auto fractal = std::make_unique<Fractal>(
+        DefaultWidth, DefaultHeight, nullptr, false, 0);
+
+    std::string line;
+    for (int i = 0; std::getline(locationFile, line); i++) {
+        if (stopToken.stop_requested()) break;
+        if (StartAt != 0 && i < StartAt) continue;
+
+        auto filename = ExtractFilename(line);
+        if (filename.empty()) continue;
+
+        auto filenameBmp = std::wstring(FilePrefix) + filename + L".bmp";
+        auto filenamePng = std::wstring(FilePrefix) + filename + L".png";
+
+        if (std::filesystem::exists(filename) ||
+            std::filesystem::exists(filenamePng) ||
+            std::filesystem::exists(filenameBmp)) {
             continue;
         }
 
         HighPrecision::defaultPrecisionInBits(PrecisionLimit);
 
-        ConvertCStringToDest(
-            line,
-            &resX,
-            &resY,
-            &minX,
-            &minY,
-            &maxX,
-            &maxY,
-            &numIters,
-            &gpuAntialiasing,
-            &filename);
+        auto params = ParseFrameParams(line);
+        auto fullPath = std::wstring(FilePrefix) + params.filename;
 
-        filename = fileprefix + filename;
-
-        PointZoomBBConverter ptz{ minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled };
+        PointZoomBBConverter ptz{
+            params.minX, params.minY, params.maxX, params.maxY,
+            PointZoomBBConverter::TestMode::Enabled};
         auto prec = PrecisionCalculator::GetPrecision(ptz, requiresReuse);
         fractal->SetPrecision(prec);
-
-        // lame hack
-        //numIters /= 200;
-        //if (numIters < 10000) {
-        //    numIters = 10000;
-        //}
-
-        fractal->SetNumIterations<uint32_t>(numIters);
-        fractal->ResetDimensions(resX, resY, gpuAntialiasing);
+        fractal->SetNumIterations<uint32_t>(params.iters);
+        fractal->ResetDimensions(params.width, params.height, params.gpuAntialiasing);
         fractal->RecenterViewCalc(ptz);
         fractal->UsePalette(8);
         fractal->CalcFractal(true);
-        fractal->SaveCurrentFractal(filename, false);
-        //fractal->CalcDiskFractal (filename_bmp);
+        fractal->SaveCurrentFractal(fullPath, false);
     }
 
-    delete fractal;
-
-    locationFile.Close();
-    PostMessage(param->hWnd, WM_FINISHED_CALCULATING, 0, 0);
-    return 0;
+    PostMessage(m_hDlg, WM_FINISHED_CALCULATING, 0, 0);
 }
 
-bool FileExists(const std::wstring& filename)
-{
-    //_wfinddata_t fileinfo;
-    //intptr_t handle = _wfindfirst (filename.c_str(), &fileinfo);
-    //if (handle == -1)
-    //{ return false; }
+// --- UI helpers ---
 
-    //_findclose (handle);
+std::wstring FractalTrayDialog::GetDlgText(int controlId) const {
+    HWND hCtrl = GetDlgItem(m_hDlg, controlId);
+    int len = GetWindowTextLength(hCtrl);
+    if (len == 0) return {};
+    std::wstring text(static_cast<size_t>(len) + 1, L'\0');
+    GetWindowText(hCtrl, text.data(), len + 1);
+    text.resize(static_cast<size_t>(len));
+    return text;
+}
 
-    DWORD dwAttrib = GetFileAttributes(filename.c_str());
+void FractalTrayDialog::SetDlgText(int controlId, const std::wstring &text) {
+    SetDlgItemText(m_hDlg, controlId, text.c_str());
+}
 
-    return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
-        !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+void FractalTrayDialog::ReadControlsToMembers() {
+    m_SourceCoords = GetDlgText(IDC_EDIT_SOURCECOORDS);
+    m_DestCoords = GetDlgText(IDC_EDIT_DESTCOORDS);
+    m_ScaleFactor = std::stod(NarrowString(GetDlgText(IDC_EDIT_SCALEFACTOR)));
+    m_ResX = static_cast<int>(GetDlgItemInt(m_hDlg, IDC_EDIT_RESX, nullptr, FALSE));
+    m_ResY = static_cast<int>(GetDlgItemInt(m_hDlg, IDC_EDIT_RESY, nullptr, FALSE));
 }

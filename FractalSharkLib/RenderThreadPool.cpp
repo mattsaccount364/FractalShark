@@ -4,6 +4,7 @@
 #include "Fractal.h"
 #include "FractalPalette.h"
 #include "GPU_Render.h"
+#include "OpenGLContext.h"
 
 #include <algorithm>
 #include <chrono>
@@ -621,8 +622,21 @@ void RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFra
         // GL 1.1-safe path: tile the frame into chunks that fit within
         // GL_MAX_TEXTURE_SIZE (1024 on GDI Generic), RGBA8, power-of-two.
         const GLint maxTex = glContext.GetMaxTextureSize();
-        if (maxTex <= 0)
+        if (maxTex <= 0) {
+            GlLog("RenderFrameToGL: maxTex <= 0, skipping");
             return;
+        }
+
+        // One-shot diagnostic on first frame.
+        static bool loggedOnce = false;
+        if (!loggedOnce) {
+            loggedOnce = true;
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "RenderFrameToGL: software path, frame=%zux%zu, maxTex=%d",
+                     frame.OutputWidth, frame.OutputHeight, maxTex);
+            GlLog(buf);
+        }
 
         const size_t frameW = frame.OutputWidth;
         const size_t frameH = frame.OutputHeight;
@@ -672,13 +686,32 @@ void RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFra
 
                 glTexImage2D(GL_TEXTURE_2D,
                              0,
-                             GL_RGBA,
+                             GL_RGBA8,
                              static_cast<GLsizei>(potW),
                              static_cast<GLsizei>(potH),
                              0,
                              GL_RGBA,
                              GL_UNSIGNED_BYTE,
                              rgba8.data());
+
+                // One-shot GL error check on first tile of first frame.
+                {
+                    static bool checkedError = false;
+                    if (!checkedError) {
+                        checkedError = true;
+                        GLenum err = glGetError();
+                        if (err != GL_NO_ERROR) {
+                            char buf[128];
+                            snprintf(buf, sizeof(buf),
+                                     "RenderFrameToGL: glTexImage2D error=0x%x, "
+                                     "potW=%u, potH=%u",
+                                     err, potW, potH);
+                            GlLog(buf);
+                        } else {
+                            GlLog("RenderFrameToGL: first tile glTexImage2D OK");
+                        }
+                    }
+                }
 
                 // Tex coords: only the content region of the POT texture.
                 const GLfloat texMaxS =
@@ -815,6 +848,20 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
             fractal->m_BenchmarkData.m_Overall.StartTimer();
 
             if (!RunCalcFractal(fractal, item, rendererIdx, workerIters)) {
+                // One-shot log for first tombstone from RunCalcFractal failure.
+                static bool loggedCalcFail = false;
+                if (!loggedCalcFail) {
+                    loggedCalcFail = true;
+                    char buf[256];
+                    snprintf(buf, sizeof(buf),
+                             "WorkerLoop: RunCalcFractal returned false, seq=%llu, "
+                             "itersWH=%zux%zu, scrnWH=%zux%zu, aa=%u",
+                             item.SequenceNumber,
+                             workerIters.m_OutputWidth, workerIters.m_OutputHeight,
+                             item.ScrnWidth, item.ScrnHeight,
+                             item.GpuAntialiasing);
+                    GlLog(buf);
+                }
                 PushTombstone(item.SequenceNumber);
                 finalFramePushed = true;
             } else {
@@ -837,7 +884,29 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
                 bool pushed = !m_ShutdownFlag.load() &&
                               !fractal->GetStopCalculating() &&
                               ProduceFrame(item, rendererIdx, workerIters, true);
-                if (!pushed) {
+                if (pushed) {
+                    static bool loggedSuccess = false;
+                    if (!loggedSuccess) {
+                        loggedSuccess = true;
+                        char buf[128];
+                        snprintf(buf, sizeof(buf),
+                                 "WorkerLoop: first frame produced, seq=%llu, "
+                                 "%zux%zu",
+                                 item.SequenceNumber,
+                                 workerIters.m_OutputWidth,
+                                 workerIters.m_OutputHeight);
+                        GlLog(buf);
+                    }
+                } else {
+                    static bool loggedPushFail = false;
+                    if (!loggedPushFail) {
+                        loggedPushFail = true;
+                        char buf[128];
+                        snprintf(buf, sizeof(buf),
+                                 "WorkerLoop: ProduceFrame returned false or skipped, "
+                                 "seq=%llu", item.SequenceNumber);
+                        GlLog(buf);
+                    }
                     PushTombstone(item.SequenceNumber);
                 }
                 finalFramePushed = true;
@@ -847,9 +916,13 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
         } catch (const FractalSharkSeriousException &e) {
             auto msg = e.GetCallstack("Worker thread exception during CalcFractal");
             std::cerr << msg << std::endl;
+            GlLog(msg.c_str());
             if (IsDebuggerPresent()) __debugbreak();
         } catch (const std::exception &e) {
             std::cerr << "Worker thread exception during CalcFractal: " << e.what() << std::endl;
+            char buf[512];
+            snprintf(buf, sizeof(buf), "WorkerLoop: exception: %s", e.what());
+            GlLog(buf);
             if (IsDebuggerPresent()) __debugbreak();
         }
 
@@ -893,7 +966,17 @@ void RenderThreadPool::GlConsumerLoop() {
     // Create OpenGL context for this thread
     auto glContext = std::make_unique<OpenGlContext>(m_hWnd);
     if (!glContext->IsValid()) {
+        GlLog("GlConsumerLoop: OpenGL context creation FAILED, no rendering will occur");
         return;
+    }
+
+    {
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+                 "GlConsumerLoop: context valid, software=%d, maxTex=%d",
+                 glContext->IsSoftwareRenderer() ? 1 : 0,
+                 glContext->GetMaxTextureSize());
+        GlLog(buf);
     }
 
     uint64_t nextExpectedSeqNum = 0;
@@ -965,6 +1048,7 @@ bool RenderThreadPool::ProduceFrame(
     const size_t totalPixels = outputWidth * outputHeight;
 
     if (totalPixels == 0) {
+        GlLog("ProduceFrame: totalPixels == 0");
         return false;
     }
 
@@ -973,6 +1057,17 @@ bool RenderThreadPool::ProduceFrame(
     // skip the frame to prevent buffer overflow in ExtractItersAndColors.
     if (renderer.GetWidth() != workerIters.m_Width ||
         renderer.GetHeight() != workerIters.m_Height) {
+        static bool loggedMismatch = false;
+        if (!loggedMismatch) {
+            loggedMismatch = true;
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "ProduceFrame: dimension mismatch, renderer=%ux%u, "
+                     "iters=%zux%zu",
+                     renderer.GetWidth(), renderer.GetHeight(),
+                     workerIters.m_Width, workerIters.m_Height);
+            GlLog(buf);
+        }
         return false;
     }
 

@@ -831,3 +831,87 @@ fun even though it is of limited practical use because one can barely zoom in be
 pixellation sets in.
 
 \end{itemize}
+
+% -----------------------------------------------------------------
+\subsection{Automatic zoom}
+\label{subsec:autozoom}
+
+The \code{AutoZoomer} class provides four heuristic strategies for
+automated zoom animation.  Each heuristic repeats until a termination
+condition is met (all pixels at the iteration limit, user abort, or
+target reached).  The render pipeline depth of
+$4 \times \text{NumRenderers}$ keeps several frames in flight for smooth
+playback.
+
+\begin{description}
+  \item[Default (zoom divisor~3)]
+    A weighted geometric mean of pixel iteration counts in a
+    center-cropped region (borders trimmed to $\tfrac{1}{8}$ of each
+    dimension).  Pixels whose iteration count exceeds the image average
+    are weighted by their distance from the screen center and their
+    iteration count relative to the observed maximum.  Each step zooms
+    to $\tfrac{1}{3}$ of the current view, centered on the weighted
+    target.
+
+  \item[Max (zoom divisor~32)]
+    The first pixel that attains the maximum iteration count is selected,
+    and the view zooms aggressively---32$\times$ per step.  The sequence
+    terminates when every pixel reaches the iteration limit.
+
+  \item[FilamentTip (zoom divisor~8)]
+    A multi-stage scoring function targets isolated filament tips.  For
+    each candidate pixel whose iteration count exceeds the image
+    average, the heuristic samples eight compass directions at a radius
+    of 12~pixels and counts high-iteration neighbors.  A composite
+    tip score combines isolation (fewer high neighbors is preferable),
+    elevation above the average, and distance from the screen center.
+    The pixel with the highest score becomes the zoom target.
+
+  \item[Feature (zoom divisor~3)]
+    A GPU-driven strategy that forces \code{GpuHDRx32PerturbedLAv2},
+    locates the nearest periodic point via the feature finder
+    (\cref{sec:feature-finder}), and pre-computes the reference orbit
+    at the target zoom depth.  An animated sequence is then generated
+    with a $1.1\times$ zoom factor per frame.  Iteration counts are
+    linearly interpolated from the current value to the target across
+    all frames.
+\end{description}
+
+% -----------------------------------------------------------------
+\subsection{Functional test suite}
+\label{subsec:crummy-test}
+
+\code{CrummyTest} is a self-contained functional test suite invoked
+from the application's right-click context menu
+(\code{IDM\_BASICTEST}, labeled ``Run Basic Test'').  The suite
+exercises the direct rendering path
+(\cref{subsec:two-render-paths}): each test calls \code{Drain()}
+first to ensure no pool workers remain active, then invokes
+\code{CalcFractal(true)}, which writes results to \code{m\_CurIters}.
+
+The top-level \code{TestAll()} method runs the full suite in sequence:
+\begin{itemize}
+  \item \code{TestWindowResize}---resizes the application window and
+        verifies that a re-render completes correctly.
+  \item \code{TestBasic}---iterates through every
+        \code{RenderAlgorithm} entry, rendering the default view,
+        View~5, and View~11 with both 32-bit and 64-bit iteration
+        types.
+  \item \code{TestReferenceSave}---saves and reloads reference orbits,
+        verifying round-trip correctness.
+  \item \code{TestVariedCompression}---tests reference-orbit
+        compression at varying error thresholds.
+  \item \code{TestImaginaLoad}---loads orbits stored in the Imagina
+        format (\cref{subsec:imagina-format}).
+  \item \code{TestStringConversion}---validates string-to-precision
+        and precision-to-string conversion utilities.
+  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
+        chains for numerical correctness.
+  \item \code{TestGrowableVector}---validates the
+        \code{GrowableVector} data structure
+        (\cref{sec:disk_backed_growable_vectors}).
+\end{itemize}
+A separate \code{TestReallyHardView27} (not included in
+\code{TestAll}) renders View~\#27, a period ${\sim}28$~billion point
+requiring hours of computation; the test serves as an overnight
+stress benchmark rather than a routine regression check.

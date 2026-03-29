@@ -1,64 +1,30 @@
-/////////////////////////////////////////////////////////////////
-// TrayIcon.h : header file
-//
+#pragma once
 
-#ifndef _INCLUDED_TRAYICON_H_
-#define _INCLUDED_TRAYICON_H_
-
-/////////////////////////////////////////////////////////////////
-// CTrayIcon window
-
-class CTrayIcon : public CObject {
-    // Construction/destruction
+class TrayIcon {
 public:
-    CTrayIcon();
-    CTrayIcon(CWnd *pWnd, UINT uCallbackMessage, LPCTSTR szTip, HICON icon, UINT uID);
-    virtual ~CTrayIcon();
+    TrayIcon() = default;
+    ~TrayIcon();
 
-    // Operations
-public:
-    BOOL Enabled() { return m_bEnabled; }
-    BOOL Visible() { return !m_bHidden; }
+    TrayIcon(const TrayIcon &) = delete;
+    TrayIcon &operator=(const TrayIcon &) = delete;
 
-    //Create the tray icon
-    BOOL Create(CWnd *pWnd, UINT uCallbackMessage, LPCTSTR szTip, HICON icon, UINT uID);
+    bool Create(HWND parentWnd, UINT callbackMessage,
+                const wchar_t *tooltip, HICON icon, UINT menuId);
+    void Remove();
 
-    //Change or retrieve the Tooltip text
-    BOOL SetTooltipText(LPCTSTR pszTooltipText);
-    BOOL SetTooltipText(UINT nID);
-    CString GetTooltipText() const;
+    bool SetIcon(HICON icon);
+    bool SetTooltipText(const wchar_t *tip);
+    void Show();
+    void Hide();
 
-    //Change or retrieve the icon displayed
-    BOOL SetIcon(HICON hIcon);
-    BOOL SetIcon(LPCTSTR lpIconName);
-    BOOL SetIcon(UINT nIDResource);
-    BOOL SetStandardIcon(LPCTSTR lpIconName);
-    BOOL SetStandardIcon(UINT nIDResource);
-    HICON GetIcon() const;
-    void HideIcon();
-    void ShowIcon();
-    void RemoveIcon();
-    void MoveToRight();
+    LRESULT OnTrayNotification(WPARAM wParam, LPARAM lParam);
 
-    //Change or retrieve the window to send notification messages to
-    BOOL SetNotificationWnd(CWnd *pNotifyWnd);
-    CWnd *GetNotificationWnd() const;
+    bool IsEnabled() const { return m_Enabled; }
+    bool IsVisible() const { return m_Enabled && !m_Hidden; }
 
-    //Default handler for tray notification message
-    virtual LRESULT OnTrayNotification(WPARAM uID, LPARAM lEvent);
-
-    // Overrides
-    // ClassWizard generated virtual function overrides
-    //{{AFX_VIRTUAL (CTrayIcon)
-    //}}AFX_VIRTUAL
-
-    // Implementation
-protected:
-    BOOL m_bEnabled; // does O/S support tray icon?
-    BOOL m_bHidden; // Has the icon been hidden?
-    NOTIFYICONDATA m_tnd;
-
-    DECLARE_DYNAMIC(CTrayIcon)
+private:
+    NOTIFYICONDATA m_Nid{};
+    UINT m_MenuId = 0;
+    bool m_Enabled = false;
+    bool m_Hidden = false;
 };
-
-#endif

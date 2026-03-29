@@ -1,70 +1,55 @@
-// FractalTrayDlg.h : header file
-//
-
 #pragma once
-
-#define WM_ICON_NOTIFY 1200
-#define WM_FINISHED_CALCULATING 1201
 
 #include "TrayIcon.h"
 #include <string>
+#include <thread>
 
-struct CThreadParam {
-    volatile bool stop;
-    const CString *LocationFilename;
-    int Algorithm;
-    HWND hWnd;
-};
+constexpr UINT WM_ICON_NOTIFY = 1200;
+constexpr UINT WM_FINISHED_CALCULATING = 1201;
 
-DWORD WINAPI CalcProc(LPVOID lpParameter);
-bool FileExists(const std::wstring &filename);
+constexpr double DefaultScaleFactor = 75.0;
+constexpr int DefaultWidth = 3840;
+constexpr int DefaultHeight = 1600;
 
-// CFractalTrayDlg dialog
-class CFractalTrayDlg : public CDialog {
-    // Construction
+class FractalTrayDialog {
 public:
-    CFractalTrayDlg(CWnd *pParent = nullptr);  // standard constructor
+    FractalTrayDialog();
+    INT_PTR DoModal(HINSTANCE hInst);
 
-    // Dialog Data
-    enum { IDD = IDD_FRACTALTRAY_DIALOG };
+private:
+    static INT_PTR CALLBACK StaticDlgProc(HWND hDlg, UINT msg,
+                                          WPARAM wParam, LPARAM lParam);
+    INT_PTR HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
-protected:
-    virtual void DoDataExchange(CDataExchange *pDX);  // DDX/DDV support
-
-
-    // Implementation
-protected:
-    HICON m_hIcon1;
-    HICON m_hIcon2;
-
-    // Generated message map functions
-    virtual BOOL OnInitDialog();
-    afx_msg void OnPaint();
-    afx_msg HCURSOR OnQueryDragIcon();
-    afx_msg LRESULT OnSysCommand(WPARAM nID, LPARAM lParam);
-    afx_msg LRESULT OnDestroy(WPARAM nID, LPARAM lParam);
-    DECLARE_MESSAGE_MAP()
-
-    void TryLoadDestCoords();
-public:
-    afx_msg void OnBnClickedButtonGenerate();
-    int HowManyFrames(void);
-    LRESULT OnTrayNotification(WPARAM, LPARAM);
-    LRESULT OnFinishedCalculating(WPARAM, LPARAM);
+    BOOL OnInitDialog();
+    void OnPaintIconic();
+    void OnClose();
+    void OnGenerate();
+    LRESULT OnTrayNotification(WPARAM wParam, LPARAM lParam);
+    LRESULT OnFinishedCalculating();
     void OnRestore();
     void OnExit();
 
-    CString m_SourceCoords;
-    CString m_DestCoords;
-    double m_ScaleFactor;
-    int m_ResX;
-    int m_ResY;
-    int m_GpuAntialiasing;
+    void TryLoadDestCoords();
+    void StartCalculation();
+    void RunCalculation(std::stop_token stopToken);
+    int CalculateFrameCount();
 
-    CString m_Messages;
-    CString m_LocationFilename;
+    std::wstring GetDlgText(int controlId) const;
+    void SetDlgText(int controlId, const std::wstring &text);
+    void ReadControlsToMembers();
 
-    HANDLE m_Thread;
-    CThreadParam m_ThreadParam;
-    CTrayIcon m_TrayIcon;
+    HWND m_hDlg = nullptr;
+    HINSTANCE m_hInst = nullptr;
+    HICON m_hIconActive = nullptr;
+    HICON m_hIconIdle = nullptr;
+    TrayIcon m_TrayIcon;
+    std::jthread m_CalcThread;
+
+    std::wstring m_SourceCoords;
+    std::wstring m_DestCoords;
+    double m_ScaleFactor = DefaultScaleFactor;
+    int m_ResX = DefaultWidth;
+    int m_ResY = DefaultHeight;
+    std::wstring m_LocationFilename = L"locations.txt";
 };

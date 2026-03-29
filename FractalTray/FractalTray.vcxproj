@@ -12,19 +12,16 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{B7468E51-1CF3-4959-B1C8-394EA78CE79C}</ProjectGuid>
-    <Keyword>MFCProj</Keyword>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(SolutionDir)Directory.FractalShark.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <UseOfMfc>Static</UseOfMfc>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <UseOfMfc>Static</UseOfMfc>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -125,8 +122,6 @@
     <ClCompile Include="TrayIcon.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\cximage599a_full\CxImage\ximage.h" />
-    <ClInclude Include="FractalTray.h" />
     <ClInclude Include="FractalTrayDlg.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="stdafx.h" />

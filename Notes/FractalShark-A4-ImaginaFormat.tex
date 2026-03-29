@@ -1,0 +1,28 @@
+\section{Imagina-Compatible Orbit Format}
+\label{subsec:imagina-format}
+
+\FractalShark{} can import and export reference orbits in a binary format
+compatible with the Imagina fractal viewer, enabling cross-tool validation of
+orbit computations.  The file layout is header-driven: a 32-byte file header
+contains a magic number (identifying either Imagina or \FractalShark{} origin), a
+reserved field, and byte offsets to the location and reference-orbit sections.
+The location section stores the reference-point coordinates and zoom metadata at
+arbitrary precision; the reference-orbit section stores orbit data together with
+precision radii (absolute and relative) and a validity radius.
+
+For orbits that include linear-approximation (LA) data, additional metadata
+accompanies the orbit payload: the reference point in single precision,
+iteration counts, periodicity status, and a flag indicating whether Attractor
+Transformation (AT) acceleration is enabled.  AT parameters comprise the step
+length, escape radius, and LA coefficients (\code{ZCoeff}, \code{CCoeff},
+\code{InvZCoeff}), as well as the number of LA stages, allowing the importing
+application to reconstruct the full approximation hierarchy described in
+\cref{sec:la-stage-hierarchy}.  The format therefore supports both basic
+reference orbits (perturbation data only) and full LA-equipped orbits.
+
+\FractalShark{} exposes four save modes: uncompressed text, simple compressed,
+max compressed, and Imagina-compatible max compressed.  The Imagina-compatible
+variant writes the orbit in Imagina's native binary layout so that the file can
+be imported directly.  Loading supports two modes: \emph{Match}, which validates
+that the loaded orbit's coordinates and precision match the current view, and
+\emph{Use Saved}, which loads unconditionally and adopts the file's parameters.

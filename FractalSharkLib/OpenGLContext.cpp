@@ -5,10 +5,22 @@
 
 #include <cassert>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+
+// Append a diagnostic line to a log file next to the executable.
+void
+GlLog(const char *msg)
+{
+    static std::mutex logMutex;
+    std::scoped_lock lock(logMutex);
+    std::ofstream f("FractalShark_gl.log", std::ios::app);
+    if (f)
+        f << msg << std::endl;
+}
 
 namespace {
 
@@ -86,6 +98,15 @@ RegisterShareRoot(HWND hWnd, HGLRC rc)
         st.shareRoot = rc;
 }
 
+void
+UnregisterShareRoot(HWND hWnd, HGLRC rc)
+{
+    std::scoped_lock lock(g_hwndMutex);
+    auto it = g_hwndState.find(hWnd);
+    if (it != g_hwndState.end() && it->second.shareRoot == rc)
+        it->second.shareRoot = nullptr;
+}
+
 HGLRC
 GetShareRoot(HWND hWnd)
 {
@@ -118,31 +139,45 @@ OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
 {
     m_Valid = false;
 
-    if (!m_hWnd)
+    if (!m_hWnd) {
+        GlLog("OpenGlContext: null HWND");
         return;
+    }
 
     m_hDC = GetDC(m_hWnd);
-    if (!m_hDC)
+    if (!m_hDC) {
+        GlLog("OpenGlContext: GetDC failed");
         return;
+    }
 
     int pf = 0;
     if (!EnsurePixelFormatSet(m_hWnd, m_hDC, pf)) {
-        std::wcerr << L"EnsurePixelFormatSet failed.\n";
+        GlLog("OpenGlContext: EnsurePixelFormatSet failed");
         return;
     }
 
     // Create a dedicated context for this instance (so you can have one per thread).
     m_hRC = wglCreateContext(m_hDC);
-    if (!m_hRC)
+    if (!m_hRC) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "OpenGlContext: wglCreateContext failed, error=%lu",
+                 GetLastError());
+        GlLog(buf);
         return;
+    }
 
     // Optional sharing with first context created for this HWND.
     // This is safe even if it fails; it just means no shared textures/lists.
     MaybeShareWithRoot(m_hWnd, m_hRC);
     RegisterShareRoot(m_hWnd, m_hRC);
 
-    if (!MakeCurrent())
+    if (!MakeCurrent()) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "OpenGlContext: MakeCurrent failed, error=%lu",
+                 GetLastError());
+        GlLog(buf);
         return;
+    }
 
     // Detect software-only renderer (e.g. Microsoft GDI Generic on RDP).
     // PFD_GENERIC_FORMAT without PFD_GENERIC_ACCELERATED = pure software GL 1.1.
@@ -157,11 +192,18 @@ OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
         const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
         const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &m_MaxTextureSize);
-        std::cerr << "OpenGL renderer: " << (renderer ? renderer : "(null)")
-                  << ", version: " << (version ? version : "(null)")
-                  << ", max texture: " << m_MaxTextureSize
-                  << (m_IsSoftwareRenderer ? " [software]" : " [hardware]")
-                  << std::endl;
+
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+                 "OpenGlContext: renderer=%s, version=%s, maxTex=%d, pfdFlags=0x%lx, "
+                 "software=%d, thread=%lu",
+                 renderer ? renderer : "(null)",
+                 version ? version : "(null)",
+                 m_MaxTextureSize,
+                 actualPfd.dwFlags,
+                 m_IsSoftwareRenderer ? 1 : 0,
+                 GetCurrentThreadId());
+        GlLog(buf);
     }
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -184,6 +226,11 @@ OpenGlContext::~OpenGlContext()
     }
 
     if (m_hRC) {
+        // Clear the share root if this context was the root, so later
+        // contexts don't try wglShareLists with a deleted HGLRC.
+        if (m_hWnd)
+            UnregisterShareRoot(m_hWnd, m_hRC);
+
         wglDeleteContext(m_hRC);
         m_hRC = nullptr;
     }

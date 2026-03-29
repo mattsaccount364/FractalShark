@@ -9,7 +9,7 @@ orbit classification, perturbation terms, or bailout logic. While
 arbitrary-precision libraries like MPIR can provide the required accuracy
 (\cref{sec:ref-orbit-calc}), their
 performance is often insufficient when reference orbits must be computed
-repeatedly or at very high precision. This creates a tension between
+repeatedly or at very high precision. This limitation creates a tension between
 numerical fidelity and throughput.
 
 To resolve this tension, high-precision arithmetic operations---in particular
@@ -124,7 +124,7 @@ correction.
 The entire lifecycle of a reference orbit computation is specialized by
 \code{SharkFloatParams}. Precision is selected once at startup via
 \code{DispatchByPrecision} and remains fixed for the lifetime of the combo
-object. This ensures that kernel code, shared-memory usage, and arithmetic
+object. This specialization ensures that kernel code, shared-memory usage, and arithmetic
 pipelines are fully specialized for the chosen precision, at the cost of
 supporting a finite, enumerated set of precisions.
 
@@ -304,7 +304,7 @@ The total carry $C_i$ entering limb $i$ is the result of applying the composed t
 \begin{equation}
 C_i = (f_{i-1} \circ f_{i-2} \circ \cdots \circ f_0)(0).
 \end{equation}
-Function composition is associative --- $(f_c \circ f_b) \circ f_a = f_c \circ (f_b \circ f_a)$ for all $f_a, f_b, f_c$ --- so the transfer functions form a monoid under composition with the identity map as the unit. This allows carry propagation to be computed using a parallel prefix scan, generalizing classical carry-lookahead logic to signed arbitrary-precision arithmetic.
+Function composition is associative --- $(f_c \circ f_b) \circ f_a = f_c \circ (f_b \circ f_a)$ for all $f_a, f_b, f_c$ --- so the transfer functions form a monoid under composition with the identity map as the unit. This algebraic structure allows carry propagation to be computed using a parallel prefix scan, generalizing classical carry-lookahead logic to signed arbitrary-precision arithmetic.
 
 \paragraph{Three-stream batching.}
 The full add pipeline requires carry propagation for three independent streams simultaneously: two candidate results for the $A - B + C$ computation (corresponding to the two possible sign-comparison outcomes), and one result for the $D + E$ term. Rather than running three separate scans, the implementation packs all three transfer functions into a single 18-bit struct (\code{PPTransfer3}): three streams $\times$ three input carries $\times$ two bits per output, stored in a \code{uint64\_t}. Composition and prefix operations act on the packed representation, so a single scan pass resolves carries for all three streams at once.
@@ -582,7 +582,7 @@ An earlier carry propagation implementation
 classical hierarchical parallel prefix scan: each CTA computes a local
 inclusive scan of its chunk's transfer functions, publishes its
 aggregate, then CTA~0 scans the per-CTA aggregates, and finally each
-CTA incorporates the global prefix.  This requires three explicit
+CTA incorporates the global prefix.  This approach requires three explicit
 \code{grid.sync()} barriers within the scan alone (local$\to$publish,
 global scan, apply prefix), in addition to the barriers before and
 after the scan.  The implementation is retained in the codebase for
@@ -730,7 +730,7 @@ p - 1 = 2^{64} - 2^{32} = 2^{32}\left(2^{32}-1\right),
 \]
 
 so $2^{32}$ divides $(p-1)$. Therefore, for any $N = 2^m$ with $m \le 32$, there
-exists an $N$-th root of unity in $\mathbb{Z}_p$. This enables power-of-two NTTs
+exists an $N$-th root of unity in $\mathbb{Z}_p$. This divisibility enables power-of-two NTTs
 up to length $2^{32}$ in principle (practically limited by memory and
 implementation constraints), which is ample for large-limb convolutions.
 
@@ -766,7 +766,7 @@ Given limb sequences $(a_i)$ and $(c_i)$:
 
 Finally, because the convolution coefficients are computed modulo $p$, it is
 necessary to ensure they represent the \emph{true integer} convolution values, not values
-wrapped modulo $p$. This is achieved by choosing the limb base $B$ and transform
+wrapped modulo $p$. This guarantee is achieved by choosing the limb base $B$ and transform
 length $N$ so that each exact coefficient $s_k$ satisfies
 
 \[
@@ -876,7 +876,7 @@ After packing, an in-place radix--2 forward NTT is performed using the
 decimation-in-time (DIT) formulation.  DIT requires the input to be in
 \emph{bit-reversed} order: each element at index~$i$ must appear at
 index~$\mathrm{bitrev}(i)$, where $\mathrm{bitrev}$ reverses the
-$\log_2 N$ least-significant bits.  This ensures that the iterative
+$\log_2 N$ least-significant bits.  This reordering ensures that the iterative
 butterfly stages can read and write elements at naturally strided
 offsets, enabling coalesced memory access patterns on the GPU.
 
@@ -885,7 +885,7 @@ rather than writing packed/twisted coefficients to position~$i$ and then
 performing a separate permutation pass, the packing kernel computes
 $j = \mathrm{bitrev}(i)$ via the hardware \code{\_\_brev} intrinsic
 and scatter-writes each coefficient directly to position~$j$.
-This eliminates one full random-access permutation pass over the
+This fusion eliminates one full random-accesspermutation pass over the
 $N$-element array, saving both memory traffic and a
 \code{grid.sync()} barrier.
 
@@ -1117,7 +1117,7 @@ kernel path is exercised repeatedly in a pipeline.
 \subsubsection{Parallel Computation with Order Preservation}
 
 The checksum must match between host and device, so the GPU computation must be
-\emph{equivalent} to the sequential definition. This requires two properties:
+\emph{equivalent} to the sequential definition. This equivalence requires two properties:
 \begin{enumerate}
   \item \textbf{Deterministic segmentation}: the array is partitioned into
   contiguous chunks assigned to threads in a deterministic manner.

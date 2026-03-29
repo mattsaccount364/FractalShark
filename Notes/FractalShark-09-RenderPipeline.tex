@@ -40,7 +40,7 @@ RGBA) output.
 \paragraph{Stream separation.}
 The antialiasing kernel is launched on a dedicated CUDA stream
 (\code{m\_Stream1}), distinct from the compute stream used by the
-iteration kernels.  This allows the display thread to run
+iteration kernels.  This separation allows the display thread to run
 antialiasing and read back the colour buffer while the compute thread
 continues issuing iteration work on its own default stream
 (see also the \code{--default-stream per-thread}
@@ -327,8 +327,8 @@ pushed back onto the vector and the condition variable is notified.
 \paragraph{Worker-to-shared swap.}
 After a successful render, the worker swaps its private
 \code{ItersMemoryContainer} into \code{m\_CurIters} under the
-calc-fractal mutex (if dimensions match).  This ensures that
-facilities requiring CPU-side iteration data
+calc-fractal mutex (if dimensions match).  This swap ensures that
+facilitiesrequiring CPU-side iteration data
 (\code{SaveCurrentFractal}, \code{FindInterestingLocation}) see the
 most recently completed render without requiring a separate direct-path
 call.  If dimensions do not match---e.g.\ a resize occurred between
@@ -573,7 +573,7 @@ mapping between screen pixel coordinates and points on the complex
 plane.  All internal coordinate quantities---centre, bounding-box
 corners, zoom factor, radius---are stored as \code{HighPrecision}
 values, which wrap MPIR's \code{mpf\_t} arbitrary-precision
-floating-point type.  This allows the coordinate system to maintain
+floating-point type.  This representation allows the coordinate system to maintain
 meaningful precision at extreme zoom depths where IEEE~754 types are
 long exhausted.
 

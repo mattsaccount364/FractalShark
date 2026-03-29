@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HpSharkFloat.h"
+#include "HpSharkTestConfig.h"
 
 #include <iostream>
 #include <vector>

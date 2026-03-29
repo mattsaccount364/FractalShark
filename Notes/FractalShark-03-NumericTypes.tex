@@ -268,7 +268,7 @@ GPUs, where fp64 performance is significantly slower than fp32, with throughput 
 The \textbf{2$\times$32 double-float} type bridges this gap: it provides
 ${\sim}48$~bits of effective mantissa using only fp32 arithmetic, delivering
 sufficient precision for accurate perturbation while remaining on the fast
-fp32 ALUs.  This is the extended-precision type with real practical value in
+fp32 ALUs.  This format is the extended-precision type with real practical value in
 \FractalShark{}'s rendering pipeline.
 
 \FractalShark{} also includes higher-precision types (2$\times$64,
@@ -315,7 +315,7 @@ operations:
 
 All operations are built on fused multiply-add (\code{\_\_fmaf\_rn},
 \code{\_\_fmaf\_rd}) intrinsics, which compute $a \times b + c$ in a single
-rounding step.  This is essential for maintaining the head--tail invariant:
+rounding step.  This property is essential for maintaining the head--tail invariant:
 intermediate products must be exact or correctly rounded before the correction
 term is computed.  The error bounds listed above are the theoretical
 $O(u^2)$ bounds for compensated float arithmetic, where $u = 2^{-24}$ is
@@ -330,12 +330,12 @@ with $u = 2^{-53}$) and were not re-measured for the float-float variant.
 
 The \code{CudaDblflt<T>} class template wraps a \code{dblflt} value with
 C++ operator overloads (\code{+}, \code{-}, \code{*}, \code{/}, comparisons)
-suitable for use in GPU device code.  This allows perturbation kernels to be
+suitable for use in GPU device code.  This wrapper allows perturbation kernels to be
 written generically over the \code{SubType} parameter without
 \code{dblflt}-specific function calls.
 
 For perturbation rendering with linear approximation, the delta values need
-both extended precision \emph{and} wide dynamic range.  This is achieved by
+both extended precision \emph{and} wide dynamic range.  This combination is achieved by
 combining \code{CudaDblflt} with the HDR wrapper
 (\cref{sec:hdr-float}):
 \begingroup\footnotesize
@@ -381,7 +381,7 @@ on consumer GPUs despite using four components.
 
 \paragraph{4\texorpdfstring{$\times$}{x}64 quad-double (\code{GQD::gqd\_real}).}
 Four \code{double} values (${\sim}212$-bit mantissa, ${\sim}64$ decimal
-digits) stored as an aligned \code{double4} type.  This is the highest
+digits) stored as an aligned \code{double4} type.  This type is the highest
 software-only precision available before switching to arbitrary-precision
 arithmetic (MPIR \cite{MPIR_Library} on CPU or \code{HpSharkFloat} on GPU).  Also adapted from
 the QD library.

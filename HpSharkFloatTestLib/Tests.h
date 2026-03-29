@@ -1,5 +1,7 @@
 #pragma once
 
+#include "HpSharkTestConfig.h"
+
 class TestTracker;
 
 enum class Operator {

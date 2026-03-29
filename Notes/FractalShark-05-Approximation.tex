@@ -368,7 +368,7 @@ The \code{CCoeff} recurrence
 is identical in form to the orbit derivative recurrence
 \(d_{n+1} = 2\,z_n\,d_n + 1\) with \(d_0 = 0\)
 (\cref{subsec:ref-orbit-periodicity}), offset by one step.
-This is not a coincidence: \code{CCoeff} accumulates the total
+This connection is not a coincidence: \code{CCoeff} accumulates the total
 sensitivity \(\partial z_n / \partial c\) of the orbit position to
 changes in the parameter, which is exactly the orbit derivative.  The
 \(+1\) in each step reflects the direct \(+\Delta c\) contribution from
@@ -454,7 +454,7 @@ Z_{\mathrm{comp},y} &= Z'_x\,Z_{2,y} + Z'_y\,Z_{2,x},
 and the composite \code{CCoeff} follows the same pattern with
 $\code{CCoeff}_2$ added after the chained multiply.
 
-This is analogous to BLA composition (\cref{sec:bilinear-approx}):
+This structure is analogous to BLA composition (\cref{sec:bilinear-approx}):
 the \code{ZCoeff} factors multiply and the \code{CCoeff} factors compose
 as an affine chain.  The factor \(2\,z_\mathrm{ref,2}\) accounts for
 the linearized Prepare step at the junction between the two entries.
@@ -580,7 +580,7 @@ implemented in \code{LAReference::\allowbreak CreateLAFromOrbit} and
         algorithm synthesizes an artificial period as
         \(\lfloor M^{1/k}\rfloor\) (where \(M\) is the total iteration
         count and \(k\) is derived from \code{periodDivisor}) and
-        proceeds with that period length.  This ensures LA~v2 provides
+        proceeds with that period length.  This fallback ensures LA~v2 provides
         some acceleration even for non-periodic reference orbits,
         though the skip lengths will be shorter.
 
@@ -817,7 +817,7 @@ differ in hierarchy design and accuracy:
         step.  LA~v2 applies a nonlinear Prepare step
         (\cref{eq:la-prepare}) that retains the quadratic term at each
         entry's reference point, then linearizes only the subsequent
-        iterations.  This provides better accuracy per LA step.
+        iterations.  This design provides better accuracy per LA step.
 
   \item \textbf{Kernel structure.}  The BLA kernel interleaves single
         perturbation steps with greedy BLA lookups: do one perturbation

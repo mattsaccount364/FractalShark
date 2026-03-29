@@ -5,6 +5,7 @@
 #include "HDRFloat.h"
 #include "HighPrecision.h"
 #include "HpSharkFloat.h"
+#include "HpSharkTestConfig.h"
 #include "KernelInvoke.h"
 #include "MpirOrbitEval.h"
 #include "PerfTimingResult.h"

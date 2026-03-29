@@ -142,7 +142,7 @@ The bounds check prevents out-of-range threads from writing.
 \end{figure}
 
 \subsection{Y-axis convention}
-The expression \code{height - Y - 1} flips \(Y\). This is common when the image
+The expression \code{height - Y - 1} flips \(Y\). This flip is common when the image
 buffer uses a top-left origin but the complex-plane mapping assumes a
 bottom-left origin (or vice versa).
 
@@ -181,7 +181,7 @@ Many kernels cache squares:
 zrsqr = x^2,\quad zisqr = y^2,
 \]
 so that \(x^2-y^2\) and \(x^2+y^2\) can be formed cheaply as \code{zrsqr - zisqr}
-and \code{zrsqr + zisqr}. This is especially valuable when \(x\) and \(y\) are
+and \code{zrsqr + zisqr}. This optimization is especially valuable when \(x\) and \(y\) are
 represented by multi-component expansion types.
 
 
@@ -316,7 +316,7 @@ The two-limb expansion kernels (\code{mandel\_2x\_float},
 \[
   zrsqr.\mathrm{head} + zisqr.\mathrm{head} < 4.
 \]
-This is fast but can misclassify points extremely near the boundary; a fully
+This test is fast but can misclassify points extremely near the boundary; a fully
 robust test would incorporate both components.
 
 \paragraph{HDR normalization and reduced comparator.}

@@ -280,6 +280,7 @@ Parts: I = Rendering Algorithms (§2–5), II = Reference Orbit Computation (§6
 
 - **Tone**: Formal third-person academic (research paper style) in chapters 1–12. Appendices A1/A2 are intentionally informal.
 - **No sensationalized language**: Avoid "dramatically", "crucially", "key insight", "notoriously", "massively parallel", etc. Let content speak for itself.
+- **No bare "This"**: Never start a sentence with "This" followed directly by a verb. Always follow "This" with a noun (e.g., "This approach ensures…" not "This ensures…"; "This property is…" not "This is…").
 - **Figures**: Use pure TikZ for diagrams (no external image files for diagrams). Use `\caption[short]{long}` format. Add `\cref{fig:...}` in surrounding prose.
 - **Equations**: Numbered equations should be referenced via `\eqref{}` or `\cref{eq:...}` in the text. Unnumbered display math (`\[...\]`) for equations only used at the point of definition.
 - **Cross-references**: Use `\cref{}` (cleveref) for all cross-references. Add forward-linking sentences at the end of each chapter.

@@ -69,6 +69,10 @@
     <ClInclude Include="HDRFloatComplex.h" />
     <ClInclude Include="HighPrecision.h" />
     <ClInclude Include="HpSharkFloat.h" />
+    <ClInclude Include="HpSharkFloatConversions.h" />
+    <ClInclude Include="HpSharkKernelResults.h" />
+    <ClInclude Include="HpSharkScratchMemory.h" />
+    <ClInclude Include="HpSharkTestConfig.h" />
     <ClInclude Include="KernelHpSharkReferenceOrbit.h" />
     <ClInclude Include="MontgomeryCoreConstexpr.h" />
     <ClInclude Include="MpirSerialization.h" />

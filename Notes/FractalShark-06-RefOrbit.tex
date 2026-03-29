@@ -202,7 +202,7 @@ multiplication paths of the high-precision arithmetic.
 
 The factored form reduces the number of full-precision squares by replacing
 $x_n^2 - y_n^2$ with a single multiplication of the shared intermediates
-$(x_n \pm y_n)$. This can reduce computational cost when multiplication and
+$(x_n \pm y_n)$. This factoring can reduce computational cost when multiplication and
 squaring have similar expense, but it introduces stronger coupling between
 terms and alters the way cancellation and rounding effects manifest in
 finite-precision arithmetic.
@@ -374,7 +374,7 @@ sporadically.
 The two-level approach nevertheless does have an important downside: instead of
 maintaining only a low-precision copy of the reference orbit, the system must also
 store the authoritative orbit samples $\{z^{(0)}_n\}$ to support intermediate
-reconstruction.  This increases memory usage and data transfer requirements,
+reconstruction.  This requirement increases memory usage and data transfer requirements,
 potentially impacting performance.
 
 \subsubsection{SaveForReuse Modes}
@@ -385,7 +385,7 @@ They differ only in execution strategy.
 \paragraph{SaveForReuse1.}
 In \code{SaveForReuse1}, the authoritative orbit samples $\{z^{(0)}_n\}$ are stored after initial computation and reused
 whenever intermediate reference orbits are constructed.
-This avoids recomputation of~\eqref{eq:authoritative_orbit} and ensures that all perturbative steps are driven by the same
+This approach avoids recomputation of~\eqref{eq:authoritative_orbit} and ensures that all perturbative steps are driven by the same
 authoritative data.
 
 \paragraph{SaveForReuse2.}

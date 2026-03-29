@@ -172,7 +172,7 @@ choice and triggers any necessary reconfiguration.
   such as edge-aware sampling or adaptive sampling.
 
   \item \emph{Choose Render Algorithm} (radio group submenu): Selects the core
-  Mandelbrot rendering strategy. This is a radio group: selecting one algorithm
+  Mandelbrot rendering strategy. This submenu is a radio group: selecting one algorithm
   automatically deselects the others. Available choices may include CPU-based
   reference and linear-approximation renderers, multiple CUDA-based GPU
   renderers, and high-dynamic-range and experimental kernels. On systems without
@@ -436,7 +436,7 @@ choice and triggers any necessary reconfiguration.
       \item \emph{GPU-Accelerated (see README)} (radio): Selects the
       GPU-accelerated perturbation path, which offloads high-precision
       reference-orbit computation to the GPU via the \code{HpSharkFloat}
-      pipeline.  This is a mode selection (radio button), not a one-shot
+      pipeline.  This option is a mode selection (radio button), not a one-shot
       action.  Intended for extremely deep zooms where CPU-based reference
       computation is prohibitively slow; may be slower than CPU at modest
       precision levels.  See \cref{subsec:ref-orbit-gpu} for details.

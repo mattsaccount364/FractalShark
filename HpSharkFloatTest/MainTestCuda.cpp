@@ -1,6 +1,7 @@
 ﻿#include "Conversion.h"
 #include "DbgHeap.h"
 #include "HpSharkFloat.h"
+#include "HpSharkTestConfig.h"
 #include "ShowMostEfficientSizes.h"
 #include "TestTracker.h"
 #include "TestVerbose.h"

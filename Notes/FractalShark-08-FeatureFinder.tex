@@ -249,8 +249,8 @@ effective $R^2$ during the scan to reduce false triggers.
 
 Each Newton step requires evaluating $F(c) = z_p(c)$ and its first two
 derivatives at the current guess~$c$, as shown in \cref{fig:newton-loops}.
-This is done by iterating the
-critical orbit from $z_0 = 0$ for exactly $p$~steps, accumulating three
+This evaluation is done by iterating the
+critical orbitfrom $z_0 = 0$ for exactly $p$~steps, accumulating three
 quantities simultaneously at \emph{different precision levels}:
 
 \begin{enumerate}
@@ -753,7 +753,7 @@ $\hat{F}''$ instead of $F''$ modifies this ratio by
   \;=\; \frac{F \cdot F'' \epsilon}{2(F')^2}
   \;=\; O(e_k \cdot \epsilon).
 \]
-This is the product of the current error and the $b$-bit truncation noise.
+This quantity is the product of the current error and the $b$-bit truncation noise.
 The resulting Halley step error, relative to the true Halley step, is therefore
 $O(e_k \cdot \epsilon)$, producing a next error of
 \[

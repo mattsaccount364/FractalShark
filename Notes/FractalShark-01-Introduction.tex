@@ -444,7 +444,7 @@ can fold into kernel code:
   \item \code{EnableNewtonRaphson}---when set, the kernel additionally
         tracks the derivative $d_n = \partial z_n/\partial c$ alongside
         the orbit, allocating extra GPU scratch memory and executing the
-        derivative recurrence at each iteration.  This is required by
+        derivative recurrence at each iteration.  This derivative is required by
         the Feature Finder's Newton's method solver
         (\cref{sec:feature-finder}).
   \item \code{NTTPlan}---a compile-time NTT plan computed by

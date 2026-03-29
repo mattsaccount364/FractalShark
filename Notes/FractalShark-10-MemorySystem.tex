@@ -22,7 +22,7 @@ In addition to scale and pointer stability, persistence is a first-class
 concern. Reference orbits are expensive to compute (\cref{subsec:ref-orbit-gpu}) but comparatively cheap to
 reuse. If orbit data can be left resident on disk and later reloaded simply by
 mapping the same backing file back into the process address space, recomputation
-can be avoided entirely. This enables efficient multi-pass rendering workflows,
+can be avoided entirely. This persistence enables efficient multi-pass rendering workflows,
 interactive debugging, and reuse of authoritative reference orbits across program
 invocations.
 
@@ -150,7 +150,7 @@ This approach has two key practical benefits:
   the pointer invalidation inherent in \code{realloc}-style strategies.
   \item \textbf{Reduced peak commit pressure.} The OS can keep most of the
   logical buffer non-resident until touched; pages are faulted in as accessed
-  and can be evicted back to disk under memory pressure. This is particularly
+  and can be evicted back to disk under memory pressure. This behavior is particularly
   effective when the workload has a large addressable dataset but a much smaller
   active working set.
 \end{itemize}
@@ -165,7 +165,7 @@ The vector supports multiple policies that control whether data is persisted:
   representation reflects the logical content exactly.
   \item \textbf{Temporary file-backed (\code{EnableWithoutSave}).} Upon
   \code{Trim()}, the view can be remapped to match the used size while
-  \emph{reusing the same base address}. This reduces the mapped span without
+  \emph{reusing the same base address}. This remapping reduces the mapped span without
   sacrificing pointer stability, and the file is automatically deleted when the
   handle closes.
   \item \textbf{Anonymous (\code{DontSave}).} Trimming is a logical operation

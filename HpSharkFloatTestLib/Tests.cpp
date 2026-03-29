@@ -1,6 +1,7 @@
 #include "BenchmarkTimer.h"
 #include "DbgHeap.h"
 #include "HpSharkFloat.h"
+#include "HpSharkTestConfig.h"
 #include "TestTracker.h"
 #include "TestVerbose.h"
 

@@ -1,26 +1,5 @@
 \documentclass[12pt]{article}
 
-% --- Draft / final toggle ---
-% Comment out the next line to produce the final PDF (all review
-% annotations disappear and no extra packages are loaded).
-\newcommand{\DraftMode}{}
-
-% --- Review annotations (draft only) ---
-\ifdefined\DraftMode
-  \usepackage{xcolor}
-  \usepackage{marginnote}    % \marginnote{} for margin comments
-  \newcounter{reviewcount}
-  \newcommand{\reviewme}[2]{%
-    \stepcounter{reviewcount}%
-    \label{review:\thereviewcount}%
-    {\color{red!70!black}\bfseries #2}%
-    \marginnote{\raggedright\tiny\sffamily\color{red!80!black}%
-      \textbf{[\#\thereviewcount: #1]}}%
-  }
-\else
-  \newcommand{\reviewme}[2]{#2}% silent pass-through
-\fi
-
 % --- Encoding / fonts (fixes OT1 issues + improves monospace metrics) ---
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
@@ -90,17 +69,7 @@ satisfied with the content.  This document has seen significant revisions
 recently and is getting better.}
 \end{center}
 
-\ifdefined\DraftMode
-\subsection*{Items Flagged for Review}
-\label{sec:review-items}
-
-No items are currently flagged for review.  Use \verb|\reviewme{category}{text}|
-in chapter files to flag new items; they will appear here automatically.
-Comment out \verb|\newcommand{\DraftMode}{}| in the preamble to produce a clean PDF.
-\clearpage
-\fi
 \renewcommand\numberline[1]{#1\enspace}
-\makeatother
 
 \tableofcontents
 \listoffigures

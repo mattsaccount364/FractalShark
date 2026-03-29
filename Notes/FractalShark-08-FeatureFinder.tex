@@ -270,11 +270,14 @@ quantities simultaneously at \emph{different precision levels}:
 \noindent
 Initial conditions: $z_0 = 0$, $\;\mathit{dzdc}_0 = 0$, $\;d2_0 = 0$.
 
-The second derivative is deliberately kept at low precision because it is
-only used for the Halley correction factor
-(\cref{subsec:ff-halley}), where ${\sim}53$~bits suffice
-to provide the cubic-convergence benefit during early iterations.
-The $z$ and $\mathit{dzdc}$ values are truncated to ${\sim}53$-bit
+The second derivative is deliberately kept at low precision because it
+enters only two quantities---the Halley correction factor
+(\cref{subsec:ff-halley}) and the error estimator
+(\cref{eq:ff-err}).  Both consumers depend primarily on the
+\emph{exponent} of $d2$, not its mantissa, so even ${\sim}24$~bits of
+mantissa (as on the GPU path) suffice; see \cref{subsec:ff-halley}
+for a detailed analysis.
+The $z$ and $\mathit{dzdc}$ values are truncated to low-precision
 \code{HDRFloat} before entering the $d2$ recurrence---the $d2$
 computation never touches the high-precision \code{mpf\_t}
 representation.
@@ -336,9 +339,10 @@ overwritten (or all old values must be saved).
 Not all operations are equally expensive.  The orbit and first-derivative
 recurrences use high-precision \code{mpf\_t} arithmetic, where each
 $N$-limb multiply costs $O(N \log N)$ (NTT-based) and each add/subtract
-costs $O(N)$.  The second derivative uses ${\sim}53$-bit
-\code{HDRFloat} arithmetic---a handful of \code{double} operations per
-iteration, negligible by comparison.
+costs $O(N)$.  The second derivative uses low-precision
+\code{HDRFloat} arithmetic (${\sim}53$-bit on the CPU path,
+${\sim}24$-bit on the GPU path)---a handful of scalar floating-point
+operations per iteration, negligible by comparison.
 
 Counting real-valued scalar operations from
 \cref{eq:ff-orbit-ri,eq:ff-dzdc-ri,eq:ff-d2-ri}, each iteration requires:
@@ -354,7 +358,7 @@ Orbit ($z^2 + c$) & coord &
   3 & 1 & 3 \\
 $\mathit{dzdc}$ ($2z \cdot \mathit{dzdc} + 1$) & deriv &
   4 & 2 & 3 \\
-$d2$ ($2(\mathit{dzdc}^2 {+} z {\cdot} d2)$) & ${\sim}53$-bit HDR &
+$d2$ ($2(\mathit{dzdc}^2 {+} z {\cdot} d2)$) & low-prec HDR &
   7 & 3 & 5 \\
 \hline
 \textbf{HP total} & &
@@ -370,7 +374,7 @@ N)$ each)---the dominant cost.  ``$\times 2$'' denotes scaling by~two
 $O(N)$ like an addition.  ``Add/subs'' includes all additions,
 subtractions, and constant additions ($+1$, $+c_x$, $+c_y$), each $O(N)$.
 The ``HP total'' row counts only the high-precision (coord and deriv)
-operations; the $d2$ row contributes only cheap ${\sim}53$-bit work.
+operations; the $d2$ row contributes only cheap low-precision work.
 
 \noindent
 In the expanded equations each $\mathit{dzdc}$ and $d2$ term carries an
@@ -422,8 +426,9 @@ The inner loop's 7~high-precision multiplies per iteration are the
 dominant cost of the entire Newton--Raphson procedure.  At deep zooms,
 where the coordinate precision reaches thousands of 32-bit limbs, each
 multiply is an $O(N \log N)$ NTT-based operation.  (The 6~additional
-multiplies for the second derivative are ${\sim}53$-bit \code{HDRFloat}
-operations and contribute negligible cost.)
+multiplies for the second derivative are low-precision \code{HDRFloat}
+operations---${\sim}24$-bit on the GPU, ${\sim}53$-bit on the
+CPU---and contribute negligible cost.)
 
 A naive GPU approach would compute the 4~NR derivative products in a
 \emph{separate} kernel launch from the 3~orbit products, doubling the
@@ -446,8 +451,9 @@ proceeds in three phases:
 \begin{enumerate}
 \item \textbf{$d2$ accumulation (HDRFloat).}
   A single GPU thread (block~0, thread~0) computes the second derivative
-  update (\cref{eq:ff-d2-ri}) in ${\sim}53$-bit \code{HDRFloat}
-  arithmetic, using truncated copies of the current $z$ and
+  update (\cref{eq:ff-d2-ri}) in ${\sim}24$-bit \code{HDRFloat<float>}
+  arithmetic (since \code{SharkParamsNR} uses \code{SubType=float}),
+  using truncated copies of the current $z$ and
   $\mathit{dzdc}$.  This runs \emph{before} the multiply kernel and
   requires no synchronization: the $d2$ values are private to one thread
   and the multiply does not depend on them.
@@ -651,8 +657,9 @@ is because $F''$ serves two distinct purposes in the refinement loop:
   requires an extra forward evaluation per check.
 \end{enumerate}
 
-Because $F''$ is carried in \code{HDRFloat<double>} (${\sim}53$~bits of
-mantissa with a wide exponent), it adds only cheap low-precision arithmetic to
+Because $F''$ is carried in \code{HDRFloat} (${\sim}53$~bits of
+mantissa on the CPU path, ${\sim}24$~bits on the GPU path; both with a
+wide exponent), it adds only cheap low-precision arithmetic to
 the forward evaluation: a few \code{HDRFloat} multiplies and additions per
 iteration of the period loop, compared with the expensive \code{mpf\_t}
 multiplies needed for $z$ and $\partial z/\partial c$.  The cost is therefore
@@ -683,8 +690,10 @@ $\Delta_H = N / D$ is a complex division as in \cref{eq:ff-newton-step}.
 The second derivative $d2 = \partial^2 z/\partial c^2$ is computed by the
 inner loop (\cref{subsubsec:ff-inner}) using the recurrence in
 \cref{eq:ff-d2-ri}.  In the code this quantity is carried as a pair of
-\code{HDRFloat<double>} values (real and imaginary parts), which provide a
-wide exponent range at low mantissa precision.  The coordinate-precision
+\code{HDRFloat} values (real and imaginary parts), which provide a
+wide exponent range at low mantissa precision---\code{HDRFloat<double>}
+(${\sim}53$-bit) on the CPU path and \code{HDRFloat<float>}
+(${\sim}24$-bit) on the GPU path.  The coordinate-precision
 quantities $z$ and $\partial z/\partial c$ are stored in \code{mpf\_t},
 while $\partial^2 z/\partial c^2$ remains in HDR throughout the forward
 evaluation.  When the Halley step is actually computed, the HDR second
@@ -705,9 +714,12 @@ gate is not satisfied), the code falls back to a plain Newton step for that
 iteration.
 
 \paragraph{Is Halley worthwhile given low-precision $F''$?}
-The second derivative $F''$ is accumulated in \code{HDRFloat<double>}
-throughout the forward evaluation, providing only ${\sim}53$~bits of
-mantissa (with a wide exponent range), while $F$ and $F'$ are carried in
+The second derivative $F''$ is accumulated in \code{HDRFloat}
+throughout the forward evaluation, providing only $b$~bits of
+mantissa (with a wide exponent range): $b \approx 53$ on the CPU path
+(\code{HDRFloat<double>}) and $b \approx 24$ on the GPU path
+(\code{HDRFloat<float>}, since \code{SharkParamsNR} uses
+\code{SubType=float}).  Meanwhile $F$ and $F'$ are carried in
 \code{mpf\_t} at hundreds or thousands of bits.  This precision mismatch
 limits the benefit of the Halley correction.
 
@@ -720,8 +732,8 @@ where $\Delta_N = F/F'$ is the Newton step and $\rho^2$ is the dimensionless
 ratio from \cref{eq:ff-halley-gate}.
 
 \paragraph{Why it works: error analysis of the correction factor.}
-Starting from \eqref{eq:ff-halley-decomp}, write the true second derivative as$F''$ and the 53-bit approximation as
-$\hat{F}'' = F''(1 + \epsilon)$ where $|\epsilon| \lesssim 2^{-53}$.  The
+Starting from \eqref{eq:ff-halley-decomp}, write the true second derivative as $F''$ and the $b$-bit approximation as
+$\hat{F}'' = F''(1 + \epsilon)$ where $|\epsilon| \lesssim 2^{-b}$.  The
 Halley step with the approximate $\hat{F}''$ is
 \[
 \hat{\Delta}_H \;=\; \Delta_N \cdot
@@ -741,7 +753,7 @@ $\hat{F}''$ instead of $F''$ modifies this ratio by
   \;=\; \frac{F \cdot F'' \epsilon}{2(F')^2}
   \;=\; O(e_k \cdot \epsilon).
 \]
-This is the product of the current error and the 53-bit truncation noise.
+This is the product of the current error and the $b$-bit truncation noise.
 The resulting Halley step error, relative to the true Halley step, is therefore
 $O(e_k \cdot \epsilon)$, producing a next error of
 \[
@@ -756,24 +768,25 @@ correction factor is $O(e_k \cdot \epsilon)$.)
 
 Two regimes emerge:
 \begin{itemize}
-\item \textbf{Early convergence} ($|e_k| \gg 2^{-53}$): the $O(e_k^3)$ term
+\item \textbf{Early convergence} ($|e_k| \gg 2^{-b}$): the $O(e_k^3)$ term
   dominates, and the method converges cubically---identical to full-precision
-  Halley.  The 53-bit noise is invisible.
-\item \textbf{Late convergence} ($|e_k| \ll 2^{-53}$): the
+  Halley.  The $b$-bit noise is invisible.
+\item \textbf{Late convergence} ($|e_k| \ll 2^{-b}$): the
   $O(e_k^2 \cdot \epsilon)$ term dominates.  Since $\epsilon$ is a fixed
-  ${\sim}2^{-53}$, the effective recurrence becomes $|e_{k+1}| \approx
-  C \cdot e_k^2 \cdot 2^{-53}$, which is quadratic convergence (like Newton)
-  but with an extra constant factor of $2^{-53}$.  In terms of correct bits,
-  this gives ${\sim}2n + 53$ bits per step---still better than Newton's
+  ${\sim}2^{-b}$, the effective recurrence becomes $|e_{k+1}| \approx
+  C \cdot e_k^2 \cdot 2^{-b}$, which is quadratic convergence (like Newton)
+  but with an extra constant factor of $2^{-b}$.  In terms of correct bits,
+  this gives ${\sim}2n + b$ bits per step---still better than Newton's
   ${\sim}2n$, but no longer cubic.
 \end{itemize}
 
-The crossover occurs when $|e_k|^3 \approx |e_k|^2 \cdot 2^{-53}$,
-i.e.\ when $|e_k| \approx 2^{-53}$, or equivalently when the iterate has
-${\sim}53$ correct bits.
+The crossover occurs when $|e_k|^3 \approx |e_k|^2 \cdot 2^{-b}$,
+i.e.\ when $|e_k| \approx 2^{-b}$, or equivalently when the iterate has
+${\sim}b$ correct bits.
 
-\paragraph{Empirical confirmation.}
-Numerical experiments on the period-3 nucleus confirm this analysis:
+\paragraph{Empirical confirmation ($b = 53$).}
+Numerical experiments on the period-3 nucleus confirm this analysis
+for the CPU path ($b = 53$, \code{HDRFloat<double>}):
 
 \begin{center}
 \begin{tabular}{crrr}
@@ -810,6 +823,29 @@ iterations.  For large period~$p$, each saved forward evaluation avoids
 $p$~expensive high-precision multiplies, making the modest cost of computing
 $F''$ in \code{HDRFloat} easily worthwhile.
 
+\paragraph{GPU variant ($b = 24$).}
+The GPU NR path (\code{SharkParamsNR}) uses \code{SubType=float},
+so $d2$ is accumulated in \code{HDRFloat<float>} with $b \approx 24$.
+The crossover from cubic to quadratic convergence therefore occurs
+at ${\sim}24$~correct bits rather than ${\sim}53$, and the late regime
+gives ${\sim}2n + 24$ bits per step instead of ${\sim}2n + 53$.
+In practice this costs roughly one extra NR iteration compared to the
+CPU path for the same target precision.
+
+Using \code{double} or \code{dblflt} for the GPU $d2$ accumulation
+would shift the crossover to ${\sim}53$ or ${\sim}48$ correct bits,
+saving that one iteration.
+However, the $d2$ accumulation runs on a single GPU thread
+(block~0, thread~0) during the multiply phase, and upgrading it would
+increase register pressure and arithmetic latency for a gain of at most
+one saved forward evaluation.  This tradeoff is not currently considered
+worthwhile.
+
+The error estimator (\cref{eq:ff-err}) and Halley gate
+(\cref{eq:ff-halley-gate}) are unaffected by this choice: both depend
+only on the \emph{exponent} of $|F''|$, which the \code{HDRFloat}
+representation tracks exactly regardless of mantissa precision.
+
 \subsection{Mixed-precision refinement}
 \label{subsec:ff-mixed-prec}
 
@@ -845,14 +881,16 @@ After each step $\Delta c$, the code computes an error proxy entirely in
 \mathrm{err} \;=\;
   \frac{|\Delta c|^4 \cdot |F''|^2}{|F'|^2}.
 \end{equation}
-This quantity approximates the leading-order truncation error of the Newton
-step (or, more precisely, the residual that would remain after two successive
-Newton steps of similar quality).  Iteration stops when
+Near a simple root the classical Newton error bound gives
+$|e_{k+1}| \approx |F''|/(2|F'|) \cdot |\Delta c|^2$,
+so $\mathrm{err} \approx 4\,|e_{k+1}|^2$.
+Iteration stops when
 \begin{equation}\label{eq:ff-stop}
 -\lfloor \log_2(\mathrm{err}) \rfloor \;\ge\; 2\,P_c,
 \end{equation}
-meaning the estimated error occupies fewer than $2P_c$ bits---well below the
-representable precision of the coordinate.
+meaning $\mathrm{err} < 2^{-2P_c}$ and hence
+$|e_{k+1}| \lesssim 2^{-P_c}$---the next iterate has at least $P_c$~correct
+bits.
 
 \paragraph{Final correction and accept/reject.}
 After the main loop converges (or exhausts the iteration budget), a single

@@ -70,9 +70,10 @@ choice and triggers any necessary reconfiguration.
       point under the cursor.
       \item \emph{Zoom In Here} (command): Zooms in toward the point under the cursor.
       \item \emph{Zoom Out} (command): Zooms out from the current view.
-      \item \emph{Autozoom Feature} (command): See \cref{par:autozoom} for details.
+      \item \emph{Autozoom Max} (command): Autozoom using the ``Max'' heuristic,
+      which zooms by a factor of~32 each step.  See \cref{par:autozoom} for details.
       \item \emph{Autozoom Default} (command): See \cref{par:autozoom} for details.
-      \item \emph{Autozoom Filament Tip} (\code{s}) (command): Autozoom using the
+      \item \emph{Autozoom Filament Tip} (\code{S}, i.e.\ \code{Shift+s}) (command): Autozoom using the
       ``FilamentTip'' heuristic.
       \item \emph{Feature Finder} (submenu): Locates nearby mini-Mandelbrot
       nuclei (periodic points) using Newton's method and optionally zooms to
@@ -118,14 +119,14 @@ choice and triggers any necessary reconfiguration.
     \end{itemize}
 
   \item \emph{Built-In Views} (submenu): Loads a predefined view/location used
-  for demonstrations, debugging, or performance testing.  Up to 31 views are
+  for demonstrations, debugging, or performance testing.  Up to 32 views are
   defined in the source (\code{FractalViewPresets.cpp}).
     \begin{itemize}
       \item \emph{Help} (command): Pops up a message box that simply says this
       submenu contains built-in test views.
       \item \emph{Standard View} (command): Loads the default starting view: the
       classic Mandelbrot.
-      \item \emph{\#1 -- \#31} (commands): Loads a specific predefined
+      \item \emph{\#1 -- \#32} (commands): Loads a specific predefined
       test view. Many entries encode expected precision limits, kernel behavior,
       or known failure cases in their label text.  Several views require intense
       computation and take a long time to render.  View \#27, for example, is a
@@ -134,6 +135,10 @@ choice and triggers any necessary reconfiguration.
       views, as they may cause long delays or high memory usage.
 
     \end{itemize}
+    When reference orbits or Imagina-format orbit files are loaded, additional
+    dynamic view entries may appear in the menu below the built-in presets.
+    These entries correspond to the loaded data and are removed when the orbit
+    state is cleared.
 
   \item \emph{Recalculate, Reuse Reference} (command): Forces an immediate
   re-render using the current settings, reusing the existing reference orbit if
@@ -223,7 +228,7 @@ choice and triggers any necessary reconfiguration.
       algorithm currently in use is checked.  This design allows users to see
       what algorithm is active.
 
-      At present, only three algorithms are eligible for automatic selection:
+      At present, four algorithms are eligible for automatic selection:
       \begin{itemize}
         \item \emph{1x32 GPU}: The default low-zoom GPU linear-approximation
               renderer.  No perturbation or linear approximation is used.
@@ -280,10 +285,9 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Low-Zoom Depth} (submenu): GPU renderers intended for relatively modest zoom depths and lower precision requirements.
         \begin{itemize}
           \item \emph{Iteration Precision} (radio group submenu): Controls a
-          rendering quality multiplier for low-zoom GPU paths.  The multiplier
-          value (1, 4, 8, or~16) affects internal sampling density per pixel.
-          Higher values produce smoother results at the cost of proportionally
-          more computation.
+          rendering speed/quality trade-off for low-zoom GPU paths.  The
+          internal multiplier (1, 4, 8, or~16) scales the iteration step size:
+          higher multipliers compute faster but with lower fidelity.
             \begin{itemize}
               \item \emph{4x (fast)} (radio): Multiplier~16 (fastest, lowest quality).
               \item \emph{3x} (radio): Multiplier~8.
@@ -355,12 +359,12 @@ choice and triggers any necessary reconfiguration.
 
           \item \emph{LA Only} (submenu): Reference-compressed LA-only variants.
             \begin{itemize}
-              \item \emph{1x32 GPU -- RC LA~v2} (radio)
-              \item \emph{2x32 GPU -- RC LA~v2} (radio)
-              \item \emph{1x64 GPU -- RC LA~v2} (radio)
-              \item \emph{HDRx32 GPU -- RC LA~v2} (radio)
-              \item \emph{HDRx2x32 GPU -- RC LA~v2} (radio)
-              \item \emph{HDRx64 GPU -- RC LA~v2} (radio)
+              \item \emph{1x32 GPU -- RC LA~v2 -- LA only} (radio)
+              \item \emph{2x32 GPU -- RC LA~v2 -- LA only} (radio)
+              \item \emph{1x64 GPU -- RC LA~v2 -- LA only} (radio)
+              \item \emph{HDRx32 GPU -- RC LA~v2 -- LA only} (radio)
+              \item \emph{HDRx2x32 GPU -- RC LA~v2 -- LA only} (radio)
+              \item \emph{HDRx64 GPU -- RC LA~v2 -- LA only} (radio)
             \end{itemize}
         \end{itemize}
 
@@ -634,7 +638,7 @@ additional work for correctness or a ``clean'' run.
         a zoom target via a weighted geometric mean of iteration counts
         (favouring high-iteration, centre-proximate pixels) and zooms by a
         factor of~3 each step.
-  \item \code{s}: Autozoom using the ``FilamentTip'' heuristic.
+  \item \code{S} (\code{Shift+s}): Autozoom using the ``FilamentTip'' heuristic.
 \end{itemize}
 Holding \code{Ctrl} may abort either autozoom variant (the abort mechanism is
 not part of the key handler and is implemented elsewhere).

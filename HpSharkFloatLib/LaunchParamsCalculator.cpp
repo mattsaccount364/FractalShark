@@ -1,6 +1,7 @@
 #include "LaunchParamsCalculator.h"
 
 #include <algorithm>
+#include <iostream>
 #include <type_traits>
 
 // ---------------- utility ----------------
@@ -145,7 +146,15 @@ CudaLaunchConfig::compute(const void *kernelFunc, size_t dynSmemBytes)
     chosenBlocks = clamp_nonzero(chosenBlocks);
 
     blocks = chosenBlocks;
-    return status = cudaSuccess;
+    status = cudaSuccess;
+
+    std::cout << "CudaLaunchConfig: blocks=" << blocks
+              << " threadsPerBlock=" << threadsPerBlock
+              << " blocksPerSM=" << blocksPerSM
+              << " SMs=" << smCount
+              << " sharedMem=" << dynamicSmemBytes << std::endl;
+
+    return status;
 }
 
 } // namespace HpShark

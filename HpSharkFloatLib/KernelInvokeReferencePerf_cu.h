@@ -404,11 +404,9 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     }
 
     constexpr int precBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
-    // Use external launch params if provided (non-zero), otherwise default
-    HpShark::LaunchParams launchParams =
-        (externalLaunchParams.NumBlocks != 0 || externalLaunchParams.ThreadsPerBlock != 0)
-            ? externalLaunchParams
-            : HpShark::LaunchParams{2, 32};
+    // Pass launch params through to InitHpSharkReferenceKernel, which handles
+    // CudaLaunchConfig when NumBlocks==0 (queries CUDA for optimal blocks/threads).
+    HpShark::LaunchParams launchParams = externalLaunchParams;
     typename SharkFloatParams::Float hdrRadiusY{1.0f};
 
     // Convert c from mpf to HpSharkFloat (heap-allocated for large types)

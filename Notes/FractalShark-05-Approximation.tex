@@ -395,7 +395,8 @@ To control this, each LA entry tracks a validity threshold
 \end{equation}
 where \(\lVert\cdot\rVert_\infty\) is the Chebyshev (max-component) norm,
 \(\lVert a + bi \rVert_\infty = \max(|a|, |b|)\), and
-\code{LAThresholdScale} is an empirically chosen tunable parameter (default \(2^{-24}\)); no formal derivation is known.
+\code{LAThresholdScale} is an empirically chosen tunable parameter
+(default \(2^{-24}\), set by \code{Default\-LA\-Threshold\-Scale\-Exponent} in \code{LAParameters.h}); no formal derivation is known.
 The \(\min\) in \eqref{eq:la-threshold} ensures the threshold can only decrease as more iterations are
 absorbed, reflecting the accumulation of linearization error.
 

@@ -1052,25 +1052,6 @@ bool RenderThreadPool::ProduceFrame(
         return false;
     }
 
-    // Safety net: if the renderer's dimensions don't match the worker's
-    // container (e.g., due to a data race on m_CurIters during resize),
-    // skip the frame to prevent buffer overflow in ExtractItersAndColors.
-    if (renderer.GetWidth() != workerIters.m_Width ||
-        renderer.GetHeight() != workerIters.m_Height) {
-        static bool loggedMismatch = false;
-        if (!loggedMismatch) {
-            loggedMismatch = true;
-            char buf[256];
-            snprintf(buf, sizeof(buf),
-                     "ProduceFrame: dimension mismatch, renderer=%ux%u, "
-                     "iters=%zux%zu",
-                     renderer.GetWidth(), renderer.GetHeight(),
-                     workerIters.m_Width, workerIters.m_Height);
-            GlLog(buf);
-        }
-        return false;
-    }
-
     // Allocate for the block-rounded color count so ExtractItersAndColors
     // (which copies N_color_cu elements) never overflows the buffer.
     const size_t roundedColorTotal = workerIters.m_RoundedOutputColorTotal;
@@ -1079,7 +1060,8 @@ bool RenderThreadPool::ProduceFrame(
     auto colorData = AcquireFrameBuffer(roundedColorTotal);
 
     if (item.Algorithm.UseLocalColor) {
-        // CPU coloring path: copy from worker's color memory
+        // CPU coloring path: copy from worker's color memory.
+        // No renderer dimension check needed — this path doesn't use the GPU renderer.
         if (workerIters.m_RoundedOutputColorMemory) {
             memcpy(colorData.get(),
                    workerIters.m_RoundedOutputColorMemory.get(),
@@ -1087,6 +1069,25 @@ bool RenderThreadPool::ProduceFrame(
         }
     } else {
         // GPU coloring path: call RenderCurrent to extract colors.
+        // Safety net: if the renderer's dimensions don't match the worker's
+        // container (e.g., due to a data race on m_CurIters during resize),
+        // skip the frame to prevent buffer overflow in ExtractItersAndColors.
+        if (renderer.GetWidth() != workerIters.m_Width ||
+            renderer.GetHeight() != workerIters.m_Height) {
+            static bool loggedMismatch = false;
+            if (!loggedMismatch) {
+                loggedMismatch = true;
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "ProduceFrame: dimension mismatch, renderer=%ux%u, "
+                         "iters=%zux%zu",
+                         renderer.GetWidth(), renderer.GetHeight(),
+                         workerIters.m_Width, workerIters.m_Height);
+                GlLog(buf);
+            }
+            return false;
+        }
+
         // Progressive (non-final) frames use the display stream to avoid
         // blocking behind compute kernels on the compute stream.
         const bool progressive = !isFinal;

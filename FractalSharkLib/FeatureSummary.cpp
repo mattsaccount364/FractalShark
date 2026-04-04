@@ -27,6 +27,8 @@ FeatureSummary::SetFound(const HighPrecision &foundX,
     Residual2 = residual2;
     IntrinsicRadius = intrinsicRadius;
 
+    Precision = std::max(foundX.precisionInBits(), foundY.precisionInBits());
+
     // Once we have a final answer, we typically don't need the staged candidate anymore.
     // Keep it if you want; otherwise clear it.
     // m_candidate = nullptr;

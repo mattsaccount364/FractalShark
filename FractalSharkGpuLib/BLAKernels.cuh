@@ -1,3 +1,5 @@
+#pragma once
+
 
 template<class HDRFloatType>
 struct SharedMemStruct {

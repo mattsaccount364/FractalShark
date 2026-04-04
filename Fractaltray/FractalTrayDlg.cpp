@@ -315,7 +315,7 @@ void FractalTrayDialog::OnGenerate() {
     ptz.SetPrecision(precInBits);
 
     auto precInDigits = static_cast<int>(
-        static_cast<double>(precInBits) / std::log10(2.0));
+        static_cast<double>(precInBits) * std::log10(2.0));
 
     double curIters = srcParams.iters;
     int maxFrames = CalculateFrameCount();
@@ -421,7 +421,7 @@ void FractalTrayDialog::RunCalculation(std::stop_token stopToken) {
     std::string line;
     for (int i = 0; std::getline(locationFile, line); i++) {
         if (stopToken.stop_requested()) break;
-        if (StartAt != 0 && i < StartAt) continue;
+        if constexpr (StartAt != 0) { if (i < StartAt) continue; }
 
         auto filename = ExtractFilename(line);
         if (filename.empty()) continue;
@@ -429,8 +429,7 @@ void FractalTrayDialog::RunCalculation(std::stop_token stopToken) {
         auto filenameBmp = std::wstring(FilePrefix) + filename + L".bmp";
         auto filenamePng = std::wstring(FilePrefix) + filename + L".png";
 
-        if (std::filesystem::exists(filename) ||
-            std::filesystem::exists(filenamePng) ||
+        if (std::filesystem::exists(filenamePng) ||
             std::filesystem::exists(filenameBmp)) {
             continue;
         }

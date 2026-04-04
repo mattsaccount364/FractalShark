@@ -5,21 +5,15 @@
 
 #include <cassert>
 #include <cstdint>
-#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
 
-// Append a diagnostic line to a log file next to the executable.
 void
 GlLog(const char *msg)
 {
-    static std::mutex logMutex;
-    std::scoped_lock lock(logMutex);
-    std::ofstream f("FractalShark_gl.log", std::ios::app);
-    if (f)
-        f << msg << std::endl;
+    std::cerr << msg << std::endl;
 }
 
 namespace {

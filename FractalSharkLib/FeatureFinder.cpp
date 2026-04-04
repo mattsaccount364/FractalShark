@@ -345,7 +345,7 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
 
     if (!f) return false;
 
-    auto toHP = [](const std::string &digits, mp_exp_t exp) -> HighPrecision {
+    auto toHP = [&out](const std::string &digits, mp_exp_t exp) -> HighPrecision {
         std::string s;
         if (digits.empty() || digits == "0") {
             s = "0";
@@ -354,8 +354,9 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
         } else {
             s = "0." + digits + "@" + std::to_string(exp);
         }
-        HighPrecision hp;
-        hp = HighPrecision{s};
+        HighPrecision hp{HighPrecision::SetPrecision::True, out.coord_prec};
+        mpf_set_str(hp.backend(), s.c_str(), 10);
+        MpfNormalize(hp.backend());
         return hp;
     };
 

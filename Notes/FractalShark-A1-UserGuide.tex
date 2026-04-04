@@ -755,6 +755,190 @@ and are not optimized heavily. They are much easier to understand and reason
 about though.
 \end{itemize}
 
+% -----------------------------------------------------------------
+\section{Automatic Zoom}
+\label{subsec:autozoom}
+
+The \code{AutoZoomer} class provides four heuristic strategies for
+automated zoom animation.  Each heuristic repeats until a termination
+condition is met (all pixels at the iteration limit, user abort, or
+target reached).  The render pipeline depth of
+$4 \times \text{NumRenderers}$ keeps several frames in flight for smooth
+playback.
+
+\begin{description}
+  \item[Default (zoom divisor~3)]
+    A weighted geometric mean of pixel iteration counts in a
+    center-cropped region (borders trimmed to $\tfrac{1}{8}$ of each
+    dimension).  Pixels whose iteration count exceeds the image average
+    are weighted by their distance from the screen center and their
+    iteration count relative to the observed maximum.  Each step zooms
+    to $\tfrac{1}{3}$ of the current view, centered on the weighted
+    target.
+
+  \item[Max (zoom divisor~32)]
+    The first pixel that attains the maximum iteration count is selected,
+    and the view zooms aggressively---32$\times$ per step.  The sequence
+    terminates when every pixel reaches the iteration limit.
+
+  \item[FilamentTip (zoom divisor~8)]
+    A multi-stage scoring function targets isolated filament tips.  For
+    each candidate pixel whose iteration count exceeds the image
+    average, the heuristic samples eight compass directions at a radius
+    of 12~pixels and counts high-iteration neighbors.  A composite
+    tip score combines isolation (fewer high neighbors is preferable),
+    elevation above the average, and distance from the screen center.
+    The pixel with the highest score becomes the zoom target.
+
+  \item[Feature (zoom divisor~3)]
+    A GPU-driven strategy that forces \code{GpuHDRx32PerturbedLAv2},
+    locates the nearest periodic point via the feature finder
+    (\cref{sec:feature-finder}), and pre-computes the reference orbit
+    at the target zoom depth.  An animated sequence is then generated
+    with a $1.1\times$ zoom factor per frame.  Iteration counts are
+    linearly interpolated from the current value to the target across
+    all frames.
+\end{description}
+
+% -----------------------------------------------------------------
+\section{FractalTray Batch Renderer}
+\label{subsec:fractaltray}
+
+\code{FractalTray} is a companion utility that renders zoom-sequence
+animations in batch, writing each frame to a network share or local
+directory as a BMP file.  The application runs as a system-tray icon
+and is designed for unattended overnight rendering.
+
+\subsubsection*{Coordinate format}
+
+Source and destination coordinates share a single line format:
+
+\begin{lstlisting}
+width height minX minY maxX maxY iters gpuAntialiasing
+\end{lstlisting}
+
+\noindent
+The coordinate values (\code{minX}, \code{minY}, \code{maxX},
+\code{maxY}) are arbitrary-precision decimal strings; the remaining
+fields are integers.  Width and height specify the output image
+dimensions in pixels.
+
+\subsubsection*{Generating a location file}
+
+The dialog provides two text fields---source coordinates and
+destination coordinates---together with a scale factor and output
+resolution.  Clicking \emph{Generate} computes the complete frame
+sequence and writes it to \code{locations.txt}.
+
+Frame generation proceeds as follows.  Let $S = (S_\mathrm{minX},
+S_\mathrm{minY}, S_\mathrm{maxX}, S_\mathrm{maxY})$ and $D$
+denote the source and destination bounding boxes respectively, and
+let $f$ denote the scale factor (default~75).  Starting from $C = S$,
+each frame updates the current bounding box:
+\[
+  C \;\leftarrow\; C + \frac{D - C}{f}
+\]
+This geometric approach progressively halves the remaining distance
+to the destination at a rate governed by $f$.  Larger values of $f$
+produce a slower, smoother zoom with more frames; smaller values
+produce a faster zoom with fewer frames.  The iteration count is
+linearly interpolated from the source to the destination value
+across the total number of frames.
+
+The frame count is determined by repeating the zoom step until the
+destination bounding-box area exceeds $90\%$ of the current area,
+at which point the current and destination views are effectively
+identical.
+
+Frames are written to \code{locations.txt} in \emph{reverse}
+order---deepest zoom first---so that during rendering, the first
+frame computed is the deepest.  This ordering allows the reference
+orbit computed for the deepest frame to be reused for subsequent
+(wider) frames, avoiding redundant orbit computation.
+
+\subsubsection*{Rendering}
+
+On startup, \code{FractalTray} checks for an existing
+\code{locations.txt}.  If found, rendering begins immediately and
+the dialog minimizes to the system tray, where the tray icon changes
+to indicate active rendering.
+
+For each line in the location file, the renderer:
+
+\begin{enumerate}
+  \item Parses the coordinate string and output filename.
+  \item Checks whether the output file already exists (BMP or PNG) in
+        the target directory; if so, the frame is skipped.  This
+        skip-if-exists behavior allows the process to be interrupted
+        and restarted without re-rendering completed frames.
+  \item Computes the required MPIR precision from the bounding box
+        using \code{PrecisionCalculator}.
+  \item Configures the \code{Fractal} object with the frame's
+        dimensions, iteration count, precision, coordinates, and
+        palette.
+  \item Calls \code{CalcFractal(true)} (the direct synchronous path),
+        which writes iteration data to \code{m\_CurIters}.
+  \item Saves the result via \code{SaveCurrentFractal()}.
+\end{enumerate}
+
+The rendering loop runs on a background \code{std::jthread}.
+Cancellation is cooperative: the tray icon's \emph{Exit} command
+requests a stop via the thread's stop token, and the loop checks
+the token at the start of each frame.
+
+\subsubsection*{Configuration}
+
+\begin{description}
+  \item[Scale factor] Controls zoom speed.  The default value of
+    $75$ produces a gradual, cinematic zoom; lower values (e.g.~10)
+    zoom faster with fewer frames.
+  \item[Resolution] Output width and height in pixels.  The default
+    is $3840 \times 1600$.
+  \item[Output directory] Controlled by the \code{FilePrefix}
+    constant, currently a UNC network path.  Each frame is saved as
+    \code{<prefix>output-NNNNNN.bmp}.
+\end{description}
+
+% -----------------------------------------------------------------
+\section{Functional Test Suite}
+\label{subsec:crummy-test}
+
+\code{CrummyTest} is a self-contained functional test suite invoked
+from the application's right-click context menu
+(\code{IDM\_BASICTEST}, labeled ``Run Basic Test'').  The suite
+exercises the direct rendering path
+(\cref{subsec:two-render-paths}): each test calls \code{Drain()}
+first to ensure no pool workers remain active, then invokes
+\code{CalcFractal(true)}, which writes results to \code{m\_CurIters}.
+
+The top-level \code{TestAll()} method runs the full suite in sequence:
+\begin{itemize}
+  \item \code{TestWindowResize}---resizes the application window and
+        verifies that a re-render completes correctly.
+  \item \code{TestBasic}---iterates through every
+        \code{RenderAlgorithm} entry, rendering the default view,
+        View~5, and View~11 with both 32-bit and 64-bit iteration
+        types.
+  \item \code{TestReferenceSave}---saves and reloads reference orbits,
+        verifying round-trip correctness.
+  \item \code{TestVariedCompression}---tests reference-orbit
+        compression at varying error thresholds.
+  \item \code{TestImaginaLoad}---loads orbits stored in the Imagina
+        format (\cref{subsec:imagina-format}).
+  \item \code{TestStringConversion}---validates string-to-precision
+        and precision-to-string conversion utilities.
+  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
+        chains for numerical correctness.
+  \item \code{TestGrowableVector}---validates the
+        \code{GrowableVector} data structure
+        (\cref{sec:disk_backed_growable_vectors}).
+\end{itemize}
+A separate \code{TestReallyHardView27} (not included in
+\code{TestAll}) renders View~\#27, a period ${\sim}28$~billion point
+requiring hours of computation; the test serves as an overnight
+stress benchmark rather than a routine regression check.
+
+% -----------------------------------------------------------------
 \section{Kernel List}
 \label{sec:kernel-list}
 
@@ -832,86 +1016,3 @@ pixellation sets in.
 
 \end{itemize}
 
-% -----------------------------------------------------------------
-\subsection{Automatic zoom}
-\label{subsec:autozoom}
-
-The \code{AutoZoomer} class provides four heuristic strategies for
-automated zoom animation.  Each heuristic repeats until a termination
-condition is met (all pixels at the iteration limit, user abort, or
-target reached).  The render pipeline depth of
-$4 \times \text{NumRenderers}$ keeps several frames in flight for smooth
-playback.
-
-\begin{description}
-  \item[Default (zoom divisor~3)]
-    A weighted geometric mean of pixel iteration counts in a
-    center-cropped region (borders trimmed to $\tfrac{1}{8}$ of each
-    dimension).  Pixels whose iteration count exceeds the image average
-    are weighted by their distance from the screen center and their
-    iteration count relative to the observed maximum.  Each step zooms
-    to $\tfrac{1}{3}$ of the current view, centered on the weighted
-    target.
-
-  \item[Max (zoom divisor~32)]
-    The first pixel that attains the maximum iteration count is selected,
-    and the view zooms aggressively---32$\times$ per step.  The sequence
-    terminates when every pixel reaches the iteration limit.
-
-  \item[FilamentTip (zoom divisor~8)]
-    A multi-stage scoring function targets isolated filament tips.  For
-    each candidate pixel whose iteration count exceeds the image
-    average, the heuristic samples eight compass directions at a radius
-    of 12~pixels and counts high-iteration neighbors.  A composite
-    tip score combines isolation (fewer high neighbors is preferable),
-    elevation above the average, and distance from the screen center.
-    The pixel with the highest score becomes the zoom target.
-
-  \item[Feature (zoom divisor~3)]
-    A GPU-driven strategy that forces \code{GpuHDRx32PerturbedLAv2},
-    locates the nearest periodic point via the feature finder
-    (\cref{sec:feature-finder}), and pre-computes the reference orbit
-    at the target zoom depth.  An animated sequence is then generated
-    with a $1.1\times$ zoom factor per frame.  Iteration counts are
-    linearly interpolated from the current value to the target across
-    all frames.
-\end{description}
-
-% -----------------------------------------------------------------
-\subsection{Functional test suite}
-\label{subsec:crummy-test}
-
-\code{CrummyTest} is a self-contained functional test suite invoked
-from the application's right-click context menu
-(\code{IDM\_BASICTEST}, labeled ``Run Basic Test'').  The suite
-exercises the direct rendering path
-(\cref{subsec:two-render-paths}): each test calls \code{Drain()}
-first to ensure no pool workers remain active, then invokes
-\code{CalcFractal(true)}, which writes results to \code{m\_CurIters}.
-
-The top-level \code{TestAll()} method runs the full suite in sequence:
-\begin{itemize}
-  \item \code{TestWindowResize}---resizes the application window and
-        verifies that a re-render completes correctly.
-  \item \code{TestBasic}---iterates through every
-        \code{RenderAlgorithm} entry, rendering the default view,
-        View~5, and View~11 with both 32-bit and 64-bit iteration
-        types.
-  \item \code{TestReferenceSave}---saves and reloads reference orbits,
-        verifying round-trip correctness.
-  \item \code{TestVariedCompression}---tests reference-orbit
-        compression at varying error thresholds.
-  \item \code{TestImaginaLoad}---loads orbits stored in the Imagina
-        format (\cref{subsec:imagina-format}).
-  \item \code{TestStringConversion}---validates string-to-precision
-        and precision-to-string conversion utilities.
-  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
-        chains for numerical correctness.
-  \item \code{TestGrowableVector}---validates the
-        \code{GrowableVector} data structure
-        (\cref{sec:disk_backed_growable_vectors}).
-\end{itemize}
-A separate \code{TestReallyHardView27} (not included in
-\code{TestAll}) renders View~\#27, a period ${\sim}28$~billion point
-requiring hours of computation; the test serves as an overnight
-stress benchmark rather than a routine regression check.

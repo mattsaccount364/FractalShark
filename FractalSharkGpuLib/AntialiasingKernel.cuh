@@ -1,3 +1,5 @@
+#pragma once
+
 template<typename IterType, uint32_t Antialiasing, bool ScaledColor>
 __global__
 void

@@ -1,3 +1,5 @@
+#pragma once
+
 
 #if 0
 // TODO Do we need this kind of conversion for the 2x32 LAv2 case:

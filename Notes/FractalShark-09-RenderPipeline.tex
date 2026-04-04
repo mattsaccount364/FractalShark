@@ -237,7 +237,8 @@ worker threads.
 \label{fig:render-pipeline}
 \end{figure}
 
-\code{RenderThreadPool} owns four worker threads (one per GPU renderer) and a
+\code{RenderThreadPool} owns \code{NumWorkers} worker threads (one per
+GPU renderer, currently four) and a
 dedicated OpenGL consumer thread.  The work queue is a \code{std::deque} of
 \code{RenderWorkItem} structs, each containing:
 

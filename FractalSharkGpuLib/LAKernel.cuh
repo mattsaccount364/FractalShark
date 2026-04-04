@@ -1,3 +1,5 @@
+#pragma once
+
 template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
 __global__
 void

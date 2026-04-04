@@ -1,3 +1,5 @@
+#pragma once
+
 template<typename IterType, class T>
 __global__
 void mandel_1x_float_perturb_scaled(

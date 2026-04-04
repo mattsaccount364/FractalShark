@@ -476,6 +476,12 @@ public:
         return &m_Data[0];
     }
 
+    __mpf_struct *
+    backend()
+    {
+        return &m_Data[0];
+    }
+
     const mpf_t *
     backendRaw() const
     {

@@ -1,3 +1,5 @@
+#pragma once
+
 __device__ uint64_t AtomicMax(uint64_t *address, uint64_t val) {
     uint64_t old = *address;
     uint64_t assumed;

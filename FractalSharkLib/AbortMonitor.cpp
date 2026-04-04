@@ -7,14 +7,14 @@
 AbortMonitor *AbortMonitor::s_Instance = nullptr;
 
 AbortMonitor::AbortMonitor(bool useSensoCursor)
-    : m_QuitFlag{ false },
-      m_StopCalculating{ false },
-      m_UseSensoCursor{ useSensoCursor },
-      m_Thread{ &AbortMonitor::Run, this } {
+    : m_QuitFlag{false}, m_StopCalculating{false}, m_UseSensoCursor{useSensoCursor},
+      m_Thread{&AbortMonitor::Run, this}
+{
     s_Instance = this;
 }
 
-AbortMonitor::~AbortMonitor() {
+AbortMonitor::~AbortMonitor()
+{
     m_QuitFlag = true;
     if (m_Thread.joinable()) {
         m_Thread.join();
@@ -24,38 +24,50 @@ AbortMonitor::~AbortMonitor() {
     }
 }
 
-bool AbortMonitor::GetStopCalculating() const {
+bool
+AbortMonitor::GetStopCalculating() const
+{
     return m_StopCalculating.load(std::memory_order_relaxed);
 }
 
-void AbortMonitor::SetStopCalculating(bool value) {
+void
+AbortMonitor::SetStopCalculating(bool value)
+{
     m_StopCalculating.store(value, std::memory_order_relaxed);
 }
 
-void AbortMonitor::ResetStopCalculating() {
+void
+AbortMonitor::ResetStopCalculating()
+{
     m_StopCalculating.store(false, std::memory_order_relaxed);
 }
 
-bool AbortMonitor::GetStopCalculatingGlobal() {
+bool
+AbortMonitor::GetStopCalculatingGlobal()
+{
     if (s_Instance) {
         return s_Instance->GetStopCalculating();
     }
     return false;
 }
 
-void AbortMonitor::ResetStopCalculatingGlobal() {
+void
+AbortMonitor::ResetStopCalculatingGlobal()
+{
     if (s_Instance) {
         s_Instance->ResetStopCalculating();
     }
 }
 
 bool
-AbortMonitor::IsDownControl() {
+AbortMonitor::IsDownControl()
+{
     return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000);
 }
 
 void
-AbortMonitor::Run() {
+AbortMonitor::Run()
+{
     POINT pt;
     GetCursorPos(&pt);
     int OrgX = pt.x;

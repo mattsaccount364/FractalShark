@@ -7,9 +7,7 @@
 #include <cmath>
 #include <iostream>
 
-AutoZoomer::AutoZoomer(Fractal &fractal)
-    : m_Fractal(fractal) {
-}
+AutoZoomer::AutoZoomer(Fractal &fractal) : m_Fractal(fractal) {}
 
 template <Fractal::AutoZoomHeuristic h>
 void
@@ -43,9 +41,7 @@ AutoZoomer::Run()
 
         FeatureZoomSetup setup;
 
-        m_Fractal.EnqueueMutation([&](Fractal &f) {
-            SetupFeatureZoom(f, setup);
-        }).Wait();
+        m_Fractal.EnqueueMutation([&](Fractal &f) { SetupFeatureZoom(f, setup); }).Wait();
 
         if (setup.Failed) {
             return;
@@ -103,16 +99,16 @@ AutoZoomer::Run()
         // Update live state to final zoom position so the view doesn't
         // snap back to the original zoom after the loop completes.
         if (!setup.ZoomSteps.empty()) {
-            auto targetIters = setup.ShouldInterpolateIters
-                ? setup.IterCounts.back()
-                : m_Fractal.GetNumIterations<IterTypeFull>();
-            m_Fractal.EnqueueCommand(
-                [ptz = setup.ZoomSteps.back(), targetIters](Fractal &f) {
+            auto targetIters = setup.ShouldInterpolateIters ? setup.IterCounts.back()
+                                                            : m_Fractal.GetNumIterations<IterTypeFull>();
+            m_Fractal
+                .EnqueueCommand([ptz = setup.ZoomSteps.back(), targetIters](Fractal &f) {
                     f.m_Ptz = ptz;
                     f.SquareCurrentView();
                     f.SetPrecision();
                     f.SetNumIterations<IterTypeFull>(targetIters);
-                }).Wait();
+                })
+                .Wait();
         }
 
         return;
@@ -241,16 +237,20 @@ AutoZoomer::Run()
                     LONG targetY = -1;
                     size_t maxiter = 0;
 
-                    for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing(); y++) {
-                        for (auto x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing(); x++) {
+                    for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing();
+                         y++) {
+                        for (auto x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing();
+                             x++) {
                             auto curiter = ItersArray[y][x];
                             if (curiter > maxiter)
                                 maxiter = curiter;
                         }
                     }
 
-                    for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing(); y++) {
-                        for (auto x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing(); x++) {
+                    for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing();
+                         y++) {
+                        for (auto x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing();
+                             x++) {
                             auto curiter = ItersArray[y][x];
 
                             if (curiter == maxiter) {
@@ -269,8 +269,9 @@ AutoZoomer::Run()
                     guessX = m_Fractal.XFromScreenToCalc<true>(HighPrecision{targetX});
                     guessY = m_Fractal.YFromScreenToCalc<true>(HighPrecision{targetY});
 
-                    if (numAtLimit ==
-                        m_Fractal.GetScrnWidth() * m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing() * m_Fractal.GetGpuAntialiasing()) {
+                    if (numAtLimit == m_Fractal.GetScrnWidth() * m_Fractal.GetScrnHeight() *
+                                          m_Fractal.GetGpuAntialiasing() *
+                                          m_Fractal.GetGpuAntialiasing()) {
                         std::wcerr << L"Flat screen! :(" << std::endl;
                         shouldBreak = true;
                         return;
@@ -280,8 +281,10 @@ AutoZoomer::Run()
                 // ---------------- FILAMENT TIP ----------------
                 if constexpr (h == Fractal::AutoZoomHeuristic::FilamentTip) {
 
-                    const auto scrnW = static_cast<int>(m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing());
-                    const auto scrnH = static_cast<int>(m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing());
+                    const auto scrnW =
+                        static_cast<int>(m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing());
+                    const auto scrnH =
+                        static_cast<int>(m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing());
 
                     // Pass 1: compute average iteration count
                     double totalIters = 0;
@@ -302,13 +305,12 @@ AutoZoomer::Run()
 
                     // Candidates: any pixel above average, even barely.
                     // Faint tips may be just slightly above background.
-                    const auto candidateThreshold =
-                        static_cast<size_t>(avgIters + 1);
+                    const auto candidateThreshold = static_cast<size_t>(avgIters + 1);
 
                     // Sample at multiple radii to handle fuzzy boundaries.
                     // A tip has lower iters in most directions at most radii.
-                    static constexpr int dx8[] = { 0,  1, 1, 1, 0, -1, -1, -1};
-                    static constexpr int dy8[] = {-1, -1, 0, 1, 1,  1,  0, -1};
+                    static constexpr int dx8[] = {0, 1, 1, 1, 0, -1, -1, -1};
+                    static constexpr int dy8[] = {-1, -1, 0, 1, 1, 1, 0, -1};
                     static constexpr int radii[] = {4, 8, 16};
                     static constexpr int numRadii = 3;
 
@@ -348,8 +350,7 @@ AutoZoomer::Run()
                             for (int d = 0; d < 8; d++) {
                                 int sx = x + dx8[d] * SampleR;
                                 int sy = y + dy8[d] * SampleR;
-                                if (sx < 0 || sx >= scrnW ||
-                                    sy < 0 || sy >= scrnH) {
+                                if (sx < 0 || sx >= scrnW || sy < 0 || sy >= scrnH) {
                                     isHigh[d] = false;
                                     continue;
                                 }
@@ -357,7 +358,8 @@ AutoZoomer::Run()
                                 // of center.  This is very strict — only
                                 // truly flat/equal neighbors count.
                                 isHigh[d] = (ItersArray[sy][sx] >= highThreshold);
-                                if (isHigh[d]) highCount++;
+                                if (isHigh[d])
+                                    highCount++;
                             }
 
                             // A TIP has exactly 1-2 contiguous high
@@ -377,7 +379,8 @@ AutoZoomer::Run()
                             for (int i = 0; i < 16; i++) {
                                 if (isHigh[i % 8]) {
                                     curRun++;
-                                    if (curRun > maxRun) maxRun = curRun;
+                                    if (curRun > maxRun)
+                                        maxRun = curRun;
                                 } else {
                                     curRun = 0;
                                 }
@@ -411,20 +414,18 @@ AutoZoomer::Run()
                             // lower-iteration tips score higher.
                             double numerator = static_cast<double>(curiter) - avgIters;
                             double denominator = static_cast<double>(NumIterations) - avgIters;
-                            double rawElevation = (denominator > 0)
-                                ? log(1.0 + numerator) / log(1.0 + denominator)
-                                : 0.5;
+                            double rawElevation =
+                                (denominator > 0) ? log(1.0 + numerator) / log(1.0 + denominator) : 0.5;
                             double elevation = 1.0 - rawElevation;
 
                             // Prefer tips away from center (exploring outward)
                             double ddx = static_cast<double>(x - scrnW / 2);
                             double ddy = static_cast<double>(y - scrnH / 2);
-                            double maxDist = sqrt(
-                                static_cast<double>(scrnW * scrnW + scrnH * scrnH)) / 2.0;
+                            double maxDist =
+                                sqrt(static_cast<double>(scrnW * scrnW + scrnH * scrnH)) / 2.0;
                             double distFromCenter = sqrt(ddx * ddx + ddy * ddy) / maxDist;
 
-                            double score = tipness * elevation *
-                                           (0.3 + 0.7 * distFromCenter);
+                            double score = tipness * elevation * (0.3 + 0.7 * distFromCenter);
 
                             if (score > bestScore) {
                                 bestScore = score;
@@ -435,22 +436,18 @@ AutoZoomer::Run()
                     }
 
                     if (bestScore < 0) {
-                        std::wcerr << L"FilamentTip: no tip found. "
-                                   << L"candidates=" << dbgCandidates
+                        std::wcerr << L"FilamentTip: no tip found. " << L"candidates=" << dbgCandidates
                                    << L" highHist=[";
                         for (int i = 0; i <= 8; i++)
                             std::wcerr << dbgHighCountHist[i] << (i < 8 ? L"," : L"");
-                        std::wcerr << L"] runReject=" << dbgRunReject
-                                   << L" avgIters=" << avgIters
-                                   << L" threshold=" << candidateThreshold
-                                   << std::endl;
+                        std::wcerr << L"] runReject=" << dbgRunReject << L" avgIters=" << avgIters
+                                   << L" threshold=" << candidateThreshold << std::endl;
                         shouldBreak = true;
                         return;
                     }
 
-                    std::wcerr << L"FilamentTip: target (" << bestX << L"," << bestY
-                               << L") score=" << bestScore
-                               << L" numAtMax=" << numAtMax << std::endl;
+                    std::wcerr << L"FilamentTip: target (" << bestX << L"," << bestY << L") score="
+                               << bestScore << L" numAtMax=" << numAtMax << std::endl;
 
                     guessX = m_Fractal.XFromScreenToCalc<true>(HighPrecision{bestX});
                     guessY = m_Fractal.YFromScreenToCalc<true>(HighPrecision{bestY});
@@ -463,9 +460,11 @@ AutoZoomer::Run()
             };
 
             if (m_Fractal.GetIterType() == IterTypeEnum::Bits32) {
-                lambda(m_Fractal.m_CurIters.GetItersArray<uint32_t>(), m_Fractal.GetNumIterations<uint32_t>());
+                lambda(m_Fractal.m_CurIters.GetItersArray<uint32_t>(),
+                       m_Fractal.GetNumIterations<uint32_t>());
             } else {
-                lambda(m_Fractal.m_CurIters.GetItersArray<uint64_t>(), m_Fractal.GetNumIterations<uint64_t>());
+                lambda(m_Fractal.m_CurIters.GetItersArray<uint64_t>(),
+                       m_Fractal.GetNumIterations<uint64_t>());
             }
 
             if (shouldBreak)
@@ -476,11 +475,13 @@ AutoZoomer::Run()
             HighPrecision newMaxX = guessX + width / Divisor;
             HighPrecision newMaxY = guessY + height / Divisor;
 
-            PointZoomBBConverter newPtz{newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
+            PointZoomBBConverter newPtz{
+                newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
 
-            m_Fractal.EnqueueCommand([newPtz = std::move(newPtz)](Fractal &f) {
-                f.RecenterViewCalc(newPtz);
-            }, false).Wait();
+            m_Fractal
+                .EnqueueCommand([newPtz = std::move(newPtz)](Fractal &f) { f.RecenterViewCalc(newPtz); },
+                                false)
+                .Wait();
 
             if constexpr (h != Fractal::AutoZoomHeuristic::FilamentTip) {
                 if (numAtMax > 500)
@@ -501,8 +502,8 @@ template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::FilamentTip>();
 void
 AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
 {
-    [[maybe_unused]] const bool success = f.SetRenderAlgorithm(
-        GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
+    [[maybe_unused]] const bool success =
+        f.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
     if (!success) {
         std::cerr << "Error: could not set render algorithm for AutoZoom(Feature).\n";
         out.Failed = true;
@@ -529,19 +530,22 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
 
     std::cout << "AutoZoom(Feature): targetZoomFactor=";
     {
-        double m; long e;
+        double m;
+        long e;
         targetZoomFactor.frexp(m, e);
         std::cout << m << " * 2^" << e;
     }
     std::cout << " origZoom=";
     {
-        double m; long e;
+        double m;
+        long e;
         f.GetPtz().GetZoomFactor().frexp(m, e);
         std::cout << m << " * 2^" << e;
     }
     std::cout << " intrinsicRadius=";
     {
-        double m; long e;
+        double m;
+        long e;
         feature->GetIntrinsicRadius().frexp(m, e);
         std::cout << m << " * 2^" << e;
     }
@@ -598,16 +602,12 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
     const double logRatio = std::log(std::abs(mantissa)) + exp2 * std::log(2.0);
     const double logZoomPerStep = std::log(1.1);
     out.TotalSteps =
-        (zoomRatio > HighPrecision{1})
-            ? static_cast<int64_t>(std::ceil(logRatio / logZoomPerStep))
-            : 1;
+        (zoomRatio > HighPrecision{1}) ? static_cast<int64_t>(std::ceil(logRatio / logZoomPerStep)) : 1;
 
     out.ShouldInterpolateIters = targetIters > 0 && startIters < targetIters;
 
-    std::cout << "AutoZoom(Feature): startIters=" << startIters
-              << " targetIters=" << targetIters
-              << " period=" << feature->GetPeriod()
-              << " totalSteps=" << out.TotalSteps
+    std::cout << "AutoZoom(Feature): startIters=" << startIters << " targetIters=" << targetIters
+              << " period=" << feature->GetPeriod() << " totalSteps=" << out.TotalSteps
               << " interpolate=" << out.ShouldInterpolateIters << "\n";
 
     out.ZoomSteps.reserve(out.TotalSteps);
@@ -622,8 +622,7 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
     if (out.ShouldInterpolateIters) {
         out.IterCounts.reserve(out.TotalSteps);
         for (int64_t i = 0; i < out.TotalSteps; ++i) {
-            out.IterCounts.push_back(
-                startIters + (targetIters - startIters) * (i + 1) / out.TotalSteps);
+            out.IterCounts.push_back(startIters + (targetIters - startIters) * (i + 1) / out.TotalSteps);
         }
     }
 

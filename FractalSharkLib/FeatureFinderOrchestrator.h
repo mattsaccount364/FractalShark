@@ -41,10 +41,20 @@ public:
     // Creates a synthetic FeatureSummary and proceeds to Phase B + navigation.
     bool ResumeFromCheckpoint();
 
-    bool GetUseGpuForNRInnerLoop() const { return m_UseGpuForNRInnerLoop; }
-    void SetUseGpuForNRInnerLoop(bool v) { m_UseGpuForNRInnerLoop = v; }
+    bool
+    GetUseGpuForNRInnerLoop() const
+    {
+        return m_UseGpuForNRInnerLoop;
+    }
+    void
+    SetUseGpuForNRInnerLoop(bool v)
+    {
+        m_UseGpuForNRInnerLoop = v;
+    }
 
-    const std::vector<std::unique_ptr<FeatureSummary>> &GetFeatureSummaries() const {
+    const std::vector<std::unique_ptr<FeatureSummary>> &
+    GetFeatureSummaries() const
+    {
         return m_FeatureSummaries;
     }
 

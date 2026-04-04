@@ -8,8 +8,7 @@ class AutoZoomer {
 public:
     explicit AutoZoomer(Fractal &fractal);
 
-    template <Fractal::AutoZoomHeuristic h>
-    void Run();
+    template <Fractal::AutoZoomHeuristic h> void Run();
 
 private:
     struct FeatureZoomSetup {

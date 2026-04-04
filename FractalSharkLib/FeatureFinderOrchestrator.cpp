@@ -15,12 +15,11 @@
 
 #include <iostream>
 
-FeatureFinderOrchestrator::FeatureFinderOrchestrator(Fractal &fractal)
-    : m_Fractal{fractal} {
-}
+FeatureFinderOrchestrator::FeatureFinderOrchestrator(Fractal &fractal) : m_Fractal{fractal} {}
 
 void
-FeatureFinderOrchestrator::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode) {
+FeatureFinderOrchestrator::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode)
+{
     if (m_Fractal.GetIterType() == IterTypeEnum::Bits32) {
         TryFindPeriodicPointIterType<uint32_t>(scrnX, scrnY, mode);
     } else {
@@ -30,7 +29,9 @@ FeatureFinderOrchestrator::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, Feat
 
 template <typename IterType>
 void
-FeatureFinderOrchestrator::TryFindPeriodicPointIterType(size_t scrnX, size_t scrnY, FeatureFinderMode mode)
+FeatureFinderOrchestrator::TryFindPeriodicPointIterType(size_t scrnX,
+                                                        size_t scrnY,
+                                                        FeatureFinderMode mode)
 {
     // Note: This accounts for "Auto" being selected via the GetRenderAlgorithm call.
     switch (m_Fractal.GetRenderAlgorithm().Algorithm) {
@@ -452,7 +453,9 @@ FeatureFinderOrchestrator::TryFindPeriodicPointIterType(size_t scrnX, size_t scr
 
 template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
 void
-FeatureFinderOrchestrator::TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderMode mode)
+FeatureFinderOrchestrator::TryFindPeriodicPointTemplate(size_t scrnX,
+                                                        size_t scrnY,
+                                                        FeatureFinderMode mode)
 {
     ScopedBenchmarkStopper stopper(m_Fractal.m_BenchmarkData.m_FeatureFinder);
 
@@ -493,26 +496,31 @@ FeatureFinderOrchestrator::TryFindPeriodicPointTemplate(size_t scrnX, size_t scr
         } else if (baseMode == FeatureFinderMode::PT) {
             auto *results =
                 m_Fractal.m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                                 T,
-                                                                 SubType,
-                                                                 PExtrasLocal,
-                                                                 RefOrbitCalc::Extras::None>(m_Fractal.m_Ptz);
+                                                                           T,
+                                                                           SubType,
+                                                                           PExtrasLocal,
+                                                                           RefOrbitCalc::Extras::None>(
+                    m_Fractal.m_Ptz);
             RuntimeDecompressor<IterType, T, PExtrasLocal> decompressor(*results);
 
             found = featureFinder->FindPeriodicPoint(
                 m_Fractal.GetNumIterations<IterType>(), *results, decompressor, *fs);
         } else if (baseMode == FeatureFinderMode::LA) {
             auto *results =
-                m_Fractal.m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                                 T,
-                                                                 SubType,
-                                                                 PExtrasLocal,
-                                                                 RefOrbitCalc::Extras::IncludeLAv2>(
-                    m_Fractal.m_Ptz);
+                m_Fractal.m_RefOrbit
+                    .GetAndCreateUsefulPerturbationResults<IterType,
+                                                           T,
+                                                           SubType,
+                                                           PExtrasLocal,
+                                                           RefOrbitCalc::Extras::IncludeLAv2>(
+                        m_Fractal.m_Ptz);
             RuntimeDecompressor<IterType, T, PExtrasLocal> decompressor(*results);
 
-            found = featureFinder->FindPeriodicPoint(
-                m_Fractal.GetNumIterations<IterType>(), *results, decompressor, *results->GetLaReference(), *fs);
+            found = featureFinder->FindPeriodicPoint(m_Fractal.GetNumIterations<IterType>(),
+                                                     *results,
+                                                     decompressor,
+                                                     *results->GetLaReference(),
+                                                     *fs);
         }
 
         if (found) {
@@ -681,29 +689,27 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
         return false;
     }
 
-    std::cout << "Resuming NR refinement: period=" << ckpt.period
-              << " prec=" << ckpt.coord_prec << " bits"
+    std::cout << "Resuming NR refinement: period=" << ckpt.period << " prec=" << ckpt.coord_prec
+              << " bits"
               << " iter=" << ckpt.iteration << std::endl;
 
     // Create a synthetic FeatureSummary with the candidate from the checkpoint
     HighPrecision radius{ckpt.sqrRadius};
-    auto fs = std::make_unique<FeatureSummary>(
-        ckpt.cand_re, ckpt.cand_im, radius, FeatureFinderMode::Direct);
+    auto fs =
+        std::make_unique<FeatureSummary>(ckpt.cand_re, ckpt.cand_im, radius, FeatureFinderMode::Direct);
 
     HDRFloat<double> residual2{}; // not stored in checkpoint, use default
 
-    fs->SetCandidate(
-        ckpt.cand_re,
-        ckpt.cand_im,
-        (IterTypeFull)ckpt.period,
-        residual2,
-        ckpt.sqrRadius,
-        ckpt.scaleExp2,
-        ckpt.coord_prec);
+    fs->SetCandidate(ckpt.cand_re,
+                     ckpt.cand_im,
+                     (IterTypeFull)ckpt.period,
+                     residual2,
+                     ckpt.sqrRadius,
+                     ckpt.scaleExp2,
+                     ckpt.coord_prec);
 
     // Set intrinsic radius so ComputeZoomFactor works correctly
-    fs->SetFound(ckpt.cand_re, ckpt.cand_im, (IterTypeFull)ckpt.period,
-                 residual2, ckpt.intrinsicRadius);
+    fs->SetFound(ckpt.cand_re, ckpt.cand_im, (IterTypeFull)ckpt.period, residual2, ckpt.intrinsicRadius);
     fs->SetNumIterationsAtFind(ckpt.numIterationsAtFind);
 
     // Restore the iteration limit that was active when the feature was found.

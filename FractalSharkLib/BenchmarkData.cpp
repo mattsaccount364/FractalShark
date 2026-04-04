@@ -5,12 +5,9 @@
 #define NOMINMAX
 #include <windows.h>
 
-BenchmarkData::BenchmarkData() :
-    m_freq{},
-    m_startTime{},
-    m_endTime{},
-    m_DeltaTime{},
-    m_WaitCursor{std::make_unique<WaitCursor>()} {
+BenchmarkData::BenchmarkData()
+    : m_freq{}, m_startTime{}, m_endTime{}, m_DeltaTime{}, m_WaitCursor{std::make_unique<WaitCursor>()}
+{
 
     LARGE_INTEGER freq;
 
@@ -18,26 +15,23 @@ BenchmarkData::BenchmarkData() :
     m_freq = freq.QuadPart;
 }
 
-BenchmarkData::~BenchmarkData() {
+BenchmarkData::~BenchmarkData() {}
+
+BenchmarkData::BenchmarkData(const BenchmarkData &other)
+    : m_freq{other.m_freq}, m_startTime{other.m_startTime}, m_endTime{other.m_endTime},
+      m_DeltaTime{other.m_DeltaTime}, m_WaitCursor{std::make_unique<WaitCursor>()}
+{
 }
 
-BenchmarkData::BenchmarkData(const BenchmarkData &other) :
-    m_freq{ other.m_freq },
-    m_startTime{ other.m_startTime },
-    m_endTime{ other.m_endTime },
-    m_DeltaTime{ other.m_DeltaTime },
-    m_WaitCursor{std::make_unique<WaitCursor>()} {
+BenchmarkData::BenchmarkData(BenchmarkData &&other) noexcept
+    : m_freq{other.m_freq}, m_startTime{other.m_startTime}, m_endTime{other.m_endTime},
+      m_DeltaTime{other.m_DeltaTime}, m_WaitCursor{std::move(other.m_WaitCursor)}
+{
 }
 
-BenchmarkData::BenchmarkData(BenchmarkData &&other) noexcept :
-    m_freq{ other.m_freq },
-    m_startTime{ other.m_startTime },
-    m_endTime{ other.m_endTime },
-    m_DeltaTime{ other.m_DeltaTime },
-    m_WaitCursor{std::move(other.m_WaitCursor)} {
-}
-
-BenchmarkData &BenchmarkData::operator=(const BenchmarkData &other) {
+BenchmarkData &
+BenchmarkData::operator=(const BenchmarkData &other)
+{
     if (this != &other) {
         m_freq = other.m_freq;
         m_startTime = other.m_startTime;
@@ -49,7 +43,9 @@ BenchmarkData &BenchmarkData::operator=(const BenchmarkData &other) {
     return *this;
 }
 
-BenchmarkData &BenchmarkData::operator=(BenchmarkData &&other) noexcept {
+BenchmarkData &
+BenchmarkData::operator=(BenchmarkData &&other) noexcept
+{
     if (this != &other) {
         m_freq = other.m_freq;
         m_startTime = other.m_startTime;
@@ -61,7 +57,9 @@ BenchmarkData &BenchmarkData::operator=(BenchmarkData &&other) noexcept {
     return *this;
 }
 
-void BenchmarkData::StartTimer() {
+void
+BenchmarkData::StartTimer()
+{
     m_startTime = 0;
     m_endTime = 1;
 
@@ -71,7 +69,9 @@ void BenchmarkData::StartTimer() {
     m_WaitCursor->ResetCursor();
 }
 
-void BenchmarkData::StopTimer() {
+void
+BenchmarkData::StopTimer()
+{
     LARGE_INTEGER endTime;
     QueryPerformanceCounter(&endTime);
     m_endTime = endTime.QuadPart;
@@ -81,7 +81,9 @@ void BenchmarkData::StopTimer() {
     m_WaitCursor->ResetCursor();
 }
 
-uint64_t BenchmarkData::GetDeltaInMs() const {
+uint64_t
+BenchmarkData::GetDeltaInMs() const
+{
     double timeTakenMs = (double)m_DeltaTime * 1000.0 / (double)m_freq;
     return (uint64_t)timeTakenMs;
 }

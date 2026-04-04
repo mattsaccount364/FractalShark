@@ -227,6 +227,11 @@ A `.clang-format` is configured for the project:
 - Braces: Allman style for functions, K&R for control flow
 - `stdafx.h` precompiled header must be included first
 
+After making code changes, run `clang-format` on modified files:
+```powershell
+clang-format -i <modified-files>
+```
+
 ### Error Handling
 
 - CUDA errors are checked via return codes (`cudaError_t`)

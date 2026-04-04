@@ -325,8 +325,6 @@ FeatureSummary::EstablishScreenCoordinates(const Fractal &fractal)
     screenYEnd = static_cast<uint64_t>(flipY(iy1));
 }
 
-
-
 void
 FeatureSummary::GetScreenCoordinates(int &outXStart, int &outYStart, int &outXEnd, int &outYEnd) const
 {
@@ -362,12 +360,14 @@ FeatureSummary::ComputeZoomFactor(const PointZoomBBConverter &ptz) const
     return zTarget;
 }
 
-void FeatureSummary::SetRefined()
+void
+FeatureSummary::SetRefined()
 {
     Refined = true;
 }
 
-bool FeatureSummary::IsRefined() const
+bool
+FeatureSummary::IsRefined() const
 {
     return Refined;
 }

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <stdint.h>
-#include <memory>
 #include "HighPrecision.h"
+#include <memory>
+#include <stdint.h>
 
 class WaitCursor;
 

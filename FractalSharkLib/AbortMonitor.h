@@ -1,8 +1,8 @@
 #pragma once
 
-#include <thread>
 #include <atomic>
 #include <chrono>
+#include <thread>
 
 class AbortMonitor {
 public:

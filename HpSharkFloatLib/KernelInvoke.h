@@ -91,8 +91,12 @@ void InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                 DebugGpuCombo *debugCombo);
 
 // GPU-accelerated drop-in replacement for EvaluateCriticalOrbitAndDerivs.
+// When startIter > 0, reads initial z/dzdc/d2 from the out parameters (caller
+// must populate them from checkpoint). Runs period - startIter iterations in chunks
+// with host-side abort check between chunks.
+// Returns total iterations completed (== period if finished, < period if aborted).
 template <class SharkFloatParams>
-void EvaluateCriticalOrbitAndDerivs_GPU(
+uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
     const mpf_t cReal,
     const mpf_t cImag,
     uint64_t period,
@@ -102,6 +106,8 @@ void EvaluateCriticalOrbitAndDerivs_GPU(
     mpf_t outDzdcImag,
     HDRFloat<double> &outD2Real,
     HDRFloat<double> &outD2Imag,
-    const HpShark::LaunchParams &externalLaunchParams = {0, 0});
+    const HpShark::LaunchParams &externalLaunchParams = {0, 0},
+    uint64_t startIter = 0,
+    bool (*shouldAbort)() = nullptr);
 
 } // namespace HpShark

@@ -788,7 +788,120 @@ of 32-bit floating-point numbers.  If the HDRx32 variant produces
 visual artifacts at extreme depths, the user can manually select
 \code{HDRx2x32} or \code{HDRx64} for additional precision.
 
-The tiered allocation strategy introduced here addresses one aspect of memory
+%% ===================================================================
+\section{Testing and Validation}
+\label{sec:testing}
+%% ===================================================================
+
+\FractalShark{} maintains three independent test projects, each
+targeting a different layer of the system.  Together they provide
+coverage from low-level GPU arithmetic through high-level rendering
+correctness.
+
+\subsection{CrummyTest (rendering pipeline)}
+\label{subsec:crummytest}
+
+\code{CrummyTest} (in \code{FractalSharkLib/CrummyTest.cpp}) is a
+functional test suite invoked from the application's right-click menu
+(\emph{Run Basic Test}).  It exercises the full rendering pipeline by
+calling \code{Drain()} followed by \code{CalcFractal(true)}---the
+direct rendering path (\cref{subsec:two-render-paths})---so that
+iteration results are written to \code{m\_CurIters} and can be
+inspected or saved.
+
+The suite iterates over every \code{RenderAlgorithm} entry, rendering
+multiple built-in views (including Views~0, 5, 10, and~11) with both
+32-bit and 64-bit iteration types.  Eight named tests run in sequence:
+
+\begin{itemize}
+  \item \code{TestBasic}---renders each algorithm at several views and
+        iteration types.
+  \item \code{TestReferenceSave}---saves and reloads reference orbits,
+        verifying round-trip correctness.
+  \item \code{TestVariedCompression}---tests reference-orbit compression
+        at varying error thresholds.
+  \item \code{TestImaginaLoad}---loads orbits stored in Imagina format.
+  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
+        chains for numerical correctness.
+  \item \code{TestWindowResize}---resizes the application window and
+        verifies re-rendering completes correctly.
+  \item \code{TestStringConversion}---validates string-to-precision and
+        precision-to-string conversion utilities.
+  \item \code{TestGrowableVector}---validates the
+        \code{GrowableVector} data structure
+        (\cref{sec:disk_backed_growable_vectors}).
+\end{itemize}
+
+\noindent
+A separate stress test, \code{TestReallyHardView27}, renders View~\#27
+(period ${\sim}28$~billion, one quadrillion iterations) and is intended
+as an overnight correctness and stability check rather than a routine
+regression test.
+
+\subsection{HpSharkFloatTest (GPU arithmetic)}
+\label{subsec:hpsharkfloattest}
+
+\code{HpSharkFloatTest} is a standalone CUDA executable (in
+\code{HpSharkFloatTest/}) that validates the GPU high-precision
+arithmetic kernels described in \cref{subsec:ref-orbit-gpu}.  It tests
+three core operations: high-precision addition
+(\cref{sec:hp-add}), NTT-based multiplication
+(\cref{sec:ntt-multiply}), and reference-orbit iteration.
+
+Each operation is validated through a three-level cross-comparison
+strategy:
+
+\begin{enumerate}
+  \item \textbf{GPU vs.\ MPIR.}  The GPU kernel result is converted to
+        an MPIR \code{mpf\_t} and compared against the same computation
+        performed entirely in MPIR arbitrary-precision arithmetic.  MPIR
+        serves as the ground-truth reference.
+  \item \textbf{GPU vs.\ CPU reference.}  A CPU-side reference
+        implementation uses the same \code{HpSharkFloat} limb format as
+        the GPU, providing a second independent check that isolates
+        GPU-specific bugs from data-format issues.
+  \item \textbf{CPU reference vs.\ MPIR.}  The CPU reference is itself
+        compared against MPIR, validating that the reference
+        implementation is trustworthy.
+\end{enumerate}
+
+\noindent
+When a test fails, the checksum-guided debugging infrastructure
+(\cref{sec:checksums}) narrows the fault to a specific pipeline stage.
+Because each stage records a deterministic checksum on both host and
+device, the first mismatching stage identifies where the GPU diverged
+from the reference---reducing a diffuse ``wrong answer'' to a targeted
+investigation.
+
+Multiply tests additionally validate Newton--Raphson derivative products
+(W0--W3) when the \code{EnableNewtonRaphson} parameter is active.  Test
+inputs include over~25 hardcoded vectors chosen to exercise sign
+combinations and boundary conditions, supplemented by randomly generated
+operands.  Performance benchmarks exercise the full reference-orbit
+pipeline at three zoom depths: View~5 (${\sim}16{,}000$ iterations),
+View~30 (${\sim}670{,}000$ iterations), and View~32
+(${\sim}30{,}000{,}000$ iterations).
+
+\subsection{FractalSharkTest (utility types)}
+\label{subsec:fractalsharktest}
+
+\code{FractalSharkTest} (in \code{FractalSharkTest/}) is a standalone
+CPU executable that validates the fundamental data types and conversion
+utilities used throughout the codebase.  It uses a lightweight
+assertion-based framework (\code{TEST}, \code{ASSERT\_EQ},
+\code{ASSERT\_NEAR}) and covers:
+
+\begin{itemize}
+  \item \code{HDRFloat<T>} arithmetic and normalization
+        (\cref{sec:hdr-float}).
+  \item \code{HDRFloatComplex} operations (complex multiply, add,
+        magnitude).
+  \item \code{HighPrecision} string parsing and round-trip conversion.
+  \item \code{PointZoomBBConverter} coordinate transforms
+        (\cref{subsec:coordinate-mgmt}).
+\end{itemize}
+
+The tiered allocation strategy introduced earlier in this chapter addresses one aspect of memory
 pressure.  The next chapter examines a complementary mechanism---disk-backed
 growable vectors---that manages the large reference-orbit buffers whose size
 can exceed available physical memory.

@@ -125,18 +125,18 @@ public:
         exp = HDRFloat::MIN_BIG_EXPONENT();
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex(SubType mantissaReal, SubType mantissaImag, TExp exp)
+    CUDA_CRAP constexpr HDRFloatComplex(SubType mantissaReal, SubType mantissaImag, TExp expIn)
     {
         this->mantissaReal = mantissaReal;
         this->mantissaImag = mantissaImag;
-        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
+        this->exp = expIn < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : expIn;
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex(TExp exp, SubType mantissaReal, SubType mantissaImag)
+    CUDA_CRAP constexpr HDRFloatComplex(TExp expIn, SubType mantissaReal, SubType mantissaImag)
     {
         this->mantissaReal = mantissaReal;
         this->mantissaImag = mantissaImag;
-        this->exp = exp;
+        this->exp = expIn;
     }
 
     template <class SubType2>
@@ -531,10 +531,10 @@ private:
     {
         SubType temp = mantissaReal * mantissaImag;
 
-        TExp exp = this->exp << 1;
+        TExp newExp = this->exp << 1;
         mantissaReal = (mantissaReal + mantissaImag) * (mantissaReal - mantissaImag);
         mantissaImag = temp + temp;
-        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
+        this->exp = newExp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : newExp;
 
         return *this;
     }
@@ -583,10 +583,10 @@ private:
         SubType tempMantissaImag =
             (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag) * temp;
 
-        TExp exp = this->exp - factor.exp;
+        TExp newExp = this->exp - factor.exp;
         mantissaReal = tempMantissaReal;
         mantissaImag = tempMantissaImag;
-        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
+        this->exp = newExp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : newExp;
 
         return *this;
     }
@@ -595,11 +595,11 @@ private:
     divide_mutable(HDRFloat real)
     {
 
-        TExp exp = this->exp - real.exp;
+        TExp newExp = this->exp - real.exp;
         SubType temp = 1.0 / real.mantissa;
         mantissaReal = mantissaReal * temp;
         mantissaImag = mantissaImag * temp;
-        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
+        this->exp = newExp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : newExp;
 
         return *this;
     }
@@ -659,20 +659,20 @@ public:
 
 private:
     void CUDA_CRAP
-    setExp(TExp exp)
+    setExp(TExp expVal)
     {
-        this->exp = exp;
+        this->exp = expVal;
     }
     void CUDA_CRAP
-    addExp(TExp exp)
+    addExp(TExp expVal)
     {
-        this->exp += exp;
+        this->exp += expVal;
     }
 
     void CUDA_CRAP
-    subExp(TExp exp)
+    subExp(TExp expVal)
     {
-        this->exp -= exp;
+        this->exp -= expVal;
         this->exp = this->exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : this->exp;
     }
 

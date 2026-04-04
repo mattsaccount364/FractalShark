@@ -7,6 +7,7 @@
 #include <Windows.h>
 
 #include "MpirOrbitEval.h"
+#include "AbortMonitor.h"
 
 #include <atomic>
 #include <format>
@@ -125,7 +126,7 @@ MulWorkerMain(MulWorkerParams p) {
 // Multi-threaded MPIR orbit evaluation
 // ============================================================
 
-void EvaluateCriticalOrbitAndDerivsMT(
+uint64_t EvaluateCriticalOrbitAndDerivsMT(
     const mpf_complex &c_coord,
     uint64_t period,
     mpf_complex &z_coord,
@@ -133,7 +134,8 @@ void EvaluateCriticalOrbitAndDerivsMT(
     HDRFloat<double> &d2r_hdr,
     HDRFloat<double> &d2i_hdr,
     mp_bitcnt_t deriv_prec,
-    mp_bitcnt_t coord_prec)
+    mp_bitcnt_t coord_prec,
+    uint64_t startIter)
 {
     // Scratch temporaries
     mpf_complex z_deriv, tmpB_deriv, tmpZ_coord;
@@ -147,14 +149,17 @@ void EvaluateCriticalOrbitAndDerivsMT(
     mpf_init2(tr_c, coord_prec); mpf_init2(ti_c, coord_prec);
     mpf_init2(t1_c, coord_prec); mpf_init2(t2_c, coord_prec);
 
-    // Initialize state
-    mpf_set_ui(z_coord.re, 0);
-    mpf_set_ui(z_coord.im, 0);
-    mpf_set_ui(dzdc_deriv.re, 0);
-    mpf_set_ui(dzdc_deriv.im, 0);
+    // Initialize state (only when starting fresh; on resume, caller provides state)
+    if (startIter == 0) {
+        mpf_set_ui(z_coord.re, 0);
+        mpf_set_ui(z_coord.im, 0);
+        mpf_set_ui(dzdc_deriv.re, 0);
+        mpf_set_ui(dzdc_deriv.im, 0);
+    }
 
     using T = HDRFloat<double>;
-    T local_d2r{}, local_d2i{};
+    T local_d2r = (startIter == 0) ? T{} : T{d2r_hdr};
+    T local_d2i = (startIter == 0) ? T{} : T{d2i_hdr};
     T zr, zi, dzr, dzi;
     T dz2r, dz2i, zd2r, zd2i, sumr, sumi;
 
@@ -205,7 +210,14 @@ void EvaluateCriticalOrbitAndDerivsMT(
         }
     };
 
-    for (uint64_t i = 0; i < period; ++i) {
+    uint64_t itersCompleted = startIter;
+    for (uint64_t i = startIter; i < period; ++i) {
+        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
+            i > startIter &&
+            AbortMonitor::GetStopCalculatingGlobal()) {
+            break;
+        }
+
         dispatch_mul(4, w_out_coord[0], z_coord.re, z_coord.re);
         dispatch_mul(5, w_out_coord[1], z_coord.im, z_coord.im);
         dispatch_mul(6, w_out_coord[2], z_coord.re, z_coord.im);
@@ -275,6 +287,8 @@ void EvaluateCriticalOrbitAndDerivsMT(
 
         mpf_add(z_coord.re, tmpZ_coord.re, c_coord.re);
         mpf_add(z_coord.im, tmpZ_coord.im, c_coord.im);
+
+        itersCompleted = i + 1;
     }
 
     d2r_hdr = HDRFloat<double>(local_d2r);
@@ -298,6 +312,8 @@ void EvaluateCriticalOrbitAndDerivsMT(
     mpf_complex_clear(z_deriv);
     mpf_complex_clear(tmpB_deriv);
     mpf_complex_clear(tmpZ_coord);
+
+    return itersCompleted;
 }
 
 // ============================================================
@@ -305,7 +321,7 @@ void EvaluateCriticalOrbitAndDerivsMT(
 // Same math as MT but all multiplies sequential (no worker threads).
 // ============================================================
 
-void EvaluateCriticalOrbitAndDerivsST(
+uint64_t EvaluateCriticalOrbitAndDerivsST(
     const mpf_complex &c_coord,
     uint64_t period,
     mpf_complex &z_coord,
@@ -313,7 +329,8 @@ void EvaluateCriticalOrbitAndDerivsST(
     HDRFloat<double> &d2r_hdr,
     HDRFloat<double> &d2i_hdr,
     mp_bitcnt_t deriv_prec,
-    mp_bitcnt_t coord_prec)
+    mp_bitcnt_t coord_prec,
+    uint64_t startIter)
 {
     // Scratch temporaries
     mpf_complex z_deriv, tmpB_deriv, tmpZ_coord;
@@ -327,18 +344,28 @@ void EvaluateCriticalOrbitAndDerivsST(
     mpf_init2(tr_c, coord_prec); mpf_init2(ti_c, coord_prec);
     mpf_init2(t1_c, coord_prec); mpf_init2(t2_c, coord_prec);
 
-    // Initialize state
-    mpf_set_ui(z_coord.re, 0);
-    mpf_set_ui(z_coord.im, 0);
-    mpf_set_ui(dzdc_deriv.re, 0);
-    mpf_set_ui(dzdc_deriv.im, 0);
+    // Initialize state (only when starting fresh; on resume, caller provides state)
+    if (startIter == 0) {
+        mpf_set_ui(z_coord.re, 0);
+        mpf_set_ui(z_coord.im, 0);
+        mpf_set_ui(dzdc_deriv.re, 0);
+        mpf_set_ui(dzdc_deriv.im, 0);
+    }
 
     using T = HDRFloat<double>;
-    T local_d2r{}, local_d2i{};
+    T local_d2r = (startIter == 0) ? T{} : T{d2r_hdr};
+    T local_d2i = (startIter == 0) ? T{} : T{d2i_hdr};
     T zr, zi, dzr, dzi;
     T dz2r, dz2i, zd2r, zd2i, sumr, sumi;
 
-    for (uint64_t i = 0; i < period; ++i) {
+    uint64_t itersCompleted = startIter;
+    for (uint64_t i = startIter; i < period; ++i) {
+        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
+            i > startIter &&
+            AbortMonitor::GetStopCalculatingGlobal()) {
+            break;
+        }
+
         // Round z from coord_prec -> deriv_prec
         mpf_set(z_deriv.re, z_coord.re);
         mpf_set(z_deriv.im, z_coord.im);
@@ -399,6 +426,8 @@ void EvaluateCriticalOrbitAndDerivsST(
 
         mpf_add(z_coord.re, tr_c, c_coord.re);
         mpf_add(z_coord.im, ti_c, c_coord.im);
+
+        itersCompleted = i + 1;
     }
 
     d2r_hdr = HDRFloat<double>(local_d2r);
@@ -411,4 +440,6 @@ void EvaluateCriticalOrbitAndDerivsST(
     mpf_complex_clear(z_deriv);
     mpf_complex_clear(tmpB_deriv);
     mpf_complex_clear(tmpZ_coord);
+
+    return itersCompleted;
 }

@@ -47,7 +47,9 @@ Only x64 builds are supported. x86 configurations in the solution are mapped to 
 
 ### Testing
 
-HpSharkFloatTest is a custom test harness (no standard framework). Build and run it:
+Three test projects cover different layers:
+
+**HpSharkFloatTest** (GPU arithmetic) — standalone CUDA executable. Tests high-precision add, NTT multiply, and reference orbit iteration via three-level cross-validation: GPU vs MPIR (ground truth), GPU vs CPU reference (same HpSharkFloat format), CPU reference vs MPIR. Leverages the checksum-guided debugging infrastructure to isolate pipeline-stage failures. Build and run:
 
 ```powershell
 msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64 /t:HpSharkFloatTest
@@ -55,7 +57,9 @@ msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platfo
 Release\HpSharkFloatTest.exe
 ```
 
-**CrummyTest** (in `FractalSharkLib/CrummyTest.cpp`) is a functional test suite invoked from the application's right-click menu (IDM_BASICTEST). It tests rendering algorithms, reference orbit save/load, compression variants, and window resizing. CrummyTest calls `Drain()` then uses the **direct rendering path** (`CalcFractal(true)` → `SaveCurrentFractal`), not the render pool. Tests include `TestBasic`, `TestReferenceSave`, `TestVariedCompression`, `TestImaginaLoad`, `TestPerturbedPerturb`, `TestWindowResize`, and `TestGrowableVector`.
+**CrummyTest** (in `FractalSharkLib/CrummyTest.cpp`) is a functional test suite invoked from the application's right-click menu (IDM_BASICTEST). It tests rendering algorithms, reference orbit save/load, compression variants, and window resizing. CrummyTest calls `Drain()` then uses the **direct rendering path** (`CalcFractal(true)` → `SaveCurrentFractal`), not the render pool. Tests include `TestBasic`, `TestReferenceSave`, `TestVariedCompression`, `TestImaginaLoad`, `TestPerturbedPerturb`, `TestWindowResize`, `TestStringConversion`, and `TestGrowableVector`.
+
+**FractalSharkTest** (in `FractalSharkTest/`) is a standalone CPU executable that validates utility types: `HDRFloat<T>` arithmetic, `HDRFloatComplex` operations, `HighPrecision` string parsing, and `PointZoomBBConverter` coordinate transforms. Uses a simple assertion-based framework (`TEST`, `ASSERT_EQ`, `ASSERT_NEAR`).
 
 ## Architecture
 

@@ -28,7 +28,11 @@ mp_bitcnt_t ChooseDerivPrec_ImaginaStyle(mp_bitcnt_t coord_prec,
 
 // Multi-threaded MPIR orbit: z=z^2+c for `period` iterations with dzdc and d2.
 // Uses 7 spin-locked worker threads for parallel MPIR multiplies.
-void EvaluateCriticalOrbitAndDerivsMT(
+// When startIter > 0, z_coord/dzdc_deriv/d2r_hdr/d2i_hdr must contain the
+// state at iteration startIter (i.e., restored from a checkpoint).
+// Returns the number of iterations completed (== period if finished,
+// < period if aborted via AbortMonitor).
+uint64_t EvaluateCriticalOrbitAndDerivsMT(
     const mpf_complex &c_coord,
     uint64_t period,
     mpf_complex &z_coord,
@@ -36,10 +40,11 @@ void EvaluateCriticalOrbitAndDerivsMT(
     HDRFloat<double> &d2r_hdr,
     HDRFloat<double> &d2i_hdr,
     mp_bitcnt_t deriv_prec,
-    mp_bitcnt_t coord_prec);
+    mp_bitcnt_t coord_prec,
+    uint64_t startIter = 0);
 
 // Single-threaded MPIR orbit: same math as MT but all multiplies sequential.
-void EvaluateCriticalOrbitAndDerivsST(
+uint64_t EvaluateCriticalOrbitAndDerivsST(
     const mpf_complex &c_coord,
     uint64_t period,
     mpf_complex &z_coord,
@@ -47,5 +52,6 @@ void EvaluateCriticalOrbitAndDerivsST(
     HDRFloat<double> &d2r_hdr,
     HDRFloat<double> &d2i_hdr,
     mp_bitcnt_t deriv_prec,
-    mp_bitcnt_t coord_prec);
+    mp_bitcnt_t coord_prec,
+    uint64_t startIter = 0);
 

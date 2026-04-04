@@ -608,7 +608,7 @@ public:
         T local_mantissa = (T)1.0 / Base::mantissa;
         TExp local_exp = -Base::exp;
 
-        return HDRFloat(local_mantissa, local_exp);
+        return HDRFloat(local_exp, local_mantissa);
     }
 
     CUDA_CRAP constexpr HDRFloat &
@@ -923,7 +923,7 @@ public:
     CUDA_CRAP constexpr HDRFloat
     divide2() const
     {
-        return HDRFloat(Base::mantissa, Base::exp - 1);
+        return HDRFloat(Base::exp - 1, Base::mantissa);
     }
 
     CUDA_CRAP constexpr HDRFloat &
@@ -938,14 +938,13 @@ public:
     CUDA_CRAP constexpr HDRFloat
     divide4() const
     {
-        return HDRFloat(Base::mantissa, Base::exp - 2);
+        return HDRFloat(Base::exp - 2, Base::mantissa);
     }
 
     CUDA_CRAP constexpr HDRFloat &
     divide4_mutable()
     {
         Base::exp -= 2;
-        Base::exp--;
         Base::exp = Base::exp < GenericHdrBase::MIN_BIG_EXPONENT() ? GenericHdrBase::MIN_BIG_EXPONENT()
                                                                    : Base::exp;
         return *this;

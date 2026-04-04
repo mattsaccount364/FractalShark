@@ -24,11 +24,13 @@
     const HpShark::LaunchParams &launchParams, \
     HpSharkReferenceResults<SharkFloatParams> &combo, \
     DebugGpuCombo *debugCombo); \
-    template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>( \
+    template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>( \
     const mpf_t, const mpf_t, uint64_t, \
     mpf_t, mpf_t, mpf_t, mpf_t, \
     HDRFloat<double> &, HDRFloat<double> &, \
-    const HpShark::LaunchParams &); \
+    const HpShark::LaunchParams &, \
+    uint64_t, \
+    bool (*)()); \
     /* end */
 
 namespace HpShark {

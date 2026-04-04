@@ -6,11 +6,12 @@
 #endif
 #include <Windows.h>
 
-#include "MpirOrbitEval.h"
 #include "AbortMonitor.h"
+#include "MpirOrbitEval.h"
 
 #include <atomic>
 #include <format>
+#include <iostream>
 #include <limits>
 #include <thread>
 
@@ -18,43 +19,59 @@
 // mpf_complex helpers
 // ============================================================
 
-void mpf_complex_init(mpf_complex &z, mp_bitcnt_t prec) {
+void
+mpf_complex_init(mpf_complex &z, mp_bitcnt_t prec)
+{
     mpf_init2(z.re, prec);
     mpf_init2(z.im, prec);
 }
 
-void mpf_complex_clear(mpf_complex &z) {
+void
+mpf_complex_clear(mpf_complex &z)
+{
     mpf_clear(z.re);
     mpf_clear(z.im);
 }
 
-void mpf_complex_set(mpf_complex &dst, const mpf_complex &src) {
+void
+mpf_complex_set(mpf_complex &dst, const mpf_complex &src)
+{
     mpf_set(dst.re, src.re);
     mpf_set(dst.im, src.im);
 }
 
-void mpf_complex_set_ui(mpf_complex &z, unsigned long re, unsigned long im) {
+void
+mpf_complex_set_ui(mpf_complex &z, unsigned long re, unsigned long im)
+{
     mpf_set_ui(z.re, re);
     mpf_set_ui(z.im, im);
 }
 
-void mpf_complex_sub(mpf_complex &out, const mpf_complex &a, const mpf_complex &b) {
+void
+mpf_complex_sub(mpf_complex &out, const mpf_complex &a, const mpf_complex &b)
+{
     mpf_sub(out.re, a.re, b.re);
     mpf_sub(out.im, a.im, b.im);
 }
 
-void mpf_complex_add(mpf_complex &out, const mpf_complex &a, const mpf_complex &b) {
+void
+mpf_complex_add(mpf_complex &out, const mpf_complex &a, const mpf_complex &b)
+{
     mpf_add(out.re, a.re, b.re);
     mpf_add(out.im, a.im, b.im);
 }
 
-void mpf_complex_norm(mpf_t out, const mpf_complex &z, mpf_t t1, mpf_t t2) {
+void
+mpf_complex_norm(mpf_t out, const mpf_complex &z, mpf_t t1, mpf_t t2)
+{
     mpf_mul(t1, z.re, z.re);
     mpf_mul(t2, z.im, z.im);
     mpf_add(out, t1, t2);
 }
 
-int approx_ilogb_mpf(const mpf_t x) {
+int
+approx_ilogb_mpf(const mpf_t x)
+{
     if (mpf_cmp_ui(x, 0) == 0)
         return INT32_MIN;
     long exp2;
@@ -62,17 +79,21 @@ int approx_ilogb_mpf(const mpf_t x) {
     return int(exp2 - 1);
 }
 
-int approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mpf_t outAbs2) {
+int
+approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mpf_t outAbs2)
+{
     mpf_mul(t1, re, re);
     mpf_mul(t2, im, im);
     mpf_add(outAbs2, t1, t2);
     return approx_ilogb_mpf(outAbs2);
 }
 
-mp_bitcnt_t ChooseDerivPrec_ImaginaStyle(mp_bitcnt_t coord_prec,
-                                          int scaleExp2,
-                                          int coordExp2_max_abs,
-                                          mp_bitcnt_t minPrec) {
+mp_bitcnt_t
+ChooseDerivPrec_ImaginaStyle(mp_bitcnt_t coord_prec,
+                             int scaleExp2,
+                             int coordExp2_max_abs,
+                             mp_bitcnt_t minPrec)
+{
     long dp = (long)((-scaleExp2 + 32) / 4);
     if (dp < (long)minPrec)
         dp = (long)minPrec;
@@ -102,7 +123,8 @@ struct MulWorkerParams {
 };
 
 static void
-MulWorkerMain(MulWorkerParams p) {
+MulWorkerMain(MulWorkerParams p)
+{
     SetThreadDescription(GetCurrentThread(), std::format(L"MpirOrbit MulWorker {}", p.idx).c_str());
     uint64_t seen = 0;
 
@@ -126,16 +148,16 @@ MulWorkerMain(MulWorkerParams p) {
 // Multi-threaded MPIR orbit evaluation
 // ============================================================
 
-uint64_t EvaluateCriticalOrbitAndDerivsMT(
-    const mpf_complex &c_coord,
-    uint64_t period,
-    mpf_complex &z_coord,
-    mpf_complex &dzdc_deriv,
-    HDRFloat<double> &d2r_hdr,
-    HDRFloat<double> &d2i_hdr,
-    mp_bitcnt_t deriv_prec,
-    mp_bitcnt_t coord_prec,
-    uint64_t startIter)
+uint64_t
+EvaluateCriticalOrbitAndDerivsMT(const mpf_complex &c_coord,
+                                 uint64_t period,
+                                 mpf_complex &z_coord,
+                                 mpf_complex &dzdc_deriv,
+                                 HDRFloat<double> &d2r_hdr,
+                                 HDRFloat<double> &d2i_hdr,
+                                 mp_bitcnt_t deriv_prec,
+                                 mp_bitcnt_t coord_prec,
+                                 uint64_t startIter)
 {
     // Scratch temporaries
     mpf_complex z_deriv, tmpB_deriv, tmpZ_coord;
@@ -144,10 +166,14 @@ uint64_t EvaluateCriticalOrbitAndDerivsMT(
     mpf_complex_init(tmpZ_coord, coord_prec);
 
     mpf_t tr_d, ti_d, t1_d, t2_d, tr_c, ti_c, t1_c, t2_c;
-    mpf_init2(tr_d, deriv_prec); mpf_init2(ti_d, deriv_prec);
-    mpf_init2(t1_d, deriv_prec); mpf_init2(t2_d, deriv_prec);
-    mpf_init2(tr_c, coord_prec); mpf_init2(ti_c, coord_prec);
-    mpf_init2(t1_c, coord_prec); mpf_init2(t2_c, coord_prec);
+    mpf_init2(tr_d, deriv_prec);
+    mpf_init2(ti_d, deriv_prec);
+    mpf_init2(t1_d, deriv_prec);
+    mpf_init2(t2_d, deriv_prec);
+    mpf_init2(tr_c, coord_prec);
+    mpf_init2(ti_c, coord_prec);
+    mpf_init2(t1_c, coord_prec);
+    mpf_init2(t2_c, coord_prec);
 
     // Initialize state (only when starting fresh; on resume, caller provides state)
     if (startIter == 0) {
@@ -212,10 +238,11 @@ uint64_t EvaluateCriticalOrbitAndDerivsMT(
 
     uint64_t itersCompleted = startIter;
     for (uint64_t i = startIter; i < period; ++i) {
-        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
-            i > startIter &&
-            AbortMonitor::GetStopCalculatingGlobal()) {
-            break;
+        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 && i > startIter) {
+            std::cout << "    CPU-MT inner: " << i << " / " << period << std::endl;
+            if (AbortMonitor::GetStopCalculatingGlobal()) {
+                break;
+            }
         }
 
         dispatch_mul(4, w_out_coord[0], z_coord.re, z_coord.re);
@@ -298,17 +325,22 @@ uint64_t EvaluateCriticalOrbitAndDerivsMT(
     for (int k = 0; k < NWORK; ++k)
         job_gen[k].store((std::numeric_limits<uint64_t>::max)(), std::memory_order_release);
     for (int k = 0; k < NWORK; ++k)
-        if (w_threads[k].joinable()) w_threads[k].join();
+        if (w_threads[k].joinable())
+            w_threads[k].join();
 
     for (int k = 0; k < 4; ++k)
         mpf_clear(w_out_deriv[k]);
     for (int k = 0; k < 3; ++k)
         mpf_clear(w_out_coord[k]);
 
-    mpf_clear(tr_d); mpf_clear(ti_d);
-    mpf_clear(t1_d); mpf_clear(t2_d);
-    mpf_clear(tr_c); mpf_clear(ti_c);
-    mpf_clear(t1_c); mpf_clear(t2_c);
+    mpf_clear(tr_d);
+    mpf_clear(ti_d);
+    mpf_clear(t1_d);
+    mpf_clear(t2_d);
+    mpf_clear(tr_c);
+    mpf_clear(ti_c);
+    mpf_clear(t1_c);
+    mpf_clear(t2_c);
     mpf_complex_clear(z_deriv);
     mpf_complex_clear(tmpB_deriv);
     mpf_complex_clear(tmpZ_coord);
@@ -321,16 +353,16 @@ uint64_t EvaluateCriticalOrbitAndDerivsMT(
 // Same math as MT but all multiplies sequential (no worker threads).
 // ============================================================
 
-uint64_t EvaluateCriticalOrbitAndDerivsST(
-    const mpf_complex &c_coord,
-    uint64_t period,
-    mpf_complex &z_coord,
-    mpf_complex &dzdc_deriv,
-    HDRFloat<double> &d2r_hdr,
-    HDRFloat<double> &d2i_hdr,
-    mp_bitcnt_t deriv_prec,
-    mp_bitcnt_t coord_prec,
-    uint64_t startIter)
+uint64_t
+EvaluateCriticalOrbitAndDerivsST(const mpf_complex &c_coord,
+                                 uint64_t period,
+                                 mpf_complex &z_coord,
+                                 mpf_complex &dzdc_deriv,
+                                 HDRFloat<double> &d2r_hdr,
+                                 HDRFloat<double> &d2i_hdr,
+                                 mp_bitcnt_t deriv_prec,
+                                 mp_bitcnt_t coord_prec,
+                                 uint64_t startIter)
 {
     // Scratch temporaries
     mpf_complex z_deriv, tmpB_deriv, tmpZ_coord;
@@ -339,10 +371,14 @@ uint64_t EvaluateCriticalOrbitAndDerivsST(
     mpf_complex_init(tmpZ_coord, coord_prec);
 
     mpf_t tr_d, ti_d, t1_d, t2_d, tr_c, ti_c, t1_c, t2_c;
-    mpf_init2(tr_d, deriv_prec); mpf_init2(ti_d, deriv_prec);
-    mpf_init2(t1_d, deriv_prec); mpf_init2(t2_d, deriv_prec);
-    mpf_init2(tr_c, coord_prec); mpf_init2(ti_c, coord_prec);
-    mpf_init2(t1_c, coord_prec); mpf_init2(t2_c, coord_prec);
+    mpf_init2(tr_d, deriv_prec);
+    mpf_init2(ti_d, deriv_prec);
+    mpf_init2(t1_d, deriv_prec);
+    mpf_init2(t2_d, deriv_prec);
+    mpf_init2(tr_c, coord_prec);
+    mpf_init2(ti_c, coord_prec);
+    mpf_init2(t1_c, coord_prec);
+    mpf_init2(t2_c, coord_prec);
 
     // Initialize state (only when starting fresh; on resume, caller provides state)
     if (startIter == 0) {
@@ -360,10 +396,11 @@ uint64_t EvaluateCriticalOrbitAndDerivsST(
 
     uint64_t itersCompleted = startIter;
     for (uint64_t i = startIter; i < period; ++i) {
-        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
-            i > startIter &&
-            AbortMonitor::GetStopCalculatingGlobal()) {
-            break;
+        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 && i > startIter) {
+            std::cout << "    CPU-ST inner: " << i << " / " << period << std::endl;
+            if (AbortMonitor::GetStopCalculatingGlobal()) {
+                break;
+            }
         }
 
         // Round z from coord_prec -> deriv_prec
@@ -433,10 +470,14 @@ uint64_t EvaluateCriticalOrbitAndDerivsST(
     d2r_hdr = HDRFloat<double>(local_d2r);
     d2i_hdr = HDRFloat<double>(local_d2i);
 
-    mpf_clear(tr_d); mpf_clear(ti_d);
-    mpf_clear(t1_d); mpf_clear(t2_d);
-    mpf_clear(tr_c); mpf_clear(ti_c);
-    mpf_clear(t1_c); mpf_clear(t2_c);
+    mpf_clear(tr_d);
+    mpf_clear(ti_d);
+    mpf_clear(t1_d);
+    mpf_clear(t2_d);
+    mpf_clear(tr_c);
+    mpf_clear(ti_c);
+    mpf_clear(t1_c);
+    mpf_clear(t2_c);
     mpf_complex_clear(z_deriv);
     mpf_complex_clear(tmpB_deriv);
     mpf_complex_clear(tmpZ_coord);

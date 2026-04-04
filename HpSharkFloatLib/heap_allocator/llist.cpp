@@ -1,5 +1,5 @@
-#include "..\DbgHeap.h"
 #include "include/llist.h"
+#include "..\DbgHeap.h"
 #include "include/HeapPanic.h"
 
 #include <exception>
@@ -18,7 +18,6 @@ mark_not_in_bin(node_t *n)
     n->in_bin = node_t::NotInBin;
     ++n->in_bin_gen;
 }
-
 
 bool
 has_cycle(node_t *head)
@@ -173,8 +172,6 @@ add_node(bin_t *bin, node_t *node, uint64_t in_bin)
     validate_bin(bin);
 }
 
-
-
 void
 remove_node(bin_t *bin, node_t *node, uint64_t in_bin)
 {
@@ -218,12 +215,13 @@ remove_node(bin_t *bin, node_t *node, uint64_t in_bin)
     validate_bin(bin);
 }
 
-
 node_t *
-get_best_fit(bin_t *bin, size_t size) {
+get_best_fit(bin_t *bin, size_t size)
+{
     validate_bin(bin);
 
-    if (bin->head == NULL) return NULL; // empty list!
+    if (bin->head == NULL)
+        return NULL; // empty list!
 
     node_t *temp = bin->head;
 
@@ -237,14 +235,16 @@ get_best_fit(bin_t *bin, size_t size) {
 }
 
 node_t *
-get_last_node(bin_t *bin) {
-    node_t *temp = bin->head;
-
+get_last_node(bin_t *bin)
+{
     validate_bin(bin);
+
+    node_t *temp = bin->head;
+    if (!temp)
+        return nullptr;
 
     while (temp->next != NULL) {
         temp = temp->next;
     }
     return temp;
 }
-

@@ -64,10 +64,11 @@ __declspec(allocate(".fs_alloc$a")) const PF InitSegStart = (PF)1;
 __declspec(allocate(".fs_alloc$z")) const PF InitSegEnd = (PF)1;
 
 // Called by MSVC for objects in our init_seg (instead of atexit)
-static int __cdecl
-myexit(PF pf)
+static int __cdecl myexit(PF pf)
 {
-    // keep it simple; add bounds checking if desired
+    if (cxpf >= 200) {
+        HeapPanic("Static destructor limit exceeded");
+    }
     pfx[cxpf++] = pf;
     return 0;
 }
@@ -189,18 +190,25 @@ HeapCpp::InitGlobalHeap()
         return;
     }
 
-    // Construct HeapCpp in raw storage (no dynamic initialization at static-init time;
-    // construction happens here under your control).
+    // Thread-safe single-initialization guard using atomic CAS.
+    // Can't use std::call_once or std::mutex — those may allocate, and this
+    // runs before the heap is ready.
+    static volatile long init_lock = 0;
+    while (InterlockedCompareExchange(&init_lock, 1, 0) != 0) {
+        // Another thread is initializing — spin until done.
+        // After init, Initialized==true and we return early above on next call.
+        Sleep(0);
+    }
+
     auto &globalHeap = GlobalHeap();
 
     if (globalHeap.Initialized) {
+        InterlockedExchange(&init_lock, 0);
         return;
     }
 
-    // Note: sprintf_s etc use heap allocations in debug mode, so we can't use them here.
     static_assert(sizeof(GrowableVector<uint8_t>) <= GrowableVectorSize);
 
-    // GrowableVector<uint8_t>(AddPointOptions::EnableWithoutSave, L"HeapFile.bin");
     globalHeap.Growable =
         std::construct_at(reinterpret_cast<GrowableVector<uint8_t> *>(globalHeap.GrowableVectorMemory),
                           AddPointOptions::EnableWithoutSave,
@@ -209,8 +217,7 @@ HeapCpp::InitGlobalHeap()
     globalHeap.Growable->MutableResize(GrowByAmtBytes);
     globalHeap.Init();
 
-    // TODO
-    // RegisterHeapCleanup();
+    InterlockedExchange(&init_lock, 0);
 }
 
 HeapCpp::HeapCpp()
@@ -421,6 +428,7 @@ HeapCpp::Allocate(size_t user_size)
             found->actual_size = static_cast<uint64_t>(actual_size);
             CreateFooter(found);
         } else {
+            found->user_size = static_cast<uint64_t>(user_size);
             CreateFooter(found);
         }
 
@@ -455,7 +463,7 @@ HeapCpp::Allocate(size_t user_size)
     if (res && (reinterpret_cast<uintptr_t>(res) % 16 != 0)) {
         HeapPanic("Memory allocation is not aligned");
     }
-     
+
     Stats.Allocations++;
     Stats.BytesAllocated += actual_size;
     return res;
@@ -524,14 +532,25 @@ HeapCpp::Deallocate(void *ptr)
 
     node_t *head = (node_t *)((char *)ptr - sizeof(node_t));
 
-    Stats.BytesFreed += head->actual_size;
-    Stats.Frees++;
+    if (!ptr_in_heap(Heap, head)) {
+        HeapPanic("Free of pointer outside heap bounds");
+    }
+
+    if (head->hole) {
+        HeapPanic("Double free detected");
+    }
 
     if (head->magic != node_t::Magic) {
         HeapPanic("Invalid node magic");
     }
 
+    Stats.BytesFreed += head->actual_size;
+    Stats.Frees++;
+
     VerifyAndClearMagicAtEnd(ptr, head->actual_size);
+
+    // Poison user data to catch use-after-free
+    std::memset(ptr, 0xCD, head->user_size);
 
     // Identify neighbors in the heap layout (SAFELY)
     footer_t *head_foot = GetFooter(head);
@@ -596,7 +615,6 @@ HeapCpp::Expand(size_t deltaSizeBytes)
     if (expanding) {
         HeapPanic("Expand: recursion detected — GrowableVector error path allocated heap");
     }
-    expanding = true;
     expanding = true;
 
     const auto growSizeBytes = std::max(size_t(GrowByAmtBytes), deltaSizeBytes * 2);
@@ -686,20 +704,27 @@ HeapCpp::CountAllocations() const
 {
     size_t count = 0;
 
-    // Start at the beginning of the heap
     uintptr_t current_address = Heap.start;
 
-    // Traverse through the heap until we reach the end
     while (current_address < Heap.end) {
-        // Get the current node (header) at the current address
         node_t *current_node = reinterpret_cast<node_t *>(current_address);
 
-        // If it's not a hole, it means it's an active allocation
+        // Validate node before trusting actual_size for traversal
+        if (current_node->hole == 0 && current_node->magic != node_t::Magic) {
+            HeapPanic("CountAllocations: corrupt allocated node");
+        }
+        if (current_node->hole == 1 && current_node->magic != node_t::ClearedMagic) {
+            HeapPanic("CountAllocations: corrupt free node");
+        }
+        if (current_node->actual_size == 0 ||
+            current_address + sizeof(node_t) + current_node->actual_size + sizeof(footer_t) > Heap.end) {
+            HeapPanic("CountAllocations: actual_size out of range");
+        }
+
         if (current_node->hole == 0) {
             count++;
         }
 
-        // Move to the next node by advancing by the size of the current node plus the overhead
         current_address += sizeof(node_t) + current_node->actual_size + sizeof(footer_t);
     }
 
@@ -817,6 +842,12 @@ CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
     }
 
     const auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(ptr) - sizeof(node_t));
+    if (node->magic != node_t::Magic) {
+        HeapPanic("Realloc: invalid node magic");
+    }
+    if (node->hole) {
+        HeapPanic("Realloc: node is already free");
+    }
     const size_t oldUsableSize = node->user_size;
     const size_t copyUserSize = std::min(oldUsableSize, newUserSize);
     std::memcpy(newPtr, ptr, copyUserSize);
@@ -853,9 +884,13 @@ calloc(size_t num, size_t size)
     EarlyInit_SafeMode_NoCRT();
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        void *p = CppMalloc(num * size);
+        if (size != 0 && num > (SIZE_MAX / size)) {
+            return nullptr;
+        }
+        size_t total = num * size;
+        void *p = CppMalloc(total);
         if (p)
-            std::memset(p, 0, num * size);
+            std::memset(p, 0, total);
         return p;
     }
     return SysCalloc(num, size);
@@ -892,13 +927,15 @@ free(void *ptr)
 }
 
 extern "C" __declspec(restrict) void *
-aligned_alloc(size_t [[maybe_unused]] alignment, size_t size)
+aligned_alloc(size_t alignment, size_t size)
 {
     EarlyInit_SafeMode_NoCRT();
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
         auto p = CppMalloc(size);
-        assert(reinterpret_cast<uintptr_t>(p) % alignment == 0);
+        if (p && (reinterpret_cast<uintptr_t>(p) % alignment != 0)) {
+            HeapPanic("aligned_alloc: allocation not aligned to requested boundary");
+        }
         return p;
     }
 
@@ -953,9 +990,13 @@ _calloc_dbg(size_t num, size_t size, int blockType, const char *filename, int li
     EarlyInit_SafeMode_NoCRT();
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        void *p = CppMalloc(num * size);
+        if (size != 0 && num > (SIZE_MAX / size)) {
+            return nullptr;
+        }
+        size_t total = num * size;
+        void *p = CppMalloc(total);
         if (p)
-            std::memset(p, 0, num * size);
+            std::memset(p, 0, total);
         return p;
     }
     return calloc(num, size);
@@ -1028,6 +1069,9 @@ _msize_dbg(void *block, int /*block_use*/)
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
         auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(block) - sizeof(node_t));
+        if (node->magic != node_t::Magic || node->hole) {
+            HeapPanic("_msize_dbg: invalid or freed block");
+        }
         return node->user_size;
     }
 
@@ -1103,4 +1147,28 @@ void *
 operator new[](size_t count, std::align_val_t al, const std::nothrow_t &) noexcept
 {
     return aligned_alloc(static_cast<size_t>(al), count);
+}
+
+void
+operator delete(void *ptr, std::align_val_t) noexcept
+{
+    free(ptr);
+}
+
+void
+operator delete[](void *ptr, std::align_val_t) noexcept
+{
+    free(ptr);
+}
+
+void
+operator delete(void *ptr, std::size_t, std::align_val_t) noexcept
+{
+    free(ptr);
+}
+
+void
+operator delete[](void *ptr, std::size_t, std::align_val_t) noexcept
+{
+    free(ptr);
 }

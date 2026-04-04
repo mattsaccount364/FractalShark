@@ -82,9 +82,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="TestBLA.cpp" />
+    <ClCompile Include="TestFloatComplex.cpp" />
     <ClCompile Include="TestHDRFloat.cpp" />
     <ClCompile Include="TestHDRFloatComplex.cpp" />
     <ClCompile Include="TestHighPrecisionStrings.cpp" />
+    <ClCompile Include="TestMpirOrbitEval.cpp" />
     <ClCompile Include="TestPointZoomBBConverter.cpp" />
     <ClCompile Include="TestPrecisionCalculator.cpp" />
   </ItemGroup>

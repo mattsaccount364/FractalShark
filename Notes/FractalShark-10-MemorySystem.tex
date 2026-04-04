@@ -26,6 +26,17 @@ can be avoided entirely. This persistence enables efficient multi-pass rendering
 interactive debugging, and reuse of authoritative reference orbits across program
 invocations.
 
+A further motivation is memory pressure.  Reference orbits, LA~v2
+coefficient tables, and compressed-orbit metadata can collectively
+grow to tens of gigabytes at extreme zoom depths.  Backing these
+structures with on-disk files rather than anonymous (pagefile-backed)
+memory avoids exhausting the system-wide virtual-memory commit charge,
+which on Windows is limited by RAM plus pagefile size.  With
+file-backed storage, the operating system demand-pages data into
+physical memory as needed and evicts it back to the file under
+pressure, so the working set stays manageable even when the logical
+data set far exceeds available RAM.
+
 To address these requirements, \FractalShark{} provides a
 \code{GrowableVector<EltT>} abstraction that combines (i) a fixed,
 virtually-contiguous address range reserved up front and (ii) incremental growth

@@ -96,18 +96,17 @@ void InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
 // with host-side abort check between chunks.
 // Returns total iterations completed (== period if finished, < period if aborted).
 template <class SharkFloatParams>
-uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
-    const mpf_t cReal,
-    const mpf_t cImag,
-    uint64_t period,
-    mpf_t outZReal,
-    mpf_t outZImag,
-    mpf_t outDzdcReal,
-    mpf_t outDzdcImag,
-    HDRFloat<double> &outD2Real,
-    HDRFloat<double> &outD2Imag,
-    const HpShark::LaunchParams &externalLaunchParams = {0, 0},
-    uint64_t startIter = 0,
-    bool (*shouldAbort)() = nullptr);
+uint64_t EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
+                                            const mpf_t cImag,
+                                            uint64_t period,
+                                            mpf_t outZReal,
+                                            mpf_t outZImag,
+                                            mpf_t outDzdcReal,
+                                            mpf_t outDzdcImag,
+                                            HDRFloat<double> &outD2Real,
+                                            HDRFloat<double> &outD2Imag,
+                                            const HpShark::LaunchParams &externalLaunchParams = {0, 0},
+                                            uint64_t startIter = 0,
+                                            bool (*shouldAbort)() = nullptr);
 
 } // namespace HpShark

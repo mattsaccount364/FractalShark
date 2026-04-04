@@ -9,20 +9,27 @@ AttachBackgroundConsole(bool initiallyVisible)
 {
     SetThreadDescription(GetCurrentThread(), L"Background Console Thread");
 
-    // Prefer AllocConsoleWithOptions so the window is never shown until we're ready.
-    // (If unavailable, fall back to AllocConsole + immediate hide.)
+    // AllocConsoleWithOptions (Win11 24H2+) lets us create the console window
+    // hidden from the start, avoiding the visible flash.  On older Windows
+    // the function does not exist, so load it dynamically and fall back to
+    // plain AllocConsole + immediate ShowWindow(SW_HIDE).
     using AllocConsoleWithOptionsFn = HRESULT(WINAPI *)(PALLOC_CONSOLE_OPTIONS, PALLOC_CONSOLE_RESULT);
 
     bool consoleAllocated = false;
 
-    ALLOC_CONSOLE_OPTIONS opts{};
-    opts.mode = ALLOC_CONSOLE_MODE_NEW_WINDOW; // ensure we get our own console
-    opts.useShowWindow = TRUE;
-    opts.showWindow = SW_HIDE; // start hidden: no flash
+    auto pfn = reinterpret_cast<AllocConsoleWithOptionsFn>(
+        ::GetProcAddress(::GetModuleHandleW(L"kernel32.dll"), "AllocConsoleWithOptions"));
 
-    ALLOC_CONSOLE_RESULT result = ALLOC_CONSOLE_RESULT_NO_CONSOLE;
-    HRESULT hr = AllocConsoleWithOptions(&opts, &result);
-    consoleAllocated = SUCCEEDED(hr) && (result == ALLOC_CONSOLE_RESULT_NEW_CONSOLE);
+    if (pfn) {
+        ALLOC_CONSOLE_OPTIONS opts{};
+        opts.mode = ALLOC_CONSOLE_MODE_NEW_WINDOW;
+        opts.useShowWindow = TRUE;
+        opts.showWindow = SW_HIDE;
+
+        ALLOC_CONSOLE_RESULT result = ALLOC_CONSOLE_RESULT_NO_CONSOLE;
+        HRESULT hr = pfn(&opts, &result);
+        consoleAllocated = SUCCEEDED(hr) && (result == ALLOC_CONSOLE_RESULT_NEW_CONSOLE);
+    }
 
     if (!consoleAllocated) {
         if (!::AllocConsole())

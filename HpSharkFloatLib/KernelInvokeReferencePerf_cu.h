@@ -73,8 +73,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
 
         // Construct One constant for derivative add (+1)
         combo->Add.One.template FromHDRFloat<typename SharkFloatParams::SubType>(
-            HDRFloat<typename SharkFloatParams::SubType>{
-                typename SharkFloatParams::SubType(1.0)});
+            HDRFloat<typename SharkFloatParams::SubType>{typename SharkFloatParams::SubType(1.0)});
     }
 
     // Allocate scratch memory: max of NTT and Add frame sizes (both share this allocation).
@@ -388,19 +387,19 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
 // When startIter > 0, reads initial z/dzdc/d2 from the out parameters.
 // Returns total iterations completed (== period if finished, < period if aborted).
 template <class SharkFloatParams>
-uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
-    const mpf_t cReal,
-    const mpf_t cImag,
-    uint64_t period,
-    mpf_t outZReal,
-    mpf_t outZImag,
-    mpf_t outDzdcReal,
-    mpf_t outDzdcImag,
-    HDRFloat<double> &outD2Real,
-    HDRFloat<double> &outD2Imag,
-    const HpShark::LaunchParams &externalLaunchParams,
-    uint64_t startIter,
-    bool (*shouldAbort)())
+uint64_t
+EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
+                                   const mpf_t cImag,
+                                   uint64_t period,
+                                   mpf_t outZReal,
+                                   mpf_t outZImag,
+                                   mpf_t outDzdcReal,
+                                   mpf_t outDzdcImag,
+                                   HDRFloat<double> &outD2Real,
+                                   HDRFloat<double> &outD2Imag,
+                                   const HpShark::LaunchParams &externalLaunchParams,
+                                   uint64_t startIter,
+                                   bool (*shouldAbort)())
 {
     if constexpr (!SharkFloatParams::EnableNewtonRaphson) {
         return 0;
@@ -413,12 +412,13 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
     // Convert c from mpf to HpSharkFloat
     auto hpCR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto hpCI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    hpCR->MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&cReal[0]), precBits, InjectNoiseInLowOrder::Disable);
-    hpCI->MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&cImag[0]), precBits, InjectNoiseInLowOrder::Disable);
+    hpCR->MpfToHpGpu(
+        *reinterpret_cast<const mpf_t *>(&cReal[0]), precBits, InjectNoiseInLowOrder::Disable);
+    hpCI->MpfToHpGpu(
+        *reinterpret_cast<const mpf_t *>(&cImag[0]), precBits, InjectNoiseInLowOrder::Disable);
 
     // Init GPU combo
-    auto combo = InitHpSharkReferenceKernel<SharkFloatParams>(
-        launchParams, hdrRadiusY, *hpCR, *hpCI);
+    auto combo = InitHpSharkReferenceKernel<SharkFloatParams>(launchParams, hdrRadiusY, *hpCR, *hpCI);
 
     if (startIter == 0) {
         // Fresh start: z=0, dzdc=0, d2=0
@@ -458,10 +458,10 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
                    sizeof(SharkNTT::RootTables),
                    cudaMemcpyDeviceToHost);
 
-        cudaError_t res = cudaMemcpy(
-            combo->comboGpu, combo.get(),
-            sizeof(HpSharkReferenceResults<SharkFloatParams>),
-            cudaMemcpyHostToDevice);
+        cudaError_t res = cudaMemcpy(combo->comboGpu,
+                                     combo.get(),
+                                     sizeof(HpSharkReferenceResults<SharkFloatParams>),
+                                     cudaMemcpyHostToDevice);
         if (res != cudaSuccess) {
             std::ostringstream oss;
             oss << "cudaMemcpy(combo H2D for NR) failed: " << cudaGetErrorString(res);
@@ -474,15 +474,19 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
                    cudaMemcpyHostToDevice);
     }
 
-    // Launch kernel in chunks for responsive abort
+    // Launch kernel in chunks for responsive abort.
+    // NR params have EnablePeriodicity=false, so the kernel always runs the
+    // full requested chunk and never writes OutputIterCount. Use chunkIters directly.
     constexpr uint64_t NRChunkSize = 10000;
     uint64_t remaining = period - startIter;
     uint64_t done = startIter;
     while (remaining > 0) {
         const uint64_t chunkIters = std::min(NRChunkSize, remaining);
         InvokeHpSharkReferenceKernel<SharkFloatParams>(launchParams, *combo, chunkIters);
-        done += combo->OutputIterCount;
-        remaining -= combo->OutputIterCount;
+        done += chunkIters;
+        remaining -= chunkIters;
+
+        std::cout << "    GPU inner: " << done << " / " << period << std::endl;
 
         if (shouldAbort && shouldAbort()) {
             break;
@@ -490,11 +494,9 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
     }
 
     // Debug: check what happened
-    std::cout << "  GPU NR wrapper: PeriodicityStatus="
-              << static_cast<int>(combo->PeriodicityStatus)
+    std::cout << "  GPU NR wrapper: PeriodicityStatus=" << static_cast<int>(combo->PeriodicityStatus)
               << " OutputIterCount=" << done
-              << " DzdcReal exponent=" << combo->Multiply.DzdcReal.Exponent
-              << std::endl;
+              << " DzdcReal exponent=" << combo->Multiply.DzdcReal.Exponent << std::endl;
 
     // Convert results back to mpf
     combo->Multiply.A.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZReal[0]));
@@ -512,7 +514,7 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
     return done;
 }
 
-#define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)\
+#define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>                                 \
     InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,             \
                                                  const typename SharkFloatParams::Float hdrRadiusY,     \
@@ -531,10 +533,16 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(
         const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
         DebugGpuCombo *debugCombo);                                                                     \
-    template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(                               \
-        const mpf_t, const mpf_t, uint64_t,                                                             \
-        mpf_t, mpf_t, mpf_t, mpf_t,                                                                    \
-        HDRFloat<double> &, HDRFloat<double> &,                                                         \
+    template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(                             \
+        const mpf_t,                                                                                    \
+        const mpf_t,                                                                                    \
+        uint64_t,                                                                                       \
+        mpf_t,                                                                                          \
+        mpf_t,                                                                                          \
+        mpf_t,                                                                                          \
+        mpf_t,                                                                                          \
+        HDRFloat<double> &,                                                                             \
+        HDRFloat<double> &,                                                                             \
         const HpShark::LaunchParams &,                                                                  \
         uint64_t,                                                                                       \
         bool (*)());

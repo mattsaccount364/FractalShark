@@ -32,11 +32,13 @@
     <ClInclude Include="MultiplyNTT_NormalizeWarpTiledV2.h" />
     <ClInclude Include="Vectors.h" />
     <ClInclude Include="KernelTestAdd_cu.h" />
+    <ClCompile Include="AbortMonitor.cpp" />
     <ClCompile Include="BenchmarkTimer.cpp">
       <FileType>Document</FileType>
     </ClCompile>
     <ClInclude Include="HpSharkFloat_cu.h" />
     <ClInclude Include="KernelHpSharkReferenceOrbit_cu.h" />
+    <ClInclude Include="AbortMonitor.h" />
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="DbgHeap.h" />
     <ClInclude Include="GPU_ReferenceIter.h" />

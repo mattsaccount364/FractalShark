@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "AbortMonitor.h"
 
 #include <Windows.h>

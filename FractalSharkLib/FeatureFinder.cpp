@@ -624,7 +624,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     uint32_t it = startIter;
     for (; it < max_nr_iters; ++it) {
 
-        std::cout << "  Refinement iter " << it << std::endl;
+        std::cout << "  Refinement iter " << it << " of " << max_nr_iters << std::endl;
 
         // Full forward eval at current c
         uint64_t innerStart = (it == startIter) ? innerStartIter : 0;
@@ -824,63 +824,67 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
     }
 
-    // ---------------- Imagina final correction pass ----------------
-    // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
-    {
-        if (useGpuForInnerLoop) {
-            DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
-                HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(c_coord.re,
-                                                                      c_coord.im,
-                                                                      period,
-                                                                      z_coord.re,
-                                                                      z_coord.im,
-                                                                      dzdc_deriv.re,
-                                                                      dzdc_deriv.im,
-                                                                      d2r_hdr,
-                                                                      d2i_hdr);
-            });
-        } else {
-            EvaluateCriticalOrbitAndDerivsMT(
-                c_coord, period, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr, deriv_prec, coord_prec);
+    // Skip final correction + accept/reject if aborted — checkpoint was already
+    // saved inside the NR loop.
+    if (!AbortMonitor::GetStopCalculatingGlobal()) {
+        // ---------------- Imagina final correction pass ----------------
+        // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
+        {
+            if (useGpuForInnerLoop) {
+                DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
+                    HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(c_coord.re,
+                                                                          c_coord.im,
+                                                                          period,
+                                                                          z_coord.re,
+                                                                          z_coord.im,
+                                                                          dzdc_deriv.re,
+                                                                          dzdc_deriv.im,
+                                                                          d2r_hdr,
+                                                                          d2i_hdr);
+                });
+            } else {
+                EvaluateCriticalOrbitAndDerivsMT(
+                    c_coord, period, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr, deriv_prec, coord_prec);
+            }
+
+            if (ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
+                    step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
+                mpf_sub(c_coord.re, c_coord.re, step_coord.re);
+                mpf_sub(c_coord.im, c_coord.im, step_coord.im);
+            }
         }
 
-        if (ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
-                step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
-            mpf_sub(c_coord.re, c_coord.re, step_coord.re);
-            mpf_sub(c_coord.im, c_coord.im, step_coord.im);
+        // ---------------- Imagina accept/reject: stay within radius ----------------
+        mpf_complex_sub(dc, c_coord, c0_coord);
+        mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
+
+        if (mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
+            mpf_set(c_coord.re, c0_coord.re);
+            mpf_set(c_coord.im, c0_coord.im);
+            it = 0;
         }
+
+        // Keep checkpoint file — user can resume or re-refine later.
+        WriteNRCheckpoint({c_coord.re,
+                           c_coord.im,
+                           c0_coord.re,
+                           c0_coord.im,
+                           sqrRadius_coord,
+                           intrinsicRadius_mpf,
+                           period,
+                           coord_prec,
+                           it,
+                           scaleExp2_for_deriv_choice,
+                           numIterationsAtFind,
+                           0,
+                           z_coord.re,
+                           z_coord.im,
+                           dzdc_deriv.re,
+                           dzdc_deriv.im,
+                           deriv_prec,
+                           d2r_hdr,
+                           d2i_hdr});
     }
-
-    // ---------------- Imagina accept/reject: stay within radius ----------------
-    mpf_complex_sub(dc, c_coord, c0_coord);
-    mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
-
-    if (mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
-        mpf_set(c_coord.re, c0_coord.re);
-        mpf_set(c_coord.im, c0_coord.im);
-        it = 0;
-    }
-
-    // Keep checkpoint file — user can resume or re-refine later.
-    WriteNRCheckpoint({c_coord.re,
-                       c_coord.im,
-                       c0_coord.re,
-                       c0_coord.im,
-                       sqrRadius_coord,
-                       intrinsicRadius_mpf,
-                       period,
-                       coord_prec,
-                       it,
-                       scaleExp2_for_deriv_choice,
-                       numIterationsAtFind,
-                       0,
-                       z_coord.re,
-                       z_coord.im,
-                       dzdc_deriv.re,
-                       dzdc_deriv.im,
-                       deriv_prec,
-                       d2r_hdr,
-                       d2i_hdr});
 
     // ---------------- cleanup ----------------
     mpf_clear(denom_c);

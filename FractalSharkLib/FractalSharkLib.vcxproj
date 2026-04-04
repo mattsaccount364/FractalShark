@@ -12,7 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\stdafx.h" />
-    <ClInclude Include="AbortMonitor.h" />
     <ClInclude Include="AutoZoomer.h" />
     <ClInclude Include="BenchmarkData.h" />
     <ClInclude Include="BenchmarkDataCollection.h" />
@@ -26,6 +25,7 @@
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="FractalViewPresets.h" />
     <ClInclude Include="LargeCoords32.h" />
+    <ClInclude Include="MpirOrbitEval.h" />
     <ClInclude Include="RenderThreadPool.h" />
     <ClInclude Include="CrummyTest.h" />
     <ClInclude Include="GPU_BLAS.h" />
@@ -68,7 +68,6 @@
     <ClInclude Include="WPngImage\WPngImage.hh" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AbortMonitor.cpp" />
     <ClCompile Include="AutoZoomer.cpp" />
     <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />

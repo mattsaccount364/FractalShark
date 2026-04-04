@@ -238,11 +238,43 @@ clang-format -i <modified-files>
 - Both C++ exceptions and return codes/status enums are acceptable depending on context
 - CUDA allocation failures fall back gracefully (e.g., `cudaMalloc` → `cudaMallocHost`)
 
+### Warning Suppression
+
+- Always use `#pragma warning(push)` / `#pragma warning(pop)` — never project-wide suppression
+- Common suppressed warnings: 4702 (unreachable code in template branches), 4324 (struct padding), 4100 (unreferenced parameter)
+
+### Ownership and Smart Pointers
+
+- Use `std::unique_ptr` for ownership. Raw pointers only for non-owning borrowed references.
+- **Do not use `std::shared_ptr`** — if shared ownership seems necessary, the design is wrong. Refactor to clarify ownership.
+
+### Logging
+
+- No logging framework. Use `std::cout` for high-level diagnostics.
+- `OutputDebugStringA` is reserved for heap/panic paths only.
+- Do not introduce custom LOG macros or logging libraries.
+
+### Windows Headers
+
+- `NOMINMAX` and `WIN32_LEAN_AND_MEAN` must appear before any `<Windows.h>` include. Already set in `stdafx.h`, but files that include Windows headers directly (e.g., `.cpp` files without the precompiled header) must define them explicitly.
+
+### `static_assert`
+
+- Use `static_assert` for compile-time validation of type layouts, platform assumptions, and range contiguity. Short messages are fine.
+
 ### Include Order
 
 1. `"stdafx.h"` (precompiled header, always first)
 2. Project headers
 3. System/third-party headers
+
+### Git LFS
+
+- `.gitattributes` tracks `*.png`, `*.jpg`, `*.zip` via Git LFS. Do not add large binaries without LFS.
+
+### CI
+
+- `.github/workflows/build.yml` builds Debug + Release, then runs `FractalSharkTest.exe` (standalone CPU unit tests). Changes that break these tests will fail CI.
 
 ## Workflow
 

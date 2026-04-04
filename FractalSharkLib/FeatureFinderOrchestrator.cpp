@@ -585,6 +585,10 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature, const Hig
         if (!featureFinder->RefinePeriodicPoint_HighPrecision(feature, m_UseGpuForNRInnerLoop)) {
             return false;
         }
+
+        if (m_Fractal.GetStopCalculating()) {
+            return false;
+        }
     }
 
     const size_t featurePrec = feature.GetPrecision();

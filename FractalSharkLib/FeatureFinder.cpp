@@ -794,16 +794,11 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                            d2r_hdr,
                            d2i_hdr});
 
-        // Check for user abort (Ctrl held 3s sets flag, Escape cancels it).
-        // Checkpoint is already saved, so progress is preserved for resume.
-        if (AbortMonitor::GetStopCalculatingGlobal()) {
-            std::cout << "RefinePeriodicPoint: aborted at iter " << it << " (checkpoint saved)\n";
-            break;
-        }
-
         // ------------------------------------------------------------
         // Imagina error estimate (HDRFloat)
         //   err = |step|^4 * |d2|^2 / |dzdc|^2
+        // Check convergence BEFORE abort so we don't waste a forward-eval
+        // on resume if this step already converged.
         // ------------------------------------------------------------
         mpf_complex_norm(normStep, step_coord, t1_c, t2_c);
 
@@ -820,6 +815,13 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         if (-e >= targetExp) {
             std::cout << "RefinePeriodicPoint: stop with err_hdr=" << err_hdr.ToString<false>()
                       << " (e=" << e << " >= targetExp=" << targetExp << ")\n";
+            break;
+        }
+
+        // Check for user abort (Ctrl held 3s sets flag, Escape cancels it).
+        // Checkpoint is already saved, so progress is preserved for resume.
+        if (AbortMonitor::GetStopCalculatingGlobal()) {
+            std::cout << "RefinePeriodicPoint: aborted at iter " << it << " (checkpoint saved)\n";
             break;
         }
     }

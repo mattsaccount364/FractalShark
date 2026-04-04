@@ -477,7 +477,7 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
     // Launch kernel in chunks for responsive abort.
     // NR params have EnablePeriodicity=false, so the kernel always runs the
     // full requested chunk and never writes OutputIterCount. Use chunkIters directly.
-    constexpr uint64_t NRChunkSize = 10000;
+    constexpr uint64_t NRChunkSize = 16384;
     uint64_t remaining = period - startIter;
     uint64_t done = startIter;
     while (remaining > 0) {

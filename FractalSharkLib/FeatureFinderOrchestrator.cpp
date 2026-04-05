@@ -582,7 +582,7 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature, const Hig
                 extras = RefOrbitCalc::Extras::IncludeLAv2;
         }
 
-        if (!featureFinder->RefinePeriodicPoint_HighPrecision(feature, m_UseGpuForNRInnerLoop)) {
+        if (!featureFinder->RefinePeriodicPoint_HighPrecision(feature, m_NRInnerLoopBackend)) {
             return false;
         }
 

@@ -21,12 +21,13 @@
 
 #include <array>
 
+#include "CalcContext.h"
 #include "CudaDblflt.h"
 #include "FeatureFinderMode.h"
 #include "HDRFloat.h"
 #include "HighPrecision.h"
 #include "ItersMemoryContainer.h"
-#include "CalcContext.h"
+#include "NRInnerLoopBackend.h"
 #include "OpenGLContext.h"
 #include "RefOrbitCalc.h"
 #include "WPngImage\WPngImage.hh"
@@ -172,14 +173,17 @@ public:
 
     // Enqueue a command that mutates Fractal state on a worker thread,
     // then renders.  Keeps the UI thread responsive and race-free.
-    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd,
-                                   bool supersedable = true);
+    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd, bool supersedable = true);
 
     // Enqueue a mutation-only command: executes under the lock but does
     // NOT trigger CalcFractal or frame production.
     RenderJobHandle EnqueueMutation(std::function<void(Fractal &)> cmd);
 
-    RenderThreadPool *GetRenderPool() { return m_RenderPool.get(); }
+    RenderThreadPool *
+    GetRenderPool()
+    {
+        return m_RenderPool.get();
+    }
 
     void SetRepaint(bool repaint);
     bool GetRepaint() const;
@@ -233,13 +237,41 @@ public:
     size_t GetRenderHeight() const;
 
     // Accessors for RenderThreadPool snapshot
-    const PointZoomBBConverter &GetPtz() const { return m_Ptz; }
-    size_t GetScrnWidth() const { return m_ScrnWidth; }
-    size_t GetScrnHeight() const { return m_ScrnHeight; }
-    IterTypeFull GetNumIterationsRT() const { return m_NumIterations; }
-    bool GetChangedWindow() const { return m_ChangedWindow; }
-    bool GetChangedScrn() const { return m_ChangedScrn; }
-    bool GetChangedIterations() const { return m_ChangedIterations; }
+    const PointZoomBBConverter &
+    GetPtz() const
+    {
+        return m_Ptz;
+    }
+    size_t
+    GetScrnWidth() const
+    {
+        return m_ScrnWidth;
+    }
+    size_t
+    GetScrnHeight() const
+    {
+        return m_ScrnHeight;
+    }
+    IterTypeFull
+    GetNumIterationsRT() const
+    {
+        return m_NumIterations;
+    }
+    bool
+    GetChangedWindow() const
+    {
+        return m_ChangedWindow;
+    }
+    bool
+    GetChangedScrn() const
+    {
+        return m_ChangedScrn;
+    }
+    bool
+    GetChangedIterations() const
+    {
+        return m_ChangedIterations;
+    }
 
     void
     GetSomeDetails(RefOrbitDetails &details) const
@@ -251,8 +283,10 @@ public:
     AddPointOptions GetResultsAutosave() const;
 
     // Unit conversion helpers
-    template <bool IncludeGpuAntialiasing = false> HighPrecision XFromScreenToCalc(HighPrecision x) const;
-    template <bool IncludeGpuAntialiasing = false> HighPrecision YFromScreenToCalc(HighPrecision y) const;
+    template <bool IncludeGpuAntialiasing = false>
+    HighPrecision XFromScreenToCalc(HighPrecision x) const;
+    template <bool IncludeGpuAntialiasing = false>
+    HighPrecision YFromScreenToCalc(HighPrecision y) const;
 
     HighPrecision XFromCalcToScreen(HighPrecision x) const;
     HighPrecision YFromCalcToScreen(HighPrecision y) const;
@@ -275,12 +309,11 @@ public:
 
     void ClearAllFoundFeatures();
     FeatureSummary *ChooseClosestFeatureToMouse() const;
-    bool ZoomToFoundFeature(FeatureSummary &feature,
-                            const HighPrecision *zoomFactor);
+    bool ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFactor);
     bool ZoomToFoundFeature();
     void ResumeNRFromCheckpoint();
-    bool GetUseGpuForNRInnerLoop() const;
-    void SetUseGpuForNRInnerLoop(bool v);
+    NRInnerLoopBackend GetNRInnerLoopBackend() const;
+    void SetNRInnerLoopBackend(NRInnerLoopBackend v);
 
 private:
     void Initialize(int width, int height, HWND hWnd, bool UseSensoCursor);
@@ -310,7 +343,8 @@ private:
         return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow));
     }
 
-    template <typename IterType> void CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &ctx);
+    template <typename IterType>
+    void CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     void FillCoord(const HighPrecision &src, MattQFltflt &dest);
     void FillCoord(const HighPrecision &src, MattQDbldbl &dest);
@@ -323,11 +357,13 @@ private:
     void FillCoord(const HighPrecision &src, CudaDblflt<MattDblflt> &dest);
     void FillCoord(const HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &dest);
 
-    template <class T> void FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2, const PointZoomBBConverter &ptz);
+    template <class T>
+    void FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2, const PointZoomBBConverter &ptz);
 
     template <typename IterType> void CalcAutoFractal();
 
-    template <typename IterType, class T> void CalcGpuFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx);
+    template <typename IterType, class T>
+    void CalcGpuFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     template <typename IterType> void CalcCpuPerturbationFractal(CalcContext &ctx);
 
@@ -365,7 +401,6 @@ private:
     // Member Variables
     RefOrbitCalc m_RefOrbit;
     std::unique_ptr<FeatureFinderOrchestrator> m_FeatureOrchestrator;
-
 
     std::vector<std::unique_ptr<PngParallelSave>> m_FractalSavesInProgress;
 
@@ -416,7 +451,9 @@ private:
 
     FractalPalette m_Palette;
 
-    uint32_t InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryContainer &itersMemory);
+    uint32_t InitializeGPUMemory(RendererIndex idx,
+                                 bool expectedReuse,
+                                 ItersMemoryContainer &itersMemory);
 
     void InitializeMemory();
     void SetCurItersMemory();
@@ -440,11 +477,15 @@ private:
     // GPU rendering
     std::array<GPURenderer, NumRenderers> m_Renderers;
 
-    GPURenderer &GetRenderer(RendererIndex idx) {
+    GPURenderer &
+    GetRenderer(RendererIndex idx)
+    {
         return m_Renderers[static_cast<size_t>(idx)];
     }
 
-    const GPURenderer &GetRenderer(RendererIndex idx) const {
+    const GPURenderer &
+    GetRenderer(RendererIndex idx) const
+    {
         return m_Renderers[static_cast<size_t>(idx)];
     }
 

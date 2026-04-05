@@ -316,7 +316,6 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
         return;
 
     const size_t ndigits = static_cast<size_t>(p.coord_prec * 0.302) + 10;
-    const size_t deriv_ndigits = static_cast<size_t>(p.deriv_prec * 0.302) + 10;
 
     f << "period: " << p.period << "\n"
       << "coord_prec: " << p.coord_prec << "\n"
@@ -336,8 +335,8 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
 
     WriteMpfField(f, "z_re", p.z_re, ndigits);
     WriteMpfField(f, "z_im", p.z_im, ndigits);
-    WriteMpfField(f, "dzdc_re", p.dzdc_re, deriv_ndigits);
-    WriteMpfField(f, "dzdc_im", p.dzdc_im, deriv_ndigits);
+    WriteMpfField(f, "dzdc_re", p.dzdc_re, ndigits);
+    WriteMpfField(f, "dzdc_im", p.dzdc_im, ndigits);
 
     f << "d2r: " << p.d2r.getExp() << " " << p.d2r.getMantissa() << "\n"
       << "d2i: " << p.d2i.getExp() << " " << p.d2i.getMantissa() << "\n";
@@ -371,7 +370,7 @@ struct CheckpointSnapshot {
         mpf_complex_init(c, coord_prec);
         mpf_complex_init(c0, coord_prec);
         mpf_complex_init(z, coord_prec);
-        mpf_complex_init(dzdc, deriv_prec);
+        mpf_complex_init(dzdc, coord_prec);
         mpf_init2(sqrRadius, coord_prec);
         mpf_init2(intrinsicRadius, coord_prec);
 
@@ -740,7 +739,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                     mp_bitcnt_t coord_prec,
                     int scaleExp2_for_deriv_choice, // exponent of Scale ≈ 1/|zcoeff*dzdc|
                     uint32_t max_nr_iters,
-                    bool useGpuForInnerLoop,
+                    NRInnerLoopBackend backend,
                     mpf_t intrinsicRadius_mpf,
                     uint64_t numIterationsAtFind)
 {
@@ -808,9 +807,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     mpf_complex_init(tmpZ_coord, coord_prec);
 
     mpf_complex dzdc_deriv, z_deriv, tmpB_d;
-    mpf_complex_init(dzdc_deriv, deriv_prec);
-    mpf_complex_init(z_deriv, deriv_prec);
-    mpf_complex_init(tmpB_d, deriv_prec);
+    mpf_complex_init(dzdc_deriv, coord_prec);
+    mpf_complex_init(z_deriv, coord_prec);
+    mpf_complex_init(tmpB_d, coord_prec);
 
     // Extra coord scratch needed for Halley (mpf-only)
     mpf_complex d2_coord_scratch, htmp1, htmp2;
@@ -907,7 +906,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                 std::make_unique<CheckpointSnapshot>(*pctx->params, itersCompleted));
         };
 
-        if (useGpuForInnerLoop) {
+        if (backend == NRInnerLoopBackend::GPU) {
             DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
                 completed = HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
                     c_coord.re,
@@ -925,8 +924,20 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                     onProgress,
                     &progressCtx);
             });
-        } else {
+        } else if (backend == NRInnerLoopBackend::CpuMT) {
             completed = EvaluateCriticalOrbitAndDerivsMT(c_coord,
+                                                         period,
+                                                         z_coord,
+                                                         dzdc_deriv,
+                                                         d2r_hdr,
+                                                         d2i_hdr,
+                                                         deriv_prec,
+                                                         coord_prec,
+                                                         innerStart,
+                                                         onProgress,
+                                                         &progressCtx);
+        } else {
+            completed = EvaluateCriticalOrbitAndDerivsST(c_coord,
                                                          period,
                                                          z_coord,
                                                          dzdc_deriv,
@@ -1114,7 +1125,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         // ---------------- Imagina final correction pass ----------------
         // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
         {
-            if (useGpuForInnerLoop) {
+            if (backend == NRInnerLoopBackend::GPU) {
                 DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
                     HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(c_coord.re,
                                                                           c_coord.im,
@@ -1126,8 +1137,11 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                                                                           d2r_hdr,
                                                                           d2i_hdr);
                 });
-            } else {
+            } else if (backend == NRInnerLoopBackend::CpuMT) {
                 EvaluateCriticalOrbitAndDerivsMT(
+                    c_coord, period, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr, deriv_prec, coord_prec);
+            } else {
+                EvaluateCriticalOrbitAndDerivsST(
                     c_coord, period, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr, deriv_prec, coord_prec);
             }
 
@@ -1222,7 +1236,7 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(HighPrecision &
                                                                  mp_bitcnt_t coord_prec,
                                                                  const T &sqrRadius_T,
                                                                  int scaleExp2_for_deriv,
-                                                                 bool useGpuForInnerLoop,
+                                                                 NRInnerLoopBackend backend,
                                                                  const HighPrecision &intrinsicRadius,
                                                                  uint64_t numIterationsAtFind) const
 {
@@ -1265,7 +1279,7 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(HighPrecision &
                                                             coord_prec,
                                                             scaleExp2_for_deriv,
                                                             max_polish,
-                                                            useGpuForInnerLoop,
+                                                            backend,
                                                             ir_mpf,
                                                             numIterationsAtFind);
 
@@ -2197,7 +2211,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(
 template <class IterType, class T, PerturbExtras PExtras>
 bool
 FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSummary &feature,
-                                                                       bool useGpuForInnerLoop) const
+                                                                       NRInnerLoopBackend backend) const
 {
     auto *cand = feature.GetCandidate();
     if (!cand)
@@ -2228,7 +2242,7 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
                                     cand->mpfPrecBits,
                                     /*sqrRadius_T*/ T{sqrRadius_hp},
                                     cand->scaleExp2_for_mpf,
-                                    useGpuForInnerLoop,
+                                    backend,
                                     feature.GetIntrinsicRadius(),
                                     feature.GetNumIterationsAtFind());
 

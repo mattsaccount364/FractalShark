@@ -45,6 +45,7 @@
 #define IDM_FEATUREFINDER_RESUME 40115
 #define IDM_NR_INNERLOOP_GPU 40116
 #define IDM_NR_INNERLOOP_CPU 40117
+#define IDM_NR_INNERLOOP_CPUST 40118
 
 //
 // ---------------------------------------------------------------------------

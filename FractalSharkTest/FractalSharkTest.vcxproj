@@ -82,13 +82,16 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="TestATInfo.cpp" />
     <ClCompile Include="TestBLA.cpp" />
     <ClCompile Include="TestCudaDblflt.cpp" />
     <ClCompile Include="TestFloatComplex.cpp" />
     <ClCompile Include="TestHDRFloat.cpp" />
     <ClCompile Include="TestHDRFloatComplex.cpp" />
     <ClCompile Include="TestHighPrecisionStrings.cpp" />
+    <ClCompile Include="TestLAParameters.cpp" />
     <ClCompile Include="TestMpirOrbitEval.cpp" />
+    <ClCompile Include="TestMpirSerialization.cpp" />
     <ClCompile Include="TestPointZoomBBConverter.cpp" />
     <ClCompile Include="TestPrecisionCalculator.cpp" />
   </ItemGroup>

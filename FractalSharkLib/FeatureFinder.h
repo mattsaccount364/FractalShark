@@ -6,6 +6,7 @@
 #include "FeatureFinderMode.h"
 #include "FloatComplex.h"
 #include "HighPrecision.h"
+#include "NRInnerLoopBackend.h"
 #include "PerturbationResultsHelpers.h"
 
 struct NRCheckpointData {
@@ -74,7 +75,7 @@ public:
                            LAReference<IterType, T, SubType, PExtras> &laRef,
                            FeatureSummary &feature) const;
 
-    bool RefinePeriodicPoint_HighPrecision(FeatureSummary &feature, bool useGpuForInnerLoop) const;
+    bool RefinePeriodicPoint_HighPrecision(FeatureSummary &feature, NRInnerLoopBackend backend) const;
 
 private:
     struct EvalState {
@@ -225,7 +226,7 @@ private:
                                          mp_bitcnt_t coord_prec,
                                          const T &sqrRadius_T,
                                          int scaleExp2_for_deriv,
-                                         bool useGpuForInnerLoop,
+                                         NRInnerLoopBackend backend,
                                          const HighPrecision &intrinsicRadius,
                                          uint64_t numIterationsAtFind) const;
 

@@ -922,6 +922,64 @@ as a \code{HighPrecision} value in \code{FeatureSummary} and can be used by
 the renderer to set an appropriate zoom level or to determine the additional
 bits of precision needed to render the component's interior.
 
+\subsection{Checkpoint and resume}
+\label{subsec:ff-checkpoint}
+
+High-precision Newton--Raphson refinement can require minutes to hours
+at extreme periods, because each outer step evaluates the critical orbit
+for $p$~iterations at the current working precision.  To avoid losing
+progress when the user aborts (\code{Ctrl+Alt}), closes the
+application, or encounters an error, \FractalShark{} writes periodic
+checkpoints to a file (\code{nr\_checkpoint.txt}) and resumes from the
+most recent checkpoint on the next invocation.
+
+\paragraph{Checkpoint contents.}
+Each checkpoint records the current candidate~$c$ (real and imaginary
+parts as decimal strings at full working precision), the detected
+period~$p$, the MPIR precision in bits, the outer Newton iteration
+index, and the inner-loop iteration count within the current $p$-step
+evaluation.  Storing the inner-loop position allows resumption
+\emph{mid-evaluation}, not only at outer-step boundaries.
+
+\paragraph{Asynchronous writer.}
+Converting high-precision \code{mpf\_t} values to decimal strings via
+\code{mpf\_get\_str} and writing them to disk can take non-trivial
+time at high precision.  A dedicated \code{CheckpointWriter} background
+thread accepts \code{CheckpointSnapshot} objects (which own independent
+copies of the \code{mpf\_t} data) and performs the serialisation and
+file I/O without blocking the Newton iteration.  The snapshot is
+written to a temporary file and atomically renamed to the checkpoint
+path, ensuring that the on-disk checkpoint is always in a consistent
+state.
+
+\paragraph{Save points.}
+Checkpoints are written at two granularities:
+\begin{itemize}
+  \item After each outer Newton step completes (precision doubling
+        boundary).
+  \item Periodically during the inner-loop evaluation, via a progress
+        callback that triggers whenever a configurable number of
+        inner iterations have elapsed.
+\end{itemize}
+Both paths route through the same asynchronous writer, so at most one
+background write is in flight at a time.
+
+\paragraph{Resume.}
+On entry to \code{RefinePeriodicPoint}, the code checks for an existing
+checkpoint file.  If the file exists and its stored period and precision
+match the current request, the saved candidate~$c$ and iteration state
+are loaded and the refinement loop skips ahead to the checkpointed
+position.  If the period or precision do not match (indicating a
+different feature or a re-run at different settings), the checkpoint is
+ignored and refinement starts from scratch.
+
+\paragraph{Abort safety.}
+When the \code{AbortMonitor} sets the stop flag, the refinement loop
+exits early \emph{after} writing a final checkpoint.  Progress is
+therefore preserved: the user can later invoke \emph{Resume NR
+Refinement} from the Feature Finder menu to continue from where the
+computation was interrupted.
+
 \subsection{Threading model}
 \label{subsec:ff-threading}
 

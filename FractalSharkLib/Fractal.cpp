@@ -11,8 +11,8 @@
 #include <psapi.h>
 #include <thread>
 
-#include "AutoZoomer.h"
 #include "ATInfo.h"
+#include "AutoZoomer.h"
 #include "FeatureFinder.h"
 #include "FeatureSummary.h"
 #include "HDRFloatComplex.h"
@@ -122,22 +122,22 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryC
     uint32_t res;
     if (GetIterType() == IterTypeEnum::Bits32) {
         res = renderer.InitializeMemory<uint32_t>((uint32_t)itersMemory.m_Width,
-                                             (uint32_t)itersMemory.m_Height,
-                                             (uint32_t)itersMemory.m_Antialiasing,
-                                             m_Palette.GetCurrentPalInterleaved(),
-                                             m_Palette.GetCurrentNumColors(),
-                                             m_Palette.GetAuxDepth(),
-                                             m_Palette.GetPaletteGeneration(),
-                                             expectedReuse);
+                                                  (uint32_t)itersMemory.m_Height,
+                                                  (uint32_t)itersMemory.m_Antialiasing,
+                                                  m_Palette.GetCurrentPalInterleaved(),
+                                                  m_Palette.GetCurrentNumColors(),
+                                                  m_Palette.GetAuxDepth(),
+                                                  m_Palette.GetPaletteGeneration(),
+                                                  expectedReuse);
     } else {
         res = renderer.InitializeMemory<uint64_t>((uint32_t)itersMemory.m_Width,
-                                             (uint32_t)itersMemory.m_Height,
-                                             (uint32_t)itersMemory.m_Antialiasing,
-                                             m_Palette.GetCurrentPalInterleaved(),
-                                             m_Palette.GetCurrentNumColors(),
-                                             m_Palette.GetAuxDepth(),
-                                             m_Palette.GetPaletteGeneration(),
-                                             expectedReuse);
+                                                  (uint32_t)itersMemory.m_Height,
+                                                  (uint32_t)itersMemory.m_Antialiasing,
+                                                  m_Palette.GetCurrentPalInterleaved(),
+                                                  m_Palette.GetCurrentNumColors(),
+                                                  m_Palette.GetAuxDepth(),
+                                                  m_Palette.GetPaletteGeneration(),
+                                                  expectedReuse);
     }
 
     if (res) {
@@ -153,8 +153,7 @@ Fractal::ReturnIterMemory(ItersMemoryContainer &&to_return)
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
 
     // Discard containers with stale dimensions or antialiasing (from before a resize/AA change)
-    if (to_return.m_OutputWidth != m_ScrnWidth ||
-        to_return.m_OutputHeight != m_ScrnHeight ||
+    if (to_return.m_OutputWidth != m_ScrnWidth || to_return.m_OutputHeight != m_ScrnHeight ||
         to_return.m_Antialiasing != m_GpuAntialiasing) {
         return;
     }
@@ -168,9 +167,7 @@ ItersMemoryContainer
 Fractal::AcquireItersMemory()
 {
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
-    m_ItersMemoryStorageCV.wait(lock, [this] {
-        return !m_ItersMemoryStorage.empty();
-    });
+    m_ItersMemoryStorageCV.wait(lock, [this] { return !m_ItersMemoryStorage.empty(); });
     auto container = std::move(m_ItersMemoryStorage.back());
     m_ItersMemoryStorage.pop_back();
     return container;
@@ -427,7 +424,8 @@ Fractal::RecenterViewScreen(RECT rect)
 
     // Set m_PerturbationGuessCalc<X|Y> = ... above.
 
-    m_Ptz = PointZoomBBConverter{newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
+    m_Ptz = PointZoomBBConverter{
+        newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
 
     SetPrecision();
     SquareCurrentView();
@@ -550,18 +548,15 @@ template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
 void
 Fractal::View(size_t view, bool includeMsgBox)
 {
-    auto preset = GetViewPreset(
-        view,
-        DefaultIterations,
-        DefaultCompressionExp[static_cast<size_t>(CompressionError::Low)],
-        DefaultCompressionExp[static_cast<size_t>(CompressionError::Intermediate)]);
+    auto preset =
+        GetViewPreset(view,
+                      DefaultIterations,
+                      DefaultCompressionExp[static_cast<size_t>(CompressionError::Low)],
+                      DefaultCompressionExp[static_cast<size_t>(CompressionError::Intermediate)]);
 
     if (includeMsgBox && !preset.warningMessage.empty()) {
         ::MessageBox(
-            nullptr,
-            preset.warningMessage.c_str(),
-            L"Warning",
-            MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+            nullptr, preset.warningMessage.c_str(), L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
     }
 
     ResetDimensions(MAXSIZE_T, MAXSIZE_T, preset.gpuAntialiasing);
@@ -574,7 +569,8 @@ Fractal::View(size_t view, bool includeMsgBox)
         m_LAParameters.SetDefaults(LAParameters::LADefaults::MaxPerf);
     }
 
-    PointZoomBBConverter convert{preset.minX, preset.minY, preset.maxX, preset.maxY, PointZoomBBConverter::TestMode::Enabled};
+    PointZoomBBConverter convert{
+        preset.minX, preset.minY, preset.maxX, preset.maxY, PointZoomBBConverter::TestMode::Enabled};
     RecenterViewCalc(convert);
 }
 
@@ -626,9 +622,11 @@ Fractal::ApproachTarget(void)
         deltaXMax = (MaxX - curMaxX) / HighPrecision{75.0};
         deltaYMax = (MaxY - curMaxY) / HighPrecision{75.0};
 
-        m_Ptz = PointZoomBBConverter{
-            curMinX + deltaXMin, curMinY + deltaYMin, curMaxX + deltaXMax, curMaxY + deltaYMax,
-            PointZoomBBConverter::TestMode::Enabled};
+        m_Ptz = PointZoomBBConverter{curMinX + deltaXMin,
+                                     curMinY + deltaYMin,
+                                     curMaxX + deltaXMax,
+                                     curMaxY + deltaYMax,
+                                     PointZoomBBConverter::TestMode::Enabled};
 
         {
             HighPrecision result = ((HighPrecision)incIters * (HighPrecision)i);
@@ -1169,10 +1167,12 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
             CalcGpuFractal<IterType, HDRFloat<double>>(idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x32PerturbedScaled:
-            CalcGpuPerturbationFractalScaledBLA<IterType, double, double, float, float>(idx, drawFractal, ctx);
+            CalcGpuPerturbationFractalScaledBLA<IterType, double, double, float, float>(
+                idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::GpuHDRx32PerturbedScaled:
-            CalcGpuPerturbationFractalScaledBLA<IterType, HDRFloat<float>, float, float, float>(idx, drawFractal, ctx);
+            CalcGpuPerturbationFractalScaledBLA<IterType, HDRFloat<float>, float, float, float>(
+                idx, drawFractal, ctx);
             break;
         case RenderAlgorithmEnum::Gpu1x64PerturbedBLA:
             CalcGpuPerturbationFractalBLA<IterType, double, double>(idx, drawFractal, ctx);
@@ -1433,17 +1433,15 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
         renderer.SyncComputeStream();
         ReductionResults gpuReductionResults;
         if (GetIterType() == IterTypeEnum::Bits32) {
-            renderer.RenderCurrent<uint32_t>(
-                GetNumIterations<uint32_t>(),
-                ctx.ItersMemory.GetIters<uint32_t>(),
-                nullptr,
-                &gpuReductionResults);
+            renderer.RenderCurrent<uint32_t>(GetNumIterations<uint32_t>(),
+                                             ctx.ItersMemory.GetIters<uint32_t>(),
+                                             nullptr,
+                                             &gpuReductionResults);
         } else {
-            renderer.RenderCurrent<uint64_t>(
-                GetNumIterations<uint64_t>(),
-                ctx.ItersMemory.GetIters<uint64_t>(),
-                nullptr,
-                &gpuReductionResults);
+            renderer.RenderCurrent<uint64_t>(GetNumIterations<uint64_t>(),
+                                             ctx.ItersMemory.GetIters<uint64_t>(),
+                                             nullptr,
+                                             &gpuReductionResults);
         }
         renderer.SyncComputeStream();
         m_BenchmarkData.m_PerPixel.StopTimer();
@@ -1658,7 +1656,6 @@ Fractal::DrawAllPerturbationResults(bool LeaveScreen)
     glFlush();
 }
 
-
 void
 Fractal::FillCoord(const HighPrecision &src, MattQFltflt &dest)
 {
@@ -1755,7 +1752,8 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2, const PointZoomBBConverte
 }
 
 void
-Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode) {
+Fractal::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode)
+{
     m_FeatureOrchestrator->TryFindPeriodicPoint(scrnX, scrnY, mode);
 }
 
@@ -1789,16 +1787,16 @@ Fractal::ResumeNRFromCheckpoint()
     m_FeatureOrchestrator->ResumeFromCheckpoint();
 }
 
-bool
-Fractal::GetUseGpuForNRInnerLoop() const
+NRInnerLoopBackend
+Fractal::GetNRInnerLoopBackend() const
 {
-    return m_FeatureOrchestrator->GetUseGpuForNRInnerLoop();
+    return m_FeatureOrchestrator->GetNRInnerLoopBackend();
 }
 
 void
-Fractal::SetUseGpuForNRInnerLoop(bool v)
+Fractal::SetNRInnerLoopBackend(NRInnerLoopBackend v)
 {
-    m_FeatureOrchestrator->SetUseGpuForNRInnerLoop(v);
+    m_FeatureOrchestrator->SetNRInnerLoopBackend(v);
 }
 
 template <typename IterType, class T>
@@ -1828,13 +1826,15 @@ template <typename IterType>
 void
 Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
 {
-    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                                     double,
-                                                                     double,
-                                                                     PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>(ctx.Ptz);
+    auto *results =
+        m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                         double,
+                                                         double,
+                                                         PerturbExtras::Disable,
+                                                         RefOrbitCalc::Extras::None>(ctx.Ptz);
 
-    if (GetStopCalculating()) return;
+    if (GetStopCalculating())
+        return;
 
     const auto &maxX = ctx.Ptz.GetMaxX();
     const auto &minX = ctx.Ptz.GetMinX();
@@ -2118,13 +2118,15 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
     const auto &maxY = ctx.Ptz.GetMaxY();
     const auto &minY = ctx.Ptz.GetMinY();
 
-    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                                     T,
-                                                                     SubType,
-                                                                     PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>(ctx.Ptz);
+    auto *results =
+        m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                         T,
+                                                         SubType,
+                                                         PerturbExtras::Disable,
+                                                         RefOrbitCalc::Extras::None>(ctx.Ptz);
 
-    if (GetStopCalculating()) return;
+    if (GetStopCalculating())
+        return;
 
     BLAS<IterType, T> blas(*results);
     blas.Init((IterType)results->GetCountOrbitEntries(), results->GetMaxRadius());
@@ -2379,7 +2381,8 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
                                                          PExtras,
                                                          RefOrbitCalc::Extras::IncludeLAv2>(ctx.Ptz);
 
-    if (GetStopCalculating()) return;
+    if (GetStopCalculating())
+        return;
 
     if (results->GetLaReference() == nullptr || results->GetOrbitData() == nullptr) {
         std::wcerr << L"Oops - a null pointer deref" << std::endl;
@@ -2574,13 +2577,15 @@ template <typename IterType, class T, class SubType>
 void
 Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
-    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                                     T,
-                                                                     SubType,
-                                                                     PerturbExtras::Disable,
-                                                                     RefOrbitCalc::Extras::None>(ctx.Ptz);
+    auto *results =
+        m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                         T,
+                                                         SubType,
+                                                         PerturbExtras::Disable,
+                                                         RefOrbitCalc::Extras::None>(ctx.Ptz);
 
-    if (GetStopCalculating()) return;
+    if (GetStopCalculating())
+        return;
 
     uint32_t err = InitializeGPUMemory(idx, true, ctx.ItersMemory);
     if (err) {
@@ -2617,16 +2622,16 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal, Calc
 
     m_BenchmarkData.m_PerPixel.StartTimer();
     result = renderer.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
-                                               &gpu_results,
-                                               &blas,
-                                               cx2,
-                                               cy2,
-                                               dx2,
-                                               dy2,
-                                               centerX2,
-                                               centerY2,
-                                               GetNumIterations<IterType>(),
-                                               m_IterationPrecision);
+                                                    &gpu_results,
+                                                    &blas,
+                                                    cx2,
+                                                    cy2,
+                                                    dx2,
+                                                    dy2,
+                                                    centerX2,
+                                                    centerY2,
+                                                    GetNumIterations<IterType>(),
+                                                    m_IterationPrecision);
 
     if (result) {
         MessageBoxCudaError(result);
@@ -2673,7 +2678,8 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal, Cal
                                                                RefOrbitMode,
                                                                T>(ctx.Ptz);
 
-    if (GetStopCalculating()) return;
+    if (GetStopCalculating())
+        return;
 
     // Reference orbit is always required for LAv2
     // The LaReference is not required when running perturbation only
@@ -2726,13 +2732,15 @@ template <typename IterType, class T, class SubType, class T2, class SubType2>
 void
 Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 {
-    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
-                                                                     T,
-                                                                     SubType,
-                                                                     PerturbExtras::Bad,
-                                                                     RefOrbitCalc::Extras::None>(ctx.Ptz);
+    auto *results =
+        m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                         T,
+                                                         SubType,
+                                                         PerturbExtras::Bad,
+                                                         RefOrbitCalc::Extras::None>(ctx.Ptz);
 
-    if (GetStopCalculating()) return;
+    if (GetStopCalculating())
+        return;
 
     auto *results2 =
         m_RefOrbit
@@ -2782,16 +2790,16 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal
 
     m_BenchmarkData.m_PerPixel.StartTimer();
     auto result = renderer.RenderPerturbBLAScaled<IterType, T>(GetRenderAlgorithm(),
-                                                          &gpu_results,
-                                                          &gpu_results2,
-                                                          cx2,
-                                                          cy2,
-                                                          dx2,
-                                                          dy2,
-                                                          centerX2,
-                                                          centerY2,
-                                                          GetNumIterations<IterType>(),
-                                                          m_IterationPrecision);
+                                                               &gpu_results,
+                                                               &gpu_results2,
+                                                               cx2,
+                                                               cy2,
+                                                               dx2,
+                                                               dy2,
+                                                               centerX2,
+                                                               centerY2,
+                                                               GetNumIterations<IterType>(),
+                                                               m_IterationPrecision);
 
     if (result) {
         MessageBoxCudaError(result);
@@ -3289,11 +3297,13 @@ Fractal::GpuBypassed() const
 }
 
 bool
-Fractal::GetStopCalculating() const {
+Fractal::GetStopCalculating() const
+{
     return AbortMonitor::GetStopCalculatingGlobal();
 }
 
 void
-Fractal::ResetStopCalculating() {
+Fractal::ResetStopCalculating()
+{
     AbortMonitor::ResetStopCalculatingGlobal();
 }

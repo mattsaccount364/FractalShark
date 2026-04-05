@@ -2,6 +2,7 @@
 
 #include "FeatureFinderMode.h"
 #include "HighPrecision.h"
+#include "NRInnerLoopBackend.h"
 
 #include <memory>
 #include <vector>
@@ -9,7 +10,7 @@
 class Fractal;
 class FeatureSummary;
 
-// Orchestrates periodic-point (feature) finding, storage, and zoom-to-feature
+// Orchestrates periodic-point(feature) finding, storage, and zoom-to-feature
 // operations.  The mathematical core lives in FeatureFinder<>; this class
 // handles screen↔calc coordinate conversion, algorithm dispatch, perturbation
 // result acquisition, scan grids, and feature lifecycle management.
@@ -41,15 +42,15 @@ public:
     // Creates a synthetic FeatureSummary and proceeds to Phase B + navigation.
     bool ResumeFromCheckpoint();
 
-    bool
-    GetUseGpuForNRInnerLoop() const
+    NRInnerLoopBackend
+    GetNRInnerLoopBackend() const
     {
-        return m_UseGpuForNRInnerLoop;
+        return m_NRInnerLoopBackend;
     }
     void
-    SetUseGpuForNRInnerLoop(bool v)
+    SetNRInnerLoopBackend(NRInnerLoopBackend v)
     {
-        m_UseGpuForNRInnerLoop = v;
+        m_NRInnerLoopBackend = v;
     }
 
     const std::vector<std::unique_ptr<FeatureSummary>> &
@@ -71,5 +72,5 @@ private:
 
     Fractal &m_Fractal;
     std::vector<std::unique_ptr<FeatureSummary>> m_FeatureSummaries;
-    bool m_UseGpuForNRInnerLoop = true;
+    NRInnerLoopBackend m_NRInnerLoopBackend = NRInnerLoopBackend::GPU;
 };

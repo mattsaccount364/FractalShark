@@ -59,15 +59,15 @@ MainWindowMenuState::IsChecked(UINT commandId) const noexcept
 {
     switch (commandId) {
         case IDM_REPAINTING:
-            //return w_.IsRepaintingEnabled();
+            // return w_.IsRepaintingEnabled();
             return false;
 
         case IDM_WINDOWED:
-            //return w_.IsWindowed();
+            // return w_.IsWindowed();
             return false;
 
         case IDM_WINDOWED_SQ:
-            //return w_.IsWindowedSquare();
+            // return w_.IsWindowedSquare();
             return false;
 
         default:
@@ -125,7 +125,8 @@ MainWindowMenuState::GetRadioSelection(DynamicPopupMenu::RadioGroup group) const
             }
 
         case RG::LaThreading:
-            return f_.GetLAParameters().GetThreading() == LAParameters::LAThreadingAlgorithm::MultiThreaded
+            return f_.GetLAParameters().GetThreading() ==
+                           LAParameters::LAThreadingAlgorithm::MultiThreaded
                        ? IDM_LA_MULTITHREADED
                        : IDM_LA_SINGLETHREADED;
 
@@ -211,8 +212,16 @@ MainWindowMenuState::GetRadioSelection(DynamicPopupMenu::RadioGroup group) const
                                                               : IDM_64BIT_ITERATIONS;
 
         case RG::NRInnerLoopBackend:
-            return f_.GetUseGpuForNRInnerLoop() ? IDM_NR_INNERLOOP_GPU
-                                                : IDM_NR_INNERLOOP_CPU;
+            switch (f_.GetNRInnerLoopBackend()) {
+                case NRInnerLoopBackend::GPU:
+                    return IDM_NR_INNERLOOP_GPU;
+                case NRInnerLoopBackend::CpuMT:
+                    return IDM_NR_INNERLOOP_CPU;
+                case NRInnerLoopBackend::CpuST:
+                    return IDM_NR_INNERLOOP_CPUST;
+                default:
+                    return IDM_NR_INNERLOOP_GPU;
+            }
 
         case RG::None:
         default:

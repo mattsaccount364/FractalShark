@@ -7,6 +7,7 @@
 #include <Windows.h>
 
 #include "AbortMonitor.h"
+#include "Environment.h"
 #include "MpirOrbitEval.h"
 
 #include <atomic>
@@ -127,7 +128,7 @@ struct MulWorkerParams {
 static void
 MulWorkerMain(MulWorkerParams p)
 {
-    SetThreadDescription(GetCurrentThread(), std::format(L"MpirOrbit MulWorker {}", p.idx).c_str());
+    Environment::SetCurrentThreadName(std::format(L"MpirOrbit MulWorker {}", p.idx).c_str());
     uint64_t seen = 0;
 
     for (;;) {

@@ -1,18 +1,12 @@
 #include "stdafx.h"
+#include "Environment.h"
 #include "BenchmarkData.h"
 #include "WaitCursor.h"
-
-#define NOMINMAX
-#include <windows.h>
 
 BenchmarkData::BenchmarkData()
     : m_freq{}, m_startTime{}, m_endTime{}, m_DeltaTime{}, m_WaitCursor{std::make_unique<WaitCursor>()}
 {
-
-    LARGE_INTEGER freq;
-
-    QueryPerformanceFrequency(&freq);
-    m_freq = freq.QuadPart;
+    m_freq = Environment::HighResFrequency();
 }
 
 BenchmarkData::~BenchmarkData() {}
@@ -62,22 +56,15 @@ BenchmarkData::StartTimer()
 {
     m_startTime = 0;
     m_endTime = 1;
-
-    LARGE_INTEGER startTime;
-    QueryPerformanceCounter(&startTime);
-    m_startTime = startTime.QuadPart;
+    m_startTime = Environment::HighResCounter();
     m_WaitCursor->ResetCursor();
 }
 
 void
 BenchmarkData::StopTimer()
 {
-    LARGE_INTEGER endTime;
-    QueryPerformanceCounter(&endTime);
-    m_endTime = endTime.QuadPart;
-
+    m_endTime = Environment::HighResCounter();
     m_DeltaTime = m_endTime - m_startTime;
-
     m_WaitCursor->ResetCursor();
 }
 

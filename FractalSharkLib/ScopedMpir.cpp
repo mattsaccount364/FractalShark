@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "Environment.h"
 #include "ScopedMpir.h"
 #include "HighPrecision.h"
 #include "Vectors.h"
@@ -71,7 +72,7 @@ void MPIRBoundedAllocator::ShutdownTls() {
     if constexpr (DebugInstrument) {
         for (size_t i = 0; i < NumBlocks; i++) {
             if (AllocationsAndFrees[i] != 0) {
-                DebugBreak();
+                Environment::DebugBreakpoint();
             }
         }
     }
@@ -129,7 +130,7 @@ void *MPIRBoundedAllocator::NewMalloc(size_t size) {
 
             if constexpr (DebugInstrument) {
                 if (AllocatedIndex == InitIndex) {
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 }
             }
         }
@@ -147,7 +148,7 @@ void *MPIRBoundedAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_si
     //memcpy(ret, ptr, minimum_size);
 
     if constexpr (DebugInstrument) {
-        DebugBreak();
+        Environment::DebugBreakpoint();
     }
     return nullptr;
 }
@@ -172,11 +173,11 @@ void MPIRBoundedAllocator::NewFree(void *ptr, size_t size) {
 
     if constexpr (DebugInstrument) {
         if (index >= NumBlocks) {
-            DebugBreak();
+            Environment::DebugBreakpoint();
         }
 
         if (AllocationsAndFrees[index] == 0) {
-            DebugBreak();
+            Environment::DebugBreakpoint();
         }
     }
 

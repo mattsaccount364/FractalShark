@@ -1,15 +1,9 @@
 #include "BenchmarkTimer.h"
-
-#define NOMINMAX
-#include <windows.h>
+#include "Environment.h"
 
 BenchmarkTimer::BenchmarkTimer() : m_freq{}, m_startTime{}, m_endTime{}, m_DeltaTime{}
 {
-
-    LARGE_INTEGER freq;
-
-    QueryPerformanceFrequency(&freq);
-    m_freq = freq.QuadPart;
+    m_freq = Environment::HighResFrequency();
 }
 
 BenchmarkTimer::~BenchmarkTimer() {}
@@ -57,19 +51,13 @@ BenchmarkTimer::StartTimer()
 {
     m_startTime = 0;
     m_endTime = 1;
-
-    LARGE_INTEGER startTime;
-    QueryPerformanceCounter(&startTime);
-    m_startTime = startTime.QuadPart;
+    m_startTime = Environment::HighResCounter();
 }
 
 void
 BenchmarkTimer::StopTimer()
 {
-    LARGE_INTEGER endTime;
-    QueryPerformanceCounter(&endTime);
-    m_endTime = endTime.QuadPart;
-
+    m_endTime = Environment::HighResCounter();
     m_DeltaTime = m_endTime - m_startTime;
 }
 

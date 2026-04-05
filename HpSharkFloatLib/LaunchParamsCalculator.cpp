@@ -1,4 +1,5 @@
 #include "LaunchParamsCalculator.h"
+#include "Environment.h"
 
 #include <algorithm>
 #include <iostream>
@@ -60,7 +61,7 @@ CudaLaunchConfig::compute(const void *kernelFunc, size_t dynSmemBytes)
 {
     auto fail = [&](cudaError_t e) {
         status = e;
-        __debugbreak();
+        Environment::DebugBreakpoint();
         return e;
     };
     if (!kernelFunc)

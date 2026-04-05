@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "Environment.h"
 #include "Fractal.h"
 #include "PerturbationResults.h"
 #include "BLAS.h"
@@ -93,7 +94,7 @@ void BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon) {
     std::vector<std::unique_ptr<std::thread>> threads;
 
     auto RunInit = [&](size_t firstLevel, size_t mStart, size_t mEnd, T blaSize, T epsilon) {
-        SetThreadDescription(GetCurrentThread(), L"BLAS::InitInternal");
+        Environment::SetCurrentThreadName(L"BLAS::InitInternal");
         for (size_t m = mStart; m < mEnd; m++) {
             InitLStep(firstLevel, m, blaSize, epsilon);
         }
@@ -165,7 +166,7 @@ void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
         const size_t destFinal = dst;
 
         auto SubMerge = [&](size_t mStart, size_t mEnd) {
-            SetThreadDescription(GetCurrentThread(), L"BLAS::Merge");
+            Environment::SetCurrentThreadName(L"BLAS::Merge");
             for (size_t m = mStart; m < mEnd; m++) {
                 MergeOneStep(m, elementsSrcFinal, srcFinal, destFinal, blaSize);
             }

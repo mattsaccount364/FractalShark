@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Environment.h"
 #include "FractalPalette.h"
 
 #include <thread>
@@ -25,7 +26,7 @@ void
 FractalPalette::InitializeAllPalettes()
 {
     auto DefaultPaletteGen = [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
-        SetThreadDescription(GetCurrentThread(), L"Fractal::DefaultPaletteGen");
+        Environment::SetCurrentThreadName(L"Fractal::DefaultPaletteGen");
         int depth_total = (int)(1 << Depth);
 
         int max_val = 65535;
@@ -41,7 +42,7 @@ FractalPalette::InitializeAllPalettes()
     };
 
     auto PatrioticPaletteGen= [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
-        SetThreadDescription(GetCurrentThread(), L"Fractal::PatrioticPaletteGen");
+        Environment::SetCurrentThreadName(L"Fractal::PatrioticPaletteGen");
         int depth_total = (int)(1 << Depth);
 
         int max_val = 65535;
@@ -72,7 +73,7 @@ FractalPalette::InitializeAllPalettes()
     };
 
     auto SummerPaletteGen = [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
-        SetThreadDescription(GetCurrentThread(), L"Fractal::SummerPaletteGen");
+        Environment::SetCurrentThreadName(L"Fractal::SummerPaletteGen");
         int depth_total = (int)(1 << Depth);
 
         int max_val = 65535;
@@ -301,7 +302,7 @@ FractalPalette::CreateNewRandomPalette()
     };
 
     auto RandomPaletteGen = [&](size_t PaletteIndex, size_t Depth) {
-        SetThreadDescription(GetCurrentThread(), L"Random Palette Gen");
+        Environment::SetCurrentThreadName(L"Random Palette Gen");
         int depth_total = (int)(1 << Depth);
 
         srand((unsigned int)rtime);

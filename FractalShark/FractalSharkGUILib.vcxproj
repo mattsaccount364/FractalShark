@@ -60,7 +60,7 @@
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <WarningLevel>Level4</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Debug;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform;..\mpir\lib\x64\Debug;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
   </ItemDefinitionGroup>
@@ -73,7 +73,7 @@
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <WarningLevel>Level4</WarningLevel>
-      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform;..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
       <OmitFramePointers>true</OmitFramePointers>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>

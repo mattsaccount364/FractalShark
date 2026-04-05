@@ -278,7 +278,7 @@ clang-format -i <modified-files>
 
 ## Workflow
 
-- **Do not create git commits.** Leave all changes uncommitted for the user to review and commit manually.
+- **Do not create git commits or stage files.** Do not run `git add` or `git commit`. Leave all changes unstaged for the user to review and commit manually.
 - **Do not make code changes in plan mode.** Plan mode is for analysis and planning only.
 
 ## Notes Document (Notes/)

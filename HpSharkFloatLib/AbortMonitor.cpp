@@ -1,6 +1,6 @@
 #include "AbortMonitor.h"
+#include "Environment.h"
 
-#include <Windows.h>
 #include <iostream>
 
 AbortMonitor *AbortMonitor::s_Instance = nullptr;
@@ -61,17 +61,14 @@ AbortMonitor::ResetStopCalculatingGlobal()
 bool
 AbortMonitor::IsDownControlAlt()
 {
-    return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000) &&
-           ((GetAsyncKeyState(VK_MENU) & 0x8000) == 0x8000);
+    return Environment::IsKeyDown(Environment::Key::Control) &&
+           Environment::IsKeyDown(Environment::Key::Alt);
 }
 
 void
 AbortMonitor::Run()
 {
-    POINT pt;
-    GetCursorPos(&pt);
-    int OrgX = pt.x;
-    int OrgY = pt.y;
+    auto [OrgX, OrgY] = Environment::GetCursorPosition();
 
     static constexpr int CtrlHoldThreshold = 12; // 12 × 250ms = 3 seconds
 
@@ -85,7 +82,7 @@ AbortMonitor::Run()
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
         // Escape: cancels/resets the abort flag
-        if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) == 0x8000) {
+        if (Environment::IsKeyDown(Environment::Key::Escape)) {
             if (m_StopCalculating.load(std::memory_order_relaxed)) {
                 std::wcerr << L"AbortMonitor: abort cancelled (Escape pressed)" << std::endl;
                 m_StopCalculating.store(false, std::memory_order_relaxed);
@@ -104,11 +101,11 @@ AbortMonitor::Run()
         }
 
         if (m_UseSensoCursor) {
-            GetCursorPos(&pt);
+            auto [curX, curY] = Environment::GetCursorPosition();
 
-            if (abs(pt.x - OrgX) >= 5 || abs(pt.y - OrgY) >= 5) {
-                OrgX = pt.x;
-                OrgY = pt.y;
+            if (abs(curX - OrgX) >= 5 || abs(curY - OrgY) >= 5) {
+                OrgX = curX;
+                OrgY = curY;
                 m_StopCalculating.store(true, std::memory_order_relaxed);
             }
         }

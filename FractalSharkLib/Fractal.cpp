@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "Environment.h"
 #include "Fractal.h"
 // #include "CBitmapWriter.h"
 
@@ -1878,7 +1879,7 @@ Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
     //}
 
     auto one_thread = [&]() {
-        SetThreadDescription(GetCurrentThread(), L"CalcCpuPerturbationFractal thread");
+        Environment::SetCurrentThreadName(L"CalcCpuPerturbationFractal thread");
         auto compressionHelper{
             std::make_unique<RuntimeDecompressor<IterType, double, PerturbExtras::Disable>>(*results)};
 
@@ -2035,7 +2036,7 @@ Fractal::CalcCpuHDR(CalcContext &ctx)
         const T Two{2};
 
         auto one_thread = [&]() {
-            SetThreadDescription(GetCurrentThread(), L"CalcCpuHDR thread");
+            Environment::SetCurrentThreadName(L"CalcCpuHDR thread");
 
             if constexpr (usesHighPrecision) {
                 MPIRBoundedAllocator::InitTls();
@@ -2149,7 +2150,7 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
-        SetThreadDescription(GetCurrentThread(), L"CalcCpuPerturbationFractalBLA thread");
+        Environment::SetCurrentThreadName(L"CalcCpuPerturbationFractalBLA thread");
         // T dzdcX = T(1);
         // T dzdcY = T(0);
         // bool periodicity_should_break = false;
@@ -2414,7 +2415,7 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
-        SetThreadDescription(GetCurrentThread(), L"CalcCpuPerturbationFractalLAV2 thread");
+        Environment::SetCurrentThreadName(L"CalcCpuPerturbationFractalLAV2 thread");
 
         auto compressionHelper{std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(*results)};
 

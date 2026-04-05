@@ -22,6 +22,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HpSharkFloatTestLib", "..\H
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HpSharkInstantiate", "..\HpSharkInstantiate\HpSharkInstantiate.vcxproj", "{045E8805-874D-48D4-BE8E-1D3EFCF176B0}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkPlatform", "..\FractalSharkPlatform\FractalSharkPlatform.vcxproj", "{2098BA02-D346-4F18-9D90-6A8701F81919}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkTest", "..\FractalSharkTest\FractalSharkTest.vcxproj", "{3B7F2A1D-8E4C-4D5F-9A6B-0C1D2E3F4A5B}"
 EndProject
 Global
@@ -112,6 +114,14 @@ Global
 		{045E8805-874D-48D4-BE8E-1D3EFCF176B0}.Release|x64.Build.0 = Release|x64
 		{045E8805-874D-48D4-BE8E-1D3EFCF176B0}.Release|x86.ActiveCfg = Release|Win32
 		{045E8805-874D-48D4-BE8E-1D3EFCF176B0}.Release|x86.Build.0 = Release|Win32
+		{2098BA02-D346-4F18-9D90-6A8701F81919}.Debug|x64.ActiveCfg = Debug|x64
+		{2098BA02-D346-4F18-9D90-6A8701F81919}.Debug|x64.Build.0 = Debug|x64
+		{2098BA02-D346-4F18-9D90-6A8701F81919}.Debug|x86.ActiveCfg = Debug|x64
+		{2098BA02-D346-4F18-9D90-6A8701F81919}.Debug|x86.Build.0 = Debug|x64
+		{2098BA02-D346-4F18-9D90-6A8701F81919}.Release|x64.ActiveCfg = Release|x64
+		{2098BA02-D346-4F18-9D90-6A8701F81919}.Release|x64.Build.0 = Release|x64
+		{2098BA02-D346-4F18-9D90-6A8701F81919}.Release|x86.ActiveCfg = Release|x64
+		{2098BA02-D346-4F18-9D90-6A8701F81919}.Release|x86.Build.0 = Release|x64
 		{3B7F2A1D-8E4C-4D5F-9A6B-0C1D2E3F4A5B}.Debug|x64.ActiveCfg = Debug|x64
 		{3B7F2A1D-8E4C-4D5F-9A6B-0C1D2E3F4A5B}.Debug|x64.Build.0 = Debug|x64
 		{3B7F2A1D-8E4C-4D5F-9A6B-0C1D2E3F4A5B}.Debug|x86.ActiveCfg = Debug|x64

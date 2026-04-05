@@ -13,6 +13,7 @@
 #include <type_traits>
 
 #include "..\Vectors.h"
+#include "Environment.h"
 
 #define NOMINMAX
 #include <windows.h>
@@ -94,16 +95,6 @@ static constexpr bool FullDebugOut = false;
 // works safely during very early initialization (TLS/CRT init).
 
 static HeapCpp gHeap;
-static HANDLE g_proc_heap = nullptr;
-
-static __forceinline HANDLE
-ProcHeap()
-{
-    if (!g_proc_heap) {
-        g_proc_heap = GetProcessHeap();
-    }
-    return g_proc_heap;
-}
 
 static __forceinline void *
 SysMalloc(size_t n)
@@ -111,7 +102,7 @@ SysMalloc(size_t n)
     if (n == 0) {
         n = 1;
     }
-    return HeapAlloc(ProcHeap(), 0, n);
+    return Environment::SystemHeapAlloc(n);
 }
 
 static __forceinline void *
@@ -124,7 +115,7 @@ SysCalloc(size_t n, size_t sz)
     if (total == 0) {
         total = 1;
     }
-    return HeapAlloc(ProcHeap(), HEAP_ZERO_MEMORY, total);
+    return Environment::SystemHeapAllocZeroed(total);
 }
 
 static __forceinline void
@@ -133,7 +124,7 @@ SysFree(void *p)
     if (!p) {
         return;
     }
-    HeapFree(ProcHeap(), 0, p);
+    Environment::SystemHeapFree(p);
 }
 
 static __forceinline void *
@@ -146,7 +137,7 @@ SysRealloc(void *p, size_t n)
     if (!p) {
         return SysMalloc(n);
     }
-    return HeapReAlloc(ProcHeap(), 0, p, n);
+    return Environment::SystemHeapRealloc(p, n);
 }
 
 static __forceinline bool
@@ -193,17 +184,17 @@ HeapCpp::InitGlobalHeap()
     // Thread-safe single-initialization guard using atomic CAS.
     // Can't use std::call_once or std::mutex — those may allocate, and this
     // runs before the heap is ready.
-    static volatile long init_lock = 0;
-    while (InterlockedCompareExchange(&init_lock, 1, 0) != 0) {
+    static volatile int32_t init_lock = 0;
+    while (Environment::InterlockedCAS32(&init_lock, 1, 0) != 0) {
         // Another thread is initializing — spin until done.
         // After init, Initialized==true and we return early above on next call.
-        Sleep(0);
+        Environment::SleepMs(0);
     }
 
     auto &globalHeap = GlobalHeap();
 
     if (globalHeap.Initialized) {
-        InterlockedExchange(&init_lock, 0);
+        Environment::InterlockedCAS32(&init_lock, 0, 1);
         return;
     }
 
@@ -217,15 +208,15 @@ HeapCpp::InitGlobalHeap()
     globalHeap.Growable->MutableResize(GrowByAmtBytes);
     globalHeap.Init();
 
-    InterlockedExchange(&init_lock, 0);
+    Environment::InterlockedCAS32(&init_lock, 0, 1);
 }
 
 HeapCpp::HeapCpp()
 {
-    if (IsDebuggerPresent()) {
+    if (Environment::IsDebuggerAttached()) {
         char buffer[256];
         sprintf_s(buffer, "HeapCpp Constructor called\n");
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
     }
 
     // It's very important that we don't do anything here, because this heap
@@ -244,30 +235,30 @@ HeapCpp::~HeapCpp()
     // Check if debugger attached.  Note this isn't necessarily the
     // end of the program, but it's a good place to check because one would
     // expect that it's close.
-    if (IsDebuggerPresent()) {
+    if (Environment::IsDebuggerAttached()) {
         // Output totalAllocs to debug console in Visual Studio
         char buffer[256];
         sprintf_s(buffer, "Total allocations remaining = %zu\n", totalAllocs);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
 
         // Print Stats
         sprintf_s(buffer, "BytesAllocated = %zu\n", Stats.BytesAllocated);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
 
         sprintf_s(buffer, "BytesFreed = %zu\n", Stats.BytesFreed);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
 
         sprintf_s(buffer, "Delta bytes allocated = %zu\n", Stats.BytesAllocated - Stats.BytesFreed);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
 
         sprintf_s(buffer, "Allocations = %zu\n", Stats.Allocations);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
 
         sprintf_s(buffer, "Frees = %zu\n", Stats.Frees);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
 
         sprintf_s(buffer, "Delta allocations = %zu\n", Stats.Allocations - Stats.Frees);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
     }
 
     // Growable->Clear();
@@ -855,7 +846,7 @@ CppMalloc(size_t size)
     if constexpr (FullDebugOut) {
         char buffer[256];
         sprintf(buffer, "malloc(%zu) = %p\n", size, res);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
     }
 
     return res;
@@ -870,7 +861,7 @@ CppFree(void *ptr)
     if constexpr (FullDebugOut) {
         char buffer[256];
         sprintf(buffer, "free(%p)\n", ptr);
-        OutputDebugStringA(buffer);
+        Environment::DebugOutput(buffer);
     }
 
     globalHeap.Deallocate(ptr);

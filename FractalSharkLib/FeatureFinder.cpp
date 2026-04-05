@@ -25,6 +25,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -451,14 +452,37 @@ public:
     CheckpointWriter(const CheckpointWriter &) = delete;
     CheckpointWriter &operator=(const CheckpointWriter &) = delete;
 
+    // Fire-and-forget: for inner-loop progress callbacks.
+    // Supersedes any pending fire-and-forget write, but never
+    // supersedes a synchronous WriteAndWait (whose caller would hang).
     void
     TriggerWrite(std::unique_ptr<CheckpointSnapshot> snapshot)
     {
         {
             std::lock_guard<std::mutex> lock(m_Mutex);
+            if (m_DonePromise)
+                return;
             m_Pending = std::move(snapshot);
         }
         m_CV.notify_one();
+    }
+
+    // Synchronous: enqueue a write and block until the writer thread
+    // finishes the I/O.  Used by the outer NR loop for critical
+    // checkpoints (abort, post-step, final).
+    void
+    WriteAndWait(const NRCheckpointParams &params)
+    {
+        auto snapshot = std::make_unique<CheckpointSnapshot>(params, params.innerIteration);
+        std::promise<void> done;
+        auto future = done.get_future();
+        {
+            std::lock_guard<std::mutex> lock(m_Mutex);
+            m_Pending = std::move(snapshot);
+            m_DonePromise = &done;
+        }
+        m_CV.notify_one();
+        future.wait();
     }
 
 private:
@@ -467,10 +491,13 @@ private:
     {
         for (;;) {
             std::unique_ptr<CheckpointSnapshot> snap;
+            std::promise<void> *done = nullptr;
             {
                 std::unique_lock<std::mutex> lock(m_Mutex);
                 m_CV.wait(lock, [&] { return m_Pending != nullptr || m_Exit; });
                 snap = std::move(m_Pending);
+                done = m_DonePromise;
+                m_DonePromise = nullptr;
                 if (m_Exit && !snap)
                     break;
             }
@@ -478,6 +505,8 @@ private:
             if (snap) {
                 auto params = snap->ToParams();
                 WriteNRCheckpoint(params);
+                if (done)
+                    done->set_value();
             }
         }
     }
@@ -486,6 +515,7 @@ private:
     std::mutex m_Mutex;
     std::condition_variable m_CV;
     std::unique_ptr<CheckpointSnapshot> m_Pending;
+    std::promise<void> *m_DonePromise = nullptr;
     bool m_Exit = false;
 };
 
@@ -951,25 +981,25 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
 
         if (completed < period) {
-            WriteNRCheckpoint({c_coord.re,
-                               c_coord.im,
-                               c0_coord.re,
-                               c0_coord.im,
-                               sqrRadius_coord,
-                               intrinsicRadius_mpf,
-                               period,
-                               coord_prec,
-                               it,
-                               scaleExp2_for_deriv_choice,
-                               numIterationsAtFind,
-                               completed,
-                               z_coord.re,
-                               z_coord.im,
-                               dzdc_deriv.re,
-                               dzdc_deriv.im,
-                               deriv_prec,
-                               d2r_hdr,
-                               d2i_hdr});
+            checkpointWriter.WriteAndWait({c_coord.re,
+                                           c_coord.im,
+                                           c0_coord.re,
+                                           c0_coord.im,
+                                           sqrRadius_coord,
+                                           intrinsicRadius_mpf,
+                                           period,
+                                           coord_prec,
+                                           it,
+                                           scaleExp2_for_deriv_choice,
+                                           numIterationsAtFind,
+                                           completed,
+                                           z_coord.re,
+                                           z_coord.im,
+                                           dzdc_deriv.re,
+                                           dzdc_deriv.im,
+                                           deriv_prec,
+                                           d2r_hdr,
+                                           d2i_hdr});
             std::cout << "RefinePeriodicPoint: aborted at NR iter " << it << " innerIter " << completed
                       << " (checkpoint saved)\n";
             break;
@@ -1067,25 +1097,27 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         mpf_sub(c_coord.im, c_coord.im, step_coord.im);
 
         // Write checkpoint after each step
-        WriteNRCheckpoint({c_coord.re,
-                           c_coord.im,
-                           c0_coord.re,
-                           c0_coord.im,
-                           sqrRadius_coord,
-                           intrinsicRadius_mpf,
-                           period,
-                           coord_prec,
-                           it,
-                           scaleExp2_for_deriv_choice,
-                           numIterationsAtFind,
-                           0,
-                           z_coord.re,
-                           z_coord.im,
-                           dzdc_deriv.re,
-                           dzdc_deriv.im,
-                           deriv_prec,
-                           d2r_hdr,
-                           d2i_hdr});
+        checkpointWriter.TriggerWrite(
+            std::make_unique<CheckpointSnapshot>(NRCheckpointParams{c_coord.re,
+                                                                    c_coord.im,
+                                                                    c0_coord.re,
+                                                                    c0_coord.im,
+                                                                    sqrRadius_coord,
+                                                                    intrinsicRadius_mpf,
+                                                                    period,
+                                                                    coord_prec,
+                                                                    it,
+                                                                    scaleExp2_for_deriv_choice,
+                                                                    numIterationsAtFind,
+                                                                    0,
+                                                                    z_coord.re,
+                                                                    z_coord.im,
+                                                                    dzdc_deriv.re,
+                                                                    dzdc_deriv.im,
+                                                                    deriv_prec,
+                                                                    d2r_hdr,
+                                                                    d2i_hdr},
+                                                 0));
 
         // ------------------------------------------------------------
         // Imagina error estimate (HDRFloat)
@@ -1163,25 +1195,27 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
 
         // Keep checkpoint file — user can resume or re-refine later.
-        WriteNRCheckpoint({c_coord.re,
-                           c_coord.im,
-                           c0_coord.re,
-                           c0_coord.im,
-                           sqrRadius_coord,
-                           intrinsicRadius_mpf,
-                           period,
-                           coord_prec,
-                           it,
-                           scaleExp2_for_deriv_choice,
-                           numIterationsAtFind,
-                           0,
-                           z_coord.re,
-                           z_coord.im,
-                           dzdc_deriv.re,
-                           dzdc_deriv.im,
-                           deriv_prec,
-                           d2r_hdr,
-                           d2i_hdr});
+        checkpointWriter.TriggerWrite(
+            std::make_unique<CheckpointSnapshot>(NRCheckpointParams{c_coord.re,
+                                                                    c_coord.im,
+                                                                    c0_coord.re,
+                                                                    c0_coord.im,
+                                                                    sqrRadius_coord,
+                                                                    intrinsicRadius_mpf,
+                                                                    period,
+                                                                    coord_prec,
+                                                                    it,
+                                                                    scaleExp2_for_deriv_choice,
+                                                                    numIterationsAtFind,
+                                                                    0,
+                                                                    z_coord.re,
+                                                                    z_coord.im,
+                                                                    dzdc_deriv.re,
+                                                                    dzdc_deriv.im,
+                                                                    deriv_prec,
+                                                                    d2r_hdr,
+                                                                    d2i_hdr},
+                                                 0));
     }
 
     // ---------------- cleanup ----------------

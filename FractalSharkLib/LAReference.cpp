@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "Environment.h"
 #include "LAReference.h"
 #include "LAParameters.h"
 #include "PerturbationResults.h"
@@ -400,7 +401,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
                        ThreadCount,
                        maxRefIteration,
                        this]() {
-        SetThreadDescription(GetCurrentThread(), L"LAReference Starter Thread");
+        Environment::SetCurrentThreadName(L"LAReference Starter Thread");
 
         auto compressionHelper{
             std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults)};
@@ -495,8 +496,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
                    ThreadCount,
                    maxRefIteration,
                    this](uint32_t ThreadID) {
-        SetThreadDescription(GetCurrentThread(),
-                             (L"LAReference Worker Thread " + std::to_wstring(ThreadID)).c_str());
+        Environment::SetCurrentThreadName((L"LAReference Worker Thread " + std::to_wstring(ThreadID)).c_str());
         auto compressionHelper{
             std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults)};
 
@@ -674,7 +674,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
             if (j > End) {
                 if (ThreadID == LastThread) {
                     std::wcerr << L"Thread finished unexpected" << std::endl;
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 }
 
                 if (j >= maxRefIteration) {
@@ -1021,7 +1021,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
 
 void SetCopyThreadDescription()
 {
-    SetThreadDescription(GetCurrentThread(), L"LAReference::CopyLAReference");
+    Environment::SetCurrentThreadName(L"LAReference::CopyLAReference");
 }
 
 // TODO - this is a mess

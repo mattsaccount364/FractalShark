@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Environment.h"
 #include "RenderThreadPool.h"
 #include "Exceptions.h"
 #include "Fractal.h"
@@ -785,8 +786,7 @@ void RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFra
 }
 
 void RenderThreadPool::WorkerLoop(size_t workerIndex) {
-    SetThreadDescription(GetCurrentThread(),
-        std::format(L"RenderPool Worker {}", workerIndex).c_str());
+    Environment::SetCurrentThreadName(std::format(L"RenderPool Worker {}", workerIndex).c_str());
 
     std::mutex workerMutex;
     std::condition_variable workerCV;
@@ -917,13 +917,13 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
             auto msg = e.GetCallstack("Worker thread exception during CalcFractal");
             std::cerr << msg << std::endl;
             GlLog(msg.c_str());
-            if (IsDebuggerPresent()) __debugbreak();
+            if (Environment::IsDebuggerAttached()) Environment::DebugBreakpoint();
         } catch (const std::exception &e) {
             std::cerr << "Worker thread exception during CalcFractal: " << e.what() << std::endl;
             char buf[512];
             snprintf(buf, sizeof(buf), "WorkerLoop: exception: %s", e.what());
             GlLog(buf);
-            if (IsDebuggerPresent()) __debugbreak();
+            if (Environment::IsDebuggerAttached()) Environment::DebugBreakpoint();
         }
 
         if (!finalFramePushed) {
@@ -961,7 +961,7 @@ void RenderThreadPool::WorkerLoop(size_t workerIndex) {
 }
 
 void RenderThreadPool::GlConsumerLoop() {
-    SetThreadDescription(GetCurrentThread(), L"RenderPool GL Consumer");
+    Environment::SetCurrentThreadName(L"RenderPool GL Consumer");
 
     // Create OpenGL context for this thread
     auto glContext = std::make_unique<OpenGlContext>(m_hWnd);

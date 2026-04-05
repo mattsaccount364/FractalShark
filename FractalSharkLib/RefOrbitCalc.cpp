@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "Environment.h"
 #include "AbortMonitor.h"
 #include "Fractal.h"
 #include "PerturbationResults.h"
@@ -152,17 +153,16 @@ template <typename IterType, class T, PerturbExtras PExtras>
 void
 RefOrbitCalc::OptimizeMemory()
 {
-    PROCESS_MEMORY_COUNTERS_EX checkHappy;
     const size_t OMGAlotOfMemory = m_CommitLimitInBytes / 2;
 
     if (OMGAlotOfMemory == 0) {
         return;
     }
 
-    GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
+    auto commitCharge = Environment::ProcessCommitChargeBytes();
 
     // Clear out the memory if the type of the orbit is different from the currently selected algorithm.
-    if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
+    if (commitCharge > OMGAlotOfMemory) {
         // Iterate over all elements in the vector and remove the ones that are not of the desired type.
         auto removalFn = [](auto &elt) {
             using eltType = std::decay_t<decltype(elt)>;
@@ -177,18 +177,18 @@ RefOrbitCalc::OptimizeMemory()
         m_C.erase(std::remove_if(m_C.begin(), m_C.end(), removalFn), m_C.end());
     }
 
-    GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
-    if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
+    commitCharge = Environment::ProcessCommitChargeBytes();
+    if (commitCharge > OMGAlotOfMemory) {
         ClearPerturbationResults(PerturbationResultType::MediumRes);
     }
 
-    GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
-    if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
+    commitCharge = Environment::ProcessCommitChargeBytes();
+    if (commitCharge > OMGAlotOfMemory) {
         ClearPerturbationResults(PerturbationResultType::HighRes);
     }
 
-    GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
-    if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
+    commitCharge = Environment::ProcessCommitChargeBytes();
+    if (commitCharge > OMGAlotOfMemory) {
         std::wcerr << L"Watch the memory use... this is just a warning" << std::endl;
         assert(false);
     }
@@ -1175,7 +1175,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     constexpr bool floatOrDouble = std::is_same<T, double>::value || std::is_same<T, float>::value;
 
     auto ThreadSqZx = [&](ThreadPtrs<ThreadZxData> *ThreadMemory) {
-        SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3Reuse SqZxThread");
+        Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3Reuse SqZxThread");
 
         mpf_t temp_mpf;
         mpf_init(temp_mpf);
@@ -1265,7 +1265,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     };
 
     auto ThreadSqZy = [&](ThreadPtrs<ThreadZyData> *ThreadMemory) {
-        SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3Reuse SqZyThread");
+        Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3Reuse SqZyThread");
 
         mpf_t temp_mpf;
         mpf_init(temp_mpf);
@@ -1735,7 +1735,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         };
 
         auto ThreadSqZx = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZxData> *ThreadMemory) {
-            SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3 ThreadSqZx");
+            Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadSqZx");
 
             InitTls();
 
@@ -1766,7 +1766,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         };
 
         auto ThreadSqZy = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZyData> *ThreadMemory) {
-            SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3 ThreadSqZy");
+            Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadSqZy");
 
             InitTls();
 
@@ -1806,7 +1806,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                              &ShutdownTls,
                              IntermediateCompressionErrorExp](
                                 ThreadPtrs<ThreadReusedData> *ThreadMemory) {
-            SetThreadDescription(GetCurrentThread(), L"AddPerturbationReferencePointMT3 ThreadReused");
+            Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadReused");
             InitTls();
 
             {

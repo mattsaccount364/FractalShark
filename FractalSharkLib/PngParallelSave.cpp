@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Environment.h"
 #include "PngParallelSave.h"
 #include "Fractal.h"
 
@@ -56,7 +57,7 @@ void PngParallelSave::StartThread() {
 }
 
 void PngParallelSave::Run() {
-    SetThreadDescription(GetCurrentThread(), L"PngParallelSave::Run");
+    Environment::SetCurrentThreadName(L"PngParallelSave::Run");
 
     int ret;
     std::wstring final_filename;

@@ -10,7 +10,9 @@
 #include "MpirOrbitEval.h"
 
 #include <atomic>
+#include <chrono>
 #include <format>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <thread>
@@ -157,7 +159,10 @@ EvaluateCriticalOrbitAndDerivsMT(const mpf_complex &c_coord,
                                  HDRFloat<double> &d2i_hdr,
                                  mp_bitcnt_t deriv_prec,
                                  mp_bitcnt_t coord_prec,
-                                 uint64_t startIter)
+                                 uint64_t startIter,
+                                 void (*onProgress)(uint64_t, void *),
+                                 void *progressContext,
+                                 uint64_t progressInterval)
 {
     // Scratch temporaries
     mpf_complex z_deriv, tmpB_deriv, tmpZ_coord;
@@ -237,11 +242,33 @@ EvaluateCriticalOrbitAndDerivsMT(const mpf_complex &c_coord,
     };
 
     uint64_t itersCompleted = startIter;
+    auto startTime = std::chrono::steady_clock::now();
+
     for (uint64_t i = startIter; i < period; ++i) {
         if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 && i > startIter) {
-            std::cout << "    CPU-MT inner: " << i << " / " << period << std::endl;
             if (AbortMonitor::GetStopCalculatingGlobal()) {
                 break;
+            }
+        }
+
+        if (progressInterval > 0 && i > startIter && (i - startIter) % progressInterval == 0) {
+            d2r_hdr = HDRFloat<double>(local_d2r);
+            d2i_hdr = HDRFloat<double>(local_d2i);
+
+            auto now = std::chrono::steady_clock::now();
+            double elapsedSec = std::chrono::duration<double>(now - startTime).count();
+            double itersPerSec = (elapsedSec > 0) ? (i - startIter) / elapsedSec : 0;
+            double etaHours = (itersPerSec > 0) ? (period - i) / itersPerSec / 3600.0 : 0;
+
+            std::cout << "    CPU-MT inner: " << i << " / " << period;
+            if (itersPerSec > 0) {
+                std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
+                          << std::setprecision(1) << etaHours << " hrs)";
+            }
+            std::cout << std::endl;
+
+            if (onProgress) {
+                onProgress(i, progressContext);
             }
         }
 
@@ -362,7 +389,10 @@ EvaluateCriticalOrbitAndDerivsST(const mpf_complex &c_coord,
                                  HDRFloat<double> &d2i_hdr,
                                  mp_bitcnt_t deriv_prec,
                                  mp_bitcnt_t coord_prec,
-                                 uint64_t startIter)
+                                 uint64_t startIter,
+                                 void (*onProgress)(uint64_t, void *),
+                                 void *progressContext,
+                                 uint64_t progressInterval)
 {
     // Scratch temporaries
     mpf_complex z_deriv, tmpB_deriv, tmpZ_coord;
@@ -395,11 +425,33 @@ EvaluateCriticalOrbitAndDerivsST(const mpf_complex &c_coord,
     T dz2r, dz2i, zd2r, zd2i, sumr, sumi;
 
     uint64_t itersCompleted = startIter;
+    auto startTime = std::chrono::steady_clock::now();
+
     for (uint64_t i = startIter; i < period; ++i) {
         if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 && i > startIter) {
-            std::cout << "    CPU-ST inner: " << i << " / " << period << std::endl;
             if (AbortMonitor::GetStopCalculatingGlobal()) {
                 break;
+            }
+        }
+
+        if (progressInterval > 0 && i > startIter && (i - startIter) % progressInterval == 0) {
+            d2r_hdr = HDRFloat<double>(local_d2r);
+            d2i_hdr = HDRFloat<double>(local_d2i);
+
+            auto now = std::chrono::steady_clock::now();
+            double elapsedSec = std::chrono::duration<double>(now - startTime).count();
+            double itersPerSec = (elapsedSec > 0) ? (i - startIter) / elapsedSec : 0;
+            double etaHours = (itersPerSec > 0) ? (period - i) / itersPerSec / 3600.0 : 0;
+
+            std::cout << "    CPU-ST inner: " << i << " / " << period;
+            if (itersPerSec > 0) {
+                std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
+                          << std::setprecision(1) << etaHours << " hrs)";
+            }
+            std::cout << std::endl;
+
+            if (onProgress) {
+                onProgress(i, progressContext);
             }
         }
 

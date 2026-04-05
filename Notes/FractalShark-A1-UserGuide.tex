@@ -580,8 +580,12 @@ options.  See also \cref{subsec:practical-usage}.
 \label{subsec:practical-usage}
 
 \begin{itemize}
-  \item There is currently no reliable way to cancel a long-running render once
-  it has begun. If necessary, the application must be terminated externally.
+  \item Long-running computations (renders, reference orbits, feature-finder
+  searches) can be aborted by holding \code{Ctrl+Alt} for approximately three
+  seconds.  An \code{AbortMonitor} background thread polls the key state every
+  250\,ms and sets a stop flag once the debounce threshold is reached.  Pressing
+  \code{Escape} cancels (resets) the abort flag, allowing computation to
+  continue if it has not yet terminated.
   \item Some menu options may be temporarily disabled depending on the current
   render state or selected algorithm.
   \item If the application exits unexpectedly, a Windows minidump
@@ -640,8 +644,9 @@ additional work for correctness or a ``clean'' run.
         factor of~3 each step.
   \item \code{S} (\code{Shift+s}): Autozoom using the ``FilamentTip'' heuristic.
 \end{itemize}
-Holding \code{Ctrl} may abort either autozoom variant (the abort mechanism is
-not part of the key handler and is implemented elsewhere).
+Holding \code{Ctrl+Alt} for approximately three seconds aborts either
+autozoom variant (the abort is detected by the \code{AbortMonitor} thread;
+pressing \code{Escape} cancels the abort and allows the zoom to resume).
 
 \paragraph{Recalculation and benchmarking.}
 Several keys force a recalculation (see also
@@ -710,6 +715,17 @@ These keys scale the maximum iteration count aggressively for quick exploration:
   \item \textbf{Shift+F10 / Menu key}: Also opens the popup menu (Windows context-menu invocation).
   \item \textbf{Alt + left-click drag} (windowed mode): Drag the window by treating the client area as a caption.
   \item \textbf{Mouse wheel}: Zoom in/out (scroll up zooms in; scroll down zooms out).
+\end{itemize}
+
+\paragraph{Abort and cancel.}
+\begin{itemize}
+  \item \textbf{Ctrl+Alt} (hold ${\sim}$3\,s): Abort the current long-running
+        computation (render, reference orbit, feature-finder search).
+        The \code{AbortMonitor} background thread polls every 250\,ms
+        and sets the stop flag after 12~consecutive positive samples.
+  \item \textbf{Escape}: Cancel (reset) the abort flag.  If pressed
+        while the stop flag is set but computation has not yet
+        terminated, allows the operation to resume.
 \end{itemize}
 
 \paragraph{Feature Finder.}

@@ -23,7 +23,7 @@ public:
 
 private:
     void Run();
-    static bool IsDownControl();
+    static bool IsDownControlAlt();
 
     static AbortMonitor *s_Instance;
 

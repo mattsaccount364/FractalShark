@@ -20,10 +20,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -277,11 +280,11 @@ ReconstructMpfString(const std::string &digits, mp_exp_t exp)
 }
 
 static void
-WriteMpfField(std::ostream &f, mpf_srcptr val, size_t ndigits)
+WriteMpfField(std::ostream &f, const char *label, mpf_srcptr val, size_t ndigits)
 {
     mp_exp_t exp;
     char *str = mpf_get_str(nullptr, &exp, 10, ndigits, val);
-    f << exp << " " << (str ? str : "0") << "\n";
+    f << label << ": " << exp << " " << (str ? str : "0") << "\n";
     if (str)
         free(str);
 }
@@ -305,44 +308,219 @@ struct NRCheckpointParams {
 static void
 WriteNRCheckpoint(const NRCheckpointParams &p)
 {
-    std::ofstream f(NRCheckpointFilename, std::ios::trunc);
+    // Write to temp file, then rename for crash-safe atomic update.
+    static const char *NRCheckpointTmpFilename = "nr_checkpoint.tmp";
+
+    std::ofstream f(NRCheckpointTmpFilename, std::ios::trunc);
     if (!f)
         return;
 
     const size_t ndigits = static_cast<size_t>(p.coord_prec * 0.302) + 10;
+    const size_t deriv_ndigits = static_cast<size_t>(p.deriv_prec * 0.302) + 10;
 
-    f << p.period << "\n" << p.coord_prec << "\n" << p.scaleExp2 << "\n" << p.iteration << "\n";
+    f << "period: " << p.period << "\n"
+      << "coord_prec: " << p.coord_prec << "\n"
+      << "scaleExp2: " << p.scaleExp2 << "\n"
+      << "iteration: " << p.iteration << "\n";
 
-    WriteMpfField(f, p.c_re, ndigits);
-    WriteMpfField(f, p.c_im, ndigits);
-    WriteMpfField(f, p.cand_re, ndigits);
-    WriteMpfField(f, p.cand_im, ndigits);
-    WriteMpfField(f, p.sqrRadius, ndigits);
-    WriteMpfField(f, p.intrinsicRadius, ndigits);
+    WriteMpfField(f, "c_re", p.c_re, ndigits);
+    WriteMpfField(f, "c_im", p.c_im, ndigits);
+    WriteMpfField(f, "cand_re", p.cand_re, ndigits);
+    WriteMpfField(f, "cand_im", p.cand_im, ndigits);
+    WriteMpfField(f, "sqrRadius", p.sqrRadius, ndigits);
+    WriteMpfField(f, "intrinsicRadius", p.intrinsicRadius, ndigits);
 
-    f << p.numIterationsAtFind << "\n" << p.innerIteration << "\n";
+    f << "numIterationsAtFind: " << p.numIterationsAtFind << "\n"
+      << "innerIteration: " << p.innerIteration << "\n"
+      << "deriv_prec: " << p.deriv_prec << "\n";
 
-    if (p.innerIteration > 0) {
-        const size_t deriv_ndigits = static_cast<size_t>(p.deriv_prec * 0.302) + 10;
+    WriteMpfField(f, "z_re", p.z_re, ndigits);
+    WriteMpfField(f, "z_im", p.z_im, ndigits);
+    WriteMpfField(f, "dzdc_re", p.dzdc_re, deriv_ndigits);
+    WriteMpfField(f, "dzdc_im", p.dzdc_im, deriv_ndigits);
 
-        f << p.deriv_prec << "\n";
-        WriteMpfField(f, p.z_re, ndigits);
-        WriteMpfField(f, p.z_im, ndigits);
-        WriteMpfField(f, p.dzdc_re, deriv_ndigits);
-        WriteMpfField(f, p.dzdc_im, deriv_ndigits);
-        f << p.d2r.getExp() << " " << p.d2r.getMantissa() << "\n"
-          << p.d2i.getExp() << " " << p.d2i.getMantissa() << "\n";
-    }
+    f << "d2r: " << p.d2r.getExp() << " " << p.d2r.getMantissa() << "\n"
+      << "d2i: " << p.d2i.getExp() << " " << p.d2i.getMantissa() << "\n";
+
+    f.close();
+
+    // Atomic rename: delete old, rename tmp → real.
+    std::remove(NRCheckpointFilename);
+    std::rename(NRCheckpointTmpFilename, NRCheckpointFilename);
 }
+
+// ------------------------------------------------------------
+// Async checkpoint writer — owns independent mpf copies so the
+// slow mpf_get_str + file I/O happens off the critical path.
+// ------------------------------------------------------------
+
+struct CheckpointSnapshot {
+    mpf_complex c, c0, z, dzdc;
+    mpf_t sqrRadius, intrinsicRadius;
+    uint64_t period, innerIteration, numIterationsAtFind;
+    mp_bitcnt_t coord_prec, deriv_prec;
+    uint32_t iteration;
+    int scaleExp2;
+    HDRFloat<double> d2r, d2i;
+
+    CheckpointSnapshot(const NRCheckpointParams &src, uint64_t iters)
+    {
+        coord_prec = src.coord_prec;
+        deriv_prec = src.deriv_prec;
+
+        mpf_complex_init(c, coord_prec);
+        mpf_complex_init(c0, coord_prec);
+        mpf_complex_init(z, coord_prec);
+        mpf_complex_init(dzdc, deriv_prec);
+        mpf_init2(sqrRadius, coord_prec);
+        mpf_init2(intrinsicRadius, coord_prec);
+
+        mpf_set(c.re, src.c_re);
+        mpf_set(c.im, src.c_im);
+        mpf_set(c0.re, src.cand_re);
+        mpf_set(c0.im, src.cand_im);
+        mpf_set(sqrRadius, src.sqrRadius);
+        mpf_set(intrinsicRadius, src.intrinsicRadius);
+        mpf_set(z.re, src.z_re);
+        mpf_set(z.im, src.z_im);
+        mpf_set(dzdc.re, src.dzdc_re);
+        mpf_set(dzdc.im, src.dzdc_im);
+
+        period = src.period;
+        innerIteration = iters;
+        numIterationsAtFind = src.numIterationsAtFind;
+        iteration = src.iteration;
+        scaleExp2 = src.scaleExp2;
+        d2r = src.d2r;
+        d2i = src.d2i;
+    }
+
+    ~CheckpointSnapshot()
+    {
+        mpf_complex_clear(c);
+        mpf_complex_clear(c0);
+        mpf_complex_clear(z);
+        mpf_complex_clear(dzdc);
+        mpf_clear(sqrRadius);
+        mpf_clear(intrinsicRadius);
+    }
+
+    CheckpointSnapshot(const CheckpointSnapshot &) = delete;
+    CheckpointSnapshot &operator=(const CheckpointSnapshot &) = delete;
+
+    NRCheckpointParams
+    ToParams() const
+    {
+        return {c.re,
+                c.im,
+                c0.re,
+                c0.im,
+                sqrRadius,
+                intrinsicRadius,
+                period,
+                coord_prec,
+                iteration,
+                scaleExp2,
+                numIterationsAtFind,
+                innerIteration,
+                z.re,
+                z.im,
+                dzdc.re,
+                dzdc.im,
+                deriv_prec,
+                d2r,
+                d2i};
+    }
+};
+
+class CheckpointWriter {
+public:
+    CheckpointWriter() : m_Thread(&CheckpointWriter::Run, this) {}
+
+    ~CheckpointWriter()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_Mutex);
+            m_Exit = true;
+        }
+        m_CV.notify_one();
+        if (m_Thread.joinable()) {
+            m_Thread.join();
+        }
+    }
+
+    CheckpointWriter(const CheckpointWriter &) = delete;
+    CheckpointWriter &operator=(const CheckpointWriter &) = delete;
+
+    void
+    TriggerWrite(std::unique_ptr<CheckpointSnapshot> snapshot)
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_Mutex);
+            m_Pending = std::move(snapshot);
+        }
+        m_CV.notify_one();
+    }
+
+private:
+    void
+    Run()
+    {
+        for (;;) {
+            std::unique_ptr<CheckpointSnapshot> snap;
+            {
+                std::unique_lock<std::mutex> lock(m_Mutex);
+                m_CV.wait(lock, [&] { return m_Pending != nullptr || m_Exit; });
+                snap = std::move(m_Pending);
+                if (m_Exit && !snap)
+                    break;
+            }
+
+            if (snap) {
+                auto params = snap->ToParams();
+                WriteNRCheckpoint(params);
+            }
+        }
+    }
+
+    std::thread m_Thread;
+    std::mutex m_Mutex;
+    std::condition_variable m_CV;
+    std::unique_ptr<CheckpointSnapshot> m_Pending;
+    bool m_Exit = false;
+};
 
 struct InnerLoopCheckpointData {
     uint64_t innerIteration{0};
     mp_bitcnt_t deriv_prec{0};
 };
 
-// Reads checkpoint including optional inner-loop state.
+// Read a "label: " prefix from the stream.  Returns false if the label
+// doesn't match or the stream is in a bad state.
+static bool
+ReadLabel(std::ifstream &f, const char *expected)
+{
+    std::string token;
+    if (!(f >> token))
+        return false;
+
+    // Token should be "expected:"
+    std::string want = std::string(expected) + ":";
+    return token == want;
+}
+
+// Read a labeled mpf field: "label: exp digits"
+static bool
+ReadLabeledMpfField(std::ifstream &f, const char *label, mp_exp_t &exp, std::string &digits)
+{
+    if (!ReadLabel(f, label))
+        return false;
+    f >> exp >> digits;
+    return f.good() || f.eof();
+}
+
+// Reads checkpoint with label verification on every field.
 // Returns true if the checkpoint matches expected_period/expected_prec.
-// When inner.innerIteration > 0, z/dzdc/d2 are populated from the checkpoint.
 static bool
 TryReadNRCheckpointWithInner(mpf_complex &c,
                              uint64_t expected_period,
@@ -362,55 +540,87 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
     mp_bitcnt_t file_prec;
     int file_scaleExp2;
     uint32_t file_iter;
-    mp_exp_t exp_re, exp_im;
-    std::string digits_re, digits_im;
 
-    f >> file_period >> file_prec >> file_scaleExp2 >> file_iter >> exp_re >> digits_re >> exp_im >>
-        digits_im;
+    if (!ReadLabel(f, "period"))
+        return false;
+    f >> file_period;
+    if (!ReadLabel(f, "coord_prec"))
+        return false;
+    f >> file_prec;
+    if (!ReadLabel(f, "scaleExp2"))
+        return false;
+    f >> file_scaleExp2;
+    if (!ReadLabel(f, "iteration"))
+        return false;
+    f >> file_iter;
 
     if (!f || file_period != expected_period || file_prec != expected_prec) {
         return false;
     }
 
+    mp_exp_t exp_re, exp_im;
+    std::string digits_re, digits_im;
+    if (!ReadLabeledMpfField(f, "c_re", exp_re, digits_re))
+        return false;
+    if (!ReadLabeledMpfField(f, "c_im", exp_im, digits_im))
+        return false;
+
     mpf_set_str(c.re, ReconstructMpfString(digits_re, exp_re).c_str(), 10);
     mpf_set_str(c.im, ReconstructMpfString(digits_im, exp_im).c_str(), 10);
     out_iteration = file_iter;
 
-    // Skip candidate, radius, intrinsicRadius, numIterationsAtFind fields
+    // Skip candidate, radius, intrinsicRadius
     mp_exp_t skip_exp;
     std::string skip_str;
-    f >> skip_exp >> skip_str >> skip_exp >> skip_str // cand_re, cand_im
-        >> skip_exp >> skip_str                       // sqrRadius
-        >> skip_exp >> skip_str;                      // intrinsicRadius
+    if (!ReadLabeledMpfField(f, "cand_re", skip_exp, skip_str))
+        return false;
+    if (!ReadLabeledMpfField(f, "cand_im", skip_exp, skip_str))
+        return false;
+    if (!ReadLabeledMpfField(f, "sqrRadius", skip_exp, skip_str))
+        return false;
+    if (!ReadLabeledMpfField(f, "intrinsicRadius", skip_exp, skip_str))
+        return false;
+
     uint64_t skip_numIters;
+    if (!ReadLabel(f, "numIterationsAtFind"))
+        return false;
     f >> skip_numIters;
 
-    // Read inner-loop fields (optional — absent in old checkpoints)
     inner = {};
     uint64_t innerIter = 0;
-    if (!(f >> innerIter)) {
-        return true;
+    if (!ReadLabel(f, "innerIteration"))
+        return false;
+    f >> innerIter;
+
+    if (!ReadLabel(f, "deriv_prec"))
+        return false;
+    f >> inner.deriv_prec;
+
+    mp_exp_t z_exp_re, z_exp_im, dz_exp_re, dz_exp_im;
+    std::string z_d_re, z_d_im, dz_d_re, dz_d_im;
+    if (!ReadLabeledMpfField(f, "z_re", z_exp_re, z_d_re))
+        return false;
+    if (!ReadLabeledMpfField(f, "z_im", z_exp_im, z_d_im))
+        return false;
+    if (!ReadLabeledMpfField(f, "dzdc_re", dz_exp_re, dz_d_re))
+        return false;
+    if (!ReadLabeledMpfField(f, "dzdc_im", dz_exp_im, dz_d_im))
+        return false;
+
+    int64_t d2r_exp, d2i_exp;
+    double d2r_mant, d2i_mant;
+    if (!ReadLabel(f, "d2r"))
+        return false;
+    f >> d2r_exp >> d2r_mant;
+    if (!ReadLabel(f, "d2i"))
+        return false;
+    f >> d2i_exp >> d2i_mant;
+
+    if (!f) {
+        return false;
     }
 
     inner.innerIteration = innerIter;
-    if (innerIter == 0) {
-        return true;
-    }
-
-    // Inner-loop state must be fully present if innerIteration > 0
-    mp_exp_t z_exp_re, z_exp_im, dz_exp_re, dz_exp_im;
-    std::string z_d_re, z_d_im, dz_d_re, dz_d_im;
-    int64_t d2r_exp, d2i_exp;
-    double d2r_mant, d2i_mant;
-
-    f >> inner.deriv_prec >> z_exp_re >> z_d_re >> z_exp_im >> z_d_im >> dz_exp_re >> dz_d_re >>
-        dz_exp_im >> dz_d_im >> d2r_exp >> d2r_mant >> d2i_exp >> d2i_mant;
-
-    if (!f) {
-        std::cerr << "Corrupt inner-loop checkpoint — ignoring inner state\n";
-        inner.innerIteration = 0;
-        return true;
-    }
 
     mpf_set_str(out_z.re, ReconstructMpfString(z_d_re, z_exp_re).c_str(), 10);
     mpf_set_str(out_z.im, ReconstructMpfString(z_d_im, z_exp_im).c_str(), 10);
@@ -430,12 +640,41 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
     if (!f)
         return false;
 
+    if (!ReadLabel(f, "period"))
+        return false;
+    f >> out.period;
+    if (!ReadLabel(f, "coord_prec"))
+        return false;
+    f >> out.coord_prec;
+    if (!ReadLabel(f, "scaleExp2"))
+        return false;
+    f >> out.scaleExp2;
+    if (!ReadLabel(f, "iteration"))
+        return false;
+    f >> out.iteration;
+
+    if (!f)
+        return false;
+
     mp_exp_t exp_cre, exp_cim, exp_candre, exp_candim, exp_rad, exp_ir;
     std::string d_cre, d_cim, d_candre, d_candim, d_rad, d_ir;
 
-    f >> out.period >> out.coord_prec >> out.scaleExp2 >> out.iteration >> exp_cre >> d_cre >> exp_cim >>
-        d_cim >> exp_candre >> d_candre >> exp_candim >> d_candim >> exp_rad >> d_rad >> exp_ir >>
-        d_ir >> out.numIterationsAtFind;
+    if (!ReadLabeledMpfField(f, "c_re", exp_cre, d_cre))
+        return false;
+    if (!ReadLabeledMpfField(f, "c_im", exp_cim, d_cim))
+        return false;
+    if (!ReadLabeledMpfField(f, "cand_re", exp_candre, d_candre))
+        return false;
+    if (!ReadLabeledMpfField(f, "cand_im", exp_candim, d_candim))
+        return false;
+    if (!ReadLabeledMpfField(f, "sqrRadius", exp_rad, d_rad))
+        return false;
+    if (!ReadLabeledMpfField(f, "intrinsicRadius", exp_ir, d_ir))
+        return false;
+
+    if (!ReadLabel(f, "numIterationsAtFind"))
+        return false;
+    f >> out.numIterationsAtFind;
 
     if (!f)
         return false;
@@ -597,6 +836,15 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     // Imagina stop threshold: Precision*2 in exponent space
     const int targetExp = int(coord_prec) * 2;
 
+    // Async checkpoint writer — mpf_get_str + file I/O happens on a background thread.
+    CheckpointWriter checkpointWriter;
+
+    // Context struct passed to onProgress callback via void* context pointer.
+    struct ProgressContext {
+        NRCheckpointParams *params;
+        CheckpointWriter *writer;
+    };
+
     uint32_t startIter = 0;
     uint64_t innerStartIter = 0;
 
@@ -629,6 +877,36 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         // Full forward eval at current c
         uint64_t innerStart = (it == startIter) ? innerStartIter : 0;
         uint64_t completed = 0;
+
+        // Checkpoint context for progress callbacks.
+        NRCheckpointParams periodicParams{c_coord.re,
+                                          c_coord.im,
+                                          c0_coord.re,
+                                          c0_coord.im,
+                                          sqrRadius_coord,
+                                          intrinsicRadius_mpf,
+                                          period,
+                                          coord_prec,
+                                          it,
+                                          scaleExp2_for_deriv_choice,
+                                          numIterationsAtFind,
+                                          0,
+                                          z_coord.re,
+                                          z_coord.im,
+                                          dzdc_deriv.re,
+                                          dzdc_deriv.im,
+                                          deriv_prec,
+                                          d2r_hdr,
+                                          d2i_hdr};
+
+        ProgressContext progressCtx{&periodicParams, &checkpointWriter};
+
+        auto onProgress = [](uint64_t itersCompleted, void *ctx) {
+            auto *pctx = static_cast<ProgressContext *>(ctx);
+            pctx->writer->TriggerWrite(
+                std::make_unique<CheckpointSnapshot>(*pctx->params, itersCompleted));
+        };
+
         if (useGpuForInnerLoop) {
             DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
                 completed = HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
@@ -643,7 +921,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                     d2i_hdr,
                     HpShark::LaunchParams{0, 0},
                     innerStart,
-                    AbortMonitor::GetStopCalculatingGlobal);
+                    AbortMonitor::GetStopCalculatingGlobal,
+                    onProgress,
+                    &progressCtx);
             });
         } else {
             completed = EvaluateCriticalOrbitAndDerivsMT(c_coord,
@@ -654,7 +934,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                                                          d2i_hdr,
                                                          deriv_prec,
                                                          coord_prec,
-                                                         innerStart);
+                                                         innerStart,
+                                                         onProgress,
+                                                         &progressCtx);
         }
 
         if (completed < period) {

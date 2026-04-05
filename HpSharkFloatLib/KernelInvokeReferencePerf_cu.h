@@ -2,6 +2,8 @@
 #include "KernelInvokeInternal.h"
 #include "Vectors.h"
 
+#include <chrono>
+#include <iomanip>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -399,7 +401,10 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
                                    HDRFloat<double> &outD2Imag,
                                    const HpShark::LaunchParams &externalLaunchParams,
                                    uint64_t startIter,
-                                   bool (*shouldAbort)())
+                                   bool (*shouldAbort)(),
+                                   void (*onProgress)(uint64_t, void *),
+                                   void *progressContext,
+                                   uint64_t progressInterval)
 {
     if constexpr (!SharkFloatParams::EnableNewtonRaphson) {
         return 0;
@@ -477,16 +482,43 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
     // Launch kernel in chunks for responsive abort.
     // NR params have EnablePeriodicity=false, so the kernel always runs the
     // full requested chunk and never writes OutputIterCount. Use chunkIters directly.
-    constexpr uint64_t NRChunkSize = 16384;
+    constexpr uint64_t NRChunkSize = 131072;
     uint64_t remaining = period - startIter;
     uint64_t done = startIter;
+
+    auto startTime = std::chrono::steady_clock::now();
+
     while (remaining > 0) {
         const uint64_t chunkIters = std::min(NRChunkSize, remaining);
         InvokeHpSharkReferenceKernel<SharkFloatParams>(launchParams, *combo, chunkIters);
         done += chunkIters;
         remaining -= chunkIters;
 
-        std::cout << "    GPU inner: " << done << " / " << period << std::endl;
+        // Convert results to mpf so caller can checkpoint
+        combo->Multiply.A.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZReal[0]));
+        combo->Multiply.B.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZImag[0]));
+        combo->Multiply.DzdcReal.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outDzdcReal[0]));
+        combo->Multiply.DzdcImag.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outDzdcImag[0]));
+        outD2Real = HDRFloat<double>(combo->d2Real);
+        outD2Imag = HDRFloat<double>(combo->d2Imag);
+
+        // Timing + ETA
+        auto now = std::chrono::steady_clock::now();
+        double elapsedSec = std::chrono::duration<double>(now - startTime).count();
+        double itersPerSec = (elapsedSec > 0) ? (done - startIter) / elapsedSec : 0;
+        double etaSec = (itersPerSec > 0) ? remaining / itersPerSec : 0;
+        double etaHours = etaSec / 3600.0;
+
+        std::cout << "    GPU inner: " << done << " / " << period;
+        if (itersPerSec > 0) {
+            std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
+                      << std::setprecision(1) << etaHours << " hrs)";
+        }
+        std::cout << std::endl;
+
+        if (onProgress) {
+            onProgress(done, progressContext);
+        }
 
         if (shouldAbort && shouldAbort()) {
             break;
@@ -545,7 +577,10 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
         HDRFloat<double> &,                                                                             \
         const HpShark::LaunchParams &,                                                                  \
         uint64_t,                                                                                       \
-        bool (*)());
+        bool (*)(),                                                                                     \
+        void (*)(uint64_t, void *),                                                                     \
+        void *,                                                                                         \
+        uint64_t);
 
 // #define ExplicitlyInstantiate(SharkFloatParams)
 // ExplicitlyInstantiateHpSharkReference(SharkFloatParams)

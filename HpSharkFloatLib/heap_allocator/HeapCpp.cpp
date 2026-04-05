@@ -440,7 +440,34 @@ HeapCpp::Allocate(size_t user_size)
         found->next = nullptr;
         found->prev = nullptr;
 
+        // Head guard: detect backward scribbles from user data
+        found->head_guard = node_t::HeadGuard;
+
+        // Save generation for use-after-free detection
+        found->alloc_gen = found->in_bin_gen;
+
+        // Metadata checksum (computed after all fields are set)
+        found->checksum = found->ComputeChecksum();
+
         char *user = (char *)found + sizeof(node_t);
+
+        // Poison spot-check: if this block was previously freed and poisoned,
+        // the first 8 bytes of payload should still be 0xCD.
+        // If not, something wrote to freed memory.
+        if (found->poisoned == node_t::WasPoisoned) {
+            auto *probe = reinterpret_cast<const uint64_t *>(user);
+            if (*probe != 0xCDCDCDCDCDCDCDCDull) {
+                char buf[256];
+                sprintf_s(buf,
+                          "Write-after-free: expected 0xCDCDCDCDCDCDCDCD, got 0x%llX at %p (size=%llu)",
+                          *probe,
+                          user,
+                          static_cast<unsigned long long>(found->actual_size));
+                HeapPanic(buf);
+            }
+        }
+        found->poisoned = node_t::NotPoisoned;
+
         SetMagicAtEnd(user, found->actual_size);
         return user;
     };
@@ -544,18 +571,35 @@ HeapCpp::Deallocate(void *ptr)
         HeapPanic("Invalid node magic");
     }
 
+    // Verify metadata checksum (catches wild-pointer scribbles on header)
+    if (head->checksum != head->ComputeChecksum()) {
+        HeapPanic("Node metadata checksum mismatch (header corruption)");
+    }
+
+    // Verify head guard (catches backward scribbles from user data)
+    if (head->head_guard != node_t::HeadGuard) {
+        HeapPanic("Head guard corrupted (buffer underflow)");
+    }
+
+    // Verify generation counter (catches use-after-free)
+    if (head->alloc_gen != head->in_bin_gen) {
+        HeapPanic("Use-after-free detected (generation mismatch)");
+    }
+
     Stats.BytesFreed += head->actual_size;
     Stats.Frees++;
 
     VerifyAndClearMagicAtEnd(ptr, head->actual_size);
 
     // Poison user data to catch use-after-free
-    std::memset(ptr, 0xCD, head->user_size);
+    std::memset(ptr, 0xCD, head->actual_size);
 
     // Identify neighbors in the heap layout (SAFELY)
     footer_t *head_foot = GetFooter(head);
     node_t *prev = safe_prev_node(Heap, head);
     node_t *next = safe_next_node(Heap, head, head_foot);
+
+    bool coalesced = false;
 
     // Coalesce with prev if free
     if (prev && prev->hole) {
@@ -571,6 +615,7 @@ HeapCpp::Deallocate(void *ptr)
 
         // Update head_foot because head changed
         head_foot = GetFooter(head);
+        coalesced = true;
     }
 
     // Coalesce with next if free
@@ -590,12 +635,19 @@ HeapCpp::Deallocate(void *ptr)
         next->hole = 0;
 
         CreateFooter(head);
+        coalesced = true;
     }
 
     // Now (coalesced) head becomes a free unlinked node; init metadata BEFORE add_node.
     const uint64_t final_payload_sz = head->actual_size;
     head->init_free_node_unlinked(final_payload_sz);
     CreateFooter(head);
+
+    // Mark poisoned only if block boundaries didn't change (no coalescing).
+    // Coalesced blocks include regions that weren't poisoned.
+    if (!coalesced) {
+        head->poisoned = node_t::WasPoisoned;
+    }
 
     const auto in_bin = GetBinIndex(head->actual_size);
     add_node(Heap.bins[in_bin], head, in_bin);

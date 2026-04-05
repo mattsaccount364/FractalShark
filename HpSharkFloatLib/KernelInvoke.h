@@ -94,6 +94,7 @@ void InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
 // When startIter > 0, reads initial z/dzdc/d2 from the out parameters (caller
 // must populate them from checkpoint). Runs period - startIter iterations in chunks
 // with host-side abort check between chunks.
+// onProgress is called every progressInterval chunks with (itersCompleted, progressContext).
 // Returns total iterations completed (== period if finished, < period if aborted).
 template <class SharkFloatParams>
 uint64_t EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
@@ -107,6 +108,9 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
                                             HDRFloat<double> &outD2Imag,
                                             const HpShark::LaunchParams &externalLaunchParams = {0, 0},
                                             uint64_t startIter = 0,
-                                            bool (*shouldAbort)() = nullptr);
+                                            bool (*shouldAbort)() = nullptr,
+                                            void (*onProgress)(uint64_t, void *) = nullptr,
+                                            void *progressContext = nullptr,
+                                            uint64_t progressInterval = 64);
 
 } // namespace HpShark

@@ -83,6 +83,7 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="TestBLA.cpp" />
+    <ClCompile Include="TestCudaDblflt.cpp" />
     <ClCompile Include="TestFloatComplex.cpp" />
     <ClCompile Include="TestHDRFloat.cpp" />
     <ClCompile Include="TestHDRFloatComplex.cpp" />

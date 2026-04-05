@@ -59,9 +59,10 @@ AbortMonitor::ResetStopCalculatingGlobal()
 }
 
 bool
-AbortMonitor::IsDownControl()
+AbortMonitor::IsDownControlAlt()
 {
-    return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000);
+    return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000) &&
+           ((GetAsyncKeyState(VK_MENU) & 0x8000) == 0x8000);
 }
 
 void
@@ -91,11 +92,11 @@ AbortMonitor::Run()
             }
         }
 
-        // Ctrl: debounced — must hold for ~3 seconds
-        if (IsDownControl()) {
+        // Ctrl+Alt: debounced — must hold for ~3 seconds
+        if (IsDownControlAlt()) {
             ctrlHeldCount++;
             if (ctrlHeldCount >= CtrlHoldThreshold) {
-                std::wcerr << L"AbortMonitor: stop signal set (Ctrl held 3s)" << std::endl;
+                std::wcerr << L"AbortMonitor: stop signal set (Ctrl+Alt held 3s)" << std::endl;
                 m_StopCalculating.store(true, std::memory_order_relaxed);
             }
         } else {

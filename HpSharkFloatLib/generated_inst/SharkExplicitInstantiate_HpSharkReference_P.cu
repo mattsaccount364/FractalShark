@@ -30,7 +30,10 @@
     HDRFloat<double> &, HDRFloat<double> &, \
     const HpShark::LaunchParams &, \
     uint64_t, \
-    bool (*)()); \
+    bool (*)(), \
+    void (*)(uint64_t, void *), \
+    void *, \
+    uint64_t); \
     /* end */
 
 namespace HpShark {
@@ -61,3 +64,4 @@ ExplicitlyInstantiate(SharkParamsNP12);
 } // namespace HpShark
 
 #undef ExplicitlyInstantiate
+

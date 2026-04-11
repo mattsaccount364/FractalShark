@@ -26,7 +26,9 @@
 #include <cstdint>
 #include <fstream>
 #include <future>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -304,6 +306,7 @@ struct NRCheckpointParams {
     mpf_srcptr dzdc_re, dzdc_im;
     mp_bitcnt_t deriv_prec;
     HDRFloat<double> d2r, d2i;
+    DiagnosticState diag;
 };
 
 static void
@@ -339,14 +342,37 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
     WriteMpfField(f, "dzdc_re", p.dzdc_re, ndigits);
     WriteMpfField(f, "dzdc_im", p.dzdc_im, ndigits);
 
-    f << "d2r: " << p.d2r.getExp() << " " << p.d2r.getMantissa() << "\n"
-      << "d2i: " << p.d2i.getExp() << " " << p.d2i.getMantissa() << "\n";
+    f << "d2r: " << p.d2r.getExp() << " " << std::setprecision(std::numeric_limits<double>::max_digits10)
+      << p.d2r.getMantissa() << "\n"
+      << "d2i: " << p.d2i.getExp() << " " << std::setprecision(std::numeric_limits<double>::max_digits10)
+      << p.d2i.getMantissa() << "\n";
+
+    // Convergence diagnostics (informational, not needed for resume)
+    f << "z_mag2: " << std::setprecision(std::numeric_limits<double>::max_digits10) << p.diag.z_mag2
+      << "\n"
+      << "inner_pct: " << std::setprecision(6) << p.diag.inner_pct << "\n"
+      << "targetExp: " << p.diag.targetExp << "\n"
+      << "diag_valid: " << (p.diag.valid ? 1 : 0) << "\n";
+
+    if (p.diag.valid) {
+        f << "rho2: " << p.diag.rho2.getExp() << " "
+          << std::setprecision(std::numeric_limits<double>::max_digits10) << p.diag.rho2.getMantissa()
+          << "\n"
+          << "err: " << p.diag.err.getExp() << " "
+          << std::setprecision(std::numeric_limits<double>::max_digits10) << p.diag.err.getMantissa()
+          << "\n"
+          << "step_norm: " << p.diag.step_norm.getExp() << " "
+          << std::setprecision(std::numeric_limits<double>::max_digits10)
+          << p.diag.step_norm.getMantissa() << "\n"
+          << "wantHalley: " << (p.diag.wantHalley ? 1 : 0) << "\n"
+          << "normalized_bits: " << p.diag.normalized_bits << "\n"
+          << "est_remaining: " << p.diag.est_remaining << "\n";
+    }
 
     f.close();
 
-    // Atomic rename: delete old, rename tmp → real.
-    std::remove(NRCheckpointFilename);
-    std::rename(NRCheckpointTmpFilename, NRCheckpointFilename);
+    // Atomic replace: rename tmp over existing file in one step.
+    MoveFileExA(NRCheckpointTmpFilename, NRCheckpointFilename, MOVEFILE_REPLACE_EXISTING);
 }
 
 // ------------------------------------------------------------
@@ -362,6 +388,7 @@ struct CheckpointSnapshot {
     uint32_t iteration;
     int scaleExp2;
     HDRFloat<double> d2r, d2i;
+    DiagnosticState diag;
 
     CheckpointSnapshot(const NRCheckpointParams &src, uint64_t iters)
     {
@@ -393,6 +420,7 @@ struct CheckpointSnapshot {
         scaleExp2 = src.scaleExp2;
         d2r = src.d2r;
         d2i = src.d2i;
+        diag = src.diag;
     }
 
     ~CheckpointSnapshot()
@@ -411,25 +439,10 @@ struct CheckpointSnapshot {
     NRCheckpointParams
     ToParams() const
     {
-        return {c.re,
-                c.im,
-                c0.re,
-                c0.im,
-                sqrRadius,
-                intrinsicRadius,
-                period,
-                coord_prec,
-                iteration,
-                scaleExp2,
-                numIterationsAtFind,
-                innerIteration,
-                z.re,
-                z.im,
-                dzdc.re,
-                dzdc.im,
-                deriv_prec,
-                d2r,
-                d2i};
+        return {c.re,   c.im,       c0.re,     c0.im,     sqrRadius,           intrinsicRadius,
+                period, coord_prec, iteration, scaleExp2, numIterationsAtFind, innerIteration,
+                z.re,   z.im,       dzdc.re,   dzdc.im,   deriv_prec,          d2r,
+                d2i,    diag};
     }
 };
 
@@ -559,7 +572,8 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
                              mpf_complex &out_z,
                              mpf_complex &out_dzdc,
                              HDRFloat<double> &out_d2r,
-                             HDRFloat<double> &out_d2i)
+                             HDRFloat<double> &out_d2i,
+                             DiagnosticState &out_diag)
 {
     std::ifstream f(NRCheckpointFilename);
     if (!f)
@@ -658,6 +672,48 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
     out_d2r = HDRFloat<double>(static_cast<int32_t>(d2r_exp), d2r_mant);
     out_d2i = HDRFloat<double>(static_cast<int32_t>(d2i_exp), d2i_mant);
 
+    // Best-effort read of diagnostic fields (not required for resume).
+    // Checkpoints without these fields still load successfully.
+    out_diag = {};
+    auto readDbl = [&](const char *label, double &val) {
+        return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
+    };
+    auto readInt = [&](const char *label, int &val) {
+        return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
+    };
+    auto readHdr = [&](const char *label, HDRFloat<double> &val) {
+        int64_t exp;
+        double mant;
+        if (!ReadLabel(f, label) || !(f >> exp >> mant) || (!f.good() && !f.eof()))
+            return false;
+        val = HDRFloat<double>(static_cast<int32_t>(exp), mant);
+        return true;
+    };
+
+    if (!readDbl("z_mag2", out_diag.z_mag2))
+        return true;
+    if (!readDbl("inner_pct", out_diag.inner_pct))
+        return true;
+    if (!readInt("targetExp", out_diag.targetExp))
+        return true;
+
+    int validInt = 0;
+    if (!readInt("diag_valid", validInt))
+        return true;
+    out_diag.valid = (validInt != 0);
+
+    if (out_diag.valid) {
+        int wantHalleyInt = 0;
+        bool ok = readHdr("rho2", out_diag.rho2) && readHdr("err", out_diag.err) &&
+                  readHdr("step_norm", out_diag.step_norm) && readInt("wantHalley", wantHalleyInt) &&
+                  readInt("normalized_bits", out_diag.normalized_bits) &&
+                  readInt("est_remaining", out_diag.est_remaining);
+        if (!ok) {
+            out_diag.valid = false;
+        }
+        out_diag.wantHalley = (wantHalleyInt != 0);
+    }
+
     return true;
 }
 
@@ -722,6 +778,75 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
     out.cand_im = toHP(d_candim, exp_candim);
     out.sqrRadius = toHP(d_rad, exp_rad);
     out.intrinsicRadius = toHP(d_ir, exp_ir);
+
+    // Best-effort: skip innerIteration through d2i, then read diagnostics.
+    out.diag = {};
+    auto skipLabel = [&](const char *label) { return ReadLabel(f, label); };
+
+    // Skip innerIteration, deriv_prec, z, dzdc, d2r, d2i
+    uint64_t skipU64;
+    mp_bitcnt_t skipBitcnt;
+    mp_exp_t skipExp;
+    std::string skipStr;
+    int64_t skipI64;
+    double skipDbl;
+
+    if (!skipLabel("innerIteration") || !(f >> skipU64))
+        return true;
+    if (!skipLabel("deriv_prec") || !(f >> skipBitcnt))
+        return true;
+    if (!ReadLabeledMpfField(f, "z_re", skipExp, skipStr))
+        return true;
+    if (!ReadLabeledMpfField(f, "z_im", skipExp, skipStr))
+        return true;
+    if (!ReadLabeledMpfField(f, "dzdc_re", skipExp, skipStr))
+        return true;
+    if (!ReadLabeledMpfField(f, "dzdc_im", skipExp, skipStr))
+        return true;
+    if (!skipLabel("d2r") || !(f >> skipI64 >> skipDbl))
+        return true;
+    if (!skipLabel("d2i") || !(f >> skipI64 >> skipDbl))
+        return true;
+
+    // Read diagnostic fields (new format: z_mag2, inner_pct, targetExp, diag_valid, ...)
+    auto readDbl = [&](const char *label, double &val) {
+        return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
+    };
+    auto readInt = [&](const char *label, int &val) {
+        return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
+    };
+    auto readHdr = [&](const char *label, HDRFloat<double> &val) {
+        int64_t exp;
+        double mant;
+        if (!ReadLabel(f, label) || !(f >> exp >> mant) || (!f.good() && !f.eof()))
+            return false;
+        val = HDRFloat<double>(static_cast<int32_t>(exp), mant);
+        return true;
+    };
+
+    if (!readDbl("z_mag2", out.diag.z_mag2))
+        return true;
+    if (!readDbl("inner_pct", out.diag.inner_pct))
+        return true;
+    if (!readInt("targetExp", out.diag.targetExp))
+        return true;
+
+    int validInt = 0;
+    if (!readInt("diag_valid", validInt))
+        return true;
+    out.diag.valid = (validInt != 0);
+
+    if (out.diag.valid) {
+        int wantHalleyInt = 0;
+        bool ok = readHdr("rho2", out.diag.rho2) && readHdr("err", out.diag.err) &&
+                  readHdr("step_norm", out.diag.step_norm) && readInt("wantHalley", wantHalleyInt) &&
+                  readInt("normalized_bits", out.diag.normalized_bits) &&
+                  readInt("est_remaining", out.diag.est_remaining);
+        if (!ok) {
+            out.diag.valid = false;
+        }
+        out.diag.wantHalley = (wantHalleyInt != 0);
+    }
 
     return true;
 }
@@ -865,6 +990,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     // Imagina stop threshold: Precision*2 in exponent space
     const int targetExp = int(coord_prec) * 2;
 
+    // Convergence diagnostics — carried forward across checkpoints.
+    DiagnosticState diagState;
+
     // Async checkpoint writer — mpf_get_str + file I/O happens on a background thread.
     CheckpointWriter checkpointWriter;
 
@@ -872,6 +1000,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     struct ProgressContext {
         NRCheckpointParams *params;
         CheckpointWriter *writer;
+        DiagnosticState *diagState; // outer diagState for live updates
     };
 
     uint32_t startIter = 0;
@@ -881,8 +1010,16 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     {
         uint32_t savedIter = 0;
         InnerLoopCheckpointData inner{};
-        if (TryReadNRCheckpointWithInner(
-                c_coord, period, coord_prec, savedIter, inner, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr)) {
+        if (TryReadNRCheckpointWithInner(c_coord,
+                                         period,
+                                         coord_prec,
+                                         savedIter,
+                                         inner,
+                                         z_coord,
+                                         dzdc_deriv,
+                                         d2r_hdr,
+                                         d2i_hdr,
+                                         diagState)) {
             if (inner.innerIteration > 0) {
                 // Resuming mid-inner-loop: outer loop at savedIter, inner at innerIteration
                 std::cout << "RefinePeriodicPoint: resuming from checkpoint iter " << savedIter
@@ -898,6 +1035,10 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
     }
 
+    // targetExp is authoritative — always restore after checkpoint read
+    // (the reader zeros diagState, which would lose a pre-set targetExp).
+    diagState.targetExp = targetExp;
+
     uint32_t it = startIter;
     for (; it < max_nr_iters; ++it) {
 
@@ -908,30 +1049,31 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         uint64_t completed = 0;
 
         // Checkpoint context for progress callbacks.
-        NRCheckpointParams periodicParams{c_coord.re,
-                                          c_coord.im,
-                                          c0_coord.re,
-                                          c0_coord.im,
-                                          sqrRadius_coord,
-                                          intrinsicRadius_mpf,
-                                          period,
-                                          coord_prec,
-                                          it,
-                                          scaleExp2_for_deriv_choice,
-                                          numIterationsAtFind,
-                                          0,
-                                          z_coord.re,
-                                          z_coord.im,
-                                          dzdc_deriv.re,
-                                          dzdc_deriv.im,
-                                          deriv_prec,
-                                          d2r_hdr,
-                                          d2i_hdr};
+        NRCheckpointParams periodicParams{
+            c_coord.re,          c_coord.im, c0_coord.re, c0_coord.im, sqrRadius_coord,
+            intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
+            numIterationsAtFind, 0,          z_coord.re,  z_coord.im,  dzdc_deriv.re,
+            dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState};
 
-        ProgressContext progressCtx{&periodicParams, &checkpointWriter};
+        ProgressContext progressCtx{&periodicParams, &checkpointWriter, &diagState};
 
         auto onProgress = [](uint64_t itersCompleted, void *ctx) {
             auto *pctx = static_cast<ProgressContext *>(ctx);
+
+            // Compute inner-loop diagnostics from live z values.
+            const double zr = mpf_get_d(pctx->params->z_re);
+            const double zi = mpf_get_d(pctx->params->z_im);
+            const double z_mag2 = zr * zr + zi * zi;
+            const double inner_pct = (pctx->params->period > 0)
+                                         ? static_cast<double>(itersCompleted) /
+                                               static_cast<double>(pctx->params->period) * 100.0
+                                         : 0.0;
+
+            pctx->diagState->z_mag2 = z_mag2;
+            pctx->diagState->inner_pct = inner_pct;
+            pctx->params->diag.z_mag2 = z_mag2;
+            pctx->params->diag.inner_pct = inner_pct;
+
             pctx->writer->TriggerWrite(
                 std::make_unique<CheckpointSnapshot>(*pctx->params, itersCompleted));
         };
@@ -981,25 +1123,19 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
 
         if (completed < period) {
-            checkpointWriter.WriteAndWait({c_coord.re,
-                                           c_coord.im,
-                                           c0_coord.re,
-                                           c0_coord.im,
-                                           sqrRadius_coord,
-                                           intrinsicRadius_mpf,
-                                           period,
-                                           coord_prec,
-                                           it,
-                                           scaleExp2_for_deriv_choice,
-                                           numIterationsAtFind,
-                                           completed,
-                                           z_coord.re,
-                                           z_coord.im,
-                                           dzdc_deriv.re,
-                                           dzdc_deriv.im,
-                                           deriv_prec,
-                                           d2r_hdr,
-                                           d2i_hdr});
+            // Compute inner-loop diagnostics for the abort checkpoint.
+            const double zr = mpf_get_d(z_coord.re);
+            const double zi = mpf_get_d(z_coord.im);
+            diagState.z_mag2 = zr * zr + zi * zi;
+            diagState.inner_pct =
+                (period > 0) ? static_cast<double>(completed) / static_cast<double>(period) * 100.0
+                             : 0.0;
+
+            checkpointWriter.WriteAndWait(
+                {c_coord.re,          c_coord.im, c0_coord.re, c0_coord.im, sqrRadius_coord,
+                 intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
+                 numIterationsAtFind, completed,  z_coord.re,  z_coord.im,  dzdc_deriv.re,
+                 dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState});
             std::cout << "RefinePeriodicPoint: aborted at NR iter " << it << " innerIter " << completed
                       << " (checkpoint saved)\n";
             break;
@@ -1096,34 +1232,10 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         mpf_sub(c_coord.re, c_coord.re, step_coord.re);
         mpf_sub(c_coord.im, c_coord.im, step_coord.im);
 
-        // Write checkpoint after each step
-        checkpointWriter.TriggerWrite(
-            std::make_unique<CheckpointSnapshot>(NRCheckpointParams{c_coord.re,
-                                                                    c_coord.im,
-                                                                    c0_coord.re,
-                                                                    c0_coord.im,
-                                                                    sqrRadius_coord,
-                                                                    intrinsicRadius_mpf,
-                                                                    period,
-                                                                    coord_prec,
-                                                                    it,
-                                                                    scaleExp2_for_deriv_choice,
-                                                                    numIterationsAtFind,
-                                                                    0,
-                                                                    z_coord.re,
-                                                                    z_coord.im,
-                                                                    dzdc_deriv.re,
-                                                                    dzdc_deriv.im,
-                                                                    deriv_prec,
-                                                                    d2r_hdr,
-                                                                    d2i_hdr},
-                                                 0));
-
         // ------------------------------------------------------------
         // Imagina error estimate (HDRFloat)
         //   err = |step|^4 * |d2|^2 / |dzdc|^2
-        // Check convergence BEFORE abort so we don't waste a forward-eval
-        // on resume if this step already converged.
+        // Compute BEFORE checkpoint so diagnostics are populated.
         // ------------------------------------------------------------
         mpf_complex_norm(normStep, step_coord, t1_c, t2_c);
 
@@ -1135,6 +1247,49 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
         err_hdr = (normStep2_hdr * d2Norm_hdr) / dzdcNorm_hdr;
         HdrReduce(err_hdr);
+
+        // Update convergence diagnostics.
+        diagState.rho2 = rho2_hdr;
+        diagState.err = err_hdr;
+        diagState.step_norm = normStep_hdr;
+        diagState.wantHalley = wantHalley;
+        diagState.valid = true;
+
+        // Inner loop completed: z_mag2 from final z, inner_pct = 100%.
+        {
+            const double zr = mpf_get_d(z_coord.re);
+            const double zi = mpf_get_d(z_coord.im);
+            diagState.z_mag2 = zr * zr + zi * zi;
+        }
+        diagState.inner_pct = 100.0;
+
+        const int rho2Exp = (int)rho2_hdr.getExp();
+        diagState.normalized_bits = (rho2Exp < 0) ? (-rho2Exp / 2) : 0;
+
+        if (wantHalley && diagState.normalized_bits > 0 && targetExp > 0) {
+            // Estimate remaining Halley iterations via tripling model:
+            // each iteration triples normalized_bits; stop when bits reach target.
+            // Only valid under Halley (cubic convergence); Newton doubles instead.
+            const int targetBits = targetExp / 4;
+            int bits = diagState.normalized_bits;
+            int remaining = 0;
+            while (bits < targetBits && remaining < 100) {
+                bits *= 3;
+                ++remaining;
+            }
+            diagState.est_remaining = remaining;
+        } else {
+            diagState.est_remaining = -1;
+        }
+
+        // Write checkpoint after each step (with diagnostics).
+        checkpointWriter.TriggerWrite(std::make_unique<CheckpointSnapshot>(
+            NRCheckpointParams{
+                c_coord.re,          c_coord.im, c0_coord.re, c0_coord.im, sqrRadius_coord,
+                intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
+                numIterationsAtFind, 0,          z_coord.re,  z_coord.im,  dzdc_deriv.re,
+                dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState},
+            0));
 
         const int e = (int)err_hdr.getExp();
         if (-e >= targetExp) {
@@ -1195,27 +1350,13 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
 
         // Keep checkpoint file — user can resume or re-refine later.
-        checkpointWriter.TriggerWrite(
-            std::make_unique<CheckpointSnapshot>(NRCheckpointParams{c_coord.re,
-                                                                    c_coord.im,
-                                                                    c0_coord.re,
-                                                                    c0_coord.im,
-                                                                    sqrRadius_coord,
-                                                                    intrinsicRadius_mpf,
-                                                                    period,
-                                                                    coord_prec,
-                                                                    it,
-                                                                    scaleExp2_for_deriv_choice,
-                                                                    numIterationsAtFind,
-                                                                    0,
-                                                                    z_coord.re,
-                                                                    z_coord.im,
-                                                                    dzdc_deriv.re,
-                                                                    dzdc_deriv.im,
-                                                                    deriv_prec,
-                                                                    d2r_hdr,
-                                                                    d2i_hdr},
-                                                 0));
+        checkpointWriter.TriggerWrite(std::make_unique<CheckpointSnapshot>(
+            NRCheckpointParams{
+                c_coord.re,          c_coord.im, c0_coord.re, c0_coord.im, sqrRadius_coord,
+                intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
+                numIterationsAtFind, 0,          z_coord.re,  z_coord.im,  dzdc_deriv.re,
+                dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState},
+            0));
     }
 
     // ---------------- cleanup ----------------

@@ -262,6 +262,11 @@ EvaluateCriticalOrbitAndDerivsMT(const mpf_complex &c_coord,
             double etaHours = (itersPerSec > 0) ? (period - i) / itersPerSec / 3600.0 : 0;
 
             std::cout << "    CPU-MT inner: " << i << " / " << period;
+            {
+                const double zr = mpf_get_d(z_coord.re);
+                const double zi = mpf_get_d(z_coord.im);
+                std::cout << " |z|^2=" << std::setprecision(4) << (zr * zr + zi * zi);
+            }
             if (itersPerSec > 0) {
                 std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
                           << std::setprecision(1) << etaHours << " hrs)";
@@ -445,6 +450,11 @@ EvaluateCriticalOrbitAndDerivsST(const mpf_complex &c_coord,
             double etaHours = (itersPerSec > 0) ? (period - i) / itersPerSec / 3600.0 : 0;
 
             std::cout << "    CPU-ST inner: " << i << " / " << period;
+            {
+                const double zr = mpf_get_d(z_coord.re);
+                const double zi = mpf_get_d(z_coord.im);
+                std::cout << " |z|^2=" << std::setprecision(4) << (zr * zr + zi * zi);
+            }
             if (itersPerSec > 0) {
                 std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
                           << std::setprecision(1) << etaHours << " hrs)";

@@ -9,6 +9,19 @@
 #include "NRInnerLoopBackend.h"
 #include "PerturbationResultsHelpers.h"
 
+struct DiagnosticState {
+    HDRFloat<double> rho2{};
+    HDRFloat<double> err{};
+    HDRFloat<double> step_norm{};
+    int targetExp{};
+    int normalized_bits{};
+    int est_remaining{};
+    bool wantHalley{};
+    bool valid{};       // true after first completed NR step populates convergence fields
+    double z_mag2{};    // |z|² at last progress/abort — orbit bounded if ~1-2
+    double inner_pct{}; // innerIteration / period * 100
+};
+
 struct NRCheckpointData {
     uint64_t period;
     mp_bitcnt_t coord_prec;
@@ -19,6 +32,7 @@ struct NRCheckpointData {
     HighPrecision sqrRadius;
     HighPrecision intrinsicRadius;
     uint64_t numIterationsAtFind;
+    DiagnosticState diag;
 };
 
 bool ReadFullNRCheckpoint(NRCheckpointData &out);

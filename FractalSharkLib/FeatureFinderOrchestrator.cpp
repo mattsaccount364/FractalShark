@@ -716,6 +716,10 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
     fs->SetFound(ckpt.cand_re, ckpt.cand_im, (IterTypeFull)ckpt.period, residual2, ckpt.intrinsicRadius);
     fs->SetNumIterationsAtFind(ckpt.numIterationsAtFind);
 
+    // Save current iteration settings so we can restore them if NR fails/aborts.
+    const auto savedIterType = m_Fractal.GetIterType();
+    const auto savedNumIters = m_Fractal.GetNumIterations<IterTypeFull>();
+
     // Restore the iteration limit that was active when the feature was found.
     // Switch to 64-bit iteration type if the saved count exceeds 32-bit max.
     if (ckpt.numIterationsAtFind > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
@@ -730,5 +734,13 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
     // which will detect the checkpoint file and resume the NR iteration.
     auto *feature = m_FeatureSummaries.back().get();
     const HighPrecision z = feature->ComputeZoomFactor(m_Fractal.m_Ptz);
-    return ZoomToFoundFeature(*feature, &z);
+    const bool ok = ZoomToFoundFeature(*feature, &z);
+
+    if (!ok) {
+        // NR aborted or failed — restore iteration settings to pre-resume values.
+        m_Fractal.SetIterType(savedIterType);
+        m_Fractal.SetNumIterations<IterTypeFull>(savedNumIters);
+    }
+
+    return ok;
 }

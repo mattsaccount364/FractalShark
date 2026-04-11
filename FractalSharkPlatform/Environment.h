@@ -44,8 +44,8 @@ void FileMappingStaticInit();
 // desiredAccess: 0 = read+write, 1 = read-only
 // deleteOnClose: if true, file is deleted when handle is closed.
 // Returns OS error code (0 = success, platform-specific nonzero on failure).
-uint32_t FileOpen(FileMapping &fm, const wchar_t *path,
-                  int openMode, int desiredAccess, bool deleteOnClose);
+uint32_t FileOpen(
+    FileMapping &fm, const wchar_t *path, int openMode, int desiredAccess, bool deleteOnClose);
 
 // Get the size of the opened file in bytes.
 uint64_t FileGetSize(const FileMapping &fm);
@@ -60,8 +60,7 @@ void SectionCreate(FileMapping &fm, uint64_t initialSizeBytes, bool readOnly);
 // viewSizeBytes: in/out — requested size, may be adjusted.
 // readOnly: if true, mapping is read-only.
 // Returns pointer to mapped memory.
-void *SectionMapView(FileMapping &fm, void *desiredData,
-                     size_t &viewSizeBytes, bool readOnly);
+void *SectionMapView(FileMapping &fm, void *desiredData, size_t &viewSizeBytes, bool readOnly);
 
 // Extend an existing section to a new (larger) size.
 void SectionExtend(FileMapping &fm, uint64_t newSizeBytes);
@@ -148,9 +147,9 @@ uint64_t HighResFrequency();
 
 // Platform-agnostic virtual key codes.
 enum class Key : int {
-    Control = 0x11,  // VK_CONTROL
-    Alt = 0x12,      // VK_MENU
-    Escape = 0x1B,   // VK_ESCAPE
+    Control = 0x11, // VK_CONTROL
+    Alt = 0x12,     // VK_MENU
+    Escape = 0x1B,  // VK_ESCAPE
 };
 
 // Returns true if the specified key is currently held down.
@@ -174,6 +173,9 @@ void *SystemHeapAllocZeroed(size_t bytes);
 
 // Free to the system default heap.
 void SystemHeapFree(void *ptr);
+
+// Query the usable size of a system-heap allocation.  Returns 0 on failure.
+size_t SystemHeapSize(const void *ptr);
 
 // =========================================================================
 // OS error codes

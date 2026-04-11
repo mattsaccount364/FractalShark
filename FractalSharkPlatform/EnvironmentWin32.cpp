@@ -5,9 +5,9 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>
 #include <combaseapi.h>
 #include <psapi.h>
+#include <windows.h>
 
 #pragma comment(lib, "ntdll")
 
@@ -39,24 +39,23 @@ typedef struct {
 } OBJECT_ATTRIBUTES_e, *POBJECT_ATTRIBUTES_e;
 
 using NtCreateSectionFn = NTSTATUS_e(NTAPI *)(OUT PHANDLE SectionHandle,
-                                            IN ULONG DesiredAccess,
-                                            IN POBJECT_ATTRIBUTES_e ObjectAttributes OPTIONAL,
-                                            IN PLARGE_INTEGER MaximumSize OPTIONAL,
-                                            IN ULONG PageAttributes,
-                                            IN ULONG SectionAttributes,
-                                            IN HANDLE FileHandle OPTIONAL);
+                                              IN ULONG DesiredAccess,
+                                              IN POBJECT_ATTRIBUTES_e ObjectAttributes OPTIONAL,
+                                              IN PLARGE_INTEGER MaximumSize OPTIONAL,
+                                              IN ULONG PageAttributes,
+                                              IN ULONG SectionAttributes,
+                                              IN HANDLE FileHandle OPTIONAL);
 using NtMapViewOfSectionFn = NTSTATUS_e(NTAPI *)(HANDLE SectionHandle,
-                                               HANDLE ProcessHandle,
-                                               PVOID *BaseAddress,
-                                               ULONG_PTR ZeroBits,
-                                               SIZE_T CommitSize,
-                                               PLARGE_INTEGER SectionOffset,
-                                               PSIZE_T ViewSize,
-                                               DWORD InheritDisposition,
-                                               ULONG AllocationType,
-                                               ULONG Win32Protect);
-using NtExtendSectionFn = NTSTATUS_e(NTAPI *)(IN HANDLE SectionHandle,
-                                            IN PLARGE_INTEGER NewSectionSize);
+                                                 HANDLE ProcessHandle,
+                                                 PVOID *BaseAddress,
+                                                 ULONG_PTR ZeroBits,
+                                                 SIZE_T CommitSize,
+                                                 PLARGE_INTEGER SectionOffset,
+                                                 PSIZE_T ViewSize,
+                                                 DWORD InheritDisposition,
+                                                 ULONG AllocationType,
+                                                 ULONG Win32Protect);
+using NtExtendSectionFn = NTSTATUS_e(NTAPI *)(IN HANDLE SectionHandle, IN PLARGE_INTEGER NewSectionSize);
 
 static NtCreateSectionFn s_NtCreateSection;
 static NtMapViewOfSectionFn s_NtMapViewOfSection;
@@ -95,17 +94,15 @@ Environment::FileMappingStaticInit()
     if (!hNtDll) {
         return;
     }
-    s_NtCreateSection =
-        reinterpret_cast<NtCreateSectionFn>(::GetProcAddress(hNtDll, "NtCreateSection"));
+    s_NtCreateSection = reinterpret_cast<NtCreateSectionFn>(::GetProcAddress(hNtDll, "NtCreateSection"));
     s_NtMapViewOfSection =
         reinterpret_cast<NtMapViewOfSectionFn>(::GetProcAddress(hNtDll, "NtMapViewOfSection"));
-    s_NtExtendSection =
-        reinterpret_cast<NtExtendSectionFn>(::GetProcAddress(hNtDll, "NtExtendSection"));
+    s_NtExtendSection = reinterpret_cast<NtExtendSectionFn>(::GetProcAddress(hNtDll, "NtExtendSection"));
 }
 
 uint32_t
-Environment::FileOpen(FileMapping &fm, const wchar_t *path,
-                      int openMode, int desiredAccess, bool deleteOnClose)
+Environment::FileOpen(
+    FileMapping &fm, const wchar_t *path, int openMode, int desiredAccess, bool deleteOnClose)
 {
     DWORD access = (desiredAccess == 1) ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE);
     DWORD creation = (openMode == 1) ? OPEN_EXISTING : OPEN_ALWAYS;
@@ -146,14 +143,18 @@ Environment::SectionCreate(FileMapping &fm, uint64_t initialSizeBytes, bool read
     ULONG access = SECTION_ALL_ACCESS;
 
     HANDLE section = nullptr;
-    s_NtCreateSection(&section, access, nullptr, &maxSize, protection, attributes,
+    s_NtCreateSection(&section,
+                      access,
+                      nullptr,
+                      &maxSize,
+                      protection,
+                      attributes,
                       reinterpret_cast<HANDLE>(fm.fileHandle));
     fm.sectionHandle = reinterpret_cast<uintptr_t>(section);
 }
 
 void *
-Environment::SectionMapView(FileMapping &fm, void *desiredData,
-                            size_t &viewSizeBytes, bool readOnly)
+Environment::SectionMapView(FileMapping &fm, void *desiredData, size_t &viewSizeBytes, bool readOnly)
 {
     ULONG protection = readOnly ? PAGE_READONLY : PAGE_READWRITE;
     void *base = desiredData;
@@ -161,8 +162,14 @@ Environment::SectionMapView(FileMapping &fm, void *desiredData,
 
     s_NtMapViewOfSection(reinterpret_cast<HANDLE>(fm.sectionHandle),
                          ::GetCurrentProcess(),
-                         &base, 0, 0, nullptr, &viewSize,
-                         ViewUnmap_e, MEM_RESERVE, protection);
+                         &base,
+                         0,
+                         0,
+                         nullptr,
+                         &viewSize,
+                         ViewUnmap_e,
+                         MEM_RESERVE,
+                         protection);
 
     viewSizeBytes = viewSize;
     return base;
@@ -230,8 +237,8 @@ Environment::ProcessCommitChargeBytes()
 {
     PROCESS_MEMORY_COUNTERS_EX pmc{};
     pmc.cb = sizeof(pmc);
-    if (::GetProcessMemoryInfo(::GetCurrentProcess(),
-                               reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&pmc), sizeof(pmc))) {
+    if (::GetProcessMemoryInfo(
+            ::GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&pmc), sizeof(pmc))) {
         return static_cast<uint64_t>(pmc.PagefileUsage);
     }
     return 0;
@@ -379,6 +386,16 @@ void
 Environment::SystemHeapFree(void *ptr)
 {
     ::HeapFree(::GetProcessHeap(), 0, ptr);
+}
+
+size_t
+Environment::SystemHeapSize(const void *ptr)
+{
+    SIZE_T s = ::HeapSize(::GetProcessHeap(), 0, ptr);
+    if (s == static_cast<SIZE_T>(-1)) {
+        return 0;
+    }
+    return static_cast<size_t>(s);
 }
 
 // =========================================================================

@@ -1118,11 +1118,7 @@ _msize_dbg(void *block, int /*block_use*/)
         return node->user_size;
     }
 
-    SIZE_T s = HeapSize(ProcHeap(), 0, block);
-    if (s == (SIZE_T)-1) {
-        return 0;
-    }
-    return static_cast<size_t>(s);
+    return Environment::SystemHeapSize(block);
 }
 
 #endif

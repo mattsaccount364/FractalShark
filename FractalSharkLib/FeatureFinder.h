@@ -17,9 +17,10 @@ struct DiagnosticState {
     int normalized_bits{};
     int est_remaining{};
     bool wantHalley{};
-    bool valid{};       // true after first completed NR step populates convergence fields
-    double z_mag2{};    // |z|² at last progress/abort — orbit bounded if ~1-2
-    double inner_pct{}; // innerIteration / period * 100
+    bool valid{};                    // true after first completed NR step populates convergence fields
+    double z_mag2{};                 // |z|² at last progress/abort — orbit bounded if ~1-2
+    double inner_pct{};              // innerIteration / period * 100
+    HDRFloat<double> c_cand_dist2{}; // |c - cand|² — distance from seed; should shrink each NR step
 };
 
 struct NRCheckpointData {

@@ -350,6 +350,9 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
     // Convergence diagnostics (informational, not needed for resume)
     f << "z_mag2: " << std::setprecision(std::numeric_limits<double>::max_digits10) << p.diag.z_mag2
       << "\n"
+      << "c_cand_dist2: " << p.diag.c_cand_dist2.getExp() << " "
+      << std::setprecision(std::numeric_limits<double>::max_digits10)
+      << p.diag.c_cand_dist2.getMantissa() << "\n"
       << "inner_pct: " << std::setprecision(6) << p.diag.inner_pct << "\n"
       << "targetExp: " << p.diag.targetExp << "\n"
       << "diag_valid: " << (p.diag.valid ? 1 : 0) << "\n";
@@ -674,7 +677,8 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
 
     // Best-effort read of diagnostic fields (not required for resume).
     // Checkpoints without these fields still load successfully.
-    out_diag = {};
+    // Do NOT zero out_diag here — preserve previous step's convergence
+    // data so abort checkpoints retain the last valid diagnostics.
     auto readDbl = [&](const char *label, double &val) {
         return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
     };
@@ -691,6 +695,8 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
     };
 
     if (!readDbl("z_mag2", out_diag.z_mag2))
+        return true;
+    if (!readHdr("c_cand_dist2", out_diag.c_cand_dist2))
         return true;
     if (!readDbl("inner_pct", out_diag.inner_pct))
         return true;
@@ -825,6 +831,8 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
     };
 
     if (!readDbl("z_mag2", out.diag.z_mag2))
+        return true;
+    if (!readHdr("c_cand_dist2", out.diag.c_cand_dist2))
         return true;
     if (!readDbl("inner_pct", out.diag.inner_pct))
         return true;
@@ -1038,6 +1046,16 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     // targetExp is authoritative — always restore after checkpoint read
     // (the reader zeros diagState, which would lose a pre-set targetExp).
     diagState.targetExp = targetExp;
+
+    // Compute initial |c - cand|² so even first progress checkpoint has a real value.
+    {
+        mpf_complex_sub(dc, c_coord, c0_coord);
+        mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
+        long dist_exp2;
+        double dist_mant = mpf_get_d_2exp(&dist_exp2, abs2_c);
+        diagState.c_cand_dist2 = HDRFloat<double>(static_cast<int32_t>(dist_exp2), dist_mant);
+        HdrReduce(diagState.c_cand_dist2);
+    }
 
     uint32_t it = startIter;
     for (; it < max_nr_iters; ++it) {
@@ -1266,15 +1284,13 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         const int rho2Exp = (int)rho2_hdr.getExp();
         diagState.normalized_bits = (rho2Exp < 0) ? (-rho2Exp / 2) : 0;
 
-        if (wantHalley && diagState.normalized_bits > 0 && targetExp > 0) {
-            // Estimate remaining Halley iterations via tripling model:
-            // each iteration triples normalized_bits; stop when bits reach target.
-            // Only valid under Halley (cubic convergence); Newton doubles instead.
+        if (diagState.normalized_bits > 0 && targetExp > 0) {
+            // Estimate remaining iterations via doubling model (quadratic convergence).
             const int targetBits = targetExp / 4;
             int bits = diagState.normalized_bits;
             int remaining = 0;
             while (bits < targetBits && remaining < 100) {
-                bits *= 3;
+                bits *= 2;
                 ++remaining;
             }
             diagState.est_remaining = remaining;
@@ -1290,6 +1306,16 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                 numIterationsAtFind, 0,          z_coord.re,  z_coord.im,  dzdc_deriv.re,
                 dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState},
             0));
+
+        // Print diagnostics between outer iterations.
+        std::cout << "  NR step " << it << " diag: rho2=" << rho2_hdr.getExp() << " "
+                  << rho2_hdr.getMantissa() << ", err=" << err_hdr.getExp() << " "
+                  << err_hdr.getMantissa() << ", step_norm=" << normStep_hdr.getExp() << " "
+                  << normStep_hdr.getMantissa() << ", z_mag2=" << diagState.z_mag2
+                  << ", |c-cand|2=" << diagState.c_cand_dist2.getExp() << " "
+                  << diagState.c_cand_dist2.getMantissa() << ", bits=" << diagState.normalized_bits
+                  << ", est_remaining=" << diagState.est_remaining
+                  << (wantHalley ? " (Halley)" : " (Newton)") << std::endl;
 
         const int e = (int)err_hdr.getExp();
         if (-e >= targetExp) {
@@ -1342,6 +1368,14 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         // ---------------- Imagina accept/reject: stay within radius ----------------
         mpf_complex_sub(dc, c_coord, c0_coord);
         mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
+
+        // Update |c - cand|² diagnostic.
+        {
+            long dist_exp2;
+            double dist_mant = mpf_get_d_2exp(&dist_exp2, abs2_c);
+            diagState.c_cand_dist2 = HDRFloat<double>(static_cast<int32_t>(dist_exp2), dist_mant);
+            HdrReduce(diagState.c_cand_dist2);
+        }
 
         if (mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
             mpf_set(c_coord.re, c0_coord.re);

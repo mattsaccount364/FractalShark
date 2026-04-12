@@ -819,9 +819,51 @@ in 6~steps versus Newton's 8~steps for 1624~bits---saving two full forward
 evaluations.  The savings come from the early cubic burst: by the time the
 method degenerates to quadratic, it already has a ${\sim}3\times$ lead in
 correct bits over Newton, and this lead persists through all subsequent
-iterations.  For large period~$p$, each saved forward evaluation avoids
+iterations.  The saving is most pronounced at shallow zoom depths, where
+the Phase~A initial guess has fewer than ${\sim}b$ correct bits and the
+cubic burst is fully observable (see below).
+For large period~$p$, each saved forward evaluation avoids
 $p$~expensive high-precision multiplies, making the modest cost of computing
 $F''$ in \code{HDRFloat} easily worthwhile.
+
+\paragraph{Dependence on initial-guess quality.}
+Whether the cubic burst is observable in practice depends on how many
+correct bits the Phase~B starting point already has.  Phase~A produces an
+initial candidate from the renderer's pixel grid and a few Newton steps in
+the native float type~$T$.  The pixel resolution contributes approximately
+$\lfloor\log_2 Z\rfloor - \lceil\log_2 W\rceil$ correct bits, where $Z$ is
+the zoom factor and $W$ the screen width in pixels.  At shallow zoom
+($Z \sim 10^{4}$--$10^{10}$), the initial guess has roughly 14--30~correct
+bits, well below the ${\sim}b$-bit crossover, and the cubic burst is fully
+observable during Phase~B.  At deep zoom ($Z \gg 2^{b}$), pixel resolution
+alone provides hundreds of correct bits, placing the iterate well past the
+crossover before Phase~B begins; in this regime only the $+b$ quadratic
+advantage is observed.
+Empirical variable-precision tests at period~16045 confirm the dependence:
+starting from 100~correct bits produces two cubic Halley steps before
+crossover, whereas starting from 150~correct bits shows only the quadratic
+$+b$ advantage from the first step onward.
+
+\paragraph{Interpreting the diagnostic metric.}
+The diagnostic ratio $\rho^2$ (\cref{eq:ff-halley-gate}) measures
+convergence in a normalized sense rather than counting correct bits of
+the candidate~$c$.  Near a simple root, $F \approx F' e_k$ where
+$e_k = c_k - c^*$, so
+\begin{equation}\label{eq:ff-rho2-offset}
+\rho^2 \;\approx\; |e_k|^2 \cdot \frac{|F''|^2}{|F'|^2},
+\qquad
+  \text{normalized bits}
+  \;=\; -\tfrac{1}{2}\log_2 \rho^2
+  \;=\; \text{correct bits} - \log_2 \frac{|F''|}{|F'|}.
+\end{equation}
+For the period-3 nucleus, $|F''/F'| \approx 2^{2.2}$ and the offset is
+negligible.  At period~16045, $|F''/F'| \approx 2^{88}$, so the
+$\rho^2$-derived metric understates actual correct bits by approximately
+88~bits.  At extreme periods ($p \sim 10^8$), the offset grows further,
+which can mask the early cubic burst in the diagnostic: the Phase~A
+initial guess may already have enough actual correct bits to place the
+iterate past the ${\sim}b$-bit crossover, even though the normalized
+metric appears low.
 
 \paragraph{GPU variant ($b = 24$).}
 The GPU NR path (\code{SharkParamsNR}) uses \code{SubType=float},

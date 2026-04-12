@@ -15,9 +15,6 @@
 #include "..\Vectors.h"
 #include "Environment.h"
 
-#define NOMINMAX
-#include <windows.h>
-
 #pragma optimize("", off)
 
 //

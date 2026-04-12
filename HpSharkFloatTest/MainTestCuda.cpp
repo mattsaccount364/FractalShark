@@ -25,8 +25,7 @@
 #include <string>
 #include <vector>
 
-#define NOMINMAX
-#include <windows.h> // Sleep()
+#include "Environment.h"
 
 // -----------------------------------------------------------------------------
 // Assumed defined elsewhere
@@ -173,7 +172,7 @@ PromptIntWithTimeout(const std::string &promptText,
             buf.push_back((char)ch);
             std::cout << (char)ch << std::flush;
         } else {
-            Sleep(sleepIntervalMs);
+            Environment::SleepMs(sleepIntervalMs);
         }
     }
 

@@ -3,63 +3,14 @@
 
 #include "Environment.h"
 
+#include <vector>
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <combaseapi.h>
-#include <psapi.h>
 #include <windows.h>
-
-#pragma comment(lib, "ntdll")
-
-// NTSTATUS is a LONG (typedef'd in ntdef.h which we don't include directly)
-typedef long NTSTATUS_e;
-#ifndef NTAPI
-#define NTAPI __stdcall
-#endif
-
-// =========================================================================
-// NtDll native API types and function pointers (for file-backed sections)
-// =========================================================================
-
-typedef enum { ViewShare_e = 1, ViewUnmap_e = 2 } SECTION_INHERIT_e;
-
-typedef struct {
-    USHORT Length;
-    USHORT MaximumLength;
-    PWSTR Buffer;
-} UNICODE_STRING_e, *PUNICODE_STRING_e;
-
-typedef struct {
-    ULONG Length;
-    HANDLE RootDirectory;
-    PUNICODE_STRING_e ObjectName;
-    ULONG Attributes;
-    PVOID SecurityDescriptor;
-    PVOID SecurityQualityOfService;
-} OBJECT_ATTRIBUTES_e, *POBJECT_ATTRIBUTES_e;
-
-using NtCreateSectionFn = NTSTATUS_e(NTAPI *)(OUT PHANDLE SectionHandle,
-                                              IN ULONG DesiredAccess,
-                                              IN POBJECT_ATTRIBUTES_e ObjectAttributes OPTIONAL,
-                                              IN PLARGE_INTEGER MaximumSize OPTIONAL,
-                                              IN ULONG PageAttributes,
-                                              IN ULONG SectionAttributes,
-                                              IN HANDLE FileHandle OPTIONAL);
-using NtMapViewOfSectionFn = NTSTATUS_e(NTAPI *)(HANDLE SectionHandle,
-                                                 HANDLE ProcessHandle,
-                                                 PVOID *BaseAddress,
-                                                 ULONG_PTR ZeroBits,
-                                                 SIZE_T CommitSize,
-                                                 PLARGE_INTEGER SectionOffset,
-                                                 PSIZE_T ViewSize,
-                                                 DWORD InheritDisposition,
-                                                 ULONG AllocationType,
-                                                 ULONG Win32Protect);
-using NtExtendSectionFn = NTSTATUS_e(NTAPI *)(IN HANDLE SectionHandle, IN PLARGE_INTEGER NewSectionSize);
-
-static NtCreateSectionFn s_NtCreateSection;
-static NtMapViewOfSectionFn s_NtMapViewOfSection;
-static NtExtendSectionFn s_NtExtendSection;
+// clang-format off
+#include <psapi.h> // must follow windows.h
+// clang-format on
 
 // =========================================================================
 // Virtual memory
@@ -84,153 +35,36 @@ Environment::VirtualRelease(void *base)
 }
 
 // =========================================================================
-// File-backed memory mapping
+// File handle operations
 // =========================================================================
 
-void
-Environment::FileMappingStaticInit()
-{
-    HMODULE hNtDll = ::GetModuleHandleW(L"ntdll.dll");
-    if (!hNtDll) {
-        return;
-    }
-    s_NtCreateSection = reinterpret_cast<NtCreateSectionFn>(::GetProcAddress(hNtDll, "NtCreateSection"));
-    s_NtMapViewOfSection =
-        reinterpret_cast<NtMapViewOfSectionFn>(::GetProcAddress(hNtDll, "NtMapViewOfSection"));
-    s_NtExtendSection = reinterpret_cast<NtExtendSectionFn>(::GetProcAddress(hNtDll, "NtExtendSection"));
-}
-
-uint32_t
-Environment::FileOpen(
-    FileMapping &fm, const wchar_t *path, int openMode, int desiredAccess, bool deleteOnClose)
-{
-    DWORD access = (desiredAccess == 1) ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE);
-    DWORD creation = (openMode == 1) ? OPEN_EXISTING : OPEN_ALWAYS;
-    DWORD flags = FILE_ATTRIBUTE_NORMAL;
-    if (deleteOnClose) {
-        flags |= FILE_FLAG_DELETE_ON_CLOSE;
-    }
-
-    HANDLE h = ::CreateFileW(path, access, FILE_SHARE_READ, nullptr, creation, flags, nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        fm.fileHandle = 0;
-        return ::GetLastError();
-    }
-
-    fm.fileHandle = reinterpret_cast<uintptr_t>(h);
-
-    // Return ERROR_ALREADY_EXISTS if the file existed, 0 otherwise.
-    DWORD lastErr = ::GetLastError();
-    return lastErr;
-}
-
-uint64_t
-Environment::FileGetSize(const FileMapping &fm)
-{
-    LARGE_INTEGER size{};
-    ::GetFileSizeEx(reinterpret_cast<HANDLE>(fm.fileHandle), &size);
-    return static_cast<uint64_t>(size.QuadPart);
-}
-
-void
-Environment::SectionCreate(FileMapping &fm, uint64_t initialSizeBytes, bool readOnly)
-{
-    LARGE_INTEGER maxSize;
-    maxSize.QuadPart = static_cast<LONGLONG>(initialSizeBytes);
-
-    ULONG protection = readOnly ? PAGE_READONLY : PAGE_READWRITE;
-    ULONG attributes = SEC_RESERVE;
-    ULONG access = SECTION_ALL_ACCESS;
-
-    HANDLE section = nullptr;
-    s_NtCreateSection(&section,
-                      access,
-                      nullptr,
-                      &maxSize,
-                      protection,
-                      attributes,
-                      reinterpret_cast<HANDLE>(fm.fileHandle));
-    fm.sectionHandle = reinterpret_cast<uintptr_t>(section);
-}
-
 void *
-Environment::SectionMapView(FileMapping &fm, void *desiredData, size_t &viewSizeBytes, bool readOnly)
+Environment::FileOpenDeleteOnClose(const wchar_t *path)
 {
-    ULONG protection = readOnly ? PAGE_READONLY : PAGE_READWRITE;
-    void *base = desiredData;
-    SIZE_T viewSize = viewSizeBytes;
-
-    s_NtMapViewOfSection(reinterpret_cast<HANDLE>(fm.sectionHandle),
-                         ::GetCurrentProcess(),
-                         &base,
-                         0,
-                         0,
-                         nullptr,
-                         &viewSize,
-                         ViewUnmap_e,
-                         MEM_RESERVE,
-                         protection);
-
-    viewSizeBytes = viewSize;
-    return base;
-}
-
-void
-Environment::SectionExtend(FileMapping &fm, uint64_t newSizeBytes)
-{
-    LARGE_INTEGER newSize;
-    newSize.QuadPart = static_cast<LONGLONG>(newSizeBytes);
-    s_NtExtendSection(reinterpret_cast<HANDLE>(fm.sectionHandle), &newSize);
-}
-
-void
-Environment::SectionUnmapView(void *addr)
-{
-    ::UnmapViewOfFile(addr);
-}
-
-void
-Environment::SectionClose(FileMapping &fm)
-{
-    if (fm.sectionHandle) {
-        ::CloseHandle(reinterpret_cast<HANDLE>(fm.sectionHandle));
-        fm.sectionHandle = 0;
+    HANDLE h = ::CreateFileW(path,
+                             0, // no read or write access
+                             FILE_SHARE_DELETE,
+                             nullptr,
+                             OPEN_EXISTING,
+                             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE,
+                             nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        return Environment::InvalidHandle;
     }
+    return static_cast<void *>(h);
 }
 
 void
-Environment::FileTruncateAndClose(FileMapping &fm, uint64_t newSizeBytes)
+Environment::FileClose(void *handle)
 {
-    if (fm.fileHandle) {
-        LARGE_INTEGER li;
-        li.QuadPart = static_cast<LONGLONG>(newSizeBytes);
-        ::SetFilePointerEx(reinterpret_cast<HANDLE>(fm.fileHandle), li, nullptr, FILE_BEGIN);
-        ::SetEndOfFile(reinterpret_cast<HANDLE>(fm.fileHandle));
-        ::CloseHandle(reinterpret_cast<HANDLE>(fm.fileHandle));
-        fm.fileHandle = 0;
-    }
-}
-
-void
-Environment::FileClose(FileMapping &fm)
-{
-    if (fm.fileHandle) {
-        ::CloseHandle(reinterpret_cast<HANDLE>(fm.fileHandle));
-        fm.fileHandle = 0;
+    if (handle && handle != Environment::InvalidHandle) {
+        ::CloseHandle(static_cast<HANDLE>(handle));
     }
 }
 
 // =========================================================================
 // System information
 // =========================================================================
-
-uint64_t
-Environment::PhysicalMemoryKB()
-{
-    ULONGLONG kb = 0;
-    ::GetPhysicallyInstalledSystemMemory(&kb);
-    return static_cast<uint64_t>(kb);
-}
 
 uint64_t
 Environment::ProcessCommitChargeBytes()
@@ -244,24 +78,37 @@ Environment::ProcessCommitChargeBytes()
     return 0;
 }
 
-uintptr_t
-Environment::CurrentProcessHandle()
+uint32_t
+Environment::LogicalProcessorCount()
 {
-    return reinterpret_cast<uintptr_t>(::GetCurrentProcess());
+    SYSTEM_INFO si;
+    ::GetSystemInfo(&si);
+    return si.dwNumberOfProcessors;
 }
 
-// =========================================================================
-// GUID generation
-// =========================================================================
-
-int
-Environment::GenerateGuidString(wchar_t *buf, int bufLen)
+bool
+Environment::IsHyperthreadingEnabled()
 {
-    GUID guid;
-    if (::CoCreateGuid(&guid) != S_OK) {
-        return 0;
+    DWORD returnLength = 0;
+    ::GetLogicalProcessorInformation(nullptr, &returnLength);
+    if (::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        return false;
     }
-    return ::StringFromGUID2(guid, buf, bufLen);
+
+    std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(
+        returnLength / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
+    if (!::GetLogicalProcessorInformation(buffer.data(), &returnLength)) {
+        return false;
+    }
+
+    for (const auto &info : buffer) {
+        if (info.Relationship == RelationProcessorCore) {
+            if (info.ProcessorCore.Flags == LTP_PC_SMT) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // =========================================================================
@@ -313,6 +160,15 @@ void
 Environment::SleepMs(uint32_t ms)
 {
     ::Sleep(static_cast<DWORD>(ms));
+}
+
+#undef YieldProcessor
+#include <immintrin.h> // _mm_pause
+
+void
+Environment::YieldProcessor()
+{
+    _mm_pause();
 }
 
 int32_t
@@ -406,4 +262,40 @@ uint32_t
 Environment::GetLastOSError()
 {
     return ::GetLastError();
+}
+
+// =========================================================================
+// Process / command line
+// =========================================================================
+
+const wchar_t *
+Environment::GetCommandLineWide()
+{
+    return ::GetCommandLineW();
+}
+
+// =========================================================================
+// Console
+// =========================================================================
+
+void
+Environment::ClearConsole()
+{
+    HANDLE hOut = ::GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    CONSOLE_SCREEN_BUFFER_INFO csbi{};
+    if (!::GetConsoleScreenBufferInfo(hOut, &csbi)) {
+        return;
+    }
+
+    const DWORD cells = static_cast<DWORD>(csbi.dwSize.X) * csbi.dwSize.Y;
+    DWORD written = 0;
+    const COORD home{0, 0};
+
+    ::FillConsoleOutputCharacterA(hOut, ' ', cells, home, &written);
+    ::FillConsoleOutputAttribute(hOut, csbi.wAttributes, cells, home, &written);
+    ::SetConsoleCursorPosition(hOut, home);
 }

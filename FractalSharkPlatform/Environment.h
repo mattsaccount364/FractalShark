@@ -27,76 +27,27 @@ bool VirtualCommit(void *addr, size_t bytes);
 void VirtualRelease(void *base);
 
 // =========================================================================
-// File-backed memory mapping (section objects)
+// File handle operations (for PerturbationResults delete-on-close)
 // =========================================================================
 
-// Opaque handle pair for a file-backed mapping.
-struct FileMapping {
-    uintptr_t fileHandle = 0;    // OS file handle
-    uintptr_t sectionHandle = 0; // OS section/mapping handle
-};
+// Open a file for delete-on-close.  Returns opaque handle, or InvalidHandle on failure.
+void *FileOpenDeleteOnClose(const wchar_t *path);
 
-// One-time initialization of native section APIs (e.g. NtDll on Win32).
-void FileMappingStaticInit();
-
-// Open or create a file for mapping.  Returns the file handle inside fm.
-// openMode: 0 = OPEN_ALWAYS, 1 = OPEN_EXISTING
-// desiredAccess: 0 = read+write, 1 = read-only
-// deleteOnClose: if true, file is deleted when handle is closed.
-// Returns OS error code (0 = success, platform-specific nonzero on failure).
-uint32_t FileOpen(
-    FileMapping &fm, const wchar_t *path, int openMode, int desiredAccess, bool deleteOnClose);
-
-// Get the size of the opened file in bytes.
-uint64_t FileGetSize(const FileMapping &fm);
-
-// Create a section (memory-mapped file) from an open file handle.
-// initialSizeBytes: initial mapping size.
-// readOnly: if true, section is read-only.
-void SectionCreate(FileMapping &fm, uint64_t initialSizeBytes, bool readOnly);
-
-// Map a view of the section into the process address space.
-// desiredData: suggested base address (nullptr for any).
-// viewSizeBytes: in/out — requested size, may be adjusted.
-// readOnly: if true, mapping is read-only.
-// Returns pointer to mapped memory.
-void *SectionMapView(FileMapping &fm, void *desiredData, size_t &viewSizeBytes, bool readOnly);
-
-// Extend an existing section to a new (larger) size.
-void SectionExtend(FileMapping &fm, uint64_t newSizeBytes);
-
-// Unmap a previously mapped view.
-void SectionUnmapView(void *addr);
-
-// Close the section handle.
-void SectionClose(FileMapping &fm);
-
-// Truncate the underlying file to the given size and close the file handle.
-void FileTruncateAndClose(FileMapping &fm, uint64_t newSizeBytes);
-
-// Close just the file handle (no truncation).
-void FileClose(FileMapping &fm);
+// Close an opaque file handle (e.g. from FileOpenDeleteOnClose).
+void FileClose(void *handle);
 
 // =========================================================================
 // System information
 // =========================================================================
 
-// Total physical RAM in kilobytes.
-uint64_t PhysicalMemoryKB();
-
 // Current process commit charge (pagefile usage) in bytes.
 uint64_t ProcessCommitChargeBytes();
 
-// Get the current process pseudo-handle (as uintptr_t).
-uintptr_t CurrentProcessHandle();
+// Number of logical processors (cores × HT).
+uint32_t LogicalProcessorCount();
 
-// =========================================================================
-// GUID generation
-// =========================================================================
-
-// Generate a random GUID and write it as a wide string (e.g. "{xxxxxxxx-...}").
-// Returns the number of characters written, or 0 on failure.
-int GenerateGuidString(wchar_t *buf, int bufLen);
+// Returns true if any physical core has SMT (hyperthreading) enabled.
+bool IsHyperthreadingEnabled();
 
 // =========================================================================
 // Debugging
@@ -126,6 +77,9 @@ void SetCurrentThreadName(const wchar_t *name);
 
 // Sleep the current thread for the given number of milliseconds.
 void SleepMs(uint32_t ms);
+
+// Yield the processor (spin-wait hint, e.g. x86 PAUSE instruction).
+void YieldProcessor();
 
 // Atomic compare-and-swap on a 32-bit integer.
 // Returns the original value of *dest.
@@ -183,5 +137,28 @@ size_t SystemHeapSize(const void *ptr);
 
 // Get the last OS error code for the current thread.
 uint32_t GetLastOSError();
+
+// =========================================================================
+// Process / command line
+// =========================================================================
+
+// Return the raw wide-character command line.  No allocation; returns a
+// pointer into process memory that is valid for the lifetime of the process.
+const wchar_t *GetCommandLineWide();
+
+// =========================================================================
+// Console
+// =========================================================================
+
+// Clear the console screen and move the cursor to the top-left corner.
+void ClearConsole();
+
+// =========================================================================
+// Opaque handle sentinel
+// =========================================================================
+
+// Platform-independent invalid-handle constant (maps to INVALID_HANDLE_VALUE
+// on Windows, i.e. (void*)(intptr_t)-1).
+inline void *const InvalidHandle = reinterpret_cast<void *>(static_cast<intptr_t>(-1));
 
 } // namespace Environment

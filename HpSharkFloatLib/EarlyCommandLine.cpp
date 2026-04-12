@@ -1,6 +1,6 @@
 #include "EarlyCommandLine.h"
+#include "Environment.h"
 #include <stdint.h>
-#include <windows.h>
 
 extern FancyHeap EnableFractalSharkHeap;
 
@@ -38,7 +38,7 @@ TokenEqualsI(const wchar_t *tok, int tokLen, const wchar_t *lit)
 bool
 HasSafeModeFlag_NoCRT()
 {
-    const wchar_t *cmd = GetCommandLineW();
+    const wchar_t *cmd = Environment::GetCommandLineWide();
     if (!cmd)
         return false;
 

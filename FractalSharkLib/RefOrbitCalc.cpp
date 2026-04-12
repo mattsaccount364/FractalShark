@@ -110,28 +110,8 @@ RefOrbitCalc::RefOrbitCalc(const Fractal &fractal, uint64_t commitLimitInBytes)
       m_GenerationNumber(), m_CommitLimitInBytes{commitLimitInBytes}
 {
 
-    // Get number of CPU cores and whether hyperthreading is enabled
-    SYSTEM_INFO sysinfo;
-    GetSystemInfo(&sysinfo);
-    m_NumCpuCores = sysinfo.dwNumberOfProcessors;
-
-    // Find whether hyperthreading is enabled via GetLogicalProcessorInformation
-    m_HyperthreadingEnabled = false;
-    DWORD returnLength = 0;
-    GetLogicalProcessorInformation(nullptr, &returnLength);
-    if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-        std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer{
-            returnLength / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION)};
-        GetLogicalProcessorInformation(buffer.data(), &returnLength);
-        for (const auto &info : buffer) {
-            if (info.Relationship == RelationProcessorCore) {
-                if (info.ProcessorCore.Flags == LTP_PC_SMT) {
-                    m_HyperthreadingEnabled = true;
-                    break;
-                }
-            }
-        }
-    }
+    m_NumCpuCores = Environment::LogicalProcessorCount();
+    m_HyperthreadingEnabled = Environment::IsHyperthreadingEnabled();
 }
 
 bool

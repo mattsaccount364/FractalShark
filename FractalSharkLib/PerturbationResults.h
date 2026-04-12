@@ -341,7 +341,7 @@ private:
 
     AddPointOptions m_RefOrbitOptions;
     std::wstring m_BaseFilename;
-    mutable HANDLE m_MetaFileHandle;
+    mutable void *m_MetaFileHandle;
 
     GrowableVector<GPUReferenceIter<T, PExtras>> m_FullOrbit;
     std::vector<IterTypeFull> m_Rebases;

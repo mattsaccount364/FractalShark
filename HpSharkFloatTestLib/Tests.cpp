@@ -30,8 +30,7 @@
 #include "Add.h"
 #include "MultiplyNTT.h"
 
-#define NOMINMAX
-#include <windows.h>
+#include "Environment.h"
 
 static constexpr bool EnableTestSign1 = true;
 static constexpr bool EnableTestSign2 = true;
@@ -83,7 +82,7 @@ struct MpfSquaringHelper {
                 if (s == static_cast<int>(State::Shutdown)) {
                     return;
                 }
-                YieldProcessor();
+                Environment::YieldProcessor();
             }
 
             mpf_mul(ctx.result, ctx.operandA, ctx.operandB);
@@ -112,7 +111,7 @@ struct MpfSquaringHelper {
         for (int i = 0; i < 2; ++i) {
             while (helpers[i].state.load(std::memory_order_acquire) !=
                    static_cast<int>(State::Done)) {
-                YieldProcessor();
+                Environment::YieldProcessor();
             }
             helpers[i].state.store(static_cast<int>(State::Idle), std::memory_order_release);
         }
@@ -805,7 +804,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     HpShark::InvokeMultiplyNTTKernelPerf<SharkFloatParams>(
                         launchParams, timer, *combo, numIters);
                 } else {
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 }
 
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
@@ -871,7 +870,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                                 // Sanity check: if periodicity is enabled, we should never exit
                                 // with "Unknown"
                                 if (combo->PeriodicityStatus == PeriodicityResult::Unknown) {
-                                    DebugBreak();
+                                    Environment::DebugBreakpoint();
                                 }
                             } else {
                                 continue;
@@ -935,7 +934,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     std::cout << "Error: Host and GPU reference orbit size mismatch: host="
                               << hostReferenceOrbit.size() << " gpu=" << hpSharkReferenceOrbit.size()
                               << std::endl;
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 } else {
                     bool orbitMatch = true;
                     for (size_t i = 0; i < hostReferenceOrbit.size(); ++i) {
@@ -967,7 +966,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                                       << " host.y - gpu.y = " << deltaY.ToString<false>() << std::endl;
 
                             orbitMatch = false;
-                            DebugBreak();
+                            Environment::DebugBreakpoint();
                             break;
                         }
                     }
@@ -983,7 +982,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         std::cout << "Error: MPIR host and CPU ref orbit size mismatch: mpir="
                                   << hostReferenceOrbit.size()
                                   << " cpuRef=" << cpuRefOrbitResult->Orbit.size() << std::endl;
-                        DebugBreak();
+                        Environment::DebugBreakpoint();
                     } else {
                         bool cpuOrbitMatch = true;
                         for (size_t i = 0; i < hostReferenceOrbit.size(); ++i) {
@@ -1005,7 +1004,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                                     << " cpu.x=" << cpuValX.ToString<false>()
                                     << " cpu.y=" << cpuValY.ToString<false>() << std::endl;
                                 cpuOrbitMatch = false;
-                                DebugBreak();
+                                Environment::DebugBreakpoint();
                                 break;
                             }
                         }
@@ -1021,14 +1020,14 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                                   << PeriodicityStrResult(hostPeriodicityResult)
                                   << " cpuRef=" << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult)
                                   << std::endl;
-                        DebugBreak();
+                        Environment::DebugBreakpoint();
                     }
 
                     if (cpuRefOrbitResult->IterationsExecuted != hostIterationsExecuted) {
                         std::cout << "Error: CPU ref iteration count mismatch: mpir="
                                   << hostIterationsExecuted
                                   << " cpuRef=" << cpuRefOrbitResult->IterationsExecuted << std::endl;
-                        DebugBreak();
+                        Environment::DebugBreakpoint();
                     }
                 }
 
@@ -1046,7 +1045,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                               << std::endl;
                     std::cout << "Escape iteration mismatch: host=" << hostIterationsExecuted
                               << " gpu=" << totalExecutedIters << std::endl;
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 } else {
                     std::cout << "Periodicity status: " << PeriodicityStrResult(combo->PeriodicityStatus)
                               << std::endl;
@@ -1064,7 +1063,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     std::cout << "Error: CPU ref and GPU orbit size mismatch: cpuRef="
                               << cpuRefOrbitResult->Orbit.size()
                               << " gpu=" << hpSharkReferenceOrbit.size() << std::endl;
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 } else {
                     bool cpuGpuOrbitMatch = true;
                     for (size_t i = 0; i < cpuRefOrbitResult->Orbit.size(); ++i) {
@@ -1086,7 +1085,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                                 << " gpu.x=" << gpuValX.ToString<false>()
                                 << " gpu.y=" << gpuValY.ToString<false>() << std::endl;
                             cpuGpuOrbitMatch = false;
-                            DebugBreak();
+                            Environment::DebugBreakpoint();
                             break;
                         }
                     }
@@ -1102,14 +1101,14 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                               << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult)
                               << " gpu=" << PeriodicityStrResult(combo->PeriodicityStatus)
                               << std::endl;
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 }
 
                 if (cpuRefOrbitResult->IterationsExecuted != totalExecutedIters) {
                     std::cout << "Error: CPU ref vs GPU iteration count mismatch: cpuRef="
                               << cpuRefOrbitResult->IterationsExecuted
                               << " gpu=" << totalExecutedIters << std::endl;
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 }
             }
 
@@ -1118,7 +1117,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     (totalExecutedIters != static_cast<uint64_t>(expectedPeriod))) {
                     std::cout << "Error: Expected result iters " << expectedPeriod << " but got "
                               << totalExecutedIters << std::endl;
-                    DebugBreak();
+                    Environment::DebugBreakpoint();
                 }
             }
 
@@ -1219,7 +1218,7 @@ CheckAgainstHost(const HpShark::LaunchParams &launchParams,
     bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
         launchParams, Tests, testNum, numTerms, name, mpfHostResult, gpuResult);
     if (!res) {
-        DebugBreak();
+        Environment::DebugBreakpoint();
     };
 
     return res;
@@ -1270,13 +1269,13 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
         if (totalMultiplyCountGpu != debugHostCombo.MultiplyCounts.multiplyCount) {
             std::cerr << "Error: GPU total count does not match host count!" << std::endl;
             ChecksumFailure = true;
-            DebugBreak();
+            Environment::DebugBreakpoint();
         }
 
         if (totalMultiplyCountResults != launchParams.TotalThreads) {
             std::cerr << "Error: Total results does not match expected number of threads!" << std::endl;
             ChecksumFailure = true;
-            DebugBreak();
+            Environment::DebugBreakpoint();
         }
 
         // Print full array
@@ -1368,7 +1367,7 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
 
                 ChecksumFailure = true;
 
-                DebugBreak();
+                Environment::DebugBreakpoint();
             }
         }
     }
@@ -1379,7 +1378,7 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
         }
     } else {
         std::cerr << "Checksum test failed" << std::endl;
-        DebugBreak();
+        Environment::DebugBreakpoint();
     }
 }
 
@@ -1406,7 +1405,7 @@ CheckGPUResult(const HpShark::LaunchParams &launchParams,
 
     if (!testSucceeded) {
         // If the test failed, we should break into the debugger
-        DebugBreak();
+        Environment::DebugBreakpoint();
     }
 
     return testSucceeded;
@@ -2415,28 +2414,10 @@ TestTernaryOperatorTwoNumbersRaw(const HpShark::LaunchParams &launchParams,
     }
 }
 
-// Win32 clear console
 void
 ClearConsole()
 {
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hOut == INVALID_HANDLE_VALUE)
-        return;
-
-    CONSOLE_SCREEN_BUFFER_INFO csbi{};
-    if (!GetConsoleScreenBufferInfo(hOut, &csbi))
-        return;
-
-    const DWORD cells = static_cast<DWORD>(csbi.dwSize.X) * csbi.dwSize.Y;
-    DWORD written = 0;
-    const COORD home{0, 0};
-
-    // Fill screen with spaces
-    FillConsoleOutputCharacterA(hOut, ' ', cells, home, &written);
-    // Reset attributes
-    FillConsoleOutputAttribute(hOut, csbi.wAttributes, cells, home, &written);
-    // Move cursor home
-    SetConsoleCursorPosition(hOut, home);
+    Environment::ClearConsole();
 }
 
 template <class SharkFloatParams, Operator sharkOperator>

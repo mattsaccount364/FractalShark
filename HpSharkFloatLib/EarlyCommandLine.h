@@ -5,8 +5,6 @@
 
 #include <stdbool.h> // bool (C-compatible)
 #include <stddef.h>  // size_t
-#define NOMINMAX
-#include <windows.h> // HMODULE, wchar_t, WinAPI types
 
 enum class FancyHeap : int { Unknown = 0, Enable = 1, Disable = 2 };
 

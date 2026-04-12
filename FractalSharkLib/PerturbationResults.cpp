@@ -150,7 +150,7 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(std::wstring base
       PerturbationResultsBase{}, m_OrbitXStr{}, m_OrbitYStr{}, m_ZoomFactorStr{}, m_OrbitXLow{},
       m_OrbitYLow{}, m_ZoomFactorLow{}, m_MaxRadius{}, m_PeriodMaybeZero{}, m_CompressionErrorExp{},
       m_IntermediateCompressionErrorExp{}, m_RefOrbitOptions{addPointOptions},
-      m_BaseFilename{base_filename}, m_MetaFileHandle{INVALID_HANDLE_VALUE}, m_FullOrbit{},
+      m_BaseFilename{base_filename}, m_MetaFileHandle{Environment::InvalidHandle}, m_FullOrbit{},
       m_UncompressedItersInOrbit{}, m_GenerationNumber{Generation}, m_LaReference{},
       m_AuthoritativePrecisionInBits{}, m_ReuseX{}, m_ReuseY{}, m_ReuseIndices{}, m_ReuseAllocations{},
       m_BenchmarkOrbit{}, m_DeltaPrecisionCached{}, m_ExtraPrecisionCached{}
@@ -189,7 +189,7 @@ PerturbationResults<IterType, T, PExtras>::~PerturbationResults()
 //     : m_GenerationNumber{ other.m_GenerationNumber } {
 //     *this = std::move(other);
 //
-//     other.m_MetaFileHandle = INVALID_HANDLE_VALUE;
+//     other.m_MetaFileHandle = Environment::InvalidHandle;
 // }
 
 template <typename IterType, class T, PerturbExtras PExtras>
@@ -317,7 +317,7 @@ requires Introspection::TestPExtras<PExtras>::value
 
     // m_RefOrbitOptions // Unchanged
     m_BaseFilename = GenBaseFilename(m_GenerationNumber);
-    m_MetaFileHandle = INVALID_HANDLE_VALUE;
+    m_MetaFileHandle = Environment::InvalidHandle;
 
     m_FullOrbit = {GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str()};
     m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize(), 0);
@@ -452,7 +452,7 @@ PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(
     m_IntermediateCompressionErrorExp = other.GetIntermediateCompressionErrorExp();
     m_RefOrbitOptions = other.GetRefOrbitOptions();
     m_BaseFilename = GenBaseFilename(m_GenerationNumber);
-    m_MetaFileHandle = INVALID_HANDLE_VALUE;
+    m_MetaFileHandle = Environment::InvalidHandle;
 
     m_FullOrbit = {};                // Note: not copied
     m_UncompressedItersInOrbit = {}; // Note: not copied
@@ -582,16 +582,10 @@ PerturbationResults<IterType, T, PExtras>::MaybeOpenMetaFileForDelete() const
 {
     // This call can fail but that should be OK
     if (GetRefOrbitOptions() == AddPointOptions::EnableWithoutSave &&
-        m_MetaFileHandle == INVALID_HANDLE_VALUE) {
+        m_MetaFileHandle == Environment::InvalidHandle) {
 
-        const auto attributes = FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE;
-        m_MetaFileHandle = CreateFile(GenFilename(GrowableVectorTypes::Metadata).c_str(),
-                                      0, // no read or write
-                                      FILE_SHARE_DELETE,
-                                      nullptr,
-                                      OPEN_EXISTING,
-                                      attributes,
-                                      nullptr);
+        m_MetaFileHandle =
+            Environment::FileOpenDeleteOnClose(GenFilename(GrowableVectorTypes::Metadata).c_str());
     }
 }
 
@@ -2333,9 +2327,9 @@ template <typename IterType, class T, PerturbExtras PExtras>
 void
 PerturbationResults<IterType, T, PExtras>::CloseMetaFileIfOpen() const
 {
-    if (m_MetaFileHandle != INVALID_HANDLE_VALUE) {
-        CloseHandle(m_MetaFileHandle);
-        m_MetaFileHandle = INVALID_HANDLE_VALUE;
+    if (m_MetaFileHandle != Environment::InvalidHandle) {
+        Environment::FileClose(m_MetaFileHandle);
+        m_MetaFileHandle = Environment::InvalidHandle;
     }
 }
 

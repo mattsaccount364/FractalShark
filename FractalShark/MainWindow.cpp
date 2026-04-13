@@ -13,10 +13,12 @@
 #include "MainWindowSavedLocation.h"
 #include "OpenGLContext.h"
 #include "PngParallelSave.h"
+
 #include "RecommendedSettings.h"
 #include "SplashWindow.h"
 #include "WaitCursor.h"
 #include "resource.h"
+#include <Windowsx.h>
 
 #include <commdlg.h>
 #include <cstdio>
@@ -212,7 +214,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // button the menu properly.  Without this, the menu is out of sync until
     // the user changes algorithm manually.
     commandDispatcher.Dispatch(IDM_ALG_AUTO);
-    //commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
+    // commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
 
     // Optional: force an initial black fill before first show (prevents any flash)
     {
@@ -394,16 +396,12 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
         }
 
         case '.': {
-            gFractal->EnqueueCommand([](Fractal &f) {
-                f.ZoomToFoundFeature();
-            });
+            gFractal->EnqueueCommand([](Fractal &f) { f.ZoomToFoundFeature(); });
             break;
         }
 
         case '>': {
-            gFractal->EnqueueCommand([](Fractal &f) {
-                f.ClearAllFoundFeatures();
-            });
+            gFractal->EnqueueCommand([](Fractal &f) { f.ClearAllFoundFeatures(); });
             break;
         }
 
@@ -443,34 +441,40 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
 
         case 'I':
         case 'i':
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                if (shiftDown) {
-                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-                }
-                f.ForceRecalc();
-            }).Wait();
+            gFractal
+                ->EnqueueCommand([shiftDown](Fractal &f) {
+                    if (shiftDown) {
+                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+                    }
+                    f.ForceRecalc();
+                })
+                .Wait();
             MenuGetCurPos();
             break;
 
         case 'O':
         case 'o':
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                if (shiftDown) {
-                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                }
-                f.ForceRecalc();
-            }).Wait();
+            gFractal
+                ->EnqueueCommand([shiftDown](Fractal &f) {
+                    if (shiftDown) {
+                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                    }
+                    f.ForceRecalc();
+                })
+                .Wait();
             MenuGetCurPos();
             break;
 
         case 'P':
         case 'p':
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                if (shiftDown) {
-                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-                }
-                f.ForceRecalc();
-            }).Wait();
+            gFractal
+                ->EnqueueCommand([shiftDown](Fractal &f) {
+                    if (shiftDown) {
+                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+                    }
+                    f.ForceRecalc();
+                })
+                .Wait();
             MenuGetCurPos();
             break;
 
@@ -498,9 +502,8 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
 
         case 'T':
         case 't':
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                f.UseNextPaletteAuxDepth(shiftDown ? -1 : 1);
-            });
+            gFractal->EnqueueCommand(
+                [shiftDown](Fractal &f) { f.UseNextPaletteAuxDepth(shiftDown ? -1 : 1); });
             break;
 
         case 'W':
@@ -764,9 +767,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             if (gFractal) {
                 auto w = LOWORD(lParam);
                 auto h = HIWORD(lParam);
-                gFractal->EnqueueCommand([w, h](Fractal &f) {
-                    f.ResetDimensions(w, h);
-                });
+                gFractal->EnqueueCommand([w, h](Fractal &f) { f.ResetDimensions(w, h); });
             }
             return 0;
         }
@@ -864,13 +865,12 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             }
 
             if (gFractal) {
-                gFractal->EnqueueCommand(
-                    [newView, maintainAspect](Fractal &f) {
-                        if (f.RecenterViewScreen(newView)) {
-                            if (maintainAspect)
-                                f.SquareCurrentView();
-                        }
-                    });
+                gFractal->EnqueueCommand([newView, maintainAspect](Fractal &f) {
+                    if (f.RecenterViewScreen(newView)) {
+                        if (maintainAspect)
+                            f.SquareCurrentView();
+                    }
+                });
             }
 
             return 0;
@@ -965,13 +965,10 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             ScreenToClient(hWnd, &pt);
 
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
-                gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
-                    f.ZoomTowardPoint(x, y, -0.3);
-                });
+                gFractal->EnqueueCommand(
+                    [x = pt.x, y = pt.y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); });
             } else {
-                gFractal->EnqueueCommand([](Fractal &f) {
-                    f.ZoomAtCenter(0.3);
-                });
+                gFractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); });
             }
 
             return 0;
@@ -1006,57 +1003,44 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 void
 MainWindow::MenuGoBack()
 {
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.Back();
-    });
+    gFractal->EnqueueCommand([](Fractal &f) { f.Back(); });
 }
 
 void
 MainWindow::MenuStandardView(size_t i)
 {
-    gFractal->EnqueueCommand([i](Fractal &f) {
-        f.View(i);
-    });
+    gFractal->EnqueueCommand([i](Fractal &f) { f.View(i); });
 }
 
 void
 MainWindow::MenuSquareView()
 {
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.SquareCurrentView();
-    });
+    gFractal->EnqueueCommand([](Fractal &f) { f.SquareCurrentView(); });
 }
 
 void
 MainWindow::MenuCenterView(int x, int y)
 {
-    gFractal->EnqueueCommand([x, y](Fractal &f) {
-        f.CenterAtPoint(x, y);
-    });
+    gFractal->EnqueueCommand([x, y](Fractal &f) { f.CenterAtPoint(x, y); });
 }
 
 void
 MainWindow::MenuZoomIn(POINT mousePt)
 {
-    gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-        f.ZoomRecentered(x, y, -.45);
-    });
+    gFractal->EnqueueCommand(
+        [x = mousePt.x, y = mousePt.y](Fractal &f) { f.ZoomRecentered(x, y, -.45); });
 }
 
 void
 MainWindow::MenuZoomOut(POINT mousePt)
 {
-    gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-        f.ZoomRecentered(x, y, 1);
-    });
+    gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) { f.ZoomRecentered(x, y, 1); });
 }
 
 void
 MainWindow::MenuRepainting()
 {
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ToggleRepainting();
-    });
+    gFractal->EnqueueCommand([](Fractal &f) { f.ToggleRepainting(); });
 }
 
 void
@@ -1105,9 +1089,7 @@ MainWindow::MenuWindowed(bool square)
             GetClientRect(hWnd, &rt);
             auto w = rt.right;
             auto h = rt.bottom;
-            gFractal->EnqueueCommand([w, h](Fractal &f) {
-                f.ResetDimensions(w, h);
-            });
+            gFractal->EnqueueCommand([w, h](Fractal &f) { f.ResetDimensions(w, h); });
         }
     } else {
         int width = GetSystemMetrics(SM_CXSCREEN);
@@ -1133,9 +1115,7 @@ MainWindow::MenuWindowed(bool square)
             GetClientRect(hWnd, &rt);
             auto w = rt.right;
             auto h = rt.bottom;
-            gFractal->EnqueueCommand([w, h](Fractal &f) {
-                f.ResetDimensions(w, h);
-            });
+            gFractal->EnqueueCommand([w, h](Fractal &f) { f.ResetDimensions(w, h); });
         }
     }
 }
@@ -1159,9 +1139,7 @@ MainWindow::MenuMultiplyIterations(double factor)
 void
 MainWindow::MenuResetIterations()
 {
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ResetNumIterations();
-    });
+    gFractal->EnqueueCommand([](Fractal &f) { f.ResetNumIterations(); });
 }
 
 void
@@ -1237,18 +1215,14 @@ MainWindow::MenuPaletteRotation()
     GetCursorPos(&OrgPos);
 
     for (;;) {
-        gFractal->EnqueueCommand([](Fractal &f) {
-            f.RotateFractalPalette(10);
-        }).Wait();
+        gFractal->EnqueueCommand([](Fractal &f) { f.RotateFractalPalette(10); }).Wait();
         GetCursorPos(&CurPos);
         if (abs(CurPos.x - OrgPos.x) > 5 || abs(CurPos.y - OrgPos.y) > 5) {
             break;
         }
     }
 
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ResetFractalPalette();
-    });
+    gFractal->EnqueueCommand([](Fractal &f) { f.ResetFractalPalette(); });
 }
 
 void
@@ -1266,9 +1240,7 @@ MainWindow::MenuPaletteType(FractalPaletteType type)
 void
 MainWindow::MenuPaletteDepth(int depth)
 {
-    gFractal->EnqueueCommand([depth](Fractal &f) {
-        f.UsePalette(depth);
-    });
+    gFractal->EnqueueCommand([depth](Fractal &f) { f.UsePalette(depth); });
 }
 
 void
@@ -1623,18 +1595,17 @@ MainWindow::LoadRefOrbit(CompressToDisk compressToDisk,
                          ImaginaSettings loadSettings,
                          std::wstring filename)
 {
-    gFractal->EnqueueCommand(
-        [compressToDisk, loadSettings, filename = std::move(filename)](Fractal &f) {
-            RecommendedSettings settings{};
-            f.LoadRefOrbit(&settings, compressToDisk, loadSettings, filename);
+    gFractal->EnqueueCommand([compressToDisk, loadSettings, filename = std::move(filename)](Fractal &f) {
+        RecommendedSettings settings{};
+        f.LoadRefOrbit(&settings, compressToDisk, loadSettings, filename);
 
-            if (settings.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
-                const bool success = f.SetRenderAlgorithm(settings.GetRenderAlgorithm());
-                if (!success) {
-                    std::wcerr << L"Warning: Could not set render algorithm to AUTO." << std::endl;
-                }
+        if (settings.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
+            const bool success = f.SetRenderAlgorithm(settings.GetRenderAlgorithm());
+            if (!success) {
+                std::wcerr << L"Warning: Could not set render algorithm to AUTO." << std::endl;
             }
-        });
+        }
+    });
 }
 
 void
@@ -1722,12 +1693,11 @@ MainWindow::MenuDiffImag()
         return;
     }
 
-    gFractal->EnqueueCommand(
-        [outFile = std::move(outFile),
-         filename1 = std::move(filename1),
-         filename2 = std::move(filename2)](Fractal &f) {
-            f.DiffRefOrbits(CompressToDisk::MaxCompressionImagina, outFile, filename1, filename2);
-        });
+    gFractal->EnqueueCommand([outFile = std::move(outFile),
+                              filename1 = std::move(filename1),
+                              filename2 = std::move(filename2)](Fractal &f) {
+        f.DiffRefOrbits(CompressToDisk::MaxCompressionImagina, outFile, filename1, filename2);
+    });
 }
 
 void
@@ -1791,8 +1761,10 @@ MainWindow::MenuShowHotkeys()
         L"Hotkeys\r\n"
         L"\r\n"
         L"Navigation\r\n"
-        L"a - Autozoom using feature heuristic (zooms toward perturbation reference point).  Hold CTRL to abort.\r\n"
-        L"A - Autozoom using default heuristic (weighted geometric mean of iteration counts).  Hold CTRL to "
+        L"a - Autozoom using feature heuristic (zooms toward perturbation reference point).  Hold CTRL "
+        L"to abort.\r\n"
+        L"A - Autozoom using default heuristic (weighted geometric mean of iteration counts).  Hold "
+        L"CTRL to "
         L"abort.\r\n"
         L"b - Go back to the previous view\r\n"
         L"c - Center the view at the current mouse position\r\n"

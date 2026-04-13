@@ -1,5 +1,8 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 // RAII Class that sets/resets mouse cursor to wait cursor
 // Use SetCursor(LoadCursor(nullptr, IDC_WAIT));
 class WaitCursor {
@@ -7,7 +10,9 @@ public:
     WaitCursor();
     ~WaitCursor();
 
-    WaitCursor &operator=(const WaitCursor &other) {
+    WaitCursor &
+    operator=(const WaitCursor &other)
+    {
         if (this == &other) {
             return *this;
         }

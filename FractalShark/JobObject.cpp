@@ -1,5 +1,8 @@
 #include "StdAfx.h"
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include "JobObject.h"
 #include <iostream>
 
@@ -18,9 +21,7 @@ private:
     HANDLE hJob;
 };
 
-JobObject::JobObjectImpl::JobObjectImpl() :
-    jeli{},
-    hJob{}
+JobObject::JobObjectImpl::JobObjectImpl() : jeli{}, hJob{}
 {
     // Use a Win32 job object to limit virtual memory used
     // by this process.
@@ -66,22 +67,25 @@ JobObject::JobObjectImpl::JobObjectImpl() :
     }
 }
 
-JobObject::JobObjectImpl::~JobObjectImpl() {
+JobObject::JobObjectImpl::~JobObjectImpl()
+{
     if (hJob != nullptr) {
         CloseHandle(hJob);
     }
 }
 
-uint64_t JobObject::JobObjectImpl::GetCommitLimitInBytes() const {
+uint64_t
+JobObject::JobObjectImpl::GetCommitLimitInBytes() const
+{
     return jeli.JobMemoryLimit;
 }
 
-JobObject::JobObject() : impl{std::make_unique<JobObjectImpl>()} {
-}
+JobObject::JobObject() : impl{std::make_unique<JobObjectImpl>()} {}
 
-JobObject::~JobObject() {
-}
+JobObject::~JobObject() {}
 
-uint64_t JobObject::GetCommitLimitInBytes() const {
+uint64_t
+JobObject::GetCommitLimitInBytes() const
+{
     return impl->GetCommitLimitInBytes();
 }

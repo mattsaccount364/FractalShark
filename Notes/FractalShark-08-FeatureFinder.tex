@@ -814,20 +814,21 @@ ${\sim}53$ correct bits.  By step~4, the 53-bit Halley's ratio has dropped to
 ${\sim}2.1$, approaching quadratic.
 
 \paragraph{Net benefit.}
-Despite the degeneration, the low-precision Halley reaches 1761~correct bits
+On the period-3 example, the low-precision Halley reaches 1761~correct bits
 in 6~steps versus Newton's 8~steps for 1624~bits---saving two full forward
-evaluations.  The savings come from the early cubic burst: by the time the
+evaluations.  This saving comes from the early cubic burst: by the time the
 method degenerates to quadratic, it already has a ${\sim}3\times$ lead in
-correct bits over Newton, and this lead persists through all subsequent
-iterations.  The saving is most pronounced at shallow zoom depths, where
-the Phase~A initial guess has fewer than ${\sim}b$ correct bits and the
-cubic burst is fully observable (see below).
-For large period~$p$, each saved forward evaluation avoids
-$p$~expensive high-precision multiplies, making the modest cost of computing
-$F''$ in \code{HDRFloat} easily worthwhile.
+correct bits over Newton, and this lead persists through the later quadratic
+phase.  Such savings are most pronounced when Phase~B starts below the
+${\sim}b$-bit crossover.  At already-accurate starts, the large cubic lead is
+absent, so the retained benefit is narrower: representative runs show only a
+0--1 outer-iteration advantage in this late regime, while $F''$ still remains
+useful for the Halley gate and error estimator.  For large period~$p$, even
+that one saved forward evaluation still avoids $p$~expensive
+high-precision multiplies.
 
 \paragraph{Dependence on initial-guess quality.}
-Whether the cubic burst is observable in practice depends on how many
+Whether this step-count saving is significant in practice depends on how many
 correct bits the Phase~B starting point already has.  Phase~A produces an
 initial candidate from the renderer's pixel grid and a few Newton steps in
 the native float type~$T$.  The pixel resolution contributes approximately
@@ -835,14 +836,20 @@ $\lfloor\log_2 Z\rfloor - \lceil\log_2 W\rceil$ correct bits, where $Z$ is
 the zoom factor and $W$ the screen width in pixels.  At shallow zoom
 ($Z \sim 10^{4}$--$10^{10}$), the initial guess has roughly 14--30~correct
 bits, well below the ${\sim}b$-bit crossover, and the cubic burst is fully
-observable during Phase~B.  At deep zoom ($Z \gg 2^{b}$), pixel resolution
-alone provides hundreds of correct bits, placing the iterate well past the
-crossover before Phase~B begins; in this regime only the $+b$ quadratic
-advantage is observed.
-Empirical variable-precision tests at period~16045 confirm the dependence:
-starting from 100~correct bits produces two cubic Halley steps before
-crossover, whereas starting from 150~correct bits shows only the quadratic
-$+b$ advantage from the first step onward.
+observable during Phase~B; this is the regime in which low-precision Halley
+delivers most of its practical iteration savings.  At deep zoom ($Z \gg 2^b$),
+pixel resolution alone provides hundreds of correct bits, placing the iterate
+well past the crossover before Phase~B begins.  In that regime the dramatic
+cubic advantage is absent; the retained value of low-precision Halley is
+limited to the smaller late-regime improvement over Newton together with the
+information carried by $|F''|$ for the Halley gate and error estimator.
+Representative period~16045 runs still show the dependence.  After accounting
+for the ${\sim}88$-bit offset between actual and normalized bits
+(\cref{eq:ff-rho2-offset}), a 100-bit start retains about a one-iteration
+advantage to representative targets, whereas a 150-bit start is already in the
+narrowed 0--1-iteration envelope.  This is consistent with the implementation
+and with partial production spot checks, but it is not yet a full validation of
+every production regime.
 
 \paragraph{Interpreting the diagnostic metric.}
 The diagnostic ratio $\rho^2$ (\cref{eq:ff-halley-gate}) measures
@@ -871,8 +878,14 @@ so $d2$ is accumulated in \code{HDRFloat<float>} with $b \approx 24$.
 The crossover from cubic to quadratic convergence therefore occurs
 at ${\sim}24$~correct bits rather than ${\sim}53$, and the late regime
 gives ${\sim}2n + 24$ bits per step instead of ${\sim}2n + 53$.
-In practice this costs roughly one extra NR iteration compared to the
-CPU path for the same target precision.
+Representative fp32-like sweeps suggest that the remaining practical
+step-count benefit is likely even more concentrated toward comparatively coarse
+starts than on the CPU-like path.  Relative to the 53-bit CPU-like variant,
+the 24-bit path can forfeit roughly one outer iteration in some targets, but
+at already-accurate starts both variants often collapse to the same narrow
+0--1-iteration envelope relative to Newton.  This trend is consistent with the
+implementation and with partial production spot checks, but it is not yet a
+full production validation.
 
 Using \code{double} or \code{dblflt} for the GPU $d2$ accumulation
 would shift the crossover to ${\sim}53$ or ${\sim}48$ correct bits,

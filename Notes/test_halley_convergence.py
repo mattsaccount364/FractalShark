@@ -33,6 +33,9 @@ ROOT_DPS = 400          # extra precision for computing "true" root
 MAX_PERIOD_SEARCH = 50000  # max period to search for
 HALLEY_RHO2_EXP_THRESHOLD = -12  # match FeatureFinder.cpp
 
+START_BITS_SWEEP = [10, 14, 20, 24, 30, 40, 50, 60, 80, 100, 120, 150]
+TARGET_BITS_SWEEP = [24, 53, 80, 100, 150, 200, 300, 400, 600, 900]
+
 
 def iterate_orbit(c, period, dps=None):
     """Iterate z = z^2 + c for `period` steps.
@@ -61,41 +64,78 @@ def iterate_orbit(c, period, dps=None):
     return z, dzdc, d2
 
 
-def iterate_orbit_trunc53(c, period, dps=None):
-    """Same orbit iteration but d2 is computed with 53-bit truncated
-    inputs (z and dzdc converted to complex128 before d2 update),
-    matching the FractalShark C++ code which uses mpf_get_d().
+def quantize_sigbits(value, bits):
+    """Quantize an mpmath scalar to a fixed mantissa width while keeping a wide exponent.
 
-    z and dzdc themselves remain at full precision.
-    d2 is kept at 53-bit precision throughout (matching HDRFloat<double>).
+    This approximates HDRFloat-style arithmetic more closely than IEEE float32/64
+    because it reduces mantissa precision without forcing the exponent into a
+    narrow hardware range.
     """
+    x = mpmath.mpf(value)
+    if x == 0:
+        return mpmath.mpf('0')
+
+    sign = -1 if x < 0 else 1
+    mant, exp2 = mpmath.frexp(abs(x))  # x = mant * 2**exp2, mant in [0.5, 1)
+    scale = mpmath.ldexp(1, bits)
+    mant_q = mpmath.nint(mant * scale) / scale
+
+    # Handle rounding overflow, e.g. 0.111111... -> 1.0
+    if mant_q >= 1:
+        mant_q = mpmath.mpf('0.5')
+        exp2 += 1
+
+    return sign * mpmath.ldexp(mant_q, exp2)
+
+
+def iterate_orbit_quantized_d2(c, period, d2_mode, dps=None):
+    """Orbit iteration with high-precision z/dzdc but quantized d2 update.
+
+    d2_mode:
+      - 'full': high-precision d2
+      - 'fp64': z/dzdc truncated through Python float and d2 kept in float64
+      - 'fp32': z/dzdc truncated to float32 and d2 kept in float32
+    """
+    if d2_mode == 'full':
+        return iterate_orbit(c, period, dps)
+
     if dps is not None:
         old = mpmath.mp.dps
         mpmath.mp.dps = dps
 
     z = mpmath.mpc(0, 0)
     dzdc = mpmath.mpc(0, 0)
-    # d2 accumulated at 53-bit (Python float = IEEE 754 double)
-    d2_r = 0.0
-    d2_i = 0.0
+
+    if d2_mode == 'fp64':
+        bits = 53
+    elif d2_mode == 'fp32':
+        bits = 24
+    else:
+        raise ValueError(f"Unknown d2_mode: {d2_mode}")
+
+    q = lambda x: quantize_sigbits(x, bits)
+    two = mpmath.mpf('2')
+
+    d2_r = mpmath.mpf('0')
+    d2_i = mpmath.mpf('0')
 
     for _ in range(period):
-        # Truncate z, dzdc to double for d2 update (matches mpf_get_d)
-        zr = float(mpmath.re(z))
-        zi = float(mpmath.im(z))
-        dr = float(mpmath.re(dzdc))
-        di = float(mpmath.im(dzdc))
+        # Truncate z and dzdc before the d2 update, matching the production
+        # path where d2 is accumulated from reduced-precision copies.
+        zr = q(mpmath.re(z))
+        zi = q(mpmath.im(z))
+        dr = q(mpmath.re(dzdc))
+        di = q(mpmath.im(dzdc))
 
-        # d2 = 2*(dzdc^2 + z*d2)  in float64
-        # dzdc^2
-        dz2r = dr * dr - di * di
-        dz2i = 2.0 * dr * di
-        # z * d2
-        zd2r = zr * d2_r - zi * d2_i
-        zd2i = zr * d2_i + zi * d2_r
-        # sum and scale
-        d2_r = 2.0 * (dz2r + zd2r)
-        d2_i = 2.0 * (dz2i + zd2i)
+        # d2 = 2*(dzdc^2 + z*d2) in the chosen reduced precision
+        dz2r = q(q(dr * dr) - q(di * di))
+        dz2i = q(q(two) * q(dr * di))
+
+        zd2r = q(q(zr * d2_r) - q(zi * d2_i))
+        zd2i = q(q(zr * d2_i) + q(zi * d2_r))
+
+        d2_r = q(q(two) * q(dz2r + zd2r))
+        d2_i = q(q(two) * q(dz2i + zd2i))
 
         # dzdc and z at full precision
         dzdc = 2 * z * dzdc + 1
@@ -104,7 +144,7 @@ def iterate_orbit_trunc53(c, period, dps=None):
     if dps is not None:
         mpmath.mp.dps = old
 
-    # Return d2 as mpmath complex (but only has ~53-bit precision)
+    # Return d2 as mpmath complex with quantized mantissa but wide exponent
     d2_mp = mpmath.mpc(d2_r, d2_i)
     return z, dzdc, d2_mp
 
@@ -195,10 +235,14 @@ def run_convergence_test(c_init, c_true, period, method, max_iters=30):
 
     for it in range(max_iters):
         # Evaluate orbit
-        if method == 'halley_53':
-            z, dzdc, d2 = iterate_orbit_trunc53(c, period)
-        else:
-            z, dzdc, d2 = iterate_orbit(c, period)
+        orbit_mode = {
+            'newton': 'full',
+            'halley_full': 'full',
+            'halley_fp64': 'fp64',
+            'halley_fp32': 'fp32',
+            'halley_53': 'fp64',
+        }[method]
+        z, dzdc, d2 = iterate_orbit_quantized_d2(c, period, orbit_mode)
 
         # Metrics BEFORE taking the step
         err_c = float(abs(c - c_true))
@@ -240,6 +284,82 @@ def run_convergence_test(c_init, c_true, period, method, max_iters=30):
             break
 
     return results
+
+
+def make_start_from_bits(c_true, start_bits):
+    perturbation = mpmath.mpf(2) ** (-start_bits)
+    return c_true + mpmath.mpc(perturbation, perturbation * mpmath.mpf('0.7'))
+
+
+def iterations_to_target(results, target_bits):
+    for r in results:
+        if r['correct_bits'] >= target_bits:
+            return r['step']
+    return None
+
+
+def compute_method_runs(c_true, period, start_bits_list, methods, max_iters=12):
+    runs = {}
+    for start_bits in start_bits_list:
+        c_start = make_start_from_bits(c_true, start_bits)
+        method_runs = {}
+        for method in methods:
+            method_runs[method] = run_convergence_test(c_start, c_true, period, method, max_iters=max_iters)
+        runs[start_bits] = method_runs
+    return runs
+
+
+def print_savings_matrix(title, runs, halley_method, target_bits_list):
+    print("\n" + "=" * 120)
+    print(title)
+    print("Cell value = Newton iterations - Halley iterations (positive means Halley saved iterations)")
+    print("NA = target not reached within the configured iteration budget")
+    print("=" * 120)
+
+    header = "start\\target"
+    for target_bits in target_bits_list:
+        header += f" {target_bits:>6}"
+    print(header)
+    print("-" * len(header))
+
+    csv_rows = ["start_bits,target_bits,newton_iters,halley_iters,savings"]
+
+    for start_bits, method_runs in runs.items():
+        row = f"{start_bits:>12}"
+        newton_results = method_runs['newton']
+        halley_results = method_runs[halley_method]
+        for target_bits in target_bits_list:
+            newton_iters = iterations_to_target(newton_results, target_bits)
+            halley_iters = iterations_to_target(halley_results, target_bits)
+            if newton_iters is None or halley_iters is None:
+                cell = "NA"
+                savings = "NA"
+            else:
+                savings = newton_iters - halley_iters
+                cell = str(savings)
+            row += f" {cell:>6}"
+            csv_rows.append(f"{start_bits},{target_bits},{newton_iters},{halley_iters},{savings}")
+        print(row)
+
+    print("\nCSV")
+    for line in csv_rows:
+        print(line)
+
+
+def print_gate_summary(title, runs, methods):
+    print("\n" + "=" * 120)
+    print(title)
+    print("first_halley_step = first outer iteration with want_halley=true; gate_hits = count of Halley-enabled steps")
+    print("=" * 120)
+    print(f"{'start_bits':>10} | {'method':>12} | {'first_halley_step':>17} | {'gate_hits':>8}")
+    print("-" * 60)
+
+    for start_bits, method_runs in runs.items():
+        for method in methods:
+            results = method_runs[method]
+            gate_steps = [r['step'] for r in results if r.get('want_halley')]
+            first_halley_step = gate_steps[0] if gate_steps else "never"
+            print(f"{start_bits:>10} | {method:>12} | {str(first_halley_step):>17} | {len(gate_steps):>8}")
 
 
 def print_table(results_list, labels):
@@ -348,15 +468,14 @@ def main():
     print("=" * 120)
 
     for start_bits in [120, 100, 80, 60, 50, 40]:
-        perturbation = mpmath.mpf(2) ** (-start_bits)
-        c_test = c_true + mpmath.mpc(perturbation, perturbation * mpmath.mpf('0.7'))
+        c_test = make_start_from_bits(c_true, start_bits)
         err_test = float(abs(c_test - c_true))
         actual_bits = -math.log2(err_test)
         print(f"\n--- Start at ~{start_bits} bits (actual: {actual_bits:.1f} bits) ---")
 
         r_n = run_convergence_test(c_test, c_true, period, 'newton', max_iters=10)
         r_hf = run_convergence_test(c_test, c_true, period, 'halley_full', max_iters=10)
-        r_h53 = run_convergence_test(c_test, c_true, period, 'halley_53', max_iters=10)
+        r_h53 = run_convergence_test(c_test, c_true, period, 'halley_fp64', max_iters=10)
 
         # Quick check: did it converge?
         if len(r_n) > 1 and r_n[1]['correct_bits'] > r_n[0]['correct_bits']:
@@ -376,7 +495,7 @@ def main():
 
     r3_n = run_convergence_test(c3_init, c3_true, 3, 'newton')
     r3_hf = run_convergence_test(c3_init, c3_true, 3, 'halley_full')
-    r3_h53 = run_convergence_test(c3_init, c3_true, 3, 'halley_53')
+    r3_h53 = run_convergence_test(c3_init, c3_true, 3, 'halley_fp64')
 
     print_table([r3_n, r3_hf, r3_h53], ['Newton', 'Halley-Full', 'Halley-53'])
 
@@ -395,6 +514,23 @@ def main():
     ratio = float(f_dprime / f_prime)
     print(f"Period-{period}: |F''/F'| = {ratio:.6e} = 2^{math.log2(ratio):.1f}")
     print(f"This offset explains why normalized_bits = correct_bits - {math.log2(ratio):.1f}")
+
+    # Step 8: regime maps for CPU-like and GPU-like low-precision Halley
+    sweep_methods = ['newton', 'halley_fp64', 'halley_fp32']
+    print("\n" + "=" * 120)
+    print("HALLEY VALUE-REGION SWEEPS")
+    print("=" * 120)
+
+    runs_p3 = compute_method_runs(c3_true, 3, START_BITS_SWEEP, sweep_methods, max_iters=12)
+    runs_p16045 = compute_method_runs(c_true, period, START_BITS_SWEEP, sweep_methods, max_iters=12)
+
+    print_savings_matrix("Period-3 CPU-like sweep (Halley fp64 vs Newton)", runs_p3, 'halley_fp64', TARGET_BITS_SWEEP)
+    print_savings_matrix("Period-3 GPU-like sweep (Halley fp32 vs Newton)", runs_p3, 'halley_fp32', TARGET_BITS_SWEEP)
+    print_savings_matrix(f"Period-{period} CPU-like sweep (Halley fp64 vs Newton)", runs_p16045, 'halley_fp64', TARGET_BITS_SWEEP)
+    print_savings_matrix(f"Period-{period} GPU-like sweep (Halley fp32 vs Newton)", runs_p16045, 'halley_fp32', TARGET_BITS_SWEEP)
+
+    print_gate_summary("Gate activation summary: period-3", runs_p3, ['halley_fp64', 'halley_fp32'])
+    print_gate_summary(f"Gate activation summary: period-{period}", runs_p16045, ['halley_fp64', 'halley_fp32'])
 
 
 if __name__ == '__main__':

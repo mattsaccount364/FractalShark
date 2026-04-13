@@ -1,7 +1,7 @@
 #include "stdafx.h"
 
-#include "Environment.h"
 #include "AbortMonitor.h"
+#include "Environment.h"
 #include "Fractal.h"
 #include "PerturbationResults.h"
 #include "RefOrbitCalc.h"
@@ -1139,7 +1139,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     auto *ThreadZxMemory =
         (ThreadPtrs<ThreadZxData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
     if (ThreadZxMemory == nullptr) {
-        throw FractalSharkSeriousException("Memory allocation failure site: ThreadZxMemory (RefOrbitCalc ST)");
+        throw FractalSharkSeriousException(
+            "Memory allocation failure site: ThreadZxMemory (RefOrbitCalc ST)");
     }
 
     memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
@@ -1147,7 +1148,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     auto *ThreadZyMemory =
         (ThreadPtrs<ThreadZyData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
     if (ThreadZyMemory == nullptr) {
-        throw FractalSharkSeriousException("Memory allocation failure site: ThreadZyMemory (RefOrbitCalc ST)");
+        throw FractalSharkSeriousException(
+            "Memory allocation failure site: ThreadZyMemory (RefOrbitCalc ST)");
     }
 
     memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
@@ -1343,8 +1345,11 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(ThreadSqZx, ThreadZxMemory));
     std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(ThreadSqZy, ThreadZyMemory));
 
-    ScopedAffinity scopedAffinity{
-        *this, GetCurrentThread(), tZx->native_handle(), tZy->native_handle(), nullptr};
+    ScopedAffinity scopedAffinity{*this,
+                                  Environment::GetCurrentThreadHandle(),
+                                  tZx->native_handle(),
+                                  tZy->native_handle(),
+                                  nullptr};
 
     ThreadZxData *expectedZx = nullptr;
     ThreadZyData *expectedZy = nullptr;
@@ -1671,7 +1676,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         auto *ThreadZxMemory =
             (ThreadPtrs<ThreadZxData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
         if (ThreadZxMemory == nullptr) {
-            throw FractalSharkSeriousException("Memory allocation failure site: ThreadZxMemory (RefOrbitCalc MT)");
+            throw FractalSharkSeriousException(
+                "Memory allocation failure site: ThreadZxMemory (RefOrbitCalc MT)");
         }
 
         memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
@@ -1679,7 +1685,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         auto *ThreadZyMemory =
             (ThreadPtrs<ThreadZyData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
         if (ThreadZyMemory == nullptr) {
-            throw FractalSharkSeriousException("Memory allocation failure site: ThreadZyMemory (RefOrbitCalc MT)");
+            throw FractalSharkSeriousException(
+                "Memory allocation failure site: ThreadZyMemory (RefOrbitCalc MT)");
         }
 
         memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
@@ -1687,7 +1694,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         auto *ThreadReusedMemory =
             (ThreadPtrs<ThreadReusedData> *)_aligned_malloc(sizeof(ThreadPtrs<ThreadReusedData>), 64);
         if (ThreadReusedMemory == nullptr) {
-            throw FractalSharkSeriousException("Memory allocation failure site: ThreadReusedMemory (RefOrbitCalc MT)");
+            throw FractalSharkSeriousException(
+                "Memory allocation failure site: ThreadReusedMemory (RefOrbitCalc MT)");
         }
 
         memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
@@ -1779,62 +1787,62 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         const int32_t IntermediateCompressionErrorExp =
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Intermediate);
 
-        auto ThreadReused = [results,
-                             &bumpAllocator,
-                             &reusedAllocator,
-                             &InitTls,
-                             &ShutdownTls,
-                             IntermediateCompressionErrorExp](
-                                ThreadPtrs<ThreadReusedData> *ThreadMemory) {
-            Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadReused");
-            InitTls();
+        auto ThreadReused =
+            [results,
+             &bumpAllocator,
+             &reusedAllocator,
+             &InitTls,
+             &ShutdownTls,
+             IntermediateCompressionErrorExp](ThreadPtrs<ThreadReusedData> *ThreadMemory) {
+                Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadReused");
+                InitTls();
 
-            {
-                // Scoped block: compressors must be destroyed before ShutdownTls()
-                // so mpf_clear() dispatches to the bump allocator (still active),
-                // not the HeapCpp fallback (which would crash on bump-allocated ptrs).
-                SimpleIntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
-                    *results, IntermediateCompressionErrorExp};
+                {
+                    // Scoped block: compressors must be destroyed before ShutdownTls()
+                    // so mpf_clear() dispatches to the bump allocator (still active),
+                    // not the HeapCpp fallback (which would crash on bump-allocated ptrs).
+                    SimpleIntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
+                        *results, IntermediateCompressionErrorExp};
 
-                MaxIntermediateOrbitCompressor<IterType, T, PExtras> maxIntermediateCompressor{
-                    *results, IntermediateCompressionErrorExp};
+                    MaxIntermediateOrbitCompressor<IterType, T, PExtras> maxIntermediateCompressor{
+                        *results, IntermediateCompressionErrorExp};
 
-                // Initialize to 1 because the array starts with a zero at the front
-                size_t index = 1;
+                    // Initialize to 1 because the array starts with a zero at the front
+                    size_t index = 1;
 
-                for (;;) {
-                    ThreadReusedData *expected = ThreadMemory->In.load();
-                    ThreadReusedData *ok = nullptr;
+                    for (;;) {
+                        ThreadReusedData *expected = ThreadMemory->In.load();
+                        ThreadReusedData *ok = nullptr;
 
-                    CheckStartCriteria;
+                        CheckStartCriteria;
 
-                    // SaveForReuse1 shouldn't be done on this thread.
-                    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
-                        results->AddUncompressedReusedEntry(ok->zx, ok->zy, index);
-                    } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
-                        intermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
-                    } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-                        maxIntermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
-                    } else {
-                        assert(false);
+                        // SaveForReuse1 shouldn't be done on this thread.
+                        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+                            results->AddUncompressedReusedEntry(ok->zx, ok->zy, index);
+                        } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
+                            intermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
+                        } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+                            maxIntermediateCompressor.MaybeAddCompressedIteration(ok->zx, ok->zy, index);
+                        } else {
+                            assert(false);
+                        }
+
+                        index++;
+
+                        // Give result back.
+                        CheckFinishCriteria;
                     }
 
-                    index++;
-
-                    // Give result back.
-                    CheckFinishCriteria;
+                    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+                        maxIntermediateCompressor.CompleteResults();
+                    }
                 }
 
-                if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-                    maxIntermediateCompressor.CompleteResults();
-                }
-            }
+                auto allocatorIndex = bumpAllocator->GetAllocatorIndex();
+                reusedAllocator = bumpAllocator->GetAllocated(allocatorIndex);
 
-            auto allocatorIndex = bumpAllocator->GetAllocatorIndex();
-            reusedAllocator = bumpAllocator->GetAllocated(allocatorIndex);
-
-            ShutdownTls();
-        };
+                ShutdownTls();
+            };
 
         auto *threadZxdata = (ThreadZxData *)_aligned_malloc(sizeof(ThreadZxData), 64);
         auto *threadZydata = (ThreadZyData *)_aligned_malloc(sizeof(ThreadZyData), 64);
@@ -1859,7 +1867,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         }
 
         ScopedAffinity scopedAffinity{*this,
-                                      GetCurrentThread(),
+                                      Environment::GetCurrentThreadHandle(),
                                       tZx->native_handle(),
                                       tZy->native_handle(),
                                       tReuse ? tReuse->native_handle() : nullptr};
@@ -3337,7 +3345,8 @@ RefOrbitCalc::SaveOrbitResults(std::wstring imagFilename) const
         auto minY = m_Fractal.GetMinY();
         auto maxY = m_Fractal.GetMaxY();
 
-        PointZoomBBConverter zoomConverter{minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled};
+        PointZoomBBConverter zoomConverter{
+            minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled};
 
         const double radiusY{double{maxY - minY} / double{2.0}};
         orbitX = zoomConverter.GetPtX();
@@ -3831,7 +3840,7 @@ RefOrbitCalc::ShutdownAllocatorsIfNeeded(std::unique_ptr<MPIRBoundedAllocator> &
 }
 
 RefOrbitCalc::ScopedAffinity::ScopedAffinity(
-    RefOrbitCalc &refOrbitCalc, HANDLE thread1, HANDLE thread2, HANDLE thread3, HANDLE thread4)
+    RefOrbitCalc &refOrbitCalc, void *thread1, void *thread2, void *thread3, void *thread4)
     : m_RefOrbitCalc(refOrbitCalc), m_Thread1(thread1), m_Thread2(thread2), m_Thread3(thread3),
       m_Thread4(thread4)
 {
@@ -3842,7 +3851,7 @@ RefOrbitCalc::ScopedAffinity::ScopedAffinity(
 RefOrbitCalc::ScopedAffinity::~ScopedAffinity()
 {
     // Note, ignore threads 2/3/4 -- they're temporaries in RefOrbitCalc.
-    SetThreadAffinityMask(m_Thread1, 0xFFFFFFFF);
+    Environment::SetThreadAffinity(m_Thread1, 0xFFFFFFFF);
 
     // Reset to default priority:
     // SetThreadPriority(m_Thread1, THREAD_PRIORITY_NORMAL);
@@ -3859,35 +3868,35 @@ RefOrbitCalc::ScopedAffinity::SetCpuAffinityAsNeeded()
 
     if (m_RefOrbitCalc.m_HyperthreadingEnabled) {
         if (m_Thread1) {
-            SetThreadAffinityMask(m_Thread1, 0x1 << 3);
+            Environment::SetThreadAffinity(m_Thread1, 0x1 << 3);
         }
 
         if (m_Thread2) {
-            SetThreadAffinityMask(m_Thread2, 0x1 << 5);
+            Environment::SetThreadAffinity(m_Thread2, 0x1 << 5);
         }
 
         if (m_Thread3) {
-            SetThreadAffinityMask(m_Thread3, 0x1 << 7);
+            Environment::SetThreadAffinity(m_Thread3, 0x1 << 7);
         }
 
         if (m_Thread4) {
-            SetThreadAffinityMask(m_Thread4, 0x1 << 9);
+            Environment::SetThreadAffinity(m_Thread4, 0x1 << 9);
         }
     } else {
         if (m_Thread1) {
-            SetThreadAffinityMask(m_Thread1, 0x1 << 1);
+            Environment::SetThreadAffinity(m_Thread1, 0x1 << 1);
         }
 
         if (m_Thread2) {
-            SetThreadAffinityMask(m_Thread2, 0x1 << 2);
+            Environment::SetThreadAffinity(m_Thread2, 0x1 << 2);
         }
 
         if (m_Thread3) {
-            SetThreadAffinityMask(m_Thread3, 0x1 << 3);
+            Environment::SetThreadAffinity(m_Thread3, 0x1 << 3);
         }
 
         if (m_Thread4) {
-            SetThreadAffinityMask(m_Thread4, 0x1 << 4);
+            Environment::SetThreadAffinity(m_Thread4, 0x1 << 4);
         }
     }
 

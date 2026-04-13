@@ -40,6 +40,9 @@ void FileClose(void *handle);
 // System information
 // =========================================================================
 
+// System memory page size in bytes (e.g. 4096).
+size_t SystemPageSize();
+
 // Current process commit charge (pagefile usage) in bytes.
 uint64_t ProcessCommitChargeBytes();
 
@@ -84,6 +87,12 @@ void YieldProcessor();
 // Atomic compare-and-swap on a 32-bit integer.
 // Returns the original value of *dest.
 int32_t InterlockedCAS32(volatile int32_t *dest, int32_t exchange, int32_t comparand);
+
+// Return a pseudo-handle for the calling thread.
+void *GetCurrentThreadHandle();
+
+// Set the CPU affinity mask for a thread. Returns the previous mask, or 0 on failure.
+uint64_t SetThreadAffinity(void *threadHandle, uint64_t mask);
 
 // =========================================================================
 // Timing

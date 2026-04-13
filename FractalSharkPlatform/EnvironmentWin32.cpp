@@ -66,6 +66,14 @@ Environment::FileClose(void *handle)
 // System information
 // =========================================================================
 
+size_t
+Environment::SystemPageSize()
+{
+    SYSTEM_INFO si;
+    ::GetSystemInfo(&si);
+    return static_cast<size_t>(si.dwPageSize);
+}
+
 uint64_t
 Environment::ProcessCommitChargeBytes()
 {
@@ -176,6 +184,20 @@ Environment::InterlockedCAS32(volatile int32_t *dest, int32_t exchange, int32_t 
 {
     return static_cast<int32_t>(
         ::InterlockedCompareExchange(reinterpret_cast<volatile LONG *>(dest), exchange, comparand));
+}
+
+void *
+Environment::GetCurrentThreadHandle()
+{
+    return ::GetCurrentThread();
+}
+
+uint64_t
+Environment::SetThreadAffinity(void *threadHandle, uint64_t mask)
+{
+    DWORD_PTR result =
+        ::SetThreadAffinityMask(static_cast<HANDLE>(threadHandle), static_cast<DWORD_PTR>(mask));
+    return static_cast<uint64_t>(result);
 }
 
 // =========================================================================

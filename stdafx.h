@@ -5,8 +5,6 @@
 
 #pragma once
 
-#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
-
 // Windows.h and STL workaround
 #define NOMINMAX
 
@@ -18,30 +16,18 @@
 // suppress this warning.
 #define _SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING
 
-// Windows Header Files:
-#include <windows.h>
-#include <Winuser.h>
-#include <Windowsx.h>
-
 #include "DbgHeap.h"
 
 // C RunTime Header Files
-#include <stdlib.h>
 #include <malloc.h>
 #include <memory.h>
-#include <tchar.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <math.h>
-#include <io.h>
 #include <time.h>
 
-#include <locale>
 #include <codecvt>
+#include <locale>
 
-#include <GL/gl.h>      /* OpenGL header file */
-#include <GL/glu.h>     /* OpenGL utilities header file */
 #include <mpir.h>
-
-// Local Header Files
-#include "OpenGLContext.h"

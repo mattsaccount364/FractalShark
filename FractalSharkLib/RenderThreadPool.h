@@ -1,7 +1,11 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include "GPU_Types.h"
 #include "ItersMemoryContainer.h"
+#include "OpenGLContext.h"
 #include "PointZoomBBConverter.h"
 #include "RenderAlgorithm.h"
 
@@ -198,8 +202,7 @@ public:
     // Enqueue a command that mutates Fractal state, then renders.
     // The command lambda runs on a worker thread under m_CalcFractalMutex.
     // After the command, the worker snapshots state and renders.
-    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd,
-                                   bool supersedable = true);
+    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd, bool supersedable = true);
 
     // Enqueue a mutation-only command: executes the lambda under the lock
     // but does NOT trigger CalcFractal or frame production.
@@ -253,14 +256,13 @@ private:
                         ItersMemoryContainer &workerIters);
 
     // Wait for GPU compute to finish, producing progressive frames periodically.
-    void WaitForGpuAndProduceProgressiveFrames(
-        Fractal *fractal,
-        GPURenderer &renderer,
-        const RenderWorkItem &item,
-        RendererIndex rendererIdx,
-        ItersMemoryContainer &workerIters,
-        std::mutex &workerMutex,
-        std::condition_variable &workerCV);
+    void WaitForGpuAndProduceProgressiveFrames(Fractal *fractal,
+                                               GPURenderer &renderer,
+                                               const RenderWorkItem &item,
+                                               RendererIndex rendererIdx,
+                                               ItersMemoryContainer &workerIters,
+                                               std::mutex &workerMutex,
+                                               std::condition_variable &workerCV);
 
     // Upload a RenderFrame to the GL context as a textured quad.
     void RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &frame);

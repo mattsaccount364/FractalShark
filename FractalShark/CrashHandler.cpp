@@ -1,9 +1,12 @@
 #include "stdafx.h"
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include "CrashHandler.h"
 
-#include <minidumpapiset.h>
 #include <cstdlib>
+#include <minidumpapiset.h>
 
 // ---------------------------------------------------------------------------
 // File-static state — initialised once by Install(), used by all handlers.
@@ -17,13 +20,11 @@ using MiniDumpWriteDumpFn = BOOL(WINAPI *)(HANDLE hProcess,
                                            CONST PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam,
                                            CONST PMINIDUMP_CALLBACK_INFORMATION CallbackParam);
 
-static HMODULE              s_DbgHelpModule = nullptr;
-static MiniDumpWriteDumpFn  s_MiniDumpWriteDump = nullptr;
+static HMODULE s_DbgHelpModule = nullptr;
+static MiniDumpWriteDumpFn s_MiniDumpWriteDump = nullptr;
 
-static constexpr MINIDUMP_TYPE DumpFlags =
-    static_cast<MINIDUMP_TYPE>(MiniDumpNormal |
-                               MiniDumpWithDataSegs |
-                               MiniDumpWithIndirectlyReferencedMemory);
+static constexpr MINIDUMP_TYPE DumpFlags = static_cast<MINIDUMP_TYPE>(
+    MiniDumpNormal | MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory);
 
 // ---------------------------------------------------------------------------
 // Minidump writer — called from every handler path.
@@ -79,14 +80,13 @@ WriteMiniDumpFromCurrentContext()
     // outlives the filter evaluation.
     EXCEPTION_RECORD record{};
     CONTEXT ctx{};
-    EXCEPTION_POINTERS captured{ &record, &ctx };
+    EXCEPTION_POINTERS captured{&record, &ctx};
 
     __try {
         ::RaiseException(0xE0000001, 0, 0, nullptr);
-    }
-    __except (record = *GetExceptionInformation()->ExceptionRecord,
-              ctx = *GetExceptionInformation()->ContextRecord,
-              EXCEPTION_EXECUTE_HANDLER) {
+    } __except (record = *GetExceptionInformation()->ExceptionRecord,
+                ctx = *GetExceptionInformation()->ContextRecord,
+                EXCEPTION_EXECUTE_HANDLER) {
         WriteMiniDump(&captured);
     }
 }
@@ -158,9 +158,8 @@ CrashHandler::Install()
     // path doesn't have to call LoadLibrary (which touches the heap).
     s_DbgHelpModule = ::LoadLibraryW(L"dbghelp.dll");
     if (s_DbgHelpModule != nullptr) {
-        s_MiniDumpWriteDump =
-            reinterpret_cast<MiniDumpWriteDumpFn>(
-                ::GetProcAddress(s_DbgHelpModule, "MiniDumpWriteDump"));
+        s_MiniDumpWriteDump = reinterpret_cast<MiniDumpWriteDumpFn>(
+            ::GetProcAddress(s_DbgHelpModule, "MiniDumpWriteDump"));
     }
 
     // SEH top-level filter.

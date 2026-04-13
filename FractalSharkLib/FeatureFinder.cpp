@@ -24,6 +24,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <future>
 #include <iomanip>
@@ -375,7 +376,7 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
     f.close();
 
     // Atomic replace: rename tmp over existing file in one step.
-    MoveFileExA(NRCheckpointTmpFilename, NRCheckpointFilename, MOVEFILE_REPLACE_EXISTING);
+    std::filesystem::rename(NRCheckpointTmpFilename, NRCheckpointFilename);
 }
 
 // ------------------------------------------------------------

@@ -163,7 +163,7 @@ orchestrates data flow between them and handles high-precision coordinate
 arithmetic.
 
 \begin{lstlisting}[language={},basicstyle=\ttfamily\small,columns=flexible]
-  View parameters (centre, zoom, iterations)
+  View parameters (center, zoom, iterations)
           |
           v
   Coordinate mapping            [PointZoomBBConverter]
@@ -205,7 +205,7 @@ iteration buffer and produce frames for the OpenGL consumer; and the
 \emph{direct path}, used by tests and save operations, which writes
 results into the shared \code{m\_CurIters} buffer.  The render thread
 pool (\cref{sec:render-thread-pool}) manages a command queue that
-serialises UI-driven mutations with rendering work, discarding stale
+serializes UI-driven mutations with rendering work, discarding stale
 renders when the user navigates faster than the GPU can complete them.
 
 \subsection*{Document roadmap}
@@ -385,9 +385,9 @@ full set of explicit instantiations is available in
 \label{subsec:template-explicit-inst}
 
 Because every translation unit that includes a template header would
-otherwise independently instantiate each specialisation it references,
+otherwise independently instantiate each specialization it references,
 \FractalShark{} relies on \emph{explicit template instantiation} to
-centralise code generation and control compile times.
+centralize code generation and control compile times.
 
 For the perturbation pipeline, the header
 \code{RefOrbitCalcTemplates.h} defines a family of preprocessor macros
@@ -421,7 +421,7 @@ compiler.
 \label{subsec:template-sharkparams}
 
 The GPU high-precision arithmetic library takes the compile-time
-parameterisation one step further by encoding not just type choices but
+parameterization one step further by encoding not only type choices but
 also \emph{algorithmic configuration} in a template parameter.
 The struct
 \code{GenericSharkFloatParams<pNumDigits,\allowbreak Periodicity,\allowbreak
@@ -470,5 +470,5 @@ parameter-set instantiations per GPU kernel template.
 
 With this architectural overview in place, the following chapter turns
 to the rendering kernels themselves, beginning with the pixel-to-parameter
-mapping and the base escape-time iteration that all subsequent optimisations
+mapping and the base escape-time iteration that all subsequent optimizations
 build upon.

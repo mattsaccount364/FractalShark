@@ -416,7 +416,7 @@ with the convention $w_0 = w_1 = 1$.  This product satisfies
 $\partial z_n/\partial c = w_n + \text{lower-order terms}$ and is used later
 to compute the intrinsic scale of the mini-brot (see
 \cref{subsec:ff-intrinsic-radius}).  In the code, \code{zcoeff} is
-initialised to~$1$ at $n=0$ (because $z_0 = 0$ would otherwise collapse the
+initialized to~$1$ at $n=0$ (because $z_0 = 0$ would otherwise collapse the
 product) and then multiplied by $2z$ at each subsequent step, matching the
 recurrence for the leading factor of the derivative.
 
@@ -1004,7 +1004,7 @@ Converting high-precision \code{mpf\_t} values to decimal strings via
 \code{mpf\_get\_str} and writing them to disk can take non-trivial
 time at high precision.  A dedicated \code{CheckpointWriter} background
 thread accepts \code{CheckpointSnapshot} objects (which own independent
-copies of the \code{mpf\_t} data) and performs the serialisation and
+copies of the \code{mpf\_t} data) and performs the serialization and
 file I/O without blocking the Newton iteration.  The snapshot is
 written to a temporary file and atomically renamed to the checkpoint
 path, ensuring that the on-disk checkpoint is always in a consistent

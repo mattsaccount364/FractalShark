@@ -72,7 +72,9 @@ Given a selected reference parameter \(c = c_x + i c_y\), the implementation:
 
 \begin{itemize}
   \item Initializes \code{mpf\_t} temporaries for \(x,y,x^2\), and scratch products.
-  \item Sets the initial iterate \((x_0,y_0) = (c_x,c_y)\) (this code uses the common convention \(z_0=c\)).
+  \item Sets the loop-entry iterate to \((x_1,y_1) = (c_x,c_y)\), which
+        corresponds to folding in the first iteration of the standard
+        recurrence \(z_{n+1}=z_n^2+c\) with \(z_0=0\).
   \item Computes low-precision cast values \(\hat{c}_x,\hat{c}_y \in T\) either via \code{mpf\_get\_d} for
         native float/double, or via a mantissa/exponent extraction for extended formats.
 \end{itemize}
@@ -496,7 +498,7 @@ the reconstruction error is bounded by the same tolerance logic used to place
 waypoints.
 
 \paragraph{On-the-fly use during rendering.}
-Because decompression is just a forward scan with occasional resets, it can be
+Because decompression is a forward scan with occasional resets, it can be
 performed \emph{streaming} (no random access required), and can be interleaved
 with perturbation-based pixel evaluation by iterating \(\hat z_n\) alongside the
 main render loop.

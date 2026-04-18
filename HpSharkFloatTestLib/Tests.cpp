@@ -74,11 +74,12 @@ struct MpfSquaringHelper {
     HelperContext helpers[2];
     std::thread threads[2];
 
-    static void HelperThreadFunc(HelperContext &ctx) {
+    static void
+    HelperThreadFunc(HelperContext &ctx)
+    {
         for (;;) {
             int s;
-            while ((s = ctx.state.load(std::memory_order_acquire)) !=
-                   static_cast<int>(State::Working)) {
+            while ((s = ctx.state.load(std::memory_order_acquire)) != static_cast<int>(State::Working)) {
                 if (s == static_cast<int>(State::Shutdown)) {
                     return;
                 }
@@ -91,13 +92,17 @@ struct MpfSquaringHelper {
         }
     }
 
-    void Start() {
+    void
+    Start()
+    {
         for (int i = 0; i < 2; ++i) {
             threads[i] = std::thread{HelperThreadFunc, std::ref(helpers[i])};
         }
     }
 
-    void Dispatch() {
+    void
+    Dispatch()
+    {
         for (int i = 0; i < 2; ++i) {
             int expected = static_cast<int>(State::Idle);
             bool ok = helpers[i].state.compare_exchange_strong(
@@ -107,17 +112,20 @@ struct MpfSquaringHelper {
         }
     }
 
-    void WaitForDone() {
+    void
+    WaitForDone()
+    {
         for (int i = 0; i < 2; ++i) {
-            while (helpers[i].state.load(std::memory_order_acquire) !=
-                   static_cast<int>(State::Done)) {
+            while (helpers[i].state.load(std::memory_order_acquire) != static_cast<int>(State::Done)) {
                 Environment::YieldProcessor();
             }
             helpers[i].state.store(static_cast<int>(State::Idle), std::memory_order_release);
         }
     }
 
-    void ShutdownHelpers() {
+    void
+    ShutdownHelpers()
+    {
         for (int i = 0; i < 2; ++i) {
             int expected = static_cast<int>(State::Idle);
             bool ok = helpers[i].state.compare_exchange_strong(
@@ -573,7 +581,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
     if constexpr (HpShark::TestMPIRImpl) {
         ScopedBenchmarkStopper hostStopper{hostTimer};
 
-
         typename SharkFloatParams::Float dzdcX{1};
         typename SharkFloatParams::Float dzdcY{0};
 
@@ -586,7 +593,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
         uint64_t keptIterationCounter = 0;
 
-        // hostReferenceOrbit.push_back({typename SharkFloatParams::Float{0}, typename SharkFloatParams::Float{0}}); // Initial value
+        // hostReferenceOrbit.push_back({typename SharkFloatParams::Float{0}, typename
+        // SharkFloatParams::Float{0}}); // Initial value
 
         MpfSquaringHelper squaringHelper;
         if constexpr (sharkOperator == Operator::ReferenceOrbit) {
@@ -623,7 +631,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     double_zy = typename SharkFloatParams::Float{recurrenceY};
                 }
 
-                hostReferenceOrbit.push_back({typename SharkFloatParams::Float{recurrenceX}, typename SharkFloatParams::Float{recurrenceY}});
+                hostReferenceOrbit.push_back({typename SharkFloatParams::Float{recurrenceX},
+                                              typename SharkFloatParams::Float{recurrenceY}});
 
                 // Increment before periodicity
                 keptIterationCounter++;
@@ -672,7 +681,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 if (useMT) {
                     squaringHelper.Dispatch();
-                    mpf_mul(twoXY, recurrenceX, recurrenceY);    // xy (main thread, concurrent with helpers)
+                    mpf_mul(
+                        twoXY, recurrenceX, recurrenceY); // xy (main thread, concurrent with helpers)
                     squaringHelper.WaitForDone();
                 } else {
                     // ST: all multiplies sequential
@@ -681,10 +691,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     mpf_mul(twoXY, recurrenceX, recurrenceY);
                 }
 
-                mpf_mul_ui(twoXY, twoXY, 2);                 // 2xy
-                mpf_sub(tempX, xSquared, ySquared);          // x^2 - y^2
-                mpf_add(recurrenceX, tempX, mpfX);           // x^2 - y^2 + a
-                mpf_add(recurrenceY, twoXY, mpfY);           // 2xy + b
+                mpf_mul_ui(twoXY, twoXY, 2);        // 2xy
+                mpf_sub(tempX, xSquared, ySquared); // x^2 - y^2
+                mpf_add(recurrenceX, tempX, mpfX);  // x^2 - y^2 + a
+                mpf_add(recurrenceY, twoXY, mpfY);  // 2xy + b
 
                 typename SharkFloatParams::Float tempZX = double_zx + cx_cast;
                 typename SharkFloatParams::Float tempZY = double_zy + cy_cast;
@@ -833,8 +843,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             std::vector<typename SharkFloatParams::ReferenceIterT> hpSharkReferenceOrbit;
             uint64_t totalExecutedIters = 0;
 
-            auto combo =
-                InitHpSharkReferenceKernel<SharkFloatParams>(launchParams, hdrRadiusY, *xNum, *yNum);
+            HpShark::GpuOrbitSession<SharkFloatParams> session(
+                launchParams, hdrRadiusY, *xNum, *yNum, debugGpuCombo.get());
+            auto &combo = session.GetCombo();
 
             {
                 BenchmarkTimer timer;
@@ -852,24 +863,23 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         assert(itersToRun > 0);
                         assert(itersToRun <= MaxOutputIters);
 
-                        HpShark::InvokeHpSharkReferenceKernel<SharkFloatParams>(
-                            launchParams, *combo, itersToRun);
+                        session.InvokeChunk(itersToRun);
 
-                        totalExecutedIters += combo->OutputIterCount;
+                        totalExecutedIters += combo.OutputIterCount;
 
-                        for (auto i = 0; i < combo->OutputIterCount; ++i) {
-                            hpSharkReferenceOrbit.push_back(combo->OutputIters[i]);
+                        for (auto i = 0; i < combo.OutputIterCount; ++i) {
+                            hpSharkReferenceOrbit.push_back(combo.OutputIters[i]);
                         }
 
                         if constexpr (SharkFloatParams::EnablePeriodicity) {
-                            if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound ||
-                                combo->PeriodicityStatus == PeriodicityResult::Escaped ||
-                                combo->PeriodicityStatus == PeriodicityResult::Unknown || // error
+                            if (combo.PeriodicityStatus == PeriodicityResult::PeriodFound ||
+                                combo.PeriodicityStatus == PeriodicityResult::Escaped ||
+                                combo.PeriodicityStatus == PeriodicityResult::Unknown || // error
                                 totalExecutedIters >= numIters) {
 
                                 // Sanity check: if periodicity is enabled, we should never exit
                                 // with "Unknown"
-                                if (combo->PeriodicityStatus == PeriodicityResult::Unknown) {
+                                if (combo.PeriodicityStatus == PeriodicityResult::Unknown) {
                                     Environment::DebugBreakpoint();
                                 }
                             } else {
@@ -884,9 +894,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         }
                     }
                 }
-
-                ShutdownHpSharkReferenceKernel<SharkFloatParams>(
-                    launchParams, *combo, debugGpuCombo.get());
 
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
@@ -903,8 +910,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 }
             }
 
-            const auto &gpuResultX = combo->Multiply.A;
-            const auto &gpuResultY = combo->Multiply.B;
+            const auto &gpuResultX = combo.Multiply.A;
+            const auto &gpuResultY = combo.Multiply.B;
 
             // HpSharkReferenceResultsToFile<SharkFloatParams>("HpSharkPerfResults.txt", *combo);
 
@@ -920,8 +927,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         xNum.get(), yNum.get(), hdrRadiusY, numIters, debugHostCombo);
                 }
 
-                std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs() << " ms, iters="
-                          << cpuRefOrbitResult->IterationsExecuted << std::endl;
+                std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs()
+                          << " ms, iters=" << cpuRefOrbitResult->IterationsExecuted << std::endl;
                 if (timingOut) {
                     timingOut->cpuRefMs = static_cast<double>(cpuRefTimer.GetDeltaInMs());
                 }
@@ -997,12 +1004,11 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                             HdrReduce(cpuValY);
 
                             if (hostValX != cpuValX || hostValY != cpuValY) {
-                                std::cout
-                                    << "Error: MPIR host and CPU ref orbit mismatch at idx " << i
-                                    << ": mpir.x=" << hostValX.ToString<false>()
-                                    << " mpir.y=" << hostValY.ToString<false>()
-                                    << " cpu.x=" << cpuValX.ToString<false>()
-                                    << " cpu.y=" << cpuValY.ToString<false>() << std::endl;
+                                std::cout << "Error: MPIR host and CPU ref orbit mismatch at idx " << i
+                                          << ": mpir.x=" << hostValX.ToString<false>()
+                                          << " mpir.y=" << hostValY.ToString<false>()
+                                          << " cpu.x=" << cpuValX.ToString<false>()
+                                          << " cpu.y=" << cpuValY.ToString<false>() << std::endl;
                                 cpuOrbitMatch = false;
                                 Environment::DebugBreakpoint();
                                 break;
@@ -1038,21 +1044,21 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 testSucceeded &= CheckDiff(
                     launchParams, Tests, testNum, numTerms, "GPU_B", mpfHostResultYY, gpuResultY);
 
-                if ((combo->PeriodicityStatus != hostPeriodicityResult) ||
+                if ((combo.PeriodicityStatus != hostPeriodicityResult) ||
                     (totalExecutedIters != hostIterationsExecuted)) {
 
-                    std::cout << "Periodicity status: " << PeriodicityStrResult(combo->PeriodicityStatus)
+                    std::cout << "Periodicity status: " << PeriodicityStrResult(combo.PeriodicityStatus)
                               << std::endl;
                     std::cout << "Escape iteration mismatch: host=" << hostIterationsExecuted
                               << " gpu=" << totalExecutedIters << std::endl;
                     Environment::DebugBreakpoint();
                 } else {
-                    std::cout << "Periodicity status: " << PeriodicityStrResult(combo->PeriodicityStatus)
+                    std::cout << "Periodicity status: " << PeriodicityStrResult(combo.PeriodicityStatus)
                               << std::endl;
                     std::cout << "Output iteration: " << totalExecutedIters << std::endl;
                 }
             } else {
-                std::cout << "Periodicity status: " << PeriodicityStrResult(combo->PeriodicityStatus)
+                std::cout << "Periodicity status: " << PeriodicityStrResult(combo.PeriodicityStatus)
                           << std::endl;
                 std::cout << "Output iteration: " << totalExecutedIters << std::endl;
             }
@@ -1078,12 +1084,11 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         HdrReduce(gpuValY);
 
                         if (cpuValX != gpuValX || cpuValY != gpuValY) {
-                            std::cout
-                                << "Error: CPU ref and GPU orbit mismatch at idx " << i
-                                << ": cpu.x=" << cpuValX.ToString<false>()
-                                << " cpu.y=" << cpuValY.ToString<false>()
-                                << " gpu.x=" << gpuValX.ToString<false>()
-                                << " gpu.y=" << gpuValY.ToString<false>() << std::endl;
+                            std::cout << "Error: CPU ref and GPU orbit mismatch at idx " << i
+                                      << ": cpu.x=" << cpuValX.ToString<false>()
+                                      << " cpu.y=" << cpuValY.ToString<false>()
+                                      << " gpu.x=" << gpuValX.ToString<false>()
+                                      << " gpu.y=" << gpuValY.ToString<false>() << std::endl;
                             cpuGpuOrbitMatch = false;
                             Environment::DebugBreakpoint();
                             break;
@@ -1096,24 +1101,23 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 }
 
                 // Direct CPU ref vs GPU periodicity/iteration comparison
-                if (cpuRefOrbitResult->PeriodResult != combo->PeriodicityStatus) {
+                if (cpuRefOrbitResult->PeriodResult != combo.PeriodicityStatus) {
                     std::cout << "Error: CPU ref vs GPU periodicity mismatch: cpuRef="
                               << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult)
-                              << " gpu=" << PeriodicityStrResult(combo->PeriodicityStatus)
-                              << std::endl;
+                              << " gpu=" << PeriodicityStrResult(combo.PeriodicityStatus) << std::endl;
                     Environment::DebugBreakpoint();
                 }
 
                 if (cpuRefOrbitResult->IterationsExecuted != totalExecutedIters) {
                     std::cout << "Error: CPU ref vs GPU iteration count mismatch: cpuRef="
-                              << cpuRefOrbitResult->IterationsExecuted
-                              << " gpu=" << totalExecutedIters << std::endl;
+                              << cpuRefOrbitResult->IterationsExecuted << " gpu=" << totalExecutedIters
+                              << std::endl;
                     Environment::DebugBreakpoint();
                 }
             }
 
             if (expectedPeriod != -1 && static_cast<uint64_t>(expectedPeriod) <= numIters) {
-                if ((combo->PeriodicityStatus != expectedResult) ||
+                if ((combo.PeriodicityStatus != expectedResult) ||
                     (totalExecutedIters != static_cast<uint64_t>(expectedPeriod))) {
                     std::cout << "Error: Expected result iters " << expectedPeriod << " but got "
                               << totalExecutedIters << std::endl;
@@ -1463,16 +1467,34 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
 
         // When NR enabled, pass NR params in the SAME call so checksums cover both
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            AddHelper<SharkFloatParams>(&aNum, &bNum, &cNum, &dNum, &eNum,
-                                        hostAddResult1.get(), hostAddResult2.get(),
-                                        &aNum, &bNum, &cNum, &dNum,  // W0=A, W1=B, W2=C, W3=D
-                                        hostDzdcReal.get(), hostDzdcImag.get(),
+            AddHelper<SharkFloatParams>(&aNum,
+                                        &bNum,
+                                        &cNum,
+                                        &dNum,
+                                        &eNum,
+                                        hostAddResult1.get(),
+                                        hostAddResult2.get(),
+                                        &aNum,
+                                        &bNum,
+                                        &cNum,
+                                        &dNum, // W0=A, W1=B, W2=C, W3=D
+                                        hostDzdcReal.get(),
+                                        hostDzdcImag.get(),
                                         debugHostCombo);
         } else {
-            AddHelper<SharkFloatParams>(&aNum, &bNum, &cNum, &dNum, &eNum,
-                                        hostAddResult1.get(), hostAddResult2.get(),
-                                        nullptr, nullptr, nullptr, nullptr,
-                                        nullptr, nullptr,
+            AddHelper<SharkFloatParams>(&aNum,
+                                        &bNum,
+                                        &cNum,
+                                        &dNum,
+                                        &eNum,
+                                        hostAddResult1.get(),
+                                        hostAddResult2.get(),
+                                        nullptr,
+                                        nullptr,
+                                        nullptr,
+                                        nullptr,
+                                        nullptr,
+                                        nullptr,
                                         debugHostCombo);
         }
 
@@ -1521,12 +1543,20 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
 
             constexpr auto numTermsNRReal = 3;
             constexpr auto numTermsNRImag = 2;
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum + 200, numTermsNRReal,
-                "NR DzdcReal", mpfExpDzdcReal, *hostDzdcReal);
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum + 201, numTermsNRImag,
-                "NR DzdcImag", mpfExpDzdcImag, *hostDzdcImag);
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(launchParams,
+                                                                     Tests,
+                                                                     testNum + 200,
+                                                                     numTermsNRReal,
+                                                                     "NR DzdcReal",
+                                                                     mpfExpDzdcReal,
+                                                                     *hostDzdcReal);
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(launchParams,
+                                                                     Tests,
+                                                                     testNum + 201,
+                                                                     numTermsNRImag,
+                                                                     "NR DzdcImag",
+                                                                     mpfExpDzdcImag,
+                                                                     *hostDzdcImag);
 
             mpf_clear(mpfExpDzdcReal);
             mpf_clear(mpfExpDzdcImag);
@@ -1593,8 +1623,7 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
             combo->W2 = cNum;
             combo->W3 = dNum;
             combo->One.template FromHDRFloat<typename SharkFloatParams::SubType>(
-                HDRFloat<typename SharkFloatParams::SubType>{
-                    typename SharkFloatParams::SubType(1.0)});
+                HDRFloat<typename SharkFloatParams::SubType>{typename SharkFloatParams::SubType(1.0)});
         }
 
         HpShark::InvokeAddKernelCorrectness<SharkFloatParams>(
@@ -1659,7 +1688,8 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
         // GPU NR checks: DzdcReal/DzdcImag against MPIR
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             mpf_t mpfGpuDzdcReal, mpfGpuDzdcImag;
-            mpf_init(mpfGpuDzdcReal); mpf_init(mpfGpuDzdcImag);
+            mpf_init(mpfGpuDzdcReal);
+            mpf_init(mpfGpuDzdcImag);
 
             // Expected: DzdcReal = W0 - W1 + 1 = A - B + 1
             // Expected: DzdcImag = W2 + W3 = C + D
@@ -1667,14 +1697,23 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
             mpf_add_ui(mpfGpuDzdcReal, mpfGpuDzdcReal, 1);
             mpf_add(mpfGpuDzdcImag, mpfC, mpfD);
 
-            testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum + 200, numTermsABC,
-                "GPU NR DzdcReal", mpfGpuDzdcReal, *gpuDzdcReal);
-            testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum + 201, numTermsDE,
-                "GPU NR DzdcImag", mpfGpuDzdcImag, *gpuDzdcImag);
+            testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(launchParams,
+                                                                             Tests,
+                                                                             testNum + 200,
+                                                                             numTermsABC,
+                                                                             "GPU NR DzdcReal",
+                                                                             mpfGpuDzdcReal,
+                                                                             *gpuDzdcReal);
+            testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(launchParams,
+                                                                             Tests,
+                                                                             testNum + 201,
+                                                                             numTermsDE,
+                                                                             "GPU NR DzdcImag",
+                                                                             mpfGpuDzdcImag,
+                                                                             *gpuDzdcImag);
 
-            mpf_clear(mpfGpuDzdcReal); mpf_clear(mpfGpuDzdcImag);
+            mpf_clear(mpfGpuDzdcReal);
+            mpf_clear(mpfGpuDzdcImag);
         }
     }
 
@@ -1770,21 +1809,30 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
 
         if constexpr (sharkOperator == Operator::MultiplyNTT) {
             if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                MultiplyHelperFFT2<SharkFloatParams>(&aNum, &bNum,
+                MultiplyHelperFFT2<SharkFloatParams>(&aNum,
+                                                     &bNum,
                                                      hostKaratsubaOutXXV2.get(),
                                                      hostKaratsubaOutXYV2.get(),
                                                      hostKaratsubaOutYYV2.get(),
-                                                     dzdcRNum, dzdcINum,
-                                                     hostW0.get(), hostW1.get(),
-                                                     hostW2.get(), hostW3.get(),
+                                                     dzdcRNum,
+                                                     dzdcINum,
+                                                     hostW0.get(),
+                                                     hostW1.get(),
+                                                     hostW2.get(),
+                                                     hostW3.get(),
                                                      debugHostCombo);
             } else {
-                MultiplyHelperFFT2<SharkFloatParams>(&aNum, &bNum,
+                MultiplyHelperFFT2<SharkFloatParams>(&aNum,
+                                                     &bNum,
                                                      hostKaratsubaOutXXV2.get(),
                                                      hostKaratsubaOutXYV2.get(),
                                                      hostKaratsubaOutYYV2.get(),
-                                                     nullptr, nullptr,
-                                                     nullptr, nullptr, nullptr, nullptr,
+                                                     nullptr,
+                                                     nullptr,
+                                                     nullptr,
+                                                     nullptr,
+                                                     nullptr,
+                                                     nullptr,
                                                      debugHostCombo);
             }
 
@@ -1833,15 +1881,21 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
         // NR: check CPU-ref W0-W3 against MPIR (same pattern as orbit above)
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             mpf_t mpfW0, mpfW1, mpfW2, mpfW3;
-            mpf_init(mpfW0); mpf_init(mpfW1);
-            mpf_init(mpfW2); mpf_init(mpfW3);
+            mpf_init(mpfW0);
+            mpf_init(mpfW1);
+            mpf_init(mpfW2);
+            mpf_init(mpfW3);
 
             // W0 = 2*dzdcR*A, W1 = 2*dzdcI*B
             // W2 = 2*dzdcR*B, W3 = 2*dzdcI*A
-            mpf_mul(mpfW0, mpfDzdcR, mpfA); mpf_mul_ui(mpfW0, mpfW0, 2);
-            mpf_mul(mpfW1, mpfDzdcI, mpfB); mpf_mul_ui(mpfW1, mpfW1, 2);
-            mpf_mul(mpfW2, mpfDzdcR, mpfB); mpf_mul_ui(mpfW2, mpfW2, 2);
-            mpf_mul(mpfW3, mpfDzdcI, mpfA); mpf_mul_ui(mpfW3, mpfW3, 2);
+            mpf_mul(mpfW0, mpfDzdcR, mpfA);
+            mpf_mul_ui(mpfW0, mpfW0, 2);
+            mpf_mul(mpfW1, mpfDzdcI, mpfB);
+            mpf_mul_ui(mpfW1, mpfW1, 2);
+            mpf_mul(mpfW2, mpfDzdcR, mpfB);
+            mpf_mul_ui(mpfW2, mpfW2, 2);
+            mpf_mul(mpfW3, mpfDzdcI, mpfA);
+            mpf_mul_ui(mpfW3, mpfW3, 2);
 
             res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
                 launchParams, Tests, testNum + 100, numTerms, "NR W0", mpfW0, *hostW0);
@@ -1852,8 +1906,10 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
             res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
                 launchParams, Tests, testNum + 103, numTerms, "NR W3", mpfW3, *hostW3);
 
-            mpf_clear(mpfW0); mpf_clear(mpfW1);
-            mpf_clear(mpfW2); mpf_clear(mpfW3);
+            mpf_clear(mpfW0);
+            mpf_clear(mpfW1);
+            mpf_clear(mpfW2);
+            mpf_clear(mpfW3);
         }
 
         return res;
@@ -1992,13 +2048,19 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
         // GPU NR checks: W0-W3 against MPIR
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             mpf_t mpfGpuW0, mpfGpuW1, mpfGpuW2, mpfGpuW3;
-            mpf_init(mpfGpuW0); mpf_init(mpfGpuW1);
-            mpf_init(mpfGpuW2); mpf_init(mpfGpuW3);
+            mpf_init(mpfGpuW0);
+            mpf_init(mpfGpuW1);
+            mpf_init(mpfGpuW2);
+            mpf_init(mpfGpuW3);
 
-            mpf_mul(mpfGpuW0, mpfDzdcR, mpfA); mpf_mul_ui(mpfGpuW0, mpfGpuW0, 2);
-            mpf_mul(mpfGpuW1, mpfDzdcI, mpfB); mpf_mul_ui(mpfGpuW1, mpfGpuW1, 2);
-            mpf_mul(mpfGpuW2, mpfDzdcR, mpfB); mpf_mul_ui(mpfGpuW2, mpfGpuW2, 2);
-            mpf_mul(mpfGpuW3, mpfDzdcI, mpfA); mpf_mul_ui(mpfGpuW3, mpfGpuW3, 2);
+            mpf_mul(mpfGpuW0, mpfDzdcR, mpfA);
+            mpf_mul_ui(mpfGpuW0, mpfGpuW0, 2);
+            mpf_mul(mpfGpuW1, mpfDzdcI, mpfB);
+            mpf_mul_ui(mpfGpuW1, mpfGpuW1, 2);
+            mpf_mul(mpfGpuW2, mpfDzdcR, mpfB);
+            mpf_mul_ui(mpfGpuW2, mpfGpuW2, 2);
+            mpf_mul(mpfGpuW3, mpfDzdcI, mpfA);
+            mpf_mul_ui(mpfGpuW3, mpfGpuW3, 2);
 
             testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
                 launchParams, Tests, testNum + 100, numTerms, "GPU NR W0", mpfGpuW0, *gpuResultW0);
@@ -2009,8 +2071,10 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
             testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
                 launchParams, Tests, testNum + 103, numTerms, "GPU NR W3", mpfGpuW3, *gpuResultW3);
 
-            mpf_clear(mpfGpuW0); mpf_clear(mpfGpuW1);
-            mpf_clear(mpfGpuW2); mpf_clear(mpfGpuW3);
+            mpf_clear(mpfGpuW0);
+            mpf_clear(mpfGpuW1);
+            mpf_clear(mpfGpuW2);
+            mpf_clear(mpfGpuW3);
         }
     }
 
@@ -2124,25 +2188,37 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         DebugHostCombo<SharkFloatParams> debugHostCombo;
         typename SharkFloatParams::Float emptyRadius{};
 
-        auto cpuResult = ReferenceOrbitHelper<SharkFloatParams>(
-            &aNum, &bNum, emptyRadius, 1, debugHostCombo);
+        auto cpuResult =
+            ReferenceOrbitHelper<SharkFloatParams>(&aNum, &bNum, emptyRadius, 1, debugHostCombo);
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "CPU ref orbit result X: " << cpuResult->FinalZReal.ToString() << std::endl;
-            std::cout << "CPU ref orbit result X hex: " << cpuResult->FinalZReal.ToHexString() << std::endl;
+            std::cout << "CPU ref orbit result X hex: " << cpuResult->FinalZReal.ToHexString()
+                      << std::endl;
             std::cout << "CPU ref orbit result Y: " << cpuResult->FinalZImag.ToString() << std::endl;
-            std::cout << "CPU ref orbit result Y hex: " << cpuResult->FinalZImag.ToHexString() << std::endl;
+            std::cout << "CPU ref orbit result Y hex: " << cpuResult->FinalZImag.ToHexString()
+                      << std::endl;
         }
 
         bool testSucceeded = true;
         constexpr auto numTerms = 2;
-        testSucceeded &= CheckAgainstHost<SharkFloatParams, Operator::ReferenceOrbit>(
-            launchParams, Tests, testNum, numTerms,
-            "ReferenceOrbitX", mpfHostResultX, cpuResult->FinalZReal);
+        testSucceeded &=
+            CheckAgainstHost<SharkFloatParams, Operator::ReferenceOrbit>(launchParams,
+                                                                         Tests,
+                                                                         testNum,
+                                                                         numTerms,
+                                                                         "ReferenceOrbitX",
+                                                                         mpfHostResultX,
+                                                                         cpuResult->FinalZReal);
 
-        testSucceeded &= CheckAgainstHost<SharkFloatParams, Operator::ReferenceOrbit>(
-            launchParams, Tests, testNum, numTerms,
-            "ReferenceOrbitY", mpfHostResultY, cpuResult->FinalZImag);
+        testSucceeded &=
+            CheckAgainstHost<SharkFloatParams, Operator::ReferenceOrbit>(launchParams,
+                                                                         Tests,
+                                                                         testNum,
+                                                                         numTerms,
+                                                                         "ReferenceOrbitY",
+                                                                         mpfHostResultY,
+                                                                         cpuResult->FinalZImag);
 
         if (SharkVerbose == VerboseMode::Debug) {
             if (!testSucceeded) {
@@ -3702,21 +3778,21 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
 
         PerfTimingResult timing;
         TestPerf<SharkFloatParams, sharkOperator>(launchParams,
-                                                   Tests,
-                                                   testNum,
-                                                   convertedMpfX.c_str(),
-                                                   convertedMpfY.c_str(),
-                                                   convertedMpfZ.c_str(),
-                                                   radiusYStr,
-                                                   mpfX,
-                                                   mpfY,
-                                                   mpfZ,
-                                                   hdrRadiusY,
-                                                   maxIters,
-                                                   expectedPeriod,
-                                                   expectedResult,
-                                                   useMT,
-                                                   &timing);
+                                                  Tests,
+                                                  testNum,
+                                                  convertedMpfX.c_str(),
+                                                  convertedMpfY.c_str(),
+                                                  convertedMpfZ.c_str(),
+                                                  radiusYStr,
+                                                  mpfX,
+                                                  mpfY,
+                                                  mpfZ,
+                                                  hdrRadiusY,
+                                                  maxIters,
+                                                  expectedPeriod,
+                                                  expectedResult,
+                                                  useMT,
+                                                  &timing);
         timings.push_back(timing);
     }
 
@@ -4010,7 +4086,7 @@ TestAllBinaryOp(int testBase)
 }
 
 // Explicitly instantiate TestAllBinaryOp
-#define ADD_KERNEL(SharkFloatParams)\
+#define ADD_KERNEL(SharkFloatParams)                                                                    \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);                       \
     template bool TestBinaryOperatorPerf<Operator::Add>(const HpShark::LaunchParams &,                  \
                                                         int testBase,                                   \
@@ -4069,4 +4145,3 @@ ExplicitInstantiateAll();
 
 NR_KERNEL(SharkParamsNR1);
 NR_KERNEL(SharkParamsNR7);
-

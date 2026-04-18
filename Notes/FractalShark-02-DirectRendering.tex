@@ -208,7 +208,7 @@ Each kernel variant renders the same Mandelbrot escape-time field; the only
 difference is the numeric type used for mapping and orbit iteration. The
 following sections describe how each type realizes the same recurrence and
 escape test.  This set of kernels does not use linear approximation or
-perturbation; they simply evaluate the Mandelbrot iteration directly in the
+perturbation; they evaluate the Mandelbrot iteration directly in the
 chosen numeric format.
 
 Throughout, \code{IterType} is the integer type used to store the escape-time
@@ -270,7 +270,7 @@ Bailey~\cite{Hida2001QD}. The implementations are modified in
     Leading-component escape test for speed. \\[4pt]
 \label{sec:mandel-2x-double}%
 \code{mandel\_2x\_double}
-  & ${\sim}106$
+  & ${\sim}104$
   & \code{dbldbl} (\cref{subsec:ep-higher-prec}), a double-double expansion.
     Leading-component escape test for speed. \\[4pt]
 \label{sec:mandel-4x-float}%
@@ -332,7 +332,7 @@ This normalization keeps comparisons meaningful and stable in HDR arithmetic.
 \section{Iteration chunking via \code{iteration\_precision}}
 \label{sec:chunking}
 
-A few of the base kernels just described (\cref{sec:mandel-base-kernels}), which exclude linear approximation or
+A few of the base kernels described in \cref{sec:mandel-base-kernels}, which exclude linear approximation or
 perturbation, are templated on an integer \code{iteration\_precision}
 (\(1,2,4,8,16\)) and unroll multiple Mandelbrot steps inside the loop:
 

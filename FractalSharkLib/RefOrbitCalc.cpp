@@ -2200,18 +2200,15 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
 
     auto lamb = [&]<class SharkFloatParams>() {
         // ---------------------------------------------------------------------
-        //   1) Init once (returns "combo")
-        //   2) Invoke in bounded chunks (<= MaxOutputIters) until done / escaped / period
-        //   3) Shutdown once
-        //   4) Copy out OutputIters each chunk
+        //   GpuOrbitSession handles Init/Shutdown lifecycle via RAII.
+        //   Loop invokes kernel in bounded chunks (<= MaxOutputIters) until done.
         // ---------------------------------------------------------------------
 
         uint64_t totalExecutedIters = 0;
 
-        // In the test, Init returns a handle/pointer-like thing ("combo") that you then pass
-        // to Invoke repeatedly and finally to Shutdown.
-        auto combo = HpShark::InitHpSharkReferenceKernel<SharkFloatParams>(
+        HpShark::GpuOrbitSession<SharkFloatParams> session(
             launchParams, results->GetMaxRadius(), cx_mpf, cy_mpf);
+        auto &combo = session.GetCombo();
 
         for (;;) {
             constexpr uint64_t MaxOutputIters =
@@ -2226,29 +2223,25 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
             const uint64_t itersToRun = (remaining > MaxOutputIters) ? MaxOutputIters : remaining;
 
             // Repeated kernel launches, each producing up to MaxOutputIters in OutputIters.
-            HpShark::InvokeHpSharkReferenceKernel<SharkFloatParams>(launchParams, *combo, itersToRun);
+            session.InvokeChunk(itersToRun);
 
-            totalExecutedIters += combo->OutputIterCount;
+            totalExecutedIters += combo.OutputIterCount;
 
             // Copy out this batch.
-            for (uint64_t i = 0; i < combo->OutputIterCount; ++i) {
-                results->AddUncompressedIteration(combo->OutputIters[i]);
+            for (uint64_t i = 0; i < combo.OutputIterCount; ++i) {
+                results->AddUncompressedIteration(combo.OutputIters[i]);
             }
 
-            if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound ||
-                combo->PeriodicityStatus == PeriodicityResult::Escaped ||
-                combo->PeriodicityStatus == PeriodicityResult::Unknown || // error
+            if (combo.PeriodicityStatus == PeriodicityResult::PeriodFound ||
+                combo.PeriodicityStatus == PeriodicityResult::Escaped ||
+                combo.PeriodicityStatus == PeriodicityResult::Unknown || // error
                 totalExecutedIters >= numIters) {
                 break;
             }
         }
 
-        HpShark::ShutdownHpSharkReferenceKernel<SharkFloatParams>(launchParams,
-                                                                  *combo,
-                                                                  /*debugGpuCombo=*/nullptr);
-
         // Period bookkeeping like before.
-        if (combo->PeriodicityStatus == PeriodicityResult::PeriodFound) {
+        if (combo.PeriodicityStatus == PeriodicityResult::PeriodFound) {
             results->SetPeriodMaybeZero(
                 static_cast<IterType>(results->GetCompressedOrUncompressedOrbitSize()));
         } else {

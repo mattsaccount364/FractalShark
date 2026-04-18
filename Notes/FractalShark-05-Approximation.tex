@@ -81,9 +81,9 @@ advantage while reducing per-pixel work from $O(p)$ to a fraction of~$p$.
   \node[green!50!black, font=\scriptsize] at (8, 2.0)
     {${\sim}9$ evaluations (skip length varies with $|\Delta z|$)};
 
-  % --- Row 3: LA v2 (period-aligned staged skips) ---
+  % --- Row 3: LA~v2 (period-aligned staged skips) ---
   \node[font=\scriptsize, anchor=east, red!60!black] at (-0.5, 4.6)
-    {LA v2};
+    {LA~v2};
   % Stage 0 entries: each skips one full period
   \draw[arr, red!60!black, thick, bend left=22] (0, 4.4) to (4, 4.4);
   \draw[arr, red!60!black, thick, bend left=22] (4, 4.4) to (8, 4.4);
@@ -464,7 +464,7 @@ The composite's reference is set to \(z_\mathrm{ref,1}\), since the
 composite's Prepare step operates at the first entry's starting point.
 
 \paragraph{Threshold propagation during composition.}
-The composite thresholds are \emph{not} simply the minimum of the two
+The composite thresholds are \emph{not} the minimum of the two
 entries' thresholds.  The computation proceeds in two stages.  First,
 one Step-like tightening is applied at the junction point:
 \begin{align}
@@ -616,8 +616,8 @@ handles a typically small fraction of remaining iterations.
 Each LA entry stores, alongside its \code{StepLength}, a field
 \code{NextStageLAIndex} that records the iteration offset into the
 \emph{next finer} stage where this entry's span begins.  When a
-Prepare check fails at stage~\(s\), the kernel does not simply
-restart from entry~0 of stage~\(s-1\); instead, it resumes at
+Prepare check fails at stage~\(s\), the kernel does not
+restart from entry~0 of stage~\(s-1\);instead, it resumes at
 macro-iteration index \code{NextStageLAIndex}, which points to the
 correct position within stage~\(s-1\)'s entry array.  This indirection avoids
 redundant re-traversal of entries in the finer stage that precede the
@@ -694,7 +694,7 @@ c_w = \Delta c \cdot \code{AT.CCoeff} + \code{AT.RefC},
 then iterates the standard Mandelbrot recurrence
 \(w_{n+1} = w_n^2 + c_w\) with bailout
 \(|w|^2 \ge \code{AT.SqrEscapeRadius}\).  No reference-orbit
-lookups are needed---just scalar iteration.  Each AT iteration corresponds
+lookups are needed---only scalar iteration.  Each AT iteration corresponds
 to \code{StepLength} original Mandelbrot iterations (one full period).
 
 In real arithmetic, the forward and inverse AT transforms expand as standard
@@ -754,7 +754,7 @@ double precision when flagged by \code{DoublePrecisionPT}.
 For distance-estimation coloring, the kernel must propagate the orbit
 derivatives \(\partial z / \partial z_0\) (denoted \code{dzdz}) and
 \(\partial z / \partial c\) (denoted \code{dzdc}) through LA steps, not
-just the perturbation delta.  Given a single LA step with coefficients
+only the perturbation delta.  Given a single LA step with coefficients
 \((\code{ZCoeff}, \code{CCoeff})\) and reference \(z_\mathrm{ref}\), the
 derivative updates are:
 \begin{align}

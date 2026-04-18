@@ -123,7 +123,7 @@ correction.
 \paragraph{Precision specialization.}
 The entire lifecycle of a reference orbit computation is specialized by
 \code{SharkFloatParams}. Precision is selected once at startup via
-\code{DispatchByPrecision} and remains fixed for the lifetime of the combo
+\code{DispatchByLimbCount} and remains fixed for the lifetime of the combo
 object. This specialization ensures that kernel code, shared-memory usage, and arithmetic
 pipelines are fully specialized for the chosen precision, at the cost of
 supporting a finite, enumerated set of precisions.
@@ -145,7 +145,7 @@ The GPU reference orbit backend operates on a custom high-precision
 floating-point format implemented by the \code{HpSharkFloat} family of types.
 This format is intentionally \emph{not} IEEE~754--compatible. Instead, it is
 designed to support exact arithmetic on large significands, deterministic
-behavior across CPU and GPU backends, and efficient execution on massively
+behavior across CPU and GPU backends, and efficient execution on highly
 parallel architectures.
 
 Conceptually, an \code{HpSharkFloat} value represents a real number of the
@@ -1010,8 +1010,8 @@ seven channels when Newton--Raphson derivatives are included) share the
 same NTT length and modular-arithmetic parameters, every stage is
 fused into a single grid-stride loop and all channels advance through
 each barrier together.  This batching strategy, described in
-\cref{subsec:amortize-sync}, amortises the cost of grid-wide
-synchronisation across all simultaneously computed products and is
+\cref{subsec:amortize-sync}, amortizes the cost of grid-wide
+synchronization across all simultaneously computed products and is
 central to the practical performance of GPU-resident reference-orbit
 computation.
 
@@ -1209,9 +1209,10 @@ lifecycle:
 \end{enumerate}
 
 Because the precision must be fixed at compile time for the \code{
-SharkFloatParams} specialization, \code{DispatchByPrecision} rounds the
-requested precision to a power of two and chooses from a fixed supported set
-(\(\{256,512,\dots,524288\}\) bits). Each invocation appends the emitted
+SharkFloatParams} specialization, \code{BitsToSupportedLimbCount} rounds the
+requested precision up to a supported limb count, and
+\code{DispatchByLimbCount} then selects the matching compile-time
+specialization from a fixed supported set (\(\{256,512,\dots,524288\}\) bits).Each invocation appends the emitted
 \code{OutputIters} records into the CPU-side \code{PerturbationResults}, while
 periodicity and escape are reported through \code{PeriodicityStatus}. From the
 rest of \FractalShark{}'s perspective, the backend therefore appears as a

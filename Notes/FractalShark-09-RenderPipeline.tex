@@ -135,12 +135,12 @@ exist in the fractal-rendering community:
   \item \textbf{Distance estimation.}  The analytic derivative
     $\partial z_n/\partial c$ (already computed for perturbation
     purposes) can yield an estimate of the distance from~$c$ to the
-    Mandelbrot boundary.  Mapping distance to color emphasises fine
+    Mandelbrot boundary.  Mapping distance to color emphasizes fine
     boundary structure and enables resolution-independent rendering of
     thin filaments.
   \item \textbf{Histogram equalization.}  Collecting a histogram of
     iteration counts across the image and mapping colors via the
-    cumulative distribution produces uniform color utilisation
+    cumulative distribution produces uniform color utilization
     regardless of the iteration distribution---useful at deep zooms
     where most counts cluster in a narrow range.
   \item \textbf{Orbit-trap coloring.}  Measuring the closest approach
@@ -345,7 +345,7 @@ prevent deadlock:
 \begin{enumerate}
   \item \code{m\_WorkQueueMutex} --- protects the work queue and
         sequence counter.
-  \item \code{m\_CalcFractalMutex} --- serialises
+  \item \code{m\_CalcFractalMutex} --- serializes
         \code{CalcFractal} calls and shared \code{Fractal} state
         access.
   \item \code{RendererPool::m\_Mutex} --- guards renderer
@@ -381,7 +381,7 @@ overlapped execution:
 \begin{itemize}
   \item \textbf{Progressive frames.}
         \code{ProduceFrame} with \code{isFinal\!=\!false}
-        synchronises on the display stream only
+        synchronizes on the display stream only
         (\code{SyncDisplayStream}), allowing the compute stream to
         continue issuing iteration work.  The antialiasing kernel
         reads whatever partial results have been written to the
@@ -389,7 +389,7 @@ overlapped execution:
         incomplete image.
   \item \textbf{Final frames.}
         \code{ProduceFrame} with \code{isFinal\!=\!true}
-        synchronises on the compute stream
+        synchronizes on the compute stream
         (\code{SyncComputeStream}) to guarantee that all iteration
         kernels have completed before color extraction.
   \item \textbf{Compute-done notification.}
@@ -520,12 +520,12 @@ uploads frame~$n$, a worker can already be computing frame~$n\!+\!1$.
 Progressive frames provide visual feedback during long GPU
 computations at the cost of one additional \code{RenderCurrent}
 call per progress interval (default: 1\,s).  Progressive frames
-synchronise via the display stream rather than the compute stream,
+synchronize via the display stream rather than the compute stream,
 so the iteration kernels continue executing concurrently
 (\cref{subsec:antialiasing}).
 
 The direct path is inherently serial: the caller blocks until
-\code{CalcFractal} completes, synchronises the compute stream
+\code{CalcFractal} completes, synchronizes the compute stream
 twice (once for iteration kernels, once for \code{RenderCurrent}),
 and only then returns control.  It should therefore be avoided in
 latency-sensitive UI code paths.
@@ -552,7 +552,7 @@ are used to reduce allocation overhead during reference-orbit computation:
 \textbf{Lifetime constraint.}  All \code{mpf\_t} / \code{HighPrecision} objects
 allocated under a custom allocator must be destroyed \emph{before}
 \code{ShutdownTls()}.  After shutdown, \code{TlsInitialized} is false and
-\code{mpf\_clear} falls back to the default allocator, which cannot recognise
+\code{mpf\_clear} falls back to the default allocator, which cannot recognize
 pointers from the custom allocator.  Enclosing \code{mpf\_t} variables in
 \code{\{\,\}} scope blocks ensures they are destroyed while the allocator TLS
 is still active.

@@ -112,7 +112,7 @@ jumps at deep zooms.  NTT-based multiplication was preferred over
 Karatsuba for the GPU arithmetic backend, as the former maps naturally
 to the highly parallel CUDA execution model.  Throughout the
 codebase, C++ template instantiation over a fixed parameter-set
-lattice allows the compiler to specialise kernels for each combination
+lattice allows the compiler to specialize kernels for each combination
 of precision, sub-type, and algorithmic mode while keeping the source
 generic.
 

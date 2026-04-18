@@ -5,10 +5,7 @@
 #include <mpir.h>
 
 #include "HDRFloat.h"
-
-namespace HpShark {
-struct LaunchParams;
-}
+#include "LaunchParams.h"
 
 template <class SharkFloatParams> struct HpSharkFloat;
 
@@ -59,6 +56,64 @@ template <class SharkFloatParams>
 void ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                                     HpSharkReferenceResults<SharkFloatParams> &combo,
                                     DebugGpuCombo *debugCombo);
+
+// RAII wrapper for the GPU reference orbit lifecycle (Init/Invoke/Shutdown).
+// Ensures GPU resources (device memory, CUDA stream, NTT root tables) are
+// always cleaned up, even if an exception is thrown during the chunk loop.
+template <class SharkFloatParams> class GpuOrbitSession {
+    std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> m_Combo;
+    HpShark::LaunchParams m_LaunchParams;
+    DebugGpuCombo *m_DebugCombo;
+
+public:
+    GpuOrbitSession(const HpShark::LaunchParams &launchParams,
+                    typename SharkFloatParams::Float hdrRadiusY,
+                    const mpf_t srcX,
+                    const mpf_t srcY,
+                    DebugGpuCombo *debugCombo = nullptr)
+        : m_Combo{InitHpSharkReferenceKernel<SharkFloatParams>(launchParams, hdrRadiusY, srcX, srcY)},
+          m_LaunchParams{launchParams}, m_DebugCombo{debugCombo}
+    {
+    }
+
+    GpuOrbitSession(const HpShark::LaunchParams &launchParams,
+                    typename SharkFloatParams::Float hdrRadiusY,
+                    const HpSharkFloat<SharkFloatParams> &xNum,
+                    const HpSharkFloat<SharkFloatParams> &yNum,
+                    DebugGpuCombo *debugCombo = nullptr)
+        : m_Combo{InitHpSharkReferenceKernel<SharkFloatParams>(launchParams, hdrRadiusY, xNum, yNum)},
+          m_LaunchParams{launchParams}, m_DebugCombo{debugCombo}
+    {
+    }
+
+    ~GpuOrbitSession()
+    {
+        ShutdownHpSharkReferenceKernel<SharkFloatParams>(m_LaunchParams, *m_Combo, m_DebugCombo);
+    }
+
+    GpuOrbitSession(const GpuOrbitSession &) = delete;
+    GpuOrbitSession &operator=(const GpuOrbitSession &) = delete;
+    GpuOrbitSession(GpuOrbitSession &&) = delete;
+    GpuOrbitSession &operator=(GpuOrbitSession &&) = delete;
+
+    void
+    InvokeChunk(uint64_t numIters)
+    {
+        InvokeHpSharkReferenceKernel<SharkFloatParams>(m_LaunchParams, *m_Combo, numIters);
+    }
+
+    HpSharkReferenceResults<SharkFloatParams> &
+    GetCombo()
+    {
+        return *m_Combo;
+    }
+
+    const HpSharkReferenceResults<SharkFloatParams> &
+    GetCombo() const
+    {
+        return *m_Combo;
+    }
+};
 
 template <class SharkFloatParams>
 void InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,

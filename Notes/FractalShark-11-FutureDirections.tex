@@ -19,7 +19,7 @@ improvement.
 
 Each subsection below describes a technique, gives its key formulas, and
 explains how it relates to---and differs from---\FractalShark{}'s current
-approach.  \Cref{fig:design-decisions} summarises the three principal
+approach.  \Cref{fig:design-decisions} summarizes the three principal
 design choices at a glance.
 
 \begin{figure}[!htbp]
@@ -83,7 +83,7 @@ Some deep-zoom renderers that lack per-pixel rebasing encounter
 down, producing visually incorrect results.  The standard remedy in
 such renderers is a multi-pass detect-and-correct workflow.
 
-The \emph{Pauldelbrot criterion} formalises glitch detection: a pixel is
+The \emph{Pauldelbrot criterion} formalizes glitch detection: a pixel is
 considered glitched if, at some iteration~$n$,
 \begin{equation}
   |z_n^\star| < |\Delta z_n|
@@ -176,7 +176,7 @@ In practice, the linear approach is simpler to implement (no
 higher-order coefficient management), numerically more robust (bounded
 error by construction), and often faster (the period-aligned hierarchy
 in LA~v2 enables very large skip counts near periodic points without
-risk of polynomial divergence).  Optimised SA variants such as NanoMB1,
+risk of polynomial divergence).  Optimized SA variants such as NanoMB1,
 NanoMB2, and Super Series Approximation (SSA)
 (\cite{KallesFraktaler}) narrow the gap but remain more complex than
 linear approximation for comparable or inferior performance.
@@ -189,7 +189,7 @@ In renderers that use the glitch-detection workflow described in
 \cref{subsec:glitch-detection}, a single reference orbit may not serve
 all pixels well.  The multi-reference approach addresses this by
 computing reference orbits at multiple locations and assigning each pixel
-to the best available reference---the one that minimises $|\Delta z_n|$
+to the best available reference---the one that minimizes $|\Delta z_n|$
 at the iteration where the perturbation is most stressed.
 
 Multi-reference rendering typically proceeds iteratively:
@@ -237,7 +237,7 @@ For a general bailout radius~$R$ (note that \FractalShark{} uses
 different squared-bailout thresholds in different contexts: $|z|^2 > 4$
 in direct rendering kernels, $|z|^2 > 256$ in perturbation and
 reference orbit paths, and $|z|^2 > 4096$ in the Feature Finder),
-the formula generalises to
+the formula generalizes to
 \begin{equation}
   n_{\text{smooth}} = n + 1
     - \frac{\log\!\bigl(\log|z_n|\bigr)}{\log 2}
@@ -282,7 +282,7 @@ Applications of the distance estimator include:
         \mathcal{M}$ receive a smooth opacity falloff.
   \item Resolution-independent thin-filament rendering, ensuring that
         fine structures are visible regardless of pixel density.
-  \item 3D height-field visualisation, using $d(c)$ as a height value
+  \item 3D height-field visualization, using $d(c)$ as a height value
         to produce surface renders of the set.
 \end{itemize}
 
@@ -299,7 +299,7 @@ discussed in \cite{HeilandAllen2013Perturbation}.
 Points inside the Mandelbrot set—orbits that never escape—are
 traditionally rendered as a uniform black.  These points belong to
 \emph{hyperbolic components} (also called \emph{atom domains}), each
-characterised by the period~$p$ of its attracting cycle.
+characterized by the period~$p$ of its attracting cycle.
 
 Several interior coloring techniques exploit this structure:
 \begin{itemize}
@@ -354,7 +354,7 @@ continuously varying values with no discrete boundaries to trace.  The
 technique works well with integer escape-time coloring.
 
 Boundary tracing is orthogonal to perturbation and LA: it is a
-pixel-level optimisation applied \emph{after} per-pixel iteration counts
+pixel-level optimization applied \emph{after} per-pixel iteration counts
 are available for the border pixels; the per-pixel algorithm
 (perturbation, LA, etc.)\ is unchanged.  Fraktaler-3
 uses boundary tracing to achieve large speedups.  An overview of the
@@ -381,8 +381,8 @@ palette according to the actual distribution of iteration counts:
   \item Map each pixel's iteration count~$k$ to the color at palette
         index $\mathrm{CDF}(k)$.
 \end{enumerate}
-The effect is that all colors in the palette are utilised approximately
-equally, maximising visual contrast in the regions where most detail
+The effect is that all colors in the palette are utilized approximately
+equally, maximizing visual contrast in the regions where most detail
 exists.
 
 \FractalShark{} already computes per-frame iteration statistics
@@ -395,14 +395,14 @@ results.  A general discussion of histogram-based coloring appears in
 \cite{WikipediaPlottingAlgorithms}.
 
 The techniques surveyed in this chapter represent a broader landscape of
-fractal rendering optimisations beyond those currently implemented in
+fractal rendering optimizations beyond those currently implemented in
 \FractalShark{}.  Of the approaches discussed, rebasing (over glitch
 correction), linear approximation (over series approximation), and
 NTT-based multiplication (over Karatsuba) have directly shaped the
 system's present architecture, as detailed in the preceding chapters.
 The remaining techniques---smooth coloring, distance estimation,
 interior rendering, boundary tracing, and histogram
-equalisation---represent practical extensions that could be integrated
+equalization---represent practical extensions that could be integrated
 into the existing pipeline without fundamental architectural changes.
-\Cref{sec:conclusion} summarises the overall design and reflects on the
+\Cref{sec:conclusion} summarizes the overall design and reflects on the
 decisions that connect these subsystems into a coherent whole.

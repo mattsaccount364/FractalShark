@@ -327,4 +327,5 @@ Parts: I = Rendering Algorithms (§2–5), II = Reference Orbit Computation (§6
 - **Cross-references**: Use `\cref{}` (cleveref) for all cross-references. Add forward-linking sentences at the end of each chapter.
 - **Code identifiers**: Use `\code{}` macro for inline code. Use `\begin{lstlisting}` (not `\begin{verbatim}`) for code blocks. `listings` package is configured in the preamble.
 - **Notation**: The notation table in `FractalShark.tex` (lines ~63–130) defines canonical symbols. New symbols should be added there if used across chapters.
+- **American English**: Use US spellings (`-ize`, `-ization`, `center`, `color`, `behavior`, `synchronize`, `analyze`, `utilize`, `optimize`, etc.), not British (`-ise`, `-isation`, `centre`, `colour`, `behaviour`, `synchronise`, `analyse`, `utilise`, `optimise`). Applies to all prose in `Notes/`. Preserve British spellings only inside `\code{...}` identifiers, bibliography titles, and quoted material.
 - **LA v2 formatting**: Use "LA~v2" (with non-breaking space) consistently, not "LAv2". Preserve "LAv2" only inside `\code{}` identifiers.

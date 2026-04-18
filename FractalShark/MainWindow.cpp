@@ -571,7 +571,11 @@ MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     memcpy(pMem, str.c_str(), str.size() + 1);
                     GlobalUnlock(hMem);
                     EmptyClipboard();
-                    SetClipboardData(CF_TEXT, hMem);
+                    if (SetClipboardData(CF_TEXT, hMem) == nullptr) {
+                        GlobalFree(hMem);
+                    }
+                } else {
+                    GlobalFree(hMem);
                 }
             }
             CloseClipboard();
@@ -1174,6 +1178,7 @@ MainWindow::MenuGetCurPos()
     char *mem = (char *)GlobalLock(hData);
     if (mem == nullptr) {
         std::wcerr << L"Insufficient memory 2." << std::endl;
+        GlobalFree(hData);
         CloseClipboard();
         return;
     }
@@ -1185,6 +1190,7 @@ MainWindow::MenuGetCurPos()
     // using strncat.
     mem[0] = 0;
     strncpy(mem, longStr.data(), numBytes - 1);
+    mem[numBytes - 1] = '\0';
 
     GlobalUnlock(hData);
 
@@ -1197,6 +1203,7 @@ MainWindow::MenuGetCurPos()
         std::wcerr << L"Adding the data to the clipboard failed.  You are probably very low on memory.  "
                       L"Try closing other programs or restarting your computer."
                    << std::endl;
+        GlobalFree(hData);
         CloseClipboard();
         return;
     }
@@ -1261,14 +1268,15 @@ MainWindow::MenuSaveCurrentLocation()
     char filename[256];
     SYSTEMTIME time_struct;
     GetLocalTime(&time_struct);
-    sprintf(filename,
-            "output_%d_%d_%d_%d_%d_%d.bmp",
-            time_struct.wYear,
-            time_struct.wMonth,
-            time_struct.wDay,
-            time_struct.wHour,
-            time_struct.wMinute,
-            time_struct.wSecond);
+    snprintf(filename,
+             sizeof(filename),
+             "output_%d_%d_%d_%d_%d_%d.bmp",
+             time_struct.wYear,
+             time_struct.wMonth,
+             time_struct.wDay,
+             time_struct.wHour,
+             time_struct.wMinute,
+             time_struct.wSecond);
 
     size_t x, y;
     if (response == IDYES) {
@@ -1304,8 +1312,10 @@ MainWindow::MenuSaveCurrentLocation()
     MessageBox(nullptr, ws.c_str(), L"location", MB_OK | MB_APPLMODAL);
 
     FILE *file = fopen("locations.txt", "at+");
-    fprintf(file, "%s\r\n", s.c_str());
-    fclose(file);
+    if (file != nullptr) {
+        fprintf(file, "%s\r\n", s.c_str());
+        fclose(file);
+    }
 }
 
 void

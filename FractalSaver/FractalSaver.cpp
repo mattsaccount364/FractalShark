@@ -6,6 +6,8 @@
 #include "resource.h"
 #include "time.h"
 
+#include <atomic>
+
 // clang-format off
 #include <windows.h>
 #include <GL/gl.h>  /* OpenGL header file */
@@ -19,7 +21,7 @@ HINSTANCE hInst; // current instance
 LPCWSTR szWindowClass = L"FractalSaverWindow";
 
 HWND gHWnd;
-volatile bool gTimeToExit;
+std::atomic<bool> gTimeToExit{false};
 
 // Foward declarations of functions included in this code module:
 ATOM MyRegisterClass(HINSTANCE hInstance);
@@ -76,6 +78,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR lpCmdLine, int n
     // Cleanup the secondary drawing thread.
     gTimeToExit = true;
     WaitForSingleObject(gDrawingThreadHandle, INFINITE);
+    CloseHandle(gDrawingThreadHandle);
 
     return 0;
 }

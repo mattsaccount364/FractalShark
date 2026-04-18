@@ -607,6 +607,14 @@ Fractal::SquareCurrentView(void)
 void
 Fractal::ApproachTarget(void)
 {
+    // Drain any in-flight render pool work before running the animation.
+    // ApproachTarget calls CalcFractal(true) and SaveCurrentFractal directly,
+    // bypassing the pool, so we must ensure no workers are active to avoid
+    // data races on m_CurIters. Mirrors the pattern in CrummyTest::TestAll.
+    if (m_RenderPool) {
+        m_RenderPool->Drain();
+    }
+
     HighPrecision targetIters{100000};
     int numFrames = 1000;
 
@@ -655,13 +663,15 @@ Fractal::ApproachTarget(void)
         wcscpy(temp2, temp);
 
         if (Utilities::FileExists(temp2) == false) { // Create a placeholder file
-            FILE *file = _wfopen(temp2, L"w+");
+            char narrow[256];
+            wcstombs(narrow, temp2, sizeof(narrow));
+            FILE *file = fopen(narrow, "w+");
             if (file == nullptr) // Fail silently.
             {
                 break;
             }
 
-            fwrite(temp2, sizeof(char), 256, file);
+            fwrite(narrow, sizeof(char), strlen(narrow), file);
             fclose(file);
 
             // Render the fractal.
@@ -672,7 +682,7 @@ Fractal::ApproachTarget(void)
             // corrupt render mixed in with good ones.
             // It's corrupt because it's incomplete!
             if (GetStopCalculating()) {
-                _wunlink(temp2); // Delete placeholder
+                Environment::FileDelete(temp2); // Delete placeholder
                 break;
             }
 
@@ -2949,6 +2959,14 @@ Fractal::GetRenderHeight(void) const
 int
 Fractal::SaveHiResFractal(std::wstring filename)
 {
+    // Drain any in-flight render pool work before rendering/saving directly.
+    // SaveHiResFractal calls CalcFractal(true) and SaveCurrentFractal directly,
+    // bypassing the pool, so we must ensure no workers are active to avoid
+    // data races on m_CurIters. Mirrors the pattern in CrummyTest::TestAll.
+    if (m_RenderPool) {
+        m_RenderPool->Drain();
+    }
+
     // CBitmapWriter bmpWriter;
 
     size_t OldScrnWidth = m_ScrnWidth;

@@ -1,7 +1,7 @@
 #include "include/HeapPanic.h"
 #include "Environment.h"
 
-__declspec(noreturn) void
+[[noreturn]] void
 HeapPanic(const char *msg)
 {
     // Best-effort debug output; does not allocate.

@@ -1,6 +1,6 @@
 #pragma once
 
-__declspec(noreturn) void HeapPanic(const char *msg);
+[[noreturn]] void HeapPanic(const char *msg);
 
 #define HEAP_ASSERT(expr, msg)                                                                          \
     do {                                                                                                \

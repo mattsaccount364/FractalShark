@@ -18,6 +18,10 @@
 #define MY_ALIGN(n) __declspec(align(n))
 #define CudaHostMax std::max
 #define CudaHostMin std::min
+#elif defined(__GNUC__) || defined(__clang__) // GCC / Clang
+#define MY_ALIGN(n) __attribute__((aligned(n)))
+#define CudaHostMax std::max
+#define CudaHostMin std::min
 #else
 #error "Please provide a definition for MY_ALIGN macro for your host compiler!"
 #endif
@@ -58,10 +62,7 @@ template <class T, class TExp = int32_t> class LMembers : public GenericHdrBase<
 public:
     using GenericHdrBase = GenericHdrBase<T, TExp>;
     CUDA_CRAP
-    LMembers()
-        : mantissa(T{}), exp(GenericHdrBase::MIN_BIG_EXPONENT())
-    {
-    }
+    LMembers() : mantissa(T{}), exp(GenericHdrBase::MIN_BIG_EXPONENT()) {}
 
     MYALIGN T mantissa;
     MYALIGN TExp exp;
@@ -71,10 +72,7 @@ template <class T, class TExp = int32_t> class RMembers : public GenericHdrBase<
 public:
     using GenericHdrBase = GenericHdrBase<T, TExp>;
     CUDA_CRAP
-    RMembers()
-        : exp(GenericHdrBase::MIN_BIG_EXPONENT()), mantissa(T{})
-    {
-    }
+    RMembers() : exp(GenericHdrBase::MIN_BIG_EXPONENT()), mantissa(T{}) {}
 
     MYALIGN TExp exp;
     MYALIGN T mantissa;
@@ -1497,8 +1495,7 @@ static CUDA_CRAP constexpr T
 HdrMaxPositiveReduced(const T &one, const U &two)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> ||
-                      std::is_same_v<T, HDRFloat<double>> ||
-                      std::is_same_v<T, HDRFloat<float>> ||
+                      std::is_same_v<T, HDRFloat<double>> || std::is_same_v<T, HDRFloat<float>> ||
                       std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>,
                   "No");
     if constexpr (std::is_same_v<T, HDRFloat<double>> || std::is_same_v<T, HDRFloat<float>> ||
@@ -1518,8 +1515,7 @@ static CUDA_CRAP constexpr T
 HdrMinPositiveReduced(const T &one, const U &two)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float> ||
-                      std::is_same_v<T, HDRFloat<double>> ||
-                      std::is_same_v<T, HDRFloat<float>> ||
+                      std::is_same_v<T, HDRFloat<double>> || std::is_same_v<T, HDRFloat<float>> ||
                       std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>,
                   "No");
     if constexpr (std::is_same_v<T, HDRFloat<double>> || std::is_same_v<T, HDRFloat<float>> ||

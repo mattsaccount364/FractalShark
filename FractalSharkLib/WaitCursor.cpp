@@ -1,14 +1,16 @@
 #include "stdafx.h"
 #include "WaitCursor.h"
 
-WaitCursor::WaitCursor() : m_hCursor{} {
-    m_hCursor = SetCursor(LoadCursor(nullptr, IDC_WAIT));
-}
+#ifdef _WIN32
 
-WaitCursor::~WaitCursor() {
-    ResetCursor();
-}
+WaitCursor::WaitCursor() : m_hCursor{} { m_hCursor = SetCursor(LoadCursor(nullptr, IDC_WAIT)); }
 
-void WaitCursor::ResetCursor() {
+WaitCursor::~WaitCursor() { ResetCursor(); }
+
+void
+WaitCursor::ResetCursor()
+{
     SetCursor(m_hCursor);
 }
+
+#endif

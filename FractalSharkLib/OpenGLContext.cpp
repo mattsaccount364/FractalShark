@@ -1,5 +1,15 @@
 // OpenGLContext.cpp
 #include "stdafx.h"
+
+// clang-format off
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+#include <GL/gl.h>
+#include <GL/glu.h>
+// clang-format on
+
 #include "OpenGLContext.h"
 #include "WPngImage\WPngImage.hh"
 
@@ -14,6 +24,23 @@ void
 GlLog(const char *msg)
 {
     std::cerr << msg << std::endl;
+}
+
+// Cast helpers for opaque handle members
+static inline HWND
+AsHWND(void *p)
+{
+    return static_cast<HWND>(p);
+}
+static inline HDC
+AsHDC(void *p)
+{
+    return static_cast<HDC>(p);
+}
+static inline HGLRC
+AsHGLRC(void *p)
+{
+    return static_cast<HGLRC>(p);
 }
 
 namespace {
@@ -129,7 +156,7 @@ MaybeShareWithRoot(HWND hWnd, HGLRC newRc)
 
 } // namespace
 
-OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
+OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
 {
     m_Valid = false;
 
@@ -138,37 +165,35 @@ OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
         return;
     }
 
-    m_hDC = GetDC(m_hWnd);
+    m_hDC = GetDC(AsHWND(m_hWnd));
     if (!m_hDC) {
         GlLog("OpenGlContext: GetDC failed");
         return;
     }
 
     int pf = 0;
-    if (!EnsurePixelFormatSet(m_hWnd, m_hDC, pf)) {
+    if (!EnsurePixelFormatSet(AsHWND(m_hWnd), AsHDC(m_hDC), pf)) {
         GlLog("OpenGlContext: EnsurePixelFormatSet failed");
         return;
     }
 
     // Create a dedicated context for this instance (so you can have one per thread).
-    m_hRC = wglCreateContext(m_hDC);
+    m_hRC = wglCreateContext(AsHDC(m_hDC));
     if (!m_hRC) {
         char buf[128];
-        snprintf(buf, sizeof(buf), "OpenGlContext: wglCreateContext failed, error=%lu",
-                 GetLastError());
+        snprintf(buf, sizeof(buf), "OpenGlContext: wglCreateContext failed, error=%lu", GetLastError());
         GlLog(buf);
         return;
     }
 
     // Optional sharing with first context created for this HWND.
     // This is safe even if it fails; it just means no shared textures/lists.
-    MaybeShareWithRoot(m_hWnd, m_hRC);
-    RegisterShareRoot(m_hWnd, m_hRC);
+    MaybeShareWithRoot(AsHWND(m_hWnd), AsHGLRC(m_hRC));
+    RegisterShareRoot(AsHWND(m_hWnd), AsHGLRC(m_hRC));
 
     if (!MakeCurrent()) {
         char buf[128];
-        snprintf(buf, sizeof(buf), "OpenGlContext: MakeCurrent failed, error=%lu",
-                 GetLastError());
+        snprintf(buf, sizeof(buf), "OpenGlContext: MakeCurrent failed, error=%lu", GetLastError());
         GlLog(buf);
         return;
     }
@@ -178,17 +203,17 @@ OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
     {
         PIXELFORMATDESCRIPTOR actualPfd{};
         actualPfd.nSize = sizeof(actualPfd);
-        DescribePixelFormat(m_hDC, pf, sizeof(actualPfd), &actualPfd);
-        m_IsSoftwareRenderer =
-            ((actualPfd.dwFlags & PFD_GENERIC_FORMAT) != 0) &&
-            ((actualPfd.dwFlags & PFD_GENERIC_ACCELERATED) == 0);
+        DescribePixelFormat(AsHDC(m_hDC), pf, sizeof(actualPfd), &actualPfd);
+        m_IsSoftwareRenderer = ((actualPfd.dwFlags & PFD_GENERIC_FORMAT) != 0) &&
+                               ((actualPfd.dwFlags & PFD_GENERIC_ACCELERATED) == 0);
 
         const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
         const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &m_MaxTextureSize);
 
         char buf[512];
-        snprintf(buf, sizeof(buf),
+        snprintf(buf,
+                 sizeof(buf),
                  "OpenGlContext: renderer=%s, version=%s, maxTex=%d, pfdFlags=0x%lx, "
                  "software=%d, thread=%lu",
                  renderer ? renderer : "(null)",
@@ -205,8 +230,8 @@ OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     RECT rt{};
-    GetClientRect(m_hWnd, &rt);
-    m_CachedRect = rt;
+    GetClientRect(AsHWND(m_hWnd), &rt);
+    m_CachedRect = {rt.left, rt.top, rt.right, rt.bottom};
     glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
 
     m_Valid = true;
@@ -215,7 +240,7 @@ OpenGlContext::OpenGlContext(HWND hWnd) : m_hWnd(hWnd)
 OpenGlContext::~OpenGlContext()
 {
     // Only detach if THIS context is current on this thread.
-    if (wglGetCurrentContext() == m_hRC) {
+    if (wglGetCurrentContext() == AsHGLRC(m_hRC)) {
         wglMakeCurrent(nullptr, nullptr);
     }
 
@@ -223,14 +248,14 @@ OpenGlContext::~OpenGlContext()
         // Clear the share root if this context was the root, so later
         // contexts don't try wglShareLists with a deleted HGLRC.
         if (m_hWnd)
-            UnregisterShareRoot(m_hWnd, m_hRC);
+            UnregisterShareRoot(AsHWND(m_hWnd), AsHGLRC(m_hRC));
 
-        wglDeleteContext(m_hRC);
+        wglDeleteContext(AsHGLRC(m_hRC));
         m_hRC = nullptr;
     }
 
     if (m_hWnd && m_hDC) {
-        ReleaseDC(m_hWnd, m_hDC);
+        ReleaseDC(AsHWND(m_hWnd), AsHDC(m_hDC));
         m_hDC = nullptr;
     }
 }
@@ -242,7 +267,7 @@ OpenGlContext::MakeCurrent() noexcept
         return false;
 
     // If another context is current on this thread, this will switch it.
-    return wglMakeCurrent(m_hDC, m_hRC) == TRUE;
+    return wglMakeCurrent(AsHDC(m_hDC), AsHGLRC(m_hRC)) == TRUE;
 }
 
 void
@@ -252,13 +277,13 @@ OpenGlContext::glResetView()
         return;
 
     RECT rt{};
-    GetClientRect(m_hWnd, &rt);
+    GetClientRect(AsHWND(m_hWnd), &rt);
 
     if (rt.right != m_CachedRect.right || rt.bottom != m_CachedRect.bottom ||
         rt.left != m_CachedRect.left || rt.top != m_CachedRect.top) {
 
         glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
-        m_CachedRect = rt;
+        m_CachedRect = {rt.left, rt.top, rt.right, rt.bottom};
     }
 }
 
@@ -301,7 +326,7 @@ void
 OpenGlContext::SwapBuffers()
 {
     if (m_hDC) {
-        ::SwapBuffers(m_hDC);
+        ::SwapBuffers(AsHDC(m_hDC));
     }
 }
 
@@ -314,7 +339,7 @@ OpenGlContext::DrawGlBox()
     glResetView();
 
     RECT rt{};
-    GetClientRect(m_hWnd, &rt);
+    GetClientRect(AsHWND(m_hWnd), &rt);
 
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
@@ -354,9 +379,9 @@ OpenGlContext::ToggleRepaint()
 }
 
 void
-OpenGlContext::DrawFractalShark(HWND hWnd)
+OpenGlContext::DrawFractalShark(void *nativeWindow)
 {
-    if (!hWnd || !MakeCurrent())
+    if (!nativeWindow || !MakeCurrent())
         return;
 
     glResetView();
@@ -379,7 +404,7 @@ OpenGlContext::DrawFractalShark(HWND hWnd)
     }
 
     RECT windowDimensions{};
-    GetClientRect(hWnd, &windowDimensions);
+    GetClientRect(static_cast<HWND>(nativeWindow), &windowDimensions);
 
     const GLint scrnHeight = windowDimensions.bottom;
     const GLint scrnWidth = windowDimensions.right;

@@ -492,10 +492,14 @@ struct WPngImage::IPixel : public WPngImage::Pixel<Pixel_t, CT, Int32> {
 // WPngImage::Pixel8 definition
 //============================================================================
 struct WPngImage::Pixel8 : public WPngImage::IPixel<Pixel8, Byte> {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4245)
+#endif
     static const Byte kComponentMaxValue = ~Byte(0);
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 
     WPNGIMAGE_CONSTEXPR Pixel8() :
         IPixel(0, 0, 0, kComponentMaxValue) {
@@ -552,10 +556,14 @@ WPngImage::Pixel8 operator/(WPngImage::Int32, const WPngImage::Pixel8 &);
 // WPngImage::Pixel16 definition
 //============================================================================
 struct WPngImage::Pixel16 : public WPngImage::IPixel<Pixel16, UInt16> {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4245)
+#endif
     static const UInt16 kComponentMaxValue = ~UInt16(0);
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 
     WPNGIMAGE_CONSTEXPR Pixel16() :
         IPixel(0, 0, 0, kComponentMaxValue) {

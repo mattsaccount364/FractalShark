@@ -6,7 +6,6 @@
 #include "FeatureFinderMode.h"
 #include "FloatComplex.h"
 #include "HighPrecision.h"
-#include "NRInnerLoopBackend.h"
 #include "PerturbationResultsHelpers.h"
 
 struct DiagnosticState {

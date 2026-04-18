@@ -1842,8 +1842,10 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         return false;
     }
 
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
+#endif
     // Fixed-period path: unscale outputs
     outDiff = z;
     outResidual2 = z.norm_squared();
@@ -1855,7 +1857,9 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     outDzdc.Reduce();
     outZcoeff.Reduce();
     return true;
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 }
 
 // =====================================================================================
@@ -2211,8 +2215,10 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
         return false;
     }
 
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
+#endif
     // Final fallback to direct (for non-FindPeriod case)
     // Use the requested period as cap (your Evaluate_PT ignores maxIters for !FindPeriod)
     // Note: Here maxIters is actually passed as "period" by your caller, but we ignore it.
@@ -2234,7 +2240,9 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
               << (uint64_t)ioPeriod << "\n";
     return self->Evaluate_PeriodResidualAndDzdc_Direct(
         c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 }
 
 // PTEvaluator::Eval implementation
@@ -2275,10 +2283,14 @@ FeatureFinder<IterType, T, PExtras>::PTEvaluator::Eval(const C &c,
             c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
     }
 
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
+#endif
     return false;
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 }
 
 // Simplified FindPeriodicPoint (Direct)

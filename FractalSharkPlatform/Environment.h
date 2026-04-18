@@ -8,23 +8,9 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <utility>
 
 namespace Environment {
-
-// =========================================================================
-// Virtual memory (anonymous, reserve-and-commit model)
-// =========================================================================
-
-// Reserve a contiguous virtual address range without committing physical pages.
-void *VirtualReserve(size_t bytes);
-
-// Commit physical pages within a previously reserved range.
-bool VirtualCommit(void *addr, size_t bytes);
-
-// Release an entire reserved region (must pass the base from VirtualReserve).
-void VirtualRelease(void *base);
 
 // =========================================================================
 // File handle operations (for PerturbationResults delete-on-close)
@@ -67,9 +53,6 @@ void DebugBreakpoint();
 
 // Terminate the process immediately with a fast-fail code.
 [[noreturn]] void FastFail(int code);
-
-// Terminate the process with exit code 1.
-[[noreturn]] void ProcessTerminate();
 
 // =========================================================================
 // Threading
@@ -201,66 +184,12 @@ operator&(FileFlags a, FileFlags b)
 // Open or create a file.  Returns opaque handle, or InvalidHandle on failure.
 void *FileOpen(const wchar_t *path, FileAccess access, FileDisposition disposition, FileFlags flags);
 
-// Get the size of an open file in bytes.  Returns 0 on failure.
-uint64_t FileGetSize(void *fileHandle);
-
-// Set the size of an open file (truncate or extend).  Returns true on success.
-bool FileSetSize(void *fileHandle, uint64_t newSize);
-
 // Write bytes to a file at the current position.  Returns the number of bytes
 // actually written, or 0 on failure.
 size_t FileWrite(void *fileHandle, const void *data, size_t bytes);
 
 // Delete a single file.  Returns true on success.
 bool FileDelete(const wchar_t *path);
-
-// =========================================================================
-// Memory-mapped files (section objects)
-// =========================================================================
-
-// Create a section backed by a file.
-// maxSize: initial maximum size of the section.
-// readOnly: if true, section is read-only.
-// Returns opaque section handle, or nullptr on failure.
-void *SectionCreate(void *fileHandle, uint64_t maxSize, bool readOnly);
-
-// Map a view of a section into the process address space.
-// suggestedBase: preferred base address (nullptr for any).
-// viewSize: in/out — requested size on input, actual mapped size on output.
-// reserveOnly: if true, reserve address space without committing physical pages.
-// readOnly: if true, map as read-only.
-// Returns mapped base address, or nullptr on failure.
-void *SectionMapView(
-    void *sectionHandle, void *suggestedBase, size_t *viewSize, bool reserveOnly, bool readOnly);
-
-// Extend a section (and its backing file) to a new size.
-// Returns true on success.
-bool SectionExtend(void *sectionHandle, uint64_t newSize);
-
-// Unmap the view currently associated with this section.
-// Each section tracks at most one mapped view at a time.
-void SectionUnmapView(void *sectionHandle);
-
-// Close a section handle (does not unmap existing views).
-void SectionClose(void *sectionHandle);
-
-// =========================================================================
-// System information (extended)
-// =========================================================================
-
-// Total physical memory installed in the system, in kilobytes.
-uint64_t PhysicalMemoryKB();
-
-// Return an opaque handle representing the current process.
-void *GetCurrentProcessHandle();
-
-// =========================================================================
-// GUID generation
-// =========================================================================
-
-// Generate a random GUID and return it as a wide string in registry format:
-// L"{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}".
-std::wstring GenerateGuidString();
 
 // =========================================================================
 // File system utilities

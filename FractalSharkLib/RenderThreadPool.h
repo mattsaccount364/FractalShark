@@ -1,8 +1,5 @@
 #pragma once
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
 #include "GPU_Types.h"
 #include "ItersMemoryContainer.h"
 #include "OpenGLContext.h"
@@ -192,7 +189,7 @@ private:
 // Replaces the old CalcFractal → DrawFractal → WaitForDrawFractal path.
 class RenderThreadPool {
 public:
-    RenderThreadPool(Fractal *fractal, HWND hWnd);
+    RenderThreadPool(Fractal *fractal, void *nativeWindow);
     ~RenderThreadPool();
 
     // Enqueue a render job. Returns a handle for optional waiting.
@@ -271,7 +268,7 @@ private:
     RenderWorkItem SnapshotCurrentState() const;
 
     Fractal *m_Fractal;
-    HWND m_hWnd;
+    void *m_NativeWindow;
 
     // Work queue
     std::mutex m_WorkQueueMutex;

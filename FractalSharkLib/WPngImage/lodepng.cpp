@@ -30,11 +30,13 @@ Rename this file to lodepng.cpp to use it for C++, or to lodepng.c to use it for
 
 #include "stdafx.h"
 
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning( disable : 4334 )
 #pragma warning( disable : 4267 )
 #pragma warning( disable : 4244 )
 #pragma warning( disable : 4334 )
+#endif
 
 #include "lodepng.h"
 
@@ -6495,4 +6497,6 @@ unsigned encode(const std::string& filename,
 } /* namespace lodepng */
 #endif /*LODEPNG_COMPILE_CPP*/
 
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif

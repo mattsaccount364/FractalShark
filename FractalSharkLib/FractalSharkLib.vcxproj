@@ -27,6 +27,8 @@
     <ClInclude Include="LargeCoords32.h" />
     <ClInclude Include="MpirComplex.h" />
     <ClInclude Include="MpirOrbitEval.h" />
+    <ClInclude Include="NRInnerLoopBackend.h" />
+    <ClInclude Include="PlatformTypes.h" />
     <ClInclude Include="RenderThreadPool.h" />
     <ClInclude Include="CrummyTest.h" />
     <ClInclude Include="GpuPrecisionDispatch.h" />

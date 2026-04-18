@@ -7,9 +7,9 @@
 // This consolidates the backend-selection logic that was duplicated in
 // FeatureFinder's main NR loop and final correction pass.
 
+#include "FeatureFinderMode.h"
 #include "HDRFloat.h"
 #include "MpirComplex.h"
-#include "NRInnerLoopBackend.h"
 
 #include <cstdint>
 

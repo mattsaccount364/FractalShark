@@ -1,5 +1,14 @@
 #include "stdafx.h"
 
+// clang-format off
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+#include <GL/gl.h>
+#include <GL/glu.h>
+// clang-format on
+
 #include "Environment.h"
 #include "Fractal.h"
 // #include "CBitmapWriter.h"
@@ -31,16 +40,17 @@
 
 #include <chrono>
 
-Fractal::Fractal(int width, int height, HWND hWnd, bool UseSensoCursor, uint64_t commitLimitInBytes)
+Fractal::Fractal(
+    int width, int height, void *nativeWindow, bool UseSensoCursor, uint64_t commitLimitInBytes)
     : m_RefOrbit{*this, commitLimitInBytes}, m_CommitLimitInBytes{commitLimitInBytes}
 {
-    Initialize(width, height, hWnd, UseSensoCursor);
+    Initialize(width, height, nativeWindow, UseSensoCursor);
 }
 
 Fractal::~Fractal() { Uninitialize(); }
 
 void
-Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
+Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCursor)
 {
     m_BypassGpu = true;
     auto SetupCuda = [&]() {
@@ -59,11 +69,11 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
     auto setupThread = std::make_unique<std::thread>(SetupCuda);
 
     // Create the control-key-down/mouse-movement-monitoring thread.
-    if (hWnd != nullptr) {
-        m_hWnd = hWnd;
+    if (nativeWindow != nullptr) {
+        m_NativeWindow = nativeWindow;
         m_AbortMonitor = std::make_unique<AbortMonitor>(UseSensoCursor);
     } else {
-        m_hWnd = nullptr;
+        m_NativeWindow = nullptr;
     }
 
     srand((unsigned int)time(nullptr));
@@ -80,7 +90,7 @@ Fractal::Initialize(int width, int height, HWND hWnd, bool UseSensoCursor)
     InitializeMemory();
 
     // Initialize the render thread pool
-    m_RenderPool = std::make_unique<RenderThreadPool>(this, m_hWnd);
+    m_RenderPool = std::make_unique<RenderThreadPool>(this, m_NativeWindow);
 
     // Initialize the feature finder orchestrator
     m_FeatureOrchestrator = std::make_unique<FeatureFinderOrchestrator>(*this);
@@ -216,10 +226,10 @@ Fractal::Uninitialize(void)
 void
 Fractal::ResetDimensions(size_t width, size_t height, uint32_t gpu_antialiasing)
 {
-    if (width == MAXSIZE_T) {
+    if (width == SIZE_MAX) {
         width = m_ScrnWidth;
     }
-    if (height == MAXSIZE_T) {
+    if (height == SIZE_MAX) {
         height = m_ScrnHeight;
     }
 
@@ -303,7 +313,7 @@ Fractal::RecenterViewCalc(const PointZoomBBConverter &ptz)
 // were given to the last call to the Reset function.
 //////////////////////////////////////////////////////////////////////////////
 bool
-Fractal::RecenterViewScreen(RECT rect)
+Fractal::RecenterViewScreen(ScreenRect rect)
 {
     SaveCurPos();
 
@@ -353,7 +363,7 @@ Fractal::RecenterViewScreen(RECT rect)
             double geometricMeanSum = 0;
             double geometricMeanY = 0;
 
-            RECT antiRect = rect;
+            ScreenRect antiRect = rect;
             antiRect.left *= GetGpuAntialiasing();
             antiRect.right *= GetGpuAntialiasing();
             antiRect.top *= GetGpuAntialiasing();
@@ -504,7 +514,7 @@ Fractal::InitialDefaultViewAndSettings(int width, int height)
     if (width != 0 && height != 0) {
         ResetDimensions(width, height, 1);
     } else {
-        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
+        ResetDimensions(SIZE_MAX, SIZE_MAX, 1);
     }
 
     // SetIterType(IterTypeEnum::Bits64);
@@ -555,11 +565,15 @@ Fractal::View(size_t view, bool includeMsgBox)
                       DefaultCompressionExp[static_cast<size_t>(CompressionError::Intermediate)]);
 
     if (includeMsgBox && !preset.warningMessage.empty()) {
+#ifdef _WIN32
         ::MessageBox(
             nullptr, preset.warningMessage.c_str(), L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+#else
+        std::wcerr << L"Warning: " << preset.warningMessage << std::endl;
+#endif
     }
 
-    ResetDimensions(MAXSIZE_T, MAXSIZE_T, preset.gpuAntialiasing);
+    ResetDimensions(SIZE_MAX, SIZE_MAX, preset.gpuAntialiasing);
     SetCompressionErrorExp(CompressionError::Low, preset.compressionErrorExpLow);
     SetCompressionErrorExp(CompressionError::Intermediate, preset.compressionErrorExpIntermediate);
     SetIterType(preset.iterType);
@@ -637,7 +651,7 @@ Fractal::ApproachTarget(void)
         m_ChangedIterations = true;
 
         wchar_t temp[256], temp2[256];
-        wsprintf(temp, L"output%04d", i);
+        swprintf(temp, 256, L"output%04d", i);
         wcscpy(temp2, temp);
 
         if (Utilities::FileExists(temp2) == false) { // Create a placeholder file
@@ -698,7 +712,7 @@ Fractal::Back(void)
 // It is supposed to find an interesting spot to zoom in on.
 // It works rather well as is...
 void
-Fractal::FindInterestingLocation(RECT *rect)
+Fractal::FindInterestingLocation(ScreenRect *rect)
 {
     int x, y;
     int xMin = 0, yMin = 0, xMax = 0, yMax = 0;

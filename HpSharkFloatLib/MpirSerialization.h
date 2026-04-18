@@ -7,10 +7,14 @@
 
 // Disable warning C4100 using push/pop
 
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4100)
+#endif
 #include <gmp-impl.h>
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 
 namespace MpirSerialization {
 size_t mpz_inp_raw_stream(mpz_ptr x, std::istream &fp);

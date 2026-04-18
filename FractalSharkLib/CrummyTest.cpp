@@ -1,6 +1,11 @@
 #include "stdafx.h"
 #include "CrummyTest.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
@@ -475,7 +480,7 @@ CrummyTest::TestImaginaLoad()
     // First, write out all the Imagina resources to files
 
     struct Pair {
-        DWORD rc;
+        uint32_t rc;
         const wchar_t *name;
         int view;
         const wchar_t *origPngName;
@@ -531,7 +536,7 @@ CrummyTest::TestImaginaLoad()
         }
 
         auto bytesWritten = Environment::FileWrite(hFile, pRes, size);
-        if (bytesWritten == 0) {
+        if (bytesWritten != size) {
             Environment::FileClose(hFile);
             throw FractalSharkSeriousException("FileWrite failed!");
         }

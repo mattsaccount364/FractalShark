@@ -17,6 +17,15 @@
 
 #pragma optimize("", off)
 
+// Portable compiler attribute macros
+#ifdef _MSC_VER
+#define FS_RESTRICT __declspec(restrict)
+#define FS_NOINLINE __declspec(noinline)
+#else
+#define FS_RESTRICT __attribute__((malloc))
+#define FS_NOINLINE __attribute__((noinline))
+#endif
+
 //
 // It'd be nice to call RegisterHeapCleanup on first use but atexit in VS2026
 // appears to have a table with some stuff in it that's not initialized yet. So
@@ -49,18 +58,23 @@
 // init segment and capture its destructor without using atexit early.
 //
 
+#ifdef _MSC_VER
 #pragma section(".fs_alloc", read, write)
+#endif
 
 using PF = void(__cdecl *)(void);
 static int cxpf = 0; // number of destructors we need to call
 static PF pfx[200];  // pointers to destructors.
 
+#ifdef _MSC_VER
 #pragma section(".fs_alloc$a", read)
 __declspec(allocate(".fs_alloc$a")) const PF InitSegStart = (PF)1;
 
 #pragma section(".fs_alloc$z", read)
 __declspec(allocate(".fs_alloc$z")) const PF InitSegEnd = (PF)1;
+#endif
 
+#ifdef _MSC_VER
 // Called by MSVC for objects in our init_seg (instead of atexit)
 static int __cdecl myexit(PF pf)
 {
@@ -74,6 +88,7 @@ static int __cdecl myexit(PF pf)
 // by default, goes into a read-only section
 #pragma warning(disable : 4075)
 #pragma init_seg(".fs_alloc$m", myexit)
+#endif
 
 FancyHeap EnableFractalSharkHeap;
 
@@ -904,7 +919,7 @@ CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
 // Override global malloc, free, and realloc functions
 extern "C" {
 
-__declspec(restrict) void *
+FS_RESTRICT void *
 malloc(size_t size)
 {
     // Ensure the safemode decision has been made as early as possible (must not allocate).
@@ -917,7 +932,7 @@ malloc(size_t size)
     return SysMalloc(size);
 }
 
-__declspec(restrict) void *
+FS_RESTRICT void *
 calloc(size_t num, size_t size)
 {
     // Ensure the safemode decision has been made as early as possible (must not allocate).
@@ -936,7 +951,7 @@ calloc(size_t num, size_t size)
     return SysCalloc(num, size);
 }
 
-__declspec(restrict) void *
+FS_RESTRICT void *
 realloc(void *ptr, size_t newSize)
 {
     // Ensure the safemode decision has been made as early as possible (must not allocate).
@@ -966,7 +981,7 @@ free(void *ptr)
     SysFree(ptr);
 }
 
-extern "C" __declspec(restrict) void *
+extern "C" FS_RESTRICT void *
 aligned_alloc(size_t alignment, size_t size)
 {
     EarlyInit_SafeMode_NoCRT();
@@ -993,7 +1008,7 @@ strdup(const char *s)
     return d;
 }
 
-__declspec(restrict) char *
+FS_RESTRICT char *
 strndup(const char *s, size_t n)
 {
     size_t len = strnlen(s, n);
@@ -1005,7 +1020,7 @@ strndup(const char *s, size_t n)
     return d;
 }
 
-__declspec(restrict) char *
+FS_RESTRICT char *
 realpath(const char *fname, char *resolved_name)
 {
     return _fullpath(resolved_name, fname, _MAX_PATH);
@@ -1042,7 +1057,7 @@ _calloc_dbg(size_t num, size_t size, int blockType, const char *filename, int li
     return calloc(num, size);
 }
 
-__declspec(noinline) void *
+FS_NOINLINE void *
 _realloc_dbg(void *block, size_t requested_size, int block_use, const char *file, int line)
 {
     EarlyInit_SafeMode_NoCRT();
@@ -1054,7 +1069,7 @@ _realloc_dbg(void *block, size_t requested_size, int block_use, const char *file
     return realloc(block, requested_size);
 }
 
-__declspec(noinline) void *
+FS_NOINLINE void *
 _recalloc_dbg(void *block,
               size_t count,
               size_t element_size,
@@ -1081,7 +1096,7 @@ _recalloc_dbg(void *block,
     return SysRealloc(block, newBytes);
 }
 
-__declspec(noinline) void *
+FS_NOINLINE void *
 _expand_dbg(void *, size_t, int, const char *, int)
 {
     errno = ENOMEM;

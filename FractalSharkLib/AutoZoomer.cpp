@@ -3,6 +3,12 @@
 #include "AutoZoomer.h"
 #include "FeatureSummary.h"
 #include "PerturbationResults.h"
+#include "PlatformTypes.h"
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 #include <cmath>
 #include <iostream>
@@ -142,14 +148,14 @@ AutoZoomer::Run()
                 // ---------------- DEFAULT ----------------
                 if constexpr (h == Fractal::AutoZoomHeuristic::Default) {
 
-                    ULONG shiftWidth = (ULONG)m_Fractal.GetScrnWidth() / 8;
-                    ULONG shiftHeight = (ULONG)m_Fractal.GetScrnHeight() / 8;
+                    int32_t shiftWidth = (int32_t)m_Fractal.GetScrnWidth() / 8;
+                    int32_t shiftHeight = (int32_t)m_Fractal.GetScrnHeight() / 8;
 
-                    RECT antiRect;
+                    ScreenRect antiRect;
                     antiRect.left = shiftWidth;
-                    antiRect.right = (ULONG)m_Fractal.GetScrnWidth() - shiftWidth;
+                    antiRect.right = (int32_t)m_Fractal.GetScrnWidth() - shiftWidth;
                     antiRect.top = shiftHeight;
-                    antiRect.bottom = (ULONG)m_Fractal.GetScrnHeight() - shiftHeight;
+                    antiRect.bottom = (int32_t)m_Fractal.GetScrnHeight() - shiftHeight;
 
                     antiRect.left *= m_Fractal.GetGpuAntialiasing();
                     antiRect.right *= m_Fractal.GetGpuAntialiasing();
@@ -235,8 +241,8 @@ AutoZoomer::Run()
                 // ---------------- MAX ----------------
                 if constexpr (h == Fractal::AutoZoomHeuristic::Max) {
 
-                    LONG targetX = -1;
-                    LONG targetY = -1;
+                    int32_t targetX = -1;
+                    int32_t targetY = -1;
                     size_t maxiter = 0;
 
                     for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing();

@@ -6,12 +6,14 @@
 
 #include "stdafx.h"
 
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4334)
 #pragma warning(disable: 4267)
 #pragma warning(disable: 4244)
 #pragma warning(disable: 4334)
 #pragma warning(disable: 4701)
+#endif
 
 #include "WPngImage.hh"
 #include <vector>
@@ -2725,11 +2727,15 @@ bool WPngImage::IOStatus::printErrorMsg(std::ostream &os) const {
 //============================================================================
 #if !WPNGIMAGE_USE_LIBPNG
 
+#ifdef _MSC_VER
 #include <codeanalysis\warnings.h>
 #pragma warning( push )
 #pragma warning ( disable : ALL_CODE_ANALYSIS_WARNINGS )
+#endif
 #include "lodepng.h"
+#ifdef _MSC_VER
 #pragma warning( pop )
+#endif
 
 #include <cstdio>
 #include <cerrno>
@@ -3316,4 +3322,6 @@ WPngImage::IOStatus WPngImage::performSaveImageToRAM
 #endif // !WPNGIMAGE_USE_LIBPNG
 #endif // !WPNGIMAGE_DISABLE_PNG_FILE_IO_SUPPORT
 
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif

@@ -25,7 +25,15 @@
 #include <memory>
 #include <vector>
 
+// clang-format off
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #include <psapi.h>
+#endif
+#include <GL/gl.h>
+#include <GL/glu.h>
+// clang-format on
 
 #include <filesystem>
 #include <iostream>

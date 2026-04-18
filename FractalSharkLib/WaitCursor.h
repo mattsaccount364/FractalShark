@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef _WIN32
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
@@ -39,3 +41,17 @@ public:
 private:
     HCURSOR m_hCursor;
 };
+
+#else
+
+class WaitCursor {
+public:
+    WaitCursor() = default;
+    ~WaitCursor() = default;
+    void
+    ResetCursor()
+    {
+    }
+};
+
+#endif

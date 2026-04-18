@@ -77,12 +77,12 @@ MainWindow::~MainWindow()
 void
 MainWindow::MainWindow::DrawFractalShark()
 {
-    auto glContext = std::make_unique<OpenGlContext>(hWnd);
+    auto glContext = std::make_unique<OpenGlContext>(static_cast<void *>(hWnd));
     if (!glContext->IsValid()) {
         return;
     }
 
-    glContext->DrawFractalShark(hWnd);
+    glContext->DrawFractalShark(static_cast<void *>(hWnd));
 }
 
 //
@@ -202,8 +202,8 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     RECT rt{};
     GetClientRect(hWnd, &rt);
 
-    gFractal =
-        std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false, gJobObj->GetCommitLimitInBytes());
+    gFractal = std::make_unique<Fractal>(
+        rt.right, rt.bottom, static_cast<void *>(hWnd), false, gJobObj->GetCommitLimitInBytes());
 
     // Create menu / popup (doesn't require the window to be shown)
     MainWindowMenuState menuState(*this);
@@ -844,7 +844,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             lButtonDown = false;
             prevX1 = prevY1 = -1;
 
-            RECT newView{};
+            RECT newViewWin{};
             const bool maintainAspect = !IsDownShift();
 
             if (maintainAspect) {
@@ -852,17 +852,19 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 ::GetClientRect(hWnd, &windowRect);
                 const double ratio = double(windowRect.right) / double(windowRect.bottom);
 
-                newView.left = dragBoxX1;
-                newView.top = dragBoxY1;
-                newView.bottom = GET_Y_LPARAM(lParam);
-                newView.right =
-                    LONG(double(newView.left) + ratio * (double(newView.bottom) - double(newView.top)));
+                newViewWin.left = dragBoxX1;
+                newViewWin.top = dragBoxY1;
+                newViewWin.bottom = GET_Y_LPARAM(lParam);
+                newViewWin.right = LONG(double(newViewWin.left) +
+                                        ratio * (double(newViewWin.bottom) - double(newViewWin.top)));
             } else {
-                newView.left = dragBoxX1;
-                newView.top = dragBoxY1;
-                newView.right = GET_X_LPARAM(lParam);
-                newView.bottom = GET_Y_LPARAM(lParam);
+                newViewWin.left = dragBoxX1;
+                newViewWin.top = dragBoxY1;
+                newViewWin.right = GET_X_LPARAM(lParam);
+                newViewWin.bottom = GET_Y_LPARAM(lParam);
             }
+
+            ScreenRect newView{newViewWin.left, newViewWin.top, newViewWin.right, newViewWin.bottom};
 
             if (gFractal) {
                 gFractal->EnqueueCommand([newView, maintainAspect](Fractal &f) {

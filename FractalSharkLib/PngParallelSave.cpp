@@ -1,7 +1,8 @@
 #include "stdafx.h"
+
 #include "Environment.h"
-#include "PngParallelSave.h"
 #include "Fractal.h"
+#include "PngParallelSave.h"
 
 //////////////////////////////////////////////////////////////////////////////
 // Saves the current fractal as a bitmap to the given file.
@@ -9,24 +10,18 @@
 // fractal is saved instead.  Thus, 1024x768 is resized to 512x384.
 //////////////////////////////////////////////////////////////////////////////
 
-PngParallelSave::PngParallelSave(
-    enum Type typ,
-    std::wstring filename_base,
-    bool copy_the_iters,
-    Fractal &fractal)
-    : m_Type(typ),
-    m_FilenameBase(filename_base),
-    m_Fractal(fractal),
-    m_ScrnWidth(fractal.m_ScrnWidth),
-    m_ScrnHeight(fractal.m_ScrnHeight),
-    m_GpuAntialiasing(fractal.m_GpuAntialiasing),
-    m_NumIterations(fractal.m_NumIterations),
-    m_PaletteRotate(fractal.GetPalette().GetPaletteRotation()),
-    m_PaletteDepthIndex(fractal.GetPalette().GetPaletteDepthIndex()),
-    m_PaletteAuxDepth(fractal.GetPalette().GetAuxDepth()),
-    m_WhichPalette(fractal.GetPalette().GetPaletteType()),
-    m_CurIters{},
-    m_CopyTheIters(copy_the_iters) {
+PngParallelSave::PngParallelSave(enum Type typ,
+                                 std::wstring filename_base,
+                                 bool copy_the_iters,
+                                 Fractal &fractal)
+    : m_Type(typ), m_FilenameBase(filename_base), m_Fractal(fractal), m_ScrnWidth(fractal.m_ScrnWidth),
+      m_ScrnHeight(fractal.m_ScrnHeight), m_GpuAntialiasing(fractal.m_GpuAntialiasing),
+      m_NumIterations(fractal.m_NumIterations),
+      m_PaletteRotate(fractal.GetPalette().GetPaletteRotation()),
+      m_PaletteDepthIndex(fractal.GetPalette().GetPaletteDepthIndex()),
+      m_PaletteAuxDepth(fractal.GetPalette().GetAuxDepth()),
+      m_WhichPalette(fractal.GetPalette().GetPaletteType()), m_CurIters{}, m_CopyTheIters(copy_the_iters)
+{
 
     for (size_t i = 0; i < FractalPaletteType::Num; i++) {
         m_PalInterleaved[i] = fractal.GetPalette().GetPalInterleaved(i);
@@ -45,18 +40,23 @@ PngParallelSave::PngParallelSave(
     }
 }
 
-PngParallelSave::~PngParallelSave() {
+PngParallelSave::~PngParallelSave()
+{
     if (m_Thread) {
         m_Thread->join();
     }
 }
 
-void PngParallelSave::StartThread() {
+void
+PngParallelSave::StartThread()
+{
     assert(m_Thread == nullptr);
     m_Thread = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(&PngParallelSave::Run, this));
 }
 
-void PngParallelSave::Run() {
+void
+PngParallelSave::Run()
+{
     Environment::SetCurrentThreadName(L"PngParallelSave::Run");
 
     int ret;
@@ -71,7 +71,7 @@ void PngParallelSave::Run() {
 
     if (m_FilenameBase != L"") {
         wchar_t temp[512];
-        wsprintf(temp, L"%s", m_FilenameBase.c_str());
+        swprintf(temp, 512, L"%s", m_FilenameBase.c_str());
         final_filename = std::wstring(temp) + ext;
         if (Utilities::FileExists(final_filename.c_str())) {
             std::wcerr << L"Not saving, file exists" << std::endl;
@@ -81,7 +81,7 @@ void PngParallelSave::Run() {
         int i = 0;
         do {
             wchar_t temp[512];
-            wsprintf(temp, L"output%05d", i);
+            swprintf(temp, 512, L"output%05d", i);
             final_filename = std::wstring(temp) + ext;
             i++;
         } while (Utilities::FileExists(final_filename.c_str()));
@@ -90,15 +90,16 @@ void PngParallelSave::Run() {
     // TODO racy bug, changing iteration type while save in progress.
     IterTypeFull maxPossibleIters = m_Fractal.GetMaxIterationsRT();
 
-    //setup converter deprecated
-    //using convert_type = std::codecvt_utf8<wchar_t>;
-    //std::wstring_convert<convert_type, wchar_t> converter;
+    // setup converter deprecated
+    // using convert_type = std::codecvt_utf8<wchar_t>;
+    // std::wstring_convert<convert_type, wchar_t> converter;
     ////use converter (.to_bytes: wstr->str, .from_bytes: str->wstr)
-    //const std::string filename_c = converter.to_bytes(final_filename);
+    // const std::string filename_c = converter.to_bytes(final_filename);
 
     std::string filename_c;
-    std::transform(final_filename.begin(), final_filename.end(), std::back_inserter(filename_c), [](wchar_t c) {
-        return (char)c;
+    std::transform(
+        final_filename.begin(), final_filename.end(), std::back_inserter(filename_c), [](wchar_t c) {
+            return (char)c;
         });
 
     if (m_Type == Type::PngImg) {
@@ -116,11 +117,11 @@ void PngParallelSave::Run() {
                 acc_b = 0;
 
                 for (input_x = output_x * m_GpuAntialiasing;
-                    input_x < (output_x + 1) * m_GpuAntialiasing;
-                    input_x++) {
+                     input_x < (output_x + 1) * m_GpuAntialiasing;
+                     input_x++) {
                     for (input_y = output_y * m_GpuAntialiasing;
-                        input_y < (output_y + 1) * m_GpuAntialiasing;
-                        input_y++) {
+                         input_y < (output_y + 1) * m_GpuAntialiasing;
+                         input_y++) {
 
                         numIters = m_CurIters.GetItersArrayValSlow(input_x, input_y);
                         if (numIters < m_NumIterations) {
@@ -130,7 +131,8 @@ void PngParallelSave::Run() {
                             }
 
                             auto shiftedIters = (numIters >> m_PaletteAuxDepth);
-                            auto palIndex = shiftedIters % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
+                            auto palIndex =
+                                shiftedIters % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
 
                             acc_r += m_PalInterleaved[m_WhichPalette][m_PaletteDepthIndex][palIndex].r;
                             acc_g += m_PalInterleaved[m_WhichPalette][m_PaletteDepthIndex][palIndex].g;
@@ -143,20 +145,20 @@ void PngParallelSave::Run() {
                 acc_g /= m_GpuAntialiasing * m_GpuAntialiasing;
                 acc_b /= m_GpuAntialiasing * m_GpuAntialiasing;
 
-                //if (index > GetMaxIterations<IterType>()) {
-                //    index = GetMaxIterations<IterType>() - 1;
-                //}
+                // if (index > GetMaxIterations<IterType>()) {
+                //     index = GetMaxIterations<IterType>() - 1;
+                // }
 
-                //data[i] = (unsigned char)acc_r;
-                //i++;
-                //data[i] = (unsigned char)acc_g;
-                //i++;
-                //data[i] = (unsigned char)acc_b;
-                //i++;
+                // data[i] = (unsigned char)acc_r;
+                // i++;
+                // data[i] = (unsigned char)acc_g;
+                // i++;
+                // data[i] = (unsigned char)acc_b;
+                // i++;
 
                 image.set((int)output_x,
-                    (int)output_y,
-                    WPngImage::Pixel16((uint16_t)acc_r, (uint16_t)acc_g, (uint16_t)acc_b));
+                          (int)output_y,
+                          WPngImage::Pixel16((uint16_t)acc_r, (uint16_t)acc_g, (uint16_t)acc_b));
             }
         }
 
@@ -175,14 +177,14 @@ void PngParallelSave::Run() {
                 IterTypeFull numiters = m_CurIters.GetItersArrayValSlow(output_x, output_y);
                 memset(one_val, ' ', sizeof(one_val));
 
-                //static_assert(sizeof(IterType) == 8, "!");
-                //char(*__kaboom1)[sizeof(IterType)] = 1;
+                // static_assert(sizeof(IterType) == 8, "!");
+                // char(*__kaboom1)[sizeof(IterType)] = 1;
                 sprintf(one_val, "(%u,%u):%llu ", output_x, output_y, (IterTypeFull)numiters);
 
                 // Wow what a kludge
-                //size_t orig_len = strlen(one_val);
-                //one_val[orig_len] = ' ';
-                //one_val[orig_len + 1] = 0;
+                // size_t orig_len = strlen(one_val);
+                // one_val[orig_len] = ' ';
+                // one_val[orig_len + 1] = 0;
 
                 out_str += one_val;
             }

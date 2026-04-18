@@ -6,34 +6,35 @@
 #include "resource.h"
 #include "time.h"
 
+// clang-format off
+#include <windows.h>
+#include <GL/gl.h>  /* OpenGL header file */
+#include <GL/glu.h> /* OpenGL utilities header file */
+// clang-format on
+
 #include "Fractal.h"
 
-#include <GL/gl.h>			/* OpenGL header file */
-#include <GL/glu.h>			/* OpenGL utilities header file */
-
 // Global Variables:
-HINSTANCE hInst;                // current instance
+HINSTANCE hInst; // current instance
 LPCWSTR szWindowClass = L"FractalSaverWindow";
 
 HWND gHWnd;
 volatile bool gTimeToExit;
 
 // Foward declarations of functions included in this code module:
-ATOM        MyRegisterClass(HINSTANCE hInstance);
-BOOL        InitInstance(HINSTANCE);
-LRESULT CALLBACK  WndProc(HWND, UINT, WPARAM, LPARAM);
+ATOM MyRegisterClass(HINSTANCE hInstance);
+BOOL InitInstance(HINSTANCE);
+LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
 HANDLE gDrawingThreadHandle;
 unsigned long WINAPI DrawingThread(void *);
 void glResetView(void);
 void glResetViewDim(int width, int height);
 
-int APIENTRY WinMain(HINSTANCE hInstance,
-    HINSTANCE /*hPrevInstance*/,
-    LPSTR     lpCmdLine,
-    int       nCmdShow) {
-    if (_strcmpi(lpCmdLine, "-s") != 0 &&
-        _strcmpi(lpCmdLine, "/s") != 0 &&
+int APIENTRY
+WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR lpCmdLine, int nCmdShow)
+{
+    if (_strcmpi(lpCmdLine, "-s") != 0 && _strcmpi(lpCmdLine, "/s") != 0 &&
         _strcmpi(lpCmdLine, "s") != 0) {
         return 0;
     }
@@ -83,7 +84,9 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 // Registers the window class
 // Note CS_OWNDC.  This is important for OpenGL.
 //
-ATOM MyRegisterClass(HINSTANCE hInstance) {
+ATOM
+MyRegisterClass(HINSTANCE hInstance)
+{
     WNDCLASSEX wcex;
 
     wcex.cbSize = sizeof(WNDCLASSEX);
@@ -113,7 +116,9 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
 //     Here we create the main window and return its handle,
 //     and we perform other initialization.
 //
-BOOL InitInstance(HINSTANCE hInstance) { // Lower our priority
+BOOL
+InitInstance(HINSTANCE hInstance)
+{ // Lower our priority
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
     SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 
@@ -121,9 +126,17 @@ BOOL InitInstance(HINSTANCE hInstance) { // Lower our priority
     hInst = hInstance;
 
     // Create the window
-    gHWnd = CreateWindow(szWindowClass, L"", WS_POPUP | WS_THICKFRAME,
-        0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
-        nullptr, nullptr, hInstance, nullptr);
+    gHWnd = CreateWindow(szWindowClass,
+                         L"",
+                         WS_POPUP | WS_THICKFRAME,
+                         0,
+                         0,
+                         GetSystemMetrics(SM_CXSCREEN),
+                         GetSystemMetrics(SM_CYSCREEN),
+                         nullptr,
+                         nullptr,
+                         hInstance,
+                         nullptr);
 
     if (!gHWnd) {
         return FALSE;
@@ -142,41 +155,42 @@ BOOL InitInstance(HINSTANCE hInstance) { // Lower our priority
 //  WM_DESTROY  - post a quit message and return
 //
 //
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK
+WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
     switch (message) {
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        BeginPaint(hWnd, &ps);
-        EndPaint(hWnd, &ps);
-        break;
-    }
-    case WM_MOUSEMOVE:
-    {
-        static int counter = 0;
-        counter++;
-        if (counter > 10) {
-            DestroyWindow(hWnd);
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            BeginPaint(hWnd, &ps);
+            EndPaint(hWnd, &ps);
+            break;
         }
-        break;
-    }
-    case WM_DESTROY:
-    {
-        PostQuitMessage(0);
-        break;
-    }
-    case WM_SIZE:
-    {
-        break;
-    }
-    default:
-    { return DefWindowProc(hWnd, message, wParam, lParam); }
+        case WM_MOUSEMOVE: {
+            static int counter = 0;
+            counter++;
+            if (counter > 10) {
+                DestroyWindow(hWnd);
+            }
+            break;
+        }
+        case WM_DESTROY: {
+            PostQuitMessage(0);
+            break;
+        }
+        case WM_SIZE: {
+            break;
+        }
+        default: {
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
     }
 
     return 0;
 }
 
-unsigned long WINAPI DrawingThread(void *) { /////////////////////////////
+unsigned long WINAPI
+DrawingThread(void *)
+{ /////////////////////////////
     // opengl initialization
     /////////////////////////////
     HDC hDC = GetDC(gHWnd);
@@ -194,12 +208,18 @@ unsigned long WINAPI DrawingThread(void *) { /////////////////////////////
 
     pf = ChoosePixelFormat(hDC, &pfd);
     if (pf == 0) {
-        MessageBox(nullptr, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK | MB_APPLMODAL);
+        MessageBox(nullptr,
+                   L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.",
+                   L"Error",
+                   MB_OK | MB_APPLMODAL);
         return FALSE;
     }
 
     if (SetPixelFormat(hDC, pf, &pfd) == FALSE) {
-        MessageBox(nullptr, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK | MB_APPLMODAL);
+        MessageBox(nullptr,
+                   L"SetPixelFormat() failed:  Cannot set format specified.",
+                   L"Error",
+                   MB_OK | MB_APPLMODAL);
         return FALSE;
     }
 
@@ -222,12 +242,12 @@ unsigned long WINAPI DrawingThread(void *) { /////////////////////////////
     glResetViewDim(rt.right, rt.bottom);
 
     Fractal *gFractal = nullptr;
-    gFractal = DEBUG_NEW Fractal(rt.right, rt.bottom, gHWnd, true, 0);
+    gFractal = DEBUG_NEW Fractal(rt.right, rt.bottom, static_cast<void *>(gHWnd), true, 0);
 
     // Autozoom
     bool gAutoZoomDone = false;
 
-    RECT nextView;
+    ScreenRect nextView;
     nextView.top = -1;
     nextView.left = -1;
     nextView.bottom = -1;
@@ -268,14 +288,18 @@ unsigned long WINAPI DrawingThread(void *) { /////////////////////////////
     return 0;
 }
 
-void glResetView(void) {
+void
+glResetView(void)
+{
     RECT rt;
     GetClientRect(gHWnd, &rt);
 
     glResetViewDim(rt.right, rt.bottom);
 }
 
-void glResetViewDim(int width, int height) {
+void
+glResetViewDim(int width, int height)
+{
     glViewport(0, 0, width, height);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();

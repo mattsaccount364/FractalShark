@@ -1,4 +1,5 @@
 #pragma once
+
 enum class FeatureFinderMode {
     Direct,
     PT,
@@ -8,3 +9,5 @@ enum class FeatureFinderMode {
     PTScan,
     LAScan
 };
+
+enum class NRInnerLoopBackend { GPU, CpuMT, CpuST };

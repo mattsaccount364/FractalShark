@@ -1,27 +1,26 @@
 // OpenGLContext.h
 #pragma once
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "PlatformTypes.h"
 
-#include <GL/gl.h>
-#include <GL/glu.h>
+// GL types needed in the header (avoids including GL/gl.h which needs windows.h on Win32)
+using GLint = int;
 
 // Append a diagnostic line to FractalShark_gl.log.
 void GlLog(const char *msg);
 
 struct OpenGlContext {
-    HWND m_hWnd{};
-    HGLRC m_hRC{};
-    HDC m_hDC{};
+    void *m_hWnd{};
+    void *m_hRC{};
+    void *m_hDC{};
     bool m_Valid{};
     bool m_IsSoftwareRenderer{};
     bool m_Repainting{true};
     GLint m_MaxTextureSize{};
-    RECT m_CachedRect{};
+    ScreenRect m_CachedRect{};
 
 public:
-    OpenGlContext(HWND hWnd);
+    OpenGlContext(void *nativeWindow);
     ~OpenGlContext();
 
     bool MakeCurrent() noexcept;
@@ -36,5 +35,5 @@ public:
     void SetRepaint(bool repaint);
     bool GetRepaint() const;
     void ToggleRepaint();
-    void DrawFractalShark(HWND hWnd);
+    void DrawFractalShark(void *nativeWindow);
 };

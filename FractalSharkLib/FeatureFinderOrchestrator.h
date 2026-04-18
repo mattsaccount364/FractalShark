@@ -2,7 +2,6 @@
 
 #include "FeatureFinderMode.h"
 #include "HighPrecision.h"
-#include "NRInnerLoopBackend.h"
 
 #include <memory>
 #include <vector>

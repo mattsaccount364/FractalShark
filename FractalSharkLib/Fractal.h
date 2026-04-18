@@ -18,6 +18,7 @@
 
 #include "FractalPalette.h"
 #include "GPU_Render.h"
+#include "PlatformTypes.h"
 
 #include <array>
 
@@ -27,7 +28,6 @@
 #include "HDRFloat.h"
 #include "HighPrecision.h"
 #include "ItersMemoryContainer.h"
-#include "NRInnerLoopBackend.h"
 #include "OpenGLContext.h"
 #include "RefOrbitCalc.h"
 #include "WPngImage\WPngImage.hh"
@@ -62,7 +62,7 @@ public:
     friend class RenderThreadPool;
     friend class FeatureFinderOrchestrator;
 
-    Fractal(int width, int height, HWND hWnd, bool UseSensoCursor, uint64_t commitLimitInBytes);
+    Fractal(int width, int height, void *nativeWindow, bool UseSensoCursor, uint64_t commitLimitInBytes);
     ~Fractal();
 
     void InitialDefaultViewAndSettings(int width = 0, int height = 0);
@@ -80,11 +80,11 @@ public:
     void SetPrecision();
     void SetPrecision(uint64_t prec);
 
-    void ResetDimensions(size_t width = MAXSIZE_T,
-                         size_t height = MAXSIZE_T,
+    void ResetDimensions(size_t width = SIZE_MAX,
+                         size_t height = SIZE_MAX,
                          uint32_t gpu_antialiasing = UINT32_MAX);
     bool RecenterViewCalc(const PointZoomBBConverter &ptz);
-    bool RecenterViewScreen(RECT rect);
+    bool RecenterViewScreen(ScreenRect rect);
     bool CenterAtPoint(size_t x, size_t y);
     void ZoomAtCenter(double factor);
     void ZoomRecentered(size_t scrnX, size_t scrnY, double factor);
@@ -101,7 +101,7 @@ public:
     void ApproachTarget();
     bool Back();
 
-    void FindInterestingLocation(RECT *rect);
+    void FindInterestingLocation(ScreenRect *rect);
 
     template <typename IterType> void SetNumIterations(IterTypeFull num);
 
@@ -313,7 +313,7 @@ public:
     void SetNRInnerLoopBackend(NRInnerLoopBackend v);
 
 private:
-    void Initialize(int width, int height, HWND hWnd, bool UseSensoCursor);
+    void Initialize(int width, int height, void *nativeWindow, bool UseSensoCursor);
     void Uninitialize();
 
     void SaveCurPos();
@@ -406,7 +406,7 @@ private:
     // static constexpr IterType DefaultIterations = 256;
 
     std::unique_ptr<AbortMonitor> m_AbortMonitor;
-    HWND m_hWnd;
+    void *m_NativeWindow;
 
     // Holds all previous positions within the fractal.
     // Allows us to go "back."

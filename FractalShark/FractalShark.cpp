@@ -1,19 +1,22 @@
 #include "stdafx.h"
 
-#include "MainWindow.h"
 #include "Callstacks.h"
+#include "MainWindow.h"
 #include "heap_allocator\include\HeapCpp.h"
 
-#include <iostream>
+#include <chrono>
 #include <conio.h>
+#include <cstdint>
+#include <iostream>
+#include <thread>
 
 void
-PressAnyKeyToContinue(DWORD timeoutMs = 5000)
+PressAnyKeyToContinue(uint32_t timeoutMs = 5000)
 {
     std::cout << "\nPress any key to continue (exits in 5s automatically) . . .";
     std::cout.flush();
 
-    const DWORD start = GetTickCount();
+    const auto start = std::chrono::steady_clock::now();
 
     while (true) {
         if (_kbhit()) {
@@ -21,19 +24,21 @@ PressAnyKeyToContinue(DWORD timeoutMs = 5000)
             break;
         }
 
-        if (GetTickCount() - start >= timeoutMs) {
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >= timeoutMs) {
             break;
         }
 
-        Sleep(10); // avoid busy-spin
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
 
-
-int APIENTRY WinMain(_In_ HINSTANCE hInstance,
-    _In_opt_ HINSTANCE /*hPrevInstance*/,
-    _In_ LPSTR     /*lpCmdLine*/,
-    _In_ int       nCmdShow) {
+int APIENTRY
+WinMain(_In_ HINSTANCE hInstance,
+        _In_opt_ HINSTANCE /*hPrevInstance*/,
+        _In_ LPSTR /*lpCmdLine*/,
+        _In_ int nCmdShow)
+{
 
     MSG msg{};
 
@@ -41,7 +46,7 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
     GlobalCallstacks->InitCallstacks();
 
     {
-        MainWindow mainWindow{ hInstance, nCmdShow };
+        MainWindow mainWindow{hInstance, nCmdShow};
 
         //// Main message loop:
         while (GetMessage(&msg, nullptr, 0, 0) > 0) {
@@ -55,4 +60,3 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
 
     return (int)msg.wParam;
 }
-

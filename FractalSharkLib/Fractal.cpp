@@ -9,7 +9,6 @@
 
 #include <fstream>
 #include <iostream>
-#include <psapi.h>
 #include <thread>
 
 #include "ATInfo.h"
@@ -186,7 +185,7 @@ Fractal::SetCurItersMemory()
 
     for (;;) {
         lock.unlock();
-        Sleep(100);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         lock.lock();
         if (!m_ItersMemoryStorage.empty()) {
             m_CurIters = std::move(m_ItersMemoryStorage.back());
@@ -2830,14 +2829,12 @@ Fractal::SaveFractalData(std::wstring filename_base, bool copy_the_iters)
 {
     auto lambda = [&]<typename T>(T &savesInProgress) {
         for (;;) {
-            MEMORYSTATUSEX statex;
-            statex.dwLength = sizeof(statex);
-            GlobalMemoryStatusEx(&statex);
+            uint32_t memoryLoad = Environment::GetMemoryLoad();
 
             if (savesInProgress.size() > std::thread::hardware_concurrency() ||
-                (statex.dwMemoryLoad > 90 && !savesInProgress.empty())) {
+                (memoryLoad > 90 && !savesInProgress.empty())) {
                 if (!CleanupThreads(false)) {
-                    Sleep(100);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
             } else {
                 auto newPtr =

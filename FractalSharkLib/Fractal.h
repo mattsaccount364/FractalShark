@@ -291,9 +291,6 @@ public:
     HighPrecision XFromCalcToScreen(HighPrecision x) const;
     HighPrecision YFromCalcToScreen(HighPrecision y) const;
 
-    static DWORD WINAPI ServerManageMainConnectionThread(void *);
-    static DWORD WINAPI ServerManageSubConnectionThread(void *);
-
     void ForceRecalc();
 
     const LAParameters &GetLAParameters() const;

@@ -280,6 +280,9 @@ bool DirectoryRemoveRecursive(const wchar_t *path);
 // Opaque handle sentinel
 // =========================================================================
 
+// Returns the percentage of physical memory currently in use (0-100).
+uint32_t GetMemoryLoad();
+
 // Platform-independent invalid-handle constant (maps to INVALID_HANDLE_VALUE
 // on Windows, i.e. (void*)(intptr_t)-1).
 inline void *const InvalidHandle = reinterpret_cast<void *>(static_cast<intptr_t>(-1));

@@ -56,10 +56,12 @@ AutoZoomer::Run()
         std::vector<RenderJobHandle> handles(PipelineDepth);
 
         for (int64_t i = 0; i < setup.TotalSteps; ++i) {
+#ifdef _WIN32
             {
                 MSG msg;
                 PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
             }
+#endif
 
             if (m_Fractal.GetStopCalculating())
                 break;

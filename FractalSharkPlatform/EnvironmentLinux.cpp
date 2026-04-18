@@ -649,6 +649,43 @@ Environment::GetCurrentProcessHandle()
     return reinterpret_cast<void *>(static_cast<intptr_t>(-1));
 }
 
+uint32_t
+Environment::GetMemoryLoad()
+{
+    // Parse /proc/meminfo to compute memory usage percentage.
+    FILE *f = ::fopen("/proc/meminfo", "r");
+    if (f == nullptr) {
+        return 0;
+    }
+
+    uint64_t memTotal = 0;
+    uint64_t memAvailable = 0;
+    bool gotTotal = false;
+    bool gotAvailable = false;
+
+    char line[256];
+    while (::fgets(line, sizeof(line), f)) {
+        if (!gotTotal && ::strncmp(line, "MemTotal:", 9) == 0) {
+            memTotal = ::strtoull(line + 9, nullptr, 10);
+            gotTotal = true;
+        } else if (!gotAvailable && ::strncmp(line, "MemAvailable:", 13) == 0) {
+            memAvailable = ::strtoull(line + 13, nullptr, 10);
+            gotAvailable = true;
+        }
+        if (gotTotal && gotAvailable) {
+            break;
+        }
+    }
+    ::fclose(f);
+
+    if (!gotTotal || memTotal == 0) {
+        return 0;
+    }
+
+    uint64_t used = (memTotal > memAvailable) ? (memTotal - memAvailable) : 0;
+    return static_cast<uint32_t>(used * 100 / memTotal);
+}
+
 // =========================================================================
 // GUID generation
 // =========================================================================

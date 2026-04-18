@@ -609,6 +609,17 @@ Environment::GetCurrentProcessHandle()
     return ::GetCurrentProcess();
 }
 
+uint32_t
+Environment::GetMemoryLoad()
+{
+    MEMORYSTATUSEX statex{};
+    statex.dwLength = sizeof(statex);
+    if (::GlobalMemoryStatusEx(&statex)) {
+        return static_cast<uint32_t>(statex.dwMemoryLoad);
+    }
+    return 0;
+}
+
 // =========================================================================
 // GUID generation
 // =========================================================================

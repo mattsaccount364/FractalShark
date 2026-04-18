@@ -926,29 +926,18 @@ exact grid dimensions.
 
 \subsubsection{Multiway Pointwise Multiplication}
 
-In the transform domain, convolution reduces to pointwise multiplication. To
-amortize the cost of the NTT, the implementation computes three related
-convolutions simultaneously using a standard three-multiply decomposition.
-Conceptually, if
+In the transform domain, convolution reduces to pointwise multiplication.
+Computing $z_n^2 = (x_n + iy_n)^2$ requires three limb-array products:
+$x_n^2$, $x_n y_n$, and $y_n^2$.  The implementation therefore computes
+three frequency-domain products per transform index,
 
 \[
-X = X_r + iX_i,\qquad Y = Y_r + iY_i,
+\widehat{XX}_k,\quad \widehat{XY}_k,\quad \widehat{YY}_k,
 \]
 
-then the products
-
-\[
-X_rY_r,\quad X_iY_i,\quad (X_r+X_i)(Y_r+Y_i)
-\]
-
-are sufficient to reconstruct both real and imaginary components. Accordingly,
-three frequency-domain products are computed per transform index:
-
-\[
-\widehat{XX}_k,\quad \widehat{YY}_k,\quad \widehat{XY}_k,
-\]
-
-each via a Montgomery modular multiplication modulo \code{MagicPrime}.
+each via a Montgomery modular multiplication modulo \code{MagicPrime},
+sharing the same forward NTT passes for $X = \mathrm{NTT}(x)$ and
+$Y = \mathrm{NTT}(y)$.
 
 \subsubsection{Inverse NTT and Untwisting}
 

@@ -99,6 +99,10 @@
     <ClCompile Include="MpirSerialization.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
     <ClCompile Include="Vectors.cpp" />
+    <ClCompile Include="VectorsLinux.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="WorkaroundVcxAnnoyingCudaBug.cpp" />
   </ItemGroup>
   <ItemGroup>

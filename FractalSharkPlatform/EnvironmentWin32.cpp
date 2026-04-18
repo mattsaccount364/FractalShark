@@ -397,6 +397,23 @@ Environment::FileSetSize(void *fileHandle, uint64_t newSize)
     return ::SetEndOfFile(static_cast<HANDLE>(fileHandle)) != FALSE;
 }
 
+size_t
+Environment::FileWrite(void *fileHandle, const void *data, size_t bytes)
+{
+    DWORD written = 0;
+    if (!::WriteFile(
+            static_cast<HANDLE>(fileHandle), data, static_cast<DWORD>(bytes), &written, nullptr)) {
+        return 0;
+    }
+    return static_cast<size_t>(written);
+}
+
+bool
+Environment::FileDelete(const wchar_t *path)
+{
+    return ::DeleteFileW(path) != FALSE;
+}
+
 // =========================================================================
 // Memory-mapped files (section objects) — NT native API
 // =========================================================================

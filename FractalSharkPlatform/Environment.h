@@ -207,6 +207,13 @@ uint64_t FileGetSize(void *fileHandle);
 // Set the size of an open file (truncate or extend).  Returns true on success.
 bool FileSetSize(void *fileHandle, uint64_t newSize);
 
+// Write bytes to a file at the current position.  Returns the number of bytes
+// actually written, or 0 on failure.
+size_t FileWrite(void *fileHandle, const void *data, size_t bytes);
+
+// Delete a single file.  Returns true on success.
+bool FileDelete(const wchar_t *path);
+
 // =========================================================================
 // Memory-mapped files (section objects)
 // =========================================================================

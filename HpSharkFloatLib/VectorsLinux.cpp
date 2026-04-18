@@ -1,81 +1,80 @@
-#ifdef _WIN32
+#ifndef _WIN32
 
-#include "Vectors.h"
+#include "Callstacks.h"
 #include "DbgHeap.h"
-
-// #include "Fractal.h"
-// #include "GPU_Render.h"
+#include "EarlyCommandLine.h"
+#include "Exceptions.h"
 #include "GPU_ReferenceIter.h"
 #include "HDRFloat.h"
 #include "LAInfoDeep.h"
+#include "Vectors.h"
 
-#include "Callstacks.h"
-#include "EarlyCommandLine.h"
-#include "Exceptions.h"
+#include <cassert>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <cwchar>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-#include <assert.h>
-#include <combaseapi.h>
+// -------------------------------------------------------------------------
+// LinuxMappingState — tracks info needed for munmap/mremap.
+// Stored in m_MappedFile (cast to/from void*).
+// -------------------------------------------------------------------------
+struct LinuxMappingState {
+    size_t viewSize;  // total mmap'd region size in bytes
+    bool reserveOnly; // true if mapped with PROT_NONE (reserve-only)
+};
 
-#pragma comment(lib, "ntdll")
+// -------------------------------------------------------------------------
+// Helper: convert wchar_t (UTF-32 on Linux) to UTF-8.
+// -------------------------------------------------------------------------
+namespace {
 
-// typedef uint32_t NTSTATUS;
+std::string
+WideToUtf8(const wchar_t *wide)
+{
+    if (wide == nullptr || *wide == L'\0') {
+        return {};
+    }
 
-typedef enum _SECTION_INHERIT { ViewShare = 1, ViewUnmap = 2 } SECTION_INHERIT;
+    std::string result;
+    for (const wchar_t *p = wide; *p != L'\0'; ++p) {
+        auto c = static_cast<uint32_t>(*p);
+        if (c < 0x80) {
+            result.push_back(static_cast<char>(c));
+        } else if (c < 0x800) {
+            result.push_back(static_cast<char>(0xC0 | (c >> 6)));
+            result.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+        } else if (c < 0x10000) {
+            result.push_back(static_cast<char>(0xE0 | (c >> 12)));
+            result.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+            result.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+        } else {
+            result.push_back(static_cast<char>(0xF0 | (c >> 18)));
+            result.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
+            result.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+            result.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+        }
+    }
+    return result;
+}
 
-typedef struct _LSA_UNICODE_STRING {
-    USHORT Length;
-    USHORT MaximumLength;
-    PWSTR Buffer;
-} UNICODE_STRING, *PUNICODE_STRING;
-typedef struct _OBJECT_ATTRIBUTES {
-    ULONG Length;
-    HANDLE RootDirectory;
-    PUNICODE_STRING ObjectName;
-    ULONG Attributes;
-    PVOID SecurityDescriptor;
-    PVOID SecurityQualityOfService;
-} OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
-typedef struct _CLIENT_ID {
-    PVOID UniqueProcess;
-    PVOID UniqueThread;
-} CLIENT_ID, *PCLIENT_ID;
-using myNtCreateSection = NTSTATUS(NTAPI *)(OUT PHANDLE SectionHandle,
-                                            IN ULONG DesiredAccess,
-                                            IN POBJECT_ATTRIBUTES ObjectAttributes OPTIONAL,
-                                            IN PLARGE_INTEGER MaximumSize OPTIONAL,
-                                            IN ULONG PageAttributess,
-                                            IN ULONG SectionAttributes,
-                                            IN HANDLE FileHandle OPTIONAL);
-using myNtMapViewOfSection = NTSTATUS(NTAPI *)(HANDLE SectionHandle,
-                                               HANDLE ProcessHandle,
-                                               PVOID *BaseAddress,
-                                               ULONG_PTR ZeroBits,
-                                               SIZE_T CommitSize,
-                                               PLARGE_INTEGER SectionOffset,
-                                               PSIZE_T ViewSize,
-                                               DWORD InheritDisposition,
-                                               ULONG AllocationType,
-                                               ULONG Win32Protect);
-using myNtExtendSection = NTSTATUS(NTAPI *)(IN HANDLE SectionHandle, IN PLARGE_INTEGER NewSectionSize);
+} // anonymous namespace
 
-static myNtCreateSection fNtCreateSection;
-static myNtMapViewOfSection fNtMapViewOfSection;
-static myNtExtendSection fNtExtendSection;
-
+// -------------------------------------------------------------------------
+// VectorStaticInit — no-op on Linux (no ntdll to load).
+// -------------------------------------------------------------------------
 void
 VectorStaticInit()
 {
-    HMODULE hNtDll = GetModuleHandle(L"ntdll.dll");
-
-    if (hNtDll == nullptr) {
-        throw FractalSharkSeriousException("Failed to get handle to ntdll.dll", false);
-    }
-
-    fNtCreateSection = (myNtCreateSection)GetProcAddress(hNtDll, "NtCreateSection");
-    fNtMapViewOfSection = (myNtMapViewOfSection)GetProcAddress(hNtDll, "NtMapViewOfSection");
-    fNtExtendSection = (myNtExtendSection)GetProcAddress(hNtDll, "NtExtendSection");
 }
 
+// -------------------------------------------------------------------------
+// GetFileExtension
+// -------------------------------------------------------------------------
 std::wstring
 GetFileExtension(GrowableVectorTypes Type)
 {
@@ -99,6 +98,10 @@ GetFileExtension(GrowableVectorTypes Type)
             return L".error";
     }
 }
+
+// =========================================================================
+// Simple accessors (identical to Win32)
+// =========================================================================
 
 template <class EltT>
 EltT *
@@ -134,6 +137,10 @@ GrowableVector<EltT>::ValidFile() const
 {
     return m_Data != nullptr;
 }
+
+// =========================================================================
+// Move constructor / assignment (identical to Win32)
+// =========================================================================
 
 template <class EltT>
 GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept
@@ -190,6 +197,10 @@ GrowableVector<EltT>::operator=(GrowableVector<EltT> &&other) noexcept
     return *this;
 }
 
+// =========================================================================
+// Constructors / destructor
+// =========================================================================
+
 template <class EltT>
 GrowableVector<EltT>::GrowableVector() : GrowableVector(AddPointOptions::DontSave, L"")
 {
@@ -207,10 +218,12 @@ GrowableVector<EltT>::GrowableVector(AddPointOptions addPointOptions,
 
     wcscpy_s(m_Filename, filename);
 
-    auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
-    if (ret == FALSE) {
+    long pages = sysconf(_SC_PHYS_PAGES);
+    long pageSize = sysconf(_SC_PAGESIZE);
+    if (pages <= 0 || pageSize <= 0) {
         throw FractalSharkSeriousException("Failed to get system memory", false);
     }
+    m_PhysicalMemoryCapacityKB = static_cast<size_t>(pages) * static_cast<size_t>(pageSize) / 1024;
 
     if (HasSafeModeFlag_NoCRT()) {
         // In safe mode, we always use anonymous memory.
@@ -236,9 +249,13 @@ GrowableVector<EltT>::GrowableVector(AddPointOptions addPointOptions, const wcha
 
 template <class EltT> GrowableVector<EltT>::~GrowableVector()
 {
-    // File is also deleted via FILE_FLAG_DELETE_ON_CLOSE if needed
+    // File is also deleted via unlink-on-open if needed
     CloseMapping();
 }
+
+// =========================================================================
+// Element access (identical to Win32)
+// =========================================================================
 
 template <class EltT>
 EltT &
@@ -310,6 +327,21 @@ GrowableVector<EltT>::Clear()
     m_UsedSizeInElts = 0;
 }
 
+// =========================================================================
+// AddPointOptions accessor
+// =========================================================================
+
+template <class EltT>
+AddPointOptions
+GrowableVector<EltT>::GetAddPointOptions() const
+{
+    return m_AddPointOptions;
+}
+
+// =========================================================================
+// CloseMapping — tears down mmap and closes the file descriptor.
+// =========================================================================
+
 template <class EltT>
 void
 GrowableVector<EltT>::CloseMapping()
@@ -317,11 +349,10 @@ GrowableVector<EltT>::CloseMapping()
     if (UsingAnonymous()) {
         if (m_Data != nullptr) {
             GlobalCallstacks->LogDeallocCallstack(m_Data);
-            auto res = VirtualFree(m_Data, 0, MEM_RELEASE);
-            if (res == FALSE) {
-                char buf[256];
-                snprintf(buf, sizeof(buf), "Failed to free memory: %lu", GetLastError());
-                throw FractalSharkSeriousException(buf, false);
+            auto *mapping = static_cast<LinuxMappingState *>(m_MappedFile);
+            size_t sz = mapping ? mapping->viewSize : 0;
+            if (sz > 0) {
+                munmap(m_Data, sz);
             }
 
             m_Data = nullptr;
@@ -331,26 +362,35 @@ GrowableVector<EltT>::CloseMapping()
         m_CapacityInElts = 0;
     } else {
         if (m_Data != nullptr) {
-            UnmapViewOfFile(m_Data);
+            auto *mapping = static_cast<LinuxMappingState *>(m_MappedFile);
+            size_t sz = mapping ? mapping->viewSize : 0;
+            if (sz > 0) {
+                munmap(m_Data, sz);
+            }
             m_Data = nullptr;
         }
     }
 
     if (m_MappedFile != nullptr) {
-        CloseHandle(m_MappedFile);
+        delete static_cast<LinuxMappingState *>(m_MappedFile);
         m_MappedFile = nullptr;
     }
 
     Trim();
 
     if (m_FileHandle != nullptr) {
-        CloseHandle(m_FileHandle);
+        int fd = static_cast<int>(reinterpret_cast<intptr_t>(m_FileHandle));
+        close(fd);
         m_FileHandle = nullptr;
     }
 
     // m_UsedSizeInElts is unchanged.
     m_CapacityInElts = 0;
 }
+
+// =========================================================================
+// TrimEnableWithoutSave — shrink the mmap'd view via mremap.
+// =========================================================================
 
 template <class EltT>
 void
@@ -363,39 +403,40 @@ GrowableVector<EltT>::TrimEnableWithoutSave()
         return;
     }
 
+    auto *mapping = static_cast<LinuxMappingState *>(m_MappedFile);
+    size_t newSize = m_UsedSizeInElts * sizeof(EltT);
+    if (newSize == 0) {
+        newSize = 1; // mremap doesn't accept 0
+    }
+
     const void *originalData = m_Data;
 
-    // First unmap the existing view:
-    UnmapViewOfFile(m_Data);
-
-    // Don't set m_Data to null so we reuse the same address
-    SIZE_T viewSize = m_UsedSizeInElts * sizeof(EltT);
-    auto status2 = fNtMapViewOfSection(m_MappedFile,
-                                       GetCurrentProcess(),
-                                       (PVOID *)&m_Data,
-                                       0,
-                                       0,
-                                       0,
-                                       &viewSize,
-                                       ViewUnmap,
-                                       MEM_RESERVE,
-                                       PAGE_READWRITE);
-    if (status2 > 0) {
+    // Shrink in-place (flags=0 means don't move)
+    void *result = mremap(m_Data, mapping->viewSize, newSize, 0);
+    if (result == MAP_FAILED) {
         char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to map view of section: %ld", status2);
+        snprintf(buf, sizeof(buf), "Failed to mremap view: %s", strerror(errno));
         throw FractalSharkSeriousException(buf, false);
     }
 
+    m_Data = static_cast<EltT *>(result);
+    mapping->viewSize = newSize;
+
     if (originalData != m_Data) {
+        // mremap with flags=0 should not move the mapping
         char buf[256];
         snprintf(buf,
                  sizeof(buf),
-                 "NtMapViewOfSection returned a different pointer: %llu vs %llu",
+                 "mremap returned a different pointer: %llu vs %llu",
                  (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
                  (unsigned long long)reinterpret_cast<uint64_t>(originalData));
         throw FractalSharkSeriousException(buf, false);
     }
 }
+
+// =========================================================================
+// TrimEnableWithSave — truncate the backing file to used size.
+// =========================================================================
 
 template <class EltT>
 void
@@ -405,17 +446,14 @@ GrowableVector<EltT>::TrimEnableWithSave()
         return;
     }
 
-    // Set the location in the file to match the used size
-    // Use 64-bit file size functions because the file could be large.
-    // Only do it when we're actually keeping the result.
-
-    LARGE_INTEGER distanceToMove{};
-    distanceToMove.QuadPart = m_UsedSizeInElts * sizeof(EltT);
-    auto result = SetFilePointerEx(m_FileHandle, distanceToMove, nullptr, FILE_BEGIN);
-    if (result) {
-        SetEndOfFile(m_FileHandle);
-    }
+    int fd = static_cast<int>(reinterpret_cast<intptr_t>(m_FileHandle));
+    off_t usedBytes = static_cast<off_t>(m_UsedSizeInElts * sizeof(EltT));
+    ftruncate(fd, usedBytes);
 }
+
+// =========================================================================
+// Trim
+// =========================================================================
 
 template <class EltT>
 void
@@ -425,12 +463,9 @@ GrowableVector<EltT>::Trim()
     TrimEnableWithSave();
 }
 
-template <class EltT>
-AddPointOptions
-GrowableVector<EltT>::GetAddPointOptions() const
-{
-    return m_AddPointOptions;
-}
+// =========================================================================
+// Resize / reserve helpers (identical logic to Win32)
+// =========================================================================
 
 template <class EltT>
 void
@@ -465,77 +500,101 @@ GrowableVector<EltT>::UsingAnonymous() const
     return m_AddPointOptions == AddPointOptions::DontSave;
 }
 
+// =========================================================================
+// InternalOpenFile — open (or create) the backing file via POSIX open().
+// Returns 0 for a newly-created file or 183 (ERROR_ALREADY_EXISTS
+// equivalent) when the file already existed.
+// =========================================================================
+
 template <class EltT>
 uint32_t
 GrowableVector<EltT>::InternalOpenFile()
 {
-    DWORD lastError = 0;
+    uint32_t lastError = 0;
 
     if (m_FileHandle == nullptr) {
-        auto attributes = FILE_ATTRIBUTE_NORMAL;
-        if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
-            attributes |= FILE_FLAG_DELETE_ON_CLOSE;
-            attributes |= FILE_ATTRIBUTE_TEMPORARY;
-        }
-
-        DWORD desired_access = GENERIC_READ | GENERIC_WRITE;
+        int oflags = O_RDWR | O_CREAT;
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-            // desired_access = GENERIC_READ; // TODO
-        }
-
-        DWORD open_mode = OPEN_ALWAYS;
-        if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-            open_mode = OPEN_EXISTING;
+            oflags = O_RDWR; // no O_CREAT — file must exist
         }
 
         if (wcscmp(m_Filename, L"") == 0) {
-            // Fill a wide string with a random guid
-            GUID guid;
-            auto res = CoCreateGuid(&guid);
-            if (res != S_OK) {
-                char buf[256];
-                snprintf(buf, sizeof(buf), "Failed to create GUID: %ld", (long)res);
-                throw FractalSharkSeriousException(buf, false);
+            // Generate a random filename from /dev/urandom.
+            uint8_t bytes[16];
+            FILE *f = fopen("/dev/urandom", "rb");
+            if (f == nullptr || fread(bytes, 1, 16, f) != 16) {
+                if (f) {
+                    fclose(f);
+                }
+                throw FractalSharkSeriousException("Failed to generate random filename", false);
             }
+            fclose(f);
 
-            wchar_t guid_str[40];
-            auto res2 = StringFromGUID2(guid, guid_str, 40);
-            if (res2 == 0) {
-                char buf[256];
-                snprintf(buf, sizeof(buf), "Failed to convert GUID to string: %d", res2);
-                throw FractalSharkSeriousException(buf, false);
-            }
-
-            // Generate a temporary filename to a non-existent file
-            // in the current directory using GetTempFileName
-            wcscpy_s(m_Filename, guid_str);
+            wchar_t guid[40];
+            swprintf(guid,
+                     40,
+                     L"{%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+                     bytes[0],
+                     bytes[1],
+                     bytes[2],
+                     bytes[3],
+                     bytes[4],
+                     bytes[5],
+                     bytes[6],
+                     bytes[7],
+                     bytes[8],
+                     bytes[9],
+                     bytes[10],
+                     bytes[11],
+                     bytes[12],
+                     bytes[13],
+                     bytes[14],
+                     bytes[15]);
+            wcscpy_s(m_Filename, guid);
         }
 
-        m_FileHandle = CreateFile(
-            m_Filename, desired_access, FILE_SHARE_READ, nullptr, open_mode, attributes, nullptr);
-        if (m_FileHandle == INVALID_HANDLE_VALUE) {
-            m_FileHandle = nullptr;
-            auto err = GetLastError();
+        // Convert wide filename to UTF-8 for POSIX APIs.
+        std::string u8path = WideToUtf8(m_Filename);
+
+        int fd = open(u8path.c_str(), oflags, 0666);
+        if (fd < 0) {
+            auto err = errno;
             char buf[256];
-            snprintf(buf, sizeof(buf), "Failed to open file for reading 2: %lu", err);
+            snprintf(buf, sizeof(buf), "Failed to open file: %d", err);
             throw FractalSharkSeriousException(buf, false);
         }
 
+        m_FileHandle = reinterpret_cast<void *>(static_cast<intptr_t>(fd));
+
+        // Delete-on-close: unlink now, data persists until fd is closed.
+        if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
+            unlink(u8path.c_str());
+        }
+
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-            lastError = ERROR_ALREADY_EXISTS;
+            lastError = 183; // ERROR_ALREADY_EXISTS equivalent
         } else {
-            // This should be either 0 or ERROR_ALREADY_EXISTS given that
-            // the CreateFile call was evidently successful
-            lastError = GetLastError();
+            // Check if file existed before by seeing if it had content.
+            struct stat st;
+            if (fstat(fd, &st) == 0 && st.st_size > 0) {
+                lastError = 183;
+            } else {
+                lastError = 0;
+            }
         }
     } else {
-        // The file must be there because it's open
-        lastError = ERROR_ALREADY_EXISTS;
+        // The file must be there because it's open.
+        lastError = 183;
         assert(m_FileHandle != nullptr);
     }
 
     return lastError;
 }
+
+// =========================================================================
+// MutableFileResizeOpen — extend backing file via ftruncate.
+// The existing MAP_SHARED mapping sees new data for in-range pages.
+// =========================================================================
 
 template <class EltT>
 void
@@ -543,18 +602,21 @@ GrowableVector<EltT>::MutableFileResizeOpen(size_t capacity)
 {
     m_CapacityInElts = capacity;
 
-    // Convert m_CapacityInElts to LARGE_INTEGER NewSize:
-    LARGE_INTEGER NewSize;
-    NewSize.QuadPart = m_CapacityInElts * sizeof(EltT);
-
-    // this call extend file, section and view size
-    auto status = fNtExtendSection(m_MappedFile, &NewSize);
-    if (status > 0) {
+    int fd = static_cast<int>(reinterpret_cast<intptr_t>(m_FileHandle));
+    off_t newSize = static_cast<off_t>(m_CapacityInElts * sizeof(EltT));
+    if (ftruncate(fd, newSize) != 0) {
         char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to extend section: %ld", status);
+        snprintf(buf, sizeof(buf), "Failed to extend file: %s", strerror(errno));
         throw FractalSharkSeriousException(buf, false);
     }
 }
+
+// =========================================================================
+// MutableFileCommit — create/extend the file-backed mapping.
+//
+// Flow mirrors the Win32 NtCreateSection/NtMapViewOfSection/NtExtendSection
+// sequence, using ftruncate + mmap + ftruncate instead.
+// =========================================================================
 
 template <class EltT>
 void
@@ -569,40 +631,33 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
         return;
     }
 
-    DWORD lastError = InternalOpenFile();
+    uint32_t lastError = InternalOpenFile();
 
-    // Check all the things that could have gone wrong
-    if (m_FileHandle == nullptr || m_FileHandle == INVALID_HANDLE_VALUE ||
-        (lastError != 0 && lastError != ERROR_ALREADY_EXISTS)) {
-
-        auto ret = GetLastError();
+    // Check all the things that could have gone wrong.
+    if (m_FileHandle == nullptr || (lastError != 0 && lastError != 183)) {
         char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to open file: %lu", ret);
+        snprintf(buf, sizeof(buf), "Failed to open file: %u", lastError);
         throw FractalSharkSeriousException(buf, false);
     }
 
     static_assert(sizeof(size_t) == sizeof(uint64_t), "!");
-    static_assert(sizeof(DWORD) == sizeof(uint32_t), "!");
-    uint64_t total_new_size = capacity * sizeof(EltT);
-    DWORD high = total_new_size >> 32;
-    DWORD low = total_new_size & 0xFFFFFFFF;
+    int fd = static_cast<int>(reinterpret_cast<intptr_t>(m_FileHandle));
 
-    LARGE_INTEGER existing_file_size{};
-    if (lastError == ERROR_ALREADY_EXISTS) {
-        BOOL ret = GetFileSizeEx(m_FileHandle, &existing_file_size);
-        if (ret == FALSE) {
+    off_t existingFileSize = 0;
+    if (lastError == 183) {
+        struct stat st;
+        if (fstat(fd, &st) != 0) {
             throw FractalSharkSeriousException("Failed to get file size", false);
         }
+        existingFileSize = st.st_size;
 
         // Note: by using the file size to find the used size, the implication
         // is that resizing the vector only takes place once the vector is full.
         // This is not the case for anonymous memory.
         // The capacity/used size distinction is important as always.
-        m_UsedSizeInElts = existing_file_size.QuadPart / sizeof(EltT);
+        m_UsedSizeInElts = static_cast<size_t>(existingFileSize) / sizeof(EltT);
 
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-            high = existing_file_size.HighPart;
-            low = existing_file_size.LowPart;
             m_CapacityInElts = m_UsedSizeInElts;
         } else {
             m_CapacityInElts = capacity;
@@ -612,78 +667,22 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
         m_CapacityInElts = capacity;
     }
 
-    DWORD sectionPageProtection = PAGE_READWRITE;
-    if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-        // sectionPageProtection = PAGE_READONLY; // TODO
-    }
-
-    /*
-    m_MappedFile = CreateFileMapping(
-        m_FileHandle,
-        nullptr,
-        sectionPageProtection,
-        high,
-        low,
-        nullptr);
-    if (m_MappedFile == nullptr) {
-        auto err = GetLastError();
-        std::string err_str = "Failed to create file mapping: ";
-        err_str += std::to_string(err);
-        throw FractalSharkSeriousException(err_str);
-    }
-
-    DWORD desired_access = FILE_MAP_READ | FILE_MAP_WRITE;
-    if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-        desired_access = FILE_MAP_READ;
-    }
-
-    m_Data = static_cast<EltT*>(MapViewOfFile(m_MappedFile, desired_access, 0, 0, 0));
-    if (m_Data == nullptr) {
-        auto err_str = "Failed to map view of file";
-        throw FractalSharkSeriousException(err_str);
-    }
-    */
-
-    DWORD desired_access = SECTION_ALL_ACCESS;
-    //  DWORD desired_access = SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_EXTEND_SIZE;
-    if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
-        // desired_access = SECTION_MAP_READ | SECTION_EXTEND_SIZE; // TODO
-    }
-
-    // set for demo intial size of section to 2 byte
-    // NtCreateSection rounds this value up to the nearest multiple of PAGE_SIZE.
-    // however this will be have effect for file size exactly, if current file size less than this value
-    LARGE_INTEGER initialSize;
-    ULONG allocationAttributes;
-    ULONG allocationType;
+    // Set the initial file size via ftruncate (analogous to NtCreateSection
+    // with initialSize).
+    off_t initialSize;
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
-        initialSize.QuadPart = m_CapacityInElts * sizeof(EltT);
-        allocationAttributes = SEC_RESERVE;
-        allocationType = MEM_RESERVE;
+        initialSize = static_cast<off_t>(m_CapacityInElts * sizeof(EltT));
     } else {
-        initialSize.QuadPart = 0;
-        allocationAttributes = SEC_RESERVE;
-        allocationType = MEM_RESERVE;
+        initialSize = existingFileSize;
     }
-
-    DWORD status = fNtCreateSection(&m_MappedFile,
-                                    desired_access,
-                                    0,
-                                    &initialSize,
-                                    sectionPageProtection,
-                                    allocationAttributes,
-                                    m_FileHandle);
-
-    // we can close file handle now
-    // CloseHandle(hFile);
-
-    if (status > 0) {
+    if (ftruncate(fd, initialSize) != 0) {
         char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to create section: %ld", status);
+        snprintf(buf, sizeof(buf), "Failed to set initial file size: %s", strerror(errno));
         throw FractalSharkSeriousException(buf, false);
     }
 
-    SIZE_T viewSize;
+    // Determine the view (mmap) size.
+    size_t viewSize;
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
         if (m_OverrideViewSizeBytes > 0) {
             viewSize = m_OverrideViewSizeBytes;
@@ -691,54 +690,49 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
             viewSize = m_PhysicalMemoryCapacityKB * 1024;
         }
     } else {
-        viewSize = existing_file_size.QuadPart;
+        viewSize = static_cast<size_t>(existingFileSize);
     }
 
-    // m_Data = MapViewOfFile(m_MappedFile, FILE_MAP_RESERVE|FILE_MAP_READ|FILE_MAP_WRITE, 0, 0,
-    // ViewSize); note MEM_RESERVE
-    const void *OriginalData = m_Data;
-    status = fNtMapViewOfSection(m_MappedFile,
-                                 GetCurrentProcess(),
-                                 (PVOID *)&m_Data,
-                                 0,
-                                 0,
-                                 0,
-                                 &viewSize,
-                                 ViewUnmap,
-                                 allocationType,
-                                 sectionPageProtection);
-    if (status > 0) {
+    // mmap the file.
+    const void *originalData = m_Data;
+    void *mapped = mmap(nullptr, viewSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mapped == MAP_FAILED) {
         char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to map view of section: %ld", status);
+        snprintf(buf, sizeof(buf), "Failed to mmap file: %s", strerror(errno));
         throw FractalSharkSeriousException(buf, false);
     }
+    m_Data = static_cast<EltT *>(mapped);
+
+    // Store the mapping state.
+    auto *mapping = new LinuxMappingState{viewSize, false};
+    m_MappedFile = static_cast<void *>(mapping);
 
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
-
         // Debug check:
-        if (OriginalData != nullptr && OriginalData != m_Data) {
+        if (originalData != nullptr && originalData != m_Data) {
             char buf[256];
             snprintf(buf,
                      sizeof(buf),
-                     "NtMapViewOfSection returned a different pointer: %llu vs %llu",
+                     "mmap returned a different pointer: %llu vs %llu",
                      (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
-                     (unsigned long long)reinterpret_cast<uint64_t>(OriginalData));
+                     (unsigned long long)reinterpret_cast<uint64_t>(originalData));
             throw FractalSharkSeriousException(buf, false);
         }
 
-        // Convert m_CapacityInElts to LARGE_INTEGER NewSize:
-        LARGE_INTEGER NewSize;
-        NewSize.QuadPart = m_CapacityInElts * sizeof(EltT);
-
-        // this call extend file, section and view size
-        status = fNtExtendSection(m_MappedFile, &NewSize);
-        if (status > 0) {
+        // Extend the file to its full capacity (analogous to NtExtendSection).
+        off_t capacityBytes = static_cast<off_t>(m_CapacityInElts * sizeof(EltT));
+        if (ftruncate(fd, capacityBytes) != 0) {
             char buf[256];
-            snprintf(buf, sizeof(buf), "Failed to extend section: %ld", status);
+            snprintf(buf, sizeof(buf), "Failed to extend file: %s", strerror(errno));
             throw FractalSharkSeriousException(buf, false);
         }
     }
 }
+
+// =========================================================================
+// MutableAnonymousCommit — commit pages within the reserved region
+// by changing protection from PROT_NONE to PROT_READ|PROT_WRITE.
+// =========================================================================
 
 template <class EltT>
 void
@@ -755,36 +749,24 @@ GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity)
     }
 
     if (capacity > m_CapacityInElts) {
-        // If we're using anonymous memory, we need to commit the memory.
-        // Use VirtualAlloc to allocate additional space for the vector.
-        // The returned pointer should be the same as the original pointer.
-
         const auto bytesCount = capacity * sizeof(EltT);
-        auto res = VirtualAlloc(m_Data, bytesCount, MEM_COMMIT, PAGE_READWRITE);
 
-        GlobalCallstacks->LogAllocCallstack(bytesCount, res);
-
-        if (m_Data == nullptr) {
-            auto code = GetLastError();
+        // Commit by changing protection from PROT_NONE to PROT_READ|PROT_WRITE.
+        if (mprotect(m_Data, bytesCount, PROT_READ | PROT_WRITE) != 0) {
+            auto code = errno;
             char buf[256];
-            snprintf(buf, sizeof(buf), "Failed to allocate memory: %lu", code);
-            throw FractalSharkSeriousException(buf, false);
-        } else if (m_Data != res) {
-            auto code = GetLastError();
-            char buf[256];
-            snprintf(buf,
-                     sizeof(buf),
-                     "VirtualAlloc returned a different pointer: %llu vs %llu. Code: %lu",
-                     (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
-                     (unsigned long long)reinterpret_cast<uint64_t>(res),
-                     code);
+            snprintf(buf, sizeof(buf), "Failed to commit memory: %d", code);
             throw FractalSharkSeriousException(buf, false);
         }
 
-        m_Data = static_cast<EltT *>(res);
+        GlobalCallstacks->LogAllocCallstack(bytesCount, m_Data);
         m_CapacityInElts = capacity;
     }
 }
+
+// =========================================================================
+// MutableReserve — reserve address space with PROT_NONE via mmap.
+// =========================================================================
 
 template <class EltT>
 void
@@ -792,19 +774,27 @@ GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes)
 {
     assert(UsingAnonymous()); // This function is only for anonymous memory.
 
-    auto res = VirtualAlloc(m_Data, new_reserved_bytes, MEM_RESERVE, PAGE_READWRITE);
+    void *res = mmap(nullptr, new_reserved_bytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     GlobalCallstacks->LogReserveCallstack(new_reserved_bytes, res);
 
-    if (res == nullptr) {
-        auto code = GetLastError();
+    if (res == MAP_FAILED) {
+        auto code = errno;
         char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to reserve memory: %lu", code);
+        snprintf(buf, sizeof(buf), "Failed to reserve memory: %d", code);
         throw FractalSharkSeriousException(buf, false);
     }
 
     m_Data = static_cast<EltT *>(res);
+
+    // Track the reserved size for later munmap.
+    auto *mapping = new LinuxMappingState{new_reserved_bytes, true};
+    m_MappedFile = static_cast<void *>(mapping);
 }
+
+// =========================================================================
+// Explicit template instantiations — must match Win32 Vectors.cpp exactly.
+// =========================================================================
 
 #define InstantiateLAInfoDeepGrowableVector(IterType, T, SubType, PExtras)                              \
     template class GrowableVector<LAInfoDeep<IterType, T, SubType, PExtras>>

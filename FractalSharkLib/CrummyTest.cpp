@@ -1,13 +1,12 @@
 #include "stdafx.h"
 #include "CrummyTest.h"
 
+#include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
 #include "HDRFloat.h"
 
 #include "..\FractalShark\resource.h"
-
-#include <shellapi.h>
 
 CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {}
 
@@ -34,31 +33,18 @@ CrummyTest::TestAll()
 void
 CrummyTest::TestPreReq(const wchar_t *dirName)
 {
-    DWORD ftyp = GetFileAttributesW(dirName);
-    if (ftyp != INVALID_FILE_ATTRIBUTES && (ftyp & FILE_ATTRIBUTE_DIRECTORY)) {
-        // Delete the directory recursively
-        // Double-null terminated string
-        std::vector<wchar_t> dirNameDoubleNull{};
-        dirNameDoubleNull.resize(std::wcslen(dirName) + 2, L'\0');
-        std::copy(dirName, dirName + std::wcslen(dirName) + 1, dirNameDoubleNull.data());
-
-        SHFILEOPSTRUCT fileOp{};
-        fileOp.wFunc = FO_DELETE;
-        fileOp.pFrom = dirNameDoubleNull.data();
-        fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOF_ALLOWUNDO;
-        auto shRet = SHFileOperation(&fileOp);
-        if (shRet != 0) {
-            auto wstrMsg = std::wstring(L"Error deleting directory! SHFileOperation returned: ") +
-                           std::to_wstring(shRet);
-            std::wcerr << wstrMsg.c_str() << std::endl;
+    if (Environment::DirectoryExists(dirName)) {
+        auto shRet = Environment::DirectoryRemoveRecursive(dirName);
+        if (!shRet) {
+            std::wcerr << L"Error deleting directory!" << std::endl;
             return;
         }
     }
 
     // Create the directory
-    auto ret = CreateDirectory(dirName, nullptr);
-    if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
-        auto lastError = GetLastError();
+    auto ret = Environment::DirectoryCreate(dirName);
+    if (!ret) {
+        auto lastError = Environment::GetLastOSError();
         std::wstring msg = L"Error creating directory! Last error: " + std::to_wstring(lastError);
         std::wcerr << msg.c_str() << std::endl;
         return;
@@ -536,20 +522,21 @@ CrummyTest::TestImaginaLoad()
         auto size = SizeofResource(hInst, hRes);
         // Write the resource to a file
         auto filename = pair.name;
-        auto hFile = CreateFile(
-            filename, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (hFile == INVALID_HANDLE_VALUE) {
-            throwErr("CreateFile failed!");
+        auto hFile = Environment::FileOpen(filename,
+                                           Environment::FileAccess::Write,
+                                           Environment::FileDisposition::CreateAlways,
+                                           Environment::FileFlags::None);
+        if (hFile == Environment::InvalidHandle) {
+            throwErr("FileOpen failed!");
         }
 
-        DWORD bytesWritten;
-        auto ret = WriteFile(hFile, pRes, size, &bytesWritten, nullptr);
-        if (ret == 0) {
-            CloseHandle(hFile);
-            throw FractalSharkSeriousException("WriteFile failed!");
+        auto bytesWritten = Environment::FileWrite(hFile, pRes, size);
+        if (bytesWritten == 0) {
+            Environment::FileClose(hFile);
+            throw FractalSharkSeriousException("FileWrite failed!");
         }
 
-        CloseHandle(hFile);
+        Environment::FileClose(hFile);
 
         // Unlock
         UnlockResource(hGlobal);
@@ -582,9 +569,9 @@ CrummyTest::TestImaginaLoad()
         m_Fractal.SaveCurrentFractal(outImaginaFilename, false);
 
         // Delete the Imagina file
-        auto ret2 = DeleteFile(filename);
-        if (ret2 == 0) {
-            throwErr("DeleteFile failed!");
+        auto ret2 = Environment::FileDelete(filename);
+        if (!ret2) {
+            throwErr("FileDelete failed!");
         }
     };
 
@@ -956,7 +943,8 @@ CrummyTest::TestGrowableVector()
     }
 }
 
-void CrummyTest::TestWindowResize()
+void
+CrummyTest::TestWindowResize()
 {
     // Pick a sane starting size that should always be valid
     constexpr int baseW = 1280;

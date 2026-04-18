@@ -502,6 +502,21 @@ Environment::FileSetSize(void *fileHandle, uint64_t newSize)
     return ::ftruncate(fd, static_cast<off_t>(newSize)) == 0;
 }
 
+size_t
+Environment::FileWrite(void *fileHandle, const void *data, size_t bytes)
+{
+    int fd = static_cast<int>(reinterpret_cast<intptr_t>(fileHandle));
+    ssize_t n = ::write(fd, data, bytes);
+    return (n >= 0) ? static_cast<size_t>(n) : 0;
+}
+
+bool
+Environment::FileDelete(const wchar_t *path)
+{
+    std::string u8 = WideToUtf8(path);
+    return ::unlink(u8.c_str()) == 0;
+}
+
 // =========================================================================
 // Memory-mapped files (section objects)
 // =========================================================================

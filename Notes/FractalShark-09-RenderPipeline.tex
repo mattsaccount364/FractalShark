@@ -329,7 +329,7 @@ pushed back onto the vector and the condition variable is notified.
 After a successful render, the worker swaps its private
 \code{ItersMemoryContainer} into \code{m\_CurIters} under the
 calc-fractal mutex (if dimensions match).  This swap ensures that
-facilitiesrequiring CPU-side iteration data
+facilities requiring CPU-side iteration data
 (\code{SaveCurrentFractal}, \code{FindInterestingLocation}) see the
 most recently completed render without requiring a separate direct-path
 call.  If dimensions do not match---e.g.\ a resize occurred between
@@ -438,7 +438,7 @@ only the latest matters.  Two mechanisms discard stale work:
   \item \textbf{Generation counter.}  Each supersedable enqueue increments a
         monotonic counter and stamps the item.  Workers check the counter
         \emph{before} acquiring a renderer: if a newer item has been enqueued
-        since dequeue, the stale item is skipped with a tombstone.  This catches
+        since dequeue, the stale item is skipped with a tombstone.  This check catches
         items that were already dequeued but not yet processing.
 \end{enumerate}
 
@@ -898,7 +898,7 @@ assertion-based framework (\code{TEST}, \code{ASSERT\_EQ},
         magnitude).
   \item \code{HighPrecision} string parsing and round-trip conversion.
   \item \code{PointZoomBBConverter} coordinate transforms
-        (\cref{subsec:coordinate-mgmt}).
+        (\cref{subsec:coordinates}).
 \end{itemize}
 
 The tiered allocation strategy introduced earlier in this chapter addresses one aspect of memory

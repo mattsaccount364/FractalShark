@@ -11,11 +11,10 @@
 #include "FeatureSummary.h"
 #include "FloatComplex.h"
 #include "HighPrecision.h"
-#include "HpSharkFloat.h"
-#include "KernelInvoke.h"
 #include "LAInfoDeep.h"
 #include "LAReference.h"
 #include "MpirOrbitEval.h"
+#include "OrbitEndpointEvaluator.h"
 #include "PerturbationResults.h"
 
 #include <algorithm>
@@ -210,61 +209,6 @@ ComputeHalleyStep_mpf_coord_from_deriv(mpf_complex &step_coord,         // coord
     mpf_div(step_coord.re, tr_c, denom_c);
     mpf_div(step_coord.im, ti_c, denom_c);
     return true;
-}
-
-// ------------------------------------------------------------
-// Dispatch GPU NR inner loop by precision.
-// Rounds coord_prec to the nearest supported SharkParamsNR limb count.
-// ------------------------------------------------------------
-template <typename F>
-static inline void
-DispatchNRByPrecision(mp_bitcnt_t coord_prec, F &&f)
-{
-    uint32_t numLimbs = static_cast<uint32_t>((coord_prec + 31) / 32);
-    uint32_t p = 256;
-    while (p < numLimbs && p < 524288)
-        p <<= 1;
-
-    switch (p) {
-        case 256:
-            f.template operator()<SharkParamsNR1>();
-            break;
-        case 512:
-            f.template operator()<SharkParamsNR2>();
-            break;
-        case 1024:
-            f.template operator()<SharkParamsNR3>();
-            break;
-        case 2048:
-            f.template operator()<SharkParamsNR4>();
-            break;
-        case 4096:
-            f.template operator()<SharkParamsNR5>();
-            break;
-        case 8192:
-            f.template operator()<SharkParamsNR6>();
-            break;
-        case 16384:
-            f.template operator()<SharkParamsNR7>();
-            break;
-        case 32768:
-            f.template operator()<SharkParamsNR8>();
-            break;
-        case 65536:
-            f.template operator()<SharkParamsNR9>();
-            break;
-        case 131072:
-            f.template operator()<SharkParamsNR10>();
-            break;
-        case 262144:
-            f.template operator()<SharkParamsNR11>();
-            break;
-        case 524288:
-            f.template operator()<SharkParamsNR12>();
-            break;
-        default:
-            throw std::invalid_argument("Unsupported NR precision");
-    }
 }
 
 // ------------------------------------------------------------
@@ -1097,49 +1041,18 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                 std::make_unique<CheckpointSnapshot>(*pctx->params, itersCompleted));
         };
 
-        if (backend == NRInnerLoopBackend::GPU) {
-            DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
-                completed = HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
-                    c_coord.re,
-                    c_coord.im,
-                    period,
-                    z_coord.re,
-                    z_coord.im,
-                    dzdc_deriv.re,
-                    dzdc_deriv.im,
-                    d2r_hdr,
-                    d2i_hdr,
-                    HpShark::LaunchParams{0, 0},
-                    innerStart,
-                    AbortMonitor::GetStopCalculatingGlobal,
-                    onProgress,
-                    &progressCtx);
-            });
-        } else if (backend == NRInnerLoopBackend::CpuMT) {
-            completed = EvaluateCriticalOrbitAndDerivsMT(c_coord,
-                                                         period,
-                                                         z_coord,
-                                                         dzdc_deriv,
-                                                         d2r_hdr,
-                                                         d2i_hdr,
-                                                         deriv_prec,
-                                                         coord_prec,
-                                                         innerStart,
-                                                         onProgress,
-                                                         &progressCtx);
-        } else {
-            completed = EvaluateCriticalOrbitAndDerivsST(c_coord,
-                                                         period,
-                                                         z_coord,
-                                                         dzdc_deriv,
-                                                         d2r_hdr,
-                                                         d2i_hdr,
-                                                         deriv_prec,
-                                                         coord_prec,
-                                                         innerStart,
-                                                         onProgress,
-                                                         &progressCtx);
-        }
+        completed = EvaluateCriticalOrbitAndDerivs(backend,
+                                                   c_coord,
+                                                   period,
+                                                   z_coord,
+                                                   dzdc_deriv,
+                                                   d2r_hdr,
+                                                   d2i_hdr,
+                                                   coord_prec,
+                                                   deriv_prec,
+                                                   innerStart,
+                                                   onProgress,
+                                                   &progressCtx);
 
         if (completed < period) {
             // Compute inner-loop diagnostics for the abort checkpoint.
@@ -1339,25 +1252,8 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         // ---------------- Imagina final correction pass ----------------
         // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
         {
-            if (backend == NRInnerLoopBackend::GPU) {
-                DispatchNRByPrecision(coord_prec, [&]<class NRParams>() {
-                    HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(c_coord.re,
-                                                                          c_coord.im,
-                                                                          period,
-                                                                          z_coord.re,
-                                                                          z_coord.im,
-                                                                          dzdc_deriv.re,
-                                                                          dzdc_deriv.im,
-                                                                          d2r_hdr,
-                                                                          d2i_hdr);
-                });
-            } else if (backend == NRInnerLoopBackend::CpuMT) {
-                EvaluateCriticalOrbitAndDerivsMT(
-                    c_coord, period, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr, deriv_prec, coord_prec);
-            } else {
-                EvaluateCriticalOrbitAndDerivsST(
-                    c_coord, period, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr, deriv_prec, coord_prec);
-            }
+            EvaluateCriticalOrbitAndDerivs(
+                backend, c_coord, period, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr, coord_prec, deriv_prec);
 
             if (ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
                     step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {

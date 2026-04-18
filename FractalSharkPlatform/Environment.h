@@ -163,6 +163,113 @@ const wchar_t *GetCommandLineWide();
 void ClearConsole();
 
 // =========================================================================
+// File I/O (general-purpose)
+// =========================================================================
+
+// Access mode for FileOpen.
+enum class FileAccess : uint32_t {
+    Read = 1,
+    Write = 2,
+    ReadWrite = 3,
+};
+
+// Creation/open disposition for FileOpen.
+enum class FileDisposition : uint32_t {
+    OpenExisting, // fail if file does not exist
+    OpenAlways,   // open if exists, create if not
+    CreateAlways, // always create (truncate if exists)
+};
+
+// Optional flags for FileOpen (may be ORed together).
+enum class FileFlags : uint32_t {
+    None = 0,
+    DeleteOnClose = 1, // FILE_FLAG_DELETE_ON_CLOSE / unlink-on-open
+    Temporary = 2,     // FILE_ATTRIBUTE_TEMPORARY / hint to OS
+    ShareRead = 4,     // FILE_SHARE_READ / allow concurrent readers
+};
+inline FileFlags
+operator|(FileFlags a, FileFlags b)
+{
+    return static_cast<FileFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+inline bool
+operator&(FileFlags a, FileFlags b)
+{
+    return (static_cast<uint32_t>(a) & static_cast<uint32_t>(b)) != 0;
+}
+
+// Open or create a file.  Returns opaque handle, or InvalidHandle on failure.
+void *FileOpen(const wchar_t *path, FileAccess access, FileDisposition disposition, FileFlags flags);
+
+// Get the size of an open file in bytes.  Returns 0 on failure.
+uint64_t FileGetSize(void *fileHandle);
+
+// Set the size of an open file (truncate or extend).  Returns true on success.
+bool FileSetSize(void *fileHandle, uint64_t newSize);
+
+// =========================================================================
+// Memory-mapped files (section objects)
+// =========================================================================
+
+// Create a section backed by a file.
+// maxSize: initial maximum size of the section.
+// readOnly: if true, section is read-only.
+// Returns opaque section handle, or nullptr on failure.
+void *SectionCreate(void *fileHandle, uint64_t maxSize, bool readOnly);
+
+// Map a view of a section into the process address space.
+// suggestedBase: preferred base address (nullptr for any).
+// viewSize: in/out — requested size on input, actual mapped size on output.
+// reserveOnly: if true, reserve address space without committing physical pages.
+// readOnly: if true, map as read-only.
+// Returns mapped base address, or nullptr on failure.
+void *SectionMapView(
+    void *sectionHandle, void *suggestedBase, size_t *viewSize, bool reserveOnly, bool readOnly);
+
+// Extend a section (and its backing file) to a new size.
+// Returns true on success.
+bool SectionExtend(void *sectionHandle, uint64_t newSize);
+
+// Unmap the view currently associated with this section.
+// Each section tracks at most one mapped view at a time.
+void SectionUnmapView(void *sectionHandle);
+
+// Close a section handle (does not unmap existing views).
+void SectionClose(void *sectionHandle);
+
+// =========================================================================
+// System information (extended)
+// =========================================================================
+
+// Total physical memory installed in the system, in kilobytes.
+uint64_t PhysicalMemoryKB();
+
+// Return an opaque handle representing the current process.
+void *GetCurrentProcessHandle();
+
+// =========================================================================
+// GUID generation
+// =========================================================================
+
+// Generate a random GUID and return it as a wide string in registry format:
+// L"{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}".
+std::wstring GenerateGuidString();
+
+// =========================================================================
+// File system utilities
+// =========================================================================
+
+// Create a directory.  Returns true on success or if it already exists.
+bool DirectoryCreate(const wchar_t *path);
+
+// Returns true if the path exists and is a directory.
+bool DirectoryExists(const wchar_t *path);
+
+// Recursively delete a directory and all its contents.
+// Returns true on success.
+bool DirectoryRemoveRecursive(const wchar_t *path);
+
+// =========================================================================
 // Opaque handle sentinel
 // =========================================================================
 

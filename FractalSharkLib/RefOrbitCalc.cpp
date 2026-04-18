@@ -16,6 +16,7 @@
 #include "RecommendedSettings.h"
 #include "ScopedMpir.h"
 
+#include "GpuPrecisionDispatch.h"
 #include "HpSharkFloat.h"
 #include "KernelInvoke.h"
 
@@ -2164,169 +2165,6 @@ RefOrbitCalc::AddPerturbationReferencePointMT5(const PointZoomBBConverter &ptz,
         ptz, cx, cy);
 }
 
-template <class P, class F>
-static void
-DispatchOne(F &&f)
-{
-    // Use unique_ptr so we always clean up even on exceptions
-    auto comboResults = std::make_unique<HpSharkReferenceResults<P>>();
-    f.template operator()<P>(*comboResults);
-}
-
-template <class F>
-void
-DispatchByPrecision(uint64_t prec, F &&f)
-{
-    // Round up prec to nearest power of 2:
-    auto precRounded = prec;
-    if ((precRounded & (precRounded - 1)) != 0) {
-        uint32_t p = 1;
-        while (p < precRounded) {
-            p <<= 1;
-        }
-        precRounded = p;
-    }
-
-    if (precRounded < 256) {
-        precRounded = 256;
-    }
-
-    if (precRounded > 524288) {
-        throw std::invalid_argument("Unsupported precision");
-    }
-
-    switch (precRounded) {
-        case 256:
-            return DispatchOne<SharkParams1>(std::forward<F>(f));
-        case 512:
-            return DispatchOne<SharkParams2>(std::forward<F>(f));
-        case 1024:
-            return DispatchOne<SharkParams3>(std::forward<F>(f));
-        case 2048:
-            return DispatchOne<SharkParams4>(std::forward<F>(f));
-        case 4096:
-            return DispatchOne<SharkParams5>(std::forward<F>(f));
-        case 8192:
-            return DispatchOne<SharkParams6>(std::forward<F>(f));
-        case 16384:
-            return DispatchOne<SharkParams7>(std::forward<F>(f));
-        case 32768:
-            return DispatchOne<SharkParams8>(std::forward<F>(f));
-        case 65536:
-            return DispatchOne<SharkParams9>(std::forward<F>(f));
-        case 131072:
-            return DispatchOne<SharkParams10>(std::forward<F>(f));
-        case 262144:
-            return DispatchOne<SharkParams11>(std::forward<F>(f));
-        case 524288:
-            return DispatchOne<SharkParams12>(std::forward<F>(f));
-        default:
-            throw std::invalid_argument("Unsupported NumIters");
-    }
-}
-
-template <class F>
-void
-DispatchByPrecisionDbl(uint64_t prec, F &&f)
-{
-    auto precRounded = prec;
-    if ((precRounded & (precRounded - 1)) != 0) {
-        uint32_t p = 1;
-        while (p < precRounded) {
-            p <<= 1;
-        }
-        precRounded = p;
-    }
-
-    if (precRounded < 256) {
-        precRounded = 256;
-    }
-
-    if (precRounded > 524288) {
-        throw std::invalid_argument("Unsupported precision");
-    }
-
-    switch (precRounded) {
-        case 256:
-            return DispatchOne<SharkParamsDbl1>(std::forward<F>(f));
-        case 512:
-            return DispatchOne<SharkParamsDbl2>(std::forward<F>(f));
-        case 1024:
-            return DispatchOne<SharkParamsDbl3>(std::forward<F>(f));
-        case 2048:
-            return DispatchOne<SharkParamsDbl4>(std::forward<F>(f));
-        case 4096:
-            return DispatchOne<SharkParamsDbl5>(std::forward<F>(f));
-        case 8192:
-            return DispatchOne<SharkParamsDbl6>(std::forward<F>(f));
-        case 16384:
-            return DispatchOne<SharkParamsDbl7>(std::forward<F>(f));
-        case 32768:
-            return DispatchOne<SharkParamsDbl8>(std::forward<F>(f));
-        case 65536:
-            return DispatchOne<SharkParamsDbl9>(std::forward<F>(f));
-        case 131072:
-            return DispatchOne<SharkParamsDbl10>(std::forward<F>(f));
-        case 262144:
-            return DispatchOne<SharkParamsDbl11>(std::forward<F>(f));
-        case 524288:
-            return DispatchOne<SharkParamsDbl12>(std::forward<F>(f));
-        default:
-            throw std::invalid_argument("Unsupported NumIters (double)");
-    }
-}
-
-template <class F>
-void
-DispatchByPrecisionDbf(uint64_t prec, F &&f)
-{
-    auto precRounded = prec;
-    if ((precRounded & (precRounded - 1)) != 0) {
-        uint32_t p = 1;
-        while (p < precRounded) {
-            p <<= 1;
-        }
-        precRounded = p;
-    }
-
-    if (precRounded < 256) {
-        precRounded = 256;
-    }
-
-    if (precRounded > 524288) {
-        throw std::invalid_argument("Unsupported precision");
-    }
-
-    switch (precRounded) {
-        case 256:
-            return DispatchOne<SharkParamsDbf1>(std::forward<F>(f));
-        case 512:
-            return DispatchOne<SharkParamsDbf2>(std::forward<F>(f));
-        case 1024:
-            return DispatchOne<SharkParamsDbf3>(std::forward<F>(f));
-        case 2048:
-            return DispatchOne<SharkParamsDbf4>(std::forward<F>(f));
-        case 4096:
-            return DispatchOne<SharkParamsDbf5>(std::forward<F>(f));
-        case 8192:
-            return DispatchOne<SharkParamsDbf6>(std::forward<F>(f));
-        case 16384:
-            return DispatchOne<SharkParamsDbf7>(std::forward<F>(f));
-        case 32768:
-            return DispatchOne<SharkParamsDbf8>(std::forward<F>(f));
-        case 65536:
-            return DispatchOne<SharkParamsDbf9>(std::forward<F>(f));
-        case 131072:
-            return DispatchOne<SharkParamsDbf10>(std::forward<F>(f));
-        case 262144:
-            return DispatchOne<SharkParamsDbf11>(std::forward<F>(f));
-        case 524288:
-            return DispatchOne<SharkParamsDbf12>(std::forward<F>(f));
-        default:
-            throw std::invalid_argument("Unsupported NumIters (CudaDblflt)");
-    }
-}
-
 template <typename IterType,
           class T,
           bool Periodicity,
@@ -2360,7 +2198,7 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
     // Auto-decide
     HpShark::LaunchParams launchParams{0, 0};
 
-    auto lamb = [&]<class SharkFloatParams>(HpSharkReferenceResults<SharkFloatParams> & /*unused*/) {
+    auto lamb = [&]<class SharkFloatParams>() {
         // ---------------------------------------------------------------------
         //   1) Init once (returns "combo")
         //   2) Invoke in bounded chunks (<= MaxOutputIters) until done / escaped / period
@@ -2421,12 +2259,13 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
     };
 
     // Dispatch by precision and SubType.
+    const auto limbCount = RoundToSupportedLimbCount(PrecInLimbs);
     if constexpr (std::is_same_v<T, HDRFloat<double>>) {
-        DispatchByPrecisionDbl(PrecInLimbs, lamb);
+        DispatchByLimbCount<SharkParamsDblFamily>(limbCount, lamb);
     } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>) {
-        DispatchByPrecisionDbf(PrecInLimbs, lamb);
+        DispatchByLimbCount<SharkParamsDbfFamily>(limbCount, lamb);
     } else {
-        DispatchByPrecision(PrecInLimbs, lamb);
+        DispatchByLimbCount<SharkParamsBaseFamily>(limbCount, lamb);
     }
 
     results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);

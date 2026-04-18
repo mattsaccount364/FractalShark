@@ -595,7 +595,7 @@ implemented in \code{LAReference::\allowbreak CreateLAFromOrbit} and
         synthetic logarithmic subdivision of the detected period,
         using the same \(\lfloor p^{1/k}\rfloor\) formula applied to
         the period~\(p\) instead of the total iteration count.
-        This keeps each stage's entry count manageable.
+        This subdivision keeps each stage's entry count manageable.
 \end{enumerate}
 
 The observation underlying this step is that near a mini-Mandelbrot copy, the orbit nearly
@@ -631,7 +631,7 @@ each step: if
 \(\lVert \Delta z \rVert_\infty > \lVert z \rVert_\infty\)
 (the perturbation has grown larger than the reconstructed orbit), the
 kernel sets \(\Delta z \leftarrow z\) and restarts the macro-iteration
-counter at entry~0 of the current stage.  This mirrors the rebasing
+counter at entry~0 of the current stage.  This behavior mirrors the rebasing
 mechanism in perturbation-only rendering (\cref{sec:perturb-only-rebase}).
 
 \subsubsection{Attractor transformation (AT)}

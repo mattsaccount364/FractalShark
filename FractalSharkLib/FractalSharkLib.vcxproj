@@ -25,9 +25,11 @@
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="FractalViewPresets.h" />
     <ClInclude Include="LargeCoords32.h" />
+    <ClInclude Include="MpirComplex.h" />
     <ClInclude Include="MpirOrbitEval.h" />
     <ClInclude Include="RenderThreadPool.h" />
     <ClInclude Include="CrummyTest.h" />
+    <ClInclude Include="GpuPrecisionDispatch.h" />
     <ClInclude Include="GPU_BLAS.h" />
     <ClInclude Include="GPU_LAInfoDeep.h" />
     <ClInclude Include="GPU_LAReference.h" />
@@ -40,6 +42,7 @@
     <ClInclude Include="LAReference.h" />
     <ClInclude Include="LargeCoords30.h" />
     <ClInclude Include="OpenGLContext.h" />
+    <ClInclude Include="OrbitEndpointEvaluator.h" />
     <ClInclude Include="OrbitParameterPack.h" />
     <ClInclude Include="PerturbationResults.h" />
     <ClInclude Include="PerturbationResultsHelpers.h" />
@@ -75,6 +78,9 @@
     <ClCompile Include="FeatureFinderOrchestrator.cpp" />
     <ClCompile Include="FeatureSummary.cpp" />
     <ClCompile Include="Fractal.cpp" />
+    <ClCompile Include="MpirComplex.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="MpirOrbitEval.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -85,6 +91,7 @@
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAReference.cpp" />
     <ClCompile Include="OpenGLContext.cpp" />
+    <ClCompile Include="OrbitEndpointEvaluator.cpp" />
     <ClCompile Include="OrbitParameterPack.cpp" />
     <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="FractalPalette.cpp" />

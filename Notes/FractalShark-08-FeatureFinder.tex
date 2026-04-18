@@ -250,7 +250,7 @@ effective $R^2$ during the scan to reduce false triggers.
 Each Newton step requires evaluating $F(c) = z_p(c)$ and its first two
 derivatives at the current guess~$c$, as shown in \cref{fig:newton-loops}.
 This evaluation is done by iterating the
-critical orbitfrom $z_0 = 0$ for exactly $p$~steps, accumulating three
+critical orbit from $z_0 = 0$ for exactly $p$~steps, accumulating three
 quantities simultaneously at \emph{different precision levels}:
 
 \begin{enumerate}
@@ -398,7 +398,7 @@ multiplying, or equivalently scaling the products after).
 \noindent
 The 7~high-precision multiplies are \emph{independent} of one another
 within a single iteration and can all execute in parallel.  This independence is
-exactly whythe multithreaded CPU evaluator dispatches them to
+exactly why the multithreaded CPU evaluator dispatches them to
 7~spin-based worker threads (\cref{subsec:ff-threading}), and why the
 GPU backend can batch them as simultaneous NTT launches
 (\cref{subsec:ff-inner-gpu}).  The $d2$ computation runs on the main
@@ -540,7 +540,7 @@ kernel applies it via an \code{addTwos} exponent adjustment array:
 \]
 where a value of~1 shifts the result exponent by one bit (equivalent to
 $\times 2$).  The orbit products XX and YY are not scaled; XY and all
-four W products receive the $\times 2$.  This matches the distributed
+four W products receive the $\times 2$.  This layout matches the distributed
 form of the equations: each derivative product appears with a factor
 of~2 already absorbed.
 
@@ -839,15 +839,15 @@ bits, well below the ${\sim}b$-bit crossover, and the cubic burst is fully
 observable during Phase~B; this is the regime in which low-precision Halley
 delivers most of its practical iteration savings.  At deep zoom ($Z \gg 2^b$),
 pixel resolution alone provides hundreds of correct bits, placing the iterate
-well past the crossover before Phase~B begins.  In that regime the dramatic
-cubic advantage is absent; the retained value of low-precision Halley is
+well past the crossover before Phase~B begins.  In that regime the cubic
+convergence advantage is absent; the retained value of low-precision Halley is
 limited to the smaller late-regime improvement over Newton together with the
 information carried by $|F''|$ for the Halley gate and error estimator.
 Representative period~16045 runs still show the dependence.  After accounting
 for the ${\sim}88$-bit offset between actual and normalized bits
 (\cref{eq:ff-rho2-offset}), a 100-bit start retains about a one-iteration
 advantage to representative targets, whereas a 150-bit start is already in the
-narrowed 0--1-iteration envelope.  This is consistent with the implementation
+narrowed 0--1-iteration envelope.  This result is consistent with the implementation
 and with partial production spot checks, but it is not yet a full validation of
 every production regime.
 
@@ -966,7 +966,7 @@ of the mini-brot copy is characterized by
   \frac{1}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|},
 \end{equation}
 where $w_p = \prod_{k=0}^{p-1} 2\,z_k$ is the \code{zcoeff} product
-\eqref{eq:ff-zcoeff} evaluated at $c^*$.The code reports an \emph{intrinsic radius}
+\eqref{eq:ff-zcoeff} evaluated at $c^*$. The code reports an \emph{intrinsic radius}
 \begin{equation}\label{eq:ff-intrinsic-radius}
 r_{\mathrm{int}} = 4 \cdot \mathrm{Scale}
   = \frac{4}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|}.

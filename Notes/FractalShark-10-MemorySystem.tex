@@ -125,7 +125,7 @@ Growth proceeds by increasing the logical capacity \code{m\_CapacityInElts}
 without moving data. In anonymous mode, this corresponds to committing
 additional pages within the reserved region. In file-backed mode, it corresponds
 to extending the underlying section and allowing the view to cover the expanded
-range. In both cases the implementation \emph{never} allocate a second buffer and
+range. In both cases the implementation \emph{never} allocates a second buffer and
 copy: the address stability is enforced by explicitly requesting the existing
 base address and treating any base-address change as a hard error.
 

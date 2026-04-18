@@ -92,7 +92,7 @@ considered glitched if, at some iteration~$n$,
 holds---that is, the magnitude of the reference orbit drops below the
 perturbation delta, indicating that the reference is a poor fit.  The
 correction procedure is to scan the rendered image for such pixels,
-compute a new reference orbit centerd on a glitched location, and
+compute a new reference orbit centered on a glitched location, and
 re-render only the affected region.  This process repeats until no
 glitches remain and requires multi-reference orbit support
 (\cref{subsec:multi-reference}).
@@ -196,7 +196,7 @@ Multi-reference rendering typically proceeds iteratively:
 \begin{enumerate}
   \item Render the image with the primary reference orbit.
   \item Detect glitched pixels (\cref{subsec:glitch-detection}).
-  \item Compute a new reference orbit centerd on a glitched pixel's
+  \item Compute a new reference orbit centered on a glitched pixel's
         location.
   \item Re-render only the glitched pixels using the new reference.
   \item Repeat until no glitches remain.
@@ -357,7 +357,7 @@ Boundary tracing is orthogonal to perturbation and LA: it is a
 pixel-level optimisation applied \emph{after} per-pixel iteration counts
 are available for the border pixels; the per-pixel algorithm
 (perturbation, LA, etc.)\ is unchanged.  Fraktaler-3
-uses boundary tracing to achieve dramatic speedups.  An overview of the
+uses boundary tracing to achieve large speedups.  An overview of the
 algorithm is given in \cite{WikipediaPlottingAlgorithms}.
 
 % -----------------------------------------------------------

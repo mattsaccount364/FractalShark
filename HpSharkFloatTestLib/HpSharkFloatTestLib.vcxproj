@@ -156,6 +156,9 @@
     <ClCompile Include="ReferenceReferenceOrbit.cpp" />
     <ClCompile Include="ShowMostEfficientSizes.cpp" />
     <ClCompile Include="TestNewtonRaphson.cpp" />
+    <ClCompile Include="..\FractalSharkLib\MpirComplex.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\FractalSharkLib\MpirOrbitEval.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

@@ -69,6 +69,7 @@
   <ItemGroup>
     <ClInclude Include="Environment.h" />
     <ClInclude Include="AlignedAlloc.h" />
+    <ClInclude Include="GlIncludes.h" />
     <ClInclude Include="MpirGmp.h" />
     <ClInclude Include="PlatformTypes.h" />
     <ClInclude Include="WaitCursor.h" />

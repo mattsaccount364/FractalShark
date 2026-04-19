@@ -18,22 +18,6 @@
 #include <filesystem>
 #include <fstream>
 
-// Portable helper: MSVC std::ofstream accepts wstring natively; other compilers
-// need conversion via std::filesystem::path.
-#ifdef _MSC_VER
-inline const std::wstring &
-ToFsPath(const std::wstring &s)
-{
-    return s;
-}
-#else
-inline std::filesystem::path
-ToFsPath(const std::wstring &s)
-{
-    return std::filesystem::path(s);
-}
-#endif
-
 CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {}
 
 void
@@ -1112,7 +1096,8 @@ CrummyTest::TestReallyHardView27()
                                  name) +
                     L".txt";
 
-                std::ofstream file(ToFsPath(textFilenameW), std::ios::binary | std::ios::trunc);
+                std::ofstream file(Environment::ToFsPath(textFilenameW),
+                                   std::ios::binary | std::ios::trunc);
                 file << renderDetailsShort;
                 file.close();
 

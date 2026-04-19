@@ -542,4 +542,27 @@ Environment::DirectoryRemoveRecursive(const wchar_t *path)
     return ::nftw(u8.c_str(), NftwRemoveCallback, 64, FTW_DEPTH | FTW_PHYS) == 0;
 }
 
+// =========================================================================
+// UI helpers
+// =========================================================================
+
+void
+Environment::ShowWarning(const wchar_t *message)
+{
+    std::wcerr << L"Warning: " << message << std::endl;
+}
+
+void
+Environment::PumpUIEvents()
+{
+    // No GUI event loop on Linux — nothing to pump.
+}
+
+bool
+Environment::ScreenToClientPos(void * /*nativeWindow*/, int & /*x*/, int & /*y*/)
+{
+    // No windowing support on Linux yet.
+    return false;
+}
+
 #endif // !_WIN32

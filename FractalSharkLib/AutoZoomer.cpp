@@ -1,14 +1,10 @@
 #include "stdafx.h"
 
 #include "AutoZoomer.h"
+#include "Environment.h"
 #include "FeatureSummary.h"
 #include "PerturbationResults.h"
 #include "PlatformTypes.h"
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
 
 #include <cmath>
 #include <iostream>
@@ -62,12 +58,7 @@ AutoZoomer::Run()
         std::vector<RenderJobHandle> handles(PipelineDepth);
 
         for (int64_t i = 0; i < setup.TotalSteps; ++i) {
-#ifdef _WIN32
-            {
-                MSG msg;
-                PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
-            }
-#endif
+            Environment::PumpUIEvents();
 
             if (m_Fractal.GetStopCalculating())
                 break;
@@ -128,12 +119,7 @@ AutoZoomer::Run()
         // current for analysis.
 
         for (;;) {
-#ifdef _WIN32
-            {
-                MSG msg;
-                PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
-            }
-#endif
+            Environment::PumpUIEvents();
 
             double geometricMeanX = 0;
             double geometricMeanSum = 0;

@@ -1,12 +1,7 @@
 #include "stdafx.h"
 
 // clang-format off
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
-#include <GL/gl.h>
-#include <GL/glu.h>
+#include "GlIncludes.h"
 // clang-format on
 
 #include "Environment.h"
@@ -565,12 +560,7 @@ Fractal::View(size_t view, bool includeMsgBox)
                       DefaultCompressionExp[static_cast<size_t>(CompressionError::Intermediate)]);
 
     if (includeMsgBox && !preset.warningMessage.empty()) {
-#ifdef _WIN32
-        ::MessageBox(
-            nullptr, preset.warningMessage.c_str(), L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
-#else
-        std::wcerr << L"Warning: " << preset.warningMessage << std::endl;
-#endif
+        Environment::ShowWarning(preset.warningMessage.c_str());
     }
 
     ResetDimensions(SIZE_MAX, SIZE_MAX, preset.gpuAntialiasing);
@@ -2491,12 +2481,12 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
                 TComplex complex0{deltaReal, deltaImaginary};
 
                 if (iterations != 0 && RefIteration < MaxRefIteration) {
-                    complex0 =
-                        results->template GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
+                    complex0 = results->template GetComplex<SubType>(*compressionHelper, RefIteration) +
+                               DeltaSubN;
                 } else if (iterations != 0 && results->GetPeriodMaybeZero() != 0) {
                     RefIteration = RefIteration % results->GetPeriodMaybeZero();
-                    complex0 =
-                        results->template GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
+                    complex0 = results->template GetComplex<SubType>(*compressionHelper, RefIteration) +
+                               DeltaSubN;
                 }
 
                 auto CurrentLAStage = LaReference.IsValid() ? LaReference.GetLAStageCount() : 0;
@@ -2553,7 +2543,8 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
                 }
 
                 for (; iterations < GetNumIterations<IterType>(); iterations++) {
-                    auto curIter = results->template GetComplex<SubType>(*compressionHelper, RefIteration);
+                    auto curIter =
+                        results->template GetComplex<SubType>(*compressionHelper, RefIteration);
                     curIter = curIter * T(2);
                     curIter = curIter + DeltaSubN;
                     DeltaSubN = DeltaSubN * curIter;
@@ -2562,8 +2553,8 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
 
                     RefIteration++;
 
-                    complex0 =
-                        results->template GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
+                    complex0 = results->template GetComplex<SubType>(*compressionHelper, RefIteration) +
+                               DeltaSubN;
                     HdrReduce(complex0);
 
                     normSquared = complex0.norm_squared();

@@ -415,3 +415,38 @@ Environment::DirectoryRemoveRecursive(const wchar_t *path)
 
     return ::SHFileOperationW(&fileOp) == 0;
 }
+
+// =========================================================================
+// UI helpers
+// =========================================================================
+
+void
+Environment::ShowWarning(const wchar_t *message)
+{
+    ::MessageBoxW(nullptr, message, L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+}
+
+void
+Environment::PumpUIEvents()
+{
+    MSG msg;
+    ::PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);
+}
+
+bool
+Environment::ScreenToClientPos(void *nativeWindow, int &x, int &y)
+{
+    POINT pt{};
+    if (!::GetCursorPos(&pt))
+        return false;
+
+    if (nativeWindow == nullptr)
+        return false;
+
+    if (!::ScreenToClient(static_cast<HWND>(nativeWindow), &pt))
+        return false;
+
+    x = pt.x;
+    y = pt.y;
+    return true;
+}

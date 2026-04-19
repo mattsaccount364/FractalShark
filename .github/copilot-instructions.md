@@ -54,6 +54,7 @@ Only x64 builds are supported.
 | **HpSharkInstantiate** | Explicit template instantiation compilation unit | ❌ |
 | **FractalTray** | System tray utility (functional) | ❌ |
 | **FractalSaver** | Screen saver (legacy) | ❌ |
+| **FractalSharkTest** | CPU unit tests for utility types (HDRFloat, HighPrecision, BLA, etc.) | ✅ |
 
 ## Build Instructions (Linux)
 
@@ -322,7 +323,7 @@ clang-format -i <modified-files>
 - `.github/workflows/build.yml` defines three parallel jobs:
   - **build-pdf**: Builds the LaTeX notes PDF on Windows.
   - **build** (matrix: Debug, Release): Windows MSBuild + CUDA build, runs `FractalSharkTest.exe`. Changes that break these tests will fail CI.
-  - **build-linux**: Linux CMake build with Clang on Ubuntu. Builds `FractalSharkPlatform` and `FractalSharkLib` static libraries. No tests yet (FractalSharkTest lacks CMake support).
+  - **build-linux**: Linux CMake build with Clang on Ubuntu. Builds `FractalSharkPlatform` and `FractalSharkLib` static libraries and the `FractalSharkTest` executable, then runs `./build/FractalSharkTest/FractalSharkTest`. `TestMpirSerialization` is excluded on Linux because `MpirSerialization.cpp` is a no-op stub there pending a GMP-compatible rewrite.
 
 ## Workflow
 

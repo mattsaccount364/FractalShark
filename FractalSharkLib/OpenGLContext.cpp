@@ -2,12 +2,7 @@
 #include "stdafx.h"
 
 // clang-format off
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
-#include <GL/gl.h>
-#include <GL/glu.h>
+#include "GlIncludes.h"
 // clang-format on
 
 #include "OpenGLContext.h"

@@ -2,12 +2,8 @@
 
 #include "FeatureFinderOrchestrator.h"
 
+#include "Environment.h"
 #include "Fractal.h"
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
 
 #include "BenchmarkData.h"
 #include "Exceptions.h"
@@ -621,28 +617,16 @@ FeatureFinderOrchestrator::ChooseClosestFeatureToMouse() const
     if (m_FeatureSummaries.empty())
         return nullptr;
 
-    struct { long x; long y; } pt{};
-#ifdef _WIN32
-    // Mouse in client pixels
-    {
-        POINT winPt{};
-        if (!::GetCursorPos(&winPt))
-            return nullptr;
+    int clientX = 0, clientY = 0;
+    if (!Environment::ScreenToClientPos(m_Fractal.m_NativeWindow, clientX, clientY))
+        return nullptr;
 
-        void *nativeWnd = m_Fractal.m_NativeWindow;
-        if (!nativeWnd)
-            return nullptr;
-
-        if (!::ScreenToClient(static_cast<HWND>(nativeWnd), &winPt))
-            return nullptr;
-
-        pt.x = winPt.x;
-        pt.y = winPt.y;
-    }
-#else
-    // No mouse query available on non-Windows platforms yet.
-    return nullptr;
-#endif
+    struct {
+        long x;
+        long y;
+    } pt{};
+    pt.x = clientX;
+    pt.y = clientY;
 
     // Clamp to render bounds
     const int w = (int)m_Fractal.GetRenderWidth();

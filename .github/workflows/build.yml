@@ -89,6 +89,9 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      - name: Run FractalSharkTest
+        run: ./build/FractalSharkTest/FractalSharkTest
+
   # ---- Code build (Debug and Release run as parallel matrix legs) ----
   build:
     name: Build FractalShark (${{ matrix.configuration }})

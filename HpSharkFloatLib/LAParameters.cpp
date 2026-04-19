@@ -1,5 +1,6 @@
 #include "LAParameters.h"
 
+#include <cmath>
 #include <fstream>
 
 LAParameters::LAParameters()

@@ -8,6 +8,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <string>
 #include <utility>
 
 namespace Environment {
@@ -215,5 +217,41 @@ uint32_t GetMemoryLoad();
 // Platform-independent invalid-handle constant (maps to INVALID_HANDLE_VALUE
 // on Windows, i.e. (void*)(intptr_t)-1).
 inline void *const InvalidHandle = reinterpret_cast<void *>(static_cast<intptr_t>(-1));
+
+// =========================================================================
+// UI helpers
+// =========================================================================
+
+// Display a modal warning dialog (MessageBox on Windows, stderr on Linux).
+void ShowWarning(const wchar_t *message);
+
+// Pump pending UI events so the message loop stays responsive.
+// On Windows this calls PeekMessage; on Linux it is a no-op.
+void PumpUIEvents();
+
+// Convert the screen-space cursor position to client coordinates of the given
+// native window.  Returns true on success, placing the result in x/y.
+// On Linux this always returns false.
+bool ScreenToClientPos(void *nativeWindow, int &x, int &y);
+
+// =========================================================================
+// Filesystem helpers
+// =========================================================================
+
+// Portable path wrapper for passing wstrings to std::ofstream and friends.
+// MSVC accepts wstring natively; other compilers need std::filesystem::path.
+#ifdef _MSC_VER
+inline const std::wstring &
+ToFsPath(const std::wstring &s)
+{
+    return s;
+}
+#else
+inline std::filesystem::path
+ToFsPath(const std::wstring &s)
+{
+    return std::filesystem::path(s);
+}
+#endif
 
 } // namespace Environment

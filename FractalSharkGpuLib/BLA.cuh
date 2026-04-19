@@ -113,6 +113,8 @@ template class BLA<double>;
 template class BLA<HDRFloat<float>>;
 template class BLA<HDRFloat<double>>;
 
+#ifndef BLA_CUH_HOST_ONLY
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Bilinear approximation.  GPU copy.
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -381,3 +383,5 @@ GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::LookupBackwards(const GPUBLA_TYPE *__re
             result = cudaErrorNotSupported;                                                             \
             break;                                                                                      \
     }
+
+#endif // BLA_CUH_HOST_ONLY

@@ -28,13 +28,7 @@
 #include <vector>
 
 // clang-format off
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <psapi.h>
-#endif
-#include <GL/gl.h>
-#include <GL/glu.h>
+#include "GlIncludes.h"
 // clang-format on
 
 #include <filesystem>
@@ -42,20 +36,6 @@
 #include <iostream>
 #include <string>
 #include <tuple>
-
-#ifdef _MSC_VER
-inline const std::wstring &
-ToFsPath(const std::wstring &s)
-{
-    return s;
-}
-#else
-inline std::filesystem::path
-ToFsPath(const std::wstring &s)
-{
-    return std::filesystem::path(s);
-}
-#endif
 
 template <class Type> struct alignas(64) ThreadPtrs {
     std::atomic<Type *> In;
@@ -3107,7 +3087,7 @@ RefOrbitCalc::SaveOrbitResults(const PerturbationResults<IterType, T, PExtras> &
                                std::wstring imagFilename) const
 {
 
-    std::ofstream file(ToFsPath(imagFilename), std::ios::binary);
+    std::ofstream file(Environment::ToFsPath(imagFilename), std::ios::binary);
     if (!file.is_open()) {
         throw FractalSharkSeriousException("Failed to open file for writing");
     }
@@ -3181,7 +3161,7 @@ RefOrbitCalc::SaveOrbitResults(std::wstring imagFilename) const
     // In this case, there's no orbit.  Instead, save only the location.
     // This path is only relevant with double/float precision and shallow depths.
 
-    std::ofstream file(ToFsPath(imagFilename), std::ios::binary);
+    std::ofstream file(Environment::ToFsPath(imagFilename), std::ios::binary);
     if (!file.is_open()) {
         throw FractalSharkSeriousException("Failed to open file for writing");
     }
@@ -3494,7 +3474,7 @@ RefOrbitCalc::LoadOrbitConstInternal(OrbitParameterPack &params,
     constexpr bool singleStepHelper = false;
 
     // Read the ReferenceHeader to determine the type
-    auto file = std::make_unique<std::ifstream>(ToFsPath(imagFilename), std::ios::binary);
+    auto file = std::make_unique<std::ifstream>(Environment::ToFsPath(imagFilename), std::ios::binary);
     if (!file->is_open()) {
         throw FractalSharkSeriousException("Failed to open file for reading");
     }

@@ -34,7 +34,7 @@ target_sources(FractalSharkLib PRIVATE
     WPngImage/WPngImage.cc
 )
 # stdafx.cpp is the MSVC PCH creator — excluded on CMake builds.
-# GPU_Render.cu is CUDA — excluded until CUDA CMake support is added.
+# GPU_Render.cu is compiled by the FractalSharkGpuLib target.
 
 target_include_directories(FractalSharkLib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

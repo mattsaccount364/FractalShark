@@ -75,6 +75,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Install CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.25
+        with:
+          cuda: '12.9.0'
+          method: 'network'
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -84,7 +90,8 @@ jobs:
         run: |
           cmake -B build \
             -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CUDA_HOST_COMPILER=g++
 
       - name: Build
         run: cmake --build build --parallel

@@ -4,38 +4,31 @@
 // Perturbation results
 ////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename IterType, typename Type, PerturbExtras PExtras>
+template <typename IterType, typename Type, PerturbExtras PExtras>
 class GPUPerturbSingleResults : public TemplateHelpers<IterType, Type, PExtras> {
 public:
-    template<typename IterType, class Type, PerturbExtras PExtras> friend class PerturbationResults;
+    template <typename IterType2, class Type2, PerturbExtras PExtras2> friend class PerturbationResults;
 
     using TemplateHelpers = TemplateHelpers<IterType, Type, PExtras>;
     using SubType = TemplateHelpers::SubType;
 
-    template<class LocalSubType>
+    template <class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
     GPUPerturbSingleResults() = delete;
 
-    template<typename Other>
-    GPUPerturbSingleResults(
-        IterType CompressedOrbitSize,
-        IterType UncompressedOrbitSize,
-        IterType PeriodMaybeZero,
-        Type OrbitXLow,
-        Type OrbitYLow,
-        const GPUReferenceIter<Other, PExtras> *in_iters,
-        cudaStream_t stream)
-        : FullOrbit{},
-        OrbitSize(CompressedOrbitSize),
-        UncompressedItersInOrbit(UncompressedOrbitSize),
-        PeriodMaybeZero(PeriodMaybeZero),
-        OrbitXLow(OrbitXLow),
-        OrbitYLow(OrbitYLow),
-        err(cudaSuccess),
-        own(true),
-        AllocHost(false),
-        m_Stream(stream) {
+    template <typename Other>
+    GPUPerturbSingleResults(IterType CompressedOrbitSize,
+                            IterType UncompressedOrbitSize,
+                            IterType PeriodMaybeZero,
+                            Type OrbitXLow,
+                            Type OrbitYLow,
+                            const GPUReferenceIter<Other, PExtras> *in_iters,
+                            cudaStream_t stream)
+        : FullOrbit{}, OrbitSize(CompressedOrbitSize), UncompressedItersInOrbit(UncompressedOrbitSize),
+          PeriodMaybeZero(PeriodMaybeZero), OrbitXLow(OrbitXLow), OrbitYLow(OrbitYLow), err(cudaSuccess),
+          own(true), AllocHost(false), m_Stream(stream)
+    {
 
         check_size<HDRFloat<float>, 8>();
         check_size<HDRFloat<double>, 16>();
@@ -70,34 +63,34 @@ public:
         FullOrbit = tempIters;
 
         // Cast to void -- it's logically const
-        cudaMemcpyAsync((void *)FullOrbit, in_iters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>), cudaMemcpyDefault, stream);
+        cudaMemcpyAsync((void *)FullOrbit,
+                        in_iters,
+                        OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>),
+                        cudaMemcpyDefault,
+                        stream);
 
-        //err = cudaMemAdvise(m_FullOrbit,
-        //    size * sizeof(GPUReferenceIter<Type>),
-        //    cudaMemAdviseSetReadMostly,
-        //    0);
-        //if (err != cudaSuccess) {
-        //    size = 0;
-        //    return;
-        //}
+        // err = cudaMemAdvise(m_FullOrbit,
+        //     size * sizeof(GPUReferenceIter<Type>),
+        //     cudaMemAdviseSetReadMostly,
+        //     0);
+        // if (err != cudaSuccess) {
+        //     size = 0;
+        //     return;
+        // }
     }
 
     GPUPerturbSingleResults(const GPUPerturbSingleResults &other)
-        :
-        FullOrbit{ reinterpret_cast<const GPUReferenceIter<Type, PExtras>*>(other.FullOrbit) },
-        OrbitSize{ other.OrbitSize },
-        UncompressedItersInOrbit{ other.UncompressedItersInOrbit },
-        PeriodMaybeZero{ other.PeriodMaybeZero },
-        OrbitXLow{ other.OrbitXLow },
-        OrbitYLow{ other.OrbitYLow },
-        own{},
-        AllocHost{ other.AllocHost },
-        m_Stream{ other.m_Stream } {
+        : FullOrbit{reinterpret_cast<const GPUReferenceIter<Type, PExtras> *>(other.FullOrbit)},
+          OrbitSize{other.OrbitSize}, UncompressedItersInOrbit{other.UncompressedItersInOrbit},
+          PeriodMaybeZero{other.PeriodMaybeZero}, OrbitXLow{other.OrbitXLow}, OrbitYLow{other.OrbitYLow},
+          own{}, AllocHost{other.AllocHost}, m_Stream{other.m_Stream}
+    {
     }
 
     // funny semantics, copy doesn't own the pointers.
-    template<class Other>
-    GPUPerturbSingleResults(const GPUPerturbSingleResults<IterType, Other, PExtras> &other) {
+    template <class Other>
+    GPUPerturbSingleResults(const GPUPerturbSingleResults<IterType, Other, PExtras> &other)
+    {
         FullOrbit = reinterpret_cast<const GPUReferenceIter<Type, PExtras> *>(other.FullOrbit);
         OrbitSize = other.OrbitSize;
         UncompressedItersInOrbit = other.UncompressedItersInOrbit;
@@ -109,7 +102,9 @@ public:
         m_Stream = other.m_Stream;
     }
 
-    uint32_t CheckValid() const {
+    uint32_t
+    CheckValid() const
+    {
         return err;
     }
 
@@ -117,7 +112,8 @@ public:
     GPUPerturbSingleResults &operator=(const GPUPerturbSingleResults &other) = delete;
     GPUPerturbSingleResults &operator=(GPUPerturbSingleResults &&other) = delete;
 
-    ~GPUPerturbSingleResults() {
+    ~GPUPerturbSingleResults()
+    {
         if (own) {
             if (FullOrbit != nullptr) {
                 if (!AllocHost) {
@@ -129,22 +125,28 @@ public:
         }
     }
 
-    //const GPUReferenceIter<T, PExtras>* GetFullOrbit() const {
-    //    return m_FullOrbit;
-    //}
+    // const GPUReferenceIter<T, PExtras>* GetFullOrbit() const {
+    //     return m_FullOrbit;
+    // }
 
     CUDA_CRAP
-        IterType GetCountOrbitEntries() const {
+    IterType
+    GetCountOrbitEntries() const
+    {
         return UncompressedItersInOrbit;
     }
 
     CUDA_CRAP
-        IterType GetPeriodMaybeZero() const {
+    IterType
+    GetPeriodMaybeZero() const
+    {
         return PeriodMaybeZero;
     }
 
     CUDA_CRAP
-        void GetIterRandom(IterType uncompressed_index, Type &x, Type &y) const {
+    void
+    GetIterRandom(IterType uncompressed_index, Type &x, Type &y) const
+    {
         if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
             x = FullOrbit[uncompressed_index].x;
             y = FullOrbit[uncompressed_index].y;
@@ -157,7 +159,8 @@ public:
 
     struct SeqWorkspace {
         CUDA_CRAP
-            SeqWorkspace(GPUPerturbSingleResults &results, IterType startUncompressedIndex) {
+        SeqWorkspace(GPUPerturbSingleResults &results, IterType startUncompressedIndex)
+        {
 
             if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
                 uncompressed_index = startUncompressedIndex;
@@ -173,8 +176,7 @@ public:
 
                 compressed_index++;
 
-                for (; uncompressed_index < results.UncompressedItersInOrbit;
-                    uncompressed_index++) {
+                for (; uncompressed_index < results.UncompressedItersInOrbit; uncompressed_index++) {
 
                     if (uncompressed_index == startUncompressedIndex) {
                         return;
@@ -183,7 +185,7 @@ public:
                     auto zx_old = zx;
                     zx = zx * zx - zy * zy + results.OrbitXLow;
                     HdrReduce(zx);
-                    zy = Type{ 2 } *zx_old * zy + results.OrbitYLow;
+                    zy = Type{2} * zx_old * zy + results.OrbitYLow;
                     HdrReduce(zy);
                 }
 
@@ -191,7 +193,11 @@ public:
             }
         }
 
-        CUDA_CRAP SeqWorkspace() : compressed_index{}, uncompressed_index{}, zx{}, zy{} {}
+        CUDA_CRAP
+        SeqWorkspace()
+            : compressed_index{}, uncompressed_index{}, zx{}, zy{}
+        {
+        }
 
         IterType compressed_index;
         IterType uncompressed_index;
@@ -201,14 +207,18 @@ public:
 
     // Returns the value multiplied by two
     CUDA_CRAP
-        void GetIterRandomX2(IterType index, Type &x, Type &y) const {
+    void
+    GetIterRandomX2(IterType index, Type &x, Type &y) const
+    {
         GetIterRandom(index, x, y);
-        x = x * Type{ 2 };
-        y = y * Type{ 2 };
+        x = x * Type{2};
+        y = y * Type{2};
     }
 
     CUDA_CRAP
-        void GetIterSeq(SeqWorkspace &workspace) const {
+    void
+    GetIterSeq(SeqWorkspace &workspace) const
+    {
         if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
             workspace.uncompressed_index++;
             workspace.zx = FullOrbit[workspace.uncompressed_index].x;
@@ -222,7 +232,9 @@ public:
     }
 
     CUDA_CRAP
-        const GPUReferenceIter<Type, PExtras> *ScaledOnlyGetIter(IterType index) const {
+    const GPUReferenceIter<Type, PExtras> *
+    ScaledOnlyGetIter(IterType index) const
+    {
         return &FullOrbit[index];
     }
 
@@ -232,7 +244,9 @@ private:
     // to the provided uncompressed index.  Return the compressed index for that
     // uncompressed index.
     CUDA_CRAP
-        IterType BinarySearch(IterType uncompressed_index) const {
+    IterType
+    BinarySearch(IterType uncompressed_index) const
+    {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return uncompressed_index;
         } else {
@@ -256,24 +270,26 @@ private:
     }
 
     CUDA_CRAP
-        HDRFloatComplex<SubType> GetCompressedComplex(IterType uncompressed_index) const {
+    HDRFloatComplex<SubType>
+    GetCompressedComplex(IterType uncompressed_index) const
+    {
         auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
 
         Type zx = FullOrbit[BestCompressedIndexGuess].x;
         Type zy = FullOrbit[BestCompressedIndexGuess].y;
 
         for (IterType cur_uncompressed_index = FullOrbit[BestCompressedIndexGuess].u.f.CompressionIndex;
-            cur_uncompressed_index < UncompressedItersInOrbit;
-            cur_uncompressed_index++) {
+             cur_uncompressed_index < UncompressedItersInOrbit;
+             cur_uncompressed_index++) {
 
             if (cur_uncompressed_index == uncompressed_index) {
-                return { zx, zy };
+                return {zx, zy};
             }
 
             auto zx_old = zx;
             zx = zx * zx - zy * zy + OrbitXLow;
             HdrReduce(zx);
-            zy = Type{ 2 } *zx_old * zy + OrbitYLow;
+            zy = Type{2} * zx_old * zy + OrbitYLow;
             HdrReduce(zy);
         }
 
@@ -282,17 +298,18 @@ private:
     }
 
     CUDA_CRAP
-        void GetCompressedComplexSeq(SeqWorkspace &workspace) const {
+    void
+    GetCompressedComplexSeq(SeqWorkspace &workspace) const
+    {
         workspace.uncompressed_index++;
         // compressed already points to the next one
 
-        //TODO do we ever walk off the end here
-                    //some notes
-            //    it looks GPU specific 
-            //    64-bit specific
-            //    non-deterministic
-            //    maybe copying compressed orbit to gpu wrong / uninitialized memory somewhere?
-
+        // TODO do we ever walk off the end here
+        // some notes
+        //    it looks GPU specific
+        //    64-bit specific
+        //    non-deterministic
+        //    maybe copying compressed orbit to gpu wrong / uninitialized memory somewhere?
 
         auto nextIndex = FullOrbit[workspace.compressed_index].u.f.CompressionIndex;
         if (nextIndex == workspace.uncompressed_index) {
@@ -303,7 +320,7 @@ private:
             auto zx_old = workspace.zx;
             workspace.zx = workspace.zx * workspace.zx - workspace.zy * workspace.zy + OrbitXLow;
             HdrReduce(workspace.zx);
-            workspace.zy = Type{ 2 } *zx_old * workspace.zy + OrbitYLow;
+            workspace.zy = Type{2} * zx_old * workspace.zy + OrbitYLow;
             HdrReduce(workspace.zy);
         }
     }
@@ -320,4 +337,3 @@ private:
     bool AllocHost;
     cudaStream_t m_Stream;
 };
-

@@ -1,34 +1,32 @@
 #pragma once
 
-#include "HDRFloatComplex.h"
-#include "LAstep.h"
-#include "LAInfoI.h"
 #include "ATInfo.h"
 #include "GPU_LAInfoDeep.h"
+#include "HDRFloatComplex.h"
+#include "LAInfoI.h"
+#include "LAstep.h"
+#include <cstddef>
 
-template<typename IterType, class Float, class SubType>
-class GPU_LAReference {
+template <typename IterType, class Float, class SubType> class GPU_LAReference {
 private:
-    static constexpr bool IsHDR =
-        std::is_same<Float, HDRFloat<float>>::value ||
-        std::is_same<Float, HDRFloat<double>>::value ||
-        std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    static constexpr bool IsHDR = std::is_same<Float, HDRFloat<float>>::value ||
+                                  std::is_same<Float, HDRFloat<double>>::value ||
+                                  std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value;
     using HDRFloatComplex =
-        std::conditional<
-        std::is_same<Float, ::HDRFloat<float>>::value ||
-        std::is_same<Float, ::HDRFloat<double>>::value ||
-        std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
-        ::HDRFloatComplex<SubType>,
-        ::FloatComplex<SubType>>::type;
+        std::conditional<std::is_same<Float, ::HDRFloat<float>>::value ||
+                             std::is_same<Float, ::HDRFloat<double>>::value ||
+                             std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
+                         ::HDRFloatComplex<SubType>,
+                         ::FloatComplex<SubType>>::type;
 
 public:
-    template<class T2, class SubType2, PerturbExtras OtherPExtras>
-    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras> &other, cudaStream_t stream);
+    template <class T2, class SubType2, PerturbExtras OtherPExtras>
+    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras> &other,
+                             cudaStream_t stream);
     __host__ GPU_LAReference(const GPU_LAReference &other);
     __host__ GPU_LAReference(GPU_LAReference &&other);
     __host__ GPU_LAReference();
     ~GPU_LAReference();
-
 
     GPU_LAReference &operator=(const GPU_LAReference &other) = delete;
     GPU_LAReference &operator=(GPU_LAReference &&other) = delete;
@@ -45,7 +43,9 @@ public:
 
     bool m_Owned;
 
-    uint32_t CheckValid() const {
+    uint32_t
+    CheckValid() const
+    {
         return m_Err;
     }
 
@@ -64,43 +64,32 @@ private:
 
     cudaStream_t m_Stream;
 
-
 public:
     CUDA_CRAP bool isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const;
     CUDA_CRAP IterType getLAIndex(IterType CurrentLAStage) const;
     CUDA_CRAP IterType getMacroItCount(IterType CurrentLAStage) const;
-    CUDA_CRAP GPU_LAstep<IterType, Float, SubType> getLA(
-        IterType LAIndex,
-        HDRFloatComplex dz,
-        IterType j,
-        IterType iterations,
-        IterType max_iterations) const;
+    CUDA_CRAP GPU_LAstep<IterType, Float, SubType> getLA(IterType LAIndex,
+                                                         HDRFloatComplex dz,
+                                                         IterType j,
+                                                         IterType iterations,
+                                                         IterType max_iterations) const;
 };
 
-template<typename IterType, class Float, class SubType>
-template<class T2, class SubType2, PerturbExtras OtherPExtras>
+template <typename IterType, class Float, class SubType>
+template <class T2, class SubType2, PerturbExtras OtherPExtras>
 __host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPExtras>(
-    const LAReference<IterType, T2, SubType2, OtherPExtras> &other,
-    cudaStream_t stream) :
-    UseAT{ other.UseAT() },
-    AT{ other.GetAT() },
-    LAStageCount{ other.GetLAStageCount() },
-    isValid{ other.IsValid() },
-    m_Err{},
-    m_Owned(true),
-    LAs{},
-    NumLAs{},
-    LAStages{},
-    NumLAStages{},
-    AllocHostLA{},
-    AllocHostLAStages{},
-    m_Stream{ stream } {
+    const LAReference<IterType, T2, SubType2, OtherPExtras> &other, cudaStream_t stream)
+    : UseAT{other.UseAT()}, AT{other.GetAT()}, LAStageCount{other.GetLAStageCount()},
+      isValid{other.IsValid()}, m_Err{}, m_Owned(true), LAs{}, NumLAs{}, LAStages{}, NumLAStages{},
+      AllocHostLA{}, AllocHostLAStages{}, m_Stream{stream}
+{
 
     GPU_LAInfoDeep<IterType, Float, SubType> *tempLAs;
     LAStageInfo<IterType> *tempLAStages;
 
-    const auto LAMemToAllocate = other.GetLAs().GetSize() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
+    const auto LAMemToAllocate =
+        other.GetLAs().GetSize() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
     m_Err = cudaMallocAsync(&tempLAs, LAMemToAllocate, stream);
     if (m_Err != cudaSuccess) {
         AllocHostLA = true;
@@ -126,32 +115,29 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     LAStages = tempLAStages;
     NumLAStages = other.GetLAStages().GetSize();
 
-    if constexpr (
-        std::is_same<Float, T2>::value &&
-        std::is_same<SubType, SubType2>::value) {
+    if constexpr (std::is_same<Float, T2>::value && std::is_same<SubType, SubType2>::value) {
 
         check_size<Float, T2>();
         check_size<SubType, SubType2>();
-        check_size<
-            typename GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex,
-            typename LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloatComplex>();
-        check_size<
-            typename GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat,
-            typename LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloat>();
+        check_size<typename GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex,
+                   typename LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloatComplex>();
+        check_size<typename GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat,
+                   typename LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloat>();
 
-        static_assert(
-            &static_cast<GPU_LAInfoDeep<IterType, Float, SubType> *>(0)->CCoeff ==
-            &static_cast<LAInfoDeep<IterType, Float, SubType, OtherPExtras> *>(0)->CCoeff, "!");
+        using GPU_LAInfoDeepT = GPU_LAInfoDeep<IterType, Float, SubType>;
+        using LAInfoDeepT = LAInfoDeep<IterType, Float, SubType, OtherPExtras>;
 
-        check_size<
-            GPU_LAInfoDeep<IterType, Float, SubType>,
-            LAInfoDeep<IterType, Float, SubType, OtherPExtras>>();
+        static_assert(offsetof(GPU_LAInfoDeepT, CCoeff) == offsetof(LAInfoDeepT, CCoeff), "!");
 
-        m_Err = cudaMemcpyAsync(LAs,
-            other.GetLAs().GetData(),
-            sizeof(GPU_LAInfoDeep<IterType, Float, SubType>) * other.GetLAs().GetSize(),
-            cudaMemcpyDefault,
-            stream);
+        check_size<GPU_LAInfoDeep<IterType, Float, SubType>,
+                   LAInfoDeep<IterType, Float, SubType, OtherPExtras>>();
+
+        m_Err =
+            cudaMemcpyAsync(LAs,
+                            other.GetLAs().GetData(),
+                            sizeof(GPU_LAInfoDeep<IterType, Float, SubType>) * other.GetLAs().GetSize(),
+                            cudaMemcpyDefault,
+                            stream);
         if (m_Err != cudaSuccess) {
             return;
         }
@@ -161,23 +147,23 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
         }
     }
 
-    //for (size_t i = 0; i < other.m_LAStages.GetSize(); i++) {
-    //    m_LAStages[i] = other.m_LAStages[i];
-    //}
+    // for (size_t i = 0; i < other.m_LAStages.GetSize(); i++) {
+    //     m_LAStages[i] = other.m_LAStages[i];
+    // }
 
     m_Err = cudaMemcpyAsync(LAStages,
-        other.GetLAStages().GetData(),
-        sizeof(LAStageInfo<IterType>) * other.GetLAStages().GetSize(),
-        cudaMemcpyDefault,
-        stream);
+                            other.GetLAStages().GetData(),
+                            sizeof(LAStageInfo<IterType>) * other.GetLAStages().GetSize(),
+                            cudaMemcpyDefault,
+                            stream);
     if (m_Err != cudaSuccess) {
         return;
     }
-
 }
 
-template<typename IterType, class Float, class SubType>
-GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference() {
+template <typename IterType, class Float, class SubType>
+GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference()
+{
     if (m_Owned) {
         if (LAs != nullptr) {
             if (AllocHostLA) {
@@ -201,27 +187,18 @@ GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference() {
     }
 }
 
-template<typename IterType, class Float, class SubType>
+template <typename IterType, class Float, class SubType>
 __host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference()
-    : UseAT{ false },
-    AT{},
-    LAStageCount{},
-    isValid{ false },
-    m_Err{ cudaSuccess },
-    m_Owned{ true },
-    LAs{},
-    NumLAs{},
-    LAStages{},
-    NumLAStages{},
-    AllocHostLA{},
-    AllocHostLAStages{},
-    m_Stream{} {
+    : UseAT{false}, AT{}, LAStageCount{}, isValid{false}, m_Err{cudaSuccess}, m_Owned{true}, LAs{},
+      NumLAs{}, LAStages{}, NumLAStages{}, AllocHostLA{}, AllocHostLAStages{}, m_Stream{}
+{
 }
 
-template<typename IterType, class Float, class SubType>
+template <typename IterType, class Float, class SubType>
 __host__
-GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference &&other) {
+GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference &&other)
+{
     UseAT = other.UseAT;
     AT = other.AT;
     LAStageCount = other.LAStageCount;
@@ -251,28 +228,21 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference &&oth
     other.m_Stream = nullptr;
 }
 
-template<typename IterType, class Float, class SubType>
+template <typename IterType, class Float, class SubType>
 __host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(const GPU_LAReference &other)
-    : UseAT{ other.UseAT },
-    AT{ other.AT },
-    LAStageCount{ other.LAStageCount },
-    isValid{ other.isValid },
-    m_Err{ cudaSuccess },
-    m_Owned{ false },
-    LAs{ other.LAs },
-    NumLAs{ other.NumLAs },
-    LAStages{ other.LAStages },
-    NumLAStages{ other.NumLAStages },
-    AllocHostLA{ other.AllocHostLA },
-    AllocHostLAStages{ other.AllocHostLAStages },
-    m_Stream{ other.m_Stream } {
+    : UseAT{other.UseAT}, AT{other.AT}, LAStageCount{other.LAStageCount}, isValid{other.isValid},
+      m_Err{cudaSuccess}, m_Owned{false}, LAs{other.LAs}, NumLAs{other.NumLAs}, LAStages{other.LAStages},
+      NumLAStages{other.NumLAStages}, AllocHostLA{other.AllocHostLA},
+      AllocHostLAStages{other.AllocHostLAStages}, m_Stream{other.m_Stream}
+{
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP
-bool GPU_LAReference<IterType, Float, SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const {
-    //return (dc.chebychevNorm().compareToBothPositiveReduced((m_LAs[LAIndex]).getLAThresholdC()) >= 0);
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP bool
+GPU_LAReference<IterType, Float, SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const
+{
+    // return (dc.chebychevNorm().compareToBothPositiveReduced((m_LAs[LAIndex]).getLAThresholdC()) >= 0);
     const auto temp1 = LAs[LAIndex];
     const auto temp2 = temp1.getLAThresholdC();
     const auto temp3 = dc.chebychevNorm();
@@ -284,22 +254,28 @@ bool GPU_LAReference<IterType, Float, SubType>::isLAStageInvalid(IterType LAInde
     }
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP
-IterType GPU_LAReference<IterType, Float, SubType>::getLAIndex(IterType CurrentLAStage) const {
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP IterType
+GPU_LAReference<IterType, Float, SubType>::getLAIndex(IterType CurrentLAStage) const
+{
     return LAStages[CurrentLAStage].LAIndex;
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP
-IterType GPU_LAReference<IterType, Float, SubType>::getMacroItCount(IterType CurrentLAStage) const {
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP IterType
+GPU_LAReference<IterType, Float, SubType>::getMacroItCount(IterType CurrentLAStage) const
+{
     return LAStages[CurrentLAStage].MacroItCount;
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP
-GPU_LAstep<IterType, Float, SubType>
-GPU_LAReference<IterType, Float, SubType>::getLA(IterType LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ IterType j, IterType iterations, IterType max_iterations) const {
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP GPU_LAstep<IterType, Float, SubType>
+GPU_LAReference<IterType, Float, SubType>::getLA(IterType LAIndex,
+                                                 HDRFloatComplex dz,
+                                                 /*HDRFloatComplex dc, */ IterType j,
+                                                 IterType iterations,
+                                                 IterType max_iterations) const
+{
 
     const IterType LAIndexj = LAIndex + j;
     const LAInfoI<IterType> &LAIj = LAs[LAIndexj].GetLAi();

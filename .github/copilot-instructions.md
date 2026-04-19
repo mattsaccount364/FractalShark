@@ -37,7 +37,7 @@ msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platfo
 
 **Build rule**: If any `.h` file changed, do full rebuild (headers are shared between `.cpp` and `.cu` files). If only `.cpp` files changed, incremental is safe.
 
-Only x64 builds are supported. x86 configurations in the solution are mapped to x64.
+Only x64 builds are supported.
 
 > **Do not use `/nologo`** — MSBuild on this project misinterprets it as a directory path.
 
@@ -64,6 +64,23 @@ Linux support is being ported incrementally. Only projects marked ✅ above have
 - CMake 3.20+
 - Clang (tested with 18.x)
 - GMP development headers (`libgmp-dev` on Debian/Ubuntu)
+
+### Linux Test Machine
+
+- Login via SSH public key using `ssh mrenz@ubuntu24`.
+- Primary development happens in the Windows working tree, which is the authoritative copy.
+- The Linux checkout at `~/FractalShark` is a disposable test mirror used only for update, file copy, build, and test operations.
+- FractalShark is already cloned on the test machine at `~/FractalShark`, but that checkout may need to be updated before testing.
+- Before copying local changes over for testing, update the test checkout with `cd ~/FractalShark && git pull origin main`.
+- Do not make source edits directly in the Linux checkout except for temporary debugging, and do not treat it as the source of record.
+- Do not create commits or push from the Linux test checkout. Treat it as a disposable test working tree only.
+- When testing local uncommitted changes, copy the modified files into `~/FractalShark` with `scp` as needed rather than creating commits or branches on the test machine.
+
+```bash
+ssh mrenz@ubuntu24
+cd ~/FractalShark && git pull origin main
+scp <local-file> mrenz@ubuntu24:~/FractalShark/<repo-relative-path>
+```
 
 ### Building
 

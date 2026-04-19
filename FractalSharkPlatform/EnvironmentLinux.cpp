@@ -12,6 +12,7 @@
 #include <cstring>
 #include <ctime>
 #include <cwchar>
+#include <string>
 
 #include <dirent.h>
 #include <fcntl.h>

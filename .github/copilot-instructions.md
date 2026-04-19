@@ -2,11 +2,20 @@
 
 ## Project Overview
 
-FractalShark is a high-performance Mandelbrot set renderer focused on extreme zoom depths using CUDA GPU acceleration. It is a Windows-native C++20/CUDA application built with Visual Studio 2026 (v145 toolset). The project targets NVIDIA GPUs (GTX 900-series+, RTX 2xxx+ for GPU reference orbits) and requires AVX-2 CPUs.
+FractalShark is a high-performance Mandelbrot set renderer focused on extreme zoom depths using CUDA GPU acceleration. It is a C++23/CUDA application targeting Windows (Visual Studio 2026, v145 toolset) and Linux (CMake + Clang). The project targets NVIDIA GPUs (GTX 900-series+, RTX 2xxx+ for GPU reference orbits) and requires AVX-2 CPUs.
 
-## Build Instructions
+## Build Systems
 
-The authoritative build process is defined in `.github/workflows/build.yml`.
+FractalShark has two parallel build systems:
+
+- **Windows**: Visual Studio `.vcxproj` / `.sln` files, built with MSBuild. This is the primary development environment.
+- **Linux**: CMake + Clang, with `CMakeLists.txt` files alongside the `.vcxproj` files. Linux support is being ported incrementally — not all projects have CMakeLists.txt yet.
+
+**Dual build system rule**: When adding or removing source files, updating include paths, or changing compiler settings, update **both** build systems if the affected project has a `CMakeLists.txt`. If the project only has a `.vcxproj`, update that alone.
+
+## Build Instructions (Windows)
+
+The authoritative Windows build process is defined in `.github/workflows/build.yml`.
 
 ### Prerequisites
 
@@ -34,16 +43,35 @@ Only x64 builds are supported. x86 configurations in the solution are mapped to 
 
 ### Solution Projects
 
-| Project | Purpose |
-|---|---|
-| **FractalShark** | Main GUI application (Win32 window, rendering loop) |
-| **FractalSharkLib** | Core library: fractal math, perturbation, reference orbits, linear approximation |
-| **FractalSharkGpuLib** | CUDA kernels for Mandelbrot rendering (perturbation, BLA, LA, reduction) |
-| **HpSharkFloatLib** | High-precision GPU arithmetic: NTT multiplication, custom float types, LA/DLA |
-| **HpSharkFloatTest** | GPU test harness for high-precision arithmetic |
-| **HpSharkInstantiate** | Explicit template instantiation compilation unit |
-| **FractalTray** | System tray utility (functional) |
-| **FractalSaver** | Screen saver (legacy) |
+| Project | Purpose | CMakeLists.txt |
+|---|---|---|
+| **FractalShark** | Main GUI application (Win32 window, rendering loop) | ❌ |
+| **FractalSharkLib** | Core library: fractal math, perturbation, reference orbits, linear approximation | ❌ |
+| **FractalSharkGpuLib** | CUDA kernels for Mandelbrot rendering (perturbation, BLA, LA, reduction) | ❌ |
+| **FractalSharkPlatform** | Cross-platform abstraction layer (Environment, types, aligned alloc) | ✅ |
+| **HpSharkFloatLib** | High-precision GPU arithmetic: NTT multiplication, custom float types, LA/DLA | ❌ |
+| **HpSharkFloatTest** | GPU test harness for high-precision arithmetic | ❌ |
+| **HpSharkInstantiate** | Explicit template instantiation compilation unit | ❌ |
+| **FractalTray** | System tray utility (functional) | ❌ |
+| **FractalSaver** | Screen saver (legacy) | ❌ |
+
+## Build Instructions (Linux)
+
+Linux support is being ported incrementally. Only projects marked ✅ above have CMakeLists.txt files. The Linux build uses Clang (not GCC).
+
+### Prerequisites
+
+- CMake 3.20+
+- Clang (tested with 18.x)
+- GMP development headers (`libgmp-dev` on Debian/Ubuntu)
+
+### Building
+
+```bash
+mkdir -p build && cd build
+cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
+make
+```
 
 ### Testing
 

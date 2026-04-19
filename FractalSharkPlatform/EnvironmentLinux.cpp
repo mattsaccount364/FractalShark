@@ -12,6 +12,7 @@
 #include <cstring>
 #include <ctime>
 #include <cwchar>
+#include <iostream>
 #include <string>
 
 #include <dirent.h>
@@ -454,6 +455,46 @@ Environment::FileDelete(const wchar_t *path)
     return ::unlink(u8.c_str()) == 0;
 }
 
+std::optional<uint64_t>
+Environment::FileSizeBytes(const wchar_t *path)
+{
+    std::string u8 = WideToUtf8(path);
+    struct stat st{};
+    if (::stat(u8.c_str(), &st) != 0) {
+        return std::nullopt;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        return std::nullopt;
+    }
+    return static_cast<uint64_t>(st.st_size);
+}
+
+// =========================================================================
+// Process information
+// =========================================================================
+
+uint64_t
+Environment::CurrentProcessId()
+{
+    return static_cast<uint64_t>(::getpid());
+}
+
+std::wstring
+Environment::TempDirectoryPath()
+{
+    const char *env = ::getenv("TMPDIR");
+    std::string narrow = (env != nullptr && *env != '\0') ? std::string(env) : std::string("/tmp");
+    if (narrow.back() != '/') {
+        narrow.push_back('/');
+    }
+    std::wstring wide;
+    wide.reserve(narrow.size());
+    for (char c : narrow) {
+        wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
+    }
+    return wide;
+}
+
 // =========================================================================
 // System information (extended)
 // =========================================================================
@@ -563,6 +604,20 @@ Environment::ScreenToClientPos(void * /*nativeWindow*/, int & /*x*/, int & /*y*/
 {
     // No windowing support on Linux yet.
     return false;
+}
+
+// =========================================================================
+// Heap cleanup (Linux stub)
+// =========================================================================
+//
+// The custom heap allocator in HpSharkFloatLib/heap_allocator/HeapCpp.cpp is
+// Windows-only by design. On Linux all allocations flow through glibc malloc
+// via Environment::SystemHeap*, so there is nothing for RegisterHeapCleanup()
+// to clean up. This empty definition satisfies the link-time dependency and
+// is a permanent Linux fixture, not a temporary workaround.
+void
+RegisterHeapCleanup()
+{
 }
 
 #endif // !_WIN32

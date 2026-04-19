@@ -47,9 +47,9 @@ Only x64 builds are supported.
 |---|---|---|
 | **FractalShark** | Main GUI application (Win32 window, rendering loop) | ❌ |
 | **FractalSharkLib** | Core library: fractal math, perturbation, reference orbits, linear approximation | ✅ |
-| **FractalSharkGpuLib** | CUDA kernels for Mandelbrot rendering (perturbation, BLA, LA, reduction) | ❌ |
+| **FractalSharkGpuLib** | CUDA kernels for Mandelbrot rendering (perturbation, BLA, LA, reduction) | ✅ |
 | **FractalSharkPlatform** | Cross-platform abstraction layer (Environment, types, aligned alloc) | ✅ |
-| **HpSharkFloatLib** | High-precision GPU arithmetic: NTT multiplication, custom float types, LA/DLA | ❌ |
+| **HpSharkFloatLib** | High-precision GPU arithmetic: NTT multiplication, custom float types, LA/DLA | ⏳ |
 | **HpSharkFloatTest** | GPU test harness for high-precision arithmetic | ❌ |
 | **HpSharkInstantiate** | Explicit template instantiation compilation unit | ❌ |
 | **FractalTray** | System tray utility (functional) | ❌ |
@@ -71,6 +71,7 @@ Linux support is being ported incrementally. Only projects marked ✅ above have
 ### Linux Test Machine
 
 - Login via SSH public key using `ssh mrenz@ubuntu24`.
+- CUDA 13.2 is installed at `/usr/local/cuda` (nvcc is at `/usr/local/cuda/bin/nvcc`). It is **not** on the default `PATH`; prefix commands with `export PATH=/usr/local/cuda/bin:$PATH` or pass the full path. There is no physical GPU on this machine, so runtime CUDA tests cannot execute — only compile and link validation.
 - Primary development happens in the Windows working tree, which is the authoritative copy. The Linux machine is **never authoritative** — all truth lives on the Windows host.
 - The Linux checkout at `~/FractalShark` is a disposable test mirror used only for update, file copy, build, and test operations.
 - FractalShark is already cloned on the test machine at `~/FractalShark`, but that checkout may need to be updated before testing.
@@ -91,11 +92,27 @@ scp <local-file> mrenz@ubuntu24:~/FractalShark/<repo-relative-path>
 
 ```bash
 mkdir -p build && cd build
-cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
-make
+export PATH=/usr/local/cuda/bin:$PATH
+cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CUDA_HOST_COMPILER=g++ ..
+cmake --build . --parallel
 ```
 
 **Parallel builds across hosts**: The Windows host and the Linux test machine are independent environments. When a change needs to be validated on both, kick off the Windows MSBuild and the Linux `make` (or `cmake --build`) **simultaneously** — start each build in its own async shell, then wait on both in parallel rather than serializing them. Use `mode="async"` for each build and monitor completion notifications. Only serialize when a later build genuinely depends on an artifact from the earlier one (which is not the case for Windows ↔ Linux validation).
+
+### Cross-platform porting roadmap
+
+Phase 1 (CPU subset + `FractalSharkTest`) and the rendering-side
+`FractalSharkGpuLib` are done. Remaining work, captured for future
+reference and not necessarily scheduled:
+
+- **Phase 2 — HpSharkFloatLib CUDA on Linux.** Port the CUDA high-precision arithmetic stack: `HpSharkInstantiate` (code-gen CPU exe), `HpSharkFloatLib` CUDA TUs (`Add.cu`, `MultiplyNTT.cu`, 18 `generated_inst/SharkExplicitInstantiate_*.cu` files), `HpSharkFloatTestLib`, `HpSharkFloatTest`. Retire the `BLA_CUH_HOST_ONLY` guard and `FractalSharkTest/BlaHostInstantiate.cpp` workaround once `FractalSharkTest` can link `FractalSharkGpuLib` directly. CI: add CUDA toolkit install; runtime GPU testing requires a self-hosted runner (deferred).
+- **Phase 3 — Main `FractalShark` GUI application.** Largest single chunk. Win32 `HWND`/`WM_*`/`IDM_*` → cross-platform windowing (GLFW/SDL/Qt; GLFW cheapest for existing GL pipeline but needs separate menu layer). Resource scripts (`.rc`) become embedded assets + in-code menus. Port `CrashHandler.cpp` (SEH+MiniDump → `signal`+`<stacktrace>`). Port or skip `JobObject.cpp`. Replace `GetOpenFileNameW` with a portable file-dialog shim. Finish the GLX skeleton in `OpenGLContext.cpp` or switch to EGL/GLFW. Clipboard / drag-drop / registry-backed settings.
+- **Phase 4 — Headless CLI renderer.** Cheap Linux deliverable and regression harness for Phase 2. Parse view (center, zoom, algorithm) from JSON/args, render via existing `FractalSharkLib`, emit PNG with `WPngImage`. Zero new platform abstraction required.
+- **Phase 5 — Out-of-scope projects.** `FractalTray` and `FractalSaver` are Windows-only by design; no Linux port planned.
+- **Phase 6 — Build-system hygiene.** CMake feature checks for `mpz_export`/`mpz_import` and `<stacktrace>`. Flip `-Werror` on CI after fixing the `BLA.h` `-Wundefined-inline`. Add a Linux Debug-config CI job. ASan/UBSan build of `FractalSharkTest`. `clang-format-check` CI job.
+- **Phase 7 — Cross-platform source hygiene.** Audit existing `#ifdef _WIN32` / `#ifdef _MSC_VER` sites (notably in `FeatureFinder.cpp`, `CrummyTest.cpp`); unify behind `FractalSharkPlatform` where it reduces duplication. Most sites — `HeapCpp.cpp`, `OpenGLContext.cpp` GLX, `MpirSerialization.cpp` — are legitimately platform-divergent and should stay as-is. Low priority.
+
+Suggested ordering: 2 → 4 → 3. Phase 6 opportunistic; Phases 5/7 documentation and cleanup, non-urgent.
 
 ### Testing
 

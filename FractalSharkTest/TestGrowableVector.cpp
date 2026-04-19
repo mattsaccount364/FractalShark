@@ -1,5 +1,6 @@
 #include "TestFramework.h"
 
+#include "Environment.h"
 #include "Vectors.h"
 
 #include <cstdint>
@@ -7,62 +8,23 @@
 #include <cstdlib>
 #include <string>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#else
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
-
 namespace {
 
-// Deterministic temp path helper. Uses %TEMP% (GetTempPathW) on Windows and
-// /tmp on Linux.
+// Deterministic temp path helper. Uses Environment::TempDirectoryPath (which
+// wraps %TEMP% on Windows and $TMPDIR/"/tmp/" on Linux) plus the current
+// process id to keep concurrent test runs isolated.
 std::wstring
 MakeTempPath(const char *stem)
 {
-    std::wstring path;
-#ifdef _WIN32
-    wchar_t buf[MAX_PATH + 1] = {};
-    DWORD len = GetTempPathW(MAX_PATH, buf);
-    if (len == 0 || len > MAX_PATH) {
-        path = L".\\";
-    } else {
-        path.assign(buf, len);
-    }
-#else
-    path = L"/tmp/";
-#endif
+    std::wstring path = Environment::TempDirectoryPath();
     path += L"fractalshark_test_";
     while (*stem) {
         path.push_back(static_cast<wchar_t>(*stem++));
     }
     path += L"_";
-    path += std::to_wstring(static_cast<unsigned long long>(
-#ifdef _WIN32
-        GetCurrentProcessId()
-#else
-        static_cast<unsigned long long>(getpid())
-#endif
-        ));
+    path += std::to_wstring(Environment::CurrentProcessId());
     path += L".bin";
     return path;
-}
-
-void
-RemoveFileUtf8(const std::wstring &widePath)
-{
-#ifdef _WIN32
-    DeleteFileW(widePath.c_str());
-#else
-    std::string narrow;
-    for (wchar_t c : widePath) {
-        narrow.push_back(static_cast<char>(c));
-    }
-    std::remove(narrow.c_str());
-#endif
 }
 
 } // namespace
@@ -123,7 +85,7 @@ TEST(GrowableVector_LargeAnonymousReserve)
 TEST(GrowableVector_FileBackedRoundtrip)
 {
     const std::wstring path = MakeTempPath("roundtrip");
-    RemoveFileUtf8(path);
+    Environment::FileDelete(path.c_str());
 
     constexpr size_t Count = 64;
 
@@ -138,23 +100,10 @@ TEST(GrowableVector_FileBackedRoundtrip)
         writer.Trim();
     } // destructor flushes + closes
 
-#ifndef _WIN32
     // File should exist and be exactly Count * sizeof(uint32_t) bytes.
-    std::string narrow;
-    for (wchar_t c : path) {
-        narrow.push_back(static_cast<char>(c));
-    }
-    struct stat st{};
-    ASSERT_EQ(::stat(narrow.c_str(), &st), 0);
-    ASSERT_EQ(static_cast<size_t>(st.st_size), Count * sizeof(uint32_t));
-#else
-    WIN32_FILE_ATTRIBUTE_DATA fad{};
-    ASSERT_TRUE(GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fad));
-    LARGE_INTEGER size;
-    size.LowPart = fad.nFileSizeLow;
-    size.HighPart = static_cast<LONG>(fad.nFileSizeHigh);
-    ASSERT_EQ(static_cast<size_t>(size.QuadPart), Count * sizeof(uint32_t));
-#endif
+    auto onDiskSize = Environment::FileSizeBytes(path.c_str());
+    ASSERT_TRUE(onDiskSize.has_value());
+    ASSERT_EQ(static_cast<size_t>(*onDiskSize), Count * sizeof(uint32_t));
 
     // Read phase — OpenExistingWithSave recovers the element count from size.
     {
@@ -165,5 +114,5 @@ TEST(GrowableVector_FileBackedRoundtrip)
         }
     }
 
-    RemoveFileUtf8(path);
+    Environment::FileDelete(path.c_str());
 }

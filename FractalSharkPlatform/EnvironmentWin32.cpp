@@ -365,6 +365,43 @@ Environment::FileDelete(const wchar_t *path)
     return ::DeleteFileW(path) != FALSE;
 }
 
+std::optional<uint64_t>
+Environment::FileSizeBytes(const wchar_t *path)
+{
+    WIN32_FILE_ATTRIBUTE_DATA fad{};
+    if (!::GetFileAttributesExW(path, GetFileExInfoStandard, &fad)) {
+        return std::nullopt;
+    }
+    if ((fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+        return std::nullopt;
+    }
+    LARGE_INTEGER size;
+    size.LowPart = fad.nFileSizeLow;
+    size.HighPart = static_cast<LONG>(fad.nFileSizeHigh);
+    return static_cast<uint64_t>(size.QuadPart);
+}
+
+// =========================================================================
+// Process information
+// =========================================================================
+
+uint64_t
+Environment::CurrentProcessId()
+{
+    return static_cast<uint64_t>(::GetCurrentProcessId());
+}
+
+std::wstring
+Environment::TempDirectoryPath()
+{
+    wchar_t buf[MAX_PATH + 1] = {};
+    DWORD len = ::GetTempPathW(MAX_PATH, buf);
+    if (len == 0 || len > MAX_PATH) {
+        return L".\\";
+    }
+    return std::wstring(buf, len);
+}
+
 // =========================================================================
 // System information (extended)
 // =========================================================================

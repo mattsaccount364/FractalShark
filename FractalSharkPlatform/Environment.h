@@ -9,8 +9,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
+
+// Register a one-time atexit handler that flushes / cleans up the custom heap
+// allocator used by HpSharkFloatLib. On Windows the real definition lives in
+// HpSharkFloatLib/heap_allocator/HeapCpp.cpp; on Linux this is an empty stub
+// defined at the bottom of EnvironmentLinux.cpp (all allocations flow through
+// glibc malloc via Environment::SystemHeap*, so there is nothing to clean up).
+// Declared here so callers can pick it up via `#include "Environment.h"`
+// instead of a bare forward declaration.
+void RegisterHeapCleanup();
 
 namespace Environment {
 
@@ -192,6 +202,23 @@ size_t FileWrite(void *fileHandle, const void *data, size_t bytes);
 
 // Delete a single file.  Returns true on success.
 bool FileDelete(const wchar_t *path);
+
+// Size of a regular file in bytes, or std::nullopt if the path does not
+// exist, is not a regular file, or cannot be queried.
+std::optional<uint64_t> FileSizeBytes(const wchar_t *path);
+
+// =========================================================================
+// Process information
+// =========================================================================
+
+// Current process id.  64-bit to cover both Windows (DWORD) and Linux
+// (pid_t) without truncation.
+uint64_t CurrentProcessId();
+
+// Absolute path to the system temp directory, with trailing separator
+// (e.g. L"C:\\Users\\foo\\AppData\\Local\\Temp\\" on Windows, L"/tmp/" on
+// Linux).  Falls back to a sensible default if the platform query fails.
+std::wstring TempDirectoryPath();
 
 // =========================================================================
 // File system utilities

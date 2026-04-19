@@ -1,8 +1,7 @@
 #include "Callstacks.h"
+#include "Environment.h"
 #include "HighPrecision.h"
 #include "TestFramework.h"
-
-void RegisterHeapCleanup();
 
 int
 main()

@@ -36,13 +36,9 @@ target_include_directories(FractalSharkTest PRIVATE
 )
 
 # The custom heap allocator in HpSharkFloatLib/heap_allocator/HeapCpp.cpp is
-# Windows-only by design; Linux uses glibc malloc via Environment::SystemHeap*.
-# HeapCleanupStub.cpp provides an empty RegisterHeapCleanup() on non-Windows
-# platforms to satisfy the link-time dependency. This is a permanent fixture,
-# not a temporary workaround.
-if(NOT WIN32)
-    target_sources(FractalSharkTest PRIVATE HeapCleanupStub.cpp)
-endif()
+# Windows-only by design; on Linux the empty RegisterHeapCleanup() stub lives
+# in FractalSharkPlatform/EnvironmentLinux.cpp and is linked in transitively.
+# This is a permanent fixture, not a temporary workaround.
 
 target_include_directories(FractalSharkTest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

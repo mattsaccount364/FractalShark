@@ -227,7 +227,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
-                launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize);
+                launchParams, (void *)HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize);
         }
     }
 
@@ -237,7 +237,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
         err = launchConfig.compute(
-            HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+            (const void *)HpSharkReferenceGpuLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
         if (err != cudaSuccess) {
             std::ostringstream oss;
             oss << "LaunchConfig.compute(HpSharkReferenceGpuLoop) failed: " << cudaGetErrorString(err)

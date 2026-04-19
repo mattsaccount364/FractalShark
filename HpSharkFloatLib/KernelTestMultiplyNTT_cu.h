@@ -64,14 +64,14 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
-                launchParams, MultiplyKernelNTT<SharkFloatParams>, SharedMemSize);
+                launchParams, (void *)MultiplyKernelNTT<SharkFloatParams>, SharedMemSize);
         }
     }
 
     HpShark::LaunchParams newLaunchParams{launchParams};
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
-        launchConfig.compute(MultiplyKernelNTT<SharkFloatParams>, SharedMemSize, newLaunchParams);
+        launchConfig.compute((const void *)MultiplyKernelNTT<SharkFloatParams>, SharedMemSize, newLaunchParams);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)MultiplyKernelNTT<SharkFloatParams>,
@@ -128,7 +128,7 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
 
         if (SharkVerbose == VerboseMode::Debug) {
             PrintMaxActiveBlocks<SharkFloatParams>(
-                launchParams, MultiplyKernelNTTTestLoop<SharkFloatParams>, SharedMemSize);
+                launchParams, (void *)MultiplyKernelNTTTestLoop<SharkFloatParams>, SharedMemSize);
         }
     }
 
@@ -136,7 +136,7 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
         launchConfig.compute(
-            MultiplyKernelNTTTestLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+            (const void *)MultiplyKernelNTTTestLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)MultiplyKernelNTTTestLoop<SharkFloatParams>,

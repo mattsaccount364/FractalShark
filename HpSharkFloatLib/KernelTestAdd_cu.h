@@ -43,7 +43,7 @@ ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
     HpShark::LaunchParams newLaunchParams{launchParams};
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
-        launchConfig.compute(AddKernel<SharkFloatParams>, SharedMemSize, newLaunchParams);
+        launchConfig.compute((const void *)AddKernel<SharkFloatParams>, SharedMemSize, newLaunchParams);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)AddKernel<SharkFloatParams>,
@@ -92,7 +92,7 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
     HpShark::LaunchParams newLaunchParams{launchParams};
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
-        launchConfig.compute(AddKernelTestLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+        launchConfig.compute((const void *)AddKernelTestLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)AddKernelTestLoop<SharkFloatParams>,

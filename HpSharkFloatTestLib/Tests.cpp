@@ -429,7 +429,7 @@ void
 HpSharkReferenceResultsToFile(const std::string &filename,
                               const HpSharkReferenceResults<SharkFloatParams> &results)
 {
-    std::string radiusYStr = "radiusY: " + results.RadiusY.ToString<false>();
+    std::string radiusYStr = "radiusY: " + results.RadiusY.template ToString<false>();
     std::string multiply_AStr = "Multiply.A: " + results.Multiply.A.ToHexString();
     std::string multiply_BStr = "Multiply.B: " + results.Multiply.B.ToHexString();
     std::string multiply_ResultX2Str = "Multiply.ResultX2: " + results.Multiply.ResultX2.ToHexString();
@@ -960,17 +960,17 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                         if (hostValX != gpuValX || hostValY != gpuValY) {
                             std::cout << "Error: Host and GPU reference orbit value mismatch at idx "
-                                      << i << ": host.x=" << hostValX.ToString<false>()
-                                      << " host.y=" << hostValY.ToString<false>()
-                                      << " gpu.x=" << gpuValX.ToString<false>()
-                                      << " gpu.y=" << gpuValY.ToString<false>() << std::endl;
+                                      << i << ": host.x=" << hostValX.template ToString<false>()
+                                      << " host.y=" << hostValY.template ToString<false>()
+                                      << " gpu.x=" << gpuValX.template ToString<false>()
+                                      << " gpu.y=" << gpuValY.template ToString<false>() << std::endl;
 
                             // Show the delta
                             const auto deltaX = hostValX - gpuValX;
                             const auto deltaY = hostValY - gpuValY;
 
-                            std::cout << "Delta: host.x - gpu.x = " << deltaX.ToString<false>()
-                                      << " host.y - gpu.y = " << deltaY.ToString<false>() << std::endl;
+                            std::cout << "Delta: host.x - gpu.x = " << deltaX.template ToString<false>()
+                                      << " host.y - gpu.y = " << deltaY.template ToString<false>() << std::endl;
 
                             orbitMatch = false;
                             Environment::DebugBreakpoint();
@@ -1005,10 +1005,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                             if (hostValX != cpuValX || hostValY != cpuValY) {
                                 std::cout << "Error: MPIR host and CPU ref orbit mismatch at idx " << i
-                                          << ": mpir.x=" << hostValX.ToString<false>()
-                                          << " mpir.y=" << hostValY.ToString<false>()
-                                          << " cpu.x=" << cpuValX.ToString<false>()
-                                          << " cpu.y=" << cpuValY.ToString<false>() << std::endl;
+                                          << ": mpir.x=" << hostValX.template ToString<false>()
+                                          << " mpir.y=" << hostValY.template ToString<false>()
+                                          << " cpu.x=" << cpuValX.template ToString<false>()
+                                          << " cpu.y=" << cpuValY.template ToString<false>() << std::endl;
                                 cpuOrbitMatch = false;
                                 Environment::DebugBreakpoint();
                                 break;
@@ -1085,10 +1085,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                         if (cpuValX != gpuValX || cpuValY != gpuValY) {
                             std::cout << "Error: CPU ref and GPU orbit mismatch at idx " << i
-                                      << ": cpu.x=" << cpuValX.ToString<false>()
-                                      << " cpu.y=" << cpuValY.ToString<false>()
-                                      << " gpu.x=" << gpuValX.ToString<false>()
-                                      << " gpu.y=" << gpuValY.ToString<false>() << std::endl;
+                                      << ": cpu.x=" << cpuValX.template ToString<false>()
+                                      << " cpu.y=" << cpuValY.template ToString<false>()
+                                      << " gpu.x=" << gpuValX.template ToString<false>()
+                                      << " gpu.y=" << gpuValY.template ToString<false>() << std::endl;
                             cpuGpuOrbitMatch = false;
                             Environment::DebugBreakpoint();
                             break;
@@ -3589,7 +3589,7 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
 {
 // TODO: this is kind of cheesy, it'd be nice to share the test
 // view parameters in FractalShark with the test in some reasonable way
-#include "..\FractalSharkLib\LargeCoords30.h"
+#include "../FractalSharkLib/LargeCoords30.h"
 
     using SharkFloatParams = SharkParams7;
 
@@ -3706,7 +3706,7 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
                             [[maybe_unused]] int internalTestLoopCount,
                             [[maybe_unused]] bool useMT)
 {
-#include "..\FractalSharkLib\LargeCoords32.h"
+#include "../FractalSharkLib/LargeCoords32.h"
 
     using SharkFloatParams = SharkParams9;
 

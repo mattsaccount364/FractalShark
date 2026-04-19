@@ -200,7 +200,7 @@ template std::string Uint32ToMpf<SharkFloatParams>(
     const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
 template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);)";
 
-        b.push_back(Batch{"HpSharkFloat_Conversions", "..\\HpSharkFloat_cu.h", templates, ""});
+        b.push_back(Batch{"HpSharkFloat_Conversions", "../HpSharkFloat_cu.h", templates, ""});
     }
 
     // 2) ComputeHpSharkReferenceGpuLoop
@@ -209,7 +209,7 @@ template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t p
             R"(template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
 
-        b.push_back(Batch{"ReferenceGpuLoop", "..\\KernelHpSharkReferenceOrbit_cu.h", templates, ""});
+        b.push_back(Batch{"ReferenceGpuLoop", "../KernelHpSharkReferenceOrbit_cu.h", templates, ""});
     }
 
     // 3) HpSharkReference init/invoke/shutdown (definitely in namespace HpShark per your snippet)
@@ -240,7 +240,7 @@ template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
     const HpShark::LaunchParams &);)";
 
         b.push_back(
-            Batch{"HpSharkReference", "..\\KernelInvokeReferencePerf_cu.h", templates, "HpShark"});
+            Batch{"HpSharkReference", "../KernelInvokeReferencePerf_cu.h", templates, "HpShark"});
     }
 
     // 4) Add kernels
@@ -251,7 +251,7 @@ template void EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
 template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
                                                       void *kernelArgs[]);)";
 
-        b.push_back(Batch{"AddKernels", "..\\KernelTestAdd_cu.h", templates, ""});
+        b.push_back(Batch{"AddKernels", "../KernelTestAdd_cu.h", templates, ""});
     }
 
     // 5) Multiply NTT kernels
@@ -262,7 +262,7 @@ template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParam
 template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
 
-        b.push_back(Batch{"MultiplyNTT", "..\\KernelTestMultiplyNTT_cu.h", templates, ""});
+        b.push_back(Batch{"MultiplyNTT", "../KernelTestMultiplyNTT_cu.h", templates, ""});
     }
 
     // 6) SharkNTT primitives are already fully-qualified as SharkNTT::..., so no wrapper needed.
@@ -285,7 +285,7 @@ template void SharkNTT::CopyRootsToCuda<SharkFloatParams>(SharkNTT::RootTables &
                                                           const SharkNTT::RootTables &inT);
 template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables &T);)";
 
-        b.push_back(Batch{"SharkNTT_Primitives", "..\\MultiplyNTTCudaSetup_cu.h", templates, ""});
+        b.push_back(Batch{"SharkNTT_Primitives", "../MultiplyNTTCudaSetup_cu.h", templates, ""});
     }
 
     return b;

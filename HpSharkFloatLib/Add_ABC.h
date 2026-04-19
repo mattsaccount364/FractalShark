@@ -543,7 +543,10 @@ CarryPropagationSmall_ABC(uint32_t *SharkRestrict globalSync1,    // [0] holds c
 
         // atomic pack of all three flags
         if (localMask) {
-            atomicAdd(global64, localMask);
+            // NOTE: On Linux uint64_t is `unsigned long`, not `unsigned long long` —
+            // CUDA only overloads atomicAdd for the latter, so cast explicitly.
+            atomicAdd(reinterpret_cast<unsigned long long *>(global64),
+                      static_cast<unsigned long long>(localMask));
         }
 
         // ── barrier 2: ensure all atomicAdds done before reading ──

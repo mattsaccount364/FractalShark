@@ -76,9 +76,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install CUDA toolkit
-        uses: Jimver/cuda-toolkit@v0.2.25
+        uses: Jimver/cuda-toolkit@v0.2.29
         with:
-          cuda: '12.9.0'
+          cuda: '13.0.2'
           method: 'network'
 
       - name: Install dependencies
@@ -98,6 +98,9 @@ jobs:
 
       - name: Run FractalSharkTest
         run: ./build/FractalSharkTest/FractalSharkTest
+        # HpSharkFloatTest is built but not run on CI — it requires a physical
+        # CUDA GPU, which ubuntu-latest runners don't provide. Runtime GPU
+        # testing is deferred to a future self-hosted runner.
 
   # ---- Code build (Debug and Release run as parallel matrix legs) ----
   build:

@@ -190,7 +190,7 @@ Normalize_GridStride_3WayV1(cooperative_groups::grid_group &grid,
 
             // Only signal continuation if something remains to hand to the *next* tid.
             if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi)
-                atomicAdd(globalCarryCheck, 1ull);
+                atomicAdd(reinterpret_cast<unsigned long long *>(globalCarryCheck), 1ull);
         }
 
         grid.sync();
@@ -200,7 +200,7 @@ Normalize_GridStride_3WayV1(cooperative_groups::grid_group &grid,
         }
 
         // Atomic read to avoid any visibility doubt
-        if (atomicAdd(globalCarryCheck, 0ull) == 0ull)
+        if (atomicAdd(reinterpret_cast<unsigned long long *>(globalCarryCheck), 0ull) == 0ull)
             break;
         grid.sync();
     }

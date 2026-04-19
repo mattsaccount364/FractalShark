@@ -342,7 +342,7 @@ RunNewtonRaphsonTest(
                 stepR, stepI, useD2r, useD2i, dzdcNorm,
                 normStep, t1, t2, err);
 
-            std::cout << "    err=" << err.ToString<false>() << " e=" << e
+            std::cout << "    err=" << err.template ToString<false>() << " e=" << e
                       << " targetExp=" << targetExp << std::endl;
             if (-e >= targetExp) {
                 hpConvergedIter = it;
@@ -466,7 +466,7 @@ TestNewtonRaphsonView30(TestTracker &Tests,
                         bool useMT,
                         int numRepeats)
 {
-#include "..\FractalSharkLib\LargeCoords30.h"
+#include "../FractalSharkLib/LargeCoords30.h"
 
     constexpr uint64_t expectedPeriod = 669772;
 
@@ -492,7 +492,7 @@ TestNewtonRaphsonView32(TestTracker &Tests,
                         bool useMT,
                         int numRepeats)
 {
-#include "..\FractalSharkLib\LargeCoords32.h"
+#include "../FractalSharkLib/LargeCoords32.h"
 
     constexpr uint64_t expectedPeriod = 27'209'300;
 

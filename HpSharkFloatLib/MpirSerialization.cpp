@@ -1,5 +1,7 @@
 #include "MpirSerialization.h"
 
+#ifdef _MSC_VER
+
 namespace MpirSerialization {
 size_t
 mpz_inp_raw_stream(mpz_ptr x, std::istream &fp)
@@ -61,3 +63,33 @@ mpf_inp_raw_stream(std::istream &f, mpf_ptr X)
     mpz_clear(Z);
 }
 } // namespace MpirSerialization
+
+#else
+
+// TODO: Implement GMP-compatible serialization using mpz_export/mpz_import.
+// The MPIR-specific raw I/O functions (mpir_out_struct, mpz_inp_raw_p,
+// mpz_out_raw_m) are not available in GMP.
+
+namespace MpirSerialization {
+size_t
+mpz_inp_raw_stream(mpz_ptr, std::istream &)
+{
+    return 0;
+}
+size_t
+mpz_out_raw_stream(std::ostream &, mpz_srcptr)
+{
+    return 0;
+}
+size_t
+mpf_out_raw_stream(std::ostream &, mpf_srcptr)
+{
+    return 0;
+}
+void
+mpf_inp_raw_stream(std::istream &, mpf_ptr)
+{
+}
+} // namespace MpirSerialization
+
+#endif

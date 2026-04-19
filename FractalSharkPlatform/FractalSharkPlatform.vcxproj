@@ -59,6 +59,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="WaitCursor.cpp" />
     <ClCompile Include="EnvironmentWin32.cpp" />
     <ClCompile Include="EnvironmentLinux.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
@@ -67,6 +68,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Environment.h" />
+    <ClInclude Include="AlignedAlloc.h" />
+    <ClInclude Include="MpirGmp.h" />
+    <ClInclude Include="PlatformTypes.h" />
+    <ClInclude Include="WaitCursor.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

@@ -1,8 +1,8 @@
 #pragma once
 
+#include "MpirGmp.h"
 #include <functional>
 #include <memory>
-#include <mpir.h>
 
 #include "HDRFloat.h"
 #include "LaunchParams.h"

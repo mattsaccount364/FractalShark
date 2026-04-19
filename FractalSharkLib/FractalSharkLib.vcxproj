@@ -28,7 +28,7 @@
     <ClInclude Include="MpirComplex.h" />
     <ClInclude Include="MpirOrbitEval.h" />
     <ClInclude Include="NRInnerLoopBackend.h" />
-    <ClInclude Include="PlatformTypes.h" />
+
     <ClInclude Include="RenderThreadPool.h" />
     <ClInclude Include="CrummyTest.h" />
     <ClInclude Include="GpuPrecisionDispatch.h" />
@@ -68,7 +68,7 @@
     <ClInclude Include="RenderAlgorithm.h" />
     <ClInclude Include="ScopedMpir.h" />
     <ClInclude Include="Utilities.h" />
-    <ClInclude Include="WaitCursor.h" />
+
     <ClInclude Include="WPngImage\lodepng.h" />
     <ClInclude Include="WPngImage\WPngImage.hh" />
   </ItemGroup>
@@ -109,7 +109,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Utilities.cpp" />
-    <ClCompile Include="WaitCursor.cpp" />
+
     <ClCompile Include="WPngImage\lodepng.cpp" />
     <ClCompile Include="WPngImage\WPngImage.cc" />
   </ItemGroup>

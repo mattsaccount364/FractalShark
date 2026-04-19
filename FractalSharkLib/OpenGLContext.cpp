@@ -26,6 +26,68 @@ GlLog(const char *msg)
     std::cerr << msg << std::endl;
 }
 
+// ============================================================================
+// Platform-specific helpers: querying the window client area.
+// ============================================================================
+
+#ifdef _WIN32
+
+struct NativeRect {
+    long left, top, right, bottom;
+};
+
+static bool
+GetNativeClientRect(void *nativeWindow, NativeRect &out)
+{
+    RECT rt{};
+    if (!GetClientRect(static_cast<HWND>(nativeWindow), &rt))
+        return false;
+    out = {rt.left, rt.top, rt.right, rt.bottom};
+    return true;
+}
+
+#else // Linux / X11
+
+#include <X11/Xlib.h>
+
+// Process-global X11 display connection.  Opened once, never closed (normal X11 practice).
+static Display *g_display = nullptr;
+
+static Display *
+GetX11Display()
+{
+    if (!g_display) {
+        g_display = XOpenDisplay(nullptr);
+    }
+    return g_display;
+}
+
+struct NativeRect {
+    long left, top, right, bottom;
+};
+
+static bool
+GetNativeClientRect(void *nativeWindow, NativeRect &out)
+{
+    Display *dpy = GetX11Display();
+    if (!dpy || !nativeWindow)
+        return false;
+    Window win = reinterpret_cast<Window>(nativeWindow);
+    XWindowAttributes attr{};
+    if (!XGetWindowAttributes(dpy, win, &attr))
+        return false;
+    out = {0, 0, attr.width, attr.height};
+    return true;
+}
+
+#endif // _WIN32
+
+// ============================================================================
+// Win32/WGL-specific context management
+// ============================================================================
+
+#ifdef _WIN32
+
 // Cast helpers for opaque handle members
 static inline HWND
 AsHWND(void *p)
@@ -46,11 +108,9 @@ AsHGLRC(void *p)
 namespace {
 
 // One-time (per HWND) pixel format setup + optional context sharing.
-// This lets you create TWO OpenGlContext instances for the same HWND
-// (e.g., one per thread) without calling SetPixelFormat twice.
 struct SharedWindowGlState {
-    int pixelFormat = 0;       // GetPixelFormat(hdc)
-    HGLRC shareRoot = nullptr; // First context created for this HWND
+    int pixelFormat = 0;
+    HGLRC shareRoot = nullptr;
 };
 
 std::mutex g_hwndMutex;
@@ -65,13 +125,11 @@ EnsurePixelFormatSet(HWND hWnd, HDC hdc, int &outPixelFormat)
     std::scoped_lock lock(g_hwndMutex);
     auto &st = g_hwndState[hWnd];
 
-    // If already known, trust it.
     if (st.pixelFormat != 0) {
         outPixelFormat = st.pixelFormat;
         return true;
     }
 
-    // If the DC already has a pixel format, keep it.
     const int existing = GetPixelFormat(hdc);
     if (existing != 0) {
         st.pixelFormat = existing;
@@ -79,7 +137,6 @@ EnsurePixelFormatSet(HWND hWnd, HDC hdc, int &outPixelFormat)
         return true;
     }
 
-    // Otherwise set it once.
     PIXELFORMATDESCRIPTOR pfd{};
     pfd.nSize = sizeof(pfd);
     pfd.nVersion = 1;
@@ -96,7 +153,6 @@ EnsurePixelFormatSet(HWND hWnd, HDC hdc, int &outPixelFormat)
         return false;
 
     if (SetPixelFormat(hdc, pf, &pfd) == FALSE) {
-        // If SetPixelFormat fails, it may already be set on that DC; try reading it again.
         const int nowPf = GetPixelFormat(hdc);
         if (nowPf == 0)
             return false;
@@ -141,16 +197,11 @@ GetShareRoot(HWND hWnd)
 void
 MaybeShareWithRoot(HWND hWnd, HGLRC newRc)
 {
-    // Share objects (textures, display lists, etc.) with the first-created context for this HWND.
-    // This is optional, but is usually what people want for "two threads, two contexts".
     HGLRC root = GetShareRoot(hWnd);
     if (!root || root == newRc)
         return;
 
-    // wglShareLists returns FALSE on failure; not fatal for correctness of simple line drawing.
     if (wglShareLists(root, newRc) == FALSE) {
-        // Keep it quiet; you can log if you want.
-        // std::wcerr << L"wglShareLists failed.\n";
     }
 }
 
@@ -177,7 +228,6 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
         return;
     }
 
-    // Create a dedicated context for this instance (so you can have one per thread).
     m_hRC = wglCreateContext(AsHDC(m_hDC));
     if (!m_hRC) {
         char buf[128];
@@ -186,8 +236,6 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
         return;
     }
 
-    // Optional sharing with first context created for this HWND.
-    // This is safe even if it fails; it just means no shared textures/lists.
     MaybeShareWithRoot(AsHWND(m_hWnd), AsHGLRC(m_hRC));
     RegisterShareRoot(AsHWND(m_hWnd), AsHGLRC(m_hRC));
 
@@ -199,7 +247,6 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
     }
 
     // Detect software-only renderer (e.g. Microsoft GDI Generic on RDP).
-    // PFD_GENERIC_FORMAT without PFD_GENERIC_ACCELERATED = pure software GL 1.1.
     {
         PIXELFORMATDESCRIPTOR actualPfd{};
         actualPfd.nSize = sizeof(actualPfd);
@@ -229,8 +276,8 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
     glShadeModel(GL_FLAT);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    RECT rt{};
-    GetClientRect(AsHWND(m_hWnd), &rt);
+    NativeRect rt{};
+    GetNativeClientRect(m_hWnd, rt);
     m_CachedRect = {rt.left, rt.top, rt.right, rt.bottom};
     glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
 
@@ -239,14 +286,11 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
 
 OpenGlContext::~OpenGlContext()
 {
-    // Only detach if THIS context is current on this thread.
     if (wglGetCurrentContext() == AsHGLRC(m_hRC)) {
         wglMakeCurrent(nullptr, nullptr);
     }
 
     if (m_hRC) {
-        // Clear the share root if this context was the root, so later
-        // contexts don't try wglShareLists with a deleted HGLRC.
         if (m_hWnd)
             UnregisterShareRoot(AsHWND(m_hWnd), AsHGLRC(m_hRC));
 
@@ -266,9 +310,188 @@ OpenGlContext::MakeCurrent() noexcept
     if (!m_hDC || !m_hRC)
         return false;
 
-    // If another context is current on this thread, this will switch it.
     return wglMakeCurrent(AsHDC(m_hDC), AsHGLRC(m_hRC)) == TRUE;
 }
+
+void
+OpenGlContext::SwapBuffers()
+{
+    if (m_hDC) {
+        ::SwapBuffers(AsHDC(m_hDC));
+    }
+}
+
+#else // !_WIN32 — GLX implementation
+
+#include <GL/glx.h>
+
+namespace {
+
+struct SharedWindowGlState {
+    GLXContext shareRoot = nullptr;
+};
+
+std::mutex g_windowMutex;
+std::unordered_map<Window, SharedWindowGlState> g_windowState;
+
+void
+RegisterShareRoot(Window win, GLXContext ctx)
+{
+    std::scoped_lock lock(g_windowMutex);
+    auto &st = g_windowState[win];
+    if (!st.shareRoot)
+        st.shareRoot = ctx;
+}
+
+void
+UnregisterShareRoot(Window win, GLXContext ctx)
+{
+    std::scoped_lock lock(g_windowMutex);
+    auto it = g_windowState.find(win);
+    if (it != g_windowState.end() && it->second.shareRoot == ctx)
+        it->second.shareRoot = nullptr;
+}
+
+GLXContext
+GetShareRoot(Window win)
+{
+    std::scoped_lock lock(g_windowMutex);
+    auto it = g_windowState.find(win);
+    if (it == g_windowState.end())
+        return nullptr;
+    return it->second.shareRoot;
+}
+
+} // namespace
+
+OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
+{
+    m_Valid = false;
+
+    if (!m_hWnd) {
+        GlLog("OpenGlContext: null Window");
+        return;
+    }
+
+    Display *dpy = GetX11Display();
+    if (!dpy) {
+        GlLog("OpenGlContext: failed to open X11 display");
+        return;
+    }
+
+    Window win = reinterpret_cast<Window>(m_hWnd);
+
+    // Choose a visual with RGBA, double-buffered, depth=0.
+    int attribs[] = {GLX_RGBA,
+                     GLX_DOUBLEBUFFER,
+                     GLX_RED_SIZE,
+                     8,
+                     GLX_GREEN_SIZE,
+                     8,
+                     GLX_BLUE_SIZE,
+                     8,
+                     GLX_ALPHA_SIZE,
+                     8,
+                     None};
+
+    XVisualInfo *vi = glXChooseVisual(dpy, DefaultScreen(dpy), attribs);
+    if (!vi) {
+        GlLog("OpenGlContext: glXChooseVisual failed");
+        return;
+    }
+
+    GLXContext shareCtx = GetShareRoot(win);
+    GLXContext ctx = glXCreateContext(dpy, vi, shareCtx, GL_TRUE);
+    XFree(vi);
+
+    if (!ctx) {
+        GlLog("OpenGlContext: glXCreateContext failed");
+        return;
+    }
+
+    m_hRC = reinterpret_cast<void *>(ctx);
+    RegisterShareRoot(win, ctx);
+
+    if (!MakeCurrent()) {
+        GlLog("OpenGlContext: MakeCurrent failed");
+        return;
+    }
+
+    // Detect software renderer via glXIsDirect.
+    m_IsSoftwareRenderer = !glXIsDirect(dpy, ctx);
+
+    const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+    const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &m_MaxTextureSize);
+
+    char buf[512];
+    snprintf(buf,
+             sizeof(buf),
+             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct=%d",
+             renderer ? renderer : "(null)",
+             version ? version : "(null)",
+             m_MaxTextureSize,
+             m_IsSoftwareRenderer ? 0 : 1);
+    GlLog(buf);
+
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glShadeModel(GL_FLAT);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    NativeRect rt{};
+    GetNativeClientRect(m_hWnd, rt);
+    m_CachedRect = {rt.left, rt.top, rt.right, rt.bottom};
+    glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
+
+    m_Valid = true;
+}
+
+OpenGlContext::~OpenGlContext()
+{
+    Display *dpy = GetX11Display();
+    GLXContext ctx = reinterpret_cast<GLXContext>(m_hRC);
+
+    if (dpy && ctx && glXGetCurrentContext() == ctx) {
+        glXMakeCurrent(dpy, None, nullptr);
+    }
+
+    if (dpy && ctx) {
+        if (m_hWnd) {
+            Window win = reinterpret_cast<Window>(m_hWnd);
+            UnregisterShareRoot(win, ctx);
+        }
+        glXDestroyContext(dpy, ctx);
+        m_hRC = nullptr;
+    }
+}
+
+bool
+OpenGlContext::MakeCurrent() noexcept
+{
+    Display *dpy = GetX11Display();
+    if (!dpy || !m_hWnd || !m_hRC)
+        return false;
+
+    Window win = reinterpret_cast<Window>(m_hWnd);
+    GLXContext ctx = reinterpret_cast<GLXContext>(m_hRC);
+    return glXMakeCurrent(dpy, win, ctx) == True;
+}
+
+void
+OpenGlContext::SwapBuffers()
+{
+    Display *dpy = GetX11Display();
+    if (dpy && m_hWnd) {
+        Window win = reinterpret_cast<Window>(m_hWnd);
+        glXSwapBuffers(dpy, win);
+    }
+}
+
+#endif // _WIN32
+
+// ============================================================================
+// Platform-independent GL methods
+// ============================================================================
 
 void
 OpenGlContext::glResetView()
@@ -276,8 +499,9 @@ OpenGlContext::glResetView()
     if (!m_hWnd)
         return;
 
-    RECT rt{};
-    GetClientRect(AsHWND(m_hWnd), &rt);
+    NativeRect rt{};
+    if (!GetNativeClientRect(m_hWnd, rt))
+        return;
 
     if (rt.right != m_CachedRect.right || rt.bottom != m_CachedRect.bottom ||
         rt.left != m_CachedRect.left || rt.top != m_CachedRect.top) {
@@ -297,11 +521,10 @@ OpenGlContext::glResetViewDim(size_t width, size_t height)
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    // Bottom-left origin in GL coords:
     gluOrtho2D(0.0, (GLdouble)width, 0.0, (GLdouble)height);
 
     glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity(); // IMPORTANT: your old code omitted this.
+    glLoadIdentity();
 }
 
 bool
@@ -323,14 +546,6 @@ OpenGlContext::GetMaxTextureSize() const
 }
 
 void
-OpenGlContext::SwapBuffers()
-{
-    if (m_hDC) {
-        ::SwapBuffers(AsHDC(m_hDC));
-    }
-}
-
-void
 OpenGlContext::DrawGlBox()
 {
     if (!m_hWnd || !MakeCurrent())
@@ -338,8 +553,8 @@ OpenGlContext::DrawGlBox()
 
     glResetView();
 
-    RECT rt{};
-    GetClientRect(AsHWND(m_hWnd), &rt);
+    NativeRect rt{};
+    GetNativeClientRect(m_hWnd, rt);
 
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
@@ -350,10 +565,10 @@ OpenGlContext::DrawGlBox()
     glBegin(GL_LINES);
     glColor3f(1.f, 1.f, 1.f);
     glVertex2i(0, 0);
-    glVertex2i(rt.right, rt.bottom);
+    glVertex2i((int)rt.right, (int)rt.bottom);
 
-    glVertex2i(rt.right, 0);
-    glVertex2i(0, rt.bottom);
+    glVertex2i((int)rt.right, 0);
+    glVertex2i(0, (int)rt.bottom);
     glEnd();
 
     glFlush();
@@ -403,11 +618,11 @@ OpenGlContext::DrawFractalShark(void *nativeWindow)
         }
     }
 
-    RECT windowDimensions{};
-    GetClientRect(static_cast<HWND>(nativeWindow), &windowDimensions);
+    NativeRect windowDimensions{};
+    GetNativeClientRect(nativeWindow, windowDimensions);
 
-    const GLint scrnHeight = windowDimensions.bottom;
-    const GLint scrnWidth = windowDimensions.right;
+    const GLint scrnHeight = (GLint)windowDimensions.bottom;
+    const GLint scrnWidth = (GLint)windowDimensions.right;
 
     GLuint texid = 0;
     glEnable(GL_TEXTURE_2D);
@@ -427,7 +642,6 @@ OpenGlContext::DrawFractalShark(void *nativeWindow)
                  GL_UNSIGNED_BYTE,
                  imageBytes.data());
 
-    // In fixed function, make sure vertex color doesn't tint the texture.
     glColor4f(1.f, 1.f, 1.f, 1.f);
 
     glBegin(GL_QUADS);

@@ -8,18 +8,18 @@
 #include "Tests.h"
 
 #include "Callstacks.h"
-#include "LaunchParams.h"
 #include "HDRFloat.h"
+#include "LaunchParams.h"
 #include "MainTestCuda.h"
 #include "heap_allocator/include/HeapCpp.h"
 
 #include <cuda_runtime.h>
 
+#include "MpirGmp.h"
 #include <chrono>
 #include <conio.h> // _getch, _kbhit
 #include <iostream>
 #include <limits>
-#include <mpir.h>
 #include <sstream>
 #include <stdarg.h>
 #include <string>
@@ -343,8 +343,8 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
                            mode == BasicCorrectnessMode::PerfSingleNRView30 ||
                            mode == BasicCorrectnessMode::PerfSingleNRView32);
 
-    auto loops =
-        PromptIntWithTimeout("CUDA iteration count? Default 1000 (NR: 0=convergence)", 1000, timeoutInSec, interactiveMode);
+    auto loops = PromptIntWithTimeout(
+        "CUDA iteration count? Default 1000 (NR: 0=convergence)", 1000, timeoutInSec, interactiveMode);
     const int internalTestLoopCount = loops.value;
 
     // NumIters: skip for NR convergence mode (internalTestLoopCount == 0)
@@ -354,14 +354,15 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         numIters = iters.value;
     }
 
-    auto numBlocks = PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
+    auto numBlocks =
+        PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
     auto numThreads =
         PromptIntWithTimeout("NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
     const HpShark::LaunchParams launchParams{numBlocks.value, numThreads.value};
 
     // MPIR threading option for view modes
-    auto mtPrompt = PromptIntWithTimeout(
-        "MPIR threading? 0=MT(default), 1=ST:", 0, timeoutInSec, interactiveMode);
+    auto mtPrompt =
+        PromptIntWithTimeout("MPIR threading? 0=MT(default), 1=ST:", 0, timeoutInSec, interactiveMode);
     const bool useMT = (mtPrompt.value == 0);
 
     // If PerfSub is selected, run the operator perf suite first.
@@ -389,27 +390,39 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 
     if (mode == BasicCorrectnessMode::PerfSingleView30) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-            Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
-            TestIds::kPerfView30, numIters, internalTestLoopCount, useMT);
+        auto res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(Tests,
+                                                                         launchParams.NumBlocks,
+                                                                         launchParams.ThreadsPerBlock,
+                                                                         TestIds::kPerfView30,
+                                                                         numIters,
+                                                                         internalTestLoopCount,
+                                                                         useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleView5) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-            Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
-            TestIds::kPerfView5, numIters, internalTestLoopCount, useMT);
+        auto res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(Tests,
+                                                                        launchParams.NumBlocks,
+                                                                        launchParams.ThreadsPerBlock,
+                                                                        TestIds::kPerfView5,
+                                                                        numIters,
+                                                                        internalTestLoopCount,
+                                                                        useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleView32) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView32<Operator::ReferenceOrbit>(
-            Tests, launchParams.NumBlocks, launchParams.ThreadsPerBlock,
-            TestIds::kPerfView32, numIters, internalTestLoopCount, useMT);
+        auto res = TestFullReferencePerfView32<Operator::ReferenceOrbit>(Tests,
+                                                                         launchParams.NumBlocks,
+                                                                         launchParams.ThreadsPerBlock,
+                                                                         TestIds::kPerfView32,
+                                                                         numIters,
+                                                                         internalTestLoopCount,
+                                                                         useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
@@ -448,7 +461,8 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 
 template <Operator op>
 static int
-RunPerfBasicOp(int testBase, BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)     {
+RunPerfBasicOp(int testBase, BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
+{
     auto iters = PromptIntWithTimeout("NumIters? Default 5", 5, timeoutInSec, interactiveMode);
     auto loops =
         PromptIntWithTimeout("CUDA iteration count? Default 1000", 1000, timeoutInSec, interactiveMode);
@@ -519,22 +533,54 @@ main(int, char **)
 
     BasicCorrectnessMode mode = BasicCorrectnessMode::PerfSingleView5;
     switch (rawMode) {
-        case 1:  mode = BasicCorrectnessMode::Correctness_P1; break;
-        case 2:  mode = BasicCorrectnessMode::Correctness_NR; break;
-        case 3:  mode = BasicCorrectnessMode::PerfSub; break;
-        case 4:  mode = BasicCorrectnessMode::PerfSweep; break;
-        case 5:  mode = BasicCorrectnessMode::PerfSingleView5; break;
-        case 6:  mode = BasicCorrectnessMode::PerfSingleView30; break;
-        case 7:  mode = BasicCorrectnessMode::PerfSingleView32; break;
-        case 8:  mode = BasicCorrectnessMode::PerfSingleNRView5; break;
-        case 9:  mode = BasicCorrectnessMode::PerfSingleNRView30; break;
-        case 10: mode = BasicCorrectnessMode::PerfSingleNRView32; break;
-        case 11: mode = BasicCorrectnessMode::PerfSingleAdd; break;
-        case 12: mode = BasicCorrectnessMode::PerfSingleMultiply; break;
-        case 13: mode = BasicCorrectnessMode::PerfSingleRef; break;
-        case 14: mode = BasicCorrectnessMode::PerfSingleNRAdd; break;
-        case 15: mode = BasicCorrectnessMode::PerfSingleNRMultiply; break;
-        case 16: mode = BasicCorrectnessMode::Correctness_P1_to_P5; break;
+        case 1:
+            mode = BasicCorrectnessMode::Correctness_P1;
+            break;
+        case 2:
+            mode = BasicCorrectnessMode::Correctness_NR;
+            break;
+        case 3:
+            mode = BasicCorrectnessMode::PerfSub;
+            break;
+        case 4:
+            mode = BasicCorrectnessMode::PerfSweep;
+            break;
+        case 5:
+            mode = BasicCorrectnessMode::PerfSingleView5;
+            break;
+        case 6:
+            mode = BasicCorrectnessMode::PerfSingleView30;
+            break;
+        case 7:
+            mode = BasicCorrectnessMode::PerfSingleView32;
+            break;
+        case 8:
+            mode = BasicCorrectnessMode::PerfSingleNRView5;
+            break;
+        case 9:
+            mode = BasicCorrectnessMode::PerfSingleNRView30;
+            break;
+        case 10:
+            mode = BasicCorrectnessMode::PerfSingleNRView32;
+            break;
+        case 11:
+            mode = BasicCorrectnessMode::PerfSingleAdd;
+            break;
+        case 12:
+            mode = BasicCorrectnessMode::PerfSingleMultiply;
+            break;
+        case 13:
+            mode = BasicCorrectnessMode::PerfSingleRef;
+            break;
+        case 14:
+            mode = BasicCorrectnessMode::PerfSingleNRAdd;
+            break;
+        case 15:
+            mode = BasicCorrectnessMode::PerfSingleNRMultiply;
+            break;
+        case 16:
+            mode = BasicCorrectnessMode::Correctness_P1_to_P5;
+            break;
         default:
             std::cout << "Invalid mode " << rawMode << " (valid: 0..4). "
                       << "Exiting.\n";
@@ -562,7 +608,8 @@ main(int, char **)
         case BasicCorrectnessMode::Correctness_NR: {
             do {
                 if (!CorrectnessTests<SharkParamsNR1>()) {
-                    if (!ContinueAfterFailure(false)) return 0;
+                    if (!ContinueAfterFailure(false))
+                        return 0;
                 }
             } while (HpShark::TestInfiniteCorrectness);
             break;

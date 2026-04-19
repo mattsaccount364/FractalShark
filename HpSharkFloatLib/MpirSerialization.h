@@ -1,18 +1,17 @@
 #pragma once
 
+#include "MpirGmp.h"
 #include <istream>
-#include <mpir.h>
 #include <ostream>
 #include <stdarg.h>
 
-// Disable warning C4100 using push/pop
-
+// gmp-impl.h and the MPIR-specific raw I/O functions (mpir_out_struct,
+// mpz_inp_raw_p, mpz_out_raw_m) are only available with MPIR on Windows.
+// A GMP-compatible rewrite using mpz_export/mpz_import is needed for Linux.
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4100)
-#endif
 #include <gmp-impl.h>
-#ifdef _MSC_VER
 #pragma warning(pop)
 #endif
 

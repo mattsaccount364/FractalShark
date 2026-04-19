@@ -66,20 +66,24 @@ Linux support is being ported incrementally. Only projects marked ✅ above have
 - Clang (tested with 18.x)
 - GMP development headers (`libgmp-dev` on Debian/Ubuntu)
 
+**Note on the custom heap allocator**: `HpSharkFloatLib/heap_allocator/HeapCpp.cpp` is Windows-only by design. On Linux all allocations flow through glibc `malloc` via `Environment::SystemHeap*`, and `RegisterHeapCleanup()` is an empty stub (`FractalSharkTest/HeapCleanupStub.cpp`). This is a permanent decision, not a temporary workaround.
+
 ### Linux Test Machine
 
 - Login via SSH public key using `ssh mrenz@ubuntu24`.
-- Primary development happens in the Windows working tree, which is the authoritative copy.
+- Primary development happens in the Windows working tree, which is the authoritative copy. The Linux machine is **never authoritative** — all truth lives on the Windows host.
 - The Linux checkout at `~/FractalShark` is a disposable test mirror used only for update, file copy, build, and test operations.
 - FractalShark is already cloned on the test machine at `~/FractalShark`, but that checkout may need to be updated before testing.
-- Before copying local changes over for testing, update the test checkout with `cd ~/FractalShark && git pull origin main`.
+- **Always verify the Linux checkout's commit matches the Windows working tree before testing.** Run `git rev-parse HEAD` (and `git status` to check for stray local modifications) on the Linux side and compare against the Windows `HEAD`. If they diverge, `git fetch && git checkout <sha>` or `git pull origin <branch>` to sync, then overlay any uncommitted Windows changes via `scp`. Skipping this check risks testing stale or mismatched code.
+- Before copying local changes over for testing, update the test checkout with `cd ~/FractalShark && git fetch origin && git checkout <branch-or-sha>` (or `git pull origin main` when tracking `main`).
 - Do not make source edits directly in the Linux checkout except for temporary debugging, and do not treat it as the source of record.
 - Do not create commits or push from the Linux test checkout. Treat it as a disposable test working tree only.
 - When testing local uncommitted changes, copy the modified files into `~/FractalShark` with `scp` as needed rather than creating commits or branches on the test machine.
 
 ```bash
 ssh mrenz@ubuntu24
-cd ~/FractalShark && git pull origin main
+cd ~/FractalShark && git rev-parse HEAD && git status --short   # verify commit matches Windows host
+cd ~/FractalShark && git fetch origin && git checkout <branch-or-sha>
 scp <local-file> mrenz@ubuntu24:~/FractalShark/<repo-relative-path>
 ```
 
@@ -90,6 +94,8 @@ mkdir -p build && cd build
 cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
 make
 ```
+
+**Parallel builds across hosts**: The Windows host and the Linux test machine are independent environments. When a change needs to be validated on both, kick off the Windows MSBuild and the Linux `make` (or `cmake --build`) **simultaneously** — start each build in its own async shell, then wait on both in parallel rather than serializing them. Use `mode="async"` for each build and monitor completion notifications. Only serialize when a later build genuinely depends on an artifact from the earlier one (which is not the case for Windows ↔ Linux validation).
 
 ### Testing
 

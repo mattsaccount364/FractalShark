@@ -194,3 +194,102 @@ TEST(MpirSer_ByteCountConsistency)
 
     mpz_clear(z);
 }
+
+// ---------------------------------------------------------------------------
+// Byte-level wire format conformance
+// ---------------------------------------------------------------------------
+// These verify the exact byte layout of the raw mpz stream against hard-coded
+// expected bytes. Matches MPIR mpz_out_raw_m: 4-byte big-endian signed int32
+// header (sign * byte_count) followed by msb-first magnitude bytes.
+
+namespace {
+
+static void
+CheckMpzBytes(mpz_srcptr value, const unsigned char *expected, size_t expected_len)
+{
+    std::stringstream ss;
+    size_t written = MpirSerialization::mpz_out_raw_stream(ss, value);
+    ASSERT_EQ(written, expected_len);
+
+    std::string s = ss.str();
+    ASSERT_EQ(s.size(), expected_len);
+    for (size_t i = 0; i < expected_len; ++i) {
+        unsigned char got = static_cast<unsigned char>(s[i]);
+        ASSERT_EQ(static_cast<int>(got), static_cast<int>(expected[i]));
+    }
+
+    mpz_t restored;
+    mpz_init(restored);
+    MpirSerialization::mpz_inp_raw_stream(restored, ss);
+    ASSERT_EQ(mpz_cmp(value, restored), 0);
+    mpz_clear(restored);
+}
+
+} // namespace
+
+TEST(MpirSer_WireFormat_Zero)
+{
+    mpz_t v;
+    mpz_init_set_si(v, 0);
+    const unsigned char expected[] = { 0x00, 0x00, 0x00, 0x00 };
+    CheckMpzBytes(v, expected, sizeof(expected));
+    mpz_clear(v);
+}
+
+TEST(MpirSer_WireFormat_One)
+{
+    mpz_t v;
+    mpz_init_set_si(v, 1);
+    const unsigned char expected[] = { 0x00, 0x00, 0x00, 0x01, 0x01 };
+    CheckMpzBytes(v, expected, sizeof(expected));
+    mpz_clear(v);
+}
+
+TEST(MpirSer_WireFormat_NegOne)
+{
+    mpz_t v;
+    mpz_init_set_si(v, -1);
+    const unsigned char expected[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0x01 };
+    CheckMpzBytes(v, expected, sizeof(expected));
+    mpz_clear(v);
+}
+
+TEST(MpirSer_WireFormat_256)
+{
+    mpz_t v;
+    mpz_init_set_si(v, 256);
+    const unsigned char expected[] = { 0x00, 0x00, 0x00, 0x02, 0x01, 0x00 };
+    CheckMpzBytes(v, expected, sizeof(expected));
+    mpz_clear(v);
+}
+
+TEST(MpirSer_WireFormat_Neg256)
+{
+    mpz_t v;
+    mpz_init_set_si(v, -256);
+    const unsigned char expected[] = { 0xFF, 0xFF, 0xFF, 0xFE, 0x01, 0x00 };
+    CheckMpzBytes(v, expected, sizeof(expected));
+    mpz_clear(v);
+}
+
+TEST(MpirSer_WireFormat_65535)
+{
+    mpz_t v;
+    mpz_init_set_ui(v, 65535u);
+    const unsigned char expected[] = { 0x00, 0x00, 0x00, 0x02, 0xFF, 0xFF };
+    CheckMpzBytes(v, expected, sizeof(expected));
+    mpz_clear(v);
+}
+
+TEST(MpirSer_WireFormat_Large64)
+{
+    mpz_t v;
+    mpz_init(v);
+    mpz_set_str(v, "1122334455667788", 16);
+    const unsigned char expected[] = {
+        0x00, 0x00, 0x00, 0x08,
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88
+    };
+    CheckMpzBytes(v, expected, sizeof(expected));
+    mpz_clear(v);
+}

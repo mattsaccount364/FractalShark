@@ -9,8 +9,6 @@
 #include <deque>
 #include <future>
 
-// #include <Windows.h>
-
 // Imagina uses 4 for this periodDivisor number instead.
 // Smaller = generally better perf, but more memory usage.
 // Larger = generally worse perf, but less memory usage.  The idea is that if compression

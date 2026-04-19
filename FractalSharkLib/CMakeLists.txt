@@ -40,13 +40,13 @@ target_include_directories(FractalSharkLib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# stdafx.h lives in the repo root; DbgHeap.h lives in HpSharkFloatLib
+# stdafx.h lives in the repo root
 target_include_directories(FractalSharkLib PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/HpSharkFloatLib
 )
 
 target_link_libraries(FractalSharkLib PUBLIC FractalSharkPlatform)
+target_link_libraries(FractalSharkLib PUBLIC HpSharkFloatLib)
 
 # GMP (MPIR on Windows, GMP on Linux — MpirGmp.h handles the include)
 find_library(GMP_LIBRARY gmp REQUIRED)

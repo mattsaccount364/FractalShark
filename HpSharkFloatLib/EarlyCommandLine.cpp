@@ -2,7 +2,19 @@
 #include "Environment.h"
 #include <stdint.h>
 
+#ifndef _MSC_VER
+#define __forceinline inline __attribute__((always_inline))
+#endif
+
+#ifdef _WIN32
 extern FancyHeap EnableFractalSharkHeap;
+#else
+// The custom FractalShark heap (HpSharkFloatLib/heap_allocator/HeapCpp.cpp) is
+// Windows-only. On Linux allocations go through glibc malloc directly, but
+// HasSafeModeFlag_NoCRT() and EarlyInit_SafeMode_NoCRT() still need a target
+// for the flag. Provide a local definition here so the TU links standalone.
+FancyHeap EnableFractalSharkHeap = FancyHeap::Unknown;
+#endif
 
 static __forceinline bool
 IsSpaceW(wchar_t c)
@@ -98,6 +110,12 @@ HasSafeModeFlag_NoCRT()
     return false;
 }
 
+
+#ifndef _MSC_VER
+#ifndef __cdecl
+#define __cdecl
+#endif
+#endif
 
 extern "C" void __cdecl EarlyInit_SafeMode_NoCRT()
 {

@@ -64,6 +64,23 @@ WideToUtf8(const wchar_t *wide)
 
 } // anonymous namespace
 
+// Portable replacement for Microsoft's wcscpy_s. Copies up to N-1 wide
+// characters and always null-terminates the destination.
+template <size_t N>
+static inline void
+wcscpy_s(wchar_t (&dst)[N], const wchar_t *src)
+{
+    if (src == nullptr) {
+        dst[0] = L'\0';
+        return;
+    }
+    size_t i = 0;
+    for (; i + 1 < N && src[i] != L'\0'; ++i) {
+        dst[i] = src[i];
+    }
+    dst[i] = L'\0';
+}
+
 // -------------------------------------------------------------------------
 // VectorStaticInit — no-op on Linux (no ntdll to load).
 // -------------------------------------------------------------------------

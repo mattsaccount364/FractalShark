@@ -21,7 +21,16 @@ GetCallStack(const std::stacktrace &stack)
 Cpp23ExceptionWithCallstack::Cpp23ExceptionWithCallstack(const char *msg, bool captureStack)
     : m_stacktrace{captureStack ? std::stacktrace::current(1) : std::stacktrace{}}
 {
+#ifdef _MSC_VER
     strncpy_s(m_msg, msg, _TRUNCATE);
+#else
+    if (msg == nullptr) {
+        m_msg[0] = '\0';
+    } else {
+        std::strncpy(m_msg, msg, MsgBufSize - 1);
+        m_msg[MsgBufSize - 1] = '\0';
+    }
+#endif
 }
 
 std::string

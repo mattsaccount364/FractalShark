@@ -94,6 +94,7 @@
     <ClCompile Include="TestMpirSerialization.cpp" />
     <ClCompile Include="TestPointZoomBBConverter.cpp" />
     <ClCompile Include="TestPrecisionCalculator.cpp" />
+    <ClCompile Include="TestGrowableVector.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestFramework.h" />

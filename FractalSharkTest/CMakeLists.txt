@@ -13,24 +13,18 @@ target_sources(FractalSharkTest PRIVATE
     TestMpirOrbitEval.cpp
     TestPointZoomBBConverter.cpp
     TestPrecisionCalculator.cpp
+    TestGrowableVector.cpp
 )
 
-# TestMpirSerialization exercises MPIR-specific raw stream I/O. On Linux
-# HpSharkFloatLib/MpirSerialization.cpp provides no-op stubs (see TODO in
-# that file: needs a GMP-compatible mpz_export/mpz_import rewrite). Until
-# that exists the roundtrip tests cannot pass, so exclude this TU here.
-if(WIN32)
-    target_sources(FractalSharkTest PRIVATE TestMpirSerialization.cpp)
-endif()
+# TestMpirSerialization exercises raw stream I/O that is byte-compatible
+# between MPIR (Windows) and GMP (Linux via mpz_export/mpz_import).
+target_sources(FractalSharkTest PRIVATE TestMpirSerialization.cpp)
 
-# HpSharkFloatLib sources the tests reference directly. HpSharkFloatLib
-# itself is not yet ported to Linux, so pull in only the portable TUs
-# the tests actually need.
-target_sources(FractalSharkTest PRIVATE
-    ${CMAKE_SOURCE_DIR}/HpSharkFloatLib/HighPrecision.cpp
-    ${CMAKE_SOURCE_DIR}/HpSharkFloatLib/LAParameters.cpp
-    ${CMAKE_SOURCE_DIR}/HpSharkFloatLib/MpirSerialization.cpp
-)
+# HpSharkFloatLib is now a proper CMake library linked via FractalSharkLib.
+# Its PUBLIC include directory and portable sources (HighPrecision,
+# LAParameters, MpirSerialization, Vectors/VectorsLinux, Callstacks,
+# EarlyCommandLine, Exceptions) are pulled in transitively — no direct
+# target_sources entries are needed here.
 
 # BLA<T> template definitions live in FractalSharkGpuLib/BLA.cuh (a CUDA
 # header whose body compiles fine as host C++ since CUDA_CRAP expands to
@@ -41,8 +35,11 @@ target_include_directories(FractalSharkTest PRIVATE
     ${CMAKE_SOURCE_DIR}/FractalSharkGpuLib
 )
 
-# RegisterHeapCleanup() is defined on Windows in HpSharkFloatLib/HeapCpp.cpp,
-# which we don't build on Linux. Provide an empty stub on non-Windows.
+# The custom heap allocator in HpSharkFloatLib/heap_allocator/HeapCpp.cpp is
+# Windows-only by design; Linux uses glibc malloc via Environment::SystemHeap*.
+# HeapCleanupStub.cpp provides an empty RegisterHeapCleanup() on non-Windows
+# platforms to satisfy the link-time dependency. This is a permanent fixture,
+# not a temporary workaround.
 if(NOT WIN32)
     target_sources(FractalSharkTest PRIVATE HeapCleanupStub.cpp)
 endif()

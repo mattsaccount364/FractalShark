@@ -621,18 +621,24 @@ FeatureFinderOrchestrator::ChooseClosestFeatureToMouse() const
     if (m_FeatureSummaries.empty())
         return nullptr;
 
+    struct { long x; long y; } pt{};
 #ifdef _WIN32
     // Mouse in client pixels
-    POINT pt{};
-    if (!::GetCursorPos(&pt))
-        return nullptr;
+    {
+        POINT winPt{};
+        if (!::GetCursorPos(&winPt))
+            return nullptr;
 
-    void *nativeWnd = m_Fractal.m_NativeWindow;
-    if (!nativeWnd)
-        return nullptr;
+        void *nativeWnd = m_Fractal.m_NativeWindow;
+        if (!nativeWnd)
+            return nullptr;
 
-    if (!::ScreenToClient(static_cast<HWND>(nativeWnd), &pt))
-        return nullptr;
+        if (!::ScreenToClient(static_cast<HWND>(nativeWnd), &winPt))
+            return nullptr;
+
+        pt.x = winPt.x;
+        pt.y = winPt.y;
+    }
 #else
     // No mouse query available on non-Windows platforms yet.
     return nullptr;

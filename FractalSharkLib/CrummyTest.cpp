@@ -11,7 +11,28 @@
 #include "Fractal.h"
 #include "HDRFloat.h"
 
+#ifdef _WIN32
 #include "..\FractalShark\resource.h"
+#endif
+
+#include <filesystem>
+#include <fstream>
+
+// Portable helper: MSVC std::ofstream accepts wstring natively; other compilers
+// need conversion via std::filesystem::path.
+#ifdef _MSC_VER
+inline const std::wstring &
+ToFsPath(const std::wstring &s)
+{
+    return s;
+}
+#else
+inline std::filesystem::path
+ToFsPath(const std::wstring &s)
+{
+    return std::filesystem::path(s);
+}
+#endif
 
 CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {}
 
@@ -477,6 +498,7 @@ CrummyTest::TestVariedCompression()
 void
 CrummyTest::TestImaginaLoad()
 {
+#ifdef _WIN32
     // First, write out all the Imagina resources to files
 
     struct Pair {
@@ -583,6 +605,7 @@ CrummyTest::TestImaginaLoad()
     for (const auto &pair : pairs) {
         processOnePair(pair);
     }
+#endif // _WIN32
 }
 
 void
@@ -685,6 +708,7 @@ CrummyTest::TestStringConversion()
     //::MessageBoxA(nullptr, allStr.c_str(), "String conversion test", MB_OK | MB_APPLMODAL);
 
     {
+#ifdef _WIN32
         // Copy to clipboard
         if (!OpenClipboard(nullptr)) {
             throw FractalSharkSeriousException("OpenClipboard failed!");
@@ -708,6 +732,7 @@ CrummyTest::TestStringConversion()
         GlobalUnlock(hg);
         SetClipboardData(CF_TEXT, hg);
         CloseClipboard();
+#endif // _WIN32
     }
 
     // convert stringstream to istream
@@ -1087,7 +1112,7 @@ CrummyTest::TestReallyHardView27()
                                  name) +
                     L".txt";
 
-                std::ofstream file(textFilenameW, std::ios::binary | std::ios::trunc);
+                std::ofstream file(ToFsPath(textFilenameW), std::ios::binary | std::ios::trunc);
                 file << renderDetailsShort;
                 file.close();
 

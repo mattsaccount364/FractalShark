@@ -30,7 +30,7 @@
 #include "ItersMemoryContainer.h"
 #include "OpenGLContext.h"
 #include "RefOrbitCalc.h"
-#include "WPngImage\WPngImage.hh"
+#include "WPngImage/WPngImage.hh"
 
 #include "PointZoomBBConverter.h"
 #include "RenderThreadPool.h"
@@ -132,12 +132,12 @@ public:
         450 // Consider AuthoritativeMinExtraPrecisionInBits.  TODO: 450 is a guess.
     };
 
-    const HighPrecision &GetCompressionError(enum class CompressionError) const;
-    int32_t GetCompressionErrorExp(enum class CompressionError) const;
-    void IncCompressionError(enum class CompressionError, int32_t amount);
-    void DecCompressionError(enum class CompressionError, int32_t amount);
-    void SetCompressionErrorExp(enum class CompressionError, int32_t CompressionExp);
-    void DefaultCompressionErrorExp(enum class CompressionError);
+    const HighPrecision &GetCompressionError(CompressionError) const;
+    int32_t GetCompressionErrorExp(CompressionError) const;
+    void IncCompressionError(CompressionError, int32_t amount);
+    void DecCompressionError(CompressionError, int32_t amount);
+    void SetCompressionErrorExp(CompressionError, int32_t CompressionExp);
+    void DefaultCompressionErrorExp(CompressionError);
 
     inline uint32_t
     GetGpuAntialiasing() const

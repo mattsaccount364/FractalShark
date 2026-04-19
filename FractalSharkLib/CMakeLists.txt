@@ -1,0 +1,63 @@
+add_library(FractalSharkLib STATIC)
+
+target_sources(FractalSharkLib PRIVATE
+    AutoZoomer.cpp
+    BenchmarkData.cpp
+    BLAS.cpp
+    CrummyTest.cpp
+    FeatureFinder.cpp
+    FeatureFinderOrchestrator.cpp
+    FeatureSummary.cpp
+    Fractal.cpp
+    FractalPalette.cpp
+    FractalViewPresets.cpp
+    ImaginaOrbit.cpp
+    ItersMemoryContainer.cpp
+    LAReference.cpp
+    MpirComplex.cpp
+    MpirOrbitEval.cpp
+    OpenGLContext.cpp
+    OrbitEndpointEvaluator.cpp
+    OrbitParameterPack.cpp
+    PerturbationResults.cpp
+    PngParallelSave.cpp
+    PointZoomBBConverter.cpp
+    PrecisionCalculator.cpp
+    RecommendedSettings.cpp
+    RefOrbitCalc.cpp
+    RenderAlgorithm.cpp
+    RenderThreadPool.cpp
+    ScopedMpir.cpp
+    Utilities.cpp
+
+    WPngImage/lodepng.cpp
+    WPngImage/WPngImage.cc
+)
+# stdafx.cpp is the MSVC PCH creator — excluded on CMake builds.
+# GPU_Render.cu is CUDA — excluded until CUDA CMake support is added.
+
+target_include_directories(FractalSharkLib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# stdafx.h lives in the repo root; DbgHeap.h lives in HpSharkFloatLib
+target_include_directories(FractalSharkLib PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/HpSharkFloatLib
+)
+
+target_link_libraries(FractalSharkLib PUBLIC FractalSharkPlatform)
+
+# GMP (MPIR on Windows, GMP on Linux — MpirGmp.h handles the include)
+find_library(GMP_LIBRARY gmp REQUIRED)
+target_link_libraries(FractalSharkLib PUBLIC ${GMP_LIBRARY})
+
+# OpenGL
+find_package(OpenGL REQUIRED)
+target_link_libraries(FractalSharkLib PUBLIC OpenGL::GL)
+
+# X11 (Linux only)
+if(NOT WIN32)
+    find_package(X11 REQUIRED)
+    target_link_libraries(FractalSharkLib PUBLIC X11::X11)
+endif()

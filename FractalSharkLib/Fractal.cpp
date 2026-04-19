@@ -974,19 +974,19 @@ Fractal::GetRenderAlgorithmName(RenderAlgorithm alg)
 }
 
 const HighPrecision &
-Fractal::GetCompressionError(enum class CompressionError err) const
+Fractal::GetCompressionError(CompressionError err) const
 {
     return m_CompressionError[static_cast<size_t>(err)];
 }
 
 int32_t
-Fractal::GetCompressionErrorExp(enum class CompressionError err) const
+Fractal::GetCompressionErrorExp(CompressionError err) const
 {
     return m_CompressionExp[static_cast<size_t>(err)];
 }
 
 void
-Fractal::IncCompressionError(enum class CompressionError err, int32_t amount)
+Fractal::IncCompressionError(CompressionError err, int32_t amount)
 {
     size_t errIndex = static_cast<size_t>(err);
     if (m_CompressionExp[errIndex] >= 1000) {
@@ -999,7 +999,7 @@ Fractal::IncCompressionError(enum class CompressionError err, int32_t amount)
 }
 
 void
-Fractal::DecCompressionError(enum class CompressionError err, int32_t amount)
+Fractal::DecCompressionError(CompressionError err, int32_t amount)
 {
     size_t errIndex = static_cast<size_t>(err);
     if (m_CompressionExp[errIndex] <= 1) {
@@ -1012,7 +1012,7 @@ Fractal::DecCompressionError(enum class CompressionError err, int32_t amount)
 }
 
 void
-Fractal::SetCompressionErrorExp(enum class CompressionError err, int32_t CompressionExp)
+Fractal::SetCompressionErrorExp(CompressionError err, int32_t CompressionExp)
 {
     size_t errIndex = static_cast<size_t>(err);
 
@@ -1026,7 +1026,7 @@ Fractal::SetCompressionErrorExp(enum class CompressionError err, int32_t Compres
 }
 
 void
-Fractal::DefaultCompressionErrorExp(enum class CompressionError err)
+Fractal::DefaultCompressionErrorExp(CompressionError err)
 {
     size_t errIndex = static_cast<size_t>(err);
     m_CompressionExp[errIndex] = DefaultCompressionExp[errIndex];
@@ -1873,7 +1873,7 @@ Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
     double centerX = (double)(results->GetHiX() - minX);
     double centerY = (double)(results->GetHiY() - maxY);
 
-    static constexpr size_t num_threads = std::thread::hardware_concurrency();
+    static const size_t num_threads = std::thread::hardware_concurrency();
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
@@ -1981,9 +1981,9 @@ Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
 
                     ++RefIteration;
 
-                    const auto tempZComplex = results->GetComplex(*compressionHelper, RefIteration);
-                    const double tempZX = tempZComplex.getRe() + DeltaSubNX;
-                    const double tempZY = tempZComplex.getIm() + DeltaSubNY;
+                    const auto tempZComplex2 = results->GetComplex(*compressionHelper, RefIteration);
+                    const double tempZX = tempZComplex2.getRe() + DeltaSubNX;
+                    const double tempZY = tempZComplex2.getIm() + DeltaSubNY;
                     const double zn_size = tempZX * tempZX + tempZY * tempZY;
                     const double normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
@@ -2492,11 +2492,11 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
 
                 if (iterations != 0 && RefIteration < MaxRefIteration) {
                     complex0 =
-                        results->GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
+                        results->template GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
                 } else if (iterations != 0 && results->GetPeriodMaybeZero() != 0) {
                     RefIteration = RefIteration % results->GetPeriodMaybeZero();
                     complex0 =
-                        results->GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
+                        results->template GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
                 }
 
                 auto CurrentLAStage = LaReference.IsValid() ? LaReference.GetLAStageCount() : 0;
@@ -2553,7 +2553,7 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
                 }
 
                 for (; iterations < GetNumIterations<IterType>(); iterations++) {
-                    auto curIter = results->GetComplex<SubType>(*compressionHelper, RefIteration);
+                    auto curIter = results->template GetComplex<SubType>(*compressionHelper, RefIteration);
                     curIter = curIter * T(2);
                     curIter = curIter + DeltaSubN;
                     DeltaSubN = DeltaSubN * curIter;
@@ -2563,7 +2563,7 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
                     RefIteration++;
 
                     complex0 =
-                        results->GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
+                        results->template GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
                     HdrReduce(complex0);
 
                     normSquared = complex0.norm_squared();

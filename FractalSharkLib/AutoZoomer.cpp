@@ -100,8 +100,8 @@ AutoZoomer::Run()
         }
 
         // Drain all remaining in-flight renders
-        for (auto &h : handles) {
-            h.Wait();
+        for (auto &handle : handles) {
+            handle.Wait();
         }
 
         // Update live state to final zoom position so the view doesn't
@@ -128,10 +128,12 @@ AutoZoomer::Run()
         // current for analysis.
 
         for (;;) {
+#ifdef _WIN32
             {
                 MSG msg;
                 PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
             }
+#endif
 
             double geometricMeanX = 0;
             double geometricMeanSum = 0;

@@ -4,7 +4,7 @@
 
 #include "HDRFloat.h"
 #include "HDRFloatComplex.h"
-#include "LAStep.h"
+#include "LAstep.h"
 #include "ATInfo.h"
 #include  "LAInfoI.h"
 #include "LAInfoDeep.h"

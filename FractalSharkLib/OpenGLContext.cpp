@@ -11,7 +11,7 @@
 // clang-format on
 
 #include "OpenGLContext.h"
-#include "WPngImage\WPngImage.hh"
+#include "WPngImage/WPngImage.hh"
 
 #include <cassert>
 #include <cstdint>
@@ -278,7 +278,10 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
 
     NativeRect rt{};
     GetNativeClientRect(m_hWnd, rt);
-    m_CachedRect = {rt.left, rt.top, rt.right, rt.bottom};
+    m_CachedRect = {static_cast<int32_t>(rt.left),
+                    static_cast<int32_t>(rt.top),
+                    static_cast<int32_t>(rt.right),
+                    static_cast<int32_t>(rt.bottom)};
     glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
 
     m_Valid = true;
@@ -440,7 +443,10 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
 
     NativeRect rt{};
     GetNativeClientRect(m_hWnd, rt);
-    m_CachedRect = {rt.left, rt.top, rt.right, rt.bottom};
+    m_CachedRect = {static_cast<int32_t>(rt.left),
+                    static_cast<int32_t>(rt.top),
+                    static_cast<int32_t>(rt.right),
+                    static_cast<int32_t>(rt.bottom)};
     glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
 
     m_Valid = true;
@@ -507,7 +513,10 @@ OpenGlContext::glResetView()
         rt.left != m_CachedRect.left || rt.top != m_CachedRect.top) {
 
         glResetViewDim((size_t)rt.right, (size_t)rt.bottom);
-        m_CachedRect = {rt.left, rt.top, rt.right, rt.bottom};
+        m_CachedRect = {static_cast<int32_t>(rt.left),
+                        static_cast<int32_t>(rt.top),
+                        static_cast<int32_t>(rt.right),
+                        static_cast<int32_t>(rt.bottom)};
     }
 }
 

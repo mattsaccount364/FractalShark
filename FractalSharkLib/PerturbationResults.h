@@ -61,7 +61,7 @@ class PerturbationResults : public PerturbationResultsBase,
                             public TemplateHelpers<IterType, T, PExtras> {
 
 public:
-    template <typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+    template <typename IterType2, class T2, PerturbExtras PExtras2> friend class PerturbationResults;
 
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
@@ -172,7 +172,7 @@ public:
     }
 
     template <class U = SubType>
-    typename HDRFloatComplex<U>
+    HDRFloatComplex<U>
     GetComplex(RuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
                size_t uncompressed_index) const
     {
@@ -368,7 +368,7 @@ private:
 
 template <typename IterType, class T, PerturbExtras PExtras>
 class RefOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
-    template <typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+    template <typename IterType2, class T2, PerturbExtras PExtras2> friend class PerturbationResults;
 
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
@@ -395,7 +395,7 @@ public:
 
 template <typename IterType, class T, PerturbExtras PExtras>
 class SimpleIntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
-    template <typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+    template <typename IterType2, class T2, PerturbExtras PExtras2> friend class PerturbationResults;
 
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
@@ -429,7 +429,7 @@ public:
 
 template <typename IterType, class T, PerturbExtras PExtras>
 class MaxIntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
-    template <typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+    template <typename IterType2, class T2, PerturbExtras PExtras2> friend class PerturbationResults;
 
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;

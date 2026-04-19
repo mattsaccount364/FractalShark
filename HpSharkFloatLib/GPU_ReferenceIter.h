@@ -12,8 +12,13 @@ struct BadField {
 
     BadField(bool bad) : bad{bad}, padding{} {}
 
+#ifdef _MSC_VER
     [[msvc::no_unique_address]] uint32_t bad;
     [[msvc::no_unique_address]] uint32_t padding;
+#else
+    [[no_unique_address]] uint32_t bad;
+    [[no_unique_address]] uint32_t padding;
+#endif
 };
 
 // TODO if we template this on IterType, update m_CompressionHelper

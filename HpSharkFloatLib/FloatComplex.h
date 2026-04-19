@@ -33,9 +33,9 @@ public:
                 ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
                    << " mantissaImag: " << static_cast<double>(this->mantissaImag) << " exp: 0";
             } else {
-                ss << this->mantissaReal.ToString<IntegerOutput>();
+                ss << this->mantissaReal.template ToString<IntegerOutput>();
                 ss << " ";
-                ss << this->mantissaImag.ToString<IntegerOutput>();
+                ss << this->mantissaImag.template ToString<IntegerOutput>();
                 ss << " exp: 0";
             }
         } else {
@@ -47,9 +47,9 @@ public:
                    << *reinterpret_cast<const uint64_t *>(&localMantissaReal) << " mantissaImag: 0x"
                    << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaImag) << " exp: 0x0";
             } else {
-                ss << this->mantissaReal.ToString<IntegerOutput>();
+                ss << this->mantissaReal.template ToString<IntegerOutput>();
                 ss << " ";
-                ss << this->mantissaImag.ToString<IntegerOutput>();
+                ss << this->mantissaImag.template ToString<IntegerOutput>();
                 ss << " exp: 0x0";
             }
         }
@@ -73,8 +73,8 @@ public:
                 this->mantissaReal = static_cast<SubType>(mantissaRealLocal);
                 this->mantissaImag = static_cast<SubType>(mantissaImagLocal);
             } else {
-                this->mantissaReal.FromIStream<IntegerOutput>(metafile);
-                this->mantissaImag.FromIStream<IntegerOutput>(metafile);
+                this->mantissaReal.template FromIStream<IntegerOutput>(metafile);
+                this->mantissaImag.template FromIStream<IntegerOutput>(metafile);
             }
         } else {
             if constexpr (!isDblFlt) {
@@ -86,8 +86,8 @@ public:
                 this->mantissaReal = static_cast<SubType>(*reinterpret_cast<double *>(&mantissaRealInt));
                 this->mantissaImag = static_cast<SubType>(*reinterpret_cast<double *>(&mantissaImagInt));
             } else {
-                this->mantissaReal.FromIStream<IntegerOutput>(metafile);
-                this->mantissaImag.FromIStream<IntegerOutput>(metafile);
+                this->mantissaReal.template FromIStream<IntegerOutput>(metafile);
+                this->mantissaImag.template FromIStream<IntegerOutput>(metafile);
             }
         }
 

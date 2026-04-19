@@ -201,11 +201,15 @@ public:
         mpf_set_si(m_Data, data);
     }
 
+    // On Windows, long is 32-bit (distinct from int64_t).
+    // On Linux x64, long is 64-bit (same as int64_t), so skip this overload.
+#ifdef _MSC_VER
     explicit HighPrecisionT(long data)
     {
         InitMpf();
         mpf_set_si(m_Data, data);
     }
+#endif
 
     explicit HighPrecisionT(std::string data)
     {

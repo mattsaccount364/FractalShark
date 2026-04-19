@@ -168,7 +168,7 @@ public:
     }
 
 private:
-    template<typename T>
+    template<typename CacheT>
     struct CachedIter {
         CachedIter() :
             zx{},
@@ -177,7 +177,7 @@ private:
             CompressedIter{ UINT64_MAX - 1 } {
         }
 
-        CachedIter(T zx, T zy, size_t uncompressed_iter, size_t compressed_iter) :
+        CachedIter(CacheT zx, CacheT zy, size_t uncompressed_iter, size_t compressed_iter) :
             zx(zx),
             zy(zy),
             UncompressedIter(uncompressed_iter),
@@ -187,8 +187,8 @@ private:
         CachedIter &operator=(const CachedIter &other) = default;
         CachedIter(const CachedIter &other) = default;
 
-        T zx;
-        T zy;
+        CacheT zx;
+        CacheT zy;
         IterTypeFull UncompressedIter;
         IterTypeFull CompressedIter;
     };

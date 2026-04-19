@@ -46,7 +46,7 @@ Only x64 builds are supported.
 | Project | Purpose | CMakeLists.txt |
 |---|---|---|
 | **FractalShark** | Main GUI application (Win32 window, rendering loop) | ❌ |
-| **FractalSharkLib** | Core library: fractal math, perturbation, reference orbits, linear approximation | ❌ |
+| **FractalSharkLib** | Core library: fractal math, perturbation, reference orbits, linear approximation | ✅ |
 | **FractalSharkGpuLib** | CUDA kernels for Mandelbrot rendering (perturbation, BLA, LA, reduction) | ❌ |
 | **FractalSharkPlatform** | Cross-platform abstraction layer (Environment, types, aligned alloc) | ✅ |
 | **HpSharkFloatLib** | High-precision GPU arithmetic: NTT multiplication, custom float types, LA/DLA | ❌ |
@@ -319,7 +319,10 @@ clang-format -i <modified-files>
 
 ### CI
 
-- `.github/workflows/build.yml` builds Debug + Release, then runs `FractalSharkTest.exe` (standalone CPU unit tests). Changes that break these tests will fail CI.
+- `.github/workflows/build.yml` defines three parallel jobs:
+  - **build-pdf**: Builds the LaTeX notes PDF on Windows.
+  - **build** (matrix: Debug, Release): Windows MSBuild + CUDA build, runs `FractalSharkTest.exe`. Changes that break these tests will fail CI.
+  - **build-linux**: Linux CMake build with Clang on Ubuntu. Builds `FractalSharkPlatform` and `FractalSharkLib` static libraries. No tests yet (FractalSharkTest lacks CMake support).
 
 ## Workflow
 

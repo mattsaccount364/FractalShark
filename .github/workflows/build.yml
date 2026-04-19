@@ -66,6 +66,29 @@ jobs:
           name: FractalSharkNotes
           path: Notes/FractalShark.pdf
 
+  # ---- Linux CMake build (runs in parallel with Windows builds) ----
+  build-linux:
+    name: Build FractalShark (Linux CMake)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libgmp-dev libgl-dev libx11-dev libglu1-mesa-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build
+        run: cmake --build build --parallel
+
   # ---- Code build (Debug and Release run as parallel matrix legs) ----
   build:
     name: Build FractalShark (${{ matrix.configuration }})

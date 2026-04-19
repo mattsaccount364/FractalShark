@@ -141,7 +141,7 @@ public:
                 result +=
                     std::format("mantissa: {} exp: {}", static_cast<double>(Base::mantissa), Base::exp);
             } else {
-                result += Base::mantissa.ToString<IntegerOutput>();
+                result += Base::mantissa.template ToString<IntegerOutput>();
                 result += std::format(" exp: {}", Base::exp);
             }
         } else {
@@ -152,7 +152,7 @@ public:
                 const uint64_t expInteger = *reinterpret_cast<const uint64_t *>(&localExp);
                 result += std::format("mantissa: 0x{:x} exp: 0x{:x}", mantissaInteger, expInteger);
             } else {
-                result += Base::mantissa.ToString<IntegerOutput>();
+                result += Base::mantissa.template ToString<IntegerOutput>();
 
                 uint64_t tempExp = Base::exp;
                 result += std::format(" exp: 0x{:x}", tempExp);
@@ -174,7 +174,7 @@ public:
             if constexpr (!isDblFlt) {
                 is >> tempstr >> Base::mantissa >> tempstr >> Base::exp;
             } else {
-                Base::mantissa.FromIStream<IntegerOutput>(is);
+                Base::mantissa.template FromIStream<IntegerOutput>(is);
                 is >> tempstr >> Base::exp;
             }
         } else {
@@ -186,7 +186,7 @@ public:
                 Base::mantissa = static_cast<T>(*reinterpret_cast<const double *>(&mantissaInteger));
                 Base::exp = static_cast<TExp>(*reinterpret_cast<const uint64_t *>(&expInteger));
             } else {
-                Base::mantissa.FromIStream<IntegerOutput>(is);
+                Base::mantissa.template FromIStream<IntegerOutput>(is);
 
                 uint64_t expInteger;
                 is >> tempstr >> std::hex >> expInteger;
@@ -306,8 +306,8 @@ public:
             const auto bits = bit_cast<uint64_t>((T)number);
             // constexpr uint64_t bits = __builtin_bit_cast(std::uint64_t, &number);
             const auto f_exp =
-                (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT_DOUBLE();
-            const auto val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+                (int32_t)((bits & 0x7FF0'0000'0000'0000ULL) >> 52ULL) + MIN_SMALL_EXPONENT_INT_DOUBLE();
+            const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFULL) | 0x3FF0'0000'0000'0000ULL;
             const T f_val = bit_cast<T>(val);
 
             Base::mantissa = (T)f_val;
@@ -328,8 +328,8 @@ public:
             } else if constexpr (std::is_same<U, float>::value) {
                 const auto bits = bit_cast<uint32_t>(number);
                 const auto f_exp =
-                    (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
-                const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+                    (int32_t)((bits & 0x7F80'0000U) >> 23U) + MIN_SMALL_EXPONENT_INT_FLOAT();
+                const uint32_t val = (bits & 0x807F'FFFFU) | 0x3F80'0000U;
                 const float f_val = bit_cast<float>(val);
 
                 Base::mantissa.d.head = f_val;
@@ -337,9 +337,9 @@ public:
                 Base::exp = (TExp)f_exp;
             } else if constexpr (std::is_same<U, double>::value) {
                 const auto bits = bit_cast<uint64_t>(number);
-                const auto f_exp = (int64_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) +
+                const auto f_exp = (int64_t)((bits & 0x7FF0'0000'0000'0000ULL) >> 52ULL) +
                                    MIN_SMALL_EXPONENT_INT_DOUBLE();
-                const auto val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+                const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFULL) | 0x3FF0'0000'0000'0000ULL;
                 const auto f_val = bit_cast<double>(val);
 
                 Base::mantissa = CudaDblflt(f_val);
@@ -348,8 +348,8 @@ public:
                 const auto floatVal = (float)number;
                 const auto bits = bit_cast<uint32_t>(floatVal);
                 const auto f_exp =
-                    (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
-                const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+                    (int32_t)((bits & 0x7F80'0000U) >> 23U) + MIN_SMALL_EXPONENT_INT_FLOAT();
+                const uint32_t val = (bits & 0x807F'FFFFU) | 0x3F80'0000U;
                 const float f_val = bit_cast<float>(val);
 
                 Base::mantissa.d.head = f_val;
@@ -422,9 +422,9 @@ public:
             }
 
             const auto bits = bit_cast<uint64_t>(this->Base::mantissa);
-            const auto f_exp = static_cast<TExp>(((bits & 0x7FF0'0000'0000'0000UL) >> 52UL)) +
+            const auto f_exp = static_cast<TExp>(((bits & 0x7FF0'0000'0000'0000ULL) >> 52ULL)) +
                                MIN_SMALL_EXPONENT_INT_DOUBLE();
-            const auto val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+            const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFULL) | 0x3FF0'0000'0000'0000ULL;
             const auto f_val = bit_cast<const T>(val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
@@ -444,7 +444,7 @@ public:
             const auto bits = bit_cast<uint32_t>(this->Base::mantissa);
             const auto f_exp =
                 static_cast<TExp>(((bits & 0x7F80'0000UL) >> 23UL)) + MIN_SMALL_EXPONENT_INT_FLOAT();
-            const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            const uint32_t val = (bits & 0x807F'FFFFU) | 0x3F80'0000U;
             const auto f_val = bit_cast<T>(val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
@@ -620,7 +620,7 @@ public:
 
     template <HDROrder OtherOrder, typename OtherTExp>
     CUDA_CRAP constexpr HDRFloat &
-    divide_mutable(HDRFloat<T, OtherOrder, typename OtherTExp> factor)
+    divide_mutable(HDRFloat<T, OtherOrder, OtherTExp> factor)
     {
         T local_mantissa{Base::mantissa / factor.mantissa};
         TExp local_exp = Base::exp - factor.exp;

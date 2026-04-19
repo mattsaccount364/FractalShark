@@ -39,8 +39,8 @@ public:
                                    this->exp);
             } else {
                 return std::format("{} {} exp: {}",
-                                   this->mantissaReal.ToString<IntegerOutput>(),
-                                   this->mantissaImag.ToString<IntegerOutput>(),
+                                   this->mantissaReal.template ToString<IntegerOutput>(),
+                                   this->mantissaImag.template ToString<IntegerOutput>(),
                                    this->exp);
             }
         } else {
@@ -56,8 +56,8 @@ public:
                                    localExp);
             } else {
                 return std::format("{} {} exp: 0x{:x}",
-                                   this->mantissaReal.ToString<IntegerOutput>(),
-                                   this->mantissaImag.ToString<IntegerOutput>(),
+                                   this->mantissaReal.template ToString<IntegerOutput>(),
+                                   this->mantissaImag.template ToString<IntegerOutput>(),
                                    localExp);
             }
         }
@@ -82,8 +82,8 @@ public:
                 this->mantissaImag = static_cast<SubType>(mantissaImagLocal);
                 this->exp = static_cast<TExp>(expInt);
             } else {
-                this->mantissaReal.FromIStream<IntegerOutput>(is);
-                this->mantissaImag.FromIStream<IntegerOutput>(is);
+                this->mantissaReal.template FromIStream<IntegerOutput>(is);
+                this->mantissaImag.template FromIStream<IntegerOutput>(is);
 
                 // Read exponent as integer
                 int64_t expInt;
@@ -105,8 +105,8 @@ public:
                     static_cast<SubType>(*reinterpret_cast<double *>(&mantissaImagLocal));
                 this->exp = static_cast<TExp>(expInt);
             } else {
-                this->mantissaReal.FromIStream<IntegerOutput>(is);
-                this->mantissaImag.FromIStream<IntegerOutput>(is);
+                this->mantissaReal.template FromIStream<IntegerOutput>(is);
+                this->mantissaImag.template FromIStream<IntegerOutput>(is);
 
                 // Read exponent as integer
                 uint64_t expInt;

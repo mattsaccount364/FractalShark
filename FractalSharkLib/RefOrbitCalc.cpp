@@ -21,6 +21,7 @@
 #include "HpSharkFloat.h"
 #include "KernelInvoke.h"
 
+#include <algorithm>
 #include <fstream>
 #include <math.h>
 #include <memory>
@@ -37,9 +38,24 @@
 // clang-format on
 
 #include <filesystem>
+#include <immintrin.h>
 #include <iostream>
 #include <string>
 #include <tuple>
+
+#ifdef _MSC_VER
+inline const std::wstring &
+ToFsPath(const std::wstring &s)
+{
+    return s;
+}
+#else
+inline std::filesystem::path
+ToFsPath(const std::wstring &s)
+{
+    return std::filesystem::path(s);
+}
+#endif
 
 template <class Type> struct alignas(64) ThreadPtrs {
     std::atomic<Type *> In;
@@ -645,7 +661,7 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
             maxIntermediateCompressor.CompleteResults();
         }
 
-        results->CompleteResults<Reuse>(bumpAllocator->GetAllocated(1));
+        results->template CompleteResults<Reuse>(bumpAllocator->GetAllocated(1));
         m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 
         mpf_clear(cx_mpf);
@@ -998,7 +1014,7 @@ RefOrbitCalc::AddPerturbationReferencePointSTReuse(const PointZoomBBConverter &p
     mpf_clear(temp_mpf);
     mpf_clear(temp2_mpf);
 
-    results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
+    results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
     m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 
     return true;
@@ -1357,8 +1373,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
 
     ScopedAffinity scopedAffinity{*this,
                                   Environment::GetCurrentThreadHandle(),
-                                  tZx->native_handle(),
-                                  tZy->native_handle(),
+                                  reinterpret_cast<void *>(tZx->native_handle()),
+                                  reinterpret_cast<void *>(tZy->native_handle()),
                                   nullptr};
 
     ThreadZxData *expectedZx = nullptr;
@@ -1540,7 +1556,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     mpf_clear(DeltaSubNX);
     mpf_clear(DeltaSubNY);
 
-    results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
+    results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
     m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 
     return true;
@@ -1876,11 +1892,12 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 std::unique_ptr<std::thread>(DEBUG_NEW std::thread(ThreadReused, ThreadReusedMemory));
         }
 
-        ScopedAffinity scopedAffinity{*this,
-                                      Environment::GetCurrentThreadHandle(),
-                                      tZx->native_handle(),
-                                      tZy->native_handle(),
-                                      tReuse ? tReuse->native_handle() : nullptr};
+        ScopedAffinity scopedAffinity{
+            *this,
+            Environment::GetCurrentThreadHandle(),
+            reinterpret_cast<void *>(tZx->native_handle()),
+            reinterpret_cast<void *>(tZy->native_handle()),
+            tReuse ? reinterpret_cast<void *>(tReuse->native_handle()) : nullptr};
 
         ThreadZxData *expectedZx = nullptr;
         ThreadZyData *expectedZy = nullptr;
@@ -2140,7 +2157,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             std::ignore = bumpAllocator->GetAllocated(1); // Destruct the return value
         }
 
-        results->CompleteResults<Reuse>(std::move(reusedAllocator));
+        results->template CompleteResults<Reuse>(std::move(reusedAllocator));
         m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 
         mpf_clear(cx_mpf);
@@ -2270,7 +2287,7 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
         DispatchByLimbCount<SharkParamsBaseFamily>(limbCount, lamb);
     }
 
-    results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
+    results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
 
     mpf_clear(cx_mpf);
     mpf_clear(cy_mpf);
@@ -2521,7 +2538,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
             // Now generate the 2x32 results:
             auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(
                 options_to_use, GetNextGenerationNumber()));
-            results2->CopyPerturbationResults<true>(*results);
+            results2->template CopyPerturbationResults<true>(*results);
 
             auto *results2Raw = results2.get();
 
@@ -2614,7 +2631,7 @@ requires((SrcEnableBad == PerturbExtras::Bad && DestEnableBad == PerturbExtras::
             m_RefOrbitOptions, GetNextGenerationNumber());
         m_C.push_back(std::move(newarray));
         auto *dest = GetLast<IterType, DestT, DestEnableBad>();
-        dest->CopyPerturbationResults<false>(src_array);
+        dest->template CopyPerturbationResults<false>(src_array);
         return dest;
     } else if constexpr (std::is_same<SrcT, float>::value) {
         return nullptr;
@@ -2623,14 +2640,14 @@ requires((SrcEnableBad == PerturbExtras::Bad && DestEnableBad == PerturbExtras::
             m_RefOrbitOptions, GetNextGenerationNumber());
         m_C.push_back(std::move(newarray));
         auto *dest = GetLast<IterType, DestT, DestEnableBad>();
-        dest->CopyPerturbationResults<false>(src_array);
+        dest->template CopyPerturbationResults<false>(src_array);
         return dest;
     } else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
         auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(
             m_RefOrbitOptions, GetNextGenerationNumber());
         m_C.push_back(std::move(newarray));
         auto *dest = GetLast<IterType, DestT, DestEnableBad>();
-        dest->CopyPerturbationResults<false>(src_array);
+        dest->template CopyPerturbationResults<false>(src_array);
         return dest;
     } else {
         return nullptr;
@@ -2990,7 +3007,7 @@ RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring filename
             results->SaveOrbit(filename);
         } else if (desiredCompression == CompressToDisk::SimpleCompression) {
             if constexpr (PExtras != PerturbExtras::Bad &&
-                          !Introspection::IsDblFlt<decltype(*results)>()) {
+                          !Introspection::IsDblFlt<std::remove_cvref_t<decltype(*results)>>()) {
 
                 if constexpr (PExtras == PerturbExtras::Disable) {
                     resultsSaver(results);
@@ -3005,11 +3022,11 @@ RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring filename
             }
         } else if (desiredCompression == CompressToDisk::MaxCompression) {
             if constexpr (PExtras != PerturbExtras::Bad &&
-                          !Introspection::IsDblFlt<decltype(*results)>()) {
+                          !Introspection::IsDblFlt<std::remove_cvref_t<decltype(*results)>>()) {
 
                 resultsSaverMax(results);
             } else if constexpr (PExtras != PerturbExtras::Bad) {
-                if constexpr (results->IsHDR) {
+                if constexpr (StrippedType2::IsHDR) {
                     const auto *relatedResults =
                         GetUsefulPerturbationResultsConst<IterType, HDRFloat<double>, false, PExtras>();
 
@@ -3024,12 +3041,12 @@ RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring filename
                 throw FractalSharkSeriousException("Currently unsupported type 1");
             }
         } else if (desiredCompression == CompressToDisk::MaxCompressionImagina) {
-            if constexpr (!Introspection::IsDblFlt<decltype(*results)>() &&
+            if constexpr (!Introspection::IsDblFlt<std::remove_cvref_t<decltype(*results)>>() &&
                           PExtras != PerturbExtras::Bad) {
 
                 SaveOrbitResults(*results, filename);
             } else if constexpr (PExtras != PerturbExtras::Bad) {
-                if constexpr (results->IsHDR) {
+                if constexpr (StrippedType2::IsHDR) {
                     const auto *relatedResults =
                         GetUsefulPerturbationResultsConst<IterType, HDRFloat<double>, false, PExtras>();
                     SaveOrbitResults(*relatedResults, filename);
@@ -3090,7 +3107,7 @@ RefOrbitCalc::SaveOrbitResults(const PerturbationResults<IterType, T, PExtras> &
                                std::wstring imagFilename) const
 {
 
-    std::ofstream file(imagFilename, std::ios::binary);
+    std::ofstream file(ToFsPath(imagFilename), std::ios::binary);
     if (!file.is_open()) {
         throw FractalSharkSeriousException("Failed to open file for writing");
     }
@@ -3164,7 +3181,7 @@ RefOrbitCalc::SaveOrbitResults(std::wstring imagFilename) const
     // In this case, there's no orbit.  Instead, save only the location.
     // This path is only relevant with double/float precision and shallow depths.
 
-    std::ofstream file(imagFilename, std::ios::binary);
+    std::ofstream file(ToFsPath(imagFilename), std::ios::binary);
     if (!file.is_open()) {
         throw FractalSharkSeriousException("Failed to open file for writing");
     }
@@ -3326,13 +3343,13 @@ RefOrbitCalc::LoadOrbitConvert(CompressToDisk compression,
     // Extended range implies the use of high precision types
     // For this example, let's assume HDRFloat<HRReal>
 
-    auto TypeHelper = [&]<typename DestIterType, typename T, PerturbExtras PExtrasDest>()
-        -> std::unique_ptr<PerturbationResults<DestIterType, T, PExtrasDest>> {
+    auto TypeHelper = [&]<typename LDestIterType, typename LT, PerturbExtras LPExtrasDest>()
+        -> std::unique_ptr<PerturbationResults<LDestIterType, LT, LPExtrasDest>> {
         auto results =
-            std::make_unique<PerturbationResults<DestIterType, T, PerturbExtras::MaxCompression>>(
+            std::make_unique<PerturbationResults<LDestIterType, LT, PerturbExtras::MaxCompression>>(
                 AddPointOptions::EnableWithoutSave, GetNextGenerationNumber());
 
-        const auto saturatedIterationLimit = params.GetSaturatedIterationCount<DestIterType>();
+        const auto saturatedIterationLimit = params.GetSaturatedIterationCount<LDestIterType>();
 
         results->LoadOrbitBin(std::move(params.orbitX),
                               std::move(params.orbitY),
@@ -3340,7 +3357,7 @@ RefOrbitCalc::LoadOrbitConvert(CompressToDisk compression,
                               params.halfH,
                               *params.file);
 
-        auto decompressedResults = results->DecompressMax<PExtrasDest>(
+        auto decompressedResults = results->template DecompressMax<LPExtrasDest>(
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low), GetNextGenerationNumber());
         return decompressedResults;
     };
@@ -3382,7 +3399,7 @@ RefOrbitCalc::LoadOrbitConst(CompressToDisk compression,
                               params.halfH,
                               *params.file);
 
-        auto decompressedResults = results->DecompressMax<PExtrasDest>(
+        auto decompressedResults = results->template DecompressMax<PExtrasDest>(
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low), GetNextGenerationNumber());
         return decompressedResults;
     };
@@ -3477,7 +3494,7 @@ RefOrbitCalc::LoadOrbitConstInternal(OrbitParameterPack &params,
     constexpr bool singleStepHelper = false;
 
     // Read the ReferenceHeader to determine the type
-    auto file = std::make_unique<std::ifstream>(imagFilename, std::ios::binary);
+    auto file = std::make_unique<std::ifstream>(ToFsPath(imagFilename), std::ios::binary);
     if (!file->is_open()) {
         throw FractalSharkSeriousException("Failed to open file for reading");
     }
@@ -3497,7 +3514,8 @@ RefOrbitCalc::LoadOrbitConstInternal(OrbitParameterPack &params,
     file->read(reinterpret_cast<char *>(&halfH), sizeof(Imagina::HRReal));
 
     // Based on the precision of halfH, determine the type
-    uint64_t precision = -std::min(0ll, halfH.getExp()) + AuthoritativeMinExtraPrecisionInBits;
+    uint64_t precision = -std::min(static_cast<int64_t>(0), static_cast<int64_t>(halfH.getExp())) +
+                         AuthoritativeMinExtraPrecisionInBits;
     HighPrecision::defaultPrecisionInBits(precision);
 
     // Convert to zoom factor

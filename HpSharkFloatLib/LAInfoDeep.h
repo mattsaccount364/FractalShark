@@ -5,7 +5,7 @@
 #include "HDRFloatComplex.h"
 #include "LAInfoI.h"
 #include "LAParameters.h"
-#include "LAStep.h"
+#include "LAstep.h"
 
 template <typename IterType, class Float, class SubType> class GPU_LAInfoDeep;
 

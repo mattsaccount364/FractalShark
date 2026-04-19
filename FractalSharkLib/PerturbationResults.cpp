@@ -5,12 +5,29 @@
 #include "Fractal.h"
 #include "ImaginaOrbit.h"
 #include "LAReference.h"
-#include "MPIRSerialization.h"
+#include "MpirSerialization.h"
 #include "PerturbationResults.h"
 #include "PrecisionCalculator.h"
 
 #include <chrono>
+#include <filesystem>
 #include <map>
+
+// Portable wstring → fstream path: MSVC supports wstring directly, other compilers
+// need conversion via std::filesystem::path.
+#ifdef _MSC_VER
+inline const std::wstring &
+ToFsPath(const std::wstring &s)
+{
+    return s;
+}
+#else
+inline std::filesystem::path
+ToFsPath(const std::wstring &s)
+{
+    return std::filesystem::path(s);
+}
+#endif
 
 const HighPrecision &
 PerturbationResultsBase::GetHiX() const
@@ -234,7 +251,7 @@ requires Introspection::TestPExtras<PExtras>::value
 
     auto new_ptr = std::make_unique<PerturbationResults<IterType, T, PExtras>>(addPointOptions,
                                                                                new_generation_number);
-    new_ptr->CopyPerturbationResults<true, T, PExtras>(*this);
+    new_ptr->template CopyPerturbationResults<true, T, PExtras>(*this);
     return new_ptr;
 }
 
@@ -396,17 +413,8 @@ InstantiateCopyPerturbationResultsLA(HDRFloat<float>,
                                      PerturbExtras::SimpleCompression,
                                      PerturbExtras::SimpleCompression);
 InstantiateCopyPerturbationResults(float, double, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResults(float, double, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResults(HDRFloat<float>,
-                                   HDRFloat<double>,
-                                   PerturbExtras::Disable,
-                                   PerturbExtras::Disable);
-InstantiateCopyPerturbationResults(HDRFloat<float>,
-                                   HDRFloat<double>,
-                                   PerturbExtras::Disable,
-                                   PerturbExtras::Disable);
-InstantiateCopyPerturbationResultsNoLA(float,
-                                       HDRFloat<float>,
+InstantiateCopyPerturbationResultsNoLA(HDRFloat<float>,
+                                       HDRFloat<double>,
                                        PerturbExtras::Disable,
                                        PerturbExtras::Disable);
 InstantiateCopyPerturbationResultsNoLA(float,
@@ -415,18 +423,11 @@ InstantiateCopyPerturbationResultsNoLA(float,
                                        PerturbExtras::Disable);
 
 InstantiateCopyPerturbationResultsNoLA(float, double, PerturbExtras::Bad, PerturbExtras::Bad);
-InstantiateCopyPerturbationResultsNoLA(float, double, PerturbExtras::Bad, PerturbExtras::Bad);
-InstantiateCopyPerturbationResultsNoLA(float, HDRFloat<float>, PerturbExtras::Bad, PerturbExtras::Bad);
 InstantiateCopyPerturbationResultsNoLA(float, HDRFloat<float>, PerturbExtras::Bad, PerturbExtras::Bad);
 InstantiateCopyPerturbationResultsNoLA(HDRFloat<float>,
                                        HDRFloat<double>,
                                        PerturbExtras::Bad,
                                        PerturbExtras::Bad);
-InstantiateCopyPerturbationResultsNoLA(HDRFloat<float>,
-                                       HDRFloat<double>,
-                                       PerturbExtras::Bad,
-                                       PerturbExtras::Bad);
-InstantiateCopyPerturbationResultsNoLA(double, HDRFloat<double>, PerturbExtras::Bad, PerturbExtras::Bad);
 InstantiateCopyPerturbationResultsNoLA(double, HDRFloat<double>, PerturbExtras::Bad, PerturbExtras::Bad);
 
 template <typename IterType, class T, PerturbExtras PExtras>
@@ -495,7 +496,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     // The code after this function will open the new file for delete.
     CloseMetaFileIfOpen();
 
-    std::ofstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
+    std::ofstream metafile(ToFsPath(GenFilename(GrowableVectorTypes::Metadata)), std::ios::binary);
     if (!metafile.is_open()) {
         std::wcerr << L"Failed to open file for writing 2" << std::endl;
         return;
@@ -595,7 +596,7 @@ PerturbationResults<IterType, T, PExtras>::ReadMetadata()
 requires Introspection::TestPExtras<PExtras>::value
 {
 
-    std::ifstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
+    std::ifstream metafile(ToFsPath(GenFilename(GrowableVectorTypes::Metadata)), std::ios::binary);
     if (!metafile.is_open()) {
         std::wcerr << L"Failed to open file for reading 1" << std::endl;
         metafile.close();
@@ -1662,7 +1663,7 @@ requires(!Introspection::IsTDblFlt<T>())
         // Append the generation number to the filename
         std::wstring filename = L"paths_taken_" + std::to_wstring(new_generation_number) + L".txt";
 
-        myfile.open(filename);
+        myfile.open(ToFsPath(filename));
         for (const auto &[key, value] : PathCounts) {
             myfile << key << " " << value << std::endl;
         }
@@ -1967,7 +1968,7 @@ InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Di
 {
     auto outFile = filename.empty() ? GenFilename(GrowableVectorTypes::DebugOutput) : filename;
 
-    std::ofstream out(outFile);
+    std::ofstream out{ToFsPath(outFile)};
     if (!out.is_open()) {
         std::wcerr << L"Failed to open file for writing 3" << std::endl;
         return;
@@ -2256,7 +2257,7 @@ PerturbationResults<IterType, T, PExtras>::DiffOrbit(
 requires(!Introspection::IsTDblFlt<T>())
 {
 
-    std::ofstream out(outFile);
+    std::ofstream out{ToFsPath(outFile)};
     if (!out.is_open()) {
         throw FractalSharkSeriousException("Failed to open file for writing 4");
     }

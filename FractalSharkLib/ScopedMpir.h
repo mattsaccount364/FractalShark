@@ -1,6 +1,8 @@
 #pragma once
 
 #include "MpirGmp.h"
+#include <atomic>
+#include <memory>
 #include <stdarg.h>
 #include <vector>
 

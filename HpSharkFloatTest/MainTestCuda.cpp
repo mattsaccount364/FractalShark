@@ -17,7 +17,89 @@
 
 #include "MpirGmp.h"
 #include <chrono>
+#ifdef _WIN32
 #include <conio.h> // _getch, _kbhit
+#else
+// Minimal Linux replacements for _getch / _kbhit using termios.
+// Puts the terminal in non-canonical no-echo mode while the program runs.
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+
+namespace {
+struct TermiosRawGuard {
+    termios original{};
+    bool valid = false;
+    TermiosRawGuard() {
+        if (!isatty(STDIN_FILENO))
+            return;
+        if (tcgetattr(STDIN_FILENO, &original) != 0)
+            return;
+        termios raw = original;
+        raw.c_lflag &= ~(ICANON | ECHO);
+        raw.c_cc[VMIN] = 0;
+        raw.c_cc[VTIME] = 0;
+        if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == 0)
+            valid = true;
+    }
+    ~TermiosRawGuard() {
+        if (valid)
+            tcsetattr(STDIN_FILENO, TCSANOW, &original);
+    }
+};
+
+TermiosRawGuard &
+getTermiosGuard()
+{
+    static TermiosRawGuard g;
+    return g;
+}
+} // namespace
+
+static int
+_kbhit()
+{
+    getTermiosGuard();
+    unsigned char c = 0;
+    int n = (int)read(STDIN_FILENO, &c, 1);
+    if (n == 1) {
+        // Put the byte back by pushing it to a static buffer the next _getch
+        // call will drain. termios non-canonical reads give us one byte at a
+        // time, so we cache it here.
+        static thread_local int pending = -1;
+        pending = c;
+        // stash via file-scope helper
+        extern int g_conio_pending;
+        g_conio_pending = c;
+        return 1;
+    }
+    return 0;
+}
+
+int g_conio_pending = -1;
+
+static int
+_getch()
+{
+    getTermiosGuard();
+    if (g_conio_pending != -1) {
+        int c = g_conio_pending;
+        g_conio_pending = -1;
+        return c;
+    }
+    unsigned char c = 0;
+    // Block until a key is available.
+    termios cur{};
+    tcgetattr(STDIN_FILENO, &cur);
+    termios blocking = cur;
+    blocking.c_cc[VMIN] = 1;
+    blocking.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &blocking);
+    ssize_t n = read(STDIN_FILENO, &c, 1);
+    tcsetattr(STDIN_FILENO, TCSANOW, &cur);
+    return (n == 1) ? c : -1;
+}
+#endif
 #include <iostream>
 #include <limits>
 #include <sstream>

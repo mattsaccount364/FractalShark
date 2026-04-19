@@ -4087,23 +4087,30 @@ TestAllBinaryOp(int testBase)
 
 // Explicitly instantiate TestAllBinaryOp
 #define ADD_KERNEL(SharkFloatParams)                                                                    \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);                       \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);
+
+#define MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                           \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);
+
+#define REFERENCE_KERNEL(SharkFloatParams)                                                              \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);
+
+// The Operator-only explicit instantiations below do not depend on
+// SharkFloatParams, so instantiate each exactly once. MSVC tolerates
+// duplicate explicit instantiations silently, but clang treats them as
+// hard errors — keeping these out of the per-SharkFloatParams macros
+// above makes the build portable.
+#define OPERATOR_ONLY_INSTANTIATIONS()                                                                  \
     template bool TestBinaryOperatorPerf<Operator::Add>(const HpShark::LaunchParams &,                  \
                                                         int testBase,                                   \
                                                         int numIters,                                   \
                                                         int internalTestLoopCount,                      \
-                                                        BasicCorrectnessMode mode);
-
-#define MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                           \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);               \
+                                                        BasicCorrectnessMode mode);                    \
     template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(const HpShark::LaunchParams &,          \
                                                                 int testBase,                           \
                                                                 int numIters,                           \
                                                                 int internalTestLoopCount,              \
-                                                                BasicCorrectnessMode mode);
-
-#define REFERENCE_KERNEL(SharkFloatParams)                                                              \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
+                                                                BasicCorrectnessMode mode);             \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(const HpShark::LaunchParams &,       \
                                                                    int testBase,                        \
                                                                    int numIters,                        \
@@ -4138,10 +4145,4 @@ TestAllBinaryOp(int testBase)
 
 ExplicitInstantiateAll();
 
-#define NR_KERNEL(SharkFloatParams)                                                                     \
-    ADD_KERNEL(SharkFloatParams)                                                                        \
-    MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                               \
-    REFERENCE_KERNEL(SharkFloatParams)
-
-NR_KERNEL(SharkParamsNR1);
-NR_KERNEL(SharkParamsNR7);
+OPERATOR_ONLY_INSTANTIATIONS();

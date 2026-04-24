@@ -26,13 +26,13 @@
 
 namespace cg = cooperative_groups;
 
-static constexpr auto [[maybe_unused]]
+[[maybe_unused]] static constexpr auto
 CalcAlign16Bytes64BitIndex(uint64_t Sixty4BitIndex)
 {
     return Sixty4BitIndex % 2 == 0 ? 0 : 1;
 }
 
-static constexpr auto [[maybe_unused]]
+[[maybe_unused]] static constexpr auto
 CalcAlign16Bytes32BitIndex(uint64_t Thirty2BitIndex)
 {
     return 4 - (Thirty2BitIndex % 4);

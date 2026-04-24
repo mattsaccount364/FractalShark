@@ -73,7 +73,7 @@ UintArrayToHexString(const IntT *array, size_t numElements)
         } else if constexpr (sizeof(IntT) == 8) {
             snprintf(buffer, sizeof(buffer), "0x%016llx ", static_cast<uint64_t>(array[i]));
         } else {
-            static_assert(false, "Unsupported size");
+            static_assert(sizeof(IntT) == 0, "Unsupported size");
         }
 
         result += buffer;
@@ -94,7 +94,7 @@ UintToHexString(IntT val)
     } else if constexpr (sizeof(IntT) == 8) {
         snprintf(buffer, sizeof(buffer), "0x%016llX", static_cast<uint64_t>(val));
     } else {
-        static_assert(false, "Unsupported size");
+        static_assert(sizeof(IntT) == 0, "Unsupported size");
     }
 
     return buffer;

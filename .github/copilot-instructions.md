@@ -66,7 +66,7 @@ Linux support is being ported incrementally. Only projects marked ✅ above have
 - Clang (tested with 18.x)
 - GMP development headers (`libgmp-dev` on Debian/Ubuntu)
 
-**Note on the custom heap allocator**: `HpSharkFloatLib/heap_allocator/HeapCpp.cpp` is Windows-only by design. On Linux all allocations flow through glibc `malloc` via `Environment::SystemHeap*`, and `RegisterHeapCleanup()` is an empty stub (`FractalSharkTest/HeapCleanupStub.cpp`). This is a permanent decision, not a temporary workaround.
+**Note on the custom heap allocator**: `HpSharkFloatLib/heap_allocator/HeapCpp.cpp` is Windows-only by design. On Linux all allocations flow through glibc `malloc` via `Environment::SystemHeap*`, and `Environment::RegisterHeapCleanup()` is an empty stub (defined at the bottom of `FractalSharkPlatform/EnvironmentLinux.cpp`). This is a permanent decision, not a temporary workaround.
 
 ### Linux Test Machine
 

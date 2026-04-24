@@ -8,19 +8,107 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
+
+// =========================================================================
+// MPIR/GMP compatibility (formerly MpirGmp.h)
+// =========================================================================
+// Use MPIR on Windows (MSVC), GMP on Linux/GCC.  MPIR and GMP share the same
+// public API (mpz_*, mpf_*, mp_set_memory_functions, etc.).
+
+#ifdef _MSC_VER
+#include <mpir.h>
+#else
+#include <gmp.h>
+
+// MPIR provides mpf_get_2exp_d(double *d, mpf_t f) -> long exp.
+// GMP provides mpf_get_d_2exp(long *exp, mpf_t f) -> double d.
+// Provide the MPIR signature in terms of GMP:
+inline long
+mpf_get_2exp_d(double *d, mpf_srcptr f)
+{
+    long exp;
+    *d = mpf_get_d_2exp(&exp, f);
+    return exp;
+}
+#endif
+
+// =========================================================================
+// Aligned allocation (formerly AlignedAlloc.h)
+// =========================================================================
+
+#ifdef _MSC_VER
+#include <malloc.h>
+#endif
+
+namespace Environment {
+
+#ifdef _MSC_VER
+inline void *
+AlignedAlloc(size_t size, size_t alignment)
+{
+    return _aligned_malloc(size, alignment);
+}
+
+inline void
+AlignedFree(void *ptr)
+{
+    _aligned_free(ptr);
+}
+#else
+inline void *
+AlignedAlloc(size_t size, size_t alignment)
+{
+    // C11 aligned_alloc requires size to be a multiple of alignment.
+    size_t rounded = (size + alignment - 1) & ~(alignment - 1);
+    return aligned_alloc(alignment, rounded);
+}
+
+inline void
+AlignedFree(void *ptr)
+{
+    free(ptr);
+}
+#endif
+
+} // namespace Environment
+
+// =========================================================================
+// Portable geometry types (formerly PlatformTypes.h)
+// =========================================================================
+
+namespace Environment {
+
+// Portable rectangle -- replaces Win32 RECT in library interfaces.
+struct ScreenRect {
+    int32_t left;
+    int32_t top;
+    int32_t right;
+    int32_t bottom;
+};
+
+// Portable 2D point -- replaces Win32 POINT in library interfaces.
+struct ScreenPoint {
+    int32_t x;
+    int32_t y;
+};
+
+} // namespace Environment
+
+namespace Environment {
 
 // Register a one-time atexit handler that flushes / cleans up the custom heap
 // allocator used by HpSharkFloatLib. On Windows the real definition lives in
 // HpSharkFloatLib/heap_allocator/HeapCpp.cpp; on Linux this is an empty stub
 // defined at the bottom of EnvironmentLinux.cpp (all allocations flow through
 // glibc malloc via Environment::SystemHeap*, so there is nothing to clean up).
-// Declared here so callers can pick it up via `#include "Environment.h"`
-// instead of a bare forward declaration.
 void RegisterHeapCleanup();
+
+} // namespace Environment
 
 namespace Environment {
 

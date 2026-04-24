@@ -13,3 +13,7 @@ endif()
 target_include_directories(FractalSharkPlatform PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# GMP (MPIR on Windows, GMP on Linux — Environment.h pulls in the header)
+find_library(GMP_LIBRARY gmp REQUIRED)
+target_link_libraries(FractalSharkPlatform PUBLIC ${GMP_LIBRARY})

@@ -4,7 +4,6 @@
 // clang-format off
 #include "GlIncludes.h"
 // clang-format on
-// clang-format on
 
 #include "Exceptions.h"
 #include "Fractal.h"

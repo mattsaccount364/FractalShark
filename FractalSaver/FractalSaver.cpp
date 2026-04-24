@@ -250,7 +250,7 @@ DrawingThread(void *)
     // Autozoom
     bool gAutoZoomDone = false;
 
-    ScreenRect nextView;
+    Environment::ScreenRect nextView;
     nextView.top = -1;
     nextView.left = -1;
     nextView.bottom = -1;

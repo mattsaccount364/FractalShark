@@ -1,7 +1,6 @@
 #include "stdafx.h"
 
 #include "AbortMonitor.h"
-#include "AlignedAlloc.h"
 #include "Environment.h"
 #include "Fractal.h"
 #include "PerturbationResults.h"
@@ -1143,7 +1142,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     };
 
     auto *ThreadZxMemory =
-        (ThreadPtrs<ThreadZxData> *)fs_aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
+        (ThreadPtrs<ThreadZxData> *)Environment::AlignedAlloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
     if (ThreadZxMemory == nullptr) {
         throw FractalSharkSeriousException(
             "Memory allocation failure site: ThreadZxMemory (RefOrbitCalc ST)");
@@ -1152,7 +1151,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
 
     auto *ThreadZyMemory =
-        (ThreadPtrs<ThreadZyData> *)fs_aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
+        (ThreadPtrs<ThreadZyData> *)Environment::AlignedAlloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
     if (ThreadZyMemory == nullptr) {
         throw FractalSharkSeriousException(
             "Memory allocation failure site: ThreadZyMemory (RefOrbitCalc ST)");
@@ -1342,8 +1341,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
         mpf_clear(temp2_mpf);
     };
 
-    auto *threadZxdata = (ThreadZxData *)fs_aligned_malloc(sizeof(ThreadZxData), 64);
-    auto *threadZydata = (ThreadZyData *)fs_aligned_malloc(sizeof(ThreadZyData), 64);
+    auto *threadZxdata = (ThreadZxData *)Environment::AlignedAlloc(sizeof(ThreadZxData), 64);
+    auto *threadZydata = (ThreadZyData *)Environment::AlignedAlloc(sizeof(ThreadZyData), 64);
 
     new (threadZxdata)(ThreadZxData){};
     new (threadZydata)(ThreadZyData){};
@@ -1516,14 +1515,14 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     tZx->join();
     tZy->join();
 
-    fs_aligned_free(ThreadZxMemory);
-    fs_aligned_free(ThreadZyMemory);
+    Environment::AlignedFree(ThreadZxMemory);
+    Environment::AlignedFree(ThreadZyMemory);
 
     threadZxdata->~ThreadZxData();
     threadZydata->~ThreadZyData();
 
-    fs_aligned_free(threadZxdata);
-    fs_aligned_free(threadZydata);
+    Environment::AlignedFree(threadZxdata);
+    Environment::AlignedFree(threadZydata);
 
     mpf_clear(zx);
     mpf_clear(zy);
@@ -1680,7 +1679,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         };
 
         auto *ThreadZxMemory =
-            (ThreadPtrs<ThreadZxData> *)fs_aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
+            (ThreadPtrs<ThreadZxData> *)Environment::AlignedAlloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
         if (ThreadZxMemory == nullptr) {
             throw FractalSharkSeriousException(
                 "Memory allocation failure site: ThreadZxMemory (RefOrbitCalc MT)");
@@ -1689,7 +1688,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
 
         auto *ThreadZyMemory =
-            (ThreadPtrs<ThreadZyData> *)fs_aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
+            (ThreadPtrs<ThreadZyData> *)Environment::AlignedAlloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
         if (ThreadZyMemory == nullptr) {
             throw FractalSharkSeriousException(
                 "Memory allocation failure site: ThreadZyMemory (RefOrbitCalc MT)");
@@ -1698,7 +1697,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
 
         auto *ThreadReusedMemory =
-            (ThreadPtrs<ThreadReusedData> *)fs_aligned_malloc(sizeof(ThreadPtrs<ThreadReusedData>), 64);
+            (ThreadPtrs<ThreadReusedData> *)Environment::AlignedAlloc(sizeof(ThreadPtrs<ThreadReusedData>), 64);
         if (ThreadReusedMemory == nullptr) {
             throw FractalSharkSeriousException(
                 "Memory allocation failure site: ThreadReusedMemory (RefOrbitCalc MT)");
@@ -1850,9 +1849,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 ShutdownTls();
             };
 
-        auto *threadZxdata = (ThreadZxData *)fs_aligned_malloc(sizeof(ThreadZxData), 64);
-        auto *threadZydata = (ThreadZyData *)fs_aligned_malloc(sizeof(ThreadZyData), 64);
-        auto *threadReuseddata = (ThreadReusedData *)fs_aligned_malloc(sizeof(ThreadReusedData), 64);
+        auto *threadZxdata = (ThreadZxData *)Environment::AlignedAlloc(sizeof(ThreadZxData), 64);
+        auto *threadZydata = (ThreadZyData *)Environment::AlignedAlloc(sizeof(ThreadZyData), 64);
+        auto *threadReuseddata = (ThreadReusedData *)Environment::AlignedAlloc(sizeof(ThreadReusedData), 64);
 
         new (threadZxdata)(ThreadZxData){};
         new (threadZydata)(ThreadZyData){};
@@ -2121,17 +2120,17 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             tReuse->join();
         }
 
-        fs_aligned_free(ThreadZxMemory);
-        fs_aligned_free(ThreadZyMemory);
-        fs_aligned_free(ThreadReusedMemory);
+        Environment::AlignedFree(ThreadZxMemory);
+        Environment::AlignedFree(ThreadZyMemory);
+        Environment::AlignedFree(ThreadReusedMemory);
 
         threadZxdata->~ThreadZxData();
         threadZydata->~ThreadZyData();
         threadReuseddata->~ThreadReusedData();
 
-        fs_aligned_free(threadZxdata);
-        fs_aligned_free(threadZydata);
-        fs_aligned_free(threadReuseddata);
+        Environment::AlignedFree(threadZxdata);
+        Environment::AlignedFree(threadZydata);
+        Environment::AlignedFree(threadReuseddata);
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
             std::ignore = bumpAllocator->GetAllocated(1); // Destruct the return value

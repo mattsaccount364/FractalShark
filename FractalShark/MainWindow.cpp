@@ -868,7 +868,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 newViewWin.bottom = GET_Y_LPARAM(lParam);
             }
 
-            ScreenRect newView{newViewWin.left, newViewWin.top, newViewWin.right, newViewWin.bottom};
+            Environment::ScreenRect newView{newViewWin.left, newViewWin.top, newViewWin.right, newViewWin.bottom};
 
             if (gFractal) {
                 gFractal->EnqueueCommand([newView, maintainAspect](Fractal &f) {

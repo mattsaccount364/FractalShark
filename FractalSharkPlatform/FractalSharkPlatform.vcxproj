@@ -50,12 +50,14 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level4</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <PreprocessorDefinitions>WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level4</WarningLevel>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -68,10 +70,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Environment.h" />
-    <ClInclude Include="AlignedAlloc.h" />
     <ClInclude Include="GlIncludes.h" />
-    <ClInclude Include="MpirGmp.h" />
-    <ClInclude Include="PlatformTypes.h" />
     <ClInclude Include="WaitCursor.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

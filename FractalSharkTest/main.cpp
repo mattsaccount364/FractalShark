@@ -6,7 +6,7 @@
 int
 main()
 {
-    RegisterHeapCleanup();
+    Environment::RegisterHeapCleanup();
 
     // GrowableVector and other HpSharkFloatLib allocation paths assume
     // GlobalCallstacks has been initialized by the application.

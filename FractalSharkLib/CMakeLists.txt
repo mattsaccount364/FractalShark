@@ -48,7 +48,7 @@ target_include_directories(FractalSharkLib PRIVATE
 target_link_libraries(FractalSharkLib PUBLIC FractalSharkPlatform)
 target_link_libraries(FractalSharkLib PUBLIC HpSharkFloatLib)
 
-# GMP (MPIR on Windows, GMP on Linux — MpirGmp.h handles the include)
+# GMP (MPIR on Windows, GMP on Linux — Environment.h handles the include)
 find_library(GMP_LIBRARY gmp REQUIRED)
 target_link_libraries(FractalSharkLib PUBLIC ${GMP_LIBRARY})
 

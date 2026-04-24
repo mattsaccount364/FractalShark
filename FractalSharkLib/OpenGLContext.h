@@ -1,7 +1,7 @@
 // OpenGLContext.h
 #pragma once
 
-#include "PlatformTypes.h"
+#include "Environment.h"
 
 // GL types needed in the header (avoids including GL/gl.h which needs windows.h on Win32)
 using GLint = int;
@@ -17,7 +17,7 @@ struct OpenGlContext {
     bool m_IsSoftwareRenderer{};
     bool m_Repainting{true};
     GLint m_MaxTextureSize{};
-    ScreenRect m_CachedRect{};
+    Environment::ScreenRect m_CachedRect{};
 
 public:
     OpenGlContext(void *nativeWindow);

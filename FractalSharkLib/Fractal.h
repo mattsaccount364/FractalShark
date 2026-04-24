@@ -18,7 +18,7 @@
 
 #include "FractalPalette.h"
 #include "GPU_Render.h"
-#include "PlatformTypes.h"
+#include "Environment.h"
 
 #include <array>
 
@@ -84,7 +84,7 @@ public:
                          size_t height = SIZE_MAX,
                          uint32_t gpu_antialiasing = UINT32_MAX);
     bool RecenterViewCalc(const PointZoomBBConverter &ptz);
-    bool RecenterViewScreen(ScreenRect rect);
+    bool RecenterViewScreen(Environment::ScreenRect rect);
     bool CenterAtPoint(size_t x, size_t y);
     void ZoomAtCenter(double factor);
     void ZoomRecentered(size_t scrnX, size_t scrnY, double factor);
@@ -101,7 +101,7 @@ public:
     void ApproachTarget();
     bool Back();
 
-    void FindInterestingLocation(ScreenRect *rect);
+    void FindInterestingLocation(Environment::ScreenRect *rect);
 
     template <typename IterType> void SetNumIterations(IterTypeFull num);
 

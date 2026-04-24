@@ -616,7 +616,7 @@ Environment::ScreenToClientPos(void * /*nativeWindow*/, int & /*x*/, int & /*y*/
 // to clean up. This empty definition satisfies the link-time dependency and
 // is a permanent Linux fixture, not a temporary workaround.
 void
-RegisterHeapCleanup()
+Environment::RegisterHeapCleanup()
 {
 }
 

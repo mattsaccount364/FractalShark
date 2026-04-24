@@ -165,7 +165,7 @@ CleanupHeap()
 }
 
 void
-RegisterHeapCleanup()
+Environment::RegisterHeapCleanup()
 {
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
         atexit(CleanupHeap);

@@ -1,4 +1,4 @@
-﻿#include "Conversion.h"
+#include "Conversion.h"
 #include "DbgHeap.h"
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
@@ -15,7 +15,7 @@
 
 #include <cuda_runtime.h>
 
-#include "MpirGmp.h"
+#include "Environment.h"
 #include <chrono>
 #ifdef _WIN32
 #include <conio.h> // _getch, _kbhit
@@ -570,7 +570,7 @@ RunPerfBasicOp(int testBase, BasicCorrectnessMode mode, int timeoutInSec, bool &
 int
 main(int, char **)
 {
-    RegisterHeapCleanup();
+    Environment::RegisterHeapCleanup();
     GlobalCallstacks->InitCallstacks();
 
     {

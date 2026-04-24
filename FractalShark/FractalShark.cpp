@@ -42,7 +42,7 @@ WinMain(_In_ HINSTANCE hInstance,
 
     MSG msg{};
 
-    RegisterHeapCleanup();
+    Environment::RegisterHeapCleanup();
     GlobalCallstacks->InitCallstacks();
 
     {

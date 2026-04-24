@@ -13,7 +13,9 @@
 template<typename T>
 class GrowableVector;
 
+namespace Environment {
 void RegisterHeapCleanup();
+}
 
 
 class HeapCpp {

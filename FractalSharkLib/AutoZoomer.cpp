@@ -4,7 +4,7 @@
 #include "Environment.h"
 #include "FeatureSummary.h"
 #include "PerturbationResults.h"
-#include "PlatformTypes.h"
+#include "Environment.h"
 
 #include <cmath>
 #include <iostream>
@@ -139,7 +139,7 @@ AutoZoomer::Run()
                     int32_t shiftWidth = (int32_t)m_Fractal.GetScrnWidth() / 8;
                     int32_t shiftHeight = (int32_t)m_Fractal.GetScrnHeight() / 8;
 
-                    ScreenRect antiRect;
+                    Environment::ScreenRect antiRect;
                     antiRect.left = shiftWidth;
                     antiRect.right = (int32_t)m_Fractal.GetScrnWidth() - shiftWidth;
                     antiRect.top = shiftHeight;

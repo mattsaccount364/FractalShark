@@ -308,7 +308,7 @@ Fractal::RecenterViewCalc(const PointZoomBBConverter &ptz)
 // were given to the last call to the Reset function.
 //////////////////////////////////////////////////////////////////////////////
 bool
-Fractal::RecenterViewScreen(ScreenRect rect)
+Fractal::RecenterViewScreen(Environment::ScreenRect rect)
 {
     SaveCurPos();
 
@@ -358,7 +358,7 @@ Fractal::RecenterViewScreen(ScreenRect rect)
             double geometricMeanSum = 0;
             double geometricMeanY = 0;
 
-            ScreenRect antiRect = rect;
+            Environment::ScreenRect antiRect = rect;
             antiRect.left *= GetGpuAntialiasing();
             antiRect.right *= GetGpuAntialiasing();
             antiRect.top *= GetGpuAntialiasing();
@@ -712,7 +712,7 @@ Fractal::Back(void)
 // It is supposed to find an interesting spot to zoom in on.
 // It works rather well as is...
 void
-Fractal::FindInterestingLocation(ScreenRect *rect)
+Fractal::FindInterestingLocation(Environment::ScreenRect *rect)
 {
     int x, y;
     int xMin = 0, yMin = 0, xMax = 0, yMax = 0;

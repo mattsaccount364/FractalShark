@@ -4,7 +4,7 @@
 // Extracted from MpirOrbitEval for shared use by FeatureFinder,
 // RefOrbitCalc, and test code.
 
-#include "MpirGmp.h"
+#include "Environment.h"
 #include <cstdint>
 
 struct mpf_complex {

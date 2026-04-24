@@ -6,7 +6,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSaver", "..\FractalS
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalShark", "Fractals.vcxproj", "{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkGUILib", "FractalSharkGUILib.vcxproj", "{6672C084-EA20-4DA3-B55A-F160EDD33BC3}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkGUILib", "..\FractalSharkGUILib\FractalSharkGUILib.vcxproj", "{6672C084-EA20-4DA3-B55A-F160EDD33BC3}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalTray", "..\FractalTray\FractalTray.vcxproj", "{B7468E51-1CF3-4959-B1C8-394EA78CE79C}"
 EndProject

@@ -14,8 +14,6 @@ target_sources(FractalSharkLib PRIVATE
     ImaginaOrbit.cpp
     ItersMemoryContainer.cpp
     LAReference.cpp
-    MpirComplex.cpp
-    MpirOrbitEval.cpp
     OpenGLContext.cpp
     OrbitEndpointEvaluator.cpp
     OrbitParameterPack.cpp

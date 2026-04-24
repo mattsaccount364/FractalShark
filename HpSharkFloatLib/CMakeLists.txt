@@ -26,6 +26,8 @@ add_library(HpSharkFloatLib STATIC)
 target_sources(HpSharkFloatLib PRIVATE
     HighPrecision.cpp
     LAParameters.cpp
+    MpirComplex.cpp
+    MpirOrbitEval.cpp
     MpirSerialization.cpp
     AbortMonitor.cpp
     BenchmarkTimer.cpp

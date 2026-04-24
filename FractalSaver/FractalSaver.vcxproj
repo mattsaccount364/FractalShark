@@ -144,9 +144,9 @@
     <ResourceCompile Include="FractalSaver.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\stdafx.h" />
     <ClInclude Include="FractalSaver.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="FractalSaver.ico" />

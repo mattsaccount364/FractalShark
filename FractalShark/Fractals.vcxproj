@@ -150,7 +150,7 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="FractalSharkGUILib.vcxproj">
+    <ProjectReference Include="..\FractalSharkGUILib\FractalSharkGUILib.vcxproj">
       <Project>{6672C084-EA20-4DA3-B55A-F160EDD33BC3}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>

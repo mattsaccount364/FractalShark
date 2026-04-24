@@ -1,7 +1,7 @@
 add_library(FractalSharkGpuLib STATIC)
 
 target_sources(FractalSharkGpuLib PRIVATE
-    ${CMAKE_SOURCE_DIR}/FractalSharkLib/GPU_Render.cu
+    GPU_Render.cu
     Main.cpp
 )
 

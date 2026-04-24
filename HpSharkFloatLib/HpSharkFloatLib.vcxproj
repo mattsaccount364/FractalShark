@@ -77,6 +77,8 @@
     <ClInclude Include="HpSharkTestConfig.h" />
     <ClInclude Include="KernelHpSharkReferenceOrbit.h" />
     <ClInclude Include="MontgomeryCoreConstexpr.h" />
+    <ClInclude Include="MpirComplex.h" />
+    <ClInclude Include="MpirOrbitEval.h" />
     <ClInclude Include="MpirSerialization.h" />
     <ClInclude Include="MultiplyNTT.h" />
     <ClInclude Include="MultiplyNTTCudaSetup.h" />
@@ -96,6 +98,12 @@
     <ClCompile Include="HighPrecision.cpp" />
     <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="LaunchParamsCalculator.cpp" />
+    <ClCompile Include="MpirComplex.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="MpirOrbitEval.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="MpirSerialization.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
     <ClCompile Include="Vectors.cpp" />

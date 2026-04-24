@@ -76,6 +76,22 @@ target_link_libraries(HpSharkFloatLib PUBLIC FractalSharkPlatform)
 find_library(GMP_LIBRARY gmp REQUIRED)
 target_link_libraries(HpSharkFloatLib PUBLIC ${GMP_LIBRARY})
 
+# MpirSerialization.cpp (Linux branch) uses mpz_export / mpz_import to emit
+# the MPIR-compatible raw stream format. Fail configure clearly if the GMP
+# headers don't expose these symbols so a silent no-op rebuild is impossible.
+if(NOT WIN32)
+    include(CheckSymbolExists)
+    check_symbol_exists(mpz_export gmp.h HAVE_MPZ_EXPORT)
+    check_symbol_exists(mpz_import gmp.h HAVE_MPZ_IMPORT)
+    check_symbol_exists(mpz_out_raw gmp.h HAVE_MPZ_OUT_RAW)
+    if(NOT HAVE_MPZ_EXPORT OR NOT HAVE_MPZ_IMPORT OR NOT HAVE_MPZ_OUT_RAW)
+        message(FATAL_ERROR
+            "GMP headers at 'gmp.h' do not expose mpz_export / mpz_import / "
+            "mpz_out_raw. MpirSerialization requires these on Linux. Install "
+            "libgmp-dev (or equivalent) >= 4.1.")
+    endif()
+endif()
+
 # std::stacktrace on libstdc++ (used by Exceptions.cpp / Callstacks.cpp).
 # libstdc++ 13 ships the impl in libstdc++_libbacktrace; libstdc++ 14
 # moved it into libstdc++exp. Link whichever one the active toolchain

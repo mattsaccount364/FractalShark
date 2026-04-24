@@ -346,7 +346,7 @@ clang-format -i <modified-files>
 - `.github/workflows/build.yml` defines three parallel jobs:
   - **build-pdf**: Builds the LaTeX notes PDF on Windows.
   - **build** (matrix: Debug, Release): Windows MSBuild + CUDA build, runs `FractalSharkTest.exe`. Changes that break these tests will fail CI.
-  - **build-linux**: Linux CMake build with Clang on Ubuntu. Builds `FractalSharkPlatform` and `FractalSharkLib` static libraries and the `FractalSharkTest` executable, then runs `./build/FractalSharkTest/FractalSharkTest`. `TestMpirSerialization` is excluded on Linux because `MpirSerialization.cpp` is a no-op stub there pending a GMP-compatible rewrite.
+  - **build-linux**: Linux CMake build with Clang on Ubuntu. Builds `FractalSharkPlatform` and `FractalSharkLib` static libraries and the `FractalSharkTest` executable, then runs `./build/FractalSharkTest/FractalSharkTest`. `TestMpirSerialization` runs on both platforms: the Linux branch of `MpirSerialization.cpp` implements the MPIR raw wire format atop GMP's `mpz_export`/`mpz_import`, producing byte-identical output to the Windows MPIR path (verified via a committed `FractalSharkTest/golden_mpir.bin`).
 
 ## Workflow
 

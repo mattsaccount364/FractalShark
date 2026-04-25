@@ -4,6 +4,7 @@ target_sources(FractalSharkLib PRIVATE
     AutoZoomer.cpp
     BenchmarkData.cpp
     BLAS.cpp
+    CommandCatalog.cpp
     CrummyTest.cpp
     FeatureFinder.cpp
     FeatureFinderOrchestrator.cpp

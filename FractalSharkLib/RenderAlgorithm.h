@@ -78,7 +78,7 @@ using TestViewMap = ConstexprMap<TestTypeEnum,
                                  TestViewEnum::Disabled>;
 
 // These should match the UI menu for sanity's sake
-enum class RenderAlgorithmEnum {
+enum class RenderAlgorithmEnum : uint32_t {
     // CPU algorithms
     CpuHigh,
     Cpu64,

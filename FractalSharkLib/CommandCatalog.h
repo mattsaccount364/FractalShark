@@ -327,61 +327,164 @@ struct Command {
 inline constexpr std::array<Command, 0> kCommands{};
 
 // ---------------------------------------------------------------------------
-// ExecuteCommand — per-platform host forwarder (Phase 0c scaffolding).
+// ExecuteCommand — per-platform host forwarder (Phase 0c).
 // ---------------------------------------------------------------------------
 //
-// Each GUI implements ExecuteCommandHost.  At this stage the Win32 host
-// forwards every command to the legacy CommandDispatcher::Dispatch(int)
-// switch, so behavior is byte-identical to before.  Phase 0c proper will
-// peel command bodies out of CommandDispatcher into a switch in this header
-// (or a sibling CommandCatalog.cpp), at which point both GUIs share dispatch.
-//
-// Linux's host implementation is responsible only for the commands its GUI
-// actually surfaces today; gaps are caught at compile time once Phase 0d
-// turns on -Werror=switch-enum.
+// Every catalog FractalCommand maps to one On*() hook on the host.  The
+// algorithm-selection family (~55 RenderAlgorithmEnum-driven commands) is
+// funnelled through the single OnSetAlgorithm hook; the catalog→alg lookup
+// happens in CommandCatalog.cpp via kAlgCmds.  Range-based commands (View
+// 1..40, dynamic orbit/imag slots) fall through to DispatchByIdm so the
+// legacy CommandDispatcher picks them up.
+
+// Forward declaration so we don't drag RenderAlgorithm.h into this header.
+// The actual definition in RenderAlgorithm.h fixes the underlying type to
+// uint32_t to match.
+} // namespace FractalShark
+
+enum class RenderAlgorithmEnum : uint32_t;
+
+namespace FractalShark {
+
 struct ExecuteCommandHost {
     virtual ~ExecuteCommandHost() = default;
 
-    // Forward to the legacy IDM-keyed dispatcher.  Phase 0c will narrow
-    // callers of this until it can be removed.
+    // Catalog→legacy bridge for unmigrated / range-based commands.
     virtual void DispatchByIdm(int wmId) = 0;
 
-    // ---- Phase 0c migrated commands -------------------------------------
-    // Each migrated FractalCommand becomes a virtual hook here.  Pure
-    // virtual so a GUI that surfaces the command must wire it up; until
-    // a GUI exposes a given command in its menu/keymap nothing can
-    // invoke it, so unimplemented hosts can stub with a no-op.
-    //
-    // Help / Exit batch:
+    // ---- Algorithm selection ------------------------------------------
+    virtual void OnSetAlgorithm(::RenderAlgorithmEnum alg) = 0;
+
+    // ---- Help / Window ------------------------------------------------
     virtual void OnShowHotkeys() = 0;
     virtual void OnViewsHelp() = 0;
     virtual void OnHelpAlg() = 0;
+    virtual void OnSquareView() = 0;
+    virtual void OnRepainting() = 0;
+    virtual void OnWindowed() = 0;
+    virtual void OnWindowedSq() = 0;
+    virtual void OnMinimize() = 0;
+    virtual void OnCurPos() = 0;
     virtual void OnExit() = 0;
+
+    // ---- Navigate -----------------------------------------------------
+    virtual void OnBack() = 0;
+    virtual void OnCenterView() = 0;
+    virtual void OnZoomIn() = 0;
+    virtual void OnZoomOut() = 0;
+    virtual void OnAutoZoomDefault() = 0;
+    virtual void OnAutoZoomMax() = 0;
+    virtual void OnAutoZoomFilament() = 0;
+    virtual void OnFeatureFinderDirect() = 0;
+    virtual void OnFeatureFinderDirectScan() = 0;
+    virtual void OnFeatureFinderPt() = 0;
+    virtual void OnFeatureFinderPtScan() = 0;
+    virtual void OnFeatureFinderLa() = 0;
+    virtual void OnFeatureFinderLaScan() = 0;
+    virtual void OnFeatureFinderZoom() = 0;
+    virtual void OnFeatureFinderClear() = 0;
+    virtual void OnFeatureFinderResume() = 0;
+    virtual void OnNrInnerLoopGpu() = 0;
+    virtual void OnNrInnerLoopCpu() = 0;
+    virtual void OnNrInnerLoopCpuSt() = 0;
+
+    // ---- Built-In Views (point entry; View1..40 are range-dispatched) -
+    virtual void OnStandardView() = 0;
+
+    // ---- Antialiasing -------------------------------------------------
+    virtual void OnGpuAntialiasing1x() = 0;
+    virtual void OnGpuAntialiasing4x() = 0;
+    virtual void OnGpuAntialiasing9x() = 0;
+    virtual void OnGpuAntialiasing16x() = 0;
+
+    // ---- Iterations ---------------------------------------------------
+    virtual void OnResetIterations() = 0;
+    virtual void OnIncreaseIterations1p5x() = 0;
+    virtual void OnIncreaseIterations6x() = 0;
+    virtual void OnIncreaseIterations24x() = 0;
+    virtual void OnDecreaseIterations() = 0;
+    virtual void OnIterations32Bit() = 0;
+    virtual void OnIterations64Bit() = 0;
+
+    // ---- Iteration Precision -----------------------------------------
+    virtual void OnIterationPrecision1x() = 0;
+    virtual void OnIterationPrecision2x() = 0;
+    virtual void OnIterationPrecision3x() = 0;
+    virtual void OnIterationPrecision4x() = 0;
+
+    // ---- Perturbation -------------------------------------------------
+    virtual void OnPerturbResults() = 0;
+    virtual void OnPerturbClearAll() = 0;
+    virtual void OnPerturbClearMed() = 0;
+    virtual void OnPerturbClearHigh() = 0;
+    virtual void OnPerturbationAuto() = 0;
+    virtual void OnPerturbationSinglethread() = 0;
+    virtual void OnPerturbationMultithread() = 0;
+    virtual void OnPerturbationSinglethreadPeriodicity() = 0;
+    virtual void OnPerturbationMultithread2Periodicity() = 0;
+    virtual void OnPerturbationMt2PerturbMthighStmed() = 0;
+    virtual void OnPerturbationMt2PerturbMthighMtmed1() = 0;
+    virtual void OnPerturbationMt2PerturbMthighMtmed2() = 0;
+    virtual void OnPerturbationMt2PerturbMthighMtmed3() = 0;
+    virtual void OnPerturbationMt2PerturbMthighMtmed4() = 0;
+    virtual void OnPerturbationMultithread5Periodicity() = 0;
+    virtual void OnPerturbationGpu() = 0;
+    virtual void OnPerturbationLoad() = 0;
+    virtual void OnPerturbationSave() = 0;
+
+    // ---- Memory / Autosave -------------------------------------------
+    virtual void OnPerturbAutosaveOnDelete() = 0;
+    virtual void OnPerturbAutosaveOn() = 0;
+    virtual void OnPerturbAutosaveOff() = 0;
+    virtual void OnMemoryLimit0() = 0;
+    virtual void OnMemoryLimit1() = 0;
+
+    // ---- Palette ------------------------------------------------------
+    virtual void OnPaletteType0() = 0;
+    virtual void OnPaletteType1() = 0;
+    virtual void OnPaletteType2() = 0;
+    virtual void OnPaletteType3() = 0;
+    virtual void OnPaletteType4() = 0;
+    virtual void OnCreateNewPalette() = 0;
+    virtual void OnPalette5() = 0;
+    virtual void OnPalette6() = 0;
+    virtual void OnPalette8() = 0;
+    virtual void OnPalette12() = 0;
+    virtual void OnPalette16() = 0;
+    virtual void OnPalette20() = 0;
+    virtual void OnPaletteRotate() = 0;
+
+    // ---- Save / Load --------------------------------------------------
+    virtual void OnSaveLocation() = 0;
+    virtual void OnSaveHiResBmp() = 0;
+    virtual void OnSaveItersText() = 0;
+    virtual void OnSaveBmp() = 0;
+    virtual void OnSaveRefOrbitText() = 0;
+    virtual void OnSaveRefOrbitTextSimple() = 0;
+    virtual void OnSaveRefOrbitTextMax() = 0;
+    virtual void OnSaveRefOrbitImagMax() = 0;
+    virtual void OnDiffRefOrbitImagMax() = 0;
+    virtual void OnLoadLocation() = 0;
+    virtual void OnLoadEnterLocation() = 0;
+    virtual void OnLoadRefOrbitImagMax() = 0;
+    virtual void OnLoadRefOrbitImagMaxSaved() = 0;
+
+    // ---- Tests / Benchmarks ------------------------------------------
+    virtual void OnBasicTest() = 0;
+    virtual void OnTest27() = 0;
+    virtual void OnBenchmarkFull() = 0;
+    virtual void OnBenchmarkInt() = 0;
+
+    // ---- LA ----------------------------------------------------------
+    virtual void OnLaMultithreaded() = 0;
+    virtual void OnLaSinglethreaded() = 0;
+    virtual void OnLaSettings1() = 0;
+    virtual void OnLaSettings2() = 0;
+    virtual void OnLaSettings3() = 0;
 };
 
-inline void
-ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host)
-{
-    switch (cmd) {
-    // Help / Exit batch (Phase 0c migration #1).
-    case FractalCommand::ShowHotkeys:
-        host.OnShowHotkeys();
-        return;
-    case FractalCommand::ViewsHelp:
-        host.OnViewsHelp();
-        return;
-    case FractalCommand::HelpAlg:
-        host.OnHelpAlg();
-        return;
-    case FractalCommand::Exit:
-        host.OnExit();
-        return;
-    default:
-        break;
-    }
-
-    // Not yet migrated: round-trip through the legacy IDM dispatcher.
-    host.DispatchByIdm(IdmFromCommand(cmd));
-}
+// Defined in CommandCatalog.cpp — does the FractalCommand→host hook
+// dispatch, including the alg-family lookup.
+void ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host);
 
 } // namespace FractalShark

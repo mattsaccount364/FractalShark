@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\stdafx.h" />
+    <ClInclude Include="AlgCmds.h" />
     <ClInclude Include="AutoZoomer.h" />
     <ClInclude Include="BenchmarkData.h" />
     <ClInclude Include="BenchmarkDataCollection.h" />
@@ -78,6 +79,7 @@
     <ClCompile Include="AutoZoomer.cpp" />
     <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />
+    <ClCompile Include="CommandCatalog.cpp" />
     <ClCompile Include="FeatureFinder.cpp" />
     <ClCompile Include="FeatureFinderOrchestrator.cpp" />
     <ClCompile Include="FeatureSummary.cpp" />

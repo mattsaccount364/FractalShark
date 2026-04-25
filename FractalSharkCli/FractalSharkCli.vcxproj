@@ -39,7 +39,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <PreprocessorDefinitions>_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\FractalSharkGUILib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\FractalSharkGUILib;..\FractalSharkPlatform;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -50,7 +50,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="..\FractalSharkGUILib\CrashHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">

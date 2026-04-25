@@ -343,9 +343,7 @@ main(int argc, char *argv[])
 {
     Environment::RegisterHeapCleanup();
     GlobalCallstacks->InitCallstacks();
-#ifdef _WIN32
     CrashHandler::Install();
-#endif
 
     // Ensure FreeCallstacks runs on every exit path.
     struct CallstackGuard {

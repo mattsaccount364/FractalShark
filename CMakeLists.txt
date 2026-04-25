@@ -25,3 +25,7 @@ add_subdirectory(HpSharkFloatTestLib)
 add_subdirectory(HpSharkFloatTest)
 add_subdirectory(FractalSharkTest)
 add_subdirectory(FractalSharkCli)
+
+if(UNIX AND NOT APPLE)
+    add_subdirectory(FractalSharkGuiLinux)
+endif()

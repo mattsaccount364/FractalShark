@@ -7,10 +7,12 @@ target_sources(FractalSharkPlatform PRIVATE
 if(WIN32)
     target_sources(FractalSharkPlatform PRIVATE
         EnvironmentWin32.cpp
+        CrashHandlerWin32.cpp
     )
 else()
     target_sources(FractalSharkPlatform PRIVATE
         EnvironmentLinux.cpp
+        CrashHandlerLinux.cpp
     )
 endif()
 

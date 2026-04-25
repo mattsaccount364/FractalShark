@@ -37,7 +37,7 @@
       <PreprocessorDefinitions>_WINDOWS;SHARK_ALLOC=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)</ObjectFileName>
-      <AdditionalIncludeDirectories>..\FractalShark;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\FractalShark;..\FractalSharkPlatform;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -50,7 +50,6 @@
     <ClCompile Include="ConsoleWindow.cpp" />
     <ClCompile Include="DynamicPopupMenu.cpp" />
     <ClCompile Include="CommandDispatcher.cpp" />
-    <ClCompile Include="CrashHandler.cpp" />
     <ClCompile Include="FractalShark.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
     </ClCompile>
@@ -68,7 +67,6 @@
     <ClInclude Include="ConsoleWindow.h" />
     <ClInclude Include="DynamicPopupMenu.h" />
     <ClInclude Include="CommandDispatcher.h" />
-    <ClInclude Include="CrashHandler.h" />
     <ClInclude Include="FractalShark.h" />
     <ClInclude Include="JobObject.h" />
     <ClInclude Include="MainWindow.h" />

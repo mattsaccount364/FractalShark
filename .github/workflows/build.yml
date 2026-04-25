@@ -94,7 +94,10 @@ jobs:
             -DCMAKE_CUDA_HOST_COMPILER=g++
 
       - name: Build
-        run: cmake --build build --parallel
+        # Serial build (-j 1) is intentional: parallel compilation of CUDA TUs
+        # plus heavy C++23 template instantiations exceeds ubuntu-latest runner
+        # memory (~7 GB) and triggers the OOM killer.
+        run: cmake --build build -j 1
 
       - name: Run FractalSharkTest
         run: ./build/FractalSharkTest/FractalSharkTest

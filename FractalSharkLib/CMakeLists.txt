@@ -25,6 +25,7 @@ target_sources(FractalSharkLib PRIVATE
     RefOrbitCalc.cpp
     RenderAlgorithm.cpp
     RenderThreadPool.cpp
+    RenderToPng.cpp
     ScopedMpir.cpp
     Utilities.cpp
 

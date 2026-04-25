@@ -14,6 +14,7 @@
 #include "RefOrbitCalc.h"
 #include "RenderAlgorithm.h"
 #include "RenderThreadPool.h"
+#include "RenderToPng.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -415,53 +416,39 @@ main(int argc, char *argv[])
     }
 
     try {
-        Fractal fractal(args.Width,
-                        args.Height,
-                        /*nativeWindow=*/nullptr,
-                        /*UseSensoCursor=*/false,
-                        args.CommitCapBytes);
+        RenderRequest req;
+        req.Width = args.Width;
+        req.Height = args.Height;
+        req.CommitCapBytes = args.CommitCapBytes;
+        req.Algorithm = *parsedAlg;
+        req.Iterations = args.Iterations;
+        req.Antialiasing = args.Antialiasing;
+        req.Quiet = args.Quiet;
 
-        // 64-bit iter counter by default (max ergonomic surface for CLI users).
-        fractal.SetIterType(IterTypeEnum::Bits64);
-
-        // Apply view source.
         switch (args.Source) {
             case ViewSource::Builtin:
-                fractal.View(args.BuiltinView, /*includeMsgBox=*/false);
+                req.ViewSource = RenderRequest::ViewSourceKind::Builtin;
+                req.BuiltinView = args.BuiltinView;
                 break;
-            case ViewSource::LocationsFile: {
-                PointZoomBBConverter ptz(
-                    loc->MinX, loc->MinY, loc->MaxX, loc->MaxY, PointZoomBBConverter::TestMode::Enabled);
-                fractal.RecenterViewCalc(ptz);
-                fractal.SetNumIterations<uint64_t>(loc->NumIterations);
-                fractal.ResetDimensions(static_cast<size_t>(args.Width),
-                                        static_cast<size_t>(args.Height),
-                                        loc->Antialiasing);
+            case ViewSource::LocationsFile:
+                req.ViewSource = RenderRequest::ViewSourceKind::BoundingBox;
+                req.MinX = loc->MinX;
+                req.MinY = loc->MinY;
+                req.MaxX = loc->MaxX;
+                req.MaxY = loc->MaxY;
+                if (args.Iterations == 0)
+                    req.Iterations = loc->NumIterations;
+                if (args.Antialiasing == 0)
+                    req.Antialiasing = loc->Antialiasing;
                 break;
-            }
-            case ViewSource::Direct: {
-                HighPrecision cx(args.CenterX);
-                HighPrecision cy(args.CenterY);
-                HighPrecision zm(args.Zoom);
-                PointZoomBBConverter ptz(cx, cy, zm, PointZoomBBConverter::TestMode::Enabled);
-                fractal.RecenterViewCalc(ptz);
+            case ViewSource::Direct:
+                req.ViewSource = RenderRequest::ViewSourceKind::Direct;
+                req.CenterX = HighPrecision(args.CenterX);
+                req.CenterY = HighPrecision(args.CenterY);
+                req.Zoom = HighPrecision(args.Zoom);
                 break;
-            }
             case ViewSource::None:
-                break; // unreachable (checked above)
-        }
-
-        if (args.Iterations != 0) {
-            fractal.SetNumIterations<uint64_t>(args.Iterations);
-        }
-        if (args.Antialiasing != 0) {
-            fractal.ResetDimensions(
-                static_cast<size_t>(args.Width), static_cast<size_t>(args.Height), args.Antialiasing);
-        }
-
-        if (!fractal.SetRenderAlgorithm(*parsedAlg)) {
-            std::cerr << "error: SetRenderAlgorithm failed for " << args.RenderAlgorithm << "\n";
-            return 1;
+                break; // unreachable
         }
 
         if (!args.PerturbationAlg.empty()) {
@@ -470,19 +457,8 @@ main(int argc, char *argv[])
                 std::cerr << "error: unknown perturbation algorithm: " << args.PerturbationAlg << "\n";
                 return 2;
             }
-            fractal.SetPerturbationAlg(*p);
+            req.Perturbation = *p;
         }
-
-        if (!args.Quiet) {
-            std::cout << "Rendering " << args.Width << "x" << args.Height << " with "
-                      << args.RenderAlgorithm << "...\n";
-            std::cout.flush();
-        }
-
-        // Direct render path (CrummyTest pattern): drain the pool, render
-        // synchronously into m_CurIters, then save.
-        fractal.GetRenderPool()->Drain();
-        fractal.CalcFractal(/*drawFractal=*/true);
 
         std::wstring base = ToWStringUtf8(args.OutFile);
         const std::wstring pngExt = L".png";
@@ -490,15 +466,18 @@ main(int argc, char *argv[])
             base.compare(base.size() - pngExt.size(), pngExt.size(), pngExt) == 0) {
             base.resize(base.size() - pngExt.size());
         }
+        req.OutPngBasename = base;
 
-        int rc = fractal.SaveCurrentFractal(base, /*copy_the_iters=*/false);
+        std::string err;
+        int rc = RenderToPng(req, &err);
         if (rc != 0) {
-            std::cerr << "error: SaveCurrentFractal returned " << rc << "\n";
-        } else if (!args.Quiet) {
+            std::cerr << "error: " << err << "\n";
+            return rc;
+        }
+        if (!args.Quiet) {
             std::cout << "Wrote " << args.OutFile << "\n";
         }
-
-        return rc;
+        return 0;
     } catch (const std::exception &e) {
         std::cerr << "error: " << e.what() << "\n";
         return 1;

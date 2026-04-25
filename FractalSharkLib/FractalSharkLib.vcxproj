@@ -64,6 +64,7 @@
     <ClInclude Include="RefOrbitCalcTemplates.h" />
     <ClInclude Include="RefOrbitDetails.h" />
     <ClInclude Include="RenderAlgorithm.h" />
+    <ClInclude Include="RenderToPng.h" />
     <ClInclude Include="ScopedMpir.h" />
     <ClInclude Include="Utilities.h" />
 
@@ -95,6 +96,7 @@
     <ClCompile Include="RecommendedSettings.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
     <ClCompile Include="RenderAlgorithm.cpp" />
+    <ClCompile Include="RenderToPng.cpp" />
     <ClCompile Include="ScopedMpir.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

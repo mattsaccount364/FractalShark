@@ -14,6 +14,7 @@ target_sources(FractalSharkTest PRIVATE
     TestPointZoomBBConverter.cpp
     TestPrecisionCalculator.cpp
     TestGrowableVector.cpp
+    TestRenderGoldens.cpp
 )
 
 # TestMpirSerialization exercises raw stream I/O that is byte-compatible
@@ -48,4 +49,4 @@ target_include_directories(FractalSharkTest PRIVATE
     ${CMAKE_SOURCE_DIR}/HpSharkFloatLib
 )
 
-target_link_libraries(FractalSharkTest PRIVATE FractalSharkLib)
+target_link_libraries(FractalSharkTest PRIVATE FractalSharkLib FractalSharkGpuLib)

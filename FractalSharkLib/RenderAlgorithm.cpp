@@ -8,6 +8,7 @@ RenderAlgorithm &RenderAlgorithm::operator=(const RenderAlgorithm &other) {
         this->UseLocalColor = other.UseLocalColor;
         this->RequiresCompression = other.RequiresCompression;
         this->RequiresReferencePoints = other.RequiresReferencePoints;
+        this->Gpu = other.Gpu;
         this->TestInclude = other.TestInclude;
     }
 

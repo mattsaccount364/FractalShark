@@ -909,6 +909,17 @@ Fractal::GetRenderAlgorithm() const
 
     if (m_RenderAlgorithm.Algorithm == RenderAlgorithmEnum::AUTO) {
         HighPrecision zoomFactor = GetZoomFactor();
+        if (m_BypassGpu) {
+            // GPU is unavailable. Fall back to CPU algorithms with the same
+            // zoom-factor tiering shape as the GPU path.
+            if (zoomFactor < HighPrecision{1e9}) {
+                return GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
+            } else if (zoomFactor < HighPrecision{1e34}) {
+                return GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64PerturbedBLA);
+            } else {
+                return GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR);
+            }
+        }
         if (zoomFactor < HighPrecision{1e4}) {
             // A bit borderline at 3840x1600 x16 AA
             return GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x32);

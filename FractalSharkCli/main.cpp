@@ -16,6 +16,7 @@
 #include "RenderThreadPool.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -28,7 +29,7 @@
 #include <vector>
 
 #ifdef _WIN32
-#include "heap_allocator\include\HeapCpp.h"
+#include "heap_allocator/include/HeapCpp.h"
 #endif
 
 namespace {
@@ -36,52 +37,51 @@ namespace {
 enum class ViewSource { None, Builtin, LocationsFile, Direct };
 
 struct CliArgs {
-    int width = 1024;
-    int height = 768;
-    bool width_set = false;
-    bool height_set = false;
+    int Width = 1024;
+    int Height = 768;
+    bool WidthSet = false;
+    bool HeightSet = false;
 
-    ViewSource view_source = ViewSource::None;
-    size_t builtin_view = 0;
-    std::string locations_file;
-    std::optional<size_t> location_index; // nullopt => last record
-    std::string center_x, center_y, zoom;
+    ViewSource Source = ViewSource::None;
+    size_t BuiltinView = 0;
+    std::string LocationsFile;
+    size_t LocationIndex = SIZE_MAX; // SIZE_MAX => use last record
+    std::string CenterX, CenterY, Zoom;
 
-    std::optional<uint64_t> iterations;
-    std::optional<uint32_t> antialiasing;
-    std::optional<uint64_t> commit_cap_bytes;
+    uint64_t Iterations = 0;              // 0 => unspecified (parser rejects 0)
+    uint32_t Antialiasing = 0;            // 0 => unspecified (parser rejects 0)
+    uint64_t CommitCapBytes = UINT64_MAX; // UINT64_MAX => unlimited
 
-    std::string render_algorithm;
-    std::optional<std::string> perturbation_alg;
+    std::string RenderAlgorithm;
+    std::string PerturbationAlg; // empty => unspecified
 
-    std::string out_file;
+    std::string OutFile;
 
-    bool list_render_algorithms = false;
-    bool quiet = false;
-    bool help = false;
+    bool ListRenderAlgorithms = false;
+    bool Quiet = false;
+    bool Help = false;
 };
 
 void
 PrintUsage()
 {
-    std::cout <<
-        "FractalSharkCli — headless Mandelbrot renderer\n"
-        "\n"
-        "Usage:\n"
-        "  FractalSharkCli --render-algorithm NAME --out FILE.png [--width W --height H]\n"
-        "                  {--builtin-view N |\n"
-        "                   --locations FILE [--location-index N] |\n"
-        "                   --center-x X --center-y Y --zoom Z}\n"
-        "                  [--iterations N] [--antialiasing N]\n"
-        "                  [--perturbation-alg NAME] [--commit-cap-bytes N]\n"
-        "                  [--quiet]\n"
-        "\n"
-        "  FractalSharkCli --list-render-algorithms\n"
-        "  FractalSharkCli --help\n"
-        "\n"
-        "Per-pixel render algorithm names match RenderAlgorithmEnum\n"
-        "(e.g. Cpu64PerturbedBLAV2HDR, Gpu1x32PerturbedLAv2, CpuHigh).\n"
-        "Run with --list-render-algorithms for the full list.\n";
+    std::cout << "FractalSharkCli — headless Mandelbrot renderer\n"
+                 "\n"
+                 "Usage:\n"
+                 "  FractalSharkCli --render-algorithm NAME --out FILE.png [--width W --height H]\n"
+                 "                  {--builtin-view N |\n"
+                 "                   --locations FILE [--location-index N] |\n"
+                 "                   --center-x X --center-y Y --zoom Z}\n"
+                 "                  [--iterations N] [--antialiasing N]\n"
+                 "                  [--perturbation-alg NAME] [--commit-cap-bytes N]\n"
+                 "                  [--quiet]\n"
+                 "\n"
+                 "  FractalSharkCli --list-render-algorithms\n"
+                 "  FractalSharkCli --help\n"
+                 "\n"
+                 "Per-pixel render algorithm names match RenderAlgorithmEnum\n"
+                 "(e.g. Cpu64PerturbedBLAV2HDR, Gpu1x32PerturbedLAv2, CpuHigh).\n"
+                 "Run with --list-render-algorithms for the full list.\n";
 }
 
 void
@@ -109,29 +109,43 @@ std::optional<RefOrbitCalc::PerturbationAlg>
 ParsePerturbationAlg(const std::string &name)
 {
     using P = RefOrbitCalc::PerturbationAlg;
-    if (name == "ST") return P::ST;
-    if (name == "MT") return P::MT;
-    if (name == "STPeriodicity") return P::STPeriodicity;
-    if (name == "MTPeriodicity3") return P::MTPeriodicity3;
-    if (name == "MTPeriodicity3PerturbMTHighSTMed") return P::MTPeriodicity3PerturbMTHighSTMed;
-    if (name == "MTPeriodicity3PerturbMTHighMTMed1") return P::MTPeriodicity3PerturbMTHighMTMed1;
-    if (name == "MTPeriodicity3PerturbMTHighMTMed2") return P::MTPeriodicity3PerturbMTHighMTMed2;
-    if (name == "MTPeriodicity3PerturbMTHighMTMed3") return P::MTPeriodicity3PerturbMTHighMTMed3;
-    if (name == "MTPeriodicity3PerturbMTHighMTMed4") return P::MTPeriodicity3PerturbMTHighMTMed4;
-    if (name == "MTPeriodicity5") return P::MTPeriodicity5;
-    if (name == "GPU") return P::GPU;
-    if (name == "Auto") return P::Auto;
+    if (name == "ST")
+        return P::ST;
+    if (name == "MT")
+        return P::MT;
+    if (name == "STPeriodicity")
+        return P::STPeriodicity;
+    if (name == "MTPeriodicity3")
+        return P::MTPeriodicity3;
+    if (name == "MTPeriodicity3PerturbMTHighSTMed")
+        return P::MTPeriodicity3PerturbMTHighSTMed;
+    if (name == "MTPeriodicity3PerturbMTHighMTMed1")
+        return P::MTPeriodicity3PerturbMTHighMTMed1;
+    if (name == "MTPeriodicity3PerturbMTHighMTMed2")
+        return P::MTPeriodicity3PerturbMTHighMTMed2;
+    if (name == "MTPeriodicity3PerturbMTHighMTMed3")
+        return P::MTPeriodicity3PerturbMTHighMTMed3;
+    if (name == "MTPeriodicity3PerturbMTHighMTMed4")
+        return P::MTPeriodicity3PerturbMTHighMTMed4;
+    if (name == "MTPeriodicity5")
+        return P::MTPeriodicity5;
+    if (name == "GPU")
+        return P::GPU;
+    if (name == "Auto")
+        return P::Auto;
     return std::nullopt;
 }
 
 bool
 ParseUint64(const char *s, uint64_t &out)
 {
-    if (!s || !*s) return false;
+    if (!s || !*s)
+        return false;
     char *end = nullptr;
     errno = 0;
     unsigned long long v = std::strtoull(s, &end, 10);
-    if (errno || !end || *end != '\0') return false;
+    if (errno || !end || *end != '\0')
+        return false;
     out = static_cast<uint64_t>(v);
     return true;
 }
@@ -140,7 +154,8 @@ bool
 ParseSizeT(const char *s, size_t &out)
 {
     uint64_t v;
-    if (!ParseUint64(s, v)) return false;
+    if (!ParseUint64(s, v))
+        return false;
     out = static_cast<size_t>(v);
     return true;
 }
@@ -149,8 +164,10 @@ bool
 ParseInt(const char *s, int &out)
 {
     uint64_t v;
-    if (!ParseUint64(s, v)) return false;
-    if (v > static_cast<uint64_t>(INT32_MAX)) return false;
+    if (!ParseUint64(s, v))
+        return false;
+    if (v > static_cast<uint64_t>(INT32_MAX))
+        return false;
     out = static_cast<int>(v);
     return true;
 }
@@ -159,7 +176,7 @@ ParseInt(const char *s, int &out)
 bool
 ParseArgs(int argc, char *argv[], CliArgs &a)
 {
-    auto expect_value = [&](int &i, const char *flag) -> const char * {
+    auto expectValue = [&](int &i, const char *flag) -> const char * {
         if (i + 1 >= argc) {
             std::cerr << "error: " << flag << " requires an argument\n";
             return nullptr;
@@ -170,75 +187,97 @@ ParseArgs(int argc, char *argv[], CliArgs &a)
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
         if (arg == "--help" || arg == "-h") {
-            a.help = true;
+            a.Help = true;
         } else if (arg == "--list-render-algorithms") {
-            a.list_render_algorithms = true;
+            a.ListRenderAlgorithms = true;
         } else if (arg == "--quiet") {
-            a.quiet = true;
+            a.Quiet = true;
         } else if (arg == "--width") {
-            auto v = expect_value(i, "--width");
-            if (!v || !ParseInt(v, a.width)) return false;
-            a.width_set = true;
+            auto v = expectValue(i, "--width");
+            if (!v || !ParseInt(v, a.Width))
+                return false;
+            a.WidthSet = true;
         } else if (arg == "--height") {
-            auto v = expect_value(i, "--height");
-            if (!v || !ParseInt(v, a.height)) return false;
-            a.height_set = true;
+            auto v = expectValue(i, "--height");
+            if (!v || !ParseInt(v, a.Height))
+                return false;
+            a.HeightSet = true;
         } else if (arg == "--render-algorithm") {
-            auto v = expect_value(i, "--render-algorithm");
-            if (!v) return false;
-            a.render_algorithm = v;
+            auto v = expectValue(i, "--render-algorithm");
+            if (!v)
+                return false;
+            a.RenderAlgorithm = v;
         } else if (arg == "--out") {
-            auto v = expect_value(i, "--out");
-            if (!v) return false;
-            a.out_file = v;
+            auto v = expectValue(i, "--out");
+            if (!v)
+                return false;
+            a.OutFile = v;
         } else if (arg == "--builtin-view") {
-            auto v = expect_value(i, "--builtin-view");
-            if (!v || !ParseSizeT(v, a.builtin_view)) return false;
-            a.view_source = ViewSource::Builtin;
+            auto v = expectValue(i, "--builtin-view");
+            if (!v || !ParseSizeT(v, a.BuiltinView))
+                return false;
+            a.Source = ViewSource::Builtin;
         } else if (arg == "--locations") {
-            auto v = expect_value(i, "--locations");
-            if (!v) return false;
-            a.locations_file = v;
-            a.view_source = ViewSource::LocationsFile;
+            auto v = expectValue(i, "--locations");
+            if (!v)
+                return false;
+            a.LocationsFile = v;
+            a.Source = ViewSource::LocationsFile;
         } else if (arg == "--location-index") {
-            auto v = expect_value(i, "--location-index");
+            auto v = expectValue(i, "--location-index");
             size_t idx;
-            if (!v || !ParseSizeT(v, idx)) return false;
-            a.location_index = idx;
+            if (!v || !ParseSizeT(v, idx))
+                return false;
+            a.LocationIndex = idx;
         } else if (arg == "--center-x") {
-            auto v = expect_value(i, "--center-x");
-            if (!v) return false;
-            a.center_x = v;
-            a.view_source = ViewSource::Direct;
+            auto v = expectValue(i, "--center-x");
+            if (!v)
+                return false;
+            a.CenterX = v;
+            a.Source = ViewSource::Direct;
         } else if (arg == "--center-y") {
-            auto v = expect_value(i, "--center-y");
-            if (!v) return false;
-            a.center_y = v;
-            a.view_source = ViewSource::Direct;
+            auto v = expectValue(i, "--center-y");
+            if (!v)
+                return false;
+            a.CenterY = v;
+            a.Source = ViewSource::Direct;
         } else if (arg == "--zoom") {
-            auto v = expect_value(i, "--zoom");
-            if (!v) return false;
-            a.zoom = v;
-            a.view_source = ViewSource::Direct;
+            auto v = expectValue(i, "--zoom");
+            if (!v)
+                return false;
+            a.Zoom = v;
+            a.Source = ViewSource::Direct;
         } else if (arg == "--iterations") {
-            auto v = expect_value(i, "--iterations");
+            auto v = expectValue(i, "--iterations");
             uint64_t n;
-            if (!v || !ParseUint64(v, n)) return false;
-            a.iterations = n;
+            if (!v || !ParseUint64(v, n))
+                return false;
+            if (n == 0) {
+                std::cerr << "error: --iterations must be > 0\n";
+                return false;
+            }
+            a.Iterations = n;
         } else if (arg == "--antialiasing") {
-            auto v = expect_value(i, "--antialiasing");
+            auto v = expectValue(i, "--antialiasing");
             uint64_t n;
-            if (!v || !ParseUint64(v, n)) return false;
-            a.antialiasing = static_cast<uint32_t>(n);
+            if (!v || !ParseUint64(v, n))
+                return false;
+            if (n == 0) {
+                std::cerr << "error: --antialiasing must be >= 1\n";
+                return false;
+            }
+            a.Antialiasing = static_cast<uint32_t>(n);
         } else if (arg == "--commit-cap-bytes") {
-            auto v = expect_value(i, "--commit-cap-bytes");
+            auto v = expectValue(i, "--commit-cap-bytes");
             uint64_t n;
-            if (!v || !ParseUint64(v, n)) return false;
-            a.commit_cap_bytes = n;
+            if (!v || !ParseUint64(v, n))
+                return false;
+            a.CommitCapBytes = n;
         } else if (arg == "--perturbation-alg") {
-            auto v = expect_value(i, "--perturbation-alg");
-            if (!v) return false;
-            a.perturbation_alg = v;
+            auto v = expectValue(i, "--perturbation-alg");
+            if (!v)
+                return false;
+            a.PerturbationAlg = v;
         } else {
             std::cerr << "error: unknown argument: " << arg << "\n";
             return false;
@@ -252,12 +291,12 @@ ParseArgs(int argc, char *argv[], CliArgs &a)
 //   width height minX minY maxX maxY num_iterations antialiasing
 //   <description line>
 struct ParsedSavedLocation {
-    size_t width = 0;
-    size_t height = 0;
-    uint64_t num_iterations = 0;
-    uint32_t antialiasing = 0;
-    HighPrecision minX, minY, maxX, maxY;
-    std::string description;
+    size_t Width = 0;
+    size_t Height = 0;
+    uint64_t NumIterations = 0;
+    uint32_t Antialiasing = 0;
+    HighPrecision MinX, MinY, MaxX, MaxY;
+    std::string Description;
 };
 
 bool
@@ -271,12 +310,13 @@ LoadLocations(const std::string &path, std::vector<ParsedSavedLocation> &out)
 
     while (in.good()) {
         ParsedSavedLocation rec;
-        in >> rec.width >> rec.height;
-        in >> rec.minX >> rec.minY >> rec.maxX >> rec.maxY;
-        in >> rec.num_iterations >> rec.antialiasing;
-        if (!in.good()) break;
+        in >> rec.Width >> rec.Height;
+        in >> rec.MinX >> rec.MinY >> rec.MaxX >> rec.MaxY;
+        in >> rec.NumIterations >> rec.Antialiasing;
+        if (!in.good())
+            break;
         in >> std::ws;
-        std::getline(in, rec.description);
+        std::getline(in, rec.Description);
         out.push_back(std::move(rec));
     }
     return !out.empty();
@@ -290,7 +330,8 @@ ToWStringUtf8(const std::string &s)
     // is adequate for ASCII filenames which is all the CLI smoke tests use.
     std::wstring w;
     w.reserve(s.size());
-    for (unsigned char c : s) w.push_back(static_cast<wchar_t>(c));
+    for (unsigned char c : s)
+        w.push_back(static_cast<wchar_t>(c));
     return w;
 }
 
@@ -305,109 +346,104 @@ main(int argc, char *argv[])
     CrashHandler::Install();
 #endif
 
+    // Ensure FreeCallstacks runs on every exit path.
+    struct CallstackGuard {
+        ~CallstackGuard() { GlobalCallstacks->FreeCallstacks(); }
+    } callstackGuard;
+
     CliArgs args;
     if (!ParseArgs(argc, argv, args)) {
         PrintUsage();
-        GlobalCallstacks->FreeCallstacks();
         return 2;
     }
 
-    if (args.help) {
+    if (args.Help) {
         PrintUsage();
-        GlobalCallstacks->FreeCallstacks();
         return 0;
     }
 
-    if (args.list_render_algorithms) {
+    if (args.ListRenderAlgorithms) {
         PrintRenderAlgorithms();
-        GlobalCallstacks->FreeCallstacks();
         return 0;
     }
 
-    if (args.render_algorithm.empty()) {
+    if (args.RenderAlgorithm.empty()) {
         std::cerr << "error: --render-algorithm is required\n";
         PrintUsage();
-        GlobalCallstacks->FreeCallstacks();
         return 2;
     }
-    if (args.out_file.empty()) {
+    if (args.OutFile.empty()) {
         std::cerr << "error: --out is required\n";
-        GlobalCallstacks->FreeCallstacks();
         return 2;
     }
-    if (args.view_source == ViewSource::None) {
+    if (args.Source == ViewSource::None) {
         std::cerr << "error: one of --builtin-view, --locations, or "
                      "--center-x/--center-y/--zoom is required\n";
-        GlobalCallstacks->FreeCallstacks();
         return 2;
     }
-    if (args.view_source == ViewSource::Direct &&
-        (args.center_x.empty() || args.center_y.empty() || args.zoom.empty())) {
+    if (args.Source == ViewSource::Direct &&
+        (args.CenterX.empty() || args.CenterY.empty() || args.Zoom.empty())) {
         std::cerr << "error: --center-x, --center-y, and --zoom must be specified together\n";
-        GlobalCallstacks->FreeCallstacks();
         return 2;
     }
 
-    auto parsed_alg = ParseRenderAlgorithm(args.render_algorithm);
-    if (!parsed_alg) {
-        std::cerr << "error: unknown render algorithm: " << args.render_algorithm
+    auto parsedAlg = ParseRenderAlgorithm(args.RenderAlgorithm);
+    if (!parsedAlg) {
+        std::cerr << "error: unknown render algorithm: " << args.RenderAlgorithm
                   << "\n(run --list-render-algorithms for valid names)\n";
-        GlobalCallstacks->FreeCallstacks();
         return 2;
     }
 
     // Pre-load locations so we can honor width/height/iters/AA from the record.
     std::vector<ParsedSavedLocation> locations;
     const ParsedSavedLocation *loc = nullptr;
-    if (args.view_source == ViewSource::LocationsFile) {
-        if (!LoadLocations(args.locations_file, locations)) {
-            GlobalCallstacks->FreeCallstacks();
+    if (args.Source == ViewSource::LocationsFile) {
+        if (!LoadLocations(args.LocationsFile, locations)) {
             return 1;
         }
-        size_t idx = args.location_index.value_or(locations.size() - 1);
+        size_t idx = (args.LocationIndex == SIZE_MAX) ? locations.size() - 1 : args.LocationIndex;
         if (idx >= locations.size()) {
             std::cerr << "error: --location-index " << idx << " out of range (file has "
                       << locations.size() << " records)\n";
-            GlobalCallstacks->FreeCallstacks();
             return 2;
         }
         loc = &locations[idx];
-        if (!args.width_set) args.width = static_cast<int>(loc->width);
-        if (!args.height_set) args.height = static_cast<int>(loc->height);
+        if (!args.WidthSet)
+            args.Width = static_cast<int>(loc->Width);
+        if (!args.HeightSet)
+            args.Height = static_cast<int>(loc->Height);
     }
 
-    const uint64_t commit_cap = args.commit_cap_bytes.value_or(UINT64_MAX);
-
     try {
-        Fractal fractal(args.width, args.height,
+        Fractal fractal(args.Width,
+                        args.Height,
                         /*nativeWindow=*/nullptr,
                         /*UseSensoCursor=*/false,
-                        commit_cap);
+                        args.CommitCapBytes);
 
         // 64-bit iter counter by default (max ergonomic surface for CLI users).
         fractal.SetIterType(IterTypeEnum::Bits64);
 
         // Apply view source.
-        switch (args.view_source) {
+        switch (args.Source) {
             case ViewSource::Builtin:
-                fractal.View(args.builtin_view, /*includeMsgBox=*/false);
+                fractal.View(args.BuiltinView, /*includeMsgBox=*/false);
                 break;
             case ViewSource::LocationsFile: {
-                PointZoomBBConverter ptz(loc->minX, loc->minY, loc->maxX, loc->maxY,
-                                         PointZoomBBConverter::TestMode::Enabled);
+                PointZoomBBConverter ptz(
+                    loc->MinX, loc->MinY, loc->MaxX, loc->MaxY, PointZoomBBConverter::TestMode::Enabled);
                 fractal.RecenterViewCalc(ptz);
-                fractal.SetNumIterations<uint64_t>(loc->num_iterations);
-                fractal.ResetDimensions(static_cast<size_t>(args.width),
-                                        static_cast<size_t>(args.height),
-                                        loc->antialiasing);
+                fractal.SetNumIterations<uint64_t>(loc->NumIterations);
+                fractal.ResetDimensions(static_cast<size_t>(args.Width),
+                                        static_cast<size_t>(args.Height),
+                                        loc->Antialiasing);
                 break;
             }
             case ViewSource::Direct: {
-                HighPrecision cx(args.center_x);
-                HighPrecision cy(args.center_y);
-                HighPrecision zm(args.zoom);
-                PointZoomBBConverter ptz(cx, cy, zm,
-                                         PointZoomBBConverter::TestMode::Enabled);
+                HighPrecision cx(args.CenterX);
+                HighPrecision cy(args.CenterY);
+                HighPrecision zm(args.Zoom);
+                PointZoomBBConverter ptz(cx, cy, zm, PointZoomBBConverter::TestMode::Enabled);
                 fractal.RecenterViewCalc(ptz);
                 break;
             }
@@ -415,36 +451,31 @@ main(int argc, char *argv[])
                 break; // unreachable (checked above)
         }
 
-        if (args.iterations) {
-            fractal.SetNumIterations<uint64_t>(*args.iterations);
+        if (args.Iterations != 0) {
+            fractal.SetNumIterations<uint64_t>(args.Iterations);
         }
-        if (args.antialiasing) {
-            fractal.ResetDimensions(static_cast<size_t>(args.width),
-                                    static_cast<size_t>(args.height),
-                                    *args.antialiasing);
+        if (args.Antialiasing != 0) {
+            fractal.ResetDimensions(
+                static_cast<size_t>(args.Width), static_cast<size_t>(args.Height), args.Antialiasing);
         }
 
-        if (!fractal.SetRenderAlgorithm(*parsed_alg)) {
-            std::cerr << "error: SetRenderAlgorithm failed for "
-                      << args.render_algorithm << "\n";
-            GlobalCallstacks->FreeCallstacks();
+        if (!fractal.SetRenderAlgorithm(*parsedAlg)) {
+            std::cerr << "error: SetRenderAlgorithm failed for " << args.RenderAlgorithm << "\n";
             return 1;
         }
 
-        if (args.perturbation_alg) {
-            auto p = ParsePerturbationAlg(*args.perturbation_alg);
+        if (!args.PerturbationAlg.empty()) {
+            auto p = ParsePerturbationAlg(args.PerturbationAlg);
             if (!p) {
-                std::cerr << "error: unknown perturbation algorithm: "
-                          << *args.perturbation_alg << "\n";
-                GlobalCallstacks->FreeCallstacks();
+                std::cerr << "error: unknown perturbation algorithm: " << args.PerturbationAlg << "\n";
                 return 2;
             }
             fractal.SetPerturbationAlg(*p);
         }
 
-        if (!args.quiet) {
-            std::cout << "Rendering " << args.width << "x" << args.height
-                      << " with " << args.render_algorithm << "...\n";
+        if (!args.Quiet) {
+            std::cout << "Rendering " << args.Width << "x" << args.Height << " with "
+                      << args.RenderAlgorithm << "...\n";
             std::cout.flush();
         }
 
@@ -453,25 +484,23 @@ main(int argc, char *argv[])
         fractal.GetRenderPool()->Drain();
         fractal.CalcFractal(/*drawFractal=*/true);
 
-        std::wstring base = ToWStringUtf8(args.out_file);
-        const std::wstring png_ext = L".png";
-        if (base.size() >= png_ext.size() &&
-            base.compare(base.size() - png_ext.size(), png_ext.size(), png_ext) == 0) {
-            base.resize(base.size() - png_ext.size());
+        std::wstring base = ToWStringUtf8(args.OutFile);
+        const std::wstring pngExt = L".png";
+        if (base.size() >= pngExt.size() &&
+            base.compare(base.size() - pngExt.size(), pngExt.size(), pngExt) == 0) {
+            base.resize(base.size() - pngExt.size());
         }
 
         int rc = fractal.SaveCurrentFractal(base, /*copy_the_iters=*/false);
         if (rc != 0) {
             std::cerr << "error: SaveCurrentFractal returned " << rc << "\n";
-        } else if (!args.quiet) {
-            std::cout << "Wrote " << args.out_file << "\n";
+        } else if (!args.Quiet) {
+            std::cout << "Wrote " << args.OutFile << "\n";
         }
 
-        GlobalCallstacks->FreeCallstacks();
         return rc;
     } catch (const std::exception &e) {
         std::cerr << "error: " << e.what() << "\n";
-        GlobalCallstacks->FreeCallstacks();
         return 1;
     }
 }

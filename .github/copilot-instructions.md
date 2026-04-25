@@ -284,8 +284,10 @@ The GPU reference orbit backend in `HpSharkFloatLib/` implements:
 ### Naming
 
 - **Classes/Methods/Enums**: `PascalCase` (e.g., `RefOrbitCalc`, `GetPrecision()`, `PerturbExtras::Disable`)
-- **Member variables**: `m_PascalCase` prefix (e.g., `m_RefOrbit`, `m_DrawThreads`)
-- **Parameters**: `camelCase` or descriptive (e.g., `width`, `height`, `RequireReuse`)
+- **Class member variables**: `m_PascalCase` prefix (e.g., `m_RefOrbit`, `m_DrawThreads`)
+- **Plain-struct fields** (no `m_` prefix): `PascalCase` (e.g., `Width`, `ViewSource`, `CommitCapBytes`)
+- **Locals, parameters, lambda params**: `camelCase` (e.g., `parsedAlg`, `commitCap`, `expectValue`)
+- When modifying a function, rename any legacy snake_case identifiers inside it to the appropriate convention. Avoid whole-file rename sweeps unrelated to functional changes.
 
 ### Formatting
 
@@ -336,6 +338,8 @@ clang-format -i <modified-files>
 1. `"stdafx.h"` (precompiled header, always first)
 2. Project headers
 3. System/third-party headers
+
+Use forward slashes in `#include` paths (e.g., `"heap_allocator/include/HeapCpp.h"`, not `"heap_allocator\include\HeapCpp.h"`). MSVC accepts either, but clang only accepts forward slashes.
 
 ### Git LFS
 

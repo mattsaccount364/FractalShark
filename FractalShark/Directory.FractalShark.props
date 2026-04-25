@@ -8,4 +8,18 @@
     <_PreferredToolset Condition="'$(_PreferredToolset)'=='' and Exists('$(VCTargetsPath)Platforms\Win32\PlatformToolsets\v143\Toolset.props')">v143</_PreferredToolset>
     <PlatformToolset Condition="'$(_PreferredToolset)'!=''">$(_PreferredToolset)</PlatformToolset>
   </PropertyGroup>
+
+  <!-- Common solution-wide defaults. Imported before Microsoft.Cpp.Default.props
+       in every FractalShark .vcxproj. Per-project values still win because
+       Microsoft.Cpp.props default-sets these only if empty. -->
+  <PropertyGroup>
+    <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)'==''">10.0</WindowsTargetPlatformVersion>
+    <CharacterSet Condition="'$(CharacterSet)'==''">Unicode</CharacterSet>
+    <UseOfMfc Condition="'$(UseOfMfc)'==''">false</UseOfMfc>
+    <OutDir Condition="'$(OutDir)'=='' or '$(OutDir)'=='$(SolutionDir)$(Platform)\$(Configuration)\'">..\$(Configuration)\</OutDir>
+
+    <!-- Single source of truth for the per-config MPIR install path.
+         Replaces every twin Debug/Release path block in per-project files. -->
+    <MpirConfigDir>..\mpir\lib\x64\$(Configuration)</MpirConfigDir>
+  </PropertyGroup>
 </Project>

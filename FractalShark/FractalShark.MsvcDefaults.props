@@ -7,6 +7,13 @@
   <!-- ========================================================= -->
   <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(Configuration)'=='Debug'">
     <ClCompile>
+      <!-- Common include search path for the FractalShark stack.
+           Per-project AdditionalIncludeDirectories adds on top of this via %(...). -->
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform;$(MpirConfigDir);..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+
+      <!-- Common preprocessor defines. _DEBUG/NDEBUG are auto-added by VS. -->
+      <PreprocessorDefinitions>WIN32;WIN64;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+
       <!-- Language / conformance -->
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
@@ -56,6 +63,13 @@
   <!-- ========================================================= -->
   <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(Configuration)'=='Release'">
     <ClCompile>
+      <!-- Common include search path for the FractalShark stack.
+           Per-project AdditionalIncludeDirectories adds on top of this via %(...). -->
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform;$(MpirConfigDir);..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+
+      <!-- Common preprocessor defines. _DEBUG/NDEBUG are auto-added by VS. -->
+      <PreprocessorDefinitions>WIN32;WIN64;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+
       <!-- Language / conformance -->
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>

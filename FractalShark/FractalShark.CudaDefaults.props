@@ -20,6 +20,13 @@
   <!-- Goals: fast iteration + strict-ish behavior                            -->
   <!-- ===================================================================== -->
   <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(Configuration)'=='Debug'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>cudart_static.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
 
@@ -48,6 +55,13 @@
   <!-- Goals: max performance + line info for profiling                       -->
   <!-- ===================================================================== -->
   <ItemDefinitionGroup Condition="'$(Platform)'=='x64' and '$(Configuration)'=='Release'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>cudart_static.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </Link>
     <CudaCompile>
       <!-- Host-side WPO only (does not enable CUDA RDC/LTO) -->
       <WholeProgramOptimization>true</WholeProgramOptimization>

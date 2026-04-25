@@ -5,6 +5,7 @@
 #include <string>
 
 #include "CommandDispatcher.h"
+#include "CommandCatalog.h"
 #include "SplashWindow.h"
 #include "UniqueHMenu.h"
 
@@ -21,7 +22,7 @@ namespace FractalShark {
 class UniqueHMenu;
 } // namespace FractalShark
 
-class MainWindow {
+class MainWindow : public FractalShark::ExecuteCommandHost {
     friend class FractalShark::CommandDispatcher;
     friend class MainWindowMenuState;
 
@@ -31,6 +32,11 @@ public:
 
     MainWindow(HINSTANCE hInstance, int nCmdShow);
     ~MainWindow();
+
+    // FractalShark::ExecuteCommandHost — Phase 0c forwards every catalog
+    // command back to the legacy IDM-keyed dispatcher.  Override remains
+    // virtual so per-menu migration can intercept individual commands.
+    void DispatchByIdm(int wmId) override;
 
 private:
     SplashWindow Splash;

@@ -326,9 +326,31 @@ struct Command {
 // handler on Win32.
 inline constexpr std::array<Command, 0> kCommands{};
 
-// Phase 0c will introduce ExecuteCommand. Declared here as a forward
-// declaration so callers can target it without committing to a definition.
-// The Win32 GUI defines a thin wrapper that forwards to the existing
-// WM_COMMAND switch; the Linux GUI provides a portable definition.
+// ---------------------------------------------------------------------------
+// ExecuteCommand — per-platform host forwarder (Phase 0c scaffolding).
+// ---------------------------------------------------------------------------
+//
+// Each GUI implements ExecuteCommandHost.  At this stage the Win32 host
+// forwards every command to the legacy CommandDispatcher::Dispatch(int)
+// switch, so behavior is byte-identical to before.  Phase 0c proper will
+// peel command bodies out of CommandDispatcher into a switch in this header
+// (or a sibling CommandCatalog.cpp), at which point both GUIs share dispatch.
+//
+// Linux's host implementation is responsible only for the commands its GUI
+// actually surfaces today; gaps are caught at compile time once Phase 0d
+// turns on -Werror=switch-enum.
+struct ExecuteCommandHost {
+    virtual ~ExecuteCommandHost() = default;
+
+    // Forward to the legacy IDM-keyed dispatcher.  Phase 0c will narrow
+    // callers of this until it can be removed.
+    virtual void DispatchByIdm(int wmId) = 0;
+};
+
+inline void
+ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host)
+{
+    host.DispatchByIdm(IdmFromCommand(cmd));
+}
 
 } // namespace FractalShark

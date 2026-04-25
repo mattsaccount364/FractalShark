@@ -74,6 +74,16 @@ MainWindow::~MainWindow()
     gJobObj.reset();
 }
 
+// ExecuteCommandHost — Phase 0c scaffolding.  Today every catalog command
+// rountrips through the legacy IDM dispatcher; per-menu migration will move
+// command bodies into FractalShark::ExecuteCommand and gradually empty out
+// CommandDispatcher's table.
+void
+MainWindow::DispatchByIdm(int wmId)
+{
+    commandDispatcher.Dispatch(wmId);
+}
+
 void
 MainWindow::MainWindow::DrawFractalShark()
 {

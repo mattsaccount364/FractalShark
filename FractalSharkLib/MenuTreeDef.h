@@ -1,32 +1,37 @@
 //
-// The menu tree below is written as a single static `Node menu[]` array.
+// MenuTreeDef.h - canonical menu definition.
+//
+// This header is INCLUDED INSIDE a function body that has already brought
+// the FractalShark::Menu namespace's factories (Sep, Item, Toggle, Radio,
+// Popup) and types (Node, Rule, RadioGroup) into scope. It defines a single
+// `static const Node menu[] = {...}` array describing the application's
+// context menu.
 //
 // Important detail: popup children must have *stable storage*.
 // Braced lists like `{ Item(...), ... }` produce temporary arrays, and
-// `std::initializer_list` does not own that memory. If you store an
-// initializer_list inside a Node and recurse later, you can end up iterating
-// dangling memory.
+// std::initializer_list does not own that memory. If we stored an
+// initializer_list inside a Node and recursed later, we could end up
+// iterating dangling memory.
 //
-// To keep the "giant definition" style while making kids stable, each Popup is
-// created via a small wrapper (FS_POPUP / FS_POPUP0) that:
+// To keep the "giant definition" style while making kids stable, each
+// Popup is created via a small wrapper (FS_POPUP / FS_POPUP0) that:
 //   1) hoists the children into a hidden `static const Node _kids[]` array,
 //   2) passes `std::span{_kids}` into Popup(...),
 //   3) returns a normal Node that simply *views* those children.
 //
-// Result: `menu[]` stays readable and static, and every submenu's children live
-// for the entire program lifetime, so recursive menu building is safe.
+// Result: `menu[]` stays readable and static, and every submenu's children
+// live for the entire program lifetime, so recursive menu walking is safe.
 //
 
 #include <span>
 
-using RG = DynamicPopupMenu::RadioGroup;
-using R = DynamicPopupMenu::Rule;
+using RG = RadioGroup;
+using R = Rule;
 
 #define FS_POPUP(label, enableRule, adornGroup, ...)                                                    \
-    []() -> DynamicPopupMenu::Node {                                                                    \
-        static const DynamicPopupMenu::Node _kids[] = {__VA_ARGS__};                                    \
-        return DynamicPopupMenu::Popup(                                                                 \
-            label, std::span<const DynamicPopupMenu::Node>{_kids}, enableRule, adornGroup);             \
+    []() -> Node {                                                                                      \
+        static const Node _kids[] = {__VA_ARGS__};                                                      \
+        return Popup(label, std::span<const Node>{_kids}, enableRule, adornGroup);                      \
     }()
 
 #define FS_POPUP0(label, ...) FS_POPUP(label, R::Always, RG::None, __VA_ARGS__)
@@ -35,7 +40,7 @@ using R = DynamicPopupMenu::Rule;
 // Menu definition (structure preserved; only Popup(...) replaced)
 // -----------------------------------------------------------------------------
 
-static const DynamicPopupMenu::Node menu[] = {
+static const Node menu[] = {
     Item(L"Show Help", IDM_SHOWHOTKEYS),
     Sep(),
 

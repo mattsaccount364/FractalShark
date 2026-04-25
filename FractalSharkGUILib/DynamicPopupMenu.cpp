@@ -1,6 +1,7 @@
 #include "StdAfx.h"
 #include "DynamicPopupMenu.h"
 #include "UniqueHMenu.h"
+#include "AlgCmds.h"
 
 #include <cstddef> // size_t
 #include <cwchar>  // wmemcpy, wcslen, wmemset
@@ -171,7 +172,7 @@ DynamicPopupMenu::InsertItemAtEnd(HMENU menu, const Node &n, const IMenuState &s
     // Optional extras
     if (n.hbmpItem != nullptr) {
         mii.fMask |= MIIM_BITMAP;
-        mii.hbmpItem = n.hbmpItem;
+        mii.hbmpItem = static_cast<HBITMAP>(n.hbmpItem);
     }
     if (n.itemData != 0) {
         mii.fMask |= MIIM_DATA;
@@ -222,7 +223,7 @@ DynamicPopupMenu::InsertPopupAtEnd(HMENU menu, const Node &n, HMENU popup, const
     // Optional extras
     if (n.hbmpItem != nullptr) {
         mii.fMask |= MIIM_BITMAP;
-        mii.hbmpItem = n.hbmpItem;
+        mii.hbmpItem = static_cast<HBITMAP>(n.hbmpItem);
     }
     if (n.itemData != 0) {
         mii.fMask |= MIIM_DATA;
@@ -323,7 +324,7 @@ DynamicPopupMenu::Create(const IMenuState &state)
     }
 
     // Top-level "POPUP" item.
-    Node top = Popup(L"POPUP", {}, Rule::Always, RadioGroup::None);
+    Node top = Menu::Popup(L"POPUP", {}, Rule::Always, RadioGroup::None);
 
     if (!InsertPopupAtEnd(root.get(), top, popup, state)) {
         ::DestroyMenu(popup);
@@ -344,7 +345,11 @@ DynamicPopupMenu::Create(const IMenuState &state)
 bool
 DynamicPopupMenu::BuildPopupContents(HMENU popup, const IMenuState &state)
 {
-#include "DynamicPopupTreeDef.h"
+    // Bring portable factories (Sep/Item/Toggle/Radio/Popup) and types
+    // (Node/Rule/RadioGroup) into scope for the menu definition include.
+    using namespace FractalShark::Menu;
+
+#include "MenuTreeDef.h"
 
     return BuildMenuTree(
         popup, std::initializer_list<Node>(menu, menu + (sizeof(menu) / sizeof(menu[0]))), state);

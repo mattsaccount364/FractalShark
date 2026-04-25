@@ -41,6 +41,8 @@
     <ClInclude Include="ItersMemoryContainer.h" />
     <ClInclude Include="LAReference.h" />
     <ClInclude Include="LargeCoords30.h" />
+    <ClInclude Include="MenuTree.h" />
+    <ClInclude Include="MenuTreeDef.h" />
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="OrbitEndpointEvaluator.h" />
     <ClInclude Include="OrbitParameterPack.h" />

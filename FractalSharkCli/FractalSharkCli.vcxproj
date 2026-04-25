@@ -63,6 +63,9 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
     </ProjectReference>
+    <ProjectReference Include="..\FractalSharkPlatform\FractalSharkPlatform.vcxproj">
+      <Project>{2098ba02-d346-4f18-9d90-6a8701f81919}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\HpSharkFloatLib\HpSharkFloatLib.vcxproj">
       <Project>{e46d1897-0f30-3518-ed23-26ed5ff35747}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>

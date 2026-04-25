@@ -169,13 +169,6 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <CudaLink />
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\FractalSharkPlatform\FractalSharkPlatform.vcxproj">
-      <Project>{2098BA02-D346-4F18-9D90-6A8701F81919}</Project>
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-      <LinkLibraryDependencies>true</LinkLibraryDependencies>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(SolutionDir)CudaAuto.targets" />

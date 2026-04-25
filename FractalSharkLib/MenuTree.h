@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include "CommandCatalog.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -172,6 +174,35 @@ Radio(std::wstring_view text,
                 nullptr,
                 0u,
                 RadioGroup::None};
+}
+
+// FractalCommand-typed overloads. These forward to the uint32_t versions
+// after casting the command to its underlying numeric ID, so existing call
+// sites that already pass uint32_t still resolve cleanly. New menu entries
+// authored against MenuTreeDef.h pick the strongly-typed path.
+constexpr Node
+Item(std::wstring_view text,
+     ::FractalShark::FractalCommand id,
+     Rule enableRule = Rule::Always) noexcept
+{
+    return Item(text, ::FractalShark::IdmFromCommand(id), enableRule);
+}
+
+constexpr Node
+Toggle(std::wstring_view text,
+       ::FractalShark::FractalCommand id,
+       Rule enableRule = Rule::Always) noexcept
+{
+    return Toggle(text, ::FractalShark::IdmFromCommand(id), enableRule);
+}
+
+constexpr Node
+Radio(std::wstring_view text,
+      ::FractalShark::FractalCommand id,
+      RadioGroup group,
+      Rule enableRule = Rule::Always) noexcept
+{
+    return Radio(text, ::FractalShark::IdmFromCommand(id), group, enableRule);
 }
 
 constexpr Node

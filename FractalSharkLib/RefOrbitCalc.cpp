@@ -3206,6 +3206,53 @@ RefOrbitCalc::SaveOrbitResults(std::wstring imagFilename) const
     file.close();
 }
 
+// Definition must precede LoadOrbit (its caller) so clang can implicitly
+// instantiate it at the call site. MSVC accepts the reverse order; clang
+// follows the standard more strictly.
+template <typename DestIterType, class DestT, PerturbExtras DestPExtras>
+RefOrbitCalc::AwesomeVariantUniquePtr
+RefOrbitCalc::LoadOrbitConvert(CompressToDisk compression,
+                               std::wstring imagFilename,
+                               RecommendedSettings *recommendedSettings)
+{
+
+    OrbitParameterPack params{};
+    LoadOrbitConstInternal(params, compression, imagFilename, recommendedSettings);
+
+    // Depending on the header, read the rest of the file and determine the type
+    // Extended range implies the use of high precision types
+    // For this example, let's assume HDRFloat<HRReal>
+
+    auto TypeHelper = [&]<typename LDestIterType, typename LT, PerturbExtras LPExtrasDest>()
+        -> std::unique_ptr<PerturbationResults<LDestIterType, LT, LPExtrasDest>> {
+        auto results =
+            std::make_unique<PerturbationResults<LDestIterType, LT, PerturbExtras::MaxCompression>>(
+                AddPointOptions::EnableWithoutSave, GetNextGenerationNumber());
+
+        const auto saturatedIterationLimit = params.GetSaturatedIterationCount<LDestIterType>();
+
+        results->LoadOrbitBin(std::move(params.orbitX),
+                              std::move(params.orbitY),
+                              saturatedIterationLimit,
+                              params.halfH,
+                              *params.file);
+
+        auto decompressedResults = results->template DecompressMax<LPExtrasDest>(
+            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low), GetNextGenerationNumber());
+        return decompressedResults;
+    };
+
+    if (params.m_OrbitType == OrbitParameterPack::IncludedOrbit::OrbitIncluded) {
+        AwesomeVariantUniquePtr retval;
+        // params.fileHeader.Magic == Imagina::IMMagicNumber
+        retval = TypeHelper.template operator()<DestIterType, DestT, DestPExtras>();
+        return retval;
+    } else {
+        // TODO use monostate?
+        return {};
+    }
+}
+
 const PerturbationResultsBase *
 RefOrbitCalc::LoadOrbit(ImaginaSettings imaginaSettings,
                         CompressToDisk compression,
@@ -3305,50 +3352,6 @@ RefOrbitCalc::LoadOrbit(ImaginaSettings imaginaSettings,
                 std::wcerr << L"Unknown render algorithm" << std::endl;
                 return helperT.template operator()<HDRFloat<double>>();
         }
-    }
-}
-
-template <typename DestIterType, class DestT, PerturbExtras DestPExtras>
-RefOrbitCalc::AwesomeVariantUniquePtr
-RefOrbitCalc::LoadOrbitConvert(CompressToDisk compression,
-                               std::wstring imagFilename,
-                               RecommendedSettings *recommendedSettings)
-{
-
-    OrbitParameterPack params{};
-    LoadOrbitConstInternal(params, compression, imagFilename, recommendedSettings);
-
-    // Depending on the header, read the rest of the file and determine the type
-    // Extended range implies the use of high precision types
-    // For this example, let's assume HDRFloat<HRReal>
-
-    auto TypeHelper = [&]<typename LDestIterType, typename LT, PerturbExtras LPExtrasDest>()
-        -> std::unique_ptr<PerturbationResults<LDestIterType, LT, LPExtrasDest>> {
-        auto results =
-            std::make_unique<PerturbationResults<LDestIterType, LT, PerturbExtras::MaxCompression>>(
-                AddPointOptions::EnableWithoutSave, GetNextGenerationNumber());
-
-        const auto saturatedIterationLimit = params.GetSaturatedIterationCount<LDestIterType>();
-
-        results->LoadOrbitBin(std::move(params.orbitX),
-                              std::move(params.orbitY),
-                              saturatedIterationLimit,
-                              params.halfH,
-                              *params.file);
-
-        auto decompressedResults = results->template DecompressMax<LPExtrasDest>(
-            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low), GetNextGenerationNumber());
-        return decompressedResults;
-    };
-
-    if (params.m_OrbitType == OrbitParameterPack::IncludedOrbit::OrbitIncluded) {
-        AwesomeVariantUniquePtr retval;
-        // params.fileHeader.Magic == Imagina::IMMagicNumber
-        retval = TypeHelper.template operator()<DestIterType, DestT, DestPExtras>();
-        return retval;
-    } else {
-        // TODO use monostate?
-        return {};
     }
 }
 

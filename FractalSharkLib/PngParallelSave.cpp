@@ -57,6 +57,14 @@ PngParallelSave::StartThread()
 void
 PngParallelSave::Run()
 {
+    // Ensure m_Destructable is set on every exit path (early return, normal
+    // completion, or uncaught exception). Fractal::CleanupThreads busy-loops
+    // waiting for this flag; missing it on any path hangs the process at exit.
+    struct DestructableGuard {
+        PngParallelSave *self;
+        ~DestructableGuard() { self->m_Destructable = true; }
+    } destructableGuard{this};
+
     Environment::SetCurrentThreadName(L"PngParallelSave::Run");
 
     int ret;
@@ -71,7 +79,7 @@ PngParallelSave::Run()
 
     if (m_FilenameBase != L"") {
         wchar_t temp[512];
-        swprintf(temp, 512, L"%s", m_FilenameBase.c_str());
+        swprintf(temp, 512, L"%ls", m_FilenameBase.c_str());
         final_filename = std::wstring(temp) + ext;
         if (Utilities::FileExists(final_filename.c_str())) {
             std::wcerr << L"Not saving, file exists" << std::endl;
@@ -200,7 +208,4 @@ PngParallelSave::Run()
             m_Fractal.ReturnIterMemory(std::move(m_CurIters));
         }
     }
-
-    m_Destructable = true;
-    return;
 }

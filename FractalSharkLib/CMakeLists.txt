@@ -50,9 +50,15 @@ target_link_libraries(FractalSharkLib PUBLIC HpSharkFloatLib)
 find_library(GMP_LIBRARY gmp REQUIRED)
 target_link_libraries(FractalSharkLib PUBLIC ${GMP_LIBRARY})
 
-# OpenGL
-find_package(OpenGL REQUIRED)
+# OpenGL + GLU (gluOrtho2D used by OpenGLContext.cpp)
+find_package(OpenGL REQUIRED COMPONENTS OpenGL)
 target_link_libraries(FractalSharkLib PUBLIC OpenGL::GL)
+if(TARGET OpenGL::GLU)
+    target_link_libraries(FractalSharkLib PUBLIC OpenGL::GLU)
+else()
+    find_library(GLU_LIBRARY GLU REQUIRED)
+    target_link_libraries(FractalSharkLib PUBLIC ${GLU_LIBRARY})
+endif()
 
 # X11 (Linux only)
 if(NOT WIN32)

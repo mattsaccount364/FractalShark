@@ -79,7 +79,7 @@ FeatureFinderOrchestrator::TryFindPeriodicPointIterType(size_t scrnX,
             TryFindPeriodicPointTemplate<
                 IterType,
                 RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR>,
-                PerturbExtras::Disable>(scrnX, scrnY, mode);
+                PerturbExtras::SimpleCompression>(scrnX, scrnY, mode);
             break;
 
         case RenderAlgorithmEnum::Cpu64:

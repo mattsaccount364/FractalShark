@@ -327,7 +327,7 @@ public:
         std::pair{TestTypeEnum::View0, TestViewEnum::View0},
     }};
 
-    using MainType = float;
+    using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
@@ -347,7 +347,7 @@ public:
         std::pair{TestTypeEnum::View0, TestViewEnum::View0},
     }};
 
-    using MainType = double;
+    using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
     using SubType = double;
 };
@@ -367,7 +367,7 @@ public:
         std::pair{TestTypeEnum::View0, TestViewEnum::View0},
     }};
 
-    using MainType = float;
+    using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
 };
@@ -387,7 +387,7 @@ public:
         std::pair{TestTypeEnum::View0, TestViewEnum::View0},
     }};
 
-    using MainType = double;
+    using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
     using SubType = double;
 };

@@ -142,7 +142,7 @@ CommandDispatcher::BuildTable()
     table_.emplace(IDM_BACK, +[](MainWindow &w) { w.MenuGoBack(); });
     table_.emplace(IDM_STANDARDVIEW, +[](MainWindow &w) { w.MenuStandardView(0); });
     table_.emplace(IDM_SQUAREVIEW, +[](MainWindow &w) { w.MenuSquareView(); });
-    table_.emplace(IDM_VIEWS_HELP, +[](MainWindow &w) { w.MenuViewsHelp(); });
+    // IDM_VIEWS_HELP migrated to MainWindow::OnViewsHelp (Phase 0c #1).
     table_.emplace(IDM_CENTERVIEW, doCenter);
     table_.emplace(IDM_ZOOMIN, doZoomIn);
     table_.emplace(IDM_ZOOMOUT, doZoomOut);
@@ -233,7 +233,7 @@ CommandDispatcher::BuildTable()
         });
 
     // Algorithm help
-    table_.emplace(IDM_HELP_ALG, +[](MainWindow &w) { w.MenuAlgHelp(); });
+    // IDM_HELP_ALG migrated to MainWindow::OnHelpAlg (Phase 0c #1).
 
     // LA toggles / presets
     table_.emplace(
@@ -486,8 +486,9 @@ CommandDispatcher::BuildTable()
         });
 
     // Help / exit
-    table_.emplace(IDM_SHOWHOTKEYS, +[](MainWindow &w) { w.MenuShowHotkeys(); });
-    table_.emplace(IDM_EXIT, +[](MainWindow &w) { ::DestroyWindow(w.hWnd); });
+    // Phase 0c migration #1: Help/Exit moved into ExecuteCommandHost.
+    // (IDM_SHOWHOTKEYS, IDM_EXIT, IDM_VIEWS_HELP, IDM_HELP_ALG handled
+    // in MainWindow::OnShowHotkeys/OnViewsHelp/OnHelpAlg/OnExit.)
 }
 
 } // namespace FractalShark

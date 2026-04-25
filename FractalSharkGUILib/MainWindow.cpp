@@ -84,6 +84,31 @@ MainWindow::DispatchByIdm(int wmId)
     commandDispatcher.Dispatch(wmId);
 }
 
+// ---- Phase 0c migration #1: Help / Exit batch ------------------------------
+void
+MainWindow::OnShowHotkeys()
+{
+    MenuShowHotkeys();
+}
+
+void
+MainWindow::OnViewsHelp()
+{
+    MenuViewsHelp();
+}
+
+void
+MainWindow::OnHelpAlg()
+{
+    MenuAlgHelp();
+}
+
+void
+MainWindow::OnExit()
+{
+    ::DestroyWindow(hWnd);
+}
+
 void
 MainWindow::MainWindow::DrawFractalShark()
 {
@@ -759,6 +784,16 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             const int wmId = LOWORD(wParam);
             const int wmEvent = HIWORD(wParam);
             (void)wmEvent;
+
+            // Phase 0c: catalog commands go through ExecuteCommand; range
+            // IDs (View 1-40, dynamic orbit/imag slots) stay on the legacy
+            // path until they get a payload-aware migration.
+            const auto cmd =
+                FractalShark::CommandFromIdm(static_cast<uint32_t>(wmId));
+            if (cmd != FractalShark::FractalCommand::None) {
+                FractalShark::ExecuteCommand(cmd, *this);
+                return 0;
+            }
 
             if (commandDispatcher.Dispatch(wmId)) {
                 return 0;

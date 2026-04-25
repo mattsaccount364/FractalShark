@@ -38,6 +38,12 @@ public:
     // virtual so per-menu migration can intercept individual commands.
     void DispatchByIdm(int wmId) override;
 
+    // Help / Exit batch (Phase 0c migration #1).
+    void OnShowHotkeys() override;
+    void OnViewsHelp() override;
+    void OnHelpAlg() override;
+    void OnExit() override;
+
 private:
     SplashWindow Splash;
 

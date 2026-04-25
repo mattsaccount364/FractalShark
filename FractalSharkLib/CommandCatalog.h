@@ -345,11 +345,42 @@ struct ExecuteCommandHost {
     // Forward to the legacy IDM-keyed dispatcher.  Phase 0c will narrow
     // callers of this until it can be removed.
     virtual void DispatchByIdm(int wmId) = 0;
+
+    // ---- Phase 0c migrated commands -------------------------------------
+    // Each migrated FractalCommand becomes a virtual hook here.  Pure
+    // virtual so a GUI that surfaces the command must wire it up; until
+    // a GUI exposes a given command in its menu/keymap nothing can
+    // invoke it, so unimplemented hosts can stub with a no-op.
+    //
+    // Help / Exit batch:
+    virtual void OnShowHotkeys() = 0;
+    virtual void OnViewsHelp() = 0;
+    virtual void OnHelpAlg() = 0;
+    virtual void OnExit() = 0;
 };
 
 inline void
 ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host)
 {
+    switch (cmd) {
+    // Help / Exit batch (Phase 0c migration #1).
+    case FractalCommand::ShowHotkeys:
+        host.OnShowHotkeys();
+        return;
+    case FractalCommand::ViewsHelp:
+        host.OnViewsHelp();
+        return;
+    case FractalCommand::HelpAlg:
+        host.OnHelpAlg();
+        return;
+    case FractalCommand::Exit:
+        host.OnExit();
+        return;
+    default:
+        break;
+    }
+
+    // Not yet migrated: round-trip through the legacy IDM dispatcher.
     host.DispatchByIdm(IdmFromCommand(cmd));
 }
 

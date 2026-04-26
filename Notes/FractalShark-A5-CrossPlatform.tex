@@ -1,0 +1,83 @@
+\section{Cross-Platform Considerations}
+\label{sec:cross-platform}
+
+\FractalShark{} is developed primarily as a Windows application built with
+Visual~Studio~2026, MSBuild, and the NVIDIA CUDA toolkit.  Linux is supported
+as a secondary target reached through an incremental port that is, at the time
+of writing, partially complete: the CPU-side numeric core, the GPU rendering
+kernels, and a unit-test executable build and run on Linux, but the main
+graphical application does not.  This appendix documents the parallel build
+infrastructure, the platform-abstraction layer, and the cross-platform
+serialization contract for arbitrary-precision integers.  The Linux port is a
+work in progress.
+
+\subsection{Dual build system}
+\label{subsec:dual-build}
+
+The Windows build is authoritative.  All project structure, source membership,
+and compiler settings are tracked first in MSBuild project files
+(\code{.vcxproj}) and a Visual~Studio solution (\code{.sln}).  The Linux build
+mirrors a subset of that structure using \code{CMakeLists.txt} files placed
+alongside the corresponding \code{.vcxproj}.  Only projects whose code has been
+ported carry a CMake counterpart; projects that remain Windows-only have no
+CMake file at all.  When a ported project gains or loses sources, both build
+systems must be updated together.
+
+The Linux toolchain is Clang only; GCC is not a supported host compiler.  CUDA
+device compilation uses the standard NVIDIA \code{nvcc} driver, with a
+host-compiler split where required: \code{clang++} drives ordinary C++
+compilation, while \code{nvcc} dispatches to a system \code{g++} purely as
+its host compiler for device translation units.  This arrangement isolates
+toolchain incompatibilities to the device-compilation step and keeps the host
+C++ surface uniformly Clang-compiled.
+
+Project-by-project coverage on the Linux side is a work in progress: the
+CPU-side numeric core, the GPU rendering kernels, and the unit-test executable
+build today, while the GPU high-precision arithmetic library and the main
+graphical application have not yet been ported.
+
+Continuous integration runs the Windows MSBuild and the Linux CMake build as
+separate jobs in the same matrix workflow, alongside a third job that compiles
+this document.  Both builds must succeed before any change merges, ensuring the
+two build systems remain synchronized as the codebase evolves.
+
+\subsection{Platform abstraction layer}
+\label{subsec:platform-abstraction}
+
+The \code{FractalSharkPlatform} library provides a thin abstraction over the
+small number of operating-system primitives that genuinely differ between
+Windows and Linux.  Its surface comprises an \code{Environment} facade with
+operations for system-heap allocation, aligned allocation, and registration of
+heap-cleanup hooks invoked at process shutdown.  Each operation has separate
+Windows and Linux translation units that supply the platform-specific
+implementation while presenting an identical C++ interface to callers.
+
+The abstraction is intentionally minimal.  Rather than scatter
+\code{\#ifdef~\_WIN32} guards through the codebase, divergent behavior is
+concentrated in a small number of files whose entire contents are
+platform-specific.  Code outside the abstraction layer therefore compiles
+unmodified on both platforms.  The audit policy tolerates legacy
+platform-conditional sites that predate the abstraction, but new platform
+divergence is expected to flow through \code{FractalSharkPlatform} unless the
+divergence is truly local in scope.
+
+\subsection{Arbitrary-precision serialization}
+\label{subsec:mpir-portability}
+
+\FractalShark{} relies on MPIR for arbitrary-precision integer arithmetic on
+Windows and on GMP for the same role on Linux.  The two libraries are
+source-compatible at the API level but differ in some internal representation
+details, which matters because reference-orbit files and saved views contain
+serialized arbitrary-precision integers that must round-trip across platforms.
+
+To guarantee byte-identical files, \FractalShark{} defines a single canonical
+wire format that matches MPIR's native \code{\_\_mpz\_struct} layout.  On
+Windows this format is produced by direct field access into the underlying
+MPIR object.  On Linux the same byte sequence is reconstructed atop GMP using
+\code{mpz\_export} and \code{mpz\_import}, which expose limb data through a
+portable interface.  The two implementations are validated against a checked-in
+golden file (\code{golden\_mpir.bin}) by the \code{TestMpirSerialization}
+unit test, which runs on both platforms in CI.  Any divergence in the wire
+format fails the test on whichever platform regressed, preventing silent
+incompatibility between Windows-written and Linux-written orbit files.
+

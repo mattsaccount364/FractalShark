@@ -26,10 +26,6 @@ namespace {
 std::string
 WideToUtf8(std::wstring_view in)
 {
-    // The menu labels in MenuTreeDef.h are L"..." literals containing
-    // ASCII characters plus a sprinkling of mathematical / unicode glyphs
-    // (ellipses, ranges).  We hand-roll a UTF-16 → UTF-8 conversion
-    // because <codecvt> is deprecated and we don't want a libicu dep.
     std::string out;
     out.reserve(in.size());
     for (std::size_t i = 0; i < in.size(); ++i) {
@@ -61,9 +57,7 @@ WideToUtf8(std::wstring_view in)
 }
 
 void
-WalkNodes(std::span<const Node> nodes,
-          const IMenuState *state,
-          ExecuteCommandHost *host)
+WalkNodes(std::span<const Node> nodes, const IMenuState *state, ExecuteCommandHost *host)
 {
     for (const Node &n : nodes) {
         const bool enabled = state ? state->IsEnabled(n.enableRule) : true;
@@ -81,10 +75,6 @@ WalkNodes(std::span<const Node> nodes,
             } else if (n.checkKind == CheckKind::Radio && state) {
                 selected = (state->GetRadioSelection(n.radioGroup) == n.id);
             }
-            // ImGui::MenuItem signature: (label, shortcut, selected, enabled).
-            // We don't surface shortcut text here — the legacy-bridge
-            // keyboard table is documented in PARITY.md and the catalog
-            // doesn't carry a per-item shortcut string.
             if (ImGui::MenuItem(label.c_str(), nullptr, selected, enabled)) {
                 if (host) {
                     ExecuteCommand(CommandFromIdm(n.id), *host);
@@ -94,9 +84,6 @@ WalkNodes(std::span<const Node> nodes,
         }
 
         case Kind::Popup: {
-            // BeginMenu also takes an enabled flag.  Disabling a
-            // submenu hides its children entirely, matching Win32
-            // grayed-out submenu behavior.
             if (ImGui::BeginMenu(label.c_str(), enabled)) {
                 WalkNodes(n.kids, state, host);
                 ImGui::EndMenu();
@@ -110,10 +97,6 @@ WalkNodes(std::span<const Node> nodes,
 void
 BuildContextMenuContents(const IMenuState *state, ExecuteCommandHost *host)
 {
-    // MenuTreeDef.h defines a `static const Node menu[]` when included
-    // with the FractalShark::Menu namespace's factories in scope.  Same
-    // pattern as DynamicPopupMenu.cpp on the Win32 side — single source
-    // of truth for the menu structure.
     using namespace FractalShark::Menu;
 
 #include "MenuTreeDef.h"
@@ -132,125 +115,37 @@ ImGuiOverlay::ImGuiOverlay(Display *display, Window window, FractalShark::LinuxC
 
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    // Disable .ini persistence — we don't want the GUI scribbling state
-    // files into the user's home directory without asking.
     io.IniFilename = nullptr;
 }
 
 ImGuiOverlay::~ImGuiOverlay()
 {
-    if (installedOn_) {
-        installedOn_->SetOverlayCallback({});
-        installedOn_ = nullptr;
-    }
     if (ctx_) {
-        // Backend shutdowns must happen on the consumer thread that
-        // owns GL.  We can't call them safely here from arbitrary
-        // contexts.  Leak the small GL objects on shutdown rather than
-        // risk crashing — the process is terminating anyway.
+        ImGui::SetCurrentContext(ctx_);
+        if (oglBackendInited_) {
+            ImGui_ImplOpenGL2_Shutdown();
+            oglBackendInited_ = false;
+        }
+        if (xlibBackendInited_) {
+            ImGui_ImplXlib_Shutdown();
+            xlibBackendInited_ = false;
+        }
         ImGui::DestroyContext(ctx_);
         ctx_ = nullptr;
     }
 }
 
-void
-ImGuiOverlay::InstallCallback(OpenGlContext &gl)
-{
-    installedOn_ = &gl;
-    gl.SetOverlayCallback([this]() noexcept { this->Render(); });
-}
-
 bool
-ImGuiOverlay::QueueEvent(const XEvent &ev)
+ImGuiOverlay::Init()
 {
-    {
-        std::lock_guard lock(mu_);
-        pendingEvents_.push_back(ev);
-    }
-    // Heuristic: if ImGui captured the previous frame, capture this one
-    // too.  Authoritative consumption is computed by the consumer thread
-    // when it actually feeds the event into ImGui, but the GUI thread
-    // needs an immediate signal to know whether to short-circuit its own
-    // dispatch.  Mouse-button events that hit a popup will reliably show
-    // up as captured because the popup raised the flag on the previous
-    // frame.
-    switch (ev.type) {
-    case ButtonPress:
-    case ButtonRelease:
-    case MotionNotify:
-        return wantCaptureMouse_.load(std::memory_order_relaxed);
-    case KeyPress:
-    case KeyRelease:
-        return wantCaptureKeyboard_.load(std::memory_order_relaxed);
-    default:
-        return false;
-    }
-}
-
-void
-ImGuiOverlay::SetExecuteHost(ExecuteCommandHost *host)
-{
-    std::lock_guard lock(mu_);
-    host_ = host;
-}
-
-void
-ImGuiOverlay::SetMenuState(const IMenuState *state)
-{
-    std::lock_guard lock(mu_);
-    menuState_ = state;
-}
-
-void
-ImGuiOverlay::RequestContextMenu(int x, int y)
-{
-    std::lock_guard lock(mu_);
-    contextMenuRequested_ = true;
-    contextMenuX_ = x;
-    contextMenuY_ = y;
-}
-
-void
-ImGuiOverlay::SetDragRect(bool active, int x0, int y0, int x1, int y1)
-{
-    std::lock_guard lock(mu_);
-    dragRectActive_ = active;
-    dragX0_ = x0;
-    dragY0_ = y0;
-    dragX1_ = x1;
-    dragY1_ = y1;
-}
-
-void
-ImGuiOverlay::DrainEvents()
-{
-    // mu_ already held by Render().
-    for (const XEvent &ev : pendingEvents_) {
-        ImGui_ImplXlib_ProcessEvent(ev);
-    }
-    pendingEvents_.clear();
-}
-
-void
-ImGuiOverlay::Render() noexcept
-{
-    // GL context is current here (we run inside InvokeOverlayCallback,
-    // which is invoked by the consumer just before SwapBuffers).
-
-    std::lock_guard lock(mu_);
-
     if (!ctx_) {
-        return;
+        return false;
     }
     ImGui::SetCurrentContext(ctx_);
 
-    // Lazy-init the platform + renderer backends on first invocation.
-    // Both need to happen with GL current.
     if (!xlibBackendInited_) {
         if (!ImGui_ImplXlib_Init(display_, window_)) {
-            // Failed init — disable.
-            xlibBackendInited_ = false;
-            return;
+            return false;
         }
         if (clipboard_) {
             ImGui_ImplXlib_SetClipboardHelper(clipboard_);
@@ -259,18 +154,77 @@ ImGuiOverlay::Render() noexcept
     }
     if (!oglBackendInited_) {
         if (!ImGui_ImplOpenGL2_Init()) {
-            return;
+            return false;
         }
         oglBackendInited_ = true;
     }
+    return true;
+}
 
-    DrainEvents();
+bool
+ImGuiOverlay::ProcessEvent(const XEvent &ev)
+{
+    if (!ctx_ || !xlibBackendInited_) {
+        return false;
+    }
+    ImGui::SetCurrentContext(ctx_);
+    ImGui_ImplXlib_ProcessEvent(ev);
+
+    const ImGuiIO &io = ImGui::GetIO();
+    switch (ev.type) {
+    case ButtonPress:
+    case ButtonRelease:
+    case MotionNotify:
+        return io.WantCaptureMouse;
+    case KeyPress:
+    case KeyRelease:
+        return io.WantCaptureKeyboard;
+    default:
+        return false;
+    }
+}
+
+void
+ImGuiOverlay::SetExecuteHost(ExecuteCommandHost *host)
+{
+    host_ = host;
+}
+
+void
+ImGuiOverlay::SetMenuState(const IMenuState *state)
+{
+    menuState_ = state;
+}
+
+void
+ImGuiOverlay::RequestContextMenu(int x, int y)
+{
+    contextMenuRequested_ = true;
+    contextMenuX_ = x;
+    contextMenuY_ = y;
+}
+
+void
+ImGuiOverlay::SetDragRect(bool active, int x0, int y0, int x1, int y1)
+{
+    dragRectActive_ = active;
+    dragX0_ = x0;
+    dragY0_ = y0;
+    dragX1_ = x1;
+    dragY1_ = y1;
+}
+
+void
+ImGuiOverlay::RenderFrame()
+{
+    if (!ctx_ || !xlibBackendInited_ || !oglBackendInited_) {
+        return;
+    }
+    ImGui::SetCurrentContext(ctx_);
 
     ImGui_ImplOpenGL2_NewFrame();
     ImGui_ImplXlib_NewFrame();
     ImGui::NewFrame();
-
-    // ---- Build UI ----
 
     if (contextMenuRequested_) {
         ImGui::SetNextWindowPos(ImVec2(float(contextMenuX_), float(contextMenuY_)),
@@ -289,25 +243,22 @@ ImGuiOverlay::Render() noexcept
         if (fg) {
             ImVec2 p0(float(std::min(dragX0_, dragX1_)), float(std::min(dragY0_, dragY1_)));
             ImVec2 p1(float(std::max(dragX0_, dragX1_)), float(std::max(dragY0_, dragY1_)));
-            // Bright magenta outline — distinctive against most fractal
-            // colorings and matches the convention used by the Win32
-            // path's InvertRect (which produces a similar high-contrast
-            // outline against typical fractal backgrounds).
             fg->AddRect(p0, p1, IM_COL32(255, 32, 255, 255), 0.0f, 0, 1.5f);
         }
     }
 
     ImGui::Render();
-
-    // Republish capture flags for the GUI thread's QueueEvent heuristic.
-    const ImGuiIO &io = ImGui::GetIO();
-    wantCaptureMouse_.store(io.WantCaptureMouse, std::memory_order_relaxed);
-    wantCaptureKeyboard_.store(io.WantCaptureKeyboard, std::memory_order_relaxed);
-
-    // Render to GL.  ImGui_ImplOpenGL2_RenderDrawData saves and restores
-    // the relevant fixed-function pipeline state, so it doesn't disrupt
-    // the surrounding fractal blit.
     ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+}
+
+bool
+ImGuiOverlay::WantsTick() const
+{
+    if (!ctx_) {
+        return false;
+    }
+    return dragRectActive_ || contextMenuRequested_
+           || (ImGui::GetCurrentContext() && ImGui::IsPopupOpen("FractalSharkContextMenu"));
 }
 
 } // namespace FractalShark::Linux

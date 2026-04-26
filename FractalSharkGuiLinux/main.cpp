@@ -15,6 +15,7 @@
 #include "LinuxImGuiOverlay.h"
 #include "OpenGLContext.h"
 #include "RefOrbitCalc.h"
+#include "RenderThreadPool.h"
 
 #include <X11/XKBlib.h>
 #include <X11/Xatom.h>
@@ -23,6 +24,10 @@
 
 #include <GL/glx.h>
 
+#include <poll.h>
+#include <unistd.h>
+
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -81,6 +86,11 @@ struct LinuxMainWindow : FractalShark::ExecuteCommandHost {
 
     std::optional<FractalShark::LinuxClipboard> clipboard;
     std::unique_ptr<Fractal> fractal;
+    // GL context is owned by the GUI thread (host-owned presentation
+    // mode).  Created after Fractal so the X window/visual are ready;
+    // destroyed before Fractal so any pool teardown that touches the
+    // cached frame buffer happens before GL goes away.
+    std::unique_ptr<OpenGlContext> glContext;
     std::optional<FractalShark::Linux::ImGuiOverlay> overlay;
 
     LinuxMainWindow();
@@ -318,39 +328,44 @@ LinuxMainWindow::LinuxMainWindow()
 
     clipboard.emplace(display, window);
 
-    // Instantiate Fractal bound to the X11 window.  OpenGlContext.cpp's GLX
-    // path picks up the window via the nativeWindow void* and creates a GLX
-    // context that matches the visual we chose above.  RenderThreadPool's GL
-    // consumer thread presents frames via glXSwapBuffers.  No commit cap on
-    // Linux — Win32 derives one from a JobObject; we leave it unlimited.
+    // Instantiate Fractal in host-owned GL presentation mode: the render
+    // pool will not start its own GL consumer thread; we drive
+    // presentation ourselves on the GUI thread below.
     fractal = std::make_unique<Fractal>(kInitialWidth,
                                         kInitialHeight,
                                         reinterpret_cast<void *>(static_cast<uintptr_t>(window)),
                                         /*UseSensoCursor=*/false,
-                                        /*commitLimitInBytes=*/UINT64_MAX);
+                                        /*commitLimitInBytes=*/UINT64_MAX,
+                                        /*hostOwnedGlPresentation=*/true);
 
-    // ImGui overlay: drawn by the GL consumer thread just before SwapBuffers.
-    // The overlay queues XEvents from this (GUI) thread under its own mutex
-    // and renders them under the GL context the consumer thread already owns.
+    // Create the GLX context on this (the GUI) thread.  OpenGlContext's
+    // constructor binds GL to this thread via glXMakeCurrent — every
+    // subsequent GL call (RenderFrameToGL, ImGui, SwapBuffers) must
+    // happen on this thread.
+    glContext = std::make_unique<OpenGlContext>(reinterpret_cast<void *>(static_cast<uintptr_t>(window)));
+    if (!glContext->IsValid()) {
+        std::fprintf(stderr,
+                     "FractalSharkGuiLinux: OpenGlContext creation failed; running headless.\n");
+    }
+
+    // ImGui overlay: single-threaded, all calls on this thread.  Init
+    // requires GL to be current, which OpenGlContext::ctor already
+    // ensured.
     overlay.emplace(display, window, clipboard ? &*clipboard : nullptr);
     overlay->SetExecuteHost(this);
-    if (auto *pool = fractal->GetRenderPool()) {
-        pool->SetOverlayCallback([this] { overlay->Render(); });
+    if (glContext && glContext->IsValid()) {
+        if (!overlay->Init()) {
+            std::fprintf(stderr, "FractalSharkGuiLinux: ImGui backend init failed.\n");
+        }
     }
 }
 
 LinuxMainWindow::~LinuxMainWindow()
 {
-    // Detach the overlay callback before the render pool tears down, so the
-    // GL consumer thread can never invoke a stale `this`.
-    if (fractal) {
-        if (auto *pool = fractal->GetRenderPool()) {
-            pool->SetOverlayCallback({});
-        }
-    }
+    // Destroy in reverse order of creation: overlay first (it owns ImGui
+    // backends that need GL current), then GL context, then Fractal.
     overlay.reset();
-    // Tear Fractal down before closing the X11 display; its destructor needs
-    // to release GLX resources held against `display`.
+    glContext.reset();
     fractal.reset();
 
     if (display) {
@@ -374,13 +389,10 @@ LinuxMainWindow::~LinuxMainWindow()
 void
 LinuxMainWindow::HandleEvent(const XEvent &ev)
 {
-    // Forward to the ImGui overlay first.  When ImGui is capturing the mouse
-    // or keyboard (a popup is open and the cursor is over it, or a text-input
-    // widget is active), the overlay returns true and we drop the event
-    // rather than dispatching it to the fractal.  Otherwise the overlay still
-    // queues the event for its own bookkeeping (mouse position tracking) and
-    // we proceed with normal dispatch.
-    if (overlay && overlay->QueueEvent(ev)) {
+    // Forward to the ImGui overlay first.  Overlay processes the event
+    // synchronously on this thread; if ImGui is capturing the input we
+    // drop the event rather than dispatching it to the fractal.
+    if (overlay && overlay->ProcessEvent(ev)) {
         return;
     }
 
@@ -541,13 +553,71 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
 void
 LinuxMainWindow::RunEventLoop()
 {
+    if (!display) {
+        return;
+    }
+
+    const int xfd = ConnectionNumber(display);
+
     XEvent ev;
+    bool everPresented = false;
+
     while (running) {
-        XNextEvent(display, &ev);
-        if (clipboard && clipboard->ProcessEvent(ev)) {
-            continue;
+        // Drain any X events already queued on the connection without
+        // blocking — they may have been deposited while the previous
+        // iteration was rendering.
+        while (XPending(display) > 0) {
+            XNextEvent(display, &ev);
+            if (clipboard && clipboard->ProcessEvent(ev)) {
+                continue;
+            }
+            HandleEvent(ev);
+            if (!running) {
+                break;
+            }
         }
-        HandleEvent(ev);
+        if (!running) {
+            break;
+        }
+
+        // Pull any frames the render pool has finished and present them.
+        // TryPresentTick drains all ready frames in order, releasing
+        // superseded buffers, and returns true if a non-tombstone frame
+        // was uploaded.
+        bool freshFrame = false;
+        if (fractal && glContext && glContext->IsValid()) {
+            auto *pool = fractal->GetRenderPool();
+            if (pool) {
+                freshFrame = pool->TryPresentTick(*glContext);
+            }
+        }
+
+        const bool overlayWantsTick = overlay && overlay->WantsTick();
+        const bool needsTick = freshFrame || overlayWantsTick || dragging || !everPresented;
+
+        if (needsTick && glContext && glContext->IsValid()) {
+            // If this tick was triggered by overlay motion only, re-blit
+            // the cached frame so the overlay has something underneath.
+            if (!freshFrame && fractal) {
+                if (auto *pool = fractal->GetRenderPool()) {
+                    pool->RepresentLastFrame(*glContext);
+                }
+            }
+            if (overlay) {
+                overlay->RenderFrame();
+            }
+            glContext->SwapBuffers();
+            everPresented = true;
+        }
+
+        // Sleep until either an X event arrives or our 16ms tick budget
+        // expires.  No need for an explicit wake from the pool — the next
+        // tick will pick the frame up.
+        struct pollfd pfd{};
+        pfd.fd = xfd;
+        pfd.events = POLLIN;
+        const int timeoutMs = needsTick ? 16 : 33;
+        poll(&pfd, 1, timeoutMs);
     }
 }
 

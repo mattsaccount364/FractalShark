@@ -189,7 +189,7 @@ private:
 // Replaces the old CalcFractal → DrawFractal → WaitForDrawFractal path.
 class RenderThreadPool {
 public:
-    RenderThreadPool(Fractal *fractal, void *nativeWindow);
+    RenderThreadPool(Fractal *fractal, void *nativeWindow, bool hostOwnedGlPresentation = false);
     ~RenderThreadPool();
 
     // Enqueue a render job. Returns a handle for optional waiting.
@@ -213,13 +213,22 @@ public:
     // Returns once no workers are processing and the queue is empty.
     void Drain();
 
-    // Install an overlay callback on the GL consumer's OpenGlContext.
-    // The callback runs once per SwapBuffers, with the GL context
-    // current.  Used by the Linux GUI to render an ImGui overlay
-    // (menus, modals, drag-zoom outline) on top of the fractal canvas.
-    // Pass an empty std::function to clear.  Safe to call from any
-    // thread, before or after the consumer has started.
-    void SetOverlayCallback(OpenGlContext::OverlayCallback cb);
+    // Host-owned GL presentation mode (Linux GUI).  When the pool was
+    // constructed with hostOwnedGlPresentation=true, no internal GL
+    // consumer thread is started; the host's main loop is expected to
+    // call TryPresentTick() each tick to drain ready frames and present
+    // them on the GL context the host owns.  Returns true if a frame
+    // was uploaded to GL (host should compose its overlay + swap),
+    // false if no frame was ready.  No-op (returns false) when the
+    // pool owns its own consumer thread.
+    bool TryPresentTick(OpenGlContext &glContext);
+
+    // Host-owned GL presentation mode only.  Re-uploads the most
+    // recently rendered frame to GL.  Used for overlay-only repaints
+    // when no new fractal frame is available (e.g. user is hovering
+    // a popup with no fractal updates in flight).  Returns false if
+    // no cached frame exists yet.
+    bool RepresentLastFrame(OpenGlContext &glContext);
 
 private:
     static constexpr size_t NumWorkers = NumRenderers;
@@ -307,13 +316,6 @@ private:
     std::vector<std::thread> m_Workers;
     std::thread m_GlConsumerThread;
 
-    // Pending overlay callback installed via SetOverlayCallback before
-    // GlConsumerLoop has constructed the OpenGlContext, plus a pointer
-    // to the live context once it exists.  Both guarded by m_OverlayCallbackMutex.
-    std::mutex m_OverlayCallbackMutex;
-    OpenGlContext::OverlayCallback m_PendingOverlayCallback;
-    OpenGlContext *m_LiveGlContext = nullptr;
-
     // Shutdown flag
     std::atomic<bool> m_ShutdownFlag;
 
@@ -326,4 +328,18 @@ private:
     // Only incremented for supersedable items.  Non-atomic: single
     // writer (UI thread), multi-reader (workers) — safe on x64.
     std::atomic<uint64_t> m_EnqueueGeneration = 0;
+
+    // Host-owned GL presentation mode (Linux GUI).  When true the pool
+    // does not start m_GlConsumerThread; the host's main loop drives
+    // presentation by calling TryPresentTick / RepresentLastFrame.
+    const bool m_HostOwnedGlPresentation = false;
+
+    // Host-owned mode: per-host sequence-number tracker (counterpart
+    // to GlConsumerLoop's nextExpectedSeqNum local).
+    uint64_t m_HostExpectedSeqNum = 0;
+
+    // Host-owned mode: most recently uploaded frame, retained for
+    // overlay-only repaints via RepresentLastFrame.  ColorData is
+    // released back to the pool only when superseded by a newer frame.
+    RenderFrame m_HostLastFrame{};
 };

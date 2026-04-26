@@ -62,7 +62,12 @@ public:
     friend class RenderThreadPool;
     friend class FeatureFinderOrchestrator;
 
-    Fractal(int width, int height, void *nativeWindow, bool UseSensoCursor, uint64_t commitLimitInBytes);
+    Fractal(int width,
+            int height,
+            void *nativeWindow,
+            bool UseSensoCursor,
+            uint64_t commitLimitInBytes,
+            bool hostOwnedGlPresentation = false);
     ~Fractal();
 
     void InitialDefaultViewAndSettings(int width = 0, int height = 0);
@@ -497,6 +502,7 @@ private:
     LAParameters m_LAParameters;
 
     const uint64_t m_CommitLimitInBytes;
+    const bool m_HostOwnedGlPresentation = false;
 
     // Async render thread pool
     std::unique_ptr<RenderThreadPool> m_RenderPool;

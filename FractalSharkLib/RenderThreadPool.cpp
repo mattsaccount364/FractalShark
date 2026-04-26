@@ -291,8 +291,12 @@ FrameCompletionQueue::Shutdown()
 // RenderThreadPool
 // ============================================================================
 
-RenderThreadPool::RenderThreadPool(Fractal *fractal, void *nativeWindow)
-    : m_Fractal(fractal), m_NativeWindow(nativeWindow), m_NextSequenceNumber(0), m_ShutdownFlag(false)
+RenderThreadPool::RenderThreadPool(Fractal *fractal, void *nativeWindow, bool hostOwnedGlPresentation)
+    : m_Fractal(fractal),
+      m_NativeWindow(nativeWindow),
+      m_NextSequenceNumber(0),
+      m_ShutdownFlag(false),
+      m_HostOwnedGlPresentation(hostOwnedGlPresentation)
 {
 
     m_RendererPool.Initialize(&fractal->GetRenderer(RendererIndex::Renderer0), NumRenderers);
@@ -301,7 +305,9 @@ RenderThreadPool::RenderThreadPool(Fractal *fractal, void *nativeWindow)
         m_Workers.emplace_back(&RenderThreadPool::WorkerLoop, this, i);
     }
 
-    m_GlConsumerThread = std::thread(&RenderThreadPool::GlConsumerLoop, this);
+    if (!m_HostOwnedGlPresentation) {
+        m_GlConsumerThread = std::thread(&RenderThreadPool::GlConsumerLoop, this);
+    }
 }
 
 RenderThreadPool::~RenderThreadPool() { Shutdown(); }
@@ -1011,18 +1017,6 @@ RenderThreadPool::GlConsumerLoop()
         return;
     }
 
-    // Hand off any overlay callback that was registered before the
-    // context existed, then publish a pointer so future SetOverlayCallback
-    // calls reach the live context directly.
-    {
-        std::lock_guard lock(m_OverlayCallbackMutex);
-        if (m_PendingOverlayCallback) {
-            glContext->SetOverlayCallback(std::move(m_PendingOverlayCallback));
-            m_PendingOverlayCallback = {};
-        }
-        m_LiveGlContext = glContext.get();
-    }
-
     {
         char buf[256];
         snprintf(buf,
@@ -1062,13 +1056,11 @@ RenderThreadPool::GlConsumerLoop()
                 if (frame.IsFinal) {
                     // Draw perturbation overlay on final frames.
                     m_Fractal->DrawAllPerturbationResults(true);
-                    glContext->InvokeOverlayCallback();
                     glContext->SwapBuffers();
                     nextExpectedSeqNum++;
                     break;
                 }
 
-                glContext->InvokeOverlayCallback();
                 glContext->SwapBuffers();
             }
 
@@ -1083,25 +1075,67 @@ RenderThreadPool::GlConsumerLoop()
             }
         }
     }
-
-    // Consumer loop is exiting.  Clear the live context pointer so any
-    // late SetOverlayCallback calls fall back to the pending slot
-    // (or, more likely, are no-ops because the host is shutting down).
-    {
-        std::lock_guard lock(m_OverlayCallbackMutex);
-        m_LiveGlContext = nullptr;
-    }
 }
 
-void
-RenderThreadPool::SetOverlayCallback(OpenGlContext::OverlayCallback cb)
+bool
+RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
 {
-    std::lock_guard lock(m_OverlayCallbackMutex);
-    if (m_LiveGlContext) {
-        m_LiveGlContext->SetOverlayCallback(std::move(cb));
-    } else {
-        m_PendingOverlayCallback = std::move(cb);
+    if (!m_HostOwnedGlPresentation) {
+        return false;
     }
+
+    bool rendered = false;
+
+    // Drain every frame currently ready for the host's expected
+    // sequence; only the most recently uploaded frame remains visible
+    // after the eventual SwapBuffers.  This mirrors the inner loop of
+    // GlConsumerLoop except it is non-blocking and does not swap.
+    for (;;) {
+        RenderFrame frame;
+        if (!m_FrameQueue.TryPopNextInOrder(m_HostExpectedSeqNum, frame)) {
+            break;
+        }
+
+        const bool tombstone =
+            !frame.ColorData || frame.OutputWidth == 0 || frame.OutputHeight == 0;
+
+        if (!tombstone) {
+            RenderFrameToGL(glContext, frame);
+
+            // Release the previously cached frame's buffer back to the
+            // pool now that a newer one supersedes it, then keep the
+            // new frame for overlay-only repaints.
+            if (m_HostLastFrame.ColorData) {
+                ReleaseFrameBuffer(std::move(m_HostLastFrame.ColorData),
+                                   m_HostLastFrame.BufferPixelCount);
+            }
+            m_HostLastFrame = std::move(frame);
+            rendered = true;
+
+            if (m_HostLastFrame.IsFinal) {
+                m_Fractal->DrawAllPerturbationResults(true);
+                ++m_HostExpectedSeqNum;
+                continue;
+            }
+        } else if (frame.IsFinal) {
+            ++m_HostExpectedSeqNum;
+        }
+    }
+
+    return rendered;
+}
+
+bool
+RenderThreadPool::RepresentLastFrame(OpenGlContext &glContext)
+{
+    if (!m_HostOwnedGlPresentation || !m_HostLastFrame.ColorData) {
+        return false;
+    }
+    RenderFrameToGL(glContext, m_HostLastFrame);
+    if (m_HostLastFrame.IsFinal) {
+        m_Fractal->DrawAllPerturbationResults(true);
+    }
+    return true;
 }
 
 bool

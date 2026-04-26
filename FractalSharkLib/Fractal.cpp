@@ -35,9 +35,15 @@
 
 #include <chrono>
 
-Fractal::Fractal(
-    int width, int height, void *nativeWindow, bool UseSensoCursor, uint64_t commitLimitInBytes)
-    : m_RefOrbit{*this, commitLimitInBytes}, m_CommitLimitInBytes{commitLimitInBytes}
+Fractal::Fractal(int width,
+                 int height,
+                 void *nativeWindow,
+                 bool UseSensoCursor,
+                 uint64_t commitLimitInBytes,
+                 bool hostOwnedGlPresentation)
+    : m_RefOrbit{*this, commitLimitInBytes},
+      m_CommitLimitInBytes{commitLimitInBytes},
+      m_HostOwnedGlPresentation{hostOwnedGlPresentation}
 {
     Initialize(width, height, nativeWindow, UseSensoCursor);
 }
@@ -85,7 +91,7 @@ Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCurs
     InitializeMemory();
 
     // Initialize the render thread pool
-    m_RenderPool = std::make_unique<RenderThreadPool>(this, m_NativeWindow);
+    m_RenderPool = std::make_unique<RenderThreadPool>(this, m_NativeWindow, m_HostOwnedGlPresentation);
 
     // Initialize the feature finder orchestrator
     m_FeatureOrchestrator = std::make_unique<FeatureFinderOrchestrator>(*this);

@@ -389,7 +389,9 @@ struct ExecuteCommandHost {
     virtual void OnNrInnerLoopCpuSt() = 0;
 
     // ---- Built-In Views (point entry; View1..40 are range-dispatched) -
+    // ---- Built-in views (range commands, 1-based) ---------------------
     virtual void OnStandardView() = 0;
+    virtual void OnSelectBuiltInView(size_t oneBasedIndex) = 0;
 
     // ---- Antialiasing -------------------------------------------------
     virtual void OnGpuAntialiasing1x() = 0;

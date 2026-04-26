@@ -42,6 +42,17 @@ ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host)
         return;
     }
 
+    // Built-in view range (View1..View40) → portable index hook.
+    {
+        const auto raw = static_cast<uint32_t>(cmd);
+        const auto v1 = static_cast<uint32_t>(FractalCommand::View1);
+        const auto v40 = static_cast<uint32_t>(FractalCommand::View40);
+        if (raw >= v1 && raw <= v40) {
+            host.OnSelectBuiltInView(static_cast<size_t>(raw - v1) + 1u);
+            return;
+        }
+    }
+
     switch (cmd) {
     // ---- Help / Window ----
     case FractalCommand::ShowHotkeys:    host.OnShowHotkeys();    return;

@@ -73,6 +73,7 @@ public:
 
     // Built-In Views
     void OnStandardView() override;
+    void OnSelectBuiltInView(size_t oneBasedIndex) override;
 
     // Antialiasing
     void OnGpuAntialiasing1x() override;

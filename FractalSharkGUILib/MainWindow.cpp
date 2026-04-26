@@ -190,6 +190,7 @@ MainWindow::OnNrInnerLoopCpuSt()
 
 // ---- Built-In Views (point entry) -----------------------------------------
 void MainWindow::OnStandardView() { MenuStandardView(0); }
+void MainWindow::OnSelectBuiltInView(size_t oneBasedIndex) { MenuStandardView(oneBasedIndex); }
 
 // ---- Antialiasing ---------------------------------------------------------
 void
@@ -621,7 +622,8 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // gFractal exists.  If CPU-only is enforced, this will show the radio
     // button the menu properly.  Without this, the menu is out of sync until
     // the user changes algorithm manually.
-    commandDispatcher.Dispatch(IDM_ALG_AUTO);
+    FractalShark::ExecuteCommand(
+        FractalShark::CommandFromIdm(IDM_ALG_AUTO), *this);
     // commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
 
     // Optional: force an initial black fill before first show (prevents any flash)

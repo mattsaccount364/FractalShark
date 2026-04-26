@@ -1011,6 +1011,18 @@ RenderThreadPool::GlConsumerLoop()
         return;
     }
 
+    // Hand off any overlay callback that was registered before the
+    // context existed, then publish a pointer so future SetOverlayCallback
+    // calls reach the live context directly.
+    {
+        std::lock_guard lock(m_OverlayCallbackMutex);
+        if (m_PendingOverlayCallback) {
+            glContext->SetOverlayCallback(std::move(m_PendingOverlayCallback));
+            m_PendingOverlayCallback = {};
+        }
+        m_LiveGlContext = glContext.get();
+    }
+
     {
         char buf[256];
         snprintf(buf,
@@ -1050,11 +1062,13 @@ RenderThreadPool::GlConsumerLoop()
                 if (frame.IsFinal) {
                     // Draw perturbation overlay on final frames.
                     m_Fractal->DrawAllPerturbationResults(true);
+                    glContext->InvokeOverlayCallback();
                     glContext->SwapBuffers();
                     nextExpectedSeqNum++;
                     break;
                 }
 
+                glContext->InvokeOverlayCallback();
                 glContext->SwapBuffers();
             }
 
@@ -1068,6 +1082,25 @@ RenderThreadPool::GlConsumerLoop()
                 continue; // Spurious wakeup — wait again
             }
         }
+    }
+
+    // Consumer loop is exiting.  Clear the live context pointer so any
+    // late SetOverlayCallback calls fall back to the pending slot
+    // (or, more likely, are no-ops because the host is shutting down).
+    {
+        std::lock_guard lock(m_OverlayCallbackMutex);
+        m_LiveGlContext = nullptr;
+    }
+}
+
+void
+RenderThreadPool::SetOverlayCallback(OpenGlContext::OverlayCallback cb)
+{
+    std::lock_guard lock(m_OverlayCallbackMutex);
+    if (m_LiveGlContext) {
+        m_LiveGlContext->SetOverlayCallback(std::move(cb));
+    } else {
+        m_PendingOverlayCallback = std::move(cb);
     }
 }
 

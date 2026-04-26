@@ -19,10 +19,19 @@ add_executable(FractalSharkGuiLinux
     main.cpp
     LinuxClipboard.cpp
     LinuxXlibBackend.cpp
+    LinuxImGuiOverlay.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp
+)
+
+# BLA<T> template definitions live in FractalSharkGpuLib/BLA.cuh; mirror the
+# CLI workaround so the CPU-only Linux GUI link can resolve those symbols
+# without pulling in CUDA.
+target_sources(FractalSharkGuiLinux PRIVATE
+    ${CMAKE_SOURCE_DIR}/FractalSharkTest/BlaHostInstantiate.cpp
 )
 
 target_include_directories(FractalSharkGuiLinux PRIVATE
@@ -30,14 +39,22 @@ target_include_directories(FractalSharkGuiLinux PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/FractalSharkLib
     ${CMAKE_SOURCE_DIR}/FractalSharkPlatform
+    ${CMAKE_SOURCE_DIR}/HpSharkFloatLib
+    ${CMAKE_SOURCE_DIR}/FractalSharkGUILib
+    ${CMAKE_SOURCE_DIR}/FractalSharkGpuLib
     ${imgui_SOURCE_DIR}
 )
 
 find_package(X11 REQUIRED)
+find_package(OpenGL REQUIRED)
 
 target_link_libraries(FractalSharkGuiLinux PRIVATE
+    FractalSharkLib
+    FractalSharkGpuLib
     FractalSharkPlatform
     X11::X11
+    OpenGL::GL
+    OpenGL::GLX
 )
 
 # ImGui itself emits some warnings under -Wpedantic; keep the rest of the tree
@@ -47,6 +64,7 @@ set_source_files_properties(
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp
     PROPERTIES
     COMPILE_OPTIONS "-Wno-pedantic"
 )

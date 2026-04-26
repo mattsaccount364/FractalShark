@@ -33,6 +33,19 @@
 #include <span>
 #include <string_view>
 
+// X11 (Xlib.h) defines `None` and `Always` as preprocessor macros that
+// collide with our enum member names below.  Undefine them here so any
+// translation unit that includes both headers (in either order) works.
+// Code that genuinely needs the X11 constants can still spell them as
+// `0L` (None) and `2` (Always) directly, or re-include <X11/X.h> *after*
+// this header.
+#ifdef None
+#undef None
+#endif
+#ifdef Always
+#undef Always
+#endif
+
 namespace FractalShark::Menu {
 
 enum class RadioGroup : uint16_t {

@@ -213,6 +213,14 @@ public:
     // Returns once no workers are processing and the queue is empty.
     void Drain();
 
+    // Install an overlay callback on the GL consumer's OpenGlContext.
+    // The callback runs once per SwapBuffers, with the GL context
+    // current.  Used by the Linux GUI to render an ImGui overlay
+    // (menus, modals, drag-zoom outline) on top of the fractal canvas.
+    // Pass an empty std::function to clear.  Safe to call from any
+    // thread, before or after the consumer has started.
+    void SetOverlayCallback(OpenGlContext::OverlayCallback cb);
+
 private:
     static constexpr size_t NumWorkers = NumRenderers;
 
@@ -298,6 +306,13 @@ private:
     // Threads
     std::vector<std::thread> m_Workers;
     std::thread m_GlConsumerThread;
+
+    // Pending overlay callback installed via SetOverlayCallback before
+    // GlConsumerLoop has constructed the OpenGlContext, plus a pointer
+    // to the live context once it exists.  Both guarded by m_OverlayCallbackMutex.
+    std::mutex m_OverlayCallbackMutex;
+    OpenGlContext::OverlayCallback m_PendingOverlayCallback;
+    OpenGlContext *m_LiveGlContext = nullptr;
 
     // Shutdown flag
     std::atomic<bool> m_ShutdownFlag;

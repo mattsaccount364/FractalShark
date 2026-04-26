@@ -26,6 +26,25 @@
 #include <span>
 #include <string_view>
 
+// X11 (Xlib.h / X.h) defines several short identifiers as preprocessor
+// macros (None, Always, Above, Below, etc.) that collide with our enum
+// member names below.  Undefine the ones that clash here so any TU that
+// includes both headers (in either order) compiles.  Code that genuinely
+// needs the X11 constants can spell them as their integer literals or
+// re-include <X11/X.h> *after* this header.
+#ifdef None
+#undef None
+#endif
+#ifdef Always
+#undef Always
+#endif
+#ifdef Above
+#undef Above
+#endif
+#ifdef Below
+#undef Below
+#endif
+
 namespace FractalShark {
 
 // Mirrors IDM_* from FractalSharkGUILib/AlgCmds.h. Values are exactly the

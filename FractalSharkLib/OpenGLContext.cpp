@@ -585,6 +585,35 @@ OpenGlContext::SetRepaint(bool repaint)
     m_Repainting = repaint;
 }
 
+void
+OpenGlContext::SetOverlayCallback(OpenGlContext::OverlayCallback cb)
+{
+    std::lock_guard lock(m_OverlayMutex);
+    m_OverlayCallback = std::move(cb);
+}
+
+void
+OpenGlContext::InvokeOverlayCallback() noexcept
+{
+    // Snapshot the callback under the mutex, then invoke without holding
+    // the lock so the callback (which runs ImGui rendering on the GL
+    // consumer thread) can take its own ImGui mutex without inverting
+    // lock order.
+    OverlayCallback local;
+    {
+        std::lock_guard lock(m_OverlayMutex);
+        local = m_OverlayCallback;
+    }
+    if (local) {
+        try {
+            local();
+        } catch (...) {
+            // Swallow.  An overlay throwing must not break the render
+            // pool; the next frame will simply skip the overlay.
+        }
+    }
+}
+
 bool
 OpenGlContext::GetRepaint() const
 {

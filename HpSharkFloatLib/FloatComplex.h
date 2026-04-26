@@ -117,6 +117,8 @@ public:
         this->mantissaImag = other.mantissaImag;
     }
 
+    FloatComplex &operator=(const FloatComplex &) = default;
+
     CUDA_CRAP constexpr FloatComplex(const SubType re, const SubType im) { setMantexp(re, im); }
 
 private:

@@ -39,8 +39,8 @@ static constexpr size_t NumRenderers = static_cast<size_t>(RendererIndex::Count)
 
 struct ReductionResults {
     ReductionResults() :
-        Max{},
         Min{},
+        Max{},
         Sum{} {
     }
 

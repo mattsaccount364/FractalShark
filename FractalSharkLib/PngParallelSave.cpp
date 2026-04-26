@@ -4,6 +4,8 @@
 #include "Fractal.h"
 #include "PngParallelSave.h"
 
+#include <cinttypes>
+
 //////////////////////////////////////////////////////////////////////////////
 // Saves the current fractal as a bitmap to the given file.
 // If halfImage is true, a bitmap with half the dimensions of the current
@@ -14,13 +16,14 @@ PngParallelSave::PngParallelSave(enum Type typ,
                                  std::wstring filename_base,
                                  bool copy_the_iters,
                                  Fractal &fractal)
-    : m_Type(typ), m_FilenameBase(filename_base), m_Fractal(fractal), m_ScrnWidth(fractal.m_ScrnWidth),
+    : m_Type(typ), m_Fractal(fractal), m_ScrnWidth(fractal.m_ScrnWidth),
       m_ScrnHeight(fractal.m_ScrnHeight), m_GpuAntialiasing(fractal.m_GpuAntialiasing),
       m_NumIterations(fractal.m_NumIterations),
       m_PaletteRotate(fractal.GetPalette().GetPaletteRotation()),
       m_PaletteDepthIndex(fractal.GetPalette().GetPaletteDepthIndex()),
       m_PaletteAuxDepth(fractal.GetPalette().GetAuxDepth()),
-      m_WhichPalette(fractal.GetPalette().GetPaletteType()), m_CurIters{}, m_CopyTheIters(copy_the_iters)
+      m_WhichPalette(fractal.GetPalette().GetPaletteType()), m_CurIters{},
+      m_CopyTheIters(copy_the_iters), m_FilenameBase(filename_base)
 {
 
     for (size_t i = 0; i < FractalPaletteType::Num; i++) {
@@ -67,7 +70,7 @@ PngParallelSave::Run()
 
     Environment::SetCurrentThreadName(L"PngParallelSave::Run");
 
-    int ret;
+    [[maybe_unused]] int ret;
     std::wstring final_filename;
 
     std::wstring ext;
@@ -187,7 +190,7 @@ PngParallelSave::Run()
 
                 // static_assert(sizeof(IterType) == 8, "!");
                 // char(*__kaboom1)[sizeof(IterType)] = 1;
-                sprintf(one_val, "(%u,%u):%llu ", output_x, output_y, (IterTypeFull)numiters);
+                sprintf(one_val, "(%u,%u):%" PRIu64 " ", output_x, output_y, (IterTypeFull)numiters);
 
                 // Wow what a kludge
                 // size_t orig_len = strlen(one_val);

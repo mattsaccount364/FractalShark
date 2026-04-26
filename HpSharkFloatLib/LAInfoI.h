@@ -7,6 +7,7 @@ public:
     LAStageInfo() : LAIndex(0), MacroItCount(0) {}
 
     LAStageInfo(const LAStageInfo &other) : LAIndex(other.LAIndex), MacroItCount(other.MacroItCount) {}
+    LAStageInfo &operator=(const LAStageInfo &) = default;
 
     IterType LAIndex;
     IterType MacroItCount;
@@ -22,6 +23,8 @@ public:
         : StepLength(other.StepLength), NextStageLAIndex(other.NextStageLAIndex)
     {
     }
+
+    LAInfoI &operator=(const LAInfoI &) = default;
 
     CUDA_CRAP
     LAInfoI()

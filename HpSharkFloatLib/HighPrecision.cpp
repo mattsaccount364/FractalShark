@@ -1,5 +1,6 @@
 #include "HighPrecision.h"
 
+#include <cinttypes>
 #include <sstream>
 #include <string>
 
@@ -79,7 +80,7 @@ MpfToHex64StringInvertable(const mpf_t mpf_val)
         // Break lim into two 32-bit values and output individually, low then high
         uint64_t curLimb = limbs[i];
 
-        snprintf(buffer, sizeof(buffer), "0x%016llX ", curLimb);
+        snprintf(buffer, sizeof(buffer), "0x%016" PRIX64 " ", curLimb);
         result += buffer;
     }
 

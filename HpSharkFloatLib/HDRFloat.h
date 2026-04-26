@@ -211,6 +211,7 @@ public:
 
     // Copy constructor
     CUDA_CRAP constexpr HDRFloat(const HDRFloat &other) : Base(other) {}
+    HDRFloat &operator=(const HDRFloat &) = default;
 
     template <HDROrder OtherOrder> CUDA_CRAP constexpr HDRFloat(const HDRFloat<T, OtherOrder> &other)
     {

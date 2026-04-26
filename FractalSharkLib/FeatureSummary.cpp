@@ -9,8 +9,8 @@ FeatureSummary::FeatureSummary(const HighPrecision &origX,
                                const HighPrecision &origY,
                                const HighPrecision &radius,
                                FeatureFinderMode mode)
-    : Radius{radius}, OrigX{origX}, OrigY{origY}, FoundX{origX}, FoundY{origY},
-      Precision{origX.precisionInBits()}, IntrinsicRadius{radius}, Mode{mode}
+    : Radius{radius}, OrigX{origX}, OrigY{origY}, Mode{mode}, FoundX{origX}, FoundY{origY},
+      Precision{origX.precisionInBits()}, IntrinsicRadius{radius}
 {
 }
 

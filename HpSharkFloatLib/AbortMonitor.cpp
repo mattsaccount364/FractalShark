@@ -6,8 +6,8 @@
 AbortMonitor *AbortMonitor::s_Instance = nullptr;
 
 AbortMonitor::AbortMonitor(bool useSensoCursor)
-    : m_QuitFlag{false}, m_StopCalculating{false}, m_UseSensoCursor{useSensoCursor},
-      m_Thread{&AbortMonitor::Run, this}
+    : m_Thread{&AbortMonitor::Run, this}, m_QuitFlag{false}, m_StopCalculating{false},
+      m_UseSensoCursor{useSensoCursor}
 {
     s_Instance = this;
 }

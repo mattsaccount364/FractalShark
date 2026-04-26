@@ -2,93 +2,79 @@
 
 ## Project Overview
 
-FractalShark is a high-performance Mandelbrot set renderer focused on extreme zoom depths using CUDA GPU acceleration. It is a C++23/CUDA application targeting Windows (Visual Studio 2026, v145 toolset) and Linux (CMake + Clang). The project targets NVIDIA GPUs (GTX 900-series+, RTX 2xxx+ for GPU reference orbits) and requires AVX-2 CPUs.
+FractalShark is a high-performance Mandelbrot renderer focused on extreme zoom depths via CUDA GPU acceleration. C++23/CUDA, Windows (Visual Studio 2026, v145 toolset) + Linux (CMake + Clang). Targets NVIDIA GPUs (GTX 900+, RTX 2xxx+ for GPU reference orbits) and AVX-2 CPUs.
+
+Deeper architectural background lives in `Notes/FractalShark-*.tex` (perturbation theory, BLA/LA, ref orbits, NTT GPU arithmetic, FeatureFinder, render pipeline, memory system) and in source-file headers. Read those when a task touches the relevant area; do not duplicate that prose here.
+
+### Template Vocabulary
+
+Multi-parameter templates appear throughout the codebase:
+
+```cpp
+template<typename IterType, class T, class SubType, PerturbExtras PExtras>
+```
+
+`IterType` = iter counter (`uint32_t`/`uint64_t`); `T` = ref-orbit precision; `SubType` = per-pixel delta precision; `PExtras` = compile-time enum for extra data. Explicit instantiation is via macros (see `RefOrbitCalcTemplates.h`, `HpSharkInstantiate`).
 
 ## Build Systems
 
-FractalShark has two parallel build systems:
+Two parallel build systems:
 
-- **Windows**: Visual Studio `.vcxproj` / `.sln` files, built with MSBuild. This is the primary development environment.
-- **Linux**: CMake + Clang, with `CMakeLists.txt` files alongside the `.vcxproj` files. Linux support is being ported incrementally — not all projects have CMakeLists.txt yet.
+- **Windows** (primary): `.vcxproj`/`.sln` + MSBuild.
+- **Linux**: CMake + Clang, `CMakeLists.txt` alongside `.vcxproj`. Porting is incremental; not all projects have `CMakeLists.txt` yet.
 
-**Dual build system rule**: When adding or removing source files, updating include paths, or changing compiler settings, update **both** build systems if the affected project has a `CMakeLists.txt`. If the project only has a `.vcxproj`, update that alone.
-
-## Build Instructions (Windows)
-
-The authoritative Windows build process is defined in `.github/workflows/build.yml`.
-
-### Prerequisites
-
-- Visual Studio 2026 with C++ and CUDA support (this is the only supported version)
-- NVIDIA CUDA Toolkit 13.0.2
-- YASM assembler at `C:\Program Files\yasm\*` (bundled in `tools/yasm.zip` for CI)
-- MPIR library: clone `https://github.com/BrianGladman/mpir.git` into the repo root, then build `mpir\msvc\vs22\mpir.sln` (lib_mpir_skylake_avx, x64)
-
-### Building
-
-```powershell
-# Full rebuild (required if .h, .cu, or .cuh files changed):
-msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Release /p:Platform=x64
-msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Debug /p:Platform=x64
-
-# Incremental build (safe only if ONLY .cpp files changed — no headers, no CUDA):
-msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64
-```
-
-**Build rule**: If any `.h` file changed, do full rebuild (headers are shared between `.cpp` and `.cu` files). If only `.cpp` files changed, incremental is safe.
-
-Only x64 builds are supported.
-
-> **Do not use `/nologo`** — MSBuild on this project misinterprets it as a directory path.
+**Dual build system rule:** When adding/removing source files, updating include paths, or changing compiler settings, update **both** systems if the project has a `CMakeLists.txt`. If only `.vcxproj`, update that alone.
 
 ### Solution Projects
 
 | Project | Purpose | CMakeLists.txt |
 |---|---|---|
-| **FractalShark** | Main GUI application (Win32 window, rendering loop) | ❌ |
-| **FractalSharkLib** | Core library: fractal math, perturbation, reference orbits, linear approximation | ✅ |
-| **FractalSharkGpuLib** | CUDA kernels for Mandelbrot rendering (perturbation, BLA, LA, reduction) | ✅ |
-| **FractalSharkPlatform** | Cross-platform abstraction layer (Environment, types, aligned alloc) | ✅ |
-| **HpSharkFloatLib** | High-precision GPU arithmetic: NTT multiplication, custom float types, LA/DLA | ⏳ |
-| **HpSharkFloatTest** | GPU test harness for high-precision arithmetic | ❌ |
-| **HpSharkInstantiate** | Explicit template instantiation compilation unit | ❌ |
+| **FractalShark** | Main GUI app (Win32 window, render loop) | ❌ |
+| **FractalSharkLib** | Core: fractal math, perturbation, ref orbits, LA | ✅ |
+| **FractalSharkGpuLib** | CUDA rendering kernels (perturbation, BLA, LA, reduction) | ✅ |
+| **FractalSharkPlatform** | Cross-platform abstraction (Environment, types, alloc) | ✅ |
+| **HpSharkFloatLib** | High-precision GPU arithmetic (NTT, custom floats, LA/DLA) | ⏳ |
+| **HpSharkFloatTest** | GPU test harness for HP arithmetic | ❌ |
+| **HpSharkInstantiate** | Explicit template instantiation generator | ❌ |
 | **FractalTray** | System tray utility (functional) | ❌ |
 | **FractalSaver** | Screen saver (legacy) | ❌ |
-| **FractalSharkTest** | CPU unit tests for utility types (HDRFloat, HighPrecision, BLA, etc.) | ✅ |
+| **FractalSharkTest** | CPU unit tests for utility types | ✅ |
+
+## Build Instructions (Windows)
+
+Authoritative process: `.github/workflows/build.yml`.
+
+**Prereqs:** Visual Studio 2026 with C++ + CUDA, CUDA Toolkit 13.0.2, YASM at `C:\Program Files\yasm\*` (bundled in `tools/yasm.zip`), MPIR cloned to repo root and built via `mpir\msvc\vs22\mpir.sln` (`lib_mpir_skylake_avx`, x64).
+
+```powershell
+# Full rebuild (required if any .h, .cu, or .cuh changed):
+msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Release /p:Platform=x64
+msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Debug /p:Platform=x64
+
+# Incremental (safe ONLY if .cpp-only changes — no headers, no CUDA):
+msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64
+```
+
+Only x64 is supported. **Do not pass `/nologo`** — MSBuild misinterprets it as a directory path on this project.
 
 ## Build Instructions (Linux)
 
-Linux support is being ported incrementally. Only projects marked ✅ above have CMakeLists.txt files. The Linux build uses Clang (not GCC).
+Linux build uses Clang (not GCC). Prereqs: CMake 3.20+, Clang (tested 18.x), `libgmp-dev`.
 
-### Prerequisites
-
-- CMake 3.20+
-- Clang (tested with 18.x)
-- GMP development headers (`libgmp-dev` on Debian/Ubuntu)
-
-**Note on the custom heap allocator**: `HpSharkFloatLib/heap_allocator/HeapCpp.cpp` is Windows-only by design. On Linux all allocations flow through glibc `malloc` via `Environment::SystemHeap*`, and `Environment::RegisterHeapCleanup()` is an empty stub (defined at the bottom of `FractalSharkPlatform/EnvironmentLinux.cpp`). This is a permanent decision, not a temporary workaround.
+The custom heap allocator (`HpSharkFloatLib/heap_allocator/HeapCpp.cpp`) is Windows-only by design. On Linux, allocations flow through glibc `malloc` via `Environment::SystemHeap*` and `Environment::RegisterHeapCleanup()` is an empty stub (`FractalSharkPlatform/EnvironmentLinux.cpp`). Permanent decision.
 
 ### Linux Test Machine
 
-- Login via SSH public key using `ssh mrenz@ubuntu24`.
-- CUDA 13.2 is installed at `/usr/local/cuda` (nvcc is at `/usr/local/cuda/bin/nvcc`). It is **not** on the default `PATH`; prefix commands with `export PATH=/usr/local/cuda/bin:$PATH` or pass the full path. There is no physical GPU on this machine, so runtime CUDA tests cannot execute — only compile and link validation.
-- Primary development happens in the Windows working tree, which is the authoritative copy. The Linux machine is **never authoritative** — all truth lives on the Windows host.
-- The Linux checkout at `~/FractalShark` is a disposable test mirror used only for update, file copy, build, and test operations.
-- FractalShark is already cloned on the test machine at `~/FractalShark`, but that checkout may need to be updated before testing.
-- **Always verify the Linux checkout's commit matches the Windows working tree before testing.** Run `git rev-parse HEAD` (and `git status` to check for stray local modifications) on the Linux side and compare against the Windows `HEAD`. If they diverge, `git fetch && git checkout <sha>` or `git pull origin <branch>` to sync, then overlay any uncommitted Windows changes via `scp`. Skipping this check risks testing stale or mismatched code.
-- Before copying local changes over for testing, update the test checkout with `cd ~/FractalShark && git fetch origin && git checkout <branch-or-sha>` (or `git pull origin main` when tracking `main`).
-- Do not make source edits directly in the Linux checkout except for temporary debugging, and do not treat it as the source of record.
-- Do not create commits or push from the Linux test checkout. Treat it as a disposable test working tree only.
-- When testing local uncommitted changes, copy the modified files into `~/FractalShark` with `scp` as needed rather than creating commits or branches on the test machine.
+Ubuntu 24.04 box at `mrenz@ubuntu24` (SSH key auth). CUDA 13.2 at `/usr/local/cuda` — not on PATH; prefix with `export PATH=/usr/local/cuda/bin:$PATH`. **No GPU**, so only compile/link is validated, not runtime CUDA.
+
+Windows working tree is authoritative. The Linux checkout at `~/FractalShark` is a disposable test mirror — never commit or push from it. Always verify the Linux checkout's commit matches the Windows working tree before testing; sync via `git fetch && git checkout <sha>`, overlay uncommitted Windows changes via `scp`.
 
 ```bash
 ssh mrenz@ubuntu24
-cd ~/FractalShark && git rev-parse HEAD && git status --short   # verify commit matches Windows host
+cd ~/FractalShark && git rev-parse HEAD && git status --short   # verify vs Windows host
 cd ~/FractalShark && git fetch origin && git checkout <branch-or-sha>
 scp <local-file> mrenz@ubuntu24:~/FractalShark/<repo-relative-path>
 ```
-
-### Building
 
 ```bash
 mkdir -p build && cd build
@@ -97,271 +83,65 @@ cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CUDA_HOST_CO
 cmake --build . --parallel
 ```
 
-**Parallel builds across hosts**: The Windows host and the Linux test machine are independent environments. When a change needs to be validated on both, kick off the Windows MSBuild and the Linux `make` (or `cmake --build`) **simultaneously** — start each build in its own async shell, then wait on both in parallel rather than serializing them. Use `mode="async"` for each build and monitor completion notifications. Only serialize when a later build genuinely depends on an artifact from the earlier one (which is not the case for Windows ↔ Linux validation).
+**Parallel cross-host builds:** When validating on both hosts, kick off Windows MSBuild and Linux `cmake --build` simultaneously in separate `mode="async"` shells. Don't serialize unless there's a real artifact dependency (there isn't, for Win↔Linux validation).
 
-### Cross-platform porting roadmap
+## Testing
 
-Phase 1 (CPU subset + `FractalSharkTest`) and the rendering-side
-`FractalSharkGpuLib` are done. Remaining work, captured for future
-reference and not necessarily scheduled:
+- **`FractalSharkTest`** — standalone CPU executable. Validates `HDRFloat`, `HDRFloatComplex`, `HighPrecision` parsing, `PointZoomBBConverter`. Custom header-only framework (`TEST`/`ASSERT_*`). Build: `msbuild ... /t:FractalSharkTest`. Run: `Release\FractalSharkTest.exe`. Exit 0 = pass.
+- **`HpSharkFloatTest`** — standalone CUDA executable. Three-level cross-validation (GPU vs MPIR ground truth, GPU vs CPU reference, CPU reference vs MPIR) with checksum-guided debugging. `msbuild ... /t:HpSharkFloatTest`, then `Release\HpSharkFloatTest.exe`.
+- **`CrummyTest`** (in `FractalSharkLib/CrummyTest.cpp`) — functional suite invoked from the GUI right-click menu (IDM_BASICTEST). Calls `Drain()` then uses the **direct rendering path** (`CalcFractal(true)` → `SaveCurrentFractal`).
 
-- **Phase 2 — HpSharkFloatLib CUDA on Linux.** Port the CUDA high-precision arithmetic stack: `HpSharkInstantiate` (code-gen CPU exe), `HpSharkFloatLib` CUDA TUs (`Add.cu`, `MultiplyNTT.cu`, 18 `generated_inst/SharkExplicitInstantiate_*.cu` files), `HpSharkFloatTestLib`, `HpSharkFloatTest`. Retire the `BLA_CUH_HOST_ONLY` guard and `FractalSharkTest/BlaHostInstantiate.cpp` workaround once `FractalSharkTest` can link `FractalSharkGpuLib` directly. CI: add CUDA toolkit install; runtime GPU testing requires a self-hosted runner (deferred).
-- **Phase 3 — Main `FractalShark` GUI application.** Largest single chunk. Win32 `HWND`/`WM_*`/`IDM_*` → cross-platform windowing (GLFW/SDL/Qt; GLFW cheapest for existing GL pipeline but needs separate menu layer). Resource scripts (`.rc`) become embedded assets + in-code menus. Port `CrashHandler.cpp` (SEH+MiniDump → `signal`+`<stacktrace>`). Port or skip `JobObject.cpp`. Replace `GetOpenFileNameW` with a portable file-dialog shim. Finish the GLX skeleton in `OpenGLContext.cpp` or switch to EGL/GLFW. Clipboard / drag-drop / registry-backed settings.
-- **Phase 4 — Headless CLI renderer.** Cheap Linux deliverable and regression harness for Phase 2. Parse view (center, zoom, algorithm) from JSON/args, render via existing `FractalSharkLib`, emit PNG with `WPngImage`. Zero new platform abstraction required.
-- **Phase 5 — Out-of-scope projects.** `FractalTray` and `FractalSaver` are Windows-only by design; no Linux port planned.
-- **Phase 6 — Build-system hygiene.** CMake feature checks for `mpz_export`/`mpz_import` and `<stacktrace>`. Flip `-Werror` on CI after fixing the `BLA.h` `-Wundefined-inline`. Add a Linux Debug-config CI job. ASan/UBSan build of `FractalSharkTest`. `clang-format-check` CI job.
-- **Phase 7 — Cross-platform source hygiene.** Audit existing `#ifdef _WIN32` / `#ifdef _MSC_VER` sites (notably in `FeatureFinder.cpp`, `CrummyTest.cpp`); unify behind `FractalSharkPlatform` where it reduces duplication. Most sites — `HeapCpp.cpp`, `OpenGLContext.cpp` GLX, `MpirSerialization.cpp` — are legitimately platform-divergent and should stay as-is. Low priority.
+## Critical Operational Rules
 
-Suggested ordering: 2 → 4 → 3. Phase 6 opportunistic; Phases 5/7 documentation and cleanup, non-urgent.
+These prevent real bugs; do not strip them when editing:
 
-### Testing
-
-Three test projects cover different layers:
-
-**HpSharkFloatTest** (GPU arithmetic) — standalone CUDA executable. Tests high-precision add, NTT multiply, and reference orbit iteration via three-level cross-validation: GPU vs MPIR (ground truth), GPU vs CPU reference (same HpSharkFloat format), CPU reference vs MPIR. Leverages the checksum-guided debugging infrastructure to isolate pipeline-stage failures. Build and run:
-
-```powershell
-msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64 /t:HpSharkFloatTest
-# Run the built executable directly
-Release\HpSharkFloatTest.exe
-```
-
-**CrummyTest** (in `FractalSharkLib/CrummyTest.cpp`) is a functional test suite invoked from the application's right-click menu (IDM_BASICTEST). It tests rendering algorithms, reference orbit save/load, compression variants, and window resizing. CrummyTest calls `Drain()` then uses the **direct rendering path** (`CalcFractal(true)` → `SaveCurrentFractal`), not the render pool. Tests include `TestBasic`, `TestReferenceSave`, `TestVariedCompression`, `TestImaginaLoad`, `TestPerturbedPerturb`, `TestWindowResize`, `TestStringConversion`, and `TestGrowableVector`.
-
-**FractalSharkTest** (in `FractalSharkTest/`) is a standalone CPU executable that validates utility types: `HDRFloat<T>` arithmetic, `HDRFloatComplex` operations, `HighPrecision` string parsing, and `PointZoomBBConverter` coordinate transforms. Uses a simple assertion-based framework (`TEST`, `ASSERT_EQ`, `ASSERT_NEAR`).
-
-## Architecture
-
-### Template-Heavy Design
-
-The codebase uses extensive multi-parameter templates to support different precision levels and iteration types at compile time:
-
-```cpp
-template<typename IterType, class T, class SubType, PerturbExtras PExtras>
-```
-
-- `IterType`: iteration counter type (`uint32_t` or `uint64_t`)
-- `T`: high-precision type for reference orbit computation
-- `SubType`: lower-precision type for per-pixel perturbation
-- `PExtras`: compile-time enum controlling extra data collection
-
-Explicit template instantiation is done via macro patterns (see `RefOrbitCalcTemplates.h`, `HpSharkInstantiate` project) to manage compile times across 36 `PerturbationResults` type combinations (2 `IterType` × 6 `T` × 3 `PExtras`, enumerated in `AwesomeVariant`) and 60 `SharkFloatParams` aliases (5 families × 12 precision levels from 256 to 524288 limbs).
-
-### Perturbation Theory Rendering
-
-Rather than iterating every pixel at full precision, FractalShark computes one **reference orbit** at high precision (MPIR arbitrary precision on CPU, or custom high-precision floats on GPU), then renders each pixel by computing only its low-precision **delta** from that reference. This is the "perturbation" technique. Template parameter `T` controls the reference orbit precision; `SubType` controls the per-pixel delta precision (float, double, HDRFloat, 2×32 custom type).
-
-**Linear approximation (LA)** further accelerates rendering by skipping iterations where the delta can be well-approximated by a linear function.
-
-### GPU Code Organization
-
-- `FractalSharkGpuLib/`: Rendering kernels (`.cu`/`.cuh` files) — perturbation, BLA, antialiasing, reduction
-- `HpSharkFloatLib/`: High-precision arithmetic kernels — NTT multiply, GPU BLAS, LA/DLA computation
-- CUDA device code uses `CUDA_CRAP` macro as a device/host qualifier shorthand
-
-### Numeric Type Hierarchy
-
-Per-pixel perturbation computation uses these types, from lowest to highest precision:
-
-| Type | Components | Effective bits | Practical role |
-|---|---|---|---|
-| `float` | 1×fp32 | ~24 | fastest; sometimes insufficient |
-| `dblflt` | 2×fp32 | ~48 | practical sweet spot on GPU |
-| `double` | 1×fp64 | ~53 | standard; slow on consumer GPUs |
-| `dbldbl` | 2×fp64 | ~104 | academic |
-| `GQF::gqf_real` | 4×fp32 | ~96 | academic |
-| `GQD::gqd_real` | 4×fp64 | ~212 | academic |
-| MPIR / `HpSharkFloat` | N limbs | arbitrary | reference orbit only |
-
-Any of these can be wrapped with `HDRFloat<>` for wide dynamic range (separate exponent + mantissa). In practice, the vast majority of rendering uses `float`, `double`, or `HDRFloat<CudaDblflt<dblflt>>` as the perturbation delta type (`SubType`).
-
-- `dblflt`: A 2×fp32 double-float expansion type. `CudaDblflt<dblflt>` is its CUDA wrapper class with `HDRFloat` integration.
-- `GQF`/`GQD`: Quad-float/quad-double types adapted from the QD library. Use namespaced helper functions (no wrapper class).
-- `HDRFloat<T>`: Decouples dynamic range from precision — stores a base-2 exponent plus a normalized `T` mantissa. Used extensively in perturbation and reference orbit paths where values span many orders of magnitude.
-
-### GPU Kernel Families
-
-Base (non-perturbation) rendering kernels follow the naming pattern `mandel_{limbs}x_{base_type}`:
-
-- `mandel_1x_float`, `mandel_1x_double` — single-precision and double-precision direct iteration
-- `mandel_2x_float`, `mandel_2x_double` — double-float and double-double expansion types
-- `mandel_4x_float`, `mandel_4x_double` — quad-float and quad-double expansion types
-- `mandel_hdr_float` — HDR-normalized expansion type
-
-Perturbation rendering has additional kernel families for BLA, LA v2, and perturbation-only paths, selected via the `LAv2Mode` enum. `iteration_precision` controls chunked iteration that can switch numeric types mid-render.
-
-### Reference Orbit Pipeline
-
-`RefOrbitCalc` orchestrates reference orbit computation with three backends:
-
-1. **Single-threaded CPU** — MPIR arbitrary precision; authoritative orbit with periodicity detection via ∂z/∂c derivative tracking
-2. **Multi-threaded CPU** — Splits orbit into segments; precision-dependent tradeoff (beneficial at moderate precision, overhead-dominated at extreme precision)
-3. **GPU** — `HpSharkFloat`-based computation using NTT multiplication (see GPU Arithmetic below)
-
-**Compression and reuse modes**: Reference orbits are expensive to compute but cheap to reuse. `SaveForReuse` modes store orbits for re-rendering at different `SubType` precisions. Waypoint-based compression stores only periodic checkpoints and replays intermediate values on demand, trading compute for memory. Imagina-compatible "max" compression format is also supported.
-
-**Evaluation modes**: Expanded evaluation computes `z_n = z_{n-1}^2 + c` directly; factored evaluation uses `z_n = (z_{n-1} + c_root) * (z_{n-1} - c_root)` near periodic points for better numerical stability.
-
-### Rendering Algorithm Selection
-
-Three main acceleration layers, selected via `LAv2Mode` enum:
-
-- **Perturbation-only** — Iterates each pixel's delta `Δz` from the reference orbit without approximation skipping. Simplest path; uses rebasing when `|Δz|` grows too large relative to `|z|`.
-- **BLA v1 (Bilinear Approximation)** — `BLA<T>` stores linear coefficients (A, B) such that `Δz_{n+s} ≈ A·Δz_n + B·Δc`. Steps are composable (two short steps → one longer step). GPU lookup selects the longest valid aligned step at each iteration.
-- **LA v2 (Linear Approximation)** — More aggressive: precomputes linear approximation coefficients from the reference orbit, allowing large iteration skips. HDR kernel variant. Can run in full-LA, LA-only, or perturbation-only sub-modes.
-
-### Key Data Structures
-
-- **`GrowableVector<EltT>`** — Growable array with stable virtual addresses (no reallocation/copy). Uses `VirtualAlloc` reserve-and-commit: reserves a large virtual region up front, then commits pages incrementally. Also supports file-backed (disk-mapped) mode for persistence and low commit overhead. Used for orbit storage, metadata streams, and the custom heap arena. Critical for multi-billion-element reference orbits.
-
-- **`PointZoomBBConverter`** — Manages screen-pixel ↔ complex-plane coordinate transforms. All internal quantities (centre, bounding box, zoom factor) stored as `HighPrecision` (MPIR `mpf_t`) for meaningful precision at extreme zoom depths. Computes per-pixel deltas at full precision, then down-converts to the kernel's working type.
-
-### Render Thread Pool and Command Queue
-
-`RenderThreadPool` owns 4 worker threads and a GL consumer thread. UI actions never mutate `Fractal` state directly — they enqueue lambdas that execute on worker threads under `m_CalcFractalMutex`, eliminating UI↔worker data races.
-
-**Three enqueue APIs** (on both `RenderThreadPool` and `Fractal`):
-
-| API | Mutation | Render | Use case |
-|-----|----------|--------|----------|
-| `EnqueueCommand(lambda)` | ✅ | ✅ | UI zoom, pan, palette, recalc |
-| `EnqueueMutation(lambda)` | ✅ | ❌ | Settings changes (algorithm, precision, perturbation type) |
-| `EnqueueRender()` | ❌ | ✅ | Re-render current state |
-
-**Queue superseding**: When a new render is enqueued, earlier queued supersedable renders are discarded (only the latest view matters during rapid input). A generation counter also skips stale in-flight renders before they acquire GPU resources. AutoZoomer pipeline items are marked `Supersedable = false` to prevent skipping animation frames.
-
-**`Drain()`**: Waits for all in-flight work to complete. Used by `CrummyTest` and `AutoZoomer` Default/Max heuristic before calling `CalcFractal(true)` directly.
-
-### Two Rendering Paths
-
-`CalcFractal` is called from two distinct paths with different iteration data flow:
-
-1. **Render pool path** (normal UI rendering): Worker acquires its own `ItersMemoryContainer` from a pool. GPU results stay in `workerIters`, get copied to a `RenderFrame` via `ProduceFrame` → `RenderCurrent`, displayed by the GL consumer. `m_CurIters` is **not** updated.
-
-2. **Direct path** (`CalcFractal(true)` — CrummyTest, AutoZoomer Default/Max, save operations): Uses `m_CurIters` directly via `CalcContext{m_Ptz, m_CurIters}`. The `drawFractal=true` parameter triggers a GPU→CPU iter copy at the end of `CalcFractalTypedIter` so `m_CurIters` has the results. **Must call `Drain()` first** to ensure no pool workers are active.
-
-**Critical rule**: Operations that read `m_CurIters` (saving images, AutoZoom iteration analysis) must use the direct path, not `EnqueueCommand`. `EnqueueCommand` renders to `workerIters` which is returned to the pool — `m_CurIters` never sees the data.
-
-### MPIR Allocator Lifecycle
-
-MPIR memory allocation is controlled via `mp_set_memory_functions` (process-global). Two custom allocators exist:
-
-- **`MPIRBoundedAllocator`** — Fixed 4×1MB stack-like blocks per thread (TLS). Used for short-lived temporaries in `CalcCpuHDR` and reference orbit computation.
-- **`MPIRBumpAllocator`** — `GrowableVector`-backed, grows dynamically. Used for `SaveForReuse` orbit data that persists after computation.
-
-**Critical rule**: All MPIR objects (`mpf_t`, `HighPrecision`) allocated under a custom allocator **must be destroyed before `ShutdownTls()`**. After `ShutdownTls()`, `TlsInitialized = false` causes `mpf_clear` → `NewFree` to fall back to the default allocator (HeapCpp), which crashes on pointers from the custom allocator. **Use `{ }` scope blocks** to ensure stack-local MPIR objects are destroyed while TLS is still active.
-
-### Feature Finder
-
-`FeatureFinder` (in `FeatureFinder.h`/`.cpp`) locates the center (nucleus) of nearby mini-Mandelbrot copies — the unique parameter `c*` where the critical orbit is exactly periodic with period `p`.
-
-- **Phase A (T-space)**: Detect candidate period `p` and perform coarse Newton iteration using the renderer's native float type
-- **Phase B (MPF refinement)**: Polish to arbitrary precision using MPIR `mpf_t` arithmetic with mixed Newton–Halley iteration
-
-Three evaluation backends are available for Phase A: direct iteration, perturbation theory, and linear approximation — so the finder works at any zoom depth. Influenced by the Imagina fractal viewer's periodic-point finder.
-
-**GPU Newton-Raphson inner loop**: The Phase B inner loop (iterating z=z²+c plus dzdc and d2 derivatives for p steps) is fully implemented on the GPU via the `HpSharkFloat` backend. The 4 NR derivative products (W0–W3) are interleaved into the same multiply and add kernel calls as the 3 orbit products, sharing all grid-wide barriers with zero additional synchronization overhead. `DispatchNRByPrecision` in `FeatureFinder.cpp` dispatches to the appropriate `SharkParamsNR` type (256 through 524288 limbs). The `addTwos` array applies the ×2 factor during multiply normalization.
-
-### GPU High-Precision Arithmetic (HpSharkFloatLib)
-
-The GPU reference orbit backend in `HpSharkFloatLib/` implements:
-
-- **NTT-based multiplication**: Number Theoretic Transform over the "magic prime" `2^64 - 2^32 + 1` (Goldilocks form enabling efficient modular reduction). Pipeline: packing → twisting → forward NTT → pointwise multiply (Montgomery domain) → inverse NTT → untwisting → unpacking/normalization. Multiple products are batched simultaneously to amortize GPU synchronization.
-
-- **High-precision addition**: Parallel prefix carry propagation on GPU — signed limbwise accumulation followed by single-pass parallel prefix scan with decoupled look-back (Merrill–Garland) for carry resolution and normalization. Three carry streams (A−B+C true branch, false branch, D+E) are packed into a single `PPTransfer3` struct and resolved in one scan. An earlier hierarchical scan implementation (`CarryPropagation_ABC_PPv3`) is retained for reference but not used in production.
-
-- **Multiply normalization carry propagation**: Uses the same decoupled-look-back parallel prefix scan as addition. Two rounds of ripple carry first reduce wide accumulators into standard form, then the DLB prefix scan resolves any residual carries.
-
-- **Checksum-guided debugging**: Stage checksums (homomorphic summaries) are computed at each pipeline stage on both host and device, then cross-compared to isolate GPU kernel bugs. This pattern is used throughout HpSharkFloat development for correctness validation.
-
-### Key Third-Party Dependencies
-
-- **MPIR** (arbitrary precision integers, fork of GMP) — built from source, linked as static lib
-- **WPngImage** — PNG image I/O
+- **Two rendering paths for `CalcFractal`.** Render-pool path (normal UI) writes to `workerIters` and does **not** update `m_CurIters`. Direct path (`CalcFractal(true)`, used by CrummyTest, AutoZoomer Default/Max, save ops) writes to `m_CurIters` and **requires `Drain()` first**. Anything that reads `m_CurIters` (image save, AutoZoom analysis) **must** use the direct path, not `EnqueueCommand`.
+- **Three enqueue APIs** on `RenderThreadPool`/`Fractal`: `EnqueueCommand` (mutate + render), `EnqueueMutation` (mutate, no render), `EnqueueRender` (render only). UI never mutates `Fractal` state directly. New renders supersede earlier supersedable ones; AutoZoomer items set `Supersedable = false`.
+- **MPIR allocator lifecycle.** All MPIR objects (`mpf_t`, `HighPrecision`) allocated under a custom allocator (`MPIRBoundedAllocator`, `MPIRBumpAllocator`) **must be destroyed before `ShutdownTls()`**. After shutdown, `mpf_clear` falls back to the default allocator and crashes on custom-allocator pointers. Use `{ }` scope blocks to force destruction order.
+- **Reference orbit backends.** `RefOrbitCalc` has single-threaded CPU (MPIR, authoritative), multi-threaded CPU, and GPU (`HpSharkFloat` + NTT). `SaveForReuse` modes persist orbits for reuse at different `SubType` precisions; waypoint and Imagina-compatible "max" compression are supported.
+- **NR checkpoint resume.** `FeatureFinder` NR inner-loop backends treat `startIter > 0` as resume mode; `startIter == 0` reinitializes z/dzdc/d2.
 
 ## Code Conventions
 
 ### Naming
 
-- **Classes/Methods/Enums**: `PascalCase` (e.g., `RefOrbitCalc`, `GetPrecision()`, `PerturbExtras::Disable`)
-- **Class member variables**: `m_PascalCase` prefix (e.g., `m_RefOrbit`, `m_DrawThreads`)
-- **Plain-struct fields** (no `m_` prefix): `PascalCase` (e.g., `Width`, `ViewSource`, `CommitCapBytes`)
-- **Locals, parameters, lambda params**: `camelCase` (e.g., `parsedAlg`, `commitCap`, `expectValue`)
-- When modifying a function, rename any legacy snake_case identifiers inside it to the appropriate convention. Avoid whole-file rename sweeps unrelated to functional changes.
+- Classes / methods / enums: `PascalCase` (`RefOrbitCalc`, `GetPrecision()`, `PerturbExtras::Disable`).
+- Class member variables: `m_PascalCase` (`m_RefOrbit`, `m_DrawThreads`).
+- Plain-struct fields (no `m_`): `PascalCase` (`Width`, `CommitCapBytes`).
+- Locals, parameters, lambda params: `camelCase`.
+- When modifying a function, rename legacy snake_case identifiers inside it. No whole-file rename sweeps.
 
 ### Formatting
 
-A `.clang-format` is configured for the project:
-- C++20 standard
-- 105-column limit, 4-space indentation, no tabs
-- Pointer/reference alignment: right (`int *ptr`, `int &ref`)
-- Braces: Allman style for functions, K&R for control flow
-- `stdafx.h` precompiled header must be included first
+`.clang-format` is configured: C++20, 105 cols, 4-space indent, no tabs, right-aligned pointers/refs, Allman braces for functions, K&R for control flow, `stdafx.h` first. `clang-format` is at `C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\Llvm\bin\clang-format.exe` (not on PATH). Run on modified files after edits.
 
-After making code changes, run `clang-format` on modified files:
-```powershell
-clang-format -i <modified-files>
-```
+### Other rules
 
-### Error Handling
+- **Error handling:** CUDA via return codes (`cudaError_t`). Both exceptions and status enums are acceptable. CUDA allocation failures should fall back gracefully (e.g., `cudaMalloc` → `cudaMallocHost`).
+- **Warnings:** Always `#pragma warning(push)`/`pop` — never project-wide suppression. Common: 4702, 4324, 4100.
+- **Ownership:** `std::unique_ptr` for ownership; raw pointers for non-owning. **Do not use `std::shared_ptr`** — refactor instead.
+- **Logging:** `std::cout` for high-level diagnostics. `OutputDebugStringA` reserved for heap/panic paths. No logging frameworks or LOG macros.
+- **Windows headers:** `NOMINMAX` and `WIN32_LEAN_AND_MEAN` must be defined before any `<Windows.h>` (already in `stdafx.h`; redefine in files that include Windows headers directly).
+- **`static_assert`** for compile-time layout / platform / range checks.
+- **Include order:** `"stdafx.h"` first, then project headers, then system/third-party. Use **forward slashes** in paths — clang requires it; MSVC accepts either.
+- **Git LFS** tracks `*.png`, `*.jpg`, `*.zip` per `.gitattributes`. Don't add large binaries without LFS.
 
-- CUDA errors are checked via return codes (`cudaError_t`)
-- Both C++ exceptions and return codes/status enums are acceptable depending on context
-- CUDA allocation failures fall back gracefully (e.g., `cudaMalloc` → `cudaMallocHost`)
+## CI
 
-### Warning Suppression
+`.github/workflows/build.yml` runs three parallel jobs:
 
-- Always use `#pragma warning(push)` / `#pragma warning(pop)` — never project-wide suppression
-- Common suppressed warnings: 4702 (unreachable code in template branches), 4324 (struct padding), 4100 (unreferenced parameter)
-
-### Ownership and Smart Pointers
-
-- Use `std::unique_ptr` for ownership. Raw pointers only for non-owning borrowed references.
-- **Do not use `std::shared_ptr`** — if shared ownership seems necessary, the design is wrong. Refactor to clarify ownership.
-
-### Logging
-
-- No logging framework. Use `std::cout` for high-level diagnostics.
-- `OutputDebugStringA` is reserved for heap/panic paths only.
-- Do not introduce custom LOG macros or logging libraries.
-
-### Windows Headers
-
-- `NOMINMAX` and `WIN32_LEAN_AND_MEAN` must appear before any `<Windows.h>` include. Already set in `stdafx.h`, but files that include Windows headers directly (e.g., `.cpp` files without the precompiled header) must define them explicitly.
-
-### `static_assert`
-
-- Use `static_assert` for compile-time validation of type layouts, platform assumptions, and range contiguity. Short messages are fine.
-
-### Include Order
-
-1. `"stdafx.h"` (precompiled header, always first)
-2. Project headers
-3. System/third-party headers
-
-Use forward slashes in `#include` paths (e.g., `"heap_allocator/include/HeapCpp.h"`, not `"heap_allocator\include\HeapCpp.h"`). MSVC accepts either, but clang only accepts forward slashes.
-
-### Git LFS
-
-- `.gitattributes` tracks `*.png`, `*.jpg`, `*.zip` via Git LFS. Do not add large binaries without LFS.
-
-### CI
-
-- `.github/workflows/build.yml` defines three parallel jobs:
-  - **build-pdf**: Builds the LaTeX notes PDF on Windows.
-  - **build** (matrix: Debug, Release): Windows MSBuild + CUDA build, runs `FractalSharkTest.exe`. Changes that break these tests will fail CI.
-  - **build-linux**: Linux CMake build with Clang on Ubuntu. Builds `FractalSharkPlatform` and `FractalSharkLib` static libraries and the `FractalSharkTest` executable, then runs `./build/FractalSharkTest/FractalSharkTest`. `TestMpirSerialization` runs on both platforms: the Linux branch of `MpirSerialization.cpp` implements the MPIR raw wire format atop GMP's `mpz_export`/`mpz_import`, producing byte-identical output to the Windows MPIR path (verified via a committed `FractalSharkTest/golden_mpir.bin`).
+- **build-pdf** — LaTeX notes PDF on Windows.
+- **build** (Debug + Release matrix) — Windows MSBuild + CUDA, runs `FractalSharkTest.exe`.
+- **build-linux** — Ubuntu CMake/Clang. Builds `FractalSharkPlatform` + `FractalSharkLib` + `FractalSharkTest`, runs `./build/FractalSharkTest/FractalSharkTest`. `TestMpirSerialization` runs on both platforms; the Linux MPIR wire-format implementation atop GMP `mpz_export`/`mpz_import` is validated byte-for-byte against the committed `FractalSharkTest/golden_mpir.bin`.
 
 ## Workflow
 
-- **Do not create git commits or stage files.** Do not run `git add` or `git commit`. Leave all changes unstaged for the user to review and commit manually.
-- **Do not make code changes in plan mode.** Plan mode is for analysis and planning only.
+- **Do not run `git add` or `git commit`.** Leave changes unstaged for the user to review and commit manually.
+- **Do not change code in plan mode.** Plan mode is analysis and planning only.
 
-## Notes Document (Notes/)
+## Notes Document (`Notes/`)
 
-The `Notes/` directory contains a LaTeX technical document (~7,500 lines, 141 pages, 13 chapters + 2 appendices) describing FractalShark's algorithms and architecture.
-
-### Build
+LaTeX technical document (~7,500 lines, 13 chapters + 2 appendices) covering FractalShark's algorithms in depth. Master file: `FractalShark.tex`.
 
 ```powershell
 cd Notes
@@ -370,38 +150,15 @@ pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
 # bibtex FractalShark && pdflatex ... (twice more) for bibliography.
 ```
 
-### Document Structure
+### Writing Conventions (Notes/)
 
-`FractalShark.tex` is the master file. It includes chapters via `\input{}`:
-
-| File | Topic |
-|---|---|
-| `FractalShark-01-Introduction.tex` | Overview, capabilities, template design |
-| `FractalShark-02-DirectRendering.tex` | GPU escape-time kernels, pixel mapping |
-| `FractalShark-03-NumericTypes.tex` | HDR float, extended-precision types |
-| `FractalShark-04-Perturbation.tex` | Perturbation theory, delta recurrence, rebasing |
-| `FractalShark-05-Approximation.tex` | BLA v1, LA v2, threshold propagation |
-| `FractalShark-06-RefOrbit.tex` | Reference orbit computation, compression, multi-threading |
-| `FractalShark-07-GpuArithmetic.tex` | NTT multiplication, carry propagation, Montgomery, checksums |
-| `FractalShark-08-FeatureFinder.tex` | Newton/Halley iteration, GPU NR inner loop |
-| `FractalShark-09-RenderPipeline.tex` | Antialiasing, coloring, thread pool, coordinate management |
-| `FractalShark-10-MemorySystem.tex` | GrowableVector, reserve/commit, file-backed storage |
-| `FractalShark-11-FutureDirections.tex` | Alternative techniques, design decision rationale |
-| `FractalShark-12-Conclusion.tex` | Summary, system architecture diagram |
-| `FractalShark-A1-UserGuide.tex` | Menu reference, keyboard shortcuts |
-| `FractalShark-A2-DevNotes.tex` | Development diary (informal) |
-
-Parts: I = Rendering Algorithms (§2–5), II = Reference Orbit Computation (§6–8), III = Supporting Infrastructure (§9–10), IV = Further Techniques (§11).
-
-### Writing Conventions
-
-- **Tone**: Formal third-person academic (research paper style) in chapters 1–12. Appendices A1/A2 are intentionally informal.
-- **No sensationalized language**: Avoid "dramatically", "crucially", "key insight", "notoriously", "massively parallel", etc. Let content speak for itself.
-- **No bare "This"**: Never start a sentence with "This" followed directly by a verb. Always follow "This" with a noun (e.g., "This approach ensures…" not "This ensures…"; "This property is…" not "This is…").
-- **Figures**: Use pure TikZ for diagrams (no external image files for diagrams). Use `\caption[short]{long}` format. Add `\cref{fig:...}` in surrounding prose.
-- **Equations**: Numbered equations should be referenced via `\eqref{}` or `\cref{eq:...}` in the text. Unnumbered display math (`\[...\]`) for equations only used at the point of definition.
-- **Cross-references**: Use `\cref{}` (cleveref) for all cross-references. Add forward-linking sentences at the end of each chapter.
-- **Code identifiers**: Use `\code{}` macro for inline code. Use `\begin{lstlisting}` (not `\begin{verbatim}`) for code blocks. `listings` package is configured in the preamble.
-- **Notation**: The notation table in `FractalShark.tex` (lines ~63–130) defines canonical symbols. New symbols should be added there if used across chapters.
-- **American English**: Use US spellings (`-ize`, `-ization`, `center`, `color`, `behavior`, `synchronize`, `analyze`, `utilize`, `optimize`, etc.), not British (`-ise`, `-isation`, `centre`, `colour`, `behaviour`, `synchronise`, `analyse`, `utilise`, `optimise`). Applies to all prose in `Notes/`. Preserve British spellings only inside `\code{...}` identifiers, bibliography titles, and quoted material.
-- **LA v2 formatting**: Use "LA~v2" (with non-breaking space) consistently, not "LAv2". Preserve "LAv2" only inside `\code{}` identifiers.
+- **Tone:** Formal third-person academic in chapters 1–12. Appendices A1/A2 are intentionally informal.
+- **No sensationalized language:** avoid "dramatically", "crucially", "key insight", "notoriously", "massively parallel", etc.
+- **No bare "This"** + verb. Always follow `This` with a noun (`This approach…`, not `This ensures…`).
+- **Figures:** pure TikZ; `\caption[short]{long}`; cross-ref via `\cref{fig:...}`.
+- **Equations:** number ones referenced elsewhere; reference via `\eqref{}` or `\cref{eq:...}`. Unnumbered display math only when used at point of definition.
+- **Cross-refs:** `\cref{}` (cleveref). Add forward-linking sentences at chapter ends.
+- **Code:** `\code{}` inline; `lstlisting` (not `verbatim`) for blocks.
+- **Notation:** canonical symbols defined in the notation table in `FractalShark.tex` (~lines 63–130).
+- **American English** prose (`-ize`, `center`, `color`, `behavior`, `synchronize`, `analyze`, `optimize`). British spellings only inside `\code{}` identifiers, bibliography titles, and quoted material.
+- **LA v2 formatting:** `LA~v2` (non-breaking space) consistently. `LAv2` only inside `\code{}` identifiers.

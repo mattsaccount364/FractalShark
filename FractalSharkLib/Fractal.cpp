@@ -724,7 +724,7 @@ Fractal::FindInterestingLocation(Environment::ScreenRect *rect)
     HighPrecision sizeXHigh = ((HighPrecision)sizeY * ratio);
     int sizeX = Convert<HighPrecision, int>(sizeXHigh);
 
-    uint64_t numberAtMax, numberAtMaxFinal = 0;
+    uint64_t numberAtMax;
     HighPrecision percentAtMax, percentAtMaxFinal{10000000.0};
     HighPrecision desiredPercent{(rand() % 75) / 100.0 + .10};
 
@@ -753,7 +753,6 @@ Fractal::FindInterestingLocation(Environment::ScreenRect *rect)
                                                      (HighPrecision)GetNumIterations<IterTypeFull>());
 
         if (abs(percentAtMax - desiredPercent) < abs(percentAtMaxFinal - desiredPercent)) {
-            numberAtMaxFinal = numberAtMax;
             percentAtMaxFinal = percentAtMax;
             xMinFinal = xMin;
             yMinFinal = yMin;
@@ -1826,7 +1825,7 @@ Fractal::SetNRInnerLoopBackend(NRInnerLoopBackend v)
 
 template <typename IterType, class T>
 void
-Fractal::CalcGpuFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx)
+Fractal::CalcGpuFractal(RendererIndex idx, [[maybe_unused]] bool drawFractal, CalcContext &ctx)
 {
     T cx2{}, cy2{}, dx2{}, dy2{};
     FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
@@ -2601,7 +2600,9 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
 
 template <typename IterType, class T, class SubType>
 void
-Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx)
+Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx,
+                                      [[maybe_unused]] bool drawFractal,
+                                      CalcContext &ctx)
 {
     auto *results =
         m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
@@ -2666,7 +2667,9 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx, bool drawFractal, Calc
 
 template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
 void
-Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal, CalcContext &ctx)
+Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx,
+                                       [[maybe_unused]] bool drawFractal,
+                                       CalcContext &ctx)
 {
 
     using T = RenderAlg::MainType;
@@ -2756,7 +2759,9 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx, bool drawFractal, Cal
 
 template <typename IterType, class T, class SubType, class T2, class SubType2>
 void
-Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx)
+Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx,
+                                             [[maybe_unused]] bool drawFractal,
+                                             CalcContext &ctx)
 {
     auto *results =
         m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,

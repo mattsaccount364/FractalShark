@@ -86,7 +86,7 @@ public:
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
 LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep()
-    : Ref{}, LAThreshold{}, ZCoeff{}, CCoeff{}, LAThresholdC{}, LAi{}, MinMag{}
+    : Ref{}, ZCoeff{}, CCoeff{}, LAThreshold{}, LAThresholdC{}, MinMag{}, LAi{}
 {
 }
 
@@ -422,7 +422,7 @@ template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP void
 LAInfoDeep<IterType, Float, SubType, PExtras>::EvaluateDzdz(HDRFloatComplex &dz,
                                                             HDRFloatComplex &dzdz,
-                                                            const HDRFloatComplex &dc) const
+                                                            [[maybe_unused]] const HDRFloatComplex &dc) const
 {
     dzdz = dzdz * HDRFloat{2.0} * (dz + HDRFloatComplex(Ref)) * HDRFloatComplex(ZCoeff);
 }

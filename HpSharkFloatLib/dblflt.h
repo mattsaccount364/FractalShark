@@ -13,6 +13,8 @@ struct MattDblflt {
         static_assert(sizeof(*this) == 8, "!");
     }
 
+    MattDblflt &operator=(const MattDblflt &) = default;
+
     CUDA_CRAP
     MattDblflt(float a, float b)
     {

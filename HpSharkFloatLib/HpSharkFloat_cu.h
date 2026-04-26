@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include <assert.h>
+#include <cinttypes>
 #include <cstdint>
 #include <random>
 
@@ -71,7 +72,7 @@ UintArrayToHexString(const IntT *array, size_t numElements)
         if constexpr (sizeof(IntT) == 4) {
             snprintf(buffer, sizeof(buffer), "0x%08x ", static_cast<uint32_t>(array[i]));
         } else if constexpr (sizeof(IntT) == 8) {
-            snprintf(buffer, sizeof(buffer), "0x%016llx ", static_cast<uint64_t>(array[i]));
+            snprintf(buffer, sizeof(buffer), "0x%016" PRIx64 " ", static_cast<uint64_t>(array[i]));
         } else {
             static_assert(sizeof(IntT) == 0, "Unsupported size");
         }
@@ -92,7 +93,7 @@ UintToHexString(IntT val)
     if constexpr (sizeof(IntT) == 4) {
         snprintf(buffer, sizeof(buffer), "0x%08X", static_cast<uint32_t>(val));
     } else if constexpr (sizeof(IntT) == 8) {
-        snprintf(buffer, sizeof(buffer), "0x%016llX", static_cast<uint64_t>(val));
+        snprintf(buffer, sizeof(buffer), "0x%016" PRIX64, static_cast<uint64_t>(val));
     } else {
         static_assert(sizeof(IntT) == 0, "Unsupported size");
     }

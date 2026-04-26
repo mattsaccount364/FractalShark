@@ -570,14 +570,15 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature, const Hig
         ScopedBenchmarkStopper stopper(m_Fractal.m_BenchmarkData.m_FeatureFinderHP);
 
         using T = HDRFloat<double>;
-        using SubType = double;
         using IterType = uint64_t;
         constexpr PerturbExtras PExtras = PerturbExtras::Disable;
 
         auto featureFinder = std::make_unique<FeatureFinder<IterType, T, PExtras>>();
 
         // Acquire PT data if possible (same logic as TryFindPeriodicPoint)
-        auto extras = RefOrbitCalc::Extras::None;
+        // TODO: 'extras' is computed here but never passed to RefinePeriodicPoint_HighPrecision.
+        // Likely a refactor leftover; review whether this needs to be threaded through.
+        [[maybe_unused]] auto extras = RefOrbitCalc::Extras::None;
         if (auto *cand = feature.GetCandidate()) {
             if (cand->modeFoundBy == FeatureFinderMode::LA)
                 extras = RefOrbitCalc::Extras::IncludeLAv2;

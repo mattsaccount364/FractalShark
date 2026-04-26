@@ -1775,7 +1775,7 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
         }
     };
 
-    IterTypeFull uncompressedCounter = 0;
+    [[maybe_unused]] IterTypeFull uncompressedCounter = 0;
     IterTypeFull i = 0;
     IterTypeFull UncorrectedOrbitBegin = 1;
     for (; i < targetUncompressedIters; i++) {
@@ -2613,8 +2613,8 @@ MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaxIntermediateOrbitCompre
     PerturbationResults<IterType, T, PExtras> &results, int32_t CompressionErrorExp)
     : results{results}, zx{}, zy{}, cx{}, cy{}, Two{}, CompressionError{}, ReducedZx{}, ReducedZy{},
       Err{}, Constant1{}, Constant2{}, Threshold2{}, I{}, J{}, PrevWayPointIteration{},
-      ItersSinceLastWrite{}, PhaseDone{}, Zx{}, Zy{}, Dzx{}, Dzy{}, DzxOld{}, Temp{}, NormTemp{},
-      NormInternalTemp{}, IntermediateCompressionErrorExp{}, CurCompressedIndex{}
+      ItersSinceLastWrite{}, PhaseDone{}, Zx{}, Zy{}, Dzx{}, Dzy{}, DzxOld{}, Temp{},
+      NormInternalTemp{}, NormTemp{}, IntermediateCompressionErrorExp{}, CurCompressedIndex{}
 {
 
     // This code can run even if compression is disabled, but it doesn't matter.

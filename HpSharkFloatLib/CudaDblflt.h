@@ -46,6 +46,8 @@ public:
     CUDA_CRAP
     constexpr CudaDblflt(const CudaDblflt &other) : d{other.d.head, other.d.tail} {}
 
+    CudaDblflt &operator=(const CudaDblflt &) = default;
+
 #ifndef __CUDA_ARCH__
     // Constructs a CudaDblflt from a double
     CUDA_CRAP

@@ -18,6 +18,8 @@ FetchContent_MakeAvailable(imgui)
 add_executable(FractalSharkGuiLinux
     main.cpp
     LinuxClipboard.cpp
+    LinuxCommandHandlers.cpp
+    LinuxMenuState.cpp
     LinuxXlibBackend.cpp
     LinuxImGuiOverlay.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp

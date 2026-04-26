@@ -26,6 +26,11 @@
 
 struct ImGuiContext;
 
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
+
 namespace FractalShark {
 struct ExecuteCommandHost;
 struct LinuxClipboard;
@@ -62,6 +67,38 @@ public:
     // RenderFrame() call.
     void RequestContextMenu(int x, int y);
 
+    // Open a modal info window with the given title + body on the next
+    // RenderFrame() call.  Body is rendered as wrapped text with a single
+    // "Close" button; this is the Linux equivalent of MessageBox(MB_OK).
+    // If a previous modal is still open, the new request supersedes it.
+    void RequestInfoModal(const char *title, const char *body);
+
+    // Open a "save filename" modal on the next RenderFrame.  Single text
+    // input pre-filled with defaultName + OK/Cancel buttons.  Callback is
+    // invoked on OK with the entered filename (no extension enforcement);
+    // not invoked on Cancel.
+    using SaveFilenameCallback = std::function<void(std::string)>;
+    void RequestSaveDialog(const char *title, const std::string &defaultName, SaveFilenameCallback cb);
+
+    // Open a "pick one from a list" modal on the next RenderFrame.  Each
+    // entry in `items` is a display string.  Callback is invoked on
+    // selection with the chosen index; not invoked on Cancel.
+    using PickFromListCallback = std::function<void(size_t)>;
+    void RequestPickFromList(const char *title, std::vector<std::string> items, PickFromListCallback cb);
+
+    // Open a "enter location" modal on the next RenderFrame: 4 text
+    // inputs (real, imag, zoom, iterations) prefilled with the given
+    // values, plus OK/Cancel.  Callback invoked on OK with the four
+    // edited values; not invoked on Cancel or when any of the first
+    // three strings is empty.
+    using EnterLocationCallback = std::function<void(
+        std::string real, std::string imag, std::string zoom, uint64_t numIterations)>;
+    void RequestEnterLocation(std::string real,
+                              std::string imag,
+                              std::string zoom,
+                              uint64_t numIterations,
+                              EnterLocationCallback cb);
+
     // Configure the drag-zoom rubber band.  active=false hides it.
     void SetDragRect(bool active, int x0, int y0, int x1, int y1);
 
@@ -86,6 +123,35 @@ private:
     bool contextMenuRequested_ = false;
     int contextMenuX_ = 0;
     int contextMenuY_ = 0;
+
+    bool infoModalRequested_ = false;
+    bool infoModalOpen_ = false;
+    std::string infoModalTitle_;
+    std::string infoModalBody_;
+
+    // Save-filename dialog state.
+    bool saveDlgRequested_ = false;
+    bool saveDlgOpen_ = false;
+    std::string saveDlgTitle_;
+    std::string saveDlgFilename_;
+    SaveFilenameCallback saveDlgCallback_;
+
+    // Pick-from-list dialog state.
+    bool pickDlgRequested_ = false;
+    bool pickDlgOpen_ = false;
+    std::string pickDlgTitle_;
+    std::vector<std::string> pickDlgItems_;
+    int pickDlgSelected_ = -1;
+    PickFromListCallback pickDlgCallback_;
+
+    // Enter-location dialog state.
+    bool locDlgRequested_ = false;
+    bool locDlgOpen_ = false;
+    std::string locDlgReal_;
+    std::string locDlgImag_;
+    std::string locDlgZoom_;
+    std::string locDlgIters_;
+    EnterLocationCallback locDlgCallback_;
 
     bool dragRectActive_ = false;
     int dragX0_ = 0;

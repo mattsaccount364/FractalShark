@@ -10,6 +10,8 @@
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).targets"
           Condition="'$(CudaBuildCustomizationVersion)'!='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).targets')" />
 
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets"
+          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets')" />
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.targets"
           Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.targets')" />
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.targets"

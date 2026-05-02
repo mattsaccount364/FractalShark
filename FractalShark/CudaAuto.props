@@ -17,6 +17,7 @@
     <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'==''"></CudaBuildCustomizationVersion>
 
     <!-- Probe CUDA_PATH only if it's not already set -->
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2</CUDA_PATH>
     <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1</CUDA_PATH>
     <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0</CUDA_PATH>
     <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4</CUDA_PATH>
@@ -39,6 +40,8 @@
           Condition="'$(CudaBuildCustomizationVersion)'!='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props')" />
 
   <!-- Otherwise try newest-first -->
+  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props"
+          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props')" />
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props"
           Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props')" />
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props"

@@ -356,12 +356,13 @@ SplashWindow::PaintOnce()
         return;
 
     static thread_local std::mt19937 rng{std::random_device{}()};
-    static thread_local std::uniform_int_distribution<int> dist(0, 2);
+    static thread_local std::uniform_int_distribution<int> dist(0, 3);
 
-    const std::array<LPCWSTR, 3> resources = {
+    const std::array<LPCWSTR, 4> resources = {
         MAKEINTRESOURCE(IDB_PNG_SPLASH1),
         MAKEINTRESOURCE(IDB_PNG_SPLASH2),
         MAKEINTRESOURCE(IDB_PNG_SPLASH3),
+        MAKEINTRESOURCE(IDB_PNG_SPLASH4),
     };
 
     LPCWSTR resStr = resources[(size_t)dist(rng)];

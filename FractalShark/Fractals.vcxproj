@@ -80,6 +80,7 @@
     <Image Include="..\Pics\Bing generated Fractal Shark.jpg" />
     <Image Include="..\Pics\Chatgpt Fractal Shark.png" />
     <Image Include="..\Pics\FractalShark.png" />
+    <Image Include="..\Pics\FractalShark2.png" />
     <Image Include="..\Pics\PrecisionShark.png" />
     <Image Include="FractalShark.ico" />
     <Image Include="small.ico" />

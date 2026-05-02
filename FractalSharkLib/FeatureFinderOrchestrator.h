@@ -71,5 +71,5 @@ private:
 
     Fractal &m_Fractal;
     std::vector<std::unique_ptr<FeatureSummary>> m_FeatureSummaries;
-    NRInnerLoopBackend m_NRInnerLoopBackend = NRInnerLoopBackend::GPU;
+    NRInnerLoopBackend m_NRInnerLoopBackend = NRInnerLoopBackend::CpuMT;
 };

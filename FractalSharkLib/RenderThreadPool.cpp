@@ -244,7 +244,7 @@ FrameCompletionQueue::WaitForFrameExact(uint64_t seqNum)
 {
     std::unique_lock lk(m_Mutex);
     m_CV.wait(lk, [this, seqNum] {
-        if (m_ShutdownFlag)
+        if (m_ShutdownFlag || m_OverlayDirty)
             return true;
         return std::any_of(m_Frames.begin(), m_Frames.end(), [seqNum](const RenderFrame &f) {
             return f.SequenceNumber == seqNum;
@@ -287,15 +287,31 @@ FrameCompletionQueue::Shutdown()
     m_CV.notify_all();
 }
 
+void
+FrameCompletionQueue::NotifyOverlay()
+{
+    {
+        std::lock_guard lk(m_Mutex);
+        m_OverlayDirty = true;
+    }
+    m_CV.notify_all();
+}
+
+bool
+FrameCompletionQueue::ConsumeOverlayDirty()
+{
+    std::lock_guard lk(m_Mutex);
+    bool wasDirty = m_OverlayDirty;
+    m_OverlayDirty = false;
+    return wasDirty;
+}
+
 // ============================================================================
 // RenderThreadPool
 // ============================================================================
 
 RenderThreadPool::RenderThreadPool(Fractal *fractal, void *nativeWindow, bool hostOwnedGlPresentation)
-    : m_Fractal(fractal),
-      m_NativeWindow(nativeWindow),
-      m_NextSequenceNumber(0),
-      m_ShutdownFlag(false),
+    : m_Fractal(fractal), m_NativeWindow(nativeWindow), m_NextSequenceNumber(0), m_ShutdownFlag(false),
       m_HostOwnedGlPresentation(hostOwnedGlPresentation)
 {
 
@@ -517,6 +533,59 @@ RenderThreadPool::Drain()
     });
 }
 
+void
+RenderThreadPool::SetDragRect(bool active, int x0, int y0, int x1, int y1)
+{
+    {
+        std::lock_guard lk(m_DragRectMutex);
+        m_DragRectActive = active;
+        m_DragRectX0 = x0;
+        m_DragRectY0 = y0;
+        m_DragRectX1 = x1;
+        m_DragRectY1 = y1;
+    }
+
+    // Wake the GL consumer for an overlay-only repaint.
+    m_FrameQueue.NotifyOverlay();
+}
+
+void
+RenderThreadPool::DrawDragRectOverlay(size_t frameHeight)
+{
+    bool active;
+    int x0, y0, x1, y1;
+    {
+        std::lock_guard lk(m_DragRectMutex);
+        active = m_DragRectActive;
+        x0 = m_DragRectX0;
+        y0 = m_DragRectY0;
+        x1 = m_DragRectX1;
+        y1 = m_DragRectY1;
+    }
+
+    if (!active || frameHeight == 0)
+        return;
+
+    // Flip Y from screen coords (top=0) to GL coords (bottom=0).
+    const int h = static_cast<int>(frameHeight);
+    const int glY0 = h - y0;
+    const int glY1 = h - y1;
+
+    glEnable(GL_COLOR_LOGIC_OP);
+    glLogicOp(GL_INVERT);
+    glDisable(GL_TEXTURE_2D);
+
+    glBegin(GL_QUADS);
+    glVertex2i(x0, glY0);
+    glVertex2i(x1, glY0);
+    glVertex2i(x1, glY1);
+    glVertex2i(x0, glY1);
+    glEnd();
+
+    glLineWidth(1.0f);
+    glDisable(GL_COLOR_LOGIC_OP);
+}
+
 bool
 RenderThreadPool::DequeueWorkItem(RenderWorkItem &item)
 {
@@ -650,7 +719,7 @@ NextPOT(uint32_t v)
 }
 
 void
-RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &frame)
+RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &frame, GLuint *persistTexOut)
 {
     glContext.glResetViewDim(frame.OutputWidth, frame.OutputHeight);
 
@@ -782,11 +851,19 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
             }
         }
 
+        // Software path always deletes — persistent texture not supported
+        // (tiled approach overwrites a single texture per tile).
         glDeleteTextures(1, &texid);
         glBindTexture(GL_TEXTURE_2D, 0);
         glDisable(GL_TEXTURE_2D);
     } else {
         // Hardware path: single RGBA16 texture with NPOT dimensions.
+        // If persistTexOut is set, keep the texture alive for overlay repaints.
+        if (persistTexOut && *persistTexOut != 0) {
+            glDeleteTextures(1, persistTexOut);
+            *persistTexOut = 0;
+        }
+
         GLuint texid;
         glEnable(GL_TEXTURE_2D);
         glGenTextures(1, &texid);
@@ -817,10 +894,41 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
         glVertex2i((GLint)frame.OutputWidth, (GLint)frame.OutputHeight);
         glEnd();
 
-        glDeleteTextures(1, &texid);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glDisable(GL_TEXTURE_2D);
+        if (persistTexOut) {
+            // Keep texture alive for caller to reuse.
+            *persistTexOut = texid;
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glDisable(GL_TEXTURE_2D);
+        } else {
+            glDeleteTextures(1, &texid);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glDisable(GL_TEXTURE_2D);
+        }
     }
+}
+
+void
+RenderThreadPool::RedrawLastTexture(OpenGlContext &glContext, GLuint texId, size_t width, size_t height)
+{
+    glContext.glResetViewDim(width, height);
+
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, texId);
+    glColor4f(1.f, 1.f, 1.f, 1.f);
+
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex2i(0, (GLint)height);
+    glTexCoord2f(0.0f, 1.0f);
+    glVertex2i(0, 0);
+    glTexCoord2f(1.0f, 1.0f);
+    glVertex2i((GLint)width, 0);
+    glTexCoord2f(1.0f, 0.0f);
+    glVertex2i((GLint)width, (GLint)height);
+    glEnd();
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
 }
 
 void
@@ -1029,14 +1137,32 @@ RenderThreadPool::GlConsumerLoop()
 
     uint64_t nextExpectedSeqNum = 0;
 
+    // Persistent GL texture for overlay-only repaints (hardware path).
+    // Instead of caching the full CPU-side Color16 buffer, we keep the
+    // last-uploaded texture alive and redraw from it.
+    GLuint lastTex = 0;
+    size_t lastFrameWidth = 0;
+    size_t lastFrameHeight = 0;
+    const bool isSoftwareRenderer = glContext->IsSoftwareRenderer();
+
     while (!m_ShutdownFlag.load()) {
         if (!m_FrameQueue.WaitForFrameExact(nextExpectedSeqNum)) {
             break; // Shutdown
         }
 
+        // Check if we woke for an overlay-only repaint (no new frame).
+        bool overlayDirty = m_FrameQueue.ConsumeOverlayDirty();
+
         RenderFrame frame;
         if (!m_FrameQueue.TryPopNextInOrder(nextExpectedSeqNum, frame)) {
-            continue; // Spurious wakeup — wait again
+            // No new frame — must be overlay-only wakeup.
+            if (overlayDirty && lastTex != 0) {
+                RedrawLastTexture(*glContext, lastTex, lastFrameWidth, lastFrameHeight);
+                m_Fractal->DrawAllPerturbationResults(true);
+                DrawDragRectOverlay(lastFrameHeight);
+                glContext->SwapBuffers();
+            }
+            continue;
         }
 
         // Process frames for this sequence number
@@ -1048,32 +1174,46 @@ RenderThreadPool::GlConsumerLoop()
                     break;
                 }
             } else {
-                RenderFrameToGL(*glContext, frame);
+                // Upload frame to GL. On hardware path, persist the texture.
+                GLuint *persistPtr = isSoftwareRenderer ? nullptr : &lastTex;
+                RenderFrameToGL(*glContext, frame, persistPtr);
 
-                // Return buffer to pool for reuse (GL has copied the data)
-                ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
+                lastFrameWidth = frame.OutputWidth;
+                lastFrameHeight = frame.OutputHeight;
 
                 if (frame.IsFinal) {
-                    // Draw perturbation overlay on final frames.
                     m_Fractal->DrawAllPerturbationResults(true);
+                    DrawDragRectOverlay(lastFrameHeight);
+
+                    // Release CPU buffer — GPU texture persists for overlay repaints.
+                    ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
+
                     glContext->SwapBuffers();
                     nextExpectedSeqNum++;
                     break;
                 }
 
+                // Progressive (non-final) frame: draw rect overlay, release buffer, swap.
+                DrawDragRectOverlay(lastFrameHeight);
+                ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
                 glContext->SwapBuffers();
             }
 
             // Block-wait for next frame for this exact sequence.
-            // Workers guarantee at least one IsFinal (or tombstone) per
-            // sequence, so this never blocks indefinitely.
             if (!m_FrameQueue.WaitForFrameExact(nextExpectedSeqNum)) {
                 break; // Shutdown
             }
             if (!m_FrameQueue.TryPopNextInOrder(nextExpectedSeqNum, frame)) {
-                continue; // Spurious wakeup — wait again
+                // Could be overlay-only wakeup while waiting for next progressive frame.
+                m_FrameQueue.ConsumeOverlayDirty();
+                continue;
             }
         }
+    }
+
+    // Clean up persistent texture on shutdown.
+    if (lastTex != 0) {
+        glDeleteTextures(1, &lastTex);
     }
 }
 
@@ -1096,8 +1236,7 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
             break;
         }
 
-        const bool tombstone =
-            !frame.ColorData || frame.OutputWidth == 0 || frame.OutputHeight == 0;
+        const bool tombstone = !frame.ColorData || frame.OutputWidth == 0 || frame.OutputHeight == 0;
 
         if (!tombstone) {
             RenderFrameToGL(glContext, frame);

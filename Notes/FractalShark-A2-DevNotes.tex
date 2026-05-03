@@ -2,6 +2,35 @@
 
 This section simply has some development notes that were posted over time.
 
+\subsection{2026-5-3 News --- Version 0.52}
+
+Version \code{0.52} focuses on GPU-accelerated Newton--Raphson and begins the
+cross-platform port to Linux.
+
+\begin{itemize}
+\item \textbf{GPU Newton--Raphson.}  A full GPU implementation of Newton's method
+  for the feature finder is now integrated end-to-end: reference-orbit
+  computation via NTT, first- and second-derivative accumulation, and
+  convergence testing all run on the GPU.  An occupancy calculation bug is
+  fixed, and a CPU-side ``reference reference orbit'' validates correctness
+  against MPIR ground truth.
+
+\item \textbf{Newton--Raphson checkpointing.}  The NR inner loop now supports
+  save/resume with full-precision derivative state.  CPU and GPU checkpoint
+  formats are compatible, so an interrupted computation can be resumed on
+  either backend.
+
+\item \textbf{Linux port (in progress).}  A CMake + Clang build system is
+  introduced alongside the existing Visual Studio solution, and a GTK-based
+  GUI is under development.  The port is incomplete---not all features work
+  yet---but the project is moving in this direction.  CPU-only unit tests
+  pass on Linux.
+
+\item \textbf{Miscellaneous.}  Extracted \code{FeatureFinderOrchestrator} from
+  the main class; improved the heap allocator panic path; parallelized the
+  CI build; fixed Imagina file loading and RDP rendering regressions.
+\end{itemize}
+
 \subsection{2026-2-14 News --- Version 0.51}
 
 Version \code{0.51} introduces the \textbf{Feature Finder} (\cref{sec:feature-finder}), a major new tool

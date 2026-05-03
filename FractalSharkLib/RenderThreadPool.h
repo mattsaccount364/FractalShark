@@ -174,6 +174,14 @@ public:
     // Signal shutdown to unblock any waiting consumers.
     void Shutdown();
 
+    // Wake the consumer for an overlay-only repaint (no new frame).
+    // Thread-safe: can be called from the UI thread.
+    void NotifyOverlay();
+
+    // Check and clear the overlay-dirty flag.  Called by the consumer
+    // after waking to distinguish overlay wakeups from frame wakeups.
+    bool ConsumeOverlayDirty();
+
 private:
     std::mutex m_Mutex;
     std::condition_variable m_CV;
@@ -183,6 +191,10 @@ private:
     std::deque<RenderFrame> m_Frames;
 
     bool m_ShutdownFlag;
+
+    // Set by NotifyOverlay(), cleared by ConsumeOverlayDirty().
+    // Protected by m_Mutex to share the same CV without missed wakeups.
+    bool m_OverlayDirty = false;
 };
 
 // The main render thread pool. Owns 4 worker threads and a GL consumer thread.
@@ -229,6 +241,10 @@ public:
     // a popup with no fractal updates in flight).  Returns false if
     // no cached frame exists yet.
     bool RepresentLastFrame(OpenGlContext &glContext);
+
+    // Update the drag-zoom selection rectangle overlay.
+    // active=false hides it.  Thread-safe: called from the UI thread.
+    void SetDragRect(bool active, int x0, int y0, int x1, int y1);
 
 private:
     static constexpr size_t NumWorkers = NumRenderers;
@@ -279,7 +295,18 @@ private:
                                                std::condition_variable &workerCV);
 
     // Upload a RenderFrame to the GL context as a textured quad.
-    void RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &frame);
+    // If persistTexOut is non-null (hardware path), stores the new texture
+    // ID there (caller owns lifetime) and does NOT delete it after drawing.
+    // Deletes the old *persistTexOut first if non-zero.
+    void RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &frame, unsigned int *persistTexOut = nullptr);
+
+    // Redraw the last persistent texture as a fullscreen quad (hardware path).
+    void RedrawLastTexture(OpenGlContext &glContext, unsigned int texId, size_t width, size_t height);
+
+    // Draw the drag-zoom selection rectangle overlay using GL_INVERT.
+    // Reads drag rect state under m_DragRectMutex.  frameHeight is needed
+    // to flip Y from screen coords (top=0) to GL coords (bottom=0).
+    void DrawDragRectOverlay(size_t frameHeight);
 
     // Snapshot current Fractal state into a RenderWorkItem (everything except Ptz).
     RenderWorkItem SnapshotCurrentState() const;
@@ -342,4 +369,13 @@ private:
     // overlay-only repaints via RepresentLastFrame.  ColorData is
     // released back to the pool only when superseded by a newer frame.
     RenderFrame m_HostLastFrame{};
+
+    // --- Drag-zoom selection rectangle overlay ---
+    // Written by the UI thread via SetDragRect(), read by the GL consumer.
+    std::mutex m_DragRectMutex;
+    bool m_DragRectActive = false;
+    int m_DragRectX0 = 0;
+    int m_DragRectY0 = 0;
+    int m_DragRectX1 = 0;
+    int m_DragRectY1 = 0;
 };

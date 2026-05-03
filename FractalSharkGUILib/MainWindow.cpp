@@ -1268,6 +1268,11 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             lButtonDown = false;
             prevX1 = prevY1 = -1;
 
+            // Clear the GL drag-rect overlay.
+            if (gFractal && gFractal->GetRenderPool()) {
+                gFractal->GetRenderPool()->SetDragRect(false, 0, 0, 0, 0);
+            }
+
             RECT newViewWin{};
             const bool maintainAspect = !IsDownShift();
 
@@ -1307,12 +1312,9 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             if (!lButtonDown)
                 return 0;
 
-            // erase any existing inverted rect
-            if (prevX1 != -1 || prevY1 != -1) {
-                HDC dc = ::GetDC(hWnd);
-                RECT rect{dragBoxX1, dragBoxY1, prevX1, prevY1};
-                ::InvertRect(dc, &rect);
-                ::ReleaseDC(hWnd, dc);
+            // Clear the GL drag-rect overlay.
+            if (gFractal && gFractal->GetRenderPool()) {
+                gFractal->GetRenderPool()->SetDragRect(false, 0, 0, 0, 0);
             }
 
             lButtonDown = false;
@@ -1329,46 +1331,31 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 return 0;
             }
 
-            HDC dc = GetDC(hWnd);
-            RECT rect;
-
-            // Erase the previous rectangle.
-            if (prevX1 != -1 || prevY1 != -1) {
-                rect.left = dragBoxX1;
-                rect.top = dragBoxY1;
-                rect.right = prevX1;
-                rect.bottom = prevY1;
-
-                InvertRect(dc, &rect);
-            }
+            int rectX1, rectY1;
 
             if (IsDownShift() == false) {
                 RECT windowRect;
                 GetClientRect(hWnd, &windowRect);
                 double ratio = (double)windowRect.right / (double)windowRect.bottom;
 
-                // Note order is important.
-                rect.left = dragBoxX1;
-                rect.top = dragBoxY1;
-                rect.bottom = GET_Y_LPARAM(lParam);
-                rect.right = (long)((double)rect.left +
-                                    (double)ratio * (double)((double)rect.bottom - (double)rect.top));
+                rectY1 = GET_Y_LPARAM(lParam);
+                rectX1 = (int)((double)dragBoxX1 +
+                               (double)ratio * (double)(rectY1 - dragBoxY1));
 
-                prevX1 = rect.right;
-                prevY1 = rect.bottom;
+                prevX1 = rectX1;
+                prevY1 = rectY1;
             } else {
-                rect.left = dragBoxX1;
-                rect.top = dragBoxY1;
-                rect.right = GET_X_LPARAM(lParam);
-                rect.bottom = GET_Y_LPARAM(lParam);
+                rectX1 = GET_X_LPARAM(lParam);
+                rectY1 = GET_Y_LPARAM(lParam);
 
-                prevX1 = GET_X_LPARAM(lParam);
-                prevY1 = GET_Y_LPARAM(lParam);
+                prevX1 = rectX1;
+                prevY1 = rectY1;
             }
 
-            InvertRect(dc, &rect);
+            if (gFractal && gFractal->GetRenderPool()) {
+                gFractal->GetRenderPool()->SetDragRect(true, dragBoxX1, dragBoxY1, rectX1, rectY1);
+            }
 
-            ReleaseDC(hWnd, dc);
             break;
         }
 

@@ -24,7 +24,8 @@
 namespace {
 
 const RenderAlgorithm *
-LookupAlgorithm(const char *name) {
+LookupAlgorithm(const char *name)
+{
     for (const auto &alg : RenderAlgorithms) {
         if (alg.AlgorithmStr && std::strcmp(alg.AlgorithmStr, name) == 0) {
             return &alg;
@@ -34,13 +35,15 @@ LookupAlgorithm(const char *name) {
 }
 
 bool
-IsUpdateMode() {
+IsUpdateMode()
+{
     const char *env = std::getenv("FRACTALSHARK_UPDATE_GOLDENS");
     return env && env[0] && std::strcmp(env, "0") != 0;
 }
 
 std::filesystem::path
-GoldensOutDir() {
+GoldensOutDir()
+{
     auto dir = std::filesystem::temp_directory_path() / "fractalshark-goldens";
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
@@ -48,10 +51,12 @@ GoldensOutDir() {
 }
 
 std::vector<uint8_t>
-ReadFileBytes(const std::filesystem::path &p) {
+ReadFileBytes(const std::filesystem::path &p)
+{
     std::ifstream in(p, std::ios::binary);
     std::vector<uint8_t> buf;
-    if (!in) return buf;
+    if (!in)
+        return buf;
     in.seekg(0, std::ios::end);
     auto sz = in.tellg();
     in.seekg(0, std::ios::beg);
@@ -83,15 +88,23 @@ constexpr int kGoldenWidth = 256;
 constexpr int kGoldenHeight = 256;
 
 const GoldenCase kCases[] = {
-    {"view0-cpu64",         0, "Cpu64",                   1, "1275500d639ad02e", "1275500d639ad02e"},
-    {"view0-cpu64-aa4",     0, "Cpu64",                   4, "39671027bacf2567", "39671027bacf2567"},
-    {"view1-cpu-bla",       1, "Cpu64PerturbedBLAHDR",    1, "d0c8921c878f6dc3", "d0c8921c878f6dc3"},
-    {"view0-cpuhdr",        0, "CpuHDR32",                1, "66ba2caaaa7f8013", "66ba2caaaa7f8013"},
-    {"view5-cpu-bla-v2",    5, "Cpu32PerturbedBLAV2HDR",  1, "1233a56b293e7b08", "1233a56b293e7b08"},
+    {"view0-cpu64", 0, "Cpu64", 1, "1275500d639ad02e", "1275500d639ad02e"},
+    {"view0-cpu64-aa4", 0, "Cpu64", 4, "39671027bacf2567", "39671027bacf2567"},
+    {"view1-cpu-bla", 1, "Cpu64PerturbedBLAHDR", 1, "d0c8921c878f6dc3", "d0c8921c878f6dc3"},
+    {"view0-cpuhdr", 0, "CpuHDR32", 1, "66ba2caaaa7f8013", "66ba2caaaa7f8013"},
+    {"view5-cpu-bla-v2", 5, "Cpu32PerturbedBLAV2HDR", 1, "1233a56b293e7b08", "1233a56b293e7b08"},
+    {"view0-cpuhdr64", 0, "CpuHDR64", 1, "1275500d639ad02e", "PENDING"},
+    {"view5-cpu-perturbed-bla", 5, "Cpu64PerturbedBLA", 1, "f201db00ade569fc", "PENDING"},
+    {"view5-cpu32-bla-hdr", 5, "Cpu32PerturbedBLAHDR", 1, "634d826801d54979", "PENDING"},
+    {"view5-cpu64-bla-hdr", 5, "Cpu64PerturbedBLAHDR", 1, "c91e33c3eb85b33d", "PENDING"},
+    {"view5-cpu64-bla-v2", 5, "Cpu64PerturbedBLAV2HDR", 1, "ca7ad7c5f9cf750e", "PENDING"},
+    {"view5-cpu32-rc-bla-v2", 5, "Cpu32PerturbedRCBLAV2HDR", 1, "b956600cfdfe431a", "PENDING"},
+    {"view5-cpu64-rc-bla-v2", 5, "Cpu64PerturbedRCBLAV2HDR", 1, "68df9ceecaf1a667", "PENDING"},
 };
 
 void
-RunGoldenCase(const GoldenCase &c) {
+RunGoldenCase(const GoldenCase &c)
+{
     const RenderAlgorithm *alg = LookupAlgorithm(c.AlgorithmName);
     if (!alg) {
         std::ostringstream oss;
@@ -152,8 +165,8 @@ RunGoldenCase(const GoldenCase &c) {
     // Keep the PNG around on mismatch for inspection; otherwise clean up.
     if (actualCrc != expected) {
         std::ostringstream oss;
-        oss << "CRC mismatch for " << c.Name << " on " << platform << ": expected "
-            << expected << ", got " << actualCrc << " (png kept at " << pngPath.string() << ")";
+        oss << "CRC mismatch for " << c.Name << " on " << platform << ": expected " << expected
+            << ", got " << actualCrc << " (png kept at " << pngPath.string() << ")";
         TestFramework::Fail(__FILE__, __LINE__, oss.str());
     }
     std::cout << "         (png: " << pngPath.string() << ")\n";
@@ -161,22 +174,26 @@ RunGoldenCase(const GoldenCase &c) {
 
 } // namespace
 
-TEST(RenderGolden_view0_cpu64) {
-    RunGoldenCase(kCases[0]);
-}
+TEST(RenderGolden_view0_cpu64) { RunGoldenCase(kCases[0]); }
 
-TEST(RenderGolden_view0_cpu64_aa4) {
-    RunGoldenCase(kCases[1]);
-}
+TEST(RenderGolden_view0_cpu64_aa4) { RunGoldenCase(kCases[1]); }
 
-TEST(RenderGolden_view1_cpu_bla) {
-    RunGoldenCase(kCases[2]);
-}
+TEST(RenderGolden_view1_cpu_bla) { RunGoldenCase(kCases[2]); }
 
-TEST(RenderGolden_view0_cpuhdr) {
-    RunGoldenCase(kCases[3]);
-}
+TEST(RenderGolden_view0_cpuhdr) { RunGoldenCase(kCases[3]); }
 
-TEST(RenderGolden_view5_cpu_bla_v2) {
-    RunGoldenCase(kCases[4]);
-}
+TEST(RenderGolden_view5_cpu_bla_v2) { RunGoldenCase(kCases[4]); }
+
+TEST(RenderGolden_view0_cpuhdr64) { RunGoldenCase(kCases[5]); }
+
+TEST(RenderGolden_view5_cpu_perturbed_bla) { RunGoldenCase(kCases[6]); }
+
+TEST(RenderGolden_view5_cpu32_bla_hdr) { RunGoldenCase(kCases[7]); }
+
+TEST(RenderGolden_view5_cpu64_bla_hdr) { RunGoldenCase(kCases[8]); }
+
+TEST(RenderGolden_view5_cpu64_bla_v2) { RunGoldenCase(kCases[9]); }
+
+TEST(RenderGolden_view5_cpu32_rc_bla_v2) { RunGoldenCase(kCases[10]); }
+
+TEST(RenderGolden_view5_cpu64_rc_bla_v2) { RunGoldenCase(kCases[11]); }

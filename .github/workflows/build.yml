@@ -101,6 +101,13 @@ jobs:
 
       - name: Run FractalSharkTest
         run: ./build/FractalSharkTest/FractalSharkTest
+
+      - name: Smoke-test FractalSharkCli
+        run: |
+          ./build/FractalSharkCli/FractalSharkCli --builtin-view 0 --render-algorithm Cpu64 --out cli-smoke-test.png --quiet
+          test -f cli-smoke-test.png || (echo "FractalSharkCli produced no output" && exit 1)
+          rm cli-smoke-test.png
+
         # HpSharkFloatTest is built but not run on CI — it requires a physical
         # CUDA GPU, which ubuntu-latest runners don't provide. Runtime GPU
         # testing is deferred to a future self-hosted runner.
@@ -261,6 +268,13 @@ jobs:
 
       - name: Run unit tests
         run: ${{ matrix.configuration }}\FractalSharkTest.exe
+
+      - name: Smoke-test FractalSharkCli
+        shell: pwsh
+        run: |
+          & "${{ matrix.configuration }}\FractalSharkCli.exe" --builtin-view 0 --render-algorithm Cpu64 --out cli-smoke-test.png --quiet
+          if (-not (Test-Path cli-smoke-test.png)) { throw "FractalSharkCli produced no output" }
+          Remove-Item cli-smoke-test.png
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

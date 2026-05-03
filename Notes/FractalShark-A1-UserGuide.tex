@@ -410,8 +410,12 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Clear Perturbation References -- Med} (command): Clears medium-class cached references.
       \item \emph{Clear Perturbation References -- High} (command): Clears high-class cached references.
       \item \emph{Show Perturbation Results} (command): Intended to display
-      diagnostic overlay information for perturbation state.  Currently
-      a stub (prints a TODO to the debug console).
+      a diagnostic overlay for perturbation state.  Currently a stub
+      (prints a TODO to the debug console).  Note, however, that white
+      dots indicating reference orbit locations are drawn unconditionally
+      as part of the normal render path---see the practical-usage note
+      below and \cref{par:ref-orbit-indicators} for implementation
+      details.
 
       \item \emph{Auto (default)} (radio): Automatically selects the perturbation
       algorithm based on current conditions.  Recommended for most use.
@@ -580,6 +584,14 @@ options.  See also \cref{subsec:practical-usage}.
 \label{subsec:practical-usage}
 
 \begin{itemize}
+  \item \textbf{White reference-orbit dots.}  After each render completes, a
+  small white dot is drawn at the screen location of every stored reference
+  orbit's center.  The dots appear unconditionally and cannot currently be
+  toggled off.  When a view contains multiple reference orbits (e.g.\ after
+  re-centering without clearing references), multiple dots are visible.
+  Clearing perturbation references via the Perturbation submenu removes the
+  corresponding dots.  See \cref{par:ref-orbit-indicators} for implementation
+  details.
   \item Long-running computations (renders, reference orbits, feature-finder
   searches) can be aborted by holding \code{Ctrl+Alt} for approximately three
   seconds.  An \code{AbortMonitor} background thread polls the key state every
@@ -914,6 +926,92 @@ the token at the start of each frame.
     constant, currently a UNC network path.  Each frame is saved as
     \code{<prefix>output-NNNNNN.bmp}.
 \end{description}
+
+% -----------------------------------------------------------------
+\section{FractalSharkCli: Headless Renderer}
+\label{sec:fractalshark-cli}
+
+\code{FractalSharkCli} is a command-line tool that renders a single
+Mandelbrot view to a PNG file without any graphical interface.  It is
+useful for scripting, CI golden-image tests, and batch rendering on
+headless servers.  The tool builds on both Windows (MSVC) and Linux
+(CMake + Clang).
+
+\subsubsection*{Usage synopsis}
+
+\begin{lstlisting}
+FractalSharkCli --render-algorithm NAME --out FILE.png [options] {view-source}
+FractalSharkCli --list-render-algorithms
+FractalSharkCli --help
+\end{lstlisting}
+
+\subsubsection*{View sources (mutually exclusive)}
+
+\begin{description}
+  \item[\code{-{}-builtin-view N}]
+    Render one of the hardcoded views compiled into \FractalShark{}
+    (the same views accessible from the GUI's View menu).
+
+  \item[\code{-{}-locations FILE [-{}-location-index N]}]
+    Load a saved-locations text file.  The file format is the same as
+    \code{FractalTray}'s (\cref{subsec:fractaltray}): each record is a
+    line of the form
+    \code{width height minX minY maxX maxY iters antialiasing}
+    followed by a description line.  If \code{-{}-location-index} is
+    omitted, the last record in the file is used.
+
+  \item[\code{-{}-center-x X -{}-center-y Y -{}-zoom Z}]
+    Specify the view directly via high-precision decimal center
+    coordinates and zoom factor.
+\end{description}
+
+\subsubsection*{Options}
+
+\begin{description}
+  \item[\code{-{}-width W -{}-height H}]
+    Output dimensions in pixels (default $1024\times768$).  When using
+    \code{-{}-locations}, the file's width/height are used unless
+    explicitly overridden.
+
+  \item[\code{-{}-render-algorithm NAME}]
+    Required.  The per-pixel algorithm name, matching
+    \code{RenderAlgorithmEnum} (e.g.\
+    \code{Cpu64PerturbedBLAV2HDR}, \code{Gpu1x32PerturbedLAv2},
+    \code{CpuHigh}).  Run \code{-{}-list-render-algorithms} to see all
+    valid names.
+
+  \item[\code{-{}-iterations N}]
+    Override the iteration count.  If omitted, the view source's
+    default is used.
+
+  \item[\code{-{}-antialiasing N}]
+    Supersampling factor ($\ge 1$).
+
+  \item[\code{-{}-perturbation-alg NAME}]
+    Reference-orbit algorithm: \code{ST}, \code{MT},
+    \code{STPeriodicity}, \code{MTPeriodicity3}, \code{GPU},
+    \code{Auto}, among others.
+
+  \item[\code{-{}-commit-cap-bytes N}]
+    Memory cap for growable vectors (default unlimited).
+
+  \item[\code{-{}-quiet}]
+    Suppress progress output.
+\end{description}
+
+\subsubsection*{Implementation}
+
+Internally, \code{FractalSharkCli} delegates to the shared
+\code{RenderToPng} function in \code{FractalSharkLib}.  This function
+constructs a \code{Fractal} instance, configures the view and
+algorithm, then uses the direct rendering path
+(\cref{subsec:two-render-paths}): \code{Drain()} followed by
+\code{CalcFractal(true)} and \code{SaveCurrentFractal}.
+
+The same \code{RenderToPng} helper is used by
+\code{TestRenderGoldens} (\cref{subsec:crummy-test}) to produce
+golden-CRC regression images, ensuring that the headless path stays
+exercised automatically.
 
 % -----------------------------------------------------------------
 \section{Functional Test Suite}

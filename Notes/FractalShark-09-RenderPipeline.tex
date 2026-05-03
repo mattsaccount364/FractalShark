@@ -402,6 +402,21 @@ overlapped execution:
         progressive frames at each interval until the callback fires.
 \end{itemize}
 
+\paragraph{Reference orbit indicators.}
+\label{par:ref-orbit-indicators}
+After every final frame, the render thread draws a white dot at the
+screen location of each stored reference orbit's center.  The overlay
+is unconditional: \code{DrawAllPerturbationResults} calls
+\code{DrawPerturbationResultsHelper}, which iterates all perturbation
+result vectors, converts each orbit's high-precision center
+(\code{GetHiX}, \code{GetHiY}) to screen coordinates, and emits an
+OpenGL \code{GL\_POINTS} vertex colored white.  When multiple
+reference orbits are stored (e.g.\ after re-centering without clearing
+references), multiple dots appear.  The dots are drawn with
+\code{GL\_COLOR\_LOGIC\_OP} disabled, so they overwrite the fractal
+image directly rather than inverting it.  The user-facing description
+of this feature appears in \cref{subsec:practical-usage}.
+
 \subsection{Enqueue APIs}
 
 Three enqueue variants serve distinct purposes:

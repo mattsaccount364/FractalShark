@@ -169,7 +169,8 @@ RunGoldenCase(const GoldenCase &c)
             << ", got " << actualCrc << " (png kept at " << pngPath.string() << ")";
         TestFramework::Fail(__FILE__, __LINE__, oss.str());
     }
-    std::cout << "         (png: " << pngPath.string() << ")\n";
+    std::cout << "  GOLDEN " << c.Name << " " << platform << " CRC " << actualCrc << " OK"
+              << "    (png: " << pngPath.string() << ")\n";
 }
 
 } // namespace

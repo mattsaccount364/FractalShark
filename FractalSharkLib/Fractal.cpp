@@ -489,6 +489,15 @@ Fractal::ZoomTowardPoint(size_t scrnX, size_t scrnY, double factor)
 }
 
 void
+Fractal::PanByFraction(double fracX, double fracY)
+{
+    const HighPrecision dx = (m_Ptz.GetMaxX() - m_Ptz.GetMinX()) * HighPrecision{fracX};
+    const HighPrecision dy = (m_Ptz.GetMaxY() - m_Ptz.GetMinY()) * HighPrecision{fracY};
+    auto ptz = m_Ptz.Panned(dx, dy);
+    RecenterViewCalc(ptz);
+}
+
+void
 Fractal::InitialDefaultViewAndSettings(int width, int height)
 {
     // Note!  This specific setting is overridden in MainWindow via a hardcoded

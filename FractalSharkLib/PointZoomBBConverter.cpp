@@ -389,6 +389,16 @@ PointZoomBBConverter::Recentered(const HighPrecision &calcX,
                                 m_Test};
 }
 
+PointZoomBBConverter
+PointZoomBBConverter::Panned(const HighPrecision &dx, const HighPrecision &dy) const
+{
+    return PointZoomBBConverter{m_MinX + dx,
+                                m_MinY + dy,
+                                m_MaxX + dx,
+                                m_MaxY + dy,
+                                m_Test};
+}
+
 HighPrecision
 PointZoomBBConverter::GetDeltaX(size_t scrnWidth, size_t antialiasing) const
 {

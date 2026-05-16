@@ -58,6 +58,9 @@ public:
     PointZoomBBConverter Recentered(const HighPrecision &calcX,
                                     const HighPrecision &calcY) const;
 
+    // Returns a new converter shifted by (dx, dy) in the complex plane
+    PointZoomBBConverter Panned(const HighPrecision &dx, const HighPrecision &dy) const;
+
     // Per-pixel stepping values for GPU rendering
     HighPrecision GetDeltaX(size_t scrnWidth, size_t antialiasing) const;
     HighPrecision GetDeltaY(size_t scrnHeight, size_t antialiasing) const;

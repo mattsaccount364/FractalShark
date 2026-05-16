@@ -962,6 +962,44 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
     }
 }
 
+void
+MainWindow::HandleArrowAndZoomKeys(WPARAM vk)
+{
+    bool shiftDown = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+
+    // Pan fraction: 10% (Shift), 50% (Ctrl), 25% (default)
+    double frac = 0.25;
+    if (shiftDown) {
+        frac = 0.10;
+    } else if (ctrlDown) {
+        frac = 0.50;
+    }
+
+    switch (vk) {
+        case VK_LEFT:
+            gFractal->EnqueueCommand([frac](Fractal &f) { f.PanByFraction(-frac, 0.0); });
+            break;
+        case VK_RIGHT:
+            gFractal->EnqueueCommand([frac](Fractal &f) { f.PanByFraction(frac, 0.0); });
+            break;
+        case VK_UP:
+            gFractal->EnqueueCommand([frac](Fractal &f) { f.PanByFraction(0.0, frac); });
+            break;
+        case VK_DOWN:
+            gFractal->EnqueueCommand([frac](Fractal &f) { f.PanByFraction(0.0, -frac); });
+            break;
+        case VK_ADD:
+            gFractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(-0.3); });
+            break;
+        case VK_SUBTRACT:
+            gFractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); });
+            break;
+        default:
+            break;
+    }
+}
+
 LRESULT
 MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -1404,6 +1442,11 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
         case WM_CHAR: {
             HandleKeyDown(message, wParam, lParam);
             return 0;
+        }
+
+        case WM_KEYDOWN: {
+            HandleArrowAndZoomKeys(wParam);
+            break;
         }
 
         default:
@@ -2180,6 +2223,9 @@ MainWindow::MenuShowHotkeys()
         L"Hotkeys\r\n"
         L"\r\n"
         L"Navigation\r\n"
+        L"Arrow keys - Pan viewport 25%% of the view.  Shift+Arrow: 10%%, Ctrl+Arrow: 50%%\r\n"
+        L"Numpad + - Zoom in at center\r\n"
+        L"Numpad - - Zoom out at center\r\n"
         L"a - Autozoom using feature heuristic (zooms toward perturbation reference point).  Hold CTRL "
         L"to abort.\r\n"
         L"A - Autozoom using default heuristic (weighted geometric mean of iteration counts).  Hold "
@@ -2188,8 +2234,8 @@ MainWindow::MenuShowHotkeys()
         L"b - Go back to the previous view\r\n"
         L"c - Center the view at the current mouse position\r\n"
         L"C - Center the view at the current mouse position + recalculate reference orbit\r\n"
-        L"z - Zoom in predefined amount\r\n"
-        L"Z - Zoom out predefined amount\r\n"
+        L"z - Zoom in predefined amount at mouse cursor\r\n"
+        L"Z - Zoom out predefined amount at mouse cursor\r\n"
         L"Left click/drag - Zoom in\r\n"
         L"\r\n"
         L"Recaluating and Benchmarking\r\n"

@@ -196,6 +196,7 @@ private:
     LRESULT CALLBACK WndProc(UINT message, WPARAM wParam, LPARAM lParam); 
     void UnInit();
     void HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/);
+    void HandleArrowAndZoomKeys(WPARAM vk);
 
     void DrawFractalShark();
 

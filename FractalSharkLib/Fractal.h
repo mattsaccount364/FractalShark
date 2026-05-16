@@ -94,6 +94,7 @@ public:
     void ZoomAtCenter(double factor);
     void ZoomRecentered(size_t scrnX, size_t scrnY, double factor);
     void ZoomTowardPoint(size_t scrnX, size_t scrnY, double factor);
+    void PanByFraction(double fracX, double fracY);
 
     void TestBasic();
 

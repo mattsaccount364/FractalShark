@@ -36,6 +36,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/keysym.h>
 
 #include <GL/glx.h>
 
@@ -1188,11 +1189,45 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
     char buf[4]{};
     KeySym keysym = NoSymbol;
     int n = XLookupString(const_cast<XKeyEvent *>(&ev), buf, sizeof(buf), &keysym, nullptr);
+
+    // Handle arrow keys and numpad +/- (these don't produce ASCII).
+    const bool shiftDown = (ev.state & ShiftMask) != 0;
+    const bool ctrlDown = (ev.state & ControlMask) != 0;
+
+    double panFrac = 0.25;
+    if (shiftDown) {
+        panFrac = 0.10;
+    } else if (ctrlDown) {
+        panFrac = 0.50;
+    }
+
+    switch (keysym) {
+        case XK_Left:
+            fractal->EnqueueCommand([panFrac](Fractal &f) { f.PanByFraction(-panFrac, 0.0); });
+            return;
+        case XK_Right:
+            fractal->EnqueueCommand([panFrac](Fractal &f) { f.PanByFraction(panFrac, 0.0); });
+            return;
+        case XK_Up:
+            fractal->EnqueueCommand([panFrac](Fractal &f) { f.PanByFraction(0.0, panFrac); });
+            return;
+        case XK_Down:
+            fractal->EnqueueCommand([panFrac](Fractal &f) { f.PanByFraction(0.0, -panFrac); });
+            return;
+        case XK_KP_Add:
+            fractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(-0.3); });
+            return;
+        case XK_KP_Subtract:
+            fractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); });
+            return;
+        default:
+            break;
+    }
+
     if (n <= 0) {
         return;
     }
 
-    const bool shiftDown = (ev.state & ShiftMask) != 0;
     const int mouseX = ev.x;
     const int mouseY = ev.y;
     const char ch = buf[0];

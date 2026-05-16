@@ -1474,6 +1474,13 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
                                              &gpuReductionResults);
         }
         renderer.SyncComputeStream();
+    }
+
+    // Stop the per-pixel timer for all algorithms in the direct path.
+    // For GPU: the sync above has completed, so this captures kernel + readback time.
+    // For CPU: threads have already joined, so this captures the full per-pixel work.
+    // For the render pool path (drawFractal=false): skipped; WorkerLoop handles StopTimer.
+    if (drawFractal) {
         m_BenchmarkData.m_PerPixel.StopTimer();
     }
 
@@ -2012,6 +2019,8 @@ Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
         }
     };
 
+    m_BenchmarkData.m_PerPixel.StartTimer();
+
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
         threads.push_back(std::make_unique<std::thread>(one_thread));
     }
@@ -2123,6 +2132,8 @@ Fractal::CalcCpuHDR(CalcContext &ctx)
                 MPIRBoundedAllocator::ShutdownTls();
             }
         };
+
+        m_BenchmarkData.m_PerPixel.StartTimer();
 
         for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
             threads.push_back(std::make_unique<std::thread>(one_thread));
@@ -2389,6 +2400,8 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
         }
     };
 
+    m_BenchmarkData.m_PerPixel.StartTimer();
+
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
         threads.push_back(std::make_unique<std::thread>(one_thread));
     }
@@ -2594,6 +2607,8 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
             }
         }
     };
+
+    m_BenchmarkData.m_PerPixel.StartTimer();
 
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
         threads.push_back(std::make_unique<std::thread>(one_thread));

@@ -1,7 +1,8 @@
 // RenderToPng — shared headless render helper used by FractalSharkCli and
-// FractalSharkTest's golden-CRC regression tests. Wraps the Fractal
-// construction + view selection + algorithm/perturbation setup +
-// CalcFractal(true) + SaveCurrentFractal sequence into one call.
+// FractalSharkTest's golden-CRC regression tests.  Wraps view selection +
+// algorithm/perturbation setup + CalcFractal(true) + SaveCurrentFractal
+// into one call.  The caller owns the Fractal and may reuse it for
+// additional output (e.g. console rendering) after the call returns.
 
 #pragma once
 
@@ -41,10 +42,13 @@ struct RenderRequest {
     std::optional<RefOrbitCalc::PerturbationAlg> Perturbation;
 
     // Filename WITHOUT the .png extension. SaveCurrentFractal appends it.
+    // If empty, PNG output is skipped (useful when the caller only wants
+    // the computed Fractal for other output like console rendering).
     std::wstring OutPngBasename;
 
     bool Quiet = true;
 };
 
 // Returns 0 on success, non-zero on failure (message appended to *err if non-null).
-int RenderToPng(const RenderRequest &req, std::string *err);
+// The Fractal is fully computed on return and may be used for additional output.
+int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err);

@@ -9,18 +9,16 @@ public:
     enum class TestMode { Enabled, Disabled };
 
     PointZoomBBConverter(TestMode testMode);
-    PointZoomBBConverter(
-        HighPrecision ptX,
-        HighPrecision ptY,
-        HighPrecision zoomFactor,
-        TestMode testMode);
+    PointZoomBBConverter(HighPrecision ptX,
+                         HighPrecision ptY,
+                         HighPrecision zoomFactor,
+                         TestMode testMode);
 
-    PointZoomBBConverter(
-        HighPrecision minX,
-        HighPrecision minY,
-        HighPrecision maxX,
-        HighPrecision maxY,
-        TestMode testMode);
+    PointZoomBBConverter(HighPrecision minX,
+                         HighPrecision minY,
+                         HighPrecision maxX,
+                         HighPrecision maxY,
+                         TestMode testMode);
 
     const HighPrecision &GetMinX() const;
     const HighPrecision &GetMinY() const;
@@ -45,18 +43,13 @@ public:
     void SquareAspectRatio(size_t scrnWidth, size_t scrnHeight);
 
     // Coordinate conversion: screen pixels ↔ fractal complex plane
-    HighPrecision XFromScreenToCalc(HighPrecision x,
-                                    size_t scrnWidth,
-                                    size_t antialiasing) const;
-    HighPrecision YFromScreenToCalc(HighPrecision y,
-                                    size_t scrnHeight,
-                                    size_t antialiasing) const;
+    HighPrecision XFromScreenToCalc(HighPrecision x, size_t scrnWidth, size_t antialiasing) const;
+    HighPrecision YFromScreenToCalc(HighPrecision y, size_t scrnHeight, size_t antialiasing) const;
     HighPrecision XFromCalcToScreen(HighPrecision x, size_t scrnWidth) const;
     HighPrecision YFromCalcToScreen(HighPrecision y, size_t scrnHeight) const;
 
     // Returns a new converter centered on (calcX, calcY) with same extents
-    PointZoomBBConverter Recentered(const HighPrecision &calcX,
-                                    const HighPrecision &calcY) const;
+    PointZoomBBConverter Recentered(const HighPrecision &calcX, const HighPrecision &calcY) const;
 
     // Returns a new converter shifted by (dx, dy) in the complex plane
     PointZoomBBConverter Panned(const HighPrecision &dx, const HighPrecision &dy) const;
@@ -67,7 +60,7 @@ public:
 
 private:
     void ZoomDivisor(double divisor);
-    void SetDebugStrings(const HighPrecision* deltaY = nullptr);
+    void SetDebugStrings(const HighPrecision *deltaY = nullptr);
     HighPrecision m_MinX, m_MinY;
     HighPrecision m_MaxX, m_MaxY;
     HighPrecision m_PtX, m_PtY;

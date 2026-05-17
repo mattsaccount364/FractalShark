@@ -132,7 +132,12 @@ RunGoldenCase(const GoldenCase &c)
     req.Quiet = true;
 
     std::string err;
-    int rc = RenderToPng(req, &err);
+    Fractal fractal(req.Width,
+                    req.Height,
+                    /*nativeWindow=*/nullptr,
+                    /*UseSensoCursor=*/false,
+                    req.CommitCapBytes);
+    int rc = RenderToPng(req, fractal, &err);
     if (rc != 0) {
         std::ostringstream oss;
         oss << "RenderToPng failed (rc=" << rc << "): " << err;

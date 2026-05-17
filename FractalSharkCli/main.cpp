@@ -14,6 +14,7 @@
 #include "RefOrbitCalc.h"
 #include "RenderAlgorithm.h"
 #include "RenderThreadPool.h"
+#include "RenderToConsole.h"
 #include "RenderToPng.h"
 
 #include <algorithm>
@@ -59,6 +60,8 @@ struct CliArgs {
     std::string OutFile;
 
     bool ListRenderAlgorithms = false;
+    bool Console = false;
+    bool Color = false;
     bool Quiet = false;
     bool Help = false;
 };
@@ -69,7 +72,8 @@ PrintUsage()
     std::cout << "FractalSharkCli — headless Mandelbrot renderer\n"
                  "\n"
                  "Usage:\n"
-                 "  FractalSharkCli --render-algorithm NAME --out FILE.png [--width W --height H]\n"
+                 "  FractalSharkCli --render-algorithm NAME [--out FILE.png] [--console] [--color]\n"
+                 "                  [--width W --height H]\n"
                  "                  {--builtin-view N |\n"
                  "                   --locations FILE [--location-index N] |\n"
                  "                   --center-x X --center-y Y --zoom Z}\n"
@@ -79,6 +83,11 @@ PrintUsage()
                  "\n"
                  "  FractalSharkCli --list-render-algorithms\n"
                  "  FractalSharkCli --help\n"
+                 "\n"
+                 "Output:\n"
+                 "  --out FILE.png    Write a PNG image (required unless --console is given)\n"
+                 "  --console         Print ASCII art to stdout (can combine with --out)\n"
+                 "  --color           Use ANSI 256-color for console output (implies --console)\n"
                  "\n"
                  "Per-pixel render algorithm names match RenderAlgorithmEnum\n"
                  "(e.g. Cpu64PerturbedBLAV2HDR, Gpu1x32PerturbedLAv2, CpuHigh).\n"
@@ -193,6 +202,11 @@ ParseArgs(int argc, char *argv[], CliArgs &a)
             a.ListRenderAlgorithms = true;
         } else if (arg == "--quiet") {
             a.Quiet = true;
+        } else if (arg == "--console") {
+            a.Console = true;
+        } else if (arg == "--color") {
+            a.Color = true;
+            a.Console = true; // --color implies --console
         } else if (arg == "--width") {
             auto v = expectValue(i, "--width");
             if (!v || !ParseInt(v, a.Width))
@@ -371,8 +385,8 @@ main(int argc, char *argv[])
         PrintUsage();
         return 2;
     }
-    if (args.OutFile.empty()) {
-        std::cerr << "error: --out is required\n";
+    if (args.OutFile.empty() && !args.Console) {
+        std::cerr << "error: --out is required (unless --console is given)\n";
         return 2;
     }
     if (args.Source == ViewSource::None) {
@@ -458,21 +472,37 @@ main(int argc, char *argv[])
             req.Perturbation = *p;
         }
 
-        std::wstring base = ToWStringUtf8(args.OutFile);
-        const std::wstring pngExt = L".png";
-        if (base.size() >= pngExt.size() &&
-            base.compare(base.size() - pngExt.size(), pngExt.size(), pngExt) == 0) {
-            base.resize(base.size() - pngExt.size());
+        std::wstring base;
+        if (!args.OutFile.empty()) {
+            base = ToWStringUtf8(args.OutFile);
+            const std::wstring pngExt = L".png";
+            if (base.size() >= pngExt.size() &&
+                base.compare(base.size() - pngExt.size(), pngExt.size(), pngExt) == 0) {
+                base.resize(base.size() - pngExt.size());
+            }
         }
         req.OutPngBasename = base;
 
+        Fractal fractal(req.Width,
+                        req.Height,
+                        /*nativeWindow=*/nullptr,
+                        /*UseSensoCursor=*/false,
+                        req.CommitCapBytes);
+
         std::string err;
-        int rc = RenderToPng(req, &err);
+        int rc = RenderToPng(req, fractal, &err);
         if (rc != 0) {
             std::cerr << "error: " << err << "\n";
             return rc;
         }
-        if (!args.Quiet) {
+        if (args.Console) {
+            ConsoleRenderOptions consoleOpts;
+            consoleOpts.ConsoleWidth = 80;
+            consoleOpts.ConsoleHeight = 40;
+            consoleOpts.Color = args.Color;
+            RenderToConsole(fractal, consoleOpts, std::cout);
+        }
+        if (!args.Quiet && !args.OutFile.empty()) {
             std::cout << "Wrote " << args.OutFile << "\n";
         }
         return 0;

@@ -95,19 +95,63 @@ MainWindow::OnSetAlgorithm(::RenderAlgorithmEnum alg)
 }
 
 // ---- Help / Window ---------------------------------------------------------
-void MainWindow::OnShowHotkeys() { MenuShowHotkeys(); }
-void MainWindow::OnViewsHelp() { MenuViewsHelp(); }
-void MainWindow::OnHelpAlg() { MenuAlgHelp(); }
-void MainWindow::OnSquareView() { MenuSquareView(); }
-void MainWindow::OnRepainting() { MenuRepainting(); }
-void MainWindow::OnWindowed() { MenuWindowed(false); }
-void MainWindow::OnWindowedSq() { MenuWindowed(true); }
-void MainWindow::OnMinimize() { ::PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0); }
-void MainWindow::OnCurPos() { MenuGetCurPos(); }
-void MainWindow::OnExit() { ::DestroyWindow(hWnd); }
+void
+MainWindow::OnShowHotkeys()
+{
+    MenuShowHotkeys();
+}
+void
+MainWindow::OnViewsHelp()
+{
+    MenuViewsHelp();
+}
+void
+MainWindow::OnHelpAlg()
+{
+    MenuAlgHelp();
+}
+void
+MainWindow::OnSquareView()
+{
+    MenuSquareView();
+}
+void
+MainWindow::OnRepainting()
+{
+    MenuRepainting();
+}
+void
+MainWindow::OnWindowed()
+{
+    MenuWindowed(false);
+}
+void
+MainWindow::OnWindowedSq()
+{
+    MenuWindowed(true);
+}
+void
+MainWindow::OnMinimize()
+{
+    ::PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+}
+void
+MainWindow::OnCurPos()
+{
+    MenuGetCurPos();
+}
+void
+MainWindow::OnExit()
+{
+    ::DestroyWindow(hWnd);
+}
 
 // ---- Navigate --------------------------------------------------------------
-void MainWindow::OnBack() { MenuGoBack(); }
+void
+MainWindow::OnBack()
+{
+    MenuGoBack();
+}
 
 void
 MainWindow::OnCenterView()
@@ -130,17 +174,29 @@ MainWindow::OnZoomOut()
     MenuZoomOut(pt);
 }
 
-void MainWindow::OnAutoZoomDefault() { gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>(); }
-void MainWindow::OnAutoZoomMax() { gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>(); }
-void MainWindow::OnAutoZoomFilament() { gFractal->AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>(); }
+void
+MainWindow::OnAutoZoomDefault()
+{
+    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+}
+void
+MainWindow::OnAutoZoomMax()
+{
+    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
+}
+void
+MainWindow::OnAutoZoomFilament()
+{
+    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
+}
 
-#define FRACTALSHARK_DEFINE_FEATURE_FINDER(Suffix, Mode)                                              \
-    void MainWindow::OnFeatureFinder##Suffix()                                                        \
-    {                                                                                                 \
-        const POINT pt = GetSafeMenuPtClient();                                                       \
-        auto x = pt.x;                                                                                \
-        auto y = pt.y;                                                                                \
-        gFractal->EnqueueCommand([x, y](Fractal &f) { f.TryFindPeriodicPoint(x, y, Mode); });         \
+#define FRACTALSHARK_DEFINE_FEATURE_FINDER(Suffix, Mode)                                                \
+    void MainWindow::OnFeatureFinder##Suffix()                                                          \
+    {                                                                                                   \
+        const POINT pt = GetSafeMenuPtClient();                                                         \
+        auto x = pt.x;                                                                                  \
+        auto y = pt.y;                                                                                  \
+        gFractal->EnqueueCommand([x, y](Fractal &f) { f.TryFindPeriodicPoint(x, y, Mode); });           \
     }
 
 FRACTALSHARK_DEFINE_FEATURE_FINDER(Direct, FeatureFinderMode::Direct)
@@ -189,8 +245,16 @@ MainWindow::OnNrInnerLoopCpuSt()
 }
 
 // ---- Built-In Views (point entry) -----------------------------------------
-void MainWindow::OnStandardView() { MenuStandardView(0); }
-void MainWindow::OnSelectBuiltInView(size_t oneBasedIndex) { MenuStandardView(oneBasedIndex); }
+void
+MainWindow::OnStandardView()
+{
+    MenuStandardView(0);
+}
+void
+MainWindow::OnSelectBuiltInView(size_t oneBasedIndex)
+{
+    MenuStandardView(oneBasedIndex);
+}
 
 // ---- Antialiasing ---------------------------------------------------------
 void
@@ -215,11 +279,31 @@ MainWindow::OnGpuAntialiasing16x()
 }
 
 // ---- Iterations -----------------------------------------------------------
-void MainWindow::OnResetIterations() { MenuResetIterations(); }
-void MainWindow::OnIncreaseIterations1p5x() { MenuMultiplyIterations(1.5); }
-void MainWindow::OnIncreaseIterations6x() { MenuMultiplyIterations(6.0); }
-void MainWindow::OnIncreaseIterations24x() { MenuMultiplyIterations(24.0); }
-void MainWindow::OnDecreaseIterations() { MenuMultiplyIterations(2.0 / 3.0); }
+void
+MainWindow::OnResetIterations()
+{
+    MenuResetIterations();
+}
+void
+MainWindow::OnIncreaseIterations1p5x()
+{
+    MenuMultiplyIterations(1.5);
+}
+void
+MainWindow::OnIncreaseIterations6x()
+{
+    MenuMultiplyIterations(6.0);
+}
+void
+MainWindow::OnIncreaseIterations24x()
+{
+    MenuMultiplyIterations(24.0);
+}
+void
+MainWindow::OnDecreaseIterations()
+{
+    MenuMultiplyIterations(2.0 / 3.0);
+}
 
 void
 MainWindow::OnIterations32Bit()
@@ -272,16 +356,14 @@ MainWindow::OnPerturbClearAll()
 void
 MainWindow::OnPerturbClearMed()
 {
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-    });
+    gFractal->EnqueueMutation(
+        [](Fractal &f) { f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes); });
 }
 void
 MainWindow::OnPerturbClearHigh()
 {
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
-    });
+    gFractal->EnqueueMutation(
+        [](Fractal &f) { f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes); });
 }
 
 void
@@ -293,12 +375,14 @@ MainWindow::OnPerturbationAuto()
 void
 MainWindow::OnPerturbationSinglethread()
 {
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST); });
+    gFractal->EnqueueMutation(
+        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST); });
 }
 void
 MainWindow::OnPerturbationMultithread()
 {
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT); });
+    gFractal->EnqueueMutation(
+        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT); });
 }
 void
 MainWindow::OnPerturbationSinglethreadPeriodicity()
@@ -381,8 +465,7 @@ MainWindow::OnPerturbAutosaveOnDelete()
 void
 MainWindow::OnPerturbAutosaveOn()
 {
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetResultsAutosave(AddPointOptions::EnableWithSave); });
+    gFractal->EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::EnableWithSave); });
 }
 void
 MainWindow::OnPerturbAutosaveOff()
@@ -390,38 +473,150 @@ MainWindow::OnPerturbAutosaveOff()
     gFractal->EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::DontSave); });
 }
 
-void MainWindow::OnMemoryLimit0() { gJobObj = nullptr; }
-void MainWindow::OnMemoryLimit1() { gJobObj = std::make_unique<JobObject>(); }
+void
+MainWindow::OnMemoryLimit0()
+{
+    gJobObj = nullptr;
+}
+void
+MainWindow::OnMemoryLimit1()
+{
+    gJobObj = std::make_unique<JobObject>();
+}
 
 // ---- Palette --------------------------------------------------------------
-void MainWindow::OnPaletteType0() { MenuPaletteType(FractalPaletteType::Basic); }
-void MainWindow::OnPaletteType1() { MenuPaletteType(FractalPaletteType::Default); }
-void MainWindow::OnPaletteType2() { MenuPaletteType(FractalPaletteType::Patriotic); }
-void MainWindow::OnPaletteType3() { MenuPaletteType(FractalPaletteType::Summer); }
-void MainWindow::OnPaletteType4() { MenuPaletteType(FractalPaletteType::Random); }
-void MainWindow::OnCreateNewPalette() { MenuCreateNewPalette(); }
-void MainWindow::OnPalette5() { MenuPaletteDepth(5); }
-void MainWindow::OnPalette6() { MenuPaletteDepth(6); }
-void MainWindow::OnPalette8() { MenuPaletteDepth(8); }
-void MainWindow::OnPalette12() { MenuPaletteDepth(12); }
-void MainWindow::OnPalette16() { MenuPaletteDepth(16); }
-void MainWindow::OnPalette20() { MenuPaletteDepth(20); }
-void MainWindow::OnPaletteRotate() { MenuPaletteRotation(); }
+void
+MainWindow::OnPaletteType0()
+{
+    MenuPaletteType(FractalPaletteType::Basic);
+}
+void
+MainWindow::OnPaletteType1()
+{
+    MenuPaletteType(FractalPaletteType::Default);
+}
+void
+MainWindow::OnPaletteType2()
+{
+    MenuPaletteType(FractalPaletteType::Patriotic);
+}
+void
+MainWindow::OnPaletteType3()
+{
+    MenuPaletteType(FractalPaletteType::Summer);
+}
+void
+MainWindow::OnPaletteType4()
+{
+    MenuPaletteType(FractalPaletteType::Random);
+}
+void
+MainWindow::OnCreateNewPalette()
+{
+    MenuCreateNewPalette();
+}
+void
+MainWindow::OnPalette5()
+{
+    MenuPaletteDepth(5);
+}
+void
+MainWindow::OnPalette6()
+{
+    MenuPaletteDepth(6);
+}
+void
+MainWindow::OnPalette8()
+{
+    MenuPaletteDepth(8);
+}
+void
+MainWindow::OnPalette12()
+{
+    MenuPaletteDepth(12);
+}
+void
+MainWindow::OnPalette16()
+{
+    MenuPaletteDepth(16);
+}
+void
+MainWindow::OnPalette20()
+{
+    MenuPaletteDepth(20);
+}
+void
+MainWindow::OnPaletteRotate()
+{
+    MenuPaletteRotation();
+}
 
 // ---- Save / Load ----------------------------------------------------------
-void MainWindow::OnSaveLocation() { MenuSaveCurrentLocation(); }
-void MainWindow::OnSaveHiResBmp() { MenuSaveHiResBMP(); }
-void MainWindow::OnSaveItersText() { MenuSaveItersAsText(); }
-void MainWindow::OnSaveBmp() { MenuSaveBMP(); }
-void MainWindow::OnSaveRefOrbitText() { MenuSaveImag(CompressToDisk::Disable); }
-void MainWindow::OnSaveRefOrbitTextSimple() { MenuSaveImag(CompressToDisk::SimpleCompression); }
-void MainWindow::OnSaveRefOrbitTextMax() { MenuSaveImag(CompressToDisk::MaxCompression); }
-void MainWindow::OnSaveRefOrbitImagMax() { MenuSaveImag(CompressToDisk::MaxCompressionImagina); }
-void MainWindow::OnDiffRefOrbitImagMax() { MenuDiffImag(); }
-void MainWindow::OnLoadLocation() { MenuLoadCurrentLocation(); }
-void MainWindow::OnLoadEnterLocation() { MenuLoadEnterLocation(); }
-void MainWindow::OnLoadRefOrbitImagMax() { MenuLoadImagDyn(ImaginaSettings::ConvertToCurrent); }
-void MainWindow::OnLoadRefOrbitImagMaxSaved() { MenuLoadImagDyn(ImaginaSettings::UseSaved); }
+void
+MainWindow::OnSaveLocation()
+{
+    MenuSaveCurrentLocation();
+}
+void
+MainWindow::OnSaveHiResBmp()
+{
+    MenuSaveHiResBMP();
+}
+void
+MainWindow::OnSaveItersText()
+{
+    MenuSaveItersAsText();
+}
+void
+MainWindow::OnSaveBmp()
+{
+    MenuSaveBMP();
+}
+void
+MainWindow::OnSaveRefOrbitText()
+{
+    MenuSaveImag(CompressToDisk::Disable);
+}
+void
+MainWindow::OnSaveRefOrbitTextSimple()
+{
+    MenuSaveImag(CompressToDisk::SimpleCompression);
+}
+void
+MainWindow::OnSaveRefOrbitTextMax()
+{
+    MenuSaveImag(CompressToDisk::MaxCompression);
+}
+void
+MainWindow::OnSaveRefOrbitImagMax()
+{
+    MenuSaveImag(CompressToDisk::MaxCompressionImagina);
+}
+void
+MainWindow::OnDiffRefOrbitImagMax()
+{
+    MenuDiffImag();
+}
+void
+MainWindow::OnLoadLocation()
+{
+    MenuLoadCurrentLocation();
+}
+void
+MainWindow::OnLoadEnterLocation()
+{
+    MenuLoadEnterLocation();
+}
+void
+MainWindow::OnLoadRefOrbitImagMax()
+{
+    MenuLoadImagDyn(ImaginaSettings::ConvertToCurrent);
+}
+void
+MainWindow::OnLoadRefOrbitImagMaxSaved()
+{
+    MenuLoadImagDyn(ImaginaSettings::UseSaved);
+}
 
 // ---- Tests / Benchmarks ---------------------------------------------------
 void
@@ -622,8 +817,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // gFractal exists.  If CPU-only is enforced, this will show the radio
     // button the menu properly.  Without this, the menu is out of sync until
     // the user changes algorithm manually.
-    FractalShark::ExecuteCommand(
-        FractalShark::CommandFromIdm(IDM_ALG_AUTO), *this);
+    FractalShark::ExecuteCommand(FractalShark::CommandFromIdm(IDM_ALG_AUTO), *this);
     // commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
 
     // Optional: force an initial black fill before first show (prevents any flash)
@@ -1201,8 +1395,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             // Phase 0c: catalog commands go through ExecuteCommand; range
             // IDs (View 1-40, dynamic orbit/imag slots) stay on the legacy
             // path until they get a payload-aware migration.
-            const auto cmd =
-                FractalShark::CommandFromIdm(static_cast<uint32_t>(wmId));
+            const auto cmd = FractalShark::CommandFromIdm(static_cast<uint32_t>(wmId));
             if (cmd != FractalShark::FractalCommand::None) {
                 FractalShark::ExecuteCommand(cmd, *this);
                 return 0;
@@ -1331,7 +1524,8 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 newViewWin.bottom = GET_Y_LPARAM(lParam);
             }
 
-            Environment::ScreenRect newView{newViewWin.left, newViewWin.top, newViewWin.right, newViewWin.bottom};
+            Environment::ScreenRect newView{
+                newViewWin.left, newViewWin.top, newViewWin.right, newViewWin.bottom};
 
             if (gFractal) {
                 gFractal->EnqueueCommand([newView, maintainAspect](Fractal &f) {
@@ -1377,8 +1571,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 double ratio = (double)windowRect.right / (double)windowRect.bottom;
 
                 rectY1 = GET_Y_LPARAM(lParam);
-                rectX1 = (int)((double)dragBoxX1 +
-                               (double)ratio * (double)(rectY1 - dragBoxY1));
+                rectX1 = (int)((double)dragBoxX1 + (double)ratio * (double)(rectY1 - dragBoxY1));
 
                 prevX1 = rectX1;
                 prevY1 = rectY1;

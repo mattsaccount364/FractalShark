@@ -76,6 +76,12 @@ void mandel_1x_double_perturb_bla(
             int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
+            // ROOT CAUSE: Same as CPU BLA path (Fractal.cpp). BLA LookupBackwards proposes
+            // a step based on delta-norm validity but does not clamp to the orbit boundary.
+            // After rebasing (RefIteration = 0), the pixel re-walks the orbit and BLA can
+            // propose jumps that overshoot GetCountOrbitEntries(). The rebase guard at
+            // line ~145 runs too late. FIX: add a rebase check between BLA loop exit and
+            // the single-step perturbation.
             if (RefIteration + l >= PerturbDouble.GetCountOrbitEntries()) {
                 break;
             }
@@ -131,6 +137,11 @@ void mandel_1x_double_perturb_bla(
 
         ++RefIteration;
 
+        // TODO: No OOB check here before the orbit read at line ~134. If ++RefIteration
+        // pushes past GetCountOrbitEntries(), GetIterRandom reads garbage GPU memory (UB).
+        // Same root cause as the CPU path: the rebase guard at line ~145 runs after the
+        // unchecked read. FIX: add OOB check + rebase before GetIterRandom, or add a
+        // rebase guard between the BLA loop exit and this single-step.
         PerturbDouble.GetIterRandom(RefIteration, tempZX, tempZY);
         tempZX = tempZX + DeltaSubNX;
         tempZY = tempZY + DeltaSubNY;
@@ -361,6 +372,12 @@ mandel_1xHDR_float_perturb_bla(
             const int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
+            // ROOT CAUSE: Same as CPU BLA and CUDA double-BLA paths. BLA LookupBackwards
+            // proposes steps based on delta-norm validity but does not clamp to the orbit
+            // boundary. The res3 condition provides partial coverage (rebases when landing
+            // at GetCountOrbitEntries() - 1) but does not prevent full overshoots after
+            // rebasing. FIX: add a rebase check between the BLA loop exit and the
+            // single-step perturbation at the top of the outer loop.
             const bool res1 = (RefIteration + l >= Perturb.GetCountOrbitEntries());
             const bool res2 = (iter + l >= n_iterations);
             const bool res3 = (RefIteration + l < Perturb.GetCountOrbitEntries() - 1);

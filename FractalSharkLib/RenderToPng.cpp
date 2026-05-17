@@ -10,7 +10,7 @@
 #include <stdexcept>
 
 int
-RenderToPng(const RenderRequest &req, std::string *err)
+RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err)
 {
     auto fail = [&](const std::string &msg, int code) -> int {
         if (err) {
@@ -24,17 +24,8 @@ RenderToPng(const RenderRequest &req, std::string *err)
     if (req.ViewSource == RenderRequest::ViewSourceKind::None) {
         return fail("RenderToPng: ViewSource must be set", 2);
     }
-    if (req.OutPngBasename.empty()) {
-        return fail("RenderToPng: OutPngBasename is required", 2);
-    }
 
     try {
-        Fractal fractal(req.Width,
-                        req.Height,
-                        /*nativeWindow=*/nullptr,
-                        /*UseSensoCursor=*/false,
-                        req.CommitCapBytes);
-
         fractal.SetIterType(IterTypeEnum::Bits64);
 
         switch (req.ViewSource) {
@@ -42,11 +33,8 @@ RenderToPng(const RenderRequest &req, std::string *err)
                 fractal.View(req.BuiltinView, /*includeMsgBox=*/false);
                 break;
             case RenderRequest::ViewSourceKind::BoundingBox: {
-                PointZoomBBConverter ptz(req.MinX,
-                                         req.MinY,
-                                         req.MaxX,
-                                         req.MaxY,
-                                         PointZoomBBConverter::TestMode::Enabled);
+                PointZoomBBConverter ptz(
+                    req.MinX, req.MinY, req.MaxX, req.MaxY, PointZoomBBConverter::TestMode::Enabled);
                 fractal.RecenterViewCalc(ptz);
                 break;
             }
@@ -64,9 +52,8 @@ RenderToPng(const RenderRequest &req, std::string *err)
             fractal.SetNumIterations<uint64_t>(req.Iterations);
         }
         if (req.Antialiasing != 0) {
-            fractal.ResetDimensions(static_cast<size_t>(req.Width),
-                                    static_cast<size_t>(req.Height),
-                                    req.Antialiasing);
+            fractal.ResetDimensions(
+                static_cast<size_t>(req.Width), static_cast<size_t>(req.Height), req.Antialiasing);
         }
 
         if (!fractal.SetRenderAlgorithm(req.Algorithm)) {
@@ -82,8 +69,7 @@ RenderToPng(const RenderRequest &req, std::string *err)
 
         if (!req.Quiet) {
             std::cout << "Rendering " << req.Width << "x" << req.Height << " with "
-                      << (req.Algorithm.AlgorithmStr ? req.Algorithm.AlgorithmStr : "<null>")
-                      << "...\n";
+                      << (req.Algorithm.AlgorithmStr ? req.Algorithm.AlgorithmStr : "<null>") << "...\n";
             std::cout.flush();
         }
 
@@ -91,12 +77,16 @@ RenderToPng(const RenderRequest &req, std::string *err)
         fractal.GetRenderPool()->Drain();
         fractal.CalcFractal(/*drawFractal=*/true);
 
-        int rc = fractal.SaveCurrentFractal(req.OutPngBasename, /*copy_the_iters=*/false);
-        if (rc != 0) {
-            std::ostringstream ss;
-            ss << "RenderToPng: SaveCurrentFractal returned " << rc;
-            return fail(ss.str(), rc);
+        // PNG output (skipped if no basename was given).
+        if (!req.OutPngBasename.empty()) {
+            int rc = fractal.SaveCurrentFractal(req.OutPngBasename, /*copy_the_iters=*/false);
+            if (rc != 0) {
+                std::ostringstream ss;
+                ss << "RenderToPng: SaveCurrentFractal returned " << rc;
+                return fail(ss.str(), rc);
+            }
         }
+
         return 0;
     } catch (const std::exception &e) {
         return fail(std::string("RenderToPng: ") + e.what(), 1);

@@ -16,9 +16,9 @@
 //      message pump.  Make it use callback functions so whoever is using this code
 //      can see the progress, be notified when it is done, whatever.
 
+#include "Environment.h"
 #include "FractalPalette.h"
 #include "GPU_Render.h"
-#include "Environment.h"
 
 #include <array>
 
@@ -257,6 +257,11 @@ public:
     GetScrnHeight() const
     {
         return m_ScrnHeight;
+    }
+    const ItersMemoryContainer &
+    GetCurIters() const
+    {
+        return m_CurIters;
     }
     IterTypeFull
     GetNumIterationsRT() const

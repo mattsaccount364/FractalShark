@@ -1,14 +1,13 @@
 #pragma once
 
 #include <memory>
-#include <vector>
 #include <string>
+#include <vector>
 
-#include "CommandDispatcher.h"
 #include "CommandCatalog.h"
+#include "CommandDispatcher.h"
 #include "SplashWindow.h"
 #include "UniqueHMenu.h"
-
 
 class JobObject;
 class Fractal;
@@ -175,7 +174,7 @@ private:
     // Global Variables:
     std::unique_ptr<JobObject> gJobObj;
 
-    HINSTANCE hInst;                // current instance
+    HINSTANCE hInst; // current instance
     LPCWSTR szWindowClass = L"FractalWindow";
     FractalShark::UniqueHMenu gPopupMenu;
     bool gWindowed; // Says whether we are in windowed mode or not.
@@ -193,17 +192,14 @@ private:
     void ApplyBorderlessFullscreenStyle();
     void SetModeWindowed(bool windowed);
     static LRESULT CALLBACK StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-    LRESULT CALLBACK WndProc(UINT message, WPARAM wParam, LPARAM lParam); 
+    LRESULT CALLBACK WndProc(UINT message, WPARAM wParam, LPARAM lParam);
     void UnInit();
     void HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/);
     void HandleArrowAndZoomKeys(WPARAM vk);
 
     void DrawFractalShark();
 
-    enum class OpenBoxType {
-        Open,
-        Save
-    };
+    enum class OpenBoxType { Open, Save };
 
     static std::wstring OpenFileDialog(OpenBoxType type);
 
@@ -258,17 +254,29 @@ private:
     void MenuLoadImagDyn(ImaginaSettings loadSettings);
     void MenuSaveImag(CompressToDisk compression);
     void MenuDiffImag();
-    void MenuLoadImag(
-        ImaginaSettings loadSettings,
-        CompressToDisk compression);
+    void MenuLoadImag(ImaginaSettings loadSettings, CompressToDisk compression);
     void MenuShowHotkeys();
 
     void PaintAsNecessary();
 
     void ClearMenu(HMENU &menu);
-    void LoadRefOrbit(CompressToDisk compressToDisk, ImaginaSettings loadSettings, std::wstring filename);
+    void LoadRefOrbit(CompressToDisk compressToDisk,
+                      ImaginaSettings loadSettings,
+                      std::wstring filename);
 
-    bool IsDownControl() { return (GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000; };
-    bool IsDownShift() { return (GetAsyncKeyState(VK_SHIFT) & 0x8000) == 0x8000; };
-    bool IsDownAlt() { return (GetAsyncKeyState(VK_MENU) & 0x8000) == 0x8000; };
+    bool
+    IsDownControl()
+    {
+        return (GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000;
+    };
+    bool
+    IsDownShift()
+    {
+        return (GetAsyncKeyState(VK_SHIFT) & 0x8000) == 0x8000;
+    };
+    bool
+    IsDownAlt()
+    {
+        return (GetAsyncKeyState(VK_MENU) & 0x8000) == 0x8000;
+    };
 };

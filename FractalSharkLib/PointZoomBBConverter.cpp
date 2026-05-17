@@ -23,11 +23,8 @@ PointZoomBBConverter::PointZoomBBConverter(HighPrecision ptX,
     SetDebugStrings(&deltaY);
 }
 
-PointZoomBBConverter::PointZoomBBConverter(HighPrecision minX,
-                                           HighPrecision minY,
-                                           HighPrecision maxX,
-                                           HighPrecision maxY,
-                                           TestMode testMode)
+PointZoomBBConverter::PointZoomBBConverter(
+    HighPrecision minX, HighPrecision minY, HighPrecision maxX, HighPrecision maxY, TestMode testMode)
     : m_MinX{minX}, m_MinY{minY}, m_MaxX{maxX}, m_MaxY{maxY}, m_PtX{(minX + maxX) / HighPrecision(2)},
       m_PtY{(minY + maxY) / HighPrecision(2)}, m_Radius{(maxY - minY) / HighPrecision(2)},
       m_Test{testMode}
@@ -339,9 +336,7 @@ PointZoomBBConverter::SquareAspectRatio(size_t scrnWidth, size_t scrnHeight)
 }
 
 HighPrecision
-PointZoomBBConverter::XFromScreenToCalc(HighPrecision x,
-                                        size_t scrnWidth,
-                                        size_t antialiasing) const
+PointZoomBBConverter::XFromScreenToCalc(HighPrecision x, size_t scrnWidth, size_t antialiasing) const
 {
     HighPrecision aa(antialiasing);
     HighPrecision highWidth(scrnWidth);
@@ -350,9 +345,7 @@ PointZoomBBConverter::XFromScreenToCalc(HighPrecision x,
 }
 
 HighPrecision
-PointZoomBBConverter::YFromScreenToCalc(HighPrecision y,
-                                        size_t scrnHeight,
-                                        size_t antialiasing) const
+PointZoomBBConverter::YFromScreenToCalc(HighPrecision y, size_t scrnHeight, size_t antialiasing) const
 {
     HighPrecision aa(antialiasing);
     HighPrecision highHeight(scrnHeight);
@@ -375,28 +368,20 @@ PointZoomBBConverter::YFromCalcToScreen(HighPrecision y, size_t scrnHeight) cons
 }
 
 PointZoomBBConverter
-PointZoomBBConverter::Recentered(const HighPrecision &calcX,
-                                 const HighPrecision &calcY) const
+PointZoomBBConverter::Recentered(const HighPrecision &calcX, const HighPrecision &calcY) const
 {
     const HighPrecision width = m_MaxX - m_MinX;
     const HighPrecision height = m_MaxY - m_MinY;
     const auto two = HighPrecision{2};
 
-    return PointZoomBBConverter{calcX - width / two,
-                                calcY - height / two,
-                                calcX + width / two,
-                                calcY + height / two,
-                                m_Test};
+    return PointZoomBBConverter{
+        calcX - width / two, calcY - height / two, calcX + width / two, calcY + height / two, m_Test};
 }
 
 PointZoomBBConverter
 PointZoomBBConverter::Panned(const HighPrecision &dx, const HighPrecision &dy) const
 {
-    return PointZoomBBConverter{m_MinX + dx,
-                                m_MinY + dy,
-                                m_MaxX + dx,
-                                m_MaxY + dy,
-                                m_Test};
+    return PointZoomBBConverter{m_MinX + dx, m_MinY + dy, m_MaxX + dx, m_MaxY + dy, m_Test};
 }
 
 HighPrecision

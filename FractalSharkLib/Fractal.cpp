@@ -2243,6 +2243,14 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
                         int l = b->getL();
 
                         // TODO this first RefIteration + l check bugs me
+                        // ROOT CAUSE: BLA LookupBackwards proposes a step l based on delta-norm
+                        // validity (r2) but does not clamp to the orbit boundary. After a pixel
+                        // rebases (RefIteration = 0), it re-walks the reference orbit and the BLA
+                        // offers the same large jumps, which can overshoot GetCountOrbitEntries().
+                        // The rebase guard at the bottom of the outer loop (line ~2396) runs too
+                        // late — after the break here — so it never fires for this case.
+                        // FIX: add a rebase check between the BLA loop exit and the single-step
+                        // perturbation, so RefIteration is rebased to 0 before overshooting.
                         if (RefIteration + l >= (IterType)results->GetCountOrbitEntries()) {
                             std::wcerr << L"Out of bounds! :(" << std::endl;
                             break;
@@ -2307,6 +2315,14 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
                     HdrReduce(DeltaSubNY);
 
                     ++RefIteration;
+                    // TODO: This OOB fires when the BLA loop exits with RefIteration near the
+                    // orbit end, LookupBackwards returns nullptr (k is odd), the single-step
+                    // runs, and ++RefIteration pushes past GetCountOrbitEntries(). The rebase
+                    // guard at line ~2396 (RefIteration >= GetCountOrbitEntries() - 1) would
+                    // have caught this, but it runs AFTER this break, so it never fires.
+                    // The pixel gets a prematurely truncated iteration count, causing
+                    // miscolored pixels. Same root cause as the BLA overshoot above.
+                    // FIX: add a rebase check between the BLA loop exit and here.
                     if (RefIteration >= (IterType)results->GetCountOrbitEntries()) {
                         std::wcerr << L"Out of bounds 2! :(" << std::endl;
                         break;

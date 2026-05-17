@@ -437,6 +437,18 @@ main(int argc, char *argv[])
         req.Antialiasing = args.Antialiasing;
         req.Quiet = args.Quiet;
 
+        // Console-only: use console dimensions for the fractal computation
+        // instead of the default 1024x768.  This avoids computing ~245x more
+        // pixels than needed.  80x40 gives correct visual proportions because
+        // terminal characters are roughly 2:1 (height:width).
+        constexpr int kConsoleWidth = 80;
+        constexpr int kConsoleHeight = 40;
+        const bool consoleOnly = args.Console && args.OutFile.empty();
+        if (consoleOnly && !args.WidthSet && !args.HeightSet) {
+            req.Width = kConsoleWidth;
+            req.Height = kConsoleHeight;
+        }
+
         switch (args.Source) {
             case ViewSource::Builtin:
                 req.ViewSource = RenderRequest::ViewSourceKind::Builtin;
@@ -497,8 +509,8 @@ main(int argc, char *argv[])
         }
         if (args.Console) {
             ConsoleRenderOptions consoleOpts;
-            consoleOpts.ConsoleWidth = 80;
-            consoleOpts.ConsoleHeight = 40;
+            consoleOpts.ConsoleWidth = kConsoleWidth;
+            consoleOpts.ConsoleHeight = kConsoleHeight;
             consoleOpts.Color = args.Color;
             RenderToConsole(fractal, consoleOpts, std::cout);
         }

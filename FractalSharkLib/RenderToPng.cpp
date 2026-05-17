@@ -85,6 +85,10 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err)
                 ss << "RenderToPng: SaveCurrentFractal returned " << rc;
                 return fail(ss.str(), rc);
             }
+
+            // SaveCurrentFractal spawns a background thread; wait for it so
+            // the PNG file exists when this function returns.
+            fractal.CleanupThreads(/*all=*/true);
         }
 
         return 0;

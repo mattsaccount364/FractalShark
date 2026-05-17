@@ -14,57 +14,12 @@ permissions:
   attestations: write    # allows uploading the attestation to GitHub
 
 jobs:
-  # ---- PDF notes (runs in parallel with code builds) ----
+  # ---- PDF notes (reusable workflow, runs in parallel with code builds) ----
   build-pdf:
     name: Build PDF Notes
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - name: Install MiKTeX
-        shell: pwsh
-        run: |
-          choco install miktex -y --no-progress
-
-          $miktex = "C:\Program Files\MiKTeX\miktex\bin\x64"
-          if (-not (Test-Path $miktex)) { throw "MiKTeX bin dir not found at $miktex" }
-
-          # Make it available in THIS step and later steps
-          $env:PATH = "$miktex;$env:PATH"
-          $miktex | Out-File -FilePath $env:GITHUB_PATH -Append
-
-          # Configure MiKTeX for CI use
-          initexmf --admin --set-config-value=[MPM]AutoInstall=1
-          initexmf --admin --set-config-value=[MPM]InstallOnTheFly=1
-          initexmf --admin --set-config-value=[MPM]AskForInstall=0
-
-      - name: Build FractalShark.pdf
-        shell: pwsh
-        working-directory: Notes
-        run: |
-          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
-          bibtex FractalShark
-          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
-          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
-
-      - name: Verify FractalShark.pdf exists
-        shell: pwsh
-        run: |
-          $pdf = "Notes\FractalShark.pdf"
-          if (-not (Test-Path $pdf)) {
-            throw "PDF not generated: $pdf"
-          }
-          Get-Item $pdf | Format-List FullName, Length
-
-      - name: Upload FractalShark PDF
-        uses: actions/upload-artifact@v4
-        with:
-          name: FractalSharkNotes
-          path: Notes/FractalShark.pdf
+    uses: ./.github/workflows/build-pdf.yml
+    permissions:
+      contents: read
 
   # ---- Linux CMake build (runs in parallel with Windows builds) ----
   build-linux:

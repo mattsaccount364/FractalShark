@@ -1,0 +1,51 @@
+name: Build PDF Notes
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-pdf:
+    name: Build PDF Notes
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install TeX Live
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-extra \
+            texlive-bibtex-extra \
+            texlive-fonts-recommended \
+            lmodern
+
+      - name: Build FractalShark.pdf
+        working-directory: Notes
+        run: |
+          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
+          bibtex FractalShark
+          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
+          pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
+
+      - name: Verify FractalShark.pdf exists
+        run: |
+          pdf="Notes/FractalShark.pdf"
+          if [ ! -f "$pdf" ]; then
+            echo "PDF not generated: $pdf" >&2
+            exit 1
+          fi
+          ls -l "$pdf"
+
+      - name: Upload FractalShark PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: FractalSharkNotes
+          path: Notes/FractalShark.pdf

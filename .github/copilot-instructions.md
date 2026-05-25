@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-FractalShark is a high-performance Mandelbrot renderer focused on extreme zoom depths via CUDA GPU acceleration. C++23/CUDA, Windows (Visual Studio 2026, v145 toolset) + Linux (CMake + Clang). Targets NVIDIA GPUs (GTX 900+, RTX 2xxx+ for GPU reference orbits) and AVX-2 CPUs.
+FractalShark is a high-performance Mandelbrot renderer focused on extreme zoom depths via CUDA GPU acceleration. C++23/CUDA, Windows (Visual Studio 2026, v145 toolset on the primary dev machine) + Linux (CMake + Clang). Targets NVIDIA GPUs (GTX 900+, RTX 2xxx+ for GPU reference orbits) and AVX-2 CPUs.
+
+For a concise contributor overview, see `AGENTS.md`. This file is the detailed AI/code-assistant operating manual.
 
 Deeper architectural background lives in `Notes/FractalShark-*.tex` (perturbation theory, BLA/LA, ref orbits, NTT GPU arithmetic, FeatureFinder, render pipeline, memory system) and in source-file headers. Read those when a task touches the relevant area; do not duplicate that prose here.
 
@@ -30,21 +32,25 @@ Two parallel build systems:
 | Project | Purpose | CMakeLists.txt |
 |---|---|---|
 | **FractalShark** | Main GUI app (Win32 window, render loop) | ❌ |
+| **FractalSharkCli** | Command-line entry point | ✅ |
+| **FractalSharkGUILib** | Shared Windows GUI support | ❌ |
+| **FractalSharkGuiLinux** | Linux GUI shell and Xlib/ImGui integration | ✅ |
 | **FractalSharkLib** | Core: fractal math, perturbation, ref orbits, LA | ✅ |
 | **FractalSharkGpuLib** | CUDA rendering kernels (perturbation, BLA, LA, reduction) | ✅ |
 | **FractalSharkPlatform** | Cross-platform abstraction (Environment, types, alloc) | ✅ |
-| **HpSharkFloatLib** | High-precision GPU arithmetic (NTT, custom floats, LA/DLA) | ⏳ |
-| **HpSharkFloatTest** | GPU test harness for HP arithmetic | ❌ |
-| **HpSharkInstantiate** | Explicit template instantiation generator | ❌ |
+| **HpSharkFloatLib** | High-precision GPU arithmetic (NTT, custom floats, LA/DLA) | ✅ |
+| **HpSharkFloatTest** | GPU test harness for HP arithmetic | ✅ |
+| **HpSharkFloatTestLib** | Shared GPU arithmetic test logic | ✅ |
+| **HpSharkInstantiate** | Explicit template instantiation generator | ✅ |
 | **FractalTray** | System tray utility (functional) | ❌ |
 | **FractalSaver** | Screen saver (legacy) | ❌ |
 | **FractalSharkTest** | CPU unit tests for utility types | ✅ |
 
 ## Build Instructions (Windows)
 
-Authoritative process: `.github/workflows/build.yml`.
+Authoritative CI process: `.github/workflows/build.yml`. Local Windows development uses Visual Studio 2026/v145 when available; CI currently overrides `PlatformToolset=v143`.
 
-**Prereqs:** Visual Studio 2026 with C++ + CUDA, CUDA Toolkit 13.0.2, YASM at `C:\Program Files\yasm\*` (bundled in `tools/yasm.zip`), MPIR cloned to repo root and built via `mpir\msvc\vs22\mpir.sln` (`lib_mpir_skylake_avx`, x64).
+**Prereqs:** Visual Studio 2026 with C++ + CUDA, CUDA Toolkit 13.0.2, YASM/vsyasm at `C:\Program Files\vsyasm\*` (bundled in `tools/yasm.zip`), MPIR cloned to repo root and built via `mpir\msvc\vs22\mpir.sln` (`lib_mpir_skylake_avx`, x64).
 
 ```powershell
 # Full rebuild (required if any .h, .cu, or .cuh changed):
@@ -132,7 +138,7 @@ These prevent real bugs; do not strip them when editing:
 
 - **build-pdf** — LaTeX notes PDF on Windows.
 - **build** (Debug + Release matrix) — Windows MSBuild + CUDA, runs `FractalSharkTest.exe`.
-- **build-linux** — Ubuntu CMake/Clang. Builds `FractalSharkPlatform` + `FractalSharkLib` + `FractalSharkTest`, runs `./build/FractalSharkTest/FractalSharkTest`. `TestMpirSerialization` runs on both platforms; the Linux MPIR wire-format implementation atop GMP `mpz_export`/`mpz_import` is validated byte-for-byte against the committed `FractalSharkTest/golden_mpir.bin`.
+- **build-linux** — Ubuntu CMake/Clang. Configures and builds the top-level CMake graph, then runs `./build/FractalSharkTest/FractalSharkTest`. `TestMpirSerialization` runs on both platforms; the Linux MPIR wire-format implementation atop GMP `mpz_export`/`mpz_import` is validated byte-for-byte against golden bytes embedded in `FractalSharkTest/TestMpirSerialization.cpp`.
 
 ## Workflow
 

@@ -39,7 +39,7 @@
 
       <!--
         Flags rationale:
-        - allow unsupported compiler: using a newer MSVC toolset than CUDA checks allow
+        - allow unsupported compiler: permit newer MSVC toolsets before CUDA's checks catch up
         - relaxed constexpr: needed for heavy constexpr/template use in device code
         - threads=0: let nvcc parallelize compilation
         - suppress diagnostic 177: silence a known noisy warning in this codebase/toolchain

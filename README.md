@@ -184,7 +184,7 @@ Here are some more hand-wavy instructions that basically describe the idea:
 4. Open `mpir\msvc\vs22\mpir.sln`
 5. Rebuild everything. Note, you probably want YASM (vsyasm) installed at: `C:\Program Files\vsyasm\*`. This may take a little while.
 6. The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
-7. Install the NVIDIA CUDA Toolkit. The CI build currently uses CUDA 13.0.2
+7. Install the NVIDIA CUDA Toolkit. The CI build currently uses CUDA 13.3.0
 8. At this point, you should be able to build all the FractalShark projects. The one called FractalShark is the most interesting. FractalTray basically works. HpSharkFloatTest is a GPU arithmetic test harness. FractalSaver is legacy/dead code.
 
 Have fun, hopefully :)

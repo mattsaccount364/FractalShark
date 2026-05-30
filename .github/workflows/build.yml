@@ -6,12 +6,17 @@ on:
     tags:
       - "*"
   pull_request:
+  schedule:
+    - cron: "0 8 1,15 * *"
   workflow_dispatch:
 
 permissions:
   contents: write
   id-token: write        # allows OIDC token minting for signing
   attestations: write    # allows uploading the attestation to GitHub
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ---- PDF notes (reusable workflow, runs in parallel with code builds) ----
@@ -24,22 +29,31 @@ jobs:
   # ---- Linux CMake build (runs in parallel with Windows builds) ----
   build-linux:
     name: Build FractalShark (Linux CMake)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install CUDA toolkit
-        uses: Jimver/cuda-toolkit@v0.2.29
-        with:
-          cuda: '13.0.2'
-          method: 'network'
+        run: |
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-ubuntu2404.pin
+          sudo mv cuda-ubuntu2404.pin /etc/apt/preferences.d/cuda-repository-pin-600
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update
+          sudo apt-get install -y cuda-toolkit-13-3
+          echo "CUDA_PATH=/usr/local/cuda-13.3" >> "$GITHUB_ENV"
+          echo "CUDA_PATH_V13_3=/usr/local/cuda-13.3" >> "$GITHUB_ENV"
+          echo "CUDA_PATH_VX_Y=CUDA_PATH_V13_3" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/usr/local/cuda-13.3/lib64:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          echo "/usr/local/cuda-13.3/bin" >> "$GITHUB_PATH"
+          /usr/local/cuda-13.3/bin/nvcc --version
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libgmp-dev libgl-dev libx11-dev libglu1-mesa-dev
+          sudo apt-get install -y libgmp-dev libgl-dev libx11-dev libglu1-mesa-dev
 
       - name: Configure CMake
         run: |
@@ -50,7 +64,7 @@ jobs:
 
       - name: Build
         # Serial build (-j 1) is intentional: parallel compilation of CUDA TUs
-        # plus heavy C++23 template instantiations exceeds ubuntu-latest runner
+        # plus heavy C++23 template instantiations exceeds the ubuntu-24.04 runner
         # memory (~7 GB) and triggers the OOM killer.
         run: cmake --build build -j 1
 
@@ -64,13 +78,13 @@ jobs:
           rm cli-smoke-test.png
 
         # HpSharkFloatTest is built but not run on CI — it requires a physical
-        # CUDA GPU, which ubuntu-latest runners don't provide. Runtime GPU
+        # CUDA GPU, which ubuntu-24.04 runners don't provide. Runtime GPU
         # testing is deferred to a future self-hosted runner.
 
   # ---- Code build (Debug and Release run as parallel matrix legs) ----
   build:
     name: Build FractalShark (${{ matrix.configuration }})
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
 
     strategy:
       fail-fast: false
@@ -79,32 +93,31 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       - name: Checkout MPIR
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: BrianGladman/mpir
+          ref: dc82b0475dea84d5338356e49176c40be03a5bdf
           path: mpir
-          submodules: true
-
-      - name: Initialize MPIR submodules
-        working-directory: mpir
-        run: git submodule update --init --recursive
 
       - name: Install VC++ 2010 runtime (for vsyasm)
         shell: pwsh
         run: |
           choco install vcredist2010 -y
 
-      - name: Set up MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      # ---- Tooling MPIR expects ----
-      - name: Install NuGet
-        uses: nuget/setup-nuget@v2
+      - name: Initialize MSBuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          if (-not $vsPath) { throw "Visual Studio with MSBuild not found" }
+          $msbuildDir = Join-Path $vsPath "MSBuild\Current\Bin"
+          if (-not (Test-Path (Join-Path $msbuildDir "MSBuild.exe"))) { throw "MSBuild.exe not found" }
+          $msbuildDir | Out-File -FilePath $env:GITHUB_PATH -Append
 
       # Note 2025-12: Tried various current vsyasm but failed.  Just
       # keeping custom one for now.
@@ -125,7 +138,7 @@ jobs:
           # Detect Git LFS pointer (typically tiny and starts with 'version https://git-lfs.github.com/spec/v1')
           $firstLine = (Get-Content -Path $zip -TotalCount 1 -ErrorAction SilentlyContinue)
           if ($item.Length -lt 2000 -and $firstLine -like "version https://git-lfs.github.com/spec/v1*") {
-            throw "This file is a Git LFS pointer, not the real zip. Fix: set actions/checkout@v4 with `lfs: true`."
+            throw "This file is a Git LFS pointer, not the real zip. Fix: set actions/checkout@v6 with `lfs: true`."
           }
 
           # Clean install location
@@ -199,7 +212,7 @@ jobs:
       # ---- Cache MPIR build outputs ----
       - name: Cache MPIR build
         id: mpir-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: mpir/lib/x64/${{ matrix.configuration }}
           key: mpir-${{ runner.os }}-skylake-avx-x64-${{ matrix.configuration }}-${{ hashFiles('mpir/**/*.c', 'mpir/**/*.h', 'mpir/**/*.asm') }}
@@ -213,13 +226,39 @@ jobs:
 
       # ---- CUDA ----
       - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.29
-        with:
-          cuda: "13.0.2"
+        shell: pwsh
+        run: |
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3"
+          $cudaBin = Join-Path $cudaPath "bin"
+          $nvcc = Join-Path $cudaBin "nvcc.exe"
+          $installer = Join-Path $env:RUNNER_TEMP "cuda_13.3.0_windows_network.exe"
+
+          Invoke-WebRequest `
+            -Uri "https://developer.download.nvidia.com/compute/cuda/13.3.0/network_installers/cuda_13.3.0_windows_network.exe" `
+            -OutFile $installer
+
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notlike "*NVIDIA*") {
+            throw "CUDA installer signature is not valid and issued to NVIDIA: $($signature.Status) $($signature.SignerCertificate.Subject)"
+          }
+
+          $process = Start-Process -FilePath $installer -ArgumentList "-s" -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -notin 0, 3010) {
+            throw "CUDA installer failed with exit code $($process.ExitCode)"
+          }
+          if (-not (Test-Path $nvcc)) {
+            throw "nvcc.exe not found after CUDA installation: $nvcc"
+          }
+
+          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDA_PATH_V13_3=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDA_PATH_VX_Y=CUDA_PATH_V13_3" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $cudaBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & $nvcc --version
 
       # ---- Build FractalShark ----
       - name: Build ${{ matrix.configuration }}
-        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64 /p:PlatformToolset=v143
+        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64
 
       - name: Run unit tests
         run: ${{ matrix.configuration }}\FractalSharkTest.exe
@@ -232,7 +271,7 @@ jobs:
           Remove-Item cli-smoke-test.png
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: FractalShark-${{ matrix.configuration }}
           path: |
@@ -241,7 +280,7 @@ jobs:
 
   release:
     name: Create FractalShark Release
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     needs: [build, build-pdf]
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -264,7 +303,7 @@ jobs:
           $PSVersionTable
 
       - name: Checkout repo (needed for gh/git context)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -287,13 +326,13 @@ jobs:
           git status --porcelain=v1
 
       - name: Download Release build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FractalShark-Release
           path: dist
 
       - name: Download FractalShark notes PDF artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FractalSharkNotes
           path: _notes_art
@@ -372,7 +411,7 @@ jobs:
           if (-not (Test-Path $p)) { throw "ZIP not found: $p" }
 
       - name: Generate build provenance attestation (ZIP)
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: out/FractalShark-${{ github.ref_name }}.zip
 

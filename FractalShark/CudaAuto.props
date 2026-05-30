@@ -10,13 +10,14 @@
          so link steps can find cudart_static.lib even when VS integration isn't installed.
 
     Optional override:
-      /p:CudaBuildCustomizationVersion=13.0
+      /p:CudaBuildCustomizationVersion=13.3
   -->
 
   <PropertyGroup>
     <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'==''"></CudaBuildCustomizationVersion>
 
     <!-- Probe CUDA_PATH only if it's not already set -->
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3</CUDA_PATH>
     <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2</CUDA_PATH>
     <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1</CUDA_PATH>
     <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0</CUDA_PATH>
@@ -26,6 +27,7 @@
 
     <!-- Resolve one build customization version. Importing multiple CUDA customizations
          duplicates scalar task metadata such as Warning/RuntimeChecks/Runtime. -->
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.3.props') and (Exists('$(CUDA_PATH_V13_3)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin\nvcc.exe'))">13.3</CudaBuildCustomizationVersion>
     <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props') and (Exists('$(CUDA_PATH_V13_2)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\nvcc.exe'))">13.2</CudaBuildCustomizationVersion>
     <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props') and (Exists('$(CUDA_PATH_V13_1)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1\bin\nvcc.exe'))">13.1</CudaBuildCustomizationVersion>
     <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props') and (Exists('$(CUDA_PATH_V13_0)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\nvcc.exe'))">13.0</CudaBuildCustomizationVersion>
@@ -35,6 +37,8 @@
 
     <!-- Pin NVIDIA's CudaToolkitDir to the same version so .Version.props does not
          depend on CUDA_PATH_Vx_y environment variables being present. -->
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.3' and '$(CUDA_PATH_V13_3)'!=''">$(CUDA_PATH_V13_3)</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.3' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3</CudaToolkitDir>
     <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.2' and '$(CUDA_PATH_V13_2)'!=''">$(CUDA_PATH_V13_2)</CudaToolkitDir>
     <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.2' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2</CudaToolkitDir>
     <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.1' and '$(CUDA_PATH_V13_1)'!=''">$(CUDA_PATH_V13_1)</CudaToolkitDir>

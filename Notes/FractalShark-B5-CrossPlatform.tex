@@ -1,4 +1,4 @@
-\section{Cross-Platform Considerations}
+\subsection{Cross-Platform Considerations}
 \label{sec:cross-platform}
 
 \FractalShark{} is developed primarily as a Windows application built with
@@ -6,12 +6,12 @@ Visual~Studio~2026, MSBuild, and the NVIDIA CUDA toolkit.  Linux is supported
 as a secondary target reached through an incremental port that is, at the time
 of writing, partially complete: the CPU-side numeric core, the GPU rendering
 kernels, and a unit-test executable build and run on Linux, but the main
-graphical application does not.  This appendix documents the parallel build
+graphical application does not.  This subsection documents the parallel build
 infrastructure, the platform-abstraction layer, and the cross-platform
 serialization contract for arbitrary-precision integers.  The Linux port is a
 work in progress.
 
-\subsection{Dual build system}
+\subsubsection{Dual build system}
 \label{subsec:dual-build}
 
 The Windows build is authoritative.  All project structure, source membership,
@@ -41,7 +41,7 @@ separate jobs in the same matrix workflow, alongside a third job that compiles
 this document.  Both builds must succeed before any change merges, ensuring the
 two build systems remain synchronized as the codebase evolves.
 
-\subsection{Platform abstraction layer}
+\subsubsection{Platform abstraction layer}
 \label{subsec:platform-abstraction}
 
 The \code{FractalSharkPlatform} library provides a thin abstraction over the
@@ -61,7 +61,7 @@ platform-conditional sites that predate the abstraction, but new platform
 divergence is expected to flow through \code{FractalSharkPlatform} unless the
 divergence is truly local in scope.
 
-\subsection{Arbitrary-precision serialization}
+\subsubsection{Arbitrary-precision serialization}
 \label{subsec:mpir-portability}
 
 \FractalShark{} relies on MPIR for arbitrary-precision integer arithmetic on

@@ -1,0 +1,117 @@
+% -----------------------------------------------------------------
+\subsection{Functional Test Suite}
+\label{subsec:crummy-test}
+
+\code{CrummyTest} is a self-contained functional test suite invoked
+from the application's right-click context menu
+(\code{IDM\_BASICTEST}, labeled ``Run Basic Test'').  The suite
+exercises the direct rendering path
+(\cref{subsec:two-render-paths}): each test calls \code{Drain()}
+first to ensure no pool workers remain active, then invokes
+\code{CalcFractal(true)}, which writes results to \code{m\_CurIters}.
+
+The top-level \code{TestAll()} method runs the full suite in sequence:
+\begin{itemize}
+  \item \code{TestWindowResize}---resizes the application window and
+        verifies that a re-render completes correctly.
+  \item \code{TestBasic}---iterates through every
+        \code{RenderAlgorithm} entry, rendering the default view,
+        View~5, and View~11 with both 32-bit and 64-bit iteration
+        types.
+  \item \code{TestReferenceSave}---saves and reloads reference orbits,
+        verifying round-trip correctness.
+  \item \code{TestVariedCompression}---tests reference-orbit
+        compression at varying error thresholds.
+  \item \code{TestImaginaLoad}---loads orbits stored in the Imagina
+        format (\cref{subsec:imagina-format}).
+  \item \code{TestStringConversion}---validates string-to-precision
+        and precision-to-string conversion utilities.
+  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
+        chains for numerical correctness.
+  \item \code{TestGrowableVector}---validates the
+        \code{GrowableVector} data structure
+        (\cref{sec:disk_backed_growable_vectors}).
+\end{itemize}
+A separate \code{TestReallyHardView27} (not included in
+\code{TestAll}) renders View~\#27, a period ${\sim}28$~billion point
+requiring hours of computation; the test serves as an overnight
+stress benchmark rather than a routine regression check.
+
+% -----------------------------------------------------------------
+\subsection{Kernel List}
+\label{sec:kernel-list}
+
+This section simply lists all the CUDA kernels in \FractalShark{}.
+
+\begin{itemize}
+
+\item \textbf{Mandelbrot base kernels} (\cref{sec:mandel-base-kernels})
+  \begin{itemize}
+    \item \code{mandel\_1x\_float}
+    \item \code{mandel\_1x\_double}
+    \item \code{mandel\_2x\_float}
+    \item \code{mandel\_2x\_double}
+    \item \code{mandel\_4x\_float}
+    \item \code{mandel\_4x\_double}
+    \item \code{mandel\_hdr\_float}
+  \end{itemize}
+
+\item \textbf{Mandelbrot perturbation kernels}
+  \begin{itemize}
+    \item \code{mandel\_1x\_double\_perturb\_bla}
+    \item \code{mandel\_1xHDR\_float\_perturb\_bla} (\cref{sec:bilinear-approx})
+    \item \code{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
+  \end{itemize}
+
+\item \textbf{High-precision reference kernels} (\cref{subsec:ref-orbit-gpu})
+  \begin{itemize}
+    \item \code{HpSharkReferenceGpuKernel}
+    \item \code{HpSharkReferenceGpuLoop}
+  \end{itemize}
+
+\item \textbf{Utility kernels}
+  \begin{itemize}
+    \item \code{antialiasing\_kernel}
+    \item \code{max\_reduce}
+    \item \code{max\_kernel}
+  \end{itemize}
+
+\item \textbf{Addition kernels} (\cref{sec:hp-add})
+  \begin{itemize}
+    \item \code{AddKernel}
+    \item \code{AddKernelTestLoop}
+  \end{itemize}
+
+\item \textbf{Multiplication (NTT) kernels} (\cref{sec:ntt-multiply})
+  \begin{itemize}
+    \item \code{MultiplyKernelNTT}
+    \item \code{MultiplyKernelNTTTestLoop}
+  \end{itemize}
+
+\item \textbf{Disabled kernels}
+  \begin{itemize}
+    \item \code{mandel\_2x\_float\_perturb\_setup}
+    \item \code{mandel\_2x\_float\_perturb}
+  \end{itemize}
+
+\end{itemize}
+
+\subsubsection{Commentary}
+
+\begin{itemize}
+
+\item All the per-pixel CUDA kernels are in \code{gpu\_render.cu}. The two
+most interesting are probably \code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_bla} and
+\code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_lav2}, which are the ones I've spent the
+most time on lately. For better performance at low zoom levels, consider
+\code{mandel\_1x\_float\_perturb}, which leaves out linear approximation
+and just does straight perturbation up to $\sim 10^{30}$, which corresponds
+with the 32-bit float exponent range.
+
+\item The \code{mandel\_1x\_float} (\cref{sec:mandel-1x-float}) is the classic 32-bit float Mandelbrot and 
+is screaming fast on a GPU. This one is optimized with fused multiply-add for 
+fun even though it is of limited practical use because one can barely zoom in before
+pixellation sets in.
+
+\end{itemize}
+

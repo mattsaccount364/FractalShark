@@ -1,4 +1,10 @@
-\section{User Interface and Popup Menu Guide}
+\section{User Documentation}
+\label{sec:user-documentation}
+
+This appendix collects the user-facing guides for the interactive application,
+keyboard-driven workflows, automatic zoom modes, and headless renderers.
+
+\subsection{User Interface and Popup Menu Guide}
 \label{sec:ui-popup-menu}
 
 \FractalShark{} can be driven \emph{entirely} from the keyboard and mouse, with the
@@ -14,7 +20,7 @@ current application settings and rendering state.  The menu can be invoked by
 mouse (\textbf{right-click}) or from the keyboard via the standard Windows
 context-menu invocation (\textbf{Shift+F10} / \textbf{Menu} key).
 
-\subsection{Basic Interaction}
+\subsubsection{Basic Interaction}
 
 On startup, \FractalShark{} displays a brief splash screen (randomly chosen
 from a set of built-in images) while initializing the renderer.
@@ -40,7 +46,7 @@ The most common interactions are:
 Resizing the window automatically resets the renderer dimensions and triggers
 a recalculation of the fractal to match the new window size.
 
-\subsection{Menu Structure and Behavior}
+\subsubsection{Menu Structure and Behavior}
 
 The popup menu is organized into logical groups and submenus. Items fall into
 three distinct behavioral categories:
@@ -58,7 +64,7 @@ Radio groups reflect the configuration in use, with the currently active option
 checked. Selecting a different option automatically deselects the previous
 choice and triggers any necessary reconfiguration.
 
-\subsection{Top-Level Menu}
+\subsubsection{Top-Level Menu}
 
 \begin{itemize}
   \item \emph{Show Help} (command): Displays an on-screen help dialog summarizing keyboard shortcuts.
@@ -559,7 +565,7 @@ choice and triggers any necessary reconfiguration.
   \label{fig:auto-renderer-artifact}
 \end{figure}
 
-\subsection{Recalculation Commands}
+\subsubsection{Recalculation Commands}
 \label{subsec:recalculation-commands}
 
 Commands such as \emph{Recalculate} or \emph{Recalculate, Reuse Reference} trigger
@@ -570,7 +576,7 @@ existing high-precision reference orbit and only recomputes the per-pixel
 perturbation pass, which is significantly faster when the view center has not
 changed.
 
-\subsection{Experimental and Debug Options}
+\subsubsection{Experimental and Debug Options}
 \label{subsec:experimental-debug}
 
 Some menu entries expose experimental features, debugging aids, or partially
@@ -580,7 +586,7 @@ a polished end-user application. Users should expect occasional crashes,
 rendering failures, or unresponsive behavior when exercising less common menu
 options.  See also \cref{subsec:practical-usage}.
 
-\subsection{Practical Usage Notes}
+\subsubsection{Practical Usage Notes}
 \label{subsec:practical-usage}
 
 \begin{itemize}
@@ -612,7 +618,7 @@ it the primary interface for both casual exploration and deep technical
 investigation.
 
 
-\section{Keyboard Shortcuts}
+\subsection{Keyboard Shortcuts}
 \label{sec:keyboard-shortcuts}
 
 In addition to the popup menu, \FractalShark{} supports a set of single-key
@@ -763,7 +769,7 @@ input may appear delayed until the render completes.  In practice, the popup
 menu and hotkeys are best used as \emph{configuration and relaunch} controls,
 not as guaranteed real-time interaction during heavy computation.
 
-\subsection{Commentary}
+\subsubsection{Commentary}
 
 \begin{itemize}
 \item An interesting experiment is running with LA~v2 + ``LA only''. This 
@@ -784,7 +790,7 @@ about though.
 \end{itemize}
 
 % -----------------------------------------------------------------
-\section{Automatic Zoom}
+\subsection{Automatic Zoom}
 \label{subsec:autozoom}
 
 The \code{AutoZoomer} class provides four heuristic strategies for
@@ -829,7 +835,7 @@ playback.
 \end{description}
 
 % -----------------------------------------------------------------
-\section{FractalTray Batch Renderer}
+\subsection{FractalTray Batch Renderer}
 \label{subsec:fractaltray}
 
 \code{FractalTray} is a companion utility that renders zoom-sequence
@@ -928,7 +934,7 @@ the token at the start of each frame.
 \end{description}
 
 % -----------------------------------------------------------------
-\section{FractalSharkCli: Headless Renderer}
+\subsection{FractalSharkCli: Headless Renderer}
 \label{sec:fractalshark-cli}
 
 \code{FractalSharkCli} is a command-line tool that renders a single
@@ -1012,121 +1018,3 @@ The same \code{RenderToPng} helper is used by
 \code{TestRenderGoldens} (\cref{subsec:crummy-test}) to produce
 golden-CRC regression images, ensuring that the headless path stays
 exercised automatically.
-
-% -----------------------------------------------------------------
-\section{Functional Test Suite}
-\label{subsec:crummy-test}
-
-\code{CrummyTest} is a self-contained functional test suite invoked
-from the application's right-click context menu
-(\code{IDM\_BASICTEST}, labeled ``Run Basic Test'').  The suite
-exercises the direct rendering path
-(\cref{subsec:two-render-paths}): each test calls \code{Drain()}
-first to ensure no pool workers remain active, then invokes
-\code{CalcFractal(true)}, which writes results to \code{m\_CurIters}.
-
-The top-level \code{TestAll()} method runs the full suite in sequence:
-\begin{itemize}
-  \item \code{TestWindowResize}---resizes the application window and
-        verifies that a re-render completes correctly.
-  \item \code{TestBasic}---iterates through every
-        \code{RenderAlgorithm} entry, rendering the default view,
-        View~5, and View~11 with both 32-bit and 64-bit iteration
-        types.
-  \item \code{TestReferenceSave}---saves and reloads reference orbits,
-        verifying round-trip correctness.
-  \item \code{TestVariedCompression}---tests reference-orbit
-        compression at varying error thresholds.
-  \item \code{TestImaginaLoad}---loads orbits stored in the Imagina
-        format (\cref{subsec:imagina-format}).
-  \item \code{TestStringConversion}---validates string-to-precision
-        and precision-to-string conversion utilities.
-  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
-        chains for numerical correctness.
-  \item \code{TestGrowableVector}---validates the
-        \code{GrowableVector} data structure
-        (\cref{sec:disk_backed_growable_vectors}).
-\end{itemize}
-A separate \code{TestReallyHardView27} (not included in
-\code{TestAll}) renders View~\#27, a period ${\sim}28$~billion point
-requiring hours of computation; the test serves as an overnight
-stress benchmark rather than a routine regression check.
-
-% -----------------------------------------------------------------
-\section{Kernel List}
-\label{sec:kernel-list}
-
-This section simply lists all the CUDA kernels in \FractalShark{}.
-
-\begin{itemize}
-
-\item \textbf{Mandelbrot base kernels} (\cref{sec:mandel-base-kernels})
-  \begin{itemize}
-    \item \code{mandel\_1x\_float}
-    \item \code{mandel\_1x\_double}
-    \item \code{mandel\_2x\_float}
-    \item \code{mandel\_2x\_double}
-    \item \code{mandel\_4x\_float}
-    \item \code{mandel\_4x\_double}
-    \item \code{mandel\_hdr\_float}
-  \end{itemize}
-
-\item \textbf{Mandelbrot perturbation kernels}
-  \begin{itemize}
-    \item \code{mandel\_1x\_double\_perturb\_bla}
-    \item \code{mandel\_1xHDR\_float\_perturb\_bla} (\cref{sec:bilinear-approx})
-    \item \code{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
-  \end{itemize}
-
-\item \textbf{High-precision reference kernels} (\cref{subsec:ref-orbit-gpu})
-  \begin{itemize}
-    \item \code{HpSharkReferenceGpuKernel}
-    \item \code{HpSharkReferenceGpuLoop}
-  \end{itemize}
-
-\item \textbf{Utility kernels}
-  \begin{itemize}
-    \item \code{antialiasing\_kernel}
-    \item \code{max\_reduce}
-    \item \code{max\_kernel}
-  \end{itemize}
-
-\item \textbf{Addition kernels} (\cref{sec:hp-add})
-  \begin{itemize}
-    \item \code{AddKernel}
-    \item \code{AddKernelTestLoop}
-  \end{itemize}
-
-\item \textbf{Multiplication (NTT) kernels} (\cref{sec:ntt-multiply})
-  \begin{itemize}
-    \item \code{MultiplyKernelNTT}
-    \item \code{MultiplyKernelNTTTestLoop}
-  \end{itemize}
-
-\item \textbf{Disabled kernels}
-  \begin{itemize}
-    \item \code{mandel\_2x\_float\_perturb\_setup}
-    \item \code{mandel\_2x\_float\_perturb}
-  \end{itemize}
-
-\end{itemize}
-
-\subsection{Commentary}
-
-\begin{itemize}
-
-\item All the per-pixel CUDA kernels are in \code{gpu\_render.cu}. The two
-most interesting are probably \code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_bla} and
-\code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_lav2}, which are the ones I've spent the
-most time on lately. For better performance at low zoom levels, consider
-\code{mandel\_1x\_float\_perturb}, which leaves out linear approximation
-and just does straight perturbation up to $\sim 10^{30}$, which corresponds
-with the 32-bit float exponent range.
-
-\item The \code{mandel\_1x\_float} (\cref{sec:mandel-1x-float}) is the classic 32-bit float Mandelbrot and 
-is screaming fast on a GPU. This one is optimized with fused multiply-add for 
-fun even though it is of limited practical use because one can barely zoom in before
-pixellation sets in.
-
-\end{itemize}
-

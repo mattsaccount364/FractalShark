@@ -1,8 +1,11 @@
-\section{Development Notes}
+\section{Development History}
+\label{sec:development-history}
 
-This section simply has some development notes that were posted over time.
+This appendix records development notes that were posted over time.
 
-\subsection{2026-5-3 News --- Version 0.52}
+\subsection{Release Notes}
+
+\subsubsection{2026-5-3 News --- Version 0.52}
 
 Version \code{0.52} focuses on GPU-accelerated Newton--Raphson and begins the
 cross-platform port to Linux.
@@ -31,7 +34,7 @@ cross-platform port to Linux.
   CI build; fixed Imagina file loading and RDP rendering regressions.
 \end{itemize}
 
-\subsection{2026-2-14 News --- Version 0.51}
+\subsubsection{2026-2-14 News --- Version 0.51}
 
 Version \code{0.51} introduces the \textbf{Feature Finder} (\cref{sec:feature-finder}), a major new tool
 for exploring the Mandelbrot set, along with several usability improvements.
@@ -69,7 +72,7 @@ for exploring the Mandelbrot set, along with several usability improvements.
   configuration for consistent code formatting.
 \end{itemize}
 
-\subsection{2026-1-18 News --- Version 0.501}
+\subsubsection{2026-1-18 News --- Version 0.501}
 
 \begin{itemize}
 \item \textbf{Basic Wine compatibility.}  Tested without a GPU and working under
@@ -83,7 +86,7 @@ device and falls back to CPU-only rendering, with a warning message.
 \item \textbf{Linked at FractalForums.}  See \url{https://fractalforums.org/index.php?topic=5564.0}
 \end{itemize}
 
-\subsection{2025-12-29 News --- Version 0.5}
+\subsubsection{2025-12-29 News --- Version 0.5}
 \begin{itemize}
   \item \textbf{Major feature: GPU-accelerated Mandelbrot reference orbit.} Adds
   an experimental CUDA reference-orbit calculator (\cref{subsec:ref-orbit-gpu}) intended to complement the
@@ -107,7 +110,7 @@ device and falls back to CPU-only rendering, with a warning message.
   builds, plus some refactoring; notes a startup windowing quirk.
 \end{itemize}
 
-\subsection{2025-11-30 News}
+\subsubsection{2025-11-30 News}
 
 The neat thing about this GPU approach is that it still has low-hanging fruit 
 related to optimization, unlike MPIR.  I've been wasting a bunch of time on the 
@@ -163,7 +166,7 @@ believe implies Nvidia RTX 2XXX series or newer.
 
 Those are the main things offhand, and I'm hoping with time off in December I can clean these up.
 
-\subsection{2025-9-1 News}
+\subsubsection{2025-9-1 News}
 
 The full reference orbit works with CUDA, though without periodicity detection 
 or high precision to ``float exp'' conversion.  That's future work but I'm not 
@@ -196,7 +199,7 @@ effectively to CUDA but that's TBD.  It will be at least several months more
 work at my current rate (a few hours on the weekends) to achieve a first-cut 
 CUDA implementation.
 
-\subsubsection{NTT-based high-precision multiply (magic prime \texorpdfstring{$2^{64} - 2^{32} + 1$}{2\^{}64 - 2\^{}32 + 1})}
+\paragraph{NTT-based high-precision multiply (magic prime \texorpdfstring{$2^{64} - 2^{32} + 1$}{2\^{}64 - 2\^{}32 + 1})}
 
 The following summary is a lightly edited draft.
 
@@ -268,7 +271,7 @@ while keeping occupancy higher than the recursive Karatsuba path.
 \end{itemize}
 
 
-\subsection{2025-07-28 News --- Version 0.46}
+\subsubsection{2025-07-28 News --- Version 0.46}
 
 Version \code{0.46} was published as a pre-release, focusing on refactoring,
 reference compression experimentation, save-file compatibility, and test infrastructure.
@@ -292,7 +295,7 @@ This release was published on GitHub on July 28, 2025 (UTC) and is tagged as a
 pre-release build.  
 
 
-\subsection{2025-6-15 News}
+\subsubsection{2025-6-15 News}
 
 This page actually gets traffic occasionally, so I just wanted to post a short 
 update.  Since last August, I've been working on a CUDA-based, high-precision 
@@ -312,7 +315,7 @@ if the performance actually pays off.  (One might argue the
 Mandelbrot multiplies/squares dominate the cost, but it's bugging me and fun to 
 play with).
 
-\subsection{2025-4-26}
+\subsubsection{2025-4-26}
 
 This high-precision arithmetic project is a lot of fun even if it's pretty 
 amateur-hour -- I know I'm leaving a lot of perf on the table yet.
@@ -346,7 +349,7 @@ months I'll have something working end-to-end.
 I was also speculating about trying Schönhage--Strassen CUDA multiply, but 
 that's a ways out.
 
-\subsection{2025-3}
+\subsubsection{2025-3}
 
 It's been a month so here's an update before I go on vacation.  I'm still 
 focusing on multiply performance and correctness.  I have a pretty aggressive 
@@ -415,7 +418,7 @@ GPU iter time: 2757 ms
 
 Edited from earlier, fussing with perf-related parameters.  I'm very happy with how it's looking now.
 
-\subsection{2025-1 -- What's going on with this native CUDA reference orbit calculation?}
+\subsubsection{2025-1 -- What's going on with this native CUDA reference orbit calculation?}
 
 The repository (``TestCuda'') has a new Karatsuba, high-precision, floating 
 point multiply implementation working on my GPU and results are showing the CPU 
@@ -532,7 +535,7 @@ remaining details to resolve and it may not work decently when combined into a
 full reference orbit.  Overall though I'm really happy with where it's at.  
 Happy to answer questions etc.
 
-\subsection{2024-04-20 --- Version 0.45}
+\subsubsection{2024-04-20 --- Version 0.45}
 
 \begin{itemize}
   
@@ -548,7 +551,7 @@ Happy to answer questions etc.
 \end{itemize}
 
 
-\subsection{2024-03-31 News --- Version 0.44}
+\subsubsection{2024-03-31 News --- Version 0.44}
 
 Version \code{0.44} represents a substantial internal refactor emphasizing memory management, allocator control, and reference-orbit performance.
 
@@ -585,7 +588,7 @@ Version \code{0.44} represents a substantial internal refactor emphasizing memor
 \end{itemize}
 
 
-\subsection{2024-03-03 News --- Version 0.43}
+\subsubsection{2024-03-03 News --- Version 0.43}
 \begin{itemize}
   
   \item Significant performance wins for lower-precision, high-period
@@ -614,7 +617,7 @@ Version \code{0.44} represents a substantial internal refactor emphasizing memor
 \end{itemize}
 
 
-\subsection{2024-02-24 News --- Version 0.42}
+\subsubsection{2024-02-24 News --- Version 0.42}
 
 Version \code{0.42} introduced major improvements to linear approximation performance, benchmarking, and configurability.
 
@@ -629,7 +632,7 @@ Version \code{0.42} introduced major improvements to linear approximation perfor
 This release corrected a prior precision regression and restored high-accuracy defaults.
 
 
-\subsection{2024-01-15 News --- Version 0.41}
+\subsubsection{2024-01-15 News --- Version 0.41}
 
 \begin{itemize}
   \item Fixes a minor bug in reference compression / GPU.
@@ -638,7 +641,7 @@ This release corrected a prior precision regression and restored high-accuracy d
 \end{itemize}
 
 
-\subsection{2024-01-01 News --- Version 0.4}
+\subsubsection{2024-01-01 News --- Version 0.4}
 
 \begin{itemize}
   \item First working implementation of \textbf{runtime} reference compression
@@ -654,7 +657,7 @@ This release corrected a prior precision regression and restored high-accuracy d
 \end{itemize}
 
 
-\subsection{2023-12 News --- Version 0.32}
+\subsubsection{2023-12 News --- Version 0.32}
 
 Version \code{0.32} focused on usability, correctness, and incremental architectural cleanup.
 
@@ -670,7 +673,7 @@ Version \code{0.32} focused on usability, correctness, and incremental architect
 \end{itemize}
 
 
-\subsection{2023-12-09 News --- Version 0.31}
+\subsubsection{2023-12-09 News --- Version 0.31}
 
 Version \code{0.31} expanded the set of available rendering algorithms and
 substantially improved default performance at shallow and mid-depth zooms.
@@ -703,7 +706,7 @@ substantially improved default performance at shallow and mid-depth zooms.
 \end{itemize}
 
 
-\subsection{2023-11-26 News --- Version 0.3}
+\subsubsection{2023-11-26 News --- Version 0.3}
 
 \begin{itemize}
   
@@ -726,7 +729,7 @@ substantially improved default performance at shallow and mid-depth zooms.
 \end{itemize}
 
 
-\subsection{2023-11-12 News --- Version 0.24}
+\subsubsection{2023-11-12 News --- Version 0.24}
 
 \begin{itemize}
 \item \textbf{UI/UX improvements.} Adds a hotkey help view and general UI
@@ -742,7 +745,7 @@ unhandled exceptions.
 \end{itemize}
 
 
-\subsection{2023-11-05 News --- Version 0.23}
+\subsubsection{2023-11-05 News --- Version 0.23}
 \begin{itemize}
   \item Adds switchable 64-bit iteration count support (enabling tens of
   billions of iterations per pixel, leveraging LA).
@@ -758,7 +761,7 @@ unhandled exceptions.
 \end{itemize}
 
 
-\subsection{2023-10-14 News --- Version 0.22}
+\subsubsection{2023-10-14 News --- Version 0.22}
 
 \begin{itemize}
 
@@ -775,7 +778,7 @@ unhandled exceptions.
 \end{itemize}
 
 
-\subsection{2023-10-08 News --- Version 0.21}
+\subsubsection{2023-10-08 News --- Version 0.21}
 \begin{itemize}
   \item Performance improvements to BLA and LA~v2.
   \item Memory-usage improvements (commit size / virtual address space issues
@@ -787,7 +790,7 @@ unhandled exceptions.
 \end{itemize}
 
 
-\subsection{2023-09-16 News --- Version 0.2}
+\subsubsection{2023-09-16 News --- Version 0.2}
 
 Version \code{0.2} introduced a major algorithmic milestone: the integration
 of Imagina's linear approximation implementation as a CUDA kernel.
@@ -805,7 +808,7 @@ While the legacy bilinear approximation remains faster at very shallow zooms,
 the new approach dominates once meaningful magnification is reached.
 
 
-\subsection{2023-07-22 News --- Version 0.11}
+\subsubsection{2023-07-22 News --- Version 0.11}
 
 Version \code{0.11} was released with a focus on performance improvements and
 improved diagnostics.

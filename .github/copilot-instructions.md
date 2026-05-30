@@ -147,7 +147,8 @@ These prevent real bugs; do not strip them when editing:
 
 ## Notes Document (`Notes/`)
 
-LaTeX technical document (~7,500 lines, 13 chapters + 2 appendices) covering FractalShark's algorithms in depth. Master file: `FractalShark.tex`.
+LaTeX technical document covering FractalShark's algorithms in depth, followed by user documentation,
+engineering-reference material, and development history in three appendices. Master file: `FractalShark.tex`.
 
 ```powershell
 cd Notes
@@ -158,7 +159,8 @@ pdflatex -interaction=nonstopmode -halt-on-error FractalShark.tex
 
 ### Writing Conventions (Notes/)
 
-- **Tone:** Formal third-person academic in chapters 1–12. Appendices A1/A2 are intentionally informal.
+- **Tone:** Formal third-person academic in the main narrative and engineering-reference appendix. The
+  user-documentation and development-history appendices are intentionally informal.
 - **No sensationalized language:** avoid "dramatically", "crucially", "key insight", "notoriously", "massively parallel", etc.
 - **No bare "This"** + verb. Always follow `This` with a noun (`This approach…`, not `This ensures…`).
 - **Figures:** pure TikZ; `\caption[short]{long}`; cross-ref via `\cref{fig:...}`.

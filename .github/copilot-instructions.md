@@ -53,7 +53,7 @@ Authoritative CI process: `.github/workflows/build.yml`. Local Windows developme
 **Prereqs:** Visual Studio 2026 with C++ + CUDA, CUDA Toolkit 13.0.2, YASM/vsyasm at `C:\Program Files\vsyasm\*` (bundled in `tools/yasm.zip`), MPIR cloned to repo root and built via `mpir\msvc\vs22\mpir.sln` (`lib_mpir_skylake_avx`, x64).
 
 ```powershell
-# Full rebuild (required if any .h, .cu, or .cuh changed):
+# Full rebuild (required if any .h, .cu, .cuh, CUDA .props/.targets, or shared build settings changed):
 msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Release /p:Platform=x64
 msbuild FractalShark\FractalShark.sln /t:Rebuild /m /v:m /p:Configuration=Debug /p:Platform=x64
 

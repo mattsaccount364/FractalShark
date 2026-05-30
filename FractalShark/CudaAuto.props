@@ -17,17 +17,46 @@
     <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'==''"></CudaBuildCustomizationVersion>
 
     <!-- Probe CUDA_PATH only if it's not already set -->
-    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2</CUDA_PATH>
-    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1</CUDA_PATH>
-    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0</CUDA_PATH>
-    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4</CUDA_PATH>
-    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3</CUDA_PATH>
-    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3</CUDA_PATH>
+    <CUDA_PATH Condition="'$(CUDA_PATH)'=='' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2</CUDA_PATH>
+
+    <!-- Resolve one build customization version. Importing multiple CUDA customizations
+         duplicates scalar task metadata such as Warning/RuntimeChecks/Runtime. -->
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props') and (Exists('$(CUDA_PATH_V13_2)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\nvcc.exe'))">13.2</CudaBuildCustomizationVersion>
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props') and (Exists('$(CUDA_PATH_V13_1)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1\bin\nvcc.exe'))">13.1</CudaBuildCustomizationVersion>
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props') and (Exists('$(CUDA_PATH_V13_0)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\nvcc.exe'))">13.0</CudaBuildCustomizationVersion>
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.4.props') and (Exists('$(CUDA_PATH_V12_4)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin\nvcc.exe'))">12.4</CudaBuildCustomizationVersion>
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.3.props') and (Exists('$(CUDA_PATH_V12_3)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3\bin\nvcc.exe'))">12.3</CudaBuildCustomizationVersion>
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.2.props') and (Exists('$(CUDA_PATH_V12_2)\bin\nvcc.exe') or Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\bin\nvcc.exe'))">12.2</CudaBuildCustomizationVersion>
+
+    <!-- Pin NVIDIA's CudaToolkitDir to the same version so .Version.props does not
+         depend on CUDA_PATH_Vx_y environment variables being present. -->
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.2' and '$(CUDA_PATH_V13_2)'!=''">$(CUDA_PATH_V13_2)</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.2' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.1' and '$(CUDA_PATH_V13_1)'!=''">$(CUDA_PATH_V13_1)</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.1' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.0' and '$(CUDA_PATH_V13_0)'!=''">$(CUDA_PATH_V13_0)</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='13.0' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='12.4' and '$(CUDA_PATH_V12_4)'!=''">$(CUDA_PATH_V12_4)</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='12.4' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='12.3' and '$(CUDA_PATH_V12_3)'!=''">$(CUDA_PATH_V12_3)</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='12.3' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='12.2' and '$(CUDA_PATH_V12_2)'!=''">$(CUDA_PATH_V12_2)</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CudaBuildCustomizationVersion)'=='12.2' and Exists('C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\bin\nvcc.exe')">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'=='' and '$(CUDA_PATH)'!=''">$(CUDA_PATH)</CudaToolkitDir>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'!='' and !HasTrailingSlash('$(CudaToolkitDir)')">$(CudaToolkitDir)\</CudaToolkitDir>
 
     <!-- Ensure these exist for projects that already reference them -->
-    <CudaToolkitLibDir Condition="'$(CudaToolkitLibDir)'=='' and '$(CUDA_PATH)'!=''">$(CUDA_PATH)\lib\x64\</CudaToolkitLibDir>
-    <CudaToolkitBinDir Condition="'$(CudaToolkitBinDir)'=='' and '$(CUDA_PATH)'!=''">$(CUDA_PATH)\bin\</CudaToolkitBinDir>
-    <CudaToolkitIncludeDir Condition="'$(CudaToolkitIncludeDir)'=='' and '$(CUDA_PATH)'!=''">$(CUDA_PATH)\include\</CudaToolkitIncludeDir>
+    <CudaToolkitLibDir Condition="'$(CudaToolkitLibDir)'=='' and '$(CudaToolkitDir)'!=''">$(CudaToolkitDir)lib\x64\</CudaToolkitLibDir>
+    <CudaToolkitBinDir Condition="'$(CudaToolkitBinDir)'=='' and '$(CudaToolkitDir)'!=''">$(CudaToolkitDir)bin\</CudaToolkitBinDir>
+    <CudaToolkitIncludeDir Condition="'$(CudaToolkitIncludeDir)'=='' and '$(CudaToolkitDir)'!=''">$(CudaToolkitDir)include\</CudaToolkitIncludeDir>
+
+    <!-- Remember whether props were available so CudaAuto.targets imports the matching targets only. -->
+    <CudaBuildCustomizationPropsAvailable Condition="'$(CudaBuildCustomizationVersion)'!='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props')">true</CudaBuildCustomizationPropsAvailable>
   </PropertyGroup>
 
   <!--
@@ -35,22 +64,8 @@
     IMPORTANT: do NOT error if missing; many machines won't have VS integration installed.
   -->
 
-  <!-- If explicitly set and present, use it -->
+  <!-- If explicitly set and present, use it; otherwise use the resolved fallback above. -->
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props"
-          Condition="'$(CudaBuildCustomizationVersion)'!='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props')" />
-
-  <!-- Otherwise try newest-first -->
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props')" />
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props')" />
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.props')" />
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.4.props"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.4.props')" />
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.3.props"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.3.props')" />
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.2.props"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 12.2.props')" />
+          Condition="'$(CudaBuildCustomizationPropsAvailable)'=='true'" />
 
 </Project>

@@ -1,19 +1,8 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <!--
     CudaAuto.targets
-    Imports the matching CUDA Build Customizations .targets (with fallbacks).
+    Imports the CUDA Build Customizations .targets matching CudaAuto.props.
   -->
-  <PropertyGroup>
-    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'==''"></CudaBuildCustomizationVersion>
-  </PropertyGroup>
-
   <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).targets"
-          Condition="'$(CudaBuildCustomizationVersion)'!='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).targets')" />
-
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets')" />
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.targets"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.targets')" />
-  <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.targets"
-          Condition="'$(CudaBuildCustomizationVersion)'=='' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.0.targets')" />
+          Condition="'$(CudaBuildCustomizationPropsAvailable)'=='true' and Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).targets')" />
 </Project>

@@ -6,12 +6,17 @@ on:
     tags:
       - "*"
   pull_request:
+  schedule:
+    - cron: "0 8 1,15 * *"
   workflow_dispatch:
 
 permissions:
   contents: write
   id-token: write        # allows OIDC token minting for signing
   attestations: write    # allows uploading the attestation to GitHub
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ---- PDF notes (reusable workflow, runs in parallel with code builds) ----
@@ -24,11 +29,11 @@ jobs:
   # ---- Linux CMake build (runs in parallel with Windows builds) ----
   build-linux:
     name: Build FractalShark (Linux CMake)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install CUDA toolkit
         uses: Jimver/cuda-toolkit@v0.2.29
@@ -50,7 +55,7 @@ jobs:
 
       - name: Build
         # Serial build (-j 1) is intentional: parallel compilation of CUDA TUs
-        # plus heavy C++23 template instantiations exceeds ubuntu-latest runner
+        # plus heavy C++23 template instantiations exceeds the ubuntu-24.04 runner
         # memory (~7 GB) and triggers the OOM killer.
         run: cmake --build build -j 1
 
@@ -64,13 +69,13 @@ jobs:
           rm cli-smoke-test.png
 
         # HpSharkFloatTest is built but not run on CI — it requires a physical
-        # CUDA GPU, which ubuntu-latest runners don't provide. Runtime GPU
+        # CUDA GPU, which ubuntu-24.04 runners don't provide. Runtime GPU
         # testing is deferred to a future self-hosted runner.
 
   # ---- Code build (Debug and Release run as parallel matrix legs) ----
   build:
     name: Build FractalShark (${{ matrix.configuration }})
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
 
     strategy:
       fail-fast: false
@@ -79,12 +84,12 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       - name: Checkout MPIR
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: BrianGladman/mpir
           path: mpir
@@ -99,12 +104,15 @@ jobs:
         run: |
           choco install vcredist2010 -y
 
-      - name: Set up MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      # ---- Tooling MPIR expects ----
-      - name: Install NuGet
-        uses: nuget/setup-nuget@v2
+      - name: Initialize MSBuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          if (-not $vsPath) { throw "Visual Studio with MSBuild not found" }
+          $msbuildDir = Join-Path $vsPath "MSBuild\Current\Bin"
+          if (-not (Test-Path (Join-Path $msbuildDir "MSBuild.exe"))) { throw "MSBuild.exe not found" }
+          $msbuildDir | Out-File -FilePath $env:GITHUB_PATH -Append
 
       # Note 2025-12: Tried various current vsyasm but failed.  Just
       # keeping custom one for now.
@@ -125,7 +133,7 @@ jobs:
           # Detect Git LFS pointer (typically tiny and starts with 'version https://git-lfs.github.com/spec/v1')
           $firstLine = (Get-Content -Path $zip -TotalCount 1 -ErrorAction SilentlyContinue)
           if ($item.Length -lt 2000 -and $firstLine -like "version https://git-lfs.github.com/spec/v1*") {
-            throw "This file is a Git LFS pointer, not the real zip. Fix: set actions/checkout@v4 with `lfs: true`."
+            throw "This file is a Git LFS pointer, not the real zip. Fix: set actions/checkout@v6 with `lfs: true`."
           }
 
           # Clean install location
@@ -199,7 +207,7 @@ jobs:
       # ---- Cache MPIR build outputs ----
       - name: Cache MPIR build
         id: mpir-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: mpir/lib/x64/${{ matrix.configuration }}
           key: mpir-${{ runner.os }}-skylake-avx-x64-${{ matrix.configuration }}-${{ hashFiles('mpir/**/*.c', 'mpir/**/*.h', 'mpir/**/*.asm') }}
@@ -219,7 +227,7 @@ jobs:
 
       # ---- Build FractalShark ----
       - name: Build ${{ matrix.configuration }}
-        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64 /p:PlatformToolset=v143
+        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64
 
       - name: Run unit tests
         run: ${{ matrix.configuration }}\FractalSharkTest.exe
@@ -232,7 +240,7 @@ jobs:
           Remove-Item cli-smoke-test.png
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: FractalShark-${{ matrix.configuration }}
           path: |
@@ -241,7 +249,7 @@ jobs:
 
   release:
     name: Create FractalShark Release
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     needs: [build, build-pdf]
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -264,7 +272,7 @@ jobs:
           $PSVersionTable
 
       - name: Checkout repo (needed for gh/git context)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -287,13 +295,13 @@ jobs:
           git status --porcelain=v1
 
       - name: Download Release build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FractalShark-Release
           path: dist
 
       - name: Download FractalShark notes PDF artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FractalSharkNotes
           path: _notes_art

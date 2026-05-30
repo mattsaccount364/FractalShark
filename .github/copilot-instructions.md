@@ -48,7 +48,7 @@ Two parallel build systems:
 
 ## Build Instructions (Windows)
 
-Authoritative CI process: `.github/workflows/build.yml`. Local Windows development uses Visual Studio 2026/v145 when available; CI currently overrides `PlatformToolset=v143`.
+Authoritative CI process: `.github/workflows/build.yml`. Windows builds prefer Visual Studio 2026/v145 when available and fall back to v143.
 
 **Prereqs:** Visual Studio 2026 with C++ + CUDA, CUDA Toolkit 13.0.2, YASM/vsyasm at `C:\Program Files\vsyasm\*` (bundled in `tools/yasm.zip`), MPIR cloned to repo root and built via `mpir\msvc\vs22\mpir.sln` (`lib_mpir_skylake_avx`, x64).
 

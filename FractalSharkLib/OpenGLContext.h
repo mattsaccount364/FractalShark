@@ -17,6 +17,7 @@ struct OpenGlContext {
     void *m_hDC{};
     bool m_Valid{};
     bool m_IsSoftwareRenderer{};
+    bool m_IsDoubleBuffered{true};
     bool m_Repainting{true};
     GLint m_MaxTextureSize{};
     Environment::ScreenRect m_CachedRect{};

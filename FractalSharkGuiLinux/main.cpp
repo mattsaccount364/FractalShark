@@ -3,7 +3,7 @@
 // Phase: fractal-render.  This stage brings up an empty X11 window with a
 // GLX-compatible visual, instantiates a Fractal bound to that window, and
 // kicks off a single default-view render.  The render thread pool's GL
-// consumer presents via glXSwapBuffers.  No keyboard / mouse input yet —
+// consumer presents via glXSwapBuffers or glFlush.  No keyboard / mouse input yet —
 // that is the next phase (input-keys / input-mouse / drag-zoom).
 
 #include "CommandCatalog.h"
@@ -60,6 +60,43 @@ namespace {
 constexpr int kInitialWidth = 1600;
 constexpr int kInitialHeight = 1000;
 constexpr const char *kWindowTitle = "FractalShark (Linux)";
+
+struct GlxVisualSelection {
+    XVisualInfo *VisualInfo;
+    const char *Description;
+};
+
+GlxVisualSelection
+ChooseGlxVisual(Display *display, int screen)
+{
+    int rgbaDoubleBufferedWithAlpha[] = {GLX_RGBA,
+                                         GLX_DOUBLEBUFFER,
+                                         GLX_RED_SIZE,
+                                         8,
+                                         GLX_GREEN_SIZE,
+                                         8,
+                                         GLX_BLUE_SIZE,
+                                         8,
+                                         GLX_ALPHA_SIZE,
+                                         8,
+                                         None};
+    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaDoubleBufferedWithAlpha)) {
+        return {visualInfo, "RGBA double-buffered with 8-bit alpha"};
+    }
+
+    int rgbaDoubleBuffered[] = {
+        GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
+    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaDoubleBuffered)) {
+        return {visualInfo, "RGBA double-buffered without required alpha"};
+    }
+
+    int rgbaSingleBuffered[] = {GLX_RGBA, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
+    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaSingleBuffered)) {
+        return {visualInfo, "RGBA single-buffered without required alpha"};
+    }
+
+    return {};
+}
 
 long long
 ElapsedMilliseconds(std::chrono::steady_clock::time_point start)
@@ -215,29 +252,21 @@ LinuxMainWindow::LinuxMainWindow()
 
     screen = DefaultScreen(display);
 
-    // Pick a GLX-compatible visual at window creation time so the GLX context
-    // OpenGlContext later creates can be made current on this window.  The
-    // attribute list mirrors OpenGLContext.cpp's glXChooseVisual call to
-    // guarantee a match.
-    int glxAttribs[] = {GLX_RGBA,
-                        GLX_DOUBLEBUFFER,
-                        GLX_RED_SIZE,
-                        8,
-                        GLX_GREEN_SIZE,
-                        8,
-                        GLX_BLUE_SIZE,
-                        8,
-                        GLX_ALPHA_SIZE,
-                        8,
-                        None};
-    visualInfo = glXChooseVisual(display, screen, glxAttribs);
+    // Pick the best GLX-compatible visual available.  OpenGlContext later
+    // creates its context from this window's actual visual, keeping fallback
+    // selection in one place.
+    const GlxVisualSelection visualSelection = ChooseGlxVisual(display, screen);
+    visualInfo = visualSelection.VisualInfo;
     if (!visualInfo) {
         std::fprintf(stderr,
-                     "FractalSharkGuiLinux: glXChooseVisual failed (no RGBA double-buffered visual)\n");
+                     "FractalSharkGuiLinux: glXChooseVisual failed (tried RGBA double-buffered with "
+                     "alpha, RGBA double-buffered without required alpha, and RGBA single-buffered "
+                     "without required alpha). Check GLX support with glxinfo.\n");
         XCloseDisplay(display);
         display = nullptr;
         return;
     }
+    std::fprintf(stderr, "FractalSharkGuiLinux: selected GLX visual: %s\n", visualSelection.Description);
 
     Window root = RootWindow(display, screen);
 

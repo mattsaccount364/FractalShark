@@ -67,6 +67,7 @@ GetNativeClientRect(void *nativeWindow, NativeRect &out)
 #else // Linux / X11
 
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 // Process-global X11 display connection.  Opened once, never closed (normal X11 practice).
 static Display *g_display = nullptr;
@@ -383,6 +384,22 @@ GetShareRoot(Window win)
     return it->second.shareRoot;
 }
 
+XVisualInfo *
+GetWindowVisualInfo(Display *dpy, Window win)
+{
+    XWindowAttributes attributes{};
+    if (!XGetWindowAttributes(dpy, win, &attributes)) {
+        return nullptr;
+    }
+
+    XVisualInfo visualTemplate{};
+    visualTemplate.visualid = XVisualIDFromVisual(attributes.visual);
+    visualTemplate.screen = XScreenNumberOfScreen(attributes.screen);
+
+    int visualCount = 0;
+    return XGetVisualInfo(dpy, VisualIDMask | VisualScreenMask, &visualTemplate, &visualCount);
+}
+
 } // namespace
 
 OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
@@ -402,24 +419,23 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
 
     Window win = reinterpret_cast<Window>(m_hWnd);
 
-    // Choose a visual with RGBA, double-buffered, depth=0.
-    int attribs[] = {GLX_RGBA,
-                     GLX_DOUBLEBUFFER,
-                     GLX_RED_SIZE,
-                     8,
-                     GLX_GREEN_SIZE,
-                     8,
-                     GLX_BLUE_SIZE,
-                     8,
-                     GLX_ALPHA_SIZE,
-                     8,
-                     None};
-
-    XVisualInfo *vi = glXChooseVisual(dpy, DefaultScreen(dpy), attribs);
+    XVisualInfo *vi = GetWindowVisualInfo(dpy, win);
     if (!vi) {
-        GlLog("OpenGlContext: glXChooseVisual failed");
+        GlLog("OpenGlContext: failed to query window visual");
         return;
     }
+
+    int supportsGl = False;
+    int rgba = False;
+    int doubleBuffered = False;
+    if (glXGetConfig(dpy, vi, GLX_USE_GL, &supportsGl) != 0 || supportsGl != True ||
+        glXGetConfig(dpy, vi, GLX_RGBA, &rgba) != 0 || rgba != True ||
+        glXGetConfig(dpy, vi, GLX_DOUBLEBUFFER, &doubleBuffered) != 0) {
+        GlLog("OpenGlContext: window visual is not a usable GLX RGBA visual");
+        XFree(vi);
+        return;
+    }
+    m_IsDoubleBuffered = doubleBuffered == True;
 
     GLXContext shareCtx = GetShareRoot(win);
     GLXContext ctx = glXCreateContext(dpy, vi, shareCtx, GL_TRUE);
@@ -447,12 +463,14 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
     char buf[512];
     snprintf(buf,
              sizeof(buf),
-             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct=%d, software=%d",
+             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct=%d, software=%d, "
+             "doubleBuffered=%d",
              renderer ? renderer : "(null)",
              version ? version : "(null)",
              m_MaxTextureSize,
              isDirect ? 1 : 0,
-             m_IsSoftwareRenderer ? 1 : 0);
+             m_IsSoftwareRenderer ? 1 : 0,
+             m_IsDoubleBuffered ? 1 : 0);
     GlLog(buf);
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -506,8 +524,12 @@ OpenGlContext::SwapBuffers()
 {
     Display *dpy = GetX11Display();
     if (dpy && m_hWnd) {
-        Window win = reinterpret_cast<Window>(m_hWnd);
-        glXSwapBuffers(dpy, win);
+        if (m_IsDoubleBuffered) {
+            Window win = reinterpret_cast<Window>(m_hWnd);
+            glXSwapBuffers(dpy, win);
+        } else {
+            glFlush();
+        }
     }
 }
 

@@ -168,20 +168,24 @@ ImGuiOverlay::ProcessEvent(const XEvent &ev)
         return false;
     }
     ImGui::SetCurrentContext(ctx_);
-    ImGui_ImplXlib_ProcessEvent(ev);
+    const bool captured = ImGui_ImplXlib_ProcessEvent(ev);
 
-    const ImGuiIO &io = ImGui::GetIO();
     switch (ev.type) {
         case ButtonPress:
         case ButtonRelease:
         case MotionNotify:
-            return io.WantCaptureMouse;
         case KeyPress:
         case KeyRelease:
-            return io.WantCaptureKeyboard;
+        case FocusIn:
+        case FocusOut:
+        case EnterNotify:
+        case LeaveNotify:
+            inputPending_ = true;
+            break;
         default:
-            return false;
+            break;
     }
+    return captured;
 }
 
 void
@@ -533,6 +537,7 @@ pickDone:
 
     ImGui::Render();
     ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+    inputPending_ = false;
 }
 
 bool
@@ -541,9 +546,9 @@ ImGuiOverlay::WantsTick() const
     if (!ctx_) {
         return false;
     }
-    return dragRectActive_ || contextMenuRequested_ || infoModalRequested_ || infoModalOpen_ ||
-           saveDlgRequested_ || saveDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ ||
-           locDlgOpen_ || contextMenuOpen_;
+    return inputPending_ || dragRectActive_ || contextMenuRequested_ || infoModalRequested_ ||
+           infoModalOpen_ || saveDlgRequested_ || saveDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ ||
+           locDlgRequested_ || locDlgOpen_ || contextMenuOpen_;
 }
 
 } // namespace FractalShark::Linux

@@ -297,7 +297,7 @@ ImGui_ImplXlib_ProcessEvent(const XEvent &ev)
         const auto &m = ev.xmotion;
         io.AddMousePosEvent(float(m.x), float(m.y));
         UpdateModifiers(m.state);
-        return io.WantCaptureMouse;
+        return io.WantCaptureMouseUnlessPopupClose;
     }
 
     case ButtonPress:
@@ -315,12 +315,12 @@ ImGui_ImplXlib_ProcessEvent(const XEvent &ev)
         case 7: if (down) io.AddMouseWheelEvent(1.0f, 0.0f); break;
         default: break;
         }
-        // Wheel events behave like clicks; never claim wheel-capture for wheel.
+        // Wheel events use the same popup-close-aware capture policy as buttons.
         if (b.button == Button4 || b.button == Button5
             || b.button == 6 || b.button == 7) {
-            return io.WantCaptureMouse;
+            return io.WantCaptureMouseUnlessPopupClose;
         }
-        return io.WantCaptureMouse;
+        return io.WantCaptureMouseUnlessPopupClose;
     }
 
     case KeyPress:

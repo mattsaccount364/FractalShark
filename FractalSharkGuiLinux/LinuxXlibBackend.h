@@ -43,8 +43,10 @@ void ImGui_ImplXlib_Shutdown();
 void ImGui_ImplXlib_NewFrame();
 
 // Returns true if the event was consumed by ImGui (e.g. mouse over a popup,
-// keystroke targeted at a text input).  Host should still call its own
-// dispatch when this returns false.
+// keystroke targeted at a text input). Mouse capture uses ImGui's
+// popup-close-aware flag so the host can react to clicks that dismiss a
+// non-modal popup. Host should still call its own dispatch when this returns
+// false.
 bool ImGui_ImplXlib_ProcessEvent(const XEvent &ev);
 
 // Optional: route ImGui clipboard Get/Set through the host's LinuxClipboard

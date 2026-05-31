@@ -122,6 +122,7 @@ private:
 
     bool contextMenuRequested_ = false;
     bool contextMenuOpen_ = false;
+    bool inputPending_ = false;
     int contextMenuX_ = 0;
     int contextMenuY_ = 0;
 

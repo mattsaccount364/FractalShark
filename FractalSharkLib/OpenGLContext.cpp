@@ -8,12 +8,35 @@
 #include "OpenGLContext.h"
 #include "WPngImage/WPngImage.hh"
 
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <cctype>
 #include <cstdint>
 #include <iostream>
 #include <mutex>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
+
+bool
+OpenGlContext::IsKnownSoftwareRendererName(std::string_view rendererName)
+{
+    constexpr std::array softwareRendererTokens{
+        "llvmpipe", "softpipe", "swrast", "lavapipe", "software rasterizer"};
+
+    return std::any_of(
+        softwareRendererTokens.begin(), softwareRendererTokens.end(), [&](std::string_view token) {
+            return std::search(rendererName.begin(),
+                               rendererName.end(),
+                               token.begin(),
+                               token.end(),
+                               [](char lhs, char rhs) {
+                                   return std::tolower(static_cast<unsigned char>(lhs)) ==
+                                          std::tolower(static_cast<unsigned char>(rhs));
+                               }) != rendererName.end();
+        });
+}
 
 void
 GlLog(const char *msg)
@@ -415,21 +438,21 @@ OpenGlContext::OpenGlContext(void *nativeWindow) : m_hWnd(nativeWindow)
         return;
     }
 
-    // Detect software renderer via glXIsDirect.
-    m_IsSoftwareRenderer = !glXIsDirect(dpy, ctx);
-
     const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
     const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &m_MaxTextureSize);
+    const bool isDirect = glXIsDirect(dpy, ctx) == True;
+    m_IsSoftwareRenderer = !isDirect || IsKnownSoftwareRendererName(renderer ? renderer : "");
 
     char buf[512];
     snprintf(buf,
              sizeof(buf),
-             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct=%d",
+             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct=%d, software=%d",
              renderer ? renderer : "(null)",
              version ? version : "(null)",
              m_MaxTextureSize,
-             m_IsSoftwareRenderer ? 0 : 1);
+             isDirect ? 1 : 0,
+             m_IsSoftwareRenderer ? 1 : 0);
     GlLog(buf);
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);

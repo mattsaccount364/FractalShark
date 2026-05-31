@@ -3,6 +3,8 @@
 
 #include "Environment.h"
 
+#include <string_view>
+
 // GL types needed in the header (avoids including GL/gl.h which needs windows.h on Win32)
 using GLint = int;
 
@@ -29,6 +31,7 @@ public:
     void glResetView();
     void glResetViewDim(size_t width, size_t height);
     bool IsValid() const;
+    static bool IsKnownSoftwareRendererName(std::string_view rendererName);
     bool IsSoftwareRenderer() const;
     GLint GetMaxTextureSize() const;
     void DrawGlBox();

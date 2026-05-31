@@ -71,15 +71,15 @@ The custom heap allocator (`HpSharkFloatLib/heap_allocator/HeapCpp.cpp`) is Wind
 
 ### Linux Test Machine
 
-Ubuntu 24.04 box at `mrenz@ubuntu24` (SSH key auth). CUDA 13.2 at `/usr/local/cuda` — not on PATH; prefix with `export PATH=/usr/local/cuda/bin:$PATH`. **No GPU**, so only compile/link is validated, not runtime CUDA.
+Local WSL Ubuntu environment at `matthew@localhost` (SSH key auth). CUDA 13.2 at `/usr/local/cuda` — not on PATH; prefix with `export PATH=/usr/local/cuda/bin:$PATH`. **No GPU**, so only compile/link is validated, not runtime CUDA.
 
 Windows working tree is authoritative. The Linux checkout at `~/FractalShark` is a test mirror — never commit or push from it. Always verify the Linux checkout's commit matches the Windows working tree before testing; sync via `git fetch && git checkout <sha>`, overlay uncommitted Windows changes via `scp`. Reuse this persistent checkout for normal validation so its configured build directories and output artifacts remain available for manual testing.
 
 ```bash
-ssh mrenz@ubuntu24
+ssh matthew@localhost
 cd ~/FractalShark && git rev-parse HEAD && git status --short   # verify vs Windows host
 cd ~/FractalShark && git fetch origin && git checkout <branch-or-sha>
-scp <local-file> mrenz@ubuntu24:~/FractalShark/<repo-relative-path>
+scp <local-file> matthew@localhost:~/FractalShark/<repo-relative-path>
 ```
 
 ```bash

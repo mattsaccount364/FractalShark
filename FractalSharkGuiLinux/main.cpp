@@ -61,6 +61,14 @@ constexpr int kInitialWidth = 1600;
 constexpr int kInitialHeight = 1000;
 constexpr const char *kWindowTitle = "FractalShark (Linux)";
 
+long long
+ElapsedMilliseconds(std::chrono::steady_clock::time_point start)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                 start)
+        .count();
+}
+
 // Mechanical-contract stub: every catalog command hook the Win32 GUI
 // implements in MainWindow must also be overridden here.  Until the Linux
 // GUI grows real menu/render plumbing each hook just announces itself so a
@@ -548,6 +556,12 @@ LinuxMainWindow::RunEventLoop()
         const bool needsTick = freshFrame || overlayWantsTick || dragging || !everPresented;
 
         if (needsTick && glContext && glContext->IsValid()) {
+            static bool diagnosedFirstFreshFrame = false;
+            const bool diagnoseFreshFrame = freshFrame && !diagnosedFirstFreshFrame;
+            if (diagnoseFreshFrame) {
+                diagnosedFirstFreshFrame = true;
+            }
+
             // If this tick was triggered by overlay motion only, re-blit
             // the cached frame so the overlay has something underneath.
             if (!freshFrame && fractal) {
@@ -556,9 +570,43 @@ LinuxMainWindow::RunEventLoop()
                 }
             }
             if (overlay) {
+                std::chrono::steady_clock::time_point overlayStart;
+                if (diagnoseFreshFrame) {
+                    GlLog("LinuxMainWindow: first completed-frame ImGui draw begin");
+                    overlayStart = std::chrono::steady_clock::now();
+                }
+
                 overlay->RenderFrame();
+
+                if (diagnoseFreshFrame) {
+                    char buf[128];
+                    snprintf(buf,
+                             sizeof(buf),
+                             "LinuxMainWindow: first completed-frame ImGui draw end, elapsedMs=%lld",
+                             ElapsedMilliseconds(overlayStart));
+                    GlLog(buf);
+                }
+            } else if (diagnoseFreshFrame) {
+                GlLog("LinuxMainWindow: first completed-frame ImGui draw skipped");
             }
+
+            std::chrono::steady_clock::time_point swapStart;
+            if (diagnoseFreshFrame) {
+                GlLog("LinuxMainWindow: first completed-frame glXSwapBuffers begin");
+                swapStart = std::chrono::steady_clock::now();
+            }
+
             glContext->SwapBuffers();
+
+            if (diagnoseFreshFrame) {
+                char buf[128];
+                snprintf(buf,
+                         sizeof(buf),
+                         "LinuxMainWindow: first completed-frame glXSwapBuffers end, elapsedMs=%lld",
+                         ElapsedMilliseconds(swapStart));
+                GlLog(buf);
+            }
+
             everPresented = true;
         }
 

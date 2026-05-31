@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
     tags:
       - "*"
   pull_request:
@@ -80,6 +80,21 @@ jobs:
         # HpSharkFloatTest is built but not run on CI — it requires a physical
         # CUDA GPU, which ubuntu-24.04 runners don't provide. Runtime GPU
         # testing is deferred to a future self-hosted runner.
+
+      - name: Package Linux artifacts
+        run: |
+          mkdir -p dist-linux
+          cp build/FractalSharkCli/FractalSharkCli dist-linux/
+          cp build/FractalSharkGuiLinux/FractalSharkGuiLinux dist-linux/
+          tar -czf FractalShark-Linux.tar.gz -C dist-linux FractalSharkCli FractalSharkGuiLinux
+          tar -tzf FractalShark-Linux.tar.gz
+
+      - name: Upload Linux build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: FractalShark-Linux
+          path: FractalShark-Linux.tar.gz
+          if-no-files-found: error
 
   # ---- Code build (Debug and Release run as parallel matrix legs) ----
   build:
@@ -281,7 +296,7 @@ jobs:
   release:
     name: Create FractalShark Release
     runs-on: windows-2025-vs2026
-    needs: [build, build-pdf]
+    needs: [build, build-linux, build-pdf]
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
@@ -336,6 +351,12 @@ jobs:
         with:
           name: FractalSharkNotes
           path: _notes_art
+
+      - name: Download Linux build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: FractalShark-Linux
+          path: _linux_art
 
       - name: Normalize FractalShark.pdf path
         shell: pwsh
@@ -404,16 +425,33 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath out\_verify -Force
           Get-ChildItem out\_verify | Format-Table -AutoSize
 
-      - name: Verify ZIP exists (pre-attestation)
+      - name: Normalize Linux artifact path
         shell: pwsh
         run: |
-          $p = "out\FractalShark-$env:GITHUB_REF_NAME.zip"
-          if (-not (Test-Path $p)) { throw "ZIP not found: $p" }
+          $source = "_linux_art\FractalShark-Linux.tar.gz"
+          if (-not (Test-Path $source)) { throw "Linux archive not found: $source" }
+
+          $destination = "out\FractalShark-Linux-$env:GITHUB_REF_NAME.tar.gz"
+          Copy-Item $source $destination -Force
+
+      - name: Verify release archives exist (pre-attestation)
+        shell: pwsh
+        run: |
+          $windowsZip = "out\FractalShark-$env:GITHUB_REF_NAME.zip"
+          if (-not (Test-Path $windowsZip)) { throw "ZIP not found: $windowsZip" }
+
+          $linuxArchive = "out\FractalShark-Linux-$env:GITHUB_REF_NAME.tar.gz"
+          if (-not (Test-Path $linuxArchive)) { throw "Linux archive not found: $linuxArchive" }
 
       - name: Generate build provenance attestation (ZIP)
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: out/FractalShark-${{ github.ref_name }}.zip
+
+      - name: Generate build provenance attestation (Linux archive)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: out/FractalShark-Linux-${{ github.ref_name }}.tar.gz
 
       - name: "Diagnostic: gh auth + version"
         shell: pwsh
@@ -440,8 +478,10 @@ jobs:
         run: |
           $tag = $env:GITHUB_REF_NAME
           $zip = "out\FractalShark-$tag.zip"
+          $linuxArchive = "out\FractalShark-Linux-$tag.tar.gz"
 
           if (-not (Test-Path $zip)) { throw "Missing asset: $zip" }
+          if (-not (Test-Path $linuxArchive)) { throw "Missing asset: $linuxArchive" }
 
           $pdf = "out\FractalShark.pdf"
           if (-not (Test-Path $pdf)) { throw "Missing asset: $pdf" }
@@ -451,6 +491,7 @@ jobs:
 
           Write-Host "Tag:   $tag"
           Write-Host "Asset: $zip"
+          Write-Host "Asset: $linuxArchive"
           Write-Host "Asset: $pdf"
 
           Write-Host "Deleting existing release if present..."
@@ -462,4 +503,4 @@ jobs:
             --verify-tag `
             --title "$title" `
             --notes "$notes" `
-            "$zip" "$pdf"
+            "$zip" "$linuxArchive" "$pdf"

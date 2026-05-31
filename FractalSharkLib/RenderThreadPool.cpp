@@ -718,8 +718,18 @@ NextPOT(uint32_t v)
     return v + 1;
 }
 
+static long long
+ElapsedMilliseconds(std::chrono::steady_clock::time_point start)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                 start)
+        .count();
+}
+
 void
-RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &frame, GLuint *persistTexOut)
+RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
+                                  const RenderFrame &frame,
+                                  GLuint *persistTexOut)
 {
     glContext.glResetViewDim(frame.OutputWidth, frame.OutputHeight);
 
@@ -746,11 +756,27 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
             GlLog(buf);
         }
 
+        constexpr size_t SoftwareTileCap = 1024;
         const size_t frameW = frame.OutputWidth;
         const size_t frameH = frame.OutputHeight;
-        const size_t tileW = static_cast<size_t>(maxTex);
-        const size_t tileH = static_cast<size_t>(maxTex);
+        const size_t tileW = std::min(static_cast<size_t>(maxTex), SoftwareTileCap);
+        const size_t tileH = std::min(static_cast<size_t>(maxTex), SoftwareTileCap);
         const Color16 *src = frame.ColorData.get();
+
+        {
+            static bool loggedTileConfig = false;
+            if (!loggedTileConfig) {
+                loggedTileConfig = true;
+                char buf[256];
+                snprintf(buf,
+                         sizeof(buf),
+                         "RenderFrameToGL: software tiles=%zux%zu, stagingBytes=%zu",
+                         tileW,
+                         tileH,
+                         tileW * tileH * 4);
+                GlLog(buf);
+            }
+        }
 
         GLuint texid;
         glEnable(GL_TEXTURE_2D);
@@ -760,7 +786,7 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glColor4f(1.f, 1.f, 1.f, 1.f);
 
-        // Reusable buffer for the largest possible tile (maxTex × maxTex × 4).
+        // Reusable buffer for the largest capped software tile.
         std::vector<uint8_t> rgba8(tileW * tileH * 4, 0);
 
         for (size_t tileY = 0; tileY < frameH; tileY += tileH) {
@@ -791,6 +817,16 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
                     }
                 }
 
+                // One-shot GL error check on first tile of first frame.
+                static bool checkedError = false;
+                const bool diagnoseFirstTile = !checkedError;
+                std::chrono::steady_clock::time_point uploadStart;
+                if (diagnoseFirstTile) {
+                    checkedError = true;
+                    GlLog("RenderFrameToGL: first software tile glTexImage2D begin");
+                    uploadStart = std::chrono::steady_clock::now();
+                }
+
                 glTexImage2D(GL_TEXTURE_2D,
                              0,
                              GL_RGBA8,
@@ -801,26 +837,18 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
                              GL_UNSIGNED_BYTE,
                              rgba8.data());
 
-                // One-shot GL error check on first tile of first frame.
-                {
-                    static bool checkedError = false;
-                    if (!checkedError) {
-                        checkedError = true;
-                        GLenum err = glGetError();
-                        if (err != GL_NO_ERROR) {
-                            char buf[128];
-                            snprintf(buf,
-                                     sizeof(buf),
-                                     "RenderFrameToGL: glTexImage2D error=0x%x, "
-                                     "potW=%u, potH=%u",
-                                     err,
-                                     potW,
-                                     potH);
-                            GlLog(buf);
-                        } else {
-                            GlLog("RenderFrameToGL: first tile glTexImage2D OK");
-                        }
-                    }
+                if (diagnoseFirstTile) {
+                    const GLenum err = glGetError();
+                    char buf[192];
+                    snprintf(buf,
+                             sizeof(buf),
+                             "RenderFrameToGL: first software tile glTexImage2D end, "
+                             "elapsedMs=%lld, error=0x%x, potW=%u, potH=%u",
+                             ElapsedMilliseconds(uploadStart),
+                             err,
+                             potW,
+                             potH);
+                    GlLog(buf);
                 }
 
                 // Tex coords: only the content region of the POT texture.
@@ -838,6 +866,12 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
                 const GLint y0 = static_cast<GLint>(frameH - tileY - th); // bottom
                 const GLint y1 = static_cast<GLint>(frameH - tileY);      // top
 
+                std::chrono::steady_clock::time_point drawStart;
+                if (diagnoseFirstTile) {
+                    GlLog("RenderFrameToGL: first software tile quad draw begin");
+                    drawStart = std::chrono::steady_clock::now();
+                }
+
                 glBegin(GL_QUADS);
                 glTexCoord2f(0.0f, 0.0f);
                 glVertex2i(x0, y1);
@@ -848,6 +882,15 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
                 glTexCoord2f(texMaxS, 0.0f);
                 glVertex2i(x1, y1);
                 glEnd();
+
+                if (diagnoseFirstTile) {
+                    char buf[128];
+                    snprintf(buf,
+                             sizeof(buf),
+                             "RenderFrameToGL: first software tile quad draw end, elapsedMs=%lld",
+                             ElapsedMilliseconds(drawStart));
+                    GlLog(buf);
+                }
             }
         }
 
@@ -871,6 +914,15 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+        static bool diagnosedFirstHardwareFrame = false;
+        const bool diagnoseHardwareFrame = !diagnosedFirstHardwareFrame;
+        std::chrono::steady_clock::time_point uploadStart;
+        if (diagnoseHardwareFrame) {
+            diagnosedFirstHardwareFrame = true;
+            GlLog("RenderFrameToGL: first hardware glTexImage2D begin");
+            uploadStart = std::chrono::steady_clock::now();
+        }
+
         glTexImage2D(GL_TEXTURE_2D,
                      0,
                      GL_RGBA16,
@@ -881,7 +933,24 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
                      GL_UNSIGNED_SHORT,
                      frame.ColorData.get());
 
+        if (diagnoseHardwareFrame) {
+            const GLenum err = glGetError();
+            char buf[160];
+            snprintf(buf,
+                     sizeof(buf),
+                     "RenderFrameToGL: first hardware glTexImage2D end, elapsedMs=%lld, error=0x%x",
+                     ElapsedMilliseconds(uploadStart),
+                     err);
+            GlLog(buf);
+        }
+
         glColor4f(1.f, 1.f, 1.f, 1.f);
+
+        std::chrono::steady_clock::time_point drawStart;
+        if (diagnoseHardwareFrame) {
+            GlLog("RenderFrameToGL: first hardware quad draw begin");
+            drawStart = std::chrono::steady_clock::now();
+        }
 
         glBegin(GL_QUADS);
         glTexCoord2f(0.0f, 0.0f);
@@ -893,6 +962,15 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &f
         glTexCoord2f(1.0f, 0.0f);
         glVertex2i((GLint)frame.OutputWidth, (GLint)frame.OutputHeight);
         glEnd();
+
+        if (diagnoseHardwareFrame) {
+            char buf[128];
+            snprintf(buf,
+                     sizeof(buf),
+                     "RenderFrameToGL: first hardware quad draw end, elapsedMs=%lld",
+                     ElapsedMilliseconds(drawStart));
+            GlLog(buf);
+        }
 
         if (persistTexOut) {
             // Keep texture alive for caller to reuse.
@@ -1239,6 +1317,15 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
         const bool tombstone = !frame.ColorData || frame.OutputWidth == 0 || frame.OutputHeight == 0;
 
         if (!tombstone) {
+            static bool diagnosedFirstHostFrame = false;
+            const bool diagnoseHostFrame = !diagnosedFirstHostFrame;
+            std::chrono::steady_clock::time_point presentationStart;
+            if (diagnoseHostFrame) {
+                diagnosedFirstHostFrame = true;
+                GlLog("TryPresentTick: first host frame begin");
+                presentationStart = std::chrono::steady_clock::now();
+            }
+
             RenderFrameToGL(glContext, frame);
 
             // Release the previously cached frame's buffer back to the
@@ -1252,9 +1339,45 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
             rendered = true;
 
             if (m_HostLastFrame.IsFinal) {
+                static bool diagnosedFirstPerturbationOverlay = false;
+                const bool diagnosePerturbationOverlay = !diagnosedFirstPerturbationOverlay;
+                std::chrono::steady_clock::time_point perturbationStart;
+                if (diagnosePerturbationOverlay) {
+                    diagnosedFirstPerturbationOverlay = true;
+                    GlLog("TryPresentTick: first perturbation overlay begin");
+                    perturbationStart = std::chrono::steady_clock::now();
+                }
+
                 m_Fractal->DrawAllPerturbationResults(true);
+
+                if (diagnosePerturbationOverlay) {
+                    char buf[128];
+                    snprintf(buf,
+                             sizeof(buf),
+                             "TryPresentTick: first perturbation overlay end, elapsedMs=%lld",
+                             ElapsedMilliseconds(perturbationStart));
+                    GlLog(buf);
+                }
+
                 ++m_HostExpectedSeqNum;
+                if (diagnoseHostFrame) {
+                    char buf[128];
+                    snprintf(buf,
+                             sizeof(buf),
+                             "TryPresentTick: first host frame end, elapsedMs=%lld",
+                             ElapsedMilliseconds(presentationStart));
+                    GlLog(buf);
+                }
                 continue;
+            }
+
+            if (diagnoseHostFrame) {
+                char buf[128];
+                snprintf(buf,
+                         sizeof(buf),
+                         "TryPresentTick: first host frame end, elapsedMs=%lld",
+                         ElapsedMilliseconds(presentationStart));
+                GlLog(buf);
             }
         } else if (frame.IsFinal) {
             ++m_HostExpectedSeqNum;

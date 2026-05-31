@@ -121,6 +121,7 @@ private:
     bool oglBackendInited_ = false;
 
     bool contextMenuRequested_ = false;
+    bool contextMenuOpen_ = false;
     int contextMenuX_ = 0;
     int contextMenuY_ = 0;
 

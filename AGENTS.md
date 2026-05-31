@@ -8,10 +8,14 @@ FractalShark is a C++23/CUDA Mandelbrot renderer. Core fractal math, perturbatio
 
 - `msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Debug /p:Platform=x64`: build the Windows Debug solution.
 - `Debug\FractalSharkTest.exe`: run the main Windows CPU unit tests.
-- `cmake -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CUDA_HOST_COMPILER=g++`: configure Linux CMake builds.
-- `cmake --build build -j 1`: build Linux targets; serial builds reduce CUDA/template memory pressure.
-- `./build/FractalSharkTest/FractalSharkTest`: run portable Linux tests.
-- `./build_linux.sh`: rebuild Debug and Release Linux configurations from scratch.
+- `./build_linux.sh`: preferred Linux build command; configures and builds Debug and Release with `--parallel`.
+- `cmake --build build-debug --parallel`: incrementally rebuild Linux Debug targets when a full
+  Debug-and-Release build is unnecessary. Use `build-release` for Release.
+- `./build-debug/FractalSharkTest/FractalSharkTest`: run portable Linux tests after a Debug build.
+
+Linux build output belongs in `build-debug/` or `build-release/`, matching `build_linux.sh`. Do not
+remove Linux build artifacts after validation; leave binaries available for manual testing and reuse
+the configured directories for incremental builds.
 
 Windows development targets Visual Studio 2026, CUDA Toolkit, MPIR, and bundled YASM tooling; `.github/workflows/build.yml` is the best reference for CI setup.
 

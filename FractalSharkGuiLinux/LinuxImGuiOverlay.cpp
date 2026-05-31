@@ -276,11 +276,14 @@ ImGuiOverlay::RenderFrame()
         ImGui::SetNextWindowPos(ImVec2(float(contextMenuX_), float(contextMenuY_)), ImGuiCond_Appearing);
         ImGui::OpenPopup("FractalSharkContextMenu");
         contextMenuRequested_ = false;
+        contextMenuOpen_ = true;
     }
 
     if (ImGui::BeginPopup("FractalSharkContextMenu")) {
         BuildContextMenuContents(menuState_, host_);
         ImGui::EndPopup();
+    } else {
+        contextMenuOpen_ = false;
     }
 
     if (infoModalRequested_) {
@@ -540,7 +543,7 @@ ImGuiOverlay::WantsTick() const
     }
     return dragRectActive_ || contextMenuRequested_ || infoModalRequested_ || infoModalOpen_ ||
            saveDlgRequested_ || saveDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ ||
-           locDlgOpen_ || (ImGui::GetCurrentContext() && ImGui::IsPopupOpen("FractalSharkContextMenu"));
+           locDlgOpen_ || contextMenuOpen_;
 }
 
 } // namespace FractalShark::Linux

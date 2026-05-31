@@ -73,7 +73,7 @@ The custom heap allocator (`HpSharkFloatLib/heap_allocator/HeapCpp.cpp`) is Wind
 
 Ubuntu 24.04 box at `mrenz@ubuntu24` (SSH key auth). CUDA 13.2 at `/usr/local/cuda` — not on PATH; prefix with `export PATH=/usr/local/cuda/bin:$PATH`. **No GPU**, so only compile/link is validated, not runtime CUDA.
 
-Windows working tree is authoritative. The Linux checkout at `~/FractalShark` is a disposable test mirror — never commit or push from it. Always verify the Linux checkout's commit matches the Windows working tree before testing; sync via `git fetch && git checkout <sha>`, overlay uncommitted Windows changes via `scp`.
+Windows working tree is authoritative. The Linux checkout at `~/FractalShark` is a test mirror — never commit or push from it. Always verify the Linux checkout's commit matches the Windows working tree before testing; sync via `git fetch && git checkout <sha>`, overlay uncommitted Windows changes via `scp`. Reuse this persistent checkout for normal validation so its configured build directories and output artifacts remain available for manual testing.
 
 ```bash
 ssh mrenz@ubuntu24
@@ -83,11 +83,32 @@ scp <local-file> mrenz@ubuntu24:~/FractalShark/<repo-relative-path>
 ```
 
 ```bash
-mkdir -p build && cd build
-export PATH=/usr/local/cuda/bin:$PATH
-cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CUDA_HOST_COMPILER=g++ ..
-cmake --build . --parallel
+cd ~/FractalShark
+./build_linux.sh
 ```
+
+`build_linux.sh` is the preferred Linux build entry point. It exports the CUDA path, configures Debug
+and Release with Clang, and builds both with `cmake --build ... --parallel`. Its output directories are
+`build-debug/` and `build-release/`. For example, the Linux GUI binaries are written to
+`build-debug/FractalSharkGuiLinux/FractalSharkGuiLinux` and
+`build-release/FractalSharkGuiLinux/FractalSharkGuiLinux`; portable test binaries follow the same
+pattern, such as `build-debug/FractalSharkTest/FractalSharkTest`.
+
+For a custom incremental build, use the existing configuration-specific directory and keep parallel
+compilation enabled:
+
+```bash
+cd ~/FractalShark
+export PATH=/usr/local/cuda/bin:$PATH
+cmake --build build-debug --parallel
+cmake --build build-debug --target FractalSharkGuiLinux --parallel
+```
+
+Use `build-release/` instead when validating Release. Do not create a generic `build/` directory for
+routine validation. Do not remove `build-debug/`, `build-release/`, or their binaries after testing;
+leave artifacts in place for manual execution and future incremental builds. If an isolated worktree
+is genuinely required, retain its requested build artifacts or copy them into the persistent mirror
+before cleanup.
 
 **Parallel cross-host builds:** When validating on both hosts, kick off Windows MSBuild and Linux `cmake --build` simultaneously in separate `mode="async"` shells. Don't serialize unless there's a real artifact dependency (there isn't, for Win↔Linux validation).
 

@@ -535,12 +535,54 @@ struct X11ContextMenu::Impl {
     }
 
     void
-    DestroyLevelsAfter(std::size_t index)
+    HideAndDestroyLevelsFrom(std::size_t firstIndex)
     {
-        while (Levels.size() > index + 1) {
+        if (firstIndex >= Levels.size()) {
+            return;
+        }
+
+        bool unmapped = false;
+        for (std::size_t i = Levels.size(); i > firstIndex; --i) {
+            XUnmapWindow(DisplayHandle, Levels[i - 1].MenuWindow);
+            unmapped = true;
+        }
+        if (unmapped) {
+            XSync(DisplayHandle, False);
+        }
+        while (Levels.size() > firstIndex) {
             XDestroyWindow(DisplayHandle, Levels.back().MenuWindow);
             Levels.pop_back();
         }
+        XFlush(DisplayHandle);
+    }
+
+    void
+    HideAndDestroyLevelsAfter(std::size_t index)
+    {
+        HideAndDestroyLevelsFrom(index + 1);
+    }
+
+    void
+    ReplaceChildLevel(
+        std::size_t levelIndex, std::span<const Node> nodes, int desiredX, int desiredY, int leftAnchorX)
+    {
+        HideAndDestroyLevelsAfter(levelIndex + 1);
+
+        Level level = BuildLevel(nodes);
+        PositionLevel(level, desiredX, desiredY, leftAnchorX);
+        level.MenuWindow = Levels[levelIndex + 1].MenuWindow;
+
+        XUnmapWindow(DisplayHandle, level.MenuWindow);
+        XSync(DisplayHandle, False);
+        XMoveResizeWindow(DisplayHandle,
+                          level.MenuWindow,
+                          level.X,
+                          level.Y,
+                          static_cast<unsigned int>(level.Width),
+                          static_cast<unsigned int>(level.Height));
+        Levels[levelIndex + 1] = std::move(level);
+        XMapRaised(DisplayHandle, Levels[levelIndex + 1].MenuWindow);
+        DrawLevel(Levels[levelIndex + 1]);
         XFlush(DisplayHandle);
     }
 
@@ -616,24 +658,28 @@ struct X11ContextMenu::Impl {
     {
         Level &parent = Levels[levelIndex];
         if (rowIndex < 0 || rowIndex >= static_cast<int>(parent.Rows.size())) {
-            DestroyLevelsAfter(levelIndex);
+            HideAndDestroyLevelsAfter(levelIndex);
             return;
         }
         const Row &row = parent.Rows[static_cast<std::size_t>(rowIndex)];
         const Node &node = *row.MenuNode;
         if (node.kind != Kind::Popup || !IsEnabled(node)) {
-            DestroyLevelsAfter(levelIndex);
+            HideAndDestroyLevelsAfter(levelIndex);
             return;
         }
 
         if (Levels.size() > levelIndex + 1 && Levels[levelIndex + 1].Nodes.data() == node.kids.data()) {
             return;
         }
-        DestroyLevelsAfter(levelIndex);
 
         const int desiredX = parent.X + parent.Width + 1;
         const int desiredY = parent.Y + row.Y - parent.ScrollOffset;
-        if (AddLevel(node.kids, desiredX, desiredY, parent.X) && selectFirst) {
+        if (Levels.size() > levelIndex + 1) {
+            ReplaceChildLevel(levelIndex, node.kids, desiredX, desiredY, parent.X);
+        } else if (!AddLevel(node.kids, desiredX, desiredY, parent.X)) {
+            return;
+        }
+        if (selectFirst) {
             SelectFirst(levelIndex + 1);
         }
     }
@@ -664,7 +710,7 @@ struct X11ContextMenu::Impl {
         Level &level = Levels[static_cast<std::size_t>(levelIndex)];
         level.ScrollOffset =
             std::clamp(level.ScrollOffset + delta, 0, std::max(0, level.ContentHeight - level.Height));
-        DestroyLevelsAfter(static_cast<std::size_t>(levelIndex));
+        HideAndDestroyLevelsAfter(static_cast<std::size_t>(levelIndex));
         DrawLevel(level);
         XFlush(DisplayHandle);
     }
@@ -747,8 +793,7 @@ struct X11ContextMenu::Impl {
                 break;
             case XK_Left:
                 if (Levels.size() > 1) {
-                    XDestroyWindow(DisplayHandle, Levels.back().MenuWindow);
-                    Levels.pop_back();
+                    HideAndDestroyLevelsAfter(Levels.size() - 2);
                     DrawLevel(Levels.back());
                     XFlush(DisplayHandle);
                 }
@@ -815,11 +860,7 @@ struct X11ContextMenu::Impl {
         }
         XUngrabPointer(DisplayHandle, CurrentTime);
         XUngrabKeyboard(DisplayHandle, CurrentTime);
-        while (!Levels.empty()) {
-            XDestroyWindow(DisplayHandle, Levels.back().MenuWindow);
-            Levels.pop_back();
-        }
-        XFlush(DisplayHandle);
+        HideAndDestroyLevelsFrom(0);
     }
 
     bool

@@ -375,7 +375,8 @@ Environment::IsKeyDown(Key key)
 std::pair<int, int>
 Environment::GetCursorPosition()
 {
-    // No global cursor query on Linux without a window system.
+    // TODO(linux-parity): Query the global X11 cursor position instead of returning a
+    // placeholder. Palette rotation and sensory-cursor cancellation need real coordinates.
     return {0, 0};
 }
 
@@ -654,7 +655,8 @@ Environment::ShowWarning(const wchar_t *message)
 void
 Environment::PumpUIEvents()
 {
-    // No GUI event loop on Linux — nothing to pump.
+    // TODO(linux-parity): Keep this generic helper intentionally empty unless a portable
+    // callback is introduced, but give Linux GUI autozoom a responsive Xlib/ImGui pump.
 }
 
 // =========================================================================
@@ -666,6 +668,7 @@ Environment::PumpUIEvents()
 // via Environment::SystemHeap*, so there is nothing for RegisterHeapCleanup()
 // to clean up. This empty definition satisfies the link-time dependency and
 // is a permanent Linux fixture, not a temporary workaround.
+// TODO(linux-parity, permanent): Keep this no-op while Linux uses glibc allocation.
 void
 Environment::RegisterHeapCleanup()
 {

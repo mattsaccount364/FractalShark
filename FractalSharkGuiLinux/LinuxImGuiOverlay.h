@@ -32,11 +32,7 @@ struct ImGuiContext;
 #include <vector>
 
 namespace FractalShark {
-struct ExecuteCommandHost;
 struct LinuxClipboard;
-namespace Menu {
-struct IMenuState;
-} // namespace Menu
 } // namespace FractalShark
 
 namespace FractalShark::Linux {
@@ -59,13 +55,6 @@ public:
     // area), in which case the caller should not run its own dispatch
     // for this event.
     bool ProcessEvent(const XEvent &ev);
-
-    void SetExecuteHost(FractalShark::ExecuteCommandHost *host);
-    void SetMenuState(const FractalShark::Menu::IMenuState *state);
-
-    // Open the context menu at (x, y) (window-relative) on the next
-    // RenderFrame() call.
-    void RequestContextMenu(int x, int y);
 
     // Open a modal info window with the given title + body on the next
     // RenderFrame() call.  Body is rendered as wrapped text with a single
@@ -120,11 +109,7 @@ private:
     bool xlibBackendInited_ = false;
     bool oglBackendInited_ = false;
 
-    bool contextMenuRequested_ = false;
-    bool contextMenuOpen_ = false;
     bool inputPending_ = false;
-    int contextMenuX_ = 0;
-    int contextMenuY_ = 0;
 
     bool infoModalRequested_ = false;
     bool infoModalOpen_ = false;
@@ -161,8 +146,6 @@ private:
     int dragX1_ = 0;
     int dragY1_ = 0;
 
-    FractalShark::ExecuteCommandHost *host_ = nullptr;
-    const FractalShark::Menu::IMenuState *menuState_ = nullptr;
 };
 
 } // namespace FractalShark::Linux

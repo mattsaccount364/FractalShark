@@ -1,10 +1,4 @@
-// FractalSharkGuiLinux — Xlib window skeleton.
-//
-// Phase: fractal-render.  This stage brings up an empty X11 window with a
-// GLX-compatible visual, instantiates a Fractal bound to that window, and
-// kicks off a single default-view render.  The render thread pool's GL
-// consumer presents via glXSwapBuffers or glFlush.  No keyboard / mouse input yet —
-// that is the next phase (input-keys / input-mouse / drag-zoom).
+// FractalSharkGuiLinux - Xlib + Dear ImGui GUI shell.
 
 #include "CommandCatalog.h"
 #include "CrashHandler.h"
@@ -16,6 +10,7 @@
 #include "LinuxHelpModals.h"
 #include "LinuxImGuiOverlay.h"
 #include "LinuxMenuState.h"
+#include "LinuxX11ContextMenu.h"
 // LinuxMenuState.h pulls in MenuTree.h which #undefs the X11 `None` and
 // `Always` macros (they collide with FractalShark::Menu enum values).
 // X.h has a header guard so it can't be re-included to restore them — just
@@ -53,8 +48,11 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -77,6 +75,8 @@ struct PresentationTickResult {
 GlxVisualSelection
 ChooseGlxVisual(Display *display, int screen)
 {
+    // TODO(linux-parity, deferred): Add a Wayland/EGL GUI backend. The Linux GUI currently
+    // selects X11 GLX visuals only.
     int rgbaDoubleBufferedWithAlpha[] = {GLX_RGBA,
                                          GLX_DOUBLEBUFFER,
                                          GLX_RED_SIZE,
@@ -145,10 +145,8 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     int savedHeight = kInitialHeight;
     bool everPresented = false;
 
-    // Set on right-click; consumed when the imgui-menus phase opens the
-    // ImGui popup.  Position is window-relative, matching MainWindow.cpp's
-    // m_LastMenuPtClient anchor.
-    bool showContextMenu = false;
+    // Right-click position in client coordinates, matching MainWindow.cpp's
+    // m_LastMenuPtClient anchor for menu commands that act on the click point.
     int contextMenuX = 0;
     int contextMenuY = 0;
 
@@ -172,6 +170,7 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     // cached frame buffer happens before GL goes away.
     std::unique_ptr<OpenGlContext> glContext;
     std::optional<FractalShark::Linux::ImGuiOverlay> overlay;
+    std::optional<FractalShark::Linux::X11ContextMenu> contextMenu;
 
     LinuxMainWindow();
     ~LinuxMainWindow() override;
@@ -217,6 +216,8 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     void
     DispatchByIdm(int wmId) override
     {
+        // TODO(linux-parity): Implement the Linux fallback for future unmigrated or
+        // payload-bearing IDM commands instead of silently reducing them to diagnostics.
         std::fprintf(stderr, "TODO LinuxMainWindow: DispatchByIdm(%d)\n", wmId);
     }
 
@@ -229,8 +230,11 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     void OnCurPos() override;
     void OnExit() override;
 
+    // TODO(linux-parity): Wire the Linux JobObject/RLIMIT_AS implementation into the GUI
+    // and define reversible unlimited/limited behavior before enabling these menu items.
     FRACTALSHARK_LINUX_STUB(OnMemoryLimit0)
     FRACTALSHARK_LINUX_STUB(OnMemoryLimit1)
+    // TODO(linux-parity): Mirror Win32 palette rotation once Linux has a real global cursor query.
     FRACTALSHARK_LINUX_STUB(OnPaletteRotate)
 
     void OnSaveLocation() override;
@@ -248,6 +252,7 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     void OnLoadRefOrbitImagMaxSaved() override;
 
 private:
+    void SaveLocation(bool scaleToMaximum);
     void DoSaveRefOrbit(::CompressToDisk compression);
     void DoLoadRefOrbitImag(::ImaginaSettings settings);
 };
@@ -288,6 +293,7 @@ LinuxMainWindow::LinuxMainWindow()
     swa.colormap = colormap;
     swa.background_pixel = BlackPixel(display, screen);
     swa.border_pixel = BlackPixel(display, screen);
+    // TODO(linux-parity, deferred): Add XdndSelection handling for OS file-drop support.
     swa.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
                      PointerMotionMask | StructureNotifyMask | FocusChangeMask;
 
@@ -351,10 +357,9 @@ LinuxMainWindow::LinuxMainWindow()
     // ImGui overlay: single-threaded, all calls on this thread.  Init
     // requires GL to be current, which OpenGlContext::ctor already
     // ensured.
-    overlay.emplace(display, window, &*clipboard);
-    overlay->SetExecuteHost(this);
     menuState.emplace(*fractal, fullscreen);
-    overlay->SetMenuState(&*menuState);
+    overlay.emplace(display, window, &*clipboard);
+    contextMenu.emplace(display, screen, window, &*menuState, this);
     if (glContext && glContext->IsValid()) {
         if (!overlay->Init()) {
             std::fprintf(stderr, "FractalSharkGuiLinux: ImGui backend init failed.\n");
@@ -366,6 +371,7 @@ LinuxMainWindow::~LinuxMainWindow()
 {
     // Destroy in reverse order of creation: overlay first (it owns ImGui
     // backends that need GL current), then GL context, then Fractal.
+    contextMenu.reset();
     overlay.reset();
     menuState.reset();
     glContext.reset();
@@ -392,6 +398,12 @@ LinuxMainWindow::~LinuxMainWindow()
 void
 LinuxMainWindow::HandleEvent(const XEvent &ev)
 {
+    // Native menus own root-level X11 windows and grabs while open.  Route
+    // their events before ImGui or the fractal window sees them.
+    if (contextMenu && contextMenu->ProcessEvent(ev)) {
+        return;
+    }
+
     // Forward to the ImGui overlay first.  Overlay processes the event
     // synchronously on this thread; if ImGui is capturing the input we
     // drop the event rather than dispatching it to the fractal.
@@ -461,22 +473,19 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                     dragAnchorY = btn.y;
                     dragPrevX = -1;
                     dragPrevY = -1;
-                    // Pointer motion + release is already in our event mask, and
-                    // X11 implicitly delivers all subsequent button-related events
-                    // to the window that received the press until release, so an
-                    // explicit XGrabPointer is unnecessary.
+                    // TODO(linux-parity): Use XGrabPointer until ButtonRelease so drag-zoom
+                    // keeps receiving motion outside the window, matching Win32 SetCapture.
+                    // TODO(linux-parity): Switch between XC_left_ptr while idle and
+                    // XC_crosshair during drag-zoom, matching the Win32 cursor feedback.
                     break;
                 }
                 case Button3:
-                    // Right-click anchors the context menu.  Window-relative coords
-                    // mirror MainWindow's m_LastMenuPtClient anchor (Win32 receives
-                    // them already client-relative; X11 hands them to us already
-                    // window-relative in btn.x/btn.y).
-                    showContextMenu = true;
+                    // Keep client coords for Center/Zoom commands, but open the
+                    // native popup at root coords so it may leave the app window.
                     contextMenuX = btn.x;
                     contextMenuY = btn.y;
-                    if (overlay) {
-                        overlay->RequestContextMenu(btn.x, btn.y);
+                    if (contextMenu) {
+                        contextMenu->Open(btn.x_root, btn.y_root);
                     }
                     break;
                 case Button4: {
@@ -910,9 +919,8 @@ MakeTimestampedStem()
     return std::string(buf);
 }
 
-// Naive ASCII widening — adequate for filenames we generate ourselves and
-// for typical user-typed paths in the dialog.  Matches FractalSharkCli's
-// ToWStringUtf8 helper.
+// TODO(linux-parity): Replace naive ASCII widening with UTF-8 decoding so user-selected
+// filesystem paths round-trip correctly.
 std::wstring
 WidenAscii(const std::string &s)
 {
@@ -952,17 +960,64 @@ ListFilesByExtension(const char *ext)
 void
 LinuxMainWindow::OnSaveLocation()
 {
-    if (!fractal) {
+    if (!fractal || !overlay) {
         return;
     }
-    // Mirror the Win32 NO branch (use current dimensions).  Skipping the
-    // "scale to maximum" prompt for simplicity; users wanting the high-
-    // res variant can use Save Hi-Res BMP instead.
-    std::string filename = MakeTimestampedStem() + ".bmp";
-    if (auto *pool = fractal->GetRenderPool()) {
-        pool->Drain();
+
+    overlay->RequestPickFromList("Scale dimensions to maximum?",
+                                 {"Scale dimensions to maximum", "Use current dimensions"},
+                                 [this](size_t index) {
+                                     if (index <= 1) {
+                                         SaveLocation(index == 0);
+                                     }
+                                 });
+}
+
+void
+LinuxMainWindow::SaveLocation(bool scaleToMaximum)
+{
+    if (!fractal || !overlay) {
+        return;
     }
-    fractal->SaveCurrentFractal(WidenAscii(filename), true);
+
+    size_t width = fractal->GetRenderWidth();
+    size_t height = fractal->GetRenderHeight();
+    if (scaleToMaximum) {
+        if (width > height) {
+            height = static_cast<size_t>(16384.0 / (static_cast<double>(width) / height));
+            width = 16384;
+        } else if (width < height) {
+            width = static_cast<size_t>(16384.0 / (static_cast<double>(height) / width));
+            height = 16384;
+        }
+    }
+
+    std::ostringstream record;
+    record << width << " ";
+    record << height << " ";
+    record << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
+    record << fractal->GetMinX() << " ";
+    record << fractal->GetMinY() << " ";
+    record << fractal->GetMaxX() << " ";
+    record << fractal->GetMaxY() << " ";
+    record << fractal->GetNumIterations<IterTypeFull>() << " ";
+    record << fractal->GetGpuAntialiasing() << " ";
+    record << "FractalTrayDestination";
+
+    const std::string serialized = record.str();
+    std::ofstream file("locations.txt", std::ios::app);
+    if (!file) {
+        overlay->RequestInfoModal("Save Location", "Could not open locations.txt for append.");
+        return;
+    }
+    file << serialized << "\r\n";
+    file.close();
+    if (!file) {
+        overlay->RequestInfoModal("Save Location", "Could not write the location to locations.txt.");
+        return;
+    }
+
+    overlay->RequestInfoModal("Location", serialized.c_str());
 }
 
 void

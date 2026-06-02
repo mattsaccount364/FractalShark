@@ -158,6 +158,10 @@ Before reporting Linux success:
 - **`HpSharkFloatTest`** — standalone CUDA executable. Three-level cross-validation (GPU vs MPIR ground truth, GPU vs CPU reference, CPU reference vs MPIR) with checksum-guided debugging. `msbuild ... /t:HpSharkFloatTest`, then `Release\HpSharkFloatTest.exe`.
 - **`CrummyTest`** (in `FractalSharkLib/CrummyTest.cpp`) — functional suite invoked from the GUI right-click menu (IDM_BASICTEST). Calls `Drain()` then uses the **direct rendering path** (`CalcFractal(true)` → `SaveCurrentFractal`).
 
+Use a timeout of at least 30 minutes for a full `FractalSharkTest` execution, especially Windows Debug
+or simultaneous Windows/Linux validation. A timed-out test process may continue running after the
+command wrapper returns; terminate that process explicitly before retrying.
+
 ## Critical Operational Rules
 
 These prevent real bugs; do not strip them when editing:

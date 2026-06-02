@@ -1,4 +1,5 @@
 #include "TestFramework.h"
+#include "FeatureSummary.h"
 #include "PointZoomBBConverter.h"
 
 using TestMode = PointZoomBBConverter::TestMode;
@@ -46,6 +47,12 @@ TEST(PointZoomConstruction_NonOrigin)
     ASSERT_TRUE(pz.GetPtX() == HighPrecision{1});
     ASSERT_TRUE(pz.GetPtY() == HighPrecision{2});
     ASSERT_TRUE(pz.GetZoomFactor() == HighPrecision{4});
+}
+
+TEST(FeatureZoomFactorForRadius)
+{
+    const HighPrecision zoom = FeatureSummary::ComputeZoomFactorForRadius(HighPrecision{0.5});
+    ASSERT_NEAR(static_cast<double>(zoom), 2.0 / 3.0, 1e-12);
 }
 
 TEST(BoundingBoxConstruction)

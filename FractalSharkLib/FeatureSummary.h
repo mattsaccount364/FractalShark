@@ -86,6 +86,7 @@ public:
 
     void EstablishScreenCoordinates(const Fractal &fractal);
     void GetScreenCoordinates(int &outXStart, int &outYStart, int &outXEnd, int &outYEnd) const;
+    static HighPrecision ComputeZoomFactorForRadius(const HighPrecision &radius);
     HighPrecision ComputeZoomFactor(const PointZoomBBConverter &ptz) const;
     void SetRefined();
     bool IsRefined() const;

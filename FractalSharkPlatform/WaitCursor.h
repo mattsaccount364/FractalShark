@@ -44,6 +44,8 @@ private:
 
 #else
 
+// TODO(linux-parity, deferred): Provide Linux GUI busy-cursor feedback for benchmarks.
+// This remains an intentional no-op for non-GUI Linux callers until a display-aware hook exists.
 class WaitCursor {
 public:
     WaitCursor() = default;

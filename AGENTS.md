@@ -33,6 +33,10 @@ Use `.clang-format`: 4-space indentation, no tabs, 105-column limit, right-align
 
 `FractalSharkTest` uses the custom framework in `FractalSharkTest/TestFramework.h`; add cases with `TEST(Name)` and `ASSERT_*` macros. Register new test files in both CMake and Visual Studio project files when the project supports both build systems. `HpSharkFloatTest` requires real CUDA hardware and is not expected to run on hosted CI.
 
+Allow at least 30 minutes before timing out a full `FractalSharkTest` execution, especially for Windows
+Debug builds or when validation is running in parallel on both hosts. If a test process does time out,
+terminate it explicitly before retrying so the previous run does not continue consuming resources.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits are short and informal, for example `More gui` or `Some notes`; keep summaries concise and outcome-focused. PRs should state the affected platform, list build/test commands run, note CUDA hardware or driver assumptions, link related issues, and include screenshots or rendered outputs for GUI, rendering, or documentation changes.

@@ -70,6 +70,9 @@ LinuxCommandHandlers::OnZoomOut()
     GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.ZoomRecentered(x, y, 1); });
 }
 
+// TODO(linux-parity): Route menu autozoom through a Linux-responsive execution path.
+// These synchronous calls can leave the Xlib/ImGui UI unresponsive because the shared
+// Environment::PumpUIEvents() Linux implementation does not pump GUI events.
 void
 LinuxCommandHandlers::OnAutoZoomDefault()
 {

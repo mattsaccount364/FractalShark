@@ -335,6 +335,17 @@ FeatureSummary::GetScreenCoordinates(int &outXStart, int &outYStart, int &outXEn
 }
 
 HighPrecision
+FeatureSummary::ComputeZoomFactorForRadius(const HighPrecision &radius)
+{
+    const HighPrecision k = HighPrecision{6};
+    const HighPrecision targetHalfH = radius * k;
+
+    // zoomFactor in PointZoomBBConverter is "magnification": larger -> smaller BB -> zoom in.
+    // halfHeight = factor / zoomFactor  (since BB uses +/- factor/zoomFactor)
+    return HighPrecision{PointZoomBBConverter::Factor} / targetHalfH;
+}
+
+HighPrecision
 FeatureSummary::ComputeZoomFactor(const PointZoomBBConverter &ptz) const
 {
     const HighPrecision curHalfH = (ptz.GetMaxY() - ptz.GetMinY()) / HighPrecision{2};
@@ -344,13 +355,7 @@ FeatureSummary::ComputeZoomFactor(const PointZoomBBConverter &ptz) const
         return ptz.GetZoomFactor();
     }
 
-    const HighPrecision k = HighPrecision{6};
-    const HighPrecision targetHalfH = r * k;
-
-    // zoomFactor in your PointZoomBBConverter is "magnification": larger -> smaller BB -> zoom in.
-    // halfHeight = factor / zoomFactor  (since BB uses +/- factor/zoomFactor)
-    // so: zoomTarget = factor / targetHalfH
-    const HighPrecision zTarget = HighPrecision{PointZoomBBConverter::Factor} / targetHalfH;
+    const HighPrecision zTarget = ComputeZoomFactorForRadius(r);
 
     // Don't zoom out: if zTarget is smaller than current zoom, keep current
     const HighPrecision zCur = ptz.GetZoomFactor();

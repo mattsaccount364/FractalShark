@@ -20,6 +20,7 @@ add_executable(FractalSharkGuiLinux
     LinuxClipboard.cpp
     LinuxCommandHandlers.cpp
     LinuxMenuState.cpp
+    LinuxX11ContextMenu.cpp
     LinuxXlibBackend.cpp
     LinuxImGuiOverlay.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp

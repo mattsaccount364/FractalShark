@@ -254,6 +254,22 @@ struct NRCheckpointParams {
     DiagnosticState diag;
 };
 
+static std::string
+ComputeCheckpointPreviewZoom(const NRCheckpointParams &p)
+{
+    if (!p.diag.valid || p.diag.err.getMantissa() <= 0.0 || mpf_cmp_ui(p.intrinsicRadius, 0) <= 0)
+        return "unavailable";
+
+    HighPrecision estimatedRemainingDistance;
+    HdrSqrt(p.diag.err).GetHighPrecision(estimatedRemainingDistance);
+
+    const HighPrecision intrinsicRadius{p.intrinsicRadius};
+    const HighPrecision &previewRadius =
+        estimatedRemainingDistance > intrinsicRadius ? estimatedRemainingDistance : intrinsicRadius;
+
+    return FeatureSummary::ComputeZoomFactorForRadius(previewRadius).str();
+}
+
 static void
 WriteNRCheckpoint(const NRCheckpointParams &p)
 {
@@ -292,7 +308,11 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
       << "d2i: " << p.d2i.getExp() << " " << std::setprecision(std::numeric_limits<double>::max_digits10)
       << p.d2i.getMantissa() << "\n";
 
-    // Convergence diagnostics (informational, not needed for resume)
+    f << "\n"
+      << "# -----------------------------------------------------------------------------\n"
+      << "# OPTIONAL INFORMATIONAL FIELDS BELOW - NOT REQUIRED FOR CHECKPOINT RESUME\n"
+      << "# -----------------------------------------------------------------------------\n";
+
     f << "z_mag2: " << std::setprecision(std::numeric_limits<double>::max_digits10) << p.diag.z_mag2
       << "\n"
       << "c_cand_dist2: " << p.diag.c_cand_dist2.getExp() << " "
@@ -316,6 +336,8 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
           << "normalized_bits: " << p.diag.normalized_bits << "\n"
           << "est_remaining: " << p.diag.est_remaining << "\n";
     }
+
+    f << "previewZoom: " << ComputeCheckpointPreviewZoom(p) << "\n";
 
     f.close();
 
@@ -509,6 +531,19 @@ ReadLabeledMpfField(std::ifstream &f, const char *label, mp_exp_t &exp, std::str
     return f.good() || f.eof();
 }
 
+static void
+SkipCheckpointComments(std::ifstream &f)
+{
+    for (;;) {
+        f >> std::ws;
+        if (f.peek() != '#')
+            return;
+
+        std::string comment;
+        std::getline(f, comment);
+    }
+}
+
 // Reads checkpoint with label verification on every field.
 // Returns true if the checkpoint matches expected_period/expected_prec.
 static bool
@@ -619,6 +654,8 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
     mpf_set_str(out_dzdc.im, ReconstructMpfString(dz_d_im, dz_exp_im).c_str(), 10);
     out_d2r = HDRFloat<double>(static_cast<int32_t>(d2r_exp), d2r_mant);
     out_d2i = HDRFloat<double>(static_cast<int32_t>(d2i_exp), d2i_mant);
+
+    SkipCheckpointComments(f);
 
     // Best-effort read of diagnostic fields (not required for resume).
     // Checkpoints without these fields still load successfully.
@@ -758,6 +795,8 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
         return true;
     if (!skipLabel("d2i") || !(f >> skipI64 >> skipDbl))
         return true;
+
+    SkipCheckpointComments(f);
 
     // Read diagnostic fields (new format: z_mag2, inner_pct, targetExp, diag_valid, ...)
     auto readDbl = [&](const char *label, double &val) {

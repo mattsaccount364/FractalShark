@@ -101,6 +101,8 @@ public:
     enum class AutoZoomHeuristic { Default, Max, Feature, FilamentTip };
 
     template <AutoZoomHeuristic h> void AutoZoom();
+    template <AutoZoomHeuristic h> void AutoZoom(int clientX, int clientY);
+    void AutoZoomFeatureAtPoint(int clientX, int clientY);
 
     void View(size_t i, bool includeMsgBox = true);
     void SquareCurrentView();
@@ -171,6 +173,7 @@ public:
     // Drawing functions
     bool RequiresUseLocalColor() const;
     void CalcFractal(bool drawFractal);
+    void CalcFractal(bool drawFractal, bool resetStopCalculatingBeforeRender);
     void CalcFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     // Async render pool: enqueue current state for rendering.
@@ -179,7 +182,14 @@ public:
 
     // Enqueue a command that mutates Fractal state on a worker thread,
     // then renders.  Keeps the UI thread responsive and race-free.
-    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd, bool supersedable = true);
+    RenderJobHandle EnqueueCommand(
+        std::function<void(Fractal &)> cmd,
+        bool supersedable = true,
+        RenderPresentationMode presentationMode = RenderPresentationMode::Immediate,
+        uint64_t presentationGroup = 0,
+        bool resetStopCalculatingBeforeRender = true);
+
+    uint64_t BeginPacedAnimation();
 
     // Enqueue a mutation-only command: executes under the lock but does
     // NOT trigger CalcFractal or frame production.
@@ -316,9 +326,9 @@ public:
     HighPrecision ComputeZoomFactorForFeature(const FeatureSummary &feature) const;
 
     void ClearAllFoundFeatures();
-    FeatureSummary *ChooseClosestFeatureToMouse() const;
+    FeatureSummary *ChooseClosestFeatureToScreenPoint(int clientX, int clientY) const;
     bool ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFactor);
-    bool ZoomToFoundFeature();
+    bool ZoomToFoundFeature(int clientX, int clientY);
     void ResumeNRFromCheckpoint();
     NRInnerLoopBackend GetNRInnerLoopBackend() const;
     void SetNRInnerLoopBackend(NRInnerLoopBackend v);

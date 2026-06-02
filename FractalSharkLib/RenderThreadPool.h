@@ -7,17 +7,25 @@
 #include "RenderAlgorithm.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 class Fractal;
 class GPURenderer;
+
+enum class RenderPresentationMode {
+    Immediate,
+    PacedAnimation,
+};
 
 // Snapshot of all render-relevant state, captured at enqueue time.
 // Workers read exclusively from this, never from live Fractal members.
@@ -72,8 +80,23 @@ struct RenderWorkItem {
     // whose generation is older than the latest enqueued supersedable item.
     uint64_t EnqueueGeneration = 0;
 
+    // Paced animation frames retain normal rendering behavior but final
+    // frames are presented at an adaptive cadence.  PresentationGroup separates
+    // consecutive animations so each one receives its own pre-roll.
+    RenderPresentationMode PresentationMode = RenderPresentationMode::Immediate;
+    uint64_t PresentationGroup = 0;
+
+    // Ordinary user renders clear a stale abort before starting.  Autozoom
+    // clears once at startup, then preserves a live abort across its frames.
+    bool ResetStopCalculatingBeforeRender = true;
+
     // Promise to signal job completion
     std::shared_ptr<std::promise<void>> CompletionPromise;
+};
+
+struct PresentedViewState {
+    PointZoomBBConverter Ptz;
+    IterTypeFull NumIterations;
 };
 
 // A rendered frame produced by a worker thread.
@@ -95,9 +118,20 @@ struct RenderFrame {
     // True if this is the final (complete) frame for this sequence
     bool IsFinal;
 
+    RenderPresentationMode PresentationMode;
+    uint64_t PresentationGroup;
+    std::optional<PresentedViewState> ViewState;
+
     // Actual allocation size of ColorData (may be larger than
     // OutputWidth*OutputHeight due to GPU block-rounding).
     size_t BufferPixelCount;
+};
+
+struct RenderFrameInfo {
+    RenderPresentationMode PresentationMode;
+    uint64_t PresentationGroup;
+    bool IsProgressive;
+    bool IsFinal;
 };
 
 // Manages checkout/return of GPURenderer instances from the Fractal's
@@ -157,6 +191,20 @@ public:
     // When a final frame for expectedSeqNum is returned, consumer should advance.
     bool TryPopNextInOrder(uint64_t expectedSeqNum, RenderFrame &frame);
 
+    // Inspect the next frame without removing it.  Used by the presenter
+    // to defer paced final frames while keeping progressive frames immediate.
+    bool TryPeekNextInOrder(uint64_t expectedSeqNum, RenderFrameInfo &frameInfo);
+
+    // Count consecutive completed paced-animation steps beginning at
+    // expectedSeqNum.  Progressive frames do not affect the count.
+    size_t CountConsecutivePacedFinalFrames(uint64_t expectedSeqNum, uint64_t presentationGroup);
+
+    // Discard unpresented frames from an aborted paced animation and
+    // replace each affected sequence with one tombstone.
+    void CancelPacedAnimation(uint64_t presentationGroup);
+
+    void PushTombstone(uint64_t sequenceNumber);
+
     // Wait until at least one frame for expectedSeqNum (or newer) is available, or shutdown.
     // Returns false on shutdown.
     bool WaitForFrame(uint64_t expectedSeqNum);
@@ -165,6 +213,12 @@ public:
     // Unlike WaitForFrame, does NOT wake for newer sequences.
     // Returns false on shutdown.
     bool WaitForFrameExact(uint64_t seqNum);
+
+    // Wait for queue activity or a pacing deadline.  changeGeneration must
+    // come from GetChangeGeneration() before checking presentation readiness.
+    bool WaitForChangeUntil(uint64_t changeGeneration, std::chrono::steady_clock::time_point deadline);
+
+    uint64_t GetChangeGeneration();
 
     // If the expected sequence is missing, advance expectedSeqNum to the
     // next available sequence in the queue.  Purges orphaned older frames.
@@ -183,13 +237,17 @@ public:
     bool ConsumeOverlayDirty();
 
 private:
+    void PushTombstoneLocked(uint64_t sequenceNumber);
+
     std::mutex m_Mutex;
     std::condition_variable m_CV;
 
     // Frames stored by sequence number. Each sequence can have
     // multiple progressive frames and one final frame.
     std::deque<RenderFrame> m_Frames;
+    std::unordered_set<uint64_t> m_CancelledPresentationGroups;
 
+    uint64_t m_ChangeGeneration = 0;
     bool m_ShutdownFlag;
 
     // Set by NotifyOverlay(), cleared by ConsumeOverlayDirty().
@@ -211,7 +269,21 @@ public:
     // Enqueue a command that mutates Fractal state, then renders.
     // The command lambda runs on a worker thread under m_CalcFractalMutex.
     // After the command, the worker snapshots state and renders.
-    RenderJobHandle EnqueueCommand(std::function<void(Fractal &)> cmd, bool supersedable = true);
+    RenderJobHandle EnqueueCommand(
+        std::function<void(Fractal &)> cmd,
+        bool supersedable = true,
+        RenderPresentationMode presentationMode = RenderPresentationMode::Immediate,
+        uint64_t presentationGroup = 0,
+        bool resetStopCalculatingBeforeRender = true);
+
+    // Allocate an identity for a paced animation.  The presenter resets
+    // pre-roll state whenever it sees a new group.
+    uint64_t BeginPacedAnimation();
+
+    // Abort queued, buffered, and in-flight work for one paced animation.
+    void CancelPacedAnimation(uint64_t presentationGroup);
+
+    std::optional<PresentedViewState> GetLastPresentedView() const;
 
     // Enqueue a mutation-only command: executes the lambda under the lock
     // but does NOT trigger CalcFractal or frame production.
@@ -228,12 +300,16 @@ public:
     // Host-owned GL presentation mode (Linux GUI).  When the pool was
     // constructed with hostOwnedGlPresentation=true, no internal GL
     // consumer thread is started; the host's main loop is expected to
-    // call TryPresentTick() each tick to drain ready frames and present
-    // them on the GL context the host owns.  Returns true if a frame
+    // call TryPresentTick() each tick to upload the next ready frame and
+    // present it on the GL context the host owns.  Returns true if a frame
     // was uploaded to GL (host should compose its overlay + swap),
     // false if no frame was ready.  No-op (returns false) when the
     // pool owns its own consumer thread.
     bool TryPresentTick(OpenGlContext &glContext);
+
+    // Host-owned GL presentation mode only.  Returns the remaining wait
+    // until a deferred paced frame becomes eligible for presentation.
+    std::optional<std::chrono::milliseconds> GetTimeUntilNextPresentation() const;
 
     // Host-owned GL presentation mode only.  Re-uploads the most
     // recently rendered frame to GL.  Used for overlay-only repaints
@@ -248,6 +324,9 @@ public:
 
 private:
     static constexpr size_t NumWorkers = NumRenderers;
+    static constexpr size_t PacedAnimationPreRollFrames = 4;
+    static constexpr auto PacedAnimationPreRollTimeout = std::chrono::milliseconds(500);
+    static constexpr auto PacedAnimationFrameInterval = std::chrono::milliseconds(100);
 
     // Pre-seed enough buffers to cover in-flight frames across all workers
     // plus progressive frames queued for the GL consumer.
@@ -298,7 +377,9 @@ private:
     // If persistTexOut is non-null (hardware path), stores the new texture
     // ID there (caller owns lifetime) and does NOT delete it after drawing.
     // Deletes the old *persistTexOut first if non-zero.
-    void RenderFrameToGL(OpenGlContext &glContext, const RenderFrame &frame, unsigned int *persistTexOut = nullptr);
+    void RenderFrameToGL(OpenGlContext &glContext,
+                         const RenderFrame &frame,
+                         unsigned int *persistTexOut = nullptr);
 
     // Redraw the last persistent texture as a fullscreen quad (hardware path).
     void RedrawLastTexture(OpenGlContext &glContext, unsigned int texId, size_t width, size_t height);
@@ -310,6 +391,14 @@ private:
 
     // Snapshot current Fractal state into a RenderWorkItem (everything except Ptz).
     RenderWorkItem SnapshotCurrentState() const;
+
+    bool IsPresentationReady(uint64_t expectedSeqNum,
+                             const RenderFrameInfo &frameInfo,
+                             std::chrono::steady_clock::time_point now);
+    void RecordPresentedFrame(const RenderFrame &frame, std::chrono::steady_clock::time_point now);
+    static std::chrono::milliseconds GetPacedAnimationFrameInterval(size_t bufferedFrames);
+    void ResetPacedAnimationState();
+    bool IsPacedAnimationCancelled(const RenderWorkItem &item) const;
 
     Fractal *m_Fractal;
     void *m_NativeWindow;
@@ -355,6 +444,10 @@ private:
     // Only incremented for supersedable items.  Non-atomic: single
     // writer (UI thread), multi-reader (workers) — safe on x64.
     std::atomic<uint64_t> m_EnqueueGeneration = 0;
+    std::atomic<uint64_t> m_NextPresentationGroup = 0;
+
+    mutable std::mutex m_CancelledPresentationGroupsMutex;
+    std::unordered_set<uint64_t> m_CancelledPresentationGroups;
 
     // Host-owned GL presentation mode (Linux GUI).  When true the pool
     // does not start m_GlConsumerThread; the host's main loop drives
@@ -369,6 +462,18 @@ private:
     // overlay-only repaints via RepresentLastFrame.  ColorData is
     // released back to the pool only when superseded by a newer frame.
     RenderFrame m_HostLastFrame{};
+
+    // Presenter-thread-only paced-animation state.  In Windows mode this
+    // is owned by the GL consumer; in host-owned mode it is owned by the
+    // Linux event-loop thread.
+    uint64_t m_PacedAnimationGroup = 0;
+    bool m_PacedAnimationStarted = false;
+    std::optional<std::chrono::steady_clock::time_point> m_PacedAnimationPreRollStart;
+    std::optional<std::chrono::steady_clock::time_point> m_NextPacedPresentation;
+    std::mutex m_PresentationMutex;
+
+    mutable std::mutex m_LastPresentedViewMutex;
+    std::optional<PresentedViewState> m_LastPresentedView;
 
     // --- Drag-zoom selection rectangle overlay ---
     // Written by the UI thread via SetDragRect(), read by the GL consumer.

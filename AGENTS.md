@@ -17,6 +17,12 @@ Linux build output belongs in `build-debug/` or `build-release/`, matching `buil
 remove Linux build artifacts after validation; leave binaries available for manual testing and reuse
 the configured directories for incremental builds.
 
+Linux validation must build the persistent `~/FractalShark` WSL mirror after force-synchronizing its
+tracked files from the authoritative Windows host working tree. WSL-local tracked source edits are
+disposable mirror drift. Isolated WSL worktree builds do not replace rebuilding the persistent
+runnable binaries. Transfer unpublished host commits directly into WSL without pushing them. See
+`.github/copilot-instructions.md` for the required synchronization procedure.
+
 Windows development targets Visual Studio 2026, CUDA Toolkit, MPIR, and bundled YASM tooling; `.github/workflows/build.yml` is the best reference for CI setup.
 
 ## Coding Style & Naming Conventions

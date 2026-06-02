@@ -10,4 +10,5 @@
 struct CalcContext {
     PointZoomBBConverter Ptz;
     ItersMemoryContainer &ItersMemory;
+    bool ResetStopCalculatingBeforeRender = true;
 };

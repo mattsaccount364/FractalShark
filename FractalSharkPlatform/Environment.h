@@ -344,11 +344,6 @@ void ShowWarning(const wchar_t *message);
 // On Windows this calls PeekMessage; on Linux it is a no-op.
 void PumpUIEvents();
 
-// Convert the screen-space cursor position to client coordinates of the given
-// native window.  Returns true on success, placing the result in x/y.
-// On Linux this always returns false.
-bool ScreenToClientPos(void *nativeWindow, int &x, int &y);
-
 // =========================================================================
 // Filesystem helpers
 // =========================================================================

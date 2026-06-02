@@ -41,8 +41,7 @@ Fractal::Fractal(int width,
                  bool UseSensoCursor,
                  uint64_t commitLimitInBytes,
                  bool hostOwnedGlPresentation)
-    : m_RefOrbit{*this, commitLimitInBytes},
-      m_CommitLimitInBytes{commitLimitInBytes},
+    : m_RefOrbit{*this, commitLimitInBytes}, m_CommitLimitInBytes{commitLimitInBytes},
       m_HostOwnedGlPresentation{hostOwnedGlPresentation}
 {
     Initialize(width, height, nativeWindow, UseSensoCursor);
@@ -553,13 +552,36 @@ template <Fractal::AutoZoomHeuristic h>
 void
 Fractal::AutoZoom()
 {
+    static_assert(h != AutoZoomHeuristic::Feature,
+                  "Use AutoZoom<AutoZoomHeuristic::Feature>(clientX, clientY).");
     AutoZoomer(*this).Run<h>();
 }
 
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Default>();
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>();
-template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Feature>();
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
+
+template <Fractal::AutoZoomHeuristic h>
+void
+Fractal::AutoZoom(int clientX, int clientY)
+{
+    if constexpr (h == AutoZoomHeuristic::Feature) {
+        AutoZoomer(*this).RunFeatureAtPoint(clientX, clientY);
+    } else {
+        AutoZoom<h>();
+    }
+}
+
+template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Default>(int, int);
+template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>(int, int);
+template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Feature>(int, int);
+template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>(int, int);
+
+void
+Fractal::AutoZoomFeatureAtPoint(int clientX, int clientY)
+{
+    AutoZoom<AutoZoomHeuristic::Feature>(clientX, clientY);
+}
 
 //////////////////////////////////////////////////////////////////////////////
 // Resets the fractal to the standard view.
@@ -1083,8 +1105,14 @@ Fractal::RequiresUseLocalColor() const
 void
 Fractal::CalcFractal(bool drawFractal)
 {
+    CalcFractal(drawFractal, true);
+}
+
+void
+Fractal::CalcFractal(bool drawFractal, bool resetStopCalculatingBeforeRender)
+{
     ScopedBenchmarkStopper stopper(m_BenchmarkData.m_Overall);
-    CalcContext ctx{m_Ptz, m_CurIters};
+    CalcContext ctx{m_Ptz, m_CurIters, resetStopCalculatingBeforeRender};
     CalcFractal(RendererIndex::Renderer0, drawFractal, ctx);
 }
 
@@ -1113,12 +1141,29 @@ Fractal::EnqueueRender()
 }
 
 RenderJobHandle
-Fractal::EnqueueCommand(std::function<void(Fractal &)> cmd, bool supersedable)
+Fractal::EnqueueCommand(std::function<void(Fractal &)> cmd,
+                        bool supersedable,
+                        RenderPresentationMode presentationMode,
+                        uint64_t presentationGroup,
+                        bool resetStopCalculatingBeforeRender)
 {
     if (m_RenderPool) {
-        return m_RenderPool->EnqueueCommand(std::move(cmd), supersedable);
+        return m_RenderPool->EnqueueCommand(std::move(cmd),
+                                            supersedable,
+                                            presentationMode,
+                                            presentationGroup,
+                                            resetStopCalculatingBeforeRender);
     }
     return RenderJobHandle{};
+}
+
+uint64_t
+Fractal::BeginPacedAnimation()
+{
+    if (m_RenderPool) {
+        return m_RenderPool->BeginPacedAnimation();
+    }
+    return 0;
 }
 
 RenderJobHandle
@@ -1140,8 +1185,9 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
     // volatile int y = x / z;
     //}
 
-    // Reset the flag should it be set.
-    ResetStopCalculating();
+    if (ctx.ResetStopCalculatingBeforeRender) {
+        ResetStopCalculating();
+    }
 
     // Do nothing if nothing has changed
     if (ChangedIsDirty() == false) {
@@ -1816,15 +1862,15 @@ Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFa
 }
 
 FeatureSummary *
-Fractal::ChooseClosestFeatureToMouse() const
+Fractal::ChooseClosestFeatureToScreenPoint(int clientX, int clientY) const
 {
-    return m_FeatureOrchestrator->ChooseClosestFeatureToMouse();
+    return m_FeatureOrchestrator->ChooseClosestFeatureToScreenPoint(clientX, clientY);
 }
 
 bool
-Fractal::ZoomToFoundFeature()
+Fractal::ZoomToFoundFeature(int clientX, int clientY)
 {
-    return m_FeatureOrchestrator->ZoomToFoundFeature();
+    return m_FeatureOrchestrator->ZoomToFoundFeature(clientX, clientY);
 }
 
 void
@@ -2647,8 +2693,8 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
 template <typename IterType, class T, class SubType>
 void
 Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx,
-                                      [[maybe_unused]] bool drawFractal,
-                                      CalcContext &ctx)
+                                       [[maybe_unused]] bool drawFractal,
+                                       CalcContext &ctx)
 {
     auto *results =
         m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
@@ -2714,8 +2760,8 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx,
 template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
 void
 Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx,
-                                       [[maybe_unused]] bool drawFractal,
-                                       CalcContext &ctx)
+                                        [[maybe_unused]] bool drawFractal,
+                                        CalcContext &ctx)
 {
 
     using T = RenderAlg::MainType;

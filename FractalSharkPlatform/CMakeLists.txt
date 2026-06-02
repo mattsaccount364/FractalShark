@@ -14,6 +14,8 @@ else()
         EnvironmentLinux.cpp
         CrashHandlerLinux.cpp
     )
+    find_package(X11 REQUIRED)
+    target_link_libraries(FractalSharkPlatform PUBLIC X11::X11)
 endif()
 
 target_include_directories(FractalSharkPlatform PUBLIC

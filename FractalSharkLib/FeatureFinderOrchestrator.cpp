@@ -2,7 +2,6 @@
 
 #include "FeatureFinderOrchestrator.h"
 
-#include "Environment.h"
 #include "Fractal.h"
 
 #include "BenchmarkData.h"
@@ -613,13 +612,9 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature, const Hig
 }
 
 FeatureSummary *
-FeatureFinderOrchestrator::ChooseClosestFeatureToMouse() const
+FeatureFinderOrchestrator::ChooseClosestFeatureToScreenPoint(int clientX, int clientY) const
 {
     if (m_FeatureSummaries.empty())
-        return nullptr;
-
-    int clientX = 0, clientY = 0;
-    if (!Environment::ScreenToClientPos(m_Fractal.m_NativeWindow, clientX, clientY))
         return nullptr;
 
     struct {
@@ -673,9 +668,9 @@ FeatureFinderOrchestrator::ChooseClosestFeatureToMouse() const
 }
 
 bool
-FeatureFinderOrchestrator::ZoomToFoundFeature()
+FeatureFinderOrchestrator::ZoomToFoundFeature(int clientX, int clientY)
 {
-    FeatureSummary *best = ChooseClosestFeatureToMouse();
+    FeatureSummary *best = ChooseClosestFeatureToScreenPoint(clientX, clientY);
     if (!best) {
         std::cerr << "No feature found to zoom to.\n";
         return false;

@@ -109,7 +109,8 @@ LINUXSHARK_DEFINE_FEATURE_FINDER(LaScan, FeatureFinderMode::LAScan)
 void
 LinuxCommandHandlers::OnFeatureFinderZoom()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.ZoomToFoundFeature(); });
+    const MenuPoint pt = GetMenuMousePos();
+    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.ZoomToFoundFeature(x, y); });
 }
 
 void

@@ -5,6 +5,9 @@
 
 #include "Environment.h"
 
+#include <X11/Xlib.h>
+#include <X11/keysym.h>
+
 #include <atomic>
 #include <cerrno>
 #include <cstdio>
@@ -63,6 +66,63 @@ WideToUtf8(const wchar_t *wide)
 
 // Command line storage (set once at program startup).
 static const wchar_t *g_commandLine = L"";
+
+class X11KeyState {
+public:
+    ~X11KeyState()
+    {
+        if (m_Display) {
+            ::XCloseDisplay(m_Display);
+        }
+    }
+
+    bool
+    IsKeyDown(Environment::Key key)
+    {
+        if (!EnsureDisplay()) {
+            return false;
+        }
+
+        char keyMap[32]{};
+        ::XQueryKeymap(m_Display, keyMap);
+
+        switch (key) {
+            case Environment::Key::Control:
+                return IsKeySymDown(keyMap, XK_Control_L) || IsKeySymDown(keyMap, XK_Control_R);
+            case Environment::Key::Alt:
+                return IsKeySymDown(keyMap, XK_Alt_L) || IsKeySymDown(keyMap, XK_Alt_R);
+            case Environment::Key::Escape:
+                return IsKeySymDown(keyMap, XK_Escape);
+        }
+        return false;
+    }
+
+private:
+    bool
+    EnsureDisplay()
+    {
+        if (!m_Initialized) {
+            m_Display = ::XOpenDisplay(nullptr);
+            m_Initialized = true;
+        }
+        return m_Display != nullptr;
+    }
+
+    bool
+    IsKeySymDown(const char *keyMap, KeySym keySym) const
+    {
+        const KeyCode keyCode = ::XKeysymToKeycode(m_Display, keySym);
+        if (keyCode == 0) {
+            return false;
+        }
+        return (static_cast<unsigned char>(keyMap[keyCode >> 3]) & (1U << (keyCode & 7))) != 0;
+    }
+
+    Display *m_Display = nullptr;
+    bool m_Initialized = false;
+};
+
+thread_local X11KeyState g_X11KeyState;
 
 } // anonymous namespace
 
@@ -307,11 +367,9 @@ Environment::HighResFrequency()
 // =========================================================================
 
 bool
-Environment::IsKeyDown(Key /*key*/)
+Environment::IsKeyDown(Key key)
 {
-    // No raw key-state query on Linux without a window system.
-    // AbortMonitor will need a callback mechanism on Linux.
-    return false;
+    return g_X11KeyState.IsKeyDown(key);
 }
 
 std::pair<int, int>
@@ -597,13 +655,6 @@ void
 Environment::PumpUIEvents()
 {
     // No GUI event loop on Linux — nothing to pump.
-}
-
-bool
-Environment::ScreenToClientPos(void * /*nativeWindow*/, int & /*x*/, int & /*y*/)
-{
-    // No windowing support on Linux yet.
-    return false;
 }
 
 // =========================================================================

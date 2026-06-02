@@ -211,7 +211,8 @@ FRACTALSHARK_DEFINE_FEATURE_FINDER(LaScan, FeatureFinderMode::LAScan)
 void
 MainWindow::OnFeatureFinderZoom()
 {
-    gFractal->EnqueueCommand([](Fractal &f) { f.ZoomToFoundFeature(); });
+    const POINT pt = GetSafeMenuPtClient();
+    gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) { f.ZoomToFoundFeature(x, y); });
 }
 
 void
@@ -902,7 +903,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
         case 'A':
         case 'a':
             if (!shiftDown) {
-                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Feature>();
+                gFractal->AutoZoomFeatureAtPoint(mousePt.x, mousePt.y);
             } else {
                 MenuCenterView(mousePt.x, mousePt.y);
                 gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
@@ -940,67 +941,50 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
             break;
 
         case 'n': {
-            POINT pt;
-            ::GetCursorPos(&pt);
-            ::ScreenToClient(hWnd, &pt);
-            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
                 f.TryFindPeriodicPoint(x, y, FeatureFinderMode::Direct);
             });
             break;
         }
 
         case 'N': {
-            POINT pt;
-            ::GetCursorPos(&pt);
-            ::ScreenToClient(hWnd, &pt);
-            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
                 f.TryFindPeriodicPoint(x, y, FeatureFinderMode::DirectScan);
             });
             break;
         }
 
         case 'm': {
-            POINT pt;
-            ::GetCursorPos(&pt);
-            ::ScreenToClient(hWnd, &pt);
-            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
                 f.TryFindPeriodicPoint(x, y, FeatureFinderMode::PT);
             });
             break;
         }
 
         case 'M': {
-            POINT pt;
-            ::GetCursorPos(&pt);
-            ::ScreenToClient(hWnd, &pt);
-            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
                 f.TryFindPeriodicPoint(x, y, FeatureFinderMode::PTScan);
             });
             break;
         }
 
         case ',': {
-            POINT pt;
-            ::GetCursorPos(&pt);
-            ::ScreenToClient(hWnd, &pt);
-            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
                 f.TryFindPeriodicPoint(x, y, FeatureFinderMode::LA);
             });
             break;
         }
 
         case '<': {
-            POINT pt;
-            ::GetCursorPos(&pt);
-            ::ScreenToClient(hWnd, &pt);
-            gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
                 f.TryFindPeriodicPoint(x, y, FeatureFinderMode::LAScan);
             });
             break;
         }
 
         case '.': {
-            gFractal->EnqueueCommand([](Fractal &f) { f.ZoomToFoundFeature(); });
+            gFractal->EnqueueCommand(
+                [x = mousePt.x, y = mousePt.y](Fractal &f) { f.ZoomToFoundFeature(x, y); });
             break;
         }
 
@@ -2436,7 +2420,7 @@ MainWindow::MenuShowHotkeys()
         L"i - Recalculate and benchmark current display, reusing perturbation results\r\n"
         L"O - Clear high-res perturbation results, recalculate, and benchmark\r\n"
         L"o - Recalculate and benchmark current display, reusing perturbation results\r\n"
-        L"P - Clear all perturbation results and recalculate\r\n"
+        L"P - Clear LA-only perturbation results and recalculate\r\n"
         L"p - Recalculate current display, reusing perturbation results\r\n"
         L"R - Clear all perturbation results and recalculate\r\n"
         L"r - Recalculate current display, reusing perturbation results\r\n"

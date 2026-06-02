@@ -15,6 +15,10 @@
 #include <algorithm>
 #include <chrono>
 
+namespace {
+constexpr size_t MaxBufferedPacedAnimationFrames = 4;
+}
+
 // Convert iteration counts to Color16 values for CPU render algorithms.
 // Mirrors the logic from Fractal::DrawFractalThread but writes to the
 // ItersMemoryContainer's m_RoundedOutputColorMemory buffer.
@@ -199,27 +203,165 @@ FrameCompletionQueue::FrameCompletionQueue() : m_ShutdownFlag(false) {}
 void
 FrameCompletionQueue::Push(RenderFrame frame)
 {
-    {
-        std::lock_guard lk(m_Mutex);
-        m_Frames.push_back(std::move(frame));
+    std::unique_lock lk(m_Mutex);
+
+    if (frame.PresentationMode == RenderPresentationMode::PacedAnimation && frame.IsFinal) {
+        m_CV.wait(lk, [this, &frame] {
+            if (m_ShutdownFlag || m_CancelledPresentationGroups.contains(frame.PresentationGroup)) {
+                return true;
+            }
+
+            const auto bufferedFrames =
+                std::count_if(m_Frames.begin(), m_Frames.end(), [](const RenderFrame &queued) {
+                    return queued.PresentationMode == RenderPresentationMode::PacedAnimation &&
+                           queued.IsFinal;
+                });
+            if (bufferedFrames < MaxBufferedPacedAnimationFrames) {
+                return true;
+            }
+
+            // A slow earlier CUDA step must never wait behind later
+            // completed steps: presentation cannot advance past the gap.
+            return std::any_of(m_Frames.begin(), m_Frames.end(), [&](const RenderFrame &queued) {
+                return queued.PresentationMode == RenderPresentationMode::PacedAnimation &&
+                       queued.IsFinal && frame.SequenceNumber < queued.SequenceNumber;
+            });
+        });
     }
-    m_CV.notify_one();
+
+    if (m_ShutdownFlag) {
+        return;
+    }
+
+    if (frame.PresentationMode == RenderPresentationMode::PacedAnimation &&
+        m_CancelledPresentationGroups.contains(frame.PresentationGroup)) {
+        PushTombstoneLocked(frame.SequenceNumber);
+        lk.unlock();
+        m_CV.notify_all();
+        return;
+    }
+
+    m_Frames.push_back(std::move(frame));
+    ++m_ChangeGeneration;
+    lk.unlock();
+    m_CV.notify_all();
 }
 
 bool
 FrameCompletionQueue::TryPopNextInOrder(uint64_t expectedSeqNum, RenderFrame &frame)
 {
-    std::lock_guard lk(m_Mutex);
+    std::unique_lock lk(m_Mutex);
 
     for (auto it = m_Frames.begin(); it != m_Frames.end(); ++it) {
         if (it->SequenceNumber == expectedSeqNum) {
             frame = std::move(*it);
             m_Frames.erase(it);
+            ++m_ChangeGeneration;
+            lk.unlock();
+            m_CV.notify_all();
             return true;
         }
     }
 
     return false;
+}
+
+bool
+FrameCompletionQueue::TryPeekNextInOrder(uint64_t expectedSeqNum, RenderFrameInfo &frameInfo)
+{
+    std::lock_guard lk(m_Mutex);
+
+    for (const auto &frame : m_Frames) {
+        if (frame.SequenceNumber == expectedSeqNum) {
+            frameInfo.PresentationMode = frame.PresentationMode;
+            frameInfo.PresentationGroup = frame.PresentationGroup;
+            frameInfo.IsProgressive = frame.IsProgressive;
+            frameInfo.IsFinal = frame.IsFinal;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+size_t
+FrameCompletionQueue::CountConsecutivePacedFinalFrames(uint64_t expectedSeqNum,
+                                                       uint64_t presentationGroup)
+{
+    std::lock_guard lk(m_Mutex);
+
+    size_t count = 0;
+    for (uint64_t sequenceNumber = expectedSeqNum;; ++sequenceNumber) {
+        const auto it = std::find_if(m_Frames.begin(), m_Frames.end(), [&](const RenderFrame &frame) {
+            return frame.SequenceNumber == sequenceNumber &&
+                   frame.PresentationMode == RenderPresentationMode::PacedAnimation &&
+                   frame.PresentationGroup == presentationGroup && frame.IsFinal;
+        });
+        if (it == m_Frames.end()) {
+            break;
+        }
+        ++count;
+    }
+
+    return count;
+}
+
+void
+FrameCompletionQueue::PushTombstoneLocked(uint64_t sequenceNumber)
+{
+    if (m_ShutdownFlag) {
+        return;
+    }
+
+    const auto alreadyQueued =
+        std::any_of(m_Frames.begin(), m_Frames.end(), [sequenceNumber](const RenderFrame &f) {
+            return f.SequenceNumber == sequenceNumber && f.IsFinal;
+        });
+    if (alreadyQueued) {
+        return;
+    }
+
+    RenderFrame skipFrame{};
+    skipFrame.SequenceNumber = sequenceNumber;
+    skipFrame.IsFinal = true;
+    m_Frames.push_back(std::move(skipFrame));
+    ++m_ChangeGeneration;
+}
+
+void
+FrameCompletionQueue::CancelPacedAnimation(uint64_t presentationGroup)
+{
+    std::unique_lock lk(m_Mutex);
+
+    m_CancelledPresentationGroups.insert(presentationGroup);
+
+    std::unordered_set<uint64_t> cancelledSequences;
+    std::erase_if(m_Frames, [&](const RenderFrame &frame) {
+        if (frame.PresentationMode != RenderPresentationMode::PacedAnimation ||
+            frame.PresentationGroup != presentationGroup) {
+            return false;
+        }
+
+        cancelledSequences.insert(frame.SequenceNumber);
+        return true;
+    });
+
+    for (const auto sequenceNumber : cancelledSequences) {
+        PushTombstoneLocked(sequenceNumber);
+    }
+
+    ++m_ChangeGeneration;
+    lk.unlock();
+    m_CV.notify_all();
+}
+
+void
+FrameCompletionQueue::PushTombstone(uint64_t sequenceNumber)
+{
+    std::unique_lock lk(m_Mutex);
+    PushTombstoneLocked(sequenceNumber);
+    lk.unlock();
+    m_CV.notify_all();
 }
 
 bool
@@ -254,6 +396,24 @@ FrameCompletionQueue::WaitForFrameExact(uint64_t seqNum)
 }
 
 bool
+FrameCompletionQueue::WaitForChangeUntil(uint64_t changeGeneration,
+                                         std::chrono::steady_clock::time_point deadline)
+{
+    std::unique_lock lk(m_Mutex);
+    m_CV.wait_until(lk, deadline, [this, changeGeneration] {
+        return m_ShutdownFlag || m_OverlayDirty || m_ChangeGeneration != changeGeneration;
+    });
+    return !m_ShutdownFlag;
+}
+
+uint64_t
+FrameCompletionQueue::GetChangeGeneration()
+{
+    std::lock_guard lk(m_Mutex);
+    return m_ChangeGeneration;
+}
+
+bool
 FrameCompletionQueue::SkipToNextAvailable(uint64_t &expectedSeqNum)
 {
     std::lock_guard lk(m_Mutex);
@@ -274,6 +434,8 @@ FrameCompletionQueue::SkipToNextAvailable(uint64_t &expectedSeqNum)
     std::erase_if(m_Frames, [minSeq](const RenderFrame &f) { return f.SequenceNumber < minSeq; });
 
     expectedSeqNum = minSeq;
+    ++m_ChangeGeneration;
+    m_CV.notify_all();
     return true;
 }
 
@@ -283,6 +445,7 @@ FrameCompletionQueue::Shutdown()
     {
         std::lock_guard lk(m_Mutex);
         m_ShutdownFlag = true;
+        ++m_ChangeGeneration;
     }
     m_CV.notify_all();
 }
@@ -443,16 +606,85 @@ RenderThreadPool::SnapshotCurrentState() const
 }
 
 RenderJobHandle
-RenderThreadPool::EnqueueCommand(std::function<void(Fractal &)> cmd, bool supersedable)
+RenderThreadPool::EnqueueCommand(std::function<void(Fractal &)> cmd,
+                                 bool supersedable,
+                                 RenderPresentationMode presentationMode,
+                                 uint64_t presentationGroup,
+                                 bool resetStopCalculatingBeforeRender)
 {
     RenderWorkItem item{};
     item.Command = std::move(cmd);
     item.Supersedable = supersedable;
+    item.PresentationMode = presentationMode;
+    item.PresentationGroup = presentationGroup;
+    item.ResetStopCalculatingBeforeRender = resetStopCalculatingBeforeRender;
     item.FractalPtr = m_Fractal;
     item.ChangedWindow = true;
     item.ChangedScrn = true;
     item.ChangedIterations = true;
     return Enqueue(item);
+}
+
+uint64_t
+RenderThreadPool::BeginPacedAnimation()
+{
+    return ++m_NextPresentationGroup;
+}
+
+void
+RenderThreadPool::CancelPacedAnimation(uint64_t presentationGroup)
+{
+    {
+        std::lock_guard lk(m_CancelledPresentationGroupsMutex);
+        m_CancelledPresentationGroups.insert(presentationGroup);
+    }
+
+    std::vector<uint64_t> tombstoneSeqs;
+    {
+        std::lock_guard lk(m_WorkQueueMutex);
+        for (auto it = m_WorkQueue.begin(); it != m_WorkQueue.end();) {
+            if (it->PresentationMode == RenderPresentationMode::PacedAnimation &&
+                it->PresentationGroup == presentationGroup) {
+                tombstoneSeqs.push_back(it->SequenceNumber);
+                if (it->CompletionPromise) {
+                    it->CompletionPromise->set_value();
+                }
+                it = m_WorkQueue.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    {
+        std::lock_guard lk(m_PresentationMutex);
+        m_FrameQueue.CancelPacedAnimation(presentationGroup);
+    }
+
+    for (const auto sequenceNumber : tombstoneSeqs) {
+        PushTombstone(sequenceNumber);
+    }
+
+    m_WorkQueueCV.notify_all();
+    m_DrainCV.notify_all();
+}
+
+std::optional<PresentedViewState>
+RenderThreadPool::GetLastPresentedView() const
+{
+    std::lock_guard lk(m_LastPresentedViewMutex);
+    return m_LastPresentedView;
+}
+
+bool
+RenderThreadPool::IsPacedAnimationCancelled(const RenderWorkItem &item) const
+{
+    if (item.PresentationMode != RenderPresentationMode::PacedAnimation) {
+        return false;
+    }
+
+    std::lock_guard lk(m_CancelledPresentationGroupsMutex);
+    return m_CancelledPresentationGroups.contains(item.PresentationGroup);
 }
 
 RenderJobHandle
@@ -482,10 +714,7 @@ RenderThreadPool::EnqueueMutation(std::function<void(Fractal &)> cmd)
 void
 RenderThreadPool::PushTombstone(uint64_t sequenceNumber)
 {
-    RenderFrame skipFrame{};
-    skipFrame.SequenceNumber = sequenceNumber;
-    skipFrame.IsFinal = true;
-    m_FrameQueue.Push(std::move(skipFrame));
+    m_FrameQueue.PushTombstone(sequenceNumber);
 }
 
 void
@@ -620,6 +849,10 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
     // and produce a final frame from stale GPU data.
     std::lock_guard lk(m_CalcFractalMutex);
 
+    if (IsPacedAnimationCancelled(item)) {
+        return false;
+    }
+
     // Execute pre-render command if present.
     if (item.Command) {
         item.Command(*fractal);
@@ -656,7 +889,7 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
     fractal->m_ChangedIterations = item.ChangedIterations;
 
     // Ptz and ItersMemory travel through CalcContext — no swap needed.
-    CalcContext ctx{item.Ptz, workerIters};
+    CalcContext ctx{item.Ptz, workerIters, item.ResetStopCalculatingBeforeRender};
     fractal->CalcFractal(rendererIdx, false, ctx);
     return true;
 }
@@ -683,11 +916,16 @@ RenderThreadPool::WaitForGpuAndProduceProgressiveFrames(Fractal *fractal,
     for (;;) {
         std::unique_lock lk(workerMutex);
         auto computeDone = workerCV.wait_for(lk, ProgressiveDrawInterval, [&] {
-            return renderer.IsComputeDone() || m_ShutdownFlag.load() || fractal->GetStopCalculating();
+            return renderer.IsComputeDone() || m_ShutdownFlag.load() || fractal->GetStopCalculating() ||
+                   IsPacedAnimationCancelled(item);
         });
         lk.unlock();
 
-        if (m_ShutdownFlag.load() || fractal->GetStopCalculating()) {
+        if (m_ShutdownFlag.load() || fractal->GetStopCalculating() || IsPacedAnimationCancelled(item)) {
+            if (fractal->GetStopCalculating() &&
+                item.PresentationMode == RenderPresentationMode::PacedAnimation) {
+                CancelPacedAnimation(item.PresentationGroup);
+            }
             renderer.SyncComputeStream();
             break;
         }
@@ -700,7 +938,9 @@ RenderThreadPool::WaitForGpuAndProduceProgressiveFrames(Fractal *fractal,
             break;
         }
 
-        ProduceFrame(item, rendererIdx, workerIters, false);
+        if (!IsPacedAnimationCancelled(item)) {
+            ProduceFrame(item, rendererIdx, workerIters, false);
+        }
     }
 }
 
@@ -724,6 +964,119 @@ ElapsedMilliseconds(std::chrono::steady_clock::time_point start)
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
                                                                  start)
         .count();
+}
+
+void
+RenderThreadPool::ResetPacedAnimationState()
+{
+    m_PacedAnimationGroup = 0;
+    m_PacedAnimationStarted = false;
+    m_PacedAnimationPreRollStart.reset();
+    m_NextPacedPresentation.reset();
+}
+
+bool
+RenderThreadPool::IsPresentationReady(uint64_t expectedSeqNum,
+                                      const RenderFrameInfo &frameInfo,
+                                      std::chrono::steady_clock::time_point now)
+{
+    if (frameInfo.PresentationMode != RenderPresentationMode::PacedAnimation) {
+        ResetPacedAnimationState();
+        return true;
+    }
+
+    if (m_PacedAnimationGroup != frameInfo.PresentationGroup) {
+        ResetPacedAnimationState();
+        m_PacedAnimationGroup = frameInfo.PresentationGroup;
+    }
+
+    if (frameInfo.IsProgressive) {
+        // Slow CUDA work should remain visibly active.  Once an animation
+        // emits progress, do not add an initial pre-roll delay.
+        m_PacedAnimationStarted = true;
+        m_PacedAnimationPreRollStart.reset();
+        return true;
+    }
+
+    if (!frameInfo.IsFinal) {
+        return true;
+    }
+
+    if (!m_PacedAnimationStarted) {
+        if (!m_PacedAnimationPreRollStart) {
+            m_PacedAnimationPreRollStart = now;
+        }
+
+        const auto preRollDeadline = *m_PacedAnimationPreRollStart + PacedAnimationPreRollTimeout;
+        const auto bufferedFrames =
+            m_FrameQueue.CountConsecutivePacedFinalFrames(expectedSeqNum, frameInfo.PresentationGroup);
+        if (bufferedFrames < PacedAnimationPreRollFrames && now < preRollDeadline) {
+            m_NextPacedPresentation = preRollDeadline;
+            return false;
+        }
+
+        m_PacedAnimationStarted = true;
+        m_PacedAnimationPreRollStart.reset();
+        m_NextPacedPresentation.reset();
+        return true;
+    }
+
+    if (m_NextPacedPresentation && now < *m_NextPacedPresentation) {
+        return false;
+    }
+
+    m_NextPacedPresentation.reset();
+    return true;
+}
+
+void
+RenderThreadPool::RecordPresentedFrame(const RenderFrame &frame,
+                                       std::chrono::steady_clock::time_point now)
+{
+    if (frame.ViewState) {
+        std::lock_guard lk(m_LastPresentedViewMutex);
+        m_LastPresentedView = frame.ViewState;
+    }
+
+    if (frame.PresentationMode == RenderPresentationMode::PacedAnimation && frame.IsFinal) {
+        const auto bufferedFrames = m_FrameQueue.CountConsecutivePacedFinalFrames(
+            frame.SequenceNumber + 1, frame.PresentationGroup);
+        m_NextPacedPresentation = now + GetPacedAnimationFrameInterval(bufferedFrames);
+    }
+}
+
+std::chrono::milliseconds
+RenderThreadPool::GetPacedAnimationFrameInterval(size_t bufferedFrames)
+{
+    if (bufferedFrames >= 4) {
+        return std::chrono::milliseconds(33);
+    }
+    if (bufferedFrames == 3) {
+        return std::chrono::milliseconds(50);
+    }
+    if (bufferedFrames == 2) {
+        return std::chrono::milliseconds(67);
+    }
+    return PacedAnimationFrameInterval;
+}
+
+std::optional<std::chrono::milliseconds>
+RenderThreadPool::GetTimeUntilNextPresentation() const
+{
+    if (!m_HostOwnedGlPresentation || !m_NextPacedPresentation) {
+        return std::nullopt;
+    }
+
+    const auto remaining = *m_NextPacedPresentation - std::chrono::steady_clock::now();
+    if (remaining <= std::chrono::steady_clock::duration::zero()) {
+        return std::chrono::milliseconds::zero();
+    }
+
+    auto roundedDown = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+    if (roundedDown < remaining) {
+        roundedDown += std::chrono::milliseconds(1);
+    }
+    return roundedDown;
 }
 
 void
@@ -1051,7 +1404,8 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
         // Skip stale in-flight renders: if a newer supersedable item was
         // enqueued since this one, this render's output will never be seen.
         // Check before acquiring renderer/memory (expensive).
-        if (item.Supersedable && item.EnqueueGeneration < m_EnqueueGeneration) {
+        if ((item.Supersedable && item.EnqueueGeneration < m_EnqueueGeneration) ||
+            IsPacedAnimationCancelled(item)) {
             PushTombstone(item.SequenceNumber);
             if (item.CompletionPromise) {
                 item.CompletionPromise->set_value();
@@ -1069,6 +1423,7 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
 
         // Guarantee: every dequeued sequence gets at least one IsFinal frame.
         bool finalFramePushed = false;
+        bool completedFramePushed = false;
 
         try {
             fractal->m_BenchmarkData.m_Overall.StartTimer();
@@ -1094,6 +1449,11 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                 PushTombstone(item.SequenceNumber);
                 finalFramePushed = true;
             } else {
+                if (fractal->GetStopCalculating() &&
+                    item.PresentationMode == RenderPresentationMode::PacedAnimation) {
+                    CancelPacedAnimation(item.PresentationGroup);
+                }
+
                 // For CPU algorithms, convert iteration counts to colors.
                 if (item.Algorithm.UseLocalColor) {
                     ColorizeCpuIterations(workerIters,
@@ -1109,8 +1469,10 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                 fractal->m_BenchmarkData.m_PerPixel.StopTimer();
 
                 bool pushed = !m_ShutdownFlag.load() && !fractal->GetStopCalculating() &&
+                              !IsPacedAnimationCancelled(item) &&
                               ProduceFrame(item, rendererIdx, workerIters, true);
                 if (pushed) {
+                    completedFramePushed = true;
                     static bool loggedSuccess = false;
                     if (!loggedSuccess) {
                         loggedSuccess = true;
@@ -1166,7 +1528,7 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
         // etc. see the most recently completed render.  Only swap if
         // m_CurIters has matching dimensions — otherwise the old container
         // would be discarded by ReturnIterMemory, shrinking the pool.
-        if (finalFramePushed) {
+        if (completedFramePushed) {
             std::lock_guard lk(m_CalcFractalMutex);
             if (fractal->m_CurIters.m_OutputWidth == workerIters.m_OutputWidth &&
                 fractal->m_CurIters.m_OutputHeight == workerIters.m_OutputHeight &&
@@ -1230,9 +1592,10 @@ RenderThreadPool::GlConsumerLoop()
 
         // Check if we woke for an overlay-only repaint (no new frame).
         bool overlayDirty = m_FrameQueue.ConsumeOverlayDirty();
+        const auto changeGeneration = m_FrameQueue.GetChangeGeneration();
 
-        RenderFrame frame;
-        if (!m_FrameQueue.TryPopNextInOrder(nextExpectedSeqNum, frame)) {
+        RenderFrameInfo frameInfo{};
+        if (!m_FrameQueue.TryPeekNextInOrder(nextExpectedSeqNum, frameInfo)) {
             // No new frame — must be overlay-only wakeup.
             if (overlayDirty && lastTex != 0) {
                 RedrawLastTexture(*glContext, lastTex, lastFrameWidth, lastFrameHeight);
@@ -1243,49 +1606,54 @@ RenderThreadPool::GlConsumerLoop()
             continue;
         }
 
-        // Process frames for this sequence number
-        for (;;) {
-            // Tombstone frame (skipped work item) — advance without rendering
-            if (!frame.ColorData || frame.OutputWidth == 0 || frame.OutputHeight == 0) {
-                if (frame.IsFinal) {
-                    nextExpectedSeqNum++;
-                    break;
-                }
-            } else {
-                // Upload frame to GL. On hardware path, persist the texture.
-                GLuint *persistPtr = isSoftwareRenderer ? nullptr : &lastTex;
-                RenderFrameToGL(*glContext, frame, persistPtr);
-
-                lastFrameWidth = frame.OutputWidth;
-                lastFrameHeight = frame.OutputHeight;
-
-                if (frame.IsFinal) {
-                    m_Fractal->DrawAllPerturbationResults(true);
-                    DrawDragRectOverlay(lastFrameHeight);
-
-                    // Release CPU buffer — GPU texture persists for overlay repaints.
-                    ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
-
-                    glContext->SwapBuffers();
-                    nextExpectedSeqNum++;
-                    break;
-                }
-
-                // Progressive (non-final) frame: draw rect overlay, release buffer, swap.
+        if (!IsPresentationReady(nextExpectedSeqNum, frameInfo, std::chrono::steady_clock::now())) {
+            if (overlayDirty && lastTex != 0) {
+                RedrawLastTexture(*glContext, lastTex, lastFrameWidth, lastFrameHeight);
+                m_Fractal->DrawAllPerturbationResults(true);
                 DrawDragRectOverlay(lastFrameHeight);
-                ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
                 glContext->SwapBuffers();
             }
 
-            // Block-wait for next frame for this exact sequence.
-            if (!m_FrameQueue.WaitForFrameExact(nextExpectedSeqNum)) {
-                break; // Shutdown
+            if (!m_FrameQueue.WaitForChangeUntil(changeGeneration, *m_NextPacedPresentation)) {
+                break;
             }
-            if (!m_FrameQueue.TryPopNextInOrder(nextExpectedSeqNum, frame)) {
-                // Could be overlay-only wakeup while waiting for next progressive frame.
-                m_FrameQueue.ConsumeOverlayDirty();
-                continue;
+            continue;
+        }
+
+        std::lock_guard presentationLock(m_PresentationMutex);
+
+        RenderFrame frame;
+        if (!m_FrameQueue.TryPopNextInOrder(nextExpectedSeqNum, frame)) {
+            continue;
+        }
+
+        // Tombstone frame (skipped work item) — advance without rendering.
+        if (!frame.ColorData || frame.OutputWidth == 0 || frame.OutputHeight == 0) {
+            if (frame.IsFinal) {
+                nextExpectedSeqNum++;
             }
+            continue;
+        }
+
+        // Upload frame to GL. On hardware path, persist the texture.
+        GLuint *persistPtr = isSoftwareRenderer ? nullptr : &lastTex;
+        RenderFrameToGL(*glContext, frame, persistPtr);
+
+        lastFrameWidth = frame.OutputWidth;
+        lastFrameHeight = frame.OutputHeight;
+
+        if (frame.IsFinal) {
+            m_Fractal->DrawAllPerturbationResults(true);
+        }
+        DrawDragRectOverlay(lastFrameHeight);
+
+        // Release CPU buffer — GPU texture persists for overlay repaints.
+        ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
+        glContext->SwapBuffers();
+        RecordPresentedFrame(frame, std::chrono::steady_clock::now());
+
+        if (frame.IsFinal) {
+            nextExpectedSeqNum++;
         }
     }
 
@@ -1302,13 +1670,29 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
         return false;
     }
 
+    std::lock_guard presentationLock(m_PresentationMutex);
+
     bool rendered = false;
 
-    // Drain every frame currently ready for the host's expected
-    // sequence; only the most recently uploaded frame remains visible
-    // after the eventual SwapBuffers.  This mirrors the inner loop of
-    // GlConsumerLoop except it is non-blocking and does not swap.
+    // Skip ready tombstones, but upload at most one visible frame per
+    // host tick.  The host swaps after this returns, so uploading more
+    // than one frame here would overwrite intermediate animation frames.
     for (;;) {
+        RenderFrameInfo frameInfo{};
+        if (!m_FrameQueue.TryPeekNextInOrder(m_HostExpectedSeqNum, frameInfo)) {
+            if (m_NextPacedPresentation &&
+                std::chrono::steady_clock::now() >= *m_NextPacedPresentation) {
+                // CUDA underrun: there is nothing to present at the old
+                // deadline.  The next completed frame should display
+                // immediately and establish a fresh cadence.
+                m_NextPacedPresentation.reset();
+            }
+            break;
+        }
+        if (!IsPresentationReady(m_HostExpectedSeqNum, frameInfo, std::chrono::steady_clock::now())) {
+            break;
+        }
+
         RenderFrame frame;
         if (!m_FrameQueue.TryPopNextInOrder(m_HostExpectedSeqNum, frame)) {
             break;
@@ -1360,6 +1744,7 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
                 }
 
                 ++m_HostExpectedSeqNum;
+                RecordPresentedFrame(m_HostLastFrame, std::chrono::steady_clock::now());
                 if (diagnoseHostFrame) {
                     char buf[128];
                     snprintf(buf,
@@ -1368,7 +1753,7 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
                              ElapsedMilliseconds(presentationStart));
                     GlLog(buf);
                 }
-                continue;
+                return true;
             }
 
             if (diagnoseHostFrame) {
@@ -1379,6 +1764,8 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
                          ElapsedMilliseconds(presentationStart));
                 GlLog(buf);
             }
+            RecordPresentedFrame(m_HostLastFrame, std::chrono::steady_clock::now());
+            return true;
         } else if (frame.IsFinal) {
             ++m_HostExpectedSeqNum;
         }
@@ -1499,6 +1886,9 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
     frame.OutputHeight = outputHeight;
     frame.IsProgressive = !isFinal;
     frame.IsFinal = isFinal;
+    frame.PresentationMode = item.PresentationMode;
+    frame.PresentationGroup = item.PresentationGroup;
+    frame.ViewState = PresentedViewState{item.Ptz, item.NumIterations};
     frame.BufferPixelCount = roundedColorTotal;
 
     m_FrameQueue.Push(std::move(frame));

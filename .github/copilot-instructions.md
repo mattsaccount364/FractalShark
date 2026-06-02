@@ -73,13 +73,41 @@ The custom heap allocator (`HpSharkFloatLib/heap_allocator/HeapCpp.cpp`) is Wind
 
 Local WSL Ubuntu environment at `matthew@localhost` (SSH key auth). CUDA 13.2 at `/usr/local/cuda` — not on PATH; prefix with `export PATH=/usr/local/cuda/bin:$PATH`. **No GPU**, so only compile/link is validated, not runtime CUDA.
 
-Windows working tree is authoritative. The Linux checkout at `~/FractalShark` is a test mirror — never commit or push from it. Always verify the Linux checkout's commit matches the Windows working tree before testing; sync via `git fetch && git checkout <sha>`, overlay uncommitted Windows changes via `scp`. Reuse this persistent checkout for normal validation so its configured build directories and output artifacts remain available for manual testing.
+The Windows working tree is the only authoritative source tree, including uncommitted changes. The
+Linux checkout at `~/FractalShark` is a disposable test mirror: never develop, commit, push, or
+preserve tracked source edits there. Reuse this persistent mirror for normal validation so its
+configured build directories and runnable output artifacts remain available for manual testing.
+
+Before every Linux build, force the persistent mirror to the exact Windows `HEAD`, then overlay the
+host working-tree changes required by the task. WSL-local tracked edits are mirror drift and should
+be discarded without preserving them. Keep untracked `build-debug/` and `build-release/` artifacts.
+The host `HEAD` may contain unpublished commits: transfer it directly to WSL with a temporary Git
+bundle. Do not rely on `origin` being current and do not push Windows commits merely to run Linux
+validation.
+
+The overlay must include staged and unstaged modifications, deletions, and any newly created
+task-relevant files. `git diff --name-status HEAD --` reports staged and unstaged tracked changes but
+does not report untracked files, so maintain an explicit list of new files created during the task.
 
 ```bash
-ssh matthew@localhost
-cd ~/FractalShark && git rev-parse HEAD && git status --short   # verify vs Windows host
-cd ~/FractalShark && git fetch origin && git checkout <branch-or-sha>
+# Run from Windows PowerShell in the authoritative working tree.
+$sha = git rev-parse HEAD
+$bundle = Join-Path $env:TEMP "FractalShark-$sha.bundle"
+$remoteBundle = "/tmp/FractalShark-$sha.bundle"
+git diff --name-status HEAD --
+
+# Transfer host HEAD without pushing, then reset tracked WSL mirror state while retaining untracked build artifacts.
+Remove-Item -LiteralPath $bundle -ErrorAction SilentlyContinue
+git bundle create $bundle HEAD
+scp $bundle "matthew@localhost:$remoteBundle"
+ssh matthew@localhost "set -e; trap 'rm -f $remoteBundle' EXIT; cd ~/FractalShark; git reset --hard; git fetch $remoteBundle HEAD; git checkout --detach -f $sha; git reset --hard $sha"
+Remove-Item -LiteralPath $bundle
+
+# Overlay each host file modified or added for the task.
 scp <local-file> matthew@localhost:~/FractalShark/<repo-relative-path>
+
+# Apply each host deletion in the mirror.
+ssh matthew@localhost "cd ~/FractalShark && rm -- <repo-relative-path>"
 ```
 
 ```bash
@@ -106,9 +134,21 @@ cmake --build build-debug --target FractalSharkGuiLinux --parallel
 
 Use `build-release/` instead when validating Release. Do not create a generic `build/` directory for
 routine validation. Do not remove `build-debug/`, `build-release/`, or their binaries after testing;
-leave artifacts in place for manual execution and future incremental builds. If an isolated worktree
-is genuinely required, retain its requested build artifacts or copy them into the persistent mirror
-before cleanup.
+leave artifacts in place for manual execution and future incremental builds.
+
+Build `~/FractalShark`, not an isolated WSL worktree, for routine validation. The Debug and Release
+binaries under this persistent mirror are the user-facing Linux artifacts. If an isolated worktree
+is exceptionally required for diagnosis, its validation is provisional only: Linux work is not
+complete until `~/FractalShark` has been resynchronized, rebuilt, and verified.
+
+Before reporting Linux success:
+
+1. Confirm Windows and `~/FractalShark` report the same `git rev-parse HEAD`.
+2. Confirm every task-relevant overlaid file matches the Windows host. Normalize CRLF/LF when hashing
+   text files, for example with `tr -d '\r' < file | sha256sum` on WSL.
+3. Rebuild the persistent mirror target and confirm its runnable binary is newer than the overlaid
+   sources.
+4. State the Windows `HEAD`, WSL mirror `HEAD`, overlaid files, persistent binary path, and tests run.
 
 **Parallel cross-host builds:** When validating on both hosts, kick off Windows MSBuild and Linux `cmake --build` simultaneously in separate `mode="async"` shells. Don't serialize unless there's a real artifact dependency (there isn't, for Win↔Linux validation).
 

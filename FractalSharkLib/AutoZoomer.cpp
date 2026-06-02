@@ -4,7 +4,6 @@
 #include "Environment.h"
 #include "FeatureSummary.h"
 #include "PerturbationResults.h"
-#include "Environment.h"
 
 #include <cmath>
 #include <iostream>
@@ -15,6 +14,11 @@ template <Fractal::AutoZoomHeuristic h>
 void
 AutoZoomer::Run()
 {
+    static_assert(h != Fractal::AutoZoomHeuristic::Feature,
+                  "Use RunFeatureAtPoint() for feature autozoom.");
+
+    m_Fractal.ResetStopCalculating();
+
     const HighPrecision Two = HighPrecision{2};
 
     HighPrecision width = m_Fractal.GetMaxX() - m_Fractal.GetMinX();
@@ -37,89 +41,21 @@ AutoZoomer::Run()
         Divisor = HighPrecision{8};
     }
 
-    if constexpr (h == Fractal::AutoZoomHeuristic::Feature) {
-        std::cout << "Forcing GPU HDRx32 Perturbed LAv2 for AutoZoom(Feature) since it relies on "
-                     "perturbation results to perform the zoom.\n";
-
-        FeatureZoomSetup setup;
-
-        m_Fractal.EnqueueMutation([&](Fractal &f) { SetupFeatureZoom(f, setup); }).Wait();
-
-        if (setup.Failed) {
-            return;
-        }
-
-        guessX = std::move(setup.GuessX);
-        guessY = std::move(setup.GuessY);
-
-        Divisor = HighPrecision{3};
-
-        static constexpr size_t PipelineDepth = 4 * NumRenderers;
-        std::vector<RenderJobHandle> handles(PipelineDepth);
-
-        for (int64_t i = 0; i < setup.TotalSteps; ++i) {
-            Environment::PumpUIEvents();
-
-            if (m_Fractal.GetStopCalculating())
-                break;
-
-            // Wait for the oldest in-flight item before enqueueing
-            size_t slot = i % PipelineDepth;
-            handles[slot].Wait();
-
-            if (setup.ShouldInterpolateIters) {
-                auto iters = setup.IterCounts[i];
-                auto ptz = setup.ZoomSteps[i];
-                handles[slot] = m_Fractal.EnqueueCommand(
-                    [ptz = std::move(ptz), iters](Fractal &f) {
-                        f.m_Ptz = ptz;
-                        f.SquareCurrentView();
-                        f.SetPrecision();
-                        f.SetNumIterations<IterTypeFull>(iters);
-                    },
-                    false);
-            } else {
-                auto ptz = setup.ZoomSteps[i];
-                handles[slot] = m_Fractal.EnqueueCommand(
-                    [ptz = std::move(ptz)](Fractal &f) {
-                        f.m_Ptz = ptz;
-                        f.SquareCurrentView();
-                        f.SetPrecision();
-                    },
-                    false);
-            }
-        }
-
-        // Drain all remaining in-flight renders
-        for (auto &handle : handles) {
-            handle.Wait();
-        }
-
-        // Update live state to final zoom position so the view doesn't
-        // snap back to the original zoom after the loop completes.
-        if (!setup.ZoomSteps.empty()) {
-            auto targetIters = setup.ShouldInterpolateIters ? setup.IterCounts.back()
-                                                            : m_Fractal.GetNumIterations<IterTypeFull>();
-            m_Fractal
-                .EnqueueCommand([ptz = setup.ZoomSteps.back(), targetIters](Fractal &f) {
-                    f.m_Ptz = ptz;
-                    f.SquareCurrentView();
-                    f.SetPrecision();
-                    f.SetNumIterations<IterTypeFull>(targetIters);
-                })
-                .Wait();
-        }
-
-        return;
-    } else {
+    {
         // Default/Max/FilamentTip heuristic: serial loop that analyzes CPU-side
         // iteration data after each render.  Each step uses EnqueueCommand +
         // Wait() so the frame is displayed by the GL consumer.  The
         // workerIters ↔ m_CurIters swap in WorkerLoop keeps m_CurIters
         // current for analysis.
 
+        bool aborted = false;
         for (;;) {
             Environment::PumpUIEvents();
+
+            if (m_Fractal.GetStopCalculating()) {
+                aborted = true;
+                break;
+            }
 
             double geometricMeanX = 0;
             double geometricMeanSum = 0;
@@ -476,6 +412,9 @@ AutoZoomer::Run()
 
             m_Fractal
                 .EnqueueCommand([newPtz = std::move(newPtz)](Fractal &f) { f.RecenterViewCalc(newPtz); },
+                                false,
+                                RenderPresentationMode::Immediate,
+                                0,
                                 false)
                 .Wait();
 
@@ -484,20 +423,64 @@ AutoZoomer::Run()
                     break;
             }
 
-            if (m_Fractal.GetStopCalculating())
+            if (m_Fractal.GetStopCalculating()) {
+                aborted = true;
                 break;
+            }
+        }
+
+        if (aborted) {
+            RestoreLastPresentedView();
         }
     }
 }
 
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Default>();
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Max>();
-template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Feature>();
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::FilamentTip>();
 
 void
-AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
+AutoZoomer::RunFeatureAtPoint(int clientX, int clientY)
 {
+    std::cout << "Forcing GPU HDRx32 Perturbed LAv2 for AutoZoom(Feature) since it relies on "
+                 "perturbation results to perform the zoom.\n";
+
+    m_Fractal.ResetStopCalculating();
+
+    FeatureZoomSetup setup;
+    m_Fractal
+        .EnqueueMutation(
+            [&, clientX, clientY](Fractal &f) { SetupFeatureZoom(f, setup, clientX, clientY); })
+        .Wait();
+
+    if (setup.Failed) {
+        if (m_Fractal.GetStopCalculating()) {
+            RestoreLastPresentedView();
+        }
+        return;
+    }
+
+    if (!RunFeatureZoomPipeline(setup.Steps)) {
+        RestoreLastPresentedView();
+    }
+}
+
+void
+AutoZoomer::ApplyFeatureZoomStep(Fractal &f, const FeatureZoomStep &step)
+{
+    f.m_Ptz = step.Ptz;
+    f.SquareCurrentView();
+    f.SetPrecision();
+    f.SetNumIterations<IterTypeFull>(step.NumIterations);
+}
+
+void
+AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out, int clientX, int clientY)
+{
+    const auto startingPtz = f.GetPtz();
+    const auto startingIters = f.GetNumIterations<IterTypeFull>();
+    const FeatureZoomStep startingStep{startingPtz, startingIters};
+
     [[maybe_unused]] const bool success =
         f.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
     if (!success) {
@@ -506,7 +489,7 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
         return;
     }
 
-    FeatureSummary *feature = f.ChooseClosestFeatureToMouse();
+    FeatureSummary *feature = f.ChooseClosestFeatureToScreenPoint(clientX, clientY);
     if (!feature) {
         std::cout << "AutoZoom(Feature): no feature found. Use the feature finder first.\n";
         out.Failed = true;
@@ -519,8 +502,8 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
         return;
     }
 
-    out.GuessX = feature->GetFoundX();
-    out.GuessY = feature->GetFoundY();
+    const HighPrecision guessX = feature->GetFoundX();
+    const HighPrecision guessY = feature->GetFoundY();
 
     HighPrecision targetZoomFactor = feature->ComputeZoomFactor(f.GetPtz());
 
@@ -564,7 +547,7 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
         f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
 
         PointZoomBBConverter targetPtz{
-            out.GuessX, out.GuessY, targetZoomFactor, PointZoomBBConverter::TestMode::Enabled};
+            guessX, guessY, targetZoomFactor, PointZoomBBConverter::TestMode::Enabled};
         f.m_Ptz = targetPtz;
         f.SquareCurrentView();
         f.SetPrecision();
@@ -574,7 +557,12 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
         f.ForceRecalc();
 
         std::cout << "AutoZoom(Feature): pre-computing ref orbit at target zoom...\n";
-        f.CalcFractal(false);
+        f.CalcFractal(false, false);
+        if (f.GetStopCalculating()) {
+            ApplyFeatureZoomStep(f, startingStep);
+            out.Failed = true;
+            return;
+        }
         std::cout << "AutoZoom(Feature): ref orbit ready.\n";
 
         // Restore starting iteration count
@@ -583,7 +571,7 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
 
     // Set starting position for zoom animation
     PointZoomBBConverter startPtzCentered{
-        out.GuessX, out.GuessY, origZoom, PointZoomBBConverter::TestMode::Enabled};
+        guessX, guessY, origZoom, PointZoomBBConverter::TestMode::Enabled};
     // Direct assignment + SquareCurrentView instead of RecenterViewCalc.
     // RecenterViewCalc calls SetPrecision() which resets MPIR precision to
     // match the current (low) zoom depth, truncating the feature's
@@ -597,28 +585,24 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
     zoomRatio.frexp(mantissa, exp2);
     const double logRatio = std::log(std::abs(mantissa)) + exp2 * std::log(2.0);
     const double logZoomPerStep = std::log(1.1);
-    out.TotalSteps =
+    const int64_t totalSteps =
         (zoomRatio > HighPrecision{1}) ? static_cast<int64_t>(std::ceil(logRatio / logZoomPerStep)) : 1;
 
-    out.ShouldInterpolateIters = targetIters > 0 && startIters < targetIters;
+    const bool shouldInterpolateIters = targetIters > 0 && startIters < targetIters;
 
     std::cout << "AutoZoom(Feature): startIters=" << startIters << " targetIters=" << targetIters
-              << " period=" << feature->GetPeriod() << " totalSteps=" << out.TotalSteps
-              << " interpolate=" << out.ShouldInterpolateIters << "\n";
+              << " period=" << feature->GetPeriod() << " totalSteps=" << totalSteps
+              << " interpolate=" << shouldInterpolateIters << "\n";
 
-    out.ZoomSteps.reserve(out.TotalSteps);
+    out.Steps.reserve(totalSteps);
     {
         PointZoomBBConverter stepPtz = f.GetPtz();
-        for (int64_t i = 0; i < out.TotalSteps; ++i) {
+        for (int64_t i = 0; i < totalSteps; ++i) {
             stepPtz.ZoomInPlace(-1.0 / 22.0);
-            out.ZoomSteps.push_back(stepPtz);
-        }
-    }
-
-    if (out.ShouldInterpolateIters) {
-        out.IterCounts.reserve(out.TotalSteps);
-        for (int64_t i = 0; i < out.TotalSteps; ++i) {
-            out.IterCounts.push_back(startIters + (targetIters - startIters) * (i + 1) / out.TotalSteps);
+            const IterTypeFull stepIters =
+                shouldInterpolateIters ? startIters + (targetIters - startIters) * (i + 1) / totalSteps
+                                       : startIters;
+            out.Steps.push_back(FeatureZoomStep{stepPtz, stepIters});
         }
     }
 
@@ -630,4 +614,92 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out)
             return;
         }
     }
+}
+
+bool
+AutoZoomer::RunFeatureZoomPipeline(const std::vector<FeatureZoomStep> &steps)
+{
+    if (steps.empty()) {
+        return true;
+    }
+
+    static constexpr size_t PipelineDepth = 4 * NumRenderers;
+    const auto presentationGroup = m_Fractal.BeginPacedAnimation();
+    std::vector<RenderJobHandle> handles(PipelineDepth);
+
+    auto cancelAnimation = [&]() {
+        if (auto *renderPool = m_Fractal.GetRenderPool()) {
+            renderPool->CancelPacedAnimation(presentationGroup);
+        }
+    };
+
+    bool aborted = false;
+    for (size_t i = 0; i < steps.size(); ++i) {
+        Environment::PumpUIEvents();
+
+        if (m_Fractal.GetStopCalculating()) {
+            aborted = true;
+            break;
+        }
+
+        // Wait for the oldest in-flight item before enqueueing.
+        auto &handle = handles[i % PipelineDepth];
+        handle.Wait();
+
+        if (m_Fractal.GetStopCalculating()) {
+            aborted = true;
+            break;
+        }
+
+        auto step = steps[i];
+        handle = m_Fractal.EnqueueCommand(
+            [step = std::move(step)](Fractal &f) { ApplyFeatureZoomStep(f, step); },
+            false,
+            RenderPresentationMode::PacedAnimation,
+            presentationGroup,
+            false);
+    }
+
+    if (aborted) {
+        cancelAnimation();
+    }
+
+    // Drain all remaining in-flight renders.
+    for (auto &handle : handles) {
+        handle.Wait();
+    }
+
+    if (m_Fractal.GetStopCalculating()) {
+        cancelAnimation();
+        return false;
+    }
+
+    // Update live state to the final zoom position so the view does not snap
+    // back to the original zoom after the loop completes.
+    auto finalStep = steps.back();
+    m_Fractal
+        .EnqueueMutation([step = std::move(finalStep)](Fractal &f) { ApplyFeatureZoomStep(f, step); })
+        .Wait();
+    return true;
+}
+
+void
+AutoZoomer::RestoreLastPresentedView()
+{
+    auto *renderPool = m_Fractal.GetRenderPool();
+    if (!renderPool) {
+        return;
+    }
+
+    auto lastPresentedView = renderPool->GetLastPresentedView();
+    if (!lastPresentedView) {
+        return;
+    }
+
+    m_Fractal
+        .EnqueueMutation([step = FeatureZoomStep{std::move(lastPresentedView->Ptz),
+                                                 lastPresentedView->NumIterations}](Fractal &f) {
+            ApplyFeatureZoomStep(f, step);
+        })
+        .Wait();
 }

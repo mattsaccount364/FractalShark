@@ -44,16 +44,19 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -64,6 +67,11 @@ constexpr const char *kWindowTitle = "FractalShark (Linux)";
 struct GlxVisualSelection {
     XVisualInfo *VisualInfo;
     const char *Description;
+};
+
+struct PresentationTickResult {
+    bool FreshFrame;
+    bool NeedsTick;
 };
 
 GlxVisualSelection
@@ -135,6 +143,7 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     int savedY = 0;
     int savedWidth = kInitialWidth;
     int savedHeight = kInitialHeight;
+    bool everPresented = false;
 
     // Set on right-click; consumed when the imgui-menus phase opens the
     // ImGui popup.  Position is window-relative, matching MainWindow.cpp's
@@ -173,14 +182,17 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     bool
     Valid() const noexcept
     {
-        return display != nullptr && window != 0;
+        return display != nullptr && window != 0 && clipboard.has_value() && fractal != nullptr &&
+               menuState.has_value() && glContext != nullptr && overlay.has_value();
     }
     void RunEventLoop();
     void HandleEvent(const XEvent &ev);
     void HandleKeyPress(const XKeyEvent &ev);
+    PresentationTickResult PresentRenderTick();
+    int GetPresentationPollTimeoutMs(bool needsTick);
+    void RunFeatureAutoZoomSynchronously(int mouseX, int mouseY);
     void StartWindowMove(const XButtonEvent &btn);
     void FinishDragZoom(const XButtonEvent &btn);
-    void CopyRenderDetailsToClipboard();
     void EnterFullscreen(bool square);
     void ExitFullscreen();
 
@@ -339,7 +351,7 @@ LinuxMainWindow::LinuxMainWindow()
     // ImGui overlay: single-threaded, all calls on this thread.  Init
     // requires GL to be current, which OpenGlContext::ctor already
     // ensured.
-    overlay.emplace(display, window, clipboard ? &*clipboard : nullptr);
+    overlay.emplace(display, window, &*clipboard);
     overlay->SetExecuteHost(this);
     menuState.emplace(*fractal, fullscreen);
     overlay->SetMenuState(&*menuState);
@@ -549,15 +561,13 @@ LinuxMainWindow::RunEventLoop()
     const int xfd = ConnectionNumber(display);
 
     XEvent ev;
-    bool everPresented = false;
-
     while (running) {
         // Drain any X events already queued on the connection without
         // blocking — they may have been deposited while the previous
         // iteration was rendering.
         while (XPending(display) > 0) {
             XNextEvent(display, &ev);
-            if (clipboard && clipboard->ProcessEvent(ev)) {
+            if (clipboard->ProcessEvent(ev)) {
                 continue;
             }
             HandleEvent(ev);
@@ -569,75 +579,7 @@ LinuxMainWindow::RunEventLoop()
             break;
         }
 
-        // Pull any frames the render pool has finished and present them.
-        // TryPresentTick drains all ready frames in order, releasing
-        // superseded buffers, and returns true if a non-tombstone frame
-        // was uploaded.
-        bool freshFrame = false;
-        if (fractal && glContext && glContext->IsValid()) {
-            auto *pool = fractal->GetRenderPool();
-            if (pool) {
-                freshFrame = pool->TryPresentTick(*glContext);
-            }
-        }
-
-        const bool overlayWantsTick = overlay && overlay->WantsTick();
-        const bool needsTick = freshFrame || overlayWantsTick || dragging || !everPresented;
-
-        if (needsTick && glContext && glContext->IsValid()) {
-            static bool diagnosedFirstFreshFrame = false;
-            const bool diagnoseFreshFrame = freshFrame && !diagnosedFirstFreshFrame;
-            if (diagnoseFreshFrame) {
-                diagnosedFirstFreshFrame = true;
-            }
-
-            // If this tick was triggered by overlay motion only, re-blit
-            // the cached frame so the overlay has something underneath.
-            if (!freshFrame && fractal) {
-                if (auto *pool = fractal->GetRenderPool()) {
-                    pool->RepresentLastFrame(*glContext);
-                }
-            }
-            if (overlay) {
-                std::chrono::steady_clock::time_point overlayStart;
-                if (diagnoseFreshFrame) {
-                    GlLog("LinuxMainWindow: first completed-frame ImGui draw begin");
-                    overlayStart = std::chrono::steady_clock::now();
-                }
-
-                overlay->RenderFrame();
-
-                if (diagnoseFreshFrame) {
-                    char buf[128];
-                    snprintf(buf,
-                             sizeof(buf),
-                             "LinuxMainWindow: first completed-frame ImGui draw end, elapsedMs=%lld",
-                             ElapsedMilliseconds(overlayStart));
-                    GlLog(buf);
-                }
-            } else if (diagnoseFreshFrame) {
-                GlLog("LinuxMainWindow: first completed-frame ImGui draw skipped");
-            }
-
-            std::chrono::steady_clock::time_point swapStart;
-            if (diagnoseFreshFrame) {
-                GlLog("LinuxMainWindow: first completed-frame glXSwapBuffers begin");
-                swapStart = std::chrono::steady_clock::now();
-            }
-
-            glContext->SwapBuffers();
-
-            if (diagnoseFreshFrame) {
-                char buf[128];
-                snprintf(buf,
-                         sizeof(buf),
-                         "LinuxMainWindow: first completed-frame glXSwapBuffers end, elapsedMs=%lld",
-                         ElapsedMilliseconds(swapStart));
-                GlLog(buf);
-            }
-
-            everPresented = true;
-        }
+        const auto presentation = PresentRenderTick();
 
         // Sleep until either an X event arrives or our 16ms tick budget
         // expires.  No need for an explicit wake from the pool — the next
@@ -645,24 +587,135 @@ LinuxMainWindow::RunEventLoop()
         struct pollfd pfd{};
         pfd.fd = xfd;
         pfd.events = POLLIN;
-        const int timeoutMs = needsTick ? 16 : 33;
-        poll(&pfd, 1, timeoutMs);
+        poll(&pfd, 1, GetPresentationPollTimeoutMs(presentation.NeedsTick));
     }
 }
 
-void
-LinuxMainWindow::CopyRenderDetailsToClipboard()
+PresentationTickResult
+LinuxMainWindow::PresentRenderTick()
 {
-    if (!fractal || !clipboard) {
+    // Pull any frames the render pool has finished and present them.
+    // TryPresentTick skips ready tombstones and uploads at most one
+    // visible frame so each completed animation step gets a swap.
+    bool freshFrame = false;
+    if (fractal && glContext && glContext->IsValid()) {
+        auto *pool = fractal->GetRenderPool();
+        if (pool) {
+            freshFrame = pool->TryPresentTick(*glContext);
+        }
+    }
+
+    const bool overlayWantsTick = overlay && overlay->WantsTick();
+    const bool needsTick = freshFrame || overlayWantsTick || dragging || !everPresented;
+
+    if (needsTick && glContext && glContext->IsValid()) {
+        static bool diagnosedFirstFreshFrame = false;
+        const bool diagnoseFreshFrame = freshFrame && !diagnosedFirstFreshFrame;
+        if (diagnoseFreshFrame) {
+            diagnosedFirstFreshFrame = true;
+        }
+
+        // If this tick was triggered by overlay motion only, re-blit
+        // the cached frame so the overlay has something underneath.
+        if (!freshFrame && fractal) {
+            if (auto *pool = fractal->GetRenderPool()) {
+                pool->RepresentLastFrame(*glContext);
+            }
+        }
+        if (overlay) {
+            std::chrono::steady_clock::time_point overlayStart;
+            if (diagnoseFreshFrame) {
+                GlLog("LinuxMainWindow: first completed-frame ImGui draw begin");
+                overlayStart = std::chrono::steady_clock::now();
+            }
+
+            overlay->RenderFrame();
+
+            if (diagnoseFreshFrame) {
+                char buf[128];
+                snprintf(buf,
+                         sizeof(buf),
+                         "LinuxMainWindow: first completed-frame ImGui draw end, elapsedMs=%lld",
+                         ElapsedMilliseconds(overlayStart));
+                GlLog(buf);
+            }
+        } else if (diagnoseFreshFrame) {
+            GlLog("LinuxMainWindow: first completed-frame ImGui draw skipped");
+        }
+
+        std::chrono::steady_clock::time_point swapStart;
+        if (diagnoseFreshFrame) {
+            GlLog("LinuxMainWindow: first completed-frame glXSwapBuffers begin");
+            swapStart = std::chrono::steady_clock::now();
+        }
+
+        glContext->SwapBuffers();
+
+        if (diagnoseFreshFrame) {
+            char buf[128];
+            snprintf(buf,
+                     sizeof(buf),
+                     "LinuxMainWindow: first completed-frame glXSwapBuffers end, elapsedMs=%lld",
+                     ElapsedMilliseconds(swapStart));
+            GlLog(buf);
+        }
+
+        everPresented = true;
+    }
+
+    return {freshFrame, needsTick};
+}
+
+int
+LinuxMainWindow::GetPresentationPollTimeoutMs(bool needsTick)
+{
+    int timeoutMs = needsTick ? 16 : 33;
+    if (fractal) {
+        if (auto *pool = fractal->GetRenderPool()) {
+            if (auto pacingDelay = pool->GetTimeUntilNextPresentation()) {
+                timeoutMs = std::min(timeoutMs, static_cast<int>(pacingDelay->count()));
+            }
+        }
+    }
+    return std::max(timeoutMs, 1);
+}
+
+void
+LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
+{
+    if (!fractal || !glContext || !glContext->IsValid()) {
+        std::fprintf(stderr, "Feature autozoom requires a valid Linux GL context.\n");
         return;
     }
-    std::string shortStr;
-    std::string longStr;
-    fractal->GetRenderDetails(shortStr, longStr);
-    // Mirror Win32 MenuGetCurPos: copy the long form (includes coordinates,
-    // zoom, iterations, algorithm).  Win32 concatenates short + long; the
-    // long form already contains everything useful so copy that.
-    clipboard->Set(longStr);
+
+    std::atomic<bool> finished = false;
+    std::exception_ptr autoZoomException;
+    std::thread autoZoomThread([&, mouseX, mouseY] {
+        try {
+            fractal->AutoZoomFeatureAtPoint(mouseX, mouseY);
+        } catch (...) {
+            autoZoomException = std::current_exception();
+        }
+        finished.store(true, std::memory_order_release);
+    });
+
+    for (;;) {
+        const auto presentation = PresentRenderTick();
+        const auto *pool = fractal->GetRenderPool();
+        const auto pacingDelay =
+            pool ? pool->GetTimeUntilNextPresentation() : std::optional<std::chrono::milliseconds>{};
+        if (finished.load(std::memory_order_acquire) && !presentation.FreshFrame && !pacingDelay) {
+            break;
+        }
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(GetPresentationPollTimeoutMs(presentation.NeedsTick)));
+    }
+
+    autoZoomThread.join();
+    if (autoZoomException) {
+        std::rethrow_exception(autoZoomException);
+    }
 }
 
 void
@@ -704,15 +757,10 @@ LinuxMainWindow::OnMinimize()
 void
 LinuxMainWindow::OnCurPos()
 {
-    if (!fractal) {
-        return;
-    }
     std::string shortStr;
     std::string longStr;
     fractal->GetRenderDetails(shortStr, longStr);
-    if (clipboard) {
-        clipboard->Set(longStr);
-    }
+    clipboard->Set(longStr);
     if (shortStr.size() < 5000 && overlay) {
         overlay->RequestInfoModal("Current Position", shortStr.c_str());
     } else {
@@ -1313,7 +1361,7 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
         case 'A':
         case 'a':
             if (!shiftDown) {
-                fractal->AutoZoom<Fractal::AutoZoomHeuristic::Feature>();
+                RunFeatureAutoZoomSynchronously(mouseX, mouseY);
             } else {
                 fractal->EnqueueCommand(
                     [mouseX, mouseY](Fractal &f) { f.CenterAtPoint(mouseX, mouseY); });
@@ -1382,7 +1430,8 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
             });
             break;
         case '.':
-            fractal->EnqueueCommand([](Fractal &f) { f.ZoomToFoundFeature(); });
+            fractal->EnqueueCommand(
+                [mouseX, mouseY](Fractal &f) { f.ZoomToFoundFeature(mouseX, mouseY); });
             break;
         case '>':
             fractal->EnqueueCommand([](Fractal &f) { f.ClearAllFoundFeatures(); });
@@ -1430,7 +1479,7 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
                     f.ForceRecalc();
                 })
                 .Wait();
-            CopyRenderDetailsToClipboard();
+            OnCurPos();
             break;
 
         case 'O':
@@ -1443,7 +1492,7 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
                     f.ForceRecalc();
                 })
                 .Wait();
-            CopyRenderDetailsToClipboard();
+            OnCurPos();
             break;
 
         case 'P':
@@ -1456,7 +1505,7 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
                     f.ForceRecalc();
                 })
                 .Wait();
-            CopyRenderDetailsToClipboard();
+            OnCurPos();
             break;
 
         case 'q':

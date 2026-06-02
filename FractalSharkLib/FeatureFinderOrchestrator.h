@@ -25,17 +25,17 @@ public:
     // Discard all found features and mark the window dirty for repaint.
     void ClearAllFoundFeatures();
 
-    // Return the feature closest to the current mouse cursor position,
+    // Return the feature closest to a client-relative screen position,
     // or nullptr if no features have been found.
-    FeatureSummary *ChooseClosestFeatureToMouse() const;
+    FeatureSummary *ChooseClosestFeatureToScreenPoint(int clientX, int clientY) const;
 
     // Refine the feature (if still a candidate) and optionally zoom
     // to it at the given zoom factor.  Pass nullptr to refine only.
     bool ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFactor);
 
-    // Convenience: choose the closest feature to the mouse and zoom to
-    // it at the feature's computed intrinsic-radius zoom depth.
-    bool ZoomToFoundFeature();
+    // Choose the closest feature to a client-relative screen position and
+    // zoom to it at the feature's computed intrinsic-radius zoom depth.
+    bool ZoomToFoundFeature(int clientX, int clientY);
 
     // Resume NR refinement from a saved checkpoint file.
     // Creates a synthetic FeatureSummary and proceeds to Phase B + navigation.

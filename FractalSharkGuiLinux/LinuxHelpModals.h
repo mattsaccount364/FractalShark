@@ -57,7 +57,7 @@ inline constexpr const char *kHotkeysModalBody =
     "i - Recalculate and benchmark current display, reusing perturbation results\n"
     "O - Clear high-res perturbation results, recalculate, and benchmark\n"
     "o - Recalculate and benchmark current display, reusing perturbation results\n"
-    "P - Clear all perturbation results and recalculate\n"
+    "P - Clear LA-only perturbation results and recalculate\n"
     "p - Recalculate current display, reusing perturbation results\n"
     "R - Clear all perturbation results and recalculate\n"
     "r - Recalculate current display, reusing perturbation results\n"

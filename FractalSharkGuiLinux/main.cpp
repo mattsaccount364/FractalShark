@@ -31,6 +31,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/cursorfont.h>
 #include <X11/keysym.h>
 
 #include <GL/glx.h>
@@ -41,6 +42,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -55,6 +57,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -64,13 +67,36 @@ constexpr const char *kWindowTitle = "FractalShark (Linux)";
 
 struct GlxVisualSelection {
     XVisualInfo *VisualInfo;
-    const char *Description;
 };
 
 struct PresentationTickResult {
     bool FreshFrame;
     bool NeedsTick;
 };
+
+struct DragEndpoint {
+    int X;
+    int Y;
+};
+
+DragEndpoint
+ComputeAspectLockedDragEndpoint(int anchorX, int anchorY, int rawX, int rawY, double aspectRatio)
+{
+    const int dy = rawY - anchorY;
+    const double width = aspectRatio * std::abs(static_cast<double>(dy));
+
+    int horizontalSign = 0;
+    if (rawX > anchorX) {
+        horizontalSign = 1;
+    } else if (rawX < anchorX) {
+        horizontalSign = -1;
+    } else {
+        horizontalSign = dy < 0 ? -1 : 1;
+    }
+
+    return {static_cast<int>(static_cast<double>(anchorX) + static_cast<double>(horizontalSign) * width),
+            rawY};
+}
 
 GlxVisualSelection
 ChooseGlxVisual(Display *display, int screen)
@@ -89,18 +115,18 @@ ChooseGlxVisual(Display *display, int screen)
                                          8,
                                          None};
     if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaDoubleBufferedWithAlpha)) {
-        return {visualInfo, "RGBA double-buffered with 8-bit alpha"};
+        return {visualInfo};
     }
 
     int rgbaDoubleBuffered[] = {
         GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
     if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaDoubleBuffered)) {
-        return {visualInfo, "RGBA double-buffered without required alpha"};
+        return {visualInfo};
     }
 
     int rgbaSingleBuffered[] = {GLX_RGBA, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
     if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaSingleBuffered)) {
-        return {visualInfo, "RGBA single-buffered without required alpha"};
+        return {visualInfo};
     }
 
     return {};
@@ -130,6 +156,8 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     XVisualInfo *visualInfo = nullptr;
     Atom wmDeleteWindow = 0;
     Atom wmProtocols = 0;
+    Cursor idleCursor = 0;
+    Cursor dragCursor = 0;
     int screen = 0;
     bool running = true;
     bool firstExposeSeen = false;
@@ -153,10 +181,10 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
 
     // Left-button drag-zoom state.  Mirrors MainWindow's lButtonDown +
     // dragBoxX1/Y1 (anchor) + prevX1/Y1 (last cursor for outline rect).
-    // Outline rendering itself is deferred to imgui-menus phase (ImGui
-    // foreground draw list); for now we only capture the box and submit
-    // RecenterViewScreen on release.
+    // Linux uses XGrabPointer during the gesture to mirror Win32
+    // SetCapture/ReleaseCapture behavior.
     bool dragging = false;
+    bool pointerGrabbed = false;
     int dragAnchorX = 0;
     int dragAnchorY = 0;
     int dragPrevX = -1;
@@ -192,6 +220,9 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     void RepaintAfterNativePopupUnmap();
     int GetPresentationPollTimeoutMs(bool needsTick);
     void RunFeatureAutoZoomSynchronously(int mouseX, int mouseY);
+    void BeginDragZoom(const XButtonEvent &btn);
+    void CancelDragZoom(Time eventTime);
+    void SetDragCursorActive(bool active);
     void StartWindowMove(const XButtonEvent &btn);
     void FinishDragZoom(const XButtonEvent &btn);
     void EnterFullscreen(bool square);
@@ -285,32 +316,38 @@ LinuxMainWindow::LinuxMainWindow()
         display = nullptr;
         return;
     }
-    std::fprintf(stderr, "FractalSharkGuiLinux: selected GLX visual: %s\n", visualSelection.Description);
 
     Window root = RootWindow(display, screen);
 
     colormap = XCreateColormap(display, root, visualInfo->visual, AllocNone);
+    idleCursor = XCreateFontCursor(display, XC_left_ptr);
+    dragCursor = XCreateFontCursor(display, XC_crosshair);
 
     XSetWindowAttributes swa{};
     swa.colormap = colormap;
     swa.background_pixel = BlackPixel(display, screen);
     swa.border_pixel = BlackPixel(display, screen);
-    // TODO(linux-parity, deferred): Add XdndSelection handling for OS file-drop support.
+    if (idleCursor) {
+        swa.cursor = idleCursor;
+    }
+    // File-drop is not a parity target: neither GUI exposes OS drag/drop as
+    // part of the documented FractalShark workflow.
     swa.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
                      PointerMotionMask | StructureNotifyMask | FocusChangeMask;
 
-    window = XCreateWindow(display,
-                           root,
-                           0,
-                           0,
-                           kInitialWidth,
-                           kInitialHeight,
-                           0,
-                           visualInfo->depth,
-                           InputOutput,
-                           visualInfo->visual,
-                           CWColormap | CWBackPixel | CWBorderPixel | CWEventMask,
-                           &swa);
+    window = XCreateWindow(
+        display,
+        root,
+        0,
+        0,
+        kInitialWidth,
+        kInitialHeight,
+        0,
+        visualInfo->depth,
+        InputOutput,
+        visualInfo->visual,
+        CWColormap | CWBackPixel | CWBorderPixel | CWEventMask | (idleCursor ? CWCursor : 0),
+        &swa);
 
     XStoreName(display, window, kWindowTitle);
 
@@ -372,6 +409,8 @@ LinuxMainWindow::LinuxMainWindow()
 
 LinuxMainWindow::~LinuxMainWindow()
 {
+    CancelDragZoom(CurrentTime);
+
     // Destroy in reverse order of creation: overlay first (it owns ImGui
     // backends that need GL current), then GL context, then Fractal.
     contextMenu.reset();
@@ -388,6 +427,14 @@ LinuxMainWindow::~LinuxMainWindow()
         if (colormap) {
             XFreeColormap(display, colormap);
             colormap = 0;
+        }
+        if (dragCursor) {
+            XFreeCursor(display, dragCursor);
+            dragCursor = 0;
+        }
+        if (idleCursor) {
+            XFreeCursor(display, idleCursor);
+            idleCursor = 0;
         }
         if (visualInfo) {
             XFree(visualInfo);
@@ -474,15 +521,7 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                     if (dragging) {
                         break;
                     }
-                    dragging = true;
-                    dragAnchorX = btn.x;
-                    dragAnchorY = btn.y;
-                    dragPrevX = -1;
-                    dragPrevY = -1;
-                    // TODO(linux-parity): Use XGrabPointer until ButtonRelease so drag-zoom
-                    // keeps receiving motion outside the window, matching Win32 SetCapture.
-                    // TODO(linux-parity): Switch between XC_left_ptr while idle and
-                    // XC_crosshair during drag-zoom, matching the Win32 cursor feedback.
+                    BeginDragZoom(btn);
                     break;
                 }
                 case Button3:
@@ -531,9 +570,10 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
             // Aspect-lock unless Shift is held, mirroring MainWindow.cpp:1345.
             if ((mot.state & ShiftMask) == 0) {
                 const double ratio = (lastHeight > 0) ? (double)lastWidth / (double)lastHeight : 1.0;
-                dragPrevY = mot.y;
-                dragPrevX = static_cast<int>((double)dragAnchorX +
-                                             ratio * ((double)dragPrevY - (double)dragAnchorY));
+                const DragEndpoint endpoint =
+                    ComputeAspectLockedDragEndpoint(dragAnchorX, dragAnchorY, mot.x, mot.y, ratio);
+                dragPrevX = endpoint.X;
+                dragPrevY = endpoint.Y;
             } else {
                 dragPrevX = mot.x;
                 dragPrevY = mot.y;
@@ -549,12 +589,7 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
             // Focus loss cancels an in-flight drag-zoom (mirrors
             // WM_CANCELMODE/WM_CAPTURECHANGED at MainWindow.cpp:1305).  Drop
             // anchors silently — no Recenter is enqueued.
-            dragging = false;
-            dragPrevX = -1;
-            dragPrevY = -1;
-            if (overlay) {
-                overlay->SetDragRect(false, 0, 0, 0, 0);
-            }
+            CancelDragZoom(CurrentTime);
             break;
 
         case KeyPress:
@@ -934,40 +969,75 @@ MakeTimestampedStem()
     return std::string(buf);
 }
 
-// TODO(linux-parity): Replace naive ASCII widening with UTF-8 decoding so user-selected
-// filesystem paths round-trip correctly.
 std::wstring
-WidenAscii(const std::string &s)
+Utf8ToWide(const std::string &s)
 {
     std::wstring w;
     w.reserve(s.size());
-    for (unsigned char c : s) {
-        w.push_back(static_cast<wchar_t>(c));
+    for (size_t i = 0; i < s.size();) {
+        const auto c0 = static_cast<uint8_t>(s[i]);
+        if (c0 < 0x80) {
+            w.push_back(static_cast<wchar_t>(c0));
+            ++i;
+            continue;
+        }
+
+        uint32_t codePoint = 0;
+        size_t length = 0;
+        uint32_t minValue = 0;
+        if ((c0 & 0xe0) == 0xc0) {
+            codePoint = c0 & 0x1f;
+            length = 2;
+            minValue = 0x80;
+        } else if ((c0 & 0xf0) == 0xe0) {
+            codePoint = c0 & 0x0f;
+            length = 3;
+            minValue = 0x800;
+        } else if ((c0 & 0xf8) == 0xf0) {
+            codePoint = c0 & 0x07;
+            length = 4;
+            minValue = 0x10000;
+        } else {
+            w.push_back(static_cast<wchar_t>(0xfffd));
+            ++i;
+            continue;
+        }
+
+        if (i + length > s.size()) {
+            w.push_back(static_cast<wchar_t>(0xfffd));
+            break;
+        }
+
+        bool valid = true;
+        for (size_t j = 1; j < length; ++j) {
+            const auto cj = static_cast<uint8_t>(s[i + j]);
+            if ((cj & 0xc0) != 0x80) {
+                valid = false;
+                break;
+            }
+            codePoint = (codePoint << 6) | (cj & 0x3f);
+        }
+
+        if (!valid || codePoint < minValue || (codePoint >= 0xd800 && codePoint <= 0xdfff) ||
+            codePoint > 0x10ffff) {
+            w.push_back(static_cast<wchar_t>(0xfffd));
+            ++i;
+            continue;
+        }
+
+        w.push_back(static_cast<wchar_t>(codePoint));
+        i += length;
     }
     return w;
 }
 
-// List files in cwd matching the given extension (e.g. ".im").  Returns
-// names sorted alphabetically.
-std::vector<std::string>
-ListFilesByExtension(const char *ext)
+using LinuxFileDialogFilter = FractalShark::Linux::ImGuiOverlay::FileDialogFilter;
+using LinuxFileDialogMode = FractalShark::Linux::ImGuiOverlay::FileDialogMode;
+
+std::vector<LinuxFileDialogFilter>
+OrbitFileFilters()
 {
-    std::vector<std::string> out;
-    std::error_code ec;
-    for (auto &entry : std::filesystem::directory_iterator(".", ec)) {
-        if (ec) {
-            break;
-        }
-        if (!entry.is_regular_file(ec)) {
-            continue;
-        }
-        const auto path = entry.path();
-        if (path.extension() == ext) {
-            out.push_back(path.filename().string());
-        }
-    }
-    std::sort(out.begin(), out.end());
-    return out;
+    return {{"All (*.*)", ""}, {"Imagina (*.im)", ".im"}};
 }
 
 } // namespace
@@ -1078,14 +1148,18 @@ LinuxMainWindow::DoSaveRefOrbit(::CompressToDisk compression)
         return;
     }
     std::string defaultName = MakeTimestampedStem() + ".im";
-    overlay->RequestSaveDialog(
-        "Save reference orbit", defaultName, [this, compression](std::string filename) {
-            if (!fractal)
-                return;
-            std::wstring w = WidenAscii(filename);
-            fractal->EnqueueCommand(
-                [compression, w = std::move(w)](Fractal &f) { f.SaveRefOrbit(compression, w); });
-        });
+    overlay->RequestFileDialog("Save reference orbit",
+                               LinuxFileDialogMode::Save,
+                               defaultName,
+                               OrbitFileFilters(),
+                               [this, compression](std::string filename) {
+                                   if (!fractal)
+                                       return;
+                                   std::wstring w = Utf8ToWide(filename);
+                                   fractal->EnqueueCommand([compression, w = std::move(w)](Fractal &f) {
+                                       f.SaveRefOrbit(compression, w);
+                                   });
+                               });
 }
 
 void
@@ -1118,36 +1192,35 @@ LinuxMainWindow::OnDiffRefOrbitImagMax()
     if (!fractal || !overlay) {
         return;
     }
-    auto files = ListFilesByExtension(".im");
-    if (files.size() < 2) {
-        overlay->RequestInfoModal("Diff Reference Orbit",
-                                  "Need at least two *.im files in the current directory.");
-        return;
-    }
     // Chain: 1) prompt for output filename, 2) pick first input,
     // 3) pick second input, 4) enqueue diff.
-    overlay->RequestSaveDialog(
-        "Output (.im) — diff result",
+    overlay->RequestFileDialog(
+        "Output (.im) - diff result",
+        LinuxFileDialogMode::Save,
         MakeTimestampedStem() + "_diff.im",
-        [this, files](std::string outFile) mutable {
+        OrbitFileFilters(),
+        [this](std::string outFile) mutable {
             if (!fractal || !overlay)
                 return;
-            overlay->RequestPickFromList(
+            overlay->RequestFileDialog(
                 "First input (.im)",
-                files,
-                [this, files, outFile = std::move(outFile)](size_t idx1) mutable {
-                    if (!fractal || !overlay || idx1 >= files.size())
+                LinuxFileDialogMode::Open,
+                "",
+                OrbitFileFilters(),
+                [this, outFile = std::move(outFile)](std::string in1) mutable {
+                    if (!fractal || !overlay)
                         return;
-                    std::string in1 = files[idx1];
-                    overlay->RequestPickFromList(
+                    overlay->RequestFileDialog(
                         "Second input (.im)",
-                        files,
-                        [this, outFile = std::move(outFile), in1 = std::move(in1), files](size_t idx2) {
-                            if (!fractal || idx2 >= files.size())
+                        LinuxFileDialogMode::Open,
+                        "",
+                        OrbitFileFilters(),
+                        [this, outFile = std::move(outFile), in1 = std::move(in1)](std::string in2) {
+                            if (!fractal)
                                 return;
-                            std::wstring outW = WidenAscii(outFile);
-                            std::wstring f1W = WidenAscii(in1);
-                            std::wstring f2W = WidenAscii(files[idx2]);
+                            std::wstring outW = Utf8ToWide(outFile);
+                            std::wstring f1W = Utf8ToWide(in1);
+                            std::wstring f2W = Utf8ToWide(in2);
                             fractal->EnqueueCommand([outW = std::move(outW),
                                                      f1W = std::move(f1W),
                                                      f2W = std::move(f2W)](Fractal &f) {
@@ -1261,24 +1334,23 @@ LinuxMainWindow::DoLoadRefOrbitImag(::ImaginaSettings settings)
     if (!fractal || !overlay) {
         return;
     }
-    auto files = ListFilesByExtension(".im");
-    if (files.empty()) {
-        overlay->RequestInfoModal("Load Reference Orbit", "No *.im files in current directory.");
-        return;
-    }
-    overlay->RequestPickFromList(
-        "Load reference orbit (.im)", files, [this, files, settings](size_t index) {
-            if (!fractal || index >= files.size())
-                return;
-            std::wstring w = WidenAscii(files[index]);
-            fractal->EnqueueCommand([settings, w = std::move(w)](Fractal &f) {
-                RecommendedSettings rs{};
-                f.LoadRefOrbit(&rs, ::CompressToDisk::MaxCompressionImagina, settings, w);
-                if (rs.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
-                    (void)f.SetRenderAlgorithm(rs.GetRenderAlgorithm());
-                }
-            });
-        });
+    overlay->RequestFileDialog("Load reference orbit (.im)",
+                               LinuxFileDialogMode::Open,
+                               "",
+                               OrbitFileFilters(),
+                               [this, settings](std::string filename) {
+                                   if (!fractal)
+                                       return;
+                                   std::wstring w = Utf8ToWide(filename);
+                                   fractal->EnqueueCommand([settings, w = std::move(w)](Fractal &f) {
+                                       RecommendedSettings rs{};
+                                       f.LoadRefOrbit(
+                                           &rs, ::CompressToDisk::MaxCompressionImagina, settings, w);
+                                       if (rs.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
+                                           (void)f.SetRenderAlgorithm(rs.GetRenderAlgorithm());
+                                       }
+                                   });
+                               });
 }
 
 void
@@ -1291,6 +1363,70 @@ void
 LinuxMainWindow::OnLoadRefOrbitImagMaxSaved()
 {
     DoLoadRefOrbitImag(::ImaginaSettings::UseSaved);
+}
+
+void
+LinuxMainWindow::SetDragCursorActive(bool active)
+{
+    if (!display || !window) {
+        return;
+    }
+
+    Cursor cursor = active ? dragCursor : idleCursor;
+    if (cursor) {
+        XDefineCursor(display, window, cursor);
+    } else {
+        XUndefineCursor(display, window);
+    }
+    XFlush(display);
+}
+
+void
+LinuxMainWindow::BeginDragZoom(const XButtonEvent &btn)
+{
+    dragging = true;
+    dragAnchorX = btn.x;
+    dragAnchorY = btn.y;
+    dragPrevX = -1;
+    dragPrevY = -1;
+
+    pointerGrabbed = false;
+    if (display && window) {
+        const unsigned int eventMask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
+        const int grabResult = XGrabPointer(display,
+                                            window,
+                                            False,
+                                            eventMask,
+                                            GrabModeAsync,
+                                            GrabModeAsync,
+                                            None,
+                                            dragCursor ? dragCursor : None,
+                                            btn.time);
+        pointerGrabbed = grabResult == GrabSuccess;
+    }
+
+    SetDragCursorActive(true);
+}
+
+void
+LinuxMainWindow::CancelDragZoom(Time eventTime)
+{
+    if (!dragging && !pointerGrabbed) {
+        return;
+    }
+
+    if (display && pointerGrabbed) {
+        XUngrabPointer(display, eventTime);
+        pointerGrabbed = false;
+    }
+
+    dragging = false;
+    dragPrevX = -1;
+    dragPrevY = -1;
+    if (overlay) {
+        overlay->SetDragRect(false, 0, 0, 0, 0);
+    }
+    SetDragCursorActive(false);
 }
 
 void
@@ -1330,12 +1466,7 @@ LinuxMainWindow::StartWindowMove(const XButtonEvent &btn)
 void
 LinuxMainWindow::FinishDragZoom(const XButtonEvent &btn)
 {
-    dragging = false;
-    dragPrevX = -1;
-    dragPrevY = -1;
-    if (overlay) {
-        overlay->SetDragRect(false, 0, 0, 0, 0);
-    }
+    CancelDragZoom(btn.time);
 
     if (btn.state & Mod1Mask) {
         // Alt-released over the window — Win32 path also bails before
@@ -1347,11 +1478,12 @@ LinuxMainWindow::FinishDragZoom(const XButtonEvent &btn)
     const bool maintainAspect = (btn.state & ShiftMask) == 0;
     if (maintainAspect) {
         const double ratio = (lastHeight > 0) ? (double)lastWidth / (double)lastHeight : 1.0;
+        const DragEndpoint endpoint =
+            ComputeAspectLockedDragEndpoint(dragAnchorX, dragAnchorY, btn.x, btn.y, ratio);
         newView.left = dragAnchorX;
         newView.top = dragAnchorY;
-        newView.bottom = btn.y;
-        newView.right = static_cast<int32_t>((double)newView.left +
-                                             ratio * ((double)newView.bottom - (double)newView.top));
+        newView.right = endpoint.X;
+        newView.bottom = endpoint.Y;
     } else {
         newView.left = dragAnchorX;
         newView.top = dragAnchorY;

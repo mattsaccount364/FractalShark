@@ -12,11 +12,8 @@
 
 #include <algorithm>
 #include <clocale>
-#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <functional>
 #include <span>
 #include <string>
@@ -151,27 +148,6 @@ AllocateNamedColor(Display *display, int screen, const char *name, unsigned long
     return fallback;
 }
 
-bool
-IsTruthyEnvironmentValue(const char *value)
-{
-    return value && value[0] != '\0' && std::strcmp(value, "0") != 0;
-}
-
-const char *
-MapStateName(int mapState)
-{
-    switch (mapState) {
-        case IsUnmapped:
-            return "IsUnmapped";
-        case IsUnviewable:
-            return "IsUnviewable";
-        case IsViewable:
-            return "IsViewable";
-        default:
-            return "unknown";
-    }
-}
-
 } // namespace
 
 struct X11ContextMenu::Impl {
@@ -192,7 +168,6 @@ struct X11ContextMenu::Impl {
     };
 
     struct Level {
-        uint64_t DebugId = 0;
         std::span<const Node> Nodes;
         std::vector<Row> Rows;
         int X = 0;
@@ -212,7 +187,6 @@ struct X11ContextMenu::Impl {
     std::function<void()> RepaintOwner;
     Window Root;
     Window PopupWindow = 0;
-    uint64_t PopupDebugId = 0;
     int PopupX = 0;
     int PopupY = 0;
     int PopupWidth = 0;
@@ -225,8 +199,6 @@ struct X11ContextMenu::Impl {
     XFontSet FontSet = nullptr;
     XFontStruct *FallbackFont = nullptr;
     Colors Palette;
-    bool DebugLogging = false;
-    uint64_t NextDebugId = 1;
     XShapeApi Shape;
     bool ShapeUsable = false;
     bool ShapeDirty = true;
@@ -247,17 +219,10 @@ struct X11ContextMenu::Impl {
                   AllocateNamedColor(display, screen, "#ffffff", WhitePixel(display, screen)),
                   AllocateNamedColor(display, screen, "#606060", BlackPixel(display, screen))}
     {
-        DebugLogging = IsTruthyEnvironmentValue(std::getenv("FRACTALSHARK_X11_MENU_DEBUG"));
         if (Shape.Available) {
             int eventBase = 0;
             int errorBase = 0;
             ShapeUsable = Shape.QueryExtension(DisplayHandle, &eventBase, &errorBase) != 0;
-            DebugLog("shape-extension usable=%d event_base=%d error_base=%d",
-                     ShapeUsable ? 1 : 0,
-                     eventBase,
-                     errorBase);
-        } else {
-            DebugLog("shape-extension usable=0 reason=libXext-or-symbols-unavailable");
         }
         GraphicsContext = XCreateGC(DisplayHandle, Root, 0, nullptr);
 
@@ -278,128 +243,6 @@ struct X11ContextMenu::Impl {
             if (FallbackFont) {
                 XSetFont(DisplayHandle, GraphicsContext, FallbackFont->fid);
             }
-        }
-    }
-
-    void
-    DebugLog(const char *format, ...) const
-    {
-        if (!DebugLogging) {
-            return;
-        }
-
-        std::fprintf(stderr, "FractalSharkGuiLinux: x11-menu: ");
-        va_list args;
-        va_start(args, format);
-        std::vfprintf(stderr, format, args);
-        va_end(args);
-        std::fputc('\n', stderr);
-    }
-
-    void
-    SetDebugWindowName()
-    {
-        if (!DebugLogging || !PopupWindow) {
-            return;
-        }
-
-        char name[160]{};
-        std::snprintf(name,
-                      sizeof(name),
-                      "FractalShark menu popup id=%llu window=0x%lx",
-                      static_cast<unsigned long long>(PopupDebugId),
-                      static_cast<unsigned long>(PopupWindow));
-        XStoreName(DisplayHandle, PopupWindow, name);
-    }
-
-    void
-    DebugLogPopupState(const char *action, bool inRootTree) const
-    {
-        if (!DebugLogging || !PopupWindow) {
-            return;
-        }
-
-        XWindowAttributes attributes{};
-        if (XGetWindowAttributes(DisplayHandle, PopupWindow, &attributes)) {
-            DebugLog("%s popup id=%llu window=0x%lx popup=(%d,%d %dx%d) attr=(%d,%d %dx%d) "
-                     "map=%s override_redirect=%d in_root_tree=%d",
-                     action,
-                     static_cast<unsigned long long>(PopupDebugId),
-                     static_cast<unsigned long>(PopupWindow),
-                     PopupX,
-                     PopupY,
-                     PopupWidth,
-                     PopupHeight,
-                     attributes.x,
-                     attributes.y,
-                     attributes.width,
-                     attributes.height,
-                     MapStateName(attributes.map_state),
-                     attributes.override_redirect,
-                     inRootTree ? 1 : 0);
-            return;
-        }
-
-        DebugLog("%s popup id=%llu window=0x%lx popup=(%d,%d %dx%d) attr=<unavailable> in_root_tree=%d",
-                 action,
-                 static_cast<unsigned long long>(PopupDebugId),
-                 static_cast<unsigned long>(PopupWindow),
-                 PopupX,
-                 PopupY,
-                 PopupWidth,
-                 PopupHeight,
-                 inRootTree ? 1 : 0);
-    }
-
-    void
-    DebugDumpKnownWindows(const char *reason) const
-    {
-        if (!DebugLogging) {
-            return;
-        }
-
-        Window rootReturn = 0;
-        Window parentReturn = 0;
-        Window *children = nullptr;
-        unsigned int childCount = 0;
-        const bool haveTree =
-            XQueryTree(DisplayHandle, Root, &rootReturn, &parentReturn, &children, &childCount) != 0;
-
-        DebugLog("dump-known-windows reason=%s levels=%zu root_children=%u query_tree=%d popup=0x%lx",
-                 reason,
-                 Levels.size(),
-                 haveTree ? childCount : 0,
-                 haveTree ? 1 : 0,
-                 static_cast<unsigned long>(PopupWindow));
-
-        bool popupInRootTree = false;
-        if (haveTree && PopupWindow) {
-            for (unsigned int childIndex = 0; childIndex < childCount; ++childIndex) {
-                if (children[childIndex] == PopupWindow) {
-                    popupInRootTree = true;
-                    break;
-                }
-            }
-        }
-        DebugLogPopupState("known-popup", popupInRootTree);
-
-        for (std::size_t levelIndex = 0; levelIndex < Levels.size(); ++levelIndex) {
-            const Level &level = Levels[levelIndex];
-            DebugLog(
-                "known-level level=%zu id=%llu logical=(%d,%d %dx%d) rows=%zu selected=%d scroll=%d",
-                levelIndex,
-                static_cast<unsigned long long>(level.DebugId),
-                level.X,
-                level.Y,
-                level.Width,
-                level.Height,
-                level.Rows.size(),
-                level.SelectedRow,
-                level.ScrollOffset);
-        }
-
-        if (children) {
-            XFree(children);
         }
     }
 
@@ -798,12 +641,6 @@ struct X11ContextMenu::Impl {
             return false;
         }
 
-        PopupDebugId = NextDebugId++;
-        SetDebugWindowName();
-        DebugLog("create-popup id=%llu window=0x%lx shape=%d",
-                 static_cast<unsigned long long>(PopupDebugId),
-                 static_cast<unsigned long>(PopupWindow),
-                 ShapeUsable ? 1 : 0);
         return true;
     }
 
@@ -814,11 +651,9 @@ struct X11ContextMenu::Impl {
             return;
         }
 
-        DebugLogPopupState("destroy-popup-request", true);
         FreeBackBuffer();
         XDestroyWindow(DisplayHandle, PopupWindow);
         PopupWindow = 0;
-        PopupDebugId = 0;
         PopupX = 0;
         PopupY = 0;
         PopupWidth = 0;
@@ -826,7 +661,6 @@ struct X11ContextMenu::Impl {
         PopupMapped = false;
         ShapeDirty = true;
         XFlush(DisplayHandle);
-        DebugDumpKnownWindows("after-destroy-popup");
     }
 
     bool
@@ -902,8 +736,6 @@ struct X11ContextMenu::Impl {
             PopupMapped = true;
         }
 
-        DebugLogPopupState("update-popup", true);
-        DebugDumpKnownWindows("after-update-popup");
         return true;
     }
 
@@ -912,15 +744,6 @@ struct X11ContextMenu::Impl {
     {
         Level level = BuildLevel(nodes);
         PositionLevel(level, desiredX, desiredY, leftAnchorX);
-        level.DebugId = NextDebugId++;
-        const std::size_t levelIndex = Levels.size();
-        DebugLog("add-level level=%zu id=%llu logical=(%d,%d %dx%d)",
-                 levelIndex,
-                 static_cast<unsigned long long>(level.DebugId),
-                 level.X,
-                 level.Y,
-                 level.Width,
-                 level.Height);
         Levels.push_back(std::move(level));
         ShapeDirty = true;
         if (!UpdatePopupWindow()) {
@@ -940,16 +763,6 @@ struct X11ContextMenu::Impl {
             return false;
         }
 
-        for (std::size_t i = Levels.size(); i > firstIndex; --i) {
-            const Level &level = Levels[i - 1];
-            DebugLog("remove-level level=%zu id=%llu logical=(%d,%d %dx%d)",
-                     i - 1,
-                     static_cast<unsigned long long>(level.DebugId),
-                     level.X,
-                     level.Y,
-                     level.Width,
-                     level.Height);
-        }
         Levels.resize(firstIndex);
         ShapeDirty = true;
         if (present) {
@@ -960,7 +773,6 @@ struct X11ContextMenu::Impl {
                 DrawAll();
             }
             XFlush(DisplayHandle);
-            DebugDumpKnownWindows("after-remove-levels");
         }
         return true;
     }
@@ -982,30 +794,13 @@ struct X11ContextMenu::Impl {
 
         HideAndDestroyLevelsFrom(childIndex + 1, false);
 
-        const uint64_t existingDebugId = Levels[childIndex].DebugId;
-        DebugLog("replace-level-before level=%zu id=%llu logical=(%d,%d %dx%d)",
-                 childIndex,
-                 static_cast<unsigned long long>(Levels[childIndex].DebugId),
-                 Levels[childIndex].X,
-                 Levels[childIndex].Y,
-                 Levels[childIndex].Width,
-                 Levels[childIndex].Height);
         Level replacement = BuildLevel(nodes);
         PositionLevel(replacement, desiredX, desiredY, leftAnchorX);
-        replacement.DebugId = existingDebugId;
         Levels[childIndex] = std::move(replacement);
         ShapeDirty = true;
-        DebugLog("replace-level-after level=%zu id=%llu logical=(%d,%d %dx%d)",
-                 childIndex,
-                 static_cast<unsigned long long>(Levels[childIndex].DebugId),
-                 Levels[childIndex].X,
-                 Levels[childIndex].Y,
-                 Levels[childIndex].Width,
-                 Levels[childIndex].Height);
         UpdatePopupWindow();
         DrawAll();
         XFlush(DisplayHandle);
-        DebugDumpKnownWindows("after-replace-mapped-child");
         return true;
     }
 
@@ -1108,7 +903,6 @@ struct X11ContextMenu::Impl {
             SelectFirst(levelIndex + 1);
             presented = true;
         }
-        DebugDumpKnownWindows("after-open-submenu");
         return presented;
     }
 
@@ -1261,7 +1055,6 @@ struct X11ContextMenu::Impl {
     void
     Open(int rootX, int rootY)
     {
-        DebugLog("open-request root=(%d,%d)", rootX, rootY);
         Close();
         if (!AddLevel(GetMenuNodes(), rootX, rootY)) {
             return;
@@ -1287,8 +1080,6 @@ struct X11ContextMenu::Impl {
             Close();
             return;
         }
-        DebugLog("grab-result pointer=%d keyboard=%d", pointerGrab, keyboardGrab);
-        DebugDumpKnownWindows("after-open");
         XFlush(DisplayHandle);
     }
 
@@ -1298,7 +1089,6 @@ struct X11ContextMenu::Impl {
         if (Levels.empty() && !PopupWindow) {
             return;
         }
-        DebugLog("close levels=%zu", Levels.size());
         XUngrabPointer(DisplayHandle, CurrentTime);
         XUngrabKeyboard(DisplayHandle, CurrentTime);
         Levels.clear();

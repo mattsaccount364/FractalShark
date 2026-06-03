@@ -27,7 +27,9 @@
 struct ImGuiContext;
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -62,12 +64,24 @@ public:
     // If a previous modal is still open, the new request supersedes it.
     void RequestInfoModal(const char *title, const char *body);
 
-    // Open a "save filename" modal on the next RenderFrame.  Single text
-    // input pre-filled with defaultName + OK/Cancel buttons.  Callback is
-    // invoked on OK with the entered filename (no extension enforcement);
-    // not invoked on Cancel.
-    using SaveFilenameCallback = std::function<void(std::string)>;
-    void RequestSaveDialog(const char *title, const std::string &defaultName, SaveFilenameCallback cb);
+    enum class FileDialogMode {
+        Open,
+        Save,
+    };
+
+    struct FileDialogFilter {
+        std::string Label;
+        std::string Extension;
+    };
+
+    // Open an in-app file dialog on the next RenderFrame.  Callback is
+    // invoked on OK with the selected UTF-8 path; not invoked on Cancel.
+    using FileDialogCallback = std::function<void(std::string)>;
+    void RequestFileDialog(const char *title,
+                           FileDialogMode mode,
+                           const std::string &defaultName,
+                           std::vector<FileDialogFilter> filters,
+                           FileDialogCallback cb);
 
     // Open a "pick one from a list" modal on the next RenderFrame.  Each
     // entry in `items` is a display string.  Callback is invoked on
@@ -102,6 +116,16 @@ public:
     bool WantsTick() const;
 
 private:
+    struct FileDialogEntry {
+        std::string Name;
+        std::filesystem::path Path;
+        bool IsDirectory = false;
+    };
+
+    bool SetFileDialogDirectory(const std::filesystem::path &path);
+    void RefreshFileDialogEntries();
+    std::optional<std::string> ResolveFileDialogSelection();
+
     Display *display_;
     Window window_;
     FractalShark::LinuxClipboard *clipboard_;
@@ -116,12 +140,20 @@ private:
     std::string infoModalTitle_;
     std::string infoModalBody_;
 
-    // Save-filename dialog state.
-    bool saveDlgRequested_ = false;
-    bool saveDlgOpen_ = false;
-    std::string saveDlgTitle_;
-    std::string saveDlgFilename_;
-    SaveFilenameCallback saveDlgCallback_;
+    // Open/save file dialog state.
+    bool fileDlgRequested_ = false;
+    bool fileDlgOpen_ = false;
+    FileDialogMode fileDlgMode_ = FileDialogMode::Open;
+    std::string fileDlgTitle_;
+    std::filesystem::path fileDlgCurrentDir_;
+    std::string fileDlgDirBuffer_;
+    std::string fileDlgFilenameBuffer_;
+    std::vector<FileDialogFilter> fileDlgFilters_;
+    int fileDlgFilterIndex_ = 0;
+    std::vector<FileDialogEntry> fileDlgEntries_;
+    int fileDlgSelected_ = -1;
+    std::string fileDlgMessage_;
+    FileDialogCallback fileDlgCallback_;
 
     // Pick-from-list dialog state.
     bool pickDlgRequested_ = false;
@@ -145,7 +177,6 @@ private:
     int dragY0_ = 0;
     int dragX1_ = 0;
     int dragY1_ = 0;
-
 };
 
 } // namespace FractalShark::Linux

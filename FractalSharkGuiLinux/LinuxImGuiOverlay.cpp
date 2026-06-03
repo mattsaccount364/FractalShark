@@ -11,11 +11,67 @@
 #include <GL/gl.h>
 
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <optional>
 #include <string>
+#include <system_error>
+#include <vector>
 
 using namespace FractalShark;
 
 namespace FractalShark::Linux {
+namespace {
+
+constexpr size_t kFileDialogInputCapacity = 4096;
+
+std::string
+InputBufferValue(const std::string &buffer)
+{
+    return std::string(buffer.c_str());
+}
+
+void
+AssignInputBuffer(std::string &buffer, const std::string &value)
+{
+    buffer = value;
+    if (buffer.size() + 1 < kFileDialogInputCapacity) {
+        buffer.resize(kFileDialogInputCapacity, '\0');
+    } else {
+        buffer.push_back('\0');
+    }
+}
+
+std::string
+PathToString(const std::filesystem::path &path)
+{
+    try {
+        return path.string();
+    } catch (const std::filesystem::filesystem_error &) {
+        return {};
+    }
+}
+
+std::string
+PathNameToString(const std::filesystem::path &path)
+{
+    std::string name = PathToString(path.filename());
+    if (name.empty()) {
+        name = PathToString(path);
+    }
+    return name;
+}
+
+std::string
+LowerAscii(std::string value)
+{
+    for (char &c : value) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return value;
+}
+
+} // namespace
 
 ImGuiOverlay::ImGuiOverlay(Display *display, Window window, FractalShark::LinuxClipboard *clipboard)
     : display_(display), window_(window), clipboard_(clipboard)
@@ -108,17 +164,164 @@ ImGuiOverlay::RequestInfoModal(const char *title, const char *body)
 }
 
 void
-ImGuiOverlay::RequestSaveDialog(const char *title,
+ImGuiOverlay::RequestFileDialog(const char *title,
+                                FileDialogMode mode,
                                 const std::string &defaultName,
-                                SaveFilenameCallback cb)
+                                std::vector<FileDialogFilter> filters,
+                                FileDialogCallback cb)
 {
-    // TODO(linux-parity): Replace this filename-only modal with a browsable Linux file
-    // dialog that supports open/save mode and filters. Decide whether last-directory
-    // persistence and overwrite confirmation should be added to both GUIs.
-    saveDlgRequested_ = true;
-    saveDlgTitle_ = title ? title : "Save";
-    saveDlgFilename_ = defaultName;
-    saveDlgCallback_ = std::move(cb);
+    fileDlgRequested_ = true;
+    fileDlgMode_ = mode;
+    fileDlgTitle_ = title ? title : (mode == FileDialogMode::Open ? "Open" : "Save");
+    fileDlgFilters_ = std::move(filters);
+    if (fileDlgFilters_.empty()) {
+        fileDlgFilters_.push_back({"All (*.*)", ""});
+    }
+    fileDlgFilterIndex_ = 0;
+    fileDlgSelected_ = -1;
+    fileDlgMessage_.clear();
+    fileDlgCallback_ = std::move(cb);
+
+    std::error_code ec;
+    std::filesystem::path defaultPath(defaultName);
+    std::filesystem::path initialDir = std::filesystem::current_path(ec);
+    if (ec || initialDir.empty()) {
+        initialDir = ".";
+    }
+
+    std::string filename = defaultName;
+    if (defaultPath.has_parent_path()) {
+        initialDir = defaultPath.parent_path();
+        filename = PathNameToString(defaultPath);
+    }
+
+    AssignInputBuffer(fileDlgFilenameBuffer_, filename);
+    if (!SetFileDialogDirectory(initialDir)) {
+        std::error_code cwdEc;
+        const auto cwd = std::filesystem::current_path(cwdEc);
+        (void)SetFileDialogDirectory(cwdEc ? std::filesystem::path(".") : cwd);
+    }
+}
+
+bool
+ImGuiOverlay::SetFileDialogDirectory(const std::filesystem::path &path)
+{
+    std::error_code ec;
+    std::filesystem::path dir = path.empty() ? std::filesystem::path(".") : path;
+    if (dir.is_relative()) {
+        dir = std::filesystem::absolute(dir, ec);
+        if (ec) {
+            fileDlgMessage_ = "Could not resolve directory.";
+            return false;
+        }
+    }
+
+    const auto canonical = std::filesystem::weakly_canonical(dir, ec);
+    if (!ec && !canonical.empty()) {
+        dir = canonical;
+    } else {
+        dir = dir.lexically_normal();
+        ec.clear();
+    }
+
+    if (!std::filesystem::is_directory(dir, ec) || ec) {
+        fileDlgMessage_ = "Selected path is not a directory.";
+        return false;
+    }
+
+    fileDlgCurrentDir_ = dir;
+    AssignInputBuffer(fileDlgDirBuffer_, PathToString(fileDlgCurrentDir_));
+    fileDlgSelected_ = -1;
+    RefreshFileDialogEntries();
+    return true;
+}
+
+void
+ImGuiOverlay::RefreshFileDialogEntries()
+{
+    fileDlgEntries_.clear();
+    fileDlgSelected_ = -1;
+    fileDlgMessage_.clear();
+
+    const std::string wantedExtension =
+        fileDlgFilterIndex_ >= 0 && fileDlgFilterIndex_ < static_cast<int>(fileDlgFilters_.size())
+            ? LowerAscii(fileDlgFilters_[static_cast<size_t>(fileDlgFilterIndex_)].Extension)
+            : std::string();
+
+    std::error_code ec;
+    std::filesystem::directory_iterator it(fileDlgCurrentDir_, ec);
+    if (ec) {
+        fileDlgMessage_ = "Could not read directory.";
+        return;
+    }
+
+    for (std::filesystem::directory_iterator end; it != end; it.increment(ec)) {
+        if (ec) {
+            fileDlgMessage_ = "Could not read all directory entries.";
+            break;
+        }
+
+        const std::filesystem::path entryPath = it->path();
+        std::error_code typeEc;
+        const bool isDirectory = it->is_directory(typeEc);
+        if (typeEc) {
+            continue;
+        }
+        const bool isRegularFile = it->is_regular_file(typeEc);
+        if (typeEc || (!isDirectory && !isRegularFile)) {
+            continue;
+        }
+        if (!isDirectory && !wantedExtension.empty() &&
+            LowerAscii(PathToString(entryPath.extension())) != wantedExtension) {
+            continue;
+        }
+
+        std::string name = PathNameToString(entryPath);
+        if (!name.empty()) {
+            fileDlgEntries_.push_back({std::move(name), entryPath, isDirectory});
+        }
+    }
+
+    std::sort(fileDlgEntries_.begin(),
+              fileDlgEntries_.end(),
+              [](const FileDialogEntry &a, const FileDialogEntry &b) {
+                  if (a.IsDirectory != b.IsDirectory) {
+                      return a.IsDirectory;
+                  }
+                  return LowerAscii(a.Name) < LowerAscii(b.Name);
+              });
+}
+
+std::optional<std::string>
+ImGuiOverlay::ResolveFileDialogSelection()
+{
+    const std::string filename = InputBufferValue(fileDlgFilenameBuffer_);
+    if (filename.empty()) {
+        fileDlgMessage_ = "Choose a file.";
+        return std::nullopt;
+    }
+
+    std::filesystem::path selected(filename);
+    if (selected.is_relative()) {
+        selected = fileDlgCurrentDir_ / selected;
+    }
+    selected = selected.lexically_normal();
+
+    std::error_code ec;
+    if (fileDlgMode_ == FileDialogMode::Open) {
+        if (!std::filesystem::is_regular_file(selected, ec) || ec) {
+            fileDlgMessage_ = "Selected path is not an existing file.";
+            return std::nullopt;
+        }
+    } else {
+        const auto parent = selected.parent_path();
+        if (!parent.empty() && (!std::filesystem::is_directory(parent, ec) || ec)) {
+            fileDlgMessage_ = "Destination directory does not exist.";
+            return std::nullopt;
+        }
+    }
+
+    return PathToString(selected);
 }
 
 void
@@ -209,58 +412,148 @@ ImGuiOverlay::RenderFrame()
         }
     }
 
-    if (saveDlgRequested_) {
-        ImGui::OpenPopup("FractalSharkSaveDialog");
-        saveDlgRequested_ = false;
-        saveDlgOpen_ = true;
+    if (fileDlgRequested_) {
+        ImGui::OpenPopup("FractalSharkFileDialog");
+        fileDlgRequested_ = false;
+        fileDlgOpen_ = true;
     }
 
-    if (saveDlgOpen_) {
+    if (fileDlgOpen_) {
         const ImGuiViewport *vp = ImGui::GetMainViewport();
         if (vp) {
             ImGui::SetNextWindowPos(
                 ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f),
                 ImGuiCond_Appearing,
                 ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(std::min(vp->WorkSize.x * 0.7f, 600.0f), 0.0f),
+            ImGui::SetNextWindowSize(ImVec2(std::min(vp->WorkSize.x * 0.85f, 900.0f),
+                                            std::min(vp->WorkSize.y * 0.85f, 650.0f)),
                                      ImGuiCond_Appearing);
         }
-        if (ImGui::BeginPopupModal(
-                "FractalSharkSaveDialog", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextUnformatted(saveDlgTitle_.c_str());
+        if (ImGui::BeginPopupModal("FractalSharkFileDialog", nullptr)) {
+            ImGui::TextUnformatted(fileDlgTitle_.c_str());
             ImGui::Separator();
-            // Resize buffer if needed.
-            if (saveDlgFilename_.size() < 512) {
-                saveDlgFilename_.resize(512, '\0');
+
+            const ImGuiStyle &style = ImGui::GetStyle();
+            constexpr float kMinDirectoryInputWidth = 160.0f;
+            const float goWidth =
+                std::max(48.0f, ImGui::CalcTextSize("Go").x + style.FramePadding.x * 2.0f);
+            const float refreshWidth =
+                std::max(80.0f, ImGui::CalcTextSize("Refresh").x + style.FramePadding.x * 2.0f);
+            const float itemSpacing = style.ItemSpacing.x;
+            const float headerAvail = ImGui::GetContentRegionAvail().x;
+            const bool allHeaderControlsFit =
+                headerAvail >= kMinDirectoryInputWidth + goWidth + refreshWidth + itemSpacing * 2.0f;
+            const bool goFitsWithInput = headerAvail >= kMinDirectoryInputWidth + goWidth + itemSpacing;
+            const bool buttonsFitTogether = headerAvail >= goWidth + refreshWidth + itemSpacing;
+            const float directoryInputWidth =
+                allHeaderControlsFit
+                    ? std::max(kMinDirectoryInputWidth,
+                               headerAvail - goWidth - refreshWidth - itemSpacing * 2.0f)
+                : goFitsWithInput
+                    ? std::max(kMinDirectoryInputWidth, headerAvail - goWidth - itemSpacing)
+                    : headerAvail;
+
+            ImGui::SetNextItemWidth(directoryInputWidth);
+            const bool dirEnter = ImGui::InputText("##directory",
+                                                   fileDlgDirBuffer_.data(),
+                                                   fileDlgDirBuffer_.size(),
+                                                   ImGuiInputTextFlags_EnterReturnsTrue);
+            if (goFitsWithInput) {
+                ImGui::SameLine(0.0f, itemSpacing);
             }
+            const bool goDir = ImGui::Button("Go", ImVec2(goWidth, 0));
+            if (allHeaderControlsFit || (!goFitsWithInput && buttonsFitTogether)) {
+                ImGui::SameLine(0.0f, itemSpacing);
+            }
+            const bool refresh = ImGui::Button("Refresh", ImVec2(refreshWidth, 0));
+            if (dirEnter || goDir) {
+                (void)SetFileDialogDirectory(std::filesystem::path(InputBufferValue(fileDlgDirBuffer_)));
+            } else if (refresh) {
+                RefreshFileDialogEntries();
+            }
+
+            const auto parent = fileDlgCurrentDir_.parent_path();
+            if (ImGui::Button("Up", ImVec2(80, 0)) && !parent.empty() && parent != fileDlgCurrentDir_) {
+                (void)SetFileDialogDirectory(parent);
+            }
+            if (!fileDlgFilters_.empty()) {
+                std::vector<const char *> labels;
+                labels.reserve(fileDlgFilters_.size());
+                for (const auto &filter : fileDlgFilters_) {
+                    labels.push_back(filter.Label.c_str());
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(220.0f);
+                if (ImGui::Combo("##filter", &fileDlgFilterIndex_, labels.data(), int(labels.size()))) {
+                    RefreshFileDialogEntries();
+                }
+            }
+
+            std::optional<std::filesystem::path> enterDirectory;
+            std::optional<std::string> acceptedPath;
+            ImGui::BeginChild("##files", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3.0f), true);
+            for (size_t i = 0; i < fileDlgEntries_.size(); ++i) {
+                const auto &entry = fileDlgEntries_[i];
+                std::string label = entry.IsDirectory ? "[dir] " + entry.Name : entry.Name;
+                label += "##file";
+                label += std::to_string(i);
+                const bool selected = fileDlgSelected_ == static_cast<int>(i);
+                if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                    fileDlgSelected_ = static_cast<int>(i);
+                    if (entry.IsDirectory) {
+                        if (ImGui::IsMouseDoubleClicked(0)) {
+                            enterDirectory = entry.Path;
+                            break;
+                        }
+                    } else {
+                        AssignInputBuffer(fileDlgFilenameBuffer_, entry.Name);
+                        if (fileDlgMode_ == FileDialogMode::Open && ImGui::IsMouseDoubleClicked(0)) {
+                            acceptedPath = ResolveFileDialogSelection();
+                            break;
+                        }
+                    }
+                }
+            }
+            ImGui::EndChild();
+
+            if (enterDirectory.has_value()) {
+                (void)SetFileDialogDirectory(*enterDirectory);
+            }
+
             ImGui::SetNextItemWidth(-1.0f);
-            const bool enter = ImGui::InputText("##filename",
-                                                saveDlgFilename_.data(),
-                                                saveDlgFilename_.size(),
-                                                ImGuiInputTextFlags_EnterReturnsTrue);
+            const bool filenameEnter = ImGui::InputText("##filename",
+                                                        fileDlgFilenameBuffer_.data(),
+                                                        fileDlgFilenameBuffer_.size(),
+                                                        ImGuiInputTextFlags_EnterReturnsTrue);
+            if (!fileDlgMessage_.empty()) {
+                ImGui::TextWrapped("%s", fileDlgMessage_.c_str());
+            }
             ImGui::Separator();
-            const bool ok = enter || ImGui::Button("Save", ImVec2(120, 0));
+            const char *okLabel = fileDlgMode_ == FileDialogMode::Open ? "Open" : "Save";
+            if (!acceptedPath.has_value() && (filenameEnter || ImGui::Button(okLabel, ImVec2(120, 0)))) {
+                acceptedPath = ResolveFileDialogSelection();
+            }
             ImGui::SameLine();
             const bool cancel =
                 ImGui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape);
-            if (ok) {
-                std::string trimmed(saveDlgFilename_.c_str()); // strip trailing NULs
+
+            if (acceptedPath.has_value()) {
                 ImGui::CloseCurrentPopup();
-                saveDlgOpen_ = false;
-                if (!trimmed.empty() && saveDlgCallback_) {
-                    auto cb = std::move(saveDlgCallback_);
-                    saveDlgCallback_ = nullptr;
-                    cb(std::move(trimmed));
+                fileDlgOpen_ = false;
+                if (fileDlgCallback_) {
+                    auto cb = std::move(fileDlgCallback_);
+                    fileDlgCallback_ = nullptr;
+                    cb(std::move(*acceptedPath));
                 }
             } else if (cancel) {
                 ImGui::CloseCurrentPopup();
-                saveDlgOpen_ = false;
-                saveDlgCallback_ = nullptr;
+                fileDlgOpen_ = false;
+                fileDlgCallback_ = nullptr;
             }
             ImGui::EndPopup();
         } else {
-            saveDlgOpen_ = false;
-            saveDlgCallback_ = nullptr;
+            fileDlgOpen_ = false;
+            fileDlgCallback_ = nullptr;
         }
     }
 
@@ -411,9 +704,8 @@ pickDone:
         if (fg) {
             ImVec2 p0(float(std::min(dragX0_, dragX1_)), float(std::min(dragY0_, dragY1_)));
             ImVec2 p1(float(std::max(dragX0_, dragX1_)), float(std::max(dragY0_, dragY1_)));
-            // TODO(linux-parity): Draw the documented thick white outer rectangle plus
-            // thin black inner rectangle so the drag outline remains visible on any image.
-            fg->AddRect(p0, p1, IM_COL32(255, 32, 255, 255), 0.0f, 0, 1.5f);
+            fg->AddRect(p0, p1, IM_COL32(255, 255, 255, 255), 0.0f, 0, 3.0f);
+            fg->AddRect(p0, p1, IM_COL32(0, 0, 0, 255), 0.0f, 0, 1.0f);
         }
     }
 
@@ -429,8 +721,8 @@ ImGuiOverlay::WantsTick() const
         return false;
     }
     return inputPending_ || dragRectActive_ || infoModalRequested_ || infoModalOpen_ ||
-           saveDlgRequested_ || saveDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ ||
-           locDlgRequested_ || locDlgOpen_;
+           fileDlgRequested_ || fileDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ ||
+           locDlgOpen_;
 }
 
 } // namespace FractalShark::Linux

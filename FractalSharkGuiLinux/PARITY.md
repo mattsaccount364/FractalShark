@@ -23,13 +23,13 @@ The flagship interaction. Mirror Win32 semantics exactly.
 |---------------------------------------------|------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
 | Begin gesture                               | `WM_LBUTTONDOWN` → `MainWindow.cpp`. `lButtonDown=true`, store `(dragBoxX1, dragBoxY1)`.             | `ButtonPress` (button 1) → `main.cpp`. `dragging=true`, store `(dragAnchorX, dragAnchorY)`.             |
 | Alt+LMB                                     | Drags the window via `WM_NCLBUTTONDOWN HTCAPTION` (`MainWindow.cpp:820`).                            | WM-driven move via `_NET_WM_MOVERESIZE` ClientMessage with `_NET_WM_MOVERESIZE_MOVE`.                  |
-| Live update on move                         | `WM_MOUSEMOVE` `MainWindow.cpp` updates the GL drag rectangle.                                      | `MotionNotify` → `ImGui::GetForegroundDrawList()->AddRect`. `TODO(linux-parity)`: add white outer + black inner strokes. |
+| Live update on move                         | `WM_MOUSEMOVE` `MainWindow.cpp` updates the GL drag rectangle.                                      | `MotionNotify` → `ImGui::GetForegroundDrawList()->AddRect` with white outer + black inner strokes.     |
 | Aspect lock                                 | Default ON. Shift held = OFF. Computed from client rect ratio (`MainWindow.cpp:854-869`).            | Same: Shift state from `XKeyEvent.state & ShiftMask`. Compute ratio from `XGetWindowAttributes`.       |
-| Aspect formula                              | `right = left + ratio * (bottom - top)` (`MainWindow.cpp:862`).                                      | Identical formula, identical operand order.                                                            |
+| Aspect formula                              | `right = left + ratio * (bottom - top)` (`MainWindow.cpp:862`).                                      | Same aspect ratio; raw cursor side chooses the horizontal direction so all four drag quadrants work.    |
 | Commit on release                           | `WM_LBUTTONUP` `MainWindow.cpp:837` → `EnqueueCommand([rect, aspect](Fractal &f){ f.RecenterViewScreen(rect); if (aspect) f.SquareCurrentView(); })`. | Same lambda body. Identical order: recenter then optionally square.            |
 | Cancel on focus loss                        | `WM_CANCELMODE` / `WM_CAPTURECHANGED` `MainWindow.cpp` erase the outline and clear `lButtonDown`.     | `FocusOut` clears `dragging` and hides the overlay.                                                     |
-| Outline rendering                           | GL drag rectangle rendered by the Win32 presentation path.                                           | `TODO(linux-parity)`: replace the single magenta stroke with thick white outer + thin black inner strokes. |
-| Capture                                     | `SetCapture` / `ReleaseCapture` so motion events arrive when cursor leaves window.                   | `TODO(linux-parity)`: explicitly `XGrabPointer` until `ButtonRelease`; current code relies on implicit delivery. |
+| Outline rendering                           | GL drag rectangle rendered by the Win32 presentation path.                                           | Two-stroke ImGui foreground rectangle: thick white outer stroke plus thin black inner stroke.           |
+| Capture                                     | `SetCapture` / `ReleaseCapture` so motion events arrive when cursor leaves window.                   | `XGrabPointer` / `XUngrabPointer` during drag; falls back to best-effort delivery if grabbing fails.   |
 
 ## Mouse interactions outside drag-to-zoom
 
@@ -37,7 +37,7 @@ The flagship interaction. Mirror Win32 semantics exactly.
 |---------------------------------------------|------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
 | Wheel zoom                                  | `WM_MOUSEWHEEL` `MainWindow.cpp:955` — forward = zoom in, backward = zoom out.                       | `ButtonPress` button 4/5 with `XButtonEvent.state` decoded similarly.                                  |
 | Right-click → context menu                  | `WM_RBUTTONDOWN` → `TrackPopupMenu` of the dynamic `HMENU` tree.                                     | `ButtonPress` button 3 opens native root-level X11 popup windows, allowing menus to extend outside the client area. |
-| Cursor                                      | `IDC_ARROW` while idle, `IDC_CROSS` during drag-zoom.                                                | `TODO(linux-parity)`: add `XC_left_ptr` / `XC_crosshair` switching via `XCreateFontCursor` + `XDefineCursor`. |
+| Cursor                                      | `IDC_ARROW` while idle, `IDC_CROSS` during drag-zoom.                                                | `XC_left_ptr` while idle, `XC_crosshair` during drag-zoom.                                             |
 
 ## Keyboard
 
@@ -63,8 +63,8 @@ The flagship interaction. Mirror Win32 semantics exactly.
 
 | Behavior                                    | Win32                                                                                                | Linux                                                                                                  |
 |---------------------------------------------|------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
-| Open / save orbit                           | `GetOpenFileNameW` / `GetSaveFileNameW` with `OPENFILENAME`.                                        | `TODO(linux-parity)`: replace the filename-only save modal and cwd-only pick lists with a browsable open/save dialog. |
-| Filter strings                              | `"All\0*.*\0Imagina\0*.im\0"` in `MainWindow.cpp`.                                                   | `TODO(linux-parity)`: mirror open/save filters in the browsable dialog.                                |
+| Open / save orbit                           | `GetOpenFileNameW` / `GetSaveFileNameW` with `OPENFILENAME`.                                        | In-app ImGui file browser with open/save modes for orbit save, load, and diff commands.                |
+| Filter strings                              | `"All\0*.*\0Imagina\0*.im\0"` in `MainWindow.cpp`.                                                   | Same effective filters: `All (*.*)` and `Imagina (*.im)`.                                              |
 | Last-directory persistence                  | Not currently persisted: `lpstrInitialDir = NULL`.                                                   | `TODO(linux-parity, follow-up)`: decide whether to add persistence to both GUIs.                        |
 | Overwrite confirm                           | Not currently requested: save-dialog flags are `0`.                                                  | `TODO(linux-parity, follow-up)`: decide whether to add overwrite confirmation to both GUIs.             |
 
@@ -85,15 +85,6 @@ The flagship interaction. Mirror Win32 semantics exactly.
 | Title                                       | `"FractalShark"`.                                                                                    | `"FractalShark (Linux)"` — distinguishable for screenshots/bug reports.                                |
 | Crash handler                               | SEH + MiniDump (`CrashHandlerWin32.cpp`).                                                            | sigaction(SIGSEGV/SIGABRT/SIGFPE/SIGILL/SIGBUS) + `std::stacktrace` + re-raise (`CrashHandlerLinux.cpp`). |
 
-## Out-of-scope (deliberately divergent)
-
-- **Window decorations / WM theming** — let each OS do its thing.
-- **Menu visual style** — Win32 native menus vs Xlib-drawn Linux menus look different.
-- **OS file-drop onto window** (drag a `.png` from a file manager).
-  `TODO(linux-parity, deferred)`: Linux needs `XdndSelection`.
-- **Wayland**. `TODO(linux-parity, deferred)`: `OpenGLContext.cpp` is GLX-only;
-  add an EGL backend as a follow-up.
-
 ## Searchable Linux backlog
 
 Search source and this file with `rg "TODO\\(linux-parity"`.
@@ -102,9 +93,7 @@ Search source and this file with `rg "TODO\\(linux-parity"`.
   and palette rotation currently stubbed in `LinuxMainWindow`.
 - `TODO(linux-parity)`: keep menu autozoom responsive while Xlib/ImGui events
   are pending.
-- `TODO(linux-parity)`: implement global cursor coordinates, UTF-8 filesystem
-  path conversion, explicit drag capture, cursor switching, and the two-stroke
-  drag outline.
+- `TODO(linux-parity)`: implement global cursor coordinates.
 - `TODO(linux-parity, deferred)`: provide Linux GUI wait-cursor feedback.
 - `TODO(linux-parity, permanent)`: keep heap cleanup as a no-op while Linux
   allocations use glibc.

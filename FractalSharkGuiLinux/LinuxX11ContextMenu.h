@@ -8,6 +8,7 @@
 
 #include <X11/Xlib.h>
 
+#include <functional>
 #include <memory>
 
 namespace FractalShark {
@@ -25,7 +26,8 @@ public:
                    int screen,
                    Window owner,
                    const Menu::IMenuState *state,
-                   ExecuteCommandHost *host);
+                   ExecuteCommandHost *host,
+                   std::function<void()> repaintOwner);
     ~X11ContextMenu();
 
     X11ContextMenu(const X11ContextMenu &) = delete;

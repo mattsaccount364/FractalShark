@@ -144,6 +144,7 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     int savedWidth = kInitialWidth;
     int savedHeight = kInitialHeight;
     bool everPresented = false;
+    bool exposeRepaintPending = false;
 
     // Right-click position in client coordinates, matching MainWindow.cpp's
     // m_LastMenuPtClient anchor for menu commands that act on the click point.
@@ -188,6 +189,7 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     void HandleEvent(const XEvent &ev);
     void HandleKeyPress(const XKeyEvent &ev);
     PresentationTickResult PresentRenderTick();
+    void RepaintAfterNativePopupUnmap();
     int GetPresentationPollTimeoutMs(bool needsTick);
     void RunFeatureAutoZoomSynchronously(int mouseX, int mouseY);
     void StartWindowMove(const XButtonEvent &btn);
@@ -359,7 +361,8 @@ LinuxMainWindow::LinuxMainWindow()
     // ensured.
     menuState.emplace(*fractal, fullscreen);
     overlay.emplace(display, window, &*clipboard);
-    contextMenu.emplace(display, screen, window, &*menuState, this);
+    contextMenu.emplace(
+        display, screen, window, &*menuState, this, [this] { RepaintAfterNativePopupUnmap(); });
     if (glContext && glContext->IsValid()) {
         if (!overlay->Init()) {
             std::fprintf(stderr, "FractalSharkGuiLinux: ImGui backend init failed.\n");
@@ -428,6 +431,9 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
             // Kick off a single render on the first Expose.  The Fractal's
             // RenderThreadPool computes off-thread; the GL consumer (also a
             // pool thread) presents via glXSwapBuffers when the frame is ready.
+            // Later exposes still matter: native X11 popup menus uncover the
+            // GL window and require the cached frame to be presented again.
+            exposeRepaintPending = true;
             if (!firstExposeSeen && fractal) {
                 firstExposeSeen = true;
                 fractal->EnqueueRender();
@@ -600,6 +606,13 @@ LinuxMainWindow::RunEventLoop()
     }
 }
 
+void
+LinuxMainWindow::RepaintAfterNativePopupUnmap()
+{
+    exposeRepaintPending = true;
+    (void)PresentRenderTick();
+}
+
 PresentationTickResult
 LinuxMainWindow::PresentRenderTick()
 {
@@ -615,7 +628,8 @@ LinuxMainWindow::PresentRenderTick()
     }
 
     const bool overlayWantsTick = overlay && overlay->WantsTick();
-    const bool needsTick = freshFrame || overlayWantsTick || dragging || !everPresented;
+    const bool needsTick =
+        freshFrame || overlayWantsTick || dragging || exposeRepaintPending || !everPresented;
 
     if (needsTick && glContext && glContext->IsValid()) {
         static bool diagnosedFirstFreshFrame = false;
@@ -670,6 +684,7 @@ LinuxMainWindow::PresentRenderTick()
         }
 
         everPresented = true;
+        exposeRepaintPending = false;
     }
 
     return {freshFrame, needsTick};

@@ -58,6 +58,7 @@ target_link_libraries(FractalSharkGuiLinux PRIVATE
     X11::X11
     OpenGL::GL
     OpenGL::GLX
+    ${CMAKE_DL_LIBS}
 )
 
 # ImGui itself emits some warnings under -Wpedantic; keep the rest of the tree

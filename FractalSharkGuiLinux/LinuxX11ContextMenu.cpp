@@ -5,13 +5,19 @@
 #include "CommandCatalog.h"
 #include "MenuTree.h"
 
-#include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
+#include <dlfcn.h>
+
 #include <algorithm>
 #include <clocale>
+#include <cstdarg>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
 #include <span>
 #include <string>
 #include <utility>
@@ -32,6 +38,48 @@ constexpr int kArrowAreaWidth = 18;
 constexpr int kMinimumWidth = 120;
 constexpr int kMaximumWidth = 700;
 constexpr int kScrollStep = kItemHeight * 3;
+constexpr int kShapeBounding = 0;
+constexpr int kShapeSet = 0;
+constexpr int kShapeUnsorted = 0;
+
+using XShapeQueryExtensionFn = Bool (*)(Display *, int *, int *);
+using XShapeCombineRectanglesFn =
+    void (*)(Display *, Window, int, int, int, XRectangle *, int, int, int);
+
+struct XShapeApi {
+    void *Library = nullptr;
+    XShapeQueryExtensionFn QueryExtension = nullptr;
+    XShapeCombineRectanglesFn CombineRectangles = nullptr;
+    bool Available = false;
+
+    XShapeApi()
+    {
+        Library = dlopen("libXext.so.6", RTLD_LAZY | RTLD_LOCAL);
+        if (!Library) {
+            Library = dlopen("libXext.so", RTLD_LAZY | RTLD_LOCAL);
+        }
+        if (!Library) {
+            return;
+        }
+
+        QueryExtension =
+            reinterpret_cast<XShapeQueryExtensionFn>(dlsym(Library, "XShapeQueryExtension"));
+        CombineRectangles =
+            reinterpret_cast<XShapeCombineRectanglesFn>(dlsym(Library, "XShapeCombineRectangles"));
+        Available = QueryExtension && CombineRectangles;
+    }
+
+    ~XShapeApi()
+    {
+        if (Library) {
+            dlclose(Library);
+            Library = nullptr;
+        }
+    }
+
+    XShapeApi(const XShapeApi &) = delete;
+    XShapeApi &operator=(const XShapeApi &) = delete;
+};
 
 std::span<const Node>
 GetMenuNodes()
@@ -103,6 +151,27 @@ AllocateNamedColor(Display *display, int screen, const char *name, unsigned long
     return fallback;
 }
 
+bool
+IsTruthyEnvironmentValue(const char *value)
+{
+    return value && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+const char *
+MapStateName(int mapState)
+{
+    switch (mapState) {
+        case IsUnmapped:
+            return "IsUnmapped";
+        case IsUnviewable:
+            return "IsUnviewable";
+        case IsViewable:
+            return "IsViewable";
+        default:
+            return "unknown";
+    }
+}
+
 } // namespace
 
 struct X11ContextMenu::Impl {
@@ -123,7 +192,7 @@ struct X11ContextMenu::Impl {
     };
 
     struct Level {
-        Window MenuWindow = 0;
+        uint64_t DebugId = 0;
         std::span<const Node> Nodes;
         std::vector<Row> Rows;
         int X = 0;
@@ -140,31 +209,56 @@ struct X11ContextMenu::Impl {
     Window Owner;
     const Menu::IMenuState *State;
     ExecuteCommandHost *Host;
+    std::function<void()> RepaintOwner;
     Window Root;
+    Window PopupWindow = 0;
+    uint64_t PopupDebugId = 0;
+    int PopupX = 0;
+    int PopupY = 0;
+    int PopupWidth = 0;
+    int PopupHeight = 0;
+    bool PopupMapped = false;
+    Pixmap BackBuffer = 0;
+    int BackBufferWidth = 0;
+    int BackBufferHeight = 0;
     GC GraphicsContext = nullptr;
     XFontSet FontSet = nullptr;
     XFontStruct *FallbackFont = nullptr;
     Colors Palette;
-    Atom WmWindowType;
-    Atom WmWindowTypePopupMenu;
+    bool DebugLogging = false;
+    uint64_t NextDebugId = 1;
+    XShapeApi Shape;
+    bool ShapeUsable = false;
+    bool ShapeDirty = true;
     std::vector<Level> Levels;
 
     Impl(Display *display,
          int screen,
          Window owner,
          const Menu::IMenuState *state,
-         ExecuteCommandHost *host)
+         ExecuteCommandHost *host,
+         std::function<void()> repaintOwner)
         : DisplayHandle(display), Screen(screen), Owner(owner), State(state), Host(host),
-          Root(RootWindow(display, screen)),
+          RepaintOwner(std::move(repaintOwner)), Root(RootWindow(display, screen)),
           Palette{AllocateNamedColor(display, screen, "#f0f0f0", WhitePixel(display, screen)),
                   AllocateNamedColor(display, screen, "#101010", BlackPixel(display, screen)),
                   AllocateNamedColor(display, screen, "#777777", BlackPixel(display, screen)),
                   AllocateNamedColor(display, screen, "#3875d6", BlackPixel(display, screen)),
                   AllocateNamedColor(display, screen, "#ffffff", WhitePixel(display, screen)),
-                  AllocateNamedColor(display, screen, "#606060", BlackPixel(display, screen))},
-          WmWindowType(XInternAtom(display, "_NET_WM_WINDOW_TYPE", False)),
-          WmWindowTypePopupMenu(XInternAtom(display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False))
+                  AllocateNamedColor(display, screen, "#606060", BlackPixel(display, screen))}
     {
+        DebugLogging = IsTruthyEnvironmentValue(std::getenv("FRACTALSHARK_X11_MENU_DEBUG"));
+        if (Shape.Available) {
+            int eventBase = 0;
+            int errorBase = 0;
+            ShapeUsable = Shape.QueryExtension(DisplayHandle, &eventBase, &errorBase) != 0;
+            DebugLog("shape-extension usable=%d event_base=%d error_base=%d",
+                     ShapeUsable ? 1 : 0,
+                     eventBase,
+                     errorBase);
+        } else {
+            DebugLog("shape-extension usable=0 reason=libXext-or-symbols-unavailable");
+        }
         GraphicsContext = XCreateGC(DisplayHandle, Root, 0, nullptr);
 
         std::setlocale(LC_CTYPE, "");
@@ -184,6 +278,128 @@ struct X11ContextMenu::Impl {
             if (FallbackFont) {
                 XSetFont(DisplayHandle, GraphicsContext, FallbackFont->fid);
             }
+        }
+    }
+
+    void
+    DebugLog(const char *format, ...) const
+    {
+        if (!DebugLogging) {
+            return;
+        }
+
+        std::fprintf(stderr, "FractalSharkGuiLinux: x11-menu: ");
+        va_list args;
+        va_start(args, format);
+        std::vfprintf(stderr, format, args);
+        va_end(args);
+        std::fputc('\n', stderr);
+    }
+
+    void
+    SetDebugWindowName()
+    {
+        if (!DebugLogging || !PopupWindow) {
+            return;
+        }
+
+        char name[160]{};
+        std::snprintf(name,
+                      sizeof(name),
+                      "FractalShark menu popup id=%llu window=0x%lx",
+                      static_cast<unsigned long long>(PopupDebugId),
+                      static_cast<unsigned long>(PopupWindow));
+        XStoreName(DisplayHandle, PopupWindow, name);
+    }
+
+    void
+    DebugLogPopupState(const char *action, bool inRootTree) const
+    {
+        if (!DebugLogging || !PopupWindow) {
+            return;
+        }
+
+        XWindowAttributes attributes{};
+        if (XGetWindowAttributes(DisplayHandle, PopupWindow, &attributes)) {
+            DebugLog("%s popup id=%llu window=0x%lx popup=(%d,%d %dx%d) attr=(%d,%d %dx%d) "
+                     "map=%s override_redirect=%d in_root_tree=%d",
+                     action,
+                     static_cast<unsigned long long>(PopupDebugId),
+                     static_cast<unsigned long>(PopupWindow),
+                     PopupX,
+                     PopupY,
+                     PopupWidth,
+                     PopupHeight,
+                     attributes.x,
+                     attributes.y,
+                     attributes.width,
+                     attributes.height,
+                     MapStateName(attributes.map_state),
+                     attributes.override_redirect,
+                     inRootTree ? 1 : 0);
+            return;
+        }
+
+        DebugLog("%s popup id=%llu window=0x%lx popup=(%d,%d %dx%d) attr=<unavailable> in_root_tree=%d",
+                 action,
+                 static_cast<unsigned long long>(PopupDebugId),
+                 static_cast<unsigned long>(PopupWindow),
+                 PopupX,
+                 PopupY,
+                 PopupWidth,
+                 PopupHeight,
+                 inRootTree ? 1 : 0);
+    }
+
+    void
+    DebugDumpKnownWindows(const char *reason) const
+    {
+        if (!DebugLogging) {
+            return;
+        }
+
+        Window rootReturn = 0;
+        Window parentReturn = 0;
+        Window *children = nullptr;
+        unsigned int childCount = 0;
+        const bool haveTree =
+            XQueryTree(DisplayHandle, Root, &rootReturn, &parentReturn, &children, &childCount) != 0;
+
+        DebugLog("dump-known-windows reason=%s levels=%zu root_children=%u query_tree=%d popup=0x%lx",
+                 reason,
+                 Levels.size(),
+                 haveTree ? childCount : 0,
+                 haveTree ? 1 : 0,
+                 static_cast<unsigned long>(PopupWindow));
+
+        bool popupInRootTree = false;
+        if (haveTree && PopupWindow) {
+            for (unsigned int childIndex = 0; childIndex < childCount; ++childIndex) {
+                if (children[childIndex] == PopupWindow) {
+                    popupInRootTree = true;
+                    break;
+                }
+            }
+        }
+        DebugLogPopupState("known-popup", popupInRootTree);
+
+        for (std::size_t levelIndex = 0; levelIndex < Levels.size(); ++levelIndex) {
+            const Level &level = Levels[levelIndex];
+            DebugLog(
+                "known-level level=%zu id=%llu logical=(%d,%d %dx%d) rows=%zu selected=%d scroll=%d",
+                levelIndex,
+                static_cast<unsigned long long>(level.DebugId),
+                level.X,
+                level.Y,
+                level.Width,
+                level.Height,
+                level.Rows.size(),
+                level.SelectedRow,
+                level.ScrollOffset);
+        }
+
+        if (children) {
+            XFree(children);
         }
     }
 
@@ -232,12 +448,12 @@ struct X11ContextMenu::Impl {
     }
 
     void
-    DrawText(Window window, int x, int baseline, const std::string &text, unsigned long color)
+    DrawText(Drawable target, int x, int baseline, const std::string &text, unsigned long color)
     {
         XSetForeground(DisplayHandle, GraphicsContext, color);
         if (FontSet) {
             Xutf8DrawString(DisplayHandle,
-                            window,
+                            target,
                             FontSet,
                             GraphicsContext,
                             x,
@@ -246,7 +462,7 @@ struct X11ContextMenu::Impl {
                             static_cast<int>(text.size()));
         } else {
             XDrawString(DisplayHandle,
-                        window,
+                        target,
                         GraphicsContext,
                         x,
                         baseline,
@@ -283,110 +499,125 @@ struct X11ContextMenu::Impl {
     }
 
     void
-    DrawCheck(const Level &level, int rowY, int rowHeight, bool radio, unsigned long color)
+    DrawCheck(Drawable target, int originX, int rowY, int rowHeight, bool radio, unsigned long color)
     {
-        const int centerX = kMenuPadding + kCheckAreaWidth / 2;
+        const int centerX = originX + kMenuPadding + kCheckAreaWidth / 2;
         const int centerY = rowY + rowHeight / 2;
         XSetForeground(DisplayHandle, GraphicsContext, color);
         if (radio) {
-            XFillArc(DisplayHandle,
-                     level.MenuWindow,
-                     GraphicsContext,
-                     centerX - 3,
-                     centerY - 3,
-                     7,
-                     7,
-                     0,
-                     360 * 64);
+            XFillArc(
+                DisplayHandle, target, GraphicsContext, centerX - 3, centerY - 3, 7, 7, 0, 360 * 64);
             return;
         }
-        XDrawLine(DisplayHandle,
-                  level.MenuWindow,
-                  GraphicsContext,
-                  centerX - 5,
-                  centerY,
-                  centerX - 1,
-                  centerY + 4);
-        XDrawLine(DisplayHandle,
-                  level.MenuWindow,
-                  GraphicsContext,
-                  centerX - 1,
-                  centerY + 4,
-                  centerX + 6,
-                  centerY - 5);
+        XDrawLine(
+            DisplayHandle, target, GraphicsContext, centerX - 5, centerY, centerX - 1, centerY + 4);
+        XDrawLine(
+            DisplayHandle, target, GraphicsContext, centerX - 1, centerY + 4, centerX + 6, centerY - 5);
     }
 
     void
-    DrawSubmenuArrow(const Level &level, int rowY, int rowHeight, unsigned long color)
+    DrawSubmenuArrow(
+        Drawable target, const Level &level, int originX, int rowY, int rowHeight, unsigned long color)
     {
-        const int centerX = level.Width - kArrowAreaWidth / 2;
+        const int centerX = originX + level.Width - kArrowAreaWidth / 2;
         const int centerY = rowY + rowHeight / 2;
         XSetForeground(DisplayHandle, GraphicsContext, color);
-        XDrawLine(DisplayHandle,
-                  level.MenuWindow,
-                  GraphicsContext,
-                  centerX - 3,
-                  centerY - 4,
-                  centerX + 2,
-                  centerY);
-        XDrawLine(DisplayHandle,
-                  level.MenuWindow,
-                  GraphicsContext,
-                  centerX + 2,
-                  centerY,
-                  centerX - 3,
-                  centerY + 4);
+        XDrawLine(
+            DisplayHandle, target, GraphicsContext, centerX - 3, centerY - 4, centerX + 2, centerY);
+        XDrawLine(
+            DisplayHandle, target, GraphicsContext, centerX + 2, centerY, centerX - 3, centerY + 4);
     }
 
     void
-    DrawScrollIndicator(const Level &level, bool atTop)
+    DrawScrollIndicator(Drawable target, const Level &level, int originX, int originY, bool atTop)
     {
-        const int centerX = level.Width / 2;
-        const int centerY = atTop ? 4 : level.Height - 5;
+        const int centerX = originX + level.Width / 2;
+        const int centerY = originY + (atTop ? 4 : level.Height - 5);
         XSetForeground(DisplayHandle, GraphicsContext, Palette.Text);
         if (atTop) {
-            XDrawLine(DisplayHandle,
-                      level.MenuWindow,
-                      GraphicsContext,
-                      centerX - 4,
-                      centerY + 2,
-                      centerX,
-                      centerY - 2);
-            XDrawLine(DisplayHandle,
-                      level.MenuWindow,
-                      GraphicsContext,
-                      centerX,
-                      centerY - 2,
-                      centerX + 4,
-                      centerY + 2);
+            XDrawLine(
+                DisplayHandle, target, GraphicsContext, centerX - 4, centerY + 2, centerX, centerY - 2);
+            XDrawLine(
+                DisplayHandle, target, GraphicsContext, centerX, centerY - 2, centerX + 4, centerY + 2);
         } else {
-            XDrawLine(DisplayHandle,
-                      level.MenuWindow,
-                      GraphicsContext,
-                      centerX - 4,
-                      centerY - 2,
-                      centerX,
-                      centerY + 2);
-            XDrawLine(DisplayHandle,
-                      level.MenuWindow,
-                      GraphicsContext,
-                      centerX,
-                      centerY + 2,
-                      centerX + 4,
-                      centerY - 2);
+            XDrawLine(
+                DisplayHandle, target, GraphicsContext, centerX - 4, centerY - 2, centerX, centerY + 2);
+            XDrawLine(
+                DisplayHandle, target, GraphicsContext, centerX, centerY + 2, centerX + 4, centerY - 2);
         }
     }
 
     void
-    DrawLevel(const Level &level)
+    FreeBackBuffer()
     {
-        XSetWindowBackground(DisplayHandle, level.MenuWindow, Palette.Background);
-        XClearWindow(DisplayHandle, level.MenuWindow);
+        if (BackBuffer) {
+            XFreePixmap(DisplayHandle, BackBuffer);
+            BackBuffer = 0;
+        }
+        BackBufferWidth = 0;
+        BackBufferHeight = 0;
+    }
+
+    bool
+    EnsureBackBuffer()
+    {
+        if (!PopupWindow || PopupWidth <= 0 || PopupHeight <= 0) {
+            return false;
+        }
+        if (BackBuffer && BackBufferWidth == PopupWidth && BackBufferHeight == PopupHeight) {
+            return true;
+        }
+
+        FreeBackBuffer();
+        BackBuffer = XCreatePixmap(DisplayHandle,
+                                   PopupWindow,
+                                   static_cast<unsigned int>(PopupWidth),
+                                   static_cast<unsigned int>(PopupHeight),
+                                   static_cast<unsigned int>(DefaultDepth(DisplayHandle, Screen)));
+        if (!BackBuffer) {
+            return false;
+        }
+        BackBufferWidth = PopupWidth;
+        BackBufferHeight = PopupHeight;
+        return true;
+    }
+
+    void
+    DrawLevelTo(Drawable target, const Level &level)
+    {
+        if (!PopupWindow) {
+            return;
+        }
+
+        const int originX = level.X - PopupX;
+        const int originY = level.Y - PopupY;
+        XRectangle clip{static_cast<short>(originX),
+                        static_cast<short>(originY),
+                        static_cast<unsigned short>(level.Width),
+                        static_cast<unsigned short>(level.Height)};
+        XSetClipRectangles(DisplayHandle, GraphicsContext, 0, 0, &clip, 1, Unsorted);
+
+        XSetForeground(DisplayHandle, GraphicsContext, Palette.Background);
+        XFillRectangle(DisplayHandle,
+                       target,
+                       GraphicsContext,
+                       originX,
+                       originY,
+                       static_cast<unsigned int>(level.Width),
+                       static_cast<unsigned int>(level.Height));
+        XSetForeground(DisplayHandle, GraphicsContext, Palette.Border);
+        XDrawRectangle(DisplayHandle,
+                       target,
+                       GraphicsContext,
+                       originX,
+                       originY,
+                       static_cast<unsigned int>(std::max(0, level.Width - 1)),
+                       static_cast<unsigned int>(std::max(0, level.Height - 1)));
 
         for (std::size_t i = 0; i < level.Rows.size(); ++i) {
             const Row &row = level.Rows[i];
-            const int rowY = row.Y - level.ScrollOffset;
-            if (rowY + row.Height <= 0 || rowY >= level.Height) {
+            const int rowY = originY + row.Y - level.ScrollOffset;
+            if (rowY + row.Height <= originY || rowY >= originY + level.Height) {
                 continue;
             }
 
@@ -395,11 +626,11 @@ struct X11ContextMenu::Impl {
                 const int y = rowY + row.Height / 2;
                 XSetForeground(DisplayHandle, GraphicsContext, Palette.DisabledText);
                 XDrawLine(DisplayHandle,
-                          level.MenuWindow,
+                          target,
                           GraphicsContext,
-                          kMenuPadding,
+                          originX + kMenuPadding,
                           y,
-                          level.Width - kMenuPadding,
+                          originX + level.Width - kMenuPadding,
                           y);
                 continue;
             }
@@ -409,9 +640,9 @@ struct X11ContextMenu::Impl {
             if (selected) {
                 XSetForeground(DisplayHandle, GraphicsContext, Palette.Highlight);
                 XFillRectangle(DisplayHandle,
-                               level.MenuWindow,
+                               target,
                                GraphicsContext,
-                               0,
+                               originX,
                                rowY,
                                static_cast<unsigned int>(level.Width),
                                static_cast<unsigned int>(row.Height));
@@ -420,32 +651,81 @@ struct X11ContextMenu::Impl {
             const unsigned long textColor =
                 !enabled ? Palette.DisabledText : (selected ? Palette.HighlightText : Palette.Text);
             if (IsChecked(node)) {
-                DrawCheck(level, rowY, row.Height, node.checkKind == CheckKind::Radio, textColor);
+                DrawCheck(
+                    target, originX, rowY, row.Height, node.checkKind == CheckKind::Radio, textColor);
             }
-            DrawText(level.MenuWindow,
-                     kMenuPadding + kCheckAreaWidth,
+            DrawText(target,
+                     originX + kMenuPadding + kCheckAreaWidth,
                      TextBaseline(rowY, row.Height),
                      row.Label,
                      textColor);
             if (node.kind == Kind::Popup) {
-                DrawSubmenuArrow(level, rowY, row.Height, textColor);
+                DrawSubmenuArrow(target, level, originX, rowY, row.Height, textColor);
             }
         }
 
         if (level.ScrollOffset > 0) {
-            DrawScrollIndicator(level, true);
+            DrawScrollIndicator(target, level, originX, originY, true);
         }
         if (level.ScrollOffset + level.Height < level.ContentHeight) {
-            DrawScrollIndicator(level, false);
+            DrawScrollIndicator(target, level, originX, originY, false);
         }
+        XSetClipMask(DisplayHandle, GraphicsContext, 0);
+    }
+
+    void
+    DrawLevel(const Level &level)
+    {
+        if (!EnsureBackBuffer()) {
+            return;
+        }
+
+        DrawLevelTo(BackBuffer, level);
+        const int originX = level.X - PopupX;
+        const int originY = level.Y - PopupY;
+        XCopyArea(DisplayHandle,
+                  BackBuffer,
+                  PopupWindow,
+                  GraphicsContext,
+                  originX,
+                  originY,
+                  static_cast<unsigned int>(level.Width),
+                  static_cast<unsigned int>(level.Height),
+                  originX,
+                  originY);
+        XFlush(DisplayHandle);
     }
 
     void
     DrawAll()
     {
-        for (const Level &level : Levels) {
-            DrawLevel(level);
+        if (!EnsureBackBuffer()) {
+            return;
         }
+
+        XSetClipMask(DisplayHandle, GraphicsContext, 0);
+        XSetForeground(DisplayHandle, GraphicsContext, Palette.Background);
+        XFillRectangle(DisplayHandle,
+                       BackBuffer,
+                       GraphicsContext,
+                       0,
+                       0,
+                       static_cast<unsigned int>(PopupWidth),
+                       static_cast<unsigned int>(PopupHeight));
+        for (const Level &level : Levels) {
+            DrawLevelTo(BackBuffer, level);
+        }
+        XSetClipMask(DisplayHandle, GraphicsContext, 0);
+        XCopyArea(DisplayHandle,
+                  BackBuffer,
+                  PopupWindow,
+                  GraphicsContext,
+                  0,
+                  0,
+                  static_cast<unsigned int>(PopupWidth),
+                  static_cast<unsigned int>(PopupHeight),
+                  0,
+                  0);
         XFlush(DisplayHandle);
     }
 
@@ -489,101 +769,244 @@ struct X11ContextMenu::Impl {
     }
 
     bool
-    AddLevel(std::span<const Node> nodes, int desiredX, int desiredY, int leftAnchorX = -1)
+    EnsurePopupWindow()
     {
-        Level level = BuildLevel(nodes);
-        PositionLevel(level, desiredX, desiredY, leftAnchorX);
+        if (PopupWindow) {
+            return true;
+        }
 
         XSetWindowAttributes attributes{};
         attributes.override_redirect = True;
-        attributes.save_under = True;
         attributes.background_pixel = Palette.Background;
         attributes.border_pixel = Palette.Border;
         attributes.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
                                 EnterWindowMask | LeaveWindowMask;
 
-        level.MenuWindow =
-            XCreateWindow(DisplayHandle,
-                          Root,
-                          level.X,
-                          level.Y,
-                          static_cast<unsigned int>(level.Width),
-                          static_cast<unsigned int>(level.Height),
-                          1,
-                          CopyFromParent,
-                          InputOutput,
-                          CopyFromParent,
-                          CWOverrideRedirect | CWSaveUnder | CWBackPixel | CWBorderPixel | CWEventMask,
-                          &attributes);
-        if (!level.MenuWindow) {
+        PopupWindow = XCreateWindow(DisplayHandle,
+                                    Root,
+                                    0,
+                                    0,
+                                    1,
+                                    1,
+                                    0,
+                                    CopyFromParent,
+                                    InputOutput,
+                                    CopyFromParent,
+                                    CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
+                                    &attributes);
+        if (!PopupWindow) {
             return false;
         }
 
-        XChangeProperty(DisplayHandle,
-                        level.MenuWindow,
-                        WmWindowType,
-                        XA_ATOM,
-                        32,
-                        PropModeReplace,
-                        reinterpret_cast<unsigned char *>(&WmWindowTypePopupMenu),
-                        1);
-        XMapRaised(DisplayHandle, level.MenuWindow);
-        Levels.push_back(std::move(level));
-        DrawLevel(Levels.back());
-        XFlush(DisplayHandle);
+        PopupDebugId = NextDebugId++;
+        SetDebugWindowName();
+        DebugLog("create-popup id=%llu window=0x%lx shape=%d",
+                 static_cast<unsigned long long>(PopupDebugId),
+                 static_cast<unsigned long>(PopupWindow),
+                 ShapeUsable ? 1 : 0);
         return true;
     }
 
     void
-    HideAndDestroyLevelsFrom(std::size_t firstIndex)
+    DestroyPopupWindow()
     {
-        if (firstIndex >= Levels.size()) {
+        if (!PopupWindow) {
             return;
         }
 
-        bool unmapped = false;
-        for (std::size_t i = Levels.size(); i > firstIndex; --i) {
-            XUnmapWindow(DisplayHandle, Levels[i - 1].MenuWindow);
-            unmapped = true;
-        }
-        if (unmapped) {
-            XSync(DisplayHandle, False);
-        }
-        while (Levels.size() > firstIndex) {
-            XDestroyWindow(DisplayHandle, Levels.back().MenuWindow);
-            Levels.pop_back();
-        }
+        DebugLogPopupState("destroy-popup-request", true);
+        FreeBackBuffer();
+        XDestroyWindow(DisplayHandle, PopupWindow);
+        PopupWindow = 0;
+        PopupDebugId = 0;
+        PopupX = 0;
+        PopupY = 0;
+        PopupWidth = 0;
+        PopupHeight = 0;
+        PopupMapped = false;
+        ShapeDirty = true;
         XFlush(DisplayHandle);
+        DebugDumpKnownWindows("after-destroy-popup");
     }
 
-    void
-    HideAndDestroyLevelsAfter(std::size_t index)
+    bool
+    UpdatePopupWindow()
     {
-        HideAndDestroyLevelsFrom(index + 1);
+        if (Levels.empty()) {
+            DestroyPopupWindow();
+            return false;
+        }
+        if (!EnsurePopupWindow()) {
+            return false;
+        }
+
+        int minX = Levels.front().X;
+        int minY = Levels.front().Y;
+        int maxX = Levels.front().X + Levels.front().Width;
+        int maxY = Levels.front().Y + Levels.front().Height;
+        for (const Level &level : Levels) {
+            minX = std::min(minX, level.X);
+            minY = std::min(minY, level.Y);
+            maxX = std::max(maxX, level.X + level.Width);
+            maxY = std::max(maxY, level.Y + level.Height);
+        }
+
+        const int newX = minX;
+        const int newY = minY;
+        const int newWidth = std::max(1, maxX - minX);
+        const int newHeight = std::max(1, maxY - minY);
+        const bool geometryChanged =
+            newX != PopupX || newY != PopupY || newWidth != PopupWidth || newHeight != PopupHeight;
+
+        if (geometryChanged) {
+            FreeBackBuffer();
+        }
+
+        PopupX = newX;
+        PopupY = newY;
+        PopupWidth = newWidth;
+        PopupHeight = newHeight;
+
+        if (geometryChanged) {
+            XMoveResizeWindow(DisplayHandle,
+                              PopupWindow,
+                              PopupX,
+                              PopupY,
+                              static_cast<unsigned int>(PopupWidth),
+                              static_cast<unsigned int>(PopupHeight));
+        }
+
+        if (ShapeUsable && (geometryChanged || ShapeDirty)) {
+            std::vector<XRectangle> rectangles;
+            rectangles.reserve(Levels.size());
+            for (const Level &level : Levels) {
+                rectangles.push_back(XRectangle{static_cast<short>(level.X - PopupX),
+                                                static_cast<short>(level.Y - PopupY),
+                                                static_cast<unsigned short>(level.Width),
+                                                static_cast<unsigned short>(level.Height)});
+            }
+            Shape.CombineRectangles(DisplayHandle,
+                                    PopupWindow,
+                                    kShapeBounding,
+                                    0,
+                                    0,
+                                    rectangles.data(),
+                                    static_cast<int>(rectangles.size()),
+                                    kShapeSet,
+                                    kShapeUnsorted);
+            ShapeDirty = false;
+        }
+
+        if (!PopupMapped) {
+            XMapRaised(DisplayHandle, PopupWindow);
+            PopupMapped = true;
+        }
+
+        DebugLogPopupState("update-popup", true);
+        DebugDumpKnownWindows("after-update-popup");
+        return true;
     }
 
-    void
-    ReplaceChildLevel(
-        std::size_t levelIndex, std::span<const Node> nodes, int desiredX, int desiredY, int leftAnchorX)
+    bool
+    AddLevel(std::span<const Node> nodes, int desiredX, int desiredY, int leftAnchorX = -1)
     {
-        HideAndDestroyLevelsAfter(levelIndex + 1);
-
         Level level = BuildLevel(nodes);
         PositionLevel(level, desiredX, desiredY, leftAnchorX);
-        level.MenuWindow = Levels[levelIndex + 1].MenuWindow;
-
-        XUnmapWindow(DisplayHandle, level.MenuWindow);
-        XSync(DisplayHandle, False);
-        XMoveResizeWindow(DisplayHandle,
-                          level.MenuWindow,
-                          level.X,
-                          level.Y,
-                          static_cast<unsigned int>(level.Width),
-                          static_cast<unsigned int>(level.Height));
-        Levels[levelIndex + 1] = std::move(level);
-        XMapRaised(DisplayHandle, Levels[levelIndex + 1].MenuWindow);
-        DrawLevel(Levels[levelIndex + 1]);
+        level.DebugId = NextDebugId++;
+        const std::size_t levelIndex = Levels.size();
+        DebugLog("add-level level=%zu id=%llu logical=(%d,%d %dx%d)",
+                 levelIndex,
+                 static_cast<unsigned long long>(level.DebugId),
+                 level.X,
+                 level.Y,
+                 level.Width,
+                 level.Height);
+        Levels.push_back(std::move(level));
+        ShapeDirty = true;
+        if (!UpdatePopupWindow()) {
+            Levels.pop_back();
+            ShapeDirty = true;
+            return false;
+        }
+        DrawAll();
         XFlush(DisplayHandle);
+        return true;
+    }
+
+    bool
+    HideAndDestroyLevelsFrom(std::size_t firstIndex, bool present = true)
+    {
+        if (firstIndex >= Levels.size()) {
+            return false;
+        }
+
+        for (std::size_t i = Levels.size(); i > firstIndex; --i) {
+            const Level &level = Levels[i - 1];
+            DebugLog("remove-level level=%zu id=%llu logical=(%d,%d %dx%d)",
+                     i - 1,
+                     static_cast<unsigned long long>(level.DebugId),
+                     level.X,
+                     level.Y,
+                     level.Width,
+                     level.Height);
+        }
+        Levels.resize(firstIndex);
+        ShapeDirty = true;
+        if (present) {
+            if (Levels.empty()) {
+                DestroyPopupWindow();
+            } else {
+                UpdatePopupWindow();
+                DrawAll();
+            }
+            XFlush(DisplayHandle);
+            DebugDumpKnownWindows("after-remove-levels");
+        }
+        return true;
+    }
+
+    bool
+    HideAndDestroyLevelsAfter(std::size_t index)
+    {
+        return HideAndDestroyLevelsFrom(index + 1);
+    }
+
+    bool
+    ReplaceMappedChildLevel(
+        std::size_t levelIndex, std::span<const Node> nodes, int desiredX, int desiredY, int leftAnchorX)
+    {
+        const std::size_t childIndex = levelIndex + 1;
+        if (childIndex >= Levels.size()) {
+            return false;
+        }
+
+        HideAndDestroyLevelsFrom(childIndex + 1, false);
+
+        const uint64_t existingDebugId = Levels[childIndex].DebugId;
+        DebugLog("replace-level-before level=%zu id=%llu logical=(%d,%d %dx%d)",
+                 childIndex,
+                 static_cast<unsigned long long>(Levels[childIndex].DebugId),
+                 Levels[childIndex].X,
+                 Levels[childIndex].Y,
+                 Levels[childIndex].Width,
+                 Levels[childIndex].Height);
+        Level replacement = BuildLevel(nodes);
+        PositionLevel(replacement, desiredX, desiredY, leftAnchorX);
+        replacement.DebugId = existingDebugId;
+        Levels[childIndex] = std::move(replacement);
+        ShapeDirty = true;
+        DebugLog("replace-level-after level=%zu id=%llu logical=(%d,%d %dx%d)",
+                 childIndex,
+                 static_cast<unsigned long long>(Levels[childIndex].DebugId),
+                 Levels[childIndex].X,
+                 Levels[childIndex].Y,
+                 Levels[childIndex].Width,
+                 Levels[childIndex].Height);
+        UpdatePopupWindow();
+        DrawAll();
+        XFlush(DisplayHandle);
+        DebugDumpKnownWindows("after-replace-mapped-child");
+        return true;
     }
 
     int
@@ -599,15 +1022,10 @@ struct X11ContextMenu::Impl {
         return -1;
     }
 
-    int
-    FindLevelByWindow(Window window) const
+    bool
+    IsPopupWindow(Window window) const
     {
-        for (std::size_t i = 0; i < Levels.size(); ++i) {
-            if (Levels[i].MenuWindow == window) {
-                return static_cast<int>(i);
-            }
-        }
-        return -1;
+        return PopupWindow != 0 && window == PopupWindow;
     }
 
     int
@@ -653,35 +1071,45 @@ struct X11ContextMenu::Impl {
         }
     }
 
-    void
+    bool
     OpenSubmenu(std::size_t levelIndex, int rowIndex, bool selectFirst)
     {
         Level &parent = Levels[levelIndex];
         if (rowIndex < 0 || rowIndex >= static_cast<int>(parent.Rows.size())) {
-            HideAndDestroyLevelsAfter(levelIndex);
-            return;
+            return HideAndDestroyLevelsAfter(levelIndex);
         }
         const Row &row = parent.Rows[static_cast<std::size_t>(rowIndex)];
         const Node &node = *row.MenuNode;
         if (node.kind != Kind::Popup || !IsEnabled(node)) {
-            HideAndDestroyLevelsAfter(levelIndex);
-            return;
+            return HideAndDestroyLevelsAfter(levelIndex);
         }
 
         if (Levels.size() > levelIndex + 1 && Levels[levelIndex + 1].Nodes.data() == node.kids.data()) {
-            return;
+            if (selectFirst) {
+                SelectFirst(levelIndex + 1);
+                return true;
+            }
+            return false;
         }
 
         const int desiredX = parent.X + parent.Width + 1;
         const int desiredY = parent.Y + row.Y - parent.ScrollOffset;
+        const int leftAnchorX = parent.X;
+        bool presented = false;
         if (Levels.size() > levelIndex + 1) {
-            ReplaceChildLevel(levelIndex, node.kids, desiredX, desiredY, parent.X);
-        } else if (!AddLevel(node.kids, desiredX, desiredY, parent.X)) {
-            return;
+            presented = ReplaceMappedChildLevel(levelIndex, node.kids, desiredX, desiredY, leftAnchorX);
+        } else {
+            presented = AddLevel(node.kids, desiredX, desiredY, leftAnchorX);
+            if (!presented) {
+                return false;
+            }
         }
         if (selectFirst) {
             SelectFirst(levelIndex + 1);
+            presented = true;
         }
+        DebugDumpKnownWindows("after-open-submenu");
+        return presented;
     }
 
     void
@@ -693,11 +1121,15 @@ struct X11ContextMenu::Impl {
         }
         Level &level = Levels[static_cast<std::size_t>(levelIndex)];
         const int rowIndex = FindRowAt(level, rootY);
+        bool selectionChanged = false;
         if (level.SelectedRow != rowIndex) {
             level.SelectedRow = rowIndex;
-            DrawLevel(level);
+            selectionChanged = true;
         }
-        OpenSubmenu(static_cast<std::size_t>(levelIndex), rowIndex, false);
+        const bool presented = OpenSubmenu(static_cast<std::size_t>(levelIndex), rowIndex, false);
+        if (selectionChanged && !presented && static_cast<std::size_t>(levelIndex) < Levels.size()) {
+            DrawLevel(Levels[static_cast<std::size_t>(levelIndex)]);
+        }
     }
 
     void
@@ -710,8 +1142,9 @@ struct X11ContextMenu::Impl {
         Level &level = Levels[static_cast<std::size_t>(levelIndex)];
         level.ScrollOffset =
             std::clamp(level.ScrollOffset + delta, 0, std::max(0, level.ContentHeight - level.Height));
-        HideAndDestroyLevelsAfter(static_cast<std::size_t>(levelIndex));
-        DrawLevel(level);
+        if (!HideAndDestroyLevelsAfter(static_cast<std::size_t>(levelIndex))) {
+            DrawLevel(level);
+        }
         XFlush(DisplayHandle);
     }
 
@@ -735,8 +1168,11 @@ struct X11ContextMenu::Impl {
             if (IsSelectable(level.Rows[static_cast<std::size_t>(rowIndex)])) {
                 level.SelectedRow = rowIndex;
                 EnsureSelectedVisible(level);
-                DrawLevel(level);
-                OpenSubmenu(Levels.size() - 1, rowIndex, false);
+                const std::size_t levelIndex = Levels.size() - 1;
+                const bool presented = OpenSubmenu(levelIndex, rowIndex, false);
+                if (!presented && levelIndex < Levels.size()) {
+                    DrawLevel(Levels[levelIndex]);
+                }
                 XFlush(DisplayHandle);
                 return;
             }
@@ -793,9 +1229,10 @@ struct X11ContextMenu::Impl {
                 break;
             case XK_Left:
                 if (Levels.size() > 1) {
-                    HideAndDestroyLevelsAfter(Levels.size() - 2);
-                    DrawLevel(Levels.back());
-                    XFlush(DisplayHandle);
+                    if (!HideAndDestroyLevelsAfter(Levels.size() - 2)) {
+                        DrawLevel(Levels.back());
+                        XFlush(DisplayHandle);
+                    }
                 }
                 break;
             case XK_Return:
@@ -824,13 +1261,14 @@ struct X11ContextMenu::Impl {
     void
     Open(int rootX, int rootY)
     {
+        DebugLog("open-request root=(%d,%d)", rootX, rootY);
         Close();
         if (!AddLevel(GetMenuNodes(), rootX, rootY)) {
             return;
         }
 
         const int pointerGrab = XGrabPointer(DisplayHandle,
-                                             Levels.front().MenuWindow,
+                                             PopupWindow,
                                              True,
                                              ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
                                              GrabModeAsync,
@@ -849,18 +1287,22 @@ struct X11ContextMenu::Impl {
             Close();
             return;
         }
+        DebugLog("grab-result pointer=%d keyboard=%d", pointerGrab, keyboardGrab);
+        DebugDumpKnownWindows("after-open");
         XFlush(DisplayHandle);
     }
 
     void
     Close()
     {
-        if (Levels.empty()) {
+        if (Levels.empty() && !PopupWindow) {
             return;
         }
+        DebugLog("close levels=%zu", Levels.size());
         XUngrabPointer(DisplayHandle, CurrentTime);
         XUngrabKeyboard(DisplayHandle, CurrentTime);
-        HideAndDestroyLevelsFrom(0);
+        Levels.clear();
+        DestroyPopupWindow();
     }
 
     bool
@@ -872,9 +1314,8 @@ struct X11ContextMenu::Impl {
 
         switch (event.type) {
             case Expose: {
-                const int levelIndex = FindLevelByWindow(event.xexpose.window);
-                if (levelIndex >= 0) {
-                    DrawLevel(Levels[static_cast<std::size_t>(levelIndex)]);
+                if (IsPopupWindow(event.xexpose.window)) {
+                    DrawAll();
                     return true;
                 }
                 return false;
@@ -942,14 +1383,18 @@ struct X11ContextMenu::Impl {
                 return true;
 
             default:
-                return FindLevelByWindow(event.xany.window) >= 0;
+                return IsPopupWindow(event.xany.window);
         }
     }
 };
 
-X11ContextMenu::X11ContextMenu(
-    Display *display, int screen, Window owner, const Menu::IMenuState *state, ExecuteCommandHost *host)
-    : m_Impl(std::make_unique<Impl>(display, screen, owner, state, host))
+X11ContextMenu::X11ContextMenu(Display *display,
+                               int screen,
+                               Window owner,
+                               const Menu::IMenuState *state,
+                               ExecuteCommandHost *host,
+                               std::function<void()> repaintOwner)
+    : m_Impl(std::make_unique<Impl>(display, screen, owner, state, host, std::move(repaintOwner)))
 {
 }
 

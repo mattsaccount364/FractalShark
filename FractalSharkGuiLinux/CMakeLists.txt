@@ -49,7 +49,7 @@ target_include_directories(FractalSharkGuiLinux PRIVATE
 )
 
 find_package(X11 REQUIRED)
-find_package(OpenGL REQUIRED)
+find_package(OpenGL REQUIRED COMPONENTS OpenGL GLX)
 
 target_link_libraries(FractalSharkGuiLinux PRIVATE
     FractalSharkLib

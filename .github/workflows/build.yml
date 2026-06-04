@@ -52,6 +52,11 @@ jobs:
             software-properties-common \
             wget
 
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc \
+            | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" \
+            > /etc/apt/sources.list.d/kitware.list
+
           add-apt-repository -y ppa:ubuntu-toolchain-r/test
           curl -fsSL https://apt.llvm.org/llvm.sh -o /tmp/llvm.sh
           chmod +x /tmp/llvm.sh
@@ -64,12 +69,14 @@ jobs:
             g++-13 \
             git \
             libgl-dev \
+            libglx-dev \
             libglu1-mesa-dev \
             libgmp-dev \
             libstdc++-13-dev \
             libx11-dev \
             make
 
+          cmake --version
           clang-18 --version
           clang++-18 --version
           g++-13 --version

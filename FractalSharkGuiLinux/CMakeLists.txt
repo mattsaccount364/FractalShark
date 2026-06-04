@@ -51,13 +51,24 @@ target_include_directories(FractalSharkGuiLinux PRIVATE
 find_package(X11 REQUIRED)
 find_package(OpenGL REQUIRED COMPONENTS OpenGL GLX)
 
+set(FRACTALSHARK_LINUX_GLX_LIBRARY)
+if(TARGET OpenGL::GLX)
+    set(FRACTALSHARK_LINUX_GLX_LIBRARY OpenGL::GLX)
+elseif(OPENGL_glx_LIBRARY)
+    set(FRACTALSHARK_LINUX_GLX_LIBRARY ${OPENGL_glx_LIBRARY})
+else()
+    message(FATAL_ERROR
+        "OpenGL GLX component was found, but neither OpenGL::GLX nor "
+        "OPENGL_glx_LIBRARY is available.")
+endif()
+
 target_link_libraries(FractalSharkGuiLinux PRIVATE
     FractalSharkLib
     FractalSharkGpuLib
     FractalSharkPlatform
     X11::X11
     OpenGL::GL
-    OpenGL::GLX
+    ${FRACTALSHARK_LINUX_GLX_LIBRARY}
     ${CMAKE_DL_LIBS}
 )
 

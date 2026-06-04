@@ -106,7 +106,6 @@ jobs:
         run: |
           cmake -B build-debug \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=clang-18 \
             -DCMAKE_CXX_COMPILER=clang++-18 \
             -DCMAKE_CUDA_HOST_COMPILER=g++-13
 
@@ -114,7 +113,6 @@ jobs:
         run: |
           cmake -B build-release \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=clang-18 \
             -DCMAKE_CXX_COMPILER=clang++-18 \
             -DCMAKE_CUDA_HOST_COMPILER=g++-13
 

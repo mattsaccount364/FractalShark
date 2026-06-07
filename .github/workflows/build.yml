@@ -74,6 +74,7 @@ jobs:
             libgmp-dev \
             libstdc++-13-dev \
             libx11-dev \
+            file \
             make
 
           cmake --version

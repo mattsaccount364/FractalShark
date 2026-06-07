@@ -848,24 +848,28 @@ MainWindow::OnLoadRefOrbitImagMaxSaved()
 void
 MainWindow::OnBasicTest()
 {
+    WaitCursor waitCursor;
     CrummyTest t{*gFractal};
     t.TestAll();
 }
 void
 MainWindow::OnTest27()
 {
+    WaitCursor waitCursor;
     CrummyTest t{*gFractal};
     t.TestReallyHardView27();
 }
 void
 MainWindow::OnBenchmarkFull()
 {
+    WaitCursor waitCursor;
     CrummyTest t{*gFractal};
     t.Benchmark(RefOrbitCalc::PerturbationResultType::All);
 }
 void
 MainWindow::OnBenchmarkInt()
 {
+    WaitCursor waitCursor;
     CrummyTest t{*gFractal};
     t.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
 }

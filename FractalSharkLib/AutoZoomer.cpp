@@ -4,6 +4,7 @@
 #include "Environment.h"
 #include "FeatureSummary.h"
 #include "PerturbationResults.h"
+#include "WaitCursor.h"
 
 #include <cmath>
 #include <iostream>
@@ -17,6 +18,7 @@ AutoZoomer::Run()
     static_assert(h != Fractal::AutoZoomHeuristic::Feature,
                   "Use RunFeatureAtPoint() for feature autozoom.");
 
+    WaitCursor waitCursor;
     m_Fractal.ResetStopCalculating();
 
     const HighPrecision Two = HighPrecision{2};
@@ -442,6 +444,8 @@ template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::FilamentTip>();
 void
 AutoZoomer::RunFeatureAtPoint(int clientX, int clientY)
 {
+    WaitCursor waitCursor;
+
     std::cout << "Forcing GPU HDRx32 Perturbed LAv2 for AutoZoom(Feature) since it relies on "
                  "perturbation results to perform the zoom.\n";
 

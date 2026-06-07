@@ -11,6 +11,7 @@
 #include "Fractal.h"
 #include "RefOrbitCalc.h"
 #include "RenderAlgorithm.h"
+#include "WaitCursor.h"
 
 #include "LAParameters.h"
 
@@ -692,6 +693,7 @@ LinuxCommandHandlers::OnPalette20()
 void
 LinuxCommandHandlers::OnBasicTest()
 {
+    WaitCursor waitCursor;
     CrummyTest t{GetFractal()};
     t.TestAll();
 }
@@ -699,6 +701,7 @@ LinuxCommandHandlers::OnBasicTest()
 void
 LinuxCommandHandlers::OnTest27()
 {
+    WaitCursor waitCursor;
     CrummyTest t{GetFractal()};
     t.TestReallyHardView27();
 }
@@ -706,6 +709,7 @@ LinuxCommandHandlers::OnTest27()
 void
 LinuxCommandHandlers::OnBenchmarkFull()
 {
+    WaitCursor waitCursor;
     CrummyTest t{GetFractal()};
     t.Benchmark(RefOrbitCalc::PerturbationResultType::All);
 }
@@ -713,6 +717,7 @@ LinuxCommandHandlers::OnBenchmarkFull()
 void
 LinuxCommandHandlers::OnBenchmarkInt()
 {
+    WaitCursor waitCursor;
     CrummyTest t{GetFractal()};
     t.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
 }

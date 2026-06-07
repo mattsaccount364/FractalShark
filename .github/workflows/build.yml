@@ -107,21 +107,33 @@ jobs:
           cmake -B build-debug \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_COMPILER=clang++-18 \
-            -DCMAKE_CUDA_HOST_COMPILER=g++-13
+            -DCMAKE_CUDA_HOST_COMPILER=g++-13 \
+            -DCMAKE_CXX_FLAGS_DEBUG="-g3" \
+            -DCMAKE_CUDA_FLAGS_DEBUG="-g -G"
 
       - name: Configure CMake (Release)
         run: |
           cmake -B build-release \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_COMPILER=clang++-18 \
-            -DCMAKE_CUDA_HOST_COMPILER=g++-13
+            -DCMAKE_CUDA_HOST_COMPILER=g++-13 \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O3 -g3 -DNDEBUG" \
+            -DCMAKE_CUDA_FLAGS_RELEASE="-O3 -g -lineinfo -DNDEBUG"
 
-      - name: Verify Linux CMake build types
+      - name: Verify Linux CMake configuration
         run: |
           grep -q '^CMAKE_BUILD_TYPE:STRING=Debug$' build-debug/CMakeCache.txt
           grep -q '^CMAKE_BUILD_TYPE:STRING=Release$' build-release/CMakeCache.txt
+          grep -q '^CMAKE_CXX_FLAGS_DEBUG:STRING=-g3$' build-debug/CMakeCache.txt
+          grep -q '^CMAKE_CUDA_FLAGS_DEBUG:STRING=-g -G$' build-debug/CMakeCache.txt
+          grep -q '^CMAKE_CXX_FLAGS_RELEASE:STRING=-O3 -g3 -DNDEBUG$' build-release/CMakeCache.txt
+          grep -q '^CMAKE_CUDA_FLAGS_RELEASE:STRING=-O3 -g -lineinfo -DNDEBUG$' build-release/CMakeCache.txt
           grep '^CMAKE_BUILD_TYPE:STRING=' build-debug/CMakeCache.txt
           grep '^CMAKE_BUILD_TYPE:STRING=' build-release/CMakeCache.txt
+          grep '^CMAKE_CXX_FLAGS_DEBUG:STRING=' build-debug/CMakeCache.txt
+          grep '^CMAKE_CUDA_FLAGS_DEBUG:STRING=' build-debug/CMakeCache.txt
+          grep '^CMAKE_CXX_FLAGS_RELEASE:STRING=' build-release/CMakeCache.txt
+          grep '^CMAKE_CUDA_FLAGS_RELEASE:STRING=' build-release/CMakeCache.txt
 
       - name: Build Debug
         # Serial build (-j 1) is intentional: parallel compilation of CUDA TUs
@@ -134,6 +146,24 @@ jobs:
         # plus heavy C++23 template instantiations exceeds the hosted runner
         # memory and triggers the OOM killer.
         run: cmake --build build-release -j 1
+
+      - name: Verify Linux debug symbols
+        run: |
+          set -euo pipefail
+
+          for binary in \
+            build-debug/FractalSharkTest/FractalSharkTest \
+            build-debug/FractalSharkCli/FractalSharkCli \
+            build-debug/FractalSharkGuiLinux/FractalSharkGuiLinux \
+            build-release/FractalSharkCli/FractalSharkCli \
+            build-release/FractalSharkGuiLinux/FractalSharkGuiLinux
+          do
+            echo "== $binary =="
+            file "$binary"
+            readelf -S "$binary" | grep -q '\.debug_info'
+            readelf -S "$binary" | grep -q '\.debug_line'
+            readelf -S "$binary" | grep -q '\.symtab'
+          done
 
       - name: Run FractalSharkTest
         run: ./build-debug/FractalSharkTest/FractalSharkTest

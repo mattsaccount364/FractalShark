@@ -2,8 +2,6 @@
 
 #include <stdint.h>
 
-class WaitCursor;
-
 class BenchmarkTimer {
 public:
     BenchmarkTimer();

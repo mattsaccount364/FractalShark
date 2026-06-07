@@ -1,10 +1,7 @@
 #pragma once
 
 #include "HighPrecision.h"
-#include <memory>
 #include <stdint.h>
-
-class WaitCursor;
 
 class BenchmarkData {
 public:
@@ -26,8 +23,6 @@ private:
     uint64_t m_endTime;
 
     uint64_t m_DeltaTime;
-
-    std::unique_ptr<WaitCursor> m_WaitCursor;
 };
 
 struct ScopedBenchmarkStopper {

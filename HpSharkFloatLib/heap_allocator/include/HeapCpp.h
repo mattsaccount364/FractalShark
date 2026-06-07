@@ -2,21 +2,19 @@
 
 #include "heap.h"
 
-#include <stdexcept>
 #include <mutex>
+#include <stdexcept>
 
 //
 // This implementation is a modified version of the simple one found here
 // https://github.com/CCareaga/heap_allocator
 //
 
-template<typename T>
-class GrowableVector;
+template <typename T> class GrowableVector;
 
 namespace Environment {
 void RegisterHeapCleanup();
 }
-
 
 class HeapCpp {
 
@@ -25,7 +23,7 @@ public:
     // The constructor does nothing, which is important because the singleton
     // may be created before the static constructor runs.
     static void InitGlobalHeap();
-    
+
     HeapCpp();
 
     // No ShutdownGlobalHeap().  We don't know when to call it.
@@ -49,13 +47,16 @@ public:
     // This is useful for detecting memory leaks.
     size_t CountAllocations() const;
 
+    // Diagnostic helper for tests and assertions.
+    bool OwnsPointer(const void *ptr) const;
+
 private:
     // Returns the bin index for a given allocation size.
     uint64_t GetBinIndex(size_t size);
 
     void CreateFooter(node_t *head);
 
-    footer_t *GetFooter(node_t * head);
+    footer_t *GetFooter(node_t *head);
 
     node_t *GetWilderness();
 
@@ -76,7 +77,7 @@ private:
     StatsCollection Stats;
 
     static constexpr auto GrowByAmtBytes = 1024 * 1024; // 1MB
-    static constexpr auto GrowableVectorSize = 2048;
+    static constexpr auto GrowableVectorSize = 4096;
     uint8_t GrowableVectorMemory[GrowableVectorSize];
     GrowableVector<uint8_t> *Growable;
 };

@@ -1,29 +1,34 @@
-#include "include\HeapCpp.h" // Include your wrapper header
-#include "..\DbgHeap.h"
-#include "..\EarlyCommandLine.h"
-#include "include\HeapPanic.h"
-#include "include\llist.h"
+#include "include/HeapCpp.h" // Include your wrapper header
+#include "../DbgHeap.h"
+#include "../EarlyCommandLine.h"
+#include "include/HeapPanic.h"
+#include "include/llist.h"
 
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <errno.h>
 #include <new>
 #include <type_traits>
 
-#include "..\Vectors.h"
+#include "../Vectors.h"
 #include "Environment.h"
 
+#ifdef _MSC_VER
 #pragma optimize("", off)
+#endif
 
 // Portable compiler attribute macros
 #ifdef _MSC_VER
 #define FS_RESTRICT __declspec(restrict)
 #define FS_NOINLINE __declspec(noinline)
 #else
+#define __forceinline inline __attribute__((always_inline))
 #define FS_RESTRICT __attribute__((malloc))
 #define FS_NOINLINE __attribute__((noinline))
+#define sprintf_s(buffer, ...) snprintf((buffer), sizeof(buffer), __VA_ARGS__)
 #endif
 
 //
@@ -62,11 +67,11 @@
 #pragma section(".fs_alloc", read, write)
 #endif
 
+#ifdef _MSC_VER
 using PF = void(__cdecl *)(void);
 static int cxpf = 0; // number of destructors we need to call
 static PF pfx[200];  // pointers to destructors.
 
-#ifdef _MSC_VER
 #pragma section(".fs_alloc$a", read)
 __declspec(allocate(".fs_alloc$a")) const PF InitSegStart = (PF)1;
 
@@ -95,7 +100,7 @@ FancyHeap EnableFractalSharkHeap;
 static constexpr auto PAGE_SIZE = 0x1000;
 
 // sprintf etc use heap allocations in debug mode, so we can't use them here.
-static constexpr bool LimitedDebugOut = !FractalSharkDebug;
+[[maybe_unused]] static constexpr bool LimitedDebugOut = !FractalSharkDebug;
 static constexpr bool FullDebugOut = false;
 
 // --------------------------------------------------------
@@ -152,7 +157,7 @@ SysRealloc(void *p, size_t n)
     return Environment::SystemHeapRealloc(p, n);
 }
 
-static __forceinline bool
+[[maybe_unused]] static __forceinline bool
 IsPow2(size_t x)
 {
     return x && ((x & (x - 1)) == 0);
@@ -167,8 +172,14 @@ CleanupHeap()
 void
 Environment::RegisterHeapCleanup()
 {
+    if (EnableFractalSharkHeap == FancyHeap::Unknown) {
+        EarlyInit_SafeMode_NoCRT();
+    }
+
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
+#ifdef _WIN32
         atexit(CleanupHeap);
+#endif
     } else if (EnableFractalSharkHeap == FancyHeap::Disable) {
         // Heh, so on this path we bypass the fancy heap but we still must init this
         // logic or the growable vector fails in other contexts.
@@ -225,11 +236,13 @@ HeapCpp::InitGlobalHeap()
 
 HeapCpp::HeapCpp()
 {
+#ifdef _WIN32
     if (Environment::IsDebuggerAttached()) {
         char buffer[256];
         sprintf_s(buffer, "HeapCpp Constructor called\n");
         Environment::DebugOutput(buffer);
     }
+#endif
 
     // It's very important that we don't do anything here, because this heap
     // may be used before its static constructor is called.
@@ -237,11 +250,16 @@ HeapCpp::HeapCpp()
 
 HeapCpp::~HeapCpp()
 {
-    Mutex->~mutex();
+    static bool destroyed = false;
+    if (destroyed || !Initialized) {
+        return;
+    }
+    destroyed = true;
 
     // So this is pretty excellent.  We don't want to touch anything here,
     // because this heap may still be used after it's destroyed.
 
+#ifdef _WIN32
     auto totalAllocs = CountAllocations();
 
     // Check if debugger attached.  Note this isn't necessarily the
@@ -272,6 +290,9 @@ HeapCpp::~HeapCpp()
         sprintf_s(buffer, "Delta allocations = %zu\n", Stats.Allocations - Stats.Frees);
         Environment::DebugOutput(buffer);
     }
+#endif
+
+    Mutex->~mutex();
 
     // Growable->Clear();
     // std::destroy_at(Growable);
@@ -463,8 +484,8 @@ HeapCpp::Allocate(size_t user_size)
                 char buf[256];
                 sprintf_s(buf,
                           "Write-after-free: expected 0xCDCDCDCDCDCDCDCD, got 0x%llX at %p (size=%llu)",
-                          *probe,
-                          user,
+                          static_cast<unsigned long long>(*probe),
+                          static_cast<void *>(user),
                           static_cast<unsigned long long>(found->actual_size));
                 HeapPanic(buf);
             }
@@ -536,7 +557,7 @@ safe_prev_node(const heap_t &H, node_t *head)
 }
 
 static inline node_t *
-safe_next_node(const heap_t &H, node_t *head, footer_t *head_foot)
+safe_next_node(const heap_t &H, node_t * /*head*/, footer_t *head_foot)
 {
     auto *next = reinterpret_cast<node_t *>(reinterpret_cast<char *>(head_foot) + sizeof(footer_t));
 
@@ -786,6 +807,17 @@ HeapCpp::CountAllocations() const
     return count;
 }
 
+bool
+HeapCpp::OwnsPointer(const void *ptr) const
+{
+    if (!Initialized || ptr == nullptr) {
+        return false;
+    }
+
+    const auto address = reinterpret_cast<uintptr_t>(ptr);
+    return address >= Heap.start && address < Heap.end;
+}
+
 // ========================================================
 // this function is the hashing function that converts
 // size => bin index. changing this function will change
@@ -1020,13 +1052,15 @@ strndup(const char *s, size_t n)
     return d;
 }
 
+#ifdef _WIN32
 FS_RESTRICT char *
 realpath(const char *fname, char *resolved_name)
 {
     return _fullpath(resolved_name, fname, _MAX_PATH);
 }
+#endif
 
-#ifdef _DEBUG
+#if defined(_MSC_VER) && defined(_DEBUG)
 
 void *
 _malloc_dbg(size_t size, int blockType, const char *filename, int line)
@@ -1138,13 +1172,13 @@ _msize_dbg(void *block, int /*block_use*/)
 } // extern "C"
 
 void
-operator delete(void *ptr)
+operator delete(void *ptr) noexcept
 {
     free(ptr);
 }
 
 void
-operator delete[](void *ptr)
+operator delete[](void *ptr) noexcept
 {
     free(ptr);
 }
@@ -1198,6 +1232,18 @@ void *
 operator new[](size_t count, std::align_val_t al, const std::nothrow_t &) noexcept
 {
     return aligned_alloc(static_cast<size_t>(al), count);
+}
+
+void
+operator delete(void *ptr, std::size_t) noexcept
+{
+    free(ptr);
+}
+
+void
+operator delete[](void *ptr, std::size_t) noexcept
+{
+    free(ptr);
 }
 
 void

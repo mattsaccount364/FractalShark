@@ -20,46 +20,74 @@
 #include <unistd.h>
 
 // -------------------------------------------------------------------------
-// LinuxMappingState — tracks info needed for munmap/mremap.
-// Stored in m_MappedFile (cast to/from void*).
-// -------------------------------------------------------------------------
-struct LinuxMappingState {
-    size_t viewSize;  // total mmap'd region size in bytes
-    bool reserveOnly; // true if mapped with PROT_NONE (reserve-only)
-};
-
-// -------------------------------------------------------------------------
 // Helper: convert wchar_t (UTF-32 on Linux) to UTF-8.
 // -------------------------------------------------------------------------
 namespace {
 
-std::string
-WideToUtf8(const wchar_t *wide)
+bool
+AppendUtf8(char *dst, size_t dstSize, size_t &offset, uint32_t c)
 {
-    if (wide == nullptr || *wide == L'\0') {
-        return {};
+    auto appendByte = [&](char b) {
+        if (offset + 1 >= dstSize) {
+            return false;
+        }
+        dst[offset++] = b;
+        return true;
+    };
+
+    if (c < 0x80) {
+        return appendByte(static_cast<char>(c));
+    }
+    if (c < 0x800) {
+        return appendByte(static_cast<char>(0xC0 | (c >> 6))) &&
+               appendByte(static_cast<char>(0x80 | (c & 0x3F)));
+    }
+    if (c < 0x10000) {
+        return appendByte(static_cast<char>(0xE0 | (c >> 12))) &&
+               appendByte(static_cast<char>(0x80 | ((c >> 6) & 0x3F))) &&
+               appendByte(static_cast<char>(0x80 | (c & 0x3F)));
     }
 
-    std::string result;
+    return appendByte(static_cast<char>(0xF0 | (c >> 18))) &&
+           appendByte(static_cast<char>(0x80 | ((c >> 12) & 0x3F))) &&
+           appendByte(static_cast<char>(0x80 | ((c >> 6) & 0x3F))) &&
+           appendByte(static_cast<char>(0x80 | (c & 0x3F)));
+}
+
+bool
+WideToUtf8Buffer(const wchar_t *wide, char *dst, size_t dstSize)
+{
+    if (dstSize == 0) {
+        return false;
+    }
+
+    size_t offset = 0;
+    if (wide == nullptr) {
+        dst[0] = '\0';
+        return true;
+    }
+
     for (const wchar_t *p = wide; *p != L'\0'; ++p) {
-        auto c = static_cast<uint32_t>(*p);
-        if (c < 0x80) {
-            result.push_back(static_cast<char>(c));
-        } else if (c < 0x800) {
-            result.push_back(static_cast<char>(0xC0 | (c >> 6)));
-            result.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-        } else if (c < 0x10000) {
-            result.push_back(static_cast<char>(0xE0 | (c >> 12)));
-            result.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-            result.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-        } else {
-            result.push_back(static_cast<char>(0xF0 | (c >> 18)));
-            result.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
-            result.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-            result.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+        if (!AppendUtf8(dst, dstSize, offset, static_cast<uint32_t>(*p))) {
+            dst[0] = '\0';
+            return false;
         }
     }
-    return result;
+
+    dst[offset] = '\0';
+    return true;
+}
+
+size_t
+MappingViewSize(void *mappedFile)
+{
+    return static_cast<size_t>(reinterpret_cast<uintptr_t>(mappedFile));
+}
+
+void *
+MappingViewState(size_t viewSize)
+{
+    return reinterpret_cast<void *>(static_cast<uintptr_t>(viewSize));
 }
 
 } // anonymous namespace
@@ -242,11 +270,6 @@ GrowableVector<EltT>::GrowableVector(AddPointOptions addPointOptions,
     }
     m_PhysicalMemoryCapacityKB = static_cast<size_t>(pages) * static_cast<size_t>(pageSize) / 1024;
 
-    if (HasSafeModeFlag_NoCRT()) {
-        // In safe mode, we always use anonymous memory.
-        m_AddPointOptions = AddPointOptions::DontSave;
-    }
-
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
         // 32 MB.  We're not allocating some function of RAM on disk.
         // It should be doing a sparse allocation but who knows.
@@ -366,8 +389,7 @@ GrowableVector<EltT>::CloseMapping()
     if (UsingAnonymous()) {
         if (m_Data != nullptr) {
             GlobalCallstacks->LogDeallocCallstack(m_Data);
-            auto *mapping = static_cast<LinuxMappingState *>(m_MappedFile);
-            size_t sz = mapping ? mapping->viewSize : 0;
+            size_t sz = MappingViewSize(m_MappedFile);
             if (sz > 0) {
                 munmap(m_Data, sz);
             }
@@ -379,8 +401,7 @@ GrowableVector<EltT>::CloseMapping()
         m_CapacityInElts = 0;
     } else {
         if (m_Data != nullptr) {
-            auto *mapping = static_cast<LinuxMappingState *>(m_MappedFile);
-            size_t sz = mapping ? mapping->viewSize : 0;
+            size_t sz = MappingViewSize(m_MappedFile);
             if (sz > 0) {
                 munmap(m_Data, sz);
             }
@@ -389,7 +410,6 @@ GrowableVector<EltT>::CloseMapping()
     }
 
     if (m_MappedFile != nullptr) {
-        delete static_cast<LinuxMappingState *>(m_MappedFile);
         m_MappedFile = nullptr;
     }
 
@@ -420,16 +440,20 @@ GrowableVector<EltT>::TrimEnableWithoutSave()
         return;
     }
 
-    auto *mapping = static_cast<LinuxMappingState *>(m_MappedFile);
     size_t newSize = m_UsedSizeInElts * sizeof(EltT);
     if (newSize == 0) {
         newSize = 1; // mremap doesn't accept 0
     }
 
+    size_t currentSize = MappingViewSize(m_MappedFile);
+    if (currentSize == 0 || newSize >= currentSize) {
+        return;
+    }
+
     const void *originalData = m_Data;
 
     // Shrink in-place (flags=0 means don't move)
-    void *result = mremap(m_Data, mapping->viewSize, newSize, 0);
+    void *result = mremap(m_Data, currentSize, newSize, 0);
     if (result == MAP_FAILED) {
         char buf[256];
         snprintf(buf, sizeof(buf), "Failed to mremap view: %s", strerror(errno));
@@ -437,7 +461,7 @@ GrowableVector<EltT>::TrimEnableWithoutSave()
     }
 
     m_Data = static_cast<EltT *>(result);
-    mapping->viewSize = newSize;
+    m_MappedFile = MappingViewState(newSize);
 
     if (originalData != m_Data) {
         // mremap with flags=0 should not move the mapping
@@ -533,19 +557,22 @@ GrowableVector<EltT>::InternalOpenFile()
         int oflags = O_RDWR | O_CREAT;
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
             oflags = O_RDWR; // no O_CREAT — file must exist
+        } else if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
+            oflags |= O_TRUNC;
         }
 
         if (wcscmp(m_Filename, L"") == 0) {
             // Generate a random filename from /dev/urandom.
             uint8_t bytes[16];
-            FILE *f = fopen("/dev/urandom", "rb");
-            if (f == nullptr || fread(bytes, 1, 16, f) != 16) {
-                if (f) {
-                    fclose(f);
+            int randomFd = open("/dev/urandom", O_RDONLY);
+            if (randomFd < 0 ||
+                read(randomFd, bytes, sizeof(bytes)) != static_cast<ssize_t>(sizeof(bytes))) {
+                if (randomFd >= 0) {
+                    close(randomFd);
                 }
                 throw FractalSharkSeriousException("Failed to generate random filename", false);
             }
-            fclose(f);
+            close(randomFd);
 
             wchar_t guid[40];
             swprintf(guid,
@@ -571,9 +598,12 @@ GrowableVector<EltT>::InternalOpenFile()
         }
 
         // Convert wide filename to UTF-8 for POSIX APIs.
-        std::string u8path = WideToUtf8(m_Filename);
+        char u8path[4096];
+        if (!WideToUtf8Buffer(m_Filename, u8path, sizeof(u8path))) {
+            throw FractalSharkSeriousException("Failed to convert filename to UTF-8", false);
+        }
 
-        int fd = open(u8path.c_str(), oflags, 0666);
+        int fd = open(u8path, oflags, 0666);
         if (fd < 0) {
             auto err = errno;
             char buf[256];
@@ -585,7 +615,7 @@ GrowableVector<EltT>::InternalOpenFile()
 
         // Delete-on-close: unlink now, data persists until fd is closed.
         if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
-            unlink(u8path.c_str());
+            unlink(u8path);
         }
 
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
@@ -617,10 +647,20 @@ template <class EltT>
 void
 GrowableVector<EltT>::MutableFileResizeOpen(size_t capacity)
 {
+    const size_t capacityBytes = capacity * sizeof(EltT);
+    if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
+        const size_t viewSize = MappingViewSize(m_MappedFile);
+        if (capacityBytes > viewSize) {
+            throw FractalSharkSeriousException("GrowableVector sparse backing view exhausted", false);
+        }
+        m_CapacityInElts = capacity;
+        return;
+    }
+
     m_CapacityInElts = capacity;
 
     int fd = static_cast<int>(reinterpret_cast<intptr_t>(m_FileHandle));
-    off_t newSize = static_cast<off_t>(m_CapacityInElts * sizeof(EltT));
+    off_t newSize = static_cast<off_t>(capacityBytes);
     if (ftruncate(fd, newSize) != 0) {
         char buf[256];
         snprintf(buf, sizeof(buf), "Failed to extend file: %s", strerror(errno));
@@ -684,20 +724,6 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
         m_CapacityInElts = capacity;
     }
 
-    // Set the initial file size via ftruncate (analogous to NtCreateSection
-    // with initialSize).
-    off_t initialSize;
-    if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
-        initialSize = static_cast<off_t>(m_CapacityInElts * sizeof(EltT));
-    } else {
-        initialSize = existingFileSize;
-    }
-    if (ftruncate(fd, initialSize) != 0) {
-        char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to set initial file size: %s", strerror(errno));
-        throw FractalSharkSeriousException(buf, false);
-    }
-
     // Determine the view (mmap) size.
     size_t viewSize;
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
@@ -710,6 +736,29 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
         viewSize = static_cast<size_t>(existingFileSize);
     }
 
+    const size_t capacityBytes = m_CapacityInElts * sizeof(EltT);
+    if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave && capacityBytes > viewSize) {
+        throw FractalSharkSeriousException("GrowableVector capacity exceeds sparse backing view", false);
+    }
+
+    // Set the initial file size via ftruncate (analogous to NtCreateSection
+    // with initialSize). Temporary file-backed vectors use the full sparse
+    // backing file immediately; disk blocks are still allocated only as pages
+    // are written.
+    off_t initialSize;
+    if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
+        initialSize = static_cast<off_t>(viewSize);
+    } else if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
+        initialSize = static_cast<off_t>(capacityBytes);
+    } else {
+        initialSize = existingFileSize;
+    }
+    if (ftruncate(fd, initialSize) != 0) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Failed to set initial file size: %s", strerror(errno));
+        throw FractalSharkSeriousException(buf, false);
+    }
+
     // mmap the file.
     const void *originalData = m_Data;
     void *mapped = mmap(nullptr, viewSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -720,9 +769,9 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
     }
     m_Data = static_cast<EltT *>(mapped);
 
-    // Store the mapping state.
-    auto *mapping = new LinuxMappingState{viewSize, false};
-    m_MappedFile = static_cast<void *>(mapping);
+    // Store the mapping size without allocating; this path is used while
+    // bootstrapping the custom heap.
+    m_MappedFile = MappingViewState(viewSize);
 
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
         // Debug check:
@@ -736,9 +785,12 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
             throw FractalSharkSeriousException(buf, false);
         }
 
-        // Extend the file to its full capacity (analogous to NtExtendSection).
-        off_t capacityBytes = static_cast<off_t>(m_CapacityInElts * sizeof(EltT));
-        if (ftruncate(fd, capacityBytes) != 0) {
+        if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
+            return;
+        }
+
+        // Extend the file to its current logical capacity (analogous to NtExtendSection).
+        if (ftruncate(fd, static_cast<off_t>(capacityBytes)) != 0) {
             char buf[256];
             snprintf(buf, sizeof(buf), "Failed to extend file: %s", strerror(errno));
             throw FractalSharkSeriousException(buf, false);
@@ -804,9 +856,8 @@ GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes)
 
     m_Data = static_cast<EltT *>(res);
 
-    // Track the reserved size for later munmap.
-    auto *mapping = new LinuxMappingState{new_reserved_bytes, true};
-    m_MappedFile = static_cast<void *>(mapping);
+    // Track the reserved size for later munmap without allocating.
+    m_MappedFile = MappingViewState(new_reserved_bytes);
 }
 
 // =========================================================================

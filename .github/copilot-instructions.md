@@ -67,7 +67,7 @@ Only x64 is supported. **Do not pass `/nologo`** — MSBuild misinterprets it as
 
 Linux build uses Clang (not GCC). Prereqs: CMake 3.20+, Clang (tested 18.x), `libgmp-dev`.
 
-The custom heap allocator (`HpSharkFloatLib/heap_allocator/HeapCpp.cpp`) is Windows-only by design. On Linux, allocations flow through glibc `malloc` via `Environment::SystemHeap*` and `Environment::RegisterHeapCleanup()` is an empty stub (`FractalSharkPlatform/EnvironmentLinux.cpp`). Permanent decision.
+The custom heap allocator (`HpSharkFloatLib/heap_allocator/HeapCpp.cpp`) is enabled on Linux and Windows. On Linux, the heap is backed by a physical-RAM-sized sparse file mapping so vector growth stays virtually contiguous without consuming disk blocks until pages are written.
 
 ### Linux Test Machine
 

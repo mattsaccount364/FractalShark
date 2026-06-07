@@ -1,12 +1,22 @@
 #include "TestFramework.h"
 
+#include "EarlyCommandLine.h"
 #include "Environment.h"
 #include "Vectors.h"
+#include "heap_allocator/include/HeapCpp.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <new>
 #include <string>
+
+#ifndef _WIN32
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -26,6 +36,31 @@ MakeTempPath(const char *stem)
     path += L".bin";
     return path;
 }
+
+#ifndef _WIN32
+std::string
+WideAsciiToNarrow(const std::wstring &path)
+{
+    std::string result;
+    result.reserve(path.size());
+    for (wchar_t ch : path) {
+        result.push_back(static_cast<char>(ch));
+    }
+    return result;
+}
+
+uint64_t
+AllocatedBytesForPath(const std::wstring &path)
+{
+    struct stat st{};
+    const std::string narrowPath = WideAsciiToNarrow(path);
+    if (stat(narrowPath.c_str(), &st) != 0) {
+        return UINT64_MAX;
+    }
+
+    return static_cast<uint64_t>(st.st_blocks) * 512u;
+}
+#endif
 
 } // namespace
 
@@ -115,4 +150,102 @@ TEST(GrowableVector_FileBackedRoundtrip)
     }
 
     Environment::FileDelete(path.c_str());
+}
+
+// ---------------------------------------------------------------------------
+// Temporary file-backed vectors should reserve one mapping and grow capacity
+// inside it without relocating m_Data.
+// ---------------------------------------------------------------------------
+TEST(GrowableVector_TemporaryMappedPointerStability)
+{
+    const std::wstring path = MakeTempPath("temporary_sparse");
+    Environment::FileDelete(path.c_str());
+
+    constexpr size_t ReserveBytes = 128ull * 1024ull * 1024ull;
+    GrowableVector<uint8_t> vec(AddPointOptions::EnableWithoutSave, path.c_str(), ReserveBytes);
+
+    vec.MutableReserveKeepFileSize(4096);
+    uint8_t *firstPtr = vec.GetData();
+    ASSERT_TRUE(firstPtr != nullptr);
+
+    vec[0] = 0x5A;
+    vec.MutableReserveKeepFileSize(ReserveBytes / 2);
+    ASSERT_TRUE(vec.GetData() == firstPtr);
+
+    vec[(ReserveBytes / 2) - 1] = 0xA5;
+    ASSERT_EQ(vec[0], static_cast<uint8_t>(0x5A));
+    ASSERT_EQ(vec[(ReserveBytes / 2) - 1], static_cast<uint8_t>(0xA5));
+
+#ifndef _WIN32
+    ASSERT_FALSE(Environment::FileSizeBytes(path.c_str()).has_value());
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Linux sparse files should report a large logical size without allocating
+// matching disk blocks until mapped pages are actually written.
+// ---------------------------------------------------------------------------
+TEST(GrowableVector_LinuxSparseFileConsumesBlocksOnlyWhenWritten)
+{
+#ifndef _WIN32
+    const std::wstring path = MakeTempPath("sparse_blocks");
+    Environment::FileDelete(path.c_str());
+
+    constexpr size_t ReserveBytes = 128ull * 1024ull * 1024ull;
+
+    {
+        GrowableVector<uint8_t> vec(AddPointOptions::EnableWithSave, path.c_str(), ReserveBytes);
+        vec.MutableResize(ReserveBytes);
+
+        auto logicalSize = Environment::FileSizeBytes(path.c_str());
+        ASSERT_TRUE(logicalSize.has_value());
+        ASSERT_EQ(static_cast<size_t>(*logicalSize), ReserveBytes);
+
+        const uint64_t allocatedBefore = AllocatedBytesForPath(path);
+        ASSERT_NE(allocatedBefore, UINT64_MAX);
+        ASSERT_TRUE(allocatedBefore < 1024ull * 1024ull);
+
+        const size_t pageSize = Environment::SystemPageSize();
+        vec[0] = 0x11;
+        vec[ReserveBytes - pageSize] = 0x22;
+
+        ASSERT_EQ(msync(vec.GetData(), pageSize, MS_SYNC), 0);
+        ASSERT_EQ(msync(vec.GetData() + ReserveBytes - pageSize, pageSize, MS_SYNC), 0);
+
+        const uint64_t allocatedAfter = AllocatedBytesForPath(path);
+        ASSERT_NE(allocatedAfter, UINT64_MAX);
+        ASSERT_TRUE(allocatedAfter >= allocatedBefore);
+        ASSERT_TRUE(allocatedAfter < 16ull * 1024ull * 1024ull);
+    }
+
+    Environment::FileDelete(path.c_str());
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Normal test runs route process allocations through HeapCpp.
+// ---------------------------------------------------------------------------
+TEST(CustomHeap_MallocAndNewUseGlobalHeap)
+{
+    EarlyInit_SafeMode_NoCRT();
+    ASSERT_EQ(static_cast<int>(EnableFractalSharkHeap), static_cast<int>(FancyHeap::Enable));
+
+    void *mallocPtr = std::malloc(257);
+    ASSERT_TRUE(mallocPtr != nullptr);
+    ASSERT_TRUE(GlobalHeap().OwnsPointer(mallocPtr));
+    std::memset(mallocPtr, 0x31, 257);
+
+    void *reallocPtr = std::realloc(mallocPtr, 1024);
+    ASSERT_TRUE(reallocPtr != nullptr);
+    ASSERT_TRUE(GlobalHeap().OwnsPointer(reallocPtr));
+    std::free(reallocPtr);
+
+    int *newPtr = new int(42);
+    ASSERT_TRUE(GlobalHeap().OwnsPointer(newPtr));
+    ASSERT_EQ(*newPtr, 42);
+    delete newPtr;
+
+    void *alignedPtr = ::operator new(64, std::align_val_t{16});
+    ASSERT_TRUE(GlobalHeap().OwnsPointer(alignedPtr));
+    ::operator delete(alignedPtr, std::align_val_t{16});
 }

@@ -47,6 +47,9 @@ else()
         Callstacks.cpp
         EarlyCommandLine.cpp
         Exceptions.cpp
+        heap_allocator/HeapCpp.cpp
+        heap_allocator/HeapPanic.cpp
+        heap_allocator/llist.cpp
     )
 endif()
 

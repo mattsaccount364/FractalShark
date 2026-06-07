@@ -104,10 +104,8 @@ struct ScreenPoint {
 namespace Environment {
 
 // Register a one-time atexit handler that flushes / cleans up the custom heap
-// allocator used by HpSharkFloatLib. On Windows the real definition lives in
-// HpSharkFloatLib/heap_allocator/HeapCpp.cpp; on Linux this is an empty stub
-// defined at the bottom of EnvironmentLinux.cpp (all allocations flow through
-// glibc malloc via Environment::SystemHeap*, so there is nothing to clean up).
+// allocator used by HpSharkFloatLib. The real definition lives in
+// HpSharkFloatLib/heap_allocator/HeapCpp.cpp.
 void RegisterHeapCleanup();
 
 } // namespace Environment

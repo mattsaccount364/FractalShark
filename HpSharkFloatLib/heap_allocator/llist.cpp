@@ -1,5 +1,5 @@
 #include "include/llist.h"
-#include "..\DbgHeap.h"
+#include "../DbgHeap.h"
 #include "include/HeapPanic.h"
 
 #include <exception>
@@ -36,14 +36,14 @@ has_cycle(node_t *head)
 static constexpr uintptr_t kPoisonNext = 0xDEADDEADDEADDEADull;
 static constexpr uintptr_t kPoisonPrev = 0xBAADF00DBAADF00Dull;
 
-static inline void
+[[maybe_unused]] static inline void
 poison_links(node_t *n)
 {
     n->next = reinterpret_cast<node_t *>(kPoisonNext);
     n->prev = reinterpret_cast<node_t *>(kPoisonPrev);
 }
 
-static inline bool
+[[maybe_unused]] static inline bool
 is_poison(node_t *p)
 {
     auto v = reinterpret_cast<uintptr_t>(p);
@@ -98,14 +98,14 @@ validate_bin(bin_t *bin)
 }
 
 // Guarded pointer set that trips on self-linking immediately
-static inline void
+[[maybe_unused]] static inline void
 set_next(node_t *a, node_t *b)
 {
     if (a == b)
         HeapPanic("Self-link detected in bin");
     a->next = b;
 }
-static inline void
+[[maybe_unused]] static inline void
 set_prev(node_t *a, node_t *b)
 {
     if (a == b)

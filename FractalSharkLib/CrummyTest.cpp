@@ -1,19 +1,10 @@
 #include "stdafx.h"
 #include "CrummyTest.h"
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
-
 #include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
 #include "HDRFloat.h"
-
-#ifdef _WIN32
-#include "..\FractalShark\resource.h"
-#endif
 
 #include <filesystem>
 #include <fstream>
@@ -482,114 +473,94 @@ CrummyTest::TestVariedCompression()
 void
 CrummyTest::TestImaginaLoad()
 {
-#ifdef _WIN32
-    // First, write out all the Imagina resources to files
-
-    struct Pair {
-        uint32_t rc;
-        const wchar_t *name;
-        int view;
-        const wchar_t *origPngName;
-        const wchar_t *imaginaPngName;
-    };
-
     const wchar_t *dirName = L"TestImaginaLoad";
     TestPreReq(dirName);
 
-    std::vector<Pair> pairs;
-    pairs.push_back({IDR_IMAGINA_VIEW0, L"View0.im", 0, L"View0 Orig.png", L"View0 Imagina.png"});
-    pairs.push_back({IDR_IMAGINA_VIEW5, L"View5.im", 5, L"View5 Orig.png", L"View5 Imagina.png"});
-    pairs.push_back({IDR_IMAGINA_VIEW14, L"View14.im", 14, L"View14 Orig.png", L"View14 Imagina.png"});
-    pairs.push_back({IDR_IMAGINA_VIEW15, L"View15.im", 15, L"View15 Orig.png", L"View15 Imagina.png"});
-    pairs.push_back({IDR_IMAGINA_VIEW19, L"View19.im", 19, L"View19 Orig.png", L"View19 Imagina.png"});
-    pairs.push_back(
-        {IDR_IMAGINA_VIEWEASY1, L"ViewEasy1.im", -1, L"ViewEasy1 Orig.png", L"ViewEasy1 Imagina.png"});
+    auto joinTestPath = [](const wchar_t *directory, std::wstring_view filename) {
+        std::filesystem::path path{directory};
+        path /= std::wstring{filename.data(), filename.size()};
+        return path.wstring();
+    };
 
-    auto processOnePair = [this, dirName](const auto &pair) {
-        auto hInst = GetModuleHandle(nullptr);
+    auto nameWithoutExtension = [](std::wstring_view filename) {
+        std::wstring result{filename.data(), filename.size()};
+        const auto dot = result.rfind(L'.');
+        if (dot != std::wstring::npos) {
+            result.resize(dot);
+        }
+        return result;
+    };
 
-        auto throwErr = [](const char *msg) {
-            char buf[256];
-            snprintf(buf, sizeof(buf), "%s Last error: %lu", msg, GetLastError());
-            throw FractalSharkSeriousException(buf);
-        };
+    auto setAutoRenderAlgorithm = [this]() {
+        const bool success = m_Fractal.SetRenderAlgorithm(
+            RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
+        if (!success) {
+            std::cerr << "Error setting RenderAlgorithm to AUTO in TestImaginaLoad!" << std::endl;
+        }
+    };
 
-        // Load the Imagina resource
-        auto hRes = FindResource(hInst, MAKEINTRESOURCE(pair.rc), L"SHARK_DATA");
-        if (hRes == nullptr) {
-            throwErr("FindResource failed!");
+    auto processOneFixture = [&](const auto &fixtureInfo) {
+        const auto resource = Environment::FindEmbeddedImaginaFixture(fixtureInfo.name);
+        if (!resource) {
+            throw FractalSharkSeriousException("Embedded Imagina fixture not found!");
         }
 
-        auto hGlobal = LoadResource(hInst, hRes);
-        if (hGlobal == nullptr) {
-            throwErr("LoadResource failed!");
-        }
-
-        auto pRes = LockResource(hGlobal);
-        if (pRes == nullptr) {
-            throwErr("LockResource failed!");
-        }
-
-        auto size = SizeofResource(hInst, hRes);
-        // Write the resource to a file
-        auto filename = pair.name;
-        auto hFile = Environment::FileOpen(filename,
+        const auto fixtureFilename = joinTestPath(dirName, fixtureInfo.name);
+        auto hFile = Environment::FileOpen(fixtureFilename.c_str(),
                                            Environment::FileAccess::Write,
                                            Environment::FileDisposition::CreateAlways,
                                            Environment::FileFlags::None);
         if (hFile == Environment::InvalidHandle) {
-            throwErr("FileOpen failed!");
+            throw FractalSharkSeriousException("FileOpen failed!");
         }
 
-        auto bytesWritten = Environment::FileWrite(hFile, pRes, size);
-        if (bytesWritten != size) {
+        const auto bytesWritten =
+            Environment::FileWrite(hFile, resource->bytes.data(), resource->bytes.size());
+        if (bytesWritten != resource->bytes.size()) {
             Environment::FileClose(hFile);
             throw FractalSharkSeriousException("FileWrite failed!");
         }
 
         Environment::FileClose(hFile);
 
-        // Unlock
-        UnlockResource(hGlobal);
+        const auto fixtureBaseName = nameWithoutExtension(fixtureInfo.name);
+
+        if (fixtureInfo.presetView) {
+            m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            m_Fractal.SetIterType(IterTypeEnum::Bits64);
+            setAutoRenderAlgorithm();
+
+            m_Fractal.View(*fixtureInfo.presetView);
+            m_Fractal.ForceRecalc();
+            m_Fractal.CalcFractal(true);
+
+            const auto outOrigFilename =
+                joinTestPath(dirName, fixtureBaseName + std::wstring(L" Orig.png"));
+            m_Fractal.SaveCurrentFractal(outOrigFilename, false);
+        }
 
         m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         m_Fractal.SetIterType(IterTypeEnum::Bits64);
-        const bool success = m_Fractal.SetRenderAlgorithm(
-            RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
-        if (!success) {
-            std::cerr << "Error setting RenderAlgorithm to AUTO in TestImaginaLoad!" << std::endl;
-        }
-
-        m_Fractal.View(pair.view);
-        m_Fractal.ForceRecalc();
-        m_Fractal.CalcFractal(true);
-
-        const auto outOrigFilename = dirName + std::wstring(L"\\") + pair.origPngName;
-        m_Fractal.SaveCurrentFractal(outOrigFilename, false);
-
-        // Load the Imagina file
-        m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        setAutoRenderAlgorithm();
 
         ImaginaSettings imaginaSettings = ImaginaSettings::UseSaved;
-        auto filenameW = std::wstring(pair.name);
         m_Fractal.LoadRefOrbit(
-            nullptr, CompressToDisk::MaxCompressionImagina, imaginaSettings, filenameW);
+            nullptr, CompressToDisk::MaxCompressionImagina, imaginaSettings, fixtureFilename);
         m_Fractal.CalcFractal(true);
 
-        const auto outImaginaFilename = dirName + std::wstring(L"\\") + pair.imaginaPngName;
+        const auto outImaginaFilename =
+            joinTestPath(dirName, fixtureBaseName + std::wstring(L" Imagina.png"));
         m_Fractal.SaveCurrentFractal(outImaginaFilename, false);
 
-        // Delete the Imagina file
-        auto ret2 = Environment::FileDelete(filename);
+        auto ret2 = Environment::FileDelete(fixtureFilename.c_str());
         if (!ret2) {
-            throwErr("FileDelete failed!");
+            throw FractalSharkSeriousException("FileDelete failed!");
         }
     };
 
-    for (const auto &pair : pairs) {
-        processOnePair(pair);
+    for (const auto &fixtureInfo : Environment::GetEmbeddedImaginaFixtureInfos()) {
+        processOneFixture(fixtureInfo);
     }
-#endif // _WIN32
 }
 
 void
@@ -692,31 +663,9 @@ CrummyTest::TestStringConversion()
     //::MessageBoxA(nullptr, allStr.c_str(), "String conversion test", MB_OK | MB_APPLMODAL);
 
     {
-#ifdef _WIN32
-        // Copy to clipboard
-        if (!OpenClipboard(nullptr)) {
-            throw FractalSharkSeriousException("OpenClipboard failed!");
+        if (!Environment::SetClipboardText(allStr)) {
+            throw FractalSharkSeriousException("SetClipboardText failed!");
         }
-
-        if (!EmptyClipboard()) {
-            throw FractalSharkSeriousException("EmptyClipboard failed!");
-        }
-
-        HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, allStr.size() + 1);
-        if (!hg) {
-            CloseClipboard();
-            throw FractalSharkSeriousException("GlobalAlloc failed!");
-        }
-
-        auto *result = GlobalLock(hg);
-        if (result != nullptr) {
-            memcpy(result, allStr.c_str(), allStr.size() + 1);
-        }
-
-        GlobalUnlock(hg);
-        SetClipboardData(CF_TEXT, hg);
-        CloseClipboard();
-#endif // _WIN32
     }
 
     // convert stringstream to istream

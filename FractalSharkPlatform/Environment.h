@@ -11,7 +11,9 @@
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 
 // =========================================================================
@@ -296,6 +298,23 @@ bool FileDelete(const wchar_t *path);
 std::optional<uint64_t> FileSizeBytes(const wchar_t *path);
 
 // =========================================================================
+// Embedded resources
+// =========================================================================
+
+struct EmbeddedResourceView {
+    std::wstring_view name;
+    std::span<const std::byte> bytes;
+};
+
+struct ImaginaFixtureInfo {
+    std::wstring_view name;
+    std::optional<size_t> presetView;
+};
+
+std::span<const ImaginaFixtureInfo> GetEmbeddedImaginaFixtureInfos();
+std::optional<EmbeddedResourceView> FindEmbeddedImaginaFixture(std::wstring_view name);
+
+// =========================================================================
 // Process information
 // =========================================================================
 
@@ -339,6 +358,11 @@ inline void *const InvalidHandle = reinterpret_cast<void *>(static_cast<intptr_t
 
 // Display a modal warning dialog (MessageBox on Windows, stderr on Linux).
 void ShowWarning(const wchar_t *message);
+
+// Copy text to the system clipboard when the platform supports it.  Linux
+// currently treats this diagnostic helper as best-effort and may return true
+// without publishing to an external clipboard.
+bool SetClipboardText(std::string_view text);
 
 // Pump pending UI events so the message loop stays responsive.
 // On Windows this calls PeekMessage; on Linux it is a no-op.

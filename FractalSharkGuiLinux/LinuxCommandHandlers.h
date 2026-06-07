@@ -37,6 +37,27 @@ public:
     // ---- Algorithm selection ---------------------------------------------
     void OnSetAlgorithm(::RenderAlgorithmEnum alg) override;
 
+    // ---- Synthetic shortcut command hooks -------------------------------
+    void OnAutoZoomDefaultAtPoint() override;
+    void OnCenterViewClearPerturbation() override;
+    void OnResetCompressionDefaults() override;
+    void OnLaThresholdScaleIncrease() override;
+    void OnLaThresholdScaleDecrease() override;
+    void OnLaPeriodDetectionIncrease() override;
+    void OnLaPeriodDetectionDecrease() override;
+    void OnRecalcCurrentCopyDetails() override;
+    void OnRecalcClearMediumCopyDetails() override;
+    void OnRecalcClearAllCopyDetails() override;
+    void OnRecalcClearLaCopyDetails() override;
+    void OnIntermediateCompressionIncrease() override;
+    void OnIntermediateCompressionDecrease() override;
+    void OnLowCompressionIncrease() override;
+    void OnLowCompressionDecrease() override;
+    void OnPaletteAuxDepthNext() override;
+    void OnPaletteAuxDepthPrevious() override;
+    void OnPaletteDepthNext() override;
+    void OnRecalcClearAllSquareView() override;
+
     // ---- Help / Window (only the platform-agnostic ones) -----------------
     void OnSquareView() override;
     void OnRepainting() override;

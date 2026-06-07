@@ -26,6 +26,7 @@
 #include "RefOrbitCalc.h"
 #include "RenderAlgorithm.h"
 #include "RenderThreadPool.h"
+#include "WaitCursor.h"
 
 #include <X11/XKBlib.h>
 #include <X11/Xatom.h>
@@ -56,6 +57,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -101,8 +103,6 @@ ComputeAspectLockedDragEndpoint(int anchorX, int anchorY, int rawX, int rawY, do
 GlxVisualSelection
 ChooseGlxVisual(Display *display, int screen)
 {
-    // TODO(linux-parity, deferred): Add a Wayland/EGL GUI backend. The Linux GUI currently
-    // selects X11 GLX visuals only.
     int rgbaDoubleBufferedWithAlpha[] = {GLX_RGBA,
                                          GLX_DOUBLEBUFFER,
                                          GLX_RED_SIZE,
@@ -138,6 +138,86 @@ ElapsedMilliseconds(std::chrono::steady_clock::time_point start)
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
                                                                  start)
         .count();
+}
+
+std::string
+NarrowAscii(std::wstring_view text)
+{
+    std::string result;
+    result.reserve(text.size());
+    for (const wchar_t ch : text) {
+        result.push_back((ch >= 0 && ch <= 0x7f) ? static_cast<char>(ch) : '?');
+    }
+    return result;
+}
+
+std::string
+BuildHotkeysModalBody()
+{
+    std::string body = "Hotkeys\n\nCommand shortcuts\n";
+    for (const FractalShark::Command &command : FractalShark::kCommands) {
+        body += FractalShark::FormatHotKeyUtf8(command.hotkey);
+        body += " - ";
+        body += NarrowAscii(command.label);
+        body += "\n";
+    }
+
+    body += "\nDirect controls\n"
+            "Arrow keys - Pan viewport 25% of the view. Shift+Arrow: 10%, Ctrl+Arrow: 50%\n"
+            "Numpad + - Zoom in at center\n"
+            "Numpad - - Zoom out at center\n"
+            "Left click/drag - Zoom in\n"
+            "Right click - popup menu\n"
+            "CTRL - Press and hold to abort autozoom\n"
+            "ALT - Press, click/drag to move window when in windowed mode\n";
+    return body;
+}
+
+std::optional<wchar_t>
+HotKeyBaseFromKeySym(KeySym keysym)
+{
+    if (keysym >= XK_A && keysym <= XK_Z) {
+        return static_cast<wchar_t>(L'a' + (keysym - XK_A));
+    }
+    if (keysym >= XK_a && keysym <= XK_z) {
+        return static_cast<wchar_t>(L'a' + (keysym - XK_a));
+    }
+    if (keysym >= XK_0 && keysym <= XK_9) {
+        return static_cast<wchar_t>(L'0' + (keysym - XK_0));
+    }
+
+    switch (keysym) {
+        case XK_comma:
+            return L',';
+        case XK_less:
+            return L',';
+        case XK_period:
+            return L'.';
+        case XK_greater:
+            return L'.';
+        case XK_equal:
+            return L'=';
+        case XK_plus:
+            return L'=';
+        case XK_minus:
+            return L'-';
+        default:
+            return std::nullopt;
+    }
+}
+
+std::optional<FractalShark::HotKey>
+HotKeyFromXKeyEvent(const XKeyEvent &ev)
+{
+    XKeyEvent mutableEvent = ev;
+    const KeySym baseKeySym = XLookupKeysym(&mutableEvent, 0);
+    const std::optional<wchar_t> key = HotKeyBaseFromKeySym(baseKeySym);
+    if (!key) {
+        return std::nullopt;
+    }
+
+    return FractalShark::NormalizeHotKey(
+        {*key, (ev.state & ShiftMask) != 0, (ev.state & ControlMask) != 0, (ev.state & Mod1Mask) != 0});
 }
 
 // Mechanical-contract stub: every catalog command hook the Win32 GUI
@@ -241,19 +321,12 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     }
 
     // ---- ExecuteCommandHost stubs (Linux-specific only) -------------------
+    void OnAutoZoomFeatureAtPoint() override;
     // Everything else is provided by LinuxCommandHandlers.  These ~25 hooks
     // touch the X server, ImGui modals, the file dialog, the clipboard, or
     // process-wide JobObject state — so they need real Linux implementations
     // (forthcoming Phase 3.3.2 / 3.3.4 / 3.3.6 / 3.3.7) and stay as stubs
     // here until then.
-    void
-    DispatchByIdm(int wmId) override
-    {
-        // TODO(linux-parity): Implement the Linux fallback for future unmigrated or
-        // payload-bearing IDM commands instead of silently reducing them to diagnostics.
-        std::fprintf(stderr, "TODO LinuxMainWindow: DispatchByIdm(%d)\n", wmId);
-    }
-
     void OnShowHotkeys() override;
     void OnViewsHelp() override;
     void OnHelpAlg() override;
@@ -263,12 +336,12 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     void OnCurPos() override;
     void OnExit() override;
 
-    // TODO(linux-parity): Wire the Linux JobObject/RLIMIT_AS implementation into the GUI
-    // and define reversible unlimited/limited behavior before enabling these menu items.
+    // TODO: Wire the Linux JobObject/RLIMIT_AS implementation into the GUI and
+    // define reversible unlimited/limited behavior before enabling these menu
+    // items.
     FRACTALSHARK_LINUX_STUB(OnMemoryLimit0)
     FRACTALSHARK_LINUX_STUB(OnMemoryLimit1)
-    // TODO(linux-parity): Mirror Win32 palette rotation once Linux has a real global cursor query.
-    FRACTALSHARK_LINUX_STUB(OnPaletteRotate)
+    void OnPaletteRotate() override;
 
     void OnSaveLocation() override;
     void OnSaveHiResBmp() override;
@@ -363,6 +436,8 @@ LinuxMainWindow::LinuxMainWindow()
     wmProtocols = XInternAtom(display, "WM_PROTOCOLS", False);
     wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(display, window, &wmDeleteWindow, 1);
+    WaitCursor::RegisterLinuxCursorTarget(
+        display, static_cast<uintptr_t>(window), static_cast<uintptr_t>(idleCursor));
 
     // Match Win32 KEYDOWN semantics: only autorepeat KeyPress, never KeyRelease.
     Bool supported = False;
@@ -420,6 +495,7 @@ LinuxMainWindow::~LinuxMainWindow()
     fractal.reset();
 
     if (display) {
+        WaitCursor::UnregisterLinuxCursorTarget();
         if (window) {
             XDestroyWindow(display, window);
             window = 0;
@@ -778,11 +854,18 @@ LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
 }
 
 void
+LinuxMainWindow::OnAutoZoomFeatureAtPoint()
+{
+    const FractalSharkLinux::MenuPoint pt = GetMenuMousePos();
+    RunFeatureAutoZoomSynchronously(pt.X, pt.Y);
+}
+
+void
 LinuxMainWindow::OnShowHotkeys()
 {
     if (overlay) {
-        overlay->RequestInfoModal(FractalSharkLinux::kHotkeysModalTitle,
-                                  FractalSharkLinux::kHotkeysModalBody);
+        const std::string body = BuildHotkeysModalBody();
+        overlay->RequestInfoModal("Hotkeys", body.c_str());
     }
 }
 
@@ -825,6 +908,26 @@ LinuxMainWindow::OnCurPos()
     } else {
         std::fprintf(stderr, "Location copied to clipboard.\n");
     }
+}
+
+void
+LinuxMainWindow::OnPaletteRotate()
+{
+    // TODO(palette-rotation): This is visually broken because RotateFractalPalette() updates the
+    // internal palette state without forcing the displayed image to be re-rendered or recolored,
+    // so the command appears to do nothing.
+    const auto origin = Environment::GetCursorPosition();
+
+    for (;;) {
+        fractal->EnqueueCommand([](Fractal &f) { f.RotateFractalPalette(10); }).Wait();
+
+        const auto current = Environment::GetCursorPosition();
+        if (std::abs(current.first - origin.first) > 5 || std::abs(current.second - origin.second) > 5) {
+            break;
+        }
+    }
+
+    fractal->EnqueueCommand([](Fractal &f) { f.ResetFractalPalette(); });
 }
 
 void
@@ -1040,6 +1143,34 @@ OrbitFileFilters()
     return {{"All (*.*)", ""}, {"Imagina (*.im)", ".im"}};
 }
 
+std::vector<LinuxFileDialogFilter>
+PngFileFilters()
+{
+    return {{"PNG Image (*.png)", ".png"}, {"All (*.*)", ""}};
+}
+
+std::vector<LinuxFileDialogFilter>
+TextFileFilters()
+{
+    return {{"Text File (*.txt)", ".txt"}, {"All (*.*)", ""}};
+}
+
+std::string
+AppendExtensionIfMissing(const std::string &filename, const char *extension)
+{
+    if (filename.empty() || extension == nullptr || extension[0] == '\0') {
+        return filename;
+    }
+
+    try {
+        if (std::filesystem::path(filename).extension().empty()) {
+            return filename + extension;
+        }
+    } catch (const std::filesystem::filesystem_error &) {
+    }
+    return filename;
+}
+
 } // namespace
 
 void
@@ -1108,37 +1239,64 @@ LinuxMainWindow::SaveLocation(bool scaleToMaximum)
 void
 LinuxMainWindow::OnSaveHiResBmp()
 {
-    if (!fractal) {
+    if (!fractal || !overlay) {
         return;
     }
-    if (auto *pool = fractal->GetRenderPool()) {
-        pool->Drain();
-    }
-    fractal->SaveHiResFractal(L"");
+    overlay->RequestFileDialog("Save high-resolution image",
+                               LinuxFileDialogMode::Save,
+                               MakeTimestampedStem() + ".png",
+                               PngFileFilters(),
+                               [this](std::string filename) {
+                                   if (!fractal)
+                                       return;
+                                   filename = AppendExtensionIfMissing(filename, ".png");
+                                   if (auto *pool = fractal->GetRenderPool()) {
+                                       pool->Drain();
+                                   }
+                                   fractal->SaveHiResFractal(Utf8ToWide(filename));
+                               });
 }
 
 void
 LinuxMainWindow::OnSaveItersText()
 {
-    if (!fractal) {
+    if (!fractal || !overlay) {
         return;
     }
-    if (auto *pool = fractal->GetRenderPool()) {
-        pool->Drain();
-    }
-    fractal->SaveItersAsText(L"");
+    overlay->RequestFileDialog("Save iterations as text",
+                               LinuxFileDialogMode::Save,
+                               MakeTimestampedStem() + ".txt",
+                               TextFileFilters(),
+                               [this](std::string filename) {
+                                   if (!fractal)
+                                       return;
+                                   filename = AppendExtensionIfMissing(filename, ".txt");
+                                   if (auto *pool = fractal->GetRenderPool()) {
+                                       pool->Drain();
+                                   }
+                                   fractal->SaveItersAsText(Utf8ToWide(filename));
+                               });
 }
 
 void
 LinuxMainWindow::OnSaveBmp()
 {
-    if (!fractal) {
+    if (!fractal || !overlay) {
         return;
     }
-    if (auto *pool = fractal->GetRenderPool()) {
-        pool->Drain();
-    }
-    fractal->SaveCurrentFractal(L"", true);
+    overlay->RequestFileDialog("Save current image",
+                               LinuxFileDialogMode::Save,
+                               MakeTimestampedStem() + ".png",
+                               PngFileFilters(),
+                               [this](std::string filename) {
+                                   if (!fractal)
+                                       return;
+                                   filename = AppendExtensionIfMissing(filename, ".png");
+                                   if (auto *pool = fractal->GetRenderPool()) {
+                                       pool->Drain();
+                                   }
+                                   fractal->SaveCurrentFractal(Utf8ToWide(filename), true);
+                               });
 }
 
 void
@@ -1510,14 +1668,8 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
         return;
     }
 
-    // Convert KeyPress → ASCII via XLookupString (already shift-aware:
-    // 'A' shifted yields 'A', unshifted yields 'a').  Win32 WM_CHAR has
-    // identical semantics; mirroring lets us reuse case literals verbatim.
-    char buf[4]{};
-    KeySym keysym = NoSymbol;
-    int n = XLookupString(const_cast<XKeyEvent *>(&ev), buf, sizeof(buf), &keysym, nullptr);
-
-    // Handle arrow keys and numpad +/- (these don't produce ASCII).
+    XKeyEvent mutableEvent = ev;
+    const KeySym keysym = XLookupKeysym(&mutableEvent, 0);
     const bool shiftDown = (ev.state & ShiftMask) != 0;
     const bool ctrlDown = (ev.state & ControlMask) != 0;
 
@@ -1551,261 +1703,15 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
             break;
     }
 
-    if (n <= 0) {
+    const std::optional<FractalShark::HotKey> hotkey = HotKeyFromXKeyEvent(ev);
+    if (!hotkey) {
         return;
     }
 
-    const int mouseX = ev.x;
-    const int mouseY = ev.y;
-    const char ch = buf[0];
-
-    switch (ch) {
-        case 'A':
-        case 'a':
-            if (!shiftDown) {
-                RunFeatureAutoZoomSynchronously(mouseX, mouseY);
-            } else {
-                fractal->EnqueueCommand(
-                    [mouseX, mouseY](Fractal &f) { f.CenterAtPoint(mouseX, mouseY); });
-                fractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-            }
-            break;
-
-        case 'S':
-            fractal->AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
-            break;
-
-        case 'b':
-            fractal->EnqueueCommand([](Fractal &f) { f.Back(); });
-            break;
-
-        case 'C':
-        case 'c':
-            if (shiftDown) {
-                fractal->EnqueueCommand([mouseX, mouseY](Fractal &f) {
-                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                    f.CenterAtPoint(mouseX, mouseY);
-                });
-            } else {
-                fractal->EnqueueCommand(
-                    [mouseX, mouseY](Fractal &f) { f.CenterAtPoint(mouseX, mouseY); });
-            }
-            break;
-
-        case 'E':
-        case 'e':
-            fractal->EnqueueCommand([](Fractal &f) {
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                f.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
-                f.DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
-            });
-            break;
-
-        case 'n':
-            fractal->EnqueueCommand([mouseX, mouseY](Fractal &f) {
-                f.TryFindPeriodicPoint(mouseX, mouseY, FeatureFinderMode::Direct);
-            });
-            break;
-        case 'N':
-            fractal->EnqueueCommand([mouseX, mouseY](Fractal &f) {
-                f.TryFindPeriodicPoint(mouseX, mouseY, FeatureFinderMode::DirectScan);
-            });
-            break;
-        case 'm':
-            fractal->EnqueueCommand([mouseX, mouseY](Fractal &f) {
-                f.TryFindPeriodicPoint(mouseX, mouseY, FeatureFinderMode::PT);
-            });
-            break;
-        case 'M':
-            fractal->EnqueueCommand([mouseX, mouseY](Fractal &f) {
-                f.TryFindPeriodicPoint(mouseX, mouseY, FeatureFinderMode::PTScan);
-            });
-            break;
-        case ',':
-            fractal->EnqueueCommand([mouseX, mouseY](Fractal &f) {
-                f.TryFindPeriodicPoint(mouseX, mouseY, FeatureFinderMode::LA);
-            });
-            break;
-        case '<':
-            fractal->EnqueueCommand([mouseX, mouseY](Fractal &f) {
-                f.TryFindPeriodicPoint(mouseX, mouseY, FeatureFinderMode::LAScan);
-            });
-            break;
-        case '.':
-            fractal->EnqueueCommand(
-                [mouseX, mouseY](Fractal &f) { f.ZoomToFoundFeature(mouseX, mouseY); });
-            break;
-        case '>':
-            fractal->EnqueueCommand([](Fractal &f) { f.ClearAllFoundFeatures(); });
-            break;
-
-        case 'H':
-        case 'h':
-            fractal->EnqueueCommand([shiftDown](Fractal &f) {
-                auto &laParameters = f.GetLAParameters();
-                if (shiftDown) {
-                    laParameters.AdjustLAThresholdScaleExponent(-1);
-                    laParameters.AdjustLAThresholdCScaleExponent(-1);
-                } else {
-                    laParameters.AdjustLAThresholdScaleExponent(1);
-                    laParameters.AdjustLAThresholdCScaleExponent(1);
-                }
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-                f.ForceRecalc();
-            });
-            break;
-
-        case 'J':
-        case 'j':
-            fractal->EnqueueCommand([shiftDown](Fractal &f) {
-                auto &laParameters = f.GetLAParameters();
-                if (shiftDown) {
-                    laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
-                    laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
-                } else {
-                    laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
-                    laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
-                }
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-                f.ForceRecalc();
-            });
-            break;
-
-        case 'I':
-        case 'i':
-            fractal
-                ->EnqueueCommand([shiftDown](Fractal &f) {
-                    if (shiftDown) {
-                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-                    }
-                    f.ForceRecalc();
-                })
-                .Wait();
-            OnCurPos();
-            break;
-
-        case 'O':
-        case 'o':
-            fractal
-                ->EnqueueCommand([shiftDown](Fractal &f) {
-                    if (shiftDown) {
-                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                    }
-                    f.ForceRecalc();
-                })
-                .Wait();
-            OnCurPos();
-            break;
-
-        case 'P':
-        case 'p':
-            fractal
-                ->EnqueueCommand([shiftDown](Fractal &f) {
-                    if (shiftDown) {
-                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-                    }
-                    f.ForceRecalc();
-                })
-                .Wait();
-            OnCurPos();
-            break;
-
-        case 'q':
-        case 'Q':
-            fractal->EnqueueCommand([shiftDown](Fractal &f) {
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                if (shiftDown) {
-                    f.DecCompressionError(Fractal::CompressionError::Intermediate, 10);
-                } else {
-                    f.IncCompressionError(Fractal::CompressionError::Intermediate, 10);
-                }
-            });
-            break;
-
-        case 'R':
-        case 'r':
-            fractal->EnqueueCommand([shiftDown](Fractal &f) {
-                if (shiftDown) {
-                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                }
-                f.SquareCurrentView();
-            });
-            break;
-
-        case 'T':
-        case 't':
-            fractal->EnqueueCommand(
-                [shiftDown](Fractal &f) { f.UseNextPaletteAuxDepth(shiftDown ? -1 : 1); });
-            break;
-
-        case 'W':
-        case 'w':
-            fractal->EnqueueCommand([shiftDown](Fractal &f) {
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                if (shiftDown) {
-                    f.DecCompressionError(Fractal::CompressionError::Low, 1);
-                } else {
-                    f.IncCompressionError(Fractal::CompressionError::Low, 1);
-                }
-            });
-            break;
-
-        case 'Z':
-        case 'z':
-            if (shiftDown) {
-                fractal->EnqueueCommand(
-                    [mouseX, mouseY](Fractal &f) { f.ZoomRecentered(mouseX, mouseY, 1); });
-            } else {
-                fractal->EnqueueCommand(
-                    [mouseX, mouseY](Fractal &f) { f.ZoomRecentered(mouseX, mouseY, -.45); });
-            }
-            break;
-
-        case 'D':
-        case 'd':
-            fractal->EnqueueCommand([shiftDown](Fractal &f) {
-                if (shiftDown) {
-                    f.CreateNewFractalPalette();
-                    f.UsePaletteType(FractalPaletteType::Random);
-                } else {
-                    f.UseNextPaletteDepth();
-                }
-            });
-            break;
-
-        case '=':
-        case '+':
-            fractal->EnqueueCommand([](Fractal &f) {
-                const double factor = 24.0;
-                if (f.GetIterType() == IterTypeEnum::Bits32) {
-                    uint64_t cur = f.GetNumIterations<uint32_t>();
-                    cur = static_cast<uint64_t>(static_cast<double>(cur) * factor);
-                    f.SetNumIterations<uint32_t>(cur);
-                } else {
-                    uint64_t cur = f.GetNumIterations<uint64_t>();
-                    cur = static_cast<uint64_t>(static_cast<double>(cur) * factor);
-                    f.SetNumIterations<uint64_t>(cur);
-                }
-            });
-            break;
-
-        case '-':
-            fractal->EnqueueCommand([](Fractal &f) {
-                const double factor = 2.0 / 3.0;
-                if (f.GetIterType() == IterTypeEnum::Bits32) {
-                    uint64_t cur = f.GetNumIterations<uint32_t>();
-                    cur = static_cast<uint64_t>(static_cast<double>(cur) * factor);
-                    f.SetNumIterations<uint32_t>(cur);
-                } else {
-                    uint64_t cur = f.GetNumIterations<uint64_t>();
-                    cur = static_cast<uint64_t>(static_cast<double>(cur) * factor);
-                    f.SetNumIterations<uint64_t>(cur);
-                }
-            });
-            break;
-
-        default:
-            break;
+    contextMenuX = ev.x;
+    contextMenuY = ev.y;
+    if (const FractalShark::Command *command = FractalShark::FindCommandByHotKey(*hotkey)) {
+        FractalShark::ExecuteCommand(command->id, *this);
     }
 }
 

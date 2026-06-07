@@ -54,9 +54,6 @@ LinuxMenuState::IsEnabled(FractalShark::Menu::Rule rule) const noexcept
         case Rule::EnableIfPerturbationAvailable:
             return false;
 
-        case Rule::EnableIfPaletteRotationSupported:
-            return false;
-
         case Rule::EnableIfNRCheckpointExists: {
             std::error_code ec;
             return std::filesystem::exists("nr_checkpoint.txt", ec);

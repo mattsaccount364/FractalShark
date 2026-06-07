@@ -30,6 +30,51 @@ constexpr bool startWindowed = true;
 constexpr bool finishWindowed = false;
 constexpr DWORD forceStartWidth = 0;
 constexpr DWORD forceStartHeight = 0;
+constexpr const wchar_t *kOrbitFileFilter = L"All\0*.*\0Imagina\0*.im\0";
+constexpr const wchar_t *kPngFileFilter = L"PNG Image\0*.png\0All\0*.*\0";
+constexpr const wchar_t *kTextFileFilter = L"Text File\0*.txt\0All\0*.*\0";
+
+std::wstring
+BuildHotkeysMessage()
+{
+    std::wstring body = L"Hotkeys\r\n\r\nCommand shortcuts\r\n";
+    for (const FractalShark::Command &command : FractalShark::kCommands) {
+        body += FractalShark::FormatHotKey(command.hotkey);
+        body += L" - ";
+        body.append(command.label.data(), command.label.size());
+        body += L"\r\n";
+    }
+
+    body += L"\r\nDirect controls\r\n"
+            L"Arrow keys - Pan viewport 25% of the view. Shift+Arrow: 10%, Ctrl+Arrow: 50%\r\n"
+            L"Numpad + - Zoom in at center\r\n"
+            L"Numpad - - Zoom out at center\r\n"
+            L"Left click/drag - Zoom in\r\n"
+            L"Right click - popup menu\r\n"
+            L"CTRL - Press and hold to abort autozoom\r\n"
+            L"ALT - Press, click/drag to move window when in windowed mode\r\n";
+    return body;
+}
+
+bool
+IsNumpadAddSubtractCharacter(WPARAM wParam, LPARAM lParam) noexcept
+{
+    constexpr UINT numpadAddScanCode = 0x4e;
+    constexpr UINT numpadSubtractScanCode = 0x4a;
+    const UINT scanCode = static_cast<UINT>((static_cast<DWORD_PTR>(lParam) >> 16) & 0xffu);
+
+    return (wParam == L'+' && scanCode == numpadAddScanCode) ||
+           (wParam == L'-' && scanCode == numpadSubtractScanCode);
+}
+
+void
+DeleteExistingRegularFile(const std::wstring &filename)
+{
+    const DWORD attrs = ::GetFileAttributesW(filename.c_str());
+    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        (void)::DeleteFileW(filename.c_str());
+    }
+}
 
 } // namespace
 
@@ -74,17 +119,7 @@ MainWindow::~MainWindow()
     gJobObj.reset();
 }
 
-// ExecuteCommandHost — Phase 0c scaffolding.  Today every catalog command
-// rountrips through the legacy IDM dispatcher; per-menu migration will move
-// command bodies into FractalShark::ExecuteCommand and gradually empty out
-// CommandDispatcher's table.
-void
-MainWindow::DispatchByIdm(int wmId)
-{
-    commandDispatcher.Dispatch(wmId);
-}
-
-// ---- Phase 0c migration: full per-menu host hook implementation ------------
+// ---- Per-menu host hook implementation -------------------------------------
 
 void
 MainWindow::OnSetAlgorithm(::RenderAlgorithmEnum alg)
@@ -92,6 +127,196 @@ MainWindow::OnSetAlgorithm(::RenderAlgorithmEnum alg)
     auto entry = GetRenderAlgorithmTupleEntry(alg);
     gFractal->EnqueueMutation(
         [entry](Fractal &f) { [[maybe_unused]] const bool ok = f.SetRenderAlgorithm(entry); });
+}
+
+// ---- Synthetic shortcut command hooks --------------------------------------
+void
+MainWindow::OnAutoZoomFeatureAtPoint()
+{
+    const POINT pt = GetSafeMenuPtClient();
+    gFractal->AutoZoomFeatureAtPoint(pt.x, pt.y);
+}
+
+void
+MainWindow::OnAutoZoomDefaultAtPoint()
+{
+    const POINT pt = GetSafeMenuPtClient();
+    MenuCenterView(pt.x, pt.y);
+    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+}
+
+void
+MainWindow::OnCenterViewClearPerturbation()
+{
+    const POINT pt = GetSafeMenuPtClient();
+    gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.CenterAtPoint(x, y);
+    });
+}
+
+void
+MainWindow::OnResetCompressionDefaults()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
+        f.DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
+    });
+}
+
+void
+MainWindow::OnLaThresholdScaleIncrease()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        auto &laParameters = f.GetLAParameters();
+        laParameters.AdjustLAThresholdScaleExponent(1);
+        laParameters.AdjustLAThresholdCScaleExponent(1);
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+        f.ForceRecalc();
+    });
+}
+
+void
+MainWindow::OnLaThresholdScaleDecrease()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        auto &laParameters = f.GetLAParameters();
+        laParameters.AdjustLAThresholdScaleExponent(-1);
+        laParameters.AdjustLAThresholdCScaleExponent(-1);
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+        f.ForceRecalc();
+    });
+}
+
+void
+MainWindow::OnLaPeriodDetectionIncrease()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        auto &laParameters = f.GetLAParameters();
+        laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
+        laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+        f.ForceRecalc();
+    });
+}
+
+void
+MainWindow::OnLaPeriodDetectionDecrease()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        auto &laParameters = f.GetLAParameters();
+        laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
+        laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+        f.ForceRecalc();
+    });
+}
+
+void
+MainWindow::OnRecalcCurrentCopyDetails()
+{
+    gFractal->EnqueueCommand([](Fractal &f) { f.ForceRecalc(); }).Wait();
+    MenuGetCurPos();
+}
+
+void
+MainWindow::OnRecalcClearMediumCopyDetails()
+{
+    gFractal
+        ->EnqueueCommand([](Fractal &f) {
+            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+            f.ForceRecalc();
+        })
+        .Wait();
+    MenuGetCurPos();
+}
+
+void
+MainWindow::OnRecalcClearAllCopyDetails()
+{
+    gFractal
+        ->EnqueueCommand([](Fractal &f) {
+            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            f.ForceRecalc();
+        })
+        .Wait();
+    MenuGetCurPos();
+}
+
+void
+MainWindow::OnRecalcClearLaCopyDetails()
+{
+    gFractal
+        ->EnqueueCommand([](Fractal &f) {
+            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+            f.ForceRecalc();
+        })
+        .Wait();
+    MenuGetCurPos();
+}
+
+void
+MainWindow::OnIntermediateCompressionIncrease()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.IncCompressionError(Fractal::CompressionError::Intermediate, 10);
+    });
+}
+
+void
+MainWindow::OnIntermediateCompressionDecrease()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.DecCompressionError(Fractal::CompressionError::Intermediate, 10);
+    });
+}
+
+void
+MainWindow::OnLowCompressionIncrease()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.IncCompressionError(Fractal::CompressionError::Low, 1);
+    });
+}
+
+void
+MainWindow::OnLowCompressionDecrease()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.DecCompressionError(Fractal::CompressionError::Low, 1);
+    });
+}
+
+void
+MainWindow::OnPaletteAuxDepthNext()
+{
+    gFractal->EnqueueCommand([](Fractal &f) { f.UseNextPaletteAuxDepth(1); });
+}
+
+void
+MainWindow::OnPaletteAuxDepthPrevious()
+{
+    gFractal->EnqueueCommand([](Fractal &f) { f.UseNextPaletteAuxDepth(-1); });
+}
+
+void
+MainWindow::OnPaletteDepthNext()
+{
+    gFractal->EnqueueCommand([](Fractal &f) { f.UseNextPaletteDepth(); });
+}
+
+void
+MainWindow::OnRecalcClearAllSquareView()
+{
+    gFractal->EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.SquareCurrentView();
+    });
 }
 
 // ---- Help / Window ---------------------------------------------------------
@@ -888,255 +1113,27 @@ MainWindow::UnInit()
 }
 
 void
-MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/)
+MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM lParam)
 {
-    POINT mousePt;
-    GetCursorPos(&mousePt);
-    if (ScreenToClient(hWnd, &mousePt) == 0) {
+    if (IsNumpadAddSubtractCharacter(wParam, lParam)) {
         return;
     }
 
-    SHORT nState = GetAsyncKeyState(VK_SHIFT);
-    bool shiftDown = (nState & 0x8000) != 0;
+    POINT mousePt;
+    if (::GetCursorPos(&mousePt) == 0 || ::ScreenToClient(hWnd, &mousePt) == 0) {
+        return;
+    }
+    lastMenuPtClient_ = mousePt;
 
-    switch (wParam) {
-        case 'A':
-        case 'a':
-            if (!shiftDown) {
-                gFractal->AutoZoomFeatureAtPoint(mousePt.x, mousePt.y);
-            } else {
-                MenuCenterView(mousePt.x, mousePt.y);
-                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-            }
-            break;
+    const FractalShark::HotKey hotkey = FractalShark::HotKeyFromCharacter(
+        static_cast<wchar_t>(wParam), IsDownShift(), IsDownControl(), IsDownAlt());
+    if (!hotkey.HasKey()) {
+        return;
+    }
 
-        case 'S':
-            gFractal->AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
-            break;
-
-        case 'b':
-            MenuGoBack();
-            break;
-
-        case 'C':
-        case 'c':
-            if (shiftDown) {
-                // ClearPerturbationResults is included in the command
-                gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                    f.CenterAtPoint(x, y);
-                });
-            } else {
-                MenuCenterView(mousePt.x, mousePt.y);
-            }
-            break;
-
-        case 'E':
-        case 'e':
-            gFractal->EnqueueCommand([](Fractal &f) {
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                f.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
-                f.DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
-            });
-            break;
-
-        case 'n': {
-            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::Direct);
-            });
-            break;
-        }
-
-        case 'N': {
-            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::DirectScan);
-            });
-            break;
-        }
-
-        case 'm': {
-            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::PT);
-            });
-            break;
-        }
-
-        case 'M': {
-            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::PTScan);
-            });
-            break;
-        }
-
-        case ',': {
-            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::LA);
-            });
-            break;
-        }
-
-        case '<': {
-            gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) {
-                f.TryFindPeriodicPoint(x, y, FeatureFinderMode::LAScan);
-            });
-            break;
-        }
-
-        case '.': {
-            gFractal->EnqueueCommand(
-                [x = mousePt.x, y = mousePt.y](Fractal &f) { f.ZoomToFoundFeature(x, y); });
-            break;
-        }
-
-        case '>': {
-            gFractal->EnqueueCommand([](Fractal &f) { f.ClearAllFoundFeatures(); });
-            break;
-        }
-
-        case 'H':
-        case 'h': {
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                auto &laParameters = f.GetLAParameters();
-                if (shiftDown) {
-                    laParameters.AdjustLAThresholdScaleExponent(-1);
-                    laParameters.AdjustLAThresholdCScaleExponent(-1);
-                } else {
-                    laParameters.AdjustLAThresholdScaleExponent(1);
-                    laParameters.AdjustLAThresholdCScaleExponent(1);
-                }
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-                f.ForceRecalc();
-            });
-            break;
-        }
-
-        case 'J':
-        case 'j': {
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                auto &laParameters = f.GetLAParameters();
-                if (shiftDown) {
-                    laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
-                    laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
-                } else {
-                    laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
-                    laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
-                }
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-                f.ForceRecalc();
-            });
-            break;
-        }
-
-        case 'I':
-        case 'i':
-            gFractal
-                ->EnqueueCommand([shiftDown](Fractal &f) {
-                    if (shiftDown) {
-                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-                    }
-                    f.ForceRecalc();
-                })
-                .Wait();
-            MenuGetCurPos();
-            break;
-
-        case 'O':
-        case 'o':
-            gFractal
-                ->EnqueueCommand([shiftDown](Fractal &f) {
-                    if (shiftDown) {
-                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                    }
-                    f.ForceRecalc();
-                })
-                .Wait();
-            MenuGetCurPos();
-            break;
-
-        case 'P':
-        case 'p':
-            gFractal
-                ->EnqueueCommand([shiftDown](Fractal &f) {
-                    if (shiftDown) {
-                        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-                    }
-                    f.ForceRecalc();
-                })
-                .Wait();
-            MenuGetCurPos();
-            break;
-
-        case 'q':
-        case 'Q':
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                if (shiftDown) {
-                    f.DecCompressionError(Fractal::CompressionError::Intermediate, 10);
-                } else {
-                    f.IncCompressionError(Fractal::CompressionError::Intermediate, 10);
-                }
-            });
-            break;
-
-        case 'R':
-        case 'r':
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                if (shiftDown) {
-                    f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                }
-                f.SquareCurrentView();
-            });
-            break;
-
-        case 'T':
-        case 't':
-            gFractal->EnqueueCommand(
-                [shiftDown](Fractal &f) { f.UseNextPaletteAuxDepth(shiftDown ? -1 : 1); });
-            break;
-
-        case 'W':
-        case 'w':
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                if (shiftDown) {
-                    f.DecCompressionError(Fractal::CompressionError::Low, 1);
-                } else {
-                    f.IncCompressionError(Fractal::CompressionError::Low, 1);
-                }
-            });
-            break;
-
-        case 'Z':
-        case 'z':
-            if (shiftDown) {
-                MenuZoomOut(mousePt);
-            } else {
-                MenuZoomIn(mousePt);
-            }
-            break;
-
-        case 'D':
-        case 'd': {
-            gFractal->EnqueueCommand([shiftDown](Fractal &f) {
-                if (shiftDown) {
-                    f.CreateNewFractalPalette();
-                    f.UsePaletteType(FractalPaletteType::Random);
-                } else {
-                    f.UseNextPaletteDepth();
-                }
-            });
-            break;
-        }
-
-        case '=':
-            MenuMultiplyIterations(24.0);
-            break;
-        case '-':
-            MenuMultiplyIterations(2.0 / 3.0);
-            break;
-
-        default:
-            break;
+    if (const FractalShark::Command *command = FractalShark::FindCommandByHotKey(hotkey);
+        command != nullptr) {
+        FractalShark::ExecuteCommand(command->id, *this);
     }
 }
 
@@ -1228,7 +1225,10 @@ MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 std::wstring
-MainWindow::OpenFileDialog(OpenBoxType type)
+MainWindow::OpenFileDialog(OpenBoxType type,
+                           const wchar_t *filter,
+                           const wchar_t *defaultExtension,
+                           unsigned long saveFlags)
 {
     OPENFILENAME ofn;    // common dialog box structure
     wchar_t szFile[260]; // buffer for file name
@@ -1239,12 +1239,13 @@ MainWindow::OpenFileDialog(OpenBoxType type)
     ofn.hwndOwner = NULL;
     ofn.lpstrFile = szFile;
     ofn.lpstrFile[0] = '\0';
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = L"All\0*.*\0Imagina\0*.im\0";
+    ofn.nMaxFile = sizeof(szFile) / sizeof(szFile[0]);
+    ofn.lpstrFilter = filter != nullptr ? filter : kOrbitFileFilter;
     ofn.nFilterIndex = 1;
     ofn.lpstrFileTitle = NULL;
     ofn.nMaxFileTitle = 0;
     ofn.lpstrInitialDir = NULL;
+    ofn.lpstrDefExt = defaultExtension;
 
     if (type == OpenBoxType::Open) {
         // Display the Open dialog box.
@@ -1255,7 +1256,7 @@ MainWindow::OpenFileDialog(OpenBoxType type)
             return std::wstring();
         }
     } else {
-        ofn.Flags = 0;
+        ofn.Flags = saveFlags;
         if (GetSaveFileName(&ofn) == TRUE) {
             return std::wstring(ofn.lpstrFile);
         } else {
@@ -1376,16 +1377,16 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             const int wmEvent = HIWORD(wParam);
             (void)wmEvent;
 
-            // Phase 0c: catalog commands go through ExecuteCommand; range
-            // IDs (View 1-40, dynamic orbit/imag slots) stay on the legacy
-            // path until they get a payload-aware migration.
-            const auto cmd = FractalShark::CommandFromIdm(static_cast<uint32_t>(wmId));
-            if (cmd != FractalShark::FractalCommand::None) {
+            // Native-only dynamic/dialog IDs sit below the portable catalog
+            // range and must keep their raw command id payload.
+            if (wmId < static_cast<int>(FractalShark::FractalCommand::ShowHotkeys)) {
+                if (commandDispatcher.Dispatch(wmId)) {
+                    return 0;
+                }
+            } else {
+                // Static catalog commands go through ExecuteCommand.
+                const auto cmd = FractalShark::CommandFromIdm(static_cast<uint32_t>(wmId));
                 FractalShark::ExecuteCommand(cmd, *this);
-                return 0;
-            }
-
-            if (commandDispatcher.Dispatch(wmId)) {
                 return 0;
             }
 
@@ -1847,6 +1848,9 @@ MainWindow::MenuGetCurPos()
 void
 MainWindow::MenuPaletteRotation()
 {
+    // TODO(palette-rotation): This is visually broken because RotateFractalPalette() updates the
+    // internal palette state without forcing the displayed image to be re-rendered or recolored,
+    // so the command appears to do nothing.
     POINT OrgPos, CurPos;
     GetCursorPos(&OrgPos);
 
@@ -2183,30 +2187,51 @@ MainWindow::MenuLoadEnterLocation()
 void
 MainWindow::MenuSaveBMP()
 {
+    std::wstring filename = OpenFileDialog(
+        OpenBoxType::Save, kPngFileFilter, L"png", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
+    if (filename.empty()) {
+        return;
+    }
+
     // Save must read m_CurIters directly, so drain the render pool first
     // to ensure no workers are active, then call synchronously.
     if (auto *pool = gFractal->GetRenderPool()) {
         pool->Drain();
     }
-    gFractal->SaveCurrentFractal(L"", true);
+    DeleteExistingRegularFile(filename);
+    gFractal->SaveCurrentFractal(std::move(filename), true);
 }
 
 void
 MainWindow::MenuSaveHiResBMP()
 {
+    std::wstring filename = OpenFileDialog(
+        OpenBoxType::Save, kPngFileFilter, L"png", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
+    if (filename.empty()) {
+        return;
+    }
+
     if (auto *pool = gFractal->GetRenderPool()) {
         pool->Drain();
     }
-    gFractal->SaveHiResFractal(L"");
+    DeleteExistingRegularFile(filename);
+    gFractal->SaveHiResFractal(std::move(filename));
 }
 
 void
 MainWindow::MenuSaveItersAsText()
 {
+    std::wstring filename = OpenFileDialog(
+        OpenBoxType::Save, kTextFileFilter, L"txt", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
+    if (filename.empty()) {
+        return;
+    }
+
     if (auto *pool = gFractal->GetRenderPool()) {
         pool->Drain();
     }
-    gFractal->SaveItersAsText(L"");
+    DeleteExistingRegularFile(filename);
+    gFractal->SaveItersAsText(std::move(filename));
 }
 
 void
@@ -2394,78 +2419,8 @@ MainWindow::MenuViewsHelp()
 void
 MainWindow::MenuShowHotkeys()
 {
-    // Shows some basic help + hotkeys as defined in HandleKeyDown
-    ::MessageBox(
-        nullptr,
-        L"Hotkeys\r\n"
-        L"\r\n"
-        L"Navigation\r\n"
-        L"Arrow keys - Pan viewport 25%% of the view.  Shift+Arrow: 10%%, Ctrl+Arrow: 50%%\r\n"
-        L"Numpad + - Zoom in at center\r\n"
-        L"Numpad - - Zoom out at center\r\n"
-        L"a - Autozoom using feature heuristic (zooms toward perturbation reference point).  Hold CTRL "
-        L"to abort.\r\n"
-        L"A - Autozoom using default heuristic (weighted geometric mean of iteration counts).  Hold "
-        L"CTRL to "
-        L"abort.\r\n"
-        L"b - Go back to the previous view\r\n"
-        L"c - Center the view at the current mouse position\r\n"
-        L"C - Center the view at the current mouse position + recalculate reference orbit\r\n"
-        L"z - Zoom in predefined amount at mouse cursor\r\n"
-        L"Z - Zoom out predefined amount at mouse cursor\r\n"
-        L"Left click/drag - Zoom in\r\n"
-        L"\r\n"
-        L"Recaluating and Benchmarking\r\n"
-        L"I - Clear medium-res perturbation results, recalculate, and benchmark\r\n"
-        L"i - Recalculate and benchmark current display, reusing perturbation results\r\n"
-        L"O - Clear high-res perturbation results, recalculate, and benchmark\r\n"
-        L"o - Recalculate and benchmark current display, reusing perturbation results\r\n"
-        L"P - Clear LA-only perturbation results and recalculate\r\n"
-        L"p - Recalculate current display, reusing perturbation results\r\n"
-        L"R - Clear all perturbation results and recalculate\r\n"
-        L"r - Recalculate current display, reusing perturbation results\r\n"
-        L"\r\n"
-        L"Reference Compression\r\n"
-        L"e - Clear all perturbation results, reset error exponent to 19 (default).  Recalculate.\r\n"
-        L"q - Decrease intermediate orbit compression: less error, more memory. Recalculate.\r\n"
-        L"Q - Increase intermediate orbit compression: more error, less memory. Recalculate.\r\n"
-        L"w - Decrease reference compression: less error, more memory. Recalculate.\r\n"
-        L"W - Increase reference compression: more error, less memory. Recalculate.\r\n"
-        L"\r\n"
-        L"Linear Approximation parameters, adjustments by powers of two\r\n"
-        L"H - Decrease LA Threshold Scale exponents.  More accurate/slower per-pixel\r\n"
-        L"h - Increase LA Threshold Scale exponents.  Less accurate/faster per-pixel\r\n"
-        L"J - Decrease LA period detection exponents.  Less memory/slower per-pixel\r\n"
-        L"j - Increase LA period detection exponents.  More memory/faster per-pixel\r\n"
-        L"\r\n"
-        L"Palettes\r\n"
-        L"T - Use prior auxiliary palette depth (mul/div iteration count by 2)\r\n"
-        L"t - Use next auxiliary palette depth (mul/div iteration count by 2)\r\n"
-        L"D - Create and use new random palette\r\n"
-        L"d - Use next palette lookup table depth\r\n"
-        L"\r\n"
-        L"Iterations\r\n"
-        L"Use these keys to increase/decrease the number of iterations used to calculate the "
-        L"fractal.\r\n"
-        L"= - Multiply max iterations by 24\r\n"
-        L"- - Multiply max iterations by 2/3\r\n"
-        L"\r\n"
-        L"Feature Finder\r\n"
-        L"n - Find periodic point at cursor (Direct mode)\r\n"
-        L"N - Find periodic point at cursor (DirectScan mode)\r\n"
-        L"m - Find periodic point at cursor (PT mode)\r\n"
-        L"M - Find periodic point at cursor (PTScan mode)\r\n"
-        L", - Find periodic point at cursor (LA mode)\r\n"
-        L"< - Find periodic point at cursor (LAScan mode)\r\n"
-        L". - Zoom to found feature\r\n"
-        L"> - Clear all found features\r\n"
-        L"\r\n"
-        L"Misc\r\n"
-        L"CTRL - Press and hold to abort autozoom\r\n"
-        L"ALT - Press, click/drag to move window when in windowed mode\r\n"
-        L"Right click - popup menu\r\n",
-        L"",
-        MB_OK);
+    const std::wstring body = BuildHotkeysMessage();
+    ::MessageBox(nullptr, body.c_str(), L"Hotkeys", MB_OK);
 }
 
 void

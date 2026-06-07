@@ -375,9 +375,28 @@ Environment::IsKeyDown(Key key)
 std::pair<int, int>
 Environment::GetCursorPosition()
 {
-    // TODO(linux-parity): Query the global X11 cursor position instead of returning a
-    // placeholder. Palette rotation and sensory-cursor cancellation need real coordinates.
-    return {0, 0};
+    Display *display = ::XOpenDisplay(nullptr);
+    if (!display) {
+        return {0, 0};
+    }
+
+    Window rootReturn = 0;
+    Window childReturn = 0;
+    int rootX = 0;
+    int rootY = 0;
+    int windowX = 0;
+    int windowY = 0;
+    unsigned int mask = 0;
+
+    const Window root = DefaultRootWindow(display);
+    const Bool ok = ::XQueryPointer(
+        display, root, &rootReturn, &childReturn, &rootX, &rootY, &windowX, &windowY, &mask);
+    ::XCloseDisplay(display);
+
+    if (!ok) {
+        return {0, 0};
+    }
+    return {rootX, rootY};
 }
 
 // =========================================================================
@@ -652,11 +671,17 @@ Environment::ShowWarning(const wchar_t *message)
     std::wcerr << L"Warning: " << message << std::endl;
 }
 
+bool
+Environment::SetClipboardText(std::string_view text)
+{
+    (void)text;
+    return true;
+}
+
 void
 Environment::PumpUIEvents()
 {
-    // TODO(linux-parity): Keep this generic helper intentionally empty unless a portable
-    // callback is introduced, but give Linux GUI autozoom a responsive Xlib/ImGui pump.
+    std::wcerr << L"Warning: PumpUIEvents not implemented" << std::endl;
 }
 
 // =========================================================================
@@ -668,10 +693,10 @@ Environment::PumpUIEvents()
 // via Environment::SystemHeap*, so there is nothing for RegisterHeapCleanup()
 // to clean up. This empty definition satisfies the link-time dependency and
 // is a permanent Linux fixture, not a temporary workaround.
-// TODO(linux-parity, permanent): Keep this no-op while Linux uses glibc allocation.
 void
 Environment::RegisterHeapCleanup()
 {
+    std::wcerr << L"Warning: RegisterHeapCleanup not implemented" << std::endl;
 }
 
 #endif // !_WIN32

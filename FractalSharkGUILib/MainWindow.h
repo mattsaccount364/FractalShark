@@ -32,10 +32,30 @@ public:
     MainWindow(HINSTANCE hInstance, int nCmdShow);
     ~MainWindow();
 
-    // ---- FractalShark::ExecuteCommandHost (Phase 0c) ---------------------
-    void DispatchByIdm(int wmId) override;
-
+    // ---- FractalShark::ExecuteCommandHost -------------------------------
     void OnSetAlgorithm(::RenderAlgorithmEnum alg) override;
+
+    // Synthetic shortcut command hooks
+    void OnAutoZoomFeatureAtPoint() override;
+    void OnAutoZoomDefaultAtPoint() override;
+    void OnCenterViewClearPerturbation() override;
+    void OnResetCompressionDefaults() override;
+    void OnLaThresholdScaleIncrease() override;
+    void OnLaThresholdScaleDecrease() override;
+    void OnLaPeriodDetectionIncrease() override;
+    void OnLaPeriodDetectionDecrease() override;
+    void OnRecalcCurrentCopyDetails() override;
+    void OnRecalcClearMediumCopyDetails() override;
+    void OnRecalcClearAllCopyDetails() override;
+    void OnRecalcClearLaCopyDetails() override;
+    void OnIntermediateCompressionIncrease() override;
+    void OnIntermediateCompressionDecrease() override;
+    void OnLowCompressionIncrease() override;
+    void OnLowCompressionDecrease() override;
+    void OnPaletteAuxDepthNext() override;
+    void OnPaletteAuxDepthPrevious() override;
+    void OnPaletteDepthNext() override;
+    void OnRecalcClearAllSquareView() override;
 
     // Help / Window
     void OnShowHotkeys() override;
@@ -194,14 +214,17 @@ private:
     static LRESULT CALLBACK StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT CALLBACK WndProc(UINT message, WPARAM wParam, LPARAM lParam);
     void UnInit();
-    void HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/);
+    void HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM lParam);
     void HandleArrowAndZoomKeys(WPARAM vk);
 
     void DrawFractalShark();
 
     enum class OpenBoxType { Open, Save };
 
-    static std::wstring OpenFileDialog(OpenBoxType type);
+    static std::wstring OpenFileDialog(OpenBoxType type,
+                                       const wchar_t *filter = nullptr,
+                                       const wchar_t *defaultExtension = nullptr,
+                                       unsigned long saveFlags = 0);
 
     void ActivateSavedOrbit(size_t index);
     void ActivateImagina(size_t index);

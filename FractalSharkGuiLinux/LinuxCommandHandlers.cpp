@@ -29,6 +29,189 @@ LinuxCommandHandlers::OnSetAlgorithm(::RenderAlgorithmEnum alg)
         [entry](Fractal &f) { [[maybe_unused]] const bool ok = f.SetRenderAlgorithm(entry); });
 }
 
+// ---- Synthetic shortcut command hooks -------------------------------------
+void
+LinuxCommandHandlers::OnAutoZoomDefaultAtPoint()
+{
+    const MenuPoint pt = GetMenuMousePos();
+    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.CenterAtPoint(x, y); });
+    GetFractal().AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+}
+
+void
+LinuxCommandHandlers::OnCenterViewClearPerturbation()
+{
+    const MenuPoint pt = GetMenuMousePos();
+    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.CenterAtPoint(x, y);
+    });
+}
+
+void
+LinuxCommandHandlers::OnResetCompressionDefaults()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
+        f.DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
+    });
+}
+
+void
+LinuxCommandHandlers::OnLaThresholdScaleIncrease()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        auto &laParameters = f.GetLAParameters();
+        laParameters.AdjustLAThresholdScaleExponent(1);
+        laParameters.AdjustLAThresholdCScaleExponent(1);
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+        f.ForceRecalc();
+    });
+}
+
+void
+LinuxCommandHandlers::OnLaThresholdScaleDecrease()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        auto &laParameters = f.GetLAParameters();
+        laParameters.AdjustLAThresholdScaleExponent(-1);
+        laParameters.AdjustLAThresholdCScaleExponent(-1);
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+        f.ForceRecalc();
+    });
+}
+
+void
+LinuxCommandHandlers::OnLaPeriodDetectionIncrease()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        auto &laParameters = f.GetLAParameters();
+        laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
+        laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+        f.ForceRecalc();
+    });
+}
+
+void
+LinuxCommandHandlers::OnLaPeriodDetectionDecrease()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        auto &laParameters = f.GetLAParameters();
+        laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
+        laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+        f.ForceRecalc();
+    });
+}
+
+void
+LinuxCommandHandlers::OnRecalcCurrentCopyDetails()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) { f.ForceRecalc(); }).Wait();
+    OnCurPos();
+}
+
+void
+LinuxCommandHandlers::OnRecalcClearMediumCopyDetails()
+{
+    GetFractal()
+        .EnqueueCommand([](Fractal &f) {
+            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+            f.ForceRecalc();
+        })
+        .Wait();
+    OnCurPos();
+}
+
+void
+LinuxCommandHandlers::OnRecalcClearAllCopyDetails()
+{
+    GetFractal()
+        .EnqueueCommand([](Fractal &f) {
+            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            f.ForceRecalc();
+        })
+        .Wait();
+    OnCurPos();
+}
+
+void
+LinuxCommandHandlers::OnRecalcClearLaCopyDetails()
+{
+    GetFractal()
+        .EnqueueCommand([](Fractal &f) {
+            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+            f.ForceRecalc();
+        })
+        .Wait();
+    OnCurPos();
+}
+
+void
+LinuxCommandHandlers::OnIntermediateCompressionIncrease()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.IncCompressionError(Fractal::CompressionError::Intermediate, 10);
+    });
+}
+
+void
+LinuxCommandHandlers::OnIntermediateCompressionDecrease()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.DecCompressionError(Fractal::CompressionError::Intermediate, 10);
+    });
+}
+
+void
+LinuxCommandHandlers::OnLowCompressionIncrease()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.IncCompressionError(Fractal::CompressionError::Low, 1);
+    });
+}
+
+void
+LinuxCommandHandlers::OnLowCompressionDecrease()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.DecCompressionError(Fractal::CompressionError::Low, 1);
+    });
+}
+
+void
+LinuxCommandHandlers::OnPaletteAuxDepthNext()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) { f.UseNextPaletteAuxDepth(1); });
+}
+
+void
+LinuxCommandHandlers::OnPaletteAuxDepthPrevious()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) { f.UseNextPaletteAuxDepth(-1); });
+}
+
+void
+LinuxCommandHandlers::OnPaletteDepthNext()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) { f.UseNextPaletteDepth(); });
+}
+
+void
+LinuxCommandHandlers::OnRecalcClearAllSquareView()
+{
+    GetFractal().EnqueueCommand([](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        f.SquareCurrentView();
+    });
+}
+
 // ---- Help / Window --------------------------------------------------------
 void
 LinuxCommandHandlers::OnSquareView()
@@ -70,9 +253,6 @@ LinuxCommandHandlers::OnZoomOut()
     GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.ZoomRecentered(x, y, 1); });
 }
 
-// TODO(linux-parity): Route menu autozoom through a Linux-responsive execution path.
-// These synchronous calls can leave the Xlib/ImGui UI unresponsive because the shared
-// Environment::PumpUIEvents() Linux implementation does not pump GUI events.
 void
 LinuxCommandHandlers::OnAutoZoomDefault()
 {

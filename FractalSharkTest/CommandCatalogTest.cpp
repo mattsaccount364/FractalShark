@@ -9,39 +9,55 @@
 // We also exercise:
 //   - The algorithm-family fast path (FractalCommand::Alg* → OnSetAlgorithm
 //     with the correct RenderAlgorithmEnum payload).
-//   - The DispatchByIdm fallback for IDMs that have no explicit case
-//     (View1..40 ranges, dynamic orbit/imag slots).
+//   - The closed-world contract: unknown FractalCommand values throw instead
+//     of silently routing back to the platform shell.
 
-#include "AlgCmds.h"
 #include "CommandCatalog.h"
+#include "AlgCmds.h"
 #include "MenuTree.h"
 #include "RenderAlgorithm.h"
 #include "TestFramework.h"
 
 #include <span>
+#include <stdexcept>
 #include <string>
 
 namespace {
 
 struct RecordingHost : FractalShark::ExecuteCommandHost {
     std::string lastMethod;
-    int lastIdm = 0;
     ::RenderAlgorithmEnum lastAlg = ::RenderAlgorithmEnum::AUTO;
 
-    void DispatchByIdm(int wmId) override
-    {
-        lastMethod = "DispatchByIdm";
-        lastIdm = wmId;
-    }
-
-    void OnSetAlgorithm(::RenderAlgorithmEnum alg) override
+    void
+    OnSetAlgorithm(::RenderAlgorithmEnum alg) override
     {
         lastMethod = "OnSetAlgorithm";
         lastAlg = alg;
     }
 
-#define FRACTALSHARK_TEST_RECORD(method)                                                              \
+#define FRACTALSHARK_TEST_RECORD(method)                                                                \
     void method() override { lastMethod = #method; }
+
+    FRACTALSHARK_TEST_RECORD(OnAutoZoomFeatureAtPoint)
+    FRACTALSHARK_TEST_RECORD(OnAutoZoomDefaultAtPoint)
+    FRACTALSHARK_TEST_RECORD(OnCenterViewClearPerturbation)
+    FRACTALSHARK_TEST_RECORD(OnResetCompressionDefaults)
+    FRACTALSHARK_TEST_RECORD(OnLaThresholdScaleIncrease)
+    FRACTALSHARK_TEST_RECORD(OnLaThresholdScaleDecrease)
+    FRACTALSHARK_TEST_RECORD(OnLaPeriodDetectionIncrease)
+    FRACTALSHARK_TEST_RECORD(OnLaPeriodDetectionDecrease)
+    FRACTALSHARK_TEST_RECORD(OnRecalcCurrentCopyDetails)
+    FRACTALSHARK_TEST_RECORD(OnRecalcClearMediumCopyDetails)
+    FRACTALSHARK_TEST_RECORD(OnRecalcClearAllCopyDetails)
+    FRACTALSHARK_TEST_RECORD(OnRecalcClearLaCopyDetails)
+    FRACTALSHARK_TEST_RECORD(OnIntermediateCompressionIncrease)
+    FRACTALSHARK_TEST_RECORD(OnIntermediateCompressionDecrease)
+    FRACTALSHARK_TEST_RECORD(OnLowCompressionIncrease)
+    FRACTALSHARK_TEST_RECORD(OnLowCompressionDecrease)
+    FRACTALSHARK_TEST_RECORD(OnPaletteAuxDepthNext)
+    FRACTALSHARK_TEST_RECORD(OnPaletteAuxDepthPrevious)
+    FRACTALSHARK_TEST_RECORD(OnPaletteDepthNext)
+    FRACTALSHARK_TEST_RECORD(OnRecalcClearAllSquareView)
 
     FRACTALSHARK_TEST_RECORD(OnShowHotkeys)
     FRACTALSHARK_TEST_RECORD(OnViewsHelp)
@@ -77,7 +93,8 @@ struct RecordingHost : FractalShark::ExecuteCommandHost {
     FRACTALSHARK_TEST_RECORD(OnStandardView)
 
     size_t lastViewIndex = static_cast<size_t>(-1);
-    void OnSelectBuiltInView(size_t oneBasedIndex) override
+    void
+    OnSelectBuiltInView(size_t oneBasedIndex) override
     {
         lastMethod = "OnSelectBuiltInView";
         lastViewIndex = oneBasedIndex;
@@ -175,19 +192,81 @@ ExpectHook(RecordingHost &host, FractalShark::FractalCommand cmd, const char *ex
     FractalShark::ExecuteCommand(cmd, host);
     if (host.lastMethod != expectedHook) {
         std::ostringstream oss;
-        oss << "ExecuteCommand(" << static_cast<unsigned>(cmd) << ") routed to '"
-            << host.lastMethod << "', expected '" << expectedHook << "'";
+        oss << "ExecuteCommand(" << static_cast<unsigned>(cmd) << ") routed to '" << host.lastMethod
+            << "', expected '" << expectedHook << "'";
         TestFramework::Fail(__FILE__, __LINE__, oss.str());
     }
+}
+
+void
+ExpectHotKey(FractalShark::HotKey hotkey, wchar_t key, bool shift, bool ctrl = false, bool alt = false)
+{
+    hotkey = FractalShark::NormalizeHotKey(hotkey);
+    ASSERT_TRUE(hotkey.key == key);
+    ASSERT_TRUE(hotkey.shift == shift);
+    ASSERT_TRUE(hotkey.ctrl == ctrl);
+    ASSERT_TRUE(hotkey.alt == alt);
 }
 
 } // namespace
 
 #define EXPECT(cmd, hook) ExpectHook(host, FractalShark::FractalCommand::cmd, #hook)
 
+TEST(CommandCatalog_HotKeyFromCharacterBuildsCatalogShape)
+{
+    using FractalShark::FractalCommand;
+    using FractalShark::HotKeyFromCharacter;
+
+    ExpectHotKey(HotKeyFromCharacter(L'a', false, false, false), L'a', false);
+    ExpectHotKey(HotKeyFromCharacter(L'A', true, false, false), L'a', true);
+    ExpectHotKey(HotKeyFromCharacter(L'A', false, false, false), L'a', false);
+    ExpectHotKey(HotKeyFromCharacter(L'a', false, true, true), L'a', false, true, true);
+    ExpectHotKey(HotKeyFromCharacter(L'+', false, false, false), L'=', true);
+    ExpectHotKey(HotKeyFromCharacter(L'<', false, false, false), L',', true);
+    ExpectHotKey(HotKeyFromCharacter(L'>', false, false, false), L'.', true);
+    ASSERT_FALSE(HotKeyFromCharacter(L'_', true, false, false).HasKey());
+
+    const FractalShark::Command *plus =
+        FractalShark::FindCommandByHotKey(HotKeyFromCharacter(L'+', false, false, false));
+    ASSERT_TRUE(plus != nullptr);
+    ASSERT_TRUE(plus->id == FractalCommand::IncreaseIterations24x);
+
+    const FractalShark::Command *less =
+        FractalShark::FindCommandByHotKey(HotKeyFromCharacter(L'<', false, false, false));
+    ASSERT_TRUE(less != nullptr);
+    ASSERT_TRUE(less->id == FractalCommand::FeatureFinderLaScan);
+
+    const FractalShark::Command *greater =
+        FractalShark::FindCommandByHotKey(HotKeyFromCharacter(L'>', false, false, false));
+    ASSERT_TRUE(greater != nullptr);
+    ASSERT_TRUE(greater->id == FractalCommand::FeatureFinderClear);
+}
+
 TEST(CommandCatalog_RoutesAllMigratedHooks)
 {
     RecordingHost host;
+
+    // Synthetic shortcut commands
+    EXPECT(AutoZoomFeatureAtPoint, OnAutoZoomFeatureAtPoint);
+    EXPECT(AutoZoomDefaultAtPoint, OnAutoZoomDefaultAtPoint);
+    EXPECT(CenterViewClearPerturbation, OnCenterViewClearPerturbation);
+    EXPECT(ResetCompressionDefaults, OnResetCompressionDefaults);
+    EXPECT(LaThresholdScaleIncrease, OnLaThresholdScaleIncrease);
+    EXPECT(LaThresholdScaleDecrease, OnLaThresholdScaleDecrease);
+    EXPECT(LaPeriodDetectionIncrease, OnLaPeriodDetectionIncrease);
+    EXPECT(LaPeriodDetectionDecrease, OnLaPeriodDetectionDecrease);
+    EXPECT(RecalcCurrentCopyDetails, OnRecalcCurrentCopyDetails);
+    EXPECT(RecalcClearMediumCopyDetails, OnRecalcClearMediumCopyDetails);
+    EXPECT(RecalcClearAllCopyDetails, OnRecalcClearAllCopyDetails);
+    EXPECT(RecalcClearLaCopyDetails, OnRecalcClearLaCopyDetails);
+    EXPECT(IntermediateCompressionIncrease, OnIntermediateCompressionIncrease);
+    EXPECT(IntermediateCompressionDecrease, OnIntermediateCompressionDecrease);
+    EXPECT(LowCompressionIncrease, OnLowCompressionIncrease);
+    EXPECT(LowCompressionDecrease, OnLowCompressionDecrease);
+    EXPECT(PaletteAuxDepthNext, OnPaletteAuxDepthNext);
+    EXPECT(PaletteAuxDepthPrevious, OnPaletteAuxDepthPrevious);
+    EXPECT(PaletteDepthNext, OnPaletteDepthNext);
+    EXPECT(RecalcClearAllSquareView, OnRecalcClearAllSquareView);
 
     // Help / Window
     EXPECT(ShowHotkeys, OnShowHotkeys);
@@ -344,7 +423,7 @@ TEST(CommandCatalog_RangeCommandsRouteToSelectBuiltInView)
 
     // View1..View40 must route through OnSelectBuiltInView with a 1-based
     // index so Linux can implement the saved-view menu without re-deriving
-    // IDM range arithmetic.
+    // native command-id range arithmetic.
     for (uint32_t v = static_cast<uint32_t>(FractalShark::FractalCommand::View1);
          v <= static_cast<uint32_t>(FractalShark::FractalCommand::View40);
          ++v) {
@@ -360,33 +439,15 @@ TEST(CommandCatalog_RangeCommandsRouteToSelectBuiltInView)
     }
 }
 
-TEST(CommandCatalog_NoneCommandFallsThroughToDispatchByIdm)
+TEST(CommandCatalog_NoneCommandThrows)
 {
     RecordingHost host;
-    host.lastMethod.clear();
-    host.lastIdm = 0xDEAD;
 
-    // FractalCommand::None should not silently drop — it falls through
-    // to DispatchByIdm with idm=0 so a host can decide whether to log
-    // or ignore it.
-    FractalShark::ExecuteCommand(FractalShark::FractalCommand::None, host);
-
-    ASSERT_EQ(host.lastMethod, std::string("DispatchByIdm"));
-    ASSERT_EQ(host.lastIdm, 0);
+    ASSERT_THROWS(FractalShark::ExecuteCommand(FractalShark::FractalCommand::None, host),
+                  std::logic_error);
 }
 
 namespace {
-
-// Walk MenuTreeDef.h and assert every leaf id is dispatched.  After audit-b
-// landed OnSelectBuiltInView, no static-menu leaf should fall through to
-// DispatchByIdm.  Dynamic orbit / imag slots use IDMs below the
-// FractalCommand range and never appear in MenuTreeDef.h, so this list is
-// currently empty.
-bool
-IsAllowedFallthrough(uint32_t /*id*/) noexcept
-{
-    return false;
-}
 
 void
 WalkAndCheckLeaves(std::span<const FractalShark::Menu::Node> nodes, RecordingHost &host)
@@ -405,22 +466,17 @@ WalkAndCheckLeaves(std::span<const FractalShark::Menu::Node> nodes, RecordingHos
         ASSERT_TRUE(node.id != 0);
 
         host.lastMethod.clear();
-        host.lastIdm = -1;
-        FractalShark::ExecuteCommand(
-            FractalShark::CommandFromIdm(node.id), host);
-
-        if (host.lastMethod == "DispatchByIdm") {
-            if (!IsAllowedFallthrough(node.id)) {
-                std::ostringstream oss;
-                oss << "Menu leaf id=" << node.id
-                    << " falls through to DispatchByIdm but is not on the "
-                       "allow-list (cf. audit-b in plan.md)";
-                TestFramework::Fail(__FILE__, __LINE__, oss.str());
-            }
-        } else if (host.lastMethod.empty()) {
+        try {
+            FractalShark::ExecuteCommand(FractalShark::CommandFromIdm(node.id), host);
+        } catch (const std::exception &e) {
             std::ostringstream oss;
-            oss << "Menu leaf id=" << node.id
-                << " dispatched via ExecuteCommand but no host hook fired";
+            oss << "Menu leaf id=" << node.id << " threw from ExecuteCommand: " << e.what();
+            TestFramework::Fail(__FILE__, __LINE__, oss.str());
+        }
+
+        if (host.lastMethod.empty()) {
+            std::ostringstream oss;
+            oss << "Menu leaf id=" << node.id << " dispatched via ExecuteCommand but no host hook fired";
             TestFramework::Fail(__FILE__, __LINE__, oss.str());
         }
     }

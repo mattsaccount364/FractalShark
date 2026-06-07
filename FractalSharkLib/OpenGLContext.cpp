@@ -347,9 +347,6 @@ OpenGlContext::SwapBuffers()
 
 #include <GL/glx.h>
 
-// TODO(linux-parity, deferred): Add a Wayland/EGL OpenGL context implementation.
-// The current Linux rendering path requires X11 and GLX.
-
 namespace {
 
 struct SharedWindowGlState {

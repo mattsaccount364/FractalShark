@@ -6,6 +6,19 @@
 
 #include <cinttypes>
 
+namespace {
+
+bool
+PathHasFilenameExtension(const std::wstring &path)
+{
+    const size_t lastSeparator = path.find_last_of(L"/\\");
+    const size_t filenameStart = lastSeparator == std::wstring::npos ? 0 : lastSeparator + 1;
+    const size_t lastDot = path.find_last_of(L'.');
+    return lastDot != std::wstring::npos && lastDot > filenameStart;
+}
+
+} // namespace
+
 //////////////////////////////////////////////////////////////////////////////
 // Saves the current fractal as a bitmap to the given file.
 // If halfImage is true, a bitmap with half the dimensions of the current
@@ -83,7 +96,10 @@ PngParallelSave::Run()
     if (m_FilenameBase != L"") {
         wchar_t temp[512];
         swprintf(temp, 512, L"%ls", m_FilenameBase.c_str());
-        final_filename = std::wstring(temp) + ext;
+        final_filename = std::wstring(temp);
+        if (!PathHasFilenameExtension(final_filename)) {
+            final_filename += ext;
+        }
         if (Utilities::FileExists(final_filename.c_str())) {
             std::wcerr << L"Not saving, file exists" << std::endl;
             return;

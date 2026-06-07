@@ -70,7 +70,6 @@ enum class Rule : uint16_t {
     EnableIfGpuActive,
     EnableIfCpuActive,
     EnableIfPerturbationAvailable,
-    EnableIfPaletteRotationSupported,
     EnableIfNRCheckpointExists,
 };
 

@@ -3,6 +3,8 @@
 
 #include "Environment.h"
 
+#include <array>
+#include <cstring>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -12,6 +14,35 @@
 #include <psapi.h>      // must follow windows.h
 #include <shellapi.h>   // SHFileOperationW
 // clang-format on
+
+#include "../FractalShark/resource.h"
+
+namespace {
+
+struct ImaginaResourceEntry {
+    Environment::ImaginaFixtureInfo info;
+    int resourceId;
+};
+
+constexpr std::array<Environment::ImaginaFixtureInfo, 6> kImaginaFixtureInfos{{
+    {L"View0.im", size_t{0}},
+    {L"View5.im", size_t{5}},
+    {L"View14.im", size_t{14}},
+    {L"View15.im", size_t{15}},
+    {L"View19.im", size_t{19}},
+    {L"ViewEasy1.im", std::nullopt},
+}};
+
+constexpr std::array<ImaginaResourceEntry, 6> kImaginaResources{{
+    {kImaginaFixtureInfos[0], IDR_IMAGINA_VIEW0},
+    {kImaginaFixtureInfos[1], IDR_IMAGINA_VIEW5},
+    {kImaginaFixtureInfos[2], IDR_IMAGINA_VIEW14},
+    {kImaginaFixtureInfos[3], IDR_IMAGINA_VIEW15},
+    {kImaginaFixtureInfos[4], IDR_IMAGINA_VIEW19},
+    {kImaginaFixtureInfos[5], IDR_IMAGINA_VIEWEASY1},
+}};
+
+} // namespace
 
 // =========================================================================
 // File handle operations
@@ -381,6 +412,50 @@ Environment::FileSizeBytes(const wchar_t *path)
     return static_cast<uint64_t>(size.QuadPart);
 }
 
+std::span<const Environment::ImaginaFixtureInfo>
+Environment::GetEmbeddedImaginaFixtureInfos()
+{
+    return kImaginaFixtureInfos;
+}
+
+std::optional<Environment::EmbeddedResourceView>
+Environment::FindEmbeddedImaginaFixture(std::wstring_view name)
+{
+    for (const auto &entry : kImaginaResources) {
+        if (entry.info.name != name) {
+            continue;
+        }
+
+        auto hInst = ::GetModuleHandleW(nullptr);
+        auto hRes = ::FindResourceW(hInst, MAKEINTRESOURCEW(entry.resourceId), L"SHARK_DATA");
+        if (hRes == nullptr) {
+            return std::nullopt;
+        }
+
+        auto hGlobal = ::LoadResource(hInst, hRes);
+        if (hGlobal == nullptr) {
+            return std::nullopt;
+        }
+
+        auto *resourceData = ::LockResource(hGlobal);
+        if (resourceData == nullptr) {
+            return std::nullopt;
+        }
+
+        const auto resourceSize = ::SizeofResource(hInst, hRes);
+        if (resourceSize == 0) {
+            return std::nullopt;
+        }
+
+        return EmbeddedResourceView{
+            entry.info.name,
+            std::span<const std::byte>{static_cast<const std::byte *>(resourceData),
+                                       static_cast<size_t>(resourceSize)}};
+    }
+
+    return std::nullopt;
+}
+
 // =========================================================================
 // Process information
 // =========================================================================
@@ -461,6 +536,45 @@ void
 Environment::ShowWarning(const wchar_t *message)
 {
     ::MessageBoxW(nullptr, message, L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+}
+
+bool
+Environment::SetClipboardText(std::string_view text)
+{
+    if (!::OpenClipboard(nullptr)) {
+        return false;
+    }
+
+    if (!::EmptyClipboard()) {
+        ::CloseClipboard();
+        return false;
+    }
+
+    HGLOBAL textHandle = ::GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+    if (textHandle == nullptr) {
+        ::CloseClipboard();
+        return false;
+    }
+
+    auto *clipboardBytes = ::GlobalLock(textHandle);
+    if (clipboardBytes == nullptr) {
+        ::GlobalFree(textHandle);
+        ::CloseClipboard();
+        return false;
+    }
+
+    std::memcpy(clipboardBytes, text.data(), text.size());
+    static_cast<char *>(clipboardBytes)[text.size()] = '\0';
+    ::GlobalUnlock(textHandle);
+
+    if (::SetClipboardData(CF_TEXT, textHandle) == nullptr) {
+        ::GlobalFree(textHandle);
+        ::CloseClipboard();
+        return false;
+    }
+
+    ::CloseClipboard();
+    return true;
 }
 
 void

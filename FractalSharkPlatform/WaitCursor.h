@@ -44,16 +44,22 @@ private:
 
 #else
 
-// TODO(linux-parity, deferred): Provide Linux GUI busy-cursor feedback for benchmarks.
-// This remains an intentional no-op for non-GUI Linux callers until a display-aware hook exists.
+#include <cstdint>
+
 class WaitCursor {
 public:
-    WaitCursor() = default;
-    ~WaitCursor() = default;
-    void
-    ResetCursor()
-    {
-    }
+    WaitCursor();
+    ~WaitCursor();
+
+    void ResetCursor();
+
+    static void RegisterLinuxCursorTarget(void *display,
+                                          std::uintptr_t window,
+                                          std::uintptr_t normalCursor);
+    static void UnregisterLinuxCursorTarget();
+
+private:
+    bool m_CursorSet;
 };
 
 #endif

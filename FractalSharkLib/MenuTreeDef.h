@@ -455,8 +455,7 @@ static const Node menu[] = {
              R::Always,
              /*adornment*/ RG::PaletteBitDepth,
 
-             // Formerly Inactive(). Replace with a rule your IMenuState returns false for.
-             Radio(L"Basic", FractalCommand::PaletteType0, RG::PaletteType, R::EnableIfPaletteRotationSupported),
+             Radio(L"Basic", FractalCommand::PaletteType0, RG::PaletteType),
              Radio(L"Default", FractalCommand::PaletteType1, RG::PaletteType),
 
              Sep(),
@@ -480,9 +479,7 @@ static const Node menu[] = {
 
              Sep(),
 
-             // Formerly Inactive(). Probably really a Toggle; leaving as Item with a rule for now.
-             // If it IS a toggle, change to Toggle(...).
-             Item(L"Pa&lette Rotation", FractalCommand::PaletteRotate, R::EnableIfPaletteRotationSupported)),
+             Item(L"Pa&lette Rotation", FractalCommand::PaletteRotate)),
 
     Sep(),
 

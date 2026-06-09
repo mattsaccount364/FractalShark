@@ -3,17 +3,17 @@
 //
 // Mirrors the Win32 SEH/MiniDump path in CrashHandlerWin32.cpp at the same
 // public seam (CrashHandler::Install). Differences are unavoidable:
-//   * No MiniDump - we capture std::stacktrace::current() and the active
-//     siginfo_t into a side-band file (core.txt), then re-raise the signal
-//     so the kernel can drop a real core dump if ulimit -c allows.
+//   * No MiniDump - when std::stacktrace is available, we print a best-effort
+//     stacktrace, then re-raise the signal so the kernel can drop a real core
+//     dump if ulimit -c allows.
 //   * No SetUnhandledExceptionFilter / structured exceptions - we install
 //     sigaction handlers for the synchronous fault signals.
 //   * No vectored handler / abort filter - SA_RESETHAND lets re-raised
 //     signals run the default disposition (terminate + core).
 //
 // Handler is async-signal-safe by construction: it touches only stack-local
-// data, file descriptors via low-level POSIX I/O, and std::stacktrace
-// (which is itself signal-safe in libstdc++ when backed by libbacktrace).
+// data and file descriptors via low-level POSIX I/O. The optional
+// std::stacktrace path is best-effort diagnostics only.
 //
 
 #include "CrashHandler.h"
@@ -25,8 +25,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#if FRACTALSHARK_HAS_STACKTRACE
 #include <iostream>
 #include <stacktrace>
+#endif
 #include <unistd.h>
 
 namespace {
@@ -69,15 +71,18 @@ OnFatalSignal(int sig, siginfo_t * /*si*/, void * /*uctx*/) noexcept
 
     SafeWriteSignalHeader(sig);
 
-    // std::stacktrace + ostream<< is not strictly async-signal-safe, but
-    // libbacktrace on Linux uses preallocated buffers and avoids malloc on
-    // the hot path. This is the best we can do without bespoke unwinding.
+#if FRACTALSHARK_HAS_STACKTRACE
+    // std::stacktrace + ostream<< is not strictly async-signal-safe, but this
+    // is best-effort fatal diagnostics when the backend is available.
     try {
         auto trace = std::stacktrace::current();
         std::cerr << trace << std::endl;
     } catch (...) {
         SafeWriteStderr("(stacktrace unavailable)\n");
     }
+#else
+    SafeWriteStderr("(stacktrace disabled)\n");
+#endif
 
     // Re-raise so the kernel produces a core dump if ulimit -c allows.
     // SA_RESETHAND means our handler is no longer installed, so the default

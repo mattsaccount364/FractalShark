@@ -62,6 +62,10 @@ target_include_directories(HpSharkFloatLib PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 
+target_compile_definitions(HpSharkFloatLib PUBLIC
+    FRACTALSHARK_HAS_STACKTRACE=${FRACTALSHARK_HAS_STACKTRACE_DEFINE}
+)
+
 # Plain .cpp files that include <cuda_runtime.h> (e.g. LaunchParamsCalculator.cpp,
 # AbortMonitor.cpp) need the CUDA toolkit include dir since they are compiled by
 # the C++ compiler, not nvcc.
@@ -97,21 +101,6 @@ if(NOT WIN32)
     endif()
 endif()
 
-# std::stacktrace on libstdc++ (used by Exceptions.cpp / Callstacks.cpp).
-# libstdc++ 13 ships the impl in libstdc++_libbacktrace; libstdc++ 14
-# moved it into libstdc++exp. Link whichever one the active toolchain
-# provides.
-if(NOT WIN32)
-    find_library(STDCXX_STACKTRACE_LIB
-        NAMES stdc++exp stdc++_libbacktrace
-        PATHS /usr/lib/gcc/x86_64-linux-gnu/14
-              /usr/lib/gcc/x86_64-linux-gnu/13
-        NO_DEFAULT_PATH
-    )
-    if(NOT STDCXX_STACKTRACE_LIB)
-        message(FATAL_ERROR "Could not find libstdc++exp or libstdc++_libbacktrace "
-                            "(needed by std::stacktrace). Install libstdc++-14-dev "
-                            "or libstdc++-13-dev.")
-    endif()
-    target_link_libraries(HpSharkFloatLib PUBLIC ${STDCXX_STACKTRACE_LIB})
+if(FRACTALSHARK_STACKTRACE_LINK_LIB)
+    target_link_libraries(HpSharkFloatLib PUBLIC ${FRACTALSHARK_STACKTRACE_LINK_LIB})
 endif()

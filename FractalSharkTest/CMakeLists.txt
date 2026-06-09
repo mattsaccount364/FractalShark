@@ -6,6 +6,7 @@ target_sources(FractalSharkTest PRIVATE
     TestBLA.cpp
     TestCudaDblflt.cpp
     TestFloatComplex.cpp
+    TestHeapAllocator.cpp
     TestHDRFloat.cpp
     TestHDRFloatComplex.cpp
     TestHighPrecisionStrings.cpp

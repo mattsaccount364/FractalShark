@@ -5,6 +5,21 @@
 
 std::unique_ptr<CallStacks> GlobalCallstacks;
 
+namespace {
+
+std::string
+CaptureCallstack()
+{
+#if FRACTALSHARK_HAS_STACKTRACE
+    const std::stacktrace stack = std::stacktrace::current(1);
+    return GetCallStack(stack);
+#else
+    return "(stacktrace disabled)\n";
+#endif
+}
+
+} // namespace
+
 void
 CallStacks::InitCallstacks()
 {
@@ -25,8 +40,7 @@ CallStacks::OutputToFile(std::ofstream &file, const CallstackDetails &callstack)
 void
 CallStacks::LogReserveCallstack(size_t bytes, const void *ptr)
 {
-    std::stacktrace stack = std::stacktrace::current(1);
-    auto callstack = GetCallStack(stack);
+    auto callstack = CaptureCallstack();
 
     std::lock_guard<std::mutex> lock(CallstacksMutex);
     auto newCallstack = CallstackDetails{callstack, bytes, ptr};
@@ -41,8 +55,7 @@ CallStacks::LogReserveCallstack(size_t bytes, const void *ptr)
 void
 CallStacks::LogAllocCallstack(size_t bytes, const void *ptr)
 {
-    std::stacktrace stack = std::stacktrace::current(1);
-    auto callstack = GetCallStack(stack);
+    auto callstack = CaptureCallstack();
 
     std::lock_guard<std::mutex> lock(CallstacksMutex);
     auto newCallstack = CallstackDetails{callstack, bytes, ptr};

@@ -98,6 +98,7 @@ static int __cdecl myexit(PF pf)
 FancyHeap EnableFractalSharkHeap;
 
 static constexpr auto PAGE_SIZE = 0x1000;
+static constexpr size_t TailCanaryBytes = 16;
 
 // sprintf etc use heap allocations in debug mode, so we can't use them here.
 [[maybe_unused]] static constexpr bool LimitedDebugOut = !FractalSharkDebug;
@@ -163,6 +164,49 @@ IsPow2(size_t x)
     return x && ((x & (x - 1)) == 0);
 }
 
+static __forceinline bool
+AddSize(size_t a, size_t b, size_t &result)
+{
+    if (a > SIZE_MAX - b) {
+        return false;
+    }
+
+    result = a + b;
+    return true;
+}
+
+static __forceinline bool
+AlignUpAddress(uintptr_t value, size_t alignment, uintptr_t &result)
+{
+    if (alignment == 0 || !IsPow2(alignment)) {
+        return false;
+    }
+
+    const uintptr_t mask = static_cast<uintptr_t>(alignment - 1);
+    if (value > UINTPTR_MAX - mask) {
+        return false;
+    }
+
+    result = (value + mask) & ~mask;
+    return true;
+}
+
+static __forceinline bool
+RoundUserSize(size_t userSize, size_t &actualSize)
+{
+    if (userSize > SIZE_MAX - TailCanaryBytes) {
+        return false;
+    }
+
+    const size_t withCanary = userSize + TailCanaryBytes;
+    if (withCanary > SIZE_MAX - (HeapAlignment - 1)) {
+        return false;
+    }
+
+    actualSize = (withCanary + (HeapAlignment - 1)) & ~(HeapAlignment - 1);
+    return true;
+}
+
 void
 CleanupHeap()
 {
@@ -205,11 +249,11 @@ HeapCpp::InitGlobalHeap()
     }
 
     // Thread-safe single-initialization guard using atomic CAS.
-    // Can't use std::call_once or std::mutex — those may allocate, and this
+    // Can't use std::call_once or std::mutex - those may allocate, and this
     // runs before the heap is ready.
     static volatile int32_t init_lock = 0;
     while (Environment::InterlockedCAS32(&init_lock, 1, 0) != 0) {
-        // Another thread is initializing — spin until done.
+        // Another thread is initializing - spin until done.
         // After init, Initialized==true and we return early above on next call.
         Environment::SleepMs(0);
     }
@@ -359,6 +403,8 @@ HeapCpp::Init()
     Mutex = new (MutexBuffer) std::mutex();
 
     node_t *init_region = reinterpret_cast<node_t *>(Growable->GetData());
+    HEAP_ASSERT(reinterpret_cast<uintptr_t>(init_region) % alignof(node_t) == 0,
+                "Init: heap start misaligned");
 
     const uint64_t init_payload_sz = (HEAP_INIT_SIZE) - sizeof(node_t) - sizeof(footer_t);
 
@@ -378,6 +424,51 @@ HeapCpp::Init()
     Initialized = true;
 }
 
+void *
+HeapCpp::FinalizeAllocation(
+    node_t *node, size_t userSize, size_t actualSize, bool initializeGeneration, bool checkPoison)
+{
+    node->user_size = static_cast<uint64_t>(userSize);
+    node->actual_size = static_cast<uint64_t>(actualSize);
+    CreateFooter(node);
+
+    node->hole = 0;
+    node->magic = node_t::Magic;
+    node->next = nullptr;
+    node->prev = nullptr;
+
+    if (initializeGeneration) {
+        node->in_bin = node_t::NotInBin;
+        node->in_bin_gen = 0;
+    }
+
+    node->head_guard = node_t::HeadGuard;
+    node->alloc_gen = node->in_bin_gen;
+    node->checksum = node->ComputeChecksum();
+
+    char *user = reinterpret_cast<char *>(node) + sizeof(node_t);
+
+    // Poison spot-check: if this block was previously freed and poisoned,
+    // the first 8 bytes of payload should still be 0xCD.
+    if (checkPoison && node->poisoned == node_t::WasPoisoned) {
+        auto *probe = reinterpret_cast<const uint64_t *>(user);
+        if (*probe != 0xCDCDCDCDCDCDCDCDull) {
+            char buf[256];
+            sprintf_s(buf,
+                      "Write-after-free: expected 0xCDCDCDCDCDCDCDCD, got 0x%llX at %p "
+                      "(size=%llu)",
+                      static_cast<unsigned long long>(*probe),
+                      static_cast<void *>(user),
+                      static_cast<unsigned long long>(node->actual_size));
+            HeapPanic(buf);
+        }
+    }
+    node->poisoned = node_t::NotPoisoned;
+
+    SetMagicAtEnd(user, node->actual_size);
+    return user;
+}
+
 // ========================================================
 // Allocate
 // ========================================================
@@ -389,11 +480,10 @@ HeapCpp::Allocate(size_t user_size)
         InitGlobalHeap();
     }
 
-    // Round up to nearest 16 bytes
-    auto actual_size = (user_size + 0xF) & ~0xF;
-
-    // Tail canary space (two u64)
-    actual_size += 16;
+    size_t actual_size = 0;
+    if (!RoundUserSize(user_size, actual_size)) {
+        return nullptr;
+    }
 
     std::unique_lock<std::mutex> lock(*Mutex);
     auto TryOnce = [&]() -> void * {
@@ -447,60 +537,30 @@ HeapCpp::Allocate(size_t user_size)
             const auto in_bin = GetBinIndex(split_payload_sz);
             add_node(Heap.bins[in_bin], split, in_bin);
 
-            // shrink found to requested size (+ canary already included)
-            found->user_size = static_cast<uint64_t>(user_size);
-            found->actual_size = static_cast<uint64_t>(actual_size);
-            CreateFooter(found);
+            return FinalizeAllocation(found, user_size, actual_size, false, true);
         } else {
-            found->user_size = static_cast<uint64_t>(user_size);
-            CreateFooter(found);
+            return FinalizeAllocation(found, user_size, found->actual_size, false, true);
         }
-
-        // Mark allocated (and no longer a freelist node)
-        found->hole = 0;
-        found->magic = node_t::Magic;
-
-        // Clear links for tidiness, but they're allocator-owned now anyway.
-        found->next = nullptr;
-        found->prev = nullptr;
-
-        // Head guard: detect backward scribbles from user data
-        found->head_guard = node_t::HeadGuard;
-
-        // Save generation for use-after-free detection
-        found->alloc_gen = found->in_bin_gen;
-
-        // Metadata checksum (computed after all fields are set)
-        found->checksum = found->ComputeChecksum();
-
-        char *user = (char *)found + sizeof(node_t);
-
-        // Poison spot-check: if this block was previously freed and poisoned,
-        // the first 8 bytes of payload should still be 0xCD.
-        // If not, something wrote to freed memory.
-        if (found->poisoned == node_t::WasPoisoned) {
-            auto *probe = reinterpret_cast<const uint64_t *>(user);
-            if (*probe != 0xCDCDCDCDCDCDCDCDull) {
-                char buf[256];
-                sprintf_s(buf,
-                          "Write-after-free: expected 0xCDCDCDCDCDCDCDCD, got 0x%llX at %p (size=%llu)",
-                          static_cast<unsigned long long>(*probe),
-                          static_cast<void *>(user),
-                          static_cast<unsigned long long>(found->actual_size));
-                HeapPanic(buf);
-            }
-        }
-        found->poisoned = node_t::NotPoisoned;
-
-        SetMagicAtEnd(user, found->actual_size);
-        return user;
     };
 
     void *res = TryOnce();
+    bool expandAttempted = false;
+    bool expandSucceeded = false;
     if (!res) {
-        if (Expand(actual_size * 2)) {
+        expandAttempted = true;
+        expandSucceeded = Expand(actual_size * 2);
+        if (expandSucceeded) {
             res = TryOnce();
         }
+    }
+
+#ifndef _WIN32
+    if (!res) {
+        PanicAllocationFailed("Allocate", user_size, actual_size, expandAttempted, expandSucceeded);
+    }
+#endif
+    if (!res) {
+        return nullptr;
     }
 
     node_t *wild = GetWilderness();
@@ -511,12 +571,183 @@ HeapCpp::Allocate(size_t user_size)
         Contract(PAGE_SIZE);
     }
 
-    if (res && (reinterpret_cast<uintptr_t>(res) % 16 != 0)) {
-        HeapPanic("Memory allocation is not aligned");
+    if (res && (reinterpret_cast<uintptr_t>(res) % HeapAlignment != 0)) {
+        HeapPanic("Memory allocation is not heap-aligned");
     }
 
     Stats.Allocations++;
-    Stats.BytesAllocated += actual_size;
+    auto *node = reinterpret_cast<node_t *>(reinterpret_cast<char *>(res) - sizeof(node_t));
+    Stats.BytesAllocated += node->actual_size;
+    return res;
+}
+
+void *
+HeapCpp::AllocateAligned(size_t user_size, size_t alignment)
+{
+    if (alignment == 0 || !IsPow2(alignment)) {
+        return nullptr;
+    }
+
+    if (alignment <= HeapAlignment) {
+        return Allocate(user_size);
+    }
+
+    if (!Initialized) {
+        VectorStaticInit();
+        InitGlobalHeap();
+    }
+
+    size_t actual_size = 0;
+    if (!RoundUserSize(user_size, actual_size)) {
+        return nullptr;
+    }
+
+    size_t search_size = 0;
+    if (!AddSize(actual_size, alignment, search_size) || !AddSize(search_size, overhead, search_size)) {
+        return nullptr;
+    }
+
+    constexpr size_t MinSplitBytes = overhead + MIN_ALLOC_SZ;
+
+    std::unique_lock<std::mutex> lock(*Mutex);
+    auto TryOnce = [&]() -> void * {
+        const uint64_t index = GetBinIndex(actual_size);
+
+        for (uint64_t i = index; i < HEAP_BIN_COUNT; ++i) {
+            for (node_t *found = Heap.bins[i]->head; found != nullptr; found = found->next) {
+                if (found->actual_size < actual_size) {
+                    continue;
+                }
+
+                HEAP_ASSERT(found->hole, "AllocateAligned: bin node is not free");
+
+                const uintptr_t blockStart = reinterpret_cast<uintptr_t>(found);
+                const uintptr_t blockEnd =
+                    blockStart + sizeof(node_t) + found->actual_size + sizeof(footer_t);
+
+                uintptr_t alignedUser = 0;
+                if (!AlignUpAddress(blockStart + sizeof(node_t), alignment, alignedUser)) {
+                    continue;
+                }
+
+                uintptr_t alignedHead = alignedUser - sizeof(node_t);
+                size_t leadingBytes = static_cast<size_t>(alignedHead - blockStart);
+
+                if (leadingBytes != 0 && leadingBytes < MinSplitBytes) {
+                    if (alignedUser > UINTPTR_MAX - alignment) {
+                        continue;
+                    }
+                    alignedUser += alignment;
+                    alignedHead = alignedUser - sizeof(node_t);
+                    if (alignedHead < blockStart) {
+                        continue;
+                    }
+                    leadingBytes = static_cast<size_t>(alignedHead - blockStart);
+                    if (leadingBytes != 0 && leadingBytes < MinSplitBytes) {
+                        continue;
+                    }
+                }
+
+                size_t allocatedBytes = 0;
+                if (!AddSize(overhead, actual_size, allocatedBytes)) {
+                    continue;
+                }
+                if (alignedHead < blockStart || alignedHead > blockEnd ||
+                    allocatedBytes > static_cast<size_t>(blockEnd - alignedHead)) {
+                    continue;
+                }
+
+                size_t allocatedActual = actual_size;
+                size_t trailingBytes = static_cast<size_t>(blockEnd - alignedHead - allocatedBytes);
+                if (trailingBytes != 0 && trailingBytes < MinSplitBytes) {
+                    if (!AddSize(allocatedActual, trailingBytes, allocatedActual)) {
+                        continue;
+                    }
+                    trailingBytes = 0;
+                }
+
+                const uint64_t foundBinIndex = found->in_bin;
+                HEAP_ASSERT(foundBinIndex != node_t::NotInBin,
+                            "AllocateAligned: found is free but NotInBin");
+                HEAP_ASSERT(bin_contains(Heap.bins[foundBinIndex], found),
+                            "AllocateAligned: in_bin says linked, but list traversal can't find it");
+                HEAP_ASSERT(foundBinIndex == GetBinIndex(found->actual_size),
+                            "AllocateAligned: found is in wrong bin for its size");
+                remove_node(Heap.bins[foundBinIndex], found, foundBinIndex);
+
+                node_t *allocated = reinterpret_cast<node_t *>(alignedHead);
+                const bool allocatedUsesFoundHeader = allocated == found;
+
+                if (leadingBytes != 0) {
+                    const uint64_t leadingPayload = static_cast<uint64_t>(leadingBytes - overhead);
+                    found->init_free_node_unlinked(leadingPayload);
+                    CreateFooter(found);
+
+                    const auto leadingBin = GetBinIndex(found->actual_size);
+                    add_node(Heap.bins[leadingBin], found, leadingBin);
+                }
+
+                if (trailingBytes != 0) {
+                    const uintptr_t trailingStart = alignedHead + overhead + allocatedActual;
+                    node_t *trailing = reinterpret_cast<node_t *>(trailingStart);
+                    HEAP_ASSERT(reinterpret_cast<uintptr_t>(trailing) % alignof(node_t) == 0,
+                                "AllocateAligned: trailing split misaligned");
+
+                    const uint64_t trailingPayload = static_cast<uint64_t>(trailingBytes - overhead);
+                    trailing->init_free_node_unlinked(trailingPayload);
+                    CreateFooter(trailing);
+
+                    const auto trailingBin = GetBinIndex(trailing->actual_size);
+                    add_node(Heap.bins[trailingBin], trailing, trailingBin);
+                }
+
+                return FinalizeAllocation(allocated,
+                                          user_size,
+                                          allocatedActual,
+                                          !allocatedUsesFoundHeader,
+                                          allocatedUsesFoundHeader);
+            }
+        }
+
+        return nullptr;
+    };
+
+    void *res = TryOnce();
+    bool expandAttempted = false;
+    bool expandSucceeded = false;
+    if (!res) {
+        expandAttempted = true;
+        expandSucceeded = Expand(search_size);
+        if (expandSucceeded) {
+            res = TryOnce();
+        }
+    }
+
+#ifndef _WIN32
+    if (!res) {
+        PanicAllocationFailed(
+            "AllocateAligned", user_size, actual_size, expandAttempted, expandSucceeded);
+    }
+#endif
+    if (!res) {
+        return nullptr;
+    }
+
+    node_t *wild = GetWilderness();
+    if (wild->actual_size < MIN_WILDERNESS) {
+        if (!Expand(PAGE_SIZE))
+            return nullptr;
+    } else if (wild->actual_size > MAX_WILDERNESS) {
+        Contract(PAGE_SIZE);
+    }
+
+    if (res && (reinterpret_cast<uintptr_t>(res) % alignment != 0)) {
+        HeapPanic("Aligned allocation is not aligned");
+    }
+
+    auto *node = reinterpret_cast<node_t *>(reinterpret_cast<char *>(res) - sizeof(node_t));
+    Stats.Allocations++;
+    Stats.BytesAllocated += node->actual_size;
     return res;
 }
 
@@ -686,10 +917,10 @@ HeapCpp::Expand(size_t deltaSizeBytes)
     // Mutex must be held
 
     // Guard against infinite recursion: if GrowableVector's error path
-    // allocates heap memory, it would re-enter Expand via malloc → HeapCpp.
+    // allocates heap memory, it would re-enter Expand via malloc -> HeapCpp.
     static thread_local bool expanding = false;
     if (expanding) {
-        HeapPanic("Expand: recursion detected — GrowableVector error path allocated heap");
+        HeapPanic("Expand: recursion detected - GrowableVector error path allocated heap");
     }
     expanding = true;
 
@@ -719,6 +950,8 @@ HeapCpp::Expand(size_t deltaSizeBytes)
 
     } else {
         node_t *new_free_block = (node_t *)Heap.end;
+        HEAP_ASSERT(reinterpret_cast<uintptr_t>(new_free_block) % alignof(node_t) == 0,
+                    "Expand: new block misaligned");
         const uint64_t payload_sz = static_cast<uint64_t>(actual_size - overhead);
 
         new_free_block->init_free_node_unlinked(payload_sz);
@@ -829,7 +1062,7 @@ uint64_t
 HeapCpp::GetBinIndex(size_t size)
 {
     int index = 0;
-    constexpr auto minAlignment = 16;
+    constexpr auto minAlignment = HeapAlignment;
     size = size < minAlignment ? minAlignment : size;
 
     while (size >>= 1)
@@ -878,6 +1111,36 @@ HeapCpp::GetWilderness()
     return wild_foot->header;
 }
 
+[[noreturn]] void
+HeapCpp::PanicAllocationFailed(const char *operation,
+                               size_t userSize,
+                               size_t actualSize,
+                               bool expandAttempted,
+                               bool expandSucceeded)
+{
+    const size_t heapBytes = Initialized ? static_cast<size_t>(Heap.end - Heap.start) : 0;
+    size_t wildernessBytes = 0;
+    if (Initialized && Heap.end > Heap.start) {
+        node_t *wild = GetWilderness();
+        if (wild != nullptr) {
+            wildernessBytes = static_cast<size_t>(wild->actual_size);
+        }
+    }
+
+    char buf[512];
+    sprintf_s(buf,
+              "Heap allocation failed: op=%s user=%zu actual=%zu heap=%zu wilderness=%zu "
+              "expandAttempted=%d expandSucceeded=%d",
+              operation,
+              userSize,
+              actualSize,
+              heapBytes,
+              wildernessBytes,
+              expandAttempted ? 1 : 0,
+              expandSucceeded ? 1 : 0);
+    HeapPanic(buf);
+}
+
 //////////////////////////////////////////////////////////////////////////
 
 void *
@@ -885,6 +1148,13 @@ CppMalloc(size_t size)
 {
     auto &globalHeap = GlobalHeap();
     auto *res = globalHeap.Allocate(size);
+#ifndef _WIN32
+    if (res == nullptr && EnableFractalSharkHeap == FancyHeap::Enable) {
+        char buf[256];
+        sprintf_s(buf, "CppMalloc returned null: size=%zu", size);
+        HeapPanic(buf);
+    }
+#endif
 
     // Output res in hex to debug console in Visual Studio
     if constexpr (FullDebugOut) {
@@ -911,6 +1181,48 @@ CppFree(void *ptr)
     globalHeap.Deallocate(ptr);
 }
 
+static node_t *
+GetLiveNodeFromUserPointer(void *ptr, const char *operation)
+{
+    auto &globalHeap = GlobalHeap();
+    auto *node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(ptr) - sizeof(node_t));
+    if (!globalHeap.OwnsPointer(node)) {
+        HeapPanic(operation);
+    }
+    if (node->magic != node_t::Magic) {
+        HeapPanic(operation);
+    }
+    if (node->hole) {
+        HeapPanic(operation);
+    }
+    return node;
+}
+
+[[maybe_unused]] static size_t
+CppUsableSize(void *ptr, const char *operation)
+{
+    if (ptr == nullptr) {
+        return 0;
+    }
+
+    return GetLiveNodeFromUserPointer(ptr, operation)->user_size;
+}
+
+void *
+CppAlignedMalloc(size_t size, size_t alignment)
+{
+    auto &globalHeap = GlobalHeap();
+    auto *res = globalHeap.AllocateAligned(size, alignment);
+
+    if constexpr (FullDebugOut) {
+        char buffer[256];
+        sprintf(buffer, "aligned_alloc(%zu, %zu) = %p\n", alignment, size, res);
+        Environment::DebugOutput(buffer);
+    }
+
+    return res;
+}
+
 void *
 CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
 {
@@ -925,21 +1237,64 @@ CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
 
     void *newPtr = CppMalloc(newUserSize);
     if (!newPtr) {
+#ifndef _WIN32
+        if (EnableFractalSharkHeap == FancyHeap::Enable) {
+            char buf[256];
+            sprintf_s(buf, "CppRealloc failed: ptr=%p newSize=%zu", ptr, newUserSize);
+            HeapPanic(buf);
+        }
+#endif
         return nullptr;
     }
 
-    const auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(ptr) - sizeof(node_t));
-    if (node->magic != node_t::Magic) {
-        HeapPanic("Realloc: invalid node magic");
-    }
-    if (node->hole) {
-        HeapPanic("Realloc: node is already free");
-    }
+    const auto node = GetLiveNodeFromUserPointer(ptr, "Realloc: invalid or freed block");
     const size_t oldUsableSize = node->user_size;
     const size_t copyUserSize = std::min(oldUsableSize, newUserSize);
     std::memcpy(newPtr, ptr, copyUserSize);
 
     // Zero newly extended region if requested
+    if (zeroNew && newUserSize > oldUsableSize) {
+        std::memset(static_cast<char *>(newPtr) + oldUsableSize, 0, newUserSize - oldUsableSize);
+    }
+
+    CppFree(ptr);
+    return newPtr;
+}
+
+void *
+CppAlignedRealloc(void *ptr, size_t newUserSize, size_t alignment, bool zeroNew)
+{
+    if (!ptr) {
+        return CppAlignedMalloc(newUserSize, alignment);
+    }
+
+    if (newUserSize == 0) {
+        CppFree(ptr);
+        return nullptr;
+    }
+
+    const auto node = GetLiveNodeFromUserPointer(ptr, "Aligned realloc: invalid or freed block");
+    const size_t oldUsableSize = node->user_size;
+
+    void *newPtr = CppAlignedMalloc(newUserSize, alignment);
+    if (!newPtr) {
+#ifndef _WIN32
+        if (EnableFractalSharkHeap == FancyHeap::Enable) {
+            char buf[256];
+            sprintf_s(buf,
+                      "CppAlignedRealloc failed: ptr=%p newSize=%zu alignment=%zu",
+                      ptr,
+                      newUserSize,
+                      alignment);
+            HeapPanic(buf);
+        }
+#endif
+        return nullptr;
+    }
+
+    const size_t copyUserSize = std::min(oldUsableSize, newUserSize);
+    std::memcpy(newPtr, ptr, copyUserSize);
+
     if (zeroNew && newUserSize > oldUsableSize) {
         std::memset(static_cast<char *>(newPtr) + oldUsableSize, 0, newUserSize - oldUsableSize);
     }
@@ -995,6 +1350,19 @@ realloc(void *ptr, size_t newSize)
     return SysRealloc(ptr, newSize);
 }
 
+#ifndef _WIN32
+FS_RESTRICT void *
+reallocarray(void *ptr, size_t num, size_t size)
+{
+    if (size != 0 && num > (SIZE_MAX / size)) {
+        errno = ENOMEM;
+        return nullptr;
+    }
+
+    return realloc(ptr, num * size);
+}
+#endif
+
 extern "C" void
 free(void *ptr)
 {
@@ -1018,10 +1386,29 @@ aligned_alloc(size_t alignment, size_t size)
 {
     EarlyInit_SafeMode_NoCRT();
 
+    if (alignment == 0 || !IsPow2(alignment)) {
+        errno = EINVAL;
+        return nullptr;
+    }
+
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        auto p = CppMalloc(size);
+        auto p = CppAlignedMalloc(size, alignment);
+#ifndef _WIN32
+        if (p == nullptr) {
+            char buf[256];
+            sprintf_s(buf, "aligned_alloc returned null: size=%zu alignment=%zu", size, alignment);
+            HeapPanic(buf);
+        }
+#endif
         if (p && (reinterpret_cast<uintptr_t>(p) % alignment != 0)) {
-            HeapPanic("aligned_alloc: allocation not aligned to requested boundary");
+            char buf[256];
+            sprintf_s(buf,
+                      "aligned_alloc: allocation not aligned to requested boundary "
+                      "size=%zu alignment=%zu ptr=%p",
+                      size,
+                      alignment,
+                      p);
+            HeapPanic(buf);
         }
         return p;
     }
@@ -1029,6 +1416,30 @@ aligned_alloc(size_t alignment, size_t size)
     // SysHeap bypass path: ignore alignment request.
     return SysMalloc(size);
 }
+
+#ifndef _WIN32
+int
+posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+    EarlyInit_SafeMode_NoCRT();
+
+    if (alignment < sizeof(void *) || !IsPow2(alignment)) {
+        return EINVAL;
+    }
+
+    if (EnableFractalSharkHeap != FancyHeap::Enable) {
+        return ENOMEM;
+    }
+
+    void *ptr = aligned_alloc(alignment, size);
+    if (ptr == nullptr) {
+        return errno == EINVAL ? EINVAL : ENOMEM;
+    }
+
+    *memptr = ptr;
+    return 0;
+}
+#endif
 
 char *
 strdup(const char *s)
@@ -1057,6 +1468,53 @@ FS_RESTRICT char *
 realpath(const char *fname, char *resolved_name)
 {
     return _fullpath(resolved_name, fname, _MAX_PATH);
+}
+
+FS_RESTRICT void *__cdecl _aligned_malloc(size_t size, size_t alignment)
+{
+    EarlyInit_SafeMode_NoCRT();
+
+    if (alignment == 0 || !IsPow2(alignment)) {
+        errno = EINVAL;
+        return nullptr;
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        return CppAlignedMalloc(size, alignment);
+    }
+
+    return SysMalloc(size);
+}
+
+void __cdecl _aligned_free(void *ptr) { free(ptr); }
+
+void *__cdecl _aligned_realloc(void *ptr, size_t size, size_t alignment)
+{
+    EarlyInit_SafeMode_NoCRT();
+
+    if (alignment == 0 || !IsPow2(alignment)) {
+        errno = EINVAL;
+        return nullptr;
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        return CppAlignedRealloc(ptr, size, alignment, false);
+    }
+
+    return SysRealloc(ptr, size);
+}
+
+size_t __cdecl _aligned_msize(void *ptr, size_t /*alignment*/, size_t /*offset*/)
+{
+    if (!ptr) {
+        return 0;
+    }
+
+    if (EnableFractalSharkHeap == FancyHeap::Enable) {
+        return CppUsableSize(ptr, "_aligned_msize: invalid or freed block");
+    }
+
+    return Environment::SystemHeapSize(ptr);
 }
 #endif
 
@@ -1157,11 +1615,7 @@ _msize_dbg(void *block, int /*block_use*/)
     }
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(block) - sizeof(node_t));
-        if (node->magic != node_t::Magic || node->hole) {
-            HeapPanic("_msize_dbg: invalid or freed block");
-        }
-        return node->user_size;
+        return CppUsableSize(block, "_msize_dbg: invalid or freed block");
     }
 
     return Environment::SystemHeapSize(block);
@@ -1201,13 +1655,19 @@ operator new[](size_t size)
 void *
 operator new(size_t n, std::align_val_t al)
 {
-    return aligned_alloc(static_cast<size_t>(al), n);
+    void *p = aligned_alloc(static_cast<size_t>(al), n);
+    if (!p)
+        throw std::bad_alloc();
+    return p;
 }
 
 void *
 operator new[](size_t n, std::align_val_t al)
 {
-    return aligned_alloc(static_cast<size_t>(al), n);
+    void *p = aligned_alloc(static_cast<size_t>(al), n);
+    if (!p)
+        throw std::bad_alloc();
+    return p;
 }
 
 void *

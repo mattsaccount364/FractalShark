@@ -53,6 +53,7 @@
     <ClCompile Include="TestBLA.cpp" />
     <ClCompile Include="TestCudaDblflt.cpp" />
     <ClCompile Include="TestFloatComplex.cpp" />
+    <ClCompile Include="TestHeapAllocator.cpp" />
     <ClCompile Include="TestHDRFloat.cpp" />
     <ClCompile Include="TestHDRFloatComplex.cpp" />
     <ClCompile Include="TestHighPrecisionStrings.cpp" />

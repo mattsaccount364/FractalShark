@@ -36,6 +36,7 @@ public:
 
     // Allocate and deallocate memory.  Returns nullptr on failure.
     void *Allocate(size_t size);
+    void *AllocateAligned(size_t size, size_t alignment);
     void Deallocate(void *ptr);
 
     // Expand and contract the heap.  Returns false on failure.
@@ -59,6 +60,15 @@ private:
     footer_t *GetFooter(node_t *head);
 
     node_t *GetWilderness();
+
+    [[noreturn]] void PanicAllocationFailed(const char *operation,
+                                            size_t userSize,
+                                            size_t actualSize,
+                                            bool expandAttempted,
+                                            bool expandSucceeded);
+
+    void *FinalizeAllocation(
+        node_t *node, size_t userSize, size_t actualSize, bool initializeGeneration, bool checkPoison);
 
     bool Initialized;
     heap_t Heap;

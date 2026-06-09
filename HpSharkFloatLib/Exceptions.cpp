@@ -1,5 +1,6 @@
 #include "Exceptions.h"
 
+#if FRACTALSHARK_HAS_STACKTRACE
 std::string
 GetCallStack(const std::stacktrace &stack)
 {
@@ -17,9 +18,36 @@ GetCallStack(const std::stacktrace &stack)
 
     return result;
 }
+#endif
+
+namespace {
+
+FractalSharkStacktrace
+CaptureStacktrace(bool captureStack)
+{
+#if FRACTALSHARK_HAS_STACKTRACE
+    return captureStack ? std::stacktrace::current(1) : std::stacktrace{};
+#else
+    (void)captureStack;
+    return {};
+#endif
+}
+
+std::string
+FormatStacktrace(const FractalSharkStacktrace &stack)
+{
+#if FRACTALSHARK_HAS_STACKTRACE
+    return GetCallStack(stack);
+#else
+    (void)stack;
+    return "(stacktrace disabled)\n";
+#endif
+}
+
+} // namespace
 
 Cpp23ExceptionWithCallstack::Cpp23ExceptionWithCallstack(const char *msg, bool captureStack)
-    : m_stacktrace{captureStack ? std::stacktrace::current(1) : std::stacktrace{}}
+    : m_stacktrace{CaptureStacktrace(captureStack)}
 {
 #ifdef _MSC_VER
     strncpy_s(m_msg, msg, _TRUNCATE);
@@ -38,7 +66,7 @@ Cpp23ExceptionWithCallstack::GetCallstack(std::string extraMsg) const
 {
     using namespace std; // without using std ns, the sv literal fails to compile. Strange.
 
-    std::string result = GetCallStack(m_stacktrace);
+    std::string result = FormatStacktrace(m_stacktrace);
 
     if (extraMsg != "") {
         result += "\n";

@@ -13,7 +13,14 @@
 #define HEAP_BIN_COUNT 31
 #define HEAP_BIN_MAX_IDX (HEAP_BIN_COUNT - 1)
 
-typedef struct node_t {
+static constexpr size_t HeapAlignment = 64;
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
+
+struct alignas(HeapAlignment) node_t {
 
     // Put the node into a known "free and not linked" state.
     // Caller supplies the payload size (not including header/footer).
@@ -63,7 +70,7 @@ typedef struct node_t {
     uint64_t in_bin_gen;
     uint64_t checksum;
     uint64_t alloc_gen;
-    uint64_t poisoned;  // WasPoisoned after free, NotPoisoned otherwise
+    uint64_t poisoned; // WasPoisoned after free, NotPoisoned otherwise
 
     struct node_t *next;
     struct node_t *prev;
@@ -71,13 +78,16 @@ typedef struct node_t {
     // Head guard: last field before user payload.
     // A backward scribble from user data hits this first.
     uint64_t head_guard;
+};
 
-} node_t;
-
-typedef struct {
+struct alignas(HeapAlignment) footer_t {
     node_t *header;
     uintptr_t pad;
-} footer_t;
+};
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 typedef struct {
     node_t *head;
@@ -92,5 +102,11 @@ typedef struct {
 } heap_t;
 
 static constexpr uint64_t overhead = sizeof(footer_t) + sizeof(node_t);
+static_assert(HeapAlignment == 64);
+static_assert(alignof(node_t) == HeapAlignment);
+static_assert(alignof(footer_t) == HeapAlignment);
+static_assert(sizeof(node_t) % HeapAlignment == 0);
+static_assert(sizeof(footer_t) % HeapAlignment == 0);
+static_assert(overhead % HeapAlignment == 0);
 
 #endif

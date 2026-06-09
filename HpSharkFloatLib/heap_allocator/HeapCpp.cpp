@@ -1051,6 +1051,26 @@ HeapCpp::OwnsPointer(const void *ptr) const
     return address >= Heap.start && address < Heap.end;
 }
 
+HeapBackingDiagnostics
+HeapCpp::GetBackingDiagnostics() const
+{
+    HeapBackingDiagnostics result{};
+    result.AddPointOption = AddPointOptions::DontSave;
+    result.Filename = L"";
+
+    if (!Initialized || Growable == nullptr) {
+        return result;
+    }
+
+    result.AddPointOption = Growable->GetAddPointOptions();
+    result.Filename = Growable->GetFilenameForDiagnostics();
+    result.Data = Growable->GetData();
+    result.CapacityBytes = Growable->GetCapacity();
+    result.HeapBytes = static_cast<size_t>(Heap.end - Heap.start);
+    result.FileHandle = Growable->GetFileHandleForDiagnostics();
+    return result;
+}
+
 // ========================================================
 // this function is the hashing function that converts
 // size => bin index. changing this function will change

@@ -163,6 +163,20 @@ GrowableVector<EltT>::GetFilename() const
 }
 
 template <class EltT>
+const wchar_t *
+GrowableVector<EltT>::GetFilenameForDiagnostics() const
+{
+    return m_Filename;
+}
+
+template <class EltT>
+intptr_t
+GrowableVector<EltT>::GetFileHandleForDiagnostics() const
+{
+    return reinterpret_cast<intptr_t>(m_FileHandle);
+}
+
+template <class EltT>
 size_t
 GrowableVector<EltT>::GetCapacity() const
 {

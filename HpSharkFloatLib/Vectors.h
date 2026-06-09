@@ -2,6 +2,8 @@
 
 #include "HighPrecision.h"
 
+#include <cstdint>
+
 enum class AddPointOptions {
     DontSave,
     EnableWithSave,
@@ -79,6 +81,11 @@ public:
 
     // The GetFilename method returns the filename of the file backing the vector.
     std::wstring GetFilename() const;
+
+    // Diagnostic accessors. These do not allocate and may refer to a temporary
+    // delete-on-close backing file.
+    const wchar_t *GetFilenameForDiagnostics() const;
+    intptr_t GetFileHandleForDiagnostics() const;
 
     // The GetCapacity method returns the capacity of the vector.
     size_t GetCapacity() const;

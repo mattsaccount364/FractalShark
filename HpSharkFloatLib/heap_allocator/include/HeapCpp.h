@@ -2,6 +2,7 @@
 
 #include "heap.h"
 
+#include <cstdint>
 #include <mutex>
 #include <stdexcept>
 
@@ -11,6 +12,16 @@
 //
 
 template <typename T> class GrowableVector;
+enum class AddPointOptions;
+
+struct HeapBackingDiagnostics {
+    AddPointOptions AddPointOption;
+    const wchar_t *Filename;
+    void *Data;
+    size_t CapacityBytes;
+    size_t HeapBytes;
+    intptr_t FileHandle;
+};
 
 namespace Environment {
 void RegisterHeapCleanup();
@@ -50,6 +61,7 @@ public:
 
     // Diagnostic helper for tests and assertions.
     bool OwnsPointer(const void *ptr) const;
+    HeapBackingDiagnostics GetBackingDiagnostics() const;
 
 private:
     // Returns the bin index for a given allocation size.

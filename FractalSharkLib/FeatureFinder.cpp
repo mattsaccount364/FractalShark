@@ -418,7 +418,7 @@ struct CheckpointSnapshot {
 
 class CheckpointWriter {
 public:
-    CheckpointWriter() : m_Thread(&CheckpointWriter::Run, this) {}
+    CheckpointWriter() { m_Thread = std::thread(&CheckpointWriter::Run, this); }
 
     ~CheckpointWriter()
     {
@@ -494,12 +494,13 @@ private:
         }
     }
 
-    std::thread m_Thread;
     std::mutex m_Mutex;
     std::condition_variable m_CV;
     std::unique_ptr<CheckpointSnapshot> m_Pending;
     std::promise<void> *m_DonePromise = nullptr;
     bool m_Exit = false;
+    // Must be last: the worker can run immediately after construction starts it.
+    std::thread m_Thread;
 };
 
 struct InnerLoopCheckpointData {

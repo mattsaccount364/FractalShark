@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <new>
 #include <string>
 
@@ -248,4 +249,38 @@ TEST(CustomHeap_MallocAndNewUseGlobalHeap)
     void *alignedPtr = ::operator new(64, std::align_val_t{16});
     ASSERT_TRUE(GlobalHeap().OwnsPointer(alignedPtr));
     ::operator delete(alignedPtr, std::align_val_t{16});
+}
+
+// ---------------------------------------------------------------------------
+// The heap backing store should be a temporary file-backed GrowableVector.
+// On Linux delete-on-close parity means HeapFile.bin is unlinked after open,
+// so validate the live file descriptor instead of expecting a cwd entry.
+// ---------------------------------------------------------------------------
+TEST(CustomHeap_UsesTemporaryFileBackedGrowableVector)
+{
+    EarlyInit_SafeMode_NoCRT();
+    ASSERT_EQ(static_cast<int>(EnableFractalSharkHeap), static_cast<int>(FancyHeap::Enable));
+
+    void *mallocPtr = std::malloc(257);
+    ASSERT_TRUE(mallocPtr != nullptr);
+
+    const auto diag = GlobalHeap().GetBackingDiagnostics();
+    ASSERT_EQ(static_cast<int>(diag.AddPointOption),
+              static_cast<int>(AddPointOptions::EnableWithoutSave));
+    ASSERT_TRUE(diag.Filename != nullptr);
+    ASSERT_EQ(std::wcscmp(diag.Filename, L"HeapFile.bin"), 0);
+    ASSERT_TRUE(diag.Data != nullptr);
+    ASSERT_TRUE(diag.CapacityBytes >= HEAP_INIT_SIZE);
+    ASSERT_TRUE(diag.HeapBytes >= HEAP_INIT_SIZE);
+
+#ifndef _WIN32
+    ASSERT_FALSE(Environment::FileSizeBytes(diag.Filename).has_value());
+
+    struct stat st{};
+    ASSERT_EQ(fstat(static_cast<int>(diag.FileHandle), &st), 0);
+    ASSERT_TRUE(S_ISREG(st.st_mode));
+    ASSERT_TRUE(static_cast<uint64_t>(st.st_size) >= diag.CapacityBytes);
+#endif
+
+    std::free(mallocPtr);
 }

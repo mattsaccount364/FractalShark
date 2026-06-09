@@ -1,6 +1,5 @@
 #include "stdafx.h"
 
-#include "Callstacks.h"
 #include "MainWindow.h"
 #include "heap_allocator\include\HeapCpp.h"
 
@@ -43,7 +42,6 @@ WinMain(_In_ HINSTANCE hInstance,
     MSG msg{};
 
     Environment::RegisterHeapCleanup();
-    GlobalCallstacks->InitCallstacks();
 
     {
         MainWindow mainWindow{hInstance, nCmdShow};
@@ -55,7 +53,6 @@ WinMain(_In_ HINSTANCE hInstance,
         }
     }
 
-    GlobalCallstacks->FreeCallstacks();
     PressAnyKeyToContinue();
 
     return (int)msg.wParam;

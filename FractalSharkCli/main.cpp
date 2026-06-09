@@ -1,12 +1,10 @@
 // FractalSharkCli: headless PNG renderer.
 //
 // Process-level init mirrors FractalSharkGUILib/FractalShark.cpp (WinMain +
-// MainWindow ctor): Environment::RegisterHeapCleanup + GlobalCallstacks +
-// CrashHandler::Install (Windows only) + FreeCallstacks at teardown.
+// MainWindow ctor): Environment::RegisterHeapCleanup + CrashHandler::Install.
 
 #include "stdafx.h"
 
-#include "Callstacks.h"
 #include "CrashHandler.h"
 #include "Environment.h"
 #include "Fractal.h"
@@ -356,13 +354,7 @@ int
 main(int argc, char *argv[])
 {
     Environment::RegisterHeapCleanup();
-    GlobalCallstacks->InitCallstacks();
     CrashHandler::Install();
-
-    // Ensure FreeCallstacks runs on every exit path.
-    struct CallstackGuard {
-        ~CallstackGuard() { GlobalCallstacks->FreeCallstacks(); }
-    } callstackGuard;
 
     CliArgs args;
     if (!ParseArgs(argc, argv, args)) {

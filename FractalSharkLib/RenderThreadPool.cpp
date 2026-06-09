@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <string>
 
 namespace {
 constexpr size_t MaxBufferedPacedAnimationFrames = 4;
@@ -1505,7 +1506,8 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
 
             fractal->m_BenchmarkData.m_Overall.StopTimer();
         } catch (const FractalSharkSeriousException &e) {
-            auto msg = e.GetCallstack("Worker thread exception during CalcFractal");
+            const std::string msg =
+                std::string{"Worker thread exception during CalcFractal\n"} + e.what();
             std::cerr << msg << std::endl;
             GlLog(msg.c_str());
             if (Environment::IsDebuggerAttached())

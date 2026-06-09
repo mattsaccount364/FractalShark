@@ -7,7 +7,6 @@
 #include "TestVerbose.h"
 #include "Tests.h"
 
-#include "Callstacks.h"
 #include "HDRFloat.h"
 #include "LaunchParams.h"
 #include "MainTestCuda.h"
@@ -30,7 +29,8 @@ namespace {
 struct TermiosRawGuard {
     termios original{};
     bool valid = false;
-    TermiosRawGuard() {
+    TermiosRawGuard()
+    {
         if (!isatty(STDIN_FILENO))
             return;
         if (tcgetattr(STDIN_FILENO, &original) != 0)
@@ -42,7 +42,8 @@ struct TermiosRawGuard {
         if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == 0)
             valid = true;
     }
-    ~TermiosRawGuard() {
+    ~TermiosRawGuard()
+    {
         if (valid)
             tcsetattr(STDIN_FILENO, TCSANOW, &original);
     }
@@ -571,7 +572,6 @@ int
 main(int, char **)
 {
     Environment::RegisterHeapCleanup();
-    GlobalCallstacks->InitCallstacks();
 
     {
         auto plateaus =
@@ -740,6 +740,5 @@ main(int, char **)
             break;
     }
 
-    GlobalCallstacks->FreeCallstacks();
     return 0;
 }

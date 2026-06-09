@@ -1,6 +1,5 @@
 #ifndef _WIN32
 
-#include "Callstacks.h"
 #include "DbgHeap.h"
 #include "EarlyCommandLine.h"
 #include "Exceptions.h"
@@ -280,7 +279,7 @@ GrowableVector<EltT>::GrowableVector(AddPointOptions addPointOptions,
     long pages = sysconf(_SC_PHYS_PAGES);
     long pageSize = sysconf(_SC_PAGESIZE);
     if (pages <= 0 || pageSize <= 0) {
-        throw FractalSharkSeriousException("Failed to get system memory", false);
+        throw FractalSharkSeriousException("Failed to get system memory");
     }
     m_PhysicalMemoryCapacityKB = static_cast<size_t>(pages) * static_cast<size_t>(pageSize) / 1024;
 
@@ -402,7 +401,6 @@ GrowableVector<EltT>::CloseMapping()
 {
     if (UsingAnonymous()) {
         if (m_Data != nullptr) {
-            GlobalCallstacks->LogDeallocCallstack(m_Data);
             size_t sz = MappingViewSize(m_MappedFile);
             if (sz > 0) {
                 munmap(m_Data, sz);
@@ -471,7 +469,7 @@ GrowableVector<EltT>::TrimEnableWithoutSave()
     if (result == MAP_FAILED) {
         char buf[256];
         snprintf(buf, sizeof(buf), "Failed to mremap view: %s", strerror(errno));
-        throw FractalSharkSeriousException(buf, false);
+        throw FractalSharkSeriousException(buf);
     }
 
     m_Data = static_cast<EltT *>(result);
@@ -485,7 +483,7 @@ GrowableVector<EltT>::TrimEnableWithoutSave()
                  "mremap returned a different pointer: %llu vs %llu",
                  (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
                  (unsigned long long)reinterpret_cast<uint64_t>(originalData));
-        throw FractalSharkSeriousException(buf, false);
+        throw FractalSharkSeriousException(buf);
     }
 }
 
@@ -584,7 +582,7 @@ GrowableVector<EltT>::InternalOpenFile()
                 if (randomFd >= 0) {
                     close(randomFd);
                 }
-                throw FractalSharkSeriousException("Failed to generate random filename", false);
+                throw FractalSharkSeriousException("Failed to generate random filename");
             }
             close(randomFd);
 
@@ -614,7 +612,7 @@ GrowableVector<EltT>::InternalOpenFile()
         // Convert wide filename to UTF-8 for POSIX APIs.
         char u8path[4096];
         if (!WideToUtf8Buffer(m_Filename, u8path, sizeof(u8path))) {
-            throw FractalSharkSeriousException("Failed to convert filename to UTF-8", false);
+            throw FractalSharkSeriousException("Failed to convert filename to UTF-8");
         }
 
         int fd = open(u8path, oflags, 0666);
@@ -622,7 +620,7 @@ GrowableVector<EltT>::InternalOpenFile()
             auto err = errno;
             char buf[256];
             snprintf(buf, sizeof(buf), "Failed to open file: %d", err);
-            throw FractalSharkSeriousException(buf, false);
+            throw FractalSharkSeriousException(buf);
         }
 
         m_FileHandle = reinterpret_cast<void *>(static_cast<intptr_t>(fd));
@@ -665,7 +663,7 @@ GrowableVector<EltT>::MutableFileResizeOpen(size_t capacity)
     if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
         const size_t viewSize = MappingViewSize(m_MappedFile);
         if (capacityBytes > viewSize) {
-            throw FractalSharkSeriousException("GrowableVector sparse backing view exhausted", false);
+            throw FractalSharkSeriousException("GrowableVector sparse backing view exhausted");
         }
         m_CapacityInElts = capacity;
         return;
@@ -678,7 +676,7 @@ GrowableVector<EltT>::MutableFileResizeOpen(size_t capacity)
     if (ftruncate(fd, newSize) != 0) {
         char buf[256];
         snprintf(buf, sizeof(buf), "Failed to extend file: %s", strerror(errno));
-        throw FractalSharkSeriousException(buf, false);
+        throw FractalSharkSeriousException(buf);
     }
 }
 
@@ -708,7 +706,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
     if (m_FileHandle == nullptr || (lastError != 0 && lastError != 183)) {
         char buf[256];
         snprintf(buf, sizeof(buf), "Failed to open file: %u", lastError);
-        throw FractalSharkSeriousException(buf, false);
+        throw FractalSharkSeriousException(buf);
     }
 
     static_assert(sizeof(size_t) == sizeof(uint64_t), "!");
@@ -718,7 +716,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
     if (lastError == 183) {
         struct stat st;
         if (fstat(fd, &st) != 0) {
-            throw FractalSharkSeriousException("Failed to get file size", false);
+            throw FractalSharkSeriousException("Failed to get file size");
         }
         existingFileSize = st.st_size;
 
@@ -752,7 +750,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
 
     const size_t capacityBytes = m_CapacityInElts * sizeof(EltT);
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave && capacityBytes > viewSize) {
-        throw FractalSharkSeriousException("GrowableVector capacity exceeds sparse backing view", false);
+        throw FractalSharkSeriousException("GrowableVector capacity exceeds sparse backing view");
     }
 
     // Set the initial file size via ftruncate (analogous to NtCreateSection
@@ -770,7 +768,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
     if (ftruncate(fd, initialSize) != 0) {
         char buf[256];
         snprintf(buf, sizeof(buf), "Failed to set initial file size: %s", strerror(errno));
-        throw FractalSharkSeriousException(buf, false);
+        throw FractalSharkSeriousException(buf);
     }
 
     // mmap the file.
@@ -779,7 +777,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
     if (mapped == MAP_FAILED) {
         char buf[256];
         snprintf(buf, sizeof(buf), "Failed to mmap file: %s", strerror(errno));
-        throw FractalSharkSeriousException(buf, false);
+        throw FractalSharkSeriousException(buf);
     }
     m_Data = static_cast<EltT *>(mapped);
 
@@ -796,7 +794,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
                      "mmap returned a different pointer: %llu vs %llu",
                      (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
                      (unsigned long long)reinterpret_cast<uint64_t>(originalData));
-            throw FractalSharkSeriousException(buf, false);
+            throw FractalSharkSeriousException(buf);
         }
 
         if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
@@ -807,7 +805,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
         if (ftruncate(fd, static_cast<off_t>(capacityBytes)) != 0) {
             char buf[256];
             snprintf(buf, sizeof(buf), "Failed to extend file: %s", strerror(errno));
-            throw FractalSharkSeriousException(buf, false);
+            throw FractalSharkSeriousException(buf);
         }
     }
 }
@@ -839,10 +837,9 @@ GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity)
             auto code = errno;
             char buf[256];
             snprintf(buf, sizeof(buf), "Failed to commit memory: %d", code);
-            throw FractalSharkSeriousException(buf, false);
+            throw FractalSharkSeriousException(buf);
         }
 
-        GlobalCallstacks->LogAllocCallstack(bytesCount, m_Data);
         m_CapacityInElts = capacity;
     }
 }
@@ -859,13 +856,11 @@ GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes)
 
     void *res = mmap(nullptr, new_reserved_bytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-    GlobalCallstacks->LogReserveCallstack(new_reserved_bytes, res);
-
     if (res == MAP_FAILED) {
         auto code = errno;
         char buf[256];
         snprintf(buf, sizeof(buf), "Failed to reserve memory: %d", code);
-        throw FractalSharkSeriousException(buf, false);
+        throw FractalSharkSeriousException(buf);
     }
 
     m_Data = static_cast<EltT *>(res);

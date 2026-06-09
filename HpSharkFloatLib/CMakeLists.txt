@@ -44,7 +44,6 @@ if(WIN32)
 else()
     target_sources(HpSharkFloatLib PRIVATE
         VectorsLinux.cpp
-        Callstacks.cpp
         EarlyCommandLine.cpp
         Exceptions.cpp
         heap_allocator/HeapCpp.cpp
@@ -52,7 +51,6 @@ else()
         heap_allocator/llist.cpp
     )
 endif()
-
 target_include_directories(HpSharkFloatLib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -60,10 +58,6 @@ target_include_directories(HpSharkFloatLib PUBLIC
 # stdafx.h lives in the repo root
 target_include_directories(HpSharkFloatLib PRIVATE
     ${CMAKE_SOURCE_DIR}
-)
-
-target_compile_definitions(HpSharkFloatLib PUBLIC
-    FRACTALSHARK_HAS_STACKTRACE=${FRACTALSHARK_HAS_STACKTRACE_DEFINE}
 )
 
 # Plain .cpp files that include <cuda_runtime.h> (e.g. LaunchParamsCalculator.cpp,
@@ -99,8 +93,4 @@ if(NOT WIN32)
             "mpz_out_raw. MpirSerialization requires these on Linux. Install "
             "libgmp-dev (or equivalent) >= 4.1.")
     endif()
-endif()
-
-if(FRACTALSHARK_STACKTRACE_LINK_LIB)
-    target_link_libraries(HpSharkFloatLib PUBLIC ${FRACTALSHARK_STACKTRACE_LINK_LIB})
 endif()

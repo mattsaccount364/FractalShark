@@ -23,6 +23,7 @@
 #include <commdlg.h>
 #include <cstdio>
 #include <random>
+#include <string>
 
 namespace {
 
@@ -1216,7 +1217,8 @@ MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         try {
             return pThis->WndProc(message, wParam, lParam);
         } catch (const FractalSharkSeriousException &e) {
-            const auto msg = e.GetCallstack("Message copied to clipboard.  CTRL-V to paste.");
+            const std::string msg =
+                std::string{"Message copied to clipboard.  CTRL-V to paste.\n"} + e.what();
             copyToClipboard(msg);
             std::cerr << msg.c_str() << std::endl;
             return 0;

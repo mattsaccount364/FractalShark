@@ -129,14 +129,6 @@ target_include_directories(FractalSharkPlatform PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_compile_definitions(FractalSharkPlatform PUBLIC
-    FRACTALSHARK_HAS_STACKTRACE=${FRACTALSHARK_HAS_STACKTRACE_DEFINE}
-)
-
 # GMP (MPIR on Windows, GMP on Linux — Environment.h pulls in the header)
 find_library(GMP_LIBRARY gmp REQUIRED)
 target_link_libraries(FractalSharkPlatform PUBLIC ${GMP_LIBRARY})
-
-if(FRACTALSHARK_STACKTRACE_LINK_LIB)
-    target_link_libraries(FractalSharkPlatform PUBLIC ${FRACTALSHARK_STACKTRACE_LINK_LIB})
-endif()

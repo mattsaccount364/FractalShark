@@ -1,92 +1,69 @@
 //
 // CrashHandlerLinux.cpp - Linux signal-based crash handler.
 //
-// Mirrors the Win32 SEH/MiniDump path in CrashHandlerWin32.cpp at the same
-// public seam (CrashHandler::Install). Differences are unavoidable:
-//   * No MiniDump - when std::stacktrace is available, we print a best-effort
-//     stacktrace, then re-raise the signal so the kernel can drop a real core
-//     dump if ulimit -c allows.
-//   * No SetUnhandledExceptionFilter / structured exceptions - we install
-//     sigaction handlers for the synchronous fault signals.
-//   * No vectored handler / abort filter - SA_RESETHAND lets re-raised
-//     signals run the default disposition (terminate + core).
-//
-// Handler is async-signal-safe by construction: it touches only stack-local
-// data and file descriptors via low-level POSIX I/O. The optional
-// std::stacktrace path is best-effort diagnostics only.
+// Linux crash handling intentionally stays minimal. The handler writes a small
+// fatal-signal header, then re-raises the signal so the kernel can produce a
+// normal core dump if ulimit -c allows.
 //
 
 #include "CrashHandler.h"
 
 #ifndef _WIN32
 
-#include <atomic>
 #include <csignal>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#if FRACTALSHARK_HAS_STACKTRACE
-#include <iostream>
-#include <stacktrace>
-#endif
+#include <cstddef>
 #include <unistd.h>
 
 namespace {
 
-std::atomic<bool> g_handlingFatal{false};
+volatile std::sig_atomic_t g_handlingFatal = 0;
 
-// async-signal-safe write of a NUL-terminated string to stderr.
+template <size_t N>
 void
-SafeWriteStderr(const char *s) noexcept
+SafeWriteLiteral(const char (&s)[N]) noexcept
 {
-    if (s == nullptr) {
-        return;
-    }
-    const size_t len = std::strlen(s);
-    [[maybe_unused]] auto ignored = ::write(STDERR_FILENO, s, len);
+    [[maybe_unused]] auto ignored = ::write(STDERR_FILENO, s, N - 1);
 }
 
 void
-SafeWriteSignalHeader(int sig) noexcept
+SafeWriteSignalNumber(int sig) noexcept
 {
-    SafeWriteStderr("\nFractalShark: fatal signal ");
     char buf[16];
-    int n = std::snprintf(buf, sizeof(buf), "%d", sig);
-    if (n > 0) {
-        [[maybe_unused]] auto ignored = ::write(STDERR_FILENO, buf, static_cast<size_t>(n));
+    int idx = 0;
+
+    if (sig < 0) {
+        buf[idx++] = '-';
+        sig = -sig;
     }
-    SafeWriteStderr("\n");
+
+    char reversed[16];
+    int reversedIdx = 0;
+    do {
+        reversed[reversedIdx++] = static_cast<char>('0' + (sig % 10));
+        sig /= 10;
+    } while (sig > 0 && reversedIdx < static_cast<int>(sizeof(reversed)));
+
+    while (reversedIdx > 0 && idx < static_cast<int>(sizeof(buf))) {
+        buf[idx++] = reversed[--reversedIdx];
+    }
+
+    [[maybe_unused]] auto ignored = ::write(STDERR_FILENO, buf, static_cast<size_t>(idx));
 }
 
 extern "C" void
 OnFatalSignal(int sig, siginfo_t * /*si*/, void * /*uctx*/) noexcept
 {
-    bool expected = false;
-    if (!g_handlingFatal.compare_exchange_strong(expected, true)) {
-        // Re-entered the handler from itself; let the default disposition
-        // (set up by SA_RESETHAND) actually terminate the process.
+    if (g_handlingFatal != 0) {
         ::raise(sig);
         return;
     }
+    g_handlingFatal = 1;
 
-    SafeWriteSignalHeader(sig);
+    SafeWriteLiteral("\nFractalShark: fatal signal ");
+    SafeWriteSignalNumber(sig);
+    SafeWriteLiteral("\n");
 
-#if FRACTALSHARK_HAS_STACKTRACE
-    // std::stacktrace + ostream<< is not strictly async-signal-safe, but this
-    // is best-effort fatal diagnostics when the backend is available.
-    try {
-        auto trace = std::stacktrace::current();
-        std::cerr << trace << std::endl;
-    } catch (...) {
-        SafeWriteStderr("(stacktrace unavailable)\n");
-    }
-#else
-    SafeWriteStderr("(stacktrace disabled)\n");
-#endif
-
-    // Re-raise so the kernel produces a core dump if ulimit -c allows.
-    // SA_RESETHAND means our handler is no longer installed, so the default
-    // disposition (terminate + core) runs.
+    // SA_RESETHAND means this handler is removed before control reaches here.
     ::raise(sig);
 }
 

@@ -55,6 +55,9 @@ TEST(HeapAlignedAllocSupportsLargeNonMultipleSize)
 
     ASSERT_TRUE(ptr != nullptr);
     ASSERT_TRUE(IsAligned(ptr, Alignment));
+#ifdef _MSC_VER
+    ASSERT_TRUE(_aligned_msize(ptr, Alignment, 0) >= Size);
+#endif
     FillBytes(ptr, Size, 0x5A);
     AssertBytes(ptr, Size, 0x5A);
 
@@ -84,6 +87,8 @@ TEST(HeapMultipleOverAlignedAllocationsFreeInMixedOrder)
     void *p256 = nullptr;
     void *p4096 = nullptr;
     void *p65536 = nullptr;
+    void *normal = std::malloc(333);
+    ASSERT_TRUE(normal != nullptr);
 
 #ifdef _MSC_VER
     p128 = _aligned_malloc(257, 128);
@@ -101,14 +106,17 @@ TEST(HeapMultipleOverAlignedAllocationsFreeInMixedOrder)
     ASSERT_TRUE(IsAligned(p256, 256));
     ASSERT_TRUE(IsAligned(p4096, 4096));
     ASSERT_TRUE(IsAligned(p65536, 65536));
+    ASSERT_TRUE(IsAligned(normal, 64));
 
 #ifdef _MSC_VER
     _aligned_free(p4096);
+    std::free(normal);
     _aligned_free(p128);
     _aligned_free(p65536);
     _aligned_free(p256);
 #else
     std::free(p4096);
+    std::free(normal);
     std::free(p128);
     std::free(p65536);
     std::free(p256);

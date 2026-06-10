@@ -50,7 +50,8 @@ struct alignas(HeapAlignment) node_t {
     uint64_t
     ComputeChecksum() const
     {
-        return hole ^ user_size ^ actual_size ^ magic ^ in_bin ^ in_bin_gen;
+        return hole ^ user_size ^ actual_size ^ magic ^ in_bin ^ in_bin_gen ^
+               reinterpret_cast<uintptr_t>(next) ^ reinterpret_cast<uintptr_t>(prev);
     }
 
     static constexpr uint64_t WasPoisoned = 0xCD00CD00CD00CD00ull;

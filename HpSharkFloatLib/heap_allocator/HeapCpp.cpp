@@ -207,6 +207,77 @@ RoundUserSize(size_t userSize, size_t &actualSize)
     return true;
 }
 
+static __forceinline void *
+BackingUserPointer(node_t *node)
+{
+    return reinterpret_cast<char *>(node) + sizeof(node_t);
+}
+
+static __forceinline void *
+ReturnedUserPointer(node_t *node)
+{
+    return node->next != nullptr ? reinterpret_cast<void *>(node->next) : BackingUserPointer(node);
+}
+
+static bool
+ReturnedCanarySpan(const node_t *node, size_t &actualSize)
+{
+    if (node->next == nullptr) {
+        actualSize = static_cast<size_t>(node->actual_size);
+        return true;
+    }
+
+    return RoundUserSize(static_cast<size_t>(node->user_size), actualSize);
+}
+
+static __forceinline bool
+NodeBlockFitsInHeap(const heap_t &heap, const node_t *node)
+{
+    const auto nodeAddress = reinterpret_cast<uintptr_t>(node);
+    if (nodeAddress < heap.start || nodeAddress >= heap.end) {
+        return false;
+    }
+
+    const uintptr_t remaining = heap.end - nodeAddress;
+    if (remaining < overhead || node->actual_size == 0) {
+        return false;
+    }
+
+    return node->actual_size <= static_cast<uint64_t>(remaining - overhead);
+}
+
+static __forceinline bool
+ReturnedUserRangeFitsInNode(const node_t *node)
+{
+    const auto backingStart = reinterpret_cast<uintptr_t>(node) + sizeof(node_t);
+    const auto backingEnd = backingStart + static_cast<uintptr_t>(node->actual_size);
+    const auto returnedStart =
+        node->next != nullptr ? reinterpret_cast<uintptr_t>(node->next) : backingStart;
+    size_t returnedActualSize = 0;
+
+    if (!ReturnedCanarySpan(node, returnedActualSize) || returnedActualSize < TailCanaryBytes) {
+        return false;
+    }
+    if (returnedStart < backingStart || returnedStart > backingEnd) {
+        return false;
+    }
+
+    return returnedActualSize <= backingEnd - returnedStart;
+}
+
+static __forceinline node_t *
+HeaderBeforeUserPointer(void *ptr)
+{
+    const auto userAddress = reinterpret_cast<uintptr_t>(ptr);
+    if (userAddress < sizeof(node_t)) {
+        return nullptr;
+    }
+
+    return reinterpret_cast<node_t *>(userAddress - sizeof(node_t));
+}
+
+static node_t *FindLiveNodeFromUserPointer(const heap_t &heap, void *ptr, const char *operation);
+
 void
 CleanupHeap()
 {
@@ -592,163 +663,47 @@ HeapCpp::AllocateAligned(size_t user_size, size_t alignment)
         return Allocate(user_size);
     }
 
-    if (!Initialized) {
-        VectorStaticInit();
-        InitGlobalHeap();
-    }
-
-    size_t actual_size = 0;
-    if (!RoundUserSize(user_size, actual_size)) {
+    size_t returnedActualSize = 0;
+    if (!RoundUserSize(user_size, returnedActualSize)) {
         return nullptr;
     }
 
-    size_t search_size = 0;
-    if (!AddSize(actual_size, alignment, search_size) || !AddSize(search_size, overhead, search_size)) {
+    size_t backingUserSize = 0;
+    if (!AddSize(alignment - 1, returnedActualSize, backingUserSize)) {
         return nullptr;
     }
 
-    constexpr size_t MinSplitBytes = overhead + MIN_ALLOC_SZ;
-
-    std::unique_lock<std::mutex> lock(*Mutex);
-    auto TryOnce = [&]() -> void * {
-        const uint64_t index = GetBinIndex(actual_size);
-
-        for (uint64_t i = index; i < HEAP_BIN_COUNT; ++i) {
-            for (node_t *found = Heap.bins[i]->head; found != nullptr; found = found->next) {
-                if (found->actual_size < actual_size) {
-                    continue;
-                }
-
-                HEAP_ASSERT(found->hole, "AllocateAligned: bin node is not free");
-
-                const uintptr_t blockStart = reinterpret_cast<uintptr_t>(found);
-                const uintptr_t blockEnd =
-                    blockStart + sizeof(node_t) + found->actual_size + sizeof(footer_t);
-
-                uintptr_t alignedUser = 0;
-                if (!AlignUpAddress(blockStart + sizeof(node_t), alignment, alignedUser)) {
-                    continue;
-                }
-
-                uintptr_t alignedHead = alignedUser - sizeof(node_t);
-                size_t leadingBytes = static_cast<size_t>(alignedHead - blockStart);
-
-                if (leadingBytes != 0 && leadingBytes < MinSplitBytes) {
-                    if (alignedUser > UINTPTR_MAX - alignment) {
-                        continue;
-                    }
-                    alignedUser += alignment;
-                    alignedHead = alignedUser - sizeof(node_t);
-                    if (alignedHead < blockStart) {
-                        continue;
-                    }
-                    leadingBytes = static_cast<size_t>(alignedHead - blockStart);
-                    if (leadingBytes != 0 && leadingBytes < MinSplitBytes) {
-                        continue;
-                    }
-                }
-
-                size_t allocatedBytes = 0;
-                if (!AddSize(overhead, actual_size, allocatedBytes)) {
-                    continue;
-                }
-                if (alignedHead < blockStart || alignedHead > blockEnd ||
-                    allocatedBytes > static_cast<size_t>(blockEnd - alignedHead)) {
-                    continue;
-                }
-
-                size_t allocatedActual = actual_size;
-                size_t trailingBytes = static_cast<size_t>(blockEnd - alignedHead - allocatedBytes);
-                if (trailingBytes != 0 && trailingBytes < MinSplitBytes) {
-                    if (!AddSize(allocatedActual, trailingBytes, allocatedActual)) {
-                        continue;
-                    }
-                    trailingBytes = 0;
-                }
-
-                const uint64_t foundBinIndex = found->in_bin;
-                HEAP_ASSERT(foundBinIndex != node_t::NotInBin,
-                            "AllocateAligned: found is free but NotInBin");
-                HEAP_ASSERT(bin_contains(Heap.bins[foundBinIndex], found),
-                            "AllocateAligned: in_bin says linked, but list traversal can't find it");
-                HEAP_ASSERT(foundBinIndex == GetBinIndex(found->actual_size),
-                            "AllocateAligned: found is in wrong bin for its size");
-                remove_node(Heap.bins[foundBinIndex], found, foundBinIndex);
-
-                node_t *allocated = reinterpret_cast<node_t *>(alignedHead);
-                const bool allocatedUsesFoundHeader = allocated == found;
-
-                if (leadingBytes != 0) {
-                    const uint64_t leadingPayload = static_cast<uint64_t>(leadingBytes - overhead);
-                    found->init_free_node_unlinked(leadingPayload);
-                    CreateFooter(found);
-
-                    const auto leadingBin = GetBinIndex(found->actual_size);
-                    add_node(Heap.bins[leadingBin], found, leadingBin);
-                }
-
-                if (trailingBytes != 0) {
-                    const uintptr_t trailingStart = alignedHead + overhead + allocatedActual;
-                    node_t *trailing = reinterpret_cast<node_t *>(trailingStart);
-                    HEAP_ASSERT(reinterpret_cast<uintptr_t>(trailing) % alignof(node_t) == 0,
-                                "AllocateAligned: trailing split misaligned");
-
-                    const uint64_t trailingPayload = static_cast<uint64_t>(trailingBytes - overhead);
-                    trailing->init_free_node_unlinked(trailingPayload);
-                    CreateFooter(trailing);
-
-                    const auto trailingBin = GetBinIndex(trailing->actual_size);
-                    add_node(Heap.bins[trailingBin], trailing, trailingBin);
-                }
-
-                return FinalizeAllocation(allocated,
-                                          user_size,
-                                          allocatedActual,
-                                          !allocatedUsesFoundHeader,
-                                          allocatedUsesFoundHeader);
-            }
-        }
-
-        return nullptr;
-    };
-
-    void *res = TryOnce();
-    bool expandAttempted = false;
-    bool expandSucceeded = false;
-    if (!res) {
-        expandAttempted = true;
-        expandSucceeded = Expand(search_size);
-        if (expandSucceeded) {
-            res = TryOnce();
-        }
-    }
-
-#ifndef _WIN32
-    if (!res) {
-        PanicAllocationFailed(
-            "AllocateAligned", user_size, actual_size, expandAttempted, expandSucceeded);
-    }
-#endif
-    if (!res) {
+    void *backingUser = Allocate(backingUserSize);
+    if (backingUser == nullptr) {
         return nullptr;
     }
 
-    node_t *wild = GetWilderness();
-    if (wild->actual_size < MIN_WILDERNESS) {
-        if (!Expand(PAGE_SIZE))
-            return nullptr;
-    } else if (wild->actual_size > MAX_WILDERNESS) {
-        Contract(PAGE_SIZE);
+    uintptr_t alignedAddress = 0;
+    if (!AlignUpAddress(reinterpret_cast<uintptr_t>(backingUser), alignment, alignedAddress)) {
+        Deallocate(backingUser);
+        return nullptr;
     }
 
-    if (res && (reinterpret_cast<uintptr_t>(res) % alignment != 0)) {
+    node_t *node = reinterpret_cast<node_t *>(reinterpret_cast<char *>(backingUser) - sizeof(node_t));
+    const uintptr_t backingStart = reinterpret_cast<uintptr_t>(backingUser);
+    const uintptr_t backingEnd = backingStart + node->actual_size;
+    if (alignedAddress < backingStart || returnedActualSize > backingEnd - alignedAddress) {
+        Deallocate(backingUser);
+        return nullptr;
+    }
+
+    auto *alignedUser = reinterpret_cast<void *>(alignedAddress);
+    node->user_size = static_cast<uint64_t>(user_size);
+    node->next = reinterpret_cast<node_t *>(alignedUser);
+    node->checksum = node->ComputeChecksum();
+
+    SetMagicAtEnd(alignedUser, returnedActualSize);
+
+    if (reinterpret_cast<uintptr_t>(alignedUser) % alignment != 0) {
         HeapPanic("Aligned allocation is not aligned");
     }
 
-    auto *node = reinterpret_cast<node_t *>(reinterpret_cast<char *>(res) - sizeof(node_t));
-    Stats.Allocations++;
-    Stats.BytesAllocated += node->actual_size;
-    return res;
+    return alignedUser;
 }
 
 // ========================================================
@@ -812,11 +767,14 @@ HeapCpp::Deallocate(void *ptr)
     std::unique_lock<std::mutex> lock(*Mutex);
     assert(Initialized);
 
-    node_t *head = (node_t *)((char *)ptr - sizeof(node_t));
-
-    if (!ptr_in_heap(Heap, head)) {
-        HeapPanic("Free of pointer outside heap bounds");
+    auto *direct = HeaderBeforeUserPointer(ptr);
+    const uintptr_t directAddress = reinterpret_cast<uintptr_t>(direct);
+    if (NodeBlockFitsInHeap(Heap, direct) && (directAddress % alignof(node_t)) == 0 && direct->hole &&
+        direct->magic == node_t::ClearedMagic) {
+        HeapPanic("Double free detected");
     }
+
+    node_t *head = FindLiveNodeFromUserPointer(Heap, ptr, "Free of invalid pointer");
 
     if (head->hole) {
         HeapPanic("Double free detected");
@@ -844,10 +802,22 @@ HeapCpp::Deallocate(void *ptr)
     Stats.BytesFreed += head->actual_size;
     Stats.Frees++;
 
-    VerifyAndClearMagicAtEnd(ptr, head->actual_size);
+    void *returnedUser = ReturnedUserPointer(head);
+    size_t returnedActualSize = 0;
+    if (!ReturnedCanarySpan(head, returnedActualSize)) {
+        HeapPanic("Invalid returned allocation size");
+    }
+    void *backingUser = BackingUserPointer(head);
+
+    char *returnedTailCanary = static_cast<char *>(returnedUser) + returnedActualSize - TailCanaryBytes;
+    char *backingTailCanary = static_cast<char *>(backingUser) + head->actual_size - TailCanaryBytes;
+    VerifyAndClearMagicAtEnd(returnedUser, returnedActualSize);
+    if (returnedTailCanary != backingTailCanary) {
+        VerifyAndClearMagicAtEnd(backingUser, head->actual_size);
+    }
 
     // Poison user data to catch use-after-free
-    std::memset(ptr, 0xCD, head->actual_size);
+    std::memset(backingUser, 0xCD, head->actual_size);
 
     // Identify neighbors in the heap layout (SAFELY)
     footer_t *head_foot = GetFooter(head);
@@ -1051,6 +1021,75 @@ HeapCpp::OwnsPointer(const void *ptr) const
     return address >= Heap.start && address < Heap.end;
 }
 
+static node_t *
+FindLiveNodeFromUserPointer(const heap_t &heap, void *ptr, const char *operation)
+{
+    if (ptr == nullptr) {
+        return nullptr;
+    }
+
+    auto isMatchingLiveNode = [&](node_t *node) {
+        const uintptr_t nodeAddress = reinterpret_cast<uintptr_t>(node);
+        if (!NodeBlockFitsInHeap(heap, node) || (nodeAddress % alignof(node_t)) != 0) {
+            return false;
+        }
+        if (node->hole || node->magic != node_t::Magic) {
+            return false;
+        }
+        if (!ReturnedUserRangeFitsInNode(node)) {
+            HeapPanic(operation);
+        }
+        if (node->checksum != node->ComputeChecksum()) {
+            HeapPanic(operation);
+        }
+        return ReturnedUserPointer(node) == ptr;
+    };
+
+    node_t *direct = HeaderBeforeUserPointer(ptr);
+    if (isMatchingLiveNode(direct)) {
+        return direct;
+    }
+
+    uintptr_t currentAddress = heap.start;
+    while (currentAddress < heap.end) {
+        node_t *currentNode = reinterpret_cast<node_t *>(currentAddress);
+        if (!NodeBlockFitsInHeap(heap, currentNode)) {
+            HeapPanic(operation);
+        }
+
+        if (!currentNode->hole) {
+            if (currentNode->magic != node_t::Magic) {
+                HeapPanic(operation);
+            }
+            if (!ReturnedUserRangeFitsInNode(currentNode)) {
+                HeapPanic(operation);
+            }
+            if (currentNode->checksum != currentNode->ComputeChecksum()) {
+                HeapPanic(operation);
+            }
+            if (ReturnedUserPointer(currentNode) == ptr) {
+                return currentNode;
+            }
+        }
+
+        currentAddress += sizeof(node_t) + currentNode->actual_size + sizeof(footer_t);
+    }
+
+    HeapPanic(operation);
+}
+
+size_t
+HeapCpp::GetUserSize(void *ptr, const char *operation)
+{
+    if (ptr == nullptr) {
+        return 0;
+    }
+
+    std::unique_lock<std::mutex> lock(*Mutex);
+    assert(Initialized);
+    return static_cast<size_t>(FindLiveNodeFromUserPointer(Heap, ptr, operation)->user_size);
+}
+
 HeapBackingDiagnostics
 HeapCpp::GetBackingDiagnostics() const
 {
@@ -1201,23 +1240,6 @@ CppFree(void *ptr)
     globalHeap.Deallocate(ptr);
 }
 
-static node_t *
-GetLiveNodeFromUserPointer(void *ptr, const char *operation)
-{
-    auto &globalHeap = GlobalHeap();
-    auto *node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(ptr) - sizeof(node_t));
-    if (!globalHeap.OwnsPointer(node)) {
-        HeapPanic(operation);
-    }
-    if (node->magic != node_t::Magic) {
-        HeapPanic(operation);
-    }
-    if (node->hole) {
-        HeapPanic(operation);
-    }
-    return node;
-}
-
 [[maybe_unused]] static size_t
 CppUsableSize(void *ptr, const char *operation)
 {
@@ -1225,7 +1247,7 @@ CppUsableSize(void *ptr, const char *operation)
         return 0;
     }
 
-    return GetLiveNodeFromUserPointer(ptr, operation)->user_size;
+    return GlobalHeap().GetUserSize(ptr, operation);
 }
 
 void *
@@ -1267,8 +1289,7 @@ CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
         return nullptr;
     }
 
-    const auto node = GetLiveNodeFromUserPointer(ptr, "Realloc: invalid or freed block");
-    const size_t oldUsableSize = node->user_size;
+    const size_t oldUsableSize = GlobalHeap().GetUserSize(ptr, "Realloc: invalid or freed block");
     const size_t copyUserSize = std::min(oldUsableSize, newUserSize);
     std::memcpy(newPtr, ptr, copyUserSize);
 
@@ -1293,8 +1314,8 @@ CppAlignedRealloc(void *ptr, size_t newUserSize, size_t alignment, bool zeroNew)
         return nullptr;
     }
 
-    const auto node = GetLiveNodeFromUserPointer(ptr, "Aligned realloc: invalid or freed block");
-    const size_t oldUsableSize = node->user_size;
+    const size_t oldUsableSize =
+        GlobalHeap().GetUserSize(ptr, "Aligned realloc: invalid or freed block");
 
     void *newPtr = CppAlignedMalloc(newUserSize, alignment);
     if (!newPtr) {

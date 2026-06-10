@@ -61,6 +61,7 @@ public:
 
     // Diagnostic helper for tests and assertions.
     bool OwnsPointer(const void *ptr) const;
+    size_t GetUserSize(void *ptr, const char *operation);
     HeapBackingDiagnostics GetBackingDiagnostics() const;
 
 private:

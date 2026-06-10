@@ -1,6 +1,6 @@
 # Linux GUI Parity Gaps
 
-Last reviewed: 2026-06-07.
+Last reviewed: 2026-06-09.
 
 This file tracks Linux GUI parity work against the Win32 GUI baseline. It is a working checklist for
 fixes and deliberate platform differences, not user-facing documentation.
@@ -28,41 +28,6 @@ fixes and deliberate platform differences, not user-facing documentation.
 - ImGui file/pick/location dialogs for saving and loading locations, PNG images, iteration text, and reference orbits.
 - Host-owned GLX presentation path in `FractalSharkGuiLinux/main.cpp`.
 
-## Windows-Only Custom Heap Allocator
-
-Win32 has a process-wide custom heap path in `HpSharkFloatLib/heap_allocator/HeapCpp.cpp`. Linux does
-not use this allocator.
-
-### What Win32 Uses
-
-- `HeapCpp.cpp` overrides `malloc`, `calloc`, `realloc`, `free`, `aligned_alloc`, and global
-  `new`/`delete` when `EnableFractalSharkHeap == FancyHeap::Enable`.
-- The heap is backed by `GrowableVector<uint8_t>` over `HeapFile.bin`.
-- Allocation metadata uses bins and free-list coalescing.
-- Debug/safety checks include tail canaries, header guards, metadata checksums, free poisoning, double
-  free detection, buffer overrun/underflow detection, and use-after-free detection.
-- `Environment::RegisterHeapCleanup()` in `HeapCpp.cpp` registers cleanup on the fancy-heap path and
-  initializes vector support on the disabled/safemode path.
-- The bypass/system-heap path calls `Environment::SystemHeap*`, which maps to Win32 process-heap calls
-  in `FractalSharkPlatform/EnvironmentWin32.cpp`.
-
-### What Linux Uses Instead
-
-- `FractalSharkPlatform/EnvironmentLinux.cpp` routes `SystemHeapAlloc`, `SystemHeapRealloc`,
-  `SystemHeapAllocZeroed`, `SystemHeapFree`, and `SystemHeapSize` through glibc
-  `malloc`, `realloc`, `calloc`, `free`, and `malloc_usable_size`.
-- `Environment::RegisterHeapCleanup()` is a Linux stub. The current comment says the custom heap is
-  Windows-only by design and that there is nothing to clean up on Linux.
-- This is distinct from the scoped MPIR allocation helpers such as `MPIRBoundedAllocator` and
-  `MPIRBumpAllocator`, which are reference-orbit/MPIR allocation tools rather than the process-wide
-  `malloc`/`new` override.
-
-### Parity Decision
-
-Treat the lack of `HeapCpp` on Linux as an explicit platform difference for now. Revisit only if Linux
-needs the same heap diagnostics, persistent allocation behavior, or process-wide allocation override
-semantics as the Win32 GUI.
-
 ## Source References
 
 - Linux GUI shell: `FractalSharkGuiLinux/main.cpp`
@@ -71,6 +36,3 @@ semantics as the Win32 GUI.
 - Win32 GUI shell: `FractalSharkGUILib/MainWindow.cpp`
 - Win32 native dynamic command dispatcher: `FractalSharkGUILib/CommandDispatcher.cpp`
 - Win32 native dynamic command IDs: `FractalShark/resource.h`
-- Windows-only custom heap: `HpSharkFloatLib/heap_allocator/HeapCpp.cpp`
-- Win32 system heap wrappers: `FractalSharkPlatform/EnvironmentWin32.cpp`
-- Linux system heap wrappers and cleanup stub: `FractalSharkPlatform/EnvironmentLinux.cpp`

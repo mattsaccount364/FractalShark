@@ -681,7 +681,7 @@ Environment::SetClipboardText(std::string_view text)
 void
 Environment::PumpUIEvents()
 {
-    std::wcerr << L"Warning: PumpUIEvents not implemented" << std::endl;
+    // TODO: Linux, should we be checking the state of things etc here at all
 }
 
 #endif // !_WIN32

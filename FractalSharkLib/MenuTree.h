@@ -59,7 +59,6 @@ enum class RadioGroup : uint16_t {
     PaletteType,
     PaletteBitDepth,
     MemoryAutosave,
-    MemoryLimit,
     IterationsWidth,
     NRInnerLoopBackend,
 };

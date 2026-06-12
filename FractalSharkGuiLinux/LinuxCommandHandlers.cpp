@@ -451,14 +451,6 @@ LinuxCommandHandlers::OnIterationPrecision4x()
 
 // ---- Perturbation ---------------------------------------------------------
 void
-LinuxCommandHandlers::OnPerturbResults()
-{
-    std::cerr << "TODO. By default these are shown as white pixels overlayed on the image. "
-                 "It'd be nice to have an option that shows them as white pixels against a "
-                 "black screen so their location is obvious.\n";
-}
-
-void
 LinuxCommandHandlers::OnPerturbClearAll()
 {
     GetFractal().EnqueueMutation(

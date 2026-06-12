@@ -116,7 +116,6 @@ public:
     void OnIterationPrecision4x() override;
 
     // Perturbation
-    void OnPerturbResults() override;
     void OnPerturbClearAll() override;
     void OnPerturbClearMed() override;
     void OnPerturbClearHigh() override;
@@ -139,8 +138,6 @@ public:
     void OnPerturbAutosaveOnDelete() override;
     void OnPerturbAutosaveOn() override;
     void OnPerturbAutosaveOff() override;
-    void OnMemoryLimit0() override;
-    void OnMemoryLimit1() override;
 
     // Palette
     void OnPaletteType0() override;

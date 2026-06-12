@@ -409,7 +409,6 @@ static const Node menu[] = {
         Item(L"Clear Perturbation References - All", FractalCommand::PerturbClearAll),
         Item(L"Clear Perturbation References - Med", FractalCommand::PerturbClearMed),
         Item(L"Clear Perturbation References - High", FractalCommand::PerturbClearHigh),
-        Item(L"Show Perturbation Results", FractalCommand::PerturbResults),
 
         Sep(),
 
@@ -488,12 +487,7 @@ static const Node menu[] = {
                     FractalCommand::PerturbAutosaveOnDelete,
                     RG::MemoryAutosave),
               Radio(L"Enable Auto-Save Orbit (keep files)", FractalCommand::PerturbAutosaveOn, RG::MemoryAutosave),
-              Radio(L"Disable Auto-Save Orbit", FractalCommand::PerturbAutosaveOff, RG::MemoryAutosave),
-
-              Sep(),
-
-              Radio(L"Remove Memory Limits", FractalCommand::MemoryLimit0, RG::MemoryLimit),
-              Radio(L"Leave max of (1/2*ram, 8GB) free (default)", FractalCommand::MemoryLimit1, RG::MemoryLimit)),
+              Radio(L"Disable Auto-Save Orbit", FractalCommand::PerturbAutosaveOff, RG::MemoryAutosave)),
 
     Item(L"Show Rendering Details", FractalCommand::CurPos),
 

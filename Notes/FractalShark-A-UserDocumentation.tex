@@ -415,13 +415,6 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Clear Perturbation References -- All} (command): Clears all cached perturbation references.
       \item \emph{Clear Perturbation References -- Med} (command): Clears medium-class cached references.
       \item \emph{Clear Perturbation References -- High} (command): Clears high-class cached references.
-      \item \emph{Show Perturbation Results} (command): Intended to display
-      a diagnostic overlay for perturbation state.  Currently a stub
-      (prints a TODO to the debug console).  Note, however, that white
-      dots indicating reference orbit locations are drawn unconditionally
-      as part of the normal render path---see the practical-usage note
-      below and \cref{par:ref-orbit-indicators} for implementation
-      details.
 
       \item \emph{Auto (default)} (radio): Automatically selects the perturbation
       algorithm based on current conditions.  Recommended for most use.
@@ -485,8 +478,8 @@ choice and triggers any necessary reconfiguration.
       Useful for quickly previewing how different color offsets look.
     \end{itemize}
 
-  \item \emph{Memory Management} (submenu): Controls memory-limit policy and
-    whether reference orbit data is automatically saved.
+  \item \emph{Memory Management} (submenu): Controls whether reference orbit
+    data is automatically saved.
     \begin{itemize}
       \item \emph{Enable Auto-Save Orbit (delete when done, default)} (radio):
       Automatically saves orbit data temporarily and deletes it when no longer
@@ -494,9 +487,6 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Enable Auto-Save Orbit (keep files)} (radio): Automatically
       saves orbit data and retains files on disk.
       \item \emph{Disable Auto-Save Orbit} (radio): Disables automatic orbit saving.
-
-      \item \emph{Remove Memory Limits} (radio): Disables memory limiting behavior.
-      \item \emph{Leave max of (1/2*ram, 8GB) free (default)} (radio): Constrains allocation to preserve system memory headroom.
     \end{itemize}
 
   \item \emph{Show Rendering Details} (command): Displays current rendering

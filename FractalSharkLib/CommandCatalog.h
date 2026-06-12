@@ -156,7 +156,6 @@ enum class FractalCommand : uint32_t {
     PerturbClearAll = 40500,
     PerturbClearMed = 40501,
     PerturbClearHigh = 40502,
-    PerturbResults = 40503,
 
     PerturbationAuto = 40510,
     PerturbationSinglethread = 40511,
@@ -196,9 +195,6 @@ enum class FractalCommand : uint32_t {
     PerturbAutosaveOnDelete = 40700,
     PerturbAutosaveOn = 40701,
     PerturbAutosaveOff = 40702,
-
-    MemoryLimit0 = 40710,
-    MemoryLimit1 = 40711,
 
     // ---- Save / Load ----
     SaveLocation = 40800,
@@ -624,7 +620,6 @@ struct ExecuteCommandHost {
     virtual void OnIterationPrecision4x() = 0;
 
     // ---- Perturbation -------------------------------------------------
-    virtual void OnPerturbResults() = 0;
     virtual void OnPerturbClearAll() = 0;
     virtual void OnPerturbClearMed() = 0;
     virtual void OnPerturbClearHigh() = 0;
@@ -647,8 +642,6 @@ struct ExecuteCommandHost {
     virtual void OnPerturbAutosaveOnDelete() = 0;
     virtual void OnPerturbAutosaveOn() = 0;
     virtual void OnPerturbAutosaveOff() = 0;
-    virtual void OnMemoryLimit0() = 0;
-    virtual void OnMemoryLimit1() = 0;
 
     // ---- Palette ------------------------------------------------------
     virtual void OnPaletteType0() = 0;

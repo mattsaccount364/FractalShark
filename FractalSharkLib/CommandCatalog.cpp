@@ -338,9 +338,6 @@ ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host)
             return;
 
         // ---- Perturbation ----
-        case FractalCommand::PerturbResults:
-            host.OnPerturbResults();
-            return;
         case FractalCommand::PerturbClearAll:
             host.OnPerturbClearAll();
             return;
@@ -402,12 +399,6 @@ ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host)
             return;
         case FractalCommand::PerturbAutosaveOff:
             host.OnPerturbAutosaveOff();
-            return;
-        case FractalCommand::MemoryLimit0:
-            host.OnMemoryLimit0();
-            return;
-        case FractalCommand::MemoryLimit1:
-            host.OnMemoryLimit1();
             return;
 
         // ---- Palette ----

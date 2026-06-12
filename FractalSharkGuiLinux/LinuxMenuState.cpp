@@ -198,10 +198,6 @@ LinuxMenuState::GetRadioSelection(FractalShark::Menu::RadioGroup group) const no
             }
             return IDM_PERTURB_AUTOSAVE_ON_DELETE;
 
-        case RG::MemoryLimit:
-            // No Linux JobObject equivalent yet — always report "no limit".
-            return IDM_MEMORY_LIMIT_0;
-
         case RG::IterationsWidth:
             return (m_Fractal.GetIterType() == IterTypeEnum::Bits32) ? IDM_32BIT_ITERATIONS
                                                                      : IDM_64BIT_ITERATIONS;

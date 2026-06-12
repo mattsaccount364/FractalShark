@@ -42,6 +42,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -58,6 +59,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -324,9 +326,8 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     void OnAutoZoomFeatureAtPoint() override;
     // Everything else is provided by LinuxCommandHandlers.  These ~25 hooks
     // touch the X server, ImGui modals, the file dialog, the clipboard, or
-    // process-wide JobObject state — so they need real Linux implementations
-    // (forthcoming Phase 3.3.2 / 3.3.4 / 3.3.6 / 3.3.7) and stay as stubs
-    // here until then.
+    // other Linux-specific UI state, so they need real Linux implementations
+    // and stay as stubs here until then.
     void OnShowHotkeys() override;
     void OnViewsHelp() override;
     void OnHelpAlg() override;
@@ -336,11 +337,6 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     void OnCurPos() override;
     void OnExit() override;
 
-    // TODO: Wire the Linux JobObject/RLIMIT_AS implementation into the GUI and
-    // define reversible unlimited/limited behavior before enabling these menu
-    // items.
-    FRACTALSHARK_LINUX_STUB(OnMemoryLimit0)
-    FRACTALSHARK_LINUX_STUB(OnMemoryLimit1)
     void OnPaletteRotate() override;
 
     void OnSaveLocation() override;
@@ -361,6 +357,8 @@ private:
     void SaveLocation(bool scaleToMaximum);
     void DoSaveRefOrbit(::CompressToDisk compression);
     void DoLoadRefOrbitImag(::ImaginaSettings settings);
+    void RequestLoadRefOrbitImagFileDialog(::ImaginaSettings settings);
+    void LoadRefOrbitImagFile(::ImaginaSettings settings, std::string filename);
 };
 
 #undef FRACTALSHARK_LINUX_STUB
@@ -1052,6 +1050,8 @@ LinuxMainWindow::ExitFullscreen()
 
 namespace {
 
+constexpr size_t kMaxQuickPickImaginaFiles = 30;
+
 // Build a "output_YYYY_MM_DD_HH_MM_SS" filename stem (no extension).
 std::string
 MakeTimestampedStem()
@@ -1136,6 +1136,81 @@ Utf8ToWide(const std::string &s)
 
 using LinuxFileDialogFilter = FractalShark::Linux::ImGuiOverlay::FileDialogFilter;
 using LinuxFileDialogMode = FractalShark::Linux::ImGuiOverlay::FileDialogMode;
+
+struct ImaginaQuickPickFile {
+    std::string Label;
+    std::string Filename;
+};
+
+std::string
+PathToString(const std::filesystem::path &path)
+{
+    try {
+        return path.string();
+    } catch (const std::filesystem::filesystem_error &) {
+        return {};
+    }
+}
+
+std::string
+LowerAscii(std::string value)
+{
+    for (char &c : value) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return value;
+}
+
+std::vector<ImaginaQuickPickFile>
+FindCurrentDirectoryImaginaFiles()
+{
+    std::vector<ImaginaQuickPickFile> files;
+
+    std::error_code ec;
+    std::filesystem::path currentDir = std::filesystem::current_path(ec);
+    if (ec || currentDir.empty()) {
+        currentDir = ".";
+        ec.clear();
+    }
+
+    std::filesystem::directory_iterator it(currentDir, ec);
+    if (ec) {
+        return files;
+    }
+
+    for (std::filesystem::directory_iterator end; it != end; it.increment(ec)) {
+        if (ec) {
+            break;
+        }
+
+        std::error_code typeEc;
+        if (!it->is_regular_file(typeEc) || typeEc) {
+            continue;
+        }
+
+        const std::filesystem::path entryPath = it->path();
+        if (LowerAscii(PathToString(entryPath.extension())) != ".im") {
+            continue;
+        }
+
+        std::string label = PathToString(entryPath.filename());
+        std::string filename = PathToString(entryPath);
+        if (!label.empty() && !filename.empty()) {
+            files.push_back({std::move(label), std::move(filename)});
+        }
+    }
+
+    std::sort(
+        files.begin(), files.end(), [](const ImaginaQuickPickFile &a, const ImaginaQuickPickFile &b) {
+            return LowerAscii(a.Label) < LowerAscii(b.Label);
+        });
+
+    if (files.size() > kMaxQuickPickImaginaFiles) {
+        files.resize(kMaxQuickPickImaginaFiles);
+    }
+
+    return files;
+}
 
 std::vector<LinuxFileDialogFilter>
 OrbitFileFilters()
@@ -1492,23 +1567,62 @@ LinuxMainWindow::DoLoadRefOrbitImag(::ImaginaSettings settings)
     if (!fractal || !overlay) {
         return;
     }
-    overlay->RequestFileDialog("Load reference orbit (.im)",
-                               LinuxFileDialogMode::Open,
-                               "",
-                               OrbitFileFilters(),
-                               [this, settings](std::string filename) {
-                                   if (!fractal)
-                                       return;
-                                   std::wstring w = Utf8ToWide(filename);
-                                   fractal->EnqueueCommand([settings, w = std::move(w)](Fractal &f) {
-                                       RecommendedSettings rs{};
-                                       f.LoadRefOrbit(
-                                           &rs, ::CompressToDisk::MaxCompressionImagina, settings, w);
-                                       if (rs.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
-                                           (void)f.SetRenderAlgorithm(rs.GetRenderAlgorithm());
-                                       }
-                                   });
-                               });
+
+    std::vector<ImaginaQuickPickFile> imagFiles = FindCurrentDirectoryImaginaFiles();
+    if (imagFiles.empty()) {
+        RequestLoadRefOrbitImagFileDialog(settings);
+        return;
+    }
+
+    std::vector<std::string> labels;
+    labels.reserve(imagFiles.size() + 1);
+    for (const ImaginaQuickPickFile &file : imagFiles) {
+        labels.push_back(file.Label);
+    }
+    labels.push_back("Load from file...");
+
+    overlay->RequestPickFromList("Load reference orbit (.im)",
+                                 std::move(labels),
+                                 [this, settings, imagFiles = std::move(imagFiles)](size_t index) {
+                                     if (!fractal || !overlay) {
+                                         return;
+                                     }
+                                     if (index < imagFiles.size()) {
+                                         LoadRefOrbitImagFile(settings, imagFiles[index].Filename);
+                                     } else if (index == imagFiles.size()) {
+                                         RequestLoadRefOrbitImagFileDialog(settings);
+                                     }
+                                 });
+}
+
+void
+LinuxMainWindow::RequestLoadRefOrbitImagFileDialog(::ImaginaSettings settings)
+{
+    if (!overlay) {
+        return;
+    }
+    overlay->RequestFileDialog(
+        "Load reference orbit (.im)",
+        LinuxFileDialogMode::Open,
+        "",
+        OrbitFileFilters(),
+        [this, settings](std::string filename) { LoadRefOrbitImagFile(settings, std::move(filename)); });
+}
+
+void
+LinuxMainWindow::LoadRefOrbitImagFile(::ImaginaSettings settings, std::string filename)
+{
+    if (!fractal) {
+        return;
+    }
+    std::wstring w = Utf8ToWide(filename);
+    fractal->EnqueueCommand([settings, w = std::move(w)](Fractal &f) {
+        RecommendedSettings rs{};
+        f.LoadRefOrbit(&rs, ::CompressToDisk::MaxCompressionImagina, settings, w);
+        if (rs.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
+            (void)f.SetRenderAlgorithm(rs.GetRenderAlgorithm());
+        }
+    });
 }
 
 void

@@ -567,14 +567,6 @@ MainWindow::OnIterationPrecision4x()
 
 // ---- Perturbation ---------------------------------------------------------
 void
-MainWindow::OnPerturbResults()
-{
-    std::wcerr << L"TODO. By default these are shown as white pixels overlayed on the image. "
-                  L"It'd be nice to have an option that shows them as white pixels against a "
-                  L"black screen so their location is obvious.\n";
-}
-
-void
 MainWindow::OnPerturbClearAll()
 {
     gFractal->EnqueueMutation(
@@ -698,17 +690,6 @@ void
 MainWindow::OnPerturbAutosaveOff()
 {
     gFractal->EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::DontSave); });
-}
-
-void
-MainWindow::OnMemoryLimit0()
-{
-    gJobObj = nullptr;
-}
-void
-MainWindow::OnMemoryLimit1()
-{
-    gJobObj = std::make_unique<JobObject>();
 }
 
 // ---- Palette --------------------------------------------------------------

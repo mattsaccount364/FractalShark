@@ -200,9 +200,6 @@ MainWindowMenuState::GetRadioSelection(DynamicPopupMenu::RadioGroup group) const
             }
             return IDM_PERTURB_AUTOSAVE_ON_DELETE;
 
-        case RG::MemoryLimit:
-            return w_.gJobObj ? IDM_MEMORY_LIMIT_1 : IDM_MEMORY_LIMIT_0;
-
         case RG::IterationsWidth:
             return (f_.GetIterType() == IterTypeEnum::Bits32) ? IDM_32BIT_ITERATIONS
                                                               : IDM_64BIT_ITERATIONS;

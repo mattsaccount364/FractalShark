@@ -118,7 +118,6 @@ struct RecordingHost : FractalShark::ExecuteCommandHost {
     FRACTALSHARK_TEST_RECORD(OnIterationPrecision3x)
     FRACTALSHARK_TEST_RECORD(OnIterationPrecision4x)
 
-    FRACTALSHARK_TEST_RECORD(OnPerturbResults)
     FRACTALSHARK_TEST_RECORD(OnPerturbClearAll)
     FRACTALSHARK_TEST_RECORD(OnPerturbClearMed)
     FRACTALSHARK_TEST_RECORD(OnPerturbClearHigh)
@@ -140,8 +139,6 @@ struct RecordingHost : FractalShark::ExecuteCommandHost {
     FRACTALSHARK_TEST_RECORD(OnPerturbAutosaveOnDelete)
     FRACTALSHARK_TEST_RECORD(OnPerturbAutosaveOn)
     FRACTALSHARK_TEST_RECORD(OnPerturbAutosaveOff)
-    FRACTALSHARK_TEST_RECORD(OnMemoryLimit0)
-    FRACTALSHARK_TEST_RECORD(OnMemoryLimit1)
 
     FRACTALSHARK_TEST_RECORD(OnPaletteType0)
     FRACTALSHARK_TEST_RECORD(OnPaletteType1)
@@ -326,7 +323,6 @@ TEST(CommandCatalog_RoutesAllMigratedHooks)
     EXPECT(IterationPrecision4x, OnIterationPrecision4x);
 
     // Perturbation
-    EXPECT(PerturbResults, OnPerturbResults);
     EXPECT(PerturbClearAll, OnPerturbClearAll);
     EXPECT(PerturbClearMed, OnPerturbClearMed);
     EXPECT(PerturbClearHigh, OnPerturbClearHigh);
@@ -349,8 +345,6 @@ TEST(CommandCatalog_RoutesAllMigratedHooks)
     EXPECT(PerturbAutosaveOnDelete, OnPerturbAutosaveOnDelete);
     EXPECT(PerturbAutosaveOn, OnPerturbAutosaveOn);
     EXPECT(PerturbAutosaveOff, OnPerturbAutosaveOff);
-    EXPECT(MemoryLimit0, OnMemoryLimit0);
-    EXPECT(MemoryLimit1, OnMemoryLimit1);
 
     // Palette
     EXPECT(PaletteType0, OnPaletteType0);

@@ -1,6 +1,5 @@
 #include "TestFramework.h"
 
-#include "EarlyCommandLine.h"
 #include "Environment.h"
 #include "Vectors.h"
 #include "heap_allocator/include/HeapCpp.h"
@@ -228,9 +227,6 @@ TEST(GrowableVector_LinuxSparseFileConsumesBlocksOnlyWhenWritten)
 // ---------------------------------------------------------------------------
 TEST(CustomHeap_MallocAndNewUseGlobalHeap)
 {
-    EarlyInit_SafeMode_NoCRT();
-    ASSERT_EQ(static_cast<int>(EnableFractalSharkHeap), static_cast<int>(FancyHeap::Enable));
-
     void *mallocPtr = std::malloc(257);
     ASSERT_TRUE(mallocPtr != nullptr);
     ASSERT_TRUE(GlobalHeap().OwnsPointer(mallocPtr));
@@ -258,9 +254,6 @@ TEST(CustomHeap_MallocAndNewUseGlobalHeap)
 // ---------------------------------------------------------------------------
 TEST(CustomHeap_UsesTemporaryFileBackedGrowableVector)
 {
-    EarlyInit_SafeMode_NoCRT();
-    ASSERT_EQ(static_cast<int>(EnableFractalSharkHeap), static_cast<int>(FancyHeap::Enable));
-
     void *mallocPtr = std::malloc(257);
     ASSERT_TRUE(mallocPtr != nullptr);
 

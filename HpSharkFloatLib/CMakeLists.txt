@@ -44,7 +44,6 @@ if(WIN32)
 else()
     target_sources(HpSharkFloatLib PRIVATE
         VectorsLinux.cpp
-        EarlyCommandLine.cpp
         Exceptions.cpp
         heap_allocator/HeapCpp.cpp
         heap_allocator/HeapPanic.cpp

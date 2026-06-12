@@ -7,7 +7,6 @@
 #include "HDRFloat.h"
 #include "LAInfoDeep.h"
 
-#include "EarlyCommandLine.h"
 #include "Exceptions.h"
 
 #include <assert.h>
@@ -221,11 +220,6 @@ GrowableVector<EltT>::GrowableVector(AddPointOptions addPointOptions,
     auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {
         throw FractalSharkSeriousException("Failed to get system memory");
-    }
-
-    if (HasSafeModeFlag_NoCRT()) {
-        // In safe mode, we always use anonymous memory.
-        m_AddPointOptions = AddPointOptions::DontSave;
     }
 
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {

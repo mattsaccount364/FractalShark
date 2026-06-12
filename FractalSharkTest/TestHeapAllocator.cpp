@@ -1,6 +1,5 @@
 #include "TestFramework.h"
 
-#include "EarlyCommandLine.h"
 #include "heap_allocator/include/HeapCpp.h"
 
 #include <cstdint>
@@ -23,13 +22,6 @@ bool
 IsAligned(const void *ptr, size_t alignment)
 {
     return (reinterpret_cast<uintptr_t>(ptr) % alignment) == 0;
-}
-
-void
-AssertFancyHeapEnabled()
-{
-    EarlyInit_SafeMode_NoCRT();
-    ASSERT_EQ(static_cast<int>(EnableFractalSharkHeap), static_cast<int>(FancyHeap::Enable));
 }
 
 void
@@ -57,8 +49,6 @@ AssertBytes(const void *ptr, size_t size, unsigned char value)
 
 TEST(HeapCAllocationApisUseGlobalHeap)
 {
-    AssertFancyHeapEnabled();
-
     void *ptr = std::malloc(123);
     ASSERT_TRUE(ptr != nullptr);
     ASSERT_TRUE(IsAligned(ptr, 64));
@@ -82,8 +72,6 @@ TEST(HeapCAllocationApisUseGlobalHeap)
 
 TEST(HeapAlignedAllocSupportsLargeNonMultipleSize)
 {
-    AssertFancyHeapEnabled();
-
     constexpr size_t Alignment = 4096;
     constexpr size_t Size = 524336;
 
@@ -100,8 +88,6 @@ TEST(HeapAlignedAllocSupportsLargeNonMultipleSize)
 
 TEST(HeapAlignedNewSupportsLargeAlignment)
 {
-    AssertFancyHeapEnabled();
-
     constexpr size_t Alignment = 4096;
     constexpr size_t Size = 524336;
 
@@ -116,8 +102,6 @@ TEST(HeapAlignedNewSupportsLargeAlignment)
 
 TEST(HeapMultipleOverAlignedAllocationsFreeInMixedOrder)
 {
-    AssertFancyHeapEnabled();
-
     void *p128 = aligned_alloc(128, 257);
     void *p256 = aligned_alloc(256, 4097);
     void *p4096 = aligned_alloc(4096, 524336);
@@ -149,8 +133,6 @@ TEST(HeapMultipleOverAlignedAllocationsFreeInMixedOrder)
 
 TEST(HeapReallocCopiesOverAlignedAllocation)
 {
-    AssertFancyHeapEnabled();
-
     constexpr size_t Alignment = 4096;
     constexpr size_t OldSize = 4093;
     constexpr size_t NewSize = 9000;
@@ -173,8 +155,6 @@ TEST(HeapReallocCopiesOverAlignedAllocation)
 #ifdef _MSC_VER
 TEST(HeapWindowsAlignedAllocCompatibility)
 {
-    AssertFancyHeapEnabled();
-
     constexpr size_t Alignment = 4096;
     constexpr size_t Size = 524336;
 
@@ -190,8 +170,6 @@ TEST(HeapWindowsAlignedAllocCompatibility)
 #else
 TEST(HeapPosixMemalignCompatibility)
 {
-    AssertFancyHeapEnabled();
-
     void *ptr = nullptr;
     ASSERT_EQ(posix_memalign(&ptr, 4096, 4093), 0);
     ASSERT_TRUE(ptr != nullptr);

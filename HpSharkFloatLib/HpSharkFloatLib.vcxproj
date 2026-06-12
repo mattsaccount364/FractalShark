@@ -16,7 +16,6 @@
     </ClInclude>
     <ClInclude Include="ATInfo.h" />
     <ClInclude Include="ATResult.h" />
-    <ClInclude Include="EarlyCommandLine.h" />
     <ClInclude Include="Exceptions.h" />
     <ClInclude Include="FloatComplex.h" />
     <ClInclude Include="heap_allocator\include\HeapPanic.h" />
@@ -88,7 +87,6 @@
     <ClInclude Include="ThreeWayMagnitude.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="EarlyCommandLine.cpp" />
     <ClCompile Include="Exceptions.cpp" />
     <ClCompile Include="heap_allocator\HeapCpp.cpp" />
     <ClCompile Include="heap_allocator\HeapPanic.cpp" />

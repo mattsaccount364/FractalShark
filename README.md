@@ -80,12 +80,6 @@ FractalShark performs **supersampled antialiasing on the GPU**: each pixel is re
 - **Try updating your NVIDIA driver** if you get a "cuda error 35" when you run it.
 - **Windows**
 
-Basic Linux compatibility.  Tested with Wine using this configuration:
-- Wine version: 9.0
-- Ubuntu 24.04 LTS
-- No nvidia GPU, CPU-only rendering
-- Command line: wine FractalShark.exe -safemode
-
 A **native Linux build** (CMake + Clang) is in progress.  The CPU-side numeric core, GPU rendering kernels, and unit tests build and run on Linux, but the main graphical application does not yet.
 
 ## Where do I download it?

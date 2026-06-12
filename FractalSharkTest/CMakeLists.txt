@@ -25,9 +25,8 @@ target_sources(FractalSharkTest PRIVATE TestMpirSerialization.cpp)
 
 # HpSharkFloatLib is now a proper CMake library linked via FractalSharkLib.
 # Its PUBLIC include directory and portable sources (HighPrecision,
-# LAParameters, MpirSerialization, Vectors/VectorsLinux,
-# EarlyCommandLine, Exceptions) are pulled in transitively — no direct
-# target_sources entries are needed here.
+# LAParameters, MpirSerialization, Vectors/VectorsLinux, Exceptions) are
+# pulled in transitively — no direct target_sources entries are needed here.
 
 # BLA<T> template definitions live in FractalSharkGpuLib/BLA.cuh (a CUDA
 # header whose body compiles fine as host C++ since CUDA_CRAP expands to

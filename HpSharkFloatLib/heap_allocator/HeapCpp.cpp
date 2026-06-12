@@ -1,6 +1,5 @@
 #include "include/HeapCpp.h" // Include your wrapper header
 #include "../DbgHeap.h"
-#include "../EarlyCommandLine.h"
 #include "include/HeapPanic.h"
 #include "include/llist.h"
 
@@ -95,8 +94,6 @@ static int __cdecl myexit(PF pf)
 #pragma init_seg(".fs_alloc$m", myexit)
 #endif
 
-FancyHeap EnableFractalSharkHeap;
-
 static constexpr auto PAGE_SIZE = 0x1000;
 static constexpr size_t TailCanaryBytes = 16;
 
@@ -146,59 +143,7 @@ DebugOutputPointer(const void *ptr)
     Environment::DebugOutput(cursor);
 }
 
-// --------------------------------------------------------
-// System heap (Win32 process heap) forwarding
-// --------------------------------------------------------
-
-// In 'safemode' or when the fancy heap is disabled, we bypass the CRT allocator
-// completely and use the Win32 process heap. This avoids GetProcAddress and
-// works safely during very early initialization (TLS/CRT init).
-
 static HeapCpp gHeap;
-
-static __forceinline void *
-SysMalloc(size_t n)
-{
-    if (n == 0) {
-        n = 1;
-    }
-    return Environment::SystemHeapAlloc(n);
-}
-
-static __forceinline void *
-SysCalloc(size_t n, size_t sz)
-{
-    if (sz != 0 && n > (SIZE_MAX / sz)) {
-        return nullptr;
-    }
-    size_t total = n * sz;
-    if (total == 0) {
-        total = 1;
-    }
-    return Environment::SystemHeapAllocZeroed(total);
-}
-
-static __forceinline void
-SysFree(void *p)
-{
-    if (!p) {
-        return;
-    }
-    Environment::SystemHeapFree(p);
-}
-
-static __forceinline void *
-SysRealloc(void *p, size_t n)
-{
-    if (n == 0) {
-        SysFree(p);
-        return nullptr;
-    }
-    if (!p) {
-        return SysMalloc(n);
-    }
-    return Environment::SystemHeapRealloc(p, n);
-}
 
 [[maybe_unused]] static __forceinline bool
 IsPow2(size_t x)
@@ -329,24 +274,12 @@ CleanupHeap()
 void
 Environment::RegisterHeapCleanup()
 {
-    if (EnableFractalSharkHeap == FancyHeap::Unknown) {
-        EarlyInit_SafeMode_NoCRT();
-    }
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
 #ifdef _WIN32
-        // Linux uses normal static destruction for gHeap. Windows registers
-        // explicit cleanup because the MSVC early-init path bypasses the usual
-        // destructor registration for this object.
-        atexit(CleanupHeap);
+    // Linux uses normal static destruction for gHeap. Windows registers
+    // explicit cleanup because the MSVC early-init path bypasses the usual
+    // destructor registration for this object.
+    atexit(CleanupHeap);
 #endif
-    } else if (EnableFractalSharkHeap == FancyHeap::Disable) {
-        // Heh, so on this path we bypass the fancy heap but we still must init this
-        // logic or the growable vector fails in other contexts.
-        VectorStaticInit();
-    } else {
-        HeapPanic("FractalShark heap disabled via command line");
-    }
 }
 
 void VectorStaticInit();
@@ -360,10 +293,6 @@ GlobalHeap()
 void
 HeapCpp::InitGlobalHeap()
 {
-    if (EnableFractalSharkHeap == FancyHeap::Disable) {
-        return;
-    }
-
     // Thread-safe single-initialization guard using atomic CAS.
     // Can't use std::call_once or std::mutex - those may allocate, and this
     // runs before the heap is ready.
@@ -1221,7 +1150,7 @@ CppMalloc(size_t size)
 {
     auto &globalHeap = GlobalHeap();
     auto *res = globalHeap.Allocate(size);
-    if (res == nullptr && EnableFractalSharkHeap == FancyHeap::Enable) {
+    if (res == nullptr) {
         char buf[256];
         sprintf_s(buf, "CppMalloc returned null: size=%zu", size);
         HeapPanic(buf);
@@ -1297,11 +1226,9 @@ CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
 
     void *newPtr = CppMalloc(newUserSize);
     if (!newPtr) {
-        if (EnableFractalSharkHeap == FancyHeap::Enable) {
-            char buf[256];
-            sprintf_s(buf, "CppRealloc failed: ptr=%p newSize=%zu", ptr, newUserSize);
-            HeapPanic(buf);
-        }
+        char buf[256];
+        sprintf_s(buf, "CppRealloc failed: ptr=%p newSize=%zu", ptr, newUserSize);
+        HeapPanic(buf);
         return nullptr;
     }
 
@@ -1335,15 +1262,13 @@ CppAlignedRealloc(void *ptr, size_t newUserSize, size_t alignment, bool zeroNew)
 
     void *newPtr = CppAlignedMalloc(newUserSize, alignment);
     if (!newPtr) {
-        if (EnableFractalSharkHeap == FancyHeap::Enable) {
-            char buf[256];
-            sprintf_s(buf,
-                      "CppAlignedRealloc failed: ptr=%p newSize=%zu alignment=%zu",
-                      ptr,
-                      newUserSize,
-                      alignment);
-            HeapPanic(buf);
-        }
+        char buf[256];
+        sprintf_s(buf,
+                  "CppAlignedRealloc failed: ptr=%p newSize=%zu alignment=%zu",
+                  ptr,
+                  newUserSize,
+                  alignment);
+        HeapPanic(buf);
         return nullptr;
     }
 
@@ -1364,45 +1289,26 @@ extern "C" {
 FS_RESTRICT void *
 malloc(size_t size)
 {
-    // Ensure the safemode decision has been made as early as possible (must not allocate).
-    EarlyInit_SafeMode_NoCRT();
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppMalloc(size);
-    }
-
-    return SysMalloc(size);
+    return CppMalloc(size);
 }
 
 FS_RESTRICT void *
 calloc(size_t num, size_t size)
 {
-    // Ensure the safemode decision has been made as early as possible (must not allocate).
-    EarlyInit_SafeMode_NoCRT();
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        if (size != 0 && num > (SIZE_MAX / size)) {
-            return nullptr;
-        }
-        size_t total = num * size;
-        void *p = CppMalloc(total);
-        if (p)
-            std::memset(p, 0, total);
-        return p;
+    if (size != 0 && num > (SIZE_MAX / size)) {
+        return nullptr;
     }
-    return SysCalloc(num, size);
+    size_t total = num * size;
+    void *p = CppMalloc(total);
+    if (p)
+        std::memset(p, 0, total);
+    return p;
 }
 
 FS_RESTRICT void *
 realloc(void *ptr, size_t newSize)
 {
-    // Ensure the safemode decision has been made as early as possible (must not allocate).
-    EarlyInit_SafeMode_NoCRT();
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppRealloc(ptr, newSize, false);
-    }
-    return SysRealloc(ptr, newSize);
+    return CppRealloc(ptr, newSize, false);
 }
 
 #ifndef _WIN32
@@ -1421,67 +1327,46 @@ reallocarray(void *ptr, size_t num, size_t size)
 extern "C" void
 free(void *ptr)
 {
-    EarlyInit_SafeMode_NoCRT();
-
     if (!ptr) {
         return;
     }
 
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        CppFree(ptr);
-        return;
-    }
-
-    // SysHeap bypass path: always free directly.
-    SysFree(ptr);
+    CppFree(ptr);
 }
 
 extern "C" FS_RESTRICT void *
 aligned_alloc(size_t alignment, size_t size)
 {
-    EarlyInit_SafeMode_NoCRT();
-
     if (alignment == 0 || !IsPow2(alignment)) {
         errno = EINVAL;
         return nullptr;
     }
 
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        auto p = CppAlignedMalloc(size, alignment);
-        if (p == nullptr) {
-            char buf[256];
-            sprintf_s(buf, "aligned_alloc returned null: size=%zu alignment=%zu", size, alignment);
-            HeapPanic(buf);
-        }
-        if (p && (reinterpret_cast<uintptr_t>(p) % alignment != 0)) {
-            char buf[256];
-            sprintf_s(buf,
-                      "aligned_alloc: allocation not aligned to requested boundary "
-                      "size=%zu alignment=%zu ptr=%p",
-                      size,
-                      alignment,
-                      p);
-            HeapPanic(buf);
-        }
-        return p;
+    auto p = CppAlignedMalloc(size, alignment);
+    if (p == nullptr) {
+        char buf[256];
+        sprintf_s(buf, "aligned_alloc returned null: size=%zu alignment=%zu", size, alignment);
+        HeapPanic(buf);
     }
-
-    // SysHeap bypass path: ignore alignment request.
-    return SysMalloc(size);
+    if (p && (reinterpret_cast<uintptr_t>(p) % alignment != 0)) {
+        char buf[256];
+        sprintf_s(buf,
+                  "aligned_alloc: allocation not aligned to requested boundary "
+                  "size=%zu alignment=%zu ptr=%p",
+                  size,
+                  alignment,
+                  p);
+        HeapPanic(buf);
+    }
+    return p;
 }
 
 #ifndef _WIN32
 int
 posix_memalign(void **memptr, size_t alignment, size_t size)
 {
-    EarlyInit_SafeMode_NoCRT();
-
     if (alignment < sizeof(void *) || !IsPow2(alignment)) {
         return EINVAL;
-    }
-
-    if (EnableFractalSharkHeap != FancyHeap::Enable) {
-        return ENOMEM;
     }
 
     void *ptr = aligned_alloc(alignment, size);
@@ -1525,36 +1410,24 @@ realpath(const char *fname, char *resolved_name)
 
 FS_RESTRICT void *__cdecl _aligned_malloc(size_t size, size_t alignment)
 {
-    EarlyInit_SafeMode_NoCRT();
-
     if (alignment == 0 || !IsPow2(alignment)) {
         errno = EINVAL;
         return nullptr;
     }
 
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppAlignedMalloc(size, alignment);
-    }
-
-    return SysMalloc(size);
+    return CppAlignedMalloc(size, alignment);
 }
 
 void __cdecl _aligned_free(void *ptr) { free(ptr); }
 
 void *__cdecl _aligned_realloc(void *ptr, size_t size, size_t alignment)
 {
-    EarlyInit_SafeMode_NoCRT();
-
     if (alignment == 0 || !IsPow2(alignment)) {
         errno = EINVAL;
         return nullptr;
     }
 
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppAlignedRealloc(ptr, size, alignment, false);
-    }
-
-    return SysRealloc(ptr, size);
+    return CppAlignedRealloc(ptr, size, alignment, false);
 }
 
 size_t __cdecl _aligned_msize(void *ptr, size_t /*alignment*/, size_t /*offset*/)
@@ -1563,11 +1436,7 @@ size_t __cdecl _aligned_msize(void *ptr, size_t /*alignment*/, size_t /*offset*/
         return 0;
     }
 
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppUsableSize(ptr, "_aligned_msize: invalid or freed block");
-    }
-
-    return Environment::SystemHeapSize(ptr);
+    return CppUsableSize(ptr, "_aligned_msize: invalid or freed block");
 }
 #endif
 
@@ -1576,42 +1445,26 @@ size_t __cdecl _aligned_msize(void *ptr, size_t /*alignment*/, size_t /*offset*/
 void *
 _malloc_dbg(size_t size, int blockType, const char *filename, int line)
 {
-    EarlyInit_SafeMode_NoCRT();
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppMalloc(size);
-    }
-    return malloc(size);
+    return CppMalloc(size);
 }
 
 void *
 _calloc_dbg(size_t num, size_t size, int blockType, const char *filename, int line)
 {
-    EarlyInit_SafeMode_NoCRT();
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        if (size != 0 && num > (SIZE_MAX / size)) {
-            return nullptr;
-        }
-        size_t total = num * size;
-        void *p = CppMalloc(total);
-        if (p)
-            std::memset(p, 0, total);
-        return p;
+    if (size != 0 && num > (SIZE_MAX / size)) {
+        return nullptr;
     }
-    return calloc(num, size);
+    size_t total = num * size;
+    void *p = CppMalloc(total);
+    if (p)
+        std::memset(p, 0, total);
+    return p;
 }
 
 FS_NOINLINE void *
 _realloc_dbg(void *block, size_t requested_size, int block_use, const char *file, int line)
 {
-    EarlyInit_SafeMode_NoCRT();
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppRealloc(block, requested_size, false);
-    }
-
-    return realloc(block, requested_size);
+    return CppRealloc(block, requested_size, false);
 }
 
 FS_NOINLINE void *
@@ -1623,22 +1476,14 @@ _recalloc_dbg(void *block,
               int /*line*/)
 {
     // Best-effort implementation.
-    // Fancy heap path supports explicit zeroing of newly grown bytes.
-    // System heap path does not know the prior size, so we fall back to realloc.
+    // The heap path supports explicit zeroing of newly grown bytes.
 
     if (element_size != 0 && count > (SIZE_MAX / element_size)) {
         return nullptr;
     }
 
     size_t newBytes = count * element_size;
-
-    EarlyInit_SafeMode_NoCRT();
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppRealloc(block, newBytes, true);
-    }
-
-    return SysRealloc(block, newBytes);
+    return CppRealloc(block, newBytes, true);
 }
 
 FS_NOINLINE void *
@@ -1651,13 +1496,7 @@ _expand_dbg(void *, size_t, int, const char *, int)
 void
 _free_dbg(void *ptr, int blockType)
 {
-    EarlyInit_SafeMode_NoCRT();
-
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        CppFree(ptr);
-        return;
-    }
-    free(ptr);
+    CppFree(ptr);
 }
 
 __declspec(noinline) size_t
@@ -1667,11 +1506,7 @@ _msize_dbg(void *block, int /*block_use*/)
         return 0;
     }
 
-    if (EnableFractalSharkHeap == FancyHeap::Enable) {
-        return CppUsableSize(block, "_msize_dbg: invalid or freed block");
-    }
-
-    return Environment::SystemHeapSize(block);
+    return CppUsableSize(block, "_msize_dbg: invalid or freed block");
 }
 
 #endif

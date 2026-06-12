@@ -8,8 +8,6 @@
 
 #include "CrashHandler.h"
 
-#ifndef _WIN32
-
 #include <csignal>
 #include <cstddef>
 #include <unistd.h>
@@ -82,5 +80,3 @@ CrashHandler::Install()
         ::sigaction(sig, &sa, nullptr);
     }
 }
-
-#endif // !_WIN32

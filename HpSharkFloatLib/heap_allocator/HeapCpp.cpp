@@ -104,6 +104,48 @@ static constexpr size_t TailCanaryBytes = 16;
 [[maybe_unused]] static constexpr bool LimitedDebugOut = !FractalSharkDebug;
 static constexpr bool FullDebugOut = false;
 
+static void
+DebugOutputSizeT(size_t value)
+{
+    char digits[3 * sizeof(size_t) + 1];
+    char *cursor = digits + sizeof(digits);
+    *--cursor = '\0';
+
+    do {
+        *--cursor = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    } while (value != 0);
+
+    Environment::DebugOutput(cursor);
+}
+
+static void
+DebugOutputStat(const char *label, size_t value)
+{
+    Environment::DebugOutput(label);
+    DebugOutputSizeT(value);
+    Environment::DebugOutput("\n");
+}
+
+[[maybe_unused]] static void
+DebugOutputPointer(const void *ptr)
+{
+    auto value = reinterpret_cast<uintptr_t>(ptr);
+    char digits[2 * sizeof(uintptr_t) + 3];
+    char *cursor = digits + sizeof(digits);
+    *--cursor = '\0';
+
+    do {
+        const auto nibble = static_cast<unsigned>(value & 0xF);
+        *--cursor = static_cast<char>(nibble < 10 ? '0' + nibble : 'a' + (nibble - 10));
+        value >>= 4;
+    } while (value != 0);
+
+    *--cursor = 'x';
+    *--cursor = '0';
+    Environment::DebugOutput(cursor);
+}
+
 // --------------------------------------------------------
 // System heap (Win32 process heap) forwarding
 // --------------------------------------------------------
@@ -293,6 +335,9 @@ Environment::RegisterHeapCleanup()
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
 #ifdef _WIN32
+        // Linux uses normal static destruction for gHeap. Windows registers
+        // explicit cleanup because the MSVC early-init path bypasses the usual
+        // destructor registration for this object.
         atexit(CleanupHeap);
 #endif
     } else if (EnableFractalSharkHeap == FancyHeap::Disable) {
@@ -351,13 +396,7 @@ HeapCpp::InitGlobalHeap()
 
 HeapCpp::HeapCpp()
 {
-#ifdef _WIN32
-    if (Environment::IsDebuggerAttached()) {
-        char buffer[256];
-        sprintf_s(buffer, "HeapCpp Constructor called\n");
-        Environment::DebugOutput(buffer);
-    }
-#endif
+    Environment::DebugOutput("HeapCpp Constructor called\n");
 
     // It's very important that we don't do anything here, because this heap
     // may be used before its static constructor is called.
@@ -374,38 +413,15 @@ HeapCpp::~HeapCpp()
     // So this is pretty excellent.  We don't want to touch anything here,
     // because this heap may still be used after it's destroyed.
 
-#ifdef _WIN32
     auto totalAllocs = CountAllocations();
 
-    // Check if debugger attached.  Note this isn't necessarily the
-    // end of the program, but it's a good place to check because one would
-    // expect that it's close.
-    if (Environment::IsDebuggerAttached()) {
-        // Output totalAllocs to debug console in Visual Studio
-        char buffer[256];
-        sprintf_s(buffer, "Total allocations remaining = %zu\n", totalAllocs);
-        Environment::DebugOutput(buffer);
-
-        // Print Stats
-        sprintf_s(buffer, "BytesAllocated = %zu\n", Stats.BytesAllocated);
-        Environment::DebugOutput(buffer);
-
-        sprintf_s(buffer, "BytesFreed = %zu\n", Stats.BytesFreed);
-        Environment::DebugOutput(buffer);
-
-        sprintf_s(buffer, "Delta bytes allocated = %zu\n", Stats.BytesAllocated - Stats.BytesFreed);
-        Environment::DebugOutput(buffer);
-
-        sprintf_s(buffer, "Allocations = %zu\n", Stats.Allocations);
-        Environment::DebugOutput(buffer);
-
-        sprintf_s(buffer, "Frees = %zu\n", Stats.Frees);
-        Environment::DebugOutput(buffer);
-
-        sprintf_s(buffer, "Delta allocations = %zu\n", Stats.Allocations - Stats.Frees);
-        Environment::DebugOutput(buffer);
-    }
-#endif
+    DebugOutputStat("Total allocations remaining = ", totalAllocs);
+    DebugOutputStat("BytesAllocated = ", Stats.BytesAllocated);
+    DebugOutputStat("BytesFreed = ", Stats.BytesFreed);
+    DebugOutputStat("Delta bytes allocated = ", Stats.BytesAllocated - Stats.BytesFreed);
+    DebugOutputStat("Allocations = ", Stats.Allocations);
+    DebugOutputStat("Frees = ", Stats.Frees);
+    DebugOutputStat("Delta allocations = ", Stats.Allocations - Stats.Frees);
 
     Mutex->~mutex();
 
@@ -625,11 +641,9 @@ HeapCpp::Allocate(size_t user_size)
         }
     }
 
-#ifndef _WIN32
     if (!res) {
         PanicAllocationFailed("Allocate", user_size, actual_size, expandAttempted, expandSucceeded);
     }
-#endif
     if (!res) {
         return nullptr;
     }
@@ -1207,19 +1221,19 @@ CppMalloc(size_t size)
 {
     auto &globalHeap = GlobalHeap();
     auto *res = globalHeap.Allocate(size);
-#ifndef _WIN32
     if (res == nullptr && EnableFractalSharkHeap == FancyHeap::Enable) {
         char buf[256];
         sprintf_s(buf, "CppMalloc returned null: size=%zu", size);
         HeapPanic(buf);
     }
-#endif
 
-    // Output res in hex to debug console in Visual Studio
+    // Output result pointer when allocation tracing is enabled.
     if constexpr (FullDebugOut) {
-        char buffer[256];
-        sprintf(buffer, "malloc(%zu) = %p\n", size, res);
-        Environment::DebugOutput(buffer);
+        Environment::DebugOutput("malloc(");
+        DebugOutputSizeT(size);
+        Environment::DebugOutput(") = ");
+        DebugOutputPointer(res);
+        Environment::DebugOutput("\n");
     }
 
     return res;
@@ -1230,11 +1244,11 @@ CppFree(void *ptr)
 {
     auto &globalHeap = GlobalHeap();
 
-    // Output ptr in hex to debug console in Visual Studio
+    // Output pointer when allocation tracing is enabled.
     if constexpr (FullDebugOut) {
-        char buffer[256];
-        sprintf(buffer, "free(%p)\n", ptr);
-        Environment::DebugOutput(buffer);
+        Environment::DebugOutput("free(");
+        DebugOutputPointer(ptr);
+        Environment::DebugOutput(")\n");
     }
 
     globalHeap.Deallocate(ptr);
@@ -1257,9 +1271,13 @@ CppAlignedMalloc(size_t size, size_t alignment)
     auto *res = globalHeap.AllocateAligned(size, alignment);
 
     if constexpr (FullDebugOut) {
-        char buffer[256];
-        sprintf(buffer, "aligned_alloc(%zu, %zu) = %p\n", alignment, size, res);
-        Environment::DebugOutput(buffer);
+        Environment::DebugOutput("aligned_alloc(");
+        DebugOutputSizeT(alignment);
+        Environment::DebugOutput(", ");
+        DebugOutputSizeT(size);
+        Environment::DebugOutput(") = ");
+        DebugOutputPointer(res);
+        Environment::DebugOutput("\n");
     }
 
     return res;
@@ -1279,13 +1297,11 @@ CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
 
     void *newPtr = CppMalloc(newUserSize);
     if (!newPtr) {
-#ifndef _WIN32
         if (EnableFractalSharkHeap == FancyHeap::Enable) {
             char buf[256];
             sprintf_s(buf, "CppRealloc failed: ptr=%p newSize=%zu", ptr, newUserSize);
             HeapPanic(buf);
         }
-#endif
         return nullptr;
     }
 
@@ -1319,7 +1335,6 @@ CppAlignedRealloc(void *ptr, size_t newUserSize, size_t alignment, bool zeroNew)
 
     void *newPtr = CppAlignedMalloc(newUserSize, alignment);
     if (!newPtr) {
-#ifndef _WIN32
         if (EnableFractalSharkHeap == FancyHeap::Enable) {
             char buf[256];
             sprintf_s(buf,
@@ -1329,7 +1344,6 @@ CppAlignedRealloc(void *ptr, size_t newUserSize, size_t alignment, bool zeroNew)
                       alignment);
             HeapPanic(buf);
         }
-#endif
         return nullptr;
     }
 
@@ -1434,13 +1448,11 @@ aligned_alloc(size_t alignment, size_t size)
 
     if (EnableFractalSharkHeap == FancyHeap::Enable) {
         auto p = CppAlignedMalloc(size, alignment);
-#ifndef _WIN32
         if (p == nullptr) {
             char buf[256];
             sprintf_s(buf, "aligned_alloc returned null: size=%zu alignment=%zu", size, alignment);
             HeapPanic(buf);
         }
-#endif
         if (p && (reinterpret_cast<uintptr_t>(p) % alignment != 0)) {
             char buf[256];
             sprintf_s(buf,

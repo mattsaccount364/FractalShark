@@ -4,6 +4,7 @@
 #include "Environment.h"
 
 #include <array>
+#include <conio.h>
 #include <cstring>
 #include <vector>
 
@@ -136,6 +137,10 @@ Environment::IsHyperthreadingEnabled()
 void
 Environment::DebugOutput(const char *msg)
 {
+    if (msg == nullptr) {
+        msg = "<null>";
+    }
+
     ::OutputDebugStringA(msg);
 }
 
@@ -323,6 +328,18 @@ Environment::ClearConsole()
     ::FillConsoleOutputCharacterA(hOut, ' ', cells, home, &written);
     ::FillConsoleOutputAttribute(hOut, csbi.wAttributes, cells, home, &written);
     ::SetConsoleCursorPosition(hOut, home);
+}
+
+bool
+Environment::ConsoleKeyAvailable()
+{
+    return _kbhit() != 0;
+}
+
+int
+Environment::ConsoleReadCharBlocking()
+{
+    return _getch();
 }
 
 // =========================================================================

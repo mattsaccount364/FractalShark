@@ -1,8 +1,6 @@
 // Linux (POSIX) implementation of the Environment namespace.
 // This file is only compiled on Linux builds.
 
-#ifndef _WIN32
-
 #include "Environment.h"
 
 #include <X11/Xlib.h>
@@ -26,6 +24,7 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include <immintrin.h> // _mm_pause (x86 Linux)
@@ -123,6 +122,43 @@ private:
 };
 
 thread_local X11KeyState g_X11KeyState;
+
+struct ConsoleRawGuard {
+    termios original{};
+    bool valid = false;
+
+    ConsoleRawGuard()
+    {
+        if (!::isatty(STDIN_FILENO)) {
+            return;
+        }
+        if (::tcgetattr(STDIN_FILENO, &original) != 0) {
+            return;
+        }
+
+        termios raw = original;
+        raw.c_lflag &= ~(ICANON | ECHO);
+        raw.c_cc[VMIN] = 0;
+        raw.c_cc[VTIME] = 0;
+        valid = (::tcsetattr(STDIN_FILENO, TCSANOW, &raw) == 0);
+    }
+
+    ~ConsoleRawGuard()
+    {
+        if (valid) {
+            ::tcsetattr(STDIN_FILENO, TCSANOW, &original);
+        }
+    }
+};
+
+ConsoleRawGuard &
+GetConsoleRawGuard()
+{
+    static ConsoleRawGuard guard;
+    return guard;
+}
+
+int g_ConsolePending = -1;
 
 } // anonymous namespace
 
@@ -231,7 +267,24 @@ Environment::IsHyperthreadingEnabled()
 void
 Environment::DebugOutput(const char *msg)
 {
-    ::fprintf(stderr, "%s", msg);
+    if (msg == nullptr) {
+        msg = "<null>";
+    }
+
+    size_t len = 0;
+    while (msg[len] != '\0') {
+        ++len;
+    }
+
+    while (len != 0) {
+        const ssize_t written = ::write(STDERR_FILENO, msg, len);
+        if (written <= 0) {
+            return;
+        }
+
+        msg += written;
+        len -= static_cast<size_t>(written);
+    }
 }
 
 bool
@@ -468,6 +521,58 @@ Environment::ClearConsole()
     (void)::write(STDOUT_FILENO, "\033[2J\033[H", 7);
 }
 
+bool
+Environment::ConsoleKeyAvailable()
+{
+    auto &guard = GetConsoleRawGuard();
+    if (!guard.valid) {
+        return false;
+    }
+
+    if (g_ConsolePending != -1) {
+        return true;
+    }
+
+    unsigned char c = 0;
+    const ssize_t n = ::read(STDIN_FILENO, &c, 1);
+    if (n == 1) {
+        g_ConsolePending = c;
+        return true;
+    }
+
+    return false;
+}
+
+int
+Environment::ConsoleReadCharBlocking()
+{
+    GetConsoleRawGuard();
+
+    if (g_ConsolePending != -1) {
+        const int c = g_ConsolePending;
+        g_ConsolePending = -1;
+        return c;
+    }
+
+    unsigned char c = 0;
+    termios current{};
+    bool changed = false;
+    if (::tcgetattr(STDIN_FILENO, &current) == 0) {
+        termios blocking = current;
+        blocking.c_cc[VMIN] = 1;
+        blocking.c_cc[VTIME] = 0;
+        changed = (::tcsetattr(STDIN_FILENO, TCSANOW, &blocking) == 0);
+    }
+
+    const ssize_t n = ::read(STDIN_FILENO, &c, 1);
+
+    if (changed) {
+        ::tcsetattr(STDIN_FILENO, TCSANOW, &current);
+    }
+
+    return (n == 1) ? static_cast<int>(c) : -1;
+}
+
 // =========================================================================
 // File I/O (general-purpose)
 // =========================================================================
@@ -683,5 +788,3 @@ Environment::PumpUIEvents()
 {
     // TODO: Linux, should we be checking the state of things etc here at all
 }
-
-#endif // !_WIN32

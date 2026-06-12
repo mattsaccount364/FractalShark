@@ -142,7 +142,8 @@ bool IsHyperthreadingEnabled();
 // Debugging
 // =========================================================================
 
-// Write a message to the platform debug output (e.g. OutputDebugString).
+// Write a message to the platform debug output. Must not allocate; this is
+// safe during allocator bootstrap, panic, and shutdown paths.
 void DebugOutput(const char *msg);
 
 // Returns true if a debugger is attached to the current process.
@@ -244,6 +245,12 @@ const wchar_t *GetCommandLineWide();
 
 // Clear the console screen and move the cursor to the top-left corner.
 void ClearConsole();
+
+// Returns true if a console character is available to read without blocking.
+bool ConsoleKeyAvailable();
+
+// Read one console character, blocking until a character is available.
+int ConsoleReadCharBlocking();
 
 // =========================================================================
 // File I/O (general-purpose)

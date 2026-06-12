@@ -1,5 +1,8 @@
 #include "TestFramework.h"
 
+#include "EarlyCommandLine.h"
+#include "heap_allocator/include/HeapCpp.h"
+
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -9,12 +12,30 @@
 #include <malloc.h>
 #endif
 
+extern "C" void *aligned_alloc(size_t alignment, size_t size);
+
+void *CppAlignedMalloc(size_t size, size_t alignment);
+void *CppAlignedRealloc(void *ptr, size_t newUserSize, size_t alignment, bool zeroNew);
+
 namespace {
 
 bool
 IsAligned(const void *ptr, size_t alignment)
 {
     return (reinterpret_cast<uintptr_t>(ptr) % alignment) == 0;
+}
+
+void
+AssertFancyHeapEnabled()
+{
+    EarlyInit_SafeMode_NoCRT();
+    ASSERT_EQ(static_cast<int>(EnableFractalSharkHeap), static_cast<int>(FancyHeap::Enable));
+}
+
+void
+AssertHeapOwned(const void *ptr)
+{
+    ASSERT_TRUE(GlobalHeap().OwnsPointer(ptr));
 }
 
 void
@@ -34,48 +55,60 @@ AssertBytes(const void *ptr, size_t size, unsigned char value)
 
 } // namespace
 
-TEST(HeapMallocIsAtLeast64ByteAligned)
+TEST(HeapCAllocationApisUseGlobalHeap)
 {
+    AssertFancyHeapEnabled();
+
     void *ptr = std::malloc(123);
     ASSERT_TRUE(ptr != nullptr);
     ASSERT_TRUE(IsAligned(ptr, 64));
-    std::free(ptr);
+    AssertHeapOwned(ptr);
+    FillBytes(ptr, 123, 0x33);
+
+    void *reallocPtr = std::realloc(ptr, 512);
+    ASSERT_TRUE(reallocPtr != nullptr);
+    ASSERT_TRUE(IsAligned(reallocPtr, 64));
+    AssertHeapOwned(reallocPtr);
+    AssertBytes(reallocPtr, 123, 0x33);
+    std::free(reallocPtr);
+
+    auto *callocPtr = static_cast<unsigned char *>(std::calloc(17, 11));
+    ASSERT_TRUE(callocPtr != nullptr);
+    ASSERT_TRUE(IsAligned(callocPtr, 64));
+    AssertHeapOwned(callocPtr);
+    AssertBytes(callocPtr, 17 * 11, 0);
+    std::free(callocPtr);
 }
 
 TEST(HeapAlignedAllocSupportsLargeNonMultipleSize)
 {
+    AssertFancyHeapEnabled();
+
     constexpr size_t Alignment = 4096;
     constexpr size_t Size = 524336;
 
-#ifdef _MSC_VER
-    void *ptr = _aligned_malloc(Size, Alignment);
-#else
     void *ptr = aligned_alloc(Alignment, Size);
-#endif
 
     ASSERT_TRUE(ptr != nullptr);
     ASSERT_TRUE(IsAligned(ptr, Alignment));
-#ifdef _MSC_VER
-    ASSERT_TRUE(_aligned_msize(ptr, Alignment, 0) >= Size);
-#endif
+    AssertHeapOwned(ptr);
     FillBytes(ptr, Size, 0x5A);
     AssertBytes(ptr, Size, 0x5A);
 
-#ifdef _MSC_VER
-    _aligned_free(ptr);
-#else
     std::free(ptr);
-#endif
 }
 
 TEST(HeapAlignedNewSupportsLargeAlignment)
 {
+    AssertFancyHeapEnabled();
+
     constexpr size_t Alignment = 4096;
     constexpr size_t Size = 524336;
 
     void *ptr = ::operator new(Size, std::align_val_t{Alignment});
     ASSERT_TRUE(ptr != nullptr);
     ASSERT_TRUE(IsAligned(ptr, Alignment));
+    AssertHeapOwned(ptr);
     FillBytes(ptr, Size, 0xA5);
     AssertBytes(ptr, Size, 0xA5);
     ::operator delete(ptr, std::align_val_t{Alignment});
@@ -83,78 +116,89 @@ TEST(HeapAlignedNewSupportsLargeAlignment)
 
 TEST(HeapMultipleOverAlignedAllocationsFreeInMixedOrder)
 {
-    void *p128 = nullptr;
-    void *p256 = nullptr;
-    void *p4096 = nullptr;
-    void *p65536 = nullptr;
+    AssertFancyHeapEnabled();
+
+    void *p128 = aligned_alloc(128, 257);
+    void *p256 = aligned_alloc(256, 4097);
+    void *p4096 = aligned_alloc(4096, 524336);
+    void *p65536 = aligned_alloc(65536, 777);
     void *normal = std::malloc(333);
+
+    ASSERT_TRUE(p128 != nullptr);
+    ASSERT_TRUE(p256 != nullptr);
+    ASSERT_TRUE(p4096 != nullptr);
+    ASSERT_TRUE(p65536 != nullptr);
     ASSERT_TRUE(normal != nullptr);
-
-#ifdef _MSC_VER
-    p128 = _aligned_malloc(257, 128);
-    p256 = _aligned_malloc(4097, 256);
-    p4096 = _aligned_malloc(524336, 4096);
-    p65536 = _aligned_malloc(777, 65536);
-#else
-    ASSERT_EQ(posix_memalign(&p128, 128, 257), 0);
-    ASSERT_EQ(posix_memalign(&p256, 256, 4097), 0);
-    ASSERT_EQ(posix_memalign(&p4096, 4096, 524336), 0);
-    ASSERT_EQ(posix_memalign(&p65536, 65536, 777), 0);
-#endif
-
     ASSERT_TRUE(IsAligned(p128, 128));
     ASSERT_TRUE(IsAligned(p256, 256));
     ASSERT_TRUE(IsAligned(p4096, 4096));
     ASSERT_TRUE(IsAligned(p65536, 65536));
     ASSERT_TRUE(IsAligned(normal, 64));
+    AssertHeapOwned(p128);
+    AssertHeapOwned(p256);
+    AssertHeapOwned(p4096);
+    AssertHeapOwned(p65536);
+    AssertHeapOwned(normal);
 
-#ifdef _MSC_VER
-    _aligned_free(p4096);
-    std::free(normal);
-    _aligned_free(p128);
-    _aligned_free(p65536);
-    _aligned_free(p256);
-#else
     std::free(p4096);
     std::free(normal);
     std::free(p128);
     std::free(p65536);
     std::free(p256);
-#endif
 }
 
 TEST(HeapReallocCopiesOverAlignedAllocation)
 {
+    AssertFancyHeapEnabled();
+
     constexpr size_t Alignment = 4096;
     constexpr size_t OldSize = 4093;
     constexpr size_t NewSize = 9000;
 
-#ifdef _MSC_VER
-    void *ptr = _aligned_malloc(OldSize, Alignment);
-#else
-    void *ptr = nullptr;
-    ASSERT_EQ(posix_memalign(&ptr, Alignment, OldSize), 0);
-#endif
-
+    void *ptr = CppAlignedMalloc(OldSize, Alignment);
     ASSERT_TRUE(ptr != nullptr);
     ASSERT_TRUE(IsAligned(ptr, Alignment));
+    AssertHeapOwned(ptr);
     FillBytes(ptr, OldSize, 0xC3);
 
-#ifdef _MSC_VER
-    void *newPtr = _aligned_realloc(ptr, NewSize, Alignment);
-#else
-    void *newPtr = std::realloc(ptr, NewSize);
-#endif
-
+    void *newPtr = CppAlignedRealloc(ptr, NewSize, Alignment, false);
     ASSERT_TRUE(newPtr != nullptr);
-#ifdef _MSC_VER
     ASSERT_TRUE(IsAligned(newPtr, Alignment));
-#endif
+    AssertHeapOwned(newPtr);
     AssertBytes(newPtr, OldSize, 0xC3);
 
-#ifdef _MSC_VER
-    _aligned_free(newPtr);
-#else
     std::free(newPtr);
-#endif
 }
+
+#ifdef _MSC_VER
+TEST(HeapWindowsAlignedAllocCompatibility)
+{
+    AssertFancyHeapEnabled();
+
+    constexpr size_t Alignment = 4096;
+    constexpr size_t Size = 524336;
+
+    void *ptr = _aligned_malloc(Size, Alignment);
+    ASSERT_TRUE(ptr != nullptr);
+    ASSERT_TRUE(IsAligned(ptr, Alignment));
+    AssertHeapOwned(ptr);
+    ASSERT_TRUE(_aligned_msize(ptr, Alignment, 0) >= Size);
+    FillBytes(ptr, Size, 0x81);
+    AssertBytes(ptr, Size, 0x81);
+    _aligned_free(ptr);
+}
+#else
+TEST(HeapPosixMemalignCompatibility)
+{
+    AssertFancyHeapEnabled();
+
+    void *ptr = nullptr;
+    ASSERT_EQ(posix_memalign(&ptr, 4096, 4093), 0);
+    ASSERT_TRUE(ptr != nullptr);
+    ASSERT_TRUE(IsAligned(ptr, 4096));
+    AssertHeapOwned(ptr);
+    FillBytes(ptr, 4093, 0x81);
+    AssertBytes(ptr, 4093, 0x81);
+    std::free(ptr);
+}
+#endif

@@ -1,55 +1,17 @@
 #pragma once
 
-#ifdef _WIN32
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
-// RAII Class that sets/resets mouse cursor to wait cursor
-// Use SetCursor(LoadCursor(nullptr, IDC_WAIT));
-class WaitCursor {
-public:
-    WaitCursor();
-    ~WaitCursor();
-
-    WaitCursor &
-    operator=(const WaitCursor &other)
-    {
-        if (this == &other) {
-            return *this;
-        }
-
-        m_hCursor = other.m_hCursor;
-    }
-
-    WaitCursor &
-    operator=(WaitCursor &&other)
-    {
-        if (this == &other) {
-            return *this;
-        }
-
-        m_hCursor = other.m_hCursor;
-        return *this;
-    }
-
-    WaitCursor(const WaitCursor &) = delete;
-    WaitCursor(WaitCursor &&) = delete;
-
-    void ResetCursor();
-
-private:
-    HCURSOR m_hCursor;
-};
-
-#else
-
 #include <cstdint>
 
+// RAII Class that sets/resets mouse cursor to wait cursor
 class WaitCursor {
 public:
     WaitCursor();
     ~WaitCursor();
+
+    WaitCursor &operator=(const WaitCursor &) = delete;
+    WaitCursor &operator=(WaitCursor &&) = delete;
+    WaitCursor(const WaitCursor &) = delete;
+    WaitCursor(WaitCursor &&) = delete;
 
     void ResetCursor();
 
@@ -59,7 +21,6 @@ public:
     static void UnregisterLinuxCursorTarget();
 
 private:
-    bool m_CursorSet;
+    void *m_PreviousCursor = nullptr;
+    bool m_CursorSet = false;
 };
-
-#endif

@@ -1,5 +1,3 @@
-#ifndef _WIN32
-
 #include "DbgHeap.h"
 #include "EarlyCommandLine.h"
 #include "Exceptions.h"
@@ -1001,5 +999,3 @@ InstantiateGPUReferenceIterGrowableVector(CudaDblflt<MattDblflt>, PerturbExtras:
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<float>, PerturbExtras::Bad);
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<double>, PerturbExtras::Bad);
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-
-#endif // _WIN32

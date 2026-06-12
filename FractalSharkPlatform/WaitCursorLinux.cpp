@@ -1,19 +1,5 @@
 #include "WaitCursor.h"
 
-#ifdef _WIN32
-
-WaitCursor::WaitCursor() : m_hCursor{} { m_hCursor = SetCursor(LoadCursor(nullptr, IDC_WAIT)); }
-
-WaitCursor::~WaitCursor() { ResetCursor(); }
-
-void
-WaitCursor::ResetCursor()
-{
-    SetCursor(m_hCursor);
-}
-
-#else
-
 #include <X11/Xlib.h>
 #include <X11/cursorfont.h>
 
@@ -99,5 +85,3 @@ WaitCursor::UnregisterLinuxCursorTarget()
     }
     g_LinuxCursorTarget = {};
 }
-
-#endif

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 class JobObject {
@@ -13,7 +14,6 @@ public:
     uint64_t GetCommitLimitInBytes() const;
 
 private:
-    // PIMPL
     class JobObjectImpl;
-    std::unique_ptr<JobObjectImpl> impl;
+    std::unique_ptr<JobObjectImpl> m_Impl;
 };

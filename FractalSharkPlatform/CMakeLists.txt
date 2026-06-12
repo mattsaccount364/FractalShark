@@ -1,13 +1,11 @@
 add_library(FractalSharkPlatform STATIC)
 
-target_sources(FractalSharkPlatform PRIVATE
-    WaitCursor.cpp
-)
-
 if(WIN32)
     target_sources(FractalSharkPlatform PRIVATE
+        WaitCursorWin32.cpp
         EnvironmentWin32.cpp
         CrashHandlerWin32.cpp
+        JobObjectWin32.cpp
     )
 else()
     set(FRACTALSHARK_IMAGINA_FIXTURE_NAMES
@@ -117,8 +115,10 @@ else()
     file(WRITE "${FRACTALSHARK_EMBEDDED_IMAGINA_SOURCE}" "${generated_source}")
 
     target_sources(FractalSharkPlatform PRIVATE
+        WaitCursorLinux.cpp
         EnvironmentLinux.cpp
         CrashHandlerLinux.cpp
+        JobObjectLinux.cpp
         "${FRACTALSHARK_EMBEDDED_IMAGINA_SOURCE}"
     )
     find_package(X11 REQUIRED)

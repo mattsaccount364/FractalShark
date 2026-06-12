@@ -28,9 +28,7 @@
 #include <string_view>
 #include <vector>
 
-#ifdef _WIN32
 #include "heap_allocator/include/HeapCpp.h"
-#endif
 
 namespace {
 

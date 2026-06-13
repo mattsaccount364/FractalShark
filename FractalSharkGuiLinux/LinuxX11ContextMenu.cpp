@@ -8,14 +8,13 @@
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
-#include <dlfcn.h>
-
 #include <algorithm>
 #include <clocale>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,44 +38,18 @@ constexpr int kShapeBounding = 0;
 constexpr int kShapeSet = 0;
 constexpr int kShapeUnsorted = 0;
 
-using XShapeQueryExtensionFn = Bool (*)(Display *, int *, int *);
-using XShapeCombineRectanglesFn =
-    void (*)(Display *, Window, int, int, int, XRectangle *, int, int, int);
-
-struct XShapeApi {
-    void *Library = nullptr;
-    XShapeQueryExtensionFn QueryExtension = nullptr;
-    XShapeCombineRectanglesFn CombineRectangles = nullptr;
-    bool Available = false;
-
-    XShapeApi()
-    {
-        Library = dlopen("libXext.so.6", RTLD_LAZY | RTLD_LOCAL);
-        if (!Library) {
-            Library = dlopen("libXext.so", RTLD_LAZY | RTLD_LOCAL);
-        }
-        if (!Library) {
-            return;
-        }
-
-        QueryExtension =
-            reinterpret_cast<XShapeQueryExtensionFn>(dlsym(Library, "XShapeQueryExtension"));
-        CombineRectangles =
-            reinterpret_cast<XShapeCombineRectanglesFn>(dlsym(Library, "XShapeCombineRectangles"));
-        Available = QueryExtension && CombineRectangles;
-    }
-
-    ~XShapeApi()
-    {
-        if (Library) {
-            dlclose(Library);
-            Library = nullptr;
-        }
-    }
-
-    XShapeApi(const XShapeApi &) = delete;
-    XShapeApi &operator=(const XShapeApi &) = delete;
-};
+extern "C" {
+Bool XShapeQueryExtension(Display *display, int *eventBase, int *errorBase);
+void XShapeCombineRectangles(Display *display,
+                             Window dest,
+                             int destKind,
+                             int xOffset,
+                             int yOffset,
+                             XRectangle *rectangles,
+                             int rectangleCount,
+                             int operation,
+                             int ordering);
+}
 
 std::span<const Node>
 GetMenuNodes()
@@ -199,8 +172,6 @@ struct X11ContextMenu::Impl {
     XFontSet FontSet = nullptr;
     XFontStruct *FallbackFont = nullptr;
     Colors Palette;
-    XShapeApi Shape;
-    bool ShapeUsable = false;
     bool ShapeDirty = true;
     std::vector<Level> Levels;
 
@@ -219,11 +190,12 @@ struct X11ContextMenu::Impl {
                   AllocateNamedColor(display, screen, "#ffffff", WhitePixel(display, screen)),
                   AllocateNamedColor(display, screen, "#606060", BlackPixel(display, screen))}
     {
-        if (Shape.Available) {
-            int eventBase = 0;
-            int errorBase = 0;
-            ShapeUsable = Shape.QueryExtension(DisplayHandle, &eventBase, &errorBase) != 0;
+        int eventBase = 0;
+        int errorBase = 0;
+        if (XShapeQueryExtension(DisplayHandle, &eventBase, &errorBase) == 0) {
+            throw std::runtime_error("FractalSharkGuiLinux: XShape extension unavailable");
         }
+
         GraphicsContext = XCreateGC(DisplayHandle, Root, 0, nullptr);
 
         std::setlocale(LC_CTYPE, "");
@@ -710,7 +682,7 @@ struct X11ContextMenu::Impl {
                               static_cast<unsigned int>(PopupHeight));
         }
 
-        if (ShapeUsable && (geometryChanged || ShapeDirty)) {
+        if (geometryChanged || ShapeDirty) {
             std::vector<XRectangle> rectangles;
             rectangles.reserve(Levels.size());
             for (const Level &level : Levels) {
@@ -719,7 +691,7 @@ struct X11ContextMenu::Impl {
                                                 static_cast<unsigned short>(level.Width),
                                                 static_cast<unsigned short>(level.Height)});
             }
-            Shape.CombineRectangles(DisplayHandle,
+            XShapeCombineRectangles(DisplayHandle,
                                     PopupWindow,
                                     kShapeBounding,
                                     0,

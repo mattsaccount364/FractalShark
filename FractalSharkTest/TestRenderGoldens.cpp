@@ -67,39 +67,33 @@ ReadFileBytes(const std::filesystem::path &p)
     return buf;
 }
 
-// Hardcoded golden CRCs. Per-platform columns so MSVC and glibc renders may
-// diverge harmlessly. "PENDING" = unbaked; first run will print actual + pass.
+// Hardcoded golden CRCs. The CPU render paths covered here are expected to
+// produce byte-identical PNG output across supported platforms. "PENDING" =
+// unbaked; first run will print actual + pass.
 struct GoldenCase {
     const char *Name;
     size_t BuiltinView;
     const char *AlgorithmName;
     uint32_t Antialiasing; // 0 = use view default
-    const char *CrcWindows;
-    const char *CrcLinux;
+    const char *ExpectedCrc;
 };
-
-#if defined(_WIN32)
-#define GOLDEN_HOST(win, lin) (win)
-#else
-#define GOLDEN_HOST(win, lin) (lin)
-#endif
 
 constexpr int kGoldenWidth = 256;
 constexpr int kGoldenHeight = 256;
 
 const GoldenCase kCases[] = {
-    {"view0-cpu64", 0, "Cpu64", 1, "1275500d639ad02e", "1275500d639ad02e"},
-    {"view0-cpu64-aa4", 0, "Cpu64", 4, "39671027bacf2567", "39671027bacf2567"},
-    {"view1-cpu-bla", 1, "Cpu64PerturbedBLAHDR", 1, "d0c8921c878f6dc3", "d0c8921c878f6dc3"},
-    {"view0-cpuhdr", 0, "CpuHDR32", 1, "66ba2caaaa7f8013", "66ba2caaaa7f8013"},
-    {"view5-cpu-bla-v2", 5, "Cpu32PerturbedBLAV2HDR", 1, "1233a56b293e7b08", "1233a56b293e7b08"},
-    {"view0-cpuhdr64", 0, "CpuHDR64", 1, "1275500d639ad02e", "1275500d639ad02e"},
-    {"view5-cpu-perturbed-bla", 5, "Cpu64PerturbedBLA", 1, "f201db00ade569fc", "f201db00ade569fc"},
-    {"view5-cpu32-bla-hdr", 5, "Cpu32PerturbedBLAHDR", 1, "634d826801d54979", "634d826801d54979"},
-    {"view5-cpu64-bla-hdr", 5, "Cpu64PerturbedBLAHDR", 1, "c91e33c3eb85b33d", "c91e33c3eb85b33d"},
-    {"view5-cpu64-bla-v2", 5, "Cpu64PerturbedBLAV2HDR", 1, "ca7ad7c5f9cf750e", "ca7ad7c5f9cf750e"},
-    {"view5-cpu32-rc-bla-v2", 5, "Cpu32PerturbedRCBLAV2HDR", 1, "b956600cfdfe431a", "b956600cfdfe431a"},
-    {"view5-cpu64-rc-bla-v2", 5, "Cpu64PerturbedRCBLAV2HDR", 1, "68df9ceecaf1a667", "68df9ceecaf1a667"},
+    {"view0-cpu64", 0, "Cpu64", 1, "1275500d639ad02e"},
+    {"view0-cpu64-aa4", 0, "Cpu64", 4, "39671027bacf2567"},
+    {"view1-cpu-bla", 1, "Cpu64PerturbedBLAHDR", 1, "d0c8921c878f6dc3"},
+    {"view0-cpuhdr", 0, "CpuHDR32", 1, "66ba2caaaa7f8013"},
+    {"view5-cpu-bla-v2", 5, "Cpu32PerturbedBLAV2HDR", 1, "1233a56b293e7b08"},
+    {"view0-cpuhdr64", 0, "CpuHDR64", 1, "1275500d639ad02e"},
+    {"view5-cpu-perturbed-bla", 5, "Cpu64PerturbedBLA", 1, "f201db00ade569fc"},
+    {"view5-cpu32-bla-hdr", 5, "Cpu32PerturbedBLAHDR", 1, "634d826801d54979"},
+    {"view5-cpu64-bla-hdr", 5, "Cpu64PerturbedBLAHDR", 1, "c91e33c3eb85b33d"},
+    {"view5-cpu64-bla-v2", 5, "Cpu64PerturbedBLAV2HDR", 1, "ca7ad7c5f9cf750e"},
+    {"view5-cpu32-rc-bla-v2", 5, "Cpu32PerturbedRCBLAV2HDR", 1, "b956600cfdfe431a"},
+    {"view5-cpu64-rc-bla-v2", 5, "Cpu64PerturbedRCBLAV2HDR", 1, "68df9ceecaf1a667"},
 };
 
 void
@@ -152,15 +146,14 @@ RunGoldenCase(const GoldenCase &c)
     }
 
     auto actualCrc = Crc64::ToHex(Crc64::Compute(bytes.data(), bytes.size()));
-    const char *expected = GOLDEN_HOST(c.CrcWindows, c.CrcLinux);
-    const char *platform = GOLDEN_HOST("Windows", "Linux");
+    const char *expected = c.ExpectedCrc;
 
     bool updateMode = IsUpdateMode();
     bool pending = std::strcmp(expected, "PENDING") == 0;
 
     if (updateMode || pending) {
-        std::cout << "  GOLDEN " << c.Name << " " << platform << " " << actualCrc
-                  << "    (png: " << pngPath.string() << ")\n";
+        std::cout << "  GOLDEN " << c.Name << " " << actualCrc << "    (png: " << pngPath.string()
+                  << ")\n";
         if (pending && !updateMode) {
             std::cout << "         (PENDING placeholder — passing; bake CRC after visual check)\n";
         }
@@ -170,11 +163,11 @@ RunGoldenCase(const GoldenCase &c)
     // Keep the PNG around on mismatch for inspection; otherwise clean up.
     if (actualCrc != expected) {
         std::ostringstream oss;
-        oss << "CRC mismatch for " << c.Name << " on " << platform << ": expected " << expected
-            << ", got " << actualCrc << " (png kept at " << pngPath.string() << ")";
+        oss << "CRC mismatch for " << c.Name << ": expected " << expected << ", got " << actualCrc
+            << " (png kept at " << pngPath.string() << ")";
         TestFramework::Fail(__FILE__, __LINE__, oss.str());
     }
-    std::cout << "  GOLDEN " << c.Name << " " << platform << " CRC " << actualCrc << " OK"
+    std::cout << "  GOLDEN " << c.Name << " CRC " << actualCrc << " OK"
               << "    (png: " << pngPath.string() << ")\n";
 }
 

@@ -3,13 +3,15 @@
 
 \FractalShark{} is developed primarily as a Windows application built with
 Visual~Studio~2026, MSBuild, and the NVIDIA CUDA toolkit.  Linux is supported
-as a secondary target reached through an incremental port that is, at the time
-of writing, partially complete: the CPU-side numeric core, the GPU rendering
-kernels, and a unit-test executable build and run on Linux, but the main
-graphical application does not.  This subsection documents the parallel build
+as a secondary native target built with CMake and Clang, with release binaries
+targeted at Ubuntu.  The Linux build includes the CPU-side numeric core, CUDA
+rendering kernels, GPU high-precision arithmetic, command-line renderer, unit
+tests, and the native \code{FractalSharkGuiLinux} graphical application built
+on Xlib and Dear~ImGui.  This subsection documents the parallel build
 infrastructure, the platform-abstraction layer, and the cross-platform
-serialization contract for arbitrary-precision integers.  The Linux port is a
-work in progress.
+serialization contract for arbitrary-precision integers.  The project goal is
+full Linux/Win32 feature parity, while Windows remains the historical primary
+development environment.
 
 \subsubsection{Dual build system}
 \label{subsec:dual-build}
@@ -17,11 +19,10 @@ work in progress.
 The Windows build is authoritative.  All project structure, source membership,
 and compiler settings are tracked first in MSBuild project files
 (\code{.vcxproj}) and a Visual~Studio solution (\code{.sln}).  The Linux build
-mirrors a subset of that structure using \code{CMakeLists.txt} files placed
-alongside the corresponding \code{.vcxproj}.  Only projects whose code has been
-ported carry a CMake counterpart; projects that remain Windows-only have no
-CMake file at all.  When a ported project gains or loses sources, both build
-systems must be updated together.
+mirrors the native Linux target set using \code{CMakeLists.txt} files placed
+alongside the corresponding \code{.vcxproj}.  Projects that remain Windows-only
+have no CMake file at all.  When a shared or native-Linux project gains or
+loses sources, both build systems must be updated together.
 
 The Linux toolchain is Clang only; GCC is not a supported host compiler.  CUDA
 device compilation uses the standard NVIDIA \code{nvcc} driver, with a
@@ -31,10 +32,12 @@ its host compiler for device translation units.  This arrangement isolates
 toolchain incompatibilities to the device-compilation step and keeps the host
 C++ surface uniformly Clang-compiled.
 
-Project-by-project coverage on the Linux side is a work in progress: the
-CPU-side numeric core, the GPU rendering kernels, and the unit-test executable
-build today, while the GPU high-precision arithmetic library and the main
-graphical application have not yet been ported.
+Project-by-project coverage on the Linux side includes the shared platform
+library, core fractal library, CUDA rendering library, GPU high-precision
+arithmetic library, explicit-instantiation generator, GPU test harness,
+portable CPU unit tests, command-line renderer, and native Linux GUI.  Legacy
+Windows utilities and the Win32 GUI project remain MSBuild-only; the Linux GUI
+entry point is \code{FractalSharkGuiLinux}.
 
 Continuous integration runs the Windows MSBuild and the Linux CMake build as
 separate jobs in the same matrix workflow, alongside a third job that compiles

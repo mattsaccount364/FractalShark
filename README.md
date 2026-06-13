@@ -78,13 +78,13 @@ FractalShark performs **supersampled antialiasing on the GPU**: each pixel is re
 - **CUDA-capable NVIDIA 900-series or newer** (~2016)
 - **CUDA-capable NVIDIA RTX 2xxx series or newer** for GPU-accelerated reference orbit.
 - **Try updating your NVIDIA driver** if you get a "cuda error 35" when you run it.
-- **Windows**
+- **Windows** with the Win32 GUI, or **Linux** through the native CMake + Clang build.
 
-A **native Linux build** (CMake + Clang) is in progress.  The CPU-side numeric core, GPU rendering kernels, and unit tests build and run on Linux, but the main graphical application does not yet.
+Linux release binaries are targeted at Ubuntu.  The native Linux build includes the CPU-side numeric core, CUDA GPU rendering components, the command-line renderer, tests, and the `FractalSharkGuiLinux` Xlib/Dear ImGui graphical application.  The intention is full Linux/Win32 parity; some rough edges may remain as the Linux GUI catches up with the older Win32 application.
 
 ## Where do I download it?
 
-- Downloadable from here: [https://github.com/mattsaccount364/FractalShark/releases](https://github.com/mattsaccount364/FractalShark/releases)
+- Download Windows and Ubuntu-targeted Linux binaries from here: [https://github.com/mattsaccount364/FractalShark/releases](https://github.com/mattsaccount364/FractalShark/releases)
 
 ## More docs?
 
@@ -164,7 +164,7 @@ If you're bored and want to try yet another Mandelbrot set renderer, give it a g
 - **2008**: I did a distributed version that ran on the University of Wisconsin's "Condor" platform. That was pretty cool, and allowed for fast creation of zoom movies.
 - **2017**: I resurrected it, and added high precision, but no perturbation or anything else. At that point, it was theoretically capable of rendering very deep images, but it was so slow as to be largely useless.
 - **2023-Q2 2024-Q2**: I bought this new video card, and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up. So here we are.
-- **2026-5**: Work continues. FractalShark now has a novel GPU-accelerated reference orbit using NTT-based high-precision arithmetic, GPU-accelerated Newton-Raphson for the Feature Finder, and a native Linux build in progress.
+- **2026-6**: Work continues. FractalShark now has a novel GPU-accelerated reference orbit using NTT-based high-precision arithmetic, GPU-accelerated Newton-Raphson for the Feature Finder, and a native Linux build with Ubuntu-targeted binaries.  Full Linux/Win32 parity is the goal.
 
 ## Build instructions
 
@@ -180,5 +180,13 @@ Here are some more hand-wavy instructions that basically describe the idea:
 6. The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
 7. Install the NVIDIA CUDA Toolkit. The CI build currently uses CUDA 13.3.0
 8. At this point, you should be able to build all the FractalShark projects. The one called FractalShark is the most interesting. FractalTray basically works. HpSharkFloatTest is a GPU arithmetic test harness. FractalSaver is legacy/dead code.
+
+For Linux:
+
+1. Use Ubuntu or an Ubuntu-compatible environment.
+2. Install CMake, Clang, the NVIDIA CUDA Toolkit, `libgmp-dev`, and the X11/OpenGL development packages needed by the GUI.
+3. Run `./build_linux.sh`.
+4. Build outputs go to `build-debug/` and `build-release/`.
+5. Run the portable tests with `./build-debug/FractalSharkTest/FractalSharkTest`.
 
 Have fun, hopefully :)

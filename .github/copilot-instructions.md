@@ -88,6 +88,10 @@ validation.
 The overlay must include staged and unstaged modifications, deletions, and any newly created
 task-relevant files. `git diff --name-status HEAD --` reports staged and unstaged tracked changes but
 does not report untracked files, so maintain an explicit list of new files created during the task.
+When validation depends on Git LFS-backed runtime assets, copy the materialized files from the
+Windows host rather than relying on the WSL mirror checkout to contain real bytes. The Linux GUI
+splash embeds `Pics/*.png`; if those files are 132-byte LFS pointer text files in WSL, the splash
+build must be treated as invalid until the real PNG files are overlaid.
 
 ```bash
 # Run from Windows PowerShell in the authoritative working tree.

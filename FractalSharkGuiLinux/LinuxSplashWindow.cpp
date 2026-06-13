@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <random>
 #include <string>
 #include <vector>
@@ -27,6 +28,7 @@ LoadRandomSplashImage(WPngImage &image)
     const std::span<const FractalShark::Linux::EmbeddedSplashImage> images =
         FractalShark::Linux::GetEmbeddedSplashImages();
     if (images.empty()) {
+        std::fprintf(stderr, "FractalSharkGuiLinux: no embedded splash images are available.\n");
         return false;
     }
 
@@ -48,8 +50,17 @@ LoadRandomSplashImage(WPngImage &image)
             image = std::move(candidate);
             return true;
         }
+
+        std::fprintf(stderr,
+                     "FractalSharkGuiLinux: embedded splash image '%.*s' failed to decode "
+                     "(%zu bytes, status %d).\n",
+                     static_cast<int>(embeddedImage.Name.size()),
+                     embeddedImage.Name.data(),
+                     embeddedImage.Bytes.size(),
+                     static_cast<int>(status));
     }
 
+    std::fprintf(stderr, "FractalSharkGuiLinux: all embedded splash images failed to decode.\n");
     return false;
 }
 
@@ -138,6 +149,8 @@ public:
     {
         DisplayHandle = XOpenDisplay(nullptr);
         if (!DisplayHandle) {
+            std::fprintf(stderr,
+                         "FractalSharkGuiLinux: splash XOpenDisplay failed; DISPLAY may be unset.\n");
             return false;
         }
 
@@ -175,6 +188,7 @@ public:
                                      CWBackPixel | CWBorderPixel | CWEventMask | CWOverrideRedirect,
                                      &attributes);
         if (!WindowHandle) {
+            std::fprintf(stderr, "FractalSharkGuiLinux: splash XCreateWindow failed.\n");
             return false;
         }
 
@@ -185,6 +199,7 @@ public:
 
         GraphicsContext = XCreateGC(DisplayHandle, WindowHandle, 0, nullptr);
         if (!GraphicsContext) {
+            std::fprintf(stderr, "FractalSharkGuiLinux: splash XCreateGC failed.\n");
             return false;
         }
 

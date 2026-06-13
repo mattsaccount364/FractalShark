@@ -68,6 +68,7 @@ jobs:
             cmake \
             g++-13 \
             git \
+            git-lfs \
             libgl-dev \
             libglx-dev \
             libglu1-mesa-dev \
@@ -81,9 +82,33 @@ jobs:
           clang-18 --version
           clang++-18 --version
           g++-13 --version
+          git lfs version
 
       - name: Checkout repo
         uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Verify Linux LFS assets
+        run: |
+          set -euo pipefail
+
+          verify_png() {
+            local path="$1"
+            echo "== $path =="
+            file "$path"
+            local signature
+            signature="$(head -c 8 "$path" | od -An -tx1 | tr -d ' \n')"
+            if [ "$signature" != "89504e470d0a1a0a" ]; then
+              echo "$path is not PNG data; Git LFS assets were not materialized" >&2
+              exit 1
+            fi
+          }
+
+          verify_png "Pics/FractalShark.png"
+          verify_png "Pics/Chatgpt Fractal Shark.png"
+          verify_png "Pics/PrecisionShark.png"
+          verify_png "Pics/FractalShark2.png"
 
       - name: Verify CUDA toolkit
         run: |
@@ -147,6 +172,27 @@ jobs:
         # plus heavy C++23 template instantiations exceeds the hosted runner
         # memory and triggers the OOM killer.
         run: cmake --build build-release -j 1
+
+      - name: Verify Linux embedded splash assets
+        run: |
+          set -euo pipefail
+
+          verify_png() {
+            local path="$1"
+            echo "== $path =="
+            file "$path"
+            local signature
+            signature="$(head -c 8 "$path" | od -An -tx1 | tr -d ' \n')"
+            if [ "$signature" != "89504e470d0a1a0a" ]; then
+              echo "$path is not PNG data; splash embedding used invalid input" >&2
+              exit 1
+            fi
+          }
+
+          verify_png "build-release/FractalSharkGuiLinux/embedded_splash/FractalShark_png.bin"
+          verify_png "build-release/FractalSharkGuiLinux/embedded_splash/Chatgpt_Fractal_Shark_png.bin"
+          verify_png "build-release/FractalSharkGuiLinux/embedded_splash/PrecisionShark_png.bin"
+          verify_png "build-release/FractalSharkGuiLinux/embedded_splash/FractalShark2_png.bin"
 
       - name: Verify Linux debug symbols
         run: |

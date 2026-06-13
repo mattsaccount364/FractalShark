@@ -172,21 +172,29 @@ The most authoritative formal instructions are available via the github build.ym
 
 Here are some more hand-wavy instructions that basically describe the idea:
 
-1. `git clone https://github.com/mattsaccount364/FractalShark.git`
-2. `cd FractalShark`
-3. `git clone https://github.com/BrianGladman/mpir.git`
-4. Open `mpir\msvc\vs22\mpir.sln`
-5. Rebuild everything. Note, you probably want YASM (vsyasm) installed at: `C:\Program Files\vsyasm\*`. This may take a little while.
-6. The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
-7. Install the NVIDIA CUDA Toolkit. The CI build currently uses CUDA 13.3.0
-8. At this point, you should be able to build all the FractalShark projects. The one called FractalShark is the most interesting. FractalTray basically works. HpSharkFloatTest is a GPU arithmetic test harness. FractalSaver is legacy/dead code.
+Source builds require Git LFS.  Some checked-in assets are LFS-backed, including the Linux splash PNGs under `Pics/` and the bundled Windows YASM archive under `tools/yasm.zip`.  If these files are still tiny `version https://git-lfs.github.com/spec/v1` pointer files, builds may fail or produce odd results.
+
+1. Install Git LFS, then run `git lfs install` once for your user account.
+2. `git clone https://github.com/mattsaccount364/FractalShark.git`
+3. `cd FractalShark`
+4. `git lfs pull`
+5. `git clone https://github.com/BrianGladman/mpir.git`
+6. Open `mpir\msvc\vs22\mpir.sln`
+7. Rebuild everything. Note, you probably want YASM (vsyasm) installed at: `C:\Program Files\vsyasm\*`. This may take a little while.
+8. The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
+9. Install the NVIDIA CUDA Toolkit. The CI build currently uses CUDA 13.3.0
+10. At this point, you should be able to build all the FractalShark projects. The one called FractalShark is the most interesting. FractalTray basically works. HpSharkFloatTest is a GPU arithmetic test harness. FractalSaver is legacy/dead code.
 
 For Linux:
 
 1. Use Ubuntu or an Ubuntu-compatible environment.
-2. Install CMake, Clang, the NVIDIA CUDA Toolkit, `libgmp-dev`, and the X11/OpenGL development packages needed by the GUI.
-3. Run `./build_linux.sh`.
-4. Build outputs go to `build-debug/` and `build-release/`.
-5. Run the portable tests with `./build-debug/FractalSharkTest/FractalSharkTest`.
+2. Install Git LFS, CMake, Clang, the NVIDIA CUDA Toolkit, `libgmp-dev`, and the X11/OpenGL development packages needed by the GUI.
+3. Run `git lfs pull` after cloning if Git LFS did not materialize the assets automatically.
+4. Run `./build_linux.sh`.
+5. Build outputs go to `build-debug/` and `build-release/`.
+6. Run the portable tests with `./build-debug/FractalSharkTest/FractalSharkTest`.
+7. The Linux GUI binary is `build-release/FractalSharkGuiLinux/FractalSharkGuiLinux` after a Release build.
+
+If the Linux splash screen is missing in a local source build, check `file Pics/FractalShark.png`.  It should report PNG image data; `ASCII text` means Git LFS assets were not materialized, so run `git lfs pull`.
 
 Have fun, hopefully :)

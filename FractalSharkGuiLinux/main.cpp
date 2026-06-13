@@ -10,6 +10,7 @@
 #include "LinuxHelpModals.h"
 #include "LinuxImGuiOverlay.h"
 #include "LinuxMenuState.h"
+#include "LinuxSplashWindow.h"
 #include "LinuxX11ContextMenu.h"
 // LinuxMenuState.h pulls in MenuTree.h which #undefs the X11 `None` and
 // `Always` macros (they collide with FractalShark::Menu enum values).
@@ -1843,10 +1844,15 @@ main(int /*argc*/, char ** /*argv*/)
     // Xlib call, otherwise concurrent access is undefined.
     XInitThreads();
 
+    FractalShark::Linux::SplashWindow splash;
+    (void)splash.Start();
+
     LinuxMainWindow win;
     if (!win.Valid()) {
+        splash.Stop();
         return 1;
     }
+    splash.Stop();
     win.RunEventLoop();
     return 0;
 }

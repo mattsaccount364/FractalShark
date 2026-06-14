@@ -66,10 +66,6 @@ GetTimeAsString(size_t generation_number)
     // get current time
     auto now = system_clock::now();
 
-    // get number of milliseconds for the current second
-    // (remainder after division into seconds)
-    auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
-
     // convert to std::time_t in order to convert to std::tm (broken time)
     auto timer = system_clock::to_time_t(now);
 
@@ -1679,13 +1675,6 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
         return norm_z;
     };
 
-    auto normZTimesT = [](T x, T y, T t) -> T {
-        // auto norm_z = (x * x + y * y) * t;
-        auto norm_z = (HdrMaxReduced(HdrAbs(x), HdrAbs(y))) * t;
-        HdrReduce(norm_z);
-        return norm_z;
-    };
-
     assert(GetCompressedOrbitSize() > 0);
     T zx{};
     T zy{};
@@ -2113,8 +2102,6 @@ PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(HighPrecision orbitX,
                                                         std::ifstream &file)
 requires(PExtras == PerturbExtras::MaxCompression) // std::is_same_v<T, HDRFloat<double>> &&
 {
-    constexpr bool singleStepHelper = false;
-
     // Notes
     // - RelativePrecision not used.  Imagina appears to ignore it.
     Imagina::ReferenceTrivialContent content;
@@ -2200,10 +2187,6 @@ requires(PExtras == PerturbExtras::MaxCompression) // std::is_same_v<T, HDRFloat
 
         // High order bit
         m_FullOrbit[i].u.f.Rebase = compressionIndex.u.f.Rebase;
-    }
-
-    if constexpr (singleStepHelper) {
-        uint64_t curPos3 = file.tellg();
     }
 
     // Rebases
@@ -2613,8 +2596,8 @@ MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaxIntermediateOrbitCompre
     PerturbationResults<IterType, T, PExtras> &results, int32_t CompressionErrorExp)
     : results{results}, zx{}, zy{}, cx{}, cy{}, Two{}, CompressionError{}, ReducedZx{}, ReducedZy{},
       Err{}, Constant1{}, Constant2{}, Threshold2{}, I{}, J{}, PrevWayPointIteration{},
-      ItersSinceLastWrite{}, PhaseDone{}, Zx{}, Zy{}, Dzx{}, Dzy{}, DzxOld{}, Temp{},
-      NormInternalTemp{}, NormTemp{}, IntermediateCompressionErrorExp{}, CurCompressedIndex{}
+      ItersSinceLastWrite{}, PhaseDone{}, Zx{}, Zy{}, Dzx{}, Dzy{}, DzxOld{}, Temp{}, NormInternalTemp{},
+      NormTemp{}, IntermediateCompressionErrorExp{}, CurCompressedIndex{}
 {
 
     // This code can run even if compression is disabled, but it doesn't matter.

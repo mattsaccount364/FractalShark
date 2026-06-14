@@ -29,7 +29,7 @@ std::vector<Plateau> BuildPrecisionPlateaus(int maxN32, int b_hint, int margin);
 // Pretty-print the full plateau table.
 void PrintPlateauTable(const std::vector<Plateau> &plateaus);
 
-// Pretty-print the “tier” sweet spots (the right edges of the plateaus).
+// Pretty-print the "tier" sweet spots (the right edges of the plateaus).
 void PrintPrecisionTiers(const std::vector<Plateau> &plateaus);
 
 } // namespace SharkNTT

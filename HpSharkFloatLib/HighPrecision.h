@@ -13,6 +13,7 @@ template <class T, HDROrder Order, class TExp> class HDRFloat;
 
 #ifndef __CUDACC__
 
+#include "Exceptions.h"
 #include "MpirSerialization.h"
 
 #include <assert.h>
@@ -50,7 +51,7 @@ public:
     InitMpf2(uint64_t precisionInBits)
     {
         if (precisionInBits > MaxPrecisionBits) {
-            throw std::runtime_error("Requested precision is too high.  This is probably a bug..");
+            throw FractalSharkSeriousException("Requested precision is too high.  This is probably a bug..");
         }
 
         mpf_init2(m_Data, precisionInBits);
@@ -388,7 +389,7 @@ public:
     defaultPrecisionInBits(uint64_t prec)
     {
         if (prec > MaxPrecisionBits) {
-            throw std::runtime_error("Requested precision is too high.  This is probably a bug..");
+            throw FractalSharkSeriousException("Requested precision is too high.  This is probably a bug..");
         }
 
         mpf_set_default_prec(prec);

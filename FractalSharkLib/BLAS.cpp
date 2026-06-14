@@ -1,30 +1,31 @@
 #include "stdafx.h"
 
+#include "BLAS.h"
 #include "Environment.h"
 #include "Fractal.h"
-#include "PerturbationResults.h"
-#include "BLAS.h"
 #include "HDRFloat.h"
+#include "PerturbationResults.h"
 
-template<typename IterType, class T, PerturbExtras PExtras>
-BLAS<IterType, T, PExtras>::BLAS(PerturbationResults<IterType, T, PExtras> &results) :
-    m_M{},
-    m_L{},
-    m_B{},
-    m_LM2{},
-    m_OldChunk{},
-    m_ElementsPerLevel{},
-    m_PerturbationResults{ results },
-    m_CompressionHelper{ std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(results) } {
+#include <utility>
+
+template <typename IterType, class T, PerturbExtras PExtras>
+BLAS<IterType, T, PExtras>::BLAS(PerturbationResults<IterType, T, PExtras> &results)
+    : m_M{}, m_L{}, m_B{}, m_LM2{}, m_OldChunk{}, m_ElementsPerLevel{}, m_PerturbationResults{results},
+      m_CompressionHelper{std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(results)}
+{
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void BLAS<IterType, T, PExtras>::InitLStep(size_t level, size_t m, T blaSize, T epsilon) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+BLAS<IterType, T, PExtras>::InitLStep(size_t level, size_t m, T blaSize, T epsilon)
+{
     m_B[level][m - 1] = CreateLStep(level, m, blaSize, epsilon);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-BLA<T> BLAS<IterType, T, PExtras>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
+template <typename IterType, class T, PerturbExtras PExtras>
+BLA<T>
+BLAS<IterType, T, PExtras>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize)
+{
     uint32_t l = x.getL() + y.getL();
     // A = y.A * x.A
     T RealA, ImagA;
@@ -45,8 +46,10 @@ BLA<T> BLAS<IterType, T, PExtras>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     return BLA<T>::getGenericStep(r2, RealA, ImagA, RealB, ImagB, l);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-BLA<T> BLAS<IterType, T, PExtras>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon) {
+template <typename IterType, class T, PerturbExtras PExtras>
+BLA<T>
+BLAS<IterType, T, PExtras>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon)
+{
 
     if (level == 0) {
         return CreateOneStep(m, epsilon);
@@ -68,8 +71,10 @@ BLA<T> BLAS<IterType, T, PExtras>::CreateLStep(size_t level, size_t m, T blaSize
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-BLA<T> BLAS<IterType, T, PExtras>::CreateOneStep(size_t m, T epsilon) {
+template <typename IterType, class T, PerturbExtras PExtras>
+BLA<T>
+BLAS<IterType, T, PExtras>::CreateOneStep(size_t m, T epsilon)
+{
     const auto Complex = m_PerturbationResults.GetComplex(*m_CompressionHelper, m);
     T RealA = static_cast<T>(Complex.getRe() * 2);
     T ImagA = static_cast<T>(Complex.getIm() * 2);
@@ -88,8 +93,10 @@ BLA<T> BLAS<IterType, T, PExtras>::CreateOneStep(size_t m, T epsilon) {
 
 constexpr size_t WorkThreshholdForThreads = 5000;
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon)
+{
 
     std::vector<std::unique_ptr<std::thread>> threads;
 
@@ -98,7 +105,7 @@ void BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon) {
         for (size_t m = mStart; m < mEnd; m++) {
             InitLStep(firstLevel, m, blaSize, epsilon);
         }
-        };
+    };
 
     size_t elements = m_ElementsPerLevel[m_FirstLevel] + 1;
     size_t optThreads = elements / WorkThreshholdForThreads;
@@ -113,11 +120,13 @@ void BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon) {
 
     if (mDelta > WorkThreshholdForThreads && optThreads > 1) {
         for (size_t i = 0; i < optThreads - 1; i++) {
-            threads.push_back(std::make_unique<std::thread>(RunInit, m_FirstLevel, mConsumed, mConsumed + mDelta, blaSize, epsilon));
+            threads.push_back(std::make_unique<std::thread>(
+                RunInit, m_FirstLevel, mConsumed, mConsumed + mDelta, blaSize, epsilon));
             mConsumed += mDelta;
         }
 
-        threads.push_back(std::make_unique<std::thread>(RunInit, m_FirstLevel, mConsumed, elements, blaSize, epsilon));
+        threads.push_back(
+            std::make_unique<std::thread>(RunInit, m_FirstLevel, mConsumed, elements, blaSize, epsilon));
 
         for (size_t i = 0; i < threads.size(); i++) {
             threads[i]->join();
@@ -127,8 +136,11 @@ void BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon) {
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void BLAS<IterType, T, PExtras>::MergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, T blaSize) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+BLAS<IterType, T, PExtras>::MergeOneStep(
+    size_t m, size_t elementsSrc, size_t src, size_t dest, T blaSize)
+{
     size_t mx = m << 1;
     size_t my = mx + 1;
     if (my < elementsSrc) {
@@ -141,8 +153,10 @@ void BLAS<IterType, T, PExtras>::MergeOneStep(size_t m, size_t elementsSrc, size
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+BLAS<IterType, T, PExtras>::Merge(T blaSize)
+{
 
     size_t elementsDst = 0;
     size_t src = m_FirstLevel;
@@ -170,14 +184,15 @@ void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
             for (size_t m = mStart; m < mEnd; m++) {
                 MergeOneStep(m, elementsSrcFinal, srcFinal, destFinal, blaSize);
             }
-            };
+        };
 
         size_t mDelta = elementsDst / optThreads;
         size_t mConsumed = 0;
 
         if (mDelta > WorkThreshholdForThreads && optThreads > 1) {
             for (size_t i = 0; i < optThreads - 1; i++) {
-                threads.push_back(std::make_unique<std::thread>(SubMerge, mConsumed, mConsumed + mDelta));
+                threads.push_back(
+                    std::make_unique<std::thread>(SubMerge, mConsumed, mConsumed + mDelta));
                 mConsumed += mDelta;
             }
 
@@ -194,9 +209,11 @@ void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
     }
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-void BLAS<IterType, T, PExtras>::Init(size_t InM, T blaSize) {
-    T precision = T(1) / T{ 1L << BLA_BITS };
+template <typename IterType, class T, PerturbExtras PExtras>
+void
+BLAS<IterType, T, PExtras>::Init(size_t InM, T blaSize)
+{
+    T precision = T(1) / T{1L << BLA_BITS};
 
     this->m_M = InM;
 
@@ -236,8 +253,10 @@ void BLAS<IterType, T, PExtras>::Init(size_t InM, T blaSize) {
     Merge(blaSize);
 }
 
-template<typename IterType, class T, PerturbExtras PExtras>
-BLA<T> *BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2) {
+template <typename IterType, class T, PerturbExtras PExtras>
+BLA<T> *
+BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2)
+{
 
     if (m == 0) {
         return nullptr;
@@ -257,7 +276,8 @@ BLA<T> *BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2) {
         // k >> m_FirstLevel,
         // This could be done for all K values, but it was shown through statistics that
         // most effort is done on k == 0
-        if constexpr (std::is_same<T, HDRFloat<float>>::value || std::is_same<T, HDRFloat<double>>::value) {
+        if constexpr (std::is_same<T, HDRFloat<float>>::value ||
+                      std::is_same<T, HDRFloat<double>>::value) {
             if (z2.compareToBothPositiveReduced(m_B[m_FirstLevel][0].getR2()) >= 0) {
                 return nullptr;
             }
@@ -277,7 +297,7 @@ BLA<T> *BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2) {
 
     int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
     for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
-        assert(level < m_B.size());
+        assert(std::cmp_less(level, m_B.size()));
         assert(ix < m_B[level].size());
         if (HdrCompareToBothPositiveReducedLT(z2, (tempB = &m_B[level][ix])->getR2())) {
             return tempB;

@@ -1,5 +1,6 @@
 #include "Conversion.h"
 #include "DbgHeap.h"
+#include "Exceptions.h"
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
 #include "ShowMostEfficientSizes.h"
@@ -131,8 +132,6 @@ PromptIntWithTimeout(const std::string &promptText,
 
     std::string buf;
     bool pressedEnter = false;
-    bool sawEditingKey = false; // <-- new
-
     while (waitForever || std::chrono::steady_clock::now() < deadline) {
         if (Environment::ConsoleKeyAvailable()) {
             int ch = Environment::ConsoleReadCharBlocking();
@@ -145,7 +144,6 @@ PromptIntWithTimeout(const std::string &promptText,
 
             // Backspace
             if (ch == 8) {
-                sawEditingKey = true;
                 waitForever = true;     // <-- new: don't timeout mid-edit
                 interactiveMode = true; // optional: make prompts sticky globally now
 
@@ -161,7 +159,6 @@ PromptIntWithTimeout(const std::string &promptText,
                 continue;
             }
 
-            sawEditingKey = true;
             waitForever = true;     // <-- new
             interactiveMode = true; // optional (see note below)
 
@@ -192,7 +189,7 @@ PromptIntWithTimeout(const std::string &promptText,
         int v = std::stoi(buf, &idx, 10);
         for (; idx < buf.size(); ++idx) {
             if (buf[idx] != ' ' && buf[idx] != '\t') {
-                throw std::runtime_error("trailing garbage");
+                throw FractalSharkSeriousException("trailing garbage");
             }
         }
         out.value = v;

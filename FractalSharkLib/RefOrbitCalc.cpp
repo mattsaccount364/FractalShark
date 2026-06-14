@@ -90,16 +90,6 @@ prefetch_range(void *addr, std::size_t len)
 }
 
 static inline void
-PrefetchHighPrec(const HighPrecision &target)
-{
-    ENABLE_PREFETCH((const char *)target.backend(), _MM_HINT_T0);
-    size_t lastindex = abs(target.backend()->_mp_size);
-    size_t size_elt = sizeof(mp_limb_t);
-    size_t total = size_elt * lastindex;
-    prefetch_range(target.backend()->_mp_d, total);
-}
-
-static inline void
 PrefetchHighPrec(const mpf_t &target)
 {
     ENABLE_PREFETCH((const char *)&target[0], _MM_HINT_T0);
@@ -1048,8 +1038,6 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     mpf_init(HighTwo);
     mpf_set_d(HighTwo, 2.0);
 
-    static const T TwoFiftySix = T(256.0);
-
     mpf_t DeltaReal;
     mpf_init2(DeltaReal, existingResults->GetAuthoritativePrecisionInBits());
     mpf_sub(DeltaReal, cx.backend(), existingResults->GetHiX().backend());
@@ -1696,8 +1684,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
         memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
 
-        auto *ThreadReusedMemory =
-            (ThreadPtrs<ThreadReusedData> *)Environment::AlignedAlloc(sizeof(ThreadPtrs<ThreadReusedData>), 64);
+        auto *ThreadReusedMemory = (ThreadPtrs<ThreadReusedData> *)Environment::AlignedAlloc(
+            sizeof(ThreadPtrs<ThreadReusedData>), 64);
         if (ThreadReusedMemory == nullptr) {
             throw FractalSharkSeriousException(
                 "Memory allocation failure site: ThreadReusedMemory (RefOrbitCalc MT)");
@@ -1851,7 +1839,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
         auto *threadZxdata = (ThreadZxData *)Environment::AlignedAlloc(sizeof(ThreadZxData), 64);
         auto *threadZydata = (ThreadZyData *)Environment::AlignedAlloc(sizeof(ThreadZyData), 64);
-        auto *threadReuseddata = (ThreadReusedData *)Environment::AlignedAlloc(sizeof(ThreadReusedData), 64);
+        auto *threadReuseddata =
+            (ThreadReusedData *)Environment::AlignedAlloc(sizeof(ThreadReusedData), 64);
 
         new (threadZxdata)(ThreadZxData){};
         new (threadZydata)(ThreadZyData){};
@@ -1895,8 +1884,6 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
         static const T HighOne = T{1.0};
         static const T HighTwo = T{2.0};
-        static const T TwoFiftySix = T(256);
-
         bool zyStarted = false;
 
         T double_zx_last = T{0.0};
@@ -2634,37 +2621,9 @@ requires((SrcEnableBad == PerturbExtras::Bad && DestEnableBad == PerturbExtras::
 }
 
 void
-RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type)
+RefOrbitCalc::ClearPerturbationResults([[maybe_unused]] PerturbationResultType type)
 {
     std::lock_guard lk(m_PerturbationMutex);
-
-    auto IsMarkedToDelete = [&](const auto &val) -> bool {
-        // Erase results as needed.
-        // Note: erase full results in dbl-float case -- we'll reconvert
-        // the whole thing if needed from double/Hdrfloat<double> etc.
-        if (type == PerturbationResultType::All ||
-            (type == PerturbationResultType::MediumRes && val->GetAuthoritativePrecisionInBits() == 0) ||
-            (type == PerturbationResultType::HighRes && val->GetAuthoritativePrecisionInBits() != 0) ||
-            (type == PerturbationResultType::LAOnly && val->Is2X32)) {
-            return true;
-        }
-
-        return false;
-    };
-
-    auto ClearLAIfNeeded = [&](const auto &o) {
-        if (type == PerturbationResultType::LAOnly) {
-            o->ClearLaReference();
-        }
-    };
-
-    auto ClearOne = [&](auto &arr) {
-        // First, erase some results completely as needed
-        arr.erase(std::remove_if(arr.begin(), arr.end(), IsMarkedToDelete), arr.end());
-
-        // Now just erase LA results of what's left, if needed
-        std::for_each(arr.begin(), arr.end(), ClearLAIfNeeded);
-    };
 
     m_C.clear();
 
@@ -3509,10 +3468,6 @@ RefOrbitCalc::LoadOrbitConstInternal(OrbitParameterPack &params,
     uint64_t iterationLimit;
     file->read((char *)&iterationLimit, sizeof(iterationLimit));
 
-    if constexpr (singleStepHelper) {
-        uint64_t curPos1 = file->tellg();
-    }
-
     HighPrecision orbitX{precision, *file};
     std::string orbitXStr = orbitX.str();
 
@@ -3522,7 +3477,6 @@ RefOrbitCalc::LoadOrbitConstInternal(OrbitParameterPack &params,
     if constexpr (singleStepHelper) {
         std::string orbitXStr2 = orbitX.str();
         std::string orbitYStr2 = orbitY.str();
-        uint64_t curPos2 = file->tellg();
     }
 
     RecommendedSettings settingsOut{precision, orbitX, orbitY, zoomFactor, {}, iterationLimit};

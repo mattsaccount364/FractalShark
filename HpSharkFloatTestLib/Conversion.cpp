@@ -1,7 +1,7 @@
 ﻿#include "DbgHeap.h"
 #include "TestVerbose.h"
 
-//#include <cuda_runtime.h>
+// #include <cuda_runtime.h>
 
 #include "BenchmarkTimer.h"
 #include "HpSharkFloat.h"
@@ -17,9 +17,6 @@
 #include <vector>
 
 #include <assert.h>
-
-static void Uint64ToMpf(
-    const uint64_t *array, size_t numElts, int32_t pow64Exponent, mpf_t &mpf_val, bool isNegative);
 
 // Function to convert uint64_t array to mpf_t
 // pow2Exponent is the exponent in base 2
@@ -87,11 +84,6 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
         mpf_clear(adiff);
         mpf_clear(diff);
         return ok;
-    };
-
-    auto set_pow2_minus_k = [&](mpf_t v, unsigned k) {
-        mpf_set_ui(v, 1);
-        mpf_div_2exp(v, v, k); // v = 2^{-k}
     };
 
     // ---------------- Build HpSharkFloat from mpf ----------------

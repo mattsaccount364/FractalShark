@@ -23,7 +23,7 @@ public:
         bool normalizeC;
     };
 
-    // ——— Three constexpr entries ———
+    // --- Three constexpr entries ---
     static constexpr Info A_GT_AllOthers{ThreeWayLargestOrdering::A_GT_AllOthers,
                                          "A is the largest",
                                          true, // normalize A against the others
@@ -36,7 +36,7 @@ public:
     static constexpr Info C_GT_AllOthers{
         ThreeWayLargestOrdering::C_GT_AllOthers, "C is the largest", false, false, true};
 
-    // ——— Public API ———
+    // --- Public API ---
 
     static std::string
     ToString(ThreeWayLargestOrdering o)
@@ -92,7 +92,7 @@ public:
         const char *ZStr;
     };
 
-    // ——— Six constexpr entries, exactly matching the old structs ———
+    // --- Six constexpr entries, exactly matching the old structs ---
     static constexpr Info A_GT_B_GT_C{
         ThreeWayMagnitudeOrdering::A_GT_B_GT_C, "A > B > C", true, false, false, "A", "B", "C"};
 
@@ -111,7 +111,7 @@ public:
     static constexpr Info C_GT_B_GT_A{
         ThreeWayMagnitudeOrdering::C_GT_B_GT_A, "C > B > A", false, false, true, "C", "B", "A"};
 
-    // ——— Public API exactly as before ———
+    // --- Public API exactly as before ---
 
     static std::string
     ToStr(ThreeWayMagnitudeOrdering o)

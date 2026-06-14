@@ -17,3 +17,8 @@ FractalSharkSeriousException::FractalSharkSeriousException(const char *msg)
     }
 #endif
 }
+
+FractalSharkSeriousException::FractalSharkSeriousException(const std::string &msg)
+    : FractalSharkSeriousException(msg.c_str())
+{
+}

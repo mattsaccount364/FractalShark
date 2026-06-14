@@ -3,6 +3,7 @@
 #include "LinuxX11ContextMenu.h"
 
 #include "CommandCatalog.h"
+#include "Exceptions.h"
 #include "MenuTree.h"
 
 #include <X11/Xutil.h>
@@ -14,7 +15,6 @@
 #include <cstdio>
 #include <functional>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -193,7 +193,7 @@ struct X11ContextMenu::Impl {
         int eventBase = 0;
         int errorBase = 0;
         if (XShapeQueryExtension(DisplayHandle, &eventBase, &errorBase) == 0) {
-            throw std::runtime_error("FractalSharkGuiLinux: XShape extension unavailable");
+            throw FractalSharkSeriousException("FractalSharkGuiLinux: XShape extension unavailable");
         }
 
         GraphicsContext = XCreateGC(DisplayHandle, Root, 0, nullptr);

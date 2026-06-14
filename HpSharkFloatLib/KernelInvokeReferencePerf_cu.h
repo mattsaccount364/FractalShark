@@ -1,3 +1,4 @@
+#include "Exceptions.h"
 #include "GPU_ReferenceIter.h"
 #include "KernelInvoke.h"
 #include "KernelInvokeInternal.h"
@@ -7,7 +8,6 @@
 #include <iomanip>
 #include <memory>
 #include <sstream>
-#include <stdexcept>
 
 namespace HpShark {
 
@@ -89,7 +89,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMalloc failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
 
@@ -100,7 +100,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                 std::ostringstream oss;
                 oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                     << static_cast<int>(cudaErr) << ")";
-                throw std::runtime_error(oss.str());
+                throw FractalSharkSeriousException(oss.str());
             }
         }
     } else {
@@ -110,7 +110,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                 std::ostringstream oss;
                 oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                     << static_cast<int>(cudaErr) << ")";
-                throw std::runtime_error(oss.str());
+                throw FractalSharkSeriousException(oss.str());
             }
         }
     }
@@ -139,7 +139,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMalloc failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
 
@@ -159,7 +159,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     {
@@ -169,7 +169,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     {
@@ -179,7 +179,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     {
@@ -189,7 +189,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     {
@@ -199,7 +199,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     {
@@ -209,7 +209,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     {
@@ -219,7 +219,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     {
@@ -229,7 +229,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemset failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
 
@@ -253,7 +253,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                 std::ostringstream oss;
                 oss << "cudaGetDeviceProperties failed: " << cudaGetErrorString(cudaErr) << " (code "
                     << static_cast<int>(cudaErr) << ")";
-                throw std::runtime_error(oss.str());
+                throw FractalSharkSeriousException(oss.str());
             }
         }
         // Set L2 persisting cache to cover our actual working set, not the full L2.
@@ -287,7 +287,7 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                 std::ostringstream oss;
                 oss << "cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow) failed: "
                     << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
-                throw std::runtime_error(oss.str());
+                throw FractalSharkSeriousException(oss.str());
             }
         };
 
@@ -316,7 +316,7 @@ InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemcpy(MaxRuntimeIters H2D) failed: " << cudaGetErrorString(res) << " (code "
                 << static_cast<int>(res) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
@@ -331,7 +331,7 @@ InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaMemcpy(comboGpu D2H) failed: " << cudaGetErrorString(res) << " (code "
                 << static_cast<int>(res) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
 }
@@ -361,7 +361,7 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaFree failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
     {
@@ -370,7 +370,7 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             std::ostringstream oss;
             oss << "cudaFree failed: " << cudaGetErrorString(cudaErr) << " (code "
                 << static_cast<int>(cudaErr) << ")";
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
 
@@ -472,7 +472,7 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
         if (res != cudaSuccess) {
             std::ostringstream oss;
             oss << "cudaMemcpy(combo H2D for NR) failed: " << cudaGetErrorString(res);
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
 
         cudaMemcpy(&combo.comboGpu->Multiply.Roots,

@@ -9,9 +9,8 @@
 #include "CommandCatalog.h"
 
 #include "AlgCmds.h"
+#include "Exceptions.h"
 #include "RenderAlgorithm.h"
-
-#include <stdexcept>
 
 namespace FractalShark {
 
@@ -518,7 +517,7 @@ ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host)
             break;
     }
 
-    throw std::logic_error("Unhandled FractalCommand in ExecuteCommand");
+    throw FractalSharkSeriousException("Unhandled FractalCommand in ExecuteCommand");
 }
 
 } // namespace FractalShark

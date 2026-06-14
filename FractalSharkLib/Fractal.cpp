@@ -3190,7 +3190,7 @@ uint64_t
 Fractal::FindTotalItersUsed(void)
 {
     uint64_t numIters = 0;
-    int x, y;
+    size_t x, y;
     for (y = 0; y < m_ScrnHeight; y++) {
         for (x = 0; x < m_ScrnWidth; x++) {
             numIters += m_CurIters.GetItersArrayValSlow(x, y);

@@ -1,5 +1,7 @@
 #include "HighPrecision.h"
 
+#include "Exceptions.h"
+
 #include <cinttypes>
 #include <sstream>
 #include <string>
@@ -97,7 +99,7 @@ Hex64StringToMpf_Exact(const std::string &s, mpf_t out)
     static_assert(sizeof(mp_limb_t) == 8, "This function expects 64-bit GMP limbs.");
 
     // --- helpers ---
-    auto fail = [](const char *msg) -> void { throw std::runtime_error(msg); };
+    auto fail = [](const char *msg) -> void { throw FractalSharkSeriousException(msg); };
 
     auto trim_left = [](std::string &t) {
         size_t i = 0;

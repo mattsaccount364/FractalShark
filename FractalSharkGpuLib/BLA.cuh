@@ -7,8 +7,9 @@
 template <class T> BLA<T>::BLA() : r2(0), Ax(0), Ay(0), Bx(0), By(0), l(0) {}
 
 template <class T>
-CUDA_CRAP constexpr BLA<T>::BLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l)
-    : Ax(RealA), Ay(ImagA), Bx(RealB), By(ImagB), r2(r2), l(l)
+CUDA_CRAP
+BLA<T>::BLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l)
+    : r2(r2), Ax(RealA), Ay(ImagA), Bx(RealB), By(ImagB), l(l)
 {
     // HdrReduce(this->Ax);
     // HdrReduce(this->Ay);

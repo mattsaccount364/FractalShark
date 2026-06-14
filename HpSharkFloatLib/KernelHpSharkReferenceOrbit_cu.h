@@ -1,10 +1,10 @@
 #include "Add.cu"
+#include "Exceptions.h"
 #include "LaunchParamsCalculator.h"
 #include "MultiplyNTT.cu"
 #include "PeriodicityChecker.h"
 #include "TestVerbose.h"
 #include <sstream>
-#include <stdexcept>
 
 //
 // Returns true if we should continue iterating, false if we should stop (period found).
@@ -60,10 +60,14 @@ ReferenceHelper(cg::grid_group &grid,
         if (block.group_index().x == 0 && block.thread_index().x == 0) {
             using HdrType = typename SharkFloatParams::Float;
 
-            HdrType zr = reference->Multiply.A.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-            HdrType zi = reference->Multiply.B.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-            HdrType dzr = reference->Multiply.DzdcReal.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-            HdrType dzi = reference->Multiply.DzdcImag.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            HdrType zr =
+                reference->Multiply.A.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            HdrType zi =
+                reference->Multiply.B.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            HdrType dzr =
+                reference->Multiply.DzdcReal.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            HdrType dzi =
+                reference->Multiply.DzdcImag.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
 
             // dzdc²
             HdrType dz2r = dzr * dzr - dzi * dzi;
@@ -90,21 +94,22 @@ ReferenceHelper(cg::grid_group &grid,
     // Note: no synchronization needed here because d2 is only read/written by
     // block 0 thread 0, and multiply does not depend on d2.
 
-    MultiplyHelperNTTV2Separates<SharkFloatParams>(reference->Multiply.Roots,
-                                                   &reference->Multiply.A,
-                                                   &reference->Multiply.B,
-                                                   &reference->Multiply.ResultX2,
-                                                   &reference->Multiply.Result2XY,
-                                                   &reference->Multiply.ResultY2,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.DzdcReal : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.DzdcImag : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW0 : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW1 : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW2 : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW3 : nullptr,
-                                                   grid,
-                                                   block,
-                                                   tempData);
+    MultiplyHelperNTTV2Separates<SharkFloatParams>(
+        reference->Multiply.Roots,
+        &reference->Multiply.A,
+        &reference->Multiply.B,
+        &reference->Multiply.ResultX2,
+        &reference->Multiply.Result2XY,
+        &reference->Multiply.ResultY2,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.DzdcReal : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.DzdcImag : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW0 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW1 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW2 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &reference->Multiply.ResultW3 : nullptr,
+        grid,
+        block,
+        tempData);
 
     // At this point, we've calculated the intermediate results:
     // ResultX2 = Add.C_A * Add.C_A = Z_real^2
@@ -154,7 +159,7 @@ __maxnreg__(HpShark::RegisterLimit)
         // Correctness checking of all this should take place via the integrated loop version just below.
         return;
     } else {
-        const auto [[maybe_unused]] shouldContinue = ReferenceHelper<SharkFloatParams>(
+        [[maybe_unused]] const auto shouldContinue = ReferenceHelper<SharkFloatParams>(
             grid, block, currentIteration, nullptr, nullptr, nullptr, nullptr, combo, tempData);
     }
 }
@@ -222,7 +227,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
             oss << "cudaFuncSetAttribute(MaxDynamicSharedMemorySize) failed: "
                 << cudaGetErrorString(errAttr) << " (code " << static_cast<int>(errAttr) << ")"
                 << " | SharedMemSize=" << SharedMemSize;
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -243,7 +248,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
             oss << "LaunchConfig.compute(HpSharkReferenceGpuLoop) failed: " << cudaGetErrorString(err)
                 << " (code " << static_cast<int>(err) << ")"
                 << " | SharedMemSize=" << SharedMemSize;
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
     }
 
@@ -260,7 +265,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
             << " (code " << static_cast<int>(err) << ")"
             << " | blocks=" << newLaunchParams.NumBlocks
             << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     // Catch immediate launch errors (async).
@@ -271,7 +276,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
             << cudaGetErrorString(err2) << " (code " << static_cast<int>(err2) << ")"
             << " | blocks=" << newLaunchParams.NumBlocks
             << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     // Catch runtime failures (device assert, illegal instruction, illegal address, etc.).
@@ -280,7 +285,7 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
         std::ostringstream oss;
         oss << "cudaDeviceSynchronize() after HpSharkReferenceGpuLoop failed: "
             << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 }
 

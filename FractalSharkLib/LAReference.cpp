@@ -1,8 +1,8 @@
 #include "stdafx.h"
 
 #include "Environment.h"
-#include "LAReference.h"
 #include "LAParameters.h"
+#include "LAReference.h"
 #include "PerturbationResults.h"
 #include "RefOrbitCalc.h"
 
@@ -378,7 +378,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
         LAsPerThread.emplace_back(OptionsToUse, filename.c_str());
     }
 
-    for (auto threadIndex = 0; threadIndex < StartIndexPromise.size(); threadIndex++) {
+    for (size_t threadIndex = 0; threadIndex < StartIndexPromise.size(); threadIndex++) {
         StartIndexFuture[threadIndex] = StartIndexPromise[threadIndex].get_future();
     }
 
@@ -406,7 +406,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
         const auto threadBoundary = maxRefIteration / ThreadCount;
 
         const auto ThreadID = 0;
-        auto NextThread = 1;
+        size_t NextThread = 1;
 
         // l:487
         for (; i < maxRefIteration; i++) {
@@ -491,12 +491,13 @@ requires(PExtras != PerturbExtras::MaxCompression)
                    &LAsPerThread,
                    &LastLAPerThread,
                    ThreadCount,
-                   maxRefIteration](uint32_t ThreadID) {
-        Environment::SetCurrentThreadName((L"LAReference Worker Thread " + std::to_wstring(ThreadID)).c_str());
+                   maxRefIteration](size_t ThreadID) {
+        Environment::SetCurrentThreadName(
+            (L"LAReference Worker Thread " + std::to_wstring(ThreadID)).c_str());
         auto compressionHelper{
             std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults)};
 
-        auto NextThread = ThreadID + 1;
+        size_t NextThread = ThreadID + 1;
         const auto LastThread = ThreadCount - 1;
 
         const IterTypeFull intermediate_j =
@@ -703,18 +704,18 @@ requires(PExtras != PerturbExtras::MaxCompression)
 
     std::vector<std::unique_ptr<std::thread>> threads;
     threads.push_back(std::make_unique<std::thread>(Starter));
-    for (uint32_t t = 1; t < ThreadCount; t++) {
+    for (size_t t = 1; t < ThreadCount; t++) {
         threads.push_back(std::make_unique<std::thread>(Worker, t));
     }
 
-    for (uint32_t t = 0; t < ThreadCount; t++) {
+    for (size_t t = 0; t < ThreadCount; t++) {
         threads[t]->join();
     }
 
     {
-        auto lastThreadToAdd = 0;
+        size_t lastThreadToAdd = 0;
 
-        auto index = 0;
+        size_t index = 0;
         auto j = index;
         while ((index < threads.size() - 1) && (FinishIndex[j] > StartIndexFuture[index + 1].get())) {
             index++; // Skip, if there is a missalignment
@@ -1015,7 +1016,8 @@ requires(PExtras != PerturbExtras::MaxCompression)
     finish();
 }
 
-void SetCopyThreadDescription()
+void
+SetCopyThreadDescription()
 {
     Environment::SetCurrentThreadName(L"LAReference::CopyLAReference");
 }
@@ -1144,7 +1146,6 @@ InitializeLAReference(uint32_t, float, float, PerturbExtras::SimpleCompression);
 InitializeLAReference(uint64_t, float, float, PerturbExtras::SimpleCompression);
 InitializeLAReference(uint32_t, double, double, PerturbExtras::SimpleCompression);
 InitializeLAReference(uint64_t, double, double, PerturbExtras::SimpleCompression);
-
 
 InitializeLAReference(uint32_t, HDRFloat<float>, float, PerturbExtras::Disable);
 InitializeLAReference(uint64_t, HDRFloat<float>, float, PerturbExtras::Disable);

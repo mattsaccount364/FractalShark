@@ -33,7 +33,7 @@ public:
         int NumBlocks = 0;
         int ThreadsPerBlock = 0;
 
-        // Explicit “ran” bit; avoids inferring from map emptiness / launch params
+        // Explicit "ran" bit; avoids inferring from map emptiness / launch params
         bool RanAnyVariant = false;
     };
 

@@ -66,7 +66,7 @@ DynamicPopupMenu::GetEnabledState(const Node &n, const IMenuState &state) noexce
 }
 
 bool
-DynamicPopupMenu::IsCheckedNow(const Node &n, const IMenuState &state) noexcept
+DynamicPopupMenu::IsCheckedNow(const Node &n, const IMenuState &state)
 {
     switch (n.checkKind) {
         case CheckKind::Toggle:
@@ -87,7 +87,7 @@ void
 DynamicPopupMenu::BuildPopupLabel(const Node &n,
                                   const IMenuState &state,
                                   /*out*/ wchar_t *buf,
-                                  size_t bufCount) noexcept
+                                  size_t bufCount)
 {
     if (!buf || bufCount == 0) {
         return;

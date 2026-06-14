@@ -1,8 +1,8 @@
+#include "Exceptions.h"
 #include "LaunchParamsCalculator.h"
 #include "MultiplyNTT.cu"
 #include "TestVerbose.h"
 #include <sstream>
-#include <stdexcept>
 
 template <class SharkFloatParams>
 __maxnreg__(HpShark::RegisterLimit) __global__
@@ -59,7 +59,7 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
             oss << "cudaFuncSetAttribute(MultiplyKernelNTT, MaxDynamicSharedMemorySize) failed: "
                 << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")"
                 << " | requested shmem=" << SharedMemSize;
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -86,7 +86,7 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
             << " (code " << static_cast<int>(err) << ")"
             << " | blocks=" << newLaunchParams.NumBlocks
             << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     err = cudaGetLastError();
@@ -94,7 +94,7 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
         std::ostringstream oss;
         oss << "cudaGetLastError() after MultiplyKernelNTT launch failed: " << cudaGetErrorString(err)
             << " (code " << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     err = cudaDeviceSynchronize();
@@ -102,7 +102,7 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
         std::ostringstream oss;
         oss << "cudaDeviceSynchronize() after MultiplyKernelNTT failed: " << cudaGetErrorString(err)
             << " (code " << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 }
 
@@ -123,7 +123,7 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
             oss << "cudaFuncSetAttribute(MultiplyKernelNTTTestLoop, MaxDynamicSharedMemorySize) failed: "
                 << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")"
                 << " | requested shmem=" << SharedMemSize;
-            throw std::runtime_error(oss.str());
+            throw FractalSharkSeriousException(oss.str());
         }
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -151,7 +151,7 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
             << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")"
             << " | blocks=" << newLaunchParams.NumBlocks
             << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     err = cudaGetLastError();
@@ -159,7 +159,7 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
         std::ostringstream oss;
         oss << "cudaGetLastError() after MultiplyKernelNTTTestLoop launch failed: "
             << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     err = cudaDeviceSynchronize();
@@ -167,7 +167,7 @@ ComputeMultiplyNTTGpuTestLoop(const HpShark::LaunchParams &launchParams,
         std::ostringstream oss;
         oss << "cudaDeviceSynchronize() after MultiplyKernelNTTTestLoop failed: "
             << cudaGetErrorString(err) << " (code " << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 }
 

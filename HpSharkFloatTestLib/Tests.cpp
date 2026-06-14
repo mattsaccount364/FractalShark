@@ -609,7 +609,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             }
         }
 
-        for (int i = 0; i < numIters; ++i) {
+        for (uint64_t i = 0; i < numIters; ++i) {
             if constexpr (sharkOperator == Operator::Add) {
                 mpf_sub(mpfHostResultXY1, mpfX, mpfY);
                 mpf_add(mpfHostResultXY1, mpfHostResultXY1, mpfZ);
@@ -867,7 +867,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                         totalExecutedIters += combo.OutputIterCount;
 
-                        for (auto i = 0; i < combo.OutputIterCount; ++i) {
+                        for (uint64_t i = 0; i < combo.OutputIterCount; ++i) {
                             hpSharkReferenceOrbit.push_back(combo.OutputIters[i]);
                         }
 
@@ -970,7 +970,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                             const auto deltaY = hostValY - gpuValY;
 
                             std::cout << "Delta: host.x - gpu.x = " << deltaX.template ToString<false>()
-                                      << " host.y - gpu.y = " << deltaY.template ToString<false>() << std::endl;
+                                      << " host.y - gpu.y = " << deltaY.template ToString<false>()
+                                      << std::endl;
 
                             orbitMatch = false;
                             Environment::DebugBreakpoint();
@@ -1008,7 +1009,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                                           << ": mpir.x=" << hostValX.template ToString<false>()
                                           << " mpir.y=" << hostValY.template ToString<false>()
                                           << " cpu.x=" << cpuValX.template ToString<false>()
-                                          << " cpu.y=" << cpuValY.template ToString<false>() << std::endl;
+                                          << " cpu.y=" << cpuValY.template ToString<false>()
+                                          << std::endl;
                                 cpuOrbitMatch = false;
                                 Environment::DebugBreakpoint();
                                 break;
@@ -4105,7 +4107,7 @@ TestAllBinaryOp(int testBase)
                                                         int testBase,                                   \
                                                         int numIters,                                   \
                                                         int internalTestLoopCount,                      \
-                                                        BasicCorrectnessMode mode);                    \
+                                                        BasicCorrectnessMode mode);                     \
     template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(const HpShark::LaunchParams &,          \
                                                                 int testBase,                           \
                                                                 int numIters,                           \

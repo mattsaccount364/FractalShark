@@ -1,49 +1,40 @@
 #pragma once
 
-#include <cmath>
+#include "BenchmarkData.h"
 #include "HDRFloat.h"
-#include "LAstep.h"
+#include "Introspection.h"
 #include "LAInfoDeep.h"
 #include "LAInfoI.h"
+#include "LAstep.h"
 #include "Vectors.h"
-#include "BenchmarkData.h"
-#include "Introspection.h"
+#include <cmath>
 
 #include <thread>
 #include <vector>
 
-template<typename IterType, class HDRFloat, class SubType>
-class ATInfo;
+template <typename IterType, class HDRFloat, class SubType> class ATInfo;
 
-template<typename IterType>
-class LAStageInfo;
+template <typename IterType> class LAStageInfo;
 
 class RefOrbitCalc;
 
-template<typename IterType, class T, PerturbExtras PExtras>
-class PerturbationResults;
+template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;
 
-template<typename IterType, class T, class SubType>
-class GPU_LAReference;
+template <typename IterType, class T, class SubType> class GPU_LAReference;
 
 void SetCopyThreadDescription();
 
 // Note: The helper functions in this header cannot be moved to the .cpp file
 // unless we can properly instantiate the template with CudaDblflt, which we
 // currently cannot do.
-template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
-class LAReference {
+template <typename IterType, class Float, class SubType, PerturbExtras PExtras> class LAReference {
 private:
-    static constexpr bool IsHDR =
-        std::is_same<Float, ::HDRFloat<float>>::value ||
-        std::is_same<Float, ::HDRFloat<double>>::value ||
-        std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
-        std::is_same<Float, ::HDRFloat<CudaDblflt<dblflt>>>::value;
+    static constexpr bool IsHDR = std::is_same<Float, ::HDRFloat<float>>::value ||
+                                  std::is_same<Float, ::HDRFloat<double>>::value ||
+                                  std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+                                  std::is_same<Float, ::HDRFloat<CudaDblflt<dblflt>>>::value;
     using FloatComplexT =
-        std::conditional<
-        IsHDR,
-        ::HDRFloatComplex<SubType>,
-        ::FloatComplex<SubType>>::type;
+        std::conditional<IsHDR, ::HDRFloatComplex<SubType>, ::FloatComplex<SubType>>::type;
 
     friend class GPU_LAReference<IterType, Float, float>;
     friend class GPU_LAReference<IterType, Float, double>;
@@ -56,7 +47,10 @@ private:
     friend class LAReference<IterType, CudaDblflt<dblflt>, CudaDblflt<dblflt>, PExtras>;
     friend class LAReference<IterType, ::HDRFloat<float>, float, PExtras>;
     friend class LAReference<IterType, ::HDRFloat<double>, double, PExtras>;
-    friend class LAReference<IterType, ::HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PExtras>;
+    friend class LAReference<IterType,
+                             ::HDRFloat<CudaDblflt<MattDblflt>>,
+                             CudaDblflt<MattDblflt>,
+                             PExtras>;
     friend class LAReference<IterType, ::HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>, PExtras>;
 
     static const int lowBound = 64;
@@ -69,50 +63,41 @@ public:
     LAReference &operator=(LAReference &&other) = delete;
     LAReference(LAReference &&other) = delete;
 
-    LAReference(
-        LAParameters la_parameters,
-        AddPointOptions addPointOptions,
-        std::wstring las_filename,
-        std::wstring la_stages_filename)
-        requires (Introspection::TestPExtras<PExtras>::value)
-        :
-        m_AddPointOptions(addPointOptions),
-        m_UseAT{},
-        m_AT{},
-        m_LAStageCount{},
-        m_LAParameters{ la_parameters },
-        m_IsValid{},
-        m_LAs(addPointOptions, las_filename.c_str()),
-        m_LAStages(addPointOptions, la_stages_filename.c_str()),
-        m_BenchmarkDataLA{} {
+    LAReference(LAParameters la_parameters,
+                AddPointOptions addPointOptions,
+                std::wstring las_filename,
+                std::wstring la_stages_filename)
+    requires(Introspection::TestPExtras<PExtras>::value)
+        : m_AddPointOptions(addPointOptions), m_UseAT{}, m_AT{}, m_LAStageCount{},
+          m_LAParameters{la_parameters}, m_IsValid{}, m_LAs(addPointOptions, las_filename.c_str()),
+          m_LAStages(addPointOptions, la_stages_filename.c_str()), m_BenchmarkDataLA{}
+    {
 
-        static_assert(PExtras != PerturbExtras::MaxCompression, "MaxCompression not supported in LAReference");
+        static_assert(PExtras != PerturbExtras::MaxCompression,
+                      "MaxCompression not supported in LAReference");
     }
 
-    LAReference(
-        AddPointOptions addPointOptions,
-        std::wstring las_filename,
-        std::wstring la_stages_filename)
-        requires (Introspection::TestPExtras<PExtras>::value)
-        :
-        m_AddPointOptions(addPointOptions),
-        m_UseAT{},
-        m_AT{},
-        m_LAStageCount{},
-        m_LAParameters{ },
-        m_IsValid{},
-        m_LAs(addPointOptions, las_filename.c_str()),
-        m_LAStages(addPointOptions, la_stages_filename.c_str()),
-        m_BenchmarkDataLA{} {
+    LAReference(AddPointOptions addPointOptions,
+                std::wstring las_filename,
+                std::wstring la_stages_filename)
+    requires(Introspection::TestPExtras<PExtras>::value)
+        : m_AddPointOptions(addPointOptions), m_UseAT{}, m_AT{}, m_LAStageCount{}, m_LAParameters{},
+          m_IsValid{}, m_LAs(addPointOptions, las_filename.c_str()),
+          m_LAStages(addPointOptions, la_stages_filename.c_str()), m_BenchmarkDataLA{}
+    {
 
-        static_assert(PExtras != PerturbExtras::MaxCompression, "MaxCompression not supported in LAReference");
+        static_assert(PExtras != PerturbExtras::MaxCompression,
+                      "MaxCompression not supported in LAReference");
     }
 
     ~LAReference()
-        requires (Introspection::TestPExtras<PExtras>::value) {
+    requires(Introspection::TestPExtras<PExtras>::value)
+    {
     }
 
-    bool WriteMetadata(std::ofstream &metafile) const {
+    bool
+    WriteMetadata(std::ofstream &metafile) const
+    {
         metafile << "LAReference:" << std::endl;
         metafile << "AddPointOptions: " << static_cast<uint64_t>(m_AddPointOptions) << std::endl;
         metafile << "UseAT: " << static_cast<uint64_t>(m_UseAT) << std::endl;
@@ -127,13 +112,15 @@ public:
         return m_AT.WriteMetadata(metafile);
     }
 
-    bool ReadMetadata(std::ifstream &metafile) {
+    bool
+    ReadMetadata(std::ifstream &metafile)
+    {
         std::string descriptor_string_junk;
 
         // "LAReference:"
         metafile >> descriptor_string_junk;
 
-        auto convert = []<typename T>(const std::string & str) {
+        auto convert = []<typename T>(const std::string &str) {
             return static_cast<T>(std::stoll(str));
         };
 
@@ -141,28 +128,28 @@ public:
             std::string addPointOptions;
             metafile >> descriptor_string_junk;
             metafile >> addPointOptions;
-            m_AddPointOptions = convert.template operator() < AddPointOptions > (addPointOptions);
+            m_AddPointOptions = convert.template operator()<AddPointOptions>(addPointOptions);
         }
 
         {
             std::string use_at;
             metafile >> descriptor_string_junk;
             metafile >> use_at;
-            m_UseAT = convert.template operator() < bool > (use_at);
+            m_UseAT = convert.template operator()<bool>(use_at);
         }
 
         {
             std::string la_stage_count;
             metafile >> descriptor_string_junk;
             metafile >> la_stage_count;
-            m_LAStageCount = convert.template operator() < IterType > (la_stage_count);
+            m_LAStageCount = convert.template operator()<IterType>(la_stage_count);
         }
 
         {
             std::string is_valid;
             metafile >> descriptor_string_junk;
             metafile >> is_valid;
-            m_IsValid = convert.template operator() < bool > (is_valid);
+            m_IsValid = convert.template operator()<bool>(is_valid);
         }
 
         bool res = m_LAParameters.ReadMetadata(metafile);
@@ -173,8 +160,10 @@ public:
         return m_AT.ReadMetadata(metafile);
     }
 
-    template<class OtherT, class Other>
-    void CopyLAReference(const LAReference<IterType, OtherT, Other, PExtras> &other) {
+    template <class OtherT, class Other>
+    void
+    CopyLAReference(const LAReference<IterType, OtherT, Other, PExtras> &other)
+    {
         // m_AddPointOptions is defined at construction time and not changed here.
         m_UseAT = other.m_UseAT;
         m_AT = other.m_AT;
@@ -199,7 +188,7 @@ public:
             for (size_t i = start; i < end; i++) {
                 m_LAs[i] = other.m_LAs[i];
             }
-            };
+        };
 
         std::vector<std::thread> threads;
         for (size_t i = 0; i < numThreads; i++) {
@@ -217,42 +206,58 @@ public:
             thread.join();
         }
 
-        for (int i = 0; i < other.m_LAStages.GetSize(); i++) {
+        for (size_t i = 0; i < other.m_LAStages.GetSize(); i++) {
             m_LAStages[i] = other.m_LAStages[i];
         }
 
         m_BenchmarkDataLA = other.m_BenchmarkDataLA;
     }
 
-    bool IsValid() const {
+    bool
+    IsValid() const
+    {
         return m_IsValid;
     }
 
-    bool UseAT() const {
+    bool
+    UseAT() const
+    {
         return m_UseAT;
     }
 
-    const ATInfo<IterType, Float, SubType> &GetAT() const {
+    const ATInfo<IterType, Float, SubType> &
+    GetAT() const
+    {
         return m_AT;
     }
 
-    IterType GetLAStageCount() const {
+    IterType
+    GetLAStageCount() const
+    {
         return m_LAStageCount;
     }
 
-    GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> &GetLAs() {
+    GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> &
+    GetLAs()
+    {
         return m_LAs;
     }
 
-    const GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> &GetLAs() const {
+    const GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> &
+    GetLAs() const
+    {
         return m_LAs;
     }
 
-    GrowableVector<LAStageInfo<IterType>> &GetLAStages() {
+    GrowableVector<LAStageInfo<IterType>> &
+    GetLAStages()
+    {
         return m_LAStages;
     }
 
-    const GrowableVector<LAStageInfo<IterType>> &GetLAStages() const {
+    const GrowableVector<LAStageInfo<IterType>> &
+    GetLAStages() const
+    {
         return m_LAStages;
     }
 
@@ -272,33 +277,34 @@ private:
     BenchmarkData m_BenchmarkDataLA;
 
     IterType LAsize();
-    template<typename PerturbType>
+    template <typename PerturbType>
     bool CreateLAFromOrbit(
         const LAParameters &la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         IterType maxRefIteration)
-        requires (PExtras != PerturbExtras::MaxCompression);
-    template<typename PerturbType>
+    requires(PExtras != PerturbExtras::MaxCompression);
+    template <typename PerturbType>
     bool CreateLAFromOrbitMT(
         const LAParameters &la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         IterType maxRefIteration)
-        requires (PExtras != PerturbExtras::MaxCompression);
-    template<typename PerturbType>
-    bool CreateNewLAStage(
-        const LAParameters &la_parameters,
-        const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
-        IterType maxRefIteration);
+    requires(PExtras != PerturbExtras::MaxCompression);
+    template <typename PerturbType>
+    bool CreateNewLAStage(const LAParameters &la_parameters,
+                          const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
+                          IterType maxRefIteration);
 
 public:
-    template<typename PerturbType>
+    template <typename PerturbType>
     void GenerateApproximationData(
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         Float radius,
         bool UseSmallExponents)
-        requires (PExtras != PerturbExtras::MaxCompression);
+    requires(PExtras != PerturbExtras::MaxCompression);
 
-    const BenchmarkData &GetBenchmarkLA() const {
+    const BenchmarkData &
+    GetBenchmarkLA() const
+    {
         return m_BenchmarkDataLA;
     }
 
@@ -310,10 +316,9 @@ public:
     IterType getLAIndex(IterType CurrentLAStage);
     IterType getMacroItCount(IterType CurrentLAStage);
 
-    LAstep<IterType, Float, SubType, PExtras>
-        getLA(IterType LAIndex,
-            FloatComplexT dz,
-            /*FloatComplexT dc, */IterType j,
-            IterType iterations,
-            IterType max_iterations);
+    LAstep<IterType, Float, SubType, PExtras> getLA(IterType LAIndex,
+                                                    FloatComplexT dz,
+                                                    /*FloatComplexT dc, */ IterType j,
+                                                    IterType iterations,
+                                                    IterType max_iterations);
 };

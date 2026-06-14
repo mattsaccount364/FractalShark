@@ -6,10 +6,10 @@
 // DispatchByLimbCount selects the correct specialization at runtime based on
 // a power-of-2 limb count.
 
+#include "Exceptions.h"
 #include "HpSharkFloat.h"
 
 #include <cstdint>
-#include <stdexcept>
 
 // Round a raw limb count up to the nearest supported power-of-2 in [256, 524288].
 inline uint32_t
@@ -138,6 +138,6 @@ DispatchByLimbCount(uint32_t limbCount, F &&f)
             f.template operator()<typename Family::P12>();
             break;
         default:
-            throw std::invalid_argument("Unsupported limb count for GPU dispatch");
+            throw FractalSharkSeriousException("Unsupported limb count for GPU dispatch");
     }
 }

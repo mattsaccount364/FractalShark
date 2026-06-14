@@ -17,7 +17,7 @@
 #include <string>
 
 namespace {
-constexpr size_t MaxBufferedPacedAnimationFrames = 4;
+constexpr auto MaxBufferedPacedAnimationFrames = 4;
 }
 
 // Convert iteration counts to Color16 values for CPU render algorithms.
@@ -1437,7 +1437,7 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                     char buf[256];
                     snprintf(buf,
                              sizeof(buf),
-                             "WorkerLoop: RunCalcFractal returned false, seq=%llu, "
+                             "WorkerLoop: RunCalcFractal returned false, seq=%zu, "
                              "itersWH=%zux%zu, scrnWH=%zux%zu, aa=%u",
                              item.SequenceNumber,
                              workerIters.m_OutputWidth,
@@ -1480,7 +1480,7 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                         char buf[128];
                         snprintf(buf,
                                  sizeof(buf),
-                                 "WorkerLoop: first frame produced, seq=%llu, "
+                                 "WorkerLoop: first frame produced, seq=%zu, "
                                  "%zux%zu",
                                  item.SequenceNumber,
                                  workerIters.m_OutputWidth,
@@ -1495,7 +1495,7 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                         snprintf(buf,
                                  sizeof(buf),
                                  "WorkerLoop: ProduceFrame returned false or skipped, "
-                                 "seq=%llu",
+                                 "seq=%zu",
                                  item.SequenceNumber);
                         GlLog(buf);
                     }

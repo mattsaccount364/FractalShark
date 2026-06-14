@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring> // for memset
 #include <iostream>
+#include <iterator>
 #include <vector>
 
 struct ABCInputs {
@@ -211,13 +212,11 @@ GetShiftedNormalizedDigit(const uint32_t *ext,
     const int32_t upperIdx = idx + wordShift + 1;
     const uint32_t lower =
         (lowerIdx >= 0 && lowerIdx < numActualDigitsPlusGuard)
-            ? GetNormalizedDigit(
-                  ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, lowerIdx)
+            ? GetNormalizedDigit(ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, lowerIdx)
             : 0;
     const uint32_t upper =
         (upperIdx >= 0 && upperIdx < numActualDigitsPlusGuard)
-            ? GetNormalizedDigit(
-                  ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, upperIdx)
+            ? GetNormalizedDigit(ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, upperIdx)
             : 0;
     if (bitShift == 0)
         return lower;
@@ -367,7 +366,7 @@ CarryPropagation_ABC_Single(const int32_t numActualDigitsPlusGuard,
     carryAcc = 0;
 
     assert(numActualDigitsPlusGuard == static_cast<int32_t>(extResult.size()));
-    assert(propagatedResult.size() == numActualDigitsPlusGuard);
+    assert(std::ssize(propagatedResult) == numActualDigitsPlusGuard);
 
     for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
         // reinterpret the 64-bit limb as signed
@@ -583,7 +582,7 @@ template <class SharkFloatParams>
 static void
 Phase1_DE(int32_t numActualDigitsPlusGuard,
           int32_t actualDigits,
-          int32_t bias,
+          [[maybe_unused]] int32_t bias,
           DEInputs orbInputs,
           DEOutputs &orbOutputs,
           DEInputs nrInputs,
@@ -847,9 +846,11 @@ Phase1_ABC(int32_t numActualDigitsPlusGuard,
                 extZ, actualDigits, numActualDigitsPlusGuard, shZ, diffZ, i);
 
             // always-true branch
-            (*out.resultTrue)[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/true, out.outSignTrue);
+            (*out.resultTrue)[i] =
+                CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/true, out.outSignTrue);
             // always-false branch
-            (*out.resultFalse)[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/false, out.outSignFalse);
+            (*out.resultFalse)[i] =
+                CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/false, out.outSignFalse);
         }
 
         // 7) both exponents (before re-bias) are just baseExp - bias
@@ -906,7 +907,7 @@ NormalizeAndCopyResult_Single(const char *prefixOutStr,
         return;
     }
 
-    assert(propagatedResult.size() == numActualDigitsPlusGuard);
+    assert(std::ssize(propagatedResult) == numActualDigitsPlusGuard);
     propagatedResult.push_back(static_cast<uint32_t>(carry));
     numActualDigitsPlusGuard++;
 
@@ -1008,14 +1009,24 @@ NormalizeAndCopyResult(const char *prefixOutStr,
                        HpSharkFloat<SharkFloatParams> *nrResultOut,
                        bool nrOutSign) noexcept
 {
-    NormalizeAndCopyResult_Single<SharkFloatParams>(
-        prefixOutStr, actualDigits, numActualDigitsPlusGuard,
-        exponent, carry, propagatedResult, ResultOut, outSign);
+    NormalizeAndCopyResult_Single<SharkFloatParams>(prefixOutStr,
+                                                    actualDigits,
+                                                    numActualDigitsPlusGuard,
+                                                    exponent,
+                                                    carry,
+                                                    propagatedResult,
+                                                    ResultOut,
+                                                    outSign);
 
     if (nrResultOut) {
-        NormalizeAndCopyResult_Single<SharkFloatParams>(
-            nrPrefixOutStr, actualDigits, numActualDigitsPlusGuard,
-            *nrExponent, *nrCarry, *nrPropagatedResult, nrResultOut, nrOutSign);
+        NormalizeAndCopyResult_Single<SharkFloatParams>(nrPrefixOutStr,
+                                                        actualDigits,
+                                                        numActualDigitsPlusGuard,
+                                                        *nrExponent,
+                                                        *nrCarry,
+                                                        *nrPropagatedResult,
+                                                        nrResultOut,
+                                                        nrOutSign);
     }
 }
 
@@ -1092,9 +1103,9 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
 
         // NR ABC inputs: One - W1 + W0 = W0 - W1 + One (reordered so
         // fallthrough to C in CompareMagnitudes3Way selects W0, not One)
-        IsNegativeNR_A = nrOne.GetNegative();       // One (A)
-        IsNegativeNR_B = !W1->GetNegative();        // -W1 (B, subtracted)
-        IsNegativeNR_C = W0->GetNegative();         // W0 (C)
+        IsNegativeNR_A = nrOne.GetNegative(); // One (A)
+        IsNegativeNR_B = !W1->GetNegative();  // -W1 (B, subtracted)
+        IsNegativeNR_C = W0->GetNegative();   // W0 (C)
         IsNegativeNR_D = W2->GetNegative();
         IsNegativeNR_E = W3->GetNegative();
     }
@@ -1370,26 +1381,44 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     bool nrOutSignTrue = false;
     bool nrOutSignFalse = false;
 
-    ABCInputs orbABC{IsNegativeA, IsNegativeB, IsNegativeC,
-                     ext_A_X2, ext_B_Y2, ext_C_A,
-                     shiftALeftToGetMsb, shiftBLeftToGetMsb, shiftCLeftToGetMsb,
-                     effExpA, effExpB, effExpC,
+    ABCInputs orbABC{IsNegativeA,
+                     IsNegativeB,
+                     IsNegativeC,
+                     ext_A_X2,
+                     ext_B_Y2,
+                     ext_C_A,
+                     shiftALeftToGetMsb,
+                     shiftBLeftToGetMsb,
+                     shiftCLeftToGetMsb,
+                     effExpA,
+                     effExpB,
+                     effExpC,
                      ordering};
-    ABCOutputs orbABCOut{outSignTrue, outSignFalse,
-                         outExponentTrue, outExponentFalse,
-                         &extResultTrue, &extResultFalse};
+    ABCOutputs orbABCOut{
+        outSignTrue, outSignFalse, outExponentTrue, outExponentFalse, &extResultTrue, &extResultFalse};
 
     ABCInputs nrABC{};
     ABCOutputs nrABCOut{false, false, 0, 0, nullptr, nullptr};
     if constexpr (NR) {
-        nrABC = {IsNegativeNR_A, IsNegativeNR_B, IsNegativeNR_C,
-                 extOne, extW1, extW0,
-                 shiftOneLeftToGetMsb, shiftW1LeftToGetMsb, shiftW0LeftToGetMsb,
-                 effExpOne, effExpW1, effExpW0,
+        nrABC = {IsNegativeNR_A,
+                 IsNegativeNR_B,
+                 IsNegativeNR_C,
+                 extOne,
+                 extW1,
+                 extW0,
+                 shiftOneLeftToGetMsb,
+                 shiftW1LeftToGetMsb,
+                 shiftW0LeftToGetMsb,
+                 effExpOne,
+                 effExpW1,
+                 effExpW0,
                  nrOrdering};
-        nrABCOut = {nrOutSignTrue, nrOutSignFalse,
-                    nrOutExponentTrue, nrOutExponentFalse,
-                    &extNrResultTrue, &extNrResultFalse};
+        nrABCOut = {nrOutSignTrue,
+                    nrOutSignFalse,
+                    nrOutExponentTrue,
+                    nrOutExponentFalse,
+                    &extNrResultTrue,
+                    &extNrResultFalse};
     }
 
     Phase1_ABC<SharkFloatParams>(numActualDigitsPlusGuard,
@@ -1435,46 +1464,52 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     // NR 2-way magnitude comparison (W2, W3)
     if constexpr (NR) {
         nrDIsBiggerMagnitude = CompareMagnitudes2Way(effExpW2,
-                                                      effExpW3,
-                                                      numActualDigits,
-                                                      numActualDigitsPlusGuard,
-                                                      shiftW2LeftToGetMsb,
-                                                      shiftW3LeftToGetMsb,
-                                                      extW2,
-                                                      extW3);
+                                                     effExpW3,
+                                                     numActualDigits,
+                                                     numActualDigitsPlusGuard,
+                                                     shiftW2LeftToGetMsb,
+                                                     shiftW3LeftToGetMsb,
+                                                     extW2,
+                                                     extW3);
     }
 
     const bool sameSignDE = (IsNegativeD == IsNegativeE);
 
-    DEInputs orbDE{DIsBiggerMagnitude, sameSignDE,
-                   ext_D_2X, ext_E_B,
-                   shiftDLeftToGetMsb, shiftELeftToGetMsb,
-                   effExpD, effExpE,
-                   newDExponent, newEExponent,
-                   IsNegativeD, IsNegativeE};
+    DEInputs orbDE{DIsBiggerMagnitude,
+                   sameSignDE,
+                   ext_D_2X,
+                   ext_E_B,
+                   shiftDLeftToGetMsb,
+                   shiftELeftToGetMsb,
+                   effExpD,
+                   effExpE,
+                   newDExponent,
+                   newEExponent,
+                   IsNegativeD,
+                   IsNegativeE};
     DEOutputs orbDEOut{outExponent_DE, &extResult_D_E};
 
     DEInputs nrDE{};
     DEOutputs nrDEOut{0, nullptr};
     if constexpr (NR) {
         const bool nrSameSign = (IsNegativeNR_D == IsNegativeNR_E);
-        nrDE = {nrDIsBiggerMagnitude, nrSameSign,
-                extW2, extW3,
-                shiftW2LeftToGetMsb, shiftW3LeftToGetMsb,
-                effExpW2, effExpW3,
-                newW2Exponent, newW3Exponent,
-                IsNegativeNR_D, IsNegativeNR_E};
+        nrDE = {nrDIsBiggerMagnitude,
+                nrSameSign,
+                extW2,
+                extW3,
+                shiftW2LeftToGetMsb,
+                shiftW3LeftToGetMsb,
+                effExpW2,
+                effExpW3,
+                newW2Exponent,
+                newW3Exponent,
+                IsNegativeNR_D,
+                IsNegativeNR_E};
         nrDEOut = {nrOutExponent_DE, &extNrResult_DE};
     }
 
-    Phase1_DE<SharkFloatParams>(numActualDigitsPlusGuard,
-                                numActualDigits,
-                                bias,
-                                orbDE,
-                                orbDEOut,
-                                nrDE,
-                                nrDEOut,
-                                debugStates);
+    Phase1_DE<SharkFloatParams>(
+        numActualDigitsPlusGuard, numActualDigits, bias, orbDE, orbDEOut, nrDE, nrDEOut, debugStates);
 
     outExponent_DE = orbDEOut.outExponent;
     if constexpr (NR) {
@@ -1519,30 +1554,54 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     // Result after propagation (orbit + NR in one call each)
     if constexpr (UseBellochPropagation) {
 
-        CarryPropagationPP_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard, extResultTrue, carryTrue, propagatedResultTrue,
-            nrTruePtr, nrCarryTruePtr, nrPropTruePtr);
+        CarryPropagationPP_ABC<SharkFloatParams>(numActualDigitsPlusGuard,
+                                                 extResultTrue,
+                                                 carryTrue,
+                                                 propagatedResultTrue,
+                                                 nrTruePtr,
+                                                 nrCarryTruePtr,
+                                                 nrPropTruePtr);
 
-        CarryPropagationPP_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard, extResultFalse, carryFalse, propagatedResultFalse,
-            nrFalsePtr, nrCarryFalsePtr, nrPropFalsePtr);
+        CarryPropagationPP_ABC<SharkFloatParams>(numActualDigitsPlusGuard,
+                                                 extResultFalse,
+                                                 carryFalse,
+                                                 propagatedResultFalse,
+                                                 nrFalsePtr,
+                                                 nrCarryFalsePtr,
+                                                 nrPropFalsePtr);
 
-        CarryPropagationPP_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard, extResult_D_E, carry_DE, propagatedResult_DE,
-            nrDEPtr, nrCarryDEPtr, nrPropDEPtr);
+        CarryPropagationPP_ABC<SharkFloatParams>(numActualDigitsPlusGuard,
+                                                 extResult_D_E,
+                                                 carry_DE,
+                                                 propagatedResult_DE,
+                                                 nrDEPtr,
+                                                 nrCarryDEPtr,
+                                                 nrPropDEPtr);
     } else {
-        CarryPropagation_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard, extResultTrue, carryTrue, propagatedResultTrue,
-            nrTruePtr, nrCarryTruePtr, nrPropTruePtr);
+        CarryPropagation_ABC<SharkFloatParams>(numActualDigitsPlusGuard,
+                                               extResultTrue,
+                                               carryTrue,
+                                               propagatedResultTrue,
+                                               nrTruePtr,
+                                               nrCarryTruePtr,
+                                               nrPropTruePtr);
 
-        CarryPropagation_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard, extResultFalse, carryFalse, propagatedResultFalse,
-            nrFalsePtr, nrCarryFalsePtr, nrPropFalsePtr);
+        CarryPropagation_ABC<SharkFloatParams>(numActualDigitsPlusGuard,
+                                               extResultFalse,
+                                               carryFalse,
+                                               propagatedResultFalse,
+                                               nrFalsePtr,
+                                               nrCarryFalsePtr,
+                                               nrPropFalsePtr);
 
         // Formerly CarryPropagation_DE with sameSignDE passed:
-        CarryPropagation_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard, extResult_D_E, carry_DE, propagatedResult_DE,
-            nrDEPtr, nrCarryDEPtr, nrPropDEPtr);
+        CarryPropagation_ABC<SharkFloatParams>(numActualDigitsPlusGuard,
+                                               extResult_D_E,
+                                               carry_DE,
+                                               propagatedResult_DE,
+                                               nrDEPtr,
+                                               nrCarryDEPtr,
+                                               nrPropDEPtr);
     }
 
     // At this point, the propagatedResult_DE array holds the result of the borrow/carry propagation.
@@ -1618,7 +1677,12 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
             /* propagatedRes = */ propagatedResultTrue,
             /* ResultOut     = */ OutXY1,
             /* outSign       = */ outSignTrue,
-            nullptr, nullptr, nullptr, nullptr, nullptr, false);
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            false);
     } else {
         NormalizeAndCopyResult<SharkFloatParams>(
             /* prefixOutStr  = */ "A - B + C: ",
@@ -1629,7 +1693,12 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
             /* propagatedRes = */ propagatedResultFalse,
             /* ResultOut     = */ OutXY1,
             /* outSign       = */ outSignFalse,
-            nullptr, nullptr, nullptr, nullptr, nullptr, false);
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            false);
     }
 
     // 3) Handle D+E (orbit + NR combined in one call)
@@ -1666,7 +1735,12 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
             /* propagatedRes = */ propagatedResult_DE,
             /* ResultOut     = */ OutXY2,
             /* outSign       = */ deSign,
-            nullptr, nullptr, nullptr, nullptr, nullptr, false);
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            false);
     }
 
     // NR: normalize A-B+C derivative result
@@ -1683,7 +1757,12 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
                 /* propagatedRes = */ propagatedNrResultTrue,
                 /* ResultOut     = */ OutDzdcReal,
                 /* outSign       = */ nrOutSignTrue,
-                nullptr, nullptr, nullptr, nullptr, nullptr, false);
+                nullptr,
+                nullptr,
+                nullptr,
+                nullptr,
+                nullptr,
+                false);
         } else {
             NormalizeAndCopyResult<SharkFloatParams>(
                 /* prefixOutStr  = */ "NR A - B + C: ",
@@ -1694,7 +1773,12 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
                 /* propagatedRes = */ propagatedNrResultFalse,
                 /* ResultOut     = */ OutDzdcReal,
                 /* outSign       = */ nrOutSignFalse,
-                nullptr, nullptr, nullptr, nullptr, nullptr, false);
+                nullptr,
+                nullptr,
+                nullptr,
+                nullptr,
+                nullptr,
+                false);
         }
     }
 

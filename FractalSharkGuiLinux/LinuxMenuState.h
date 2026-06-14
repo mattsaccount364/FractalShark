@@ -16,7 +16,7 @@ public:
 
     bool IsEnabled(FractalShark::Menu::Rule rule) const noexcept override;
     bool IsChecked(uint32_t commandId) const noexcept override;
-    uint32_t GetRadioSelection(FractalShark::Menu::RadioGroup group) const noexcept override;
+    uint32_t GetRadioSelection(FractalShark::Menu::RadioGroup group) const override;
 
 private:
     const Fractal &m_Fractal;

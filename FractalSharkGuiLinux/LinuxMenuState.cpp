@@ -8,6 +8,7 @@
 #include "LinuxMenuState.h"
 
 #include "AlgCmds.h"
+#include "Exceptions.h"
 #include "Fractal.h"
 #include "LAParameters.h"
 #include "RefOrbitCalc.h"
@@ -79,7 +80,7 @@ LinuxMenuState::IsChecked(uint32_t commandId) const noexcept
 }
 
 uint32_t
-LinuxMenuState::GetRadioSelection(FractalShark::Menu::RadioGroup group) const noexcept
+LinuxMenuState::GetRadioSelection(FractalShark::Menu::RadioGroup group) const
 {
     using RG = FractalShark::Menu::RadioGroup;
 
@@ -166,8 +167,11 @@ LinuxMenuState::GetRadioSelection(FractalShark::Menu::RadioGroup group) const no
                     return IDM_PALETTE_TYPE_3;
                 case FractalPaletteType::Random:
                     return IDM_PALETTE_TYPE_4;
+                case FractalPaletteType::Num:
+                    throw FractalSharkSeriousException(
+                        "FractalPaletteType::Num is not a valid palette selection");
             }
-            return IDM_PALETTE_TYPE_1;
+            throw FractalSharkSeriousException("Unknown FractalPaletteType selection");
 
         case RG::PaletteBitDepth:
             switch (m_Fractal.GetPaletteDepth()) {
@@ -195,8 +199,11 @@ LinuxMenuState::GetRadioSelection(FractalShark::Menu::RadioGroup group) const no
                     return IDM_PERTURB_AUTOSAVE_ON_DELETE;
                 case AddPointOptions::DontSave:
                     return IDM_PERTURB_AUTOSAVE_OFF;
+                case AddPointOptions::OpenExistingWithSave:
+                    throw FractalSharkSeriousException(
+                        "AddPointOptions::OpenExistingWithSave is not a memory autosave setting");
             }
-            return IDM_PERTURB_AUTOSAVE_ON_DELETE;
+            throw FractalSharkSeriousException("Unknown AddPointOptions memory autosave setting");
 
         case RG::IterationsWidth:
             return (m_Fractal.GetIterType() == IterTypeEnum::Bits32) ? IDM_32BIT_ITERATIONS

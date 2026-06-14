@@ -27,7 +27,7 @@ public:
 
 private:
     void *m_NativeWindow{};
-    void *m_DeviceContext{};
+    [[maybe_unused]] void *m_DeviceContext{};
     void *m_RenderContext{};
     bool m_Valid{};
     bool m_IsSoftwareRenderer{};

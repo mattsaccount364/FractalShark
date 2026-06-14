@@ -14,12 +14,12 @@
 
 #include "CommandCatalog.h"
 #include "AlgCmds.h"
+#include "Exceptions.h"
 #include "MenuTree.h"
 #include "RenderAlgorithm.h"
 #include "TestFramework.h"
 
 #include <span>
-#include <stdexcept>
 #include <string>
 
 namespace {
@@ -438,7 +438,7 @@ TEST(CommandCatalog_NoneCommandThrows)
     RecordingHost host;
 
     ASSERT_THROWS(FractalShark::ExecuteCommand(FractalShark::FractalCommand::None, host),
-                  std::logic_error);
+                  FractalSharkSeriousException);
 }
 
 namespace {

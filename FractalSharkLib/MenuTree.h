@@ -77,7 +77,7 @@ struct IMenuState {
 
     virtual bool IsEnabled(Rule rule) const noexcept = 0;
     virtual bool IsChecked(uint32_t commandId) const noexcept = 0;
-    virtual uint32_t GetRadioSelection(RadioGroup group) const noexcept = 0;
+    virtual uint32_t GetRadioSelection(RadioGroup group) const = 0;
 
     virtual uint32_t
     GetPopupAdornmentCommandId(RadioGroup /*group*/) const noexcept

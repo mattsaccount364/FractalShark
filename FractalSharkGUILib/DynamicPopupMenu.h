@@ -63,12 +63,12 @@ private:
     static bool InsertPopupAtEnd(HMENU menu, const Node &n, HMENU popup, const IMenuState &state);
 
     static UINT GetEnabledState(const Node &n, const IMenuState &state) noexcept;
-    static bool IsCheckedNow(const Node &n, const IMenuState &state) noexcept;
+    static bool IsCheckedNow(const Node &n, const IMenuState &state);
 
     static void BuildPopupLabel(const Node &n,
                                 const IMenuState &state,
                                 /*out*/ wchar_t *buf,
-                                size_t bufCount) noexcept;
+                                size_t bufCount);
 
     static UINT GetMenuItemCountSafe(HMENU menu) noexcept;
     static UINT MapEnabledStateToMFS(UINT mfEnabled) noexcept;

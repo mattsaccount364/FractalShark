@@ -1,7 +1,7 @@
 #include "Add.cu"
+#include "Exceptions.h"
 #include "LaunchParamsCalculator.h"
 #include <sstream>
-#include <stdexcept>
 
 template <class SharkFloatParams>
 __global__ void
@@ -58,7 +58,7 @@ ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
             << static_cast<int>(err) << ")"
             << " | blocks=" << newLaunchParams.NumBlocks
             << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     // Catch immediate launch errors too (async)
@@ -67,7 +67,7 @@ ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
         std::ostringstream oss;
         oss << "cudaGetLastError() after AddKernel launch failed: " << cudaGetErrorString(err)
             << " (code " << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     // Catch runtime errors (illegal access, device assert, etc.)
@@ -76,7 +76,7 @@ ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
         std::ostringstream oss;
         oss << "cudaDeviceSynchronize() after AddKernel failed: " << cudaGetErrorString(err) << " (code "
             << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 }
 
@@ -107,7 +107,7 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
             << " (code " << static_cast<int>(err) << ")"
             << " | blocks=" << newLaunchParams.NumBlocks
             << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     err = cudaGetLastError();
@@ -115,7 +115,7 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
         std::ostringstream oss;
         oss << "cudaGetLastError() after AddKernelTestLoop launch failed: " << cudaGetErrorString(err)
             << " (code " << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 
     err = cudaDeviceSynchronize();
@@ -123,7 +123,7 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
         std::ostringstream oss;
         oss << "cudaDeviceSynchronize() after AddKernelTestLoop failed: " << cudaGetErrorString(err)
             << " (code " << static_cast<int>(err) << ")";
-        throw std::runtime_error(oss.str());
+        throw FractalSharkSeriousException(oss.str());
     }
 }
 

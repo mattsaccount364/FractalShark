@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <utility>
 
 AutoZoomer::AutoZoomer(Fractal &fractal) : m_Fractal(fractal) {}
 
@@ -157,7 +158,7 @@ AutoZoomer::Run()
                     guessX = m_Fractal.XFromScreenToCalc<true>(HighPrecision{meanX});
                     guessY = m_Fractal.YFromScreenToCalc<true>(HighPrecision{meanY});
 
-                    if (numAtLimit == antiRectWidthInt * antiRectHeightInt) {
+                    if (std::cmp_equal(numAtLimit, antiRectWidthInt * antiRectHeightInt)) {
                         std::wcerr << L"Flat screen! :(" << std::endl;
                         shouldBreak = true;
                         return;
@@ -167,13 +168,14 @@ AutoZoomer::Run()
                 // ---------------- MAX ----------------
                 if constexpr (h == Fractal::AutoZoomHeuristic::Max) {
 
-                    int32_t targetX = -1;
-                    int32_t targetY = -1;
+                    bool foundTarget = false;
+                    size_t targetX = 0;
+                    size_t targetY = 0;
                     size_t maxiter = 0;
 
-                    for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing();
+                    for (size_t y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing();
                          y++) {
-                        for (auto x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing();
+                        for (size_t x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing();
                              x++) {
                             auto curiter = ItersArray[y][x];
                             if (curiter > maxiter)
@@ -181,15 +183,16 @@ AutoZoomer::Run()
                         }
                     }
 
-                    for (auto y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing();
+                    for (size_t y = 0; y < m_Fractal.GetScrnHeight() * m_Fractal.GetGpuAntialiasing();
                          y++) {
-                        for (auto x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing();
+                        for (size_t x = 0; x < m_Fractal.GetScrnWidth() * m_Fractal.GetGpuAntialiasing();
                              x++) {
                             auto curiter = ItersArray[y][x];
 
                             if (curiter == maxiter) {
                                 numAtLimit++;
-                                if (targetX == -1 && targetY == -1) {
+                                if (!foundTarget) {
+                                    foundTarget = true;
                                     targetX = x;
                                     targetY = y;
                                 }
@@ -241,12 +244,8 @@ AutoZoomer::Run()
                     // Faint tips may be just slightly above background.
                     const auto candidateThreshold = static_cast<size_t>(avgIters + 1);
 
-                    // Sample at multiple radii to handle fuzzy boundaries.
-                    // A tip has lower iters in most directions at most radii.
                     static constexpr int dx8[] = {0, 1, 1, 1, 0, -1, -1, -1};
                     static constexpr int dy8[] = {-1, -1, 0, 1, 1, 1, 0, -1};
-                    static constexpr int radii[] = {4, 8, 16};
-                    static constexpr int numRadii = 3;
 
                     const int margin = 18;
 

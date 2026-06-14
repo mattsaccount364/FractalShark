@@ -9,7 +9,7 @@
     <ClCompile>
       <!-- Common include search path for the FractalShark stack.
            Per-project AdditionalIncludeDirectories adds on top of this via %(...). -->
-      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform;$(MpirConfigDir);..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform\Common;$(MpirConfigDir);..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
 
       <!-- Common preprocessor defines. _DEBUG/NDEBUG are auto-added by VS. -->
       <PreprocessorDefinitions>WIN32;WIN64;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -65,7 +65,7 @@
     <ClCompile>
       <!-- Common include search path for the FractalShark stack.
            Per-project AdditionalIncludeDirectories adds on top of this via %(...). -->
-      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform;$(MpirConfigDir);..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform\Common;$(MpirConfigDir);..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
 
       <!-- Common preprocessor defines. _DEBUG/NDEBUG are auto-added by VS. -->
       <PreprocessorDefinitions>WIN32;WIN64;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>

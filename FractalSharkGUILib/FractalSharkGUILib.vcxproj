@@ -37,7 +37,7 @@
       <PreprocessorDefinitions>_WINDOWS;SHARK_ALLOC=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)</ObjectFileName>
-      <AdditionalIncludeDirectories>..\FractalShark;..\FractalSharkPlatform;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\FractalShark;..\FractalSharkPlatform\Common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -67,7 +67,7 @@
     <ClInclude Include="DynamicPopupMenu.h" />
     <ClInclude Include="CommandDispatcher.h" />
     <ClInclude Include="FractalShark.h" />
-    <ClInclude Include="..\FractalSharkPlatform\JobObject.h" />
+    <ClInclude Include="..\FractalSharkPlatform\Common\JobObject.h" />
     <ClInclude Include="MainWindow.h" />
     <ClInclude Include="MainWindowMenuState.h" />
     <ClInclude Include="MainWindowSavedLocation.h" />

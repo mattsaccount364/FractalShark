@@ -31,33 +31,33 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="WaitCursorWin32.cpp" />
-    <ClCompile Include="WaitCursorLinux.cpp">
+    <ClCompile Include="Win32\WaitCursorWin32.cpp" />
+    <ClCompile Include="Linux\WaitCursorLinux.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="EnvironmentWin32.cpp" />
-    <ClCompile Include="EnvironmentLinux.cpp">
+    <ClCompile Include="Win32\EnvironmentWin32.cpp" />
+    <ClCompile Include="Linux\EnvironmentLinux.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="CrashHandlerWin32.cpp" />
-    <ClCompile Include="CrashHandlerLinux.cpp">
+    <ClCompile Include="Win32\CrashHandlerWin32.cpp" />
+    <ClCompile Include="Linux\CrashHandlerLinux.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="JobObjectWin32.cpp" />
-    <ClCompile Include="JobObjectLinux.cpp">
+    <ClCompile Include="Win32\JobObjectWin32.cpp" />
+    <ClCompile Include="Linux\JobObjectLinux.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Environment.h" />
-    <ClInclude Include="GlIncludes.h" />
-    <ClInclude Include="WaitCursor.h" />
-    <ClInclude Include="CrashHandler.h" />
-    <ClInclude Include="JobObject.h" />
+    <ClInclude Include="Common\Environment.h" />
+    <ClInclude Include="Common\GlIncludes.h" />
+    <ClInclude Include="Common\WaitCursor.h" />
+    <ClInclude Include="Common\CrashHandler.h" />
+    <ClInclude Include="Common\JobObject.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

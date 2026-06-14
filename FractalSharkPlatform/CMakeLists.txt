@@ -2,10 +2,10 @@ add_library(FractalSharkPlatform STATIC)
 
 if(WIN32)
     target_sources(FractalSharkPlatform PRIVATE
-        WaitCursorWin32.cpp
-        EnvironmentWin32.cpp
-        CrashHandlerWin32.cpp
-        JobObjectWin32.cpp
+        Win32/WaitCursorWin32.cpp
+        Win32/EnvironmentWin32.cpp
+        Win32/CrashHandlerWin32.cpp
+        Win32/JobObjectWin32.cpp
     )
 else()
     set(FRACTALSHARK_IMAGINA_FIXTURE_NAMES
@@ -115,10 +115,10 @@ else()
     file(WRITE "${FRACTALSHARK_EMBEDDED_IMAGINA_SOURCE}" "${generated_source}")
 
     target_sources(FractalSharkPlatform PRIVATE
-        WaitCursorLinux.cpp
-        EnvironmentLinux.cpp
-        CrashHandlerLinux.cpp
-        JobObjectLinux.cpp
+        Linux/WaitCursorLinux.cpp
+        Linux/EnvironmentLinux.cpp
+        Linux/CrashHandlerLinux.cpp
+        Linux/JobObjectLinux.cpp
         "${FRACTALSHARK_EMBEDDED_IMAGINA_SOURCE}"
     )
     find_package(X11 REQUIRED)
@@ -126,7 +126,7 @@ else()
 endif()
 
 target_include_directories(FractalSharkPlatform PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/Common
 )
 
 # GMP (MPIR on Windows, GMP on Linux — Environment.h pulls in the header)

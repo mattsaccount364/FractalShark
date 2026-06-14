@@ -43,7 +43,7 @@
       <SubSystem>Console</SubSystem>
     </Link>
     <CudaCompile>
-      <Include>.\;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform</Include>
+      <Include>.\;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform\Common</Include>
       <CudaRuntime>Static</CudaRuntime>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -58,7 +58,7 @@
       <SubSystem>Console</SubSystem>
     </Link>
     <CudaCompile>
-      <Include>.\;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform</Include>
+      <Include>.\;..\HpSharkFloatLib;..\FractalSharkLib;..\FractalSharkPlatform\Common</Include>
       <CudaRuntime>Static</CudaRuntime>
     </CudaCompile>
   </ItemDefinitionGroup>

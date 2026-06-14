@@ -175,10 +175,16 @@ private:
         No
     };
 
+    enum class ResetStreams {
+        No,
+        Destroy
+    };
+
     void ResetMemory(
         ResetLocals locals,
         ResetPalettes palettes,
-        ResetPerturb perturb);
+        ResetPerturb perturb,
+        ResetStreams streams);
     void ClearLocals();
 
     template<typename IterType>

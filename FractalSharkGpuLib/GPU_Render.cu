@@ -94,17 +94,7 @@ GPURenderer::GPURenderer() {
 }
 
 GPURenderer::~GPURenderer() {
-    ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
-
-    if (m_DisplayStream != nullptr) {
-        cudaStreamSynchronize(m_DisplayStream);
-        cudaStreamDestroy(m_DisplayStream);
-    }
-
-    if (m_ComputeStream != nullptr) {
-        cudaStreamSynchronize(m_ComputeStream);
-        cudaStreamDestroy(m_ComputeStream);
-    }
+    ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
 }
 
 uint32_t
@@ -142,7 +132,11 @@ void GPURenderer::ResetPalettesOnly() {
 void GPURenderer::ResetMemory(
     ResetLocals locals,
     ResetPalettes palettes,
-    ResetPerturb perturb) {
+    ResetPerturb perturb,
+    ResetStreams streams) {
+
+    const cudaStream_t displayStream = m_DisplayStream;
+    const cudaStream_t computeStream = m_ComputeStream;
 
     if (OutputIterMatrix != nullptr) {
         cudaFreeAsync(OutputIterMatrix, m_ComputeStream);
@@ -165,6 +159,22 @@ void GPURenderer::ResetMemory(
 
     if (perturb == ResetPerturb::Yes) {
         m_PerturbResults.DeleteAll();
+    }
+
+    if (streams == ResetStreams::Destroy && computeStream != nullptr) {
+        cudaStreamSynchronize(computeStream);
+    }
+
+    if (streams == ResetStreams::Destroy && displayStream != nullptr) {
+        cudaStreamSynchronize(displayStream);
+    }
+
+    if (streams == ResetStreams::Destroy && displayStream != nullptr) {
+        cudaStreamDestroy(displayStream);
+    }
+
+    if (streams == ResetStreams::Destroy && computeStream != nullptr) {
+        cudaStreamDestroy(computeStream);
     }
 
     if (locals == ResetLocals::Yes) {
@@ -251,6 +261,7 @@ uint32_t GPURenderer::InitializeMemory(
 
         err = cudaStreamCreateWithPriority(&m_DisplayStream, cudaStreamNonBlocking, streamPriorityHigh);
         if (err != cudaSuccess) {
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return err;
         }
     }
@@ -273,7 +284,7 @@ uint32_t GPURenderer::InitializeMemory(
             Pals.local_palIters * sizeof(Color16),
             m_ComputeStream);
         if (err != cudaSuccess) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return err;
         }
 
@@ -285,7 +296,7 @@ uint32_t GPURenderer::InitializeMemory(
             cudaMemcpyHostToDevice,
             m_ComputeStream);
         if (err != cudaSuccess) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return err;
         }
 
@@ -344,7 +355,7 @@ uint32_t GPURenderer::InitializeMemory(
     local_color_height = no_antialias_height;
     N_color_cu = static_cast<decltype(N_color_cu)>(w_color_block) * NB_THREADS_W_AA * h_color_block * NB_THREADS_H_AA;
 
-    ResetMemory(ResetLocals::No, ResetPalettes::No, ResetPerturb::Yes);
+    ResetMemory(ResetLocals::No, ResetPalettes::No, ResetPerturb::Yes, ResetStreams::No);
 
     {
         IterType *tempiter = nullptr;
@@ -353,7 +364,7 @@ uint32_t GPURenderer::InitializeMemory(
             N_cu * sizeof(IterType),
             m_ComputeStream);
         if (err != cudaSuccess) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return err;
         }
 
@@ -368,7 +379,7 @@ uint32_t GPURenderer::InitializeMemory(
             sizeof(ReductionResults),
             m_ComputeStream);
         if (err != cudaSuccess) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return err;
         }
 
@@ -383,7 +394,7 @@ uint32_t GPURenderer::InitializeMemory(
             N_color_cu * sizeof(Color16),
             m_ComputeStream);
         if (err != cudaSuccess) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return err;
         }
 
@@ -444,7 +455,7 @@ uint32_t GPURenderer::InitializePerturb(
 
         auto result = CudaResults1->CheckValid();
         if (result != 0) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return result;
         }
 
@@ -466,7 +477,7 @@ uint32_t GPURenderer::InitializePerturb(
 
         auto result = CudaResults2->CheckValid();
         if (result != 0) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return result;
         }
 
@@ -479,7 +490,7 @@ uint32_t GPURenderer::InitializePerturb(
         auto *LaReferenceCuda = new GPU_LAReference<IterType, T1, SubType>{ *LaReferenceHost, m_ComputeStream };
         auto result = LaReferenceCuda->CheckValid();
         if (result != 0) {
-            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes, ResetStreams::Destroy);
             return result;
         }
 

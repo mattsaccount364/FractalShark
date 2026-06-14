@@ -6,7 +6,10 @@ if(WIN32)
         Win32/EnvironmentWin32.cpp
         Win32/CrashHandlerWin32.cpp
         Win32/JobObjectWin32.cpp
+        Win32/NativeOpenGLContextWin32.cpp
     )
+    find_package(OpenGL REQUIRED COMPONENTS OpenGL)
+    target_link_libraries(FractalSharkPlatform PUBLIC OpenGL::GL)
 else()
     set(FRACTALSHARK_IMAGINA_FIXTURE_NAMES
         View0.im
@@ -119,10 +122,15 @@ else()
         Linux/EnvironmentLinux.cpp
         Linux/CrashHandlerLinux.cpp
         Linux/JobObjectLinux.cpp
+        Linux/NativeOpenGLContextLinux.cpp
         "${FRACTALSHARK_EMBEDDED_IMAGINA_SOURCE}"
     )
     find_package(X11 REQUIRED)
-    target_link_libraries(FractalSharkPlatform PUBLIC X11::X11)
+    find_package(OpenGL REQUIRED COMPONENTS OpenGL GLX)
+    if(NOT TARGET OpenGL::GLX)
+        message(FATAL_ERROR "FractalSharkPlatform requires GLX.")
+    endif()
+    target_link_libraries(FractalSharkPlatform PUBLIC X11::X11 OpenGL::GL OpenGL::GLX)
 endif()
 
 target_include_directories(FractalSharkPlatform PUBLIC

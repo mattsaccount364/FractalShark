@@ -32,7 +32,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Win32\WaitCursorWin32.cpp" />
+    <ClCompile Include="Win32\NativeOpenGLContextWin32.cpp" />
     <ClCompile Include="Linux\WaitCursorLinux.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="Linux\NativeOpenGLContextLinux.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
@@ -55,6 +60,7 @@
   <ItemGroup>
     <ClInclude Include="Common\Environment.h" />
     <ClInclude Include="Common\GlIncludes.h" />
+    <ClInclude Include="Common\NativeOpenGLContext.h" />
     <ClInclude Include="Common\WaitCursor.h" />
     <ClInclude Include="Common\CrashHandler.h" />
     <ClInclude Include="Common\JobObject.h" />

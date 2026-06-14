@@ -2,7 +2,9 @@
 #pragma once
 
 #include "Environment.h"
+#include "NativeOpenGLContext.h"
 
+#include <memory>
 #include <string_view>
 
 // GL types needed in the header (avoids including GL/gl.h which needs windows.h on Win32)
@@ -12,12 +14,10 @@ using GLint = int;
 void GlLog(const char *msg);
 
 struct OpenGlContext {
-    void *m_hWnd{};
-    void *m_hRC{};
-    void *m_hDC{};
+    void *m_NativeWindow{};
+    std::unique_ptr<Environment::NativeOpenGLContext> m_NativeContext;
     bool m_Valid{};
     bool m_IsSoftwareRenderer{};
-    bool m_IsDoubleBuffered{true};
     bool m_Repainting{true};
     GLint m_MaxTextureSize{};
     Environment::ScreenRect m_CachedRect{};

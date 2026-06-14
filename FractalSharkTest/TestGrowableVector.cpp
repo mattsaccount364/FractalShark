@@ -66,7 +66,7 @@ AllocatedBytesForPath(const std::wstring &path)
 
 // ---------------------------------------------------------------------------
 // Anonymous pointer stability: committing additional pages via
-// MutableReserveKeepFileSize must not relocate m_Data — the whole point of
+// MutableReserveKeepFileSize must not relocate m_Data -- the whole point of
 // the reserve-then-commit design.
 // ---------------------------------------------------------------------------
 TEST(GrowableVector_AnonymousPointerStability)
@@ -82,8 +82,8 @@ TEST(GrowableVector_AnonymousPointerStability)
     const uint32_t *firstPtr = &vec[0];
     const uint32_t firstValue = vec[0];
 
-    // Commit progressively larger capacities — each call mprotects more pages
-    // within the same reservation. Push data to make leaks observable.
+    // Commit progressively larger capacities inside the same reservation. Push
+    // data to make leaks observable.
     const size_t capacities[] = {128, 4096, 65536, 1ull << 20};
     for (size_t cap : capacities) {
         vec.MutableReserveKeepFileSize(cap);
@@ -96,8 +96,8 @@ TEST(GrowableVector_AnonymousPointerStability)
 }
 
 // ---------------------------------------------------------------------------
-// Large anonymous reserve: a 1 GiB PROT_NONE reservation must succeed on
-// a 64-bit host (Linux overcommit plus PROT_NONE keep this nearly free).
+// Large anonymous reserve: a 1 GiB virtual reservation must succeed on
+// a 64-bit host without committing the full physical footprint.
 // ---------------------------------------------------------------------------
 TEST(GrowableVector_LargeAnonymousReserve)
 {
@@ -115,7 +115,7 @@ TEST(GrowableVector_LargeAnonymousReserve)
 
 // ---------------------------------------------------------------------------
 // File-backed roundtrip: write, close, reopen. On reopen the element count
-// is recovered from the on-disk file size (fstat) and values read back match.
+// is recovered from the on-disk file size and values read back match.
 // ---------------------------------------------------------------------------
 TEST(GrowableVector_FileBackedRoundtrip)
 {
@@ -140,7 +140,7 @@ TEST(GrowableVector_FileBackedRoundtrip)
     ASSERT_TRUE(onDiskSize.has_value());
     ASSERT_EQ(static_cast<size_t>(*onDiskSize), Count * sizeof(uint32_t));
 
-    // Read phase — OpenExistingWithSave recovers the element count from size.
+    // Read phase: OpenExistingWithSave recovers the element count from size.
     {
         GrowableVector<uint32_t> reader(AddPointOptions::OpenExistingWithSave, path.c_str());
         ASSERT_EQ(reader.GetSize(), Count);
@@ -176,9 +176,7 @@ TEST(GrowableVector_TemporaryMappedPointerStability)
     ASSERT_EQ(vec[0], static_cast<uint8_t>(0x5A));
     ASSERT_EQ(vec[(ReserveBytes / 2) - 1], static_cast<uint8_t>(0xA5));
 
-#ifndef _WIN32
     ASSERT_FALSE(Environment::FileSizeBytes(path.c_str()).has_value());
-#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -249,8 +247,8 @@ TEST(CustomHeap_MallocAndNewUseGlobalHeap)
 
 // ---------------------------------------------------------------------------
 // The heap backing store should be a temporary file-backed GrowableVector.
-// On Linux delete-on-close parity means HeapFile.bin is unlinked after open,
-// so validate the live file descriptor instead of expecting a cwd entry.
+// Delete-on-close parity means HeapFile.bin should not exist as a cwd entry;
+// POSIX also lets us validate the live file descriptor.
 // ---------------------------------------------------------------------------
 TEST(CustomHeap_UsesTemporaryFileBackedGrowableVector)
 {
@@ -265,10 +263,9 @@ TEST(CustomHeap_UsesTemporaryFileBackedGrowableVector)
     ASSERT_TRUE(diag.Data != nullptr);
     ASSERT_TRUE(diag.CapacityBytes >= HEAP_INIT_SIZE);
     ASSERT_TRUE(diag.HeapBytes >= HEAP_INIT_SIZE);
-
-#ifndef _WIN32
     ASSERT_FALSE(Environment::FileSizeBytes(diag.Filename).has_value());
 
+#ifndef _WIN32
     struct stat st{};
     ASSERT_EQ(fstat(static_cast<int>(diag.FileHandle), &st), 0);
     ASSERT_TRUE(S_ISREG(st.st_mode));

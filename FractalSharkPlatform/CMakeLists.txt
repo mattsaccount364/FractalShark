@@ -127,10 +127,10 @@ else()
     )
     find_package(X11 REQUIRED)
     find_package(OpenGL REQUIRED COMPONENTS OpenGL GLX)
-    if(NOT TARGET OpenGL::GLX)
+    if(NOT OPENGL_glx_LIBRARY)
         message(FATAL_ERROR "FractalSharkPlatform requires GLX.")
     endif()
-    target_link_libraries(FractalSharkPlatform PUBLIC X11::X11 OpenGL::GL OpenGL::GLX)
+    target_link_libraries(FractalSharkPlatform PUBLIC X11::X11 OpenGL::GL ${OPENGL_glx_LIBRARY})
 endif()
 
 target_include_directories(FractalSharkPlatform PUBLIC

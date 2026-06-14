@@ -12,6 +12,8 @@
 #include <cstddef>
 #include <unistd.h>
 
+namespace Environment {
+
 namespace {
 
 volatile std::sig_atomic_t g_handlingFatal = 0;
@@ -80,3 +82,5 @@ CrashHandler::Install()
         ::sigaction(sig, &sa, nullptr);
     }
 }
+
+} // namespace Environment

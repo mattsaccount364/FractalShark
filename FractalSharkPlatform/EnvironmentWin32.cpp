@@ -18,6 +18,8 @@
 
 #include "../FractalShark/resource.h"
 
+namespace Environment {
+
 namespace {
 
 struct ImaginaResourceEntry {
@@ -44,6 +46,8 @@ constexpr std::array<ImaginaResourceEntry, 6> kImaginaResources{{
 }};
 
 } // namespace
+
+} // namespace Environment
 
 // =========================================================================
 // File handle operations

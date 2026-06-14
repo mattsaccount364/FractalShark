@@ -1,7 +1,7 @@
 // FractalSharkCli: headless PNG renderer.
 //
 // Process-level init mirrors FractalSharkGUILib/FractalShark.cpp (WinMain +
-// MainWindow ctor): Environment::RegisterHeapCleanup + CrashHandler::Install.
+// MainWindow ctor): Environment::RegisterHeapCleanup + Environment::CrashHandler::Install.
 
 #include "stdafx.h"
 
@@ -352,7 +352,7 @@ int
 main(int argc, char *argv[])
 {
     Environment::RegisterHeapCleanup();
-    CrashHandler::Install();
+    Environment::CrashHandler::Install();
 
     CliArgs args;
     if (!ParseArgs(argc, argv, args)) {

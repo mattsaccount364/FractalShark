@@ -5,6 +5,8 @@
 #include <string>
 #include <sys/resource.h>
 
+namespace Environment {
+
 class JobObject::JobObjectImpl {
 public:
     JobObjectImpl();
@@ -79,3 +81,5 @@ JobObject::GetCommitLimitInBytes() const
 {
     return m_Impl->GetCommitLimitInBytes();
 }
+
+} // namespace Environment

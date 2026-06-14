@@ -81,10 +81,10 @@ DeleteExistingRegularFile(const std::wstring &filename)
 
 MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) : commandDispatcher(*this), hWnd{}
 {
-    gJobObj = std::make_unique<JobObject>();
+    gJobObj = std::make_unique<Environment::JobObject>();
     HighPrecision::defaultPrecisionInBits(256);
 
-    CrashHandler::Install();
+    Environment::CrashHandler::Install();
 
     // SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
@@ -830,28 +830,28 @@ MainWindow::OnLoadRefOrbitImagMaxSaved()
 void
 MainWindow::OnBasicTest()
 {
-    WaitCursor waitCursor;
+    Environment::WaitCursor waitCursor;
     CrummyTest t{*gFractal};
     t.TestAll();
 }
 void
 MainWindow::OnTest27()
 {
-    WaitCursor waitCursor;
+    Environment::WaitCursor waitCursor;
     CrummyTest t{*gFractal};
     t.TestReallyHardView27();
 }
 void
 MainWindow::OnBenchmarkFull()
 {
-    WaitCursor waitCursor;
+    Environment::WaitCursor waitCursor;
     CrummyTest t{*gFractal};
     t.Benchmark(RefOrbitCalc::PerturbationResultType::All);
 }
 void
 MainWindow::OnBenchmarkInt()
 {
-    WaitCursor waitCursor;
+    Environment::WaitCursor waitCursor;
     CrummyTest t{*gFractal};
     t.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
 }

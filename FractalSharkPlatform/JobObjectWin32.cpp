@@ -8,6 +8,8 @@
 
 #include <iostream>
 
+namespace Environment {
+
 class JobObject::JobObjectImpl {
 public:
     JobObjectImpl();
@@ -87,3 +89,5 @@ JobObject::GetCommitLimitInBytes() const
 {
     return m_Impl->GetCommitLimitInBytes();
 }
+
+} // namespace Environment

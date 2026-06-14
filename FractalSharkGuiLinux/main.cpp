@@ -435,7 +435,7 @@ LinuxMainWindow::LinuxMainWindow()
     wmProtocols = XInternAtom(display, "WM_PROTOCOLS", False);
     wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(display, window, &wmDeleteWindow, 1);
-    WaitCursor::RegisterLinuxCursorTarget(
+    Environment::WaitCursor::RegisterLinuxCursorTarget(
         display, static_cast<uintptr_t>(window), static_cast<uintptr_t>(idleCursor));
 
     // Match Win32 KEYDOWN semantics: only autorepeat KeyPress, never KeyRelease.
@@ -494,7 +494,7 @@ LinuxMainWindow::~LinuxMainWindow()
     fractal.reset();
 
     if (display) {
-        WaitCursor::UnregisterLinuxCursorTarget();
+        Environment::WaitCursor::UnregisterLinuxCursorTarget();
         if (window) {
             XDestroyWindow(display, window);
             window = 0;
@@ -1836,7 +1836,7 @@ int
 main(int /*argc*/, char ** /*argv*/)
 {
     Environment::RegisterHeapCleanup();
-    CrashHandler::Install();
+    Environment::CrashHandler::Install();
 
     // Xlib functions are touched from both the GUI thread (XNextEvent
     // pump) and the GL consumer thread (ImGui overlay callback queries

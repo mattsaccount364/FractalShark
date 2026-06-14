@@ -6,6 +6,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+namespace Environment {
+
 WaitCursor::WaitCursor() : m_PreviousCursor{SetCursor(LoadCursor(nullptr, IDC_WAIT))}, m_CursorSet{true}
 {
 }
@@ -34,3 +36,5 @@ void
 WaitCursor::UnregisterLinuxCursorTarget()
 {
 }
+
+} // namespace Environment

@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+namespace Environment {
+
 // RAII Class that sets/resets mouse cursor to wait cursor
 class WaitCursor {
 public:
@@ -24,3 +26,5 @@ private:
     void *m_PreviousCursor = nullptr;
     bool m_CursorSet = false;
 };
+
+} // namespace Environment

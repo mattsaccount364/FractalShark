@@ -21,7 +21,7 @@ FeatureFinderOrchestrator::FeatureFinderOrchestrator(Fractal &fractal) : m_Fract
 void
 FeatureFinderOrchestrator::TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode)
 {
-    WaitCursor waitCursor;
+    Environment::WaitCursor waitCursor;
 
     if (m_Fractal.GetIterType() == IterTypeEnum::Bits32) {
         TryFindPeriodicPointIterType<uint32_t>(scrnX, scrnY, mode);
@@ -673,7 +673,7 @@ FeatureFinderOrchestrator::ChooseClosestFeatureToScreenPoint(int clientX, int cl
 bool
 FeatureFinderOrchestrator::ZoomToFoundFeature(int clientX, int clientY)
 {
-    WaitCursor waitCursor;
+    Environment::WaitCursor waitCursor;
 
     FeatureSummary *best = ChooseClosestFeatureToScreenPoint(clientX, clientY);
     if (!best) {
@@ -688,7 +688,7 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(int clientX, int clientY)
 bool
 FeatureFinderOrchestrator::ResumeFromCheckpoint()
 {
-    WaitCursor waitCursor;
+    Environment::WaitCursor waitCursor;
 
     NRCheckpointData ckpt;
     if (!ReadFullNRCheckpoint(ckpt)) {

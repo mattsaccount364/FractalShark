@@ -9,9 +9,12 @@
 #include "SplashWindow.h"
 #include "UniqueHMenu.h"
 
-class JobObject;
 class Fractal;
 class MainWindowMenuState;
+
+namespace Environment {
+class JobObject;
+} // namespace Environment
 
 enum FractalPaletteType : size_t;
 enum class CompressToDisk;
@@ -189,7 +192,7 @@ private:
     std::vector<ImaginaSavedLocation> gImaginaLocations;
 
     // Global Variables:
-    std::unique_ptr<JobObject> gJobObj;
+    std::unique_ptr<Environment::JobObject> gJobObj;
 
     HINSTANCE hInst; // current instance
     LPCWSTR szWindowClass = L"FractalWindow";

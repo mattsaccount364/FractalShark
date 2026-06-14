@@ -7,6 +7,8 @@
 #include <exception>
 #include <minidumpapiset.h>
 
+namespace Environment {
+
 // ---------------------------------------------------------------------------
 // File-static state — initialised once by Install(), used by all handlers.
 // ---------------------------------------------------------------------------
@@ -177,3 +179,5 @@ CrashHandler::Install()
     ULONG extraStack = 32 * 1024;
     ::SetThreadStackGuarantee(&extraStack);
 }
+
+} // namespace Environment

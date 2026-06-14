@@ -29,6 +29,8 @@
 
 #include <immintrin.h> // _mm_pause (x86 Linux)
 
+namespace Environment {
+
 namespace {
 
 // -------------------------------------------------------------------------
@@ -161,6 +163,8 @@ GetConsoleRawGuard()
 int g_ConsolePending = -1;
 
 } // anonymous namespace
+
+} // namespace Environment
 
 // =========================================================================
 // File handle operations (for PerturbationResults delete-on-close)
@@ -744,6 +748,8 @@ Environment::DirectoryExists(const wchar_t *path)
     return S_ISDIR(st.st_mode);
 }
 
+namespace Environment {
+
 namespace {
 
 int
@@ -756,6 +762,8 @@ NftwRemoveCallback(const char *fpath,
 }
 
 } // anonymous namespace
+
+} // namespace Environment
 
 bool
 Environment::DirectoryRemoveRecursive(const wchar_t *path)

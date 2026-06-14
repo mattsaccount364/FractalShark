@@ -1,7 +1,7 @@
 // LinuxMenuState.cpp — IMenuState impl for the Linux GUI.
 //
 // Mirrors FractalSharkGUILib/MainWindowMenuState.cpp but uses
-// std::filesystem instead of _stat and reads window/JobObject state via
+// std::filesystem instead of _stat and reads window/Environment::JobObject state via
 // constructor refs instead of the Win32-specific MainWindow members.  No
 // Win32 lib changes.
 

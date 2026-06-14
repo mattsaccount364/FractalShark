@@ -5,6 +5,8 @@
 
 #include <mutex>
 
+namespace Environment {
+
 namespace {
 
 struct LinuxCursorTarget {
@@ -85,3 +87,5 @@ WaitCursor::UnregisterLinuxCursorTarget()
     }
     g_LinuxCursorTarget = {};
 }
+
+} // namespace Environment

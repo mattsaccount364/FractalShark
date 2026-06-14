@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <memory>
 
+namespace Environment {
+
 class JobObject {
 public:
     JobObject();
@@ -17,3 +19,5 @@ private:
     class JobObjectImpl;
     std::unique_ptr<JobObjectImpl> m_Impl;
 };
+
+} // namespace Environment

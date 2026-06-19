@@ -1,5 +1,5 @@
-#include "TestFramework.h"
 #include "HighPrecision.h"
+#include "TestFramework.h"
 
 #include <sstream>
 #include <string>
@@ -110,13 +110,7 @@ TEST(HPStr_Hex64Error_Empty)
 {
     mpf_t out;
     mpf_init(out);
-    bool threw = false;
-    try {
-        Hex64StringToMpf_Exact("", out);
-    } catch (const std::runtime_error &) {
-        threw = true;
-    }
-    ASSERT_TRUE(threw);
+    ASSERT_THROWS(Hex64StringToMpf_Exact("", out), FractalSharkSeriousException);
     mpf_clear(out);
 }
 
@@ -124,13 +118,8 @@ TEST(HPStr_Hex64Error_BadSign)
 {
     mpf_t out;
     mpf_init(out);
-    bool threw = false;
-    try {
-        Hex64StringToMpf_Exact("x limbs: 1 actualLimbsUsed: 1 0x0000000000000001 e 0", out);
-    } catch (const std::runtime_error &) {
-        threw = true;
-    }
-    ASSERT_TRUE(threw);
+    ASSERT_THROWS(Hex64StringToMpf_Exact("x limbs: 1 actualLimbsUsed: 1 0x0000000000000001 e 0", out),
+                  FractalSharkSeriousException);
     mpf_clear(out);
 }
 
@@ -138,13 +127,7 @@ TEST(HPStr_Hex64Error_MissingLimbs)
 {
     mpf_t out;
     mpf_init(out);
-    bool threw = false;
-    try {
-        Hex64StringToMpf_Exact("+ garbage data here", out);
-    } catch (const std::runtime_error &) {
-        threw = true;
-    }
-    ASSERT_TRUE(threw);
+    ASSERT_THROWS(Hex64StringToMpf_Exact("+ garbage data here", out), FractalSharkSeriousException);
     mpf_clear(out);
 }
 

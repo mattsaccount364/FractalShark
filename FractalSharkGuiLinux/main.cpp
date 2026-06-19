@@ -613,13 +613,14 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                     // MainWindow.cpp:1393 `ZoomTowardPoint(x, y, -0.3)`.
                     const int x = btn.x;
                     const int y = btn.y;
-                    fractal->EnqueueCommand([x, y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); });
+                    fractal->EnqueueCommand(
+                        [x, y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); }, false);
                     break;
                 }
                 case Button5:
                     // Wheel backward → zoom out at center.  Mirrors
                     // MainWindow.cpp:1397 `ZoomAtCenter(0.3)`.
-                    fractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); });
+                    fractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); }, false);
                     break;
                 default:
                     // Button2 (MMB) currently unused on Win32; leave as-is.

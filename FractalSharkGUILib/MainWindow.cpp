@@ -1582,9 +1582,9 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
                 gFractal->EnqueueCommand(
-                    [x = pt.x, y = pt.y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); });
+                    [x = pt.x, y = pt.y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); }, false);
             } else {
-                gFractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); });
+                gFractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); }, false);
             }
 
             return 0;

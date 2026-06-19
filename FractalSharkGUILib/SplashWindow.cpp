@@ -43,10 +43,7 @@ struct UniqueHandle {
         h = nh;
     }
     HANDLE
-    get() const noexcept
-    {
-        return h;
-    }
+    get() const noexcept { return h; }
     explicit
     operator bool() const noexcept
     {
@@ -124,10 +121,7 @@ struct ScopedBitmap {
         bm = nb;
     }
     HBITMAP
-    get() const noexcept
-    {
-        return bm;
-    }
+    get() const noexcept { return bm; }
     explicit
     operator bool() const noexcept
     {
@@ -155,6 +149,8 @@ MakeManualResetEvent(bool initialState)
 }
 
 } // namespace
+
+namespace FractalShark::Win32 {
 
 // ------------------------------------------------------------
 // Lifetime
@@ -472,3 +468,5 @@ SplashWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             return DefWindowProcW(hWnd, msg, wParam, lParam);
     }
 }
+
+} // namespace FractalShark::Win32

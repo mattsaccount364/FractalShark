@@ -23,7 +23,7 @@
 
 class Fractal;
 
-namespace FractalSharkLinux {
+namespace FractalShark::Linux {
 
 struct MenuPoint {
     int X;
@@ -169,4 +169,4 @@ protected:
     virtual MenuPoint GetMenuMousePos() const = 0;
 };
 
-} // namespace FractalSharkLinux
+} // namespace FractalShark::Linux

@@ -8,7 +8,7 @@
 
 #include <sys/stat.h>
 
-using namespace FractalShark;
+namespace FractalShark::Win32 {
 
 MainWindowMenuState::MainWindowMenuState(const MainWindow &w) noexcept : w_(w), f_(*w.gFractal) {}
 
@@ -17,10 +17,8 @@ MainWindowMenuState::MainWindowMenuState(const MainWindow &w) noexcept : w_(w), 
 // ------------------------------------------------------------
 
 bool
-MainWindowMenuState::IsEnabled(DynamicPopupMenu::Rule rule) const noexcept
+MainWindowMenuState::IsEnabled(Rule rule) const noexcept
 {
-    using Rule = DynamicPopupMenu::Rule;
-
     switch (rule) {
         case Rule::Always:
             return true;
@@ -76,9 +74,9 @@ MainWindowMenuState::IsChecked(UINT commandId) const noexcept
 // ------------------------------------------------------------
 
 UINT
-MainWindowMenuState::GetRadioSelection(DynamicPopupMenu::RadioGroup group) const noexcept
+MainWindowMenuState::GetRadioSelection(RadioGroup group) const noexcept
 {
-    using RG = DynamicPopupMenu::RadioGroup;
+    using RG = RadioGroup;
 
     switch (group) {
         case RG::RenderAlgorithm: {
@@ -227,7 +225,7 @@ MainWindowMenuState::GetRadioSelection(DynamicPopupMenu::RadioGroup group) const
 // ------------------------------------------------------------
 
 UINT
-MainWindowMenuState::GetPopupAdornmentCommandId(DynamicPopupMenu::RadioGroup group) const noexcept
+MainWindowMenuState::GetPopupAdornmentCommandId(RadioGroup group) const noexcept
 {
     return GetRadioSelection(group);
 }
@@ -238,3 +236,5 @@ MainWindowMenuState::GetCommandLabel(UINT /*commandId*/) const noexcept
     // Optional — you can fill this in later if you want text adornments.
     return {};
 }
+
+} // namespace FractalShark::Win32

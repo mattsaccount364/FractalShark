@@ -1,7 +1,7 @@
 #include "StdAfx.h"
+#include "AlgCmds.h"
 #include "DynamicPopupMenu.h"
 #include "UniqueHMenu.h"
-#include "AlgCmds.h"
 
 #include <cstddef> // size_t
 #include <cwchar>  // wmemcpy, wcslen, wmemset
@@ -9,7 +9,7 @@
 
 #include "resource.h"
 
-namespace FractalShark {
+namespace FractalShark::Win32 {
 
 // -------------------- UniqueHMenu --------------------
 
@@ -324,7 +324,7 @@ DynamicPopupMenu::Create(const IMenuState &state)
     }
 
     // Top-level "POPUP" item.
-    Node top = Menu::Popup(L"POPUP", {}, Rule::Always, RadioGroup::None);
+    Node top = Popup(L"POPUP", {}, Rule::Always, RadioGroup::None);
 
     if (!InsertPopupAtEnd(root.get(), top, popup, state)) {
         ::DestroyMenu(popup);
@@ -345,14 +345,10 @@ DynamicPopupMenu::Create(const IMenuState &state)
 bool
 DynamicPopupMenu::BuildPopupContents(HMENU popup, const IMenuState &state)
 {
-    // Bring portable factories (Sep/Item/Toggle/Radio/Popup) and types
-    // (Node/Rule/RadioGroup) into scope for the menu definition include.
-    using namespace FractalShark::Menu;
-
 #include "MenuTreeDef.h"
 
     return BuildMenuTree(
         popup, std::initializer_list<Node>(menu, menu + (sizeof(menu) / sizeof(menu[0]))), state);
 }
 
-} // namespace FractalShark
+} // namespace FractalShark::Win32

@@ -8,19 +8,19 @@
 
 class Fractal;
 
-namespace FractalSharkLinux {
+namespace FractalShark::Linux {
 
-class LinuxMenuState final : public FractalShark::Menu::IMenuState {
+class LinuxMenuState final : public IMenuState {
 public:
     explicit LinuxMenuState(const Fractal &f, const bool &fullscreen) noexcept;
 
-    bool IsEnabled(FractalShark::Menu::Rule rule) const noexcept override;
+    bool IsEnabled(Rule rule) const noexcept override;
     bool IsChecked(uint32_t commandId) const noexcept override;
-    uint32_t GetRadioSelection(FractalShark::Menu::RadioGroup group) const override;
+    uint32_t GetRadioSelection(RadioGroup group) const override;
 
 private:
     const Fractal &m_Fractal;
     const bool &m_Fullscreen;
 };
 
-} // namespace FractalSharkLinux
+} // namespace FractalShark::Linux

@@ -19,7 +19,7 @@
 #include <cstddef>
 #include <iostream>
 
-namespace FractalSharkLinux {
+namespace FractalShark::Linux {
 
 // ---- Algorithm selection --------------------------------------------------
 void
@@ -752,4 +752,4 @@ LinuxCommandHandlers::OnLaSettings3()
         [](Fractal &f) { f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MinMemory); });
 }
 
-} // namespace FractalSharkLinux
+} // namespace FractalShark::Linux

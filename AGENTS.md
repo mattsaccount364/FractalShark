@@ -29,6 +29,11 @@ Windows development targets Visual Studio 2026, CUDA Toolkit, MPIR, and bundled 
 
 Use `.clang-format`: 4-space indentation, no tabs, 105-column limit, right-aligned pointers/references, and `stdafx.h` first where used. Classes, methods, enums, and CMake targets use PascalCase. Member variables use `m_PascalCase`; locals and parameters use `camelCase`. Prefer existing file patterns such as `Test*.cpp`, `*Kernel*.cuh`, and descriptive module names.
 
+Portable command and menu contracts belong directly in `FractalShark`. Platform-specific GUI
+implementation belongs in `FractalShark::Win32` or `FractalShark::Linux`. Keep OS entry points and
+third-party-mandated APIs global. Do not use `using namespace`; use unqualified names inside the
+owning namespace and narrow aliases or using-declarations where needed.
+
 ## Testing Guidelines
 
 `FractalSharkTest` uses the custom framework in `FractalSharkTest/TestFramework.h`; add cases with `TEST(Name)` and `ASSERT_*` macros. Register new test files in both CMake and Visual Studio project files when the project supports both build systems. `HpSharkFloatTest` requires real CUDA hardware and is not expected to run on hosted CI.

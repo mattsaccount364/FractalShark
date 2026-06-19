@@ -192,6 +192,12 @@ These prevent real bugs; do not strip them when editing:
 
 ### Other rules
 
+- **Application namespaces:** Portable command and menu contracts live directly in `FractalShark`.
+  Windows-only GUI implementation lives in `FractalShark::Win32`; Linux-only GUI implementation
+  lives in `FractalShark::Linux`. Keep OS entry points and third-party-mandated APIs global. Do not
+  use `using namespace`; prefer natural unqualified lookup inside the owning namespace and narrow
+  aliases or using-declarations elsewhere. Do not add compatibility aliases that create a second
+  spelling for the same application API.
 - **Error handling:** CUDA via return codes (`cudaError_t`). Both exceptions and status enums are acceptable. CUDA allocation failures should fall back gracefully (e.g., `cudaMalloc` → `cudaMallocHost`).
 - **Warnings:** Always `#pragma warning(push)`/`pop` — never project-wide suppression. Common: 4702, 4324, 4100.
 - **Ownership:** `std::unique_ptr` for ownership; raw pointers for non-owning. **Do not use `std::shared_ptr`** — refactor instead.

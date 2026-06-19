@@ -1,5 +1,7 @@
 #pragma once
 
+namespace FractalShark::Win32 {
+
 struct MainWindow::SavedLocation {
 
     explicit SavedLocation(std::ifstream &infile)
@@ -43,3 +45,5 @@ struct MainWindow::ImaginaSavedLocation {
     std::wstring Filename;
     ImaginaSettings Settings;
 };
+
+} // namespace FractalShark::Win32

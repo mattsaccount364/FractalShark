@@ -6,6 +6,8 @@
 #include <atomic>
 #include <thread>
 
+namespace FractalShark::Win32 {
+
 class SplashWindow {
 public:
     SplashWindow() noexcept = default;
@@ -48,3 +50,5 @@ private:
     // Owned/closed by Start/Stop (or dtor).
     HANDLE CreatedEvent = nullptr;
 };
+
+} // namespace FractalShark::Win32

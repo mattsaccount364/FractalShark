@@ -46,7 +46,7 @@
 #undef Always
 #endif
 
-namespace FractalShark::Menu {
+namespace FractalShark {
 
 enum class RadioGroup : uint16_t {
     None = 0,
@@ -111,8 +111,8 @@ struct Node final {
     RadioGroup radioGroup;
     bool isDefault;
     bool ownerDraw;
-    void *hbmpItem;          // Win32 HBITMAP cast to void *; nullptr on Linux
-    uintptr_t itemData;      // Win32 ULONG_PTR; 0 on Linux
+    void *hbmpItem;     // Win32 HBITMAP cast to void *; nullptr on Linux
+    uintptr_t itemData; // Win32 ULONG_PTR; 0 on Linux
     RadioGroup adornGroup;
 };
 
@@ -168,10 +168,7 @@ Toggle(std::wstring_view text, uint32_t id, Rule enableRule = Rule::Always) noex
 }
 
 constexpr Node
-Radio(std::wstring_view text,
-      uint32_t id,
-      RadioGroup group,
-      Rule enableRule = Rule::Always) noexcept
+Radio(std::wstring_view text, uint32_t id, RadioGroup group, Rule enableRule = Rule::Always) noexcept
 {
     return Node{Kind::Item,
                 text,
@@ -192,28 +189,24 @@ Radio(std::wstring_view text,
 // sites that already pass uint32_t still resolve cleanly. New menu entries
 // authored against MenuTreeDef.h pick the strongly-typed path.
 constexpr Node
-Item(std::wstring_view text,
-     ::FractalShark::FractalCommand id,
-     Rule enableRule = Rule::Always) noexcept
+Item(std::wstring_view text, FractalCommand id, Rule enableRule = Rule::Always) noexcept
 {
-    return Item(text, ::FractalShark::IdmFromCommand(id), enableRule);
+    return Item(text, IdmFromCommand(id), enableRule);
 }
 
 constexpr Node
-Toggle(std::wstring_view text,
-       ::FractalShark::FractalCommand id,
-       Rule enableRule = Rule::Always) noexcept
+Toggle(std::wstring_view text, FractalCommand id, Rule enableRule = Rule::Always) noexcept
 {
-    return Toggle(text, ::FractalShark::IdmFromCommand(id), enableRule);
+    return Toggle(text, IdmFromCommand(id), enableRule);
 }
 
 constexpr Node
 Radio(std::wstring_view text,
-      ::FractalShark::FractalCommand id,
+      FractalCommand id,
       RadioGroup group,
       Rule enableRule = Rule::Always) noexcept
 {
-    return Radio(text, ::FractalShark::IdmFromCommand(id), group, enableRule);
+    return Radio(text, IdmFromCommand(id), group, enableRule);
 }
 
 constexpr Node
@@ -236,4 +229,4 @@ Popup(std::wstring_view text,
                 adornGroup};
 }
 
-} // namespace FractalShark::Menu
+} // namespace FractalShark

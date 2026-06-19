@@ -79,6 +79,8 @@ DeleteExistingRegularFile(const std::wstring &filename)
 
 } // namespace
 
+namespace FractalShark::Win32 {
+
 MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) : commandDispatcher(*this), hWnd{}
 {
     gJobObj = std::make_unique<Environment::JobObject>();
@@ -1023,7 +1025,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     // Create menu / popup (doesn't require the window to be shown)
     MainWindowMenuState menuState(*this);
-    gPopupMenu = FractalShark::DynamicPopupMenu::Create(menuState);
+    gPopupMenu = DynamicPopupMenu::Create(menuState);
 
     // SetRenderAlgorithm: TODO kind of gross but it works, reset now that
     // gFractal exists.  If CPU-only is enforced, this will show the radio
@@ -1416,9 +1418,9 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 
             // Rebuild the menu each time so dynamic state (radio/toggles/enabled) is fresh.
             MainWindowMenuState menuState(*this);
-            gPopupMenu = FractalShark::DynamicPopupMenu::Create(menuState);
+            gPopupMenu = DynamicPopupMenu::Create(menuState);
 
-            HMENU popup = FractalShark::DynamicPopupMenu::GetPopup(gPopupMenu.get());
+            HMENU popup = DynamicPopupMenu::GetPopup(gPopupMenu.get());
             if (!popup) {
                 return 0;
             }
@@ -2424,3 +2426,5 @@ MainWindow::PaintAsNecessary()
         gFractal->EnqueueCommand([](Fractal &) {});
     }
 }
+
+} // namespace FractalShark::Win32

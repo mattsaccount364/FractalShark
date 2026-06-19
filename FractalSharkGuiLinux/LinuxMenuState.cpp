@@ -15,7 +15,7 @@
 
 #include <filesystem>
 
-namespace FractalSharkLinux {
+namespace FractalShark::Linux {
 
 namespace {
 
@@ -38,10 +38,8 @@ LinuxMenuState::LinuxMenuState(const Fractal &f, const bool &fullscreen) noexcep
 }
 
 bool
-LinuxMenuState::IsEnabled(FractalShark::Menu::Rule rule) const noexcept
+LinuxMenuState::IsEnabled(Rule rule) const noexcept
 {
-    using Rule = FractalShark::Menu::Rule;
-
     switch (rule) {
         case Rule::Always:
             return true;
@@ -80,9 +78,9 @@ LinuxMenuState::IsChecked(uint32_t commandId) const noexcept
 }
 
 uint32_t
-LinuxMenuState::GetRadioSelection(FractalShark::Menu::RadioGroup group) const
+LinuxMenuState::GetRadioSelection(RadioGroup group) const
 {
-    using RG = FractalShark::Menu::RadioGroup;
+    using RG = RadioGroup;
 
     switch (group) {
         case RG::RenderAlgorithm: {
@@ -227,4 +225,4 @@ LinuxMenuState::GetRadioSelection(FractalShark::Menu::RadioGroup group) const
     }
 }
 
-} // namespace FractalSharkLinux
+} // namespace FractalShark::Linux

@@ -19,7 +19,7 @@
 #include <optional>
 #include <string>
 
-namespace FractalShark {
+namespace FractalShark::Linux {
 
 struct LinuxClipboard {
     LinuxClipboard(Display *display, Window window);
@@ -65,4 +65,4 @@ private:
     void RespondSelectionRequest(const XSelectionRequestEvent &req);
 };
 
-} // namespace FractalShark
+} // namespace FractalShark::Linux

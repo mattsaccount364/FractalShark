@@ -33,15 +33,13 @@ struct ImGuiContext;
 #include <string>
 #include <vector>
 
-namespace FractalShark {
-struct LinuxClipboard;
-} // namespace FractalShark
-
 namespace FractalShark::Linux {
+
+struct LinuxClipboard;
 
 class ImGuiOverlay {
 public:
-    ImGuiOverlay(Display *display, Window window, FractalShark::LinuxClipboard *clipboard);
+    ImGuiOverlay(Display *display, Window window, LinuxClipboard *clipboard);
     ~ImGuiOverlay();
 
     ImGuiOverlay(const ImGuiOverlay &) = delete;
@@ -128,7 +126,7 @@ private:
 
     Display *display_;
     Window window_;
-    FractalShark::LinuxClipboard *clipboard_;
+    LinuxClipboard *clipboard_;
     ImGuiContext *ctx_ = nullptr;
     bool xlibBackendInited_ = false;
     bool oglBackendInited_ = false;

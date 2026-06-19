@@ -1,6 +1,6 @@
 #pragma once
 
-namespace FractalShark {
+namespace FractalShark::Win32 {
 
 // RAII wrapper for HMENU.
 class UniqueHMenu final {
@@ -29,4 +29,4 @@ private:
     HMENU h_ = nullptr;
 };
 
-} // namespace FractalShark
+} // namespace FractalShark::Win32

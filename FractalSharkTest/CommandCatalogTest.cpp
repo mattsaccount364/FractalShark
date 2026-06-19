@@ -444,9 +444,9 @@ TEST(CommandCatalog_NoneCommandThrows)
 namespace {
 
 void
-WalkAndCheckLeaves(std::span<const FractalShark::Menu::Node> nodes, RecordingHost &host)
+WalkAndCheckLeaves(std::span<const FractalShark::Node> nodes, RecordingHost &host)
 {
-    using FractalShark::Menu::Kind;
+    using FractalShark::Kind;
     for (const auto &node : nodes) {
         if (node.kind == Kind::Popup) {
             WalkAndCheckLeaves(node.kids, host);
@@ -481,7 +481,14 @@ WalkAndCheckLeaves(std::span<const FractalShark::Menu::Node> nodes, RecordingHos
 TEST(CommandCatalog_MenuTreeLeavesAllRouteToHooks)
 {
     using FractalShark::FractalCommand;
-    using namespace FractalShark::Menu;
+    using FractalShark::Item;
+    using FractalShark::Node;
+    using FractalShark::Popup;
+    using FractalShark::Radio;
+    using FractalShark::RadioGroup;
+    using FractalShark::Rule;
+    using FractalShark::Sep;
+    using FractalShark::Toggle;
 
 #include "MenuTreeDef.h"
 

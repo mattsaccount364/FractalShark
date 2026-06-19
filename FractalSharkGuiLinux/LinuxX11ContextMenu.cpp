@@ -23,8 +23,6 @@ namespace FractalShark::Linux {
 
 namespace {
 
-using namespace FractalShark::Menu;
-
 constexpr int kScreenMargin = 4;
 constexpr int kMenuPadding = 3;
 constexpr int kItemHeight = 22;
@@ -155,7 +153,7 @@ struct X11ContextMenu::Impl {
     Display *DisplayHandle;
     int Screen;
     Window Owner;
-    const Menu::IMenuState *State;
+    const IMenuState *State;
     ExecuteCommandHost *Host;
     std::function<void()> RepaintOwner;
     Window Root;
@@ -178,7 +176,7 @@ struct X11ContextMenu::Impl {
     Impl(Display *display,
          int screen,
          Window owner,
-         const Menu::IMenuState *state,
+         const IMenuState *state,
          ExecuteCommandHost *host,
          std::function<void()> repaintOwner)
         : DisplayHandle(display), Screen(screen), Owner(owner), State(state), Host(host),
@@ -1153,7 +1151,7 @@ struct X11ContextMenu::Impl {
 X11ContextMenu::X11ContextMenu(Display *display,
                                int screen,
                                Window owner,
-                               const Menu::IMenuState *state,
+                               const IMenuState *state,
                                ExecuteCommandHost *host,
                                std::function<void()> repaintOwner)
     : m_Impl(std::make_unique<Impl>(display, screen, owner, state, host, std::move(repaintOwner)))

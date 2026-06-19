@@ -10,7 +10,6 @@
 #include "UniqueHMenu.h"
 
 class Fractal;
-class MainWindowMenuState;
 
 namespace Environment {
 class JobObject;
@@ -20,12 +19,12 @@ enum FractalPaletteType : size_t;
 enum class CompressToDisk;
 enum class ImaginaSettings;
 
-namespace FractalShark {
-class UniqueHMenu;
-} // namespace FractalShark
+namespace FractalShark::Win32 {
 
-class MainWindow : public FractalShark::ExecuteCommandHost {
-    friend class FractalShark::CommandDispatcher;
+class MainWindowMenuState;
+
+class MainWindow : public ExecuteCommandHost {
+    friend class CommandDispatcher;
     friend class MainWindowMenuState;
 
 public:
@@ -196,7 +195,7 @@ private:
 
     HINSTANCE hInst; // current instance
     LPCWSTR szWindowClass = L"FractalWindow";
-    FractalShark::UniqueHMenu gPopupMenu;
+    UniqueHMenu gPopupMenu;
     bool gWindowed; // Says whether we are in windowed mode or not.
     HWND hWnd;
 
@@ -242,7 +241,7 @@ private:
     int prevX1 = -1;
     int prevY1 = -1;
 
-    FractalShark::CommandDispatcher commandDispatcher;
+    CommandDispatcher commandDispatcher;
 
     bool HasLastMenuPtClient() const noexcept;
     POINT GetSafeMenuPtClient() const;
@@ -303,3 +302,5 @@ private:
         return (GetAsyncKeyState(VK_MENU) & 0x8000) == 0x8000;
     };
 };
+
+} // namespace FractalShark::Win32

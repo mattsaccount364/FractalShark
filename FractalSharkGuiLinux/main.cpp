@@ -13,7 +13,7 @@
 #include "LinuxSplashWindow.h"
 #include "LinuxX11ContextMenu.h"
 // LinuxMenuState.h pulls in MenuTree.h which #undefs the X11 `None` and
-// `Always` macros (they collide with FractalShark::Menu enum values).
+// `Always` macros (they collide with FractalShark enum values).
 // X.h has a header guard so it can't be re-included to restore them — just
 // redefine the two we use locally.
 #ifndef None
@@ -232,7 +232,7 @@ HotKeyFromXKeyEvent(const XKeyEvent &ev)
 #define FRACTALSHARK_LINUX_STUB(method)                                                                 \
     void method() override { std::fprintf(stderr, "TODO LinuxMainWindow: %s\n", #method); }
 
-struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
+struct LinuxMainWindow : FractalShark::Linux::LinuxCommandHandlers {
     Display *display = nullptr;
     Window window = 0;
     Colormap colormap = 0;
@@ -273,9 +273,9 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     int dragPrevX = -1;
     int dragPrevY = -1;
 
-    std::optional<FractalShark::LinuxClipboard> clipboard;
+    std::optional<FractalShark::Linux::LinuxClipboard> clipboard;
     std::unique_ptr<Fractal> fractal;
-    std::optional<FractalSharkLinux::LinuxMenuState> menuState;
+    std::optional<FractalShark::Linux::LinuxMenuState> menuState;
     // GL context is owned by the GUI thread (host-owned presentation
     // mode).  Created after Fractal so the X window/visual are ready;
     // destroyed before Fractal so any pool teardown that touches the
@@ -317,7 +317,7 @@ struct LinuxMainWindow : FractalSharkLinux::LinuxCommandHandlers {
     {
         return *fractal;
     }
-    FractalSharkLinux::MenuPoint
+    FractalShark::Linux::MenuPoint
     GetMenuMousePos() const override
     {
         return {contextMenuX, contextMenuY};
@@ -613,8 +613,8 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                     // MainWindow.cpp:1393 `ZoomTowardPoint(x, y, -0.3)`.
                     const int x = btn.x;
                     const int y = btn.y;
-                    fractal->EnqueueCommand(
-                        [x, y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); }, false);
+                    fractal->EnqueueCommand([x, y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); },
+                                            false);
                     break;
                 }
                 case Button5:
@@ -856,7 +856,7 @@ LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
 void
 LinuxMainWindow::OnAutoZoomFeatureAtPoint()
 {
-    const FractalSharkLinux::MenuPoint pt = GetMenuMousePos();
+    const FractalShark::Linux::MenuPoint pt = GetMenuMousePos();
     RunFeatureAutoZoomSynchronously(pt.X, pt.Y);
 }
 
@@ -873,8 +873,8 @@ void
 LinuxMainWindow::OnViewsHelp()
 {
     if (overlay) {
-        overlay->RequestInfoModal(FractalSharkLinux::kViewsModalTitle,
-                                  FractalSharkLinux::kViewsModalBody);
+        overlay->RequestInfoModal(FractalShark::Linux::kViewsModalTitle,
+                                  FractalShark::Linux::kViewsModalBody);
     }
 }
 
@@ -882,8 +882,8 @@ void
 LinuxMainWindow::OnHelpAlg()
 {
     if (overlay) {
-        overlay->RequestInfoModal(FractalSharkLinux::kAlgorithmsModalTitle,
-                                  FractalSharkLinux::kAlgorithmsModalBody);
+        overlay->RequestInfoModal(FractalShark::Linux::kAlgorithmsModalTitle,
+                                  FractalShark::Linux::kAlgorithmsModalBody);
     }
 }
 

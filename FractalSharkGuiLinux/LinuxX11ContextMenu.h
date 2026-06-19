@@ -13,9 +13,7 @@
 
 namespace FractalShark {
 struct ExecuteCommandHost;
-namespace Menu {
 struct IMenuState;
-} // namespace Menu
 } // namespace FractalShark
 
 namespace FractalShark::Linux {
@@ -25,7 +23,7 @@ public:
     X11ContextMenu(Display *display,
                    int screen,
                    Window owner,
-                   const Menu::IMenuState *state,
+                   const IMenuState *state,
                    ExecuteCommandHost *host,
                    std::function<void()> repaintOwner);
     ~X11ContextMenu();

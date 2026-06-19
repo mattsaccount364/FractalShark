@@ -18,8 +18,6 @@
 #include <system_error>
 #include <vector>
 
-using namespace FractalShark;
-
 namespace FractalShark::Linux {
 namespace {
 
@@ -73,7 +71,7 @@ LowerAscii(std::string value)
 
 } // namespace
 
-ImGuiOverlay::ImGuiOverlay(Display *display, Window window, FractalShark::LinuxClipboard *clipboard)
+ImGuiOverlay::ImGuiOverlay(Display *display, Window window, LinuxClipboard *clipboard)
     : display_(display), window_(window), clipboard_(clipboard)
 {
     IMGUI_CHECKVERSION();

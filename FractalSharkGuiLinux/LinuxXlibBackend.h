@@ -34,9 +34,9 @@
 
 #include <X11/Xlib.h>
 
-namespace FractalShark {
+namespace FractalShark::Linux {
 struct LinuxClipboard;
-} // namespace FractalShark
+} // namespace FractalShark::Linux
 
 bool ImGui_ImplXlib_Init(Display *display, Window window);
 void ImGui_ImplXlib_Shutdown();
@@ -52,4 +52,4 @@ bool ImGui_ImplXlib_ProcessEvent(const XEvent &ev);
 // Optional: route ImGui clipboard Get/Set through the host's LinuxClipboard
 // (so ImGui text widgets share the same CLIPBOARD selection as the rest of
 // the app).  May be called once after Init.
-void ImGui_ImplXlib_SetClipboardHelper(FractalShark::LinuxClipboard *clipboard);
+void ImGui_ImplXlib_SetClipboardHelper(FractalShark::Linux::LinuxClipboard *clipboard);

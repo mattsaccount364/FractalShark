@@ -5,7 +5,7 @@
 // FractalShark::kCommands instead of duplicated here.
 #pragma once
 
-namespace FractalSharkLinux {
+namespace FractalShark::Linux {
 
 inline constexpr const char *kAlgorithmsModalTitle = "Algorithms";
 inline constexpr const char *kAlgorithmsModalBody =
@@ -35,4 +35,4 @@ inline constexpr const char *kViewsModalBody =
     "The purpose of these is simply to make it easy to navigate to\n"
     "some interesting locations.\n";
 
-} // namespace FractalSharkLinux
+} // namespace FractalShark::Linux

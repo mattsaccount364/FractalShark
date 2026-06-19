@@ -44,7 +44,7 @@ WinMain(_In_ HINSTANCE hInstance,
     Environment::RegisterHeapCleanup();
 
     {
-        MainWindow mainWindow{hInstance, nCmdShow};
+        FractalShark::Win32::MainWindow mainWindow{hInstance, nCmdShow};
 
         //// Main message loop:
         while (GetMessage(&msg, nullptr, 0, 0) > 0) {

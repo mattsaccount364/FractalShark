@@ -9,13 +9,12 @@
 #include "AlgCmds.h"
 #include "RenderAlgorithm.h"
 
+namespace FractalShark::Win32 {
+
 // Forward declare to avoid dragging all of MainWindow.h into every TU that uses this.
 class MainWindow;
 
-namespace FractalShark {
-struct AlgCmd;
-
-const FractalShark::AlgCmd *FindAlgForCmd(int wmId) noexcept;
+const AlgCmd *FindAlgForCmd(int wmId) noexcept;
 int FindCmdForAlg(RenderAlgorithmEnum alg) noexcept;
 
 class CommandDispatcher final {
@@ -39,4 +38,4 @@ private:
     MainWindow &w_;
     std::unordered_map<int, Fn> table_;
 };
-} // namespace FractalShark
+} // namespace FractalShark::Win32

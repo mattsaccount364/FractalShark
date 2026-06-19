@@ -14,7 +14,7 @@
 #include <array>
 #include <utility>
 
-namespace FractalShark {
+namespace FractalShark::Win32 {
 
 // ---- CommandDispatcher::Alg helpers ----
 
@@ -129,4 +129,4 @@ CommandDispatcher::BuildTable()
         });
 }
 
-} // namespace FractalShark
+} // namespace FractalShark::Win32

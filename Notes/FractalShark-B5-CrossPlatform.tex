@@ -2,85 +2,130 @@
 \label{sec:cross-platform}
 
 \FractalShark{} is developed primarily as a Windows application built with
-Visual~Studio~2026, MSBuild, and the NVIDIA CUDA toolkit.  Linux is supported
-as a secondary native target built with CMake and Clang, with release binaries
-targeted at Ubuntu.  The Linux build includes the CPU-side numeric core, CUDA
-rendering kernels, GPU high-precision arithmetic, command-line renderer, unit
-tests, and the native \code{FractalSharkGuiLinux} graphical application built
-on Xlib and Dear~ImGui.  This subsection documents the parallel build
-infrastructure, the platform-abstraction layer, and the cross-platform
-serialization contract for arbitrary-precision integers.  The project goal is
-full Linux/Win32 feature parity, while Windows remains the historical primary
-development environment.
+Visual~Studio~2026, MSBuild, and the NVIDIA CUDA toolkit. Linux is also a native
+target built with CMake and Clang, with release binaries targeted at Ubuntu.
+The Linux build includes the CPU numeric core, CUDA rendering kernels, GPU
+high-precision arithmetic, the command-line renderer, the portable unit tests,
+and the \code{FractalSharkGuiLinux} graphical application. Windows remains the
+historical primary development environment, and the two graphical front ends
+do not yet have complete behavioral parity.
 
 \subsubsection{Dual build system}
 \label{subsec:dual-build}
 
-The Windows build is authoritative.  All project structure, source membership,
-and compiler settings are tracked first in MSBuild project files
-(\code{.vcxproj}) and a Visual~Studio solution (\code{.sln}).  The Linux build
-mirrors the native Linux target set using \code{CMakeLists.txt} files placed
-alongside the corresponding \code{.vcxproj}.  Projects that remain Windows-only
-have no CMake file at all.  When a shared or native-Linux project gains or
-loses sources, both build systems must be updated together.
+The Windows working tree and Visual~Studio solution are authoritative. Shared
+projects maintain parallel \code{.vcxproj} and \code{CMakeLists.txt} source
+lists and settings. Projects that remain Windows-only do not have CMake targets;
+the Win32 GUI and native Linux GUI are intentionally separate applications over
+the same renderer and portable command contracts. Adding or removing a source
+file from a shared project therefore requires updating both build descriptions.
 
-The Linux toolchain is Clang only; GCC is not a supported host compiler.  CUDA
-device compilation uses the standard NVIDIA \code{nvcc} driver, with a
-host-compiler split where required: \code{clang++} drives ordinary C++
-compilation, while \code{nvcc} dispatches to a system \code{g++} purely as
-its host compiler for device translation units.  This arrangement isolates
-toolchain incompatibilities to the device-compilation step and keeps the host
-C++ surface uniformly Clang-compiled.
+The preferred Linux build command is \code{./build\_linux.sh}. It configures
+and builds persistent \code{build-debug} and \code{build-release} trees. An
+incremental build may instead use \code{cmake -{}-build build-debug
+-{}-parallel}, with the corresponding release directory used for an
+incremental release build. Ordinary C++ translation units are compiled as
+C++23 by \code{clang++}. CUDA translation units use C++20 through
+\code{nvcc}, with the system \code{g++} selected as the CUDA host compiler.
 
-Project-by-project coverage on the Linux side includes the shared platform
-library, core fractal library, CUDA rendering library, GPU high-precision
-arithmetic library, explicit-instantiation generator, GPU test harness,
-portable CPU unit tests, command-line renderer, and native Linux GUI.  Legacy
-Windows utilities and the Win32 GUI project remain MSBuild-only; the Linux GUI
-entry point is \code{FractalSharkGuiLinux}.
+The Linux target set comprises \code{FractalSharkPlatform},
+\code{FractalSharkLib}, \code{FractalSharkGpuLib},
+\code{HpSharkFloatLib}, the explicit-instantiation generator, the GPU test
+harness and its support library, \code{FractalSharkTest},
+\code{FractalSharkCli}, and \code{FractalSharkGuiLinux}. The GUI additionally
+requires Xlib, GLX, and OpenGL. Dear~ImGui is fetched at a pinned version during
+CMake configuration. Splash images and Imagina test fixtures are embedded into
+ELF objects during the build, so the packaged executables do not depend on
+loose copies of those assets. The splash-image embedding step currently limits
+the GUI target to x86-64 ELF systems.
 
-Continuous integration runs the Windows MSBuild and the Linux CMake build as
-separate jobs in the same matrix workflow, alongside a third job that compiles
-this document.  Both builds must succeed before any change merges, ensuring the
-two build systems remain synchronized as the codebase evolves.
+Continuous integration configures and builds both Debug and Release on Linux,
+runs \code{FractalSharkTest}, and smoke-tests a release CLI render. It verifies
+that the CLI and GUI binaries have no unresolved shared-library dependencies
+and packages both release executables in the Linux archive. The GUI is built
+but is not launched on the headless runner. \code{HpSharkFloatTest} is also
+built but is not run there because its runtime tests require physical CUDA
+hardware. Separate workflow jobs build and test Windows and compile this
+document; release publication depends on all three jobs.
 
 \subsubsection{Platform abstraction layer}
 \label{subsec:platform-abstraction}
 
-The \code{FractalSharkPlatform} library provides a thin abstraction over the
-small number of operating-system primitives that genuinely differ between
-Windows and Linux.  Its surface comprises an \code{Environment} facade with
-operations for system-heap allocation, aligned allocation, and registration of
-heap-cleanup hooks invoked at process shutdown.  Each operation has separate
-Windows and Linux translation units that supply the platform-specific
-implementation while presenting an identical C++ interface to callers.
+The \code{FractalSharkPlatform} library concentrates operating-system behavior
+behind portable interfaces. The \code{Environment} namespace covers aligned
+and system-heap allocation, file and directory operations, process and memory
+information, timing, thread naming and affinity, console access, input polling,
+temporary paths, embedded resources, diagnostics, and small user-interface
+helpers. Portable geometry and opaque-handle types prevent Win32 types from
+leaking into shared library interfaces.
 
-The abstraction is intentionally minimal.  Rather than scatter
-\code{\#ifdef~\_WIN32} guards through the codebase, divergent behavior is
-concentrated in a small number of files whose entire contents are
-platform-specific.  Code outside the abstraction layer therefore compiles
-unmodified on both platforms.  The audit policy tolerates legacy
-platform-conditional sites that predate the abstraction, but new platform
-divergence is expected to flow through \code{FractalSharkPlatform} unless the
-divergence is truly local in scope.
+Dedicated abstractions cover crash handling, process memory limits, wait-cursor
+state, and native OpenGL contexts. Each abstraction has separate Win32 and
+Linux translation units. The OpenGL wrapper uses WGL on Windows and GLX on
+Linux while presenting the same client-rectangle, context, buffer-swap,
+renderer-detection, and texture-limit interface to the rendering code. On
+Windows, the crash handler writes a \code{.dmp} minidump for post-mortem
+analysis.
+
+This separation avoids distributing platform conditionals throughout the
+numeric and rendering libraries. Platform-specific graphical behavior remains
+in \code{FractalShark::Win32} or \code{FractalShark::Linux}; portable commands
+and menu contracts remain directly in \code{FractalShark}. Operating-system
+entry points and third-party callback interfaces remain in the global namespace
+when required by their APIs.
+
+\subsubsection{Native Linux graphical application}
+\label{subsec:linux-gui}
+
+\code{FractalSharkGuiLinux} uses Xlib for its top-level window and event loop,
+GLX for the native OpenGL context, and the shared OpenGL display pipeline for
+presenting completed frames. The GUI thread owns the window, GLX context, and
+all Dear~ImGui state. It forwards input to an in-project ImGui Xlib backend,
+presents the latest renderer output, draws overlays, and swaps buffers from the
+same event loop. The backend handles mouse buttons and wheels, keyboard input,
+focus changes, window resizing, and clipboard integration.
+
+The right-click menu is a native X11 popup hierarchy rather than an ImGui
+window. It is generated from the shared \code{MenuTree} catalog and dispatches
+through the same portable command identifiers as the Win32 GUI. Linux-specific
+menu-state and command-handler classes translate those contracts into renderer
+mutations and X11 operations. This arrangement keeps algorithm selection,
+navigation, built-in views, iteration controls, perturbation modes, palettes,
+tests, benchmarks, and linear-approximation settings synchronized with the
+portable command catalog while leaving window-system operations in the Linux
+front end.
+
+Dear~ImGui supplies the overlay surfaces that do not need separate native
+windows: help and rendering-information messages, file selection, saved-view
+selection, manual location entry, and the drag-zoom rectangle. The X11 front
+end also implements resize-driven recalculation, mouse-wheel zoom, captured
+drag zoom, fullscreen and square-fullscreen transitions, minimization, feature
+finding and automatic zoom, save and load commands, and an X11 clipboard owner
+for UTF-8 text. A separate Xlib splash window displays a randomly selected
+embedded image while initialization proceeds.
+
+The Linux GUI is functional but is not represented as completely equivalent to
+the Win32 GUI. Some menu enablement and checked-state rules remain conservative,
+and palette rotation currently changes internal state without visibly
+recoloring the displayed frame. These limitations should be stated explicitly
+rather than hidden behind a general claim of full parity.
 
 \subsubsection{Arbitrary-precision serialization}
 \label{subsec:mpir-portability}
 
 \FractalShark{} relies on MPIR for arbitrary-precision integer arithmetic on
-Windows and on GMP for the same role on Linux.  The two libraries are
+Windows and on GMP for the same role on Linux. The two libraries are
 source-compatible at the API level but differ in some internal representation
 details, which matters because reference-orbit files and saved views contain
 serialized arbitrary-precision integers that must round-trip across platforms.
 
 To guarantee byte-identical files, \FractalShark{} defines a single canonical
-wire format that matches MPIR's native \code{\_\_mpz\_struct} layout.  On
+wire format that matches MPIR's native \code{\_\_mpz\_struct} layout. On
 Windows this format is produced by direct field access into the underlying
-MPIR object.  On Linux the same byte sequence is reconstructed atop GMP using
+MPIR object. On Linux the same byte sequence is reconstructed atop GMP using
 \code{mpz\_export} and \code{mpz\_import}, which expose limb data through a
-portable interface.  The two implementations are validated against a checked-in
+portable interface. The two implementations are validated against a checked-in
 golden file (\code{golden\_mpir.bin}) by the \code{TestMpirSerialization}
-unit test, which runs on both platforms in CI.  Any divergence in the wire
+unit test, which runs on both platforms in CI. Any divergence in the wire
 format fails the test on whichever platform regressed, preventing silent
 incompatibility between Windows-written and Linux-written orbit files.
-

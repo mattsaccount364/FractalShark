@@ -15,10 +15,12 @@ through single-key shortcuts, so common workflows do not require opening the
 menu.
 
 The popup menu is context-sensitive and rebuilt dynamically each time it is
-shown, so that checked, enabled, and disabled states accurately reflect the
-current application settings and rendering state.  The menu can be invoked by
-mouse (\textbf{right-click}) or from the keyboard via the standard Windows
-context-menu invocation (\textbf{Shift+F10} / \textbf{Menu} key).
+shown. The Win32 front end reports checked, enabled, and disabled states from
+the current application settings and rendering state; the Linux front end uses
+the same menu and command catalog, with a few conservative state rules noted
+below. The menu can be invoked by mouse (\textbf{right-click}) on both
+platforms. The Win32 GUI also supports the standard keyboard context-menu
+invocation (\textbf{Shift+F10} / \textbf{Menu} key).
 
 \subsubsection{Basic Interaction}
 
@@ -45,6 +47,25 @@ The most common interactions are:
 
 Resizing the window automatically resets the renderer dimensions and triggers
 a recalculation of the fractal to match the new window size.
+
+\paragraph{Linux graphical front end.}
+The native Linux application is \code{FractalSharkGuiLinux}. It uses an X11
+window and native hierarchical popup menu, presents rendered frames through
+OpenGL, and uses Dear~ImGui for help, file-selection, saved-location, and manual
+location-entry dialogs. It supports the primary mouse and keyboard navigation
+paths, fullscreen and square-fullscreen modes, the shared render and
+perturbation commands, automatic zoom and feature finding, clipboard export,
+and the save/load workflows described below. The application requires a
+working X display and GLX/OpenGL implementation. GPU algorithms additionally
+require supported NVIDIA CUDA hardware; CPU algorithms remain available when
+GPU rendering is bypassed.
+
+Most commands have the same meaning on Windows and Linux because both front
+ends dispatch through the shared command catalog. Some Linux menu enablement
+and checked-state rules are intentionally conservative. Linux palette rotation
+also has a known display limitation: it updates palette state but does not
+currently recolor the presented frame, so the interactive effect is not
+visible.
 
 \subsubsection{Menu Structure and Behavior}
 
@@ -471,11 +492,13 @@ choice and triggers any necessary reconfiguration.
       \item \emph{16-bit} (radio)
       \item \emph{20-bit} (radio)
 
-      \item \emph{Palette Rotation} (command): Enters an interactive rotation
-      mode.  The palette shifts by 10~units per frame while the image redraws
-      continuously.  Moving the mouse more than 5~pixels from the starting
-      position exits the mode and resets the palette to its original state.
-      Useful for quickly previewing how different color offsets look.
+      \item \emph{Palette Rotation} (command): On Windows, enters an interactive
+      rotation mode. The palette shifts by 10~units per frame while the image
+      redraws continuously. Moving the mouse more than 5~pixels from the
+      starting position exits the mode and resets the palette to its original
+      state. This command is useful for quickly previewing how different color
+      offsets look. The Linux implementation currently changes the internal
+      palette without visibly recoloring the displayed frame.
     \end{itemize}
 
   \item \emph{Memory Management} (submenu): Controls whether reference orbit
@@ -492,7 +515,7 @@ choice and triggers any necessary reconfiguration.
   \item \emph{Show Rendering Details} (command): Displays current rendering
   status and diagnostics, including position coordinates (real, imaginary,
   zoom level), the active render algorithm, and perturbation/LA state.
-  The information is shown in a message box and also copied to the clipboard.
+  The information is shown in a modal dialog and also copied to the clipboard.
 
   \item \emph{Save} (submenu): Output and benchmarking commands.
     \begin{itemize}
@@ -928,18 +951,23 @@ the token at the start of each frame.
 \label{sec:fractalshark-cli}
 
 \code{FractalSharkCli} is a command-line tool that renders a single
-Mandelbrot view to a PNG file without any graphical interface.  It is
-useful for scripting, CI golden-image tests, and batch rendering on
-headless servers.  The tool builds on both Windows (MSVC) and Linux
-(CMake + Clang).
+Mandelbrot view without a graphical interface. It can write a PNG file,
+print monochrome ASCII art, print ANSI 256-color output, or combine image and
+console output. It is useful for scripting, CI golden-image tests, batch
+rendering on headless servers, and terminal inspection. The tool builds on
+both Windows (MSVC) and Linux (CMake + Clang).
 
 \subsubsection*{Usage synopsis}
 
 \begin{lstlisting}
-FractalSharkCli --render-algorithm NAME --out FILE.png [options] {view-source}
+FractalSharkCli --render-algorithm NAME [--out FILE.png] [--console] [--color]
+                [options] {view-source}
 FractalSharkCli --list-render-algorithms
 FractalSharkCli --help
 \end{lstlisting}
+
+At least one output mode is required. \code{-{}-out} may be omitted when
+\code{-{}-console} or \code{-{}-color} is selected.
 
 \subsubsection*{View sources (mutually exclusive)}
 
@@ -990,6 +1018,18 @@ FractalSharkCli --help
 
   \item[\code{-{}-commit-cap-bytes N}]
     Memory cap for growable vectors (default unlimited).
+
+  \item[\code{-{}-out FILE.png}]
+    Write the rendered image as a PNG. This option can be combined with either
+    console-output mode.
+
+  \item[\code{-{}-console}]
+    Print a monochrome ASCII representation of the rendered view to standard
+    output. The PNG output is optional in this mode.
+
+  \item[\code{-{}-color}]
+    Print an ANSI 256-color terminal representation. This option implies
+    \code{-{}-console} and can also be combined with PNG output.
 
   \item[\code{-{}-quiet}]
     Suppress progress output.

@@ -8,11 +8,33 @@ This appendix records development notes that were posted over time.
 \subsubsection{2026-6 News --- Version 0.53}
 
 \begin{itemize}
-\item \textbf{Native Linux build.}  A CMake + Clang build system is introduced
-  alongside the existing Visual Studio solution, including the native
-  \code{FractalSharkGuiLinux} Xlib/Dear~ImGui GUI.  Linux release binaries are
-  targeted at Ubuntu, and the intended direction is full Linux/Win32 parity.
-  CPU-only unit tests pass on Linux.
+\item \textbf{Native Linux build.} The CMake + Clang build now covers the core
+  numeric library, CUDA rendering, GPU high-precision arithmetic, tests, the
+  command-line renderer, and the native graphical application. Debug and
+  Release configurations are built in parallel with the Visual~Studio
+  solution, and Linux release binaries are targeted at Ubuntu.
+
+\item \textbf{Native Linux GUI.} \code{FractalSharkGuiLinux} now uses Xlib and
+  GLX for its window and OpenGL presentation, a native hierarchical X11 popup
+  menu, and Dear~ImGui overlays for help and application dialogs. Navigation,
+  drag and wheel zoom, automatic zoom, feature finding, fullscreen transitions,
+  clipboard output, and the principal save/load workflows are connected to the
+  shared renderer and command catalog. Full Win32 parity remains a direction
+  rather than a completed claim; palette rotation and some menu-state details
+  still have Linux-specific limitations.
+
+\item \textbf{Portable platform services.} Operating-system dependencies are
+  consolidated in \code{FractalSharkPlatform}, including allocation, files,
+  process and memory queries, threading, input, diagnostics, wait cursors,
+  embedded resources, and native OpenGL contexts. Shared library interfaces use
+  portable window and geometry types instead of exposing Win32 types.
+
+\item \textbf{Linux validation and packaging.} Linux CI builds Debug and
+  Release, runs the portable CPU unit tests, smoke-tests the headless renderer,
+  checks the release executables for unresolved dependencies, and packages
+  \code{FractalSharkCli} with \code{FractalSharkGuiLinux}. CUDA-specific tests
+  are compiled but remain a hardware validation step because hosted runners do
+  not provide a physical GPU.
 \end{itemize}
 
 \subsubsection{2026-5-3 News --- Version 0.52}
@@ -33,11 +55,12 @@ cross-platform port to Linux.
   formats are compatible, so an interrupted computation can be resumed on
   either backend.
 
-\item \textbf{Linux port (in progress).}  A CMake + Clang build system is
-  introduced alongside the existing Visual Studio solution, and a GTK-based
-  GUI is under development.  The port is incomplete---not all features work
-  yet---but the project is moving in this direction.  CPU-only unit tests
-  pass on Linux.
+\item \textbf{Linux port (in progress).} A CMake + Clang build system is
+  introduced alongside the existing Visual~Studio solution. At the time of
+  this release, a GTK-based GUI was proposed and the port was incomplete.
+  Version~0.53 superseded that proposal with the native Xlib/GLX and
+  Dear~ImGui application described above. CPU-only unit tests already passed on
+  Linux at this stage.
 
 \item \textbf{Miscellaneous.}  Extracted \code{FeatureFinderOrchestrator} from
   the main class; improved the heap allocator panic path; parallelized the
@@ -835,5 +858,3 @@ A long-duration technology demonstration video accompanied this release,
 showcasing a zoom to approximately $10^{4000}$ using the default HDRx32/BLA CUDA
 kernel.  Rendering and post-processing each required roughly one and a half
 days.
-
-

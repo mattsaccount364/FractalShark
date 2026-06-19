@@ -143,7 +143,7 @@ PromptIntWithTimeout(const std::string &promptText,
             }
 
             // Backspace
-            if (ch == 8) {
+            if (ch == '\b' || ch == 0x7f) {
                 waitForever = true;     // <-- new: don't timeout mid-edit
                 interactiveMode = true; // optional: make prompts sticky globally now
 

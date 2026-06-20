@@ -78,13 +78,13 @@ FractalShark performs **supersampled antialiasing on the GPU**: each pixel is re
 - **CUDA-capable NVIDIA 900-series or newer** (~2016)
 - **CUDA-capable NVIDIA RTX 2xxx series or newer** for GPU-accelerated reference orbit.
 - **Try updating your NVIDIA driver** if you get a "cuda error 35" when you run it.
-- **Windows** with the Win32 GUI as the official release platform, or **Linux** through the experimental native CMake + Clang port.
+- **Windows** with the Win32 GUI as the official release platform, or **Linux** through the experimental native CMake + Clang port introduced in version 0.53.
 
-**Linux is not currently an official release platform.** The native Linux port is undergoing heavy revision and should be treated as an unsupported development preview. It includes the CPU-side numeric core, CUDA GPU rendering components, the command-line renderer, tests, and the `FractalSharkGuiLinux` Xlib/Dear ImGui graphical application. Full Linux/Win32 parity remains the goal, but behavior, dependencies, and interfaces may change substantially while the port catches up with the older Win32 application.
+**Version 0.53 is the first release with experimental Linux support. Linux is not currently an official release platform.** The native Linux port is undergoing heavy revision and should be treated as an unsupported development preview. It includes the CPU-side numeric core, CUDA GPU rendering components, the command-line renderer, tests, and the `FractalSharkGuiLinux` Xlib/Dear ImGui graphical application. Full Linux/Win32 parity remains the goal, but behavior, dependencies, and interfaces may change substantially while the port catches up with the older Win32 application.
 
 ## Where do I download it?
 
-- Download official Windows binaries from here: [https://github.com/mattsaccount364/FractalShark/releases](https://github.com/mattsaccount364/FractalShark/releases). Tagged releases also include an experimental `FractalShark-Linux-<tag>.tar.gz` archive containing the Linux command-line and GUI binaries. This Linux archive is an unsupported development preview, not an official release, and may change or break while the port is under heavy revision. Linux users may alternatively build it from source using the instructions below.
+- Download official Windows binaries from here: [https://github.com/mattsaccount364/FractalShark/releases](https://github.com/mattsaccount364/FractalShark/releases). Beginning with version 0.53, tagged releases also include an experimental `FractalShark-Linux-<tag>.tar.gz` archive containing the Linux command-line and GUI binaries. This Linux archive is an unsupported development preview, not an official release, and may change or break while the port is under heavy revision. Linux users may alternatively build it from source using the instructions below.
 
 ## More docs?
 
@@ -164,7 +164,7 @@ If you're bored and want to try yet another Mandelbrot set renderer, give it a g
 - **2008**: I did a distributed version that ran on the University of Wisconsin's "Condor" platform. That was pretty cool, and allowed for fast creation of zoom movies.
 - **2017**: I resurrected it, and added high precision, but no perturbation or anything else. At that point, it was theoretically capable of rendering very deep images, but it was so slow as to be largely useless.
 - **2023-Q2 2024-Q2**: I bought this new video card, and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up. So here we are.
-- **2026-6**: Work continues. FractalShark now has a novel GPU-accelerated reference orbit using NTT-based high-precision arithmetic, GPU-accelerated Newton-Raphson for the Feature Finder, and a native Linux development build. Linux is not yet an official release platform, and the port remains under heavy revision while work toward Linux/Win32 parity continues.
+- **2026-6**: Version 0.53 is the first release with experimental Linux support. FractalShark now has a novel GPU-accelerated reference orbit using NTT-based high-precision arithmetic, GPU-accelerated Newton-Raphson for the Feature Finder, and a native Linux development build. Linux is not yet an official release platform, and the port remains under heavy revision while work toward Linux/Win32 parity continues.
 
 ## Build instructions
 
@@ -187,7 +187,7 @@ Source builds require Git LFS.  Some checked-in assets are LFS-backed, including
 
 For Linux:
 
-The Linux port is an unsupported development preview under heavy revision, not an official release. These instructions are intended for developers and testers who are comfortable diagnosing build and runtime problems.
+Version 0.53 is the first release with experimental Linux support. The Linux port remains an unsupported development preview under heavy revision, not an official release platform. These instructions are intended for developers and testers who are comfortable diagnosing build and runtime problems.
 
 1. Use Ubuntu or an Ubuntu-compatible environment.
 2. Install Git LFS, CMake, Clang, the NVIDIA CUDA Toolkit, `libgmp-dev`, and the X11/OpenGL development packages needed by the GUI.

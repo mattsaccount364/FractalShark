@@ -9,8 +9,8 @@
 #include "Fractal.h"
 #include "JobObject.h"
 #include "MainWindow.h"
-#include "MainWindowMenuState.h"
 #include "MainWindowSavedLocation.h"
+#include "MenuState.h"
 #include "OpenGLContext.h"
 #include "PngParallelSave.h"
 
@@ -1024,7 +1024,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
         rt.right, rt.bottom, static_cast<void *>(hWnd), false, gJobObj->GetCommitLimitInBytes());
 
     // Create menu / popup (doesn't require the window to be shown)
-    MainWindowMenuState menuState(*this);
+    MenuState menuState(*gFractal);
     gPopupMenu = DynamicPopupMenu::Create(menuState);
 
     // SetRenderAlgorithm: TODO kind of gross but it works, reset now that
@@ -1417,7 +1417,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             }
 
             // Rebuild the menu each time so dynamic state (radio/toggles/enabled) is fresh.
-            MainWindowMenuState menuState(*this);
+            MenuState menuState(*gFractal);
             gPopupMenu = DynamicPopupMenu::Create(menuState);
 
             HMENU popup = DynamicPopupMenu::GetPopup(gPopupMenu.get());

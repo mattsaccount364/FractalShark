@@ -1,11 +1,6 @@
-// LinuxMenuState.cpp — IMenuState impl for the Linux GUI.
-//
-// Mirrors FractalSharkGUILib/MainWindowMenuState.cpp but uses
-// std::filesystem instead of _stat and reads window/Environment::JobObject state via
-// constructor refs instead of the Win32-specific MainWindow members.  No
-// Win32 lib changes.
+#include "stdafx.h"
 
-#include "LinuxMenuState.h"
+#include "MenuState.h"
 
 #include "AlgCmds.h"
 #include "Exceptions.h"
@@ -15,16 +10,16 @@
 
 #include <filesystem>
 
-namespace FractalShark::Linux {
+namespace FractalShark {
 
 namespace {
 
 int
-findCmdForAlg(::RenderAlgorithmEnum alg) noexcept
+FindCommandForAlgorithm(::RenderAlgorithmEnum algorithm) noexcept
 {
-    for (const auto &e : FractalShark::kAlgCmds) {
-        if (e.alg == alg) {
-            return e.id;
+    for (const auto &entry : kAlgCmds) {
+        if (entry.alg == algorithm) {
+            return entry.id;
         }
     }
     return -1;
@@ -32,13 +27,10 @@ findCmdForAlg(::RenderAlgorithmEnum alg) noexcept
 
 } // namespace
 
-LinuxMenuState::LinuxMenuState(const Fractal &f, const bool &fullscreen) noexcept
-    : m_Fractal(f), m_Fullscreen(fullscreen)
-{
-}
+MenuState::MenuState(const Fractal &fractal) noexcept : m_Fractal(fractal) {}
 
 bool
-LinuxMenuState::IsEnabled(Rule rule) const noexcept
+MenuState::IsEnabled(Rule rule) const noexcept
 {
     switch (rule) {
         case Rule::Always:
@@ -54,8 +46,8 @@ LinuxMenuState::IsEnabled(Rule rule) const noexcept
             return false;
 
         case Rule::EnableIfNRCheckpointExists: {
-            std::error_code ec;
-            return std::filesystem::exists("nr_checkpoint.txt", ec);
+            std::error_code error;
+            return std::filesystem::exists("nr_checkpoint.txt", error);
         }
 
         default:
@@ -64,29 +56,27 @@ LinuxMenuState::IsEnabled(Rule rule) const noexcept
 }
 
 bool
-LinuxMenuState::IsChecked(uint32_t commandId) const noexcept
+MenuState::IsChecked(uint32_t commandId) const noexcept
 {
     switch (commandId) {
-        case IDM_WINDOWED:
-        case IDM_WINDOWED_SQ:
-            return m_Fullscreen;
-
         case IDM_REPAINTING:
+            return m_Fractal.GetRepaint();
+
         default:
             return false;
     }
 }
 
 uint32_t
-LinuxMenuState::GetRadioSelection(RadioGroup group) const
+MenuState::GetRadioSelection(RadioGroup group) const
 {
     using RG = RadioGroup;
 
     switch (group) {
         case RG::RenderAlgorithm: {
-            const auto ra = m_Fractal.GetRenderAlgorithm();
-            const int cmd = findCmdForAlg(ra.Algorithm);
-            return (cmd >= 0) ? static_cast<uint32_t>(cmd) : 0;
+            const auto renderAlgorithm = m_Fractal.GetRenderAlgorithm();
+            const int command = FindCommandForAlgorithm(renderAlgorithm.Algorithm);
+            return command >= 0 ? static_cast<uint32_t>(command) : 0;
         }
 
         case RG::GpuAntialiasing:
@@ -204,8 +194,8 @@ LinuxMenuState::GetRadioSelection(RadioGroup group) const
             throw FractalSharkSeriousException("Unknown AddPointOptions memory autosave setting");
 
         case RG::IterationsWidth:
-            return (m_Fractal.GetIterType() == IterTypeEnum::Bits32) ? IDM_32BIT_ITERATIONS
-                                                                     : IDM_64BIT_ITERATIONS;
+            return m_Fractal.GetIterType() == IterTypeEnum::Bits32 ? IDM_32BIT_ITERATIONS
+                                                                   : IDM_64BIT_ITERATIONS;
 
         case RG::NRInnerLoopBackend:
             switch (m_Fractal.GetNRInnerLoopBackend()) {
@@ -225,4 +215,4 @@ LinuxMenuState::GetRadioSelection(RadioGroup group) const
     }
 }
 
-} // namespace FractalShark::Linux
+} // namespace FractalShark

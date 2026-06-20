@@ -45,6 +45,7 @@
     <ClInclude Include="CommandCatalog.h" />
     <ClInclude Include="MenuTree.h" />
     <ClInclude Include="MenuTreeDef.h" />
+    <ClInclude Include="MenuState.h" />
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="OrbitEndpointEvaluator.h" />
     <ClInclude Include="OrbitParameterPack.h" />
@@ -91,6 +92,7 @@
     <ClCompile Include="ImaginaOrbit.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAReference.cpp" />
+    <ClCompile Include="MenuState.cpp" />
     <ClCompile Include="OpenGLContext.cpp" />
     <ClCompile Include="OrbitEndpointEvaluator.cpp" />
     <ClCompile Include="OrbitParameterPack.cpp" />

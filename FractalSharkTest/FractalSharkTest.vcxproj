@@ -58,6 +58,7 @@
     <ClCompile Include="TestHDRFloatComplex.cpp" />
     <ClCompile Include="TestHighPrecisionStrings.cpp" />
     <ClCompile Include="TestLAParameters.cpp" />
+    <ClCompile Include="MenuStateTest.cpp" />
     <ClCompile Include="TestMpirOrbitEval.cpp" />
     <ClCompile Include="TestMpirSerialization.cpp" />
     <ClCompile Include="TestPointZoomBBConverter.cpp" />

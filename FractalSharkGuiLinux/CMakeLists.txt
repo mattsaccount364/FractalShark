@@ -122,7 +122,6 @@ add_executable(FractalSharkGuiLinux
     main.cpp
     LinuxClipboard.cpp
     LinuxCommandHandlers.cpp
-    LinuxMenuState.cpp
     LinuxSplashWindow.cpp
     LinuxX11ContextMenu.cpp
     LinuxXlibBackend.cpp

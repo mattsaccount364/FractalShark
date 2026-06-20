@@ -21,11 +21,8 @@ enum class ImaginaSettings;
 
 namespace FractalShark::Win32 {
 
-class MainWindowMenuState;
-
 class MainWindow : public ExecuteCommandHost {
     friend class CommandDispatcher;
-    friend class MainWindowMenuState;
 
 public:
     struct SavedLocation;

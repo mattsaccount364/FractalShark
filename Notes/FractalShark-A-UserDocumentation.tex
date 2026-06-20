@@ -15,10 +15,9 @@ through single-key shortcuts, so common workflows do not require opening the
 menu.
 
 The popup menu is context-sensitive and rebuilt dynamically each time it is
-shown. The Win32 front end reports checked, enabled, and disabled states from
-the current application settings and rendering state; the Linux front end uses
-the same menu and command catalog, with a few conservative state rules noted
-below. The menu can be invoked by mouse (\textbf{right-click}) on both
+shown. Both front ends derive checked, enabled, and disabled states from the
+same portable menu-state implementation and current rendering state. The menu
+can be invoked by mouse (\textbf{right-click}) on both
 platforms. The Win32 GUI also supports the standard keyboard context-menu
 invocation (\textbf{Shift+F10} / \textbf{Menu} key).
 
@@ -61,9 +60,9 @@ require supported NVIDIA CUDA hardware; CPU algorithms remain available when
 GPU rendering is bypassed.
 
 Most commands have the same meaning on Windows and Linux because both front
-ends dispatch through the shared command catalog. Some Linux menu enablement
-and checked-state rules are intentionally conservative. Linux palette rotation
-also has a known display limitation: it updates palette state but does not
+ends dispatch through the shared command catalog and evaluate state through the
+same portable implementation. Linux palette rotation has a known display
+limitation: it updates palette state but does not
 currently recolor the presented frame, so the interactive effect is not
 visible.
 

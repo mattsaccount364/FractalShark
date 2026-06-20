@@ -20,8 +20,9 @@ This appendix records development notes that were posted over time.
   drag and wheel zoom, automatic zoom, feature finding, fullscreen transitions,
   clipboard output, and the principal save/load workflows are connected to the
   shared renderer and command catalog. Full Win32 parity remains a direction
-  rather than a completed claim; palette rotation and some menu-state details
-  still have Linux-specific limitations.
+  rather than a completed claim; palette rotation still has a Linux-specific
+  display limitation. Menu enablement, check marks, and radio selections are
+  evaluated by the same portable implementation on both platforms.
 
 \item \textbf{Portable platform services.} Operating-system dependencies are
   consolidated in \code{FractalSharkPlatform}, including allocation, files,

@@ -9,10 +9,10 @@
 #include "LinuxCommandHandlers.h"
 #include "LinuxHelpModals.h"
 #include "LinuxImGuiOverlay.h"
-#include "LinuxMenuState.h"
 #include "LinuxSplashWindow.h"
 #include "LinuxX11ContextMenu.h"
-// LinuxMenuState.h pulls in MenuTree.h which #undefs the X11 `None` and
+#include "MenuState.h"
+// MenuState.h pulls in MenuTree.h which #undefs the X11 `None` and
 // `Always` macros (they collide with FractalShark enum values).
 // X.h has a header guard so it can't be re-included to restore them — just
 // redefine the two we use locally.
@@ -275,7 +275,7 @@ struct LinuxMainWindow : FractalShark::Linux::LinuxCommandHandlers {
 
     std::optional<FractalShark::Linux::LinuxClipboard> clipboard;
     std::unique_ptr<Fractal> fractal;
-    std::optional<FractalShark::Linux::LinuxMenuState> menuState;
+    std::optional<FractalShark::MenuState> menuState;
     // GL context is owned by the GUI thread (host-owned presentation
     // mode).  Created after Fractal so the X window/visual are ready;
     // destroyed before Fractal so any pool teardown that touches the
@@ -470,7 +470,7 @@ LinuxMainWindow::LinuxMainWindow()
     // ImGui overlay: single-threaded, all calls on this thread.  Init
     // requires GL to be current, which OpenGlContext::ctor already
     // ensured.
-    menuState.emplace(*fractal, fullscreen);
+    menuState.emplace(*fractal);
     overlay.emplace(display, window, &*clipboard);
     contextMenu.emplace(
         display, screen, window, &*menuState, this, [this] { RepaintAfterNativePopupUnmap(); });

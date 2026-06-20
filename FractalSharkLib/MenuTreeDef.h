@@ -117,10 +117,11 @@ static const Node menu[] = {
     Item(L"Recalculate, Reuse Reference", FractalCommand::SquareView),
     Sep(),
 
-    // These read their check state from IMenuState::IsChecked(commandId)
+    // Repainting reflects persistent renderer state. Window-size entries are
+    // actions: both switch between fullscreen and a differently sized window.
     Toggle(L"Toggle Repainting", FractalCommand::Repainting),
-    Toggle(L"Toggle Window Size", FractalCommand::Windowed),
-    Toggle(L"Toggle Window Size (Square)", FractalCommand::WindowedSq),
+    Item(L"Toggle Window Size", FractalCommand::Windowed),
+    Item(L"Toggle Window Size (Square)", FractalCommand::WindowedSq),
 
     Item(L"Minimize Window", FractalCommand::Minimize),
     Sep(),

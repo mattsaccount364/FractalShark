@@ -87,9 +87,10 @@ focus changes, window resizing, and clipboard integration.
 
 The right-click menu is a native X11 popup hierarchy rather than an ImGui
 window. It is generated from the shared \code{MenuTree} catalog and dispatches
-through the same portable command identifiers as the Win32 GUI. Linux-specific
-menu-state and command-handler classes translate those contracts into renderer
-mutations and X11 operations. This arrangement keeps algorithm selection,
+through the same portable command identifiers as the Win32 GUI. A shared
+\code{MenuState} implementation supplies enablement, check marks, and radio
+selections to both native menu builders. Linux-specific command handlers
+translate commands that require X11 operations. This arrangement keeps algorithm selection,
 navigation, built-in views, iteration controls, perturbation modes, palettes,
 tests, benchmarks, and linear-approximation settings synchronized with the
 portable command catalog while leaving window-system operations in the Linux
@@ -105,8 +106,7 @@ for UTF-8 text. A separate Xlib splash window displays a randomly selected
 embedded image while initialization proceeds.
 
 The Linux GUI is functional but is not represented as completely equivalent to
-the Win32 GUI. Some menu enablement and checked-state rules remain conservative,
-and palette rotation currently changes internal state without visibly
+the Win32 GUI. Palette rotation currently changes internal state without visibly
 recoloring the displayed frame. These limitations should be stated explicitly
 rather than hidden behind a general claim of full parity.
 

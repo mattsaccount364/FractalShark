@@ -11,6 +11,7 @@ target_sources(FractalSharkTest PRIVATE
     TestHDRFloatComplex.cpp
     TestHighPrecisionStrings.cpp
     TestLAParameters.cpp
+    MenuStateTest.cpp
     TestMpirOrbitEval.cpp
     TestPointZoomBBConverter.cpp
     TestPrecisionCalculator.cpp

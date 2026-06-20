@@ -176,7 +176,11 @@ TEST(GrowableVector_TemporaryMappedPointerStability)
     ASSERT_EQ(vec[0], static_cast<uint8_t>(0x5A));
     ASSERT_EQ(vec[(ReserveBytes / 2) - 1], static_cast<uint8_t>(0xA5));
 
+#ifdef _WIN32
+    ASSERT_TRUE(Environment::FileSizeBytes(path.c_str()).has_value());
+#else
     ASSERT_FALSE(Environment::FileSizeBytes(path.c_str()).has_value());
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -247,8 +251,8 @@ TEST(CustomHeap_MallocAndNewUseGlobalHeap)
 
 // ---------------------------------------------------------------------------
 // The heap backing store should be a temporary file-backed GrowableVector.
-// Delete-on-close parity means HeapFile.bin should not exist as a cwd entry;
-// POSIX also lets us validate the live file descriptor.
+// Win32 keeps HeapFile.bin in the namespace until its delete-on-close handle closes.
+// Linux unlinks it immediately while retaining the live file descriptor.
 // ---------------------------------------------------------------------------
 TEST(CustomHeap_UsesTemporaryFileBackedGrowableVector)
 {
@@ -263,9 +267,11 @@ TEST(CustomHeap_UsesTemporaryFileBackedGrowableVector)
     ASSERT_TRUE(diag.Data != nullptr);
     ASSERT_TRUE(diag.CapacityBytes >= HEAP_INIT_SIZE);
     ASSERT_TRUE(diag.HeapBytes >= HEAP_INIT_SIZE);
+#ifdef _WIN32
+    ASSERT_TRUE(Environment::FileSizeBytes(diag.Filename).has_value());
+#else
     ASSERT_FALSE(Environment::FileSizeBytes(diag.Filename).has_value());
 
-#ifndef _WIN32
     struct stat st{};
     ASSERT_EQ(fstat(static_cast<int>(diag.FileHandle), &st), 0);
     ASSERT_TRUE(S_ISREG(st.st_mode));

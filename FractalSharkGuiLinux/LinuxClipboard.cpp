@@ -3,12 +3,16 @@
 #include <X11/Xatom.h>
 
 #include <cstring>
+#include <stdexcept>
 #include <thread>
 
 namespace FractalShark::Linux {
 
 LinuxClipboard::LinuxClipboard(Display *display, Window window) : m_Display(display), m_Window(window)
 {
+    if (!m_Display || !m_Window) {
+        throw std::invalid_argument("LinuxClipboard requires a valid X display and window");
+    }
     m_AtomClipboard = XInternAtom(m_Display, "CLIPBOARD", False);
     m_AtomTargets = XInternAtom(m_Display, "TARGETS", False);
     m_AtomUtf8String = XInternAtom(m_Display, "UTF8_STRING", False);
@@ -16,6 +20,10 @@ LinuxClipboard::LinuxClipboard(Display *display, Window window) : m_Display(disp
     m_AtomText = XInternAtom(m_Display, "TEXT", False);
     m_AtomIncr = XInternAtom(m_Display, "INCR", False);
     m_AtomFractalSharkPaste = XInternAtom(m_Display, "_FRACTALSHARK_PASTE", False);
+    if (m_AtomClipboard == None || m_AtomTargets == None || m_AtomUtf8String == None ||
+        m_AtomText == None || m_AtomIncr == None || m_AtomFractalSharkPaste == None) {
+        throw std::runtime_error("Failed to initialize X clipboard atoms");
+    }
 }
 
 void
@@ -25,6 +33,9 @@ LinuxClipboard::Set(std::string text)
     XSetSelectionOwner(m_Display, m_AtomClipboard, m_Window, CurrentTime);
     m_OwnsSelection = (XGetSelectionOwner(m_Display, m_AtomClipboard) == m_Window);
     XFlush(m_Display);
+    if (!m_OwnsSelection) {
+        throw std::runtime_error("Failed to take ownership of the X clipboard selection");
+    }
 }
 
 std::optional<std::string>
@@ -59,7 +70,10 @@ LinuxClipboard::Get(std::chrono::milliseconds timeout)
         }
     }
 
-    m_GetPending = false;
+    if (m_GetPending) {
+        m_GetPending = false;
+        throw std::runtime_error("Timed out waiting for the X clipboard selection");
+    }
     return std::move(m_GetResult);
 }
 
@@ -100,7 +114,10 @@ LinuxClipboard::RespondSelectionRequest(const XSelectionRequestEvent &req)
         reply.property = req.property;
     }
 
-    XSendEvent(req.display, req.requestor, False, NoEventMask, reinterpret_cast<XEvent *>(&reply));
+    if (XSendEvent(req.display, req.requestor, False, NoEventMask, reinterpret_cast<XEvent *>(&reply)) ==
+        0) {
+        throw std::runtime_error("Failed to send an X clipboard selection response");
+    }
     XFlush(req.display);
 }
 
@@ -129,14 +146,15 @@ LinuxClipboard::ProcessEvent(const XEvent &ev)
 
         case SelectionNotify: {
             const auto &sel = ev.xselection;
-            if (sel.requestor != m_Window || sel.selection != m_AtomClipboard ||
-                sel.property != m_AtomFractalSharkPaste) {
+            if (sel.requestor != m_Window || sel.selection != m_AtomClipboard) {
                 return false;
             }
-            if (sel.property == None || sel.target != m_AtomUtf8String) {
-                // Conversion refused or wrong target — give up; INCR is not handled.
+            if (sel.property == None) {
                 m_GetPending = false;
-                return true;
+                throw std::runtime_error("X clipboard owner refused UTF-8 conversion");
+            }
+            if (sel.property != m_AtomFractalSharkPaste || sel.target != m_AtomUtf8String) {
+                return false;
             }
 
             Atom actualType = 0;
@@ -144,29 +162,34 @@ LinuxClipboard::ProcessEvent(const XEvent &ev)
             unsigned long nItems = 0;
             unsigned long bytesAfter = 0;
             unsigned char *data = nullptr;
-            if (XGetWindowProperty(m_Display,
-                                   m_Window,
-                                   m_AtomFractalSharkPaste,
-                                   0,
-                                   (~0L) / 4,
-                                   True, // delete on read
-                                   AnyPropertyType,
-                                   &actualType,
-                                   &actualFormat,
-                                   &nItems,
-                                   &bytesAfter,
-                                   &data) == Success &&
-                data != nullptr) {
-                if (actualType == m_AtomIncr) {
-                    // INCR transfer not supported — payloads are tiny.
-                    XFree(data);
-                } else if (actualFormat == 8) {
-                    m_GetResult = std::string(reinterpret_cast<const char *>(data), nItems);
-                    XFree(data);
-                } else if (data) {
-                    XFree(data);
-                }
+            const int status = XGetWindowProperty(m_Display,
+                                                  m_Window,
+                                                  m_AtomFractalSharkPaste,
+                                                  0,
+                                                  (~0L) / 4,
+                                                  True, // delete on read
+                                                  AnyPropertyType,
+                                                  &actualType,
+                                                  &actualFormat,
+                                                  &nItems,
+                                                  &bytesAfter,
+                                                  &data);
+            if (status != Success || !data) {
+                m_GetPending = false;
+                throw std::runtime_error("Failed to read the X clipboard selection property");
             }
+            if (actualType == m_AtomIncr) {
+                XFree(data);
+                m_GetPending = false;
+                throw std::runtime_error("Incremental X clipboard transfers are not supported");
+            }
+            if (actualFormat != 8 || bytesAfter != 0) {
+                XFree(data);
+                m_GetPending = false;
+                throw std::runtime_error("X clipboard selection has an unexpected format");
+            }
+            m_GetResult = std::string(reinterpret_cast<const char *>(data), nItems);
+            XFree(data);
             m_GetPending = false;
             return true;
         }

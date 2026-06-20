@@ -12,9 +12,10 @@
 #include <algorithm>
 #include <clocale>
 #include <cstdint>
-#include <cstdio>
 #include <functional>
 #include <span>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -195,6 +196,10 @@ struct X11ContextMenu::Impl {
         }
 
         GraphicsContext = XCreateGC(DisplayHandle, Root, 0, nullptr);
+        if (!GraphicsContext) {
+            throw FractalSharkSeriousException(
+                "FractalSharkGuiLinux: XCreateGC failed for context menu");
+        }
 
         std::setlocale(LC_CTYPE, "");
         char **missingCharsets = nullptr;
@@ -287,14 +292,17 @@ struct X11ContextMenu::Impl {
     bool
     IsEnabled(const Node &node) const
     {
-        return !State || State->IsEnabled(node.enableRule);
+        if (!State) {
+            throw std::logic_error("Context-menu state is not initialized");
+        }
+        return State->IsEnabled(node.enableRule);
     }
 
     bool
     IsChecked(const Node &node) const
     {
         if (!State) {
-            return false;
+            throw std::logic_error("Context-menu state is not initialized");
         }
         if (node.checkKind == CheckKind::Toggle) {
             return State->IsChecked(node.id);
@@ -371,14 +379,15 @@ struct X11ContextMenu::Impl {
         BackBufferHeight = 0;
     }
 
-    bool
+    void
     EnsureBackBuffer()
     {
         if (!PopupWindow || PopupWidth <= 0 || PopupHeight <= 0) {
-            return false;
+            throw FractalSharkSeriousException(
+                "FractalSharkGuiLinux: invalid context-menu back-buffer geometry");
         }
         if (BackBuffer && BackBufferWidth == PopupWidth && BackBufferHeight == PopupHeight) {
-            return true;
+            return;
         }
 
         FreeBackBuffer();
@@ -388,18 +397,19 @@ struct X11ContextMenu::Impl {
                                    static_cast<unsigned int>(PopupHeight),
                                    static_cast<unsigned int>(DefaultDepth(DisplayHandle, Screen)));
         if (!BackBuffer) {
-            return false;
+            throw FractalSharkSeriousException(
+                "FractalSharkGuiLinux: XCreatePixmap failed for context menu");
         }
         BackBufferWidth = PopupWidth;
         BackBufferHeight = PopupHeight;
-        return true;
     }
 
     void
     DrawLevelTo(Drawable target, const Level &level)
     {
         if (!PopupWindow) {
-            return;
+            throw FractalSharkSeriousException(
+                "FractalSharkGuiLinux: attempted to draw an unavailable context-menu window");
         }
 
         const int originX = level.X - PopupX;
@@ -489,9 +499,7 @@ struct X11ContextMenu::Impl {
     void
     DrawLevel(const Level &level)
     {
-        if (!EnsureBackBuffer()) {
-            return;
-        }
+        EnsureBackBuffer();
 
         DrawLevelTo(BackBuffer, level);
         const int originX = level.X - PopupX;
@@ -512,9 +520,7 @@ struct X11ContextMenu::Impl {
     void
     DrawAll()
     {
-        if (!EnsureBackBuffer()) {
-            return;
-        }
+        EnsureBackBuffer();
 
         XSetClipMask(DisplayHandle, GraphicsContext, 0);
         XSetForeground(DisplayHandle, GraphicsContext, Palette.Background);
@@ -581,11 +587,11 @@ struct X11ContextMenu::Impl {
                              std::max(kScreenMargin, displayHeight - level.Height - kScreenMargin));
     }
 
-    bool
+    void
     EnsurePopupWindow()
     {
         if (PopupWindow) {
-            return true;
+            return;
         }
 
         XSetWindowAttributes attributes{};
@@ -608,10 +614,9 @@ struct X11ContextMenu::Impl {
                                     CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
                                     &attributes);
         if (!PopupWindow) {
-            return false;
+            throw FractalSharkSeriousException(
+                "FractalSharkGuiLinux: XCreateWindow failed for context menu");
         }
-
-        return true;
     }
 
     void
@@ -640,9 +645,7 @@ struct X11ContextMenu::Impl {
             DestroyPopupWindow();
             return false;
         }
-        if (!EnsurePopupWindow()) {
-            return false;
-        }
+        EnsurePopupWindow();
 
         int minX = Levels.front().X;
         int minY = Levels.front().Y;
@@ -709,7 +712,7 @@ struct X11ContextMenu::Impl {
         return true;
     }
 
-    bool
+    void
     AddLevel(std::span<const Node> nodes, int desiredX, int desiredY, int leftAnchorX = -1)
     {
         Level level = BuildLevel(nodes);
@@ -717,13 +720,11 @@ struct X11ContextMenu::Impl {
         Levels.push_back(std::move(level));
         ShapeDirty = true;
         if (!UpdatePopupWindow()) {
-            Levels.pop_back();
-            ShapeDirty = true;
-            return false;
+            throw FractalSharkSeriousException(
+                "FractalSharkGuiLinux: failed to present a context-menu level");
         }
         DrawAll();
         XFlush(DisplayHandle);
-        return true;
     }
 
     bool
@@ -753,13 +754,13 @@ struct X11ContextMenu::Impl {
         return HideAndDestroyLevelsFrom(index + 1);
     }
 
-    bool
+    void
     ReplaceMappedChildLevel(
         std::size_t levelIndex, std::span<const Node> nodes, int desiredX, int desiredY, int leftAnchorX)
     {
         const std::size_t childIndex = levelIndex + 1;
         if (childIndex >= Levels.size()) {
-            return false;
+            throw std::out_of_range("Context-menu child level is out of range");
         }
 
         HideAndDestroyLevelsFrom(childIndex + 1, false);
@@ -771,7 +772,6 @@ struct X11ContextMenu::Impl {
         UpdatePopupWindow();
         DrawAll();
         XFlush(DisplayHandle);
-        return true;
     }
 
     int
@@ -862,12 +862,11 @@ struct X11ContextMenu::Impl {
         const int leftAnchorX = parent.X;
         bool presented = false;
         if (Levels.size() > levelIndex + 1) {
-            presented = ReplaceMappedChildLevel(levelIndex, node.kids, desiredX, desiredY, leftAnchorX);
+            ReplaceMappedChildLevel(levelIndex, node.kids, desiredX, desiredY, leftAnchorX);
+            presented = true;
         } else {
-            presented = AddLevel(node.kids, desiredX, desiredY, leftAnchorX);
-            if (!presented) {
-                return false;
-            }
+            AddLevel(node.kids, desiredX, desiredY, leftAnchorX);
+            presented = true;
         }
         if (selectFirst) {
             SelectFirst(levelIndex + 1);
@@ -967,9 +966,10 @@ struct X11ContextMenu::Impl {
 
         const uint32_t commandId = node.id;
         Close();
-        if (Host) {
-            ExecuteCommand(CommandFromIdm(commandId), *Host);
+        if (!Host) {
+            throw std::logic_error("Context-menu command host is not initialized");
         }
+        ExecuteCommand(CommandFromIdm(commandId), *Host);
     }
 
     void
@@ -1026,9 +1026,7 @@ struct X11ContextMenu::Impl {
     Open(int rootX, int rootY)
     {
         Close();
-        if (!AddLevel(GetMenuNodes(), rootX, rootY)) {
-            return;
-        }
+        AddLevel(GetMenuNodes(), rootX, rootY);
 
         const int pointerGrab = XGrabPointer(DisplayHandle,
                                              PopupWindow,
@@ -1042,13 +1040,11 @@ struct X11ContextMenu::Impl {
         const int keyboardGrab =
             XGrabKeyboard(DisplayHandle, Owner, True, GrabModeAsync, GrabModeAsync, CurrentTime);
         if (pointerGrab != GrabSuccess || keyboardGrab != GrabSuccess) {
-            std::fprintf(stderr,
-                         "FractalSharkGuiLinux: native context-menu grab failed "
-                         "(pointer=%d, keyboard=%d).\n",
-                         pointerGrab,
-                         keyboardGrab);
+            std::ostringstream message;
+            message << "FractalSharkGuiLinux: native context-menu grab failed (pointer=" << pointerGrab
+                    << ", keyboard=" << keyboardGrab << ')';
             Close();
-            return;
+            throw FractalSharkSeriousException(message.str());
         }
         XFlush(DisplayHandle);
     }
@@ -1154,8 +1150,12 @@ X11ContextMenu::X11ContextMenu(Display *display,
                                const IMenuState *state,
                                ExecuteCommandHost *host,
                                std::function<void()> repaintOwner)
-    : m_Impl(std::make_unique<Impl>(display, screen, owner, state, host, std::move(repaintOwner)))
+    : m_Impl(nullptr)
 {
+    if (!display || !owner || !state || !host) {
+        throw std::invalid_argument("X11ContextMenu requires valid display, owner, state, and host");
+    }
+    m_Impl = std::make_unique<Impl>(display, screen, owner, state, host, std::move(repaintOwner));
 }
 
 X11ContextMenu::~X11ContextMenu() = default;

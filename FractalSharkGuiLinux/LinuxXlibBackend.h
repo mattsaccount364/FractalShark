@@ -38,7 +38,7 @@ namespace FractalShark::Linux {
 struct LinuxClipboard;
 } // namespace FractalShark::Linux
 
-bool ImGui_ImplXlib_Init(Display *display, Window window);
+void ImGui_ImplXlib_Init(Display *display, Window window);
 void ImGui_ImplXlib_Shutdown();
 void ImGui_ImplXlib_NewFrame();
 

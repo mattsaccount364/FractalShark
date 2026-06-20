@@ -15,9 +15,12 @@
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
+#include <cerrno>
 #include <cstring>
 #include <ctime>
+#include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace {
 
@@ -305,7 +308,7 @@ ImGuiGetClipboardCb(ImGuiContext * /*ctx*/)
 {
     BackendData &data = Self();
     if (!data.clipboard) {
-        return "";
+        throw std::logic_error("ImGui Xlib clipboard helper is not initialized");
     }
     auto v = data.clipboard->Get();
     data.clipboardCache = v.value_or(std::string{});
@@ -316,9 +319,10 @@ void
 ImGuiSetClipboardCb(ImGuiContext * /*ctx*/, const char *text)
 {
     BackendData &data = Self();
-    if (data.clipboard && text) {
-        data.clipboard->Set(text);
+    if (!data.clipboard || !text) {
+        throw std::logic_error("ImGui Xlib clipboard callback is not initialized");
     }
+    data.clipboard->Set(text);
 }
 
 double
@@ -333,21 +337,33 @@ TimeSeconds(const timespec &ts)
 // Public API
 // ---------------------------------------------------------------------------
 
-bool
+void
 ImGui_ImplXlib_Init(Display *display, Window window)
 {
     if (!display || !window) {
-        return false;
+        throw std::invalid_argument("ImGui Xlib backend requires a valid display and window");
     }
 
     BackendData &data = Self();
     if (data.installed) {
-        return true;
+        return;
+    }
+
+    timespec initialTime{};
+    if (clock_gettime(CLOCK_MONOTONIC, &initialTime) != 0) {
+        throw std::system_error(errno, std::generic_category(), "clock_gettime failed");
+    }
+
+    XWindowAttributes attr{};
+    if (XGetWindowAttributes(display, window, &attr) == 0) {
+        throw std::runtime_error("XGetWindowAttributes failed during ImGui initialization");
     }
 
     data.display = display;
     data.window = window;
-    clock_gettime(CLOCK_MONOTONIC, &data.lastTime);
+    data.lastTime = initialTime;
+    data.displayWidth = attr.width;
+    data.displayHeight = attr.height;
 
     ImGuiIO &io = ImGui::GetIO();
     io.BackendPlatformName = "imgui_impl_xlib";
@@ -359,14 +375,7 @@ ImGui_ImplXlib_Init(Display *display, Window window)
     platformIo.Platform_GetClipboardTextFn = ImGuiGetClipboardCb;
     platformIo.Platform_SetClipboardTextFn = ImGuiSetClipboardCb;
 
-    XWindowAttributes attr{};
-    if (XGetWindowAttributes(display, window, &attr)) {
-        data.displayWidth = attr.width;
-        data.displayHeight = attr.height;
-    }
-
     data.installed = true;
-    return true;
 }
 
 void
@@ -381,7 +390,7 @@ ImGui_ImplXlib_NewFrame()
 {
     BackendData &data = Self();
     if (!data.installed) {
-        return;
+        throw std::logic_error("ImGui Xlib NewFrame called before initialization");
     }
 
     ImGuiIO &io = ImGui::GetIO();
@@ -389,16 +398,19 @@ ImGui_ImplXlib_NewFrame()
     // Display size.  Updated lazily on ConfigureNotify; refresh here too in
     // case the host resized between events.
     XWindowAttributes attr{};
-    if (XGetWindowAttributes(data.display, data.window, &attr)) {
-        data.displayWidth = attr.width;
-        data.displayHeight = attr.height;
+    if (XGetWindowAttributes(data.display, data.window, &attr) == 0) {
+        throw std::runtime_error("XGetWindowAttributes failed while starting an ImGui frame");
     }
+    data.displayWidth = attr.width;
+    data.displayHeight = attr.height;
     io.DisplaySize = ImVec2(float(data.displayWidth), float(data.displayHeight));
     io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
 
     // Time delta.
     timespec now{};
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        throw std::system_error(errno, std::generic_category(), "clock_gettime failed");
+    }
     double dt = TimeSeconds(now) - TimeSeconds(data.lastTime);
     if (dt <= 0.0) {
         dt = 1.0 / 60.0;
@@ -410,6 +422,9 @@ ImGui_ImplXlib_NewFrame()
 void
 ImGui_ImplXlib_SetClipboardHelper(FractalShark::Linux::LinuxClipboard *clipboard)
 {
+    if (!clipboard) {
+        throw std::invalid_argument("ImGui Xlib clipboard helper must not be null");
+    }
     Self().clipboard = clipboard;
 }
 
@@ -418,7 +433,7 @@ ImGui_ImplXlib_ProcessEvent(const XEvent &ev)
 {
     BackendData &data = Self();
     if (!data.installed) {
-        return false;
+        throw std::logic_error("ImGui Xlib event processed before initialization");
     }
 
     ImGuiIO &io = ImGui::GetIO();

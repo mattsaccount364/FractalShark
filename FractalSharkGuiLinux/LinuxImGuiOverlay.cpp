@@ -12,8 +12,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <filesystem>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -43,11 +45,7 @@ AssignInputBuffer(std::string &buffer, const std::string &value)
 std::string
 PathToString(const std::filesystem::path &path)
 {
-    try {
-        return path.string();
-    } catch (const std::filesystem::filesystem_error &) {
-        return {};
-    }
+    return path.string();
 }
 
 std::string
@@ -74,8 +72,14 @@ LowerAscii(std::string value)
 ImGuiOverlay::ImGuiOverlay(Display *display, Window window, LinuxClipboard *clipboard)
     : display_(display), window_(window), clipboard_(clipboard)
 {
+    if (!display_ || !window_) {
+        throw std::invalid_argument("ImGuiOverlay requires a valid X display and window");
+    }
     IMGUI_CHECKVERSION();
     ctx_ = ImGui::CreateContext();
+    if (!ctx_) {
+        throw std::runtime_error("ImGui::CreateContext failed");
+    }
     ImGui::SetCurrentContext(ctx_);
 
     ImGuiIO &io = ImGui::GetIO();
@@ -100,18 +104,16 @@ ImGuiOverlay::~ImGuiOverlay()
     }
 }
 
-bool
+void
 ImGuiOverlay::Init()
 {
     if (!ctx_) {
-        return false;
+        throw std::logic_error("ImGui overlay has no context");
     }
     ImGui::SetCurrentContext(ctx_);
 
     if (!xlibBackendInited_) {
-        if (!ImGui_ImplXlib_Init(display_, window_)) {
-            return false;
-        }
+        ImGui_ImplXlib_Init(display_, window_);
         if (clipboard_) {
             ImGui_ImplXlib_SetClipboardHelper(clipboard_);
         }
@@ -119,18 +121,17 @@ ImGuiOverlay::Init()
     }
     if (!oglBackendInited_) {
         if (!ImGui_ImplOpenGL2_Init()) {
-            return false;
+            throw std::runtime_error("ImGui OpenGL backend initialization failed");
         }
         oglBackendInited_ = true;
     }
-    return true;
 }
 
 bool
 ImGuiOverlay::ProcessEvent(const XEvent &ev)
 {
     if (!ctx_ || !xlibBackendInited_) {
-        return false;
+        throw std::logic_error("ImGui overlay processed an event before initialization");
     }
     ImGui::SetCurrentContext(ctx_);
     const bool captured = ImGui_ImplXlib_ProcessEvent(ev);
@@ -180,12 +181,8 @@ ImGuiOverlay::RequestFileDialog(const char *title,
     fileDlgMessage_.clear();
     fileDlgCallback_ = std::move(cb);
 
-    std::error_code ec;
     std::filesystem::path defaultPath(defaultName);
-    std::filesystem::path initialDir = std::filesystem::current_path(ec);
-    if (ec || initialDir.empty()) {
-        initialDir = ".";
-    }
+    std::filesystem::path initialDir = std::filesystem::current_path();
 
     std::string filename = defaultName;
     if (defaultPath.has_parent_path()) {
@@ -195,9 +192,7 @@ ImGuiOverlay::RequestFileDialog(const char *title,
 
     AssignInputBuffer(fileDlgFilenameBuffer_, filename);
     if (!SetFileDialogDirectory(initialDir)) {
-        std::error_code cwdEc;
-        const auto cwd = std::filesystem::current_path(cwdEc);
-        (void)SetFileDialogDirectory(cwdEc ? std::filesystem::path(".") : cwd);
+        throw std::runtime_error("Could not initialize the file-dialog directory");
     }
 }
 
@@ -346,6 +341,7 @@ ImGuiOverlay::RequestEnterLocation(std::string real,
     locDlgImag_ = std::move(imag);
     locDlgZoom_ = std::move(zoom);
     locDlgIters_ = std::to_string(numIterations);
+    locDlgMessage_.clear();
     locDlgCallback_ = std::move(cb);
 }
 
@@ -363,7 +359,7 @@ void
 ImGuiOverlay::RenderFrame()
 {
     if (!ctx_ || !xlibBackendInited_ || !oglBackendInited_) {
-        return;
+        throw std::logic_error("ImGui overlay rendered before initialization");
     }
     ImGui::SetCurrentContext(ctx_);
 
@@ -662,6 +658,9 @@ pickDone:
             editField("Imag (Y)##imag", locDlgImag_);
             editField("Zoom##zoom", locDlgZoom_);
             editField("Iterations##iters", locDlgIters_);
+            if (!locDlgMessage_.empty()) {
+                ImGui::TextWrapped("%s", locDlgMessage_.c_str());
+            }
             ImGui::Separator();
             const bool ok = ImGui::Button("OK", ImVec2(120, 0));
             ImGui::SameLine();
@@ -672,18 +671,21 @@ pickDone:
                 std::string i(locDlgImag_.c_str());
                 std::string z(locDlgZoom_.c_str());
                 std::string it(locDlgIters_.c_str());
-                ImGui::CloseCurrentPopup();
-                locDlgOpen_ = false;
                 if (!r.empty() && !i.empty() && !z.empty() && locDlgCallback_) {
                     uint64_t iters = 0;
-                    try {
-                        iters = std::stoull(it);
-                    } catch (...) {
-                        iters = 0;
+                    const auto [end, error] = std::from_chars(it.data(), it.data() + it.size(), iters);
+                    if (error != std::errc{} || end != it.data() + it.size()) {
+                        locDlgMessage_ = "Iterations must be a non-negative integer.";
+                    } else {
+                        ImGui::CloseCurrentPopup();
+                        locDlgOpen_ = false;
+                        locDlgMessage_.clear();
+                        auto cb = std::move(locDlgCallback_);
+                        locDlgCallback_ = nullptr;
+                        cb(std::move(r), std::move(i), std::move(z), iters);
                     }
-                    auto cb = std::move(locDlgCallback_);
-                    locDlgCallback_ = nullptr;
-                    cb(std::move(r), std::move(i), std::move(z), iters);
+                } else {
+                    locDlgMessage_ = "Real, imaginary, and zoom values are required.";
                 }
             } else if (cancel) {
                 ImGui::CloseCurrentPopup();
@@ -716,7 +718,7 @@ bool
 ImGuiOverlay::WantsTick() const
 {
     if (!ctx_) {
-        return false;
+        throw std::logic_error("ImGui overlay has no context");
     }
     return inputPending_ || dragRectActive_ || infoModalRequested_ || infoModalOpen_ ||
            fileDlgRequested_ || fileDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ ||

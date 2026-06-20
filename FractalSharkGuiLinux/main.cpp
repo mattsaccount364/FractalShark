@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -54,10 +55,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -69,6 +72,14 @@ namespace {
 constexpr int kInitialWidth = 1600;
 constexpr int kInitialHeight = 1000;
 constexpr const char *kWindowTitle = "FractalShark (Linux)";
+
+void
+RequireUiState(bool available, const char *operation)
+{
+    if (!available) {
+        throw std::logic_error(std::string(operation) + " requires initialized Linux UI state");
+    }
+}
 
 struct GlxVisualSelection {
     XVisualInfo *VisualInfo;
@@ -256,6 +267,7 @@ struct LinuxMainWindow : FractalShark::Linux::LinuxCommandHandlers {
     int savedHeight = kInitialHeight;
     bool everPresented = false;
     bool exposeRepaintPending = false;
+    bool waitCursorRegistered = false;
 
     // Right-click position in client coordinates, matching MainWindow.cpp's
     // m_LastMenuPtClient anchor for menu commands that act on the click point.
@@ -290,12 +302,6 @@ struct LinuxMainWindow : FractalShark::Linux::LinuxCommandHandlers {
     LinuxMainWindow(const LinuxMainWindow &) = delete;
     LinuxMainWindow &operator=(const LinuxMainWindow &) = delete;
 
-    bool
-    Valid() const noexcept
-    {
-        return display != nullptr && window != 0 && clipboard.has_value() && fractal != nullptr &&
-               menuState.has_value() && glContext != nullptr && overlay.has_value();
-    }
     void RunEventLoop();
     void HandleEvent(const XEvent &ev);
     void HandleKeyPress(const XKeyEvent &ev);
@@ -355,6 +361,7 @@ struct LinuxMainWindow : FractalShark::Linux::LinuxCommandHandlers {
     void OnLoadRefOrbitImagMaxSaved() override;
 
 private:
+    void Destroy() noexcept;
     void SaveLocation(bool scaleToMaximum);
     void DoSaveRefOrbit(::CompressToDisk compression);
     void DoLoadRefOrbitImag(::ImaginaSettings settings);
@@ -366,10 +373,12 @@ private:
 
 LinuxMainWindow::LinuxMainWindow()
 {
+    const auto cleanup = [this](LinuxMainWindow *) { Destroy(); };
+    std::unique_ptr<LinuxMainWindow, decltype(cleanup)> constructionGuard(this, cleanup);
+
     display = XOpenDisplay(nullptr);
     if (!display) {
-        std::fprintf(stderr, "FractalSharkGuiLinux: XOpenDisplay failed (DISPLAY env not set?)\n");
-        return;
+        throw std::runtime_error("XOpenDisplay failed; DISPLAY may be unset");
     }
 
     screen = DefaultScreen(display);
@@ -380,20 +389,21 @@ LinuxMainWindow::LinuxMainWindow()
     const GlxVisualSelection visualSelection = ChooseGlxVisual(display, screen);
     visualInfo = visualSelection.VisualInfo;
     if (!visualInfo) {
-        std::fprintf(stderr,
-                     "FractalSharkGuiLinux: glXChooseVisual failed (tried RGBA double-buffered with "
-                     "alpha, RGBA double-buffered without required alpha, and RGBA single-buffered "
-                     "without required alpha). Check GLX support with glxinfo.\n");
-        XCloseDisplay(display);
-        display = nullptr;
-        return;
+        throw std::runtime_error(
+            "glXChooseVisual failed after trying supported RGBA configurations; check GLX support");
     }
 
     Window root = RootWindow(display, screen);
 
     colormap = XCreateColormap(display, root, visualInfo->visual, AllocNone);
+    if (!colormap) {
+        throw std::runtime_error("XCreateColormap failed");
+    }
     idleCursor = XCreateFontCursor(display, XC_left_ptr);
     dragCursor = XCreateFontCursor(display, XC_crosshair);
+    if (!idleCursor || !dragCursor) {
+        throw std::runtime_error("XCreateFontCursor failed");
+    }
 
     XSetWindowAttributes swa{};
     swa.colormap = colormap;
@@ -420,8 +430,13 @@ LinuxMainWindow::LinuxMainWindow()
         visualInfo->visual,
         CWColormap | CWBackPixel | CWBorderPixel | CWEventMask | (idleCursor ? CWCursor : 0),
         &swa);
+    if (!window) {
+        throw std::runtime_error("XCreateWindow failed");
+    }
 
-    XStoreName(display, window, kWindowTitle);
+    if (XStoreName(display, window, kWindowTitle) == 0) {
+        throw std::runtime_error("XStoreName failed");
+    }
 
     // Class hint — lets WMs recognize and theme the app.
     XClassHint classHint{};
@@ -429,14 +444,20 @@ LinuxMainWindow::LinuxMainWindow()
     std::string resClass = "FractalShark";
     classHint.res_name = resName.data();
     classHint.res_class = resClass.data();
-    XSetClassHint(display, window, &classHint);
+    if (XSetClassHint(display, window, &classHint) == 0) {
+        throw std::runtime_error("XSetClassHint failed");
+    }
 
     // Receive WM_DELETE_WINDOW client messages instead of having the WM kill us.
     wmProtocols = XInternAtom(display, "WM_PROTOCOLS", False);
     wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", False);
-    XSetWMProtocols(display, window, &wmDeleteWindow, 1);
+    if (wmProtocols == None || wmDeleteWindow == None ||
+        XSetWMProtocols(display, window, &wmDeleteWindow, 1) == 0) {
+        throw std::runtime_error("Failed to register the WM_DELETE_WINDOW protocol");
+    }
     Environment::WaitCursor::RegisterLinuxCursorTarget(
         display, static_cast<uintptr_t>(window), static_cast<uintptr_t>(idleCursor));
+    waitCursorRegistered = true;
 
     // Match Win32 KEYDOWN semantics: only autorepeat KeyPress, never KeyRelease.
     Bool supported = False;
@@ -464,7 +485,7 @@ LinuxMainWindow::LinuxMainWindow()
     glContext =
         std::make_unique<OpenGlContext>(reinterpret_cast<void *>(static_cast<uintptr_t>(window)));
     if (!glContext->IsValid()) {
-        std::fprintf(stderr, "FractalSharkGuiLinux: OpenGlContext creation failed; running headless.\n");
+        throw std::runtime_error("OpenGL context creation failed");
     }
 
     // ImGui overlay: single-threaded, all calls on this thread.  Init
@@ -474,14 +495,14 @@ LinuxMainWindow::LinuxMainWindow()
     overlay.emplace(display, window, &*clipboard);
     contextMenu.emplace(
         display, screen, window, &*menuState, this, [this] { RepaintAfterNativePopupUnmap(); });
-    if (glContext && glContext->IsValid()) {
-        if (!overlay->Init()) {
-            std::fprintf(stderr, "FractalSharkGuiLinux: ImGui backend init failed.\n");
-        }
-    }
+    overlay->Init();
+    constructionGuard.release();
 }
 
-LinuxMainWindow::~LinuxMainWindow()
+LinuxMainWindow::~LinuxMainWindow() { Destroy(); }
+
+void
+LinuxMainWindow::Destroy() noexcept
 {
     CancelDragZoom(CurrentTime);
 
@@ -494,7 +515,10 @@ LinuxMainWindow::~LinuxMainWindow()
     fractal.reset();
 
     if (display) {
-        Environment::WaitCursor::UnregisterLinuxCursorTarget();
+        if (waitCursorRegistered) {
+            Environment::WaitCursor::UnregisterLinuxCursorTarget();
+            waitCursorRegistered = false;
+        }
         if (window) {
             XDestroyWindow(display, window);
             window = 0;
@@ -582,7 +606,7 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
         case ButtonPress: {
             const auto &btn = ev.xbutton;
             if (!fractal) {
-                break;
+                throw std::logic_error("Button event received without an initialized fractal");
             }
             switch (btn.button) {
                 case Button1: {
@@ -604,9 +628,8 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                     // native popup at root coords so it may leave the app window.
                     contextMenuX = btn.x;
                     contextMenuY = btn.y;
-                    if (contextMenu) {
-                        contextMenu->Open(btn.x_root, btn.y_root);
-                    }
+                    RequireUiState(contextMenu.has_value(), "Opening the context menu");
+                    contextMenu->Open(btn.x_root, btn.y_root);
                     break;
                 case Button4: {
                     // Wheel forward → zoom in toward cursor.  Mirrors
@@ -655,9 +678,8 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                 dragPrevY = mot.y;
             }
             // Live outline rect rendered by the overlay's foreground draw list.
-            if (overlay) {
-                overlay->SetDragRect(true, dragAnchorX, dragAnchorY, dragPrevX, dragPrevY);
-            }
+            RequireUiState(overlay.has_value(), "Updating drag zoom");
+            overlay->SetDragRect(true, dragAnchorX, dragAnchorY, dragPrevX, dragPrevY);
             break;
         }
 
@@ -681,7 +703,7 @@ void
 LinuxMainWindow::RunEventLoop()
 {
     if (!display) {
-        return;
+        throw std::logic_error("Linux event loop started without an X display");
     }
 
     const int xfd = ConnectionNumber(display);
@@ -713,7 +735,10 @@ LinuxMainWindow::RunEventLoop()
         struct pollfd pfd{};
         pfd.fd = xfd;
         pfd.events = POLLIN;
-        poll(&pfd, 1, GetPresentationPollTimeoutMs(presentation.NeedsTick));
+        const int pollResult = poll(&pfd, 1, GetPresentationPollTimeoutMs(presentation.NeedsTick));
+        if (pollResult < 0 && errno != EINTR) {
+            throw std::system_error(errno, std::generic_category(), "Linux UI poll failed");
+        }
     }
 }
 
@@ -730,19 +755,18 @@ LinuxMainWindow::PresentRenderTick()
     // Pull any frames the render pool has finished and present them.
     // TryPresentTick skips ready tombstones and uploads at most one
     // visible frame so each completed animation step gets a swap.
-    bool freshFrame = false;
-    if (fractal && glContext && glContext->IsValid()) {
-        auto *pool = fractal->GetRenderPool();
-        if (pool) {
-            freshFrame = pool->TryPresentTick(*glContext);
-        }
+    RequireUiState(fractal && glContext && glContext->IsValid() && overlay, "Presenting a render frame");
+    auto *pool = fractal->GetRenderPool();
+    if (!pool) {
+        throw std::logic_error("Presenting a render frame requires a render pool");
     }
+    const bool freshFrame = pool->TryPresentTick(*glContext);
 
-    const bool overlayWantsTick = overlay && overlay->WantsTick();
+    const bool overlayWantsTick = overlay->WantsTick();
     const bool needsTick =
         freshFrame || overlayWantsTick || dragging || exposeRepaintPending || !everPresented;
 
-    if (needsTick && glContext && glContext->IsValid()) {
+    if (needsTick) {
         static bool diagnosedFirstFreshFrame = false;
         const bool diagnoseFreshFrame = freshFrame && !diagnosedFirstFreshFrame;
         if (diagnoseFreshFrame) {
@@ -751,30 +775,24 @@ LinuxMainWindow::PresentRenderTick()
 
         // If this tick was triggered by overlay motion only, re-blit
         // the cached frame so the overlay has something underneath.
-        if (!freshFrame && fractal) {
-            if (auto *pool = fractal->GetRenderPool()) {
-                pool->RepresentLastFrame(*glContext);
-            }
+        if (!freshFrame) {
+            pool->RepresentLastFrame(*glContext);
         }
-        if (overlay) {
-            std::chrono::steady_clock::time_point overlayStart;
-            if (diagnoseFreshFrame) {
-                GlLog("LinuxMainWindow: first completed-frame ImGui draw begin");
-                overlayStart = std::chrono::steady_clock::now();
-            }
+        std::chrono::steady_clock::time_point overlayStart;
+        if (diagnoseFreshFrame) {
+            GlLog("LinuxMainWindow: first completed-frame ImGui draw begin");
+            overlayStart = std::chrono::steady_clock::now();
+        }
 
-            overlay->RenderFrame();
+        overlay->RenderFrame();
 
-            if (diagnoseFreshFrame) {
-                char buf[128];
-                snprintf(buf,
-                         sizeof(buf),
-                         "LinuxMainWindow: first completed-frame ImGui draw end, elapsedMs=%lld",
-                         ElapsedMilliseconds(overlayStart));
-                GlLog(buf);
-            }
-        } else if (diagnoseFreshFrame) {
-            GlLog("LinuxMainWindow: first completed-frame ImGui draw skipped");
+        if (diagnoseFreshFrame) {
+            char buf[128];
+            snprintf(buf,
+                     sizeof(buf),
+                     "LinuxMainWindow: first completed-frame ImGui draw end, elapsedMs=%lld",
+                     ElapsedMilliseconds(overlayStart));
+            GlLog(buf);
         }
 
         std::chrono::steady_clock::time_point swapStart;
@@ -805,12 +823,13 @@ int
 LinuxMainWindow::GetPresentationPollTimeoutMs(bool needsTick)
 {
     int timeoutMs = needsTick ? 16 : 33;
-    if (fractal) {
-        if (auto *pool = fractal->GetRenderPool()) {
-            if (auto pacingDelay = pool->GetTimeUntilNextPresentation()) {
-                timeoutMs = std::min(timeoutMs, static_cast<int>(pacingDelay->count()));
-            }
+    RequireUiState(fractal != nullptr, "Calculating presentation timing");
+    if (auto *pool = fractal->GetRenderPool()) {
+        if (auto pacingDelay = pool->GetTimeUntilNextPresentation()) {
+            timeoutMs = std::min(timeoutMs, static_cast<int>(pacingDelay->count()));
         }
+    } else {
+        throw std::logic_error("Calculating presentation timing requires a render pool");
     }
     return std::max(timeoutMs, 1);
 }
@@ -819,8 +838,7 @@ void
 LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
 {
     if (!fractal || !glContext || !glContext->IsValid()) {
-        std::fprintf(stderr, "Feature autozoom requires a valid Linux GL context.\n");
-        return;
+        throw std::logic_error("Feature autozoom requires an initialized fractal and GL context");
     }
 
     std::atomic<bool> finished = false;
@@ -863,47 +881,46 @@ LinuxMainWindow::OnAutoZoomFeatureAtPoint()
 void
 LinuxMainWindow::OnShowHotkeys()
 {
-    if (overlay) {
-        const std::string body = BuildHotkeysModalBody();
-        overlay->RequestInfoModal("Hotkeys", body.c_str());
-    }
+    RequireUiState(overlay.has_value(), "Showing hotkeys");
+    const std::string body = BuildHotkeysModalBody();
+    overlay->RequestInfoModal("Hotkeys", body.c_str());
 }
 
 void
 LinuxMainWindow::OnViewsHelp()
 {
-    if (overlay) {
-        overlay->RequestInfoModal(FractalShark::Linux::kViewsModalTitle,
-                                  FractalShark::Linux::kViewsModalBody);
-    }
+    RequireUiState(overlay.has_value(), "Showing views help");
+    overlay->RequestInfoModal(FractalShark::Linux::kViewsModalTitle,
+                              FractalShark::Linux::kViewsModalBody);
 }
 
 void
 LinuxMainWindow::OnHelpAlg()
 {
-    if (overlay) {
-        overlay->RequestInfoModal(FractalShark::Linux::kAlgorithmsModalTitle,
-                                  FractalShark::Linux::kAlgorithmsModalBody);
-    }
+    RequireUiState(overlay.has_value(), "Showing algorithm help");
+    overlay->RequestInfoModal(FractalShark::Linux::kAlgorithmsModalTitle,
+                              FractalShark::Linux::kAlgorithmsModalBody);
 }
 
 void
 LinuxMainWindow::OnMinimize()
 {
-    if (display && window) {
-        XIconifyWindow(display, window, screen);
-        XFlush(display);
+    RequireUiState(display && window, "Minimizing the window");
+    if (XIconifyWindow(display, window, screen) == 0) {
+        throw std::runtime_error("XIconifyWindow failed");
     }
+    XFlush(display);
 }
 
 void
 LinuxMainWindow::OnCurPos()
 {
+    RequireUiState(fractal && clipboard && overlay, "Copying the current position");
     std::string shortStr;
     std::string longStr;
     fractal->GetRenderDetails(shortStr, longStr);
     clipboard->Set(longStr);
-    if (shortStr.size() < 5000 && overlay) {
+    if (shortStr.size() < 5000) {
         overlay->RequestInfoModal("Current Position", shortStr.c_str());
     } else {
         std::fprintf(stderr, "Location copied to clipboard.\n");
@@ -959,7 +976,8 @@ LinuxMainWindow::OnWindowedSq()
 void
 LinuxMainWindow::EnterFullscreen(bool square)
 {
-    if (!display || !window || fullscreen) {
+    RequireUiState(display && window, "Entering fullscreen");
+    if (fullscreen) {
         return;
     }
 
@@ -968,15 +986,19 @@ LinuxMainWindow::EnterFullscreen(bool square)
     // purposes that's fine since we just XMoveResizeWindow back to the same
     // values.
     XWindowAttributes attrs{};
-    if (XGetWindowAttributes(display, window, &attrs)) {
-        Window dummyChild = 0;
-        int rx = 0, ry = 0;
-        XTranslateCoordinates(display, window, RootWindow(display, screen), 0, 0, &rx, &ry, &dummyChild);
-        savedX = rx;
-        savedY = ry;
-        savedWidth = attrs.width;
-        savedHeight = attrs.height;
+    if (XGetWindowAttributes(display, window, &attrs) == 0) {
+        throw std::runtime_error("XGetWindowAttributes failed before entering fullscreen");
     }
+    Window dummyChild = 0;
+    int rx = 0, ry = 0;
+    if (XTranslateCoordinates(
+            display, window, RootWindow(display, screen), 0, 0, &rx, &ry, &dummyChild) == 0) {
+        throw std::runtime_error("XTranslateCoordinates failed before entering fullscreen");
+    }
+    savedX = rx;
+    savedY = ry;
+    savedWidth = attrs.width;
+    savedHeight = attrs.height;
 
     if (square) {
         // For the square arm, resize *before* requesting fullscreen so the
@@ -992,7 +1014,7 @@ LinuxMainWindow::EnterFullscreen(bool square)
     Atom wmState = XInternAtom(display, "_NET_WM_STATE", False);
     Atom wmFullscreen = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
     if (wmState == None || wmFullscreen == None) {
-        return;
+        throw std::runtime_error("Failed to initialize fullscreen X atoms");
     }
 
     XEvent ev{};
@@ -1005,11 +1027,13 @@ LinuxMainWindow::EnterFullscreen(bool square)
     ev.xclient.data.l[2] = 0;
     ev.xclient.data.l[3] = 1; // source = normal application
     ev.xclient.data.l[4] = 0;
-    XSendEvent(display,
-               RootWindow(display, screen),
-               False,
-               SubstructureRedirectMask | SubstructureNotifyMask,
-               &ev);
+    if (XSendEvent(display,
+                   RootWindow(display, screen),
+                   False,
+                   SubstructureRedirectMask | SubstructureNotifyMask,
+                   &ev) == 0) {
+        throw std::runtime_error("Failed to send the fullscreen request");
+    }
     XFlush(display);
     fullscreen = true;
 }
@@ -1017,14 +1041,15 @@ LinuxMainWindow::EnterFullscreen(bool square)
 void
 LinuxMainWindow::ExitFullscreen()
 {
-    if (!display || !window || !fullscreen) {
+    RequireUiState(display && window, "Exiting fullscreen");
+    if (!fullscreen) {
         return;
     }
 
     Atom wmState = XInternAtom(display, "_NET_WM_STATE", False);
     Atom wmFullscreen = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
     if (wmState == None || wmFullscreen == None) {
-        return;
+        throw std::runtime_error("Failed to initialize fullscreen X atoms");
     }
 
     XEvent ev{};
@@ -1037,11 +1062,13 @@ LinuxMainWindow::ExitFullscreen()
     ev.xclient.data.l[2] = 0;
     ev.xclient.data.l[3] = 1;
     ev.xclient.data.l[4] = 0;
-    XSendEvent(display,
-               RootWindow(display, screen),
-               False,
-               SubstructureRedirectMask | SubstructureNotifyMask,
-               &ev);
+    if (XSendEvent(display,
+                   RootWindow(display, screen),
+                   False,
+                   SubstructureRedirectMask | SubstructureNotifyMask,
+                   &ev) == 0) {
+        throw std::runtime_error("Failed to send the windowed-mode request");
+    }
 
     if (savedWidth > 0 && savedHeight > 0) {
         XMoveResizeWindow(display, window, savedX, savedY, savedWidth, savedHeight);
@@ -1147,11 +1174,7 @@ struct ImaginaQuickPickFile {
 std::string
 PathToString(const std::filesystem::path &path)
 {
-    try {
-        return path.string();
-    } catch (const std::filesystem::filesystem_error &) {
-        return {};
-    }
+    return path.string();
 }
 
 std::string
@@ -1168,29 +1191,14 @@ FindCurrentDirectoryImaginaFiles()
 {
     std::vector<ImaginaQuickPickFile> files;
 
-    std::error_code ec;
-    std::filesystem::path currentDir = std::filesystem::current_path(ec);
-    if (ec || currentDir.empty()) {
-        currentDir = ".";
-        ec.clear();
-    }
-
-    std::filesystem::directory_iterator it(currentDir, ec);
-    if (ec) {
-        return files;
-    }
-
-    for (std::filesystem::directory_iterator end; it != end; it.increment(ec)) {
-        if (ec) {
-            break;
-        }
-
-        std::error_code typeEc;
-        if (!it->is_regular_file(typeEc) || typeEc) {
+    const std::filesystem::path currentDir = std::filesystem::current_path();
+    for (const std::filesystem::directory_entry &entry :
+         std::filesystem::directory_iterator(currentDir)) {
+        if (!entry.is_regular_file()) {
             continue;
         }
 
-        const std::filesystem::path entryPath = it->path();
+        const std::filesystem::path entryPath = entry.path();
         if (LowerAscii(PathToString(entryPath.extension())) != ".im") {
             continue;
         }
@@ -1239,11 +1247,8 @@ AppendExtensionIfMissing(const std::string &filename, const char *extension)
         return filename;
     }
 
-    try {
-        if (std::filesystem::path(filename).extension().empty()) {
-            return filename + extension;
-        }
-    } catch (const std::filesystem::filesystem_error &) {
+    if (std::filesystem::path(filename).extension().empty()) {
+        return filename + extension;
     }
     return filename;
 }
@@ -1253,9 +1258,7 @@ AppendExtensionIfMissing(const std::string &filename, const char *extension)
 void
 LinuxMainWindow::OnSaveLocation()
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Saving a location");
 
     overlay->RequestPickFromList("Scale dimensions to maximum?",
                                  {"Scale dimensions to maximum", "Use current dimensions"},
@@ -1269,9 +1272,7 @@ LinuxMainWindow::OnSaveLocation()
 void
 LinuxMainWindow::SaveLocation(bool scaleToMaximum)
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Saving a location");
 
     size_t width = fractal->GetRenderWidth();
     size_t height = fractal->GetRenderHeight();
@@ -1300,14 +1301,12 @@ LinuxMainWindow::SaveLocation(bool scaleToMaximum)
     const std::string serialized = record.str();
     std::ofstream file("locations.txt", std::ios::app);
     if (!file) {
-        overlay->RequestInfoModal("Save Location", "Could not open locations.txt for append.");
-        return;
+        throw std::runtime_error("Could not open locations.txt for append");
     }
     file << serialized << "\r\n";
     file.close();
     if (!file) {
-        overlay->RequestInfoModal("Save Location", "Could not write the location to locations.txt.");
-        return;
+        throw std::runtime_error("Could not write the location to locations.txt");
     }
 
     overlay->RequestInfoModal("Location", serialized.c_str());
@@ -1316,16 +1315,13 @@ LinuxMainWindow::SaveLocation(bool scaleToMaximum)
 void
 LinuxMainWindow::OnSaveHiResBmp()
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Saving a high-resolution image");
     overlay->RequestFileDialog("Save high-resolution image",
                                LinuxFileDialogMode::Save,
                                MakeTimestampedStem() + ".png",
                                PngFileFilters(),
                                [this](std::string filename) {
-                                   if (!fractal)
-                                       return;
+                                   RequireUiState(fractal != nullptr, "Saving a high-resolution image");
                                    filename = AppendExtensionIfMissing(filename, ".png");
                                    if (auto *pool = fractal->GetRenderPool()) {
                                        pool->Drain();
@@ -1337,16 +1333,13 @@ LinuxMainWindow::OnSaveHiResBmp()
 void
 LinuxMainWindow::OnSaveItersText()
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Saving iterations");
     overlay->RequestFileDialog("Save iterations as text",
                                LinuxFileDialogMode::Save,
                                MakeTimestampedStem() + ".txt",
                                TextFileFilters(),
                                [this](std::string filename) {
-                                   if (!fractal)
-                                       return;
+                                   RequireUiState(fractal != nullptr, "Saving iterations");
                                    filename = AppendExtensionIfMissing(filename, ".txt");
                                    if (auto *pool = fractal->GetRenderPool()) {
                                        pool->Drain();
@@ -1358,16 +1351,13 @@ LinuxMainWindow::OnSaveItersText()
 void
 LinuxMainWindow::OnSaveBmp()
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Saving an image");
     overlay->RequestFileDialog("Save current image",
                                LinuxFileDialogMode::Save,
                                MakeTimestampedStem() + ".png",
                                PngFileFilters(),
                                [this](std::string filename) {
-                                   if (!fractal)
-                                       return;
+                                   RequireUiState(fractal != nullptr, "Saving an image");
                                    filename = AppendExtensionIfMissing(filename, ".png");
                                    if (auto *pool = fractal->GetRenderPool()) {
                                        pool->Drain();
@@ -1379,17 +1369,14 @@ LinuxMainWindow::OnSaveBmp()
 void
 LinuxMainWindow::DoSaveRefOrbit(::CompressToDisk compression)
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Saving a reference orbit");
     std::string defaultName = MakeTimestampedStem() + ".im";
     overlay->RequestFileDialog("Save reference orbit",
                                LinuxFileDialogMode::Save,
                                defaultName,
                                OrbitFileFilters(),
                                [this, compression](std::string filename) {
-                                   if (!fractal)
-                                       return;
+                                   RequireUiState(fractal != nullptr, "Saving a reference orbit");
                                    std::wstring w = Utf8ToWide(filename);
                                    fractal->EnqueueCommand([compression, w = std::move(w)](Fractal &f) {
                                        f.SaveRefOrbit(compression, w);
@@ -1424,9 +1411,7 @@ LinuxMainWindow::OnSaveRefOrbitImagMax()
 void
 LinuxMainWindow::OnDiffRefOrbitImagMax()
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Diffing reference orbits");
     // Chain: 1) prompt for output filename, 2) pick first input,
     // 3) pick second input, 4) enqueue diff.
     overlay->RequestFileDialog(
@@ -1435,24 +1420,21 @@ LinuxMainWindow::OnDiffRefOrbitImagMax()
         MakeTimestampedStem() + "_diff.im",
         OrbitFileFilters(),
         [this](std::string outFile) mutable {
-            if (!fractal || !overlay)
-                return;
+            RequireUiState(fractal && overlay, "Diffing reference orbits");
             overlay->RequestFileDialog(
                 "First input (.im)",
                 LinuxFileDialogMode::Open,
                 "",
                 OrbitFileFilters(),
                 [this, outFile = std::move(outFile)](std::string in1) mutable {
-                    if (!fractal || !overlay)
-                        return;
+                    RequireUiState(fractal && overlay, "Diffing reference orbits");
                     overlay->RequestFileDialog(
                         "Second input (.im)",
                         LinuxFileDialogMode::Open,
                         "",
                         OrbitFileFilters(),
                         [this, outFile = std::move(outFile), in1 = std::move(in1)](std::string in2) {
-                            if (!fractal)
-                                return;
+                            RequireUiState(fractal != nullptr, "Diffing reference orbits");
                             std::wstring outW = Utf8ToWide(outFile);
                             std::wstring f1W = Utf8ToWide(in1);
                             std::wstring f2W = Utf8ToWide(in2);
@@ -1469,14 +1451,11 @@ LinuxMainWindow::OnDiffRefOrbitImagMax()
 void
 LinuxMainWindow::OnLoadLocation()
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Loading a location");
     // Read locations.txt — same format as the Win32 SavedLocation parser.
     std::ifstream infile("locations.txt");
     if (!infile) {
-        overlay->RequestInfoModal("Load Location", "No locations.txt found in current directory.");
-        return;
+        throw std::runtime_error("Could not open locations.txt for reading");
     }
     struct Entry {
         size_t Width = 0, Height = 0;
@@ -1500,6 +1479,9 @@ LinuxMainWindow::OnLoadLocation()
         labels.push_back(e.Description.empty() ? "(unnamed)" : e.Description);
         entries.push_back(std::move(e));
     }
+    if (infile.bad()) {
+        throw std::runtime_error("Failed while reading locations.txt");
+    }
     if (entries.empty()) {
         overlay->RequestInfoModal("Load Location", "locations.txt has no entries.");
         return;
@@ -1512,8 +1494,10 @@ LinuxMainWindow::OnLoadLocation()
         "Load saved location",
         std::move(labels),
         [this, entries = std::move(entries)](size_t index) mutable {
-            if (!fractal || index >= entries.size())
-                return;
+            RequireUiState(fractal != nullptr, "Loading a location");
+            if (index >= entries.size()) {
+                throw std::out_of_range("Selected saved-location index is out of range");
+            }
             const auto &e = entries[index];
             PointZoomBBConverter ptz{
                 e.MinX, e.MinY, e.MaxX, e.MaxY, PointZoomBBConverter::TestMode::Enabled};
@@ -1530,9 +1514,7 @@ LinuxMainWindow::OnLoadLocation()
 void
 LinuxMainWindow::OnLoadEnterLocation()
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Entering a location");
     // Pull current location to prefill the dialog.
     HighPrecision minX = fractal->GetMinX();
     HighPrecision minY = fractal->GetMinY();
@@ -1549,8 +1531,7 @@ LinuxMainWindow::OnLoadEnterLocation()
         std::move(zoom),
         iters,
         [this](std::string r, std::string i, std::string z, uint64_t numIters) {
-            if (!fractal)
-                return;
+            RequireUiState(fractal != nullptr, "Entering a location");
             HighPrecision::defaultPrecisionInBits(Fractal::MaxPrecisionLame);
             HighPrecision realHP(r);
             HighPrecision imagHP(i);
@@ -1566,9 +1547,7 @@ LinuxMainWindow::OnLoadEnterLocation()
 void
 LinuxMainWindow::DoLoadRefOrbitImag(::ImaginaSettings settings)
 {
-    if (!fractal || !overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Loading a reference orbit");
 
     std::vector<ImaginaQuickPickFile> imagFiles = FindCurrentDirectoryImaginaFiles();
     if (imagFiles.empty()) {
@@ -1586,9 +1565,7 @@ LinuxMainWindow::DoLoadRefOrbitImag(::ImaginaSettings settings)
     overlay->RequestPickFromList("Load reference orbit (.im)",
                                  std::move(labels),
                                  [this, settings, imagFiles = std::move(imagFiles)](size_t index) {
-                                     if (!fractal || !overlay) {
-                                         return;
-                                     }
+                                     RequireUiState(fractal && overlay, "Loading a reference orbit");
                                      if (index < imagFiles.size()) {
                                          LoadRefOrbitImagFile(settings, imagFiles[index].Filename);
                                      } else if (index == imagFiles.size()) {
@@ -1600,9 +1577,7 @@ LinuxMainWindow::DoLoadRefOrbitImag(::ImaginaSettings settings)
 void
 LinuxMainWindow::RequestLoadRefOrbitImagFileDialog(::ImaginaSettings settings)
 {
-    if (!overlay) {
-        return;
-    }
+    RequireUiState(fractal && overlay, "Loading a reference orbit");
     overlay->RequestFileDialog(
         "Load reference orbit (.im)",
         LinuxFileDialogMode::Open,
@@ -1614,15 +1589,15 @@ LinuxMainWindow::RequestLoadRefOrbitImagFileDialog(::ImaginaSettings settings)
 void
 LinuxMainWindow::LoadRefOrbitImagFile(::ImaginaSettings settings, std::string filename)
 {
-    if (!fractal) {
-        return;
-    }
+    RequireUiState(fractal != nullptr, "Loading a reference orbit");
     std::wstring w = Utf8ToWide(filename);
     fractal->EnqueueCommand([settings, w = std::move(w)](Fractal &f) {
         RecommendedSettings rs{};
         f.LoadRefOrbit(&rs, ::CompressToDisk::MaxCompressionImagina, settings, w);
         if (rs.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
-            (void)f.SetRenderAlgorithm(rs.GetRenderAlgorithm());
+            if (!f.SetRenderAlgorithm(rs.GetRenderAlgorithm())) {
+                throw std::runtime_error("Failed to restore the reference-orbit render algorithm");
+            }
         }
     });
 }
@@ -1658,6 +1633,7 @@ LinuxMainWindow::SetDragCursorActive(bool active)
 void
 LinuxMainWindow::BeginDragZoom(const XButtonEvent &btn)
 {
+    RequireUiState(display && window && overlay, "Beginning drag zoom");
     dragging = true;
     dragAnchorX = btn.x;
     dragAnchorY = btn.y;
@@ -1665,18 +1641,19 @@ LinuxMainWindow::BeginDragZoom(const XButtonEvent &btn)
     dragPrevY = -1;
 
     pointerGrabbed = false;
-    if (display && window) {
-        const unsigned int eventMask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
-        const int grabResult = XGrabPointer(display,
-                                            window,
-                                            False,
-                                            eventMask,
-                                            GrabModeAsync,
-                                            GrabModeAsync,
-                                            None,
-                                            dragCursor ? dragCursor : None,
-                                            btn.time);
-        pointerGrabbed = grabResult == GrabSuccess;
+    const unsigned int eventMask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
+    const int grabResult = XGrabPointer(display,
+                                        window,
+                                        False,
+                                        eventMask,
+                                        GrabModeAsync,
+                                        GrabModeAsync,
+                                        None,
+                                        dragCursor ? dragCursor : None,
+                                        btn.time);
+    pointerGrabbed = grabResult == GrabSuccess;
+    if (!pointerGrabbed) {
+        throw std::runtime_error("XGrabPointer failed while beginning drag zoom");
     }
 
     SetDragCursorActive(true);
@@ -1712,7 +1689,7 @@ LinuxMainWindow::StartWindowMove(const XButtonEvent &btn)
     constexpr long kMoveDirection = 8; // _NET_WM_MOVERESIZE_MOVE
     Atom moveResize = XInternAtom(display, "_NET_WM_MOVERESIZE", False);
     if (moveResize == None) {
-        return;
+        throw std::runtime_error("Failed to initialize the window-move X atom");
     }
 
     // Release any implicit pointer grab so the WM can take over.
@@ -1729,11 +1706,13 @@ LinuxMainWindow::StartWindowMove(const XButtonEvent &btn)
     ev.xclient.data.l[3] = Button1;
     ev.xclient.data.l[4] = 1; // source = normal application
 
-    XSendEvent(display,
-               RootWindow(display, screen),
-               False,
-               SubstructureRedirectMask | SubstructureNotifyMask,
-               &ev);
+    if (XSendEvent(display,
+                   RootWindow(display, screen),
+                   False,
+                   SubstructureRedirectMask | SubstructureNotifyMask,
+                   &ev) == 0) {
+        throw std::runtime_error("Failed to send the window-move request");
+    }
     XFlush(display);
 }
 
@@ -1766,7 +1745,7 @@ LinuxMainWindow::FinishDragZoom(const XButtonEvent &btn)
     }
 
     if (!fractal) {
-        return;
+        throw std::logic_error("Drag zoom completed without an initialized fractal");
     }
     fractal->EnqueueCommand([newView, maintainAspect](Fractal &f) {
         if (f.RecenterViewScreen(newView)) {
@@ -1781,7 +1760,7 @@ void
 LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
 {
     if (!fractal) {
-        return;
+        throw std::logic_error("Key event received without an initialized fractal");
     }
 
     XKeyEvent mutableEvent = ev;
@@ -1843,17 +1822,20 @@ main(int /*argc*/, char ** /*argv*/)
     // pump) and the GL consumer thread (ImGui overlay callback queries
     // window attributes).  XInitThreads must be called before any other
     // Xlib call, otherwise concurrent access is undefined.
-    XInitThreads();
+    try {
+        if (XInitThreads() == 0) {
+            throw std::runtime_error("XInitThreads failed");
+        }
 
-    FractalShark::Linux::SplashWindow splash;
-    (void)splash.Start();
+        FractalShark::Linux::SplashWindow splash;
+        splash.Start();
 
-    LinuxMainWindow win;
-    if (!win.Valid()) {
+        LinuxMainWindow win;
         splash.Stop();
+        win.RunEventLoop();
+        return 0;
+    } catch (const std::exception &exception) {
+        std::cerr << "FractalSharkGuiLinux: " << exception.what() << '\n';
         return 1;
     }
-    splash.Stop();
-    win.RunEventLoop();
-    return 0;
 }

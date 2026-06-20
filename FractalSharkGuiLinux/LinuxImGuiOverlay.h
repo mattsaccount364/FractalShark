@@ -9,7 +9,7 @@
 //      but the platform/renderer backends are NOT initialized yet (GL
 //      may not be current at construction time).
 //   2. Call Init() once after the GL context has been made current.
-//      Returns false on backend init failure.
+//      Throws on backend init failure.
 //   3. Call ProcessEvent for every XEvent before dispatching it to the
 //      app's own handler.  Returns true if ImGui consumed it (caller
 //      should drop the event).
@@ -46,9 +46,9 @@ public:
     ImGuiOverlay &operator=(const ImGuiOverlay &) = delete;
 
     // Initialize the platform + renderer backends.  Must be called once,
-    // on the GUI thread, after GL context is current.  Returns false on
-    // backend init failure (rare).
-    bool Init();
+    // on the GUI thread, after GL context is current.  Throws on backend
+    // init failure.
+    void Init();
 
     // Forward an XEvent to ImGui.  Returns true when ImGui captured it
     // (a popup is up and the cursor / keyboard input is over the popup
@@ -168,6 +168,7 @@ private:
     std::string locDlgImag_;
     std::string locDlgZoom_;
     std::string locDlgIters_;
+    std::string locDlgMessage_;
     EnterLocationCallback locDlgCallback_;
 
     bool dragRectActive_ = false;

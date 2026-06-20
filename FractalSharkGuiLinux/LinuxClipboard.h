@@ -31,8 +31,8 @@ struct LinuxClipboard {
     void Set(std::string text);
 
     // Request the current clipboard contents.  Synchronous: pumps X events
-    // until SelectionNotify arrives or `timeout` elapses.  Returns nullopt on
-    // timeout, conversion failure, or empty selection.
+    // until SelectionNotify arrives or `timeout` elapses.  Returns nullopt when
+    // no client owns the selection.  Throws on timeout or conversion failure.
     std::optional<std::string> Get(std::chrono::milliseconds timeout = std::chrono::milliseconds(250));
 
     // Forward every X event from the main loop here.  Returns true if the

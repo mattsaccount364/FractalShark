@@ -10,26 +10,28 @@
 #include <poll.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 namespace {
 
 constexpr const char *kSplashTitle = "FractalShark";
 
-bool
+void
 LoadRandomSplashImage(WPngImage &image)
 {
     const std::span<const FractalShark::Linux::EmbeddedSplashImage> images =
         FractalShark::Linux::GetEmbeddedSplashImages();
     if (images.empty()) {
-        std::fprintf(stderr, "FractalSharkGuiLinux: no embedded splash images are available.\n");
-        return false;
+        throw std::runtime_error("No embedded Linux splash images are available");
     }
 
     std::vector<std::size_t> imageOrder(images.size());
@@ -48,20 +50,10 @@ LoadRandomSplashImage(WPngImage &image)
             embeddedImage.Bytes.data(), embeddedImage.Bytes.size(), WPngImage::kPixelFormat_RGBA8);
         if (status == WPngImage::kIOStatus_Ok && candidate.width() > 0 && candidate.height() > 0) {
             image = std::move(candidate);
-            return true;
+            return;
         }
-
-        std::fprintf(stderr,
-                     "FractalSharkGuiLinux: embedded splash image '%.*s' failed to decode "
-                     "(%zu bytes, status %d).\n",
-                     static_cast<int>(embeddedImage.Name.size()),
-                     embeddedImage.Name.data(),
-                     embeddedImage.Bytes.size(),
-                     static_cast<int>(status));
     }
-
-    std::fprintf(stderr, "FractalSharkGuiLinux: all embedded splash images failed to decode.\n");
-    return false;
+    throw std::runtime_error("All embedded Linux splash images failed to decode");
 }
 
 unsigned long
@@ -144,19 +136,15 @@ public:
     SplashSession(const SplashSession &) = delete;
     SplashSession &operator=(const SplashSession &) = delete;
 
-    bool
+    void
     Create()
     {
         DisplayHandle = XOpenDisplay(nullptr);
         if (!DisplayHandle) {
-            std::fprintf(stderr,
-                         "FractalSharkGuiLinux: splash XOpenDisplay failed; DISPLAY may be unset.\n");
-            return false;
+            throw std::runtime_error("Splash XOpenDisplay failed; DISPLAY may be unset");
         }
 
-        if (!LoadRandomSplashImage(Image)) {
-            return false;
-        }
+        LoadRandomSplashImage(Image);
 
         Screen = DefaultScreen(DisplayHandle);
         Root = RootWindow(DisplayHandle, Screen);
@@ -188,8 +176,7 @@ public:
                                      CWBackPixel | CWBorderPixel | CWEventMask | CWOverrideRedirect,
                                      &attributes);
         if (!WindowHandle) {
-            std::fprintf(stderr, "FractalSharkGuiLinux: splash XCreateWindow failed.\n");
-            return false;
+            throw std::runtime_error("Splash XCreateWindow failed");
         }
 
         XStoreName(DisplayHandle, WindowHandle, kSplashTitle);
@@ -199,14 +186,12 @@ public:
 
         GraphicsContext = XCreateGC(DisplayHandle, WindowHandle, 0, nullptr);
         if (!GraphicsContext) {
-            std::fprintf(stderr, "FractalSharkGuiLinux: splash XCreateGC failed.\n");
-            return false;
+            throw std::runtime_error("Splash XCreateGC failed");
         }
 
         XMapRaised(DisplayHandle, WindowHandle);
         Draw();
         XFlush(DisplayHandle);
-        return true;
     }
 
     void
@@ -227,7 +212,9 @@ public:
             XFlush(DisplayHandle);
             pollfd pollInfo{connection, POLLIN, 0};
             const int pollResult = poll(&pollInfo, 1, 50);
-            (void)pollResult;
+            if (pollResult < 0 && errno != EINTR) {
+                throw std::system_error(errno, std::generic_category(), "Splash poll failed");
+            }
         }
 
         if (WindowHandle) {
@@ -325,7 +312,7 @@ private:
             if (xImage) {
                 XDestroyImage(xImage);
             }
-            return;
+            throw std::runtime_error("Splash XCreateImage failed");
         }
 
         std::vector<char> imageData(static_cast<std::size_t>(xImage->bytes_per_line) *
@@ -388,13 +375,20 @@ private:
 
 namespace FractalShark::Linux {
 
-SplashWindow::~SplashWindow() noexcept { Stop(); }
+SplashWindow::~SplashWindow() noexcept
+{
+    if (m_Worker.joinable()) {
+        m_Worker.request_stop();
+        m_Worker.join();
+    }
+    m_Running.store(false, std::memory_order_release);
+}
 
-bool
+void
 SplashWindow::Start()
 {
     if (m_Running.load(std::memory_order_acquire)) {
-        return true;
+        return;
     }
 
     Stop();
@@ -402,56 +396,65 @@ SplashWindow::Start()
     {
         std::lock_guard<std::mutex> lock(m_StartMutex);
         m_StartCompleted = false;
-        m_StartSucceeded = false;
+        m_StartException = nullptr;
+        m_WorkerException = nullptr;
     }
 
-    try {
-        m_Worker = std::jthread([this](std::stop_token stopToken) { ThreadMain(stopToken); });
-    } catch (...) {
-        return false;
-    }
+    m_Worker = std::jthread([this](std::stop_token stopToken) { ThreadMain(stopToken); });
 
     std::unique_lock<std::mutex> lock(m_StartMutex);
     m_StartCondition.wait(lock, [this] { return m_StartCompleted; });
-    return m_StartSucceeded;
+    if (m_StartException) {
+        std::rethrow_exception(m_StartException);
+    }
 }
 
 void
-SplashWindow::Stop() noexcept
+SplashWindow::Stop()
 {
     if (m_Worker.joinable()) {
-        try {
-            m_Worker.request_stop();
-            m_Worker.join();
-        } catch (...) {
-        }
+        m_Worker.request_stop();
+        m_Worker.join();
     }
     m_Running.store(false, std::memory_order_release);
+    std::exception_ptr workerException;
+    {
+        std::lock_guard<std::mutex> lock(m_StartMutex);
+        workerException = std::exchange(m_WorkerException, nullptr);
+    }
+    if (workerException) {
+        std::rethrow_exception(workerException);
+    }
 }
 
 void
 SplashWindow::ThreadMain(std::stop_token stopToken)
 {
     SplashSession session;
-    const bool created = session.Create();
-    if (created) {
+    try {
+        session.Create();
         m_Running.store(true, std::memory_order_release);
-    }
-    SignalStarted(created);
-    if (!created) {
+        SignalStarted(nullptr);
+    } catch (...) {
+        SignalStarted(std::current_exception());
         return;
     }
 
-    session.Run(stopToken);
+    try {
+        session.Run(stopToken);
+    } catch (...) {
+        std::lock_guard<std::mutex> lock(m_StartMutex);
+        m_WorkerException = std::current_exception();
+    }
     m_Running.store(false, std::memory_order_release);
 }
 
 void
-SplashWindow::SignalStarted(bool succeeded) noexcept
+SplashWindow::SignalStarted(std::exception_ptr exception) noexcept
 {
     {
         std::lock_guard<std::mutex> lock(m_StartMutex);
-        m_StartSucceeded = succeeded;
+        m_StartException = std::move(exception);
         m_StartCompleted = true;
     }
     m_StartCondition.notify_all();

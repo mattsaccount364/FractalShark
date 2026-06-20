@@ -1,5 +1,6 @@
 #include "LinuxSplashWindow.h"
 
+#include "Exceptions.h"
 #include "LinuxEmbeddedSplashImages.h"
 #include "WPngImage/WPngImage.hh"
 
@@ -15,7 +16,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <random>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -31,7 +31,7 @@ LoadRandomSplashImage(WPngImage &image)
     const std::span<const FractalShark::Linux::EmbeddedSplashImage> images =
         FractalShark::Linux::GetEmbeddedSplashImages();
     if (images.empty()) {
-        throw std::runtime_error("No embedded Linux splash images are available");
+        throw FractalSharkSeriousException("No embedded Linux splash images are available");
     }
 
     std::vector<std::size_t> imageOrder(images.size());
@@ -53,7 +53,7 @@ LoadRandomSplashImage(WPngImage &image)
             return;
         }
     }
-    throw std::runtime_error("All embedded Linux splash images failed to decode");
+    throw FractalSharkSeriousException("All embedded Linux splash images failed to decode");
 }
 
 unsigned long
@@ -141,7 +141,7 @@ public:
     {
         DisplayHandle = XOpenDisplay(nullptr);
         if (!DisplayHandle) {
-            throw std::runtime_error("Splash XOpenDisplay failed; DISPLAY may be unset");
+            throw FractalSharkSeriousException("Splash XOpenDisplay failed; DISPLAY may be unset");
         }
 
         LoadRandomSplashImage(Image);
@@ -176,7 +176,7 @@ public:
                                      CWBackPixel | CWBorderPixel | CWEventMask | CWOverrideRedirect,
                                      &attributes);
         if (!WindowHandle) {
-            throw std::runtime_error("Splash XCreateWindow failed");
+            throw FractalSharkSeriousException("Splash XCreateWindow failed");
         }
 
         XStoreName(DisplayHandle, WindowHandle, kSplashTitle);
@@ -186,7 +186,7 @@ public:
 
         GraphicsContext = XCreateGC(DisplayHandle, WindowHandle, 0, nullptr);
         if (!GraphicsContext) {
-            throw std::runtime_error("Splash XCreateGC failed");
+            throw FractalSharkSeriousException("Splash XCreateGC failed");
         }
 
         XMapRaised(DisplayHandle, WindowHandle);
@@ -213,7 +213,9 @@ public:
             pollfd pollInfo{connection, POLLIN, 0};
             const int pollResult = poll(&pollInfo, 1, 50);
             if (pollResult < 0 && errno != EINTR) {
-                throw std::system_error(errno, std::generic_category(), "Splash poll failed");
+                const int errorCode = errno;
+                throw FractalSharkSeriousException(std::string("Splash poll failed: ") +
+                                                   std::generic_category().message(errorCode));
             }
         }
 
@@ -312,7 +314,7 @@ private:
             if (xImage) {
                 XDestroyImage(xImage);
             }
-            throw std::runtime_error("Splash XCreateImage failed");
+            throw FractalSharkSeriousException("Splash XCreateImage failed");
         }
 
         std::vector<char> imageData(static_cast<std::size_t>(xImage->bytes_per_line) *

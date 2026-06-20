@@ -1,9 +1,10 @@
 #include "LinuxClipboard.h"
 
+#include "Exceptions.h"
+
 #include <X11/Xatom.h>
 
 #include <cstring>
-#include <stdexcept>
 #include <thread>
 
 namespace FractalShark::Linux {
@@ -11,7 +12,7 @@ namespace FractalShark::Linux {
 LinuxClipboard::LinuxClipboard(Display *display, Window window) : m_Display(display), m_Window(window)
 {
     if (!m_Display || !m_Window) {
-        throw std::invalid_argument("LinuxClipboard requires a valid X display and window");
+        throw FractalSharkSeriousException("LinuxClipboard requires a valid X display and window");
     }
     m_AtomClipboard = XInternAtom(m_Display, "CLIPBOARD", False);
     m_AtomTargets = XInternAtom(m_Display, "TARGETS", False);
@@ -22,7 +23,7 @@ LinuxClipboard::LinuxClipboard(Display *display, Window window) : m_Display(disp
     m_AtomFractalSharkPaste = XInternAtom(m_Display, "_FRACTALSHARK_PASTE", False);
     if (m_AtomClipboard == None || m_AtomTargets == None || m_AtomUtf8String == None ||
         m_AtomText == None || m_AtomIncr == None || m_AtomFractalSharkPaste == None) {
-        throw std::runtime_error("Failed to initialize X clipboard atoms");
+        throw FractalSharkSeriousException("Failed to initialize X clipboard atoms");
     }
 }
 
@@ -34,7 +35,7 @@ LinuxClipboard::Set(std::string text)
     m_OwnsSelection = (XGetSelectionOwner(m_Display, m_AtomClipboard) == m_Window);
     XFlush(m_Display);
     if (!m_OwnsSelection) {
-        throw std::runtime_error("Failed to take ownership of the X clipboard selection");
+        throw FractalSharkSeriousException("Failed to take ownership of the X clipboard selection");
     }
 }
 
@@ -72,7 +73,7 @@ LinuxClipboard::Get(std::chrono::milliseconds timeout)
 
     if (m_GetPending) {
         m_GetPending = false;
-        throw std::runtime_error("Timed out waiting for the X clipboard selection");
+        throw FractalSharkSeriousException("Timed out waiting for the X clipboard selection");
     }
     return std::move(m_GetResult);
 }
@@ -116,7 +117,7 @@ LinuxClipboard::RespondSelectionRequest(const XSelectionRequestEvent &req)
 
     if (XSendEvent(req.display, req.requestor, False, NoEventMask, reinterpret_cast<XEvent *>(&reply)) ==
         0) {
-        throw std::runtime_error("Failed to send an X clipboard selection response");
+        throw FractalSharkSeriousException("Failed to send an X clipboard selection response");
     }
     XFlush(req.display);
 }
@@ -151,7 +152,7 @@ LinuxClipboard::ProcessEvent(const XEvent &ev)
             }
             if (sel.property == None) {
                 m_GetPending = false;
-                throw std::runtime_error("X clipboard owner refused UTF-8 conversion");
+                throw FractalSharkSeriousException("X clipboard owner refused UTF-8 conversion");
             }
             if (sel.property != m_AtomFractalSharkPaste || sel.target != m_AtomUtf8String) {
                 return false;
@@ -176,17 +177,18 @@ LinuxClipboard::ProcessEvent(const XEvent &ev)
                                                   &data);
             if (status != Success || !data) {
                 m_GetPending = false;
-                throw std::runtime_error("Failed to read the X clipboard selection property");
+                throw FractalSharkSeriousException("Failed to read the X clipboard selection property");
             }
             if (actualType == m_AtomIncr) {
                 XFree(data);
                 m_GetPending = false;
-                throw std::runtime_error("Incremental X clipboard transfers are not supported");
+                throw FractalSharkSeriousException(
+                    "Incremental X clipboard transfers are not supported");
             }
             if (actualFormat != 8 || bytesAfter != 0) {
                 XFree(data);
                 m_GetPending = false;
-                throw std::runtime_error("X clipboard selection has an unexpected format");
+                throw FractalSharkSeriousException("X clipboard selection has an unexpected format");
             }
             m_GetResult = std::string(reinterpret_cast<const char *>(data), nItems);
             XFree(data);

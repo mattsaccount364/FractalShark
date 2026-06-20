@@ -3,6 +3,7 @@
 #include "CommandCatalog.h"
 #include "CrashHandler.h"
 #include "Environment.h"
+#include "Exceptions.h"
 #include "FeatureFinderMode.h"
 #include "Fractal.h"
 #include "LinuxClipboard.h"
@@ -60,7 +61,6 @@
 #include <memory>
 #include <optional>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -77,7 +77,8 @@ void
 RequireUiState(bool available, const char *operation)
 {
     if (!available) {
-        throw std::logic_error(std::string(operation) + " requires initialized Linux UI state");
+        throw FractalSharkSeriousException(std::string(operation) +
+                                           " requires initialized Linux UI state");
     }
 }
 
@@ -378,7 +379,7 @@ LinuxMainWindow::LinuxMainWindow()
 
     display = XOpenDisplay(nullptr);
     if (!display) {
-        throw std::runtime_error("XOpenDisplay failed; DISPLAY may be unset");
+        throw FractalSharkSeriousException("XOpenDisplay failed; DISPLAY may be unset");
     }
 
     screen = DefaultScreen(display);
@@ -389,7 +390,7 @@ LinuxMainWindow::LinuxMainWindow()
     const GlxVisualSelection visualSelection = ChooseGlxVisual(display, screen);
     visualInfo = visualSelection.VisualInfo;
     if (!visualInfo) {
-        throw std::runtime_error(
+        throw FractalSharkSeriousException(
             "glXChooseVisual failed after trying supported RGBA configurations; check GLX support");
     }
 
@@ -397,12 +398,12 @@ LinuxMainWindow::LinuxMainWindow()
 
     colormap = XCreateColormap(display, root, visualInfo->visual, AllocNone);
     if (!colormap) {
-        throw std::runtime_error("XCreateColormap failed");
+        throw FractalSharkSeriousException("XCreateColormap failed");
     }
     idleCursor = XCreateFontCursor(display, XC_left_ptr);
     dragCursor = XCreateFontCursor(display, XC_crosshair);
     if (!idleCursor || !dragCursor) {
-        throw std::runtime_error("XCreateFontCursor failed");
+        throw FractalSharkSeriousException("XCreateFontCursor failed");
     }
 
     XSetWindowAttributes swa{};
@@ -431,11 +432,11 @@ LinuxMainWindow::LinuxMainWindow()
         CWColormap | CWBackPixel | CWBorderPixel | CWEventMask | (idleCursor ? CWCursor : 0),
         &swa);
     if (!window) {
-        throw std::runtime_error("XCreateWindow failed");
+        throw FractalSharkSeriousException("XCreateWindow failed");
     }
 
     if (XStoreName(display, window, kWindowTitle) == 0) {
-        throw std::runtime_error("XStoreName failed");
+        throw FractalSharkSeriousException("XStoreName failed");
     }
 
     // Class hint — lets WMs recognize and theme the app.
@@ -445,7 +446,7 @@ LinuxMainWindow::LinuxMainWindow()
     classHint.res_name = resName.data();
     classHint.res_class = resClass.data();
     if (XSetClassHint(display, window, &classHint) == 0) {
-        throw std::runtime_error("XSetClassHint failed");
+        throw FractalSharkSeriousException("XSetClassHint failed");
     }
 
     // Receive WM_DELETE_WINDOW client messages instead of having the WM kill us.
@@ -453,7 +454,7 @@ LinuxMainWindow::LinuxMainWindow()
     wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", False);
     if (wmProtocols == None || wmDeleteWindow == None ||
         XSetWMProtocols(display, window, &wmDeleteWindow, 1) == 0) {
-        throw std::runtime_error("Failed to register the WM_DELETE_WINDOW protocol");
+        throw FractalSharkSeriousException("Failed to register the WM_DELETE_WINDOW protocol");
     }
     Environment::WaitCursor::RegisterLinuxCursorTarget(
         display, static_cast<uintptr_t>(window), static_cast<uintptr_t>(idleCursor));
@@ -485,7 +486,7 @@ LinuxMainWindow::LinuxMainWindow()
     glContext =
         std::make_unique<OpenGlContext>(reinterpret_cast<void *>(static_cast<uintptr_t>(window)));
     if (!glContext->IsValid()) {
-        throw std::runtime_error("OpenGL context creation failed");
+        throw FractalSharkSeriousException("OpenGL context creation failed");
     }
 
     // ImGui overlay: single-threaded, all calls on this thread.  Init
@@ -606,7 +607,8 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
         case ButtonPress: {
             const auto &btn = ev.xbutton;
             if (!fractal) {
-                throw std::logic_error("Button event received without an initialized fractal");
+                throw FractalSharkSeriousException(
+                    "Button event received without an initialized fractal");
             }
             switch (btn.button) {
                 case Button1: {
@@ -703,7 +705,7 @@ void
 LinuxMainWindow::RunEventLoop()
 {
     if (!display) {
-        throw std::logic_error("Linux event loop started without an X display");
+        throw FractalSharkSeriousException("Linux event loop started without an X display");
     }
 
     const int xfd = ConnectionNumber(display);
@@ -737,7 +739,9 @@ LinuxMainWindow::RunEventLoop()
         pfd.events = POLLIN;
         const int pollResult = poll(&pfd, 1, GetPresentationPollTimeoutMs(presentation.NeedsTick));
         if (pollResult < 0 && errno != EINTR) {
-            throw std::system_error(errno, std::generic_category(), "Linux UI poll failed");
+            const int errorCode = errno;
+            throw FractalSharkSeriousException(std::string("Linux UI poll failed: ") +
+                                               std::generic_category().message(errorCode));
         }
     }
 }
@@ -758,7 +762,7 @@ LinuxMainWindow::PresentRenderTick()
     RequireUiState(fractal && glContext && glContext->IsValid() && overlay, "Presenting a render frame");
     auto *pool = fractal->GetRenderPool();
     if (!pool) {
-        throw std::logic_error("Presenting a render frame requires a render pool");
+        throw FractalSharkSeriousException("Presenting a render frame requires a render pool");
     }
     const bool freshFrame = pool->TryPresentTick(*glContext);
 
@@ -829,7 +833,7 @@ LinuxMainWindow::GetPresentationPollTimeoutMs(bool needsTick)
             timeoutMs = std::min(timeoutMs, static_cast<int>(pacingDelay->count()));
         }
     } else {
-        throw std::logic_error("Calculating presentation timing requires a render pool");
+        throw FractalSharkSeriousException("Calculating presentation timing requires a render pool");
     }
     return std::max(timeoutMs, 1);
 }
@@ -838,7 +842,8 @@ void
 LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
 {
     if (!fractal || !glContext || !glContext->IsValid()) {
-        throw std::logic_error("Feature autozoom requires an initialized fractal and GL context");
+        throw FractalSharkSeriousException(
+            "Feature autozoom requires an initialized fractal and GL context");
     }
 
     std::atomic<bool> finished = false;
@@ -907,7 +912,7 @@ LinuxMainWindow::OnMinimize()
 {
     RequireUiState(display && window, "Minimizing the window");
     if (XIconifyWindow(display, window, screen) == 0) {
-        throw std::runtime_error("XIconifyWindow failed");
+        throw FractalSharkSeriousException("XIconifyWindow failed");
     }
     XFlush(display);
 }
@@ -987,13 +992,13 @@ LinuxMainWindow::EnterFullscreen(bool square)
     // values.
     XWindowAttributes attrs{};
     if (XGetWindowAttributes(display, window, &attrs) == 0) {
-        throw std::runtime_error("XGetWindowAttributes failed before entering fullscreen");
+        throw FractalSharkSeriousException("XGetWindowAttributes failed before entering fullscreen");
     }
     Window dummyChild = 0;
     int rx = 0, ry = 0;
     if (XTranslateCoordinates(
             display, window, RootWindow(display, screen), 0, 0, &rx, &ry, &dummyChild) == 0) {
-        throw std::runtime_error("XTranslateCoordinates failed before entering fullscreen");
+        throw FractalSharkSeriousException("XTranslateCoordinates failed before entering fullscreen");
     }
     savedX = rx;
     savedY = ry;
@@ -1014,7 +1019,7 @@ LinuxMainWindow::EnterFullscreen(bool square)
     Atom wmState = XInternAtom(display, "_NET_WM_STATE", False);
     Atom wmFullscreen = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
     if (wmState == None || wmFullscreen == None) {
-        throw std::runtime_error("Failed to initialize fullscreen X atoms");
+        throw FractalSharkSeriousException("Failed to initialize fullscreen X atoms");
     }
 
     XEvent ev{};
@@ -1032,7 +1037,7 @@ LinuxMainWindow::EnterFullscreen(bool square)
                    False,
                    SubstructureRedirectMask | SubstructureNotifyMask,
                    &ev) == 0) {
-        throw std::runtime_error("Failed to send the fullscreen request");
+        throw FractalSharkSeriousException("Failed to send the fullscreen request");
     }
     XFlush(display);
     fullscreen = true;
@@ -1049,7 +1054,7 @@ LinuxMainWindow::ExitFullscreen()
     Atom wmState = XInternAtom(display, "_NET_WM_STATE", False);
     Atom wmFullscreen = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
     if (wmState == None || wmFullscreen == None) {
-        throw std::runtime_error("Failed to initialize fullscreen X atoms");
+        throw FractalSharkSeriousException("Failed to initialize fullscreen X atoms");
     }
 
     XEvent ev{};
@@ -1067,7 +1072,7 @@ LinuxMainWindow::ExitFullscreen()
                    False,
                    SubstructureRedirectMask | SubstructureNotifyMask,
                    &ev) == 0) {
-        throw std::runtime_error("Failed to send the windowed-mode request");
+        throw FractalSharkSeriousException("Failed to send the windowed-mode request");
     }
 
     if (savedWidth > 0 && savedHeight > 0) {
@@ -1301,12 +1306,12 @@ LinuxMainWindow::SaveLocation(bool scaleToMaximum)
     const std::string serialized = record.str();
     std::ofstream file("locations.txt", std::ios::app);
     if (!file) {
-        throw std::runtime_error("Could not open locations.txt for append");
+        throw FractalSharkSeriousException("Could not open locations.txt for append");
     }
     file << serialized << "\r\n";
     file.close();
     if (!file) {
-        throw std::runtime_error("Could not write the location to locations.txt");
+        throw FractalSharkSeriousException("Could not write the location to locations.txt");
     }
 
     overlay->RequestInfoModal("Location", serialized.c_str());
@@ -1455,7 +1460,7 @@ LinuxMainWindow::OnLoadLocation()
     // Read locations.txt — same format as the Win32 SavedLocation parser.
     std::ifstream infile("locations.txt");
     if (!infile) {
-        throw std::runtime_error("Could not open locations.txt for reading");
+        throw FractalSharkSeriousException("Could not open locations.txt for reading");
     }
     struct Entry {
         size_t Width = 0, Height = 0;
@@ -1480,7 +1485,7 @@ LinuxMainWindow::OnLoadLocation()
         entries.push_back(std::move(e));
     }
     if (infile.bad()) {
-        throw std::runtime_error("Failed while reading locations.txt");
+        throw FractalSharkSeriousException("Failed while reading locations.txt");
     }
     if (entries.empty()) {
         overlay->RequestInfoModal("Load Location", "locations.txt has no entries.");
@@ -1496,7 +1501,7 @@ LinuxMainWindow::OnLoadLocation()
         [this, entries = std::move(entries)](size_t index) mutable {
             RequireUiState(fractal != nullptr, "Loading a location");
             if (index >= entries.size()) {
-                throw std::out_of_range("Selected saved-location index is out of range");
+                throw FractalSharkSeriousException("Selected saved-location index is out of range");
             }
             const auto &e = entries[index];
             PointZoomBBConverter ptz{
@@ -1596,7 +1601,8 @@ LinuxMainWindow::LoadRefOrbitImagFile(::ImaginaSettings settings, std::string fi
         f.LoadRefOrbit(&rs, ::CompressToDisk::MaxCompressionImagina, settings, w);
         if (rs.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
             if (!f.SetRenderAlgorithm(rs.GetRenderAlgorithm())) {
-                throw std::runtime_error("Failed to restore the reference-orbit render algorithm");
+                throw FractalSharkSeriousException(
+                    "Failed to restore the reference-orbit render algorithm");
             }
         }
     });
@@ -1653,7 +1659,7 @@ LinuxMainWindow::BeginDragZoom(const XButtonEvent &btn)
                                         btn.time);
     pointerGrabbed = grabResult == GrabSuccess;
     if (!pointerGrabbed) {
-        throw std::runtime_error("XGrabPointer failed while beginning drag zoom");
+        throw FractalSharkSeriousException("XGrabPointer failed while beginning drag zoom");
     }
 
     SetDragCursorActive(true);
@@ -1689,7 +1695,7 @@ LinuxMainWindow::StartWindowMove(const XButtonEvent &btn)
     constexpr long kMoveDirection = 8; // _NET_WM_MOVERESIZE_MOVE
     Atom moveResize = XInternAtom(display, "_NET_WM_MOVERESIZE", False);
     if (moveResize == None) {
-        throw std::runtime_error("Failed to initialize the window-move X atom");
+        throw FractalSharkSeriousException("Failed to initialize the window-move X atom");
     }
 
     // Release any implicit pointer grab so the WM can take over.
@@ -1711,7 +1717,7 @@ LinuxMainWindow::StartWindowMove(const XButtonEvent &btn)
                    False,
                    SubstructureRedirectMask | SubstructureNotifyMask,
                    &ev) == 0) {
-        throw std::runtime_error("Failed to send the window-move request");
+        throw FractalSharkSeriousException("Failed to send the window-move request");
     }
     XFlush(display);
 }
@@ -1745,7 +1751,7 @@ LinuxMainWindow::FinishDragZoom(const XButtonEvent &btn)
     }
 
     if (!fractal) {
-        throw std::logic_error("Drag zoom completed without an initialized fractal");
+        throw FractalSharkSeriousException("Drag zoom completed without an initialized fractal");
     }
     fractal->EnqueueCommand([newView, maintainAspect](Fractal &f) {
         if (f.RecenterViewScreen(newView)) {
@@ -1760,7 +1766,7 @@ void
 LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
 {
     if (!fractal) {
-        throw std::logic_error("Key event received without an initialized fractal");
+        throw FractalSharkSeriousException("Key event received without an initialized fractal");
     }
 
     XKeyEvent mutableEvent = ev;
@@ -1824,7 +1830,7 @@ main(int /*argc*/, char ** /*argv*/)
     // Xlib call, otherwise concurrent access is undefined.
     try {
         if (XInitThreads() == 0) {
-            throw std::runtime_error("XInitThreads failed");
+            throw FractalSharkSeriousException("XInitThreads failed");
         }
 
         FractalShark::Linux::SplashWindow splash;

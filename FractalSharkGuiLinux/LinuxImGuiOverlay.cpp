@@ -2,6 +2,7 @@
 
 #include "LinuxImGuiOverlay.h"
 
+#include "Exceptions.h"
 #include "LinuxClipboard.h"
 #include "LinuxXlibBackend.h"
 
@@ -15,7 +16,6 @@
 #include <charconv>
 #include <filesystem>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -73,12 +73,12 @@ ImGuiOverlay::ImGuiOverlay(Display *display, Window window, LinuxClipboard *clip
     : display_(display), window_(window), clipboard_(clipboard)
 {
     if (!display_ || !window_) {
-        throw std::invalid_argument("ImGuiOverlay requires a valid X display and window");
+        throw FractalSharkSeriousException("ImGuiOverlay requires a valid X display and window");
     }
     IMGUI_CHECKVERSION();
     ctx_ = ImGui::CreateContext();
     if (!ctx_) {
-        throw std::runtime_error("ImGui::CreateContext failed");
+        throw FractalSharkSeriousException("ImGui::CreateContext failed");
     }
     ImGui::SetCurrentContext(ctx_);
 
@@ -108,7 +108,7 @@ void
 ImGuiOverlay::Init()
 {
     if (!ctx_) {
-        throw std::logic_error("ImGui overlay has no context");
+        throw FractalSharkSeriousException("ImGui overlay has no context");
     }
     ImGui::SetCurrentContext(ctx_);
 
@@ -121,7 +121,7 @@ ImGuiOverlay::Init()
     }
     if (!oglBackendInited_) {
         if (!ImGui_ImplOpenGL2_Init()) {
-            throw std::runtime_error("ImGui OpenGL backend initialization failed");
+            throw FractalSharkSeriousException("ImGui OpenGL backend initialization failed");
         }
         oglBackendInited_ = true;
     }
@@ -131,7 +131,7 @@ bool
 ImGuiOverlay::ProcessEvent(const XEvent &ev)
 {
     if (!ctx_ || !xlibBackendInited_) {
-        throw std::logic_error("ImGui overlay processed an event before initialization");
+        throw FractalSharkSeriousException("ImGui overlay processed an event before initialization");
     }
     ImGui::SetCurrentContext(ctx_);
     const bool captured = ImGui_ImplXlib_ProcessEvent(ev);
@@ -192,7 +192,7 @@ ImGuiOverlay::RequestFileDialog(const char *title,
 
     AssignInputBuffer(fileDlgFilenameBuffer_, filename);
     if (!SetFileDialogDirectory(initialDir)) {
-        throw std::runtime_error("Could not initialize the file-dialog directory");
+        throw FractalSharkSeriousException("Could not initialize the file-dialog directory");
     }
 }
 
@@ -359,7 +359,7 @@ void
 ImGuiOverlay::RenderFrame()
 {
     if (!ctx_ || !xlibBackendInited_ || !oglBackendInited_) {
-        throw std::logic_error("ImGui overlay rendered before initialization");
+        throw FractalSharkSeriousException("ImGui overlay rendered before initialization");
     }
     ImGui::SetCurrentContext(ctx_);
 
@@ -718,7 +718,7 @@ bool
 ImGuiOverlay::WantsTick() const
 {
     if (!ctx_) {
-        throw std::logic_error("ImGui overlay has no context");
+        throw FractalSharkSeriousException("ImGui overlay has no context");
     }
     return inputPending_ || dragRectActive_ || infoModalRequested_ || infoModalOpen_ ||
            fileDlgRequested_ || fileDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ ||

@@ -15,7 +15,6 @@
 #include <functional>
 #include <span>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -293,7 +292,7 @@ struct X11ContextMenu::Impl {
     IsEnabled(const Node &node) const
     {
         if (!State) {
-            throw std::logic_error("Context-menu state is not initialized");
+            throw FractalSharkSeriousException("Context-menu state is not initialized");
         }
         return State->IsEnabled(node.enableRule);
     }
@@ -302,7 +301,7 @@ struct X11ContextMenu::Impl {
     IsChecked(const Node &node) const
     {
         if (!State) {
-            throw std::logic_error("Context-menu state is not initialized");
+            throw FractalSharkSeriousException("Context-menu state is not initialized");
         }
         if (node.checkKind == CheckKind::Toggle) {
             return State->IsChecked(node.id);
@@ -760,7 +759,7 @@ struct X11ContextMenu::Impl {
     {
         const std::size_t childIndex = levelIndex + 1;
         if (childIndex >= Levels.size()) {
-            throw std::out_of_range("Context-menu child level is out of range");
+            throw FractalSharkSeriousException("Context-menu child level is out of range");
         }
 
         HideAndDestroyLevelsFrom(childIndex + 1, false);
@@ -967,7 +966,7 @@ struct X11ContextMenu::Impl {
         const uint32_t commandId = node.id;
         Close();
         if (!Host) {
-            throw std::logic_error("Context-menu command host is not initialized");
+            throw FractalSharkSeriousException("Context-menu command host is not initialized");
         }
         ExecuteCommand(CommandFromIdm(commandId), *Host);
     }
@@ -1153,7 +1152,8 @@ X11ContextMenu::X11ContextMenu(Display *display,
     : m_Impl(nullptr)
 {
     if (!display || !owner || !state || !host) {
-        throw std::invalid_argument("X11ContextMenu requires valid display, owner, state, and host");
+        throw FractalSharkSeriousException(
+            "X11ContextMenu requires valid display, owner, state, and host");
     }
     m_Impl = std::make_unique<Impl>(display, screen, owner, state, host, std::move(repaintOwner));
 }

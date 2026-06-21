@@ -13,7 +13,7 @@ target_include_directories(FractalSharkCli PRIVATE
     ${CMAKE_SOURCE_DIR}/FractalSharkLib
     ${CMAKE_SOURCE_DIR}/FractalSharkPlatform/Common
     ${CMAKE_SOURCE_DIR}/HpSharkFloatLib
-    ${CMAKE_SOURCE_DIR}/FractalSharkGUILib
+    ${CMAKE_SOURCE_DIR}/FractalSharkGuiWin32
     ${CMAKE_SOURCE_DIR}/FractalSharkGpuLib
 )
 

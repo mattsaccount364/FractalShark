@@ -1,0 +1,150 @@
+\subsection{Codebase Organization}
+\label{sec:code-organization}
+
+The source tree separates operating-system integration, reusable numeric and
+rendering code, application front ends, and validation tools.  The build-target
+boundaries are significant: they keep CUDA compilation isolated, prevent
+platform APIs from leaking into portable interfaces, and allow the Windows GUI,
+Linux GUI, and command-line renderer to share the same rendering implementation.
+
+\subsubsection{Dependency layers}
+
+\Cref{fig:codebase-layers} summarizes the architectural layers.  Arrows point
+toward targets that consume the layer below them; final executables link the
+libraries required by the features they expose.
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{tikzpicture}[
+      component/.style={
+        draw,
+        rounded corners,
+        align=center,
+        minimum height=12mm,
+        text width=0.90\textwidth,
+        inner sep=3mm
+      },
+      flow/.style={-{Latex[length=2.5mm]}, thick}
+    ]
+    \node[component] (foundation) {
+      \textbf{Foundation libraries}\\
+      \code{FractalSharkPlatform}\qquad \code{HpSharkFloatLib}
+    };
+    \node[component, above=8mm of foundation] (rendering) {
+      \textbf{Shared rendering implementation}\\
+      \code{FractalSharkLib}\qquad \code{FractalSharkGpuLib}
+    };
+    \node[component, above=8mm of rendering] (consumers) {
+      \textbf{Applications and developer tools}\\[1mm]
+      \code{FractalShark} + \code{FractalSharkGuiWin32}\quad
+      \code{FractalSharkGuiLinux}\quad \code{FractalSharkCli}\\
+      \code{FractalTray}\quad \code{FractalSaver}\quad
+      \code{FractalSharkTest}\quad \code{HpSharkFloatTest}\\
+      \code{HpSharkFloatTestLib}\quad \code{HpSharkInstantiate}
+    };
+
+    \draw[flow] (foundation) -- (rendering);
+    \draw[flow] (rendering) -- (consumers);
+  \end{tikzpicture}
+  \caption[Codebase dependency layers]{Codebase dependency layers.  Platform and
+    high-precision arithmetic support the shared CPU and CUDA rendering code;
+    applications and validation tools consume those shared layers.}
+  \label{fig:codebase-layers}
+\end{figure}
+
+\subsubsection{Foundation and rendering libraries}
+
+\paragraph{\code{FractalSharkPlatform}.}
+The platform library owns operating-system services used by otherwise portable
+code.  Its common interfaces cover allocation, files, process information,
+timing, diagnostics, crash handling, wait-cursor state, process memory limits,
+and native OpenGL contexts.  Separate Win32 and Linux translation units provide
+the implementations described in \cref{subsec:platform-abstraction}.
+
+\paragraph{\code{HpSharkFloatLib}.}
+The high-precision GPU arithmetic library implements the limb-based
+\code{HpSharkFloat} representation, addition, NTT multiplication,
+normalization, periodicity support, and the GPU reference-orbit machinery.  It
+also contains the parameter families used to specialize those kernels.  The
+numeric representation and execution pipeline are documented in
+\cref{subsec:ref-orbit-gpu,subsec:hpfloat-model,sec:hp-add,sec:ntt-multiply}.
+
+\paragraph{\code{FractalSharkLib}.}
+The core library owns portable fractal state and CPU-side orchestration.  Its
+responsibilities include coordinate conversion, reference-orbit dispatch,
+linear-approximation construction, feature finding, palettes, iteration-buffer
+management, render-thread coordination, persistence, PNG output, shared
+commands, and functional tests.  The principal flows appear in
+\cref{sec:ref-orbit-calc,sec:render-thread-pool,sec:disk_backed_growable_vectors}.
+
+\paragraph{\code{FractalSharkGpuLib}.}
+The rendering CUDA library owns the per-pixel launch surface and kernels for
+direct escape-time rendering, perturbation, BLA and LA~v2 traversal,
+antialiasing, coloring, and reductions.  It consumes numeric and state types
+defined by the core and high-precision libraries; final applications link all
+required libraries together.  Kernel behavior is covered in
+\cref{sec:mandel-base-kernels,sec:perturb-only,sec:la-v2-perturb,sec:kernel-list}.
+
+\subsubsection{Applications and front ends}
+
+\paragraph{\code{FractalShark} and \code{FractalSharkGuiWin32}.}
+The primary Windows application is split across two Visual~Studio projects.
+\code{FractalShark} supplies the executable target, resources, icons, and final
+link, while \code{FractalSharkGuiWin32} implements the Win32 entry point, main
+window, command dispatcher, popup menus, console, saved-location UI, and splash
+window.  Shared command identifiers remain in the core library.  User-visible
+behavior and frame presentation are described in
+\cref{sec:ui-popup-menu,sec:keyboard-shortcuts,subsec:opengl-display}.
+
+\paragraph{\code{FractalSharkGuiLinux}.}
+The native Linux application combines an Xlib event loop and menus, GLX context
+management, Dear~ImGui overlays, clipboard integration, and the shared renderer.
+Its platform boundary and current parity limitations are documented in
+\cref{subsec:linux-gui}.
+
+\paragraph{\code{FractalSharkCli}.}
+The portable command-line executable provides headless rendering from built-in
+views, saved locations, or explicit coordinates.  It exercises the same core
+and CUDA rendering libraries without a window system; its contract and render
+path are documented in \cref{sec:fractalshark-cli}.
+
+\paragraph{\code{FractalTray}.}
+The Windows tray application batch-renders a sequence of coordinates through
+the shared renderer.  Its input format, configuration, and operating procedure
+are described in \cref{subsec:fractaltray}.
+
+\paragraph{\code{FractalSaver}.}
+The Windows screen-saver project is legacy, unsupported code retained in the
+Visual~Studio solution.  It is not part of the CMake build or release packages
+and should not be treated as an active front end.
+
+\subsubsection{Validation and generation tools}
+
+\paragraph{\code{FractalSharkTest}.}
+The portable unit-test executable covers core numeric types, coordinate
+conversion, linear-approximation data, allocators, serialization, command
+state, render goldens, and related utilities.  The custom test framework and
+representative coverage are summarized in \cref{subsec:fractalsharktest}.
+
+\paragraph{\code{HpSharkFloatTestLib} and \code{HpSharkFloatTest}.}
+The support library contains reference implementations, correctness tests,
+performance drivers, and result tracking for high-precision CUDA arithmetic.
+The executable supplies the CUDA-aware harness that invokes those tests.
+Runtime validation requires physical CUDA hardware, as discussed in
+\cref{subsec:hpsharkfloattest}.
+
+\paragraph{\code{HpSharkInstantiate}.}
+The standalone developer tool generates explicit-instantiation CUDA sources
+for the fixed \code{SharkFloatParams} families.  Generated translation units
+control template compile time and final binary coverage; the underlying
+strategy is documented in \cref{subsec:template-explicit-inst}.
+
+\subsubsection{Build-system coverage}
+
+The Visual~Studio solution contains the Windows application, Windows GUI
+library, tray application, legacy screen saver, shared libraries, tests, and
+generation tool.  CMake builds the portable shared libraries and tools,
+\code{FractalSharkCli}, and \code{FractalSharkGuiLinux}; it intentionally omits
+the Win32-only front ends.  Parallel project-file maintenance, Linux target
+composition, and continuous-integration coverage are described in
+\cref{subsec:dual-build}.

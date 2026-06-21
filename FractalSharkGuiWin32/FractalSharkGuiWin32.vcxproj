@@ -12,7 +12,7 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{6672C084-EA20-4DA3-B55A-F160EDD33BC3}</ProjectGuid>
-    <ProjectName>FractalSharkGUILib</ProjectName>
+    <ProjectName>FractalSharkGuiWin32</ProjectName>
   </PropertyGroup>
   <Import Project="$(SolutionDir)Directory.FractalShark.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -30,7 +30,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
-    <IntDir>$(Platform)\$(Configuration)\GUILib\</IntDir>
+    <IntDir>$(Platform)\$(Configuration)\GuiWin32\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>

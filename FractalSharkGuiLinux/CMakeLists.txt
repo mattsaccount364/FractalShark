@@ -1,7 +1,7 @@
 # FractalSharkGuiLinux — Linux-only GUI executable.
 #
 # This subdirectory is only added on UNIX from the root CMakeLists.txt.  The
-# Windows GUI lives in FractalSharkGUILib + FractalShark/Fractals.vcxproj and
+# Windows GUI lives in FractalSharkGuiWin32 + FractalShark/Fractals.vcxproj and
 # is intentionally separate.
 
 include(FetchContent)
@@ -148,7 +148,7 @@ target_include_directories(FractalSharkGuiLinux PRIVATE
     ${CMAKE_SOURCE_DIR}/FractalSharkLib
     ${CMAKE_SOURCE_DIR}/FractalSharkPlatform/Common
     ${CMAKE_SOURCE_DIR}/HpSharkFloatLib
-    ${CMAKE_SOURCE_DIR}/FractalSharkGUILib
+    ${CMAKE_SOURCE_DIR}/FractalSharkGuiWin32
     ${CMAKE_SOURCE_DIR}/FractalSharkGpuLib
     ${imgui_SOURCE_DIR}
 )

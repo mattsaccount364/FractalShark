@@ -20,7 +20,7 @@
 //     into hidden static const Node arrays to keep storage stable for the
 //     lifetime of the program.
 //
-// The Win32 builder (FractalSharkGUILib/DynamicPopupMenu.{h,cpp}) and the
+// The Win32 builder (FractalSharkGuiWin32/DynamicPopupMenu.{h,cpp}) and the
 // Linux builder (FractalSharkGuiLinux, future) both consume this same tree.
 //
 

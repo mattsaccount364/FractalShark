@@ -1,6 +1,6 @@
 // FractalSharkCli: headless PNG renderer.
 //
-// Process-level init mirrors FractalSharkGUILib/FractalShark.cpp (WinMain +
+// Process-level init mirrors FractalSharkGuiWin32/FractalShark.cpp (WinMain +
 // MainWindow ctor): Environment::RegisterHeapCleanup + Environment::CrashHandler::Install.
 
 #include "stdafx.h"
@@ -298,7 +298,7 @@ ParseArgs(int argc, char *argv[], CliArgs &a)
 }
 
 // Simple saved-location record. Mirrors the format consumed by the GUI's
-// MainWindow::SavedLocation parser in FractalSharkGUILib/MainWindowSavedLocation.h:
+// MainWindow::SavedLocation parser in FractalSharkGuiWin32/MainWindowSavedLocation.h:
 //   width height minX minY maxX maxY num_iterations antialiasing
 //   <description line>
 struct ParsedSavedLocation {

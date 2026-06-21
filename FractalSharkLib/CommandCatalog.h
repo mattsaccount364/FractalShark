@@ -51,7 +51,7 @@
 namespace FractalShark {
 
 // Commands in the native menu-command range mirror IDM_* values from
-// FractalSharkGUILib/AlgCmds.h. Their numeric compatibility is intentional:
+// FractalSharkGuiWin32/AlgCmds.h. Their numeric compatibility is intentional:
 // a Win32 WM_COMMAND id can be cast to FractalCommand, and Linux can reuse the
 // same catalog ids without carrying Win32 menu resources. Synthetic shortcut
 // commands live outside that native range when a shortcut variant needs its own

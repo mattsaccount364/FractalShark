@@ -1,5 +1,5 @@
 // LinuxHelpModals.h — UTF-8 help strings for the Linux GUI's info modals.
-// The static text here mirrors FractalSharkGUILib/MainWindow.cpp's
+// The static text here mirrors FractalSharkGuiWin32/MainWindow.cpp's
 // MenuViewsHelp / MenuAlgHelp message-box bodies, with the Win32 wide-string
 // + CRLF rewritten as plain UTF-8 + LF. Hotkey help is generated from
 // FractalShark::kCommands instead of duplicated here.

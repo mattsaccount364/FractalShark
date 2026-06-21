@@ -1,6 +1,6 @@
 // LinuxCommandHandlers.cpp — Linux-side default impls of platform-agnostic
 // catalog command hooks.  Mirrors the bodies in
-// FractalSharkGUILib/MainWindow.cpp 1:1 but lives entirely on the Linux side.
+// FractalSharkGuiWin32/MainWindow.cpp 1:1 but lives entirely on the Linux side.
 //
 // LinuxMainWindow inherits from LinuxCommandHandlers and overrides only the
 // Linux-specific hooks (modals, file dialogs, window mode, clipboard).

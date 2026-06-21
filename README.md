@@ -10,7 +10,7 @@ Because fractals and sharks are both cool, so why not? And it's relatively uniqu
 
 ## What is the Mandelbrot Set?
 
-The Mandelbrot set is defined as the set of complex numbers that do not diverge to infinity when iterated according to \( Z_{n+1} \leftarrow Z_n^2 + c \), with \( Z_0 \) initialized to 0. It's possible to visualize the set by assigning a color depending on the number of iterations necessary to determine whether the point was in the set. In FractalShark, points are left black to denote membership, and colored if they escape (diverge) to infinity after some number of iterations. Membership is necessarily approximate in practice: infinite iterations are required in the general case, but a sufficiently large fixed iteration limit is "good enough" for visualization.
+The Mandelbrot set is defined as the set of complex numbers that do not diverge to infinity when iterated according to `Zₙ₊₁ = Zₙ² + c`, starting from `Z₀ = 0`. It's possible to visualize the set by assigning a color depending on the number of iterations necessary to determine whether the point was in the set. In FractalShark, points are left black to denote membership, and colored if they escape (diverge) to infinity after some number of iterations. Membership is necessarily approximate in practice: infinite iterations are required in the general case, but a sufficiently large fixed iteration limit is "good enough" for visualization.
 
 ## Why do we need another Mandelbrot Set renderer? Thousands of others already exist!
 
@@ -88,7 +88,7 @@ FractalShark performs **supersampled antialiasing on the GPU**: each pixel is re
 
 ## More docs?
 
-The `Notes/` directory contains a detailed technical document (FractalShark.pdf) covering algorithms, data structures, and implementation decisions. It is organized into four parts:
+The `Notes/` directory contains a detailed technical document ([FractalShark.pdf](https://github.com/mattsaccount364/FractalShark/releases/latest/download/FractalShark.pdf)) covering algorithms, data structures, and implementation decisions. It is organized into four parts:
 
 - **Part I — Rendering Algorithms**: pixel-to-parameter mapping, HDR floating-point types, perturbation theory, and linear/bilinear approximation.
 - **Part II — Reference Orbit Computation**: CPU and GPU reference orbit backends, NTT-based GPU arithmetic, and the Feature Finder.

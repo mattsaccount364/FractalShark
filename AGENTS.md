@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-FractalShark is a C++23/CUDA Mandelbrot renderer. Core fractal math, perturbation, reference orbits, palettes, PNG output, and render orchestration live in `FractalSharkLib/`. CUDA kernels and GPU rendering helpers are in `FractalSharkGpuLib/`; high-precision GPU arithmetic is in `HpSharkFloatLib/`. Platform abstractions live in `FractalSharkPlatform/`. Windows GUI code is split across `FractalShark/` and `FractalSharkGUILib/`; Linux GUI work is in `FractalSharkGuiLinux/`; CLI entry points are in `FractalSharkCli/`. Tests live in `FractalSharkTest/`, `HpSharkFloatTest/`, and `HpSharkFloatTestLib/`. LaTeX docs are in `Notes/`; sample images and inputs are in `Pics/` and `FromImagina/`.
+FractalShark is a C++23/CUDA Mandelbrot renderer. Core fractal math, perturbation, reference orbits, palettes, PNG output, and render orchestration live in `FractalSharkLib/`. CUDA kernels and GPU rendering helpers are in `FractalSharkGpuLib/`; high-precision GPU arithmetic is in `HpSharkFloatLib/`. Platform abstractions live in `FractalSharkPlatform/`. Windows GUI code is split across `FractalShark/` and `FractalSharkGuiWin32/`; Linux GUI work is in `FractalSharkGuiLinux/`; CLI entry points are in `FractalSharkCli/`. Tests live in `FractalSharkTest/`, `HpSharkFloatTest/`, and `HpSharkFloatTestLib/`. LaTeX docs are in `Notes/`; sample images and inputs are in `Pics/` and `FromImagina/`.
 
 ## Build, Test, and Development Commands
 

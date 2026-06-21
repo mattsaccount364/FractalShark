@@ -34,6 +34,8 @@ InputBufferValue(const std::string &buffer)
 void
 AssignInputBuffer(std::string &buffer, const std::string &value)
 {
+    // ImGui edits std::string storage in place and needs stable spare capacity.  The logical value
+    // remains the prefix before the first NUL, as recovered by InputBufferValue().
     buffer = value;
     if (buffer.size() + 1 < kFileDialogInputCapacity) {
         buffer.resize(kFileDialogInputCapacity, '\0');
@@ -367,6 +369,8 @@ ImGuiOverlay::RenderFrame()
     ImGui_ImplXlib_NewFrame();
     ImGui::NewFrame();
 
+    // Requests may arrive between frames.  Split requested/open state so OpenPopup is issued once,
+    // while the event loop continues rendering until ImGui reports that the modal has closed.
     if (infoModalRequested_) {
         ImGui::OpenPopup("FractalSharkInfoModal");
         infoModalRequested_ = false;
@@ -585,6 +589,8 @@ ImGuiOverlay::RenderFrame()
                             ImGui::CloseCurrentPopup();
                             pickDlgOpen_ = false;
                             if (pickDlgCallback_) {
+                                // Clear stored ownership before invoking client code: callbacks may
+                                // immediately request another overlay dialog reentrantly.
                                 auto cb = std::move(pickDlgCallback_);
                                 pickDlgCallback_ = nullptr;
                                 cb(size_t(i));
@@ -720,6 +726,8 @@ ImGuiOverlay::WantsTick() const
     if (!ctx_) {
         throw FractalSharkSeriousException("ImGui overlay has no context");
     }
+    // The X event loop otherwise sleeps until render-pool work arrives.  Keep presentation ticking
+    // while an overlay can animate, consume input, or transition a queued request into an open popup.
     return inputPending_ || dragRectActive_ || infoModalRequested_ || infoModalOpen_ ||
            fileDlgRequested_ || fileDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ ||
            locDlgOpen_;

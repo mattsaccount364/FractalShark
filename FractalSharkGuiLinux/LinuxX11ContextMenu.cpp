@@ -121,6 +121,9 @@ AllocateNamedColor(Display *display, int screen, const char *name, unsigned long
 
 } // namespace
 
+// All visible menu levels are logical rectangles inside one override-redirect X window.  The Shape
+// extension cuts that window to the union of those rectangles, giving independent-looking submenus
+// without managing a separate native window and grab lifecycle for every level.
 struct X11ContextMenu::Impl {
     struct Colors {
         unsigned long Background;
@@ -498,6 +501,8 @@ struct X11ContextMenu::Impl {
     void
     DrawLevel(const Level &level)
     {
+        // Draw into a pixmap first so hover and keyboard updates reach the popup as one copy rather
+        // than exposing partially repainted rows over a GL-backed owner window.
         EnsureBackBuffer();
 
         DrawLevelTo(BackBuffer, level);
@@ -550,6 +555,8 @@ struct X11ContextMenu::Impl {
     Level
     BuildLevel(std::span<const Node> nodes)
     {
+        // Row Y values stay in unscrolled content coordinates.  Level X/Y use root coordinates so
+        // hit testing remains valid when a submenu extends outside the owner window.
         Level level;
         level.Nodes = nodes;
         level.Width = kMinimumWidth;
@@ -594,6 +601,8 @@ struct X11ContextMenu::Impl {
         }
 
         XSetWindowAttributes attributes{};
+        // The application owns placement and dismissal; a window manager must not reparent,
+        // decorate, or constrain this transient surface.
         attributes.override_redirect = True;
         attributes.background_pixel = Palette.Background;
         attributes.border_pixel = Palette.Border;
@@ -646,6 +655,8 @@ struct X11ContextMenu::Impl {
         }
         EnsurePopupWindow();
 
+        // Resize the single popup to the bounding box of the current cascade.  Its bounding shape
+        // is then restricted to the level rectangles so gaps do not intercept pointer input.
         int minX = Levels.front().X;
         int minY = Levels.front().Y;
         int maxX = Levels.front().X + Levels.front().Width;
@@ -848,6 +859,8 @@ struct X11ContextMenu::Impl {
             return HideAndDestroyLevelsAfter(levelIndex);
         }
 
+        // MenuTree storage is static, so the child span address identifies an already-open submenu
+        // without comparing every node or rebuilding the popup on each MotionNotify.
         if (Levels.size() > levelIndex + 1 && Levels[levelIndex + 1].Nodes.data() == node.kids.data()) {
             if (selectFirst) {
                 SelectFirst(levelIndex + 1);
@@ -964,6 +977,8 @@ struct X11ContextMenu::Impl {
         }
 
         const uint32_t commandId = node.id;
+        // Release grabs and destroy the popup before dispatch.  Commands may display another modal,
+        // alter menu state, or terminate the event loop.
         Close();
         if (!Host) {
             throw FractalSharkSeriousException("Context-menu command host is not initialized");
@@ -1027,6 +1042,8 @@ struct X11ContextMenu::Impl {
         Close();
         AddLevel(GetMenuNodes(), rootX, rootY);
 
+        // Grabs turn the cascade into a modal interaction: pointer events outside its shaped region
+        // still arrive here for dismissal, and keyboard navigation works regardless of pointer focus.
         const int pointerGrab = XGrabPointer(DisplayHandle,
                                              PopupWindow,
                                              True,

@@ -76,6 +76,8 @@ ScaleColorComponentToMask(std::uint8_t value, unsigned long mask)
 unsigned long
 PixelToXPixel(const Visual *visual, const WPngImage::Pixel8 &pixel)
 {
+    // The default X visual has no alpha channel.  Composite transparent source pixels onto the
+    // splash's black background before packing components according to the visual's channel masks.
     const auto blendAgainstBlack = [](std::uint8_t component, std::uint8_t alpha) {
         return static_cast<std::uint8_t>(
             (static_cast<unsigned int>(component) * static_cast<unsigned int>(alpha) + 127U) / 255U);
@@ -128,6 +130,8 @@ SampleBilinear(const WPngImage &image, int destX, int destY, int destWidth, int 
     return WPngImage::Pixel8(toByte(red), toByte(green), toByte(blue));
 }
 
+// The splash owns a separate X connection on its worker thread.  Keeping every X resource in this
+// RAII session avoids sharing the main window's connection while startup is still constructing it.
 class SplashSession {
 public:
     SplashSession() = default;
@@ -161,6 +165,8 @@ public:
         attributes.background_pixel = BlackPixel(DisplayHandle, Screen);
         attributes.border_pixel = BlackPixel(DisplayHandle, Screen);
         attributes.event_mask = ExposureMask | StructureNotifyMask;
+        // Bypass window-manager decoration and placement so the splash can appear immediately.
+        // EWMH hints are still supplied below for compositors that inspect override-redirect windows.
         attributes.override_redirect = True;
 
         WindowHandle = XCreateWindow(DisplayHandle,
@@ -210,6 +216,8 @@ public:
             }
 
             XFlush(DisplayHandle);
+            // A finite poll interval makes stop_token cancellation observable without an extra
+            // cross-thread wakeup pipe while remaining idle when X has no events.
             pollfd pollInfo{connection, POLLIN, 0};
             const int pollResult = poll(&pollInfo, 1, 50);
             if (pollResult < 0 && errno != EINTR) {
@@ -319,6 +327,8 @@ private:
 
         std::vector<char> imageData(static_cast<std::size_t>(xImage->bytes_per_line) *
                                     static_cast<std::size_t>(drawHeight));
+        // XDestroyImage normally frees data as well.  This storage belongs to the vector, so detach
+        // it after XPutImage has synchronously copied the pixels into Xlib's outgoing request.
         xImage->data = imageData.data();
 
         for (int y = 0; y < drawHeight; ++y) {
@@ -404,6 +414,8 @@ SplashWindow::Start()
 
     m_Worker = std::jthread([this](std::stop_token stopToken) { ThreadMain(stopToken); });
 
+    // Do not return until the worker has either mapped a usable splash or captured its startup
+    // exception.  Callers can therefore treat successful Start() as an established invariant.
     std::unique_lock<std::mutex> lock(m_StartMutex);
     m_StartCondition.wait(lock, [this] { return m_StartCompleted; });
     if (m_StartException) {
@@ -424,6 +436,7 @@ SplashWindow::Stop()
         std::lock_guard<std::mutex> lock(m_StartMutex);
         workerException = std::exchange(m_WorkerException, nullptr);
     }
+    // Failures after startup occur off-thread; surface each one once at the synchronization point.
     if (workerException) {
         std::rethrow_exception(workerException);
     }

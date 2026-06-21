@@ -30,6 +30,8 @@ LinuxClipboard::LinuxClipboard(Display *display, Window window) : m_Display(disp
 void
 LinuxClipboard::Set(std::string text)
 {
+    // X11 stores clipboard data in the selection owner, not in the server.  Keep the bytes alive
+    // until SelectionClear tells us that another client has replaced this ownership claim.
     m_OwnedText = std::move(text);
     XSetSelectionOwner(m_Display, m_AtomClipboard, m_Window, CurrentTime);
     m_OwnsSelection = (XGetSelectionOwner(m_Display, m_AtomClipboard) == m_Window);
@@ -56,6 +58,9 @@ LinuxClipboard::Get(std::chrono::milliseconds timeout)
     m_GetPending = true;
     m_GetResult.reset();
 
+    // Selection conversion is asynchronous: the owner writes the requested representation to our
+    // private window property and the server follows with SelectionNotify.  Present a synchronous
+    // interface by pumping the X connection until that protocol completes.
     XConvertSelection(
         m_Display, m_AtomClipboard, m_AtomUtf8String, m_AtomFractalSharkPaste, m_Window, CurrentTime);
     XFlush(m_Display);
@@ -180,6 +185,8 @@ LinuxClipboard::ProcessEvent(const XEvent &ev)
                 throw FractalSharkSeriousException("Failed to read the X clipboard selection property");
             }
             if (actualType == m_AtomIncr) {
+                // INCR requires a property-notify handshake and chunk assembly.  Reject it
+                // explicitly so a large transfer cannot be mistaken for ordinary clipboard text.
                 XFree(data);
                 m_GetPending = false;
                 throw FractalSharkSeriousException(

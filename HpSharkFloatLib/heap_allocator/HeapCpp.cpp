@@ -384,13 +384,27 @@ SetMagicAtEnd(void *newBuffer, size_t bufferSize)
     magicPtr[1] = node_t::Magic;
 }
 void
-VerifyAndClearMagicAtEnd(void *buffer, size_t bufferSize)
+VerifyAndClearMagicAtEnd(void *buffer, size_t bufferSize, const node_t *node, const char *canaryKind)
 {
     // Verify magic at end of buffer to detect overruns
     uint64_t *magicPtr =
         reinterpret_cast<uint64_t *>((char *)buffer + bufferSize - 2 * sizeof(uint64_t));
     if (magicPtr[0] != node_t::Magic || magicPtr[1] != node_t::Magic) {
-        HeapPanic("Buffer overrun detected");
+        char buf[512];
+        sprintf_s(buf,
+                  "Buffer overrun detected: ptr=%p requested=%llu actual=%zu canary=%p "
+                  "expected=%llx/%llx observed=%llx/%llx sequence=%llu kind=%s",
+                  buffer,
+                  static_cast<unsigned long long>(node->user_size),
+                  bufferSize,
+                  static_cast<void *>(magicPtr),
+                  static_cast<unsigned long long>(node_t::Magic),
+                  static_cast<unsigned long long>(node_t::Magic),
+                  static_cast<unsigned long long>(magicPtr[0]),
+                  static_cast<unsigned long long>(magicPtr[1]),
+                  static_cast<unsigned long long>(node->allocation_sequence),
+                  canaryKind);
+        HeapPanic(buf);
     }
     // Clear magic to avoid double-free issues
     magicPtr[0] = node_t::ClearedMagic;
@@ -460,6 +474,7 @@ HeapCpp::FinalizeAllocation(
 
     node->head_guard = node_t::HeadGuard;
     node->alloc_gen = node->in_bin_gen;
+    node->allocation_sequence = ++NextAllocationSequence;
     node->checksum = node->ComputeChecksum();
 
     char *user = reinterpret_cast<char *>(node) + sizeof(node_t);
@@ -701,6 +716,18 @@ safe_next_node(const heap_t &H, node_t * /*head*/, footer_t *head_foot)
     return next;
 }
 
+static void
+InvalidateAbsorbedNode(node_t *node)
+{
+    node->hole = 0;
+    node->user_size = 0;
+    node->actual_size = 0;
+    node->magic = node_t::AbsorbedMagic;
+    node->checksum = 0;
+    node->next = nullptr;
+    node->prev = nullptr;
+}
+
 void
 HeapCpp::Deallocate(void *ptr)
 {
@@ -754,9 +781,9 @@ HeapCpp::Deallocate(void *ptr)
 
     char *returnedTailCanary = static_cast<char *>(returnedUser) + returnedActualSize - TailCanaryBytes;
     char *backingTailCanary = static_cast<char *>(backingUser) + head->actual_size - TailCanaryBytes;
-    VerifyAndClearMagicAtEnd(returnedUser, returnedActualSize);
+    VerifyAndClearMagicAtEnd(returnedUser, returnedActualSize, head, "returned");
     if (returnedTailCanary != backingTailCanary) {
-        VerifyAndClearMagicAtEnd(backingUser, head->actual_size);
+        VerifyAndClearMagicAtEnd(backingUser, head->actual_size, head, "backing");
     }
 
     // Poison user data to catch use-after-free
@@ -779,6 +806,7 @@ HeapCpp::Deallocate(void *ptr)
         // merge
         prev->actual_size += overhead + head->actual_size;
         CreateFooter(prev);
+        InvalidateAbsorbedNode(head);
         head = prev;
 
         // Update head_foot because head changed
@@ -798,9 +826,7 @@ HeapCpp::Deallocate(void *ptr)
         // optional clear
         footer_t *old_foot = GetFooter(next);
         old_foot->header = nullptr;
-        next->user_size = 0;
-        next->actual_size = 0;
-        next->hole = 0;
+        InvalidateAbsorbedNode(next);
 
         CreateFooter(head);
         coalesced = true;
@@ -1031,6 +1057,32 @@ HeapCpp::GetUserSize(void *ptr, const char *operation)
     std::unique_lock<std::mutex> lock(*Mutex);
     assert(Initialized);
     return static_cast<size_t>(FindLiveNodeFromUserPointer(Heap, ptr, operation)->user_size);
+}
+
+HeapAllocationDiagnostics
+HeapCpp::GetAllocationDiagnostics(void *ptr)
+{
+    std::unique_lock<std::mutex> lock(*Mutex);
+    assert(Initialized);
+
+    node_t *node = FindLiveNodeFromUserPointer(Heap, ptr, "Diagnostics: invalid or freed block");
+    size_t returnedActualSize = 0;
+    if (!ReturnedCanarySpan(node, returnedActualSize)) {
+        HeapPanic("Diagnostics: invalid returned allocation size");
+    }
+
+    void *returnedUser = ReturnedUserPointer(node);
+    void *backingUser = BackingUserPointer(node);
+    return HeapAllocationDiagnostics{
+        returnedUser,
+        static_cast<size_t>(node->user_size),
+        returnedActualSize,
+        static_cast<char *>(returnedUser) + returnedActualSize - TailCanaryBytes,
+        backingUser,
+        static_cast<size_t>(node->actual_size),
+        static_cast<char *>(backingUser) + node->actual_size - TailCanaryBytes,
+        node->allocation_sequence,
+    };
 }
 
 HeapBackingDiagnostics

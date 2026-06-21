@@ -23,6 +23,17 @@ struct HeapBackingDiagnostics {
     intptr_t FileHandle;
 };
 
+struct HeapAllocationDiagnostics {
+    void *ReturnedUser;
+    size_t RequestedSize;
+    size_t ReturnedActualSize;
+    void *ReturnedCanary;
+    void *BackingUser;
+    size_t BackingActualSize;
+    void *BackingCanary;
+    uint64_t AllocationSequence;
+};
+
 namespace Environment {
 void RegisterHeapCleanup();
 }
@@ -62,6 +73,7 @@ public:
     // Diagnostic helper for tests and assertions.
     bool OwnsPointer(const void *ptr) const;
     size_t GetUserSize(void *ptr, const char *operation);
+    HeapAllocationDiagnostics GetAllocationDiagnostics(void *ptr);
     HeapBackingDiagnostics GetBackingDiagnostics() const;
 
 private:
@@ -98,6 +110,7 @@ private:
     };
 
     StatsCollection Stats;
+    uint64_t NextAllocationSequence;
 
     static constexpr auto GrowByAmtBytes = 1024 * 1024; // 1MB
     static constexpr auto GrowableVectorSize = 4096;

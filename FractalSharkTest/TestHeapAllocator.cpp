@@ -18,6 +18,14 @@ void *CppAlignedRealloc(void *ptr, size_t newUserSize, size_t alignment, bool ze
 
 namespace {
 
+constexpr size_t TailCanaryBytes = 2 * sizeof(uint64_t);
+
+size_t
+ExpectedActualSize(size_t requestedSize)
+{
+    return (requestedSize + TailCanaryBytes + HeapAlignment - 1) & ~(HeapAlignment - 1);
+}
+
 bool
 IsAligned(const void *ptr, size_t alignment)
 {
@@ -68,6 +76,56 @@ TEST(HeapCAllocationApisUseGlobalHeap)
     AssertHeapOwned(callocPtr);
     AssertBytes(callocPtr, 17 * 11, 0);
     std::free(callocPtr);
+}
+
+TEST(HeapAllocationDiagnosticsDescribeTailCanary)
+{
+    constexpr size_t Size = 123;
+    void *ptr = std::malloc(Size);
+    ASSERT_TRUE(ptr != nullptr);
+
+    const HeapAllocationDiagnostics diagnostics = GlobalHeap().GetAllocationDiagnostics(ptr);
+    ASSERT_TRUE(diagnostics.ReturnedUser == ptr);
+    ASSERT_EQ(diagnostics.RequestedSize, Size);
+    ASSERT_EQ(diagnostics.ReturnedActualSize, ExpectedActualSize(Size));
+    ASSERT_TRUE(diagnostics.ReturnedCanary ==
+                static_cast<char *>(ptr) + diagnostics.ReturnedActualSize - TailCanaryBytes);
+    ASSERT_TRUE(diagnostics.BackingUser == ptr);
+    ASSERT_EQ(diagnostics.BackingActualSize, diagnostics.ReturnedActualSize);
+    ASSERT_TRUE(diagnostics.BackingCanary == diagnostics.ReturnedCanary);
+    ASSERT_TRUE(diagnostics.AllocationSequence != 0);
+
+    const auto *canary = static_cast<const uint64_t *>(diagnostics.ReturnedCanary);
+    ASSERT_EQ(canary[0], node_t::Magic);
+    ASSERT_EQ(canary[1], node_t::Magic);
+    std::free(ptr);
+}
+
+TEST(HeapAlignedAllocationDiagnosticsDescribeBothTailCanaries)
+{
+    constexpr size_t Alignment = 4096;
+    constexpr size_t Size = 4093;
+    void *ptr = CppAlignedMalloc(Size, Alignment);
+    ASSERT_TRUE(ptr != nullptr);
+
+    const HeapAllocationDiagnostics diagnostics = GlobalHeap().GetAllocationDiagnostics(ptr);
+    ASSERT_TRUE(diagnostics.ReturnedUser == ptr);
+    ASSERT_EQ(diagnostics.RequestedSize, Size);
+    ASSERT_EQ(diagnostics.ReturnedActualSize, ExpectedActualSize(Size));
+    ASSERT_TRUE(diagnostics.ReturnedCanary ==
+                static_cast<char *>(ptr) + diagnostics.ReturnedActualSize - TailCanaryBytes);
+    ASSERT_TRUE(diagnostics.BackingActualSize >= diagnostics.ReturnedActualSize);
+    ASSERT_TRUE(diagnostics.BackingCanary == static_cast<char *>(diagnostics.BackingUser) +
+                                                 diagnostics.BackingActualSize - TailCanaryBytes);
+    ASSERT_TRUE(diagnostics.AllocationSequence != 0);
+
+    const auto *returnedCanary = static_cast<const uint64_t *>(diagnostics.ReturnedCanary);
+    const auto *backingCanary = static_cast<const uint64_t *>(diagnostics.BackingCanary);
+    ASSERT_EQ(returnedCanary[0], node_t::Magic);
+    ASSERT_EQ(returnedCanary[1], node_t::Magic);
+    ASSERT_EQ(backingCanary[0], node_t::Magic);
+    ASSERT_EQ(backingCanary[1], node_t::Magic);
+    std::free(ptr);
 }
 
 TEST(HeapAlignedAllocSupportsLargeNonMultipleSize)

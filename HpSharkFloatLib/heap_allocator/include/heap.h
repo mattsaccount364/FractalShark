@@ -34,6 +34,7 @@ struct alignas(HeapAlignment) node_t {
         in_bin = NotInBin;
         magic = ClearedMagic;
         checksum = 0;
+        allocation_sequence = 0;
         poisoned = NotPoisoned;
         // Note: alloc_gen is NOT reset here. It tracks whether the block
         // was ever handed to user code (set in Allocate, verified on Deallocate).
@@ -50,7 +51,7 @@ struct alignas(HeapAlignment) node_t {
     uint64_t
     ComputeChecksum() const
     {
-        return hole ^ user_size ^ actual_size ^ magic ^ in_bin ^ in_bin_gen ^
+        return hole ^ user_size ^ actual_size ^ magic ^ in_bin ^ in_bin_gen ^ allocation_sequence ^
                reinterpret_cast<uintptr_t>(next) ^ reinterpret_cast<uintptr_t>(prev);
     }
 
@@ -63,6 +64,7 @@ struct alignas(HeapAlignment) node_t {
 
     static constexpr uint64_t Magic = 0xDEADBEEFDEADBEEFllu;
     static constexpr uint64_t ClearedMagic = 0xABCDABCDABCDABCDllu;
+    static constexpr uint64_t AbsorbedMagic = 0xA85BEDA85BEDA85Bull;
     static constexpr uint64_t NotInBin = 0xFFFFFFFFFFFFFFFFull;
     static constexpr uint64_t HeadGuard = 0xFEEDBEEFFEEDBEEFull;
 
@@ -71,6 +73,7 @@ struct alignas(HeapAlignment) node_t {
     uint64_t in_bin_gen;
     uint64_t checksum;
     uint64_t alloc_gen;
+    uint64_t allocation_sequence;
     uint64_t poisoned; // WasPoisoned after free, NotPoisoned otherwise
 
     struct node_t *next;

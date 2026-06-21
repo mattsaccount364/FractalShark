@@ -68,7 +68,6 @@
     <ClInclude Include="FractalShark.h" />
     <ClInclude Include="..\FractalSharkPlatform\Common\JobObject.h" />
     <ClInclude Include="MainWindow.h" />
-    <ClInclude Include="MainWindowSavedLocation.h" />
     <ClInclude Include="..\FractalShark\resource.h" />
     <ClInclude Include="SplashWindow.h" />
     <ClInclude Include="UniqueHMenu.h" />

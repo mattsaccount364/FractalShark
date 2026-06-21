@@ -6,13 +6,14 @@
 #include "Exceptions.h"
 #include "FeatureFinderMode.h"
 #include "Fractal.h"
+#include "GuiFileOperations.h"
+#include "GuiHelp.h"
 #include "LinuxClipboard.h"
-#include "LinuxCommandHandlers.h"
-#include "LinuxHelpModals.h"
 #include "LinuxImGuiOverlay.h"
 #include "LinuxSplashWindow.h"
 #include "LinuxX11ContextMenu.h"
 #include "MenuState.h"
+#include "PortableCommandHandlers.h"
 // MenuState.h pulls in MenuTree.h which #undefs the X11 `None` and
 // `Always` macros (they collide with FractalShark enum values).
 // X.h has a header guard so it can't be re-included to restore them — just
@@ -24,10 +25,8 @@
 #define Always 2
 #endif
 #include "OpenGLContext.h"
-#include "RecommendedSettings.h"
-#include "RefOrbitCalc.h"
-#include "RenderAlgorithm.h"
 #include "RenderThreadPool.h"
+#include "SavedLocation.h"
 #include "WaitCursor.h"
 
 #include <X11/XKBlib.h>
@@ -155,39 +154,6 @@ ElapsedMilliseconds(std::chrono::steady_clock::time_point start)
         .count();
 }
 
-std::string
-NarrowAscii(std::wstring_view text)
-{
-    std::string result;
-    result.reserve(text.size());
-    for (const wchar_t ch : text) {
-        result.push_back((ch >= 0 && ch <= 0x7f) ? static_cast<char>(ch) : '?');
-    }
-    return result;
-}
-
-std::string
-BuildHotkeysModalBody()
-{
-    std::string body = "Hotkeys\n\nCommand shortcuts\n";
-    for (const FractalShark::Command &command : FractalShark::kCommands) {
-        body += FractalShark::FormatHotKeyUtf8(command.hotkey);
-        body += " - ";
-        body += NarrowAscii(command.label);
-        body += "\n";
-    }
-
-    body += "\nDirect controls\n"
-            "Arrow keys - Pan viewport 25% of the view. Shift+Arrow: 10%, Ctrl+Arrow: 50%\n"
-            "Numpad + - Zoom in at center\n"
-            "Numpad - - Zoom out at center\n"
-            "Left click/drag - Zoom in\n"
-            "Right click - popup menu\n"
-            "CTRL - Press and hold to abort autozoom\n"
-            "ALT - Press, click/drag to move window when in windowed mode\n";
-    return body;
-}
-
 std::optional<wchar_t>
 HotKeyBaseFromKeySym(KeySym keysym)
 {
@@ -244,7 +210,7 @@ HotKeyFromXKeyEvent(const XKeyEvent &ev)
 #define FRACTALSHARK_LINUX_STUB(method)                                                                 \
     void method() override { std::fprintf(stderr, "TODO LinuxMainWindow: %s\n", #method); }
 
-struct LinuxMainWindow : FractalShark::Linux::LinuxCommandHandlers {
+struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     Display *display = nullptr;
     Window window = 0;
     Colormap colormap = 0;
@@ -318,13 +284,13 @@ struct LinuxMainWindow : FractalShark::Linux::LinuxCommandHandlers {
     void EnterFullscreen(bool square);
     void ExitFullscreen();
 
-    // ---- LinuxCommandHandlers protected accessors -------------------------
+    // ---- PortableCommandHandlers protected accessors ----------------------
     Fractal &
     GetFractal() noexcept override
     {
         return *fractal;
     }
-    FractalShark::Linux::MenuPoint
+    FractalShark::MenuPoint
     GetMenuMousePos() const override
     {
         return {contextMenuX, contextMenuY};
@@ -332,7 +298,7 @@ struct LinuxMainWindow : FractalShark::Linux::LinuxCommandHandlers {
 
     // ---- ExecuteCommandHost stubs (Linux-specific only) -------------------
     void OnAutoZoomFeatureAtPoint() override;
-    // Everything else is provided by LinuxCommandHandlers.  These ~25 hooks
+    // Everything else is provided by PortableCommandHandlers. These hooks
     // touch the X server, ImGui modals, the file dialog, the clipboard, or
     // other Linux-specific UI state, so they need real Linux implementations
     // and stay as stubs here until then.
@@ -879,7 +845,7 @@ LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
 void
 LinuxMainWindow::OnAutoZoomFeatureAtPoint()
 {
-    const FractalShark::Linux::MenuPoint pt = GetMenuMousePos();
+    const FractalShark::MenuPoint pt = GetMenuMousePos();
     RunFeatureAutoZoomSynchronously(pt.X, pt.Y);
 }
 
@@ -887,7 +853,7 @@ void
 LinuxMainWindow::OnShowHotkeys()
 {
     RequireUiState(overlay.has_value(), "Showing hotkeys");
-    const std::string body = BuildHotkeysModalBody();
+    const std::string body = FractalShark::BuildHotkeysHelpUtf8();
     overlay->RequestInfoModal("Hotkeys", body.c_str());
 }
 
@@ -895,16 +861,16 @@ void
 LinuxMainWindow::OnViewsHelp()
 {
     RequireUiState(overlay.has_value(), "Showing views help");
-    overlay->RequestInfoModal(FractalShark::Linux::kViewsModalTitle,
-                              FractalShark::Linux::kViewsModalBody);
+    const auto help = FractalShark::GetGuiHelpContent(FractalShark::GuiHelpTopic::Views);
+    overlay->RequestInfoModal(help.Title.data(), help.Body.data());
 }
 
 void
 LinuxMainWindow::OnHelpAlg()
 {
     RequireUiState(overlay.has_value(), "Showing algorithm help");
-    overlay->RequestInfoModal(FractalShark::Linux::kAlgorithmsModalTitle,
-                              FractalShark::Linux::kAlgorithmsModalBody);
+    const auto help = FractalShark::GetGuiHelpContent(FractalShark::GuiHelpTopic::Algorithms);
+    overlay->RequestInfoModal(help.Title.data(), help.Body.data());
 }
 
 void
@@ -1171,62 +1137,6 @@ Utf8ToWide(const std::string &s)
 using LinuxFileDialogFilter = FractalShark::Linux::ImGuiOverlay::FileDialogFilter;
 using LinuxFileDialogMode = FractalShark::Linux::ImGuiOverlay::FileDialogMode;
 
-struct ImaginaQuickPickFile {
-    std::string Label;
-    std::string Filename;
-};
-
-std::string
-PathToString(const std::filesystem::path &path)
-{
-    return path.string();
-}
-
-std::string
-LowerAscii(std::string value)
-{
-    for (char &c : value) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    return value;
-}
-
-std::vector<ImaginaQuickPickFile>
-FindCurrentDirectoryImaginaFiles()
-{
-    std::vector<ImaginaQuickPickFile> files;
-
-    const std::filesystem::path currentDir = std::filesystem::current_path();
-    for (const std::filesystem::directory_entry &entry :
-         std::filesystem::directory_iterator(currentDir)) {
-        if (!entry.is_regular_file()) {
-            continue;
-        }
-
-        const std::filesystem::path entryPath = entry.path();
-        if (LowerAscii(PathToString(entryPath.extension())) != ".im") {
-            continue;
-        }
-
-        std::string label = PathToString(entryPath.filename());
-        std::string filename = PathToString(entryPath);
-        if (!label.empty() && !filename.empty()) {
-            files.push_back({std::move(label), std::move(filename)});
-        }
-    }
-
-    std::sort(
-        files.begin(), files.end(), [](const ImaginaQuickPickFile &a, const ImaginaQuickPickFile &b) {
-            return LowerAscii(a.Label) < LowerAscii(b.Label);
-        });
-
-    if (files.size() > kMaxQuickPickImaginaFiles) {
-        files.resize(kMaxQuickPickImaginaFiles);
-    }
-
-    return files;
-}
-
 std::vector<LinuxFileDialogFilter>
 OrbitFileFilters()
 {
@@ -1278,42 +1188,14 @@ void
 LinuxMainWindow::SaveLocation(bool scaleToMaximum)
 {
     RequireUiState(fractal && overlay, "Saving a location");
+    const FractalShark::SavedLocation location =
+        FractalShark::CaptureSavedLocation(*fractal, scaleToMaximum);
+    const std::string serialized = FractalShark::SerializeSavedLocation(location);
 
-    size_t width = fractal->GetRenderWidth();
-    size_t height = fractal->GetRenderHeight();
-    if (scaleToMaximum) {
-        if (width > height) {
-            height = static_cast<size_t>(16384.0 / (static_cast<double>(width) / height));
-            width = 16384;
-        } else if (width < height) {
-            width = static_cast<size_t>(16384.0 / (static_cast<double>(height) / width));
-            height = 16384;
-        }
-    }
-
-    std::ostringstream record;
-    record << width << " ";
-    record << height << " ";
-    record << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
-    record << fractal->GetMinX() << " ";
-    record << fractal->GetMinY() << " ";
-    record << fractal->GetMaxX() << " ";
-    record << fractal->GetMaxY() << " ";
-    record << fractal->GetNumIterations<IterTypeFull>() << " ";
-    record << fractal->GetGpuAntialiasing() << " ";
-    record << "FractalTrayDestination";
-
-    const std::string serialized = record.str();
     std::ofstream file("locations.txt", std::ios::app);
-    if (!file) {
-        throw FractalSharkSeriousException("Could not open locations.txt for append");
+    if (!file || !(file << serialized << "\r\n")) {
+        throw FractalSharkSeriousException("Could not append to locations.txt");
     }
-    file << serialized << "\r\n";
-    file.close();
-    if (!file) {
-        throw FractalSharkSeriousException("Could not write the location to locations.txt");
-    }
-
     overlay->RequestInfoModal("Location", serialized.c_str());
 }
 
@@ -1321,54 +1203,51 @@ void
 LinuxMainWindow::OnSaveHiResBmp()
 {
     RequireUiState(fractal && overlay, "Saving a high-resolution image");
-    overlay->RequestFileDialog("Save high-resolution image",
-                               LinuxFileDialogMode::Save,
-                               MakeTimestampedStem() + ".png",
-                               PngFileFilters(),
-                               [this](std::string filename) {
-                                   RequireUiState(fractal != nullptr, "Saving a high-resolution image");
-                                   filename = AppendExtensionIfMissing(filename, ".png");
-                                   if (auto *pool = fractal->GetRenderPool()) {
-                                       pool->Drain();
-                                   }
-                                   fractal->SaveHiResFractal(Utf8ToWide(filename));
-                               });
+    overlay->RequestFileDialog(
+        "Save high-resolution image",
+        LinuxFileDialogMode::Save,
+        MakeTimestampedStem() + ".png",
+        PngFileFilters(),
+        [this](std::string filename) {
+            RequireUiState(fractal != nullptr, "Saving a high-resolution image");
+            filename = AppendExtensionIfMissing(filename, ".png");
+            FractalShark::SaveFractalOutput(
+                *fractal, FractalShark::FractalOutputFile::HighResolutionImage, Utf8ToWide(filename));
+        });
 }
 
 void
 LinuxMainWindow::OnSaveItersText()
 {
     RequireUiState(fractal && overlay, "Saving iterations");
-    overlay->RequestFileDialog("Save iterations as text",
-                               LinuxFileDialogMode::Save,
-                               MakeTimestampedStem() + ".txt",
-                               TextFileFilters(),
-                               [this](std::string filename) {
-                                   RequireUiState(fractal != nullptr, "Saving iterations");
-                                   filename = AppendExtensionIfMissing(filename, ".txt");
-                                   if (auto *pool = fractal->GetRenderPool()) {
-                                       pool->Drain();
-                                   }
-                                   fractal->SaveItersAsText(Utf8ToWide(filename));
-                               });
+    overlay->RequestFileDialog(
+        "Save iterations as text",
+        LinuxFileDialogMode::Save,
+        MakeTimestampedStem() + ".txt",
+        TextFileFilters(),
+        [this](std::string filename) {
+            RequireUiState(fractal != nullptr, "Saving iterations");
+            filename = AppendExtensionIfMissing(filename, ".txt");
+            FractalShark::SaveFractalOutput(
+                *fractal, FractalShark::FractalOutputFile::IterationsText, Utf8ToWide(filename));
+        });
 }
 
 void
 LinuxMainWindow::OnSaveBmp()
 {
     RequireUiState(fractal && overlay, "Saving an image");
-    overlay->RequestFileDialog("Save current image",
-                               LinuxFileDialogMode::Save,
-                               MakeTimestampedStem() + ".png",
-                               PngFileFilters(),
-                               [this](std::string filename) {
-                                   RequireUiState(fractal != nullptr, "Saving an image");
-                                   filename = AppendExtensionIfMissing(filename, ".png");
-                                   if (auto *pool = fractal->GetRenderPool()) {
-                                       pool->Drain();
-                                   }
-                                   fractal->SaveCurrentFractal(Utf8ToWide(filename), true);
-                               });
+    overlay->RequestFileDialog(
+        "Save current image",
+        LinuxFileDialogMode::Save,
+        MakeTimestampedStem() + ".png",
+        PngFileFilters(),
+        [this](std::string filename) {
+            RequireUiState(fractal != nullptr, "Saving an image");
+            filename = AppendExtensionIfMissing(filename, ".png");
+            FractalShark::SaveFractalOutput(
+                *fractal, FractalShark::FractalOutputFile::CurrentImage, Utf8ToWide(filename));
+        });
 }
 
 void
@@ -1382,10 +1261,8 @@ LinuxMainWindow::DoSaveRefOrbit(::CompressToDisk compression)
                                OrbitFileFilters(),
                                [this, compression](std::string filename) {
                                    RequireUiState(fractal != nullptr, "Saving a reference orbit");
-                                   std::wstring w = Utf8ToWide(filename);
-                                   fractal->EnqueueCommand([compression, w = std::move(w)](Fractal &f) {
-                                       f.SaveRefOrbit(compression, w);
-                                   });
+                                   FractalShark::SaveReferenceOrbit(
+                                       *fractal, compression, Utf8ToWide(filename));
                                });
 }
 
@@ -1443,11 +1320,8 @@ LinuxMainWindow::OnDiffRefOrbitImagMax()
                             std::wstring outW = Utf8ToWide(outFile);
                             std::wstring f1W = Utf8ToWide(in1);
                             std::wstring f2W = Utf8ToWide(in2);
-                            fractal->EnqueueCommand([outW = std::move(outW),
-                                                     f1W = std::move(f1W),
-                                                     f2W = std::move(f2W)](Fractal &f) {
-                                f.DiffRefOrbits(::CompressToDisk::MaxCompressionImagina, outW, f1W, f2W);
-                            });
+                            FractalShark::DiffReferenceOrbits(
+                                *fractal, std::move(outW), std::move(f1W), std::move(f2W));
                         });
                 });
         });
@@ -1457,62 +1331,31 @@ void
 LinuxMainWindow::OnLoadLocation()
 {
     RequireUiState(fractal && overlay, "Loading a location");
-    // Read locations.txt — same format as the Win32 SavedLocation parser.
-    std::ifstream infile("locations.txt");
-    if (!infile) {
+    std::ifstream input("locations.txt");
+    if (!input) {
         throw FractalSharkSeriousException("Could not open locations.txt for reading");
     }
-    struct Entry {
-        size_t Width = 0, Height = 0;
-        HighPrecision MinX, MinY, MaxX, MaxY;
-        IterTypeFull NumIterations = 0;
-        uint32_t Antialiasing = 0;
-        std::string Description;
-    };
-    std::vector<Entry> entries;
-    std::vector<std::string> labels;
-    while (infile.good() && entries.size() < 30) {
-        Entry e;
-        infile >> e.Width >> e.Height;
-        infile >> e.MinX >> e.MinY >> e.MaxX >> e.MaxY;
-        infile >> e.NumIterations >> e.Antialiasing;
-        if (!infile.good()) {
-            break;
-        }
-        infile >> std::ws;
-        std::getline(infile, e.Description);
-        labels.push_back(e.Description.empty() ? "(unnamed)" : e.Description);
-        entries.push_back(std::move(e));
-    }
-    if (infile.bad()) {
-        throw FractalSharkSeriousException("Failed while reading locations.txt");
-    }
-    if (entries.empty()) {
+
+    std::vector<FractalShark::SavedLocation> locations = FractalShark::ReadSavedLocations(input, 30);
+    if (locations.empty()) {
         overlay->RequestInfoModal("Load Location", "locations.txt has no entries.");
         return;
     }
-    // The pick-from-list callback only gets the index, so move entries
-    // into a shared container.  Use a shared_ptr would normally fit but
-    // codebase forbids it — instead, leak-free by capturing entries by
-    // value into the lambda (move).
+
+    std::vector<std::string> labels;
+    labels.reserve(locations.size());
+    for (const FractalShark::SavedLocation &location : locations) {
+        labels.push_back(location.Description.empty() ? "(unnamed)" : location.Description);
+    }
     overlay->RequestPickFromList(
         "Load saved location",
         std::move(labels),
-        [this, entries = std::move(entries)](size_t index) mutable {
+        [this, locations = std::move(locations)](size_t index) {
             RequireUiState(fractal != nullptr, "Loading a location");
-            if (index >= entries.size()) {
+            if (index >= locations.size()) {
                 throw FractalSharkSeriousException("Selected saved-location index is out of range");
             }
-            const auto &e = entries[index];
-            PointZoomBBConverter ptz{
-                e.MinX, e.MinY, e.MaxX, e.MaxY, PointZoomBBConverter::TestMode::Enabled};
-            auto numIters = e.NumIterations;
-            auto antialiasing = e.Antialiasing;
-            fractal->EnqueueCommand([ptz = std::move(ptz), numIters, antialiasing](Fractal &f) {
-                f.RecenterViewCalc(ptz);
-                f.SetNumIterations<IterTypeFull>(numIters);
-                f.ResetDimensions(SIZE_MAX, SIZE_MAX, antialiasing);
-            });
+            FractalShark::EnqueueSavedLocation(*fractal, locations[index]);
         });
 }
 
@@ -1520,32 +1363,16 @@ void
 LinuxMainWindow::OnLoadEnterLocation()
 {
     RequireUiState(fractal && overlay, "Entering a location");
-    // Pull current location to prefill the dialog.
-    HighPrecision minX = fractal->GetMinX();
-    HighPrecision minY = fractal->GetMinY();
-    HighPrecision maxX = fractal->GetMaxX();
-    HighPrecision maxY = fractal->GetMaxY();
-    PointZoomBBConverter pz{minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled};
-    std::string real = pz.GetPtX().str();
-    std::string imag = pz.GetPtY().str();
-    std::string zoom = pz.GetZoomFactor().str();
-    uint64_t iters = fractal->GetNumIterations<IterTypeFull>();
+    FractalShark::EnteredLocation current = FractalShark::CaptureEnteredLocation(*fractal);
     overlay->RequestEnterLocation(
-        std::move(real),
-        std::move(imag),
-        std::move(zoom),
-        iters,
-        [this](std::string r, std::string i, std::string z, uint64_t numIters) {
+        std::move(current.Real),
+        std::move(current.Imaginary),
+        std::move(current.Zoom),
+        current.NumIterations,
+        [this](std::string real, std::string imaginary, std::string zoom, uint64_t numIterations) {
             RequireUiState(fractal != nullptr, "Entering a location");
-            HighPrecision::defaultPrecisionInBits(Fractal::MaxPrecisionLame);
-            HighPrecision realHP(r);
-            HighPrecision imagHP(i);
-            HighPrecision zoomHP(z);
-            PointZoomBBConverter pz2{realHP, imagHP, zoomHP, PointZoomBBConverter::TestMode::Enabled};
-            fractal->EnqueueCommand([pz2 = std::move(pz2), numIters](Fractal &f) {
-                f.RecenterViewCalc(pz2);
-                f.SetNumIterations<IterTypeFull>(numIters);
-            });
+            FractalShark::EnqueueEnteredLocation(
+                *fractal, {std::move(real), std::move(imaginary), std::move(zoom), numIterations});
         });
 }
 
@@ -1554,7 +1381,8 @@ LinuxMainWindow::DoLoadRefOrbitImag(::ImaginaSettings settings)
 {
     RequireUiState(fractal && overlay, "Loading a reference orbit");
 
-    std::vector<ImaginaQuickPickFile> imagFiles = FindCurrentDirectoryImaginaFiles();
+    std::vector<std::filesystem::path> imagFiles = FractalShark::FindReferenceOrbitFiles(
+        std::filesystem::current_path(), kMaxQuickPickImaginaFiles);
     if (imagFiles.empty()) {
         RequestLoadRefOrbitImagFileDialog(settings);
         return;
@@ -1562,8 +1390,8 @@ LinuxMainWindow::DoLoadRefOrbitImag(::ImaginaSettings settings)
 
     std::vector<std::string> labels;
     labels.reserve(imagFiles.size() + 1);
-    for (const ImaginaQuickPickFile &file : imagFiles) {
-        labels.push_back(file.Label);
+    for (const std::filesystem::path &file : imagFiles) {
+        labels.push_back(file.filename().string());
     }
     labels.push_back("Load from file...");
 
@@ -1572,7 +1400,7 @@ LinuxMainWindow::DoLoadRefOrbitImag(::ImaginaSettings settings)
                                  [this, settings, imagFiles = std::move(imagFiles)](size_t index) {
                                      RequireUiState(fractal && overlay, "Loading a reference orbit");
                                      if (index < imagFiles.size()) {
-                                         LoadRefOrbitImagFile(settings, imagFiles[index].Filename);
+                                         LoadRefOrbitImagFile(settings, imagFiles[index].string());
                                      } else if (index == imagFiles.size()) {
                                          RequestLoadRefOrbitImagFileDialog(settings);
                                      }
@@ -1595,17 +1423,8 @@ void
 LinuxMainWindow::LoadRefOrbitImagFile(::ImaginaSettings settings, std::string filename)
 {
     RequireUiState(fractal != nullptr, "Loading a reference orbit");
-    std::wstring w = Utf8ToWide(filename);
-    fractal->EnqueueCommand([settings, w = std::move(w)](Fractal &f) {
-        RecommendedSettings rs{};
-        f.LoadRefOrbit(&rs, ::CompressToDisk::MaxCompressionImagina, settings, w);
-        if (rs.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
-            if (!f.SetRenderAlgorithm(rs.GetRenderAlgorithm())) {
-                throw FractalSharkSeriousException(
-                    "Failed to restore the reference-orbit render algorithm");
-            }
-        }
-    });
+    FractalShark::LoadReferenceOrbit(
+        *fractal, ::CompressToDisk::MaxCompressionImagina, settings, Utf8ToWide(filename));
 }
 
 void

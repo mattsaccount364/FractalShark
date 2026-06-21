@@ -18,6 +18,7 @@ target_sources(FractalSharkTest PRIVATE
     TestGrowableVector.cpp
     TestRenderGoldens.cpp
     CommandCatalogTest.cpp
+    TestGuiShared.cpp
 )
 
 # TestMpirSerialization exercises raw stream I/O that is byte-compatible

@@ -1,38 +1,24 @@
-// LinuxCommandHandlers.h
+// PortableCommandHandlers.h
 //
-// Linux-only intermediate base class between FractalShark::ExecuteCommandHost
-// and LinuxMainWindow.  Provides default implementations of the ~80 catalog
-// command hooks that are platform-agnostic — i.e. all the ones whose Win32
-// counterpart in MainWindow.cpp is just a 1-3 line shim that calls into the
-// Fractal engine.
-//
-// LinuxMainWindow inherits from LinuxCommandHandlers, supplies the two pure
-// virtual accessors (GetFractal, GetMenuMousePos), and overrides only the
-// ~25 hooks that need platform-specific code (help modals, file dialogs,
-// window-mode toggles, clipboard, exit/minimize, palette rotate spin loop).
-//
-// The Win32 GUI is intentionally NOT in this inheritance chain.  Code is
-// duplicated between MainWindow.cpp (Win32) and LinuxCommandHandlers.cpp
-// (Linux) — that's the explicit tradeoff per the user's "two GUIs, no
-// overlap; only duplicate when truly platform-specific" directive.
-//
-// FractalSharkLib is not modified by this file.
+// Shared implementations of commands that only interact with Fractal. Native
+// GUI shells provide the active Fractal and command position, and override the
+// remaining hooks that require platform UI services.
 #pragma once
 
 #include "CommandCatalog.h"
 
 class Fractal;
 
-namespace FractalShark::Linux {
+namespace FractalShark {
 
 struct MenuPoint {
     int X;
     int Y;
 };
 
-class LinuxCommandHandlers : public FractalShark::ExecuteCommandHost {
+class PortableCommandHandlers : public ExecuteCommandHost {
 public:
-    ~LinuxCommandHandlers() override = default;
+    ~PortableCommandHandlers() override = default;
 
     // ---- Algorithm selection ---------------------------------------------
     void OnSetAlgorithm(::RenderAlgorithmEnum alg) override;
@@ -160,7 +146,7 @@ public:
     void OnLaSettings3() override;
 
 protected:
-    // Provided by LinuxMainWindow.
+    // Provided by the native main window.
     virtual Fractal &GetFractal() noexcept = 0;
 
     // Window-relative pixel position of the cursor at the moment the user
@@ -169,4 +155,4 @@ protected:
     virtual MenuPoint GetMenuMousePos() const = 0;
 };
 
-} // namespace FractalShark::Linux
+} // namespace FractalShark

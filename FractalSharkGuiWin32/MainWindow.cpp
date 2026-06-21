@@ -3,26 +3,23 @@
 #include "CommandDispatcher.h"
 #include "ConsoleWindow.h"
 #include "CrashHandler.h"
-#include "CrummyTest.h"
 #include "DynamicPopupMenu.h"
 #include "Exceptions.h"
 #include "Fractal.h"
+#include "GuiFileOperations.h"
+#include "GuiHelp.h"
 #include "JobObject.h"
 #include "MainWindow.h"
-#include "MainWindowSavedLocation.h"
 #include "MenuState.h"
 #include "OpenGLContext.h"
 #include "PngParallelSave.h"
+#include "SavedLocation.h"
 
-#include "RecommendedSettings.h"
 #include "SplashWindow.h"
-#include "WaitCursor.h"
 #include "resource.h"
 #include <Windowsx.h>
 
 #include <commdlg.h>
-#include <cstdio>
-#include <random>
 #include <string>
 
 namespace {
@@ -35,28 +32,6 @@ constexpr const wchar_t *kOrbitFileFilter = L"All\0*.*\0Imagina\0*.im\0";
 constexpr const wchar_t *kPngFileFilter = L"PNG Image\0*.png\0All\0*.*\0";
 constexpr const wchar_t *kTextFileFilter = L"Text File\0*.txt\0All\0*.*\0";
 
-std::wstring
-BuildHotkeysMessage()
-{
-    std::wstring body = L"Hotkeys\r\n\r\nCommand shortcuts\r\n";
-    for (const FractalShark::Command &command : FractalShark::kCommands) {
-        body += FractalShark::FormatHotKey(command.hotkey);
-        body += L" - ";
-        body.append(command.label.data(), command.label.size());
-        body += L"\r\n";
-    }
-
-    body += L"\r\nDirect controls\r\n"
-            L"Arrow keys - Pan viewport 25% of the view. Shift+Arrow: 10%, Ctrl+Arrow: 50%\r\n"
-            L"Numpad + - Zoom in at center\r\n"
-            L"Numpad - - Zoom out at center\r\n"
-            L"Left click/drag - Zoom in\r\n"
-            L"Right click - popup menu\r\n"
-            L"CTRL - Press and hold to abort autozoom\r\n"
-            L"ALT - Press, click/drag to move window when in windowed mode\r\n";
-    return body;
-}
-
 bool
 IsNumpadAddSubtractCharacter(WPARAM wParam, LPARAM lParam) noexcept
 {
@@ -66,15 +41,6 @@ IsNumpadAddSubtractCharacter(WPARAM wParam, LPARAM lParam) noexcept
 
     return (wParam == L'+' && scanCode == numpadAddScanCode) ||
            (wParam == L'-' && scanCode == numpadSubtractScanCode);
-}
-
-void
-DeleteExistingRegularFile(const std::wstring &filename)
-{
-    const DWORD attrs = ::GetFileAttributesW(filename.c_str());
-    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-        (void)::DeleteFileW(filename.c_str());
-    }
 }
 
 } // namespace
@@ -124,202 +90,12 @@ MainWindow::~MainWindow()
 
 // ---- Per-menu host hook implementation -------------------------------------
 
-void
-MainWindow::OnSetAlgorithm(::RenderAlgorithmEnum alg)
-{
-    auto entry = GetRenderAlgorithmTupleEntry(alg);
-    gFractal->EnqueueMutation(
-        [entry](Fractal &f) { [[maybe_unused]] const bool ok = f.SetRenderAlgorithm(entry); });
-}
-
 // ---- Synthetic shortcut command hooks --------------------------------------
 void
 MainWindow::OnAutoZoomFeatureAtPoint()
 {
     const POINT pt = GetSafeMenuPtClient();
     gFractal->AutoZoomFeatureAtPoint(pt.x, pt.y);
-}
-
-void
-MainWindow::OnAutoZoomDefaultAtPoint()
-{
-    const POINT pt = GetSafeMenuPtClient();
-    MenuCenterView(pt.x, pt.y);
-    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-}
-
-void
-MainWindow::OnCenterViewClearPerturbation()
-{
-    const POINT pt = GetSafeMenuPtClient();
-    gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        f.CenterAtPoint(x, y);
-    });
-}
-
-void
-MainWindow::OnResetCompressionDefaults()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        f.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
-        f.DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
-    });
-}
-
-void
-MainWindow::OnLaThresholdScaleIncrease()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        auto &laParameters = f.GetLAParameters();
-        laParameters.AdjustLAThresholdScaleExponent(1);
-        laParameters.AdjustLAThresholdCScaleExponent(1);
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-        f.ForceRecalc();
-    });
-}
-
-void
-MainWindow::OnLaThresholdScaleDecrease()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        auto &laParameters = f.GetLAParameters();
-        laParameters.AdjustLAThresholdScaleExponent(-1);
-        laParameters.AdjustLAThresholdCScaleExponent(-1);
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-        f.ForceRecalc();
-    });
-}
-
-void
-MainWindow::OnLaPeriodDetectionIncrease()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        auto &laParameters = f.GetLAParameters();
-        laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
-        laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-        f.ForceRecalc();
-    });
-}
-
-void
-MainWindow::OnLaPeriodDetectionDecrease()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        auto &laParameters = f.GetLAParameters();
-        laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
-        laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-        f.ForceRecalc();
-    });
-}
-
-void
-MainWindow::OnRecalcCurrentCopyDetails()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.ForceRecalc(); }).Wait();
-    MenuGetCurPos();
-}
-
-void
-MainWindow::OnRecalcClearMediumCopyDetails()
-{
-    gFractal
-        ->EnqueueCommand([](Fractal &f) {
-            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-            f.ForceRecalc();
-        })
-        .Wait();
-    MenuGetCurPos();
-}
-
-void
-MainWindow::OnRecalcClearAllCopyDetails()
-{
-    gFractal
-        ->EnqueueCommand([](Fractal &f) {
-            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-            f.ForceRecalc();
-        })
-        .Wait();
-    MenuGetCurPos();
-}
-
-void
-MainWindow::OnRecalcClearLaCopyDetails()
-{
-    gFractal
-        ->EnqueueCommand([](Fractal &f) {
-            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-            f.ForceRecalc();
-        })
-        .Wait();
-    MenuGetCurPos();
-}
-
-void
-MainWindow::OnIntermediateCompressionIncrease()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        f.IncCompressionError(Fractal::CompressionError::Intermediate, 10);
-    });
-}
-
-void
-MainWindow::OnIntermediateCompressionDecrease()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        f.DecCompressionError(Fractal::CompressionError::Intermediate, 10);
-    });
-}
-
-void
-MainWindow::OnLowCompressionIncrease()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        f.IncCompressionError(Fractal::CompressionError::Low, 1);
-    });
-}
-
-void
-MainWindow::OnLowCompressionDecrease()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        f.DecCompressionError(Fractal::CompressionError::Low, 1);
-    });
-}
-
-void
-MainWindow::OnPaletteAuxDepthNext()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.UseNextPaletteAuxDepth(1); });
-}
-
-void
-MainWindow::OnPaletteAuxDepthPrevious()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.UseNextPaletteAuxDepth(-1); });
-}
-
-void
-MainWindow::OnPaletteDepthNext()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.UseNextPaletteDepth(); });
-}
-
-void
-MainWindow::OnRecalcClearAllSquareView()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        f.SquareCurrentView();
-    });
 }
 
 // ---- Help / Window ---------------------------------------------------------
@@ -337,16 +113,6 @@ void
 MainWindow::OnHelpAlg()
 {
     MenuAlgHelp();
-}
-void
-MainWindow::OnSquareView()
-{
-    MenuSquareView();
-}
-void
-MainWindow::OnRepainting()
-{
-    MenuRepainting();
 }
 void
 MainWindow::OnWindowed()
@@ -375,386 +141,14 @@ MainWindow::OnExit()
 }
 
 // ---- Navigate --------------------------------------------------------------
-void
-MainWindow::OnBack()
-{
-    MenuGoBack();
-}
-
-void
-MainWindow::OnCenterView()
-{
-    const POINT pt = GetSafeMenuPtClient();
-    MenuCenterView(pt.x, pt.y);
-}
-
-void
-MainWindow::OnZoomIn()
-{
-    const POINT pt = GetSafeMenuPtClient();
-    MenuZoomIn(pt);
-}
-
-void
-MainWindow::OnZoomOut()
-{
-    const POINT pt = GetSafeMenuPtClient();
-    MenuZoomOut(pt);
-}
-
-void
-MainWindow::OnAutoZoomDefault()
-{
-    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-}
-void
-MainWindow::OnAutoZoomMax()
-{
-    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
-}
-void
-MainWindow::OnAutoZoomFilament()
-{
-    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
-}
-
-#define FRACTALSHARK_DEFINE_FEATURE_FINDER(Suffix, Mode)                                                \
-    void MainWindow::OnFeatureFinder##Suffix()                                                          \
-    {                                                                                                   \
-        const POINT pt = GetSafeMenuPtClient();                                                         \
-        auto x = pt.x;                                                                                  \
-        auto y = pt.y;                                                                                  \
-        gFractal->EnqueueCommand([x, y](Fractal &f) { f.TryFindPeriodicPoint(x, y, Mode); });           \
-    }
-
-FRACTALSHARK_DEFINE_FEATURE_FINDER(Direct, FeatureFinderMode::Direct)
-FRACTALSHARK_DEFINE_FEATURE_FINDER(DirectScan, FeatureFinderMode::DirectScan)
-FRACTALSHARK_DEFINE_FEATURE_FINDER(Pt, FeatureFinderMode::PT)
-FRACTALSHARK_DEFINE_FEATURE_FINDER(PtScan, FeatureFinderMode::PTScan)
-FRACTALSHARK_DEFINE_FEATURE_FINDER(La, FeatureFinderMode::LA)
-FRACTALSHARK_DEFINE_FEATURE_FINDER(LaScan, FeatureFinderMode::LAScan)
-
-#undef FRACTALSHARK_DEFINE_FEATURE_FINDER
-
-void
-MainWindow::OnFeatureFinderZoom()
-{
-    const POINT pt = GetSafeMenuPtClient();
-    gFractal->EnqueueCommand([x = pt.x, y = pt.y](Fractal &f) { f.ZoomToFoundFeature(x, y); });
-}
-
-void
-MainWindow::OnFeatureFinderClear()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.ClearAllFoundFeatures(); });
-}
-
-void
-MainWindow::OnFeatureFinderResume()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.ResumeNRFromCheckpoint(); });
-}
-
-void
-MainWindow::OnNrInnerLoopGpu()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::GPU); });
-}
-
-void
-MainWindow::OnNrInnerLoopCpu()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::CpuMT); });
-}
-
-void
-MainWindow::OnNrInnerLoopCpuSt()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::CpuST); });
-}
 
 // ---- Built-In Views (point entry) -----------------------------------------
-void
-MainWindow::OnStandardView()
-{
-    MenuStandardView(0);
-}
-void
-MainWindow::OnSelectBuiltInView(size_t oneBasedIndex)
-{
-    MenuStandardView(oneBasedIndex);
-}
-
 // ---- Antialiasing ---------------------------------------------------------
-void
-MainWindow::OnGpuAntialiasing1x()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1); });
-}
-void
-MainWindow::OnGpuAntialiasing4x()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2); });
-}
-void
-MainWindow::OnGpuAntialiasing9x()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3); });
-}
-void
-MainWindow::OnGpuAntialiasing16x()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4); });
-}
-
 // ---- Iterations -----------------------------------------------------------
-void
-MainWindow::OnResetIterations()
-{
-    MenuResetIterations();
-}
-void
-MainWindow::OnIncreaseIterations1p5x()
-{
-    MenuMultiplyIterations(1.5);
-}
-void
-MainWindow::OnIncreaseIterations6x()
-{
-    MenuMultiplyIterations(6.0);
-}
-void
-MainWindow::OnIncreaseIterations24x()
-{
-    MenuMultiplyIterations(24.0);
-}
-void
-MainWindow::OnDecreaseIterations()
-{
-    MenuMultiplyIterations(2.0 / 3.0);
-}
-
-void
-MainWindow::OnIterations32Bit()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetIterType(IterTypeEnum::Bits32); });
-}
-void
-MainWindow::OnIterations64Bit()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetIterType(IterTypeEnum::Bits64); });
-}
-
 // ---- Iteration precision --------------------------------------------------
-void
-MainWindow::OnIterationPrecision1x()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(1); });
-}
-void
-MainWindow::OnIterationPrecision2x()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(4); });
-}
-void
-MainWindow::OnIterationPrecision3x()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(8); });
-}
-void
-MainWindow::OnIterationPrecision4x()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(16); });
-}
-
 // ---- Perturbation ---------------------------------------------------------
-void
-MainWindow::OnPerturbClearAll()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All); });
-}
-void
-MainWindow::OnPerturbClearMed()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes); });
-}
-void
-MainWindow::OnPerturbClearHigh()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes); });
-}
-
-void
-MainWindow::OnPerturbationAuto()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto); });
-}
-void
-MainWindow::OnPerturbationSinglethread()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST); });
-}
-void
-MainWindow::OnPerturbationMultithread()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT); });
-}
-void
-MainWindow::OnPerturbationSinglethreadPeriodicity()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity); });
-}
-void
-MainWindow::OnPerturbationMultithread2Periodicity()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3); });
-}
-void
-MainWindow::OnPerturbationMt2PerturbMthighStmed()
-{
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
-    });
-}
-void
-MainWindow::OnPerturbationMt2PerturbMthighMtmed1()
-{
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
-    });
-}
-void
-MainWindow::OnPerturbationMt2PerturbMthighMtmed2()
-{
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
-    });
-}
-void
-MainWindow::OnPerturbationMt2PerturbMthighMtmed3()
-{
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
-    });
-}
-void
-MainWindow::OnPerturbationMt2PerturbMthighMtmed4()
-{
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
-    });
-}
-void
-MainWindow::OnPerturbationMultithread5Periodicity()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5); });
-}
-void
-MainWindow::OnPerturbationGpu()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU); });
-}
-
-void
-MainWindow::OnPerturbationLoad()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.LoadPerturbationOrbits(); });
-}
-void
-MainWindow::OnPerturbationSave()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SavePerturbationOrbits(); });
-}
-
 // ---- Memory / Autosave ---------------------------------------------------
-void
-MainWindow::OnPerturbAutosaveOnDelete()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.SetResultsAutosave(AddPointOptions::EnableWithoutSave); });
-}
-void
-MainWindow::OnPerturbAutosaveOn()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::EnableWithSave); });
-}
-void
-MainWindow::OnPerturbAutosaveOff()
-{
-    gFractal->EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::DontSave); });
-}
-
 // ---- Palette --------------------------------------------------------------
-void
-MainWindow::OnPaletteType0()
-{
-    MenuPaletteType(FractalPaletteType::Basic);
-}
-void
-MainWindow::OnPaletteType1()
-{
-    MenuPaletteType(FractalPaletteType::Default);
-}
-void
-MainWindow::OnPaletteType2()
-{
-    MenuPaletteType(FractalPaletteType::Patriotic);
-}
-void
-MainWindow::OnPaletteType3()
-{
-    MenuPaletteType(FractalPaletteType::Summer);
-}
-void
-MainWindow::OnPaletteType4()
-{
-    MenuPaletteType(FractalPaletteType::Random);
-}
-void
-MainWindow::OnCreateNewPalette()
-{
-    MenuCreateNewPalette();
-}
-void
-MainWindow::OnPalette5()
-{
-    MenuPaletteDepth(5);
-}
-void
-MainWindow::OnPalette6()
-{
-    MenuPaletteDepth(6);
-}
-void
-MainWindow::OnPalette8()
-{
-    MenuPaletteDepth(8);
-}
-void
-MainWindow::OnPalette12()
-{
-    MenuPaletteDepth(12);
-}
-void
-MainWindow::OnPalette16()
-{
-    MenuPaletteDepth(16);
-}
-void
-MainWindow::OnPalette20()
-{
-    MenuPaletteDepth(20);
-}
 void
 MainWindow::OnPaletteRotate()
 {
@@ -829,69 +223,7 @@ MainWindow::OnLoadRefOrbitImagMaxSaved()
 }
 
 // ---- Tests / Benchmarks ---------------------------------------------------
-void
-MainWindow::OnBasicTest()
-{
-    Environment::WaitCursor waitCursor;
-    CrummyTest t{*gFractal};
-    t.TestAll();
-}
-void
-MainWindow::OnTest27()
-{
-    Environment::WaitCursor waitCursor;
-    CrummyTest t{*gFractal};
-    t.TestReallyHardView27();
-}
-void
-MainWindow::OnBenchmarkFull()
-{
-    Environment::WaitCursor waitCursor;
-    CrummyTest t{*gFractal};
-    t.Benchmark(RefOrbitCalc::PerturbationResultType::All);
-}
-void
-MainWindow::OnBenchmarkInt()
-{
-    Environment::WaitCursor waitCursor;
-    CrummyTest t{*gFractal};
-    t.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
-}
-
 // ---- LA -------------------------------------------------------------------
-void
-MainWindow::OnLaMultithreaded()
-{
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
-    });
-}
-void
-MainWindow::OnLaSinglethreaded()
-{
-    gFractal->EnqueueMutation([](Fractal &f) {
-        f.GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
-    });
-}
-void
-MainWindow::OnLaSettings1()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxAccuracy); });
-}
-void
-MainWindow::OnLaSettings2()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxPerf); });
-}
-void
-MainWindow::OnLaSettings3()
-{
-    gFractal->EnqueueMutation(
-        [](Fractal &f) { f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MinMemory); });
-}
-
 void
 MainWindow::MainWindow::DrawFractalShark()
 {
@@ -1273,20 +605,18 @@ MainWindow::GetSafeMenuPtClient() const
     return pt;
 }
 
+MenuPoint
+MainWindow::GetMenuMousePos() const
+{
+    const POINT point = GetSafeMenuPtClient();
+    return {point.x, point.y};
+}
+
 void
 MainWindow::ActivateSavedOrbit(size_t index)
 {
     ClearMenu(LoadSubMenu);
-
-    const auto ptz = gSavedLocations[index].ptz;
-    const auto num_iterations = gSavedLocations[index].num_iterations;
-    const auto antialiasing = gSavedLocations[index].antialiasing;
-
-    gFractal->EnqueueCommand([ptz, num_iterations, antialiasing](Fractal &f) {
-        f.RecenterViewCalc(ptz);
-        f.SetNumIterations<IterTypeFull>(num_iterations);
-        f.ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
-    });
+    EnqueueSavedLocation(*gFractal, gSavedLocations.at(index));
 }
 
 void
@@ -1624,46 +954,9 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 void
-MainWindow::MenuGoBack()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.Back(); });
-}
-
-void
 MainWindow::MenuStandardView(size_t i)
 {
     gFractal->EnqueueCommand([i](Fractal &f) { f.View(i); });
-}
-
-void
-MainWindow::MenuSquareView()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.SquareCurrentView(); });
-}
-
-void
-MainWindow::MenuCenterView(int x, int y)
-{
-    gFractal->EnqueueCommand([x, y](Fractal &f) { f.CenterAtPoint(x, y); });
-}
-
-void
-MainWindow::MenuZoomIn(POINT mousePt)
-{
-    gFractal->EnqueueCommand(
-        [x = mousePt.x, y = mousePt.y](Fractal &f) { f.ZoomRecentered(x, y, -.45); });
-}
-
-void
-MainWindow::MenuZoomOut(POINT mousePt)
-{
-    gFractal->EnqueueCommand([x = mousePt.x, y = mousePt.y](Fractal &f) { f.ZoomRecentered(x, y, 1); });
-}
-
-void
-MainWindow::MenuRepainting()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.ToggleRepainting(); });
 }
 
 void
@@ -1741,28 +1034,6 @@ MainWindow::MenuWindowed(bool square)
             gFractal->EnqueueCommand([w, h](Fractal &f) { f.ResetDimensions(w, h); });
         }
     }
-}
-
-void
-MainWindow::MenuMultiplyIterations(double factor)
-{
-    gFractal->EnqueueCommand([factor](Fractal &f) {
-        if (f.GetIterType() == IterTypeEnum::Bits32) {
-            uint64_t curIters = f.GetNumIterations<uint32_t>();
-            curIters = (uint64_t)((double)curIters * factor);
-            f.SetNumIterations<uint32_t>(curIters);
-        } else {
-            uint64_t curIters = f.GetNumIterations<uint64_t>();
-            curIters = (uint64_t)((double)curIters * factor);
-            f.SetNumIterations<uint64_t>(curIters);
-        }
-    });
-}
-
-void
-MainWindow::MenuResetIterations()
-{
-    gFractal->EnqueueCommand([](Fractal &f) { f.ResetNumIterations(); });
 }
 
 void
@@ -1855,125 +1126,41 @@ MainWindow::MenuPaletteRotation()
 }
 
 void
-MainWindow::MenuPaletteType(FractalPaletteType type)
-{
-    gFractal->EnqueueCommand([type](Fractal &f) {
-        f.UsePaletteType(type);
-        if (type == FractalPaletteType::Default) {
-            f.UsePalette(8);
-            f.SetPaletteAuxDepth(0);
-        }
-    });
-}
-
-void
-MainWindow::MenuPaletteDepth(int depth)
-{
-    gFractal->EnqueueCommand([depth](Fractal &f) { f.UsePalette(depth); });
-}
-
-void
-MainWindow::MenuCreateNewPalette()
-{
-    gFractal->EnqueueCommand([](Fractal &f) {
-        f.CreateNewFractalPalette();
-        f.UsePaletteType(FractalPaletteType::Random);
-    });
-}
-
-void
 MainWindow::MenuSaveCurrentLocation()
 {
-    int response = ::MessageBox(hWnd, L"Scale dimensions to maximum?", L"Choose!", MB_YESNO);
-    char filename[256];
-    SYSTEMTIME time_struct;
-    GetLocalTime(&time_struct);
-    snprintf(filename,
-             sizeof(filename),
-             "output_%d_%d_%d_%d_%d_%d.bmp",
-             time_struct.wYear,
-             time_struct.wMonth,
-             time_struct.wDay,
-             time_struct.wHour,
-             time_struct.wMinute,
-             time_struct.wSecond);
+    const int response = ::MessageBox(hWnd, L"Scale dimensions to maximum?", L"Choose!", MB_YESNO);
+    const SavedLocation location = CaptureSavedLocation(*gFractal, response == IDYES);
+    const std::string serialized = SerializeSavedLocation(location);
+    const std::wstring message(serialized.begin(), serialized.end());
+    ::MessageBox(nullptr, message.c_str(), L"Location", MB_OK | MB_APPLMODAL);
 
-    size_t x, y;
-    if (response == IDYES) {
-        x = gFractal->GetRenderWidth();
-        y = gFractal->GetRenderHeight();
-        if (x > y) {
-            y = (int)((double)16384.0 / (double)((double)x / (double)y));
-            x = 16384;
-        } else if (x < y) {
-            x = (int)((double)16384.0 / (double)((double)y / (double)x));
-            y = 16384;
-        }
-    } else {
-        x = gFractal->GetRenderWidth();
-        y = gFractal->GetRenderHeight();
-    }
-
-    std::stringstream ss;
-    ss << x << " ";
-    ss << y << " ";
-    ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
-    ss << gFractal->GetMinX() << " ";
-    ss << gFractal->GetMinY() << " ";
-    ss << gFractal->GetMaxX() << " ";
-    ss << gFractal->GetMaxY() << " ";
-    ss << gFractal->GetNumIterations<IterTypeFull>() << " ";
-    ss << gFractal->GetGpuAntialiasing() << " ";
-    // ss << gFractal->GetIterationPrecision() << " ";
-    ss << "FractalTrayDestination";
-    std::string s = ss.str();
-    const std::wstring ws(s.begin(), s.end());
-
-    MessageBox(nullptr, ws.c_str(), L"location", MB_OK | MB_APPLMODAL);
-
-    FILE *file = fopen("locations.txt", "at+");
-    if (file != nullptr) {
-        fprintf(file, "%s\r\n", s.c_str());
-        fclose(file);
+    std::ofstream file("locations.txt", std::ios::app);
+    if (!file || !(file << serialized << "\r\n")) {
+        throw FractalSharkSeriousException("Could not append to locations.txt");
     }
 }
 
 void
 MainWindow::MenuLoadCurrentLocation()
 {
-    std::ifstream infile("locations.txt");
-    HMENU hSubMenu = CreatePopupMenu();
+    std::ifstream input("locations.txt");
+    if (!input) {
+        throw FractalSharkSeriousException("Could not open locations.txt for reading");
+    }
 
-    size_t index = 0;
-
-    gSavedLocations.clear();
-
-    for (;;) {
-        SavedLocation loc(infile);
-        if (infile.rdstate() != std::ios_base::goodbit) {
-            break;
-        }
-
-        // Convert loc.description to a wstring:
-        std::string s = loc.description;
-        const std::wstring ws(s.begin(), s.end());
-
-        gSavedLocations.push_back(loc);
-        AppendMenu(hSubMenu, MF_STRING, IDM_VIEW_DYNAMIC_ORBIT + index, ws.c_str());
-        index++;
-
-        // Limit the number of locations we show.
-        if (index > 30) {
-            break;
-        }
+    gSavedLocations = ReadSavedLocations(input, 30);
+    HMENU submenu = ::CreatePopupMenu();
+    for (size_t index = 0; index < gSavedLocations.size(); ++index) {
+        const std::string &description = gSavedLocations[index].Description;
+        const std::wstring label(description.begin(), description.end());
+        ::AppendMenu(submenu, MF_STRING, IDM_VIEW_DYNAMIC_ORBIT + index, label.c_str());
     }
 
     POINT point;
-    GetCursorPos(&point);
-    TrackPopupMenu(
-        hSubMenu, TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN, point.x, point.y, 0, hWnd, nullptr);
-
-    DestroyMenu(hSubMenu);
+    ::GetCursorPos(&point);
+    ::TrackPopupMenu(
+        submenu, TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN, point.x, point.y, 0, hWnd, nullptr);
+    ::DestroyMenu(submenu);
 }
 
 // Subclass procedure for the edit controls
@@ -2011,38 +1198,23 @@ MainWindow::MenuLoadEnterLocation()
     // If the Cancel button is pressed, it should call EndDialog(hWnd, 1).
     // WM_CLOSE should call EndDialog(hWnd, 1).
 
-    struct Values {
-        Values() : real(""), imag(""), zoom(""), num_iterations(0) {}
-
-        std::string real, imag, zoom;
-        IterTypeFull num_iterations;
+    struct Values : EnteredLocation {
 
         std::string
         ItersToString() const
         {
-            return std::to_string(num_iterations);
+            return std::to_string(NumIterations);
         }
 
         void
         StringToIters(std::string new_iters)
         {
-            num_iterations = std::stoull(new_iters);
+            NumIterations = std::stoull(new_iters);
         }
     };
 
     Values values;
-
-    // Store existing location in the strings.
-    HighPrecision minX = gFractal->GetMinX();
-    HighPrecision minY = gFractal->GetMinY();
-    HighPrecision maxX = gFractal->GetMaxX();
-    HighPrecision maxY = gFractal->GetMaxY();
-
-    PointZoomBBConverter pz{minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled};
-    values.real = pz.GetPtX().str();
-    values.imag = pz.GetPtY().str();
-    values.zoom = pz.GetZoomFactor().str();
-    values.num_iterations = gFractal->GetNumIterations<IterTypeFull>();
+    static_cast<EnteredLocation &>(values) = CaptureEnteredLocation(*gFractal);
 
     auto EnterLocationDialogProc = [](HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) -> INT_PTR {
         // TODO: static?  This is surely not the right way to do this.
@@ -2070,9 +1242,9 @@ MainWindow::MenuLoadEnterLocation()
                 SetWindowPos(hDlg, NULL, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 
                 // Set the text in the text boxes to the values in the strings.
-                SetDlgItemTextA(hDlg, IDC_EDIT_REAL, values->real.c_str());
-                SetDlgItemTextA(hDlg, IDC_EDIT_IMAG, values->imag.c_str());
-                SetDlgItemTextA(hDlg, IDC_EDIT_ZOOM, values->zoom.c_str());
+                SetDlgItemTextA(hDlg, IDC_EDIT_REAL, values->Real.c_str());
+                SetDlgItemTextA(hDlg, IDC_EDIT_IMAG, values->Imaginary.c_str());
+                SetDlgItemTextA(hDlg, IDC_EDIT_ZOOM, values->Zoom.c_str());
                 SetDlgItemTextA(hDlg, IDC_EDIT_ITERATIONS, values->ItersToString().c_str());
 
                 // Subclass the edit controls
@@ -2109,16 +1281,16 @@ MainWindow::MenuLoadEnterLocation()
                     // First, figure out how many bytes are needed
                     // to store the text in the text boxes.
                     int len = GetWindowTextLength(GetDlgItem(hDlg, IDC_EDIT_REAL));
-                    values->real.resize(len + 1);
-                    GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_REAL), &values->real[0], len + 1);
+                    values->Real.resize(len + 1);
+                    GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_REAL), values->Real.data(), len + 1);
 
                     len = GetWindowTextLength(GetDlgItem(hDlg, IDC_EDIT_IMAG));
-                    values->imag.resize(len + 1);
-                    GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_IMAG), &values->imag[0], len + 1);
+                    values->Imaginary.resize(len + 1);
+                    GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_IMAG), values->Imaginary.data(), len + 1);
 
                     len = GetWindowTextLength(GetDlgItem(hDlg, IDC_EDIT_ZOOM));
-                    values->zoom.resize(len + 1);
-                    GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_ZOOM), &values->zoom[0], len + 1);
+                    values->Zoom.resize(len + 1);
+                    GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_ZOOM), values->Zoom.data(), len + 1);
 
                     len = GetWindowTextLength(GetDlgItem(hDlg, IDC_EDIT_ITERATIONS));
                     std::string new_iters;
@@ -2150,7 +1322,7 @@ MainWindow::MenuLoadEnterLocation()
     auto OkOrCancel = DialogBoxParam(
         hInst, MAKEINTRESOURCE(IDD_DIALOG_LOCATION), hWnd, EnterLocationDialogProc, lParam);
 
-    if (values.real.empty() || values.imag.empty() || values.zoom.empty()) {
+    if (values.Real.empty() || values.Imaginary.empty() || values.Zoom.empty()) {
         return;
     }
 
@@ -2159,18 +1331,7 @@ MainWindow::MenuLoadEnterLocation()
         return;
     }
 
-    // Convert the strings to HighPrecision and set the fractal to the new location.
-    HighPrecision::defaultPrecisionInBits(Fractal::MaxPrecisionLame);
-    HighPrecision realHP(values.real);
-    HighPrecision imagHP(values.imag);
-    HighPrecision zoomHP(values.zoom);
-
-    PointZoomBBConverter pz2{realHP, imagHP, zoomHP, PointZoomBBConverter::TestMode::Enabled};
-    auto numIters = values.num_iterations;
-    gFractal->EnqueueCommand([pz2 = std::move(pz2), numIters](Fractal &f) {
-        f.RecenterViewCalc(pz2);
-        f.SetNumIterations<IterTypeFull>(numIters);
-    });
+    EnqueueEnteredLocation(*gFractal, values);
 }
 
 void
@@ -2178,17 +1339,9 @@ MainWindow::MenuSaveBMP()
 {
     std::wstring filename = OpenFileDialog(
         OpenBoxType::Save, kPngFileFilter, L"png", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
-    if (filename.empty()) {
-        return;
+    if (!filename.empty()) {
+        SaveFractalOutput(*gFractal, FractalOutputFile::CurrentImage, std::move(filename));
     }
-
-    // Save must read m_CurIters directly, so drain the render pool first
-    // to ensure no workers are active, then call synchronously.
-    if (auto *pool = gFractal->GetRenderPool()) {
-        pool->Drain();
-    }
-    DeleteExistingRegularFile(filename);
-    gFractal->SaveCurrentFractal(std::move(filename), true);
 }
 
 void
@@ -2196,15 +1349,9 @@ MainWindow::MenuSaveHiResBMP()
 {
     std::wstring filename = OpenFileDialog(
         OpenBoxType::Save, kPngFileFilter, L"png", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
-    if (filename.empty()) {
-        return;
+    if (!filename.empty()) {
+        SaveFractalOutput(*gFractal, FractalOutputFile::HighResolutionImage, std::move(filename));
     }
-
-    if (auto *pool = gFractal->GetRenderPool()) {
-        pool->Drain();
-    }
-    DeleteExistingRegularFile(filename);
-    gFractal->SaveHiResFractal(std::move(filename));
 }
 
 void
@@ -2212,15 +1359,9 @@ MainWindow::MenuSaveItersAsText()
 {
     std::wstring filename = OpenFileDialog(
         OpenBoxType::Save, kTextFileFilter, L"txt", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
-    if (filename.empty()) {
-        return;
+    if (!filename.empty()) {
+        SaveFractalOutput(*gFractal, FractalOutputFile::IterationsText, std::move(filename));
     }
-
-    if (auto *pool = gFractal->GetRenderPool()) {
-        pool->Drain();
-    }
-    DeleteExistingRegularFile(filename);
-    gFractal->SaveItersAsText(std::move(filename));
 }
 
 void
@@ -2248,17 +1389,7 @@ MainWindow::LoadRefOrbit(CompressToDisk compressToDisk,
                          ImaginaSettings loadSettings,
                          std::wstring filename)
 {
-    gFractal->EnqueueCommand([compressToDisk, loadSettings, filename = std::move(filename)](Fractal &f) {
-        RecommendedSettings settings{};
-        f.LoadRefOrbit(&settings, compressToDisk, loadSettings, filename);
-
-        if (settings.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
-            const bool success = f.SetRenderAlgorithm(settings.GetRenderAlgorithm());
-            if (!success) {
-                std::wcerr << L"Warning: Could not set render algorithm to AUTO." << std::endl;
-            }
-        }
-    });
+    LoadReferenceOrbit(*gFractal, compressToDisk, loadSettings, std::move(filename));
 }
 
 void
@@ -2267,35 +1398,12 @@ MainWindow::MenuLoadImagDyn(ImaginaSettings loadSettings)
     ClearMenu(ImaginaMenu);
 
     ImaginaMenu = CreatePopupMenu();
-    size_t index = 0;
-
-    std::vector<std::wstring> imagFiles;
-    // Find all files with the extension .im in current directory.
-    // Add filenames to imagFiles.
-
-    WIN32_FIND_DATA FindFileData;
-    HANDLE hFind = FindFirstFile(L"*.im", &FindFileData);
-    if (hFind != INVALID_HANDLE_VALUE) {
-        do {
-            imagFiles.push_back(FindFileData.cFileName);
-        } while (FindNextFile(hFind, &FindFileData) != 0);
-
-        FindClose(hFind);
-    }
-
-    // Even if no files found, just run the following so we get
-    // an empty menu.
-
-    for (const auto &imagFile : imagFiles) {
-
-        gImaginaLocations.push_back({imagFile, loadSettings});
-
-        AppendMenu(ImaginaMenu, MF_STRING, IDM_VIEW_DYNAMIC_IMAG + index, imagFile.c_str());
-        index++;
-
-        if (index > 30) {
-            break;
-        }
+    const auto imagFiles = FindReferenceOrbitFiles(std::filesystem::current_path(), 30);
+    for (size_t index = 0; index < imagFiles.size(); ++index) {
+        const std::wstring filename = imagFiles[index].wstring();
+        const std::wstring label = imagFiles[index].filename().wstring();
+        gImaginaLocations.push_back({filename, loadSettings});
+        AppendMenu(ImaginaMenu, MF_STRING, IDM_VIEW_DYNAMIC_IMAG + index, label.c_str());
     }
 
     if (loadSettings == ImaginaSettings::ConvertToCurrent) {
@@ -2317,40 +1425,26 @@ void
 MainWindow::MenuSaveImag(CompressToDisk compression)
 {
     std::wstring filename = OpenFileDialog(OpenBoxType::Save);
-    if (filename.empty()) {
-        return;
+    if (!filename.empty()) {
+        SaveReferenceOrbit(*gFractal, compression, std::move(filename));
     }
-
-    gFractal->EnqueueCommand([compression, filename = std::move(filename)](Fractal &f) {
-        f.SaveRefOrbit(compression, filename);
-    });
 }
 
 void
 MainWindow::MenuDiffImag()
 {
-
-    std::wstring outFile = OpenFileDialog(OpenBoxType::Save);
-    if (outFile.empty()) {
+    std::wstring output = OpenFileDialog(OpenBoxType::Save);
+    if (output.empty()) {
         return;
     }
-
-    // Open two files, both must exist
-    std::wstring filename1 = OpenFileDialog(OpenBoxType::Open);
-    if (filename1.empty()) {
+    std::wstring first = OpenFileDialog(OpenBoxType::Open);
+    if (first.empty()) {
         return;
     }
-
-    std::wstring filename2 = OpenFileDialog(OpenBoxType::Open);
-    if (filename2.empty()) {
-        return;
+    std::wstring second = OpenFileDialog(OpenBoxType::Open);
+    if (!second.empty()) {
+        DiffReferenceOrbits(*gFractal, std::move(output), std::move(first), std::move(second));
     }
-
-    gFractal->EnqueueCommand([outFile = std::move(outFile),
-                              filename1 = std::move(filename1),
-                              filename2 = std::move(filename2)](Fractal &f) {
-        f.DiffRefOrbits(CompressToDisk::MaxCompressionImagina, outFile, filename1, filename2);
-    });
 }
 
 void
@@ -2368,47 +1462,23 @@ MainWindow::MenuLoadImag(ImaginaSettings loadSettings, CompressToDisk compressio
 void
 MainWindow::MenuAlgHelp()
 {
-    // This message box shows some help related to the algorithms.
-    ::MessageBox(
-        nullptr,
-        L"Algorithms\r\n"
-        L"\r\n"
-        L"- As a general recommendation, choose AUTO.  Auto will render the fractal using "
-        L"direct 32-bit evaluation at the lowest zoom depths. "
-        L"From 1e4 to 1e9, it uses perturbation + 32-bit floating point. "
-        L"From 1e9 to 1e34, it uses perturbation + 32-bit + linear approximation.  "
-        L"Past that, it uses perturbation a 32-bit \"high dynamic range\" implementation, "
-        L"which simply stores the exponent in a separate integer.\r\n"
-        L"\r\n"
-        L"- If you try rendering \"hard\" points, you may find that the 32-bit implementations "
-        L"are not accurate enough.  In this case, you can try the 64-bit implementations.  "
-        L"You may also find the 2x32 implementations to be faster than the 1x64."
-        L"Generally, it's probably easiest to use the 32-bit implementations, and only "
-        L"switch to the 64-bit implementations when you need to.\r\n"
-        L"\r\n"
-        L"Note that professional/high-end chips offer superior 64-bit performance, so if you have one "
-        L"of those, you may find that the 64-bit implementations work well.  Most consumer GPUs offer"
-        L"poor 64-bit performance (even RTX 4090, 5090 etc)\r\n",
-        L"Algorithms",
-        MB_OK);
+    const std::wstring title = GuiHelpTitleWide(GuiHelpTopic::Algorithms);
+    const std::wstring body = GuiHelpBodyWide(GuiHelpTopic::Algorithms);
+    ::MessageBox(nullptr, body.c_str(), title.c_str(), MB_OK);
 }
 
 void
 MainWindow::MenuViewsHelp()
 {
-    ::MessageBox(nullptr,
-                 L"Views\r\n"
-                 L"\r\n"
-                 L"The purpose of these is simply to make it easy to navigate to\r\n"
-                 L"some interesting locations.\r\n",
-                 L"Views",
-                 MB_OK);
+    const std::wstring title = GuiHelpTitleWide(GuiHelpTopic::Views);
+    const std::wstring body = GuiHelpBodyWide(GuiHelpTopic::Views);
+    ::MessageBox(nullptr, body.c_str(), title.c_str(), MB_OK);
 }
 
 void
 MainWindow::MenuShowHotkeys()
 {
-    const std::wstring body = BuildHotkeysMessage();
+    const std::wstring body = BuildHotkeysHelpWide();
     ::MessageBox(nullptr, body.c_str(), L"Hotkeys", MB_OK);
 }
 

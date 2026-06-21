@@ -5,6 +5,10 @@ target_sources(FractalSharkLib PRIVATE
     BenchmarkData.cpp
     BLAS.cpp
     CommandCatalog.cpp
+    GuiHelp.cpp
+    GuiFileOperations.cpp
+    PortableCommandHandlers.cpp
+    SavedLocation.cpp
     CrummyTest.cpp
     FeatureFinder.cpp
     FeatureFinderOrchestrator.cpp

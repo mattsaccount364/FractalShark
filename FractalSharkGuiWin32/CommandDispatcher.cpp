@@ -7,7 +7,6 @@
 #include "Fractal.h"
 #include "JobObject.h"
 #include "MainWindow.h"
-#include "MainWindowSavedLocation.h"
 #include "RecommendedSettings.h"
 #include "resource.h"
 

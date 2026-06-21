@@ -297,8 +297,8 @@ ParseArgs(int argc, char *argv[], CliArgs &a)
     return true;
 }
 
-// Simple saved-location record. Mirrors the format consumed by the GUI's
-// MainWindow::SavedLocation parser in FractalSharkGuiWin32/MainWindowSavedLocation.h:
+// Simple saved-location record. Mirrors the format implemented by
+// FractalSharkLib/SavedLocation.h:
 //   width height minX minY maxX maxY num_iterations antialiasing
 //   <description line>
 struct ParsedSavedLocation {

@@ -116,8 +116,7 @@ CommandDispatcher::BuildTable()
     // Phase 0c: Imagina file-dialog entries are the only IDMs left in the
     // legacy table.  They have no FractalCommand mapping (the dialog launch
     // is GUI-shell-specific) so they remain dispatched here.  Everything else
-    // routes through FractalShark::ExecuteCommand → ExecuteCommandHost on
-    // MainWindow.
+    // routes through PortableCommandHandlers on MainWindow.
     table_.emplace(
         IDM_LOAD_IMAGINA_DLG, +[](MainWindow &w) {
             w.MenuLoadImag(ImaginaSettings::ConvertToCurrent, CompressToDisk::MaxCompressionImagina);

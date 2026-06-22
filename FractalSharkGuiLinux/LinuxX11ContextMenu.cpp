@@ -2,9 +2,9 @@
 
 #include "LinuxX11ContextMenu.h"
 
-#include "CommandCatalog.h"
 #include "Exceptions.h"
 #include "MenuTree.h"
+#include "PortableCommandHandlers.h"
 
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -157,7 +157,7 @@ struct X11ContextMenu::Impl {
     int Screen;
     Window Owner;
     const IMenuState *State;
-    ExecuteCommandHost *Host;
+    PortableCommandHandlers *Handlers;
     std::function<void()> RepaintOwner;
     Window Root;
     Window PopupWindow = 0;
@@ -180,9 +180,9 @@ struct X11ContextMenu::Impl {
          int screen,
          Window owner,
          const IMenuState *state,
-         ExecuteCommandHost *host,
+         PortableCommandHandlers *handlers,
          std::function<void()> repaintOwner)
-        : DisplayHandle(display), Screen(screen), Owner(owner), State(state), Host(host),
+        : DisplayHandle(display), Screen(screen), Owner(owner), State(state), Handlers(handlers),
           RepaintOwner(std::move(repaintOwner)), Root(RootWindow(display, screen)),
           Palette{AllocateNamedColor(display, screen, "#f0f0f0", WhitePixel(display, screen)),
                   AllocateNamedColor(display, screen, "#101010", BlackPixel(display, screen)),
@@ -980,10 +980,10 @@ struct X11ContextMenu::Impl {
         // Release grabs and destroy the popup before dispatch.  Commands may display another modal,
         // alter menu state, or terminate the event loop.
         Close();
-        if (!Host) {
-            throw FractalSharkSeriousException("Context-menu command host is not initialized");
+        if (!Handlers) {
+            throw FractalSharkSeriousException("Context-menu command handlers are not initialized");
         }
-        ExecuteCommand(CommandFromIdm(commandId), *Host);
+        Handlers->ExecuteCommand(CommandFromIdm(commandId));
     }
 
     void
@@ -1164,15 +1164,15 @@ X11ContextMenu::X11ContextMenu(Display *display,
                                int screen,
                                Window owner,
                                const IMenuState *state,
-                               ExecuteCommandHost *host,
+                               PortableCommandHandlers *handlers,
                                std::function<void()> repaintOwner)
     : m_Impl(nullptr)
 {
-    if (!display || !owner || !state || !host) {
+    if (!display || !owner || !state || !handlers) {
         throw FractalSharkSeriousException(
-            "X11ContextMenu requires valid display, owner, state, and host");
+            "X11ContextMenu requires valid display, owner, state, and command handlers");
     }
-    m_Impl = std::make_unique<Impl>(display, screen, owner, state, host, std::move(repaintOwner));
+    m_Impl = std::make_unique<Impl>(display, screen, owner, state, handlers, std::move(repaintOwner));
 }
 
 X11ContextMenu::~X11ContextMenu() = default;

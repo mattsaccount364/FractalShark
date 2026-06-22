@@ -1,13 +1,14 @@
 // PortableCommandHandlers.h
 //
-// Shared implementations of commands that only interact with Fractal. Native
-// GUI shells provide the active Fractal and command position, and override the
-// remaining hooks that require platform UI services.
+// Shared command dispatch and implementations for the native GUI shells.
+// Native shells provide the active Fractal, command position, and operations
+// that require platform UI services.
 #pragma once
 
 #include "CommandCatalog.h"
 
 class Fractal;
+enum class RenderAlgorithmEnum : uint32_t;
 
 namespace FractalShark {
 
@@ -16,143 +17,155 @@ struct MenuPoint {
     int Y;
 };
 
-class PortableCommandHandlers : public ExecuteCommandHost {
+class PortableCommandHandlers {
 public:
-    ~PortableCommandHandlers() override = default;
+    virtual ~PortableCommandHandlers() = default;
 
-    // ---- Algorithm selection ---------------------------------------------
-    void OnSetAlgorithm(::RenderAlgorithmEnum alg) override;
-
-    // ---- Synthetic shortcut command hooks -------------------------------
-    void OnAutoZoomDefaultAtPoint() override;
-    void OnCenterViewClearPerturbation() override;
-    void OnResetCompressionDefaults() override;
-    void OnLaThresholdScaleIncrease() override;
-    void OnLaThresholdScaleDecrease() override;
-    void OnLaPeriodDetectionIncrease() override;
-    void OnLaPeriodDetectionDecrease() override;
-    void OnRecalcCurrentCopyDetails() override;
-    void OnRecalcClearMediumCopyDetails() override;
-    void OnRecalcClearAllCopyDetails() override;
-    void OnRecalcClearLaCopyDetails() override;
-    void OnIntermediateCompressionIncrease() override;
-    void OnIntermediateCompressionDecrease() override;
-    void OnLowCompressionIncrease() override;
-    void OnLowCompressionDecrease() override;
-    void OnPaletteAuxDepthNext() override;
-    void OnPaletteAuxDepthPrevious() override;
-    void OnPaletteDepthNext() override;
-    void OnRecalcClearAllSquareView() override;
-
-    // ---- Help / Window (only the platform-agnostic ones) -----------------
-    void OnSquareView() override;
-    void OnRepainting() override;
-
-    // ---- Navigate --------------------------------------------------------
-    void OnBack() override;
-    void OnCenterView() override;
-    void OnZoomIn() override;
-    void OnZoomOut() override;
-    void OnAutoZoomDefault() override;
-    void OnAutoZoomMax() override;
-    void OnAutoZoomFilament() override;
-    void OnFeatureFinderDirect() override;
-    void OnFeatureFinderDirectScan() override;
-    void OnFeatureFinderPt() override;
-    void OnFeatureFinderPtScan() override;
-    void OnFeatureFinderLa() override;
-    void OnFeatureFinderLaScan() override;
-    void OnFeatureFinderZoom() override;
-    void OnFeatureFinderClear() override;
-    void OnFeatureFinderResume() override;
-    void OnNrInnerLoopGpu() override;
-    void OnNrInnerLoopCpu() override;
-    void OnNrInnerLoopCpuSt() override;
-
-    // ---- Built-In Views --------------------------------------------------
-    void OnStandardView() override;
-    void OnSelectBuiltInView(size_t oneBasedIndex) override;
-
-    // ---- Antialiasing ----------------------------------------------------
-    void OnGpuAntialiasing1x() override;
-    void OnGpuAntialiasing4x() override;
-    void OnGpuAntialiasing9x() override;
-    void OnGpuAntialiasing16x() override;
-
-    // ---- Iterations ------------------------------------------------------
-    void OnResetIterations() override;
-    void OnIncreaseIterations1p5x() override;
-    void OnIncreaseIterations6x() override;
-    void OnIncreaseIterations24x() override;
-    void OnDecreaseIterations() override;
-    void OnIterations32Bit() override;
-    void OnIterations64Bit() override;
-
-    // ---- Iteration precision ---------------------------------------------
-    void OnIterationPrecision1x() override;
-    void OnIterationPrecision2x() override;
-    void OnIterationPrecision3x() override;
-    void OnIterationPrecision4x() override;
-
-    // ---- Perturbation ----------------------------------------------------
-    void OnPerturbClearAll() override;
-    void OnPerturbClearMed() override;
-    void OnPerturbClearHigh() override;
-    void OnPerturbationAuto() override;
-    void OnPerturbationSinglethread() override;
-    void OnPerturbationMultithread() override;
-    void OnPerturbationSinglethreadPeriodicity() override;
-    void OnPerturbationMultithread2Periodicity() override;
-    void OnPerturbationMt2PerturbMthighStmed() override;
-    void OnPerturbationMt2PerturbMthighMtmed1() override;
-    void OnPerturbationMt2PerturbMthighMtmed2() override;
-    void OnPerturbationMt2PerturbMthighMtmed3() override;
-    void OnPerturbationMt2PerturbMthighMtmed4() override;
-    void OnPerturbationMultithread5Periodicity() override;
-    void OnPerturbationGpu() override;
-    void OnPerturbationLoad() override;
-    void OnPerturbationSave() override;
-
-    // ---- Autosave --------------------------------------------------------
-    void OnPerturbAutosaveOnDelete() override;
-    void OnPerturbAutosaveOn() override;
-    void OnPerturbAutosaveOff() override;
-
-    // ---- Palette ---------------------------------------------------------
-    void OnPaletteType0() override;
-    void OnPaletteType1() override;
-    void OnPaletteType2() override;
-    void OnPaletteType3() override;
-    void OnPaletteType4() override;
-    void OnCreateNewPalette() override;
-    void OnPalette5() override;
-    void OnPalette6() override;
-    void OnPalette8() override;
-    void OnPalette12() override;
-    void OnPalette16() override;
-    void OnPalette20() override;
-
-    // ---- Tests / Benchmarks ----------------------------------------------
-    void OnBasicTest() override;
-    void OnTest27() override;
-    void OnBenchmarkFull() override;
-    void OnBenchmarkInt() override;
-
-    // ---- LA --------------------------------------------------------------
-    void OnLaMultithreaded() override;
-    void OnLaSinglethreaded() override;
-    void OnLaSettings1() override;
-    void OnLaSettings2() override;
-    void OnLaSettings3() override;
+    void ExecuteCommand(FractalCommand command);
 
 protected:
-    // Provided by the native main window.
     virtual Fractal &GetFractal() noexcept = 0;
-
-    // Window-relative pixel position of the cursor at the moment the user
-    // invoked the command.  Used by OnCenterView / OnZoomIn / OnZoomOut /
-    // OnFeatureFinder*; ignored elsewhere.
     virtual MenuPoint GetMenuMousePos() const = 0;
+
+    virtual void OnAutoZoomFeatureAtPoint() = 0;
+
+    virtual void OnShowHotkeys() = 0;
+    virtual void OnViewsHelp() = 0;
+    virtual void OnHelpAlg() = 0;
+    virtual void OnWindowed() = 0;
+    virtual void OnWindowedSq() = 0;
+    virtual void OnMinimize() = 0;
+    virtual void OnCurPos() = 0;
+    virtual void OnExit() = 0;
+
+    virtual void OnPaletteRotate() = 0;
+
+    virtual void OnSaveLocation() = 0;
+    virtual void OnSaveHiResBmp() = 0;
+    virtual void OnSaveItersText() = 0;
+    virtual void OnSaveBmp() = 0;
+    virtual void OnSaveRefOrbitText() = 0;
+    virtual void OnSaveRefOrbitTextSimple() = 0;
+    virtual void OnSaveRefOrbitTextMax() = 0;
+    virtual void OnSaveRefOrbitImagMax() = 0;
+    virtual void OnDiffRefOrbitImagMax() = 0;
+    virtual void OnLoadLocation() = 0;
+    virtual void OnLoadEnterLocation() = 0;
+    virtual void OnLoadRefOrbitImagMax() = 0;
+    virtual void OnLoadRefOrbitImagMaxSaved() = 0;
+
+private:
+    void OnSetAlgorithm(::RenderAlgorithmEnum alg);
+
+    void OnAutoZoomDefaultAtPoint();
+    void OnCenterViewClearPerturbation();
+    void OnResetCompressionDefaults();
+    void OnLaThresholdScaleIncrease();
+    void OnLaThresholdScaleDecrease();
+    void OnLaPeriodDetectionIncrease();
+    void OnLaPeriodDetectionDecrease();
+    void OnRecalcCurrentCopyDetails();
+    void OnRecalcClearMediumCopyDetails();
+    void OnRecalcClearAllCopyDetails();
+    void OnRecalcClearLaCopyDetails();
+    void OnIntermediateCompressionIncrease();
+    void OnIntermediateCompressionDecrease();
+    void OnLowCompressionIncrease();
+    void OnLowCompressionDecrease();
+    void OnPaletteAuxDepthNext();
+    void OnPaletteAuxDepthPrevious();
+    void OnPaletteDepthNext();
+    void OnRecalcClearAllSquareView();
+
+    void OnSquareView();
+    void OnRepainting();
+
+    void OnBack();
+    void OnCenterView();
+    void OnZoomIn();
+    void OnZoomOut();
+    void OnAutoZoomDefault();
+    void OnAutoZoomMax();
+    void OnAutoZoomFilament();
+    void OnFeatureFinderDirect();
+    void OnFeatureFinderDirectScan();
+    void OnFeatureFinderPt();
+    void OnFeatureFinderPtScan();
+    void OnFeatureFinderLa();
+    void OnFeatureFinderLaScan();
+    void OnFeatureFinderZoom();
+    void OnFeatureFinderClear();
+    void OnFeatureFinderResume();
+    void OnNrInnerLoopGpu();
+    void OnNrInnerLoopCpu();
+    void OnNrInnerLoopCpuSt();
+
+    void OnStandardView();
+    void OnSelectBuiltInView(size_t oneBasedIndex);
+
+    void OnGpuAntialiasing1x();
+    void OnGpuAntialiasing4x();
+    void OnGpuAntialiasing9x();
+    void OnGpuAntialiasing16x();
+
+    void OnResetIterations();
+    void OnIncreaseIterations1p5x();
+    void OnIncreaseIterations6x();
+    void OnIncreaseIterations24x();
+    void OnDecreaseIterations();
+    void OnIterations32Bit();
+    void OnIterations64Bit();
+
+    void OnIterationPrecision1x();
+    void OnIterationPrecision2x();
+    void OnIterationPrecision3x();
+    void OnIterationPrecision4x();
+
+    void OnPerturbClearAll();
+    void OnPerturbClearMed();
+    void OnPerturbClearHigh();
+    void OnPerturbationAuto();
+    void OnPerturbationSinglethread();
+    void OnPerturbationMultithread();
+    void OnPerturbationSinglethreadPeriodicity();
+    void OnPerturbationMultithread2Periodicity();
+    void OnPerturbationMt2PerturbMthighStmed();
+    void OnPerturbationMt2PerturbMthighMtmed1();
+    void OnPerturbationMt2PerturbMthighMtmed2();
+    void OnPerturbationMt2PerturbMthighMtmed3();
+    void OnPerturbationMt2PerturbMthighMtmed4();
+    void OnPerturbationMultithread5Periodicity();
+    void OnPerturbationGpu();
+    void OnPerturbationLoad();
+    void OnPerturbationSave();
+
+    void OnPerturbAutosaveOnDelete();
+    void OnPerturbAutosaveOn();
+    void OnPerturbAutosaveOff();
+
+    void OnPaletteType0();
+    void OnPaletteType1();
+    void OnPaletteType2();
+    void OnPaletteType3();
+    void OnPaletteType4();
+    void OnCreateNewPalette();
+    void OnPalette5();
+    void OnPalette6();
+    void OnPalette8();
+    void OnPalette12();
+    void OnPalette16();
+    void OnPalette20();
+
+    void OnBasicTest();
+    void OnTest27();
+    void OnBenchmarkFull();
+    void OnBenchmarkInt();
+
+    void OnLaMultithreaded();
+    void OnLaSinglethreaded();
+    void OnLaSettings1();
+    void OnLaSettings2();
+    void OnLaSettings3();
 };
 
 } // namespace FractalShark

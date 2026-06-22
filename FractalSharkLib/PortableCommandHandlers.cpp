@@ -4,7 +4,9 @@
 #include "stdafx.h"
 #include "PortableCommandHandlers.h"
 
+#include "AlgCmds.h"
 #include "CrummyTest.h"
+#include "Exceptions.h"
 #include "Fractal.h"
 #include "RefOrbitCalc.h"
 #include "RenderAlgorithm.h"
@@ -17,6 +19,436 @@
 #include <iostream>
 
 namespace FractalShark {
+
+namespace {
+
+const RenderAlgorithmEnum *
+TryFindAlgForCommand(FractalCommand command) noexcept
+{
+    const auto idm = static_cast<int>(IdmFromCommand(command));
+    for (const auto &entry : kAlgCmds) {
+        if (entry.id == idm) {
+            return &entry.alg;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+void
+PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
+{
+    // Algorithm-selection commands first; they all share OnSetAlgorithm.
+    if (const auto *alg = TryFindAlgForCommand(cmd); alg != nullptr) {
+        OnSetAlgorithm(*alg);
+        return;
+    }
+
+    // Built-in view range (View1..View40) → portable index hook.
+    {
+        const auto raw = static_cast<uint32_t>(cmd);
+        const auto v1 = static_cast<uint32_t>(FractalCommand::View1);
+        const auto v40 = static_cast<uint32_t>(FractalCommand::View40);
+        if (raw >= v1 && raw <= v40) {
+            OnSelectBuiltInView(static_cast<size_t>(raw - v1) + 1u);
+            return;
+        }
+    }
+
+    switch (cmd) {
+        // ---- Synthetic shortcut commands ----
+        case FractalCommand::AutoZoomFeatureAtPoint:
+            OnAutoZoomFeatureAtPoint();
+            return;
+        case FractalCommand::AutoZoomDefaultAtPoint:
+            OnAutoZoomDefaultAtPoint();
+            return;
+        case FractalCommand::CenterViewClearPerturbation:
+            OnCenterViewClearPerturbation();
+            return;
+        case FractalCommand::ResetCompressionDefaults:
+            OnResetCompressionDefaults();
+            return;
+        case FractalCommand::LaThresholdScaleIncrease:
+            OnLaThresholdScaleIncrease();
+            return;
+        case FractalCommand::LaThresholdScaleDecrease:
+            OnLaThresholdScaleDecrease();
+            return;
+        case FractalCommand::LaPeriodDetectionIncrease:
+            OnLaPeriodDetectionIncrease();
+            return;
+        case FractalCommand::LaPeriodDetectionDecrease:
+            OnLaPeriodDetectionDecrease();
+            return;
+        case FractalCommand::RecalcCurrentCopyDetails:
+            OnRecalcCurrentCopyDetails();
+            return;
+        case FractalCommand::RecalcClearMediumCopyDetails:
+            OnRecalcClearMediumCopyDetails();
+            return;
+        case FractalCommand::RecalcClearAllCopyDetails:
+            OnRecalcClearAllCopyDetails();
+            return;
+        case FractalCommand::RecalcClearLaCopyDetails:
+            OnRecalcClearLaCopyDetails();
+            return;
+        case FractalCommand::IntermediateCompressionIncrease:
+            OnIntermediateCompressionIncrease();
+            return;
+        case FractalCommand::IntermediateCompressionDecrease:
+            OnIntermediateCompressionDecrease();
+            return;
+        case FractalCommand::LowCompressionIncrease:
+            OnLowCompressionIncrease();
+            return;
+        case FractalCommand::LowCompressionDecrease:
+            OnLowCompressionDecrease();
+            return;
+        case FractalCommand::PaletteAuxDepthNext:
+            OnPaletteAuxDepthNext();
+            return;
+        case FractalCommand::PaletteAuxDepthPrevious:
+            OnPaletteAuxDepthPrevious();
+            return;
+        case FractalCommand::PaletteDepthNext:
+            OnPaletteDepthNext();
+            return;
+        case FractalCommand::RecalcClearAllSquareView:
+            OnRecalcClearAllSquareView();
+            return;
+
+        // ---- Help / Window ----
+        case FractalCommand::ShowHotkeys:
+            OnShowHotkeys();
+            return;
+        case FractalCommand::ViewsHelp:
+            OnViewsHelp();
+            return;
+        case FractalCommand::HelpAlg:
+            OnHelpAlg();
+            return;
+        case FractalCommand::SquareView:
+            OnSquareView();
+            return;
+        case FractalCommand::Repainting:
+            OnRepainting();
+            return;
+        case FractalCommand::Windowed:
+            OnWindowed();
+            return;
+        case FractalCommand::WindowedSq:
+            OnWindowedSq();
+            return;
+        case FractalCommand::Minimize:
+            OnMinimize();
+            return;
+        case FractalCommand::CurPos:
+            OnCurPos();
+            return;
+        case FractalCommand::Exit:
+            OnExit();
+            return;
+
+        // ---- Navigate ----
+        case FractalCommand::Back:
+            OnBack();
+            return;
+        case FractalCommand::CenterView:
+            OnCenterView();
+            return;
+        case FractalCommand::ZoomIn:
+            OnZoomIn();
+            return;
+        case FractalCommand::ZoomOut:
+            OnZoomOut();
+            return;
+        case FractalCommand::AutoZoomDefault:
+            OnAutoZoomDefault();
+            return;
+        case FractalCommand::AutoZoomMax:
+            OnAutoZoomMax();
+            return;
+        case FractalCommand::AutoZoomFilament:
+            OnAutoZoomFilament();
+            return;
+        case FractalCommand::FeatureFinderDirect:
+            OnFeatureFinderDirect();
+            return;
+        case FractalCommand::FeatureFinderDirectScan:
+            OnFeatureFinderDirectScan();
+            return;
+        case FractalCommand::FeatureFinderPt:
+            OnFeatureFinderPt();
+            return;
+        case FractalCommand::FeatureFinderPtScan:
+            OnFeatureFinderPtScan();
+            return;
+        case FractalCommand::FeatureFinderLa:
+            OnFeatureFinderLa();
+            return;
+        case FractalCommand::FeatureFinderLaScan:
+            OnFeatureFinderLaScan();
+            return;
+        case FractalCommand::FeatureFinderZoom:
+            OnFeatureFinderZoom();
+            return;
+        case FractalCommand::FeatureFinderClear:
+            OnFeatureFinderClear();
+            return;
+        case FractalCommand::FeatureFinderResume:
+            OnFeatureFinderResume();
+            return;
+        case FractalCommand::NrInnerLoopGpu:
+            OnNrInnerLoopGpu();
+            return;
+        case FractalCommand::NrInnerLoopCpu:
+            OnNrInnerLoopCpu();
+            return;
+        case FractalCommand::NrInnerLoopCpuSt:
+            OnNrInnerLoopCpuSt();
+            return;
+
+        // ---- Built-In Views ----
+        case FractalCommand::StandardView:
+            OnStandardView();
+            return;
+
+        // ---- Antialiasing ----
+        case FractalCommand::GpuAntialiasing1x:
+            OnGpuAntialiasing1x();
+            return;
+        case FractalCommand::GpuAntialiasing4x:
+            OnGpuAntialiasing4x();
+            return;
+        case FractalCommand::GpuAntialiasing9x:
+            OnGpuAntialiasing9x();
+            return;
+        case FractalCommand::GpuAntialiasing16x:
+            OnGpuAntialiasing16x();
+            return;
+
+        // ---- Iterations ----
+        case FractalCommand::ResetIterations:
+            OnResetIterations();
+            return;
+        case FractalCommand::IncreaseIterations1p5x:
+            OnIncreaseIterations1p5x();
+            return;
+        case FractalCommand::IncreaseIterations6x:
+            OnIncreaseIterations6x();
+            return;
+        case FractalCommand::IncreaseIterations24x:
+            OnIncreaseIterations24x();
+            return;
+        case FractalCommand::DecreaseIterations:
+            OnDecreaseIterations();
+            return;
+        case FractalCommand::Iterations32Bit:
+            OnIterations32Bit();
+            return;
+        case FractalCommand::Iterations64Bit:
+            OnIterations64Bit();
+            return;
+
+        // ---- Iteration Precision ----
+        case FractalCommand::IterationPrecision1x:
+            OnIterationPrecision1x();
+            return;
+        case FractalCommand::IterationPrecision2x:
+            OnIterationPrecision2x();
+            return;
+        case FractalCommand::IterationPrecision3x:
+            OnIterationPrecision3x();
+            return;
+        case FractalCommand::IterationPrecision4x:
+            OnIterationPrecision4x();
+            return;
+
+        // ---- Perturbation ----
+        case FractalCommand::PerturbClearAll:
+            OnPerturbClearAll();
+            return;
+        case FractalCommand::PerturbClearMed:
+            OnPerturbClearMed();
+            return;
+        case FractalCommand::PerturbClearHigh:
+            OnPerturbClearHigh();
+            return;
+        case FractalCommand::PerturbationAuto:
+            OnPerturbationAuto();
+            return;
+        case FractalCommand::PerturbationSinglethread:
+            OnPerturbationSinglethread();
+            return;
+        case FractalCommand::PerturbationMultithread:
+            OnPerturbationMultithread();
+            return;
+        case FractalCommand::PerturbationSinglethreadPeriodicity:
+            OnPerturbationSinglethreadPeriodicity();
+            return;
+        case FractalCommand::PerturbationMultithread2Periodicity:
+            OnPerturbationMultithread2Periodicity();
+            return;
+        case FractalCommand::PerturbationMultithread2PeriodicityPerturbMthighStmed:
+            OnPerturbationMt2PerturbMthighStmed();
+            return;
+        case FractalCommand::PerturbationMultithread2PeriodicityPerturbMthighMtmed1:
+            OnPerturbationMt2PerturbMthighMtmed1();
+            return;
+        case FractalCommand::PerturbationMultithread2PeriodicityPerturbMthighMtmed2:
+            OnPerturbationMt2PerturbMthighMtmed2();
+            return;
+        case FractalCommand::PerturbationMultithread2PeriodicityPerturbMthighMtmed3:
+            OnPerturbationMt2PerturbMthighMtmed3();
+            return;
+        case FractalCommand::PerturbationMultithread2PeriodicityPerturbMthighMtmed4:
+            OnPerturbationMt2PerturbMthighMtmed4();
+            return;
+        case FractalCommand::PerturbationMultithread5Periodicity:
+            OnPerturbationMultithread5Periodicity();
+            return;
+        case FractalCommand::PerturbationGpu:
+            OnPerturbationGpu();
+            return;
+        case FractalCommand::PerturbationLoad:
+            OnPerturbationLoad();
+            return;
+        case FractalCommand::PerturbationSave:
+            OnPerturbationSave();
+            return;
+
+        // ---- Memory / Autosave ----
+        case FractalCommand::PerturbAutosaveOnDelete:
+            OnPerturbAutosaveOnDelete();
+            return;
+        case FractalCommand::PerturbAutosaveOn:
+            OnPerturbAutosaveOn();
+            return;
+        case FractalCommand::PerturbAutosaveOff:
+            OnPerturbAutosaveOff();
+            return;
+
+        // ---- Palette ----
+        case FractalCommand::PaletteType0:
+            OnPaletteType0();
+            return;
+        case FractalCommand::PaletteType1:
+            OnPaletteType1();
+            return;
+        case FractalCommand::PaletteType2:
+            OnPaletteType2();
+            return;
+        case FractalCommand::PaletteType3:
+            OnPaletteType3();
+            return;
+        case FractalCommand::PaletteType4:
+            OnPaletteType4();
+            return;
+        case FractalCommand::CreateNewPalette:
+            OnCreateNewPalette();
+            return;
+        case FractalCommand::Palette5:
+            OnPalette5();
+            return;
+        case FractalCommand::Palette6:
+            OnPalette6();
+            return;
+        case FractalCommand::Palette8:
+            OnPalette8();
+            return;
+        case FractalCommand::Palette12:
+            OnPalette12();
+            return;
+        case FractalCommand::Palette16:
+            OnPalette16();
+            return;
+        case FractalCommand::Palette20:
+            OnPalette20();
+            return;
+        case FractalCommand::PaletteRotate:
+            OnPaletteRotate();
+            return;
+
+        // ---- Save / Load ----
+        case FractalCommand::SaveLocation:
+            OnSaveLocation();
+            return;
+        case FractalCommand::SaveHiResBmp:
+            OnSaveHiResBmp();
+            return;
+        case FractalCommand::SaveItersText:
+            OnSaveItersText();
+            return;
+        case FractalCommand::SaveBmp:
+            OnSaveBmp();
+            return;
+        case FractalCommand::SaveRefOrbitText:
+            OnSaveRefOrbitText();
+            return;
+        case FractalCommand::SaveRefOrbitTextSimple:
+            OnSaveRefOrbitTextSimple();
+            return;
+        case FractalCommand::SaveRefOrbitTextMax:
+            OnSaveRefOrbitTextMax();
+            return;
+        case FractalCommand::SaveRefOrbitImagMax:
+            OnSaveRefOrbitImagMax();
+            return;
+        case FractalCommand::DiffRefOrbitImagMax:
+            OnDiffRefOrbitImagMax();
+            return;
+        case FractalCommand::LoadLocation:
+            OnLoadLocation();
+            return;
+        case FractalCommand::LoadEnterLocation:
+            OnLoadEnterLocation();
+            return;
+        case FractalCommand::LoadRefOrbitImagMax:
+            OnLoadRefOrbitImagMax();
+            return;
+        case FractalCommand::LoadRefOrbitImagMaxSaved:
+            OnLoadRefOrbitImagMaxSaved();
+            return;
+
+        // ---- Tests / Benchmarks ----
+        case FractalCommand::BasicTest:
+            OnBasicTest();
+            return;
+        case FractalCommand::Test27:
+            OnTest27();
+            return;
+        case FractalCommand::BenchmarkFull:
+            OnBenchmarkFull();
+            return;
+        case FractalCommand::BenchmarkInt:
+            OnBenchmarkInt();
+            return;
+
+        // ---- LA ----
+        case FractalCommand::LaMultithreaded:
+            OnLaMultithreaded();
+            return;
+        case FractalCommand::LaSinglethreaded:
+            OnLaSinglethreaded();
+            return;
+        case FractalCommand::LaSettings1:
+            OnLaSettings1();
+            return;
+        case FractalCommand::LaSettings2:
+            OnLaSettings2();
+            return;
+        case FractalCommand::LaSettings3:
+            OnLaSettings3();
+            return;
+
+        default:
+            break;
+    }
+
+    throw FractalSharkSeriousException("Unhandled FractalCommand in ExecuteCommand");
+}
 
 // ---- Algorithm selection --------------------------------------------------
 void

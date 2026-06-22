@@ -15,9 +15,9 @@
 //   * dispatch keypresses to the right FractalCommand,
 //   * drive the help-modal listing.
 //
-// Win32 and Linux route catalog commands through ExecuteCommand. GUI-specific
-// input code is responsible only for translating native events into HotKey or
-// FractalCommand values.
+// Win32 and Linux route catalog commands through PortableCommandHandlers.
+// GUI-specific input code is responsible only for translating native events
+// into HotKey or FractalCommand values.
 //
 
 #pragma once
@@ -509,186 +509,36 @@ ValidateCommandCatalog(const std::array<Command, N> &commands) noexcept
 
 static_assert(ValidateCommandCatalog(kCommands), "Invalid FractalShark command hotkey catalog");
 
-const Command *FindCommandByHotKey(HotKey hotkey) noexcept;
+inline constexpr const Command *
+FindCommandByHotKey(HotKey hotkey) noexcept
+{
+    hotkey = NormalizeHotKey(hotkey);
+    for (const Command &command : kCommands) {
+        if (HotKeysEqual(command.hotkey, hotkey)) {
+            return &command;
+        }
+    }
+    return nullptr;
+}
+
+static_assert(HotKeyFromCharacter(L'A', false, false, false).key == L'a');
+static_assert(!HotKeyFromCharacter(L'A', false, false, false).shift);
+static_assert(HotKeyFromCharacter(L'A', true, false, false).shift);
+static_assert(HotKeyFromCharacter(L'+', false, false, false).key == L'=');
+static_assert(HotKeyFromCharacter(L'+', false, false, false).shift);
+static_assert(HotKeyFromCharacter(L'<', false, false, false).key == L',');
+static_assert(HotKeyFromCharacter(L'<', false, false, false).shift);
+static_assert(HotKeyFromCharacter(L'>', false, false, false).key == L'.');
+static_assert(HotKeyFromCharacter(L'>', false, false, false).shift);
+static_assert(!HotKeyFromCharacter(L'_', true, false, false).HasKey());
+static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'+', false, false, false))->id ==
+              FractalCommand::IncreaseIterations24x);
+static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'<', false, false, false))->id ==
+              FractalCommand::FeatureFinderLaScan);
+static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'>', false, false, false))->id ==
+              FractalCommand::FeatureFinderClear);
+
 std::wstring FormatHotKey(HotKey hotkey);
 std::string FormatHotKeyUtf8(HotKey hotkey);
-
-// ---------------------------------------------------------------------------
-// ExecuteCommand — per-platform host forwarder.
-// ---------------------------------------------------------------------------
-//
-// Every catalog FractalCommand maps to one On*() hook on the host.  The
-// algorithm-selection family (~55 RenderAlgorithmEnum-driven commands) is
-// funnelled through the single OnSetAlgorithm hook; the catalog→alg lookup
-// happens in CommandCatalog.cpp via kAlgCmds.  Native-only command ids must be
-// handled by the platform shell before entering this catalog dispatcher.
-
-// Forward declaration so we don't drag RenderAlgorithm.h into this header.
-// The actual definition in RenderAlgorithm.h fixes the underlying type to
-// uint32_t to match.
-} // namespace FractalShark
-
-enum class RenderAlgorithmEnum : uint32_t;
-
-namespace FractalShark {
-
-struct ExecuteCommandHost {
-    virtual ~ExecuteCommandHost() = default;
-
-    // ---- Algorithm selection ------------------------------------------
-    virtual void OnSetAlgorithm(::RenderAlgorithmEnum alg) = 0;
-
-    // ---- Synthetic shortcut command hooks ----------------------------
-    virtual void OnAutoZoomFeatureAtPoint() = 0;
-    virtual void OnAutoZoomDefaultAtPoint() = 0;
-    virtual void OnCenterViewClearPerturbation() = 0;
-    virtual void OnResetCompressionDefaults() = 0;
-    virtual void OnLaThresholdScaleIncrease() = 0;
-    virtual void OnLaThresholdScaleDecrease() = 0;
-    virtual void OnLaPeriodDetectionIncrease() = 0;
-    virtual void OnLaPeriodDetectionDecrease() = 0;
-    virtual void OnRecalcCurrentCopyDetails() = 0;
-    virtual void OnRecalcClearMediumCopyDetails() = 0;
-    virtual void OnRecalcClearAllCopyDetails() = 0;
-    virtual void OnRecalcClearLaCopyDetails() = 0;
-    virtual void OnIntermediateCompressionIncrease() = 0;
-    virtual void OnIntermediateCompressionDecrease() = 0;
-    virtual void OnLowCompressionIncrease() = 0;
-    virtual void OnLowCompressionDecrease() = 0;
-    virtual void OnPaletteAuxDepthNext() = 0;
-    virtual void OnPaletteAuxDepthPrevious() = 0;
-    virtual void OnPaletteDepthNext() = 0;
-    virtual void OnRecalcClearAllSquareView() = 0;
-
-    // ---- Help / Window ------------------------------------------------
-    virtual void OnShowHotkeys() = 0;
-    virtual void OnViewsHelp() = 0;
-    virtual void OnHelpAlg() = 0;
-    virtual void OnSquareView() = 0;
-    virtual void OnRepainting() = 0;
-    virtual void OnWindowed() = 0;
-    virtual void OnWindowedSq() = 0;
-    virtual void OnMinimize() = 0;
-    virtual void OnCurPos() = 0;
-    virtual void OnExit() = 0;
-
-    // ---- Navigate -----------------------------------------------------
-    virtual void OnBack() = 0;
-    virtual void OnCenterView() = 0;
-    virtual void OnZoomIn() = 0;
-    virtual void OnZoomOut() = 0;
-    virtual void OnAutoZoomDefault() = 0;
-    virtual void OnAutoZoomMax() = 0;
-    virtual void OnAutoZoomFilament() = 0;
-    virtual void OnFeatureFinderDirect() = 0;
-    virtual void OnFeatureFinderDirectScan() = 0;
-    virtual void OnFeatureFinderPt() = 0;
-    virtual void OnFeatureFinderPtScan() = 0;
-    virtual void OnFeatureFinderLa() = 0;
-    virtual void OnFeatureFinderLaScan() = 0;
-    virtual void OnFeatureFinderZoom() = 0;
-    virtual void OnFeatureFinderClear() = 0;
-    virtual void OnFeatureFinderResume() = 0;
-    virtual void OnNrInnerLoopGpu() = 0;
-    virtual void OnNrInnerLoopCpu() = 0;
-    virtual void OnNrInnerLoopCpuSt() = 0;
-
-    // ---- Built-In Views (point entry; View1..40 are range-dispatched) -
-    // ---- Built-in views (range commands, 1-based) ---------------------
-    virtual void OnStandardView() = 0;
-    virtual void OnSelectBuiltInView(size_t oneBasedIndex) = 0;
-
-    // ---- Antialiasing -------------------------------------------------
-    virtual void OnGpuAntialiasing1x() = 0;
-    virtual void OnGpuAntialiasing4x() = 0;
-    virtual void OnGpuAntialiasing9x() = 0;
-    virtual void OnGpuAntialiasing16x() = 0;
-
-    // ---- Iterations ---------------------------------------------------
-    virtual void OnResetIterations() = 0;
-    virtual void OnIncreaseIterations1p5x() = 0;
-    virtual void OnIncreaseIterations6x() = 0;
-    virtual void OnIncreaseIterations24x() = 0;
-    virtual void OnDecreaseIterations() = 0;
-    virtual void OnIterations32Bit() = 0;
-    virtual void OnIterations64Bit() = 0;
-
-    // ---- Iteration Precision -----------------------------------------
-    virtual void OnIterationPrecision1x() = 0;
-    virtual void OnIterationPrecision2x() = 0;
-    virtual void OnIterationPrecision3x() = 0;
-    virtual void OnIterationPrecision4x() = 0;
-
-    // ---- Perturbation -------------------------------------------------
-    virtual void OnPerturbClearAll() = 0;
-    virtual void OnPerturbClearMed() = 0;
-    virtual void OnPerturbClearHigh() = 0;
-    virtual void OnPerturbationAuto() = 0;
-    virtual void OnPerturbationSinglethread() = 0;
-    virtual void OnPerturbationMultithread() = 0;
-    virtual void OnPerturbationSinglethreadPeriodicity() = 0;
-    virtual void OnPerturbationMultithread2Periodicity() = 0;
-    virtual void OnPerturbationMt2PerturbMthighStmed() = 0;
-    virtual void OnPerturbationMt2PerturbMthighMtmed1() = 0;
-    virtual void OnPerturbationMt2PerturbMthighMtmed2() = 0;
-    virtual void OnPerturbationMt2PerturbMthighMtmed3() = 0;
-    virtual void OnPerturbationMt2PerturbMthighMtmed4() = 0;
-    virtual void OnPerturbationMultithread5Periodicity() = 0;
-    virtual void OnPerturbationGpu() = 0;
-    virtual void OnPerturbationLoad() = 0;
-    virtual void OnPerturbationSave() = 0;
-
-    // ---- Memory / Autosave -------------------------------------------
-    virtual void OnPerturbAutosaveOnDelete() = 0;
-    virtual void OnPerturbAutosaveOn() = 0;
-    virtual void OnPerturbAutosaveOff() = 0;
-
-    // ---- Palette ------------------------------------------------------
-    virtual void OnPaletteType0() = 0;
-    virtual void OnPaletteType1() = 0;
-    virtual void OnPaletteType2() = 0;
-    virtual void OnPaletteType3() = 0;
-    virtual void OnPaletteType4() = 0;
-    virtual void OnCreateNewPalette() = 0;
-    virtual void OnPalette5() = 0;
-    virtual void OnPalette6() = 0;
-    virtual void OnPalette8() = 0;
-    virtual void OnPalette12() = 0;
-    virtual void OnPalette16() = 0;
-    virtual void OnPalette20() = 0;
-    virtual void OnPaletteRotate() = 0;
-
-    // ---- Save / Load --------------------------------------------------
-    virtual void OnSaveLocation() = 0;
-    virtual void OnSaveHiResBmp() = 0;
-    virtual void OnSaveItersText() = 0;
-    virtual void OnSaveBmp() = 0;
-    virtual void OnSaveRefOrbitText() = 0;
-    virtual void OnSaveRefOrbitTextSimple() = 0;
-    virtual void OnSaveRefOrbitTextMax() = 0;
-    virtual void OnSaveRefOrbitImagMax() = 0;
-    virtual void OnDiffRefOrbitImagMax() = 0;
-    virtual void OnLoadLocation() = 0;
-    virtual void OnLoadEnterLocation() = 0;
-    virtual void OnLoadRefOrbitImagMax() = 0;
-    virtual void OnLoadRefOrbitImagMaxSaved() = 0;
-
-    // ---- Tests / Benchmarks ------------------------------------------
-    virtual void OnBasicTest() = 0;
-    virtual void OnTest27() = 0;
-    virtual void OnBenchmarkFull() = 0;
-    virtual void OnBenchmarkInt() = 0;
-
-    // ---- LA ----------------------------------------------------------
-    virtual void OnLaMultithreaded() = 0;
-    virtual void OnLaSinglethreaded() = 0;
-    virtual void OnLaSettings1() = 0;
-    virtual void OnLaSettings2() = 0;
-    virtual void OnLaSettings3() = 0;
-};
-
-// Defined in CommandCatalog.cpp — does the FractalCommand→host hook
-// dispatch, including the alg-family lookup.
-void ExecuteCommand(FractalCommand cmd, ExecuteCommandHost &host);
 
 } // namespace FractalShark

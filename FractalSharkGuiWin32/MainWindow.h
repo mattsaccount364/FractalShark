@@ -34,7 +34,7 @@ public:
     MainWindow(HINSTANCE hInstance, int nCmdShow);
     ~MainWindow();
 
-    // ---- FractalShark::ExecuteCommandHost -------------------------------
+    // ---- Platform-specific command handlers ----------------------------
 
     // Synthetic shortcut command hooks
     void OnAutoZoomFeatureAtPoint() override;

@@ -64,7 +64,6 @@
     <ClCompile Include="TestPointZoomBBConverter.cpp" />
     <ClCompile Include="TestPrecisionCalculator.cpp" />
     <ClCompile Include="TestRenderGoldens.cpp" />
-    <ClCompile Include="CommandCatalogTest.cpp" />
     <ClCompile Include="TestGuiShared.cpp" />
     <ClCompile Include="TestGrowableVector.cpp" />
   </ItemGroup>

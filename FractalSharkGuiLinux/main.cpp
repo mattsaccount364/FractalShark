@@ -201,15 +201,6 @@ HotKeyFromXKeyEvent(const XKeyEvent &ev)
         {*key, (ev.state & ShiftMask) != 0, (ev.state & ControlMask) != 0, (ev.state & Mod1Mask) != 0});
 }
 
-// Mechanical-contract stub: every catalog command hook the Win32 GUI
-// implements in MainWindow must also be overridden here.  Until the Linux
-// GUI grows real menu/render plumbing each hook just announces itself so a
-// developer wiring up a UI surface can see which commands fire.  A missing
-// hook produces a compile error (pure virtual not implemented), which is
-// exactly the signal we want from Phase 0c.
-#define FRACTALSHARK_LINUX_STUB(method)                                                                 \
-    void method() override { std::fprintf(stderr, "TODO LinuxMainWindow: %s\n", #method); }
-
 struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     Display *display = nullptr;
     Window window = 0;
@@ -296,7 +287,7 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
         return {contextMenuX, contextMenuY};
     }
 
-    // ---- ExecuteCommandHost stubs (Linux-specific only) -------------------
+    // ---- Platform-specific command handlers ------------------------------
     void OnAutoZoomFeatureAtPoint() override;
     // Everything else is provided by PortableCommandHandlers. These hooks
     // touch the X server, ImGui modals, the file dialog, the clipboard, or
@@ -335,8 +326,6 @@ private:
     void RequestLoadRefOrbitImagFileDialog(::ImaginaSettings settings);
     void LoadRefOrbitImagFile(::ImaginaSettings settings, std::string filename);
 };
-
-#undef FRACTALSHARK_LINUX_STUB
 
 LinuxMainWindow::LinuxMainWindow()
 {
@@ -1631,7 +1620,7 @@ LinuxMainWindow::HandleKeyPress(const XKeyEvent &ev)
     contextMenuX = ev.x;
     contextMenuY = ev.y;
     if (const FractalShark::Command *command = FractalShark::FindCommandByHotKey(*hotkey)) {
-        FractalShark::ExecuteCommand(command->id, *this);
+        ExecuteCommand(command->id);
     }
 }
 

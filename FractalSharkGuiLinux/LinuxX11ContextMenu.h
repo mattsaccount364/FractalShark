@@ -12,7 +12,7 @@
 #include <memory>
 
 namespace FractalShark {
-struct ExecuteCommandHost;
+class PortableCommandHandlers;
 struct IMenuState;
 } // namespace FractalShark
 
@@ -24,7 +24,7 @@ public:
                    int screen,
                    Window owner,
                    const IMenuState *state,
-                   ExecuteCommandHost *host,
+                   PortableCommandHandlers *handlers,
                    std::function<void()> repaintOwner);
     ~X11ContextMenu();
 

@@ -363,7 +363,7 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     // gFractal exists.  If CPU-only is enforced, this will show the radio
     // button the menu properly.  Without this, the menu is out of sync until
     // the user changes algorithm manually.
-    FractalShark::ExecuteCommand(FractalShark::CommandFromIdm(IDM_ALG_AUTO), *this);
+    ExecuteCommand(FractalShark::CommandFromIdm(IDM_ALG_AUTO));
     // commandDispatcher.Dispatch(IDM_ALG_GPU_HDR_64_PERTURB_LAV2);
 
     // Optional: force an initial black fill before first show (prevents any flash)
@@ -453,7 +453,7 @@ MainWindow::HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM lParam)
 
     if (const FractalShark::Command *command = FractalShark::FindCommandByHotKey(hotkey);
         command != nullptr) {
-        FractalShark::ExecuteCommand(command->id, *this);
+        ExecuteCommand(command->id);
     }
 }
 
@@ -703,9 +703,9 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                     return 0;
                 }
             } else {
-                // Static catalog commands go through ExecuteCommand.
+                // Static catalog commands go through the portable handlers.
                 const auto cmd = FractalShark::CommandFromIdm(static_cast<uint32_t>(wmId));
-                FractalShark::ExecuteCommand(cmd, *this);
+                ExecuteCommand(cmd);
                 return 0;
             }
 

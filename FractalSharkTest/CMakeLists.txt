@@ -17,7 +17,6 @@ target_sources(FractalSharkTest PRIVATE
     TestPrecisionCalculator.cpp
     TestGrowableVector.cpp
     TestRenderGoldens.cpp
-    CommandCatalogTest.cpp
     TestGuiShared.cpp
 )
 

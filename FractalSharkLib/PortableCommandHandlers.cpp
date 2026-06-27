@@ -6,6 +6,7 @@
 
 #include "AlgCmds.h"
 #include "CrummyTest.h"
+#include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
 #include "RefOrbitCalc.h"
@@ -16,6 +17,7 @@
 
 #include <climits>
 #include <cstddef>
+#include <cstdlib>
 #include <iostream>
 
 namespace FractalShark {
@@ -1108,6 +1110,26 @@ void
 PortableCommandHandlers::OnPalette20()
 {
     GetFractal().EnqueueCommand([](Fractal &f) { f.UsePalette(20); });
+}
+
+void
+PortableCommandHandlers::OnPaletteRotate()
+{
+    // TODO(palette-rotation): This is visually broken because RotateFractalPalette() updates the
+    // internal palette state without forcing the displayed image to be re-rendered or recolored,
+    // so the command appears to do nothing.
+    const auto origin = Environment::GetCursorPosition();
+
+    for (;;) {
+        GetFractal().EnqueueCommand([](Fractal &f) { f.RotateFractalPalette(10); }).Wait();
+
+        const auto current = Environment::GetCursorPosition();
+        if (std::abs(current.first - origin.first) > 5 || std::abs(current.second - origin.second) > 5) {
+            break;
+        }
+    }
+
+    GetFractal().EnqueueCommand([](Fractal &f) { f.ResetFractalPalette(); });
 }
 
 // ---- Tests / Benchmarks ---------------------------------------------------

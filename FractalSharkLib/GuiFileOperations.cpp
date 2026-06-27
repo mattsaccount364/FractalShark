@@ -8,10 +8,28 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <ctime>
 #include <filesystem>
 
 namespace FractalShark {
 namespace {
+
+bool
+HasPathExtension(std::string_view filename)
+{
+    const size_t slash = filename.find_last_of("/\\");
+    const size_t dot = filename.find_last_of('.');
+    return dot != std::string_view::npos && (slash == std::string_view::npos || dot > slash);
+}
+
+bool
+HasPathExtension(std::wstring_view filename)
+{
+    const size_t slash = filename.find_last_of(L"/\\");
+    const size_t dot = filename.find_last_of(L'.');
+    return dot != std::wstring_view::npos && (slash == std::wstring_view::npos || dot > slash);
+}
 
 void
 RemoveExistingRegularFile(const std::wstring &filename)
@@ -29,6 +47,50 @@ RemoveExistingRegularFile(const std::wstring &filename)
 }
 
 } // namespace
+
+std::string
+MakeTimestampedOutputStem()
+{
+    std::time_t now = std::time(nullptr);
+    std::tm localTime{};
+#ifdef _MSC_VER
+    localtime_s(&localTime, &now);
+#else
+    localtime_r(&now, &localTime);
+#endif
+
+    char buffer[64];
+    std::snprintf(buffer,
+                  sizeof(buffer),
+                  "output_%04d_%02d_%02d_%02d_%02d_%02d",
+                  localTime.tm_year + 1900,
+                  localTime.tm_mon + 1,
+                  localTime.tm_mday,
+                  localTime.tm_hour,
+                  localTime.tm_min,
+                  localTime.tm_sec);
+    return std::string(buffer);
+}
+
+std::string
+AppendExtensionIfMissing(std::string filename, std::string_view extension)
+{
+    if (filename.empty() || extension.empty() || HasPathExtension(filename)) {
+        return filename;
+    }
+    filename.append(extension);
+    return filename;
+}
+
+std::wstring
+AppendExtensionIfMissing(std::wstring filename, std::wstring_view extension)
+{
+    if (filename.empty() || extension.empty() || HasPathExtension(filename)) {
+        return filename;
+    }
+    filename.append(extension);
+    return filename;
+}
 
 std::vector<std::filesystem::path>
 FindReferenceOrbitFiles(const std::filesystem::path &directory, size_t maximumCount)

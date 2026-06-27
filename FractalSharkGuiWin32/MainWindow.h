@@ -64,7 +64,6 @@ public:
     // Memory / Autosave
 
     // Palette
-    void OnPaletteRotate() override;
 
     // Save / Load
     void OnSaveLocation() override;
@@ -158,7 +157,6 @@ private:
     // Controlling functions
     void MenuStandardView(size_t i);
     void MenuWindowed(bool square);
-    void MenuPaletteRotation();
     void MenuGetCurPos();
     void MenuSaveCurrentLocation();
     void MenuLoadCurrentLocation();

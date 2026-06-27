@@ -38,8 +38,6 @@ protected:
     virtual void OnCurPos() = 0;
     virtual void OnExit() = 0;
 
-    virtual void OnPaletteRotate() = 0;
-
     virtual void OnSaveLocation() = 0;
     virtual void OnSaveHiResBmp() = 0;
     virtual void OnSaveItersText() = 0;
@@ -155,6 +153,7 @@ private:
     void OnPalette12();
     void OnPalette16();
     void OnPalette20();
+    void OnPaletteRotate();
 
     void OnBasicTest();
     void OnTest27();

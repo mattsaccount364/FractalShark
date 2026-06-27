@@ -4,6 +4,7 @@
 #include "ConsoleWindow.h"
 #include "CrashHandler.h"
 #include "DynamicPopupMenu.h"
+#include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
 #include "GuiFileOperations.h"
@@ -149,12 +150,6 @@ MainWindow::OnExit()
 // ---- Perturbation ---------------------------------------------------------
 // ---- Memory / Autosave ---------------------------------------------------
 // ---- Palette --------------------------------------------------------------
-void
-MainWindow::OnPaletteRotate()
-{
-    MenuPaletteRotation();
-}
-
 // ---- Save / Load ----------------------------------------------------------
 void
 MainWindow::OnSaveLocation()
@@ -1039,64 +1034,13 @@ MainWindow::MenuWindowed(bool square)
 void
 MainWindow::MenuGetCurPos()
 {
-    constexpr size_t numBytes = 4 * 1024 * 1024;
-
-    BOOL ret = OpenClipboard(hWnd);
-    if (ret == 0) {
-        std::wcerr << L"Opening the clipboard failed.  Another program must be using it." << std::endl;
-        return;
-    }
-
-    ret = EmptyClipboard();
-    if (ret == 0) {
-        std::wcerr << L"Emptying the clipboard of its current contents failed.  Make sure no other "
-                      L"programs are using it."
-                   << std::endl;
-        CloseClipboard();
-        return;
-    }
-
-    HGLOBAL hData = GlobalAlloc(GMEM_MOVEABLE, numBytes);
-    if (hData == nullptr) {
-        std::wcerr << L"Insufficient memory." << std::endl;
-        CloseClipboard();
-        return;
-    }
-
-    char *mem = (char *)GlobalLock(hData);
-    if (mem == nullptr) {
-        std::wcerr << L"Insufficient memory 2." << std::endl;
-        GlobalFree(hData);
-        CloseClipboard();
-        return;
-    }
-
     std::string shortStr, longStr;
     gFractal->GetRenderDetails(shortStr, longStr);
 
-    // Append temp2 to mem without overrunning the buffer
-    // using strncat.
-    mem[0] = 0;
-    strncpy(mem, longStr.data(), numBytes - 1);
-    mem[numBytes - 1] = '\0';
-
-    GlobalUnlock(hData);
-
-    //
-    // This is not a memory leak - we don't "free" hData.
-    //
-
-    HANDLE clpData = SetClipboardData(CF_TEXT, hData);
-    if (clpData == nullptr) {
-        std::wcerr << L"Adding the data to the clipboard failed.  You are probably very low on memory.  "
-                      L"Try closing other programs or restarting your computer."
-                   << std::endl;
-        GlobalFree(hData);
-        CloseClipboard();
+    if (!Environment::SetClipboardText(longStr)) {
+        std::wcerr << L"Copying the current position to the clipboard failed." << std::endl;
         return;
     }
-
-    CloseClipboard();
 
     if (shortStr.length() < 5000) {
         ::MessageBoxA(hWnd, shortStr.c_str(), "Current Position", MB_OK | MB_APPLMODAL);
@@ -1106,52 +1050,22 @@ MainWindow::MenuGetCurPos()
 }
 
 void
-MainWindow::MenuPaletteRotation()
-{
-    // TODO(palette-rotation): This is visually broken because RotateFractalPalette() updates the
-    // internal palette state without forcing the displayed image to be re-rendered or recolored,
-    // so the command appears to do nothing.
-    POINT OrgPos, CurPos;
-    GetCursorPos(&OrgPos);
-
-    for (;;) {
-        gFractal->EnqueueCommand([](Fractal &f) { f.RotateFractalPalette(10); }).Wait();
-        GetCursorPos(&CurPos);
-        if (abs(CurPos.x - OrgPos.x) > 5 || abs(CurPos.y - OrgPos.y) > 5) {
-            break;
-        }
-    }
-
-    gFractal->EnqueueCommand([](Fractal &f) { f.ResetFractalPalette(); });
-}
-
-void
 MainWindow::MenuSaveCurrentLocation()
 {
     const int response = ::MessageBox(hWnd, L"Scale dimensions to maximum?", L"Choose!", MB_YESNO);
-    const SavedLocation location = CaptureSavedLocation(*gFractal, response == IDYES);
-    const std::string serialized = SerializeSavedLocation(location);
+    const std::string serialized = AppendSavedLocation(*gFractal, response == IDYES);
     const std::wstring message(serialized.begin(), serialized.end());
     ::MessageBox(nullptr, message.c_str(), L"Location", MB_OK | MB_APPLMODAL);
-
-    std::ofstream file("locations.txt", std::ios::app);
-    if (!file || !(file << serialized << "\r\n")) {
-        throw FractalSharkSeriousException("Could not append to locations.txt");
-    }
 }
 
 void
 MainWindow::MenuLoadCurrentLocation()
 {
-    std::ifstream input("locations.txt");
-    if (!input) {
-        throw FractalSharkSeriousException("Could not open locations.txt for reading");
-    }
-
-    gSavedLocations = ReadSavedLocations(input, 30);
+    gSavedLocations = ReadSavedLocationsFile(kSavedLocationsFilename, 30);
+    std::vector<std::string> labels = BuildSavedLocationLabels(gSavedLocations);
     HMENU submenu = ::CreatePopupMenu();
-    for (size_t index = 0; index < gSavedLocations.size(); ++index) {
-        const std::string &description = gSavedLocations[index].Description;
+    for (size_t index = 0; index < labels.size(); ++index) {
+        const std::string &description = labels[index];
         const std::wstring label(description.begin(), description.end());
         ::AppendMenu(submenu, MF_STRING, IDM_VIEW_DYNAMIC_ORBIT + index, label.c_str());
     }
@@ -1340,6 +1254,7 @@ MainWindow::MenuSaveBMP()
     std::wstring filename = OpenFileDialog(
         OpenBoxType::Save, kPngFileFilter, L"png", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
     if (!filename.empty()) {
+        filename = AppendExtensionIfMissing(std::move(filename), L".png");
         SaveFractalOutput(*gFractal, FractalOutputFile::CurrentImage, std::move(filename));
     }
 }
@@ -1350,6 +1265,7 @@ MainWindow::MenuSaveHiResBMP()
     std::wstring filename = OpenFileDialog(
         OpenBoxType::Save, kPngFileFilter, L"png", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
     if (!filename.empty()) {
+        filename = AppendExtensionIfMissing(std::move(filename), L".png");
         SaveFractalOutput(*gFractal, FractalOutputFile::HighResolutionImage, std::move(filename));
     }
 }
@@ -1360,6 +1276,7 @@ MainWindow::MenuSaveItersAsText()
     std::wstring filename = OpenFileDialog(
         OpenBoxType::Save, kTextFileFilter, L"txt", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
     if (!filename.empty()) {
+        filename = AppendExtensionIfMissing(std::move(filename), L".txt");
         SaveFractalOutput(*gFractal, FractalOutputFile::IterationsText, std::move(filename));
     }
 }
@@ -1424,8 +1341,10 @@ MainWindow::MenuLoadImagDyn(ImaginaSettings loadSettings)
 void
 MainWindow::MenuSaveImag(CompressToDisk compression)
 {
-    std::wstring filename = OpenFileDialog(OpenBoxType::Save);
+    std::wstring filename = OpenFileDialog(
+        OpenBoxType::Save, kOrbitFileFilter, L"im", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
     if (!filename.empty()) {
+        filename = AppendExtensionIfMissing(std::move(filename), L".im");
         SaveReferenceOrbit(*gFractal, compression, std::move(filename));
     }
 }
@@ -1433,10 +1352,12 @@ MainWindow::MenuSaveImag(CompressToDisk compression)
 void
 MainWindow::MenuDiffImag()
 {
-    std::wstring output = OpenFileDialog(OpenBoxType::Save);
+    std::wstring output = OpenFileDialog(
+        OpenBoxType::Save, kOrbitFileFilter, L"im", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
     if (output.empty()) {
         return;
     }
+    output = AppendExtensionIfMissing(std::move(output), L".im");
     std::wstring first = OpenFileDialog(OpenBoxType::Open);
     if (first.empty()) {
         return;

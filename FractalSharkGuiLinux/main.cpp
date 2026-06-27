@@ -50,11 +50,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <ctime>
 #include <exception>
 #include <filesystem>
-#include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -79,6 +76,17 @@ RequireUiState(bool available, const char *operation)
         throw FractalSharkSeriousException(std::string(operation) +
                                            " requires initialized Linux UI state");
     }
+}
+
+bool
+SetEnvironmentClipboardText(void *context, std::string_view text)
+{
+    auto *clipboard = static_cast<FractalShark::Linux::LinuxClipboard *>(context);
+    if (clipboard == nullptr) {
+        return false;
+    }
+    clipboard->Set(std::string(text));
+    return true;
 }
 
 struct GlxVisualSelection {
@@ -226,6 +234,7 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     bool everPresented = false;
     bool exposeRepaintPending = false;
     bool waitCursorRegistered = false;
+    bool clipboardTextSetterRegistered = false;
 
     // Right-click position in client coordinates, matching MainWindow.cpp's
     // m_LastMenuPtClient anchor for menu commands that act on the click point.
@@ -301,8 +310,6 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     void OnMinimize() override;
     void OnCurPos() override;
     void OnExit() override;
-
-    void OnPaletteRotate() override;
 
     void OnSaveLocation() override;
     void OnSaveHiResBmp() override;
@@ -423,6 +430,8 @@ LinuxMainWindow::LinuxMainWindow()
     XFlush(display);
 
     clipboard.emplace(display, window);
+    Environment::RegisterClipboardTextSetter(&SetEnvironmentClipboardText, &*clipboard);
+    clipboardTextSetterRegistered = true;
 
     // Instantiate Fractal in host-owned GL presentation mode: the render
     // pool will not start its own GL consumer thread; we drive
@@ -469,6 +478,11 @@ LinuxMainWindow::Destroy() noexcept
     menuState.reset();
     glContext.reset();
     fractal.reset();
+    if (clipboardTextSetterRegistered && clipboard) {
+        Environment::UnregisterClipboardTextSetter(&SetEnvironmentClipboardText, &*clipboard);
+        clipboardTextSetterRegistered = false;
+    }
+    clipboard.reset();
 
     if (display) {
         if (waitCursorRegistered) {
@@ -875,36 +889,18 @@ LinuxMainWindow::OnMinimize()
 void
 LinuxMainWindow::OnCurPos()
 {
-    RequireUiState(fractal && clipboard && overlay, "Copying the current position");
+    RequireUiState(fractal && overlay, "Copying the current position");
     std::string shortStr;
     std::string longStr;
     fractal->GetRenderDetails(shortStr, longStr);
-    clipboard->Set(longStr);
+    if (!Environment::SetClipboardText(longStr)) {
+        std::fprintf(stderr, "Could not copy location to clipboard.\n");
+    }
     if (shortStr.size() < 5000) {
         overlay->RequestInfoModal("Current Position", shortStr.c_str());
     } else {
         std::fprintf(stderr, "Location copied to clipboard.\n");
     }
-}
-
-void
-LinuxMainWindow::OnPaletteRotate()
-{
-    // TODO(palette-rotation): This is visually broken because RotateFractalPalette() updates the
-    // internal palette state without forcing the displayed image to be re-rendered or recolored,
-    // so the command appears to do nothing.
-    const auto origin = Environment::GetCursorPosition();
-
-    for (;;) {
-        fractal->EnqueueCommand([](Fractal &f) { f.RotateFractalPalette(10); }).Wait();
-
-        const auto current = Environment::GetCursorPosition();
-        if (std::abs(current.first - origin.first) > 5 || std::abs(current.second - origin.second) > 5) {
-            break;
-        }
-    }
-
-    fractal->EnqueueCommand([](Fractal &f) { f.ResetFractalPalette(); });
 }
 
 void
@@ -1041,88 +1037,6 @@ namespace {
 
 constexpr size_t kMaxQuickPickImaginaFiles = 30;
 
-// Build a "output_YYYY_MM_DD_HH_MM_SS" filename stem (no extension).
-std::string
-MakeTimestampedStem()
-{
-    std::time_t t = std::time(nullptr);
-    std::tm tm{};
-    localtime_r(&t, &tm);
-    char buf[64];
-    std::snprintf(buf,
-                  sizeof(buf),
-                  "output_%04d_%02d_%02d_%02d_%02d_%02d",
-                  tm.tm_year + 1900,
-                  tm.tm_mon + 1,
-                  tm.tm_mday,
-                  tm.tm_hour,
-                  tm.tm_min,
-                  tm.tm_sec);
-    return std::string(buf);
-}
-
-std::wstring
-Utf8ToWide(const std::string &s)
-{
-    std::wstring w;
-    w.reserve(s.size());
-    for (size_t i = 0; i < s.size();) {
-        const auto c0 = static_cast<uint8_t>(s[i]);
-        if (c0 < 0x80) {
-            w.push_back(static_cast<wchar_t>(c0));
-            ++i;
-            continue;
-        }
-
-        uint32_t codePoint = 0;
-        size_t length = 0;
-        uint32_t minValue = 0;
-        if ((c0 & 0xe0) == 0xc0) {
-            codePoint = c0 & 0x1f;
-            length = 2;
-            minValue = 0x80;
-        } else if ((c0 & 0xf0) == 0xe0) {
-            codePoint = c0 & 0x0f;
-            length = 3;
-            minValue = 0x800;
-        } else if ((c0 & 0xf8) == 0xf0) {
-            codePoint = c0 & 0x07;
-            length = 4;
-            minValue = 0x10000;
-        } else {
-            w.push_back(static_cast<wchar_t>(0xfffd));
-            ++i;
-            continue;
-        }
-
-        if (i + length > s.size()) {
-            w.push_back(static_cast<wchar_t>(0xfffd));
-            break;
-        }
-
-        bool valid = true;
-        for (size_t j = 1; j < length; ++j) {
-            const auto cj = static_cast<uint8_t>(s[i + j]);
-            if ((cj & 0xc0) != 0x80) {
-                valid = false;
-                break;
-            }
-            codePoint = (codePoint << 6) | (cj & 0x3f);
-        }
-
-        if (!valid || codePoint < minValue || (codePoint >= 0xd800 && codePoint <= 0xdfff) ||
-            codePoint > 0x10ffff) {
-            w.push_back(static_cast<wchar_t>(0xfffd));
-            ++i;
-            continue;
-        }
-
-        w.push_back(static_cast<wchar_t>(codePoint));
-        i += length;
-    }
-    return w;
-}
-
 using LinuxFileDialogFilter = FractalShark::Linux::ImGuiOverlay::FileDialogFilter;
 using LinuxFileDialogMode = FractalShark::Linux::ImGuiOverlay::FileDialogMode;
 
@@ -1142,19 +1056,6 @@ std::vector<LinuxFileDialogFilter>
 TextFileFilters()
 {
     return {{"Text File (*.txt)", ".txt"}, {"All (*.*)", ""}};
-}
-
-std::string
-AppendExtensionIfMissing(const std::string &filename, const char *extension)
-{
-    if (filename.empty() || extension == nullptr || extension[0] == '\0') {
-        return filename;
-    }
-
-    if (std::filesystem::path(filename).extension().empty()) {
-        return filename + extension;
-    }
-    return filename;
 }
 
 } // namespace
@@ -1177,14 +1078,7 @@ void
 LinuxMainWindow::SaveLocation(bool scaleToMaximum)
 {
     RequireUiState(fractal && overlay, "Saving a location");
-    const FractalShark::SavedLocation location =
-        FractalShark::CaptureSavedLocation(*fractal, scaleToMaximum);
-    const std::string serialized = FractalShark::SerializeSavedLocation(location);
-
-    std::ofstream file("locations.txt", std::ios::app);
-    if (!file || !(file << serialized << "\r\n")) {
-        throw FractalSharkSeriousException("Could not append to locations.txt");
-    }
+    const std::string serialized = FractalShark::AppendSavedLocation(*fractal, scaleToMaximum);
     overlay->RequestInfoModal("Location", serialized.c_str());
 }
 
@@ -1195,13 +1089,14 @@ LinuxMainWindow::OnSaveHiResBmp()
     overlay->RequestFileDialog(
         "Save high-resolution image",
         LinuxFileDialogMode::Save,
-        MakeTimestampedStem() + ".png",
+        FractalShark::MakeTimestampedOutputStem() + ".png",
         PngFileFilters(),
         [this](std::string filename) {
             RequireUiState(fractal != nullptr, "Saving a high-resolution image");
-            filename = AppendExtensionIfMissing(filename, ".png");
-            FractalShark::SaveFractalOutput(
-                *fractal, FractalShark::FractalOutputFile::HighResolutionImage, Utf8ToWide(filename));
+            filename = FractalShark::AppendExtensionIfMissing(std::move(filename), ".png");
+            FractalShark::SaveFractalOutput(*fractal,
+                                            FractalShark::FractalOutputFile::HighResolutionImage,
+                                            Environment::Utf8ToWide(filename));
         });
 }
 
@@ -1212,13 +1107,14 @@ LinuxMainWindow::OnSaveItersText()
     overlay->RequestFileDialog(
         "Save iterations as text",
         LinuxFileDialogMode::Save,
-        MakeTimestampedStem() + ".txt",
+        FractalShark::MakeTimestampedOutputStem() + ".txt",
         TextFileFilters(),
         [this](std::string filename) {
             RequireUiState(fractal != nullptr, "Saving iterations");
-            filename = AppendExtensionIfMissing(filename, ".txt");
-            FractalShark::SaveFractalOutput(
-                *fractal, FractalShark::FractalOutputFile::IterationsText, Utf8ToWide(filename));
+            filename = FractalShark::AppendExtensionIfMissing(std::move(filename), ".txt");
+            FractalShark::SaveFractalOutput(*fractal,
+                                            FractalShark::FractalOutputFile::IterationsText,
+                                            Environment::Utf8ToWide(filename));
         });
 }
 
@@ -1229,13 +1125,14 @@ LinuxMainWindow::OnSaveBmp()
     overlay->RequestFileDialog(
         "Save current image",
         LinuxFileDialogMode::Save,
-        MakeTimestampedStem() + ".png",
+        FractalShark::MakeTimestampedOutputStem() + ".png",
         PngFileFilters(),
         [this](std::string filename) {
             RequireUiState(fractal != nullptr, "Saving an image");
-            filename = AppendExtensionIfMissing(filename, ".png");
-            FractalShark::SaveFractalOutput(
-                *fractal, FractalShark::FractalOutputFile::CurrentImage, Utf8ToWide(filename));
+            filename = FractalShark::AppendExtensionIfMissing(std::move(filename), ".png");
+            FractalShark::SaveFractalOutput(*fractal,
+                                            FractalShark::FractalOutputFile::CurrentImage,
+                                            Environment::Utf8ToWide(filename));
         });
 }
 
@@ -1243,16 +1140,17 @@ void
 LinuxMainWindow::DoSaveRefOrbit(::CompressToDisk compression)
 {
     RequireUiState(fractal && overlay, "Saving a reference orbit");
-    std::string defaultName = MakeTimestampedStem() + ".im";
-    overlay->RequestFileDialog("Save reference orbit",
-                               LinuxFileDialogMode::Save,
-                               defaultName,
-                               OrbitFileFilters(),
-                               [this, compression](std::string filename) {
-                                   RequireUiState(fractal != nullptr, "Saving a reference orbit");
-                                   FractalShark::SaveReferenceOrbit(
-                                       *fractal, compression, Utf8ToWide(filename));
-                               });
+    std::string defaultName = FractalShark::MakeTimestampedOutputStem() + ".im";
+    overlay->RequestFileDialog(
+        "Save reference orbit",
+        LinuxFileDialogMode::Save,
+        defaultName,
+        OrbitFileFilters(),
+        [this, compression](std::string filename) {
+            RequireUiState(fractal != nullptr, "Saving a reference orbit");
+            filename = FractalShark::AppendExtensionIfMissing(std::move(filename), ".im");
+            FractalShark::SaveReferenceOrbit(*fractal, compression, Environment::Utf8ToWide(filename));
+        });
 }
 
 void
@@ -1288,10 +1186,11 @@ LinuxMainWindow::OnDiffRefOrbitImagMax()
     overlay->RequestFileDialog(
         "Output (.im) - diff result",
         LinuxFileDialogMode::Save,
-        MakeTimestampedStem() + "_diff.im",
+        FractalShark::MakeTimestampedOutputStem() + "_diff.im",
         OrbitFileFilters(),
         [this](std::string outFile) mutable {
             RequireUiState(fractal && overlay, "Diffing reference orbits");
+            outFile = FractalShark::AppendExtensionIfMissing(std::move(outFile), ".im");
             overlay->RequestFileDialog(
                 "First input (.im)",
                 LinuxFileDialogMode::Open,
@@ -1306,9 +1205,9 @@ LinuxMainWindow::OnDiffRefOrbitImagMax()
                         OrbitFileFilters(),
                         [this, outFile = std::move(outFile), in1 = std::move(in1)](std::string in2) {
                             RequireUiState(fractal != nullptr, "Diffing reference orbits");
-                            std::wstring outW = Utf8ToWide(outFile);
-                            std::wstring f1W = Utf8ToWide(in1);
-                            std::wstring f2W = Utf8ToWide(in2);
+                            std::wstring outW = Environment::Utf8ToWide(outFile);
+                            std::wstring f1W = Environment::Utf8ToWide(in1);
+                            std::wstring f2W = Environment::Utf8ToWide(in2);
                             FractalShark::DiffReferenceOrbits(
                                 *fractal, std::move(outW), std::move(f1W), std::move(f2W));
                         });
@@ -1320,22 +1219,14 @@ void
 LinuxMainWindow::OnLoadLocation()
 {
     RequireUiState(fractal && overlay, "Loading a location");
-    std::ifstream input("locations.txt");
-    if (!input) {
-        throw FractalSharkSeriousException("Could not open locations.txt for reading");
-    }
-
-    std::vector<FractalShark::SavedLocation> locations = FractalShark::ReadSavedLocations(input, 30);
+    std::vector<FractalShark::SavedLocation> locations =
+        FractalShark::ReadSavedLocationsFile(FractalShark::kSavedLocationsFilename, 30);
     if (locations.empty()) {
         overlay->RequestInfoModal("Load Location", "locations.txt has no entries.");
         return;
     }
 
-    std::vector<std::string> labels;
-    labels.reserve(locations.size());
-    for (const FractalShark::SavedLocation &location : locations) {
-        labels.push_back(location.Description.empty() ? "(unnamed)" : location.Description);
-    }
+    std::vector<std::string> labels = FractalShark::BuildSavedLocationLabels(locations);
     overlay->RequestPickFromList(
         "Load saved location",
         std::move(labels),
@@ -1413,7 +1304,7 @@ LinuxMainWindow::LoadRefOrbitImagFile(::ImaginaSettings settings, std::string fi
 {
     RequireUiState(fractal != nullptr, "Loading a reference orbit");
     FractalShark::LoadReferenceOrbit(
-        *fractal, ::CompressToDisk::MaxCompressionImagina, settings, Utf8ToWide(filename));
+        *fractal, ::CompressToDisk::MaxCompressionImagina, settings, Environment::Utf8ToWide(filename));
 }
 
 void

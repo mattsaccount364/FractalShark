@@ -31,10 +31,17 @@ struct EnteredLocation {
     IterTypeFull NumIterations = 0;
 };
 
+inline constexpr const char *kSavedLocationsFilename = "locations.txt";
+
 SavedLocation CaptureSavedLocation(const Fractal &fractal, bool scaleToMaximum);
 std::string SerializeSavedLocation(const SavedLocation &location);
 bool ParseSavedLocation(std::istream &input, SavedLocation &location);
 std::vector<SavedLocation> ReadSavedLocations(std::istream &input, size_t maximumCount);
+std::string AppendSavedLocation(Fractal &fractal,
+                                bool scaleToMaximum,
+                                const char *filename = kSavedLocationsFilename);
+std::vector<SavedLocation> ReadSavedLocationsFile(const char *filename, size_t maximumCount);
+std::vector<std::string> BuildSavedLocationLabels(const std::vector<SavedLocation> &locations);
 void EnqueueSavedLocation(Fractal &fractal, const SavedLocation &location);
 EnteredLocation CaptureEnteredLocation(const Fractal &fractal);
 void EnqueueEnteredLocation(Fractal &fractal, const EnteredLocation &location);

@@ -6,6 +6,7 @@
 #include <array>
 #include <conio.h>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -559,6 +560,20 @@ Environment::ShowWarning(const wchar_t *message)
     ::MessageBoxW(nullptr, message, L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
 }
 
+void
+Environment::RegisterClipboardTextSetter(ClipboardTextSetter setter, void *context)
+{
+    (void)setter;
+    (void)context;
+}
+
+void
+Environment::UnregisterClipboardTextSetter(ClipboardTextSetter setter, void *context)
+{
+    (void)setter;
+    (void)context;
+}
+
 bool
 Environment::SetClipboardText(std::string_view text)
 {
@@ -603,4 +618,32 @@ Environment::PumpUIEvents()
 {
     MSG msg;
     ::PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);
+}
+
+std::wstring
+Environment::Utf8ToWide(std::string_view text)
+{
+    if (text.empty()) {
+        return {};
+    }
+    if (text.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return {};
+    }
+
+    const int textLength = static_cast<int>(text.size());
+    int wideLength =
+        ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), textLength, nullptr, 0);
+    if (wideLength <= 0) {
+        std::wstring fallback;
+        fallback.reserve(text.size());
+        for (char ch : text) {
+            fallback.push_back(static_cast<unsigned char>(ch));
+        }
+        return fallback;
+    }
+
+    std::wstring result(static_cast<size_t>(wideLength), L'\0');
+    ::MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), textLength, result.data(), wideLength);
+    return result;
 }

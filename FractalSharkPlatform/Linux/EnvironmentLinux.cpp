@@ -67,6 +67,8 @@ WideToUtf8(const wchar_t *wide)
 
 // Command line storage (set once at program startup).
 static const wchar_t *g_commandLine = L"";
+ClipboardTextSetter g_ClipboardTextSetter = nullptr;
+void *g_ClipboardTextContext = nullptr;
 
 class X11KeyState {
 public:
@@ -784,15 +786,98 @@ Environment::ShowWarning(const wchar_t *message)
     std::wcerr << L"Warning: " << message << std::endl;
 }
 
+void
+Environment::RegisterClipboardTextSetter(ClipboardTextSetter setter, void *context)
+{
+    if (setter == nullptr) {
+        return;
+    }
+    g_ClipboardTextSetter = setter;
+    g_ClipboardTextContext = context;
+}
+
+void
+Environment::UnregisterClipboardTextSetter(ClipboardTextSetter setter, void *context)
+{
+    if (g_ClipboardTextSetter == setter && g_ClipboardTextContext == context) {
+        g_ClipboardTextSetter = nullptr;
+        g_ClipboardTextContext = nullptr;
+    }
+}
+
 bool
 Environment::SetClipboardText(std::string_view text)
 {
-    (void)text;
-    return true;
+    if (g_ClipboardTextSetter == nullptr) {
+        return false;
+    }
+    return g_ClipboardTextSetter(g_ClipboardTextContext, text);
 }
 
 void
 Environment::PumpUIEvents()
 {
     // TODO: Linux, should we be checking the state of things etc here at all
+}
+
+std::wstring
+Environment::Utf8ToWide(std::string_view text)
+{
+    std::wstring result;
+    result.reserve(text.size());
+    for (size_t i = 0; i < text.size();) {
+        const auto c0 = static_cast<uint8_t>(text[i]);
+        if (c0 < 0x80) {
+            result.push_back(static_cast<wchar_t>(c0));
+            ++i;
+            continue;
+        }
+
+        uint32_t codePoint = 0;
+        size_t length = 0;
+        uint32_t minValue = 0;
+        if ((c0 & 0xe0) == 0xc0) {
+            codePoint = c0 & 0x1f;
+            length = 2;
+            minValue = 0x80;
+        } else if ((c0 & 0xf0) == 0xe0) {
+            codePoint = c0 & 0x0f;
+            length = 3;
+            minValue = 0x800;
+        } else if ((c0 & 0xf8) == 0xf0) {
+            codePoint = c0 & 0x07;
+            length = 4;
+            minValue = 0x10000;
+        } else {
+            result.push_back(static_cast<wchar_t>(0xfffd));
+            ++i;
+            continue;
+        }
+
+        if (i + length > text.size()) {
+            result.push_back(static_cast<wchar_t>(0xfffd));
+            break;
+        }
+
+        bool valid = true;
+        for (size_t j = 1; j < length; ++j) {
+            const auto cj = static_cast<uint8_t>(text[i + j]);
+            if ((cj & 0xc0) != 0x80) {
+                valid = false;
+                break;
+            }
+            codePoint = (codePoint << 6) | (cj & 0x3f);
+        }
+
+        if (!valid || codePoint < minValue || (codePoint >= 0xd800 && codePoint <= 0xdfff) ||
+            codePoint > 0x10ffff) {
+            result.push_back(static_cast<wchar_t>(0xfffd));
+            ++i;
+            continue;
+        }
+
+        result.push_back(static_cast<wchar_t>(codePoint));
+        i += length;
+    }
+    return result;
 }

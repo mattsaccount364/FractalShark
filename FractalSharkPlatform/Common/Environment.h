@@ -364,14 +364,22 @@ inline void *const InvalidHandle = reinterpret_cast<void *>(static_cast<intptr_t
 // Display a modal warning dialog (MessageBox on Windows, stderr on Linux).
 void ShowWarning(const wchar_t *message);
 
+using ClipboardTextSetter = bool (*)(void *context, std::string_view text);
+
+// Register a GUI-owned clipboard implementation for platforms where clipboard ownership is tied
+// to a live UI window/event loop. Passing nullptr clears no state; use UnregisterClipboardTextSetter.
+void RegisterClipboardTextSetter(ClipboardTextSetter setter, void *context);
+void UnregisterClipboardTextSetter(ClipboardTextSetter setter, void *context);
+
 // Copy text to the system clipboard when the platform supports it.  Linux
-// currently treats this diagnostic helper as best-effort and may return true
-// without publishing to an external clipboard.
+// requires a registered GUI clipboard target.
 bool SetClipboardText(std::string_view text);
 
 // Pump pending UI events so the message loop stays responsive.
 // On Windows this calls PeekMessage; on Linux it is a no-op.
 void PumpUIEvents();
+
+std::wstring Utf8ToWide(std::string_view text);
 
 // =========================================================================
 // Filesystem helpers

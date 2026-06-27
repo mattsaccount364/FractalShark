@@ -2,9 +2,11 @@
 
 #include "SavedLocation.h"
 
+#include "Exceptions.h"
 #include "Fractal.h"
 #include "PointZoomBBConverter.h"
 
+#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -81,6 +83,40 @@ ReadSavedLocations(std::istream &input, size_t maximumCount)
         locations.push_back(std::move(location));
     }
     return locations;
+}
+
+std::string
+AppendSavedLocation(Fractal &fractal, bool scaleToMaximum, const char *filename)
+{
+    const SavedLocation location = CaptureSavedLocation(fractal, scaleToMaximum);
+    const std::string serialized = SerializeSavedLocation(location);
+
+    std::ofstream file(filename, std::ios::app);
+    if (!file || !(file << serialized << "\r\n")) {
+        throw FractalSharkSeriousException("Could not append to locations.txt");
+    }
+    return serialized;
+}
+
+std::vector<SavedLocation>
+ReadSavedLocationsFile(const char *filename, size_t maximumCount)
+{
+    std::ifstream input(filename);
+    if (!input) {
+        throw FractalSharkSeriousException("Could not open locations.txt for reading");
+    }
+    return ReadSavedLocations(input, maximumCount);
+}
+
+std::vector<std::string>
+BuildSavedLocationLabels(const std::vector<SavedLocation> &locations)
+{
+    std::vector<std::string> labels;
+    labels.reserve(locations.size());
+    for (const SavedLocation &location : locations) {
+        labels.push_back(location.Description.empty() ? "(unnamed)" : location.Description);
+    }
+    return labels;
 }
 
 void

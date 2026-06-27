@@ -97,9 +97,9 @@ choice and triggers any necessary reconfiguration.
       point under the cursor.
       \item \emph{Zoom In Here} (command): Zooms in toward the point under the cursor.
       \item \emph{Zoom Out} (command): Zooms out from the current view.
+      \item \emph{Autozoom Default} (command): See \cref{par:autozoom} for details.
       \item \emph{Autozoom Max} (command): Autozoom using the ``Max'' heuristic,
       which zooms by a factor of~32 each step.  See \cref{par:autozoom} for details.
-      \item \emph{Autozoom Default} (command): See \cref{par:autozoom} for details.
       \item \emph{Autozoom Filament Tip} (\code{S}, i.e.\ \code{Shift+s}) (command): Autozoom using the
       ``FilamentTip'' heuristic.
       \item \emph{Feature Finder} (submenu): Locates nearby mini-Mandelbrot
@@ -255,11 +255,12 @@ choice and triggers any necessary reconfiguration.
       algorithm currently in use is checked.  This design allows users to see
       what algorithm is active.
 
-      At present, four algorithms are eligible for automatic selection:
+      When GPU rendering is active, four algorithms are eligible for automatic
+      selection:
       \begin{itemize}
-        \item \emph{1x32 GPU}: The default low-zoom GPU linear-approximation
-              renderer.  No perturbation or linear approximation is used.
-        \item \emph{1x32 GPU -- Perturbation Only}: The default
+        \item \emph{1x32 GPU}: The default low-zoom GPU renderer.  No
+              perturbation or linear approximation is used.
+        \item \emph{1x32 GPU -- Perturb only}: The default
               perturbation-only GPU renderer (\cref{sec:perturb-only}) for
               moderate zooms uses perturbation but no linear approximation.
         \item \emph{1x32 GPU -- LA~v2}: A bit deeper, no high-dynamic range
@@ -275,6 +276,10 @@ choice and triggers any necessary reconfiguration.
               See \cref{fig:auto-renderer-artifact} for an example of
               artifacts that can arise when using HDRx32 at extreme depths.
       \end{itemize}
+      If GPU rendering is bypassed or unavailable, \emph{Auto} follows the same
+      zoom-factor tiering shape with CPU renderers: \emph{1x64 CPU} below
+      $10^9$, \emph{1x64 CPU -- Perturbation BLA} below $10^{34}$, and
+      \emph{HDRx64 CPU -- Perturbation LA~v2} at deeper zooms.
 
       \item \emph{LA Parameters} (submenu): Controls linear-approximation (LA) configuration and tuning.
         \begin{itemize}

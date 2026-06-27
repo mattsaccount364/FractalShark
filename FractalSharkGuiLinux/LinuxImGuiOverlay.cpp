@@ -5,6 +5,8 @@
 #include "Exceptions.h"
 #include "LinuxClipboard.h"
 #include "LinuxXlibBackend.h"
+#include "MenuTree.h"
+#include "PortableCommandHandlers.h"
 
 #include "backends/imgui_impl_opengl2.h"
 #include "imgui.h"
@@ -16,6 +18,7 @@
 #include <charconv>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -69,13 +72,153 @@ LowerAscii(std::string value)
     return value;
 }
 
+std::span<const Node>
+GetMenuNodes()
+{
+#include "MenuTreeDef.h"
+
+    return {menu, sizeof(menu) / sizeof(menu[0])};
+}
+
+std::string
+WideToUtf8(std::wstring_view in)
+{
+    std::string out;
+    out.reserve(in.size());
+    for (std::size_t i = 0; i < in.size(); ++i) {
+        uint32_t cp = static_cast<uint32_t>(in[i]);
+        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < in.size()) {
+            uint32_t low = static_cast<uint32_t>(in[i + 1]);
+            if (low >= 0xDC00 && low <= 0xDFFF) {
+                cp = 0x10000 + (((cp - 0xD800) << 10) | (low - 0xDC00));
+                ++i;
+            }
+        }
+        if (cp < 0x80) {
+            out.push_back(char(cp));
+        } else if (cp < 0x800) {
+            out.push_back(char(0xC0 | (cp >> 6)));
+            out.push_back(char(0x80 | (cp & 0x3F)));
+        } else if (cp < 0x10000) {
+            out.push_back(char(0xE0 | (cp >> 12)));
+            out.push_back(char(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(char(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(char(0xF0 | (cp >> 18)));
+            out.push_back(char(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(char(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(char(0x80 | (cp & 0x3F)));
+        }
+    }
+    return out;
+}
+
+std::string
+StripMenuMnemonics(std::string label)
+{
+    std::string out;
+    out.reserve(label.size());
+    for (std::size_t i = 0; i < label.size(); ++i) {
+        if (label[i] == '&' && i + 1 < label.size()) {
+            if (label[i + 1] == '&') {
+                out.push_back('&');
+                ++i;
+            }
+            continue;
+        }
+        out.push_back(label[i]);
+    }
+    return out;
+}
+
+std::string
+MenuLabel(const Node &node, const IMenuState &state)
+{
+    std::wstring label(node.text);
+    if (node.kind == Kind::Popup && node.adornGroup != RadioGroup::None) {
+        uint32_t adornId = state.GetPopupAdornmentCommandId(node.adornGroup);
+        if (adornId == 0) {
+            adornId = state.GetRadioSelection(node.adornGroup);
+        }
+        if (adornId != 0) {
+            const std::wstring_view selection = state.GetCommandLabel(adornId);
+            if (!selection.empty()) {
+                label += L" (";
+                label += selection;
+                label += L")";
+            }
+        }
+    }
+    return StripMenuMnemonics(WideToUtf8(label));
+}
+
+bool
+IsNodeChecked(const Node &node, const IMenuState &state)
+{
+    if (node.checkKind == CheckKind::Toggle) {
+        return state.IsChecked(node.id);
+    }
+    if (node.checkKind == CheckKind::Radio) {
+        return state.GetRadioSelection(node.radioGroup) == node.id;
+    }
+    return false;
+}
+
+bool
+RenderContextMenuNodes(std::span<const Node> nodes, const IMenuState &state, FractalCommand &command)
+{
+    for (const Node &node : nodes) {
+        ImGui::PushID(&node);
+
+        bool selected = false;
+        switch (node.kind) {
+            case Kind::Separator:
+                ImGui::Separator();
+                break;
+
+            case Kind::Popup: {
+                const std::string label = MenuLabel(node, state);
+                if (ImGui::BeginMenu(label.c_str(), state.IsEnabled(node.enableRule))) {
+                    selected = RenderContextMenuNodes(node.kids, state, command);
+                    ImGui::EndMenu();
+                }
+                break;
+            }
+
+            case Kind::Item: {
+                const std::string label = MenuLabel(node, state);
+                const bool enabled = state.IsEnabled(node.enableRule);
+                const bool checked = IsNodeChecked(node, state);
+                if (ImGui::MenuItem(label.c_str(), nullptr, checked, enabled)) {
+                    command = CommandFromIdm(node.id);
+                    ImGui::CloseCurrentPopup();
+                    selected = true;
+                }
+                break;
+            }
+        }
+
+        ImGui::PopID();
+        if (selected) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
-ImGuiOverlay::ImGuiOverlay(Display *display, Window window, LinuxClipboard *clipboard)
-    : display_(display), window_(window), clipboard_(clipboard)
+ImGuiOverlay::ImGuiOverlay(Display *display,
+                           Window window,
+                           LinuxClipboard *clipboard,
+                           const IMenuState *menuState,
+                           PortableCommandHandlers *commandHandlers)
+    : display_(display), window_(window), clipboard_(clipboard), menuState_(menuState),
+      commandHandlers_(commandHandlers)
 {
-    if (!display_ || !window_) {
-        throw FractalSharkSeriousException("ImGuiOverlay requires a valid X display and window");
+    if (!display_ || !window_ || !menuState_ || !commandHandlers_) {
+        throw FractalSharkSeriousException(
+            "ImGuiOverlay requires a valid X display, window, menu state, and command handlers");
     }
     IMGUI_CHECKVERSION();
     ctx_ = ImGui::CreateContext();
@@ -153,7 +296,16 @@ ImGuiOverlay::ProcessEvent(const XEvent &ev)
         default:
             break;
     }
-    return captured;
+    switch (ev.type) {
+        case ButtonPress:
+        case ButtonRelease:
+        case MotionNotify:
+        case KeyPress:
+        case KeyRelease:
+            return captured || contextMenuRequested_ || contextMenuOpen_;
+        default:
+            return captured;
+    }
 }
 
 void
@@ -162,6 +314,15 @@ ImGuiOverlay::RequestInfoModal(const char *title, const char *body)
     infoModalRequested_ = true;
     infoModalTitle_ = title ? title : "";
     infoModalBody_ = body ? body : "";
+}
+
+void
+ImGuiOverlay::RequestContextMenu(int x, int y)
+{
+    contextMenuRequested_ = true;
+    contextMenuApplyPosition_ = true;
+    contextMenuX_ = x;
+    contextMenuY_ = y;
 }
 
 void
@@ -705,6 +866,35 @@ pickDone:
         }
     }
 
+    FractalCommand contextCommand = FractalCommand::None;
+    if (contextMenuRequested_) {
+        ImGui::OpenPopup("FractalSharkContextMenu");
+        contextMenuRequested_ = false;
+        contextMenuOpen_ = true;
+    }
+
+    if (contextMenuOpen_) {
+        if (contextMenuApplyPosition_) {
+            ImGui::SetNextWindowPos(ImVec2(float(contextMenuX_), float(contextMenuY_)),
+                                    ImGuiCond_Always);
+            contextMenuApplyPosition_ = false;
+        }
+        if (ImGui::BeginPopup("FractalSharkContextMenu")) {
+            (void)RenderContextMenuNodes(GetMenuNodes(), *menuState_, contextCommand);
+            ImGui::EndPopup();
+        } else {
+            contextMenuOpen_ = false;
+        }
+    }
+
+    if (contextCommand != FractalCommand::None) {
+        contextMenuOpen_ = false;
+        if (!commandHandlers_) {
+            throw FractalSharkSeriousException("Context-menu command handlers are not initialized");
+        }
+        commandHandlers_->ExecuteCommand(contextCommand);
+    }
+
     if (dragRectActive_) {
         ImDrawList *fg = ImGui::GetForegroundDrawList();
         if (fg) {
@@ -728,9 +918,9 @@ ImGuiOverlay::WantsTick() const
     }
     // The X event loop otherwise sleeps until render-pool work arrives.  Keep presentation ticking
     // while an overlay can animate, consume input, or transition a queued request into an open popup.
-    return inputPending_ || dragRectActive_ || infoModalRequested_ || infoModalOpen_ ||
-           fileDlgRequested_ || fileDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ ||
-           locDlgOpen_;
+    return inputPending_ || dragRectActive_ || contextMenuRequested_ || contextMenuOpen_ ||
+           infoModalRequested_ || infoModalOpen_ || fileDlgRequested_ || fileDlgOpen_ ||
+           pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ || locDlgOpen_;
 }
 
 } // namespace FractalShark::Linux

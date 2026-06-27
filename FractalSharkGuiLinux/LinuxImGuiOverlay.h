@@ -33,13 +33,22 @@ struct ImGuiContext;
 #include <string>
 #include <vector>
 
-namespace FractalShark::Linux {
+namespace FractalShark {
+
+struct IMenuState;
+class PortableCommandHandlers;
+
+namespace Linux {
 
 struct LinuxClipboard;
 
 class ImGuiOverlay {
 public:
-    ImGuiOverlay(Display *display, Window window, LinuxClipboard *clipboard);
+    ImGuiOverlay(Display *display,
+                 Window window,
+                 LinuxClipboard *clipboard,
+                 const FractalShark::IMenuState *menuState,
+                 FractalShark::PortableCommandHandlers *commandHandlers);
     ~ImGuiOverlay();
 
     ImGuiOverlay(const ImGuiOverlay &) = delete;
@@ -61,6 +70,10 @@ public:
     // "Close" button; this is the Linux equivalent of MessageBox(MB_OK).
     // If a previous modal is still open, the new request supersedes it.
     void RequestInfoModal(const char *title, const char *body);
+
+    // Open the context menu at the given client coordinate on the next
+    // RenderFrame() call.  Commands are dispatched through PortableCommandHandlers.
+    void RequestContextMenu(int x, int y);
 
     enum class FileDialogMode {
         Open,
@@ -127,11 +140,19 @@ private:
     Display *display_;
     Window window_;
     LinuxClipboard *clipboard_;
+    const FractalShark::IMenuState *menuState_;
+    FractalShark::PortableCommandHandlers *commandHandlers_;
     ImGuiContext *ctx_ = nullptr;
     bool xlibBackendInited_ = false;
     bool oglBackendInited_ = false;
 
     bool inputPending_ = false;
+
+    bool contextMenuRequested_ = false;
+    bool contextMenuOpen_ = false;
+    bool contextMenuApplyPosition_ = false;
+    int contextMenuX_ = 0;
+    int contextMenuY_ = 0;
 
     bool infoModalRequested_ = false;
     bool infoModalOpen_ = false;
@@ -178,4 +199,5 @@ private:
     int dragY1_ = 0;
 };
 
-} // namespace FractalShark::Linux
+} // namespace Linux
+} // namespace FractalShark

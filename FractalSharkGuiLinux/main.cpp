@@ -11,7 +11,6 @@
 #include "LinuxClipboard.h"
 #include "LinuxImGuiOverlay.h"
 #include "LinuxSplashWindow.h"
-#include "LinuxX11ContextMenu.h"
 #include "MenuState.h"
 #include "PortableCommandHandlers.h"
 // MenuState.h pulls in MenuTree.h which #undefs the X11 `None` and
@@ -261,7 +260,6 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     // cached frame buffer happens before GL goes away.
     std::unique_ptr<OpenGlContext> glContext;
     std::optional<FractalShark::Linux::ImGuiOverlay> overlay;
-    std::optional<FractalShark::Linux::X11ContextMenu> contextMenu;
 
     LinuxMainWindow();
     ~LinuxMainWindow() override;
@@ -273,7 +271,6 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     void HandleEvent(const XEvent &ev);
     void HandleKeyPress(const XKeyEvent &ev);
     PresentationTickResult PresentRenderTick();
-    void RepaintAfterNativePopupUnmap();
     int GetPresentationPollTimeoutMs(bool needsTick);
     void RunFeatureAutoZoomSynchronously(int mouseX, int mouseY);
     void BeginDragZoom(const XButtonEvent &btn);
@@ -457,9 +454,7 @@ LinuxMainWindow::LinuxMainWindow()
     // requires GL to be current, which OpenGlContext::ctor already
     // ensured.
     menuState.emplace(*fractal);
-    overlay.emplace(display, window, &*clipboard);
-    contextMenu.emplace(
-        display, screen, window, &*menuState, this, [this] { RepaintAfterNativePopupUnmap(); });
+    overlay.emplace(display, window, &*clipboard, &*menuState, this);
     overlay->Init();
     constructionGuard.release();
 }
@@ -473,7 +468,6 @@ LinuxMainWindow::Destroy() noexcept
 
     // Destroy in reverse order of creation: overlay first (it owns ImGui
     // backends that need GL current), then GL context, then Fractal.
-    contextMenu.reset();
     overlay.reset();
     menuState.reset();
     glContext.reset();
@@ -517,12 +511,6 @@ LinuxMainWindow::Destroy() noexcept
 void
 LinuxMainWindow::HandleEvent(const XEvent &ev)
 {
-    // Native menus own root-level X11 windows and grabs while open.  Route
-    // their events before ImGui or the fractal window sees them.
-    if (contextMenu && contextMenu->ProcessEvent(ev)) {
-        return;
-    }
-
     // Forward to the ImGui overlay first.  Overlay processes the event
     // synchronously on this thread; if ImGui is capturing the input we
     // drop the event rather than dispatching it to the fractal.
@@ -547,8 +535,8 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
             // Kick off a single render on the first Expose.  The Fractal's
             // RenderThreadPool computes off-thread; the GL consumer (also a
             // pool thread) presents via glXSwapBuffers when the frame is ready.
-            // Later exposes still matter: native X11 popup menus uncover the
-            // GL window and require the cached frame to be presented again.
+            // Later exposes still matter: window manager expose events require
+            // the cached frame to be presented again.
             exposeRepaintPending = true;
             if (!firstExposeSeen && fractal) {
                 firstExposeSeen = true;
@@ -595,12 +583,12 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                     break;
                 }
                 case Button3:
-                    // Keep client coords for Center/Zoom commands, but open the
-                    // native popup at root coords so it may leave the app window.
+                    // Keep client coords for Center/Zoom commands, and anchor
+                    // the ImGui menu at that same client point.
                     contextMenuX = btn.x;
                     contextMenuY = btn.y;
-                    RequireUiState(contextMenu.has_value(), "Opening the context menu");
-                    contextMenu->Open(btn.x_root, btn.y_root);
+                    RequireUiState(overlay.has_value(), "Opening the context menu");
+                    overlay->RequestContextMenu(btn.x, btn.y);
                     break;
                 case Button4: {
                     // Wheel forward → zoom in toward cursor.  Mirrors
@@ -713,13 +701,6 @@ LinuxMainWindow::RunEventLoop()
                                                std::generic_category().message(errorCode));
         }
     }
-}
-
-void
-LinuxMainWindow::RepaintAfterNativePopupUnmap()
-{
-    exposeRepaintPending = true;
-    (void)PresentRenderTick();
 }
 
 PresentationTickResult

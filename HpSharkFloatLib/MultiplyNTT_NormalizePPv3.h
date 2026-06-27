@@ -1,7 +1,6 @@
 ﻿// ---- Templated N-channel DigitTransfer ----
 
-template <int NumChannels>
-struct DigitTransfer {
+template <int NumChannels> struct DigitTransfer {
     uint8_t g; // NumChannels bits
     uint8_t p; // NumChannels bits
 };
@@ -10,9 +9,8 @@ template <int NumChannels>
 __device__ constexpr DigitTransfer<NumChannels>
 DigitTransfer_identity()
 {
-    return DigitTransfer<NumChannels>{
-        static_cast<uint8_t>(0u),
-        static_cast<uint8_t>((1u << NumChannels) - 1u)};
+    return DigitTransfer<NumChannels>{static_cast<uint8_t>(0u),
+                                      static_cast<uint8_t>((1u << NumChannels) - 1u)};
 }
 
 template <int NumChannels>
@@ -20,18 +18,16 @@ __device__ inline DigitTransfer<NumChannels>
 make_digit_transfer(uint8_t gMask, uint8_t pMask)
 {
     constexpr uint8_t mask = static_cast<uint8_t>((1u << NumChannels) - 1u);
-    return DigitTransfer<NumChannels>{
-        static_cast<uint8_t>(gMask & mask),
-        static_cast<uint8_t>(pMask & mask)};
+    return DigitTransfer<NumChannels>{static_cast<uint8_t>(gMask & mask),
+                                      static_cast<uint8_t>(pMask & mask)};
 }
 
 template <int NumChannels>
 __device__ inline DigitTransfer<NumChannels>
 compose(const DigitTransfer<NumChannels> &a, const DigitTransfer<NumChannels> &b)
 {
-    return DigitTransfer<NumChannels>{
-        static_cast<uint8_t>(b.g | (b.p & a.g)),
-        static_cast<uint8_t>(b.p & a.p)};
+    return DigitTransfer<NumChannels>{static_cast<uint8_t>(b.g | (b.p & a.g)),
+                                      static_cast<uint8_t>(b.p & a.p)};
 }
 
 template <int NumChannels>
@@ -220,9 +216,8 @@ shfl_up_dt(unsigned mask, DigitTransfer<NumChannels> val, int offset)
     // Pack g/p into a single uint32 for shuffle
     uint32_t packed = (static_cast<uint32_t>(val.g) << 8) | static_cast<uint32_t>(val.p);
     packed = __shfl_up_sync(mask, packed, offset);
-    return DigitTransfer<NumChannels>{
-        static_cast<uint8_t>(packed >> 8),
-        static_cast<uint8_t>(packed & 0xFF)};
+    return DigitTransfer<NumChannels>{static_cast<uint8_t>(packed >> 8),
+                                      static_cast<uint8_t>(packed & 0xFF)};
 }
 
 template <int NumChannels>
@@ -231,24 +226,24 @@ shfl_down_dt(unsigned mask, DigitTransfer<NumChannels> val, int offset)
 {
     uint32_t packed = (static_cast<uint32_t>(val.g) << 8) | static_cast<uint32_t>(val.p);
     packed = __shfl_down_sync(mask, packed, offset);
-    return DigitTransfer<NumChannels>{
-        static_cast<uint8_t>(packed >> 8),
-        static_cast<uint8_t>(packed & 0xFF)};
+    return DigitTransfer<NumChannels>{static_cast<uint8_t>(packed >> 8),
+                                      static_cast<uint8_t>(packed & 0xFF)};
 }
 
 template <class SharkFloatParams, int NumChannels>
 static __device__ inline void
 ParallelPrefixNormalize_DLB(uint64_t *SharkRestrict shared_data,
-                             cooperative_groups::grid_group &grid,
-                             cooperative_groups::thread_block &block,
-                             uint64_t *SharkRestrict cur,
-                             const uint32_t Ddigits,
-                             uint64_t *SharkRestrict *results,
-                             DigitTransfer<NumChannels> *SharkRestrict digitXfer,
-                             uint32_t *SharkRestrict descBuf,
-                             uint32_t *SharkRestrict carryInMask)
+                            cooperative_groups::grid_group &grid,
+                            cooperative_groups::thread_block &block,
+                            uint64_t *SharkRestrict cur,
+                            const uint32_t Ddigits,
+                            uint64_t *SharkRestrict *results,
+                            DigitTransfer<NumChannels> *SharkRestrict digitXfer,
+                            uint32_t *SharkRestrict descBuf,
+                            uint32_t *SharkRestrict carryInMask)
 {
-    if (Ddigits == 0u) return;
+    if (Ddigits == 0u)
+        return;
 
     constexpr int warpSz = 32;
     const int totalThreads = static_cast<int>(grid.size());
@@ -276,7 +271,7 @@ ParallelPrefixNormalize_DLB(uint64_t *SharkRestrict shared_data,
     };
 
     auto store_desc = [](uint32_t *addr, uint32_t v) {
-        asm volatile("membar.gl;\n\tst.global.u32 [%0], %1;\n\t" :: "l"(addr), "r"(v) : "memory");
+        asm volatile("membar.gl;\n\tst.global.u32 [%0], %1;\n\t" ::"l"(addr), "r"(v) : "memory");
     };
     auto load_desc = [](const uint32_t *addr) -> uint32_t {
         uint32_t v;
@@ -363,7 +358,8 @@ ParallelPrefixNormalize_DLB(uint64_t *SharkRestrict shared_data,
 
 #pragma unroll
             for (int offset = 1; offset < 32; offset <<= 1) {
-                if (offset >= numWarps) break;
+                if (offset >= numWarps)
+                    break;
                 DigitTransfer<NumChannels> y = shfl_up_dt<NumChannels>(warpMask, x, offset);
                 if (lane >= offset) {
                     x = compose<NumChannels>(y, x);
@@ -372,9 +368,10 @@ ParallelPrefixNormalize_DLB(uint64_t *SharkRestrict shared_data,
 
             // Exclusive prefix for each warp
             DigitTransfer<NumChannels> prev = shfl_up_dt<NumChannels>(warpMask, x, 1);
-            DigitTransfer<NumChannels> pref =
-                (lane == 0) ? DigitTransfer_identity<NumChannels>() : prev;
-            warpPref[lane] = pack_desc(FLAG_X, pref);
+            DigitTransfer<NumChannels> pref = (lane == 0) ? DigitTransfer_identity<NumChannels>() : prev;
+            if (lane < numWarps) {
+                warpPref[lane] = pack_desc(FLAG_X, pref);
+            }
 
             // Full partition aggregate
             if (lane == numWarps - 1) {
@@ -404,7 +401,8 @@ ParallelPrefixNormalize_DLB(uint64_t *SharkRestrict shared_data,
                     int spin = 0;
                     do {
                         w = load_desc(&descBuf[k]);
-                        if (unpack_flag(w) != FLAG_X) break;
+                        if (unpack_flag(w) != FLAG_X)
+                            break;
                         if (++spin > 64) {
                             __nanosleep(64);
                             spin = 0;
@@ -431,7 +429,7 @@ ParallelPrefixNormalize_DLB(uint64_t *SharkRestrict shared_data,
                         DigitTransfer<NumChannels> partner =
                             shfl_down_dt<NumChannels>(warpMask, my, offset);
                         if ((lane + offset) < 32) {
-                            my = compose<NumChannels>(my, partner);
+                            my = compose<NumChannels>(partner, my);
                         }
                     }
 
@@ -452,7 +450,7 @@ ParallelPrefixNormalize_DLB(uint64_t *SharkRestrict shared_data,
                         DigitTransfer<NumChannels> partner =
                             shfl_down_dt<NumChannels>(warpMask, my, offset);
                         if ((lane + offset) < 32) {
-                            my = compose<NumChannels>(my, partner);
+                            my = compose<NumChannels>(partner, my);
                         }
                     }
 

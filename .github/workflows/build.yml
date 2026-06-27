@@ -248,9 +248,17 @@ jobs:
           mkdir -p dist-linux
           test -x build-release/FractalSharkCli/FractalSharkCli
           test -x build-release/FractalSharkGuiLinux/FractalSharkGuiLinux
+          test -x build-release/HpSharkFloatTest/HpSharkFloatTest
+          test -x build-release/FractalSharkTest/FractalSharkTest
           cp build-release/FractalSharkCli/FractalSharkCli dist-linux/
           cp build-release/FractalSharkGuiLinux/FractalSharkGuiLinux dist-linux/
-          tar -czf FractalShark-Linux.tar.gz -C dist-linux FractalSharkCli FractalSharkGuiLinux
+          cp build-release/HpSharkFloatTest/HpSharkFloatTest dist-linux/
+          cp build-release/FractalSharkTest/FractalSharkTest dist-linux/
+          tar -czf FractalShark-Linux.tar.gz -C dist-linux \
+            FractalSharkCli \
+            FractalSharkGuiLinux \
+            HpSharkFloatTest \
+            FractalSharkTest
           tar -tzf FractalShark-Linux.tar.gz
 
       - name: Upload Linux build artifacts
@@ -556,6 +564,24 @@ jobs:
           $pdb = Get-ChildItem dist -Recurse -Filter FractalShark.pdb -File | Select-Object -First 1
           if (-not $pdb) { throw "FractalShark.pdb not found anywhere under dist" }
 
+          $cliExe = Get-ChildItem dist -Recurse -Filter FractalSharkCli.exe -File | Select-Object -First 1
+          if (-not $cliExe) { throw "FractalSharkCli.exe not found anywhere under dist" }
+
+          $cliPdb = Get-ChildItem dist -Recurse -Filter FractalSharkCli.pdb -File | Select-Object -First 1
+          if (-not $cliPdb) { throw "FractalSharkCli.pdb not found anywhere under dist" }
+
+          $hpTestExe = Get-ChildItem dist -Recurse -Filter HpSharkFloatTest.exe -File | Select-Object -First 1
+          if (-not $hpTestExe) { throw "HpSharkFloatTest.exe not found anywhere under dist" }
+
+          $hpTestPdb = Get-ChildItem dist -Recurse -Filter HpSharkFloatTest.pdb -File | Select-Object -First 1
+          if (-not $hpTestPdb) { throw "HpSharkFloatTest.pdb not found anywhere under dist" }
+
+          $fractalTestExe = Get-ChildItem dist -Recurse -Filter FractalSharkTest.exe -File | Select-Object -First 1
+          if (-not $fractalTestExe) { throw "FractalSharkTest.exe not found anywhere under dist" }
+
+          $fractalTestPdb = Get-ChildItem dist -Recurse -Filter FractalSharkTest.pdb -File | Select-Object -First 1
+          if (-not $fractalTestPdb) { throw "FractalSharkTest.pdb not found anywhere under dist" }
+
           $pdfSrc = Join-Path $PWD "Notes\FractalShark.pdf"
           if (-not (Test-Path $pdfSrc)) {
             throw "FractalShark.pdf missing at $pdfSrc (Normalize step failed?)"
@@ -563,6 +589,12 @@ jobs:
 
           Write-Host "Using EXE: $($exe.FullName)"
           Write-Host "Using PDB: $($pdb.FullName)"
+          Write-Host "Using CLI EXE: $($cliExe.FullName)"
+          Write-Host "Using CLI PDB: $($cliPdb.FullName)"
+          Write-Host "Using HpSharkFloatTest EXE: $($hpTestExe.FullName)"
+          Write-Host "Using HpSharkFloatTest PDB: $($hpTestPdb.FullName)"
+          Write-Host "Using FractalSharkTest EXE: $($fractalTestExe.FullName)"
+          Write-Host "Using FractalSharkTest PDB: $($fractalTestPdb.FullName)"
           Write-Host "Using PDF: $pdfSrc"
 
           # --- stage outputs ---
@@ -570,13 +602,30 @@ jobs:
 
           Copy-Item $exe.FullName "out\FractalShark.exe" -Force
           Copy-Item $pdb.FullName "out\FractalShark.pdb" -Force
+          Copy-Item $cliExe.FullName "out\FractalSharkCli.exe" -Force
+          Copy-Item $cliPdb.FullName "out\FractalSharkCli.pdb" -Force
+          Copy-Item $hpTestExe.FullName "out\HpSharkFloatTest.exe" -Force
+          Copy-Item $hpTestPdb.FullName "out\HpSharkFloatTest.pdb" -Force
+          Copy-Item $fractalTestExe.FullName "out\FractalSharkTest.exe" -Force
+          Copy-Item $fractalTestPdb.FullName "out\FractalSharkTest.pdb" -Force
           Copy-Item $pdfSrc       "out\FractalShark.pdf"        -Force
 
           $zip = "out\FractalShark-$env:GITHUB_REF_NAME.zip"
+          $archiveFiles = @(
+            "out\FractalShark.exe",
+            "out\FractalShark.pdb",
+            "out\FractalSharkCli.exe",
+            "out\FractalSharkCli.pdb",
+            "out\HpSharkFloatTest.exe",
+            "out\HpSharkFloatTest.pdb",
+            "out\FractalSharkTest.exe",
+            "out\FractalSharkTest.pdb",
+            "out\FractalShark.pdf"
+          )
 
-          # --- create final release zip (exe + pdb + notes) ---
+          # --- create final release zip (binaries + symbols + notes) ---
           Compress-Archive `
-            -Path "out\FractalShark.exe","out\FractalShark.pdb","out\FractalShark.pdf" `
+            -Path $archiveFiles `
             -DestinationPath $zip `
             -Force
 

@@ -3736,7 +3736,7 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
     // radiusY ≈ 2 / zoom, zoom = 1.60610174675e+244240
     const char *radiusYStr = "1.24525e-244240";
     const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 30'000'000;
-    constexpr auto expectedPeriod = -1; // Unknown, expected between 26-28M
+    constexpr auto expectedPeriod = 22'680'804;
     const auto expectedResult = PeriodicityResult::PeriodFound;
 
     mpf_t mpfX;

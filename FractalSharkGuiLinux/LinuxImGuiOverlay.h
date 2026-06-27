@@ -136,6 +136,12 @@ private:
     bool SetFileDialogDirectory(const std::filesystem::path &path);
     void RefreshFileDialogEntries();
     std::optional<std::string> ResolveFileDialogSelection();
+    void RenderInfoModal();
+    void RenderFileDialog();
+    void RenderPickDialog();
+    void RenderEnterLocationDialog();
+    void RenderContextMenu();
+    void RenderDragRect();
 
     Display *display_;
     Window window_;

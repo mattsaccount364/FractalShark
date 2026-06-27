@@ -530,6 +530,21 @@ ImGuiOverlay::RenderFrame()
     ImGui_ImplXlib_NewFrame();
     ImGui::NewFrame();
 
+    RenderInfoModal();
+    RenderFileDialog();
+    RenderPickDialog();
+    RenderEnterLocationDialog();
+    RenderContextMenu();
+    RenderDragRect();
+
+    ImGui::Render();
+    ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+    inputPending_ = false;
+}
+
+void
+ImGuiOverlay::RenderInfoModal()
+{
     // Requests may arrive between frames.  Split requested/open state so OpenPopup is issued once,
     // while the event loop continues rendering until ImGui reports that the modal has closed.
     if (infoModalRequested_) {
@@ -570,7 +585,11 @@ ImGuiOverlay::RenderFrame()
             infoModalOpen_ = false;
         }
     }
+}
 
+void
+ImGuiOverlay::RenderFileDialog()
+{
     if (fileDlgRequested_) {
         ImGui::OpenPopup("FractalSharkFileDialog");
         fileDlgRequested_ = false;
@@ -715,7 +734,11 @@ ImGuiOverlay::RenderFrame()
             fileDlgCallback_ = nullptr;
         }
     }
+}
 
+void
+ImGuiOverlay::RenderPickDialog()
+{
     if (pickDlgRequested_) {
         ImGui::OpenPopup("FractalSharkPickDialog");
         pickDlgRequested_ = false;
@@ -794,7 +817,11 @@ ImGuiOverlay::RenderFrame()
         }
     }
 pickDone:
+}
 
+void
+ImGuiOverlay::RenderEnterLocationDialog()
+{
     if (locDlgRequested_) {
         ImGui::OpenPopup("FractalSharkLocationDialog");
         locDlgRequested_ = false;
@@ -865,7 +892,11 @@ pickDone:
             locDlgCallback_ = nullptr;
         }
     }
+}
 
+void
+ImGuiOverlay::RenderContextMenu()
+{
     FractalCommand contextCommand = FractalCommand::None;
     if (contextMenuRequested_) {
         ImGui::OpenPopup("FractalSharkContextMenu");
@@ -894,7 +925,11 @@ pickDone:
         }
         commandHandlers_->ExecuteCommand(contextCommand);
     }
+}
 
+void
+ImGuiOverlay::RenderDragRect()
+{
     if (dragRectActive_) {
         ImDrawList *fg = ImGui::GetForegroundDrawList();
         if (fg) {
@@ -904,10 +939,6 @@ pickDone:
             fg->AddRect(p0, p1, IM_COL32(0, 0, 0, 255), 0.0f, 0, 1.0f);
         }
     }
-
-    ImGui::Render();
-    ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
-    inputPending_ = false;
 }
 
 bool

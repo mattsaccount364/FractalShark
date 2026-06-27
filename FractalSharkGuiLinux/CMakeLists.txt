@@ -121,6 +121,7 @@ file(WRITE "${FRACTALSHARK_LINUX_EMBEDDED_SPLASH_SOURCE}" "${generated_splash_so
 add_executable(FractalSharkGuiLinux
     main.cpp
     LinuxClipboard.cpp
+    LinuxMainWindow.cpp
     LinuxSplashWindow.cpp
     LinuxXlibBackend.cpp
     LinuxImGuiOverlay.cpp

@@ -652,7 +652,7 @@ PortableCommandHandlers::OnSquareView()
 void
 PortableCommandHandlers::OnRepainting()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.ToggleRepainting(); });
+    GetFractal().EnqueueCommand([](Fractal &f) { f.ToggleRepainting(); }, false);
 }
 
 // ---- Navigate -------------------------------------------------------------

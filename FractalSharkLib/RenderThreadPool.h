@@ -118,6 +118,10 @@ struct RenderFrame {
     // True if this is the final (complete) frame for this sequence
     bool IsFinal;
 
+    // True when repainting is disabled and this frame should present the
+    // legacy X placeholder instead of fractal pixels.
+    bool IsRepaintPlaceholder;
+
     RenderPresentationMode PresentationMode;
     uint64_t PresentationGroup;
     std::optional<PresentedViewState> ViewState;
@@ -354,15 +358,25 @@ private:
     // past the given sequence number.
     void PushTombstone(uint64_t sequenceNumber);
 
+    // Push a final placeholder frame for a repaint-disabled render.
+    void PushRepaintPlaceholder(const RenderWorkItem &item);
+
+    enum class CalcRenderResult {
+        Rendered,
+        RepaintDisabled,
+        Failed,
+    };
+
     // Run CalcFractal under m_CalcFractalMutex with state save/restore.
     // If item.Command is set, executes it first, then re-snapshots state.
     // Swaps workerIters into m_CurIters, sets Ptz and dirty flags from the
     // work item, calls CalcFractal, then restores everything.  Exception-safe.
-    // Returns false if dimensions mismatch after command execution.
-    bool RunCalcFractal(Fractal *fractal,
-                        RenderWorkItem &item,
-                        RendererIndex rendererIdx,
-                        ItersMemoryContainer &workerIters);
+    // Returns RepaintDisabled when the render should present the legacy
+    // placeholder without clearing dirty state.
+    CalcRenderResult RunCalcFractal(Fractal *fractal,
+                                    RenderWorkItem &item,
+                                    RendererIndex rendererIdx,
+                                    ItersMemoryContainer &workerIters);
 
     // Wait for GPU compute to finish, producing progressive frames periodically.
     void WaitForGpuAndProduceProgressiveFrames(Fractal *fractal,

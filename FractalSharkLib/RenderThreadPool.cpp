@@ -719,6 +719,18 @@ RenderThreadPool::PushTombstone(uint64_t sequenceNumber)
 }
 
 void
+RenderThreadPool::PushRepaintPlaceholder(const RenderWorkItem &item)
+{
+    RenderFrame frame{};
+    frame.SequenceNumber = item.SequenceNumber;
+    frame.IsFinal = true;
+    frame.IsRepaintPlaceholder = true;
+    frame.PresentationMode = RenderPresentationMode::Immediate;
+
+    m_FrameQueue.Push(std::move(frame));
+}
+
+void
 RenderThreadPool::Shutdown()
 {
     if (m_ShutdownFlag.exchange(true)) {
@@ -836,7 +848,7 @@ RenderThreadPool::DequeueWorkItem(RenderWorkItem &item)
     return true;
 }
 
-bool
+RenderThreadPool::CalcRenderResult
 RenderThreadPool::RunCalcFractal(Fractal *fractal,
                                  RenderWorkItem &item,
                                  RendererIndex rendererIdx,
@@ -851,7 +863,7 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
     std::lock_guard lk(m_CalcFractalMutex);
 
     if (IsPacedAnimationCancelled(item)) {
-        return false;
+        return CalcRenderResult::Failed;
     }
 
     // Execute pre-render command if present.
@@ -879,10 +891,14 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
         workerIters = fractal->AcquireItersMemory();
     }
 
+    if (!fractal->GetRepaint()) {
+        return CalcRenderResult::RepaintDisabled;
+    }
+
     // Dimension/AA check (covers both command and non-command items).
     if (workerIters.m_OutputWidth != item.ScrnWidth || workerIters.m_OutputHeight != item.ScrnHeight ||
         workerIters.m_Antialiasing != item.GpuAntialiasing) {
-        return false;
+        return CalcRenderResult::Failed;
     }
 
     fractal->m_ChangedWindow = item.ChangedWindow;
@@ -892,7 +908,7 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
     // Ptz and ItersMemory travel through CalcContext — no swap needed.
     CalcContext ctx{item.Ptz, workerIters, item.ResetStopCalculatingBeforeRender};
     fractal->CalcFractal(rendererIdx, false, ctx);
-    return true;
+    return CalcRenderResult::Rendered;
 }
 
 void
@@ -1429,26 +1445,32 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
         try {
             fractal->m_BenchmarkData.m_Overall.StartTimer();
 
-            if (!RunCalcFractal(fractal, item, rendererIdx, workerIters)) {
-                // One-shot log for first tombstone from RunCalcFractal failure.
-                static bool loggedCalcFail = false;
-                if (!loggedCalcFail) {
-                    loggedCalcFail = true;
-                    char buf[256];
-                    snprintf(buf,
-                             sizeof(buf),
-                             "WorkerLoop: RunCalcFractal returned false, seq=%zu, "
-                             "itersWH=%zux%zu, scrnWH=%zux%zu, aa=%u",
-                             item.SequenceNumber,
-                             workerIters.m_OutputWidth,
-                             workerIters.m_OutputHeight,
-                             item.ScrnWidth,
-                             item.ScrnHeight,
-                             item.GpuAntialiasing);
-                    GlLog(buf);
+            const CalcRenderResult calcResult = RunCalcFractal(fractal, item, rendererIdx, workerIters);
+            if (calcResult != CalcRenderResult::Rendered) {
+                if (calcResult == CalcRenderResult::RepaintDisabled) {
+                    PushRepaintPlaceholder(item);
+                    finalFramePushed = true;
+                } else {
+                    // One-shot log for first tombstone from RunCalcFractal failure.
+                    static bool loggedCalcFail = false;
+                    if (!loggedCalcFail) {
+                        loggedCalcFail = true;
+                        char buf[256];
+                        snprintf(buf,
+                                 sizeof(buf),
+                                 "WorkerLoop: RunCalcFractal returned false, seq=%zu, "
+                                 "itersWH=%zux%zu, scrnWH=%zux%zu, aa=%u",
+                                 item.SequenceNumber,
+                                 workerIters.m_OutputWidth,
+                                 workerIters.m_OutputHeight,
+                                 item.ScrnWidth,
+                                 item.ScrnHeight,
+                                 item.GpuAntialiasing);
+                        GlLog(buf);
+                    }
+                    PushTombstone(item.SequenceNumber);
+                    finalFramePushed = true;
                 }
-                PushTombstone(item.SequenceNumber);
-                finalFramePushed = true;
             } else {
                 if (fractal->GetStopCalculating() &&
                     item.PresentationMode == RenderPresentationMode::PacedAnimation) {
@@ -1585,6 +1607,7 @@ RenderThreadPool::GlConsumerLoop()
     GLuint lastTex = 0;
     size_t lastFrameWidth = 0;
     size_t lastFrameHeight = 0;
+    bool lastFrameWasRepaintPlaceholder = false;
     const bool isSoftwareRenderer = glContext->IsSoftwareRenderer();
 
     while (!m_ShutdownFlag.load()) {
@@ -1604,6 +1627,9 @@ RenderThreadPool::GlConsumerLoop()
                 m_Fractal->DrawAllPerturbationResults(true);
                 DrawDragRectOverlay(lastFrameHeight);
                 glContext->SwapBuffers();
+            } else if (overlayDirty && lastFrameWasRepaintPlaceholder) {
+                glContext->DrawGlBox(false);
+                glContext->SwapBuffers();
             }
             continue;
         }
@@ -1613,6 +1639,9 @@ RenderThreadPool::GlConsumerLoop()
                 RedrawLastTexture(*glContext, lastTex, lastFrameWidth, lastFrameHeight);
                 m_Fractal->DrawAllPerturbationResults(true);
                 DrawDragRectOverlay(lastFrameHeight);
+                glContext->SwapBuffers();
+            } else if (overlayDirty && lastFrameWasRepaintPlaceholder) {
+                glContext->DrawGlBox(false);
                 glContext->SwapBuffers();
             }
 
@@ -1626,6 +1655,22 @@ RenderThreadPool::GlConsumerLoop()
 
         RenderFrame frame;
         if (!m_FrameQueue.TryPopNextInOrder(nextExpectedSeqNum, frame)) {
+            continue;
+        }
+
+        if (frame.IsRepaintPlaceholder) {
+            if (lastTex != 0) {
+                glDeleteTextures(1, &lastTex);
+                lastTex = 0;
+            }
+            lastFrameWidth = 0;
+            lastFrameHeight = 0;
+            lastFrameWasRepaintPlaceholder = true;
+            glContext->DrawGlBox(false);
+            glContext->SwapBuffers();
+            if (frame.IsFinal) {
+                nextExpectedSeqNum++;
+            }
             continue;
         }
 
@@ -1643,6 +1688,7 @@ RenderThreadPool::GlConsumerLoop()
 
         lastFrameWidth = frame.OutputWidth;
         lastFrameHeight = frame.OutputHeight;
+        lastFrameWasRepaintPlaceholder = false;
 
         if (frame.IsFinal) {
             m_Fractal->DrawAllPerturbationResults(true);
@@ -1698,6 +1744,20 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
         RenderFrame frame;
         if (!m_FrameQueue.TryPopNextInOrder(m_HostExpectedSeqNum, frame)) {
             break;
+        }
+
+        if (frame.IsRepaintPlaceholder) {
+            if (m_HostLastFrame.ColorData) {
+                ReleaseFrameBuffer(std::move(m_HostLastFrame.ColorData),
+                                   m_HostLastFrame.BufferPixelCount);
+            }
+            m_HostLastFrame = std::move(frame);
+            glContext.DrawGlBox(false);
+            rendered = true;
+            if (m_HostLastFrame.IsFinal) {
+                ++m_HostExpectedSeqNum;
+            }
+            return true;
         }
 
         const bool tombstone = !frame.ColorData || frame.OutputWidth == 0 || frame.OutputHeight == 0;
@@ -1779,7 +1839,14 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
 bool
 RenderThreadPool::RepresentLastFrame(OpenGlContext &glContext)
 {
-    if (!m_HostOwnedGlPresentation || !m_HostLastFrame.ColorData) {
+    if (!m_HostOwnedGlPresentation) {
+        return false;
+    }
+    if (m_HostLastFrame.IsRepaintPlaceholder) {
+        glContext.DrawGlBox(false);
+        return true;
+    }
+    if (!m_HostLastFrame.ColorData) {
         return false;
     }
     RenderFrameToGL(glContext, m_HostLastFrame);
@@ -1888,6 +1955,7 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
     frame.OutputHeight = outputHeight;
     frame.IsProgressive = !isFinal;
     frame.IsFinal = isFinal;
+    frame.IsRepaintPlaceholder = false;
     frame.PresentationMode = item.PresentationMode;
     frame.PresentationGroup = item.PresentationGroup;
     frame.ViewState = PresentedViewState{item.Ptz, item.NumIterations};

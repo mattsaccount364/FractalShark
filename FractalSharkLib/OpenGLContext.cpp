@@ -41,9 +41,9 @@ GlLog(const char *msg)
     std::cerr << msg << std::endl;
 }
 
-OpenGlContext::OpenGlContext(void *nativeWindow) :
-    m_NativeWindow(nativeWindow),
-    m_NativeContext(std::make_unique<Environment::NativeOpenGLContext>(nativeWindow))
+OpenGlContext::OpenGlContext(void *nativeWindow)
+    : m_NativeWindow(nativeWindow),
+      m_NativeContext(std::make_unique<Environment::NativeOpenGLContext>(nativeWindow))
 {
     if (!m_NativeContext || !m_NativeContext->IsValid())
         return;
@@ -139,7 +139,7 @@ OpenGlContext::GetMaxTextureSize() const
 }
 
 void
-OpenGlContext::DrawGlBox()
+OpenGlContext::DrawGlBox(bool swapBuffers)
 {
     if (!MakeCurrent())
         return;
@@ -166,25 +166,9 @@ OpenGlContext::DrawGlBox()
     glEnd();
 
     glFlush();
-    SwapBuffers();
-}
-
-void
-OpenGlContext::SetRepaint(bool repaint)
-{
-    m_Repainting = repaint;
-}
-
-bool
-OpenGlContext::GetRepaint() const
-{
-    return m_Repainting;
-}
-
-void
-OpenGlContext::ToggleRepaint()
-{
-    m_Repainting = !m_Repainting;
+    if (swapBuffers) {
+        SwapBuffers();
+    }
 }
 
 void

@@ -18,7 +18,6 @@ struct OpenGlContext {
     std::unique_ptr<Environment::NativeOpenGLContext> m_NativeContext;
     bool m_Valid{};
     bool m_IsSoftwareRenderer{};
-    bool m_Repainting{true};
     GLint m_MaxTextureSize{};
     Environment::ScreenRect m_CachedRect{};
 
@@ -35,9 +34,6 @@ public:
     static bool IsKnownSoftwareRendererName(std::string_view rendererName);
     bool IsSoftwareRenderer() const;
     GLint GetMaxTextureSize() const;
-    void DrawGlBox();
-    void SetRepaint(bool repaint);
-    bool GetRepaint() const;
-    void ToggleRepaint();
+    void DrawGlBox(bool swapBuffers = true);
     void DrawFractalShark(void *nativeWindow);
 };

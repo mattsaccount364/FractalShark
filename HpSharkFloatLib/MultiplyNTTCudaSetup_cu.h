@@ -1,4 +1,4 @@
-﻿#include "MultiplyNTTCudaSetup.h"
+#include "MultiplyNTTCudaSetup.h"
 
 #include <algorithm>
 #include <array>
@@ -280,8 +280,8 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
         throw FractalSharkSeriousException(oss.str());
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
-                << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -357,8 +357,8 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
             &outT.stage_omegas_inv, &stage_omegas_inv_ptr, sizeof(uint64_t *), cudaMemcpyHostToDevice);
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
-                << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -371,8 +371,8 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
         err = cudaMalloc(&psi_pows_ptr, N_bytes);
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMalloc(&psi_pows_ptr, N_bytes) failed: " << cudaGetErrorString(err) << " (code "
-                << static_cast<int>(err) << ")";
+            oss << "cudaMalloc(&psi_pows_ptr, N_bytes) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
         err = cudaMemcpy(psi_pows_ptr, inT.psi_pows, N_bytes, cudaMemcpyHostToDevice);
@@ -476,8 +476,8 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
                          cudaMemcpyHostToDevice);
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
-                << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
 
@@ -510,8 +510,8 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
                          cudaMemcpyHostToDevice);
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
-                << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -526,8 +526,8 @@ CopyRootsToCuda(RootTables &outT, const RootTables &inT)
         throw FractalSharkSeriousException(oss.str());
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
-                << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -577,8 +577,8 @@ DestroyRoots(bool cuda, RootTables &roots)
         err = cudaFree(localRoots.stage_omegas);
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaFree(localRoots.stage_omegas) failed: " << cudaGetErrorString(err) << " (code "
-                << static_cast<int>(err) << ")";
+            oss << "cudaFree(localRoots.stage_omegas) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
         err = cudaFree(localRoots.stage_omegas_inv);
@@ -591,15 +591,15 @@ DestroyRoots(bool cuda, RootTables &roots)
         err = cudaFree(localRoots.psi_pows);
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaFree(localRoots.psi_pows) failed: " << cudaGetErrorString(err) << " (code "
-                << static_cast<int>(err) << ")";
+            oss << "cudaFree(localRoots.psi_pows) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
         err = cudaFree(localRoots.psi_inv_pows);
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaFree(localRoots.psi_inv_pows) failed: " << cudaGetErrorString(err) << " (code "
-                << static_cast<int>(err) << ")";
+            oss << "cudaFree(localRoots.psi_inv_pows) failed: " << cudaGetErrorString(err)
+                << " (code " << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
         err = cudaFree(localRoots.stage_twiddles_fwd);

@@ -696,9 +696,9 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
         return false;
     }
 
-    std::cout << "Resuming NR refinement: period=" << ckpt.period << " prec=" << ckpt.coord_prec
-              << " bits"
-              << " iter=" << ckpt.iteration << std::endl;
+    std::cout << "Resuming NR refinement: period=" << ckpt.period
+              << " prec(bits)=" << ckpt.coord_prec << " iter=" << ckpt.iteration
+              << std::endl;
 
     // Create a synthetic FeatureSummary with the candidate from the checkpoint
     HighPrecision radius{ckpt.sqrRadius};

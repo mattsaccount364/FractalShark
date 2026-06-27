@@ -174,7 +174,8 @@ PromptIntWithTimeout(const std::string &promptText,
 
     // Timeout case: only possible if we never went waitForever
     if (!pressedEnter && !waitForever && std::chrono::steady_clock::now() >= deadline) {
-        std::cout << "\n(no input in " << timeoutSec << "s, defaulting to " << defaultValue << ")\n";
+        std::cout << "\n(no input in " << timeoutSec << "s, defaulting to " << defaultValue
+                  << ")\n";
         out.value = defaultValue;
         return out;
     }
@@ -194,7 +195,8 @@ PromptIntWithTimeout(const std::string &promptText,
         }
         out.value = v;
     } catch (...) {
-        std::cout << "(could not parse \"" << buf << "\", defaulting to " << defaultValue << ")\n";
+        std::cout << "(could not parse \"" << buf << "\", defaulting to " << defaultValue
+                  << ")\n";
         out.value = defaultValue;
     }
     return out;
@@ -574,7 +576,7 @@ main(int, char **)
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
         default:
-            std::cout << "Invalid mode " << rawMode << " (valid: 0..4). "
+            std::cout << "Invalid mode " << rawMode << " (valid range: 0..4). "
                       << "Exiting.\n";
             mode = BasicCorrectnessMode::Error;
             break;

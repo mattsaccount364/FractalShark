@@ -54,8 +54,8 @@ ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
                                                   0);
     if (err != cudaSuccess) {
         std::ostringstream oss;
-        oss << "cudaLaunchCooperativeKernel(AddKernel) failed: " << cudaGetErrorString(err) << " (code "
-            << static_cast<int>(err) << ")"
+        oss << "cudaLaunchCooperativeKernel(AddKernel) failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")"
             << " | blocks=" << newLaunchParams.NumBlocks
             << " threads=" << newLaunchParams.ThreadsPerBlock << " shmem=" << SharedMemSize;
         throw FractalSharkSeriousException(oss.str());
@@ -74,8 +74,8 @@ ComputeAddGpu(const HpShark::LaunchParams &launchParams, void *kernelArgs[])
     err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
         std::ostringstream oss;
-        oss << "cudaDeviceSynchronize() after AddKernel failed: " << cudaGetErrorString(err) << " (code "
-            << static_cast<int>(err) << ")";
+        oss << "cudaDeviceSynchronize() after AddKernel failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")";
         throw FractalSharkSeriousException(oss.str());
     }
 }
@@ -92,7 +92,8 @@ ComputeAddGpuTestLoop(const HpShark::LaunchParams &launchParams, void *kernelArg
     HpShark::LaunchParams newLaunchParams{launchParams};
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
-        launchConfig.compute((const void *)AddKernelTestLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
+        launchConfig.compute(
+            (const void *)AddKernelTestLoop<SharkFloatParams>, SharedMemSize, newLaunchParams);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)AddKernelTestLoop<SharkFloatParams>,

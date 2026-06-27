@@ -31,26 +31,28 @@ public:
             if constexpr (!isDblFlt) {
                 // Output the mantissa and exponent as doubles:
                 ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
-                   << " mantissaImag: " << static_cast<double>(this->mantissaImag) << " exp: 0";
+                   << " mantissaImag: " << static_cast<double>(this->mantissaImag)
+                   << " exp2: 0";
             } else {
                 ss << this->mantissaReal.template ToString<IntegerOutput>();
                 ss << " ";
                 ss << this->mantissaImag.template ToString<IntegerOutput>();
-                ss << " exp: 0";
+                ss << " exp2: 0";
             }
         } else {
             if constexpr (!isDblFlt) {
                 // Interpret the bits as integers and output the integers:
                 const double localMantissaReal = static_cast<double>(this->mantissaReal);
                 const double localMantissaImag = static_cast<double>(this->mantissaImag);
-                ss << "mantissaReal: 0x" << std::hex
-                   << *reinterpret_cast<const uint64_t *>(&localMantissaReal) << " mantissaImag: 0x"
-                   << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaImag) << " exp: 0x0";
+                ss << "mantissaRealBits(base16): 0x" << std::hex
+                   << *reinterpret_cast<const uint64_t *>(&localMantissaReal)
+                   << " mantissaImagBits(base16): 0x" << std::hex
+                   << *reinterpret_cast<const uint64_t *>(&localMantissaImag) << " exp2(base16): 0x0";
             } else {
                 ss << this->mantissaReal.template ToString<IntegerOutput>();
                 ss << " ";
                 ss << this->mantissaImag.template ToString<IntegerOutput>();
-                ss << " exp: 0x0";
+                ss << " exp2(base16): 0x0";
             }
         }
 

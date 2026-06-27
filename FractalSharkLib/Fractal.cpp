@@ -2934,7 +2934,7 @@ Fractal::MessageBoxCudaError(uint32_t result)
 {
     char error[256];
     sprintf(error,
-            "Error from cuda: %u.  Message: \"%s\"\n",
+            "Error from cuda: code %u.  Message: \"%s\"\n",
             result,
             GPURenderer::ConvertErrorToString(result));
     std::cerr << error << std::endl;

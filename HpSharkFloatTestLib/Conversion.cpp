@@ -1,4 +1,4 @@
-﻿#include "DbgHeap.h"
+#include "DbgHeap.h"
 #include "TestVerbose.h"
 
 // #include <cuda_runtime.h>
@@ -94,7 +94,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "\nHighPrecisionNumber representations:\n";
         std::cout << "  X: " << x_num->ToString() << "\n";
-        std::cout << "  X hex: " << x_num->ToHexString() << "\n";
+        std::cout << "  X hex(base16 digits, exponent): " << x_num->ToHexString() << "\n";
     }
 
     long e2 = 0;
@@ -228,14 +228,15 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "\nHex string conversion:\n";
-            std::cout << "  Hex string: " << hexStr << "\n";
+            std::cout << "  Hex string(base16 limbs, counts/exponent): " << hexStr << "\n";
         }
 
         mpf_t outX;
         Hex64StringToMpf_Exact(hexStr, outX);
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "  RoundTripX hex  : " << MpfToHex64StringInvertable(outX) << "\n";
+            std::cout << "  RoundTripX hex(base16 limbs, counts/exponent): "
+                      << MpfToHex64StringInvertable(outX) << "\n";
         }
 
         const bool ok_hex = compare_within_eps(mpf_x, outX, eps_full, "conversion/full");
@@ -263,8 +264,10 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
             compare_within_eps(mpf_x, mpf_x_normalized, eps_full, "conversion/normalize");
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "Original X hex: " << MpfToHex64StringInvertable(mpf_x) << "\n";
-            std::cout << "Normalized X hex: " << MpfToHex64StringInvertable(mpf_x_normalized) << "\n";
+            std::cout << "Original X hex(base16 limbs, counts/exponent): "
+                      << MpfToHex64StringInvertable(mpf_x) << "\n";
+            std::cout << "Normalized X hex(base16 limbs, counts/exponent): "
+                      << MpfToHex64StringInvertable(mpf_x_normalized) << "\n";
             std::cout << "Normalized str: "
                       << MpfToString<SharkFloatParams>(mpf_x_normalized,
                                                        HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
@@ -320,7 +323,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, const char *numberStr)
                   << MpfToString<SharkFloatParams>(mpf_x,
                                                    HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << "\n";
-        std::cout << "  X hex  : " << MpfToHex32String(mpf_x) << "\n";
+        std::cout << "  X hex(base16 limbs, exponent): " << MpfToHex32String(mpf_x) << "\n";
     }
 
     // ---------------- Test conversion ----------------
@@ -348,13 +351,14 @@ TestConvertNumber(
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Original input values:\n";
-        std::cout << "  numberStr: " << UintArrayToHexString(limbs.data(), limbs.size()) << " * 2^"
-                  << exponent << (isNegative ? " (negative)" : " (positive)") << "\n";
+        std::cout << "  numberStr: " << UintArrayToHexString(limbs.data(), limbs.size())
+                  << " * 2^exponent " << exponent << (isNegative ? " (negative)" : " (positive)")
+                  << "\n";
         std::cout << "  X (mpf): "
                   << MpfToString<SharkFloatParams>(mpf_x,
                                                    HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << "\n";
-        std::cout << "  X hex  : " << MpfToHex32String(mpf_x) << "\n";
+        std::cout << "  X hex(base16 limbs, exponent): " << MpfToHex32String(mpf_x) << "\n";
     }
 
     // ---------------- Test conversion ----------------

@@ -282,7 +282,10 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
 
     const size_t ndigits = static_cast<size_t>(p.coord_prec * 0.302) + 10;
 
-    f << "period: " << p.period << "\n"
+    f << "# Integer fields are decimal unless prefixed with 0x.\n"
+      << "# Fields named exp or exp2 are decimal exponents for powers of 2.\n"
+      << "# MPIR fields are written as decimal exponent plus decimal digits.\n"
+      << "period: " << p.period << "\n"
       << "coord_prec: " << p.coord_prec << "\n"
       << "scaleExp2: " << p.scaleExp2 << "\n"
       << "iteration: " << p.iteration << "\n";
@@ -513,6 +516,15 @@ struct InnerLoopCheckpointData {
 static bool
 ReadLabel(std::ifstream &f, const char *expected)
 {
+    for (;;) {
+        f >> std::ws;
+        if (f.peek() != '#')
+            break;
+
+        std::string comment;
+        std::getline(f, comment);
+    }
+
     std::string token;
     if (!(f >> token))
         return false;
@@ -936,8 +948,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
             coord_prec, scaleExp2_for_deriv_choice, coordExp2_max_abs, /*minPrec*/ 256);
     }
 
-    std::cout << "RefinePeriodicPoint: coord_prec=" << coord_prec << " bits, deriv_prec=" << deriv_prec
-              << " bits (scaleExp2=" << scaleExp2_for_deriv_choice
+    std::cout << "RefinePeriodicPoint: coord_prec(bits)=" << coord_prec
+              << ", deriv_prec(bits)=" << deriv_prec
+              << " (scaleExp2=" << scaleExp2_for_deriv_choice
               << ", coordExp2_max_abs=" << coordExp2_max_abs << ")\n";
 
     // ---------------- deriv temporaries ----------------
@@ -1108,8 +1121,8 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                  intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
                  numIterationsAtFind, completed,  z_coord.re,  z_coord.im,  dzdc_deriv.re,
                  dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState});
-            std::cout << "RefinePeriodicPoint: aborted at NR iter " << it << " innerIter " << completed
-                      << " (checkpoint saved)\n";
+            std::cout << "RefinePeriodicPoint: aborted at NR iter " << it
+                      << " innerIter " << completed << " (checkpoint saved)\n";
             break;
         }
 
@@ -1262,26 +1275,31 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
             0));
 
         // Print diagnostics between outer iterations.
-        std::cout << "  NR step " << it << " diag: rho2=" << rho2_hdr.getExp() << " "
-                  << rho2_hdr.getMantissa() << ", err=" << err_hdr.getExp() << " "
-                  << err_hdr.getMantissa() << ", step_norm=" << normStep_hdr.getExp() << " "
-                  << normStep_hdr.getMantissa() << ", z_mag2=" << diagState.z_mag2
-                  << ", |c-cand|2=" << diagState.c_cand_dist2.getExp() << " "
-                  << diagState.c_cand_dist2.getMantissa() << ", bits=" << diagState.normalized_bits
+        std::cout << "  NR step " << it << " diag: rho2_exp2=" << rho2_hdr.getExp()
+                  << " rho2_mantissa=" << rho2_hdr.getMantissa()
+                  << ", err_exp2=" << err_hdr.getExp()
+                  << " err_mantissa=" << err_hdr.getMantissa()
+                  << ", step_norm_exp2=" << normStep_hdr.getExp()
+                  << " step_norm_mantissa=" << normStep_hdr.getMantissa()
+                  << ", z_mag2=" << diagState.z_mag2
+                  << ", |c-cand|2_exp2=" << diagState.c_cand_dist2.getExp()
+                  << " |c-cand|2_mantissa=" << diagState.c_cand_dist2.getMantissa()
+                  << ", bits=" << diagState.normalized_bits
                   << ", est_remaining=" << diagState.est_remaining
                   << (wantHalley ? " (Halley)" : " (Newton)") << std::endl;
 
         const int e = (int)err_hdr.getExp();
         if (-e >= targetExp) {
             std::cout << "RefinePeriodicPoint: stop with err_hdr=" << err_hdr.ToString<false>()
-                      << " (e=" << e << " >= targetExp=" << targetExp << ")\n";
+                      << " (err_exp2=" << e << " >= targetExp2=" << targetExp << ")\n";
             break;
         }
 
         // Check for user abort (Ctrl held 3s sets flag, Escape cancels it).
         // Checkpoint is already saved, so progress is preserved for resume.
         if (AbortMonitor::GetStopCalculatingGlobal()) {
-            std::cout << "RefinePeriodicPoint: aborted at iter " << it << " (checkpoint saved)\n";
+            std::cout << "RefinePeriodicPoint: aborted at iter " << it
+                      << " (checkpoint saved)\n";
             break;
         }
     }
@@ -2228,11 +2246,13 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
                 return true;
             }
 
-            std::cout << "[LA->PT fallback] INFO: LA eval incomplete; trying PT at same period cap="
-                      << (uint64_t)ioPeriod << "\n";
+            std::cout
+                << "[LA->PT fallback] INFO: LA eval incomplete; trying PT at same period cap="
+                << (uint64_t)ioPeriod << "\n";
         } else {
-            std::cout << "[LA->PT fallback] INFO: LA reference invalid; trying PT at same period cap="
-                      << (uint64_t)ioPeriod << "\n";
+            std::cout
+                << "[LA->PT fallback] INFO: LA reference invalid; trying PT at same period cap="
+                << (uint64_t)ioPeriod << "\n";
         }
 
         // Fall back to PT
@@ -2564,7 +2584,8 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         // Optional absolute residual accept (if you already use this)
         if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{}) &&
             HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
-            std::cout << "Iter3 " << it << ": residual^2=" << HdrToString<false>(residual2) << "\n";
+            std::cout << "Iter3 " << it << ": residual^2=" << HdrToString<false>(residual2)
+                      << "\n";
             break;
         }
     }

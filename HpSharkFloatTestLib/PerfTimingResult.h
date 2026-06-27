@@ -21,8 +21,7 @@ PrintPerfSummaryTable(const char *viewName,
                       const std::vector<PerfTimingResult> &timings,
                       const char *hostPrefix = "Host")
 {
-    const std::string hostLabel =
-        std::string(hostPrefix) + (useMT ? "-MT(ms)" : "-ST(ms)");
+    const std::string hostLabel = std::string(hostPrefix) + (useMT ? "-MT(ms)" : "-ST(ms)");
     std::cout << "\n=== " << viewName << " PERF SUMMARY (tab-separated) ===" << std::endl;
 
     // Header

@@ -538,9 +538,9 @@ requires(PExtras != PerturbExtras::MaxCompression)
     // don't bother with m_MaxRadiusHigh
     metafile << "MaxIterationsPerPixel: " << this->GetMaxIterations() << std::endl;
     metafile << "Period: " << m_PeriodMaybeZero << std::endl;
-    metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
-    metafile << "IntermediateCompressionErrorExponent: " << m_IntermediateCompressionErrorExp
-             << std::endl;
+    metafile << "CompressionErrorExponent_exp2: " << m_CompressionErrorExp << std::endl;
+    metafile << "IntermediateCompressionErrorExponent_exp2: "
+             << m_IntermediateCompressionErrorExp << std::endl;
     metafile << "UncompressedIterationsInOrbit: " << GetCountOrbitEntries() << std::endl;
 
     if constexpr (Introspection::TestPExtras<PExtras>::value) {
@@ -1126,7 +1126,7 @@ template <typename IterType, class T, PerturbExtras PExtras>
 void
 PerturbationResults<IterType, T, PExtras>::SetPeriodMaybeZero(IterType period)
 {
-    std::cout << "Setting period maybe zero to " << period << std::endl;
+    std::cout << "Setting period maybe zero to period " << period << std::endl;
     m_PeriodMaybeZero = period;
 }
 
@@ -1883,11 +1883,13 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
                   [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
 
         std::ofstream out("countsPerIndex.txt");
+        out << "# count and occurrence columns are decimal.\n";
         for (const auto &pair : countsPerIndexVec) {
             out << pair.first << " " << pair.second << std::endl;
         }
 
         std::ofstream out2("indexTouched.txt");
+        out2 << "# indices are decimal.\n";
         for (const auto &index : indexTouched) {
             out2 << index << std::endl;
         }
@@ -1958,35 +1960,39 @@ InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Di
     out << "m_MaxRadius: " << HdrToString<false>(m_MaxRadius) << std::endl;
     out << "m_MaxIterations: " << GetMaxIterations() << std::endl;
     out << "m_PeriodMaybeZero: " << m_PeriodMaybeZero << std::endl;
-    out << "m_CompressionErrorExp: " << m_CompressionErrorExp << std::endl;
-    out << "m_IntermediateCompressionErrorExp: " << m_IntermediateCompressionErrorExp << std::endl;
+    out << "m_CompressionErrorExp_exp2: " << m_CompressionErrorExp << std::endl;
+    out << "m_IntermediateCompressionErrorExp_exp2: " << m_IntermediateCompressionErrorExp
+        << std::endl;
     out << "m_RefOrbitOptions: " << static_cast<int>(m_RefOrbitOptions) << std::endl;
-    out << "m_FullOrbit: " << m_FullOrbit.GetSize() << std::endl;
+    out << "m_FullOrbitSize: " << m_FullOrbit.GetSize() << std::endl;
     out << "m_UncompressedItersInOrbit: " << GetCountOrbitEntries() << std::endl;
     out << "m_AuthoritativePrecisionInBits: " << m_AuthoritativePrecisionInBits << std::endl;
 
     // Write out all values in m_FullOrbit:
     for (size_t i = 0; i < GetCompressedOrUncompressedOrbitSize(); i++) {
-        out << "m_FullOrbit[" << i << "].x: " << HdrToString<false>(m_FullOrbit[i].x) << std::endl;
-        out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y) << std::endl;
+        out << "m_FullOrbit[" << i << "].x: " << HdrToString<false>(m_FullOrbit[i].x)
+            << std::endl;
+        out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y)
+            << std::endl;
 
         if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-            out << "m_FullOrbit[" << i << "].CompressionIndex: " << m_FullOrbit[i].u.f.CompressionIndex
+            out << "m_FullOrbit[" << i
+                << "].CompressionIndex: " << m_FullOrbit[i].u.f.CompressionIndex << std::endl;
+            out << "m_FullOrbit[" << i << "].Rebase(bool): " << m_FullOrbit[i].u.f.Rebase
                 << std::endl;
-            out << "m_FullOrbit[" << i << "].Rebase: " << m_FullOrbit[i].u.f.Rebase << std::endl;
         }
     }
 
     if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-        out << "m_Rebases: " << m_Rebases.size() << std::endl;
+        out << "m_RebasesSize: " << m_Rebases.size() << std::endl;
         for (size_t i = 0; i < m_Rebases.size(); i++) {
             out << "m_Rebases[" << i << "]: " << m_Rebases[i] << std::endl;
         }
     }
 
-    out << "m_ReuseX: " << m_ReuseX.size() << std::endl;
-    out << "m_ReuseY: " << m_ReuseY.size() << std::endl;
-    out << "m_ReuseIndices: " << m_ReuseIndices.size() << std::endl;
+    out << "m_ReuseXSize: " << m_ReuseX.size() << std::endl;
+    out << "m_ReuseYSize: " << m_ReuseY.size() << std::endl;
+    out << "m_ReuseIndicesSize: " << m_ReuseIndices.size() << std::endl;
     if (m_ReuseX.size() != m_ReuseY.size() || m_ReuseX.size() != m_ReuseIndices.size()) {
         std::wcerr << L"m_ReuseX and m_ReuseY are different sizes." << std::endl;
         out.close();

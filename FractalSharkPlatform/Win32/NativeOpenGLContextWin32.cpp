@@ -30,10 +30,7 @@ AsHDC(void *p)
 }
 
 HGLRC
-AsHGLRC(void *p)
-{
-    return static_cast<HGLRC>(p);
-}
+AsHGLRC(void *p) { return static_cast<HGLRC>(p); }
 
 struct SharedWindowGlState {
     int pixelFormat = 0;
@@ -158,7 +155,10 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     m_RenderContext = wglCreateContext(AsHDC(m_DeviceContext));
     if (!m_RenderContext) {
         char buf[128];
-        snprintf(buf, sizeof(buf), "OpenGlContext: wglCreateContext failed, error=%lu", GetLastError());
+        snprintf(buf,
+                 sizeof(buf),
+                 "OpenGlContext: wglCreateContext failed, error=%lu",
+                 GetLastError());
         GlLog(buf);
         return;
     }
@@ -168,7 +168,8 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
 
     if (!MakeCurrent()) {
         char buf[128];
-        snprintf(buf, sizeof(buf), "OpenGlContext: MakeCurrent failed, error=%lu", GetLastError());
+        snprintf(
+            buf, sizeof(buf), "OpenGlContext: MakeCurrent failed, error=%lu", GetLastError());
         GlLog(buf);
         return;
     }
@@ -186,8 +187,8 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     char buf[512];
     snprintf(buf,
              sizeof(buf),
-             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, pfdFlags=0x%lx, "
-             "software=%d, thread=%lu",
+             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, pfdFlags(base16)=0x%lx, "
+             "software(bool)=%d, thread=%lu",
              renderer ? renderer : "(null)",
              version ? version : "(null)",
              m_MaxTextureSize,

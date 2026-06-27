@@ -251,8 +251,8 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             cudaError_t cudaErr = cudaGetDeviceProperties(&prop, device_id);
             if (cudaErr != cudaSuccess) {
                 std::ostringstream oss;
-                oss << "cudaGetDeviceProperties failed: " << cudaGetErrorString(cudaErr) << " (code "
-                    << static_cast<int>(cudaErr) << ")";
+                oss << "cudaGetDeviceProperties failed: " << cudaGetErrorString(cudaErr)
+                    << " (code " << static_cast<int>(cudaErr) << ")";
                 throw FractalSharkSeriousException(oss.str());
             }
         }
@@ -314,8 +314,8 @@ InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
             cudaMemcpy(&comboGpu->MaxRuntimeIters, &numIters, sizeof(uint64_t), cudaMemcpyHostToDevice);
         if (res != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy(MaxRuntimeIters H2D) failed: " << cudaGetErrorString(res) << " (code "
-                << static_cast<int>(res) << ")";
+            oss << "cudaMemcpy(MaxRuntimeIters H2D) failed: " << cudaGetErrorString(res)
+                << " (code " << static_cast<int>(res) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -513,8 +513,9 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
 
         std::cout << "    GPU inner: " << done << " / " << period;
         if (itersPerSec > 0) {
-            std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
-                      << std::setprecision(1) << etaHours << " hrs)";
+            std::cout << " (" << static_cast<uint64_t>(itersPerSec)
+                      << " iter/s, ETA: " << std::fixed << std::setprecision(1)
+                      << etaHours << " hrs)";
         }
         std::cout << std::endl;
 
@@ -528,9 +529,9 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
     }
 
     // Debug: check what happened
-    std::cout << "  GPU NR wrapper: PeriodicityStatus=" << static_cast<int>(combo.PeriodicityStatus)
-              << " OutputIterCount=" << done << " DzdcReal exponent=" << combo.Multiply.DzdcReal.Exponent
-              << std::endl;
+    std::cout << "  GPU NR wrapper: PeriodicityStatus="
+              << static_cast<int>(combo.PeriodicityStatus) << " OutputIterCount=" << done
+              << " DzdcReal exponent2=" << combo.Multiply.DzdcReal.Exponent << std::endl;
 
     // Convert results back to mpf
     combo.Multiply.A.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZReal[0]));

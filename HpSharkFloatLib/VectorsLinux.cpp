@@ -477,7 +477,7 @@ GrowableVector<EltT>::TrimEnableWithoutSave()
         char buf[256];
         snprintf(buf,
                  sizeof(buf),
-                 "mremap returned a different pointer: %llu vs %llu",
+                 "mremap returned a different pointer: actual(base16)=0x%llx vs expected(base16)=0x%llx",
                  (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
                  (unsigned long long)reinterpret_cast<uint64_t>(originalData));
         throw FractalSharkSeriousException(buf);
@@ -616,7 +616,7 @@ GrowableVector<EltT>::InternalOpenFile()
         if (fd < 0) {
             auto err = errno;
             char buf[256];
-            snprintf(buf, sizeof(buf), "Failed to open file: %d", err);
+            snprintf(buf, sizeof(buf), "Failed to open file: errno=%d", err);
             throw FractalSharkSeriousException(buf);
         }
 
@@ -702,7 +702,7 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
     // Check all the things that could have gone wrong.
     if (m_FileHandle == nullptr || (lastError != 0 && lastError != 183)) {
         char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to open file: %u", lastError);
+        snprintf(buf, sizeof(buf), "Failed to open file: status=%u", lastError);
         throw FractalSharkSeriousException(buf);
     }
 
@@ -786,11 +786,12 @@ GrowableVector<EltT>::MutableFileCommit(size_t capacity)
         // Debug check:
         if (originalData != nullptr && originalData != m_Data) {
             char buf[256];
-            snprintf(buf,
-                     sizeof(buf),
-                     "mmap returned a different pointer: %llu vs %llu",
-                     (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
-                     (unsigned long long)reinterpret_cast<uint64_t>(originalData));
+            snprintf(
+                buf,
+                sizeof(buf),
+                "mmap returned a different pointer: actual(base16)=0x%llx vs expected(base16)=0x%llx",
+                (unsigned long long)reinterpret_cast<uint64_t>(m_Data),
+                (unsigned long long)reinterpret_cast<uint64_t>(originalData));
             throw FractalSharkSeriousException(buf);
         }
 
@@ -833,7 +834,7 @@ GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity)
         if (mprotect(m_Data, bytesCount, PROT_READ | PROT_WRITE) != 0) {
             auto code = errno;
             char buf[256];
-            snprintf(buf, sizeof(buf), "Failed to commit memory: %d", code);
+            snprintf(buf, sizeof(buf), "Failed to commit memory: errno=%d", code);
             throw FractalSharkSeriousException(buf);
         }
 
@@ -856,7 +857,7 @@ GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes)
     if (res == MAP_FAILED) {
         auto code = errno;
         char buf[256];
-        snprintf(buf, sizeof(buf), "Failed to reserve memory: %d", code);
+        snprintf(buf, sizeof(buf), "Failed to reserve memory: errno=%d", code);
         throw FractalSharkSeriousException(buf);
     }
 

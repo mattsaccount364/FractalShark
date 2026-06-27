@@ -1,4 +1,4 @@
-﻿#include "HpSharkFloat.h"
+#include "HpSharkFloat.h"
 #include "MultiplyNTTPlanBuilder.h"
 
 #include <cstdint>
@@ -137,8 +137,8 @@ PrintPlateauTable(const std::vector<Plateau> &plateaus)
 {
     std::cout << std::fixed << std::setprecision(3);
 
-    std::cout << "Idx  n32_min–n32_max   bits_min–bits_max     b    N     "
-                 "L_min-L_max   overhead_start-->end\n";
+    std::cout << "Idx  n32_min–n32_max   bits_min–bits_max     "
+                 "b    N     L_min-L_max   overhead_start-->end\n";
 
     int idx = 0;
     for (const auto &p : plateaus) {
@@ -157,7 +157,8 @@ PrintPlateauTable(const std::vector<Plateau> &plateaus)
 void
 PrintPrecisionTiers(const std::vector<Plateau> &plateaus)
 {
-    std::cout << "Tier  n32   bits   b   N   L_max   overhead\n";
+    std::cout << "Tier  n32   bits   b   N   "
+                 "L_max   overhead\n";
     int tier = 1;
     for (const auto &p : plateaus) {
         int n32 = p.n32_max;

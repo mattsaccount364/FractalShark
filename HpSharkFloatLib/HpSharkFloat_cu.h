@@ -1,4 +1,4 @@
-﻿#include "TestVerbose.h"
+#include "TestVerbose.h"
 
 #include "HpSharkFloat.h"
 
@@ -63,7 +63,7 @@ UintArrayToHexString(const IntT *array, size_t numElements)
     std::string result;
 
     // Append numElements
-    result += "Len:" + std::to_string(numElements) + ", ";
+    result += "Len:" + std::to_string(numElements) + ", words(base16): ";
 
     // Convert each 4-byte integer to hex and append to result
     for (size_t i = 0; i < numElements; ++i) {
@@ -167,7 +167,8 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
     mpf_abs(abs_val, mpf_value);
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits) << std::endl;
+        std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits)
+                  << std::endl;
     }
 
     // Determine the sign
@@ -267,7 +268,8 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
         auto originalDataStr = VectorUintToHexString(dataCopy);
         auto shiftedDataStr = VectorUintToHexString(data);
         std::cout << "Original data: " << originalDataStr << std::endl;
-        std::cout << "Shifted data: " << shiftedDataStr << ", shiftBits: " << shiftBits << std::endl;
+        std::cout << "Shifted data: " << shiftedDataStr << ", shiftBits: " << shiftBits
+                  << std::endl;
         std::cout << "Shift bits: " << shiftBits << std::endl;
     }
 
@@ -372,7 +374,7 @@ HpSharkFloat<SharkFloatParams>::ToHexString() const
     }
 
     // Finally append exponent
-    result += "2^(0n" + std::to_string(Exponent) + ")";
+    result += "2^(exponent:" + std::to_string(Exponent) + ")";
 
     return result;
 }
@@ -698,10 +700,10 @@ Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val)
 }
 
 // Explicit instantiation
-//#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-//    template class HpSharkFloat<SharkFloatParams>;                                                      \
-//    template std::string Uint32ToMpf<SharkFloatParams>(                                                 \
-//        const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);                                  \
+// #define ExplicitlyInstantiate(SharkFloatParams) \
+//    template class HpSharkFloat<SharkFloatParams>; \
+//    template std::string Uint32ToMpf<SharkFloatParams>( \
+//        const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val); \
 //    template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);
 //
-//ExplicitInstantiateAll();
+// ExplicitInstantiateAll();

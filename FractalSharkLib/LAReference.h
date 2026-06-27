@@ -100,9 +100,9 @@ public:
     {
         metafile << "LAReference:" << std::endl;
         metafile << "AddPointOptions: " << static_cast<uint64_t>(m_AddPointOptions) << std::endl;
-        metafile << "UseAT: " << static_cast<uint64_t>(m_UseAT) << std::endl;
+        metafile << "UseAT(bool): " << static_cast<uint64_t>(m_UseAT) << std::endl;
         metafile << "LAStageCount: " << static_cast<uint64_t>(m_LAStageCount) << std::endl;
-        metafile << "IsValid: " << static_cast<uint64_t>(m_IsValid) << std::endl;
+        metafile << "IsValid(bool): " << static_cast<uint64_t>(m_IsValid) << std::endl;
 
         bool res = m_LAParameters.WriteMetadata(metafile);
         if (!res) {

@@ -285,7 +285,7 @@ DebugStateHost<SharkFloatParams>::GetStr() const
     std::stringstream ss;
 
     ss << "Initialized: " << Initialized;
-    ss << ", Checksum: 0x" << std::hex << Checksum;
+    ss << ", Checksum(base16): 0x" << std::hex << Checksum;
     ss << ", DebugStatePurpose: " << std::dec << static_cast<int>(ChecksumPurpose);
 
     if (ArrayToChecksum32.size() > 0) {

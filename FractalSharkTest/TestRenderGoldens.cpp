@@ -152,8 +152,8 @@ RunGoldenCase(const GoldenCase &c)
     bool pending = std::strcmp(expected, "PENDING") == 0;
 
     if (updateMode || pending) {
-        std::cout << "  GOLDEN " << c.Name << " " << actualCrc << "    (png: " << pngPath.string()
-                  << ")\n";
+        std::cout << "  GOLDEN " << c.Name << " CRC(base16) " << actualCrc
+                  << "    (png: " << pngPath.string() << ")\n";
         if (pending && !updateMode) {
             std::cout << "         (PENDING placeholder — passing; bake CRC after visual check)\n";
         }
@@ -163,11 +163,11 @@ RunGoldenCase(const GoldenCase &c)
     // Keep the PNG around on mismatch for inspection; otherwise clean up.
     if (actualCrc != expected) {
         std::ostringstream oss;
-        oss << "CRC mismatch for " << c.Name << ": expected " << expected << ", got " << actualCrc
-            << " (png kept at " << pngPath.string() << ")";
+        oss << "CRC(base16) mismatch for " << c.Name << ": expected " << expected << ", got "
+            << actualCrc << " (png kept at " << pngPath.string() << ")";
         TestFramework::Fail(__FILE__, __LINE__, oss.str());
     }
-    std::cout << "  GOLDEN " << c.Name << " CRC " << actualCrc << " OK"
+    std::cout << "  GOLDEN " << c.Name << " CRC(base16) " << actualCrc << " OK"
               << "    (png: " << pngPath.string() << ")\n";
 }
 

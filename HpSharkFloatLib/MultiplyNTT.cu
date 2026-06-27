@@ -208,20 +208,22 @@ FinalizeNormalizeNWay(cooperative_groups::grid_group &grid,
     for (int i = tid; i < SharkFloatParams::GlobalNumUint32; i += T_all) {
 #pragma unroll
         for (int ch = 0; ch < NumChannels; ++ch) {
-            outs[ch]->Digits[i] = zeros[ch]
-                                      ? 0u
-                                      : ((shifts[ch] + i < static_cast<int>(Ddigits))
-                                             ? static_cast<uint32_t>(results[ch][shifts[ch] + i])
-                                             : 0u);
+            outs[ch]->Digits[i] = zeros[ch] ? 0u
+                                            : ((shifts[ch] + i < static_cast<int>(Ddigits))
+                                                   ? static_cast<uint32_t>(results[ch][shifts[ch] + i])
+                                                   : 0u);
         }
     }
 
     if constexpr (HpShark::DebugChecksums) {
         grid.sync();
         for (int ch = 0; ch < NumChannels; ++ch) {
-            StoreCurrentDebugState<SharkFloatParams, uint32_t>(
-                debugStates, grid, block, purposes[ch],
-                outs[ch]->Digits, SharkFloatParams::GlobalNumUint32);
+            StoreCurrentDebugState<SharkFloatParams, uint32_t>(debugStates,
+                                                               grid,
+                                                               block,
+                                                               purposes[ch],
+                                                               outs[ch]->Digits,
+                                                               SharkFloatParams::GlobalNumUint32);
         }
         grid.sync();
     } else {
@@ -365,15 +367,15 @@ Normalize_GridStride_NWay(cooperative_groups::grid_group &grid,
     }
 
     FinalizeNormalizeNWay<SharkFloatParams, NumChannels>(grid,
-                                                        block,
-                                                        debugStates,
-                                                        outs,
-                                                        baseExponents,
-                                                        Ddigits,
-                                                        addTwos,
-                                                        CarryPropagationBuffer2,
-                                                        results,
-                                                        purposes);
+                                                         block,
+                                                         debugStates,
+                                                         outs,
+                                                         baseExponents,
+                                                         Ddigits,
+                                                         addTwos,
+                                                         CarryPropagationBuffer2,
+                                                         results,
+                                                         purposes);
 }
 
 template <class SharkFloatParams,
@@ -430,8 +432,12 @@ Normalize_GridStride_3WayV2(uint64_t *shared_data,
     // Only cur[0..2] and next[0..2] need zeroing (carry-in for digit 0).
     // tid=0 processes index=0 in Phase 2 → same-thread write→read, no sync needed.
     if (tid == 0) {
-        cur[0] = 0; cur[1] = 0; cur[2] = 0;
-        next[0] = 0; next[1] = 0; next[2] = 0;
+        cur[0] = 0;
+        cur[1] = 0;
+        cur[2] = 0;
+        next[0] = 0;
+        next[1] = 0;
+        next[2] = 0;
     }
 
     // We run the tile chain in a single warp for now (warp 0) so that tile
@@ -671,22 +677,22 @@ Normalize_GridStride_3WayV2(uint64_t *shared_data,
 #endif
 
     FinalizeNormalize<SharkFloatParams, purposeXX, purposeYY, purposeXY>(grid,
-                                        block,
-                                        debugStates,
-                                        outXX,
-                                        outYY,
-                                        outXY,
-                                        inA,
-                                        inB,
-                                        Ddigits,
-                                        addTwoXX,
-                                        addTwoYY,
-                                        addTwoXY,
-                                        CarryPropagationBuffer2,
-                                        CarryPropagationBuffer,
-                                        resultXX,
-                                        resultYY,
-                                        resultXY);
+                                                                         block,
+                                                                         debugStates,
+                                                                         outXX,
+                                                                         outYY,
+                                                                         outXY,
+                                                                         inA,
+                                                                         inB,
+                                                                         Ddigits,
+                                                                         addTwoXX,
+                                                                         addTwoYY,
+                                                                         addTwoXY,
+                                                                         CarryPropagationBuffer2,
+                                                                         CarryPropagationBuffer,
+                                                                         resultXX,
+                                                                         resultYY,
+                                                                         resultXY);
 }
 
 // This one does work, but is just slow because it's sequential
@@ -1130,26 +1136,25 @@ NTTRadix2(cooperative_groups::grid_group &grid,
 // ---------------------------------------------------------------------------
 template <class SharkFloatParams, Multiway Mode, uint32_t TS_log, bool UseMontPow>
 static __device__ inline void
-ProcessOneTile_Phase1_SM(
-    cooperative_groups::thread_block &block,
-    cooperative_groups::grid_group &grid,
-    DebugGlobalCount<SharkFloatParams> *debugCombo,
-    uint64_t *s_dataA,
-    uint64_t *s_dataB,
-    uint64_t *s_dataC,
-    uint64_t *s_dataD,
-    uint64_t *__restrict A,
-    uint64_t *__restrict B,
-    uint64_t *__restrict C,
-    uint64_t *__restrict D,
-    const uint64_t *s_twiddles_cached,
-    const uint64_t *__restrict stage_twiddles,
-    const uint64_t *s_stages,
-    uint32_t tile,
-    uint32_t TS,
-    uint32_t len,
-    uint32_t S1,
-    uint32_t cachedStages)
+ProcessOneTile_Phase1_SM(cooperative_groups::thread_block &block,
+                         cooperative_groups::grid_group &grid,
+                         DebugGlobalCount<SharkFloatParams> *debugCombo,
+                         uint64_t *s_dataA,
+                         uint64_t *s_dataB,
+                         uint64_t *s_dataC,
+                         uint64_t *s_dataD,
+                         uint64_t *__restrict A,
+                         uint64_t *__restrict B,
+                         uint64_t *__restrict C,
+                         uint64_t *__restrict D,
+                         const uint64_t *s_twiddles_cached,
+                         const uint64_t *__restrict stage_twiddles,
+                         const uint64_t *s_stages,
+                         uint32_t tile,
+                         uint32_t TS,
+                         uint32_t len,
+                         uint32_t S1,
+                         uint32_t cachedStages)
 {
     namespace cg = cooperative_groups;
 
@@ -1157,13 +1162,12 @@ ProcessOneTile_Phase1_SM(
     const uint32_t step = block.size();
 
     // Load tiles into shared memory
-    if constexpr (Mode == Multiway::OneWay || Mode == Multiway::TwoWay ||
-                  Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
+    if constexpr (Mode == Multiway::OneWay || Mode == Multiway::TwoWay || Mode == Multiway::ThreeWay ||
+                  Mode == Multiway::FourWay) {
         cg::memcpy_async(block, s_dataA, &A[tile * TS], len * sizeof(uint64_t));
     }
 
-    if constexpr (Mode == Multiway::TwoWay || Mode == Multiway::ThreeWay ||
-                  Mode == Multiway::FourWay) {
+    if constexpr (Mode == Multiway::TwoWay || Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
         cg::memcpy_async(block, s_dataB, &B[tile * TS], len * sizeof(uint64_t));
     }
 
@@ -1380,9 +1384,8 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 
     // Reserve shared space for cached twiddles after the last tile buffer.
     auto *const s_twiddles_cached =
-        (OneTwoThree == Multiway::FourWay || OneTwoThree == Multiway::SevenWay)
-            ? (s_dataD + TS)
-            : (s_dataC + TS);
+        (OneTwoThree == Multiway::FourWay || OneTwoThree == Multiway::SevenWay) ? (s_dataD + TS)
+                                                                                : (s_dataC + TS);
 
     // Only cache for precomputed-table mode, and only up to S1.
     const uint32_t cachedStages =
@@ -1406,20 +1409,68 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
         if constexpr (OneTwoThree == Multiway::SevenWay) {
             // Pass 1: ThreeWay on A, B, C
             ProcessOneTile_Phase1_SM<SharkFloatParams, Multiway::ThreeWay, TS_log, UseMontPow>(
-                block, grid, debugCombo, s_dataA, s_dataB, s_dataC, nullptr,
-                A, B, C, nullptr, s_twiddles_cached, stage_twiddles, s_stages,
-                tile, TS, len, S1, cachedStages);
+                block,
+                grid,
+                debugCombo,
+                s_dataA,
+                s_dataB,
+                s_dataC,
+                nullptr,
+                A,
+                B,
+                C,
+                nullptr,
+                s_twiddles_cached,
+                stage_twiddles,
+                s_stages,
+                tile,
+                TS,
+                len,
+                S1,
+                cachedStages);
             block.sync();
             // Pass 2: FourWay on D, E, F, G
             ProcessOneTile_Phase1_SM<SharkFloatParams, Multiway::FourWay, TS_log, UseMontPow>(
-                block, grid, debugCombo, s_dataA, s_dataB, s_dataC, s_dataD,
-                D, E, F, G, s_twiddles_cached, stage_twiddles, s_stages,
-                tile, TS, len, S1, cachedStages);
+                block,
+                grid,
+                debugCombo,
+                s_dataA,
+                s_dataB,
+                s_dataC,
+                s_dataD,
+                D,
+                E,
+                F,
+                G,
+                s_twiddles_cached,
+                stage_twiddles,
+                s_stages,
+                tile,
+                TS,
+                len,
+                S1,
+                cachedStages);
         } else {
             ProcessOneTile_Phase1_SM<SharkFloatParams, OneTwoThree, TS_log, UseMontPow>(
-                block, grid, debugCombo, s_dataA, s_dataB, s_dataC, s_dataD,
-                A, B, C, D, s_twiddles_cached, stage_twiddles, s_stages,
-                tile, TS, len, S1, cachedStages);
+                block,
+                grid,
+                debugCombo,
+                s_dataA,
+                s_dataB,
+                s_dataC,
+                s_dataD,
+                A,
+                B,
+                C,
+                D,
+                s_twiddles_cached,
+                stage_twiddles,
+                s_stages,
+                tile,
+                TS,
+                len,
+                S1,
+                cachedStages);
         }
     }
 
@@ -1624,23 +1675,23 @@ ProcessTile(cooperative_groups::grid_group &grid,
     uint64_t gUpper0 = 0, gLower0 = 0;
 
     loadABCD(jIndex0,
-            inRange0,
-            indexUpper0,
-            indexLower0,
-            aUpper0,
-            aLower0,
-            bUpper0,
-            bLower0,
-            cUpper0,
-            cLower0,
-            dUpper0,
-            dLower0,
-            eUpper0,
-            eLower0,
-            fUpper0,
-            fLower0,
-            gUpper0,
-            gLower0);
+             inRange0,
+             indexUpper0,
+             indexLower0,
+             aUpper0,
+             aLower0,
+             bUpper0,
+             bLower0,
+             cUpper0,
+             cLower0,
+             dUpper0,
+             dLower0,
+             eUpper0,
+             eLower0,
+             fUpper0,
+             fLower0,
+             gUpper0,
+             gLower0);
 
     uint64_t twiddle0 = 0;
     if (inRange0) {
@@ -1667,23 +1718,23 @@ ProcessTile(cooperative_groups::grid_group &grid,
         const uint32_t jIndex1 = jIndex0 + warpSize;
 
         loadABCD(jIndex1,
-                inRange1,
-                indexUpper1,
-                indexLower1,
-                aUpper1,
-                aLower1,
-                bUpper1,
-                bLower1,
-                cUpper1,
-                cLower1,
-                dUpper1,
-                dLower1,
-                eUpper1,
-                eLower1,
-                fUpper1,
-                fLower1,
-                gUpper1,
-                gLower1);
+                 inRange1,
+                 indexUpper1,
+                 indexLower1,
+                 aUpper1,
+                 aLower1,
+                 bUpper1,
+                 bLower1,
+                 cUpper1,
+                 cLower1,
+                 dUpper1,
+                 dLower1,
+                 eUpper1,
+                 eLower1,
+                 fUpper1,
+                 fLower1,
+                 gUpper1,
+                 gLower1);
 
         if constexpr (UseMontPow) {
             twiddle1 = MontgomeryMul(grid, block, debugCombo, twiddle0, twiddleStrideWarp);
@@ -1716,23 +1767,23 @@ ProcessTile(cooperative_groups::grid_group &grid,
         if (tileWidth >= 3) {
             const uint32_t jIndex2 = jIndex0 + 2u * warpSize;
             loadABCD(jIndex2,
-                    inRange2,
-                    indexUpper2,
-                    indexLower2,
-                    aUpper2,
-                    aLower2,
-                    bUpper2,
-                    bLower2,
-                    cUpper2,
-                    cLower2,
-                    dUpper2,
-                    dLower2,
-                    eUpper2,
-                    eLower2,
-                    fUpper2,
-                    fLower2,
-                    gUpper2,
-                    gLower2);
+                     inRange2,
+                     indexUpper2,
+                     indexLower2,
+                     aUpper2,
+                     aLower2,
+                     bUpper2,
+                     bLower2,
+                     cUpper2,
+                     cLower2,
+                     dUpper2,
+                     dLower2,
+                     eUpper2,
+                     eLower2,
+                     fUpper2,
+                     fLower2,
+                     gUpper2,
+                     gLower2);
 
             if constexpr (!UseMontPow) {
                 if (inRange2) {
@@ -1743,23 +1794,23 @@ ProcessTile(cooperative_groups::grid_group &grid,
         if (tileWidth >= 4) {
             const uint32_t jIndex3 = jIndex0 + 3u * warpSize;
             loadABCD(jIndex3,
-                    inRange3,
-                    indexUpper3,
-                    indexLower3,
-                    aUpper3,
-                    aLower3,
-                    bUpper3,
-                    bLower3,
-                    cUpper3,
-                    cLower3,
-                    dUpper3,
-                    dLower3,
-                    eUpper3,
-                    eLower3,
-                    fUpper3,
-                    fLower3,
-                    gUpper3,
-                    gLower3);
+                     inRange3,
+                     indexUpper3,
+                     indexLower3,
+                     aUpper3,
+                     aLower3,
+                     bUpper3,
+                     bLower3,
+                     cUpper3,
+                     cLower3,
+                     dUpper3,
+                     dLower3,
+                     eUpper3,
+                     eLower3,
+                     fUpper3,
+                     fLower3,
+                     gUpper3,
+                     gLower3);
 
             if constexpr (!UseMontPow) {
                 if (inRange3) {
@@ -1780,14 +1831,44 @@ ProcessTile(cooperative_groups::grid_group &grid,
 
     // ---- compute/store: position 0 ----
     if (inRange0) {
-        applyButterfly(
-            indexUpper0, indexLower0, aUpper0, aLower0, bUpper0, bLower0, cUpper0, cLower0, dUpper0, dLower0, eUpper0, eLower0, fUpper0, fLower0, gUpper0, gLower0, twiddle0);
+        applyButterfly(indexUpper0,
+                       indexLower0,
+                       aUpper0,
+                       aLower0,
+                       bUpper0,
+                       bLower0,
+                       cUpper0,
+                       cLower0,
+                       dUpper0,
+                       dLower0,
+                       eUpper0,
+                       eLower0,
+                       fUpper0,
+                       fLower0,
+                       gUpper0,
+                       gLower0,
+                       twiddle0);
     }
 
     // ---- compute/store: position 1 ----
     if (tileWidth >= 2 && inRange1) {
-        applyButterfly(
-            indexUpper1, indexLower1, aUpper1, aLower1, bUpper1, bLower1, cUpper1, cLower1, dUpper1, dLower1, eUpper1, eLower1, fUpper1, fLower1, gUpper1, gLower1, twiddle1);
+        applyButterfly(indexUpper1,
+                       indexLower1,
+                       aUpper1,
+                       aLower1,
+                       bUpper1,
+                       bLower1,
+                       cUpper1,
+                       cLower1,
+                       dUpper1,
+                       dLower1,
+                       eUpper1,
+                       eLower1,
+                       fUpper1,
+                       fLower1,
+                       gUpper1,
+                       gLower1,
+                       twiddle1);
     }
 
     // ---- compute/store: positions 2 & 3 (OneWay only) ----
@@ -1994,20 +2075,20 @@ NTTRadix2_GridStride(uint64_t *shared_data,
         // SevenWay: interleaved ThreeWay + FourWay per tile in a single call
         firstLargeStage =
             SmallRadixPhase1_SM<SharkFloatParams, Multiway::SevenWay, TileSizeLog2>(shared_data,
-                                                                                     grid,
-                                                                                     block,
-                                                                                     debugCombo,
-                                                                                     A,
-                                                                                     B,
-                                                                                     C,
-                                                                                     D,
-                                                                                     transformSize,
-                                                                                     numStages,
-                                                                                     sharedStageRoots,
-                                                                                     stageTwiddleTable,
-                                                                                     E,
-                                                                                     F,
-                                                                                     G);
+                                                                                    grid,
+                                                                                    block,
+                                                                                    debugCombo,
+                                                                                    A,
+                                                                                    B,
+                                                                                    C,
+                                                                                    D,
+                                                                                    transformSize,
+                                                                                    numStages,
+                                                                                    sharedStageRoots,
+                                                                                    stageTwiddleTable,
+                                                                                    E,
+                                                                                    F,
+                                                                                    G);
     }
 
     // =========================
@@ -2080,28 +2161,76 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                 // Pass 1: ThreeWay on A, B, C
                 while (tasksRemaining) {
                     ProcessTile<SharkFloatParams, Multiway::ThreeWay, UseMontPow, microTileWidth>(
-                        grid, block, debugCombo, A, B, C, nullptr,
-                        stageTwiddlesForStage, halfSpan, warpSize, numJChunks, laneIndex,
-                        butterflySpan, blockIndex, jChunkIndex, tasksRemaining,
-                        blockDataBaseIndex, currentTwiddle, twiddleStrideWarp, laneTwiddleBase);
+                        grid,
+                        block,
+                        debugCombo,
+                        A,
+                        B,
+                        C,
+                        nullptr,
+                        stageTwiddlesForStage,
+                        halfSpan,
+                        warpSize,
+                        numJChunks,
+                        laneIndex,
+                        butterflySpan,
+                        blockIndex,
+                        jChunkIndex,
+                        tasksRemaining,
+                        blockDataBaseIndex,
+                        currentTwiddle,
+                        twiddleStrideWarp,
+                        laneTwiddleBase);
                 }
 
                 // Pass 2: FourWay on D, E, F, G
                 while (tasksRemaining2) {
                     ProcessTile<SharkFloatParams, Multiway::FourWay, UseMontPow, microTileWidth>(
-                        grid, block, debugCombo, D, E, F, G,
-                        stageTwiddlesForStage, halfSpan, warpSize, numJChunks, laneIndex,
-                        butterflySpan, blockIndex2, jChunkIndex2, tasksRemaining2,
-                        blockDataBaseIndex2, currentTwiddle2, twiddleStrideWarp, laneTwiddleBase);
+                        grid,
+                        block,
+                        debugCombo,
+                        D,
+                        E,
+                        F,
+                        G,
+                        stageTwiddlesForStage,
+                        halfSpan,
+                        warpSize,
+                        numJChunks,
+                        laneIndex,
+                        butterflySpan,
+                        blockIndex2,
+                        jChunkIndex2,
+                        tasksRemaining2,
+                        blockDataBaseIndex2,
+                        currentTwiddle2,
+                        twiddleStrideWarp,
+                        laneTwiddleBase);
                 }
             } else {
                 constexpr int microTileWidth = (OneTwoThree == Multiway::OneWay ? 4 : 2);
                 while (tasksRemaining) {
                     ProcessTile<SharkFloatParams, OneTwoThree, UseMontPow, microTileWidth>(
-                        grid, block, debugCombo, A, B, C, D,
-                        stageTwiddlesForStage, halfSpan, warpSize, numJChunks, laneIndex,
-                        butterflySpan, blockIndex, jChunkIndex, tasksRemaining,
-                        blockDataBaseIndex, currentTwiddle, twiddleStrideWarp, laneTwiddleBase);
+                        grid,
+                        block,
+                        debugCombo,
+                        A,
+                        B,
+                        C,
+                        D,
+                        stageTwiddlesForStage,
+                        halfSpan,
+                        warpSize,
+                        numJChunks,
+                        laneIndex,
+                        butterflySpan,
+                        blockIndex,
+                        jChunkIndex,
+                        tasksRemaining,
+                        blockDataBaseIndex,
+                        currentTwiddle,
+                        twiddleStrideWarp,
+                        laneTwiddleBase);
                 }
             }
         }
@@ -2193,8 +2322,7 @@ UnpackPrimeToFinal128_NWay(cooperative_groups::grid_group &grid,
     };
 
     const uint64_t HALF = (SharkNTT::MagicPrime - 1ull) >> 1;
-    const int Imax =
-        min(SharkFloatParams::NTTPlan.N, 2 * SharkFloatParams::NTTPlan.L - 1);
+    const int Imax = min(SharkFloatParams::NTTPlan.N, 2 * SharkFloatParams::NTTPlan.L - 1);
 
     for (size_t j = grank; j < Ddigits; j += gsize) {
         uint64_t accum_lo[NumChannels];
@@ -2805,11 +2933,10 @@ static_assert(HpShark::AdditionalUInt64PerFrame == 256, "See below");
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 16 */        \
     constexpr auto Z2_offsetYY = Z2_offsetXY + 4 * NewN * TestMultiplier +                              \
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 20 */        \
-    /* NTT path: orbit Z0/Z2 are the only macro-allocated buffers.                                     \
+    /* NTT path: orbit Z0/Z2 are the only macro-allocated buffers.                                      \
        NR W and all other buffers are in the runtime layout. */                                         \
-    constexpr auto NTT_OrbitEnd = Z2_offsetYY + 4 * NewN * TestMultiplier +                            \
+    constexpr auto NTT_OrbitEnd = Z2_offsetYY + 4 * NewN * TestMultiplier +                             \
                                   CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);
-
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
@@ -3075,12 +3202,15 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     // 8) Unpack -> Final128
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         // 7-way: all products in one call, one trailing grid.sync()
-        const uint64_t *unpackInputs[7] = {
-            tempDigitsXX1, tempDigitsYY1, tempDigitsXY1,
-            tempDigitsW0_1, tempDigitsW1_1, tempDigitsW2_1, tempDigitsW3_1};
+        const uint64_t *unpackInputs[7] = {tempDigitsXX1,
+                                           tempDigitsYY1,
+                                           tempDigitsXY1,
+                                           tempDigitsW0_1,
+                                           tempDigitsW1_1,
+                                           tempDigitsW2_1,
+                                           tempDigitsW3_1};
         uint64_t *unpackOutputs[7] = {
-            Final128_XX, Final128_YY, Final128_XY,
-            Final128_W0, Final128_W1, Final128_W2, Final128_W3};
+            Final128_XX, Final128_YY, Final128_XY, Final128_W0, Final128_W1, Final128_W2, Final128_W3};
         SharkNTT::UnpackPrimeToFinal128_NWay<SharkFloatParams, 7>(
             grid, block, unpackInputs, unpackOutputs, Ddigits);
     } else {
@@ -3140,10 +3270,10 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         // W product signs: XOR of input signs
-        outW0->SetNegative(inDzdcReal->GetNegative() ^ inA.GetNegative());   // dzdcR × zR
-        outW1->SetNegative(inDzdcImag->GetNegative() ^ inB.GetNegative());   // dzdcI × zI
-        outW2->SetNegative(inDzdcReal->GetNegative() ^ inB.GetNegative());   // dzdcR × zI
-        outW3->SetNegative(inDzdcImag->GetNegative() ^ inA.GetNegative());   // dzdcI × zR
+        outW0->SetNegative(inDzdcReal->GetNegative() ^ inA.GetNegative()); // dzdcR × zR
+        outW1->SetNegative(inDzdcImag->GetNegative() ^ inB.GetNegative()); // dzdcI × zI
+        outW2->SetNegative(inDzdcReal->GetNegative() ^ inB.GetNegative()); // dzdcR × zI
+        outW3->SetNegative(inDzdcImag->GetNegative() ^ inA.GetNegative()); // dzdcI × zR
 
         // All 7 products in one fused 7-way normalize call.
         // This fixes the aliased-buffer bug in the old 4x3-way approach.
@@ -3152,46 +3282,44 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
         uint64_t *resultW2 = tempDigitsW2_1;
         uint64_t *resultW3 = tempDigitsW3_1;
 
-        HpSharkFloat<SharkFloatParams> *outs7[7] = {
-            outXX, outYY, outXY, outW0, outW1, outW2, outW3};
+        HpSharkFloat<SharkFloatParams> *outs7[7] = {outXX, outYY, outXY, outW0, outW1, outW2, outW3};
         uint64_t *final128s7[7] = {
-            Final128_XX, Final128_YY, Final128_XY,
-            Final128_W0, Final128_W1, Final128_W2, Final128_W3};
-        uint64_t *results7[7] = {
-            resultXX, resultYY, resultXY,
-            resultW0, resultW1, resultW2, resultW3};
+            Final128_XX, Final128_YY, Final128_XY, Final128_W0, Final128_W1, Final128_W2, Final128_W3};
+        uint64_t *results7[7] = {resultXX, resultYY, resultXY, resultW0, resultW1, resultW2, resultW3};
         int32_t exps7[7] = {
-            inA.Exponent + inA.Exponent,               // XX
-            inB.Exponent + inB.Exponent,               // YY
-            inA.Exponent + inB.Exponent,               // XY
-            inDzdcReal->Exponent + inA.Exponent,       // W0 = dzdcR × zR
-            inDzdcImag->Exponent + inB.Exponent,       // W1 = dzdcI × zI
-            inDzdcReal->Exponent + inB.Exponent,       // W2 = dzdcR × zI
-            inDzdcImag->Exponent + inA.Exponent,       // W3 = dzdcI × zR
+            inA.Exponent + inA.Exponent,         // XX
+            inB.Exponent + inB.Exponent,         // YY
+            inA.Exponent + inB.Exponent,         // XY
+            inDzdcReal->Exponent + inA.Exponent, // W0 = dzdcR × zR
+            inDzdcImag->Exponent + inB.Exponent, // W1 = dzdcI × zI
+            inDzdcReal->Exponent + inB.Exponent, // W2 = dzdcR × zI
+            inDzdcImag->Exponent + inA.Exponent, // W3 = dzdcI × zR
         };
         int32_t addTwos7[7] = {0, 0, 1, 1, 1, 1, 1};
-        DebugStatePurpose purposes7[7] = {
-            DebugStatePurpose::Final128XX, DebugStatePurpose::Final128YY,
-            DebugStatePurpose::Final128XY,
-            DebugStatePurpose::Final128W0, DebugStatePurpose::Final128W1,
-            DebugStatePurpose::Final128W2, DebugStatePurpose::Final128W3};
+        DebugStatePurpose purposes7[7] = {DebugStatePurpose::Final128XX,
+                                          DebugStatePurpose::Final128YY,
+                                          DebugStatePurpose::Final128XY,
+                                          DebugStatePurpose::Final128W0,
+                                          DebugStatePurpose::Final128W1,
+                                          DebugStatePurpose::Final128W2,
+                                          DebugStatePurpose::Final128W3};
 
         SharkNTT::Normalize_GridStride_NWay<SharkFloatParams, 7>(grid,
-                                                                  block,
-                                                                  debugGlobalState,
-                                                                  debugStates,
-                                                                  outs7,
-                                                                  exps7,
-                                                                  final128s7,
-                                                                  Ddigits,
-                                                                  addTwos7,
-                                                                  CarryPropagationBuffer2,
-                                                                  CarryPropagationBuffer,
-                                                                  CarryPropagationSync,
-                                                                  CarryPropagationSync2,
-                                                                  results7,
-                                                                  purposes7,
-                                                                  shared_data);
+                                                                 block,
+                                                                 debugGlobalState,
+                                                                 debugStates,
+                                                                 outs7,
+                                                                 exps7,
+                                                                 final128s7,
+                                                                 Ddigits,
+                                                                 addTwos7,
+                                                                 CarryPropagationBuffer2,
+                                                                 CarryPropagationBuffer,
+                                                                 CarryPropagationSync,
+                                                                 CarryPropagationSync2,
+                                                                 results7,
+                                                                 purposes7,
+                                                                 shared_data);
     } else {
         // Non-NR: existing 3-way call (unchanged)
         // ---- Single fused normalize for XX, YY, XY ----
@@ -3278,8 +3406,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     // NR W buffers are now in the runtime layout (not macro offsets), so NTT_OrbitEnd covers both.
     constexpr auto TotalAlloc =
         HpShark::AdditionalUInt64Global + HpShark::CalculateNTTFrameSize<SharkFloatParams>();
-    static_assert(NTT_OrbitEnd <= TotalAlloc,
-                  "Scratch offsets exceed total allocation");
+    static_assert(NTT_OrbitEnd <= TotalAlloc, "Scratch offsets exceed total allocation");
 
     // TODO: indexes
     auto *SharkRestrict debugGlobalState =
@@ -3517,7 +3644,7 @@ void
 PrintMaxActiveBlocks(const HpShark::LaunchParams &launchParams, void *kernelFn, int sharedAmountBytes)
 {
 
-    std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
+    std::cout << "Shared memory size bytes: " << sharedAmountBytes << std::endl;
 
     int numBlocks;
 
@@ -3550,7 +3677,8 @@ PrintMaxActiveBlocks(const HpShark::LaunchParams &launchParams, void *kernelFn, 
             return;
         }
 
-        std::cout << "Available shared memory per block: " << availableSharedMemory << std::endl;
+        std::cout << "Available shared memory per block bytes: " << availableSharedMemory
+                  << std::endl;
     }
 
     // Check the number of multiprocessors on the device
@@ -3600,7 +3728,8 @@ PrintMaxActiveBlocks(const HpShark::LaunchParams &launchParams, void *kernelFn, 
                       << std::endl;
             return;
         }
-        std::cout << "Max threads per multiprocessor: " << maxThreadsPerMultiprocessor << std::endl;
+        std::cout << "Max threads per multiprocessor: " << maxThreadsPerMultiprocessor
+                  << std::endl;
     }
 
     // Check if this device supports cooperative launches
@@ -3632,19 +3761,20 @@ MultiplyHelperNTT(HpSharkComboResults<SharkFloatParams> *SharkRestrict combo,
                   cg::thread_block &block,
                   uint64_t *SharkRestrict tempProducts)
 {
-    MultiplyHelperNTTV2Separates<SharkFloatParams>(combo->Roots,
-                                                   &combo->A,
-                                                   &combo->B,
-                                                   &combo->ResultX2,
-                                                   &combo->Result2XY,
-                                                   &combo->ResultY2,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->DzdcReal : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->DzdcImag : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW0 : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW1 : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW2 : nullptr,
-                                                   SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW3 : nullptr,
-                                                   grid,
-                                                   block,
-                                                   tempProducts);
+    MultiplyHelperNTTV2Separates<SharkFloatParams>(
+        combo->Roots,
+        &combo->A,
+        &combo->B,
+        &combo->ResultX2,
+        &combo->Result2XY,
+        &combo->ResultY2,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->DzdcReal : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->DzdcImag : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW0 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW1 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW2 : nullptr,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->ResultW3 : nullptr,
+        grid,
+        block,
+        tempProducts);
 }

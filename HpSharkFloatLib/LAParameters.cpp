@@ -2,6 +2,32 @@
 
 #include <cmath>
 #include <fstream>
+#include <string>
+
+namespace {
+
+std::string
+BaseLabel(std::string label)
+{
+    if (!label.empty() && label.back() == ':') {
+        label.pop_back();
+    }
+
+    const auto paren = label.find('(');
+    if (paren != std::string::npos) {
+        label.erase(paren);
+    }
+
+    return label;
+}
+
+bool
+MetadataLabelMatches(const std::string &actual, const char *expected)
+{
+    return BaseLabel(actual) == BaseLabel(expected);
+}
+
+} // namespace
 
 LAParameters::LAParameters()
     : m_DetectionMethod{DefaultDetectionMethod},
@@ -21,7 +47,7 @@ LAParameters::ReadLine(std::ifstream &metafile, int32_t &value, const char *name
 {
     std::string line;
     metafile >> line;
-    if (line != name) {
+    if (!MetadataLabelMatches(line, name)) {
         return false;
     }
 
@@ -77,14 +103,16 @@ LAParameters::WriteMetadata(std::ofstream &metafile) const
     metafile << std::dec;
     metafile << "LAParameters:" << std::endl;
     metafile << "DetectionMethod: " << m_DetectionMethod << std::endl;
-    metafile << "LAThresholdScale: " << m_LAThresholdScaleExponent << std::endl;
-    metafile << "LAThresholdCScale: " << m_LAThresholdCScaleExponent << std::endl;
-    metafile << "Stage0PeriodDetectionThreshold2: " << m_Stage0PeriodDetectionThreshold2Exponent
+    metafile << "LAThresholdScale(exp2): " << m_LAThresholdScaleExponent << std::endl;
+    metafile << "LAThresholdCScale(exp2): " << m_LAThresholdCScaleExponent << std::endl;
+    metafile << "Stage0PeriodDetectionThreshold2(exp2): "
+             << m_Stage0PeriodDetectionThreshold2Exponent << std::endl;
+    metafile << "PeriodDetectionThreshold2(exp2): " << m_PeriodDetectionThreshold2Exponent
              << std::endl;
-    metafile << "PeriodDetectionThreshold2: " << m_PeriodDetectionThreshold2Exponent << std::endl;
-    metafile << "Stage0PeriodDetectionThreshold: " << m_Stage0PeriodDetectionThresholdExponent
+    metafile << "Stage0PeriodDetectionThreshold(exp2): "
+             << m_Stage0PeriodDetectionThresholdExponent << std::endl;
+    metafile << "PeriodDetectionThreshold(exp2): " << m_PeriodDetectionThresholdExponent
              << std::endl;
-    metafile << "PeriodDetectionThreshold: " << m_PeriodDetectionThresholdExponent << std::endl;
     return true;
 }
 

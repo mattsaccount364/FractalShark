@@ -595,7 +595,7 @@ Phase1_DE(int32_t numActualDigitsPlusGuard,
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "diffDE: " << diffDE << std::endl;
-            std::cout << "outExponent_DE: " << out.outExponent << std::endl;
+            std::cout << "outExponent_DE_exp2: " << out.outExponent << std::endl;
         }
 
         // --- Phase 1: Raw Extended Arithmetic ---
@@ -901,7 +901,7 @@ NormalizeAndCopyResult_Single(const char *prefixOutStr,
     // --- 1) Inject any carry/borrow back into the digit stream ---
     if (carry < 0) {
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << prefixOutStr << " negative carry (" << carry << "), skipping branch\n";
+            std::cout << prefixOutStr << " negative carry " << carry << ", skipping branch\n";
         }
         assert(false);
         return;
@@ -926,17 +926,17 @@ NormalizeAndCopyResult_Single(const char *prefixOutStr,
     int32_t desiredBit = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << prefixOutStr << " CLZ of word[" << msdResult << "] = 0x" << std::hex << clzResult
-                  << "\n"
-                  << prefixOutStr << " currentBit = 0x" << currentBit << "\n"
-                  << prefixOutStr << " desiredBit = 0x" << desiredBit << std::dec << "\n";
+        std::cout << prefixOutStr << " CLZ(base16) of wordIndex[" << msdResult << "] = 0x"
+                  << std::hex << clzResult << "\n"
+                  << prefixOutStr << " currentBit(base16) = 0x" << currentBit << "\n"
+                  << prefixOutStr << " desiredBit(base16) = 0x" << desiredBit << std::dec << "\n";
     }
 
     // --- 4) Normalize by shifting left or right ---
     int32_t shiftNeeded = currentBit - desiredBit;
     if (shiftNeeded > 0) {
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << prefixOutStr << " right-shifting by " << shiftNeeded << "\n";
+            std::cout << prefixOutStr << " right-shifting by bits " << shiftNeeded << "\n";
         }
         MultiWordShift<Dir::Right>(propagatedResult.data(),
                                    numActualDigitsPlusGuard,
@@ -949,13 +949,13 @@ NormalizeAndCopyResult_Single(const char *prefixOutStr,
             std::cout << prefixOutStr
                       << " after right shift: " << VectorUintToHexString(ResultOut->Digits, actualDigits)
                       << "\n"
-                      << prefixOutStr << " final exponent = 0x" << std::hex << exponent << std::dec
-                      << "\n";
+                      << prefixOutStr << " final exponent2(base16) = 0x" << std::hex << exponent
+                      << std::dec << "\n";
         }
     } else if (shiftNeeded < 0) {
         int32_t L = -shiftNeeded;
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << prefixOutStr << " left-shifting by " << L << "\n";
+            std::cout << prefixOutStr << " left-shifting by bits " << L << "\n";
         }
         MultiWordShift<Dir::Left>(
             propagatedResult.data(), numActualDigitsPlusGuard, L, ResultOut->Digits, actualDigits);
@@ -965,8 +965,8 @@ NormalizeAndCopyResult_Single(const char *prefixOutStr,
             std::cout << prefixOutStr
                       << " after left shift: " << VectorUintToHexString(ResultOut->Digits, actualDigits)
                       << "\n"
-                      << prefixOutStr << " final exponent = 0x" << std::hex << exponent << std::dec
-                      << "\n";
+                      << prefixOutStr << " final exponent2(base16) = 0x" << std::hex << exponent
+                      << std::dec << "\n";
         }
     } else {
         if (SharkVerbose == VerboseMode::Debug) {
@@ -1145,23 +1145,23 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "ext_A_X2: " << VectorUintToHexString(ext_A_X2, numActualDigits) << std::endl;
-        std::cout << "ext_A_X2 exponent: " << A_X2->Exponent << std::endl;
+        std::cout << "ext_A_X2 exponent2: " << A_X2->Exponent << std::endl;
         std::cout << "ext_A_X2 sign: " << (IsNegativeA ? "-" : "+") << std::endl;
 
         std::cout << "ext_B_Y2: " << VectorUintToHexString(ext_B_Y2, numActualDigits) << std::endl;
-        std::cout << "ext_B_Y2 exponent: " << B_Y2->Exponent << std::endl;
+        std::cout << "ext_B_Y2 exponent2: " << B_Y2->Exponent << std::endl;
         std::cout << "ext_B_Y2 sign: " << (IsNegativeB ? "-" : "+") << std::endl;
 
         std::cout << "ext_C_A: " << VectorUintToHexString(ext_C_A, numActualDigits) << std::endl;
-        std::cout << "ext_C_A exponent: " << C_A->Exponent << std::endl;
+        std::cout << "ext_C_A exponent2: " << C_A->Exponent << std::endl;
         std::cout << "ext_C_A sign: " << (IsNegativeC ? "-" : "+") << std::endl;
 
         std::cout << "ext_D_2X: " << VectorUintToHexString(ext_D_2X, numActualDigits) << std::endl;
-        std::cout << "ext_D_2X exponent: " << D_2X->Exponent << std::endl;
+        std::cout << "ext_D_2X exponent2: " << D_2X->Exponent << std::endl;
         std::cout << "ext_D_2X sign: " << (IsNegativeD ? "-" : "+") << std::endl;
 
         std::cout << "ext_E_B: " << VectorUintToHexString(ext_E_B, numActualDigits) << std::endl;
-        std::cout << "ext_E_B exponent: " << E_B->Exponent << std::endl;
+        std::cout << "ext_E_B exponent2: " << E_B->Exponent << std::endl;
         std::cout << "ext_E_B sign: " << (IsNegativeE ? "-" : "+") << std::endl;
     }
 
@@ -1264,16 +1264,17 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     }
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << std::hex << "shiftALeftToGetMsb: 0x" << shiftALeftToGetMsb << ", newAExponent: 0x"
-                  << std::hex << newAExponent << std::endl;
-        std::cout << std::hex << "shiftBLeftToGetMsb: 0x" << shiftBLeftToGetMsb << ", newBExponent: 0x"
-                  << std::hex << newBExponent << std::endl;
-        std::cout << std::hex << "shiftCLeftToGetMsb: 0x" << shiftCLeftToGetMsb << ", newCExponent: 0x"
-                  << std::hex << newCExponent << std::endl;
-        std::cout << std::hex << "shiftDLeftToGetMsb: 0x" << shiftDLeftToGetMsb << ", newDExponent: 0x"
-                  << std::hex << newDExponent << std::endl;
-        std::cout << std::hex << "shiftELeftToGetMsb: 0x" << shiftELeftToGetMsb << ", newEExponent: 0x"
-                  << std::hex << newEExponent << std::endl;
+        std::cout << std::hex << "shiftALeftToGetMsb(base16): 0x" << shiftALeftToGetMsb
+                  << ", newAExponent2(base16): 0x" << std::hex << newAExponent << std::endl;
+        std::cout << std::hex << "shiftBLeftToGetMsb(base16): 0x" << shiftBLeftToGetMsb
+                  << ", newBExponent2(base16): 0x" << std::hex << newBExponent << std::endl;
+        std::cout << std::hex << "shiftCLeftToGetMsb(base16): 0x" << shiftCLeftToGetMsb
+                  << ", newCExponent2(base16): 0x" << std::hex << newCExponent << std::endl;
+        std::cout << std::hex << "shiftDLeftToGetMsb(base16): 0x" << shiftDLeftToGetMsb
+                  << ", newDExponent2(base16): 0x" << std::hex << newDExponent << std::endl;
+        std::cout << std::hex << "shiftELeftToGetMsb(base16): 0x" << shiftELeftToGetMsb
+                  << ", newEExponent2(base16): 0x" << std::hex << newEExponent << std::endl;
+        std::cout << std::dec;
     }
 
     // --- Compute Effective Exponents ---
@@ -1300,11 +1301,11 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     }
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "effExpA: " << effExpA << std::endl;
-        std::cout << "effExpB: " << effExpB << std::endl;
-        std::cout << "effExpC: " << effExpC << std::endl;
-        std::cout << "effExpD: " << effExpD << std::endl;
-        std::cout << "effExpE: " << effExpE << std::endl;
+        std::cout << "effExpA_exp2: " << effExpA << std::endl;
+        std::cout << "effExpB_exp2: " << effExpB << std::endl;
+        std::cout << "effExpC_exp2: " << effExpC << std::endl;
+        std::cout << "effExpD_exp2: " << effExpD << std::endl;
+        std::cout << "effExpE_exp2: " << effExpE << std::endl;
 
         // Print the each array normalized according to
         // their resepective effective exponents
@@ -1453,7 +1454,7 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
                                                           ext_E_B);
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "DIsBiggerMagnitude: " << DIsBiggerMagnitude << std::endl;
+        std::cout << "DIsBiggerMagnitude(bool): " << DIsBiggerMagnitude << std::endl;
     }
 
     // --- Phase 1: D+E ---
@@ -1611,15 +1612,15 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "propagatedResultTrue after arithmetic: "
                   << VectorUintToHexString(propagatedResultTrue) << std::endl;
-        std::cout << "carryTrue out: 0x" << std::hex << carryTrue << std::endl;
+        std::cout << "carryTrue out(base16): 0x" << std::hex << carryTrue << std::endl;
 
         std::cout << "propagatedResultFalse after arithmetic: "
                   << VectorUintToHexString(propagatedResultFalse) << std::endl;
-        std::cout << "carryFalse out: 0x" << std::hex << carryFalse << std::endl;
+        std::cout << "carryFalse out(base16): 0x" << std::hex << carryFalse << std::endl;
 
         std::cout << "propagatedResult_DE after arithmetic: "
                   << VectorUintToHexString(propagatedResult_DE) << std::endl;
-        std::cout << "carry_DE out: 0x" << std::hex << carry_DE << std::endl;
+        std::cout << "carry_DE out(base16): 0x" << std::hex << carry_DE << std::dec << std::endl;
     }
 
     if constexpr (HpShark::DebugChecksums) {

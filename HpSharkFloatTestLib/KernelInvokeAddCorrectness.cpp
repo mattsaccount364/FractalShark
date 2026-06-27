@@ -26,8 +26,8 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
     if (err != cudaSuccess) {
         cudaFree(comboResults);
         std::ostringstream oss;
-        oss << "cudaMemcpy(combo -> comboResults) failed: " << cudaGetErrorString(err) << " (code "
-            << static_cast<int>(err) << ")";
+        oss << "cudaMemcpy(combo -> comboResults) failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")";
         throw FractalSharkSeriousException(oss.str());
     }
 
@@ -68,10 +68,9 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
     // Zero the debug checksum region so stale data from previous kernels
     // doesn't cause false mismatches.
     if constexpr (HpShark::DebugChecksums) {
-        err = cudaMemset(
-            &g_extResult[HpShark::AdditionalChecksumsOffset],
-            0,
-            SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw));
+        err = cudaMemset(&g_extResult[HpShark::AdditionalChecksumsOffset],
+                         0,
+                         SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw));
         if (err != cudaSuccess) {
             cudaFree(g_extResult);
             cudaFree(comboResults);
@@ -96,8 +95,8 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
         cudaFree(g_extResult);
         cudaFree(comboResults);
         std::ostringstream oss;
-        oss << "cudaMemcpy(comboResults -> combo) failed: " << cudaGetErrorString(err) << " (code "
-            << static_cast<int>(err) << ")";
+        oss << "cudaMemcpy(comboResults -> combo) failed: " << cudaGetErrorString(err)
+            << " (code " << static_cast<int>(err) << ")";
         throw FractalSharkSeriousException(oss.str());
     }
 
@@ -112,8 +111,8 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
                 cudaFree(g_extResult);
                 cudaFree(comboResults);
                 std::ostringstream oss;
-                oss << "cudaMemcpy(DebugChecksums) failed: " << cudaGetErrorString(err) << " (code "
-                    << static_cast<int>(err) << ")";
+                oss << "cudaMemcpy(DebugChecksums) failed: " << cudaGetErrorString(err)
+                    << " (code " << static_cast<int>(err) << ")";
                 throw FractalSharkSeriousException(oss.str());
             }
         }
@@ -128,8 +127,8 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
                 cudaFree(g_extResult);
                 cudaFree(comboResults);
                 std::ostringstream oss;
-                oss << "cudaMemcpy(DebugGlobalState) failed: " << cudaGetErrorString(err) << " (code "
-                    << static_cast<int>(err) << ")";
+                oss << "cudaMemcpy(DebugGlobalState) failed: " << cudaGetErrorString(err)
+                    << " (code " << static_cast<int>(err) << ")";
                 throw FractalSharkSeriousException(oss.str());
             }
         }
@@ -152,7 +151,6 @@ InvokeAddKernelCorrectness(const HpShark::LaunchParams &launchParams,
         throw FractalSharkSeriousException(oss.str());
     }
 }
-
 
 #define ExplicitlyInstantiateAdd(SharkFloatParams)                                                      \
     template void InvokeAddKernelCorrectness<SharkFloatParams>(                                         \

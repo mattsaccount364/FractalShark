@@ -706,7 +706,8 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 
             wchar_t buf[256];
             swprintf_s(buf,
-                       L"Unknown WM_COMMAND.\n\nwmId = %d (0x%X)\nwmEvent = %d (0x%X)\n",
+                       L"Unknown WM_COMMAND.\n\nwmId = %d, wmId(base16) = 0x%X\n"
+                       L"wmEvent = %d, wmEvent(base16) = 0x%X\n",
                        wmId,
                        wmId,
                        wmEvent,

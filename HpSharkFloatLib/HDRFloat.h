@@ -138,11 +138,12 @@ public:
         std::string result;
         if constexpr (!IntegerOutput) {
             if constexpr (!isDblFlt) {
-                result +=
-                    std::format("mantissa: {} exp: {}", static_cast<double>(Base::mantissa), Base::exp);
+                result += std::format("mantissa: {} exp2: {}",
+                                      static_cast<double>(Base::mantissa),
+                                      Base::exp);
             } else {
                 result += Base::mantissa.template ToString<IntegerOutput>();
-                result += std::format(" exp: {}", Base::exp);
+                result += std::format(" exp2: {}", Base::exp);
             }
         } else {
             if constexpr (!isDblFlt) {
@@ -150,12 +151,13 @@ public:
                 const uint64_t mantissaInteger = *reinterpret_cast<const uint64_t *>(&res);
                 const uint64_t localExp = Base::exp;
                 const uint64_t expInteger = *reinterpret_cast<const uint64_t *>(&localExp);
-                result += std::format("mantissa: 0x{:x} exp: 0x{:x}", mantissaInteger, expInteger);
+                result += std::format(
+                    "mantissaBits(base16): 0x{:x} exp2(base16): 0x{:x}", mantissaInteger, expInteger);
             } else {
                 result += Base::mantissa.template ToString<IntegerOutput>();
 
                 uint64_t tempExp = Base::exp;
-                result += std::format(" exp: 0x{:x}", tempExp);
+                result += std::format(" exp2(base16): 0x{:x}", tempExp);
             }
         }
 
@@ -1670,14 +1672,14 @@ HdrToString(const T &dat)
         if constexpr (!IntegerOutput) {
             std::stringstream ss;
             ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-            ss << "mantissa: " << static_cast<double>(dat) << " exp: 0";
+            ss << "mantissa: " << static_cast<double>(dat) << " exp2: 0";
             return ss.str();
         } else {
             // Interpret the bits as an integer and output that
             const auto doubleDat = static_cast<double>(dat);
             uint64_t bits = *reinterpret_cast<const uint64_t *>(&doubleDat);
             std::stringstream ss;
-            ss << "mantissa: 0x" << std::hex << bits << " exp: 0x0";
+            ss << "mantissaBits(base16): 0x" << std::hex << bits << " exp2(base16): 0x0";
             return ss.str();
         }
     } else if constexpr (std::is_same<T, HighPrecisionT<HPDestructor::True>>::value ||

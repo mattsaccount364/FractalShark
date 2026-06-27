@@ -33,12 +33,12 @@ public:
         if constexpr (!IntegerOutput) {
             if constexpr (!isDblFlt) {
                 // Output the mantissa and exponent as doubles:
-                return std::format("mantissaReal: {} mantissaImag: {} exp: {}",
+                return std::format("mantissaReal: {} mantissaImag: {} exp2: {}",
                                    static_cast<double>(this->mantissaReal),
                                    static_cast<double>(this->mantissaImag),
                                    this->exp);
             } else {
-                return std::format("{} {} exp: {}",
+                return std::format("{} {} exp2: {}",
                                    this->mantissaReal.template ToString<IntegerOutput>(),
                                    this->mantissaImag.template ToString<IntegerOutput>(),
                                    this->exp);
@@ -50,12 +50,13 @@ public:
                 // Interpret the bits as integers and output the integers:
                 const double localMantissaReal = static_cast<double>(this->mantissaReal);
                 const double localMantissaImag = static_cast<double>(this->mantissaImag);
-                return std::format("mantissaReal: 0x{:x} mantissaImag: 0x{:x} exp: 0x{:x}",
+                return std::format("mantissaRealBits(base16): 0x{:x} mantissaImagBits(base16): 0x{:x} "
+                                   "exp2(base16): 0x{:x}",
                                    *reinterpret_cast<const uint64_t *>(&localMantissaReal),
                                    *reinterpret_cast<const uint64_t *>(&localMantissaImag),
                                    localExp);
             } else {
-                return std::format("{} {} exp: 0x{:x}",
+                return std::format("{} {} exp2(base16): 0x{:x}",
                                    this->mantissaReal.template ToString<IntegerOutput>(),
                                    this->mantissaImag.template ToString<IntegerOutput>(),
                                    localExp);

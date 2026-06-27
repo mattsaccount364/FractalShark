@@ -170,8 +170,9 @@ EvaluateCriticalOrbitAndDerivsMT(const mpf_complex &c_coord,
                 std::cout << " |z|^2=" << std::setprecision(4) << (zr * zr + zi * zi);
             }
             if (itersPerSec > 0) {
-                std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
-                          << std::setprecision(1) << etaHours << " hrs)";
+                std::cout << " (" << static_cast<uint64_t>(itersPerSec)
+                          << " iter/s, ETA: " << std::fixed << std::setprecision(1)
+                          << etaHours << " hrs)";
             }
             std::cout << std::endl;
 
@@ -358,8 +359,9 @@ EvaluateCriticalOrbitAndDerivsST(const mpf_complex &c_coord,
                 std::cout << " |z|^2=" << std::setprecision(4) << (zr * zr + zi * zi);
             }
             if (itersPerSec > 0) {
-                std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
-                          << std::setprecision(1) << etaHours << " hrs)";
+                std::cout << " (" << static_cast<uint64_t>(itersPerSec)
+                          << " iter/s, ETA: " << std::fixed << std::setprecision(1)
+                          << etaHours << " hrs)";
             }
             std::cout << std::endl;
 

@@ -446,7 +446,8 @@ HpSharkReferenceResultsToFile(const std::string &filename,
     std::string add_Result2DEStr = "Add.Result2_D_E: " + results.Add.Result2_D_E.ToHexString();
 
     std::string periodicityStatusStr = "PeriodicityStatus: " + results.PeriodicityStrResult();
-    std::string outputIterationStr = "OutputIterCount: " + std::to_string(results.OutputIterCount);
+    std::string outputIterationStr =
+        "OutputIterCount: " + std::to_string(results.OutputIterCount);
 
     // Open file in text mode
     std::ofstream outFile(filename, std::ios::out);
@@ -729,7 +730,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
         hostTimer.StopTimer();
 
-        std::cout << "Host iter time: " << hostTimer.GetDeltaInMs() << " ms" << std::endl;
+        std::cout << "Host iter timeMs: " << hostTimer.GetDeltaInMs() << std::endl;
         std::cout << "Host periodicity: " << PeriodicityStrResult(hostPeriodicityResult)
                   << ", iters=" << hostIterationsExecuted << std::endl;
         if (timingOut) {
@@ -778,7 +779,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 HpShark::InvokeAddKernelPerf<SharkFloatParams>(launchParams, timer, *combo, numIters);
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
-                std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+                std::cout << "GPU iter timeMs: " << timer.GetDeltaInMs() << std::endl;
 
                 if (timer.GetDeltaInMs() != 0) {
                     std::cout << "Ratio: "
@@ -819,7 +820,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
-                std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+                std::cout << "GPU iter timeMs: " << timer.GetDeltaInMs() << std::endl;
 
                 if (timer.GetDeltaInMs() != 0) {
                     std::cout << "Ratio: "
@@ -897,7 +898,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
-                std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+                std::cout << "GPU iter timeMs: " << timer.GetDeltaInMs() << std::endl;
                 if (timingOut) {
                     timingOut->gpuMs = static_cast<double>(timer.GetDeltaInMs());
                 }
@@ -939,8 +940,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             if constexpr (HpShark::TestMPIRImpl) {
                 if (hpSharkReferenceOrbit.size() != hostReferenceOrbit.size()) {
                     std::cout << "Error: Host and GPU reference orbit size mismatch: host="
-                              << hostReferenceOrbit.size() << " gpu=" << hpSharkReferenceOrbit.size()
-                              << std::endl;
+                              << hostReferenceOrbit.size()
+                              << " gpu=" << hpSharkReferenceOrbit.size() << std::endl;
                     Environment::DebugBreakpoint();
                 } else {
                     bool orbitMatch = true;
@@ -959,7 +960,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         HdrReduce(gpuValY);
 
                         if (hostValX != gpuValX || hostValY != gpuValY) {
-                            std::cout << "Error: Host and GPU reference orbit value mismatch at idx "
+                            std::cout << "Error: Host and GPU reference orbit value mismatch at "
+                                         "idx "
                                       << i << ": host.x=" << hostValX.template ToString<false>()
                                       << " host.y=" << hostValY.template ToString<false>()
                                       << " gpu.x=" << gpuValX.template ToString<false>()
@@ -1005,8 +1007,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                             HdrReduce(cpuValY);
 
                             if (hostValX != cpuValX || hostValY != cpuValY) {
-                                std::cout << "Error: MPIR host and CPU ref orbit mismatch at idx " << i
-                                          << ": mpir.x=" << hostValX.template ToString<false>()
+                                std::cout << "Error: MPIR host and CPU ref orbit mismatch at "
+                                             "idx "
+                                          << i << ": mpir.x=" << hostValX.template ToString<false>()
                                           << " mpir.y=" << hostValY.template ToString<false>()
                                           << " cpu.x=" << cpuValX.template ToString<false>()
                                           << " cpu.y=" << cpuValY.template ToString<false>()
@@ -1034,7 +1037,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     if (cpuRefOrbitResult->IterationsExecuted != hostIterationsExecuted) {
                         std::cout << "Error: CPU ref iteration count mismatch: mpir="
                                   << hostIterationsExecuted
-                                  << " cpuRef=" << cpuRefOrbitResult->IterationsExecuted << std::endl;
+                                  << " cpuRef=" << cpuRefOrbitResult->IterationsExecuted
+                                  << std::endl;
                         Environment::DebugBreakpoint();
                     }
                 }
@@ -1112,8 +1116,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 if (cpuRefOrbitResult->IterationsExecuted != totalExecutedIters) {
                     std::cout << "Error: CPU ref vs GPU iteration count mismatch: cpuRef="
-                              << cpuRefOrbitResult->IterationsExecuted << " gpu=" << totalExecutedIters
-                              << std::endl;
+                              << cpuRefOrbitResult->IterationsExecuted
+                              << " gpu=" << totalExecutedIters << std::endl;
                     Environment::DebugBreakpoint();
                 }
             }
@@ -1121,8 +1125,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             if (expectedPeriod != -1 && static_cast<uint64_t>(expectedPeriod) <= numIters) {
                 if ((combo.PeriodicityStatus != expectedResult) ||
                     (totalExecutedIters != static_cast<uint64_t>(expectedPeriod))) {
-                    std::cout << "Error: Expected result iters " << expectedPeriod << " but got "
-                              << totalExecutedIters << std::endl;
+                    std::cout << "Error: Expected result iters " << expectedPeriod
+                              << " but got " << totalExecutedIters << std::endl;
                     Environment::DebugBreakpoint();
                 }
             }
@@ -1259,7 +1263,8 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
         uint64_t totalMultiplyCountResults{};
         std::cerr << "MultiplyCount distribution:" << std::endl;
         for (const auto &pair : countOfCountsMultiply) {
-            std::cerr << "Count: " << pair.first << " occurred " << pair.second << " times" << std::endl;
+            std::cerr << "Count: " << pair.first << " occurred " << pair.second
+                      << " times" << std::endl;
             totalMultiplyCountGpu += pair.first * pair.second;
             totalMultiplyCountResults += pair.second;
         }
@@ -1268,8 +1273,8 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
         std::cerr << "GPU total normalize count: " << normalizeCount << std::endl;
 
         std::cerr << "GPU total multiply count: " << totalMultiplyCountGpu << std::endl;
-        std::cerr << "GPU result count (should be total num threads): " << totalMultiplyCountResults
-                  << std::endl;
+        std::cerr << "GPU result count (should be total num threads): "
+                  << totalMultiplyCountResults << std::endl;
         std::cerr << "Host count: " << debugHostCombo.MultiplyCounts.multiplyCount << std::endl;
 
         if (totalMultiplyCountGpu != debugHostCombo.MultiplyCounts.multiplyCount) {
@@ -1323,7 +1328,8 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
                 maxHostArraySize != cuda.ArraySize) {
 
                 std::cerr << "======================================" << std::endl;
-                std::cerr << "Error: Checksum mismatch at index 0x" << std::hex << i << std::endl;
+                std::cerr << "Error: Checksum mismatch at index(base16) 0x" << std::hex << i
+                          << std::endl;
                 std::cerr << "GPU:" << std::endl;
 
                 // Print all fields of cuda:
@@ -1333,8 +1339,10 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
                 std::cerr << "Thread: " << cuda.Thread << std::endl;
                 std::cerr << "ArraySize: " << cuda.ArraySize << std::endl;
 
-                std::cerr << "Checksum: 0x" << std::hex << cuda.Checksum << std::dec << std::endl;
-                std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose) << std::endl;
+                std::cerr << "Checksum(base16): 0x" << std::hex << cuda.Checksum << std::dec
+                          << std::endl;
+                std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose)
+                          << std::endl;
                 std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(cuda.ChecksumPurpose)
                           << std::endl;
 
@@ -1346,24 +1354,28 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
                 std::cerr << std::endl;
                 std::cerr << "Host reference implementation:" << std::endl;
                 std::cerr << "Initialized: " << host.Initialized << std::endl;
-                std::cerr << "ArrayToChecksum32: " << std::endl;
+                std::cerr << "ArrayToChecksum32(base16 words): " << std::endl;
                 for (size_t j = 0; j < host.ArrayToChecksum32.size(); ++j) {
                     std::cerr << std::hex << "0x" << host.ArrayToChecksum32[j] << std::dec << " ";
                 }
 
                 std::cerr << std::endl;
-                std::cerr << "ArrayToChecksum32 length: " << host.ArrayToChecksum32.size() << std::endl;
+                std::cerr << "ArrayToChecksum32 length: " << host.ArrayToChecksum32.size()
+                          << std::endl;
 
-                std::cerr << "ArrayToChecksum64: " << std::endl;
+                std::cerr << "ArrayToChecksum64(base16 words): " << std::endl;
                 for (size_t j = 0; j < host.ArrayToChecksum64.size(); ++j) {
                     std::cerr << std::hex << "0x" << host.ArrayToChecksum64[j] << std::dec << " ";
                 }
 
                 std::cerr << std::endl;
-                std::cerr << "ArrayToChecksum64 length: " << host.ArrayToChecksum64.size() << std::endl;
+                std::cerr << "ArrayToChecksum64 length: " << host.ArrayToChecksum64.size()
+                          << std::endl;
 
-                std::cerr << "Checksum: 0x" << std::hex << host.Checksum << std::dec << std::endl;
-                std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose) << std::endl;
+                std::cerr << "Checksum(base16): 0x" << std::hex << host.Checksum << std::dec
+                          << std::endl;
+                std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose)
+                          << std::endl;
                 std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(host.ChecksumPurpose)
                           << std::endl;
 
@@ -1642,7 +1654,7 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "GPU single time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+            std::cout << "GPU single timeMs: " << timer.GetDeltaInMs() << std::endl;
         }
     }
 
@@ -1998,7 +2010,7 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "GPU single time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+            std::cout << "GPU single timeMs: " << timer.GetDeltaInMs() << std::endl;
         }
     }
 
@@ -2252,7 +2264,7 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "GPU single time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+            std::cout << "GPU single timeMs: " << timer.GetDeltaInMs() << std::endl;
         }
     }
 
@@ -3289,8 +3301,8 @@ TestTernarySpecial21(const HpShark::LaunchParams &launchParams,
         std::cout << std::endl;
     }
 
-    std::cout << "Test " << std::dec << testNum << ", exponentOverride2: " << exponentOverride2
-              << std::endl;
+    std::cout << "Test " << std::dec << testNum
+              << ", exponentOverride2_exp2: " << exponentOverride2 << std::endl;
 
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>(allFs.data(), 0, false);
     auto yNum =

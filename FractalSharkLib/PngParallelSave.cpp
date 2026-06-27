@@ -198,6 +198,7 @@ PngParallelSave::Run()
         constexpr size_t buf_size = 128;
         char one_val[buf_size];
         std::string out_str;
+        out_str += "# x, y, and iteration counts are decimal.\n";
 
         for (uint32_t output_y = 0; output_y < m_ScrnHeight * m_GpuAntialiasing; output_y++) {
             for (uint32_t output_x = 0; output_x < m_ScrnWidth * m_GpuAntialiasing; output_x++) {
@@ -206,7 +207,11 @@ PngParallelSave::Run()
 
                 // static_assert(sizeof(IterType) == 8, "!");
                 // char(*__kaboom1)[sizeof(IterType)] = 1;
-                sprintf(one_val, "(%u,%u):%" PRIu64 " ", output_x, output_y, (IterTypeFull)numiters);
+                sprintf(one_val,
+                        "(x=%u,y=%u):iters=%" PRIu64 " ",
+                        output_x,
+                        output_y,
+                        (IterTypeFull)numiters);
 
                 // Wow what a kludge
                 // size_t orig_len = strlen(one_val);

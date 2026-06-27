@@ -79,7 +79,8 @@ TestTracker::CheckAllTestsPassed() const
             }
 
             if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "Test " << i << " [" << t.NumBlocks << "x" << t.ThreadsPerBlock << "] "
+                std::cout << "Test " << i << " [blocks=" << t.NumBlocks
+                          << ", threadsPerBlock=" << t.ThreadsPerBlock << "] "
                           << "Variant: " << desc << " -> " << StatusToString(vr.status) << "\n";
                 if (vr.status == VariantStatus::Failed) {
                     std::cout << "  Error: " << vr.relativeError
@@ -91,12 +92,14 @@ TestTracker::CheckAllTestsPassed() const
         if (anyFailed) {
             failedTests++;
             std::cout << "Test " << i << " FAILED"
-                      << " [" << t.NumBlocks << "x" << t.ThreadsPerBlock << "] " << failedVariants
+                      << " [blocks=" << t.NumBlocks
+                      << ", threadsPerBlock=" << t.ThreadsPerBlock << "] " << failedVariants
                       << "\n";
         } else if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "Test " << i << " PASSED"
-                      << " [" << t.NumBlocks << "x" << t.ThreadsPerBlock << "] "
-                      << "Time: " << t.TestMs << " ms\n";
+                      << " [blocks=" << t.NumBlocks
+                      << ", threadsPerBlock=" << t.ThreadsPerBlock << "] "
+                      << "TimeMs: " << t.TestMs << "\n";
         }
     }
 
@@ -110,8 +113,9 @@ TestTracker::CheckAllTestsPassed() const
         for (size_t k = 0; k < topN; ++k) {
             auto ms = slow[k].first;
             auto idx = slow[k].second;
-            std::cout << "  Test " << idx << ": " << ms << " ms"
-                      << " [" << m_Tests[idx].NumBlocks << "x" << m_Tests[idx].ThreadsPerBlock << "]\n";
+            std::cout << "  Test " << idx << ": timeMs=" << ms
+                      << " [blocks=" << m_Tests[idx].NumBlocks
+                      << ", threadsPerBlock=" << m_Tests[idx].ThreadsPerBlock << "]\n";
         }
     }
 
@@ -121,20 +125,21 @@ TestTracker::CheckAllTestsPassed() const
     }
 
     if (!failedByVariant.empty()) {
-        std::cout << "Some tests failed! (" << failedTests << "/" << ranTests << " tests)\n";
+        std::cout << "Some tests failed! (failed=" << failedTests << ", ran=" << ranTests
+                  << ")\n";
         for (const auto &kv : failedByVariant) {
             const std::string &desc = kv.first;
             const size_t failed = kv.second;
             const size_t ran = ranByVariant[desc];
             const double pct = ran ? (failed * 100.0) / double(ran) : 0.0;
 
-            std::cout << "  Variant \"" << desc << "\": " << failed << "/" << ran << " failed (" << pct
-                      << "%)\n";
+            std::cout << "  Variant \"" << desc << "\": failed=" << failed
+                      << ", ran=" << ran << ", percent=" << pct << "%\n";
         }
         return false;
     }
 
-    std::cout << "All tests passed! (" << ranTests << " tests)\n";
+    std::cout << "All tests passed! (ran=" << ranTests << ")\n";
     return true;
 }
 

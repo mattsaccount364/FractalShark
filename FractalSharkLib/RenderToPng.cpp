@@ -68,7 +68,7 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err)
         }
 
         if (!req.Quiet) {
-            std::cout << "Rendering " << req.Width << "x" << req.Height << " with "
+            std::cout << "Rendering " << req.Width << "x" << req.Height << " pixels with "
                       << (req.Algorithm.AlgorithmStr ? req.Algorithm.AlgorithmStr : "<null>") << "...\n";
             std::cout.flush();
         }
@@ -82,7 +82,7 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err)
             int rc = fractal.SaveCurrentFractal(req.OutPngBasename, /*copy_the_iters=*/false);
             if (rc != 0) {
                 std::ostringstream ss;
-                ss << "RenderToPng: SaveCurrentFractal returned " << rc;
+                ss << "RenderToPng: SaveCurrentFractal returned code " << rc;
                 return fail(ss.str(), rc);
             }
 

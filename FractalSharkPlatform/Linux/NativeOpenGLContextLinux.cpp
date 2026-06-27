@@ -169,8 +169,8 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     char buf[512];
     snprintf(buf,
              sizeof(buf),
-             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct=%d, software=%d, "
-             "doubleBuffered=%d",
+             "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct(bool)=%d, "
+             "software(bool)=%d, doubleBuffered(bool)=%d",
              renderer ? renderer : "(null)",
              version ? version : "(null)",
              m_MaxTextureSize,

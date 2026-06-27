@@ -58,10 +58,9 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
     // Zero the debug checksum region so stale data from previous kernels
     // doesn't cause false mismatches.
     if constexpr (HpShark::DebugChecksums) {
-        err = cudaMemset(
-            &combo.d_tempProducts[HpShark::AdditionalChecksumsOffset],
-            0,
-            SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw));
+        err = cudaMemset(&combo.d_tempProducts[HpShark::AdditionalChecksumsOffset],
+                         0,
+                         SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw));
         if (err != cudaSuccess) {
             std::ostringstream oss;
             oss << "cudaMemset(debug checksum region) failed: " << cudaGetErrorString(err)
@@ -88,8 +87,8 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
                      cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
         std::ostringstream oss;
-        oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
-            << ")";
+        oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
         throw FractalSharkSeriousException(oss.str());
     }
 
@@ -221,8 +220,8 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
         throw FractalSharkSeriousException(oss.str());
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
-                << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -242,8 +241,8 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
                      cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
         std::ostringstream oss;
-        oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
-            << ")";
+        oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
         throw FractalSharkSeriousException(oss.str());
     }
 

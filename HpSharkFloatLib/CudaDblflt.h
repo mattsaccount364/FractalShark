@@ -106,8 +106,8 @@ public:
             auto float2 = static_cast<double>(this->d.tail);
             auto *float1Bits = reinterpret_cast<uint64_t *>(&float1);
             auto *float2Bits = reinterpret_cast<uint64_t *>(&float2);
-            ss << "mantissaOne: 0x" << std::hex << *float1Bits << " mantissaTwo: 0x" << std::hex
-               << *float2Bits;
+            ss << "mantissaOneBits(base16): 0x" << std::hex << *float1Bits
+               << " mantissaTwoBits(base16): 0x" << std::hex << *float2Bits;
         }
         return ss.str();
     }

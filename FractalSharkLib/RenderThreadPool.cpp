@@ -1119,7 +1119,7 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
             char buf[256];
             snprintf(buf,
                      sizeof(buf),
-                     "RenderFrameToGL: software path, frame=%zux%zu, maxTex=%d",
+                     "RenderFrameToGL: software path, frame(pixels)=%zux%zu, maxTex=%d",
                      frame.OutputWidth,
                      frame.OutputHeight,
                      maxTex);
@@ -1138,12 +1138,13 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
             if (!loggedTileConfig) {
                 loggedTileConfig = true;
                 char buf[256];
-                snprintf(buf,
-                         sizeof(buf),
-                         "RenderFrameToGL: software tiles=%zux%zu, stagingBytes=%zu",
-                         tileW,
-                         tileH,
-                         tileW * tileH * 4);
+                snprintf(
+                    buf,
+                    sizeof(buf),
+                    "RenderFrameToGL: software tiles(pixels)=%zux%zu, stagingBytes=%zu",
+                    tileW,
+                    tileH,
+                    tileW * tileH * 4);
                 GlLog(buf);
             }
         }
@@ -1213,7 +1214,8 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
                     snprintf(buf,
                              sizeof(buf),
                              "RenderFrameToGL: first software tile glTexImage2D end, "
-                             "elapsedMs=%lld, error=0x%x, potW=%u, potH=%u",
+                             "elapsedMs=%lld, error(base16)=0x%x, potW=%u, "
+                             "potH=%u",
                              ElapsedMilliseconds(uploadStart),
                              err,
                              potW,
@@ -1255,10 +1257,11 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
 
                 if (diagnoseFirstTile) {
                     char buf[128];
-                    snprintf(buf,
-                             sizeof(buf),
-                             "RenderFrameToGL: first software tile quad draw end, elapsedMs=%lld",
-                             ElapsedMilliseconds(drawStart));
+                    snprintf(
+                        buf,
+                        sizeof(buf),
+                        "RenderFrameToGL: first software tile quad draw end, elapsedMs=%lld",
+                        ElapsedMilliseconds(drawStart));
                     GlLog(buf);
                 }
             }
@@ -1308,7 +1311,8 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
             char buf[160];
             snprintf(buf,
                      sizeof(buf),
-                     "RenderFrameToGL: first hardware glTexImage2D end, elapsedMs=%lld, error=0x%x",
+                     "RenderFrameToGL: first hardware glTexImage2D end, elapsedMs=%lld, "
+                     "error(base16)=0x%x",
                      ElapsedMilliseconds(uploadStart),
                      err);
             GlLog(buf);
@@ -1503,7 +1507,7 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                         snprintf(buf,
                                  sizeof(buf),
                                  "WorkerLoop: first frame produced, seq=%zu, "
-                                 "%zux%zu",
+                                 "size(pixels)=%zux%zu",
                                  item.SequenceNumber,
                                  workerIters.m_OutputWidth,
                                  workerIters.m_OutputHeight);
@@ -1593,7 +1597,7 @@ RenderThreadPool::GlConsumerLoop()
         char buf[256];
         snprintf(buf,
                  sizeof(buf),
-                 "GlConsumerLoop: context valid, software=%d, maxTex=%d",
+                 "GlConsumerLoop: context valid, software(bool)=%d, maxTex=%d",
                  glContext->IsSoftwareRenderer() ? 1 : 0,
                  glContext->GetMaxTextureSize());
         GlLog(buf);
@@ -1905,7 +1909,7 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
                 char buf[256];
                 snprintf(buf,
                          sizeof(buf),
-                         "ProduceFrame: dimension mismatch, renderer=%ux%u, "
+                         "ProduceFrame: dimension mismatch, renderer(pixels)=%ux%u, "
                          "iters=%zux%zu",
                          renderer.GetWidth(),
                          renderer.GetHeight(),

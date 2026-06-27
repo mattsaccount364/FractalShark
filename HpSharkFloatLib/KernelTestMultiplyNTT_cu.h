@@ -71,7 +71,8 @@ ComputeMultiplyNTTGpu(const HpShark::LaunchParams &launchParams, void *kernelArg
     HpShark::LaunchParams newLaunchParams{launchParams};
     if (newLaunchParams.NumBlocks == 0) {
         HpShark::CudaLaunchConfig launchConfig;
-        launchConfig.compute((const void *)MultiplyKernelNTT<SharkFloatParams>, SharedMemSize, newLaunchParams);
+        launchConfig.compute(
+            (const void *)MultiplyKernelNTT<SharkFloatParams>, SharedMemSize, newLaunchParams);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)MultiplyKernelNTT<SharkFloatParams>,

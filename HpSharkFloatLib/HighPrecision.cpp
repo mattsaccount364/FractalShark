@@ -36,6 +36,8 @@ MpfToHex32String(const mpf_t mpf_val)
         result += "+";
     }
 
+    result += " limbs32(base16): ";
+
     // Convert each limb to hex and append to result
     for (int i = 0; i < numLimbs; ++i) {
         char buffer[32];
@@ -50,7 +52,7 @@ MpfToHex32String(const mpf_t mpf_val)
 
     // Finally append exponent
     exponent = mpf_val[0]._mp_exp;
-    result += "2^64^(0n" + std::to_string(exponent) + ")";
+    result += "2^64^(exponent:" + std::to_string(exponent) + ")";
 
     return result;
 }
@@ -74,6 +76,7 @@ MpfToHex64StringInvertable(const mpf_t mpf_val)
 
     result += " limbs: " + std::to_string(numLimbs) + " ";
     result += " actualLimbsUsed: " + std::to_string(actualLimbsUsed) + " ";
+    result += " limbs(base16): ";
 
     // Convert each limb to hex and append to result
     for (int i = 0; i < numLimbs; ++i) {
@@ -88,7 +91,7 @@ MpfToHex64StringInvertable(const mpf_t mpf_val)
 
     // Finally append exponent
     exponent = mpf_val[0]._mp_exp;
-    result += " e " + std::to_string(exponent);
+    result += " e: " + std::to_string(exponent);
 
     return result;
 }
@@ -130,7 +133,8 @@ Hex64StringToMpf_Exact(const std::string &s, mpf_t out)
 
     // --- parse wire format ---
     // Format:
-    //   <+|-> limbs: <numLimbs> actualLimbsUsed: <actualLimbsUsed> 0xLLLL... (numLimbs tokens) e <exp>
+    //   <+|-> limbs: <numLimbs> actualLimbsUsed: <actualLimbsUsed>
+    //   limbs(base16): 0xLLLL... (numLimbs tokens) e: <exp>
     std::string w = s;
     trim_left(w);
     expect(!w.empty(), "Empty input");
@@ -140,8 +144,12 @@ Hex64StringToMpf_Exact(const std::string &s, mpf_t out)
     w.erase(0, 1);
     trim_left(w);
 
-    expect(w.compare(0, 6, "limbs:") == 0, "Missing 'limbs:' token");
-    w.erase(0, 6);
+    if (w.compare(0, 14, "limbs:") == 0) {
+        w.erase(0, 14);
+    } else {
+        expect(w.compare(0, 6, "limbs:") == 0, "Missing 'limbs:' token");
+        w.erase(0, 6);
+    }
     trim_left(w);
 
     std::istringstream iss(w);
@@ -154,27 +162,50 @@ Hex64StringToMpf_Exact(const std::string &s, mpf_t out)
     {
         std::string tok;
         expect(static_cast<bool>(iss >> tok), "Missing 'actualLimbsUsed:' token");
-        expect(tok == "actualLimbsUsed:", "Expected 'actualLimbsUsed:'");
+        expect(tok == "actualLimbsUsed:" || tok == "actualLimbsUsed:",
+               "Expected 'actualLimbsUsed:'");
     }
 
     long actualLimbsUsed = 0; // signed; may be negative
     expect(static_cast<bool>(iss >> actualLimbsUsed), "Failed to read actualLimbsUsed");
+
+    std::string firstLimbToken;
+    std::string eTok;
+    bool haveFirstLimbToken = false;
+    expect(static_cast<bool>(iss >> firstLimbToken), "Missing limb or exponent token");
+    if (firstLimbToken == "limbs(base16):") {
+        if (numLimbs > 0) {
+            expect(static_cast<bool>(iss >> firstLimbToken), "Not enough limb tokens");
+            haveFirstLimbToken = true;
+        } else {
+            expect(static_cast<bool>(iss >> eTok), "Missing exponent marker");
+        }
+    } else if (numLimbs > 0) {
+        haveFirstLimbToken = true;
+    } else {
+        eTok = firstLimbToken;
+    }
 
     // Collect exactly numLimbs limb tokens
     std::vector<mp_limb_t> limbs;
     limbs.reserve(numLimbs);
     for (std::size_t i = 0; i < numLimbs; ++i) {
         std::string tok;
-        expect(static_cast<bool>(iss >> tok), "Not enough limb tokens");
+        if (i == 0 && haveFirstLimbToken) {
+            tok = firstLimbToken;
+        } else {
+            expect(static_cast<bool>(iss >> tok), "Not enough limb tokens");
+        }
         expect(tok.size() >= 3 && tok[0] == '0' && (tok[1] == 'x' || tok[1] == 'X'),
                "Limb token not in 0x... form");
         limbs.push_back(parse_hex64(tok));
     }
 
     // Expect 'e' then exponent (in limb units)
-    std::string eTok;
-    expect(static_cast<bool>(iss >> eTok), "Missing exponent marker");
-    expect(eTok == "e", "Expected 'e' before exponent");
+    if (eTok.empty()) {
+        expect(static_cast<bool>(iss >> eTok), "Missing exponent marker");
+    }
+    expect(eTok == "e" || eTok == "e:", "Expected 'e' before exponent");
 
     long expLimbs = 0;
     expect(static_cast<bool>(iss >> expLimbs), "Failed to parse exponent");

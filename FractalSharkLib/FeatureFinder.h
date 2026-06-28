@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <iosfwd>
+#include <string>
 
 #include "FeatureFinderMode.h"
 #include "FloatComplex.h"
@@ -36,6 +37,8 @@ struct NRCheckpointData {
 };
 
 bool ReadFullNRCheckpoint(NRCheckpointData &out);
+std::string ComputeNRCheckpointPreviewZoom(const DiagnosticState &diag,
+                                           const HighPrecision &intrinsicRadius);
 void DeleteNRCheckpoint();
 
 template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;

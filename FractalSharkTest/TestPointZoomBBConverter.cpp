@@ -1,4 +1,5 @@
 #include "TestFramework.h"
+#include "FeatureFinder.h"
 #include "FeatureSummary.h"
 #include "PointZoomBBConverter.h"
 
@@ -53,6 +54,47 @@ TEST(FeatureZoomFactorForRadius)
 {
     const HighPrecision zoom = FeatureSummary::ComputeZoomFactorForRadius(HighPrecision{0.5});
     ASSERT_NEAR(static_cast<double>(zoom), 2.0 / 3.0, 1e-12);
+}
+
+TEST(NRCheckpointPreviewZoomUsesIntrinsicRadiusWhenStepIsSmaller)
+{
+    DiagnosticState diag;
+    diag.valid = true;
+    diag.step_norm = HDRFloat<double>{0.0625};
+    diag.err = HDRFloat<double>{10000.0};
+
+    const std::string previewZoom = ComputeNRCheckpointPreviewZoom(diag, HighPrecision{0.5});
+    const std::string expected = FeatureSummary::ComputeZoomFactorForRadius(HighPrecision{0.5}).str();
+
+    ASSERT_EQ(previewZoom, expected);
+}
+
+TEST(NRCheckpointPreviewZoomUsesStepDistanceWhenLarger)
+{
+    DiagnosticState diag;
+    diag.valid = true;
+    diag.step_norm = HDRFloat<double>{1.0};
+    diag.err = HDRFloat<double>{0.0001};
+
+    const std::string previewZoom = ComputeNRCheckpointPreviewZoom(diag, HighPrecision{0.25});
+    const std::string expected = FeatureSummary::ComputeZoomFactorForRadius(HighPrecision{1.0}).str();
+
+    ASSERT_EQ(previewZoom, expected);
+}
+
+TEST(NRCheckpointPreviewZoomUnavailableForInvalidInputs)
+{
+    DiagnosticState diag;
+    diag.valid = true;
+    diag.step_norm = HDRFloat<double>{0.25};
+
+    ASSERT_EQ(ComputeNRCheckpointPreviewZoom(DiagnosticState{}, HighPrecision{0.5}), "unavailable");
+
+    diag.step_norm = HDRFloat<double>{0.0};
+    ASSERT_EQ(ComputeNRCheckpointPreviewZoom(diag, HighPrecision{0.5}), "unavailable");
+
+    diag.step_norm = HDRFloat<double>{0.25};
+    ASSERT_EQ(ComputeNRCheckpointPreviewZoom(diag, HighPrecision{0}), "unavailable");
 }
 
 TEST(BoundingBoxConstruction)

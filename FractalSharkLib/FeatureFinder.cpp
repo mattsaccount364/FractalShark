@@ -254,20 +254,27 @@ struct NRCheckpointParams {
     DiagnosticState diag;
 };
 
-static std::string
-ComputeCheckpointPreviewZoom(const NRCheckpointParams &p)
+std::string
+ComputeNRCheckpointPreviewZoom(const DiagnosticState &diag, const HighPrecision &intrinsicRadius)
 {
-    if (!p.diag.valid || p.diag.err.getMantissa() <= 0.0 || mpf_cmp_ui(p.intrinsicRadius, 0) <= 0)
+    if (!diag.valid || diag.step_norm.getMantissa() <= 0.0 || intrinsicRadius <= HighPrecision{0})
         return "unavailable";
 
     HighPrecision estimatedRemainingDistance;
-    HdrSqrt(p.diag.err).GetHighPrecision(estimatedRemainingDistance);
+    // step_norm is a legacy checkpoint label; it stores |step|^2 from mpf_complex_norm().
+    HdrSqrt(diag.step_norm).GetHighPrecision(estimatedRemainingDistance);
 
-    const HighPrecision intrinsicRadius{p.intrinsicRadius};
     const HighPrecision &previewRadius =
         estimatedRemainingDistance > intrinsicRadius ? estimatedRemainingDistance : intrinsicRadius;
 
     return FeatureSummary::ComputeZoomFactorForRadius(previewRadius).str();
+}
+
+static std::string
+ComputeCheckpointPreviewZoom(const NRCheckpointParams &p)
+{
+    const HighPrecision intrinsicRadius{p.intrinsicRadius};
+    return ComputeNRCheckpointPreviewZoom(p.diag, intrinsicRadius);
 }
 
 static void

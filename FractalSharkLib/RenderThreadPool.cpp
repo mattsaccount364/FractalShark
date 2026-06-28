@@ -531,6 +531,69 @@ RenderThreadPool::ReleaseFrameBuffer(std::unique_ptr<Color16[]> buffer, size_t t
     m_BufferPool.push_back(std::move(buffer));
 }
 
+class RenderThreadPool::WorkerJobScope {
+public:
+    WorkerJobScope(RenderThreadPool &pool, RenderWorkItem &item) : m_Pool(pool), m_Item(item) {}
+
+    ~WorkerJobScope() noexcept
+    {
+        if (!m_CompletionSignaled && !m_Pool.m_ShutdownFlag.load()) {
+            GlLog("WorkerJobScope: job exited without explicit completion");
+            if (Environment::IsDebuggerAttached()) {
+                Environment::DebugBreakpoint();
+            }
+        }
+
+        if (m_RendererIdx.has_value()) {
+            m_Pool.m_RendererPool.Release(*m_RendererIdx);
+        }
+
+        m_Pool.m_InFlightCount.fetch_sub(1);
+        m_Pool.m_DrainCV.notify_all();
+    }
+
+    void
+    SetRenderer(RendererIndex rendererIdx)
+    {
+        m_RendererIdx = rendererIdx;
+    }
+
+    void
+    MarkFinalFramePushed()
+    {
+        m_FinalFramePushed = true;
+    }
+
+    void
+    Complete()
+    {
+        if (m_CompletionSignaled) {
+            GlLog("WorkerJobScope: Complete called more than once");
+            if (Environment::IsDebuggerAttached()) {
+                Environment::DebugBreakpoint();
+            }
+        }
+
+        if (m_RequiresFinalFrame && !m_FinalFramePushed) {
+            m_Pool.PushTombstone(m_Item.SequenceNumber);
+            m_FinalFramePushed = true;
+        }
+
+        if (m_Item.CompletionPromise) {
+            m_Item.CompletionPromise->set_value();
+        }
+        m_CompletionSignaled = true;
+    }
+
+private:
+    RenderThreadPool &m_Pool;
+    RenderWorkItem &m_Item;
+    std::optional<RendererIndex> m_RendererIdx;
+    const bool m_RequiresFinalFrame = !m_Item.MutationOnly;
+    bool m_FinalFramePushed = false;
+    bool m_CompletionSignaled = false;
+};
+
 RenderJobHandle
 RenderThreadPool::Enqueue(const RenderWorkItem &item)
 {
@@ -545,6 +608,10 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
     {
         std::lock_guard lk(m_WorkQueueMutex);
         workItem.SequenceNumber = m_NextSequenceNumber++;
+
+        if (!workItem.MutationOnly && workItem.PresentationMode == RenderPresentationMode::Immediate) {
+            workItem.PresentationGeneration = ++m_PresentationGeneration;
+        }
 
         // Supersede: when a new render arrives, discard earlier queued
         // renders that it replaces (e.g., rapid zoom — only last matters).
@@ -581,6 +648,12 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
     m_WorkQueueCV.notify_one();
 
     return RenderJobHandle(std::move(future));
+}
+
+RenderJobHandle
+RenderThreadPool::EnqueueRender()
+{
+    return Enqueue(SnapshotCurrentState());
 }
 
 RenderWorkItem
@@ -726,6 +799,7 @@ RenderThreadPool::PushRepaintPlaceholder(const RenderWorkItem &item)
     frame.IsFinal = true;
     frame.IsRepaintPlaceholder = true;
     frame.PresentationMode = RenderPresentationMode::Immediate;
+    frame.PresentationGeneration = item.PresentationGeneration;
 
     m_FrameQueue.Push(std::move(frame));
 }
@@ -897,6 +971,10 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
         workerIters = fractal->AcquireItersMemory();
     }
 
+    if (IsPresentationStale(item)) {
+        return CalcRenderResult::Stale;
+    }
+
     if (!fractal->GetRepaint()) {
         return CalcRenderResult::RepaintDisabled;
     }
@@ -961,7 +1039,7 @@ RenderThreadPool::WaitForGpuAndProduceProgressiveFrames(Fractal *fractal,
             break;
         }
 
-        if (!IsPacedAnimationCancelled(item)) {
+        if (!IsPresentationStale(item) && !IsPacedAnimationCancelled(item)) {
             ProduceFrame(item, rendererIdx, workerIters, false);
         }
     }
@@ -1144,13 +1222,12 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
             if (!loggedTileConfig) {
                 loggedTileConfig = true;
                 char buf[256];
-                snprintf(
-                    buf,
-                    sizeof(buf),
-                    "RenderFrameToGL: software tiles(pixels)=%zux%zu, stagingBytes=%zu",
-                    tileW,
-                    tileH,
-                    tileW * tileH * 4);
+                snprintf(buf,
+                         sizeof(buf),
+                         "RenderFrameToGL: software tiles(pixels)=%zux%zu, stagingBytes=%zu",
+                         tileW,
+                         tileH,
+                         tileW * tileH * 4);
                 GlLog(buf);
             }
         }
@@ -1263,11 +1340,10 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
 
                 if (diagnoseFirstTile) {
                     char buf[128];
-                    snprintf(
-                        buf,
-                        sizeof(buf),
-                        "RenderFrameToGL: first software tile quad draw end, elapsedMs=%lld",
-                        ElapsedMilliseconds(drawStart));
+                    snprintf(buf,
+                             sizeof(buf),
+                             "RenderFrameToGL: first software tile quad draw end, elapsedMs=%lld",
+                             ElapsedMilliseconds(drawStart));
                     GlLog(buf);
                 }
             }
@@ -1390,6 +1466,179 @@ RenderThreadPool::RedrawLastTexture(OpenGlContext &glContext, GLuint texId, size
 }
 
 void
+RenderThreadPool::ExecuteMutationOnly(const RenderWorkItem &item)
+{
+    std::lock_guard lk(m_CalcFractalMutex);
+    if (item.Command) {
+        item.Command(*item.FractalPtr);
+    }
+}
+
+bool
+RenderThreadPool::ShouldSkipRender(const RenderWorkItem &item) const
+{
+    return (item.Supersedable &&
+            (item.EnqueueGeneration < m_EnqueueGeneration || IsPresentationStale(item))) ||
+           IsPacedAnimationCancelled(item);
+}
+
+bool
+RenderThreadPool::IsPresentationStale(const RenderWorkItem &item) const
+{
+    return item.PresentationMode == RenderPresentationMode::Immediate &&
+           item.PresentationGeneration != 0 &&
+           item.PresentationGeneration < m_PresentationGeneration.load();
+}
+
+bool
+RenderThreadPool::IsPresentationStale(const RenderFrame &frame) const
+{
+    return frame.PresentationMode == RenderPresentationMode::Immediate &&
+           frame.PresentationGeneration != 0 &&
+           frame.PresentationGeneration < m_PresentationGeneration.load();
+}
+
+RenderThreadPool::WorkerRenderResult
+RenderThreadPool::RenderWorkerItem(RenderWorkItem &item,
+                                   RendererIndex rendererIdx,
+                                   ItersMemoryContainer &workerIters,
+                                   std::mutex &workerMutex,
+                                   std::condition_variable &workerCV)
+{
+    WorkerRenderResult result;
+    Fractal *fractal = item.FractalPtr;
+    auto &renderer = fractal->GetRenderer(rendererIdx);
+
+    fractal->m_BenchmarkData.m_Overall.StartTimer();
+
+    const CalcRenderResult calcResult = RunCalcFractal(fractal, item, rendererIdx, workerIters);
+    if (calcResult != CalcRenderResult::Rendered) {
+        if (calcResult == CalcRenderResult::RepaintDisabled) {
+            PushRepaintPlaceholder(item);
+            result.FinalFramePushed = true;
+        } else if (calcResult == CalcRenderResult::Stale) {
+            PushTombstone(item.SequenceNumber);
+            result.FinalFramePushed = true;
+        } else {
+            // One-shot log for first tombstone from RunCalcFractal failure.
+            static bool loggedCalcFail = false;
+            if (!loggedCalcFail) {
+                loggedCalcFail = true;
+                char buf[256];
+                snprintf(buf,
+                         sizeof(buf),
+                         "WorkerLoop: RunCalcFractal returned false, seq=%zu, "
+                         "itersWH=%zux%zu, scrnWH=%zux%zu, aa=%u",
+                         item.SequenceNumber,
+                         workerIters.m_OutputWidth,
+                         workerIters.m_OutputHeight,
+                         item.ScrnWidth,
+                         item.ScrnHeight,
+                         item.GpuAntialiasing);
+                GlLog(buf);
+            }
+            PushTombstone(item.SequenceNumber);
+            result.FinalFramePushed = true;
+        }
+    } else {
+        if (fractal->GetStopCalculating() &&
+            item.PresentationMode == RenderPresentationMode::PacedAnimation) {
+            CancelPacedAnimation(item.PresentationGroup);
+        }
+
+        // For CPU algorithms, convert iteration counts to colors.
+        if (item.Algorithm.UseLocalColor) {
+            ColorizeCpuIterations(workerIters,
+                                  fractal->GetPalette(),
+                                  item.NumIterations,
+                                  item.IterType,
+                                  item.GpuAntialiasing);
+        }
+
+        WaitForGpuAndProduceProgressiveFrames(
+            fractal, renderer, item, rendererIdx, workerIters, workerMutex, workerCV);
+
+        fractal->m_BenchmarkData.m_PerPixel.StopTimer();
+
+        if (IsPresentationStale(item)) {
+            PushTombstone(item.SequenceNumber);
+            result.FinalFramePushed = true;
+            fractal->m_BenchmarkData.m_Overall.StopTimer();
+            return result;
+        }
+
+        const bool pushed = !m_ShutdownFlag.load() && !fractal->GetStopCalculating() &&
+                            !IsPacedAnimationCancelled(item) &&
+                            ProduceFrame(item, rendererIdx, workerIters, true);
+        if (pushed) {
+            result.CompletedFramePushed = true;
+            static bool loggedSuccess = false;
+            if (!loggedSuccess) {
+                loggedSuccess = true;
+                char buf[128];
+                snprintf(buf,
+                         sizeof(buf),
+                         "WorkerLoop: first frame produced, seq=%zu, "
+                         "size(pixels)=%zux%zu",
+                         item.SequenceNumber,
+                         workerIters.m_OutputWidth,
+                         workerIters.m_OutputHeight);
+                GlLog(buf);
+            }
+        } else {
+            static bool loggedPushFail = false;
+            if (!loggedPushFail) {
+                loggedPushFail = true;
+                char buf[128];
+                snprintf(buf,
+                         sizeof(buf),
+                         "WorkerLoop: ProduceFrame returned false or skipped, "
+                         "seq=%zu",
+                         item.SequenceNumber);
+                GlLog(buf);
+            }
+            PushTombstone(item.SequenceNumber);
+        }
+        result.FinalFramePushed = true;
+    }
+
+    fractal->m_BenchmarkData.m_Overall.StopTimer();
+    return result;
+}
+
+void
+RenderThreadPool::PublishCompletedIters(Fractal &fractal, ItersMemoryContainer &workerIters)
+{
+    std::lock_guard lk(m_CalcFractalMutex);
+    if (fractal.m_CurIters.m_OutputWidth == workerIters.m_OutputWidth &&
+        fractal.m_CurIters.m_OutputHeight == workerIters.m_OutputHeight &&
+        fractal.m_CurIters.m_Antialiasing == workerIters.m_Antialiasing) {
+        std::swap(fractal.m_CurIters, workerIters);
+    }
+}
+
+static void
+LogWorkerException(const FractalSharkSeriousException &e)
+{
+    const std::string msg = std::string{"Worker thread exception during CalcFractal\n"} + e.what();
+    std::cerr << msg << std::endl;
+    GlLog(msg.c_str());
+    if (Environment::IsDebuggerAttached())
+        Environment::DebugBreakpoint();
+}
+
+static void
+LogWorkerException(const std::exception &e)
+{
+    std::cerr << "Worker thread exception during CalcFractal: " << e.what() << std::endl;
+    char buf[512];
+    snprintf(buf, sizeof(buf), "WorkerLoop: exception: %s", e.what());
+    GlLog(buf);
+    if (Environment::IsDebuggerAttached())
+        Environment::DebugBreakpoint();
+}
+
+void
 RenderThreadPool::WorkerLoop(size_t workerIndex)
 {
     Environment::SetCurrentThreadName(std::format(L"RenderPool Worker {}", workerIndex).c_str());
@@ -1403,187 +1652,65 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
             break;
         }
 
-        // Mutation-only fast path: execute command under lock, no render.
-        if (item.MutationOnly) {
-            // Scope guard: always decrement in-flight count on exit,
-            // even if the command throws (prevents Drain() deadlock).
-            struct DecrementGuard {
-                RenderThreadPool &pool;
-                ~DecrementGuard()
-                {
-                    pool.m_InFlightCount.fetch_sub(1);
-                    pool.m_DrainCV.notify_all();
-                }
-            } guard{*this};
+        WorkerJobScope jobScope(*this, item);
+        auto completeJob = [&jobScope]() {
+            try {
+                jobScope.Complete();
+            } catch (const FractalSharkSeriousException &e) {
+                LogWorkerException(e);
+                throw;
+            } catch (const std::exception &e) {
+                LogWorkerException(e);
+                throw;
+            }
+        };
 
-            {
-                std::lock_guard lk(m_CalcFractalMutex);
-                if (item.Command) {
-                    item.Command(*item.FractalPtr);
-                }
+        if (item.MutationOnly) {
+            try {
+                ExecuteMutationOnly(item);
+            } catch (const FractalSharkSeriousException &e) {
+                LogWorkerException(e);
+            } catch (const std::exception &e) {
+                LogWorkerException(e);
             }
-            if (item.CompletionPromise) {
-                item.CompletionPromise->set_value();
-            }
+            completeJob();
             continue;
         }
 
         // Skip stale in-flight renders: if a newer supersedable item was
         // enqueued since this one, this render's output will never be seen.
         // Check before acquiring renderer/memory (expensive).
-        if ((item.Supersedable && item.EnqueueGeneration < m_EnqueueGeneration) ||
-            IsPacedAnimationCancelled(item)) {
-            PushTombstone(item.SequenceNumber);
-            if (item.CompletionPromise) {
-                item.CompletionPromise->set_value();
-            }
-            m_InFlightCount.fetch_sub(1);
-            m_DrainCV.notify_all();
+        if (ShouldSkipRender(item)) {
+            completeJob();
             continue;
         }
 
         RendererIndex rendererIdx = m_RendererPool.Acquire();
+        jobScope.SetRenderer(rendererIdx);
         Fractal *fractal = item.FractalPtr;
         auto &renderer = fractal->GetRenderer(rendererIdx);
         renderer.SetComputeDoneNotification(&workerMutex, &workerCV);
         ItersMemoryContainer workerIters = fractal->AcquireItersMemory();
 
-        // Guarantee: every dequeued sequence gets at least one IsFinal frame.
-        bool finalFramePushed = false;
-        bool completedFramePushed = false;
-
+        WorkerRenderResult renderResult;
         try {
-            fractal->m_BenchmarkData.m_Overall.StartTimer();
-
-            const CalcRenderResult calcResult = RunCalcFractal(fractal, item, rendererIdx, workerIters);
-            if (calcResult != CalcRenderResult::Rendered) {
-                if (calcResult == CalcRenderResult::RepaintDisabled) {
-                    PushRepaintPlaceholder(item);
-                    finalFramePushed = true;
-                } else {
-                    // One-shot log for first tombstone from RunCalcFractal failure.
-                    static bool loggedCalcFail = false;
-                    if (!loggedCalcFail) {
-                        loggedCalcFail = true;
-                        char buf[256];
-                        snprintf(buf,
-                                 sizeof(buf),
-                                 "WorkerLoop: RunCalcFractal returned false, seq=%zu, "
-                                 "itersWH=%zux%zu, scrnWH=%zux%zu, aa=%u",
-                                 item.SequenceNumber,
-                                 workerIters.m_OutputWidth,
-                                 workerIters.m_OutputHeight,
-                                 item.ScrnWidth,
-                                 item.ScrnHeight,
-                                 item.GpuAntialiasing);
-                        GlLog(buf);
-                    }
-                    PushTombstone(item.SequenceNumber);
-                    finalFramePushed = true;
-                }
-            } else {
-                if (fractal->GetStopCalculating() &&
-                    item.PresentationMode == RenderPresentationMode::PacedAnimation) {
-                    CancelPacedAnimation(item.PresentationGroup);
-                }
-
-                // For CPU algorithms, convert iteration counts to colors.
-                if (item.Algorithm.UseLocalColor) {
-                    ColorizeCpuIterations(workerIters,
-                                          fractal->GetPalette(),
-                                          item.NumIterations,
-                                          item.IterType,
-                                          item.GpuAntialiasing);
-                }
-
-                WaitForGpuAndProduceProgressiveFrames(
-                    fractal, renderer, item, rendererIdx, workerIters, workerMutex, workerCV);
-
-                fractal->m_BenchmarkData.m_PerPixel.StopTimer();
-
-                bool pushed = !m_ShutdownFlag.load() && !fractal->GetStopCalculating() &&
-                              !IsPacedAnimationCancelled(item) &&
-                              ProduceFrame(item, rendererIdx, workerIters, true);
-                if (pushed) {
-                    completedFramePushed = true;
-                    static bool loggedSuccess = false;
-                    if (!loggedSuccess) {
-                        loggedSuccess = true;
-                        char buf[128];
-                        snprintf(buf,
-                                 sizeof(buf),
-                                 "WorkerLoop: first frame produced, seq=%zu, "
-                                 "size(pixels)=%zux%zu",
-                                 item.SequenceNumber,
-                                 workerIters.m_OutputWidth,
-                                 workerIters.m_OutputHeight);
-                        GlLog(buf);
-                    }
-                } else {
-                    static bool loggedPushFail = false;
-                    if (!loggedPushFail) {
-                        loggedPushFail = true;
-                        char buf[128];
-                        snprintf(buf,
-                                 sizeof(buf),
-                                 "WorkerLoop: ProduceFrame returned false or skipped, "
-                                 "seq=%zu",
-                                 item.SequenceNumber);
-                        GlLog(buf);
-                    }
-                    PushTombstone(item.SequenceNumber);
-                }
-                finalFramePushed = true;
-            }
-
-            fractal->m_BenchmarkData.m_Overall.StopTimer();
+            renderResult = RenderWorkerItem(item, rendererIdx, workerIters, workerMutex, workerCV);
         } catch (const FractalSharkSeriousException &e) {
-            const std::string msg =
-                std::string{"Worker thread exception during CalcFractal\n"} + e.what();
-            std::cerr << msg << std::endl;
-            GlLog(msg.c_str());
-            if (Environment::IsDebuggerAttached())
-                Environment::DebugBreakpoint();
+            LogWorkerException(e);
         } catch (const std::exception &e) {
-            std::cerr << "Worker thread exception during CalcFractal: " << e.what() << std::endl;
-            char buf[512];
-            snprintf(buf, sizeof(buf), "WorkerLoop: exception: %s", e.what());
-            GlLog(buf);
-            if (Environment::IsDebuggerAttached())
-                Environment::DebugBreakpoint();
+            LogWorkerException(e);
         }
 
-        if (!finalFramePushed) {
-            PushTombstone(item.SequenceNumber);
+        if (renderResult.FinalFramePushed) {
+            jobScope.MarkFinalFramePushed();
         }
 
-        // Swap the worker's iteration data into m_CurIters so that
-        // SaveCurrentFractal, AutoZoom analysis, FindInterestingLocation,
-        // etc. see the most recently completed render.  Only swap if
-        // m_CurIters has matching dimensions — otherwise the old container
-        // would be discarded by ReturnIterMemory, shrinking the pool.
-        if (completedFramePushed) {
-            std::lock_guard lk(m_CalcFractalMutex);
-            if (fractal->m_CurIters.m_OutputWidth == workerIters.m_OutputWidth &&
-                fractal->m_CurIters.m_OutputHeight == workerIters.m_OutputHeight &&
-                fractal->m_CurIters.m_Antialiasing == workerIters.m_Antialiasing) {
-                std::swap(fractal->m_CurIters, workerIters);
-            }
+        if (renderResult.CompletedFramePushed) {
+            PublishCompletedIters(*fractal, workerIters);
         }
 
-        // Return the container to the pool
         fractal->ReturnIterMemory(std::move(workerIters));
-
-        // Signal completion to any waiters
-        if (item.CompletionPromise) {
-            item.CompletionPromise->set_value();
-        }
-
-        // Release the renderer back to the pool
-        m_RendererPool.Release(rendererIdx);
-
-        m_InFlightCount.fetch_sub(1);
-        m_DrainCV.notify_all();
+        completeJob();
     }
 }
 
@@ -1665,6 +1792,16 @@ RenderThreadPool::GlConsumerLoop()
 
         RenderFrame frame;
         if (!m_FrameQueue.TryPopNextInOrder(nextExpectedSeqNum, frame)) {
+            continue;
+        }
+
+        if (IsPresentationStale(frame)) {
+            if (frame.ColorData) {
+                ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
+            }
+            if (frame.IsFinal) {
+                nextExpectedSeqNum++;
+            }
             continue;
         }
 
@@ -1754,6 +1891,16 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
         RenderFrame frame;
         if (!m_FrameQueue.TryPopNextInOrder(m_HostExpectedSeqNum, frame)) {
             break;
+        }
+
+        if (IsPresentationStale(frame)) {
+            if (frame.ColorData) {
+                ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
+            }
+            if (frame.IsFinal) {
+                ++m_HostExpectedSeqNum;
+            }
+            continue;
         }
 
         if (frame.IsRepaintPlaceholder) {
@@ -1969,6 +2116,7 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
     frame.PresentationMode = item.PresentationMode;
     frame.PresentationGroup = item.PresentationGroup;
     frame.ViewState = PresentedViewState{item.Ptz, item.NumIterations};
+    frame.PresentationGeneration = item.PresentationGeneration;
     frame.BufferPixelCount = roundedColorTotal;
 
     m_FrameQueue.Push(std::move(frame));

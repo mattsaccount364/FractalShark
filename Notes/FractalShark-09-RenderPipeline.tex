@@ -469,8 +469,9 @@ data flow:
 \paragraph{Render pool path (normal UI rendering).}
 A worker acquires a private \code{ItersMemoryContainer} from a pool.  GPU
 results are extracted via \code{RenderCurrent} into a \code{RenderFrame} and
-forwarded to the GL consumer thread for texture upload.  The shared
-\code{m\_CurIters} is \emph{not} updated.
+forwarded to the GL consumer thread for texture upload.  After a successful
+final frame, the worker publishes its private iteration container into
+\code{m\_CurIters} when the dimensions and antialiasing factor still match.
 
 \paragraph{Direct path (\code{CalcFractal(true)}).}
 Used by \code{CrummyTest}, \code{AutoZoomer} Default/Max heuristic, and save
@@ -480,10 +481,11 @@ into \code{m\_CurIters}.  The \code{drawFractal = true} flag triggers a
 GPU\(\to\)CPU iteration copy at the end of \code{CalcFractalTypedIter} via
 \code{RenderCurrent}.
 
-\textbf{Invariant.}  Any code that reads \code{m\_CurIters} (saving images,
-analysing iteration data) must use the direct path and call
-\code{RenderThreadPool::Drain()} first to ensure no pool workers are active.
-The pool path writes to \code{workerIters}, which is returned to the pool---\code{m\_CurIters} never sees that data.
+\textbf{Invariant.}  Any code that requires a stable CPU-side
+\code{m\_CurIters} snapshot must call \code{RenderThreadPool::Drain()} first
+to ensure no pool workers are active.  Pool renders publish successful final
+frames into \code{m\_CurIters}; direct renders write into \code{m\_CurIters}
+for workflows that bypass the pool.
 
 \paragraph{Data-flow trace.}
 In the pool path, the data-flow sequence proceeds as follows:
@@ -504,6 +506,9 @@ In the pool path, the data-flow sequence proceeds as follows:
         buffer from the GPU into a pooled frame buffer
         (\code{AcquireFrameBuffer}), and pushes a
         \code{RenderFrame} to the \code{FrameCompletionQueue}.
+  \item The worker swaps the completed iteration container into
+        \code{m\_CurIters} when the container still matches the live render
+        dimensions.
   \item The GL consumer thread dequeues the frame in sequence
         order via \code{Try\-Pop\-Next\-In\-Order}, uploads the
         \code{Color16} data as a \code{GL\_RGBA16} texture, draws
@@ -519,15 +524,12 @@ CPU memory (the \code{drawFractal = true} branch).
 \paragraph{Choosing between paths.}
 The pool path is the default for all interactive rendering.  Its
 private \code{ItersMemoryContainer} avoids write contention on
-\code{m\_CurIters} and allows the GL consumer to display frames
-without blocking the next render.  The direct path should be used
-only when the caller requires CPU-side access to the final
-iteration buffer---specifically for image saving
-(\code{SaveCurrentFractal}), regression testing
-(\code{CrummyTest}), and the AutoZoomer's heuristic analysis
-modes that inspect iteration data.  Any such call must be preceded
-by \code{Drain()} to ensure that no pool worker is concurrently
-modifying shared state.
+\code{m\_CurIters} during calculation, then publishes the completed
+container after final frame production.  The direct path should be used for
+workflows that intentionally bypass the pool, such as regression testing
+(\code{CrummyTest}) and high-resolution saves.  Callers that inspect
+\code{m\_CurIters} after pool rendering must first call \code{Drain()} to
+ensure that no pool worker is concurrently modifying shared state.
 
 \paragraph{Performance implications.}
 The pool path enables pipeline parallelism: while the GL consumer

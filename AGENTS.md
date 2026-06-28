@@ -110,9 +110,10 @@ rendering path: `CalcFractal(true)` followed by `SaveCurrentFractal`.
 
 ## Rendering And Lifetime Invariants
 
-- Normal UI rendering uses the render-pool path, which writes `workerIters` and does not update
-  `m_CurIters`. Anything that reads `m_CurIters`, including image save and AutoZoom analysis, must call
-  `Drain()` and use the direct path. Do not substitute `EnqueueCommand`.
+- Normal UI rendering uses the render-pool path, which renders into `workerIters` and publishes a
+  successful final frame into `m_CurIters` when dimensions match. Anything that needs a guaranteed
+  current CPU iteration buffer must call `Drain()` first; direct `CalcFractal(true)` remains required
+  for workflows that bypass the pool, such as `CrummyTest` and high-resolution saves.
 - `RenderThreadPool`/`Fractal` provide `EnqueueCommand` (mutate and render), `EnqueueMutation` (mutate
   without rendering), and `EnqueueRender` (render only). UI code must not mutate `Fractal` state
   directly. AutoZoomer work items must be non-supersedable.

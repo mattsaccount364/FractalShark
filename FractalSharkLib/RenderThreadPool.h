@@ -80,6 +80,11 @@ struct RenderWorkItem {
     // whose generation is older than the latest enqueued supersedable item.
     uint64_t EnqueueGeneration = 0;
 
+    // Presentation freshness generation for ordinary immediate renders.
+    // Non-supersedable commands still execute, but their frames are not
+    // presentable after a newer immediate render has been requested.
+    uint64_t PresentationGeneration = 0;
+
     // Paced animation frames retain normal rendering behavior but final
     // frames are presented at an adaptive cadence.  PresentationGroup separates
     // consecutive animations so each one receives its own pre-roll.
@@ -125,6 +130,7 @@ struct RenderFrame {
     RenderPresentationMode PresentationMode;
     uint64_t PresentationGroup;
     std::optional<PresentedViewState> ViewState;
+    uint64_t PresentationGeneration = 0;
 
     // Actual allocation size of ColorData (may be larger than
     // OutputWidth*OutputHeight due to GPU block-rounding).
@@ -270,6 +276,9 @@ public:
     // Captures a snapshot of render state at call time.
     RenderJobHandle Enqueue(const RenderWorkItem &item);
 
+    // Enqueue a render-only job for the Fractal's current state.
+    RenderJobHandle EnqueueRender();
+
     // Enqueue a command that mutates Fractal state, then renders.
     // The command lambda runs on a worker thread under m_CalcFractalMutex.
     // After the command, the worker snapshots state and renders.
@@ -358,6 +367,24 @@ private:
                       ItersMemoryContainer &workerIters,
                       bool isFinal);
 
+    class WorkerJobScope;
+
+    struct WorkerRenderResult {
+        bool FinalFramePushed = false;
+        bool CompletedFramePushed = false;
+    };
+
+    void ExecuteMutationOnly(const RenderWorkItem &item);
+    bool ShouldSkipRender(const RenderWorkItem &item) const;
+    bool IsPresentationStale(const RenderWorkItem &item) const;
+    bool IsPresentationStale(const RenderFrame &frame) const;
+    WorkerRenderResult RenderWorkerItem(RenderWorkItem &item,
+                                        RendererIndex rendererIdx,
+                                        ItersMemoryContainer &workerIters,
+                                        std::mutex &workerMutex,
+                                        std::condition_variable &workerCV);
+    void PublishCompletedIters(Fractal &fractal, ItersMemoryContainer &workerIters);
+
     // Push a tombstone (empty IsFinal) frame so the GL consumer can advance
     // past the given sequence number.
     void PushTombstone(uint64_t sequenceNumber);
@@ -368,13 +395,14 @@ private:
     enum class CalcRenderResult {
         Rendered,
         RepaintDisabled,
+        Stale,
         Failed,
     };
 
-    // Run CalcFractal under m_CalcFractalMutex with state save/restore.
+    // Run CalcFractal under m_CalcFractalMutex.
     // If item.Command is set, executes it first, then re-snapshots state.
-    // Swaps workerIters into m_CurIters, sets Ptz and dirty flags from the
-    // work item, calls CalcFractal, then restores everything.  Exception-safe.
+    // Sets dirty flags from the work item and calls CalcFractal with a
+    // CalcContext backed by workerIters.
     // Returns RepaintDisabled when the render should present the legacy
     // placeholder without clearing dirty state.
     CalcRenderResult RunCalcFractal(Fractal *fractal,
@@ -407,7 +435,7 @@ private:
     // to flip Y from screen coords (top=0) to GL coords (bottom=0).
     void DrawDragRectOverlay(size_t frameHeight);
 
-    // Snapshot current Fractal state into a RenderWorkItem (everything except Ptz).
+    // Snapshot current Fractal state into a RenderWorkItem.
     RenderWorkItem SnapshotCurrentState() const;
 
     bool IsPresentationReady(uint64_t expectedSeqNum,
@@ -458,10 +486,13 @@ private:
     std::mutex m_DrainMutex;
     std::condition_variable m_DrainCV;
 
-    // Generation counter for skipping stale in-flight renders.
-    // Only incremented for supersedable items.  Non-atomic: single
-    // writer (UI thread), multi-reader (workers) — safe on x64.
+    // Supersedable-work generation for skipping stale in-flight renders.
+    // Only incremented for supersedable items.
     std::atomic<uint64_t> m_EnqueueGeneration = 0;
+
+    // Immediate-presentation generation for suppressing frames from older
+    // renders while still allowing non-supersedable commands to execute.
+    std::atomic<uint64_t> m_PresentationGeneration = 0;
     std::atomic<uint64_t> m_NextPresentationGroup = 0;
 
     mutable std::mutex m_CancelledPresentationGroupsMutex;

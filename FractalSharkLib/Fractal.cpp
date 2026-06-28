@@ -1135,7 +1135,7 @@ RenderJobHandle
 Fractal::EnqueueRender()
 {
     if (m_RenderPool) {
-        return m_RenderPool->EnqueueCommand([](Fractal &) {});
+        return m_RenderPool->EnqueueRender();
     }
     return RenderJobHandle{};
 }

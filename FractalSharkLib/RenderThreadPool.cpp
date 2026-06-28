@@ -776,6 +776,12 @@ RenderThreadPool::Drain()
 }
 
 void
+RenderThreadPool::RequestOverlayRepaint()
+{
+    m_FrameQueue.NotifyOverlay();
+}
+
+void
 RenderThreadPool::SetDragRect(bool active, int x0, int y0, int x1, int y1)
 {
     {

@@ -31,9 +31,6 @@ struct PeriodicPointCandidate {
     // Cached MPF setup (computed from w=zcoeff*dzdc at candidate time)
     int scaleExp2_for_mpf{0};   // exponent-ish of Scale = 1/|zcoeff*dzdc|
     mp_bitcnt_t mpfPrecBits{0}; // chosen coord precision for MPF
-
-    // Optional: if you want Phase B independent of FeatureSummary radius:
-    // HighPrecision sqrRadius_hp;
 };
 
 class FeatureSummary {

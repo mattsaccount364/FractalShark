@@ -56,6 +56,28 @@ TEST(FeatureZoomFactorForRadius)
     ASSERT_NEAR(static_cast<double>(zoom), 2.0 / 3.0, 1e-12);
 }
 
+TEST(ResumedFeatureSummaryKeepsLinearAndSquaredRadiiSeparate)
+{
+    const HighPrecision candidateX{1.25};
+    const HighPrecision candidateY{-0.75};
+    const HighPrecision intrinsicRadius{0.5};
+    const HighPrecision sqrRadius{0.25};
+    const HDRFloat<double> residual2{0.001};
+    constexpr IterTypeFull Period = 7;
+    constexpr int ScaleExp2ForMpf = -3;
+    constexpr mp_bitcnt_t MpfPrecBits = 256;
+
+    FeatureSummary summary(candidateX, candidateY, intrinsicRadius, FeatureFinderMode::Direct);
+    summary.SetCandidate(
+        candidateX, candidateY, Period, residual2, sqrRadius, ScaleExp2ForMpf, MpfPrecBits);
+    summary.SetFound(candidateX, candidateY, Period, residual2, intrinsicRadius);
+
+    ASSERT_TRUE(summary.GetRadius() == intrinsicRadius);
+    ASSERT_TRUE(summary.GetCandidate() != nullptr);
+    ASSERT_TRUE(summary.GetCandidate()->sqrRadius_hp == sqrRadius);
+    ASSERT_TRUE(summary.GetIntrinsicRadius() == intrinsicRadius);
+}
+
 TEST(NRCheckpointPreviewZoomUsesIntrinsicRadiusWhenStepIsSmaller)
 {
     DiagnosticState diag;

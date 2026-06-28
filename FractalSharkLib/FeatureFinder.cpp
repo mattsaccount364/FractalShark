@@ -2415,8 +2415,7 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
         return false;
     period = (IterType)cand->period;
 
-    // Use candidate’s stored radius^2 so Phase B is independent of current FeatureSummary radius
-    // (Add this field to PeriodicPointCandidate)
+    // Use the candidate's stored radius^2 so Phase B is independent of the FeatureSummary radius.
     const HighPrecision &sqrRadius_hp = cand->sqrRadius_hp;
 
     // MPF polish only

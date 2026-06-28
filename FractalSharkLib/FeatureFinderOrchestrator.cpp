@@ -700,10 +700,10 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
               << " prec(bits)=" << ckpt.coord_prec << " iter=" << ckpt.iteration
               << std::endl;
 
-    // Create a synthetic FeatureSummary with the candidate from the checkpoint
-    HighPrecision radius{ckpt.sqrRadius};
-    auto fs =
-        std::make_unique<FeatureSummary>(ckpt.cand_re, ckpt.cand_im, radius, FeatureFinderMode::Direct);
+    // Keep resumed radius invariants separate: constructor/search radius is linear,
+    // candidate.sqrRadius_hp is squared for Phase B, and intrinsicRadius drives final zoom.
+    auto fs = std::make_unique<FeatureSummary>(
+        ckpt.cand_re, ckpt.cand_im, ckpt.intrinsicRadius, FeatureFinderMode::Direct);
 
     HDRFloat<double> residual2{}; // not stored in checkpoint, use default
 

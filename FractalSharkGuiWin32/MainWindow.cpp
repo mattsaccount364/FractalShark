@@ -751,6 +751,11 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 return 0;
             }
 
+            // Persist menu location as CLIENT coords before command dispatch.
+            POINT ptClient = ptScreen;
+            ::ScreenToClient(hWnd, &ptClient);
+            lastMenuPtClient_ = ptClient;
+
             ::TrackPopupMenu(popup,
                              TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN,
                              ptScreen.x,
@@ -758,11 +763,6 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                              0,
                              hWnd,
                              nullptr);
-
-            // Persist menu location as CLIENT coords on the instance (used by Center/Zoom commands).
-            POINT ptClient = ptScreen;
-            ::ScreenToClient(hWnd, &ptClient);
-            lastMenuPtClient_ = ptClient;
 
             return 0;
         }
@@ -1415,7 +1415,9 @@ MainWindow::PaintAsNecessary()
     }
 
     if (gFractal != nullptr) {
-        gFractal->EnqueueCommand([](Fractal &) {});
+        if (auto *renderPool = gFractal->GetRenderPool()) {
+            renderPool->RequestOverlayRepaint();
+        }
     }
 }
 

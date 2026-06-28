@@ -26,7 +26,6 @@
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="FractalViewPresets.h" />
     <ClInclude Include="LargeCoords32.h" />
-    <ClInclude Include="NRInnerLoopBackend.h" />
 
     <ClInclude Include="RenderThreadPool.h" />
     <ClInclude Include="CrummyTest.h" />

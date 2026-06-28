@@ -301,6 +301,10 @@ public:
     // Returns once no workers are processing and the queue is empty.
     void Drain();
 
+    // Wake the GL consumer to redraw the last presented frame without
+    // enqueuing a new fractal calculation.
+    void RequestOverlayRepaint();
+
     // Host-owned GL presentation mode (Linux GUI).  When the pool was
     // constructed with hostOwnedGlPresentation=true, no internal GL
     // consumer thread is started; the host's main loop is expected to

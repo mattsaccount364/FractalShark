@@ -237,39 +237,6 @@ mandel_1xHDR_float_perturb_lav2(
         //    for (;;) {
         __syncthreads();
 
-        //bool differences = false;
-        IterType maxRefIteration = 0;
-        const uint64_t XStart = blockIdx.x * blockDim.x;
-        const uint64_t YStart = blockIdx.y * blockDim.y;
-
-        size_t curidx = ConvertLocToIndex(XStart, YStart, width);
-        maxRefIteration = OutputIterMatrix[curidx];
-
-        for (auto yiter = YStart; yiter < YStart + blockDim.y; yiter++) {
-            for (auto xiter = XStart; xiter < XStart + blockDim.x; xiter++) {
-                //curidx = width * yiter + xiter;
-                curidx = ConvertLocToIndex(xiter, yiter, width);
-                if (maxRefIteration < OutputIterMatrix[curidx]) {
-                    //differences = true;
-                    maxRefIteration = OutputIterMatrix[curidx];
-                }
-            }
-        }
-
-        //if (differences == false) {
-        //    break;
-        //}
-
-        __syncthreads();
-
-        // Give it one chance to synchronize memory access
-        if (RefIteration < maxRefIteration) {
-            perturbLoop(maxRefIteration);
-        }
-        //}
-
-        __syncthreads();
-
         perturbLoop(n_iterations);
     }
 

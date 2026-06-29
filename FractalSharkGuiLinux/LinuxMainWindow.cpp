@@ -121,6 +121,27 @@ ComputeAspectLockedDragEndpoint(int anchorX, int anchorY, int rawX, int rawY, do
 GlxVisualSelection
 ChooseGlxVisual(Display *display, int screen)
 {
+    int rgbaDoubleBufferedWithAlpha[] = {GLX_RGBA,
+                                         GLX_DOUBLEBUFFER,
+                                         GLX_RED_SIZE,
+                                         8,
+                                         GLX_GREEN_SIZE,
+                                         8,
+                                         GLX_BLUE_SIZE,
+                                         8,
+                                         GLX_ALPHA_SIZE,
+                                         8,
+                                         None};
+    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaDoubleBufferedWithAlpha)) {
+        return {visualInfo};
+    }
+
+    int rgbaDoubleBuffered[] = {
+        GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
+    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaDoubleBuffered)) {
+        return {visualInfo};
+    }
+
     int rgbaWithAlpha[] = {
         GLX_RGBA, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, GLX_ALPHA_SIZE, 8, None};
     if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaWithAlpha)) {
@@ -221,6 +242,7 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     // m_LastMenuPtClient anchor for menu commands that act on the click point.
     int contextMenuX = 0;
     int contextMenuY = 0;
+    bool suppressContextMenuButtonRelease = false;
 
     // Left-button drag-zoom state.  Mirrors MainWindow's lButtonDown +
     // dragBoxX1/Y1 (anchor) + prevX1/Y1 (last cursor for outline rect).
@@ -523,6 +545,25 @@ LinuxMainWindow::Destroy() noexcept
 void
 LinuxMainWindow::HandleEvent(const XEvent &ev)
 {
+    if (ev.type == ButtonRelease && ev.xbutton.button == Button3 && suppressContextMenuButtonRelease) {
+        suppressContextMenuButtonRelease = false;
+        return;
+    }
+
+    if (ev.type == ButtonPress && ev.xbutton.button == Button3) {
+        const auto &btn = ev.xbutton;
+        if (!fractal) {
+            throw FractalSharkSeriousException("Button event received without an initialized fractal");
+        }
+        // Keep this initiating click out of ImGui's mouse-button state; it is only the popup trigger.
+        contextMenuX = btn.x;
+        contextMenuY = btn.y;
+        suppressContextMenuButtonRelease = true;
+        RequireUiState(overlay.has_value(), "Opening the context menu");
+        overlay->RequestContextMenu(btn.x, btn.y);
+        return;
+    }
+
     // Forward to the ImGui overlay first.  Overlay processes the event
     // synchronously on this thread; if ImGui is capturing the input we
     // drop the event rather than dispatching it to the fractal.
@@ -594,14 +635,6 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                     BeginDragZoom(btn);
                     break;
                 }
-                case Button3:
-                    // Keep client coords for Center/Zoom commands, and anchor
-                    // the ImGui menu at that same client point.
-                    contextMenuX = btn.x;
-                    contextMenuY = btn.y;
-                    RequireUiState(overlay.has_value(), "Opening the context menu");
-                    overlay->RequestContextMenu(btn.x, btn.y);
-                    break;
                 case Button4: {
                     // Wheel forward → zoom in toward cursor.  Mirrors
                     // MainWindow.cpp:1393 `ZoomTowardPoint(x, y, -0.3)`.

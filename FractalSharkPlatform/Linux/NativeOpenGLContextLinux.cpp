@@ -57,18 +57,20 @@ IsKnownSoftwareRendererName(std::string_view rendererName)
 
 struct SharedWindowGlState {
     GLXContext shareRoot = nullptr;
+    bool doubleBuffered = false;
 };
 
 std::mutex g_windowMutex;
 std::unordered_map<Window, SharedWindowGlState> g_windowState;
 
 void
-RegisterShareRoot(Window win, GLXContext ctx)
+RegisterWindowGlState(Window win, GLXContext ctx, bool doubleBuffered)
 {
     std::scoped_lock lock(g_windowMutex);
     auto &st = g_windowState[win];
     if (!st.shareRoot)
         st.shareRoot = ctx;
+    st.doubleBuffered = doubleBuffered;
 }
 
 void
@@ -88,6 +90,16 @@ GetShareRoot(Window win)
     if (it == g_windowState.end())
         return nullptr;
     return it->second.shareRoot;
+}
+
+bool
+IsWindowDoubleBuffered(Window win)
+{
+    std::scoped_lock lock(g_windowMutex);
+    auto it = g_windowState.find(win);
+    if (it == g_windowState.end())
+        return false;
+    return it->second.doubleBuffered;
 }
 
 XVisualInfo *
@@ -133,8 +145,10 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
 
     int supportsGl = False;
     int rgba = False;
+    int doubleBuffered = False;
     if (glXGetConfig(dpy, vi, GLX_USE_GL, &supportsGl) != 0 || supportsGl != True ||
-        glXGetConfig(dpy, vi, GLX_RGBA, &rgba) != 0 || rgba != True) {
+        glXGetConfig(dpy, vi, GLX_RGBA, &rgba) != 0 || rgba != True ||
+        glXGetConfig(dpy, vi, GLX_DOUBLEBUFFER, &doubleBuffered) != 0) {
         GlLog("OpenGlContext: window visual is not a usable GLX RGBA visual");
         XFree(vi);
         return;
@@ -150,7 +164,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     }
 
     m_RenderContext = reinterpret_cast<void *>(ctx);
-    RegisterShareRoot(win, ctx);
+    RegisterWindowGlState(win, ctx, doubleBuffered == True);
 
     if (!MakeCurrent()) {
         GlLog("OpenGlContext: MakeCurrent failed");
@@ -167,12 +181,13 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     snprintf(buf,
              sizeof(buf),
              "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct(bool)=%d, "
-             "software(bool)=%d",
+             "software(bool)=%d, doubleBuffered(bool)=%d",
              renderer ? renderer : "(null)",
              version ? version : "(null)",
              m_MaxTextureSize,
              isDirect ? 1 : 0,
-             m_IsSoftwareRenderer ? 1 : 0);
+             m_IsSoftwareRenderer ? 1 : 0,
+             doubleBuffered == True ? 1 : 0);
     GlLog(buf);
 
     m_Valid = true;
@@ -218,7 +233,18 @@ NativeOpenGLContext::MakeCurrent() noexcept
 void
 NativeOpenGLContext::SwapBuffers() noexcept
 {
-    glFlush();
+    Display *dpy = GetX11Display();
+    if (!dpy || !m_NativeWindow) {
+        glFlush();
+        return;
+    }
+
+    Window win = reinterpret_cast<Window>(m_NativeWindow);
+    if (IsWindowDoubleBuffered(win)) {
+        glXSwapBuffers(dpy, win);
+    } else {
+        glFlush();
+    }
 }
 
 std::optional<ScreenRect>

@@ -949,9 +949,9 @@ ImGuiOverlay::WantsTick() const
     }
     // The X event loop otherwise sleeps until render-pool work arrives.  Keep presentation ticking
     // while an overlay can animate, consume input, or transition a queued request into an open popup.
-    return inputPending_ || dragRectActive_ || contextMenuRequested_ || contextMenuOpen_ ||
-           infoModalRequested_ || infoModalOpen_ || fileDlgRequested_ || fileDlgOpen_ ||
-           pickDlgRequested_ || pickDlgOpen_ || locDlgRequested_ || locDlgOpen_;
+    return inputPending_ || dragRectActive_ || contextMenuRequested_ || infoModalRequested_ ||
+           infoModalOpen_ || fileDlgRequested_ || fileDlgOpen_ || pickDlgRequested_ || pickDlgOpen_ ||
+           locDlgRequested_ || locDlgOpen_;
 }
 
 } // namespace FractalShark::Linux

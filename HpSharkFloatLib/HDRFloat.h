@@ -138,9 +138,8 @@ public:
         std::string result;
         if constexpr (!IntegerOutput) {
             if constexpr (!isDblFlt) {
-                result += std::format("mantissa: {} exp2: {}",
-                                      static_cast<double>(Base::mantissa),
-                                      Base::exp);
+                result +=
+                    std::format("mantissa: {} exp2: {}", static_cast<double>(Base::mantissa), Base::exp);
             } else {
                 result += Base::mantissa.template ToString<IntegerOutput>();
                 result += std::format(" exp2: {}", Base::exp);
@@ -277,7 +276,7 @@ public:
                   (sizeof(To) == sizeof(From)) && (alignof(To) == alignof(From)) &&
                       std::is_trivially_copyable<From>::value && std::is_trivially_copyable<To>::value,
                   To>::type>
-    CUDA_CRAP const Res &
+    static CUDA_CRAP const Res &
     bit_cast(const From &src) noexcept
     {
         return *reinterpret_cast<const To *>(&src);
@@ -506,7 +505,7 @@ public:
                 return std::numeric_limits<T>::max();
             }
 
-            return (T)scalbnf(1.0f, (int)scaleFactor);
+            return T{PowerOfTwoFloat(scaleFactor)};
         } else if constexpr (std::is_same<T, double>::value) {
             if (scaleFactor <= MIN_SMALL_EXPONENT_DOUBLE()) {
                 return T{};
@@ -516,7 +515,7 @@ public:
                 return std::numeric_limits<T>::max();
             }
 
-            return scalbn(1.0, (int)scaleFactor);
+            return PowerOfTwoDouble(scaleFactor);
         }
     }
 
@@ -524,13 +523,6 @@ public:
     static CUDA_CRAP constexpr T
     getMultiplierNeg(TExp scaleFactor)
     {
-        // if constexpr (std::is_same<T, double>::value) {
-        //     return scalbn(1.0, scaleFactor);
-        // }
-        // else {
-        //     return scalbnf(1.0f, scaleFactor);
-        // }
-
         if constexpr (std::is_same<T, double>::value) {
             if constexpr (IncludeCheck) {
                 if (scaleFactor <= MIN_SMALL_EXPONENT_DOUBLE()) {
@@ -538,7 +530,7 @@ public:
                 }
             }
 
-            return scalbn(1.0, scaleFactor);
+            return PowerOfTwoDouble(scaleFactor);
         } else {
             if constexpr (IncludeCheck) {
                 if (scaleFactor <= MIN_SMALL_EXPONENT_FLOAT()) {
@@ -546,8 +538,44 @@ public:
                 }
             }
 
-            return (T)scalbnf(1.0f, scaleFactor);
+            return T{PowerOfTwoFloat(scaleFactor)};
         }
+    }
+
+    static CUDA_CRAP constexpr float
+    PowerOfTwoFloat(TExp scaleFactor)
+    {
+        const int64_t exp = static_cast<int64_t>(scaleFactor);
+        uint32_t bits;
+        if (exp < -149) {
+            bits = 0;
+        } else if (exp < -126) {
+            bits = 1U << static_cast<uint32_t>(exp + 149);
+        } else if (exp > 127) {
+            bits = 0x7F800000U;
+        } else {
+            bits = static_cast<uint32_t>(exp + 127) << 23U;
+        }
+
+        return bit_cast<float>(bits);
+    }
+
+    static CUDA_CRAP constexpr double
+    PowerOfTwoDouble(TExp scaleFactor)
+    {
+        const int64_t exp = static_cast<int64_t>(scaleFactor);
+        uint64_t bits;
+        if (exp < -1074) {
+            bits = 0;
+        } else if (exp < -1022) {
+            bits = 1ULL << static_cast<uint64_t>(exp + 1074);
+        } else if (exp > 1023) {
+            bits = 0x7FF0000000000000ULL;
+        } else {
+            bits = static_cast<uint64_t>(exp + 1023) << 52ULL;
+        }
+
+        return bit_cast<double>(bits);
     }
 
     CUDA_CRAP constexpr T

@@ -2234,7 +2234,7 @@ requires(!Introspection::IsTDblFlt<T>())
 
     std::ofstream out{Environment::ToFsPath(outFile)};
     if (!out.is_open()) {
-        throw FractalSharkSeriousException("Failed to open file for writing 4");
+        throw FractalSharkSeriousException("Error diffing orbits: failed to open output file");
     }
 
     if (m_FullOrbit.GetSize() != other.m_FullOrbit.GetSize()) {
@@ -2320,13 +2320,18 @@ requires Introspection::TestPExtras<PExtras>::value
 
     m_FullOrbit = {GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str()};
 
-    try {
+    const auto laInfoFilename = GenFilename(GrowableVectorTypes::LAInfoDeep);
+    const auto laStageFilename = GenFilename(GrowableVectorTypes::LAStageInfo);
+    const bool hasLaInfo = Utilities::FileExists(laInfoFilename.c_str());
+    const bool hasLaStage = Utilities::FileExists(laStageFilename.c_str());
+
+    if (hasLaInfo != hasLaStage) {
+        throw FractalSharkSeriousException("Incomplete LA reference files");
+    }
+
+    if (hasLaInfo) {
         m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
-            GetRefOrbitOptions(),
-            GenFilename(GrowableVectorTypes::LAInfoDeep),
-            GenFilename(GrowableVectorTypes::LAStageInfo));
-    } catch (const std::exception &) {
-        m_LaReference = nullptr;
+            GetRefOrbitOptions(), laInfoFilename, laStageFilename);
     }
 }
 

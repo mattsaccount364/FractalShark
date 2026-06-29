@@ -50,5 +50,6 @@ struct RenderRequest {
 };
 
 // Returns 0 on success, non-zero on failure (message appended to *err if non-null).
+// Exceptions from the underlying render path propagate to the caller.
 // The Fractal is fully computed on return and may be used for additional output.
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err);

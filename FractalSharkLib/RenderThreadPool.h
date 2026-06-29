@@ -10,6 +10,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <future>
 #include <memory>
@@ -388,6 +389,7 @@ private:
                                         std::mutex &workerMutex,
                                         std::condition_variable &workerCV);
     void PublishCompletedIters(Fractal &fractal, ItersMemoryContainer &workerIters);
+    void AbortAfterWorkerException(const std::exception &e);
 
     // Push a tombstone (empty IsFinal) frame so the GL consumer can advance
     // past the given sequence number.

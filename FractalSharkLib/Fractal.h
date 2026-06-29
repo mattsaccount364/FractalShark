@@ -189,7 +189,15 @@ public:
         uint64_t presentationGroup = 0,
         bool resetStopCalculatingBeforeRender = true);
 
+    // Enqueue a palette-only recolor of the current CPU iteration buffer.
+    RenderJobHandle EnqueuePaletteRecolor(
+        std::function<void(Fractal &)> cmd,
+        bool supersedable = true,
+        RenderPresentationMode presentationMode = RenderPresentationMode::Immediate,
+        uint64_t presentationGroup = 0);
+
     uint64_t BeginPacedAnimation();
+    void CancelPacedAnimation(uint64_t presentationGroup);
 
     // Enqueue a mutation-only command: executes under the lock but does
     // NOT trigger CalcFractal or frame production.

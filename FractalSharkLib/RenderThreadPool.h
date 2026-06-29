@@ -27,9 +27,17 @@ enum class RenderPresentationMode {
     PacedAnimation,
 };
 
+enum class RenderWorkMode {
+    Render,
+    MutationOnly,
+    RecolorCurrentFrame,
+};
+
 // Snapshot of all render-relevant state, captured at enqueue time.
 // Workers read exclusively from this, never from live Fractal members.
 struct RenderWorkItem {
+    RenderWorkMode WorkMode = RenderWorkMode::Render;
+
     // Monotonic sequence number assigned at enqueue time
     uint64_t SequenceNumber;
 
@@ -65,11 +73,6 @@ struct RenderWorkItem {
     // thread instead of the UI thread, avoiding data races.
     // When set, the worker re-snapshots state after executing the command.
     std::function<void(Fractal &)> Command;
-
-    // When true, the worker only executes the Command (under the lock)
-    // and skips CalcFractal / GPU / frame production entirely.
-    // Used for settings changes that take effect on the next render.
-    bool MutationOnly = false;
 
     // When true (default), this render item can be superseded by a newer
     // enqueue — the older queued item is discarded.  Set to false for
@@ -283,6 +286,14 @@ public:
         uint64_t presentationGroup = 0,
         bool resetStopCalculatingBeforeRender = true);
 
+    // Enqueue a palette mutation and rebuild the current frame from
+    // m_CurIters without recalculating fractal geometry.
+    RenderJobHandle EnqueueRecolorCurrentFrame(
+        std::function<void(Fractal &)> cmd,
+        bool supersedable = true,
+        RenderPresentationMode presentationMode = RenderPresentationMode::Immediate,
+        uint64_t presentationGroup = 0);
+
     // Allocate an identity for a paced animation.  The presenter resets
     // pre-roll state whenever it sees a new group.
     uint64_t BeginPacedAnimation();
@@ -369,6 +380,7 @@ private:
     };
 
     void ExecuteMutationOnly(const RenderWorkItem &item);
+    bool ExecuteRecolorCurrentFrame(RenderWorkItem &item);
     bool ShouldSkipRender(const RenderWorkItem &item) const;
     WorkerRenderResult RenderWorkerItem(RenderWorkItem &item,
                                         RendererIndex rendererIdx,

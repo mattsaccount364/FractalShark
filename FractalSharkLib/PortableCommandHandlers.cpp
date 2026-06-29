@@ -17,7 +17,6 @@
 
 #include <climits>
 #include <cstddef>
-#include <cstdlib>
 #include <iostream>
 
 namespace FractalShark {
@@ -1115,21 +1114,25 @@ PortableCommandHandlers::OnPalette20()
 void
 PortableCommandHandlers::OnPaletteRotate()
 {
-    // TODO(palette-rotation): This is visually broken because RotateFractalPalette() updates the
-    // internal palette state without forcing the displayed image to be re-rendered or recolored,
-    // so the command appears to do nothing.
-    const auto origin = Environment::GetCursorPosition();
-
-    for (;;) {
-        GetFractal().EnqueueCommand([](Fractal &f) { f.RotateFractalPalette(10); }).Wait();
-
-        const auto current = Environment::GetCursorPosition();
-        if (std::abs(current.first - origin.first) > 5 || std::abs(current.second - origin.second) > 5) {
-            break;
-        }
+    auto &fractal = GetFractal();
+    fractal.ResetStopCalculating();
+    if (auto *pool = fractal.GetRenderPool()) {
+        pool->Drain();
     }
 
-    GetFractal().EnqueueCommand([](Fractal &f) { f.ResetFractalPalette(); });
+    const uint64_t presentationGroup = fractal.BeginPacedAnimation();
+    while (!fractal.GetStopCalculating()) {
+        auto handle = fractal.EnqueuePaletteRecolor([](Fractal &f) { f.RotateFractalPalette(10); },
+                                                    false,
+                                                    RenderPresentationMode::PacedAnimation,
+                                                    presentationGroup);
+        handle.Wait();
+        Environment::PumpUIEvents();
+    }
+
+    fractal.CancelPacedAnimation(presentationGroup);
+    fractal.EnqueuePaletteRecolor([](Fractal &f) { f.ResetFractalPalette(); }, false).Wait();
+    fractal.ResetStopCalculating();
 }
 
 // ---- Tests / Benchmarks ---------------------------------------------------

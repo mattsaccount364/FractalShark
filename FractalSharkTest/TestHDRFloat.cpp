@@ -1,8 +1,10 @@
-#include "TestFramework.h"
 #include "HDRFloat.h"
 #include "HighPrecision.h"
+#include "TestFramework.h"
 
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <sstream>
 
@@ -10,6 +12,36 @@
 using HDRd = HDRFloat<double>;
 using HDRf = HDRFloat<float>;
 using HRReal = Imagina::HRReal; // HDRFloat<double, HDROrder::Left, int64_t>
+
+namespace {
+
+uint32_t
+FloatBits(float value)
+{
+    return std::bit_cast<uint32_t>(value);
+}
+
+uint64_t
+DoubleBits(double value)
+{
+    return std::bit_cast<uint64_t>(value);
+}
+
+void
+AssertHdrFloatBits(const HDRf &value, int32_t exponent, uint32_t mantissaBits)
+{
+    ASSERT_EQ(value.getExp(), exponent);
+    ASSERT_EQ(FloatBits(value.getMantissa()), mantissaBits);
+}
+
+void
+AssertHdrDoubleBits(const HDRd &value, int32_t exponent, uint64_t mantissaBits)
+{
+    ASSERT_EQ(value.getExp(), exponent);
+    ASSERT_EQ(DoubleBits(value.getMantissa()), mantissaBits);
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -254,9 +286,9 @@ TEST(HDR_Multiply2_Divide2)
 TEST(HDR_ExponentDiffIgnored)
 {
     // When exponent difference > 120, the smaller value is ignored in addition
-    HDRd big(0, 1.5);   // 1.5 × 2^0
+    HDRd big(0, 1.5); // 1.5 × 2^0
     HDRd tiny(0, 1.0);
-    tiny.setExp(-200);   // 1.0 × 2^-200 (negligible compared to big)
+    tiny.setExp(-200); // 1.0 × 2^-200 (negligible compared to big)
 
     HDRd sum = big + tiny;
     // tiny should be ignored because |0 - (-200)| = 200 > 120
@@ -273,9 +305,9 @@ TEST(HDR_CompareTo_Basic)
     HDRd b(5.0);
     HDRd c(10.0);
 
-    ASSERT_TRUE(a.compareTo(b) > 0);  // 10 > 5
-    ASSERT_TRUE(b.compareTo(a) < 0);  // 5 < 10
-    ASSERT_EQ(a.compareTo(c), 0);     // 10 == 10
+    ASSERT_TRUE(a.compareTo(b) > 0); // 10 > 5
+    ASSERT_TRUE(b.compareTo(a) < 0); // 5 < 10
+    ASSERT_EQ(a.compareTo(c), 0);    // 10 == 10
 }
 
 TEST(HDR_CompareTo_Negative)
@@ -294,7 +326,7 @@ TEST(HDR_UnnormalizedEquality)
 {
     // Same numeric value (512), different (exp, mantissa) decomposition
     HDRd a(0, 1.0);
-    a.setExp(9);  // 1.0 × 2^9 = 512
+    a.setExp(9); // 1.0 × 2^9 = 512
 
     HDRd b(0, 0.5);
     b.setExp(10); // 0.5 × 2^10 = 512
@@ -458,6 +490,170 @@ TEST(HDR_GetMultiplier_Overflow)
 
     result = HDRd::getMultiplier(5000);
     ASSERT_EQ(result, std::numeric_limits<double>::max());
+}
+
+TEST(HDR_GetMultiplier_FloatBitPatterns)
+{
+    ASSERT_EQ(FloatBits(HDRf::getMultiplier(-128)), 0x00000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplier(-127)), 0x00000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplier(-126)), 0x00800000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplier(-1)), 0x3F000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplier(0)), 0x3F800000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplier(1)), 0x40000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplier(127)), 0x7F000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplier(128)), 0x7F7FFFFFU);
+}
+
+TEST(HDR_GetMultiplier_DoubleBitPatterns)
+{
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplier(-1024)), 0x0000000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplier(-1023)), 0x0000000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplier(-1022)), 0x0010000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplier(-1)), 0x3FE0000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplier(0)), 0x3FF0000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplier(1)), 0x4000000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplier(1023)), 0x7FE0000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplier(1024)), 0x7FEFFFFFFFFFFFFFULL);
+}
+
+TEST(HDR_GetMultiplierNeg_CheckedBitPatterns)
+{
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg(-128)), 0x00000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg(-127)), 0x00000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg(-126)), 0x00800000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg(0)), 0x3F800000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg(127)), 0x7F000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg(128)), 0x7F800000U);
+
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg(-1024)), 0x0000000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg(-1023)), 0x0000000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg(-1022)), 0x0010000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg(0)), 0x3FF0000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg(1023)), 0x7FE0000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg(1024)), 0x7FF0000000000000ULL);
+}
+
+TEST(HDR_GetMultiplierNeg_UncheckedBitPatterns)
+{
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg<false>(-150)), 0x00000000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg<false>(-149)), 0x00000001U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg<false>(-127)), 0x00400000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg<false>(-126)), 0x00800000U);
+    ASSERT_EQ(FloatBits(HDRf::getMultiplierNeg<false>(128)), 0x7F800000U);
+
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg<false>(-1075)), 0x0000000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg<false>(-1074)), 0x0000000000000001ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg<false>(-1023)), 0x0008000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg<false>(-1022)), 0x0010000000000000ULL);
+    ASSERT_EQ(DoubleBits(HDRd::getMultiplierNeg<false>(1024)), 0x7FF0000000000000ULL);
+}
+
+TEST(HDR_AddMutable_FloatBoundaryBitPatterns)
+{
+    HDRf equalExp{0, 1.25f};
+    equalExp.add_mutable(HDRf{0, 0.75f});
+    AssertHdrFloatBits(equalExp, 0, 0x40000000U);
+
+    HDRf positiveDiff{10, 1.5f};
+    positiveDiff.add_mutable(HDRf{8, 1.0f});
+    AssertHdrFloatBits(positiveDiff, 10, 0x3FE00000U);
+
+    HDRf negativeDiff{8, 1.0f};
+    negativeDiff.add_mutable(HDRf{10, 1.5f});
+    AssertHdrFloatBits(negativeDiff, 10, 0x3FE00000U);
+
+    HDRf ignoredSmaller{120, 1.25f};
+    ignoredSmaller.add_mutable(HDRf{0, 1.5f});
+    AssertHdrFloatBits(ignoredSmaller, 120, 0x3FA00000U);
+
+    HDRf replacedByLarger{0, 1.25f};
+    replacedByLarger.add_mutable(HDRf{120, 1.5f});
+    AssertHdrFloatBits(replacedByLarger, 120, 0x3FC00000U);
+
+    HDRf cancellation{5, 1.25f};
+    cancellation.add_mutable(HDRf{5, -1.25f});
+    AssertHdrFloatBits(cancellation, HDRf::MIN_BIG_EXPONENT(), 0x00000000U);
+}
+
+TEST(HDR_AddMutable_DoubleBoundaryBitPatterns)
+{
+    HDRd equalExp{0, 1.25};
+    equalExp.add_mutable(HDRd{0, 0.75});
+    AssertHdrDoubleBits(equalExp, 0, 0x4000000000000000ULL);
+
+    HDRd positiveDiff{10, 1.5};
+    positiveDiff.add_mutable(HDRd{8, 1.0});
+    AssertHdrDoubleBits(positiveDiff, 10, 0x3FFC000000000000ULL);
+
+    HDRd negativeDiff{8, 1.0};
+    negativeDiff.add_mutable(HDRd{10, 1.5});
+    AssertHdrDoubleBits(negativeDiff, 10, 0x3FFC000000000000ULL);
+
+    HDRd ignoredSmaller{120, 1.25};
+    ignoredSmaller.add_mutable(HDRd{0, 1.5});
+    AssertHdrDoubleBits(ignoredSmaller, 120, 0x3FF4000000000000ULL);
+
+    HDRd replacedByLarger{0, 1.25};
+    replacedByLarger.add_mutable(HDRd{120, 1.5});
+    AssertHdrDoubleBits(replacedByLarger, 120, 0x3FF8000000000000ULL);
+
+    HDRd cancellation{5, 1.25};
+    cancellation.add_mutable(HDRd{5, -1.25});
+    AssertHdrDoubleBits(cancellation, HDRd::MIN_BIG_EXPONENT(), 0x0000000000000000ULL);
+}
+
+TEST(HDR_SubtractMutable_FloatBoundaryBitPatterns)
+{
+    HDRf equalExp{0, 1.25f};
+    equalExp.subtract_mutable(HDRf{0, 0.75f});
+    AssertHdrFloatBits(equalExp, 0, 0x3F000000U);
+
+    HDRf positiveDiff{10, 1.5f};
+    positiveDiff.subtract_mutable(HDRf{8, 1.0f});
+    AssertHdrFloatBits(positiveDiff, 10, 0x3FA00000U);
+
+    HDRf negativeDiff{8, 1.0f};
+    negativeDiff.subtract_mutable(HDRf{10, 1.5f});
+    AssertHdrFloatBits(negativeDiff, 10, 0xBFA00000U);
+
+    HDRf ignoredSmaller{120, 1.25f};
+    ignoredSmaller.subtract_mutable(HDRf{0, 1.5f});
+    AssertHdrFloatBits(ignoredSmaller, 120, 0x3FA00000U);
+
+    HDRf replacedByLarger{0, 1.25f};
+    replacedByLarger.subtract_mutable(HDRf{120, 1.5f});
+    AssertHdrFloatBits(replacedByLarger, 120, 0xBFC00000U);
+
+    HDRf cancellation{5, 1.25f};
+    cancellation.subtract_mutable(HDRf{5, 1.25f});
+    AssertHdrFloatBits(cancellation, HDRf::MIN_BIG_EXPONENT(), 0x00000000U);
+}
+
+TEST(HDR_SubtractMutable_DoubleBoundaryBitPatterns)
+{
+    HDRd equalExp{0, 1.25};
+    equalExp.subtract_mutable(HDRd{0, 0.75});
+    AssertHdrDoubleBits(equalExp, 0, 0x3FE0000000000000ULL);
+
+    HDRd positiveDiff{10, 1.5};
+    positiveDiff.subtract_mutable(HDRd{8, 1.0});
+    AssertHdrDoubleBits(positiveDiff, 10, 0x3FF4000000000000ULL);
+
+    HDRd negativeDiff{8, 1.0};
+    negativeDiff.subtract_mutable(HDRd{10, 1.5});
+    AssertHdrDoubleBits(negativeDiff, 10, 0xBFF4000000000000ULL);
+
+    HDRd ignoredSmaller{120, 1.25};
+    ignoredSmaller.subtract_mutable(HDRd{0, 1.5});
+    AssertHdrDoubleBits(ignoredSmaller, 120, 0x3FF4000000000000ULL);
+
+    HDRd replacedByLarger{0, 1.25};
+    replacedByLarger.subtract_mutable(HDRd{120, 1.5});
+    AssertHdrDoubleBits(replacedByLarger, 120, 0xBFF8000000000000ULL);
+
+    HDRd cancellation{5, 1.25};
+    cancellation.subtract_mutable(HDRd{5, 1.25});
+    AssertHdrDoubleBits(cancellation, HDRd::MIN_BIG_EXPONENT(), 0x0000000000000000ULL);
 }
 
 // ---------------------------------------------------------------------------

@@ -116,8 +116,6 @@ private:
     void HandleKeyDown(UINT /*message*/, WPARAM wParam, LPARAM lParam);
     void HandleArrowAndZoomKeys(WPARAM vk);
 
-    void DrawFractalShark();
-
     enum class OpenBoxType { Open, Save };
 
     static std::wstring OpenFileDialog(OpenBoxType type,

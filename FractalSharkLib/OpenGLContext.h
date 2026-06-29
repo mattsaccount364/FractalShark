@@ -35,5 +35,4 @@ public:
     bool IsSoftwareRenderer() const;
     GLint GetMaxTextureSize() const;
     void DrawGlBox(bool swapBuffers = true);
-    void DrawFractalShark(void *nativeWindow);
 };

@@ -12,7 +12,6 @@
 #include "JobObject.h"
 #include "MainWindow.h"
 #include "MenuState.h"
-#include "OpenGLContext.h"
 #include "PngParallelSave.h"
 #include "SavedLocation.h"
 
@@ -66,13 +65,14 @@ MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) : commandDispatcher(*t
     auto startupBackgroundConsole = []() { AttachBackgroundConsole(true); };
     auto threadConsole = std::thread(startupBackgroundConsole);
 
+    // Join before InitInstance since that might print stuff
+    threadConsole.join();
+
     // Perform application initialization:
     hWnd = InitInstance(hInstance, nCmdShow);
     if (!hWnd) {
         throw FractalSharkSeriousException("Failed to create window.");
     }
-
-    threadConsole.join();
 
     // Main window is ready; close splash now.
     Splash.Stop();
@@ -215,19 +215,6 @@ void
 MainWindow::OnLoadRefOrbitImagMaxSaved()
 {
     MenuLoadImagDyn(ImaginaSettings::UseSaved);
-}
-
-// ---- Tests / Benchmarks ---------------------------------------------------
-// ---- LA -------------------------------------------------------------------
-void
-MainWindow::MainWindow::DrawFractalShark()
-{
-    auto glContext = std::make_unique<OpenGlContext>(static_cast<void *>(hWnd));
-    if (!glContext->IsValid()) {
-        return;
-    }
-
-    glContext->DrawFractalShark(static_cast<void *>(hWnd));
 }
 
 //

@@ -133,15 +133,12 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
 
     int supportsGl = False;
     int rgba = False;
-    int doubleBuffered = False;
     if (glXGetConfig(dpy, vi, GLX_USE_GL, &supportsGl) != 0 || supportsGl != True ||
-        glXGetConfig(dpy, vi, GLX_RGBA, &rgba) != 0 || rgba != True ||
-        glXGetConfig(dpy, vi, GLX_DOUBLEBUFFER, &doubleBuffered) != 0) {
+        glXGetConfig(dpy, vi, GLX_RGBA, &rgba) != 0 || rgba != True) {
         GlLog("OpenGlContext: window visual is not a usable GLX RGBA visual");
         XFree(vi);
         return;
     }
-    m_IsDoubleBuffered = doubleBuffered == True;
 
     GLXContext shareCtx = GetShareRoot(win);
     GLXContext ctx = glXCreateContext(dpy, vi, shareCtx, GL_TRUE);
@@ -170,13 +167,12 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     snprintf(buf,
              sizeof(buf),
              "OpenGlContext: renderer=%s, version=%s, maxTex=%d, direct(bool)=%d, "
-             "software(bool)=%d, doubleBuffered(bool)=%d",
+             "software(bool)=%d",
              renderer ? renderer : "(null)",
              version ? version : "(null)",
              m_MaxTextureSize,
              isDirect ? 1 : 0,
-             m_IsSoftwareRenderer ? 1 : 0,
-             m_IsDoubleBuffered ? 1 : 0);
+             m_IsSoftwareRenderer ? 1 : 0);
     GlLog(buf);
 
     m_Valid = true;
@@ -222,15 +218,7 @@ NativeOpenGLContext::MakeCurrent() noexcept
 void
 NativeOpenGLContext::SwapBuffers() noexcept
 {
-    Display *dpy = GetX11Display();
-    if (dpy && m_NativeWindow) {
-        if (m_IsDoubleBuffered) {
-            Window win = reinterpret_cast<Window>(m_NativeWindow);
-            glXSwapBuffers(dpy, win);
-        } else {
-            glFlush();
-        }
-    }
+    glFlush();
 }
 
 std::optional<ScreenRect>
@@ -252,12 +240,6 @@ bool
 NativeOpenGLContext::IsSoftwareRenderer() const noexcept
 {
     return m_IsSoftwareRenderer;
-}
-
-bool
-NativeOpenGLContext::IsDoubleBuffered() const noexcept
-{
-    return m_IsDoubleBuffered;
 }
 
 int

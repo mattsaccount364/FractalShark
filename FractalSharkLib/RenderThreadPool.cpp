@@ -609,10 +609,6 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
         std::lock_guard lk(m_WorkQueueMutex);
         workItem.SequenceNumber = m_NextSequenceNumber++;
 
-        if (!workItem.MutationOnly && workItem.PresentationMode == RenderPresentationMode::Immediate) {
-            workItem.PresentationGeneration = ++m_PresentationGeneration;
-        }
-
         // Supersede: when a new render arrives, discard earlier queued
         // renders that it replaces (e.g., rapid zoom — only last matters).
         // Keep mutations and non-supersedable items (AutoZoomer pipeline).
@@ -799,7 +795,6 @@ RenderThreadPool::PushRepaintPlaceholder(const RenderWorkItem &item)
     frame.IsFinal = true;
     frame.IsRepaintPlaceholder = true;
     frame.PresentationMode = RenderPresentationMode::Immediate;
-    frame.PresentationGeneration = item.PresentationGeneration;
 
     m_FrameQueue.Push(std::move(frame));
 }
@@ -971,10 +966,6 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
         workerIters = fractal->AcquireItersMemory();
     }
 
-    if (IsPresentationStale(item)) {
-        return CalcRenderResult::Stale;
-    }
-
     if (!fractal->GetRepaint()) {
         return CalcRenderResult::RepaintDisabled;
     }
@@ -1039,7 +1030,7 @@ RenderThreadPool::WaitForGpuAndProduceProgressiveFrames(Fractal *fractal,
             break;
         }
 
-        if (!IsPresentationStale(item) && !IsPacedAnimationCancelled(item)) {
+        if (!IsPacedAnimationCancelled(item)) {
             ProduceFrame(item, rendererIdx, workerIters, false);
         }
     }
@@ -1477,25 +1468,8 @@ RenderThreadPool::ExecuteMutationOnly(const RenderWorkItem &item)
 bool
 RenderThreadPool::ShouldSkipRender(const RenderWorkItem &item) const
 {
-    return (item.Supersedable &&
-            (item.EnqueueGeneration < m_EnqueueGeneration || IsPresentationStale(item))) ||
+    return (item.Supersedable && item.EnqueueGeneration < m_EnqueueGeneration.load()) ||
            IsPacedAnimationCancelled(item);
-}
-
-bool
-RenderThreadPool::IsPresentationStale(const RenderWorkItem &item) const
-{
-    return item.PresentationMode == RenderPresentationMode::Immediate &&
-           item.PresentationGeneration != 0 &&
-           item.PresentationGeneration < m_PresentationGeneration.load();
-}
-
-bool
-RenderThreadPool::IsPresentationStale(const RenderFrame &frame) const
-{
-    return frame.PresentationMode == RenderPresentationMode::Immediate &&
-           frame.PresentationGeneration != 0 &&
-           frame.PresentationGeneration < m_PresentationGeneration.load();
 }
 
 RenderThreadPool::WorkerRenderResult
@@ -1515,9 +1489,6 @@ RenderThreadPool::RenderWorkerItem(RenderWorkItem &item,
     if (calcResult != CalcRenderResult::Rendered) {
         if (calcResult == CalcRenderResult::RepaintDisabled) {
             PushRepaintPlaceholder(item);
-            result.FinalFramePushed = true;
-        } else if (calcResult == CalcRenderResult::Stale) {
-            PushTombstone(item.SequenceNumber);
             result.FinalFramePushed = true;
         } else {
             // One-shot log for first tombstone from RunCalcFractal failure.
@@ -1559,13 +1530,6 @@ RenderThreadPool::RenderWorkerItem(RenderWorkItem &item,
             fractal, renderer, item, rendererIdx, workerIters, workerMutex, workerCV);
 
         fractal->m_BenchmarkData.m_PerPixel.StopTimer();
-
-        if (IsPresentationStale(item)) {
-            PushTombstone(item.SequenceNumber);
-            result.FinalFramePushed = true;
-            fractal->m_BenchmarkData.m_Overall.StopTimer();
-            return result;
-        }
 
         const bool pushed = !m_ShutdownFlag.load() && !fractal->GetStopCalculating() &&
                             !IsPacedAnimationCancelled(item) &&
@@ -1795,16 +1759,6 @@ RenderThreadPool::GlConsumerLoop()
             continue;
         }
 
-        if (IsPresentationStale(frame)) {
-            if (frame.ColorData) {
-                ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
-            }
-            if (frame.IsFinal) {
-                nextExpectedSeqNum++;
-            }
-            continue;
-        }
-
         if (frame.IsRepaintPlaceholder) {
             if (lastTex != 0) {
                 glDeleteTextures(1, &lastTex);
@@ -1891,16 +1845,6 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
         RenderFrame frame;
         if (!m_FrameQueue.TryPopNextInOrder(m_HostExpectedSeqNum, frame)) {
             break;
-        }
-
-        if (IsPresentationStale(frame)) {
-            if (frame.ColorData) {
-                ReleaseFrameBuffer(std::move(frame.ColorData), frame.BufferPixelCount);
-            }
-            if (frame.IsFinal) {
-                ++m_HostExpectedSeqNum;
-            }
-            continue;
         }
 
         if (frame.IsRepaintPlaceholder) {
@@ -2116,7 +2060,6 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
     frame.PresentationMode = item.PresentationMode;
     frame.PresentationGroup = item.PresentationGroup;
     frame.ViewState = PresentedViewState{item.Ptz, item.NumIterations};
-    frame.PresentationGeneration = item.PresentationGeneration;
     frame.BufferPixelCount = roundedColorTotal;
 
     m_FrameQueue.Push(std::move(frame));

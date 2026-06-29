@@ -1157,6 +1157,19 @@ Fractal::EnqueueCommand(std::function<void(Fractal &)> cmd,
     return RenderJobHandle{};
 }
 
+RenderJobHandle
+Fractal::EnqueuePaletteRecolor(std::function<void(Fractal &)> cmd,
+                               bool supersedable,
+                               RenderPresentationMode presentationMode,
+                               uint64_t presentationGroup)
+{
+    if (m_RenderPool) {
+        return m_RenderPool->EnqueueRecolorCurrentFrame(
+            std::move(cmd), supersedable, presentationMode, presentationGroup);
+    }
+    return RenderJobHandle{};
+}
+
 uint64_t
 Fractal::BeginPacedAnimation()
 {
@@ -1164,6 +1177,14 @@ Fractal::BeginPacedAnimation()
         return m_RenderPool->BeginPacedAnimation();
     }
     return 0;
+}
+
+void
+Fractal::CancelPacedAnimation(uint64_t presentationGroup)
+{
+    if (m_RenderPool) {
+        m_RenderPool->CancelPacedAnimation(presentationGroup);
+    }
 }
 
 RenderJobHandle

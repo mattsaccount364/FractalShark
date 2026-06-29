@@ -62,10 +62,7 @@ GPU rendering is bypassed.
 
 Most commands have the same meaning on Windows and Linux because both front
 ends dispatch through the shared command catalog and evaluate state through the
-same portable implementation. Linux palette rotation has a known display
-limitation: it updates palette state but does not
-currently recolor the presented frame, so the interactive effect is not
-visible.
+same portable implementation.
 
 \subsubsection{Menu Structure and Behavior}
 
@@ -497,13 +494,13 @@ choice and triggers any necessary reconfiguration.
       \item \emph{16-bit} (radio)
       \item \emph{20-bit} (radio)
 
-      \item \emph{Palette Rotation} (command): On Windows, enters an interactive
-      rotation mode. The palette shifts by 10~units per frame while the image
-      redraws continuously. Moving the mouse more than 5~pixels from the
-      starting position exits the mode and resets the palette to its original
+      \item \emph{Palette Rotation} (command): Enters an interactive rotation
+      mode through the shared presentation path on Windows and Linux. The
+      palette shifts by 10~units per frame while the current iteration buffer
+      is recolored continuously. Holding \code{Ctrl+Alt} for approximately
+      three seconds exits the mode and resets the palette to its original
       state. This command is useful for quickly previewing how different color
-      offsets look. The Linux implementation currently changes the internal
-      palette without visibly recoloring the displayed frame.
+      offsets look without recomputing the fractal geometry.
     \end{itemize}
 
   \item \emph{Memory Management} (submenu): Controls whether reference orbit
@@ -617,11 +614,12 @@ options.  See also \cref{subsec:practical-usage}.
   corresponding dots.  See \cref{par:ref-orbit-indicators} for implementation
   details.
   \item Long-running computations (renders, reference orbits, feature-finder
-  searches) can be aborted by holding \code{Ctrl+Alt} for approximately three
-  seconds.  An \code{AbortMonitor} background thread polls the key state every
-  250\,ms and sets a stop flag once the debounce threshold is reached.  Pressing
-  \code{Escape} cancels (resets) the abort flag, allowing computation to
-  continue if it has not yet terminated.
+  searches, palette rotation, and autozoom) can be aborted by holding
+  \code{Ctrl+Alt} for approximately three seconds.  An \code{AbortMonitor}
+  background thread polls the key state every 250\,ms and sets a stop flag once
+  the debounce threshold is reached.  Pressing \code{Escape} cancels (resets)
+  the abort flag, allowing computation to continue if it has not yet
+  terminated.
   \item Some menu options may be temporarily disabled depending on the current
   render state or selected algorithm.
   \item If the application exits unexpectedly, a Windows minidump
@@ -756,7 +754,8 @@ These keys scale the maximum iteration count aggressively for quick exploration:
 \paragraph{Abort and cancel.}
 \begin{itemize}
   \item \textbf{Ctrl+Alt} (hold ${\sim}$3\,s): Abort the current long-running
-        computation (render, reference orbit, feature-finder search).
+        operation (render, reference orbit, feature-finder search, palette
+        rotation, or autozoom).
         The \code{AbortMonitor} background thread polls every 250\,ms
         and sets the stop flag after 12~consecutive positive samples.
   \item \textbf{Escape}: Cancel (reset) the abort flag.  If pressed

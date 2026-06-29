@@ -589,7 +589,7 @@ private:
     RenderThreadPool &m_Pool;
     RenderWorkItem &m_Item;
     std::optional<RendererIndex> m_RendererIdx;
-    const bool m_RequiresFinalFrame = !m_Item.MutationOnly;
+    const bool m_RequiresFinalFrame = m_Item.WorkMode != RenderWorkMode::MutationOnly;
     bool m_FinalFramePushed = false;
     bool m_CompletionSignaled = false;
 };
@@ -612,9 +612,9 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
         // Supersede: when a new render arrives, discard earlier queued
         // renders that it replaces (e.g., rapid zoom — only last matters).
         // Keep mutations and non-supersedable items (AutoZoomer pipeline).
-        if (!workItem.MutationOnly) {
+        if (workItem.WorkMode != RenderWorkMode::MutationOnly) {
             for (auto it = m_WorkQueue.begin(); it != m_WorkQueue.end();) {
-                if (it->Supersedable && !it->MutationOnly) {
+                if (it->Supersedable && it->WorkMode != RenderWorkMode::MutationOnly) {
                     tombstoneSeqs.push_back(it->SequenceNumber);
                     if (it->CompletionPromise) {
                         it->CompletionPromise->set_value();
@@ -695,6 +695,22 @@ RenderThreadPool::EnqueueCommand(std::function<void(Fractal &)> cmd,
     return Enqueue(item);
 }
 
+RenderJobHandle
+RenderThreadPool::EnqueueRecolorCurrentFrame(std::function<void(Fractal &)> cmd,
+                                             bool supersedable,
+                                             RenderPresentationMode presentationMode,
+                                             uint64_t presentationGroup)
+{
+    RenderWorkItem item{};
+    item.WorkMode = RenderWorkMode::RecolorCurrentFrame;
+    item.Command = std::move(cmd);
+    item.Supersedable = supersedable;
+    item.PresentationMode = presentationMode;
+    item.PresentationGroup = presentationGroup;
+    item.FractalPtr = m_Fractal;
+    return Enqueue(item);
+}
+
 uint64_t
 RenderThreadPool::BeginPacedAnimation()
 {
@@ -765,7 +781,7 @@ RenderThreadPool::EnqueueMutation(std::function<void(Fractal &)> cmd)
 
     RenderWorkItem workItem{};
     workItem.Command = std::move(cmd);
-    workItem.MutationOnly = true;
+    workItem.WorkMode = RenderWorkMode::MutationOnly;
     workItem.FractalPtr = m_Fractal;
     workItem.CompletionPromise = std::move(promise);
     // No sequence number — mutations don't produce frames.
@@ -1466,6 +1482,98 @@ RenderThreadPool::ExecuteMutationOnly(const RenderWorkItem &item)
 }
 
 bool
+RenderThreadPool::ExecuteRecolorCurrentFrame(RenderWorkItem &item)
+{
+    Fractal *fractal = item.FractalPtr;
+
+    std::unique_ptr<Color16[]> colorData;
+    size_t outputWidth = 0;
+    size_t outputHeight = 0;
+    size_t roundedColorTotal = 0;
+    bool repaintDisabled = false;
+
+    {
+        std::lock_guard lk(m_CalcFractalMutex);
+
+        if (IsPacedAnimationCancelled(item) || m_ShutdownFlag.load()) {
+            return false;
+        }
+
+        if (item.Command) {
+            item.Command(*fractal);
+        }
+
+        auto fresh = SnapshotCurrentState();
+        item.Ptz = fresh.Ptz;
+        item.Algorithm = fresh.Algorithm;
+        item.IterType = fresh.IterType;
+        item.NumIterations = fresh.NumIterations;
+        item.IterationPrecision = fresh.IterationPrecision;
+        item.ScrnWidth = fresh.ScrnWidth;
+        item.ScrnHeight = fresh.ScrnHeight;
+        item.GpuAntialiasing = fresh.GpuAntialiasing;
+        item.ChangedWindow = fresh.ChangedWindow;
+        item.ChangedScrn = fresh.ChangedScrn;
+        item.ChangedIterations = fresh.ChangedIterations;
+
+        if (!fractal->GetRepaint()) {
+            repaintDisabled = true;
+        } else {
+            auto &curIters = fractal->m_CurIters;
+            if (!curIters.m_RoundedOutputColorMemory || curIters.m_OutputWidth != item.ScrnWidth ||
+                curIters.m_OutputHeight != item.ScrnHeight ||
+                curIters.m_Antialiasing != item.GpuAntialiasing) {
+                return false;
+            }
+
+            outputWidth = curIters.m_OutputWidth;
+            outputHeight = curIters.m_OutputHeight;
+            roundedColorTotal = curIters.m_RoundedOutputColorTotal;
+            const size_t totalPixels = outputWidth * outputHeight;
+            if (totalPixels == 0 || roundedColorTotal < totalPixels) {
+                return false;
+            }
+
+            ColorizeCpuIterations(curIters,
+                                  fractal->GetPalette(),
+                                  item.NumIterations,
+                                  item.IterType,
+                                  item.GpuAntialiasing);
+
+            colorData = AcquireFrameBuffer(roundedColorTotal);
+            memcpy(colorData.get(),
+                   curIters.m_RoundedOutputColorMemory.get(),
+                   totalPixels * sizeof(Color16));
+        }
+    }
+
+    if (repaintDisabled) {
+        PushRepaintPlaceholder(item);
+        return true;
+    }
+
+    if (!colorData) {
+        return false;
+    }
+
+    RenderFrame frame;
+    frame.SequenceNumber = item.SequenceNumber;
+    frame.ColorData = std::move(colorData);
+    frame.OutputWidth = outputWidth;
+    frame.OutputHeight = outputHeight;
+    frame.IsProgressive = false;
+    frame.IsFinal = true;
+    frame.IsRepaintPlaceholder = false;
+    frame.PresentationMode = item.PresentationMode;
+    frame.PresentationGroup = item.PresentationGroup;
+    frame.ViewState = PresentedViewState{item.Ptz, item.NumIterations};
+    frame.BufferPixelCount = roundedColorTotal;
+
+    m_FrameQueue.Push(std::move(frame));
+    return true;
+}
+
+bool
 RenderThreadPool::ShouldSkipRender(const RenderWorkItem &item) const
 {
     return (item.Supersedable && item.EnqueueGeneration < m_EnqueueGeneration.load()) ||
@@ -1629,7 +1737,7 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
             }
         };
 
-        if (item.MutationOnly) {
+        if (item.WorkMode == RenderWorkMode::MutationOnly) {
             try {
                 ExecuteMutationOnly(item);
             } catch (const FractalSharkSeriousException &e) {
@@ -1642,9 +1750,25 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
         }
 
         // Skip stale in-flight renders: if a newer supersedable item was
-        // enqueued since this one, this render's output will never be seen.
+        // enqueued since this one, this frame's output will never be seen.
         // Check before acquiring renderer/memory (expensive).
         if (ShouldSkipRender(item)) {
+            completeJob();
+            continue;
+        }
+
+        if (item.WorkMode == RenderWorkMode::RecolorCurrentFrame) {
+            bool framePushed = false;
+            try {
+                framePushed = ExecuteRecolorCurrentFrame(item);
+            } catch (const FractalSharkSeriousException &e) {
+                LogWorkerException(e);
+            } catch (const std::exception &e) {
+                LogWorkerException(e);
+            }
+            if (framePushed) {
+                jobScope.MarkFinalFramePushed();
+            }
             completeJob();
             continue;
         }

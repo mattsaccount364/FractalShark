@@ -95,7 +95,9 @@ translate commands that require X11 operations. This arrangement keeps algorithm
 navigation, built-in views, iteration controls, perturbation modes, palettes,
 tests, benchmarks, and linear-approximation settings synchronized with the
 portable command catalog while leaving window-system operations in the Linux
-front end.
+front end. Palette rotation is handled by the portable command layer and uses
+the shared render-pool presentation path to recolor the current iteration
+buffer.
 
 Dear~ImGui supplies the overlay surfaces that do not need separate native
 windows: help and rendering-information messages, file selection, saved-view
@@ -107,9 +109,8 @@ for UTF-8 text. A separate Xlib splash window displays a randomly selected
 embedded image while initialization proceeds.
 
 The Linux GUI is functional but is not represented as completely equivalent to
-the Win32 GUI. Palette rotation currently changes internal state without visibly
-recoloring the displayed frame. These limitations should be stated explicitly
-rather than hidden behind a general claim of full parity.
+the Win32 GUI. Current limitations should be stated explicitly rather than
+hidden behind a general claim of full parity.
 
 \subsubsection{Arbitrary-precision serialization}
 \label{subsec:mpir-portability}

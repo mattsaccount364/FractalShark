@@ -1,6 +1,5 @@
 #include "Conversion.h"
 #include "DbgHeap.h"
-#include "Exceptions.h"
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
 #include "ShowMostEfficientSizes.h"
@@ -16,12 +15,15 @@
 #include <cuda_runtime.h>
 
 #include "Environment.h"
+#include <charconv>
 #include <chrono>
 #include <iostream>
 #include <limits>
 #include <sstream>
 #include <stdarg.h>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 // -----------------------------------------------------------------------------
@@ -116,6 +118,46 @@ struct PromptResult {
     bool gotAnyInput = false; // user typed something (even if invalid)
 };
 
+static bool
+TryParsePromptInt(std::string_view text, int &value)
+{
+    if (text.empty()) {
+        return false;
+    }
+
+    const char *first = text.data();
+    const char *last = first + text.size();
+    while (first != last && (*first == ' ' || *first == '\t')) {
+        ++first;
+    }
+
+    if (first == last) {
+        return false;
+    }
+
+    if (*first == '+') {
+        ++first;
+        if (first == last || *first == '-') {
+            return false;
+        }
+    }
+
+    int parsedValue = 0;
+    const auto parseResult = std::from_chars(first, last, parsedValue, 10);
+    if (parseResult.ec != std::errc{} || parseResult.ptr == first) {
+        return false;
+    }
+
+    for (const char *ptr = parseResult.ptr; ptr != last; ++ptr) {
+        if (*ptr != ' ' && *ptr != '\t') {
+            return false;
+        }
+    }
+
+    value = parsedValue;
+    return true;
+}
+
 static PromptResult
 PromptIntWithTimeout(const std::string &promptText,
                      int defaultValue,
@@ -174,8 +216,7 @@ PromptIntWithTimeout(const std::string &promptText,
 
     // Timeout case: only possible if we never went waitForever
     if (!pressedEnter && !waitForever && std::chrono::steady_clock::now() >= deadline) {
-        std::cout << "\n(no input in " << timeoutSec << "s, defaulting to " << defaultValue
-                  << ")\n";
+        std::cout << "\n(no input in " << timeoutSec << "s, defaulting to " << defaultValue << ")\n";
         out.value = defaultValue;
         return out;
     }
@@ -185,18 +226,11 @@ PromptIntWithTimeout(const std::string &promptText,
         return out;
     }
 
-    try {
-        size_t idx = 0;
-        int v = std::stoi(buf, &idx, 10);
-        for (; idx < buf.size(); ++idx) {
-            if (buf[idx] != ' ' && buf[idx] != '\t') {
-                throw FractalSharkSeriousException("trailing garbage");
-            }
-        }
-        out.value = v;
-    } catch (...) {
-        std::cout << "(could not parse \"" << buf << "\", defaulting to " << defaultValue
-                  << ")\n";
+    int value = 0;
+    if (TryParsePromptInt(buf, value)) {
+        out.value = value;
+    } else {
+        std::cout << "(could not parse \"" << buf << "\", defaulting to " << defaultValue << ")\n";
         out.value = defaultValue;
     }
     return out;

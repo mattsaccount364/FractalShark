@@ -607,6 +607,11 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
 
     {
         std::lock_guard lk(m_WorkQueueMutex);
+        if (m_ShutdownFlag.load()) {
+            workItem.CompletionPromise->set_value();
+            return RenderJobHandle(std::move(future));
+        }
+
         workItem.SequenceNumber = m_NextSequenceNumber++;
 
         // Supersede: when a new render arrives, discard earlier queued
@@ -790,6 +795,11 @@ RenderThreadPool::EnqueueMutation(std::function<void(Fractal &)> cmd)
 
     {
         std::lock_guard lk(m_WorkQueueMutex);
+        if (m_ShutdownFlag.load()) {
+            workItem.CompletionPromise->set_value();
+            return RenderJobHandle(std::move(future));
+        }
+
         m_WorkQueue.push_back(std::move(workItem));
     }
     m_WorkQueueCV.notify_one();
@@ -1690,24 +1700,38 @@ RenderThreadPool::PublishCompletedIters(Fractal &fractal, ItersMemoryContainer &
 }
 
 static void
-LogWorkerException(const FractalSharkSeriousException &e)
-{
-    const std::string msg = std::string{"Worker thread exception during CalcFractal\n"} + e.what();
-    std::cerr << msg << std::endl;
-    GlLog(msg.c_str());
-    if (Environment::IsDebuggerAttached())
-        Environment::DebugBreakpoint();
-}
-
-static void
 LogWorkerException(const std::exception &e)
 {
-    std::cerr << "Worker thread exception during CalcFractal: " << e.what() << std::endl;
-    char buf[512];
-    snprintf(buf, sizeof(buf), "WorkerLoop: exception: %s", e.what());
-    GlLog(buf);
-    if (Environment::IsDebuggerAttached())
+    const std::string msg = std::string{"RenderThreadPool worker fatal exception: "} + e.what();
+    std::cerr << msg << std::endl;
+    GlLog(msg.c_str());
+    if (Environment::IsDebuggerAttached()) {
         Environment::DebugBreakpoint();
+    }
+}
+
+void
+RenderThreadPool::AbortAfterWorkerException(const std::exception &e)
+{
+    if (m_ShutdownFlag.exchange(true)) {
+        return;
+    }
+
+    LogWorkerException(e);
+
+    {
+        std::lock_guard lk(m_WorkQueueMutex);
+        for (auto &item : m_WorkQueue) {
+            if (item.CompletionPromise) {
+                item.CompletionPromise->set_value();
+            }
+        }
+        m_WorkQueue.clear();
+    }
+
+    m_WorkQueueCV.notify_all();
+    m_DrainCV.notify_all();
+    m_FrameQueue.Shutdown();
 }
 
 void
@@ -1725,80 +1749,54 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
         }
 
         WorkerJobScope jobScope(*this, item);
-        auto completeJob = [&jobScope]() {
-            try {
-                jobScope.Complete();
-            } catch (const FractalSharkSeriousException &e) {
-                LogWorkerException(e);
-                throw;
-            } catch (const std::exception &e) {
-                LogWorkerException(e);
-                throw;
-            }
-        };
-
-        if (item.WorkMode == RenderWorkMode::MutationOnly) {
-            try {
+        try {
+            if (item.WorkMode == RenderWorkMode::MutationOnly) {
                 ExecuteMutationOnly(item);
-            } catch (const FractalSharkSeriousException &e) {
-                LogWorkerException(e);
-            } catch (const std::exception &e) {
-                LogWorkerException(e);
+                jobScope.Complete();
+                continue;
             }
-            completeJob();
-            continue;
-        }
 
-        // Skip stale in-flight renders: if a newer supersedable item was
-        // enqueued since this one, this frame's output will never be seen.
-        // Check before acquiring renderer/memory (expensive).
-        if (ShouldSkipRender(item)) {
-            completeJob();
-            continue;
-        }
-
-        if (item.WorkMode == RenderWorkMode::RecolorCurrentFrame) {
-            bool framePushed = false;
-            try {
-                framePushed = ExecuteRecolorCurrentFrame(item);
-            } catch (const FractalSharkSeriousException &e) {
-                LogWorkerException(e);
-            } catch (const std::exception &e) {
-                LogWorkerException(e);
+            // Skip stale in-flight renders: if a newer supersedable item was
+            // enqueued since this one, this frame's output will never be seen.
+            // Check before acquiring renderer/memory (expensive).
+            if (ShouldSkipRender(item)) {
+                jobScope.Complete();
+                continue;
             }
-            if (framePushed) {
+
+            if (item.WorkMode == RenderWorkMode::RecolorCurrentFrame) {
+                const bool framePushed = ExecuteRecolorCurrentFrame(item);
+                if (framePushed) {
+                    jobScope.MarkFinalFramePushed();
+                }
+                jobScope.Complete();
+                continue;
+            }
+
+            RendererIndex rendererIdx = m_RendererPool.Acquire();
+            jobScope.SetRenderer(rendererIdx);
+            Fractal *fractal = item.FractalPtr;
+            auto &renderer = fractal->GetRenderer(rendererIdx);
+            renderer.SetComputeDoneNotification(&workerMutex, &workerCV);
+            ItersMemoryContainer workerIters = fractal->AcquireItersMemory();
+
+            const WorkerRenderResult renderResult =
+                RenderWorkerItem(item, rendererIdx, workerIters, workerMutex, workerCV);
+
+            if (renderResult.FinalFramePushed) {
                 jobScope.MarkFinalFramePushed();
             }
-            completeJob();
-            continue;
-        }
 
-        RendererIndex rendererIdx = m_RendererPool.Acquire();
-        jobScope.SetRenderer(rendererIdx);
-        Fractal *fractal = item.FractalPtr;
-        auto &renderer = fractal->GetRenderer(rendererIdx);
-        renderer.SetComputeDoneNotification(&workerMutex, &workerCV);
-        ItersMemoryContainer workerIters = fractal->AcquireItersMemory();
+            if (renderResult.CompletedFramePushed) {
+                PublishCompletedIters(*fractal, workerIters);
+            }
 
-        WorkerRenderResult renderResult;
-        try {
-            renderResult = RenderWorkerItem(item, rendererIdx, workerIters, workerMutex, workerCV);
-        } catch (const FractalSharkSeriousException &e) {
-            LogWorkerException(e);
+            fractal->ReturnIterMemory(std::move(workerIters));
+            jobScope.Complete();
         } catch (const std::exception &e) {
-            LogWorkerException(e);
+            AbortAfterWorkerException(e);
+            break;
         }
-
-        if (renderResult.FinalFramePushed) {
-            jobScope.MarkFinalFramePushed();
-        }
-
-        if (renderResult.CompletedFramePushed) {
-            PublishCompletedIters(*fractal, workerIters);
-        }
-
-        fractal->ReturnIterMemory(std::move(workerIters));
-        completeJob();
     }
 }
 

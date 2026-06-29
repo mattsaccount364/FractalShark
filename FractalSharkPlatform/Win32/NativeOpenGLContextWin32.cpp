@@ -64,7 +64,7 @@ EnsurePixelFormatSet(HWND hWnd, HDC hdc, int &outPixelFormat)
     PIXELFORMATDESCRIPTOR pfd{};
     pfd.nSize = sizeof(pfd);
     pfd.nVersion = 1;
-    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL;
     pfd.iPixelType = PFD_TYPE_RGBA;
     pfd.cColorBits = 32;
     pfd.cAlphaBits = 8;
@@ -155,10 +155,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     m_RenderContext = wglCreateContext(AsHDC(m_DeviceContext));
     if (!m_RenderContext) {
         char buf[128];
-        snprintf(buf,
-                 sizeof(buf),
-                 "OpenGlContext: wglCreateContext failed, error=%lu",
-                 GetLastError());
+        snprintf(buf, sizeof(buf), "OpenGlContext: wglCreateContext failed, error=%lu", GetLastError());
         GlLog(buf);
         return;
     }
@@ -168,8 +165,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
 
     if (!MakeCurrent()) {
         char buf[128];
-        snprintf(
-            buf, sizeof(buf), "OpenGlContext: MakeCurrent failed, error=%lu", GetLastError());
+        snprintf(buf, sizeof(buf), "OpenGlContext: MakeCurrent failed, error=%lu", GetLastError());
         GlLog(buf);
         return;
     }
@@ -238,9 +234,7 @@ NativeOpenGLContext::MakeCurrent() noexcept
 void
 NativeOpenGLContext::SwapBuffers() noexcept
 {
-    if (m_DeviceContext) {
-        ::SwapBuffers(AsHDC(m_DeviceContext));
-    }
+    glFlush();
 }
 
 std::optional<ScreenRect>
@@ -260,12 +254,6 @@ bool
 NativeOpenGLContext::IsSoftwareRenderer() const noexcept
 {
     return m_IsSoftwareRenderer;
-}
-
-bool
-NativeOpenGLContext::IsDoubleBuffered() const noexcept
-{
-    return m_IsDoubleBuffered;
 }
 
 int

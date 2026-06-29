@@ -22,7 +22,6 @@ public:
 
     std::optional<ScreenRect> GetClientRect() const noexcept;
     bool IsSoftwareRenderer() const noexcept;
-    bool IsDoubleBuffered() const noexcept;
     int GetMaxTextureSize() const noexcept;
 
 private:
@@ -31,7 +30,6 @@ private:
     void *m_RenderContext{};
     bool m_Valid{};
     bool m_IsSoftwareRenderer{};
-    bool m_IsDoubleBuffered{true};
     int m_MaxTextureSize{};
 };
 

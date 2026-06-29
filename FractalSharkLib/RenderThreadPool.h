@@ -80,11 +80,6 @@ struct RenderWorkItem {
     // whose generation is older than the latest enqueued supersedable item.
     uint64_t EnqueueGeneration = 0;
 
-    // Presentation freshness generation for ordinary immediate renders.
-    // Non-supersedable commands still execute, but their frames are not
-    // presentable after a newer immediate render has been requested.
-    uint64_t PresentationGeneration = 0;
-
     // Paced animation frames retain normal rendering behavior but final
     // frames are presented at an adaptive cadence.  PresentationGroup separates
     // consecutive animations so each one receives its own pre-roll.
@@ -130,7 +125,6 @@ struct RenderFrame {
     RenderPresentationMode PresentationMode;
     uint64_t PresentationGroup;
     std::optional<PresentedViewState> ViewState;
-    uint64_t PresentationGeneration = 0;
 
     // Actual allocation size of ColorData (may be larger than
     // OutputWidth*OutputHeight due to GPU block-rounding).
@@ -376,8 +370,6 @@ private:
 
     void ExecuteMutationOnly(const RenderWorkItem &item);
     bool ShouldSkipRender(const RenderWorkItem &item) const;
-    bool IsPresentationStale(const RenderWorkItem &item) const;
-    bool IsPresentationStale(const RenderFrame &frame) const;
     WorkerRenderResult RenderWorkerItem(RenderWorkItem &item,
                                         RendererIndex rendererIdx,
                                         ItersMemoryContainer &workerIters,
@@ -395,7 +387,6 @@ private:
     enum class CalcRenderResult {
         Rendered,
         RepaintDisabled,
-        Stale,
         Failed,
     };
 
@@ -490,9 +481,6 @@ private:
     // Only incremented for supersedable items.
     std::atomic<uint64_t> m_EnqueueGeneration = 0;
 
-    // Immediate-presentation generation for suppressing frames from older
-    // renders while still allowing non-supersedable commands to execute.
-    std::atomic<uint64_t> m_PresentationGeneration = 0;
     std::atomic<uint64_t> m_NextPresentationGroup = 0;
 
     mutable std::mutex m_CancelledPresentationGroupsMutex;

@@ -121,29 +121,14 @@ ComputeAspectLockedDragEndpoint(int anchorX, int anchorY, int rawX, int rawY, do
 GlxVisualSelection
 ChooseGlxVisual(Display *display, int screen)
 {
-    int rgbaDoubleBufferedWithAlpha[] = {GLX_RGBA,
-                                         GLX_DOUBLEBUFFER,
-                                         GLX_RED_SIZE,
-                                         8,
-                                         GLX_GREEN_SIZE,
-                                         8,
-                                         GLX_BLUE_SIZE,
-                                         8,
-                                         GLX_ALPHA_SIZE,
-                                         8,
-                                         None};
-    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaDoubleBufferedWithAlpha)) {
+    int rgbaWithAlpha[] = {
+        GLX_RGBA, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, GLX_ALPHA_SIZE, 8, None};
+    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaWithAlpha)) {
         return {visualInfo};
     }
 
-    int rgbaDoubleBuffered[] = {
-        GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
-    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaDoubleBuffered)) {
-        return {visualInfo};
-    }
-
-    int rgbaSingleBuffered[] = {GLX_RGBA, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
-    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgbaSingleBuffered)) {
+    int rgba[] = {GLX_RGBA, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
+    if (XVisualInfo *visualInfo = glXChooseVisual(display, screen, rgba)) {
         return {visualInfo};
     }
 

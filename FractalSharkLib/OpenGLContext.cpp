@@ -6,15 +6,12 @@
 // clang-format on
 
 #include "OpenGLContext.h"
-#include "WPngImage/WPngImage.hh"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstdint>
 #include <iostream>
 #include <string_view>
-#include <vector>
 
 bool
 OpenGlContext::IsKnownSoftwareRendererName(std::string_view rendererName)
@@ -169,76 +166,4 @@ OpenGlContext::DrawGlBox(bool swapBuffers)
     if (swapBuffers) {
         SwapBuffers();
     }
-}
-
-void
-OpenGlContext::DrawFractalShark(void *nativeWindow)
-{
-    if (!nativeWindow || !MakeCurrent())
-        return;
-
-    glResetView();
-
-    auto windowDimensions = m_NativeContext->GetClientRect();
-    if (!windowDimensions)
-        return;
-
-    WPngImage image{};
-    image.loadImage("FractalShark.png");
-
-    std::vector<uint8_t> imageBytes;
-    imageBytes.resize((size_t)image.width() * (size_t)image.height() * 4);
-
-    for (int y = 0; y < image.height(); y++) {
-        for (int x = 0; x < image.width(); x++) {
-            auto pixel = image.get8(x, y);
-            const size_t idx = ((size_t)y * (size_t)image.width() + (size_t)x) * 4;
-            imageBytes[idx + 0] = pixel.r;
-            imageBytes[idx + 1] = pixel.g;
-            imageBytes[idx + 2] = pixel.b;
-            imageBytes[idx + 3] = pixel.a;
-        }
-    }
-
-    const GLint scrnHeight = static_cast<GLint>(windowDimensions->bottom);
-    const GLint scrnWidth = static_cast<GLint>(windowDimensions->right);
-
-    GLuint texid = 0;
-    glEnable(GL_TEXTURE_2D);
-    glGenTextures(1, &texid);
-    glBindTexture(GL_TEXTURE_2D, texid);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    glTexImage2D(GL_TEXTURE_2D,
-                 0,
-                 GL_RGBA8,
-                 (GLsizei)image.width(),
-                 (GLsizei)image.height(),
-                 0,
-                 GL_RGBA,
-                 GL_UNSIGNED_BYTE,
-                 imageBytes.data());
-
-    glColor4f(1.f, 1.f, 1.f, 1.f);
-
-    glBegin(GL_QUADS);
-    glTexCoord2i(0, 0);
-    glVertex2i(0, scrnHeight);
-    glTexCoord2i(0, 1);
-    glVertex2i(0, 0);
-    glTexCoord2i(1, 1);
-    glVertex2i(scrnWidth, 0);
-    glTexCoord2i(1, 0);
-    glVertex2i(scrnWidth, scrnHeight);
-    glEnd();
-
-    glFlush();
-    glFinish();
-    SwapBuffers();
-
-    glDeleteTextures(1, &texid);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glDisable(GL_TEXTURE_2D);
 }

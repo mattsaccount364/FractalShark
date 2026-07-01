@@ -85,7 +85,7 @@ jobs:
           git lfs version
 
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           lfs: true
 
@@ -280,12 +280,12 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           lfs: true
 
       - name: Checkout MPIR
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: BrianGladman/mpir
           ref: dc82b0475dea84d5338356e49176c40be03a5bdf
@@ -325,7 +325,7 @@ jobs:
           # Detect Git LFS pointer (typically tiny and starts with 'version https://git-lfs.github.com/spec/v1')
           $firstLine = (Get-Content -Path $zip -TotalCount 1 -ErrorAction SilentlyContinue)
           if ($item.Length -lt 2000 -and $firstLine -like "version https://git-lfs.github.com/spec/v1*") {
-            throw "This file is a Git LFS pointer, not the real zip. Fix: set actions/checkout@v6 with `lfs: true`."
+            throw "This file is a Git LFS pointer, not the real zip. Fix: set actions/checkout@v7 with `lfs: true`."
           }
 
           # Clean install location
@@ -399,7 +399,7 @@ jobs:
       # ---- Cache MPIR build outputs ----
       - name: Cache MPIR build
         id: mpir-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: mpir/lib/x64/${{ matrix.configuration }}
           key: mpir-${{ runner.os }}-skylake-avx-x64-${{ matrix.configuration }}-${{ hashFiles('mpir/**/*.c', 'mpir/**/*.h', 'mpir/**/*.asm') }}
@@ -490,7 +490,7 @@ jobs:
           $PSVersionTable
 
       - name: Checkout repo (needed for gh/git context)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

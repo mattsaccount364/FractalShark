@@ -31,11 +31,15 @@ public:
 
     // Refine the feature (if still a candidate) and optionally zoom
     // to it at the given zoom factor.  Pass nullptr to refine only.
-    bool ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFactor);
+    bool ZoomToFoundFeature(FeatureSummary &feature,
+                            const HighPrecision *zoomFactor,
+                            NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save);
 
     // Choose the closest feature to a client-relative screen position and
     // zoom to it at the feature's computed intrinsic-radius zoom depth.
-    bool ZoomToFoundFeature(int clientX, int clientY);
+    bool ZoomToFoundFeature(int clientX,
+                            int clientY,
+                            NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save);
 
     // Resume NR refinement from a saved checkpoint file.
     // Creates a synthetic FeatureSummary and proceeds to Phase B + navigation.

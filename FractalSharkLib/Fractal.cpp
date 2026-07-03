@@ -552,12 +552,11 @@ template <Fractal::AutoZoomHeuristic h>
 void
 Fractal::AutoZoom()
 {
-    static_assert(h != AutoZoomHeuristic::Feature,
-                  "Use AutoZoom<AutoZoomHeuristic::Feature>(clientX, clientY).");
+    static_assert(h != AutoZoomHeuristic::Feature && h != AutoZoomHeuristic::FeatureNoSave,
+                  "Use AutoZoom<AutoZoomHeuristic::Feature>(clientX, clientY) for feature autozoom.");
     AutoZoomer(*this).Run<h>();
 }
 
-template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Default>();
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>();
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
 
@@ -566,21 +565,23 @@ void
 Fractal::AutoZoom(int clientX, int clientY)
 {
     if constexpr (h == AutoZoomHeuristic::Feature) {
-        AutoZoomer(*this).RunFeatureAtPoint(clientX, clientY);
+        AutoZoomer(*this).RunFeatureAtPoint(clientX, clientY, NRCheckpointSavePolicy::Save);
+    } else if constexpr (h == AutoZoomHeuristic::FeatureNoSave) {
+        AutoZoomer(*this).RunFeatureAtPoint(clientX, clientY, NRCheckpointSavePolicy::PreserveExisting);
     } else {
         AutoZoom<h>();
     }
 }
 
-template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Default>(int, int);
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>(int, int);
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Feature>(int, int);
+template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FeatureNoSave>(int, int);
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>(int, int);
 
 void
-Fractal::AutoZoomFeatureAtPoint(int clientX, int clientY)
+Fractal::AutoZoomFeatureAtPoint(int clientX, int clientY, NRCheckpointSavePolicy checkpointSavePolicy)
 {
-    AutoZoom<AutoZoomHeuristic::Feature>(clientX, clientY);
+    AutoZoomer(*this).RunFeatureAtPoint(clientX, clientY, checkpointSavePolicy);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1877,9 +1878,11 @@ Fractal::ClearAllFoundFeatures()
 }
 
 bool
-Fractal::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFactor)
+Fractal::ZoomToFoundFeature(FeatureSummary &feature,
+                            const HighPrecision *zoomFactor,
+                            NRCheckpointSavePolicy checkpointSavePolicy)
 {
-    return m_FeatureOrchestrator->ZoomToFoundFeature(feature, zoomFactor);
+    return m_FeatureOrchestrator->ZoomToFoundFeature(feature, zoomFactor, checkpointSavePolicy);
 }
 
 FeatureSummary *
@@ -1889,9 +1892,9 @@ Fractal::ChooseClosestFeatureToScreenPoint(int clientX, int clientY) const
 }
 
 bool
-Fractal::ZoomToFoundFeature(int clientX, int clientY)
+Fractal::ZoomToFoundFeature(int clientX, int clientY, NRCheckpointSavePolicy checkpointSavePolicy)
 {
-    return m_FeatureOrchestrator->ZoomToFoundFeature(clientX, clientY);
+    return m_FeatureOrchestrator->ZoomToFoundFeature(clientX, clientY, checkpointSavePolicy);
 }
 
 void

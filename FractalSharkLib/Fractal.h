@@ -98,11 +98,14 @@ public:
 
     void TestBasic();
 
-    enum class AutoZoomHeuristic { Default, Max, Feature, FilamentTip };
+    enum class AutoZoomHeuristic { Max, Feature, FeatureNoSave, FilamentTip };
 
     template <AutoZoomHeuristic h> void AutoZoom();
     template <AutoZoomHeuristic h> void AutoZoom(int clientX, int clientY);
-    void AutoZoomFeatureAtPoint(int clientX, int clientY);
+    void AutoZoomFeatureAtPoint(
+        int clientX,
+        int clientY,
+        NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save);
 
     void View(size_t i, bool includeMsgBox = true);
     void SquareCurrentView();
@@ -335,8 +338,12 @@ public:
 
     void ClearAllFoundFeatures();
     FeatureSummary *ChooseClosestFeatureToScreenPoint(int clientX, int clientY) const;
-    bool ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFactor);
-    bool ZoomToFoundFeature(int clientX, int clientY);
+    bool ZoomToFoundFeature(FeatureSummary &feature,
+                            const HighPrecision *zoomFactor,
+                            NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save);
+    bool ZoomToFoundFeature(int clientX,
+                            int clientY,
+                            NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save);
     void ResumeNRFromCheckpoint();
     NRInnerLoopBackend GetNRInnerLoopBackend() const;
     void SetNRInnerLoopBackend(NRInnerLoopBackend v);

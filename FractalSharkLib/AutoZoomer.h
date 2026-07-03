@@ -9,7 +9,9 @@ public:
     explicit AutoZoomer(Fractal &fractal);
 
     template <Fractal::AutoZoomHeuristic h> void Run();
-    void RunFeatureAtPoint(int clientX, int clientY);
+    void RunFeatureAtPoint(int clientX,
+                           int clientY,
+                           NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save);
 
 private:
     struct FeatureZoomStep {
@@ -23,7 +25,11 @@ private:
     };
 
     static void ApplyFeatureZoomStep(Fractal &f, const FeatureZoomStep &step);
-    void SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out, int clientX, int clientY);
+    void SetupFeatureZoom(Fractal &f,
+                          FeatureZoomSetup &out,
+                          int clientX,
+                          int clientY,
+                          NRCheckpointSavePolicy checkpointSavePolicy);
     bool RunFeatureZoomPipeline(const std::vector<FeatureZoomStep> &steps);
     void RestoreLastPresentedView();
 

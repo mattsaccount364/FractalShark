@@ -16,13 +16,12 @@ template <Fractal::AutoZoomHeuristic h>
 void
 AutoZoomer::Run()
 {
-    static_assert(h != Fractal::AutoZoomHeuristic::Feature,
-                  "Use RunFeatureAtPoint() for feature autozoom.");
+    static_assert(
+        h != Fractal::AutoZoomHeuristic::Feature && h != Fractal::AutoZoomHeuristic::FeatureNoSave,
+        "Use RunFeatureAtPoint() for feature autozoom.");
 
     Environment::WaitCursor waitCursor;
     m_Fractal.ResetStopCalculating();
-
-    const HighPrecision Two = HighPrecision{2};
 
     HighPrecision width = m_Fractal.GetMaxX() - m_Fractal.GetMinX();
     HighPrecision height = m_Fractal.GetMaxY() - m_Fractal.GetMinY();
@@ -31,10 +30,6 @@ AutoZoomer::Run()
     HighPrecision guessY;
 
     HighPrecision Divisor;
-
-    if constexpr (h == Fractal::AutoZoomHeuristic::Default) {
-        Divisor = HighPrecision{3};
-    }
 
     if constexpr (h == Fractal::AutoZoomHeuristic::Max) {
         Divisor = HighPrecision{32};
@@ -45,11 +40,8 @@ AutoZoomer::Run()
     }
 
     {
-        // Default/Max/FilamentTip heuristic: serial loop that analyzes CPU-side
-        // iteration data after each render.  Each step uses EnqueueCommand +
-        // Wait() so the frame is displayed by the GL consumer.  The
-        // workerIters ↔ m_CurIters swap in WorkerLoop keeps m_CurIters
-        // current for analysis.
+        // Max/FilamentTip heuristic: serial loop that analyzes CPU-side
+        // iteration data after each render.
 
         bool aborted = false;
         for (;;) {
@@ -60,10 +52,6 @@ AutoZoomer::Run()
                 break;
             }
 
-            double geometricMeanX = 0;
-            double geometricMeanSum = 0;
-            double geometricMeanY = 0;
-
             width = m_Fractal.GetMaxX() - m_Fractal.GetMinX();
             height = m_Fractal.GetMaxY() - m_Fractal.GetMinY();
 
@@ -72,99 +60,6 @@ AutoZoomer::Run()
             bool shouldBreak = false;
 
             auto lambda = [&]([[maybe_unused]] auto **ItersArray, [[maybe_unused]] auto NumIterations) {
-                // ---------------- DEFAULT ----------------
-                if constexpr (h == Fractal::AutoZoomHeuristic::Default) {
-
-                    int32_t shiftWidth = (int32_t)m_Fractal.GetScrnWidth() / 8;
-                    int32_t shiftHeight = (int32_t)m_Fractal.GetScrnHeight() / 8;
-
-                    Environment::ScreenRect antiRect;
-                    antiRect.left = shiftWidth;
-                    antiRect.right = (int32_t)m_Fractal.GetScrnWidth() - shiftWidth;
-                    antiRect.top = shiftHeight;
-                    antiRect.bottom = (int32_t)m_Fractal.GetScrnHeight() - shiftHeight;
-
-                    antiRect.left *= m_Fractal.GetGpuAntialiasing();
-                    antiRect.right *= m_Fractal.GetGpuAntialiasing();
-                    antiRect.top *= m_Fractal.GetGpuAntialiasing();
-                    antiRect.bottom *= m_Fractal.GetGpuAntialiasing();
-
-                    const auto antiRectWidthInt = antiRect.right - antiRect.left;
-                    const auto antiRectHeightInt = antiRect.bottom - antiRect.top;
-
-                    size_t maxiter = 0;
-                    double totaliters = 0;
-
-                    for (auto y = antiRect.top; y < antiRect.bottom; y++) {
-                        for (auto x = antiRect.left; x < antiRect.right; x++) {
-                            auto curiter = ItersArray[y][x];
-                            totaliters += curiter;
-                            if (curiter > maxiter)
-                                maxiter = curiter;
-                        }
-                    }
-
-                    double avgiters = totaliters / ((antiRect.bottom - antiRect.top) *
-                                                    (antiRect.right - antiRect.left));
-
-                    double widthOver2 = antiRectWidthInt / 2.0;
-                    double heightOver2 = antiRectHeightInt / 2.0;
-                    double maxDistance = sqrt(widthOver2 * widthOver2 + heightOver2 * heightOver2);
-
-                    for (auto y = antiRect.top; y < antiRect.bottom; y++) {
-                        for (auto x = antiRect.left; x < antiRect.right; x++) {
-
-                            auto curiter = ItersArray[y][x];
-
-                            if (curiter == maxiter)
-                                numAtLimit++;
-
-                            if (curiter < avgiters)
-                                continue;
-
-                            double distanceX =
-                                fabs(widthOver2 - fabs(widthOver2 - fabs(x - antiRect.left)));
-                            double distanceY =
-                                fabs(heightOver2 - fabs(heightOver2 - fabs(y - antiRect.top)));
-
-                            double normalizedIters = (double)curiter / (double)NumIterations;
-
-                            if (curiter == maxiter)
-                                normalizedIters *= normalizedIters;
-
-                            double normalizedDist =
-                                sqrt(distanceX * distanceX + distanceY * distanceY) / maxDistance;
-
-                            double sq = normalizedIters * normalizedDist;
-
-                            geometricMeanSum += sq;
-                            geometricMeanX += sq * x;
-                            geometricMeanY += sq * y;
-
-                            if (curiter >= NumIterations)
-                                numAtMax++;
-                        }
-                    }
-
-                    if (geometricMeanSum == 0) {
-                        std::wcerr << L"Flat screen (geometricMeanSum=0)! :(" << std::endl;
-                        shouldBreak = true;
-                        return;
-                    }
-
-                    double meanX = geometricMeanX / geometricMeanSum;
-                    double meanY = geometricMeanY / geometricMeanSum;
-
-                    guessX = m_Fractal.XFromScreenToCalc<true>(HighPrecision{meanX});
-                    guessY = m_Fractal.YFromScreenToCalc<true>(HighPrecision{meanY});
-
-                    if (std::cmp_equal(numAtLimit, antiRectWidthInt * antiRectHeightInt)) {
-                        std::wcerr << L"Flat screen! :(" << std::endl;
-                        shouldBreak = true;
-                        return;
-                    }
-                }
-
                 // ---------------- MAX ----------------
                 if constexpr (h == Fractal::AutoZoomHeuristic::Max) {
 
@@ -436,12 +331,11 @@ AutoZoomer::Run()
     }
 }
 
-template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Default>();
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::Max>();
 template void AutoZoomer::Run<Fractal::AutoZoomHeuristic::FilamentTip>();
 
 void
-AutoZoomer::RunFeatureAtPoint(int clientX, int clientY)
+AutoZoomer::RunFeatureAtPoint(int clientX, int clientY, NRCheckpointSavePolicy checkpointSavePolicy)
 {
     Environment::WaitCursor waitCursor;
 
@@ -452,8 +346,9 @@ AutoZoomer::RunFeatureAtPoint(int clientX, int clientY)
 
     FeatureZoomSetup setup;
     m_Fractal
-        .EnqueueMutation(
-            [&, clientX, clientY](Fractal &f) { SetupFeatureZoom(f, setup, clientX, clientY); })
+        .EnqueueMutation([&, clientX, clientY, checkpointSavePolicy](Fractal &f) {
+            SetupFeatureZoom(f, setup, clientX, clientY, checkpointSavePolicy);
+        })
         .Wait();
 
     if (setup.Failed) {
@@ -478,7 +373,11 @@ AutoZoomer::ApplyFeatureZoomStep(Fractal &f, const FeatureZoomStep &step)
 }
 
 void
-AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out, int clientX, int clientY)
+AutoZoomer::SetupFeatureZoom(Fractal &f,
+                             FeatureZoomSetup &out,
+                             int clientX,
+                             int clientY,
+                             NRCheckpointSavePolicy checkpointSavePolicy)
 {
     const auto startingPtz = f.GetPtz();
     const auto startingIters = f.GetNumIterations<IterTypeFull>();
@@ -499,7 +398,7 @@ AutoZoomer::SetupFeatureZoom(Fractal &f, FeatureZoomSetup &out, int clientX, int
         return;
     }
 
-    if (!f.ZoomToFoundFeature(*feature, nullptr)) {
+    if (!f.ZoomToFoundFeature(*feature, nullptr, checkpointSavePolicy)) {
         std::cout << "AutoZoom(Feature): feature refinement failed.\n";
         out.Failed = true;
         return;

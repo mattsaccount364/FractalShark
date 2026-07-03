@@ -565,7 +565,9 @@ FeatureFinderOrchestrator::ClearAllFoundFeatures()
 }
 
 bool
-FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature, const HighPrecision *zoomFactor)
+FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature,
+                                              const HighPrecision *zoomFactor,
+                                              NRCheckpointSavePolicy checkpointSavePolicy)
 {
     // If we only have a candidate, refine now
     if (feature.HasCandidate()) {
@@ -586,7 +588,8 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature, const Hig
                 extras = RefOrbitCalc::Extras::IncludeLAv2;
         }
 
-        if (!featureFinder->RefinePeriodicPoint_HighPrecision(feature, m_NRInnerLoopBackend)) {
+        if (!featureFinder->RefinePeriodicPoint_HighPrecision(
+                feature, m_NRInnerLoopBackend, checkpointSavePolicy)) {
             return false;
         }
 
@@ -671,7 +674,9 @@ FeatureFinderOrchestrator::ChooseClosestFeatureToScreenPoint(int clientX, int cl
 }
 
 bool
-FeatureFinderOrchestrator::ZoomToFoundFeature(int clientX, int clientY)
+FeatureFinderOrchestrator::ZoomToFoundFeature(int clientX,
+                                              int clientY,
+                                              NRCheckpointSavePolicy checkpointSavePolicy)
 {
     Environment::WaitCursor waitCursor;
 
@@ -682,7 +687,7 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(int clientX, int clientY)
     }
 
     const HighPrecision z = best->ComputeZoomFactor(m_Fractal.m_Ptz);
-    return ZoomToFoundFeature(*best, &z);
+    return ZoomToFoundFeature(*best, &z, checkpointSavePolicy);
 }
 
 bool
@@ -696,9 +701,8 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
         return false;
     }
 
-    std::cout << "Resuming NR refinement: period=" << ckpt.period
-              << " prec(bits)=" << ckpt.coord_prec << " iter=" << ckpt.iteration
-              << std::endl;
+    std::cout << "Resuming NR refinement: period=" << ckpt.period << " prec(bits)=" << ckpt.coord_prec
+              << " iter=" << ckpt.iteration << std::endl;
 
     // Keep resumed radius invariants separate: constructor/search radius is linear,
     // candidate.sqrRadius_hp is squared for Phase B, and intrinsicRadius drives final zoom.

@@ -428,10 +428,19 @@ struct CheckpointSnapshot {
 
 class CheckpointWriter {
 public:
-    CheckpointWriter() { m_Thread = std::thread(&CheckpointWriter::Run, this); }
+    explicit CheckpointWriter(NRCheckpointSavePolicy savePolicy)
+        : m_Enabled(savePolicy == NRCheckpointSavePolicy::Save)
+    {
+        if (m_Enabled) {
+            m_Thread = std::thread(&CheckpointWriter::Run, this);
+        }
+    }
 
     ~CheckpointWriter()
     {
+        if (!m_Enabled) {
+            return;
+        }
         {
             std::lock_guard<std::mutex> lock(m_Mutex);
             m_Exit = true;
@@ -451,6 +460,9 @@ public:
     void
     TriggerWrite(std::unique_ptr<CheckpointSnapshot> snapshot)
     {
+        if (!m_Enabled) {
+            return;
+        }
         {
             std::lock_guard<std::mutex> lock(m_Mutex);
             if (m_DonePromise)
@@ -466,6 +478,9 @@ public:
     void
     WriteAndWait(const NRCheckpointParams &params)
     {
+        if (!m_Enabled) {
+            return;
+        }
         auto snapshot = std::make_unique<CheckpointSnapshot>(params, params.innerIteration);
         std::promise<void> done;
         auto future = done.get_future();
@@ -508,6 +523,7 @@ private:
     std::condition_variable m_CV;
     std::unique_ptr<CheckpointSnapshot> m_Pending;
     std::promise<void> *m_DonePromise = nullptr;
+    bool m_Enabled = true;
     bool m_Exit = false;
     // Must be last: the worker can run immediately after construction starts it.
     std::thread m_Thread;
@@ -908,7 +924,8 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                     uint32_t max_nr_iters,
                     NRInnerLoopBackend backend,
                     mpf_t intrinsicRadius_mpf,
-                    uint64_t numIterationsAtFind)
+                    uint64_t numIterationsAtFind,
+                    NRCheckpointSavePolicy checkpointSavePolicy)
 {
     // Compile-time enable, runtime gating below.
     constexpr bool UseHalley = true;
@@ -956,8 +973,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     }
 
     std::cout << "RefinePeriodicPoint: coord_prec(bits)=" << coord_prec
-              << ", deriv_prec(bits)=" << deriv_prec
-              << " (scaleExp2=" << scaleExp2_for_deriv_choice
+              << ", deriv_prec(bits)=" << deriv_prec << " (scaleExp2=" << scaleExp2_for_deriv_choice
               << ", coordExp2_max_abs=" << coordExp2_max_abs << ")\n";
 
     // ---------------- deriv temporaries ----------------
@@ -1007,7 +1023,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     DiagnosticState diagState;
 
     // Async checkpoint writer — mpf_get_str + file I/O happens on a background thread.
-    CheckpointWriter checkpointWriter;
+    CheckpointWriter checkpointWriter(checkpointSavePolicy);
 
     // Context struct passed to onProgress callback via void* context pointer.
     struct ProgressContext {
@@ -1128,8 +1144,10 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                  intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
                  numIterationsAtFind, completed,  z_coord.re,  z_coord.im,  dzdc_deriv.re,
                  dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState});
-            std::cout << "RefinePeriodicPoint: aborted at NR iter " << it
-                      << " innerIter " << completed << " (checkpoint saved)\n";
+            std::cout << "RefinePeriodicPoint: aborted at NR iter " << it << " innerIter " << completed
+                      << (checkpointSavePolicy == NRCheckpointSavePolicy::Save
+                              ? " (checkpoint saved)\n"
+                              : " (checkpoint unchanged)\n");
             break;
         }
 
@@ -1283,8 +1301,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
         // Print diagnostics between outer iterations.
         std::cout << "  NR step " << it << " diag: rho2_exp2=" << rho2_hdr.getExp()
-                  << " rho2_mantissa=" << rho2_hdr.getMantissa()
-                  << ", err_exp2=" << err_hdr.getExp()
+                  << " rho2_mantissa=" << rho2_hdr.getMantissa() << ", err_exp2=" << err_hdr.getExp()
                   << " err_mantissa=" << err_hdr.getMantissa()
                   << ", step_norm_exp2=" << normStep_hdr.getExp()
                   << " step_norm_mantissa=" << normStep_hdr.getMantissa()
@@ -1303,16 +1320,17 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
 
         // Check for user abort (Ctrl held 3s sets flag, Escape cancels it).
-        // Checkpoint is already saved, so progress is preserved for resume.
+        // The latest checkpoint write has already been requested when enabled.
         if (AbortMonitor::GetStopCalculatingGlobal()) {
             std::cout << "RefinePeriodicPoint: aborted at iter " << it
-                      << " (checkpoint saved)\n";
+                      << (checkpointSavePolicy == NRCheckpointSavePolicy::Save
+                              ? " (checkpoint saved)\n"
+                              : " (checkpoint unchanged)\n");
             break;
         }
     }
 
-    // Skip final correction + accept/reject if aborted — checkpoint was already
-    // saved inside the NR loop.
+    // Skip final correction + accept/reject if aborted.
     if (!AbortMonitor::GetStopCalculatingGlobal()) {
         // ---------------- Imagina final correction pass ----------------
         // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
@@ -1401,15 +1419,17 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 // ------------------------------------------------------------
 template <class IterType, class T, PerturbExtras PExtras>
 IterType
-FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(HighPrecision &cX_hp,
-                                                                 HighPrecision &cY_hp,
-                                                                 IterType period,
-                                                                 mp_bitcnt_t coord_prec,
-                                                                 const T &sqrRadius_T,
-                                                                 int scaleExp2_for_deriv,
-                                                                 NRInnerLoopBackend backend,
-                                                                 const HighPrecision &intrinsicRadius,
-                                                                 uint64_t numIterationsAtFind) const
+FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(
+    HighPrecision &cX_hp,
+    HighPrecision &cY_hp,
+    IterType period,
+    mp_bitcnt_t coord_prec,
+    const T &sqrRadius_T,
+    int scaleExp2_for_deriv,
+    NRInnerLoopBackend backend,
+    const HighPrecision &intrinsicRadius,
+    uint64_t numIterationsAtFind,
+    NRCheckpointSavePolicy checkpointSavePolicy) const
 {
     // ---- Convert inputs to MPF at coord_prec ----
     mpf_complex c;
@@ -1452,7 +1472,8 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(HighPrecision &
                                                             max_polish,
                                                             backend,
                                                             ir_mpf,
-                                                            numIterationsAtFind);
+                                                            numIterationsAtFind,
+                                                            checkpointSavePolicy);
 
     // ---- Write back ----
     cX_hp = HighPrecision{c.re};
@@ -2253,13 +2274,11 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
                 return true;
             }
 
-            std::cout
-                << "[LA->PT fallback] INFO: LA eval incomplete; trying PT at same period cap="
-                << (uint64_t)ioPeriod << "\n";
+            std::cout << "[LA->PT fallback] INFO: LA eval incomplete; trying PT at same period cap="
+                      << (uint64_t)ioPeriod << "\n";
         } else {
-            std::cout
-                << "[LA->PT fallback] INFO: LA reference invalid; trying PT at same period cap="
-                << (uint64_t)ioPeriod << "\n";
+            std::cout << "[LA->PT fallback] INFO: LA reference invalid; trying PT at same period cap="
+                      << (uint64_t)ioPeriod << "\n";
         }
 
         // Fall back to PT
@@ -2395,8 +2414,10 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint(
 
 template <class IterType, class T, PerturbExtras PExtras>
 bool
-FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSummary &feature,
-                                                                       NRInnerLoopBackend backend) const
+FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(
+    FeatureSummary &feature,
+    NRInnerLoopBackend backend,
+    NRCheckpointSavePolicy checkpointSavePolicy) const
 {
     auto *cand = feature.GetCandidate();
     if (!cand)
@@ -2428,7 +2449,8 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(FeatureSu
                                     cand->scaleExp2_for_mpf,
                                     backend,
                                     feature.GetIntrinsicRadius(),
-                                    feature.GetNumIterationsAtFind());
+                                    feature.GetNumIterationsAtFind(),
+                                    checkpointSavePolicy);
 
     // Commit only the refined coordinates + period.
     // Preserve existing intrinsicRadius if present — the refinement
@@ -2590,8 +2612,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         // Optional absolute residual accept (if you already use this)
         if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{}) &&
             HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
-            std::cout << "Iter3 " << it << ": residual^2=" << HdrToString<false>(residual2)
-                      << "\n";
+            std::cout << "Iter3 " << it << ": residual^2=" << HdrToString<false>(residual2) << "\n";
             break;
         }
     }

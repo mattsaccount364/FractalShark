@@ -52,9 +52,9 @@ static const Node menu[] = {
         Item(L"Zoom In Here", FractalCommand::ZoomIn),
         Item(L"Zoom Out", FractalCommand::ZoomOut),
         Sep(),
-        Item(L"Autozoom Default", FractalCommand::AutoZoomDefault),
+        Item(L"Autozoom Feature No Checkpoint", FractalCommand::AutoZoomDefault),
         Item(L"Autozoom Max", FractalCommand::AutoZoomMax),
-        Item(L"Autozoom Filament Tip (S)", FractalCommand::AutoZoomFilament),
+        Item(L"Autozoom Filament Tip - heuristic, not that great (S)", FractalCommand::AutoZoomFilament),
         Sep(),
         FS_POPUP0(
             L"Feature Finder",

@@ -465,8 +465,7 @@ void
 PortableCommandHandlers::OnAutoZoomDefaultAtPoint()
 {
     const MenuPoint pt = GetMenuMousePos();
-    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.CenterAtPoint(x, y); });
-    GetFractal().AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+    GetFractal().AutoZoom<Fractal::AutoZoomHeuristic::FeatureNoSave>(pt.X, pt.Y);
 }
 
 void
@@ -687,7 +686,8 @@ PortableCommandHandlers::OnZoomOut()
 void
 PortableCommandHandlers::OnAutoZoomDefault()
 {
-    GetFractal().AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+    const MenuPoint pt = GetMenuMousePos();
+    GetFractal().AutoZoom<Fractal::AutoZoomHeuristic::FeatureNoSave>(pt.X, pt.Y);
 }
 
 void

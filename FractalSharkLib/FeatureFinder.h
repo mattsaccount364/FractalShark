@@ -92,7 +92,10 @@ public:
                            LAReference<IterType, T, SubType, PExtras> &laRef,
                            FeatureSummary &feature) const;
 
-    bool RefinePeriodicPoint_HighPrecision(FeatureSummary &feature, NRInnerLoopBackend backend) const;
+    bool RefinePeriodicPoint_HighPrecision(
+        FeatureSummary &feature,
+        NRInnerLoopBackend backend,
+        NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save) const;
 
 private:
     struct EvalState {
@@ -245,7 +248,8 @@ private:
                                          int scaleExp2_for_deriv,
                                          NRInnerLoopBackend backend,
                                          const HighPrecision &intrinsicRadius,
-                                         uint64_t numIterationsAtFind) const;
+                                         uint64_t numIterationsAtFind,
+                                         NRCheckpointSavePolicy checkpointSavePolicy) const;
 
 private:
     Params m_params{};

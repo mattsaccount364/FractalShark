@@ -435,7 +435,9 @@ struct Command {
 
 inline constexpr auto kCommands = std::to_array<Command>({
     {FractalCommand::AutoZoomFeatureAtPoint, L"Autozoom feature at cursor", {L'a'}},
-    {FractalCommand::AutoZoomDefaultAtPoint, L"Autozoom default from cursor", {L'a', true}},
+    {FractalCommand::AutoZoomDefaultAtPoint,
+     L"Autozoom feature at cursor without checkpoint",
+     {L'a', true}},
     {FractalCommand::AutoZoomFilament, L"Autozoom filament tip", {L's', true}},
     {FractalCommand::Back, L"Go back to the previous view", {L'b'}},
     {FractalCommand::CenterView, L"Center view at cursor", {L'c'}},
@@ -533,6 +535,10 @@ static_assert(HotKeyFromCharacter(L'>', false, false, false).shift);
 static_assert(!HotKeyFromCharacter(L'_', true, false, false).HasKey());
 static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'+', false, false, false))->id ==
               FractalCommand::IncreaseIterations24x);
+static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'a', false, false, false))->id ==
+              FractalCommand::AutoZoomFeatureAtPoint);
+static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'A', true, false, false))->id ==
+              FractalCommand::AutoZoomDefaultAtPoint);
 static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'<', false, false, false))->id ==
               FractalCommand::FeatureFinderLaScan);
 static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'>', false, false, false))->id ==

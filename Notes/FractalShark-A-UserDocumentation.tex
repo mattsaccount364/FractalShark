@@ -60,9 +60,12 @@ working X display and GLX/OpenGL implementation. GPU algorithms additionally
 require supported NVIDIA CUDA hardware; CPU algorithms remain available when
 GPU rendering is bypassed.
 
-Most commands have the same meaning on Windows and Linux because both front
-ends dispatch through the shared command catalog and evaluate state through the
-same portable implementation.
+The Linux front end is intended to have feature parity with the Win32 GUI where
+platform capabilities allow. Most commands have the same meaning on Windows and
+Linux because both front ends dispatch through the shared command catalog and
+evaluate state through the same portable implementation. Any remaining omissions
+should be described as current Linux implementation gaps rather than permanent
+product differences.
 
 \subsubsection{Menu Structure and Behavior}
 

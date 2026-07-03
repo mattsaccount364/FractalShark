@@ -21,10 +21,11 @@ Version \code{0.53} is the first release with experimental Linux support.
   menu, and Dear~ImGui overlays for help and application dialogs. Navigation,
   drag and wheel zoom, automatic zoom, feature finding, fullscreen transitions,
   clipboard output, and the principal save/load workflows are connected to the
-  shared renderer and command catalog. Full Win32 parity remains a direction
-  rather than a completed claim; palette rotation still has a Linux-specific
-  display limitation. Menu enablement, check marks, and radio selections are
-  evaluated by the same portable implementation on both platforms.
+  shared renderer and command catalog. Feature parity with the Win32 GUI is the
+  intended target for Linux; any missing command behavior should be documented
+  as a Linux implementation gap rather than a deliberate divergence. Menu
+  enablement, check marks, and radio selections are evaluated by the same
+  portable implementation on both platforms.
 
 \item \textbf{Portable platform services.} Operating-system dependencies are
   consolidated in \code{FractalSharkPlatform}, including allocation, files,

@@ -8,8 +8,10 @@ with CMake and Clang, with release binaries targeted at Ubuntu. The Linux build
 includes the CPU numeric core, CUDA rendering kernels, GPU high-precision
 arithmetic, the command-line renderer, the portable unit tests, and the
 \code{FractalSharkGuiLinux} graphical application. Windows remains the
-historical primary development environment, and the two graphical front ends
-do not yet have complete behavioral parity.
+historical primary development environment, but the native Linux GUI is expected
+to reach feature parity with the Win32 GUI where platform capabilities allow.
+Current gaps should be treated as Linux implementation status rather than as
+intentional permanent divergence.
 
 \subsubsection{Dual build system}
 \label{subsec:dual-build}
@@ -20,14 +22,6 @@ lists and settings. Projects that remain Windows-only do not have CMake targets;
 the Win32 GUI and native Linux GUI are intentionally separate applications over
 the same renderer and portable command contracts. Adding or removing a source
 file from a shared project therefore requires updating both build descriptions.
-
-The preferred Linux build command is \code{./build\_linux.sh}. It configures
-and builds persistent \code{build-debug} and \code{build-release} trees. An
-incremental build may instead use \code{cmake -{}-build build-debug
--{}-parallel}, with the corresponding release directory used for an
-incremental release build. Ordinary C++ translation units are compiled as
-C++23 by \code{clang++}. CUDA translation units use C++20 through
-\code{nvcc}, with the system \code{g++} selected as the CUDA host compiler.
 
 The Linux target set comprises \code{FractalSharkPlatform},
 \code{FractalSharkLib}, \code{FractalSharkGpuLib},
@@ -44,10 +38,28 @@ Continuous integration configures and builds both Debug and Release on Linux,
 runs \code{FractalSharkTest}, and smoke-tests a release CLI render. It verifies
 that the CLI and GUI binaries have no unresolved shared-library dependencies
 and packages both release executables in the Linux archive. The GUI is built
-but is not launched on the headless runner. \code{HpSharkFloatTest} is also
-built but is not run there because its runtime tests require physical CUDA
-hardware. Separate workflow jobs build and test Windows and compile this
-document; release publication depends on all three jobs.
+but is not launched on the headless runner. Separate workflow jobs build and
+test Windows and compile this document; release publication depends on all
+three jobs.
+
+\subsubsection{Building on Linux}
+\label{subsec:building-linux}
+
+For normal local Linux development, run \code{./build\_linux.sh}. The script
+configures and builds the persistent \code{build-debug/} and
+\code{build-release/} directories, which should remain in place for repeated
+manual testing and incremental rebuilds. After configuration, a Debug
+incremental build may use \code{cmake -{}-build build-debug -{}-parallel};
+the release equivalent uses \code{build-release}. Debug validation runs
+\code{./build-debug/FractalSharkTest/FractalSharkTest}.
+
+\code{HpSharkFloatTest} requires physical CUDA hardware for its runtime
+checks, so it is not expected to run on ordinary hosted CI. The GitHub Actions
+workflow at \code{.github/workflows/build.yml} remains the authoritative Linux
+environment setup reference. It records the exact package versions, CUDA and
+compiler selection, CMake flags, LFS materialization checks, dependency audits,
+release packaging behavior, and other details that should not be duplicated in
+prose.
 
 \subsubsection{Platform abstraction layer}
 \label{subsec:platform-abstraction}
@@ -108,9 +120,9 @@ finding and automatic zoom, save and load commands, and an X11 clipboard owner
 for UTF-8 text. A separate Xlib splash window displays a randomly selected
 embedded image while initialization proceeds.
 
-The Linux GUI is functional but is not represented as completely equivalent to
-the Win32 GUI. Current limitations should be stated explicitly rather than
-hidden behind a general claim of full parity.
+The Linux GUI is functional, and its feature set should continue to converge on
+the Win32 GUI. Current limitations should be stated explicitly as implementation
+gaps rather than hidden behind a premature claim of completed parity.
 
 \subsubsection{Arbitrary-precision serialization}
 \label{subsec:mpir-portability}

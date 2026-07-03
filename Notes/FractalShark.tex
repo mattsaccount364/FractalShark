@@ -73,83 +73,10 @@ recently and is getting better.}
 
 \tableofcontents
 \listoffigures
+\listoftables
 \clearpage
 
-\subsection*{Notation}
-\label{sec:notation}
-
-The following symbols appear throughout these notes.  Where a concept
-admits more than one notation the table lists the canonical form first
-and notes the section-local variant.
-
-\begin{center}
-\begin{tabularx}{\textwidth}{llX}
-\hline
-\textbf{Symbol} & \textbf{Meaning} & \textbf{Notes} \\
-\hline
-$z_n$        & orbit value at iteration $n$  & $z_0=0$,\; $z_{n+1}=z_n^2+c$ \\
-$c$          & complex parameter (pixel)     & \\
-$z_n^\star,\; c_\star$ & reference orbit / parameter
-             & $z^{(0)}_n,\; c_0$ in the reuse hierarchy (\cref{subsec:ref-orbit-reuse}) \\
-$\Delta z_n$ & perturbation $z_n - z_n^\star$ & \\
-$\delta z_n$ & second-level perturbation      & relative to an intermediate orbit (\cref{subsec:ref-orbit-reuse}) \\
-$\Delta c$   & parameter offset $c - c_\star$ & \\
-$d_n \equiv \partial z_n/\partial c$ & orbit derivative
-             & $d_0=0$;\; implementation starts from $d_1=1$ \\
-$c^*$        & nucleus of a hyperbolic component & distinct from $c_\star$ \\
-$n$          & iteration index               & \\
-$p$          & period                        & \\
-$n_{\text{smooth}}$ & smooth (fractional) iteration count
-             & $n_{\text{smooth}} = n - \log_2\!\log_2|z_n| + \mathrm{const}$;\;
-               continuous coloring \\
-$N$          & limb count (multi-precision)  & \\
-\hline
-\multicolumn{3}{l}{\textbf{Real / imaginary component convention}} \\
-\hline
-$x_n,\; y_n$     & components of $z_n = x_n + i\,y_n$
-                  & similarly $x_n^\star, y_n^\star$ for $z_n^\star$ \\
-$\Delta x_n,\; \Delta y_n$ & components of $\Delta z_n$
-                  & $\Delta c_x, \Delta c_y$ for $\Delta c$ \\
-$d_{x,n},\; d_{y,n}$ & components of $d_n$
-                  & \\
-\hline
-\multicolumn{3}{l}{\textbf{Linear approximation (LA)}} \\
-\hline
-$z_\mathrm{ref}$ & reference orbit value at an LA entry & distinct from the global $z_n^\star$ \\
-$z_j^\star$  & reference orbit value at LA stage boundary $j$
-             & used when the LA hierarchy references specific stage entry points \\
-$\tilde{\Delta z}$ & prepared perturbation
-                  & output of the nonlinear Prepare step (\cref{sec:la-coeff-model}) \\
-\code{ZCoeff},\; \code{CCoeff} & LA linear coefficients
-                  & $\Delta z_\mathrm{out} \approx
-                     \code{ZCoeff}\cdot\tilde{\Delta z}
-                   + \code{CCoeff}\cdot\Delta c$ \\
-\hline
-\multicolumn{3}{l}{\textbf{Feature Finder}} \\
-\hline
-$F(c) = z_p(c)$  & root-finding objective
-                  & $p$-fold iterate of the critical point \\
-$w_n$             & \code{zcoeff} product $\prod_{k=1}^{n-1} 2\,z_k$
-                  & intrinsic scale of a mini-brot \\
-$e_k$             & Newton iteration error at step $k$
-                  & $e_k = c_k - c^*$, where $c^*$ is the target nucleus \\
-\hline
-\multicolumn{3}{l}{\textbf{Reference orbit internals (chapter~6)}} \\
-\hline
-$e_n$            & reconstruction error          & $z_n^{\mathrm{HP}} - \tilde{z}_n$ \\
-$\hat{z}_n$      & low-precision shadow orbit     & reduced-precision copy of $z_n^\star$ \\
-$z_n^{\mathrm{HP}}$ & high-precision orbit value   & full-precision authoritative orbit \\
-$z_r$            & waypoint (rebasing) reference value
-                 & stored checkpoint from which intermediate iterations are replayed
-                   during orbit decompression \\
-$R_{\max}$       & maximum perturbation radius    & stored in \code{PerturbationResults} \\
-\hline
-\multicolumn{3}{l}{\textbf{Feature Finder internals (chapter~8)}} \\
-\hline
-$d2_n$           & second orbit derivative        & $\partial^2 z_n / \partial c^2$;\; used in Halley iteration \\
-\hline
-\end{tabularx}
-\end{center}
+\input{FractalShark-01-Notation}
 
 \clearpage
 
@@ -157,46 +84,46 @@ $d2_n$           & second orbit derivative        & $\partial^2 z_n / \partial c
 % ============================================================
 % Introduction
 % ============================================================
-\input{FractalShark-01-Introduction}
+\input{FractalShark-02-Introduction}
 
 % ============================================================
 % Part I: Rendering Algorithms
 % ============================================================
 \part{Rendering Algorithms}
 
-\input{FractalShark-02-DirectRendering}
-\input{FractalShark-03-NumericTypes}
-\input{FractalShark-04-Perturbation}
-\input{FractalShark-05-Approximation}
+\input{FractalShark-04-DirectRendering}
+\input{FractalShark-08-NumericTypes}
+\input{FractalShark-10-Perturbation}
+\input{FractalShark-12-Approximation}
 
 % ============================================================
 % Part II: Reference Orbit Computation
 % ============================================================
 \part{Reference Orbit Computation}
 
-\input{FractalShark-06-RefOrbit}
-\input{FractalShark-07-GpuArithmetic}
-\input{FractalShark-08-FeatureFinder}
+\input{FractalShark-13-RefOrbit}
+\input{FractalShark-17-GpuArithmetic}
+\input{FractalShark-18-FeatureFinder}
 
 % ============================================================
 % Part III: Supporting Infrastructure
 % ============================================================
 \part{Supporting Infrastructure}
 
-\input{FractalShark-09-RenderPipeline}
-\input{FractalShark-10-MemorySystem}
+\input{FractalShark-19-RenderPipeline}
+\input{FractalShark-22-MemorySystem}
 
 % ============================================================
 % Part IV: Further Techniques
 % ============================================================
 \part{Further Techniques}
 
-\input{FractalShark-11-FutureDirections}
+\input{FractalShark-23-FutureDirections}
 
 % ============================================================
 % Conclusion
 % ============================================================
-\input{FractalShark-12-Conclusion}
+\input{FractalShark-24-Conclusion}
 
 % ============================================================
 % Appendices

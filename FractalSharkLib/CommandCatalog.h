@@ -74,25 +74,25 @@ enum class FractalCommand : uint32_t {
     Exit = 40020, // IDM_EXIT
 
     // ---- Navigate ----
-    Back = 40100,                    // IDM_BACK
-    CenterView = 40101,              // IDM_CENTERVIEW
-    ZoomIn = 40102,                  // IDM_ZOOMIN
-    ZoomOut = 40103,                 // IDM_ZOOMOUT
-    AutoZoomDefault = 40104,         // IDM_AUTOZOOM_DEFAULT
-    AutoZoomMax = 40105,             // IDM_AUTOZOOM_MAX
-    FeatureFinderDirect = 40106,     // IDM_FEATUREFINDER_DIRECT
-    FeatureFinderPt = 40107,         // IDM_FEATUREFINDER_PT
-    FeatureFinderLa = 40108,         // IDM_FEATUREFINDER_LA
-    FeatureFinderDirectScan = 40109, // IDM_FEATUREFINDER_DIRECTSCAN
-    FeatureFinderPtScan = 40110,     // IDM_FEATUREFINDER_PTSCAN
-    FeatureFinderLaScan = 40111,     // IDM_FEATUREFINDER_LASCAN
-    FeatureFinderZoom = 40112,       // IDM_FEATUREFINDER_ZOOM
-    FeatureFinderClear = 40113,      // IDM_FEATUREFINDER_CLEAR
-    AutoZoomFilament = 40114,        // IDM_AUTOZOOM_FILAMENT
-    FeatureFinderResume = 40115,     // IDM_FEATUREFINDER_RESUME
-    NrInnerLoopGpu = 40116,          // IDM_NR_INNERLOOP_GPU
-    NrInnerLoopCpu = 40117,          // IDM_NR_INNERLOOP_CPU
-    NrInnerLoopCpuSt = 40118,        // IDM_NR_INNERLOOP_CPUST
+    Back = 40100,                                 // IDM_BACK
+    CenterView = 40101,                           // IDM_CENTERVIEW
+    ZoomIn = 40102,                               // IDM_ZOOMIN
+    ZoomOut = 40103,                              // IDM_ZOOMOUT
+    AutoZoomFeatureWithoutCheckpointSave = 40104, // IDM_AUTOZOOM_FEATURE_WITHOUT_CHECKPOINT_SAVE
+    AutoZoomMax = 40105,                          // IDM_AUTOZOOM_MAX
+    FeatureFinderDirect = 40106,                  // IDM_FEATUREFINDER_DIRECT
+    FeatureFinderPt = 40107,                      // IDM_FEATUREFINDER_PT
+    FeatureFinderLa = 40108,                      // IDM_FEATUREFINDER_LA
+    FeatureFinderDirectScan = 40109,              // IDM_FEATUREFINDER_DIRECTSCAN
+    FeatureFinderPtScan = 40110,                  // IDM_FEATUREFINDER_PTSCAN
+    FeatureFinderLaScan = 40111,                  // IDM_FEATUREFINDER_LASCAN
+    FeatureFinderZoom = 40112,                    // IDM_FEATUREFINDER_ZOOM
+    FeatureFinderClear = 40113,                   // IDM_FEATUREFINDER_CLEAR
+    AutoZoomFilament = 40114,                     // IDM_AUTOZOOM_FILAMENT
+    FeatureFinderResume = 40115,                  // IDM_FEATUREFINDER_RESUME
+    NrInnerLoopGpu = 40116,                       // IDM_NR_INNERLOOP_GPU
+    NrInnerLoopCpu = 40117,                       // IDM_NR_INNERLOOP_CPU
+    NrInnerLoopCpuSt = 40118,                     // IDM_NR_INNERLOOP_CPUST
 
     // ---- Built-In Views ----
     StandardView = 40200, // IDM_STANDARDVIEW
@@ -307,8 +307,7 @@ enum class FractalCommand : uint32_t {
     AlgGpuHdr64PerturbLav2 = 41405,
 
     // ---- Synthetic Shortcut Commands ----
-    AutoZoomFeatureAtPoint = 42000,
-    AutoZoomDefaultAtPoint = 42001,
+    AutoZoomFeatureWithCheckpointSave = 42000,
     CenterViewClearPerturbation = 42002,
     ResetCompressionDefaults = 42003,
     LaThresholdScaleIncrease = 42004,
@@ -434,9 +433,11 @@ struct Command {
 };
 
 inline constexpr auto kCommands = std::to_array<Command>({
-    {FractalCommand::AutoZoomFeatureAtPoint, L"Autozoom feature at cursor", {L'a'}},
-    {FractalCommand::AutoZoomDefaultAtPoint,
-     L"Autozoom feature at cursor without checkpoint",
+    {FractalCommand::AutoZoomFeatureWithCheckpointSave,
+     L"Autozoom feature with checkpoint save",
+     {L'a'}},
+    {FractalCommand::AutoZoomFeatureWithoutCheckpointSave,
+     L"Autozoom feature without checkpoint save",
      {L'a', true}},
     {FractalCommand::AutoZoomFilament, L"Autozoom filament tip", {L's', true}},
     {FractalCommand::Back, L"Go back to the previous view", {L'b'}},
@@ -536,9 +537,9 @@ static_assert(!HotKeyFromCharacter(L'_', true, false, false).HasKey());
 static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'+', false, false, false))->id ==
               FractalCommand::IncreaseIterations24x);
 static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'a', false, false, false))->id ==
-              FractalCommand::AutoZoomFeatureAtPoint);
+              FractalCommand::AutoZoomFeatureWithCheckpointSave);
 static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'A', true, false, false))->id ==
-              FractalCommand::AutoZoomDefaultAtPoint);
+              FractalCommand::AutoZoomFeatureWithoutCheckpointSave);
 static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'<', false, false, false))->id ==
               FractalCommand::FeatureFinderLaScan);
 static_assert(FindCommandByHotKey(HotKeyFromCharacter(L'>', false, false, false))->id ==

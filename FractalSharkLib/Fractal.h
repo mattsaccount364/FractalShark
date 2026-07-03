@@ -102,10 +102,6 @@ public:
 
     template <AutoZoomHeuristic h> void AutoZoom();
     template <AutoZoomHeuristic h> void AutoZoom(int clientX, int clientY);
-    void AutoZoomFeatureAtPoint(
-        int clientX,
-        int clientY,
-        NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save);
 
     void View(size_t i, bool includeMsgBox = true);
     void SquareCurrentView();

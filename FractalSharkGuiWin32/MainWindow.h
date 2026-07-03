@@ -37,7 +37,7 @@ public:
     // ---- Platform-specific command handlers ----------------------------
 
     // Synthetic shortcut command hooks
-    void OnAutoZoomFeatureAtPoint() override;
+    void OnAutoZoomFeatureWithCheckpointSave() override;
 
     // Help / Window
     void OnShowHotkeys() override;

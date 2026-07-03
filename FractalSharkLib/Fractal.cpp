@@ -578,12 +578,6 @@ template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Feature>(int, int);
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FeatureNoSave>(int, int);
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>(int, int);
 
-void
-Fractal::AutoZoomFeatureAtPoint(int clientX, int clientY, NRCheckpointSavePolicy checkpointSavePolicy)
-{
-    AutoZoomer(*this).RunFeatureAtPoint(clientX, clientY, checkpointSavePolicy);
-}
-
 //////////////////////////////////////////////////////////////////////////////
 // Resets the fractal to the standard view.
 // Make sure the view is square on all monitors at all weird aspect ratios.

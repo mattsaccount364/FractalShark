@@ -276,7 +276,7 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     void HandleKeyPress(const XKeyEvent &ev);
     PresentationTickResult PresentRenderTick();
     int GetPresentationPollTimeoutMs(bool needsTick);
-    void RunFeatureAutoZoomSynchronously(int mouseX, int mouseY);
+    template <Fractal::AutoZoomHeuristic h> void RunFeatureAutoZoomSynchronously(int mouseX, int mouseY);
     void BeginDragZoom(const XButtonEvent &btn);
     void CancelDragZoom(Time eventTime);
     void SetDragCursorActive(bool active);
@@ -298,7 +298,8 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     }
 
     // ---- Platform-specific command handlers ------------------------------
-    void OnAutoZoomFeatureAtPoint() override;
+    void OnAutoZoomFeatureWithCheckpointSave() override;
+    void OnAutoZoomFeatureWithoutCheckpointSave() override;
     // Everything else is provided by PortableCommandHandlers. These hooks
     // touch the X server, ImGui modals, the file dialog, the clipboard, or
     // other Linux-specific UI state.
@@ -833,9 +834,14 @@ LinuxMainWindow::GetPresentationPollTimeoutMs(bool needsTick)
     return std::max(timeoutMs, 1);
 }
 
+template <Fractal::AutoZoomHeuristic h>
 void
 LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
 {
+    static_assert(
+        h == Fractal::AutoZoomHeuristic::Feature || h == Fractal::AutoZoomHeuristic::FeatureNoSave,
+        "RunFeatureAutoZoomSynchronously is only for feature autozoom.");
+
     if (!fractal || !glContext || !glContext->IsValid()) {
         throw FractalSharkSeriousException(
             "Feature autozoom requires an initialized fractal and GL context");
@@ -845,7 +851,7 @@ LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
     std::exception_ptr autoZoomException;
     std::thread autoZoomThread([&, mouseX, mouseY] {
         try {
-            fractal->AutoZoomFeatureAtPoint(mouseX, mouseY);
+            fractal->AutoZoom<h>(mouseX, mouseY);
         } catch (...) {
             autoZoomException = std::current_exception();
         }
@@ -872,10 +878,17 @@ LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
 }
 
 void
-LinuxMainWindow::OnAutoZoomFeatureAtPoint()
+LinuxMainWindow::OnAutoZoomFeatureWithCheckpointSave()
 {
     const FractalShark::MenuPoint pt = GetMenuMousePos();
-    RunFeatureAutoZoomSynchronously(pt.X, pt.Y);
+    RunFeatureAutoZoomSynchronously<Fractal::AutoZoomHeuristic::Feature>(pt.X, pt.Y);
+}
+
+void
+LinuxMainWindow::OnAutoZoomFeatureWithoutCheckpointSave()
+{
+    const FractalShark::MenuPoint pt = GetMenuMousePos();
+    RunFeatureAutoZoomSynchronously<Fractal::AutoZoomHeuristic::FeatureNoSave>(pt.X, pt.Y);
 }
 
 void

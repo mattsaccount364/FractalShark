@@ -277,7 +277,7 @@ ComputeCheckpointPreviewZoom(const NRCheckpointParams &p)
     return ComputeNRCheckpointPreviewZoom(p.diag, intrinsicRadius);
 }
 
-static void
+static bool
 WriteNRCheckpoint(const NRCheckpointParams &p)
 {
     // Write to temp file, then rename for crash-safe atomic update.
@@ -285,7 +285,7 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
 
     std::ofstream f(NRCheckpointTmpFilename, std::ios::trunc);
     if (!f)
-        return;
+        return false;
 
     const size_t ndigits = static_cast<size_t>(p.coord_prec * 0.302) + 10;
 
@@ -353,6 +353,7 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
 
     // Atomic replace: rename tmp over existing file in one step.
     std::filesystem::rename(NRCheckpointTmpFilename, NRCheckpointFilename);
+    return true;
 }
 
 // ------------------------------------------------------------
@@ -428,17 +429,16 @@ struct CheckpointSnapshot {
 
 class CheckpointWriter {
 public:
-    explicit CheckpointWriter(NRCheckpointSavePolicy savePolicy)
-        : m_Enabled(savePolicy == NRCheckpointSavePolicy::Save)
+    explicit CheckpointWriter(NRCheckpointSavePolicy savePolicy) : m_SavePolicy(savePolicy)
     {
-        if (m_Enabled) {
+        if (ShouldWrite()) {
             m_Thread = std::thread(&CheckpointWriter::Run, this);
         }
     }
 
     ~CheckpointWriter()
     {
-        if (!m_Enabled) {
+        if (!ShouldWrite()) {
             return;
         }
         {
@@ -460,7 +460,10 @@ public:
     void
     TriggerWrite(std::unique_ptr<CheckpointSnapshot> snapshot)
     {
-        if (!m_Enabled) {
+        if (!ShouldWrite()) {
+            if (m_SavePolicy == NRCheckpointSavePolicy::PreserveExisting && snapshot) {
+                PrintCheckpointMessage(snapshot->ToParams(), false);
+            }
             return;
         }
         {
@@ -478,7 +481,10 @@ public:
     void
     WriteAndWait(const NRCheckpointParams &params)
     {
-        if (!m_Enabled) {
+        if (!ShouldWrite()) {
+            if (m_SavePolicy == NRCheckpointSavePolicy::PreserveExisting) {
+                PrintCheckpointMessage(params, false);
+            }
             return;
         }
         auto snapshot = std::make_unique<CheckpointSnapshot>(params, params.innerIteration);
@@ -512,18 +518,35 @@ private:
 
             if (snap) {
                 auto params = snap->ToParams();
-                WriteNRCheckpoint(params);
+                if (WriteNRCheckpoint(params)) {
+                    PrintCheckpointMessage(params, true);
+                }
                 if (done)
                     done->set_value();
             }
         }
     }
 
+    bool
+    ShouldWrite() const
+    {
+        return m_SavePolicy == NRCheckpointSavePolicy::Save;
+    }
+
+    void
+    PrintCheckpointMessage(const NRCheckpointParams &params, bool saved) const
+    {
+        std::cout << "RefinePeriodicPoint: NR checkpoint "
+                  << (saved ? "saved" : "not saved because policy is PreserveExisting") << " at NR iter "
+                  << params.iteration << " innerIter " << params.innerIteration << " period "
+                  << params.period << std::endl;
+    }
+
     std::mutex m_Mutex;
     std::condition_variable m_CV;
     std::unique_ptr<CheckpointSnapshot> m_Pending;
     std::promise<void> *m_DonePromise = nullptr;
-    bool m_Enabled = true;
+    NRCheckpointSavePolicy m_SavePolicy = NRCheckpointSavePolicy::Save;
     bool m_Exit = false;
     // Must be last: the worker can run immediately after construction starts it.
     std::thread m_Thread;
@@ -1145,9 +1168,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                  numIterationsAtFind, completed,  z_coord.re,  z_coord.im,  dzdc_deriv.re,
                  dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState});
             std::cout << "RefinePeriodicPoint: aborted at NR iter " << it << " innerIter " << completed
-                      << (checkpointSavePolicy == NRCheckpointSavePolicy::Save
-                              ? " (checkpoint saved)\n"
-                              : " (checkpoint unchanged)\n");
+                      << "\n";
             break;
         }
 
@@ -1322,10 +1343,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         // Check for user abort (Ctrl held 3s sets flag, Escape cancels it).
         // The latest checkpoint write has already been requested when enabled.
         if (AbortMonitor::GetStopCalculatingGlobal()) {
-            std::cout << "RefinePeriodicPoint: aborted at iter " << it
-                      << (checkpointSavePolicy == NRCheckpointSavePolicy::Save
-                              ? " (checkpoint saved)\n"
-                              : " (checkpoint unchanged)\n");
+            std::cout << "RefinePeriodicPoint: aborted at iter " << it << "\n";
             break;
         }
     }

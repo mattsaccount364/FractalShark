@@ -97,7 +97,11 @@ choice and triggers any necessary reconfiguration.
       point under the cursor.
       \item \emph{Zoom In Here} (command): Zooms in toward the point under the cursor.
       \item \emph{Zoom Out} (command): Zooms out from the current view.
-      \item \emph{Autozoom Default} (command): See \cref{par:autozoom} for details.
+      \item \emph{Autozoom Feature With Checkpoint Save} (\code{a}) (command):
+      See \cref{par:autozoom} for details.
+      \item \emph{Autozoom Feature Without Checkpoint Save}
+      (\code{A}, i.e.\ \code{Shift+a}) (command): See \cref{par:autozoom} for
+      details.
       \item \emph{Autozoom Max} (command): Autozoom using the ``Max'' heuristic,
       which zooms by a factor of~32 each step.  See \cref{par:autozoom} for details.
       \item \emph{Autozoom Filament Tip} (\code{S}, i.e.\ \code{Shift+s}) (command): Autozoom using the
@@ -668,17 +672,16 @@ additional work for correctness or a ``clean'' run.
 \label{par:autozoom}
 
 \begin{itemize}
-  \item \code{a}: Autozoom using the ``Feature'' heuristic.  Forces the
+  \item \code{a}: Autozoom using the ``Feature'' heuristic with checkpoint
+        saving enabled.  The command forces the
         \code{GpuHDRx32PerturbedLAv2} render algorithm, centers on the
         perturbation reference point, computes a target zoom depth from the
         reference orbit's maximum radius, and zooms in incrementally while
         linearly interpolating the iteration count toward the reference orbit's
         target.
-  \item \code{A} (\code{Shift+a}): Center the view at the mouse cursor, then
-        autozoom using the ``Default'' heuristic.  Iteratively picks
-        a zoom target via a weighted geometric mean of iteration counts
-        (favoring high-iteration, center-proximate pixels) and zooms by a
-        factor of~3 each step.
+  \item \code{A} (\code{Shift+a}): Autozoom using the same ``Feature''
+        heuristic while preserving any existing Newton--Raphson checkpoint
+        instead of writing a new checkpoint.
   \item \code{S} (\code{Shift+s}): Autozoom using the ``FilamentTip'' heuristic.
 \end{itemize}
 Holding \code{Ctrl+Alt} for approximately three seconds aborts either
@@ -813,23 +816,15 @@ about though.
 \subsection{Automatic Zoom}
 \label{subsec:autozoom}
 
-The \code{AutoZoomer} class provides four heuristic strategies for
-automated zoom animation.  Each heuristic repeats until a termination
-condition is met (all pixels at the iteration limit, user abort, or
-target reached).  The render pipeline depth of
+The \code{AutoZoomer} class provides three heuristic strategies for
+automated zoom animation.  The Feature strategy has checkpoint-saving and
+checkpoint-preserving command variants.  Each heuristic repeats until a
+termination condition is met (all pixels at the iteration limit, user abort,
+or target reached).  The render pipeline depth of
 $4 \times \text{NumRenderers}$ keeps several frames in flight for smooth
 playback.
 
 \begin{description}
-  \item[Default (zoom divisor~3)]
-    A weighted geometric mean of pixel iteration counts in a
-    center-cropped region (borders trimmed to $\tfrac{1}{8}$ of each
-    dimension).  Pixels whose iteration count exceeds the image average
-    are weighted by their distance from the screen center and their
-    iteration count relative to the observed maximum.  Each step zooms
-    to $\tfrac{1}{3}$ of the current view, centered on the weighted
-    target.
-
   \item[Max (zoom divisor~32)]
     The first pixel that attains the maximum iteration count is selected,
     and the view zooms aggressively---32$\times$ per step.  The sequence
@@ -851,7 +846,9 @@ playback.
     at the target zoom depth.  An animated sequence is then generated
     with a $1.1\times$ zoom factor per frame.  Iteration counts are
     linearly interpolated from the current value to the target across
-    all frames.
+    all frames.  The checkpoint-saving variant writes the refinement
+    checkpoint, and the checkpoint-preserving variant leaves the existing
+    checkpoint state unchanged.
 \end{description}
 
 % -----------------------------------------------------------------

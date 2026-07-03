@@ -91,12 +91,12 @@ MainWindow::~MainWindow()
 
 // ---- Per-menu host hook implementation -------------------------------------
 
-// ---- Synthetic shortcut command hooks --------------------------------------
+// ---- Autozoom command hooks -------------------------------------------------
 void
-MainWindow::OnAutoZoomFeatureAtPoint()
+MainWindow::OnAutoZoomFeatureWithCheckpointSave()
 {
     const POINT pt = GetSafeMenuPtClient();
-    gFractal->AutoZoomFeatureAtPoint(pt.x, pt.y);
+    gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Feature>(pt.x, pt.y);
 }
 
 // ---- Help / Window ---------------------------------------------------------

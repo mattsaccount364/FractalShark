@@ -27,7 +27,8 @@ protected:
     virtual Fractal &GetFractal() noexcept = 0;
     virtual MenuPoint GetMenuMousePos() const = 0;
 
-    virtual void OnAutoZoomFeatureAtPoint() = 0;
+    virtual void OnAutoZoomFeatureWithCheckpointSave() = 0;
+    virtual void OnAutoZoomFeatureWithoutCheckpointSave();
 
     virtual void OnShowHotkeys() = 0;
     virtual void OnViewsHelp() = 0;
@@ -55,7 +56,6 @@ protected:
 private:
     void OnSetAlgorithm(::RenderAlgorithmEnum alg);
 
-    void OnAutoZoomDefaultAtPoint();
     void OnCenterViewClearPerturbation();
     void OnResetCompressionDefaults();
     void OnLaThresholdScaleIncrease();
@@ -82,7 +82,6 @@ private:
     void OnCenterView();
     void OnZoomIn();
     void OnZoomOut();
-    void OnAutoZoomDefault();
     void OnAutoZoomMax();
     void OnAutoZoomFilament();
     void OnFeatureFinderDirect();

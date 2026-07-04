@@ -6,7 +6,6 @@
 
 #include "Environment.h"
 #include "Fractal.h"
-// #include "CBitmapWriter.h"
 
 #include "BLAS.h"
 #include "FeatureFinderOrchestrator.h"
@@ -3083,8 +3082,6 @@ Fractal::SaveHiResFractal(std::wstring filename)
     if (m_RenderPool) {
         m_RenderPool->Drain();
     }
-
-    // CBitmapWriter bmpWriter;
 
     size_t OldScrnWidth = m_ScrnWidth;
     size_t OldScrnHeight = m_ScrnHeight;

@@ -1,20 +1,8 @@
 #pragma once
 
 //
-// Comments for Matthew:
-// - Re-use information from points in set between frames so that the all-black
-//   pixels don't suck up so much time (skip chunks on the interior).
-// - Multisample antialiasing, where we look for the "edges" and recalculating
-//   those only?
-// - Add text box in UI to import a set of coordinates so we can navigate
-//   somewhere saved.
-//
 // Search for TODO
-// Make the screen saver render high-res versions of screens that have
-//      been saved to a queue.  High res images made at idle time
-// Make this code run in a separate thread so it doesn't interfere with the windows
-//      message pump.  Make it use callback functions so whoever is using this code
-//      can see the progress, be notified when it is done, whatever.
+//
 
 #include "Environment.h"
 #include "FractalPalette.h"

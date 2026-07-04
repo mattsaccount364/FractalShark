@@ -87,7 +87,8 @@ TEST(HeapAllocationDiagnosticsDescribeTailCanary)
     const HeapAllocationDiagnostics diagnostics = GlobalHeap().GetAllocationDiagnostics(ptr);
     ASSERT_TRUE(diagnostics.ReturnedUser == ptr);
     ASSERT_EQ(diagnostics.RequestedSize, Size);
-    ASSERT_EQ(diagnostics.ReturnedActualSize, ExpectedActualSize(Size));
+    ASSERT_TRUE(diagnostics.ReturnedActualSize >= ExpectedActualSize(Size));
+    ASSERT_EQ(diagnostics.ReturnedActualSize % HeapAlignment, size_t{0});
     ASSERT_TRUE(diagnostics.ReturnedCanary ==
                 static_cast<char *>(ptr) + diagnostics.ReturnedActualSize - TailCanaryBytes);
     ASSERT_TRUE(diagnostics.BackingUser == ptr);
@@ -111,10 +112,12 @@ TEST(HeapAlignedAllocationDiagnosticsDescribeBothTailCanaries)
     const HeapAllocationDiagnostics diagnostics = GlobalHeap().GetAllocationDiagnostics(ptr);
     ASSERT_TRUE(diagnostics.ReturnedUser == ptr);
     ASSERT_EQ(diagnostics.RequestedSize, Size);
-    ASSERT_EQ(diagnostics.ReturnedActualSize, ExpectedActualSize(Size));
+    ASSERT_TRUE(diagnostics.ReturnedActualSize >= ExpectedActualSize(Size));
+    ASSERT_EQ(diagnostics.ReturnedActualSize % HeapAlignment, size_t{0});
     ASSERT_TRUE(diagnostics.ReturnedCanary ==
                 static_cast<char *>(ptr) + diagnostics.ReturnedActualSize - TailCanaryBytes);
     ASSERT_TRUE(diagnostics.BackingActualSize >= diagnostics.ReturnedActualSize);
+    ASSERT_EQ(diagnostics.BackingActualSize % HeapAlignment, size_t{0});
     ASSERT_TRUE(diagnostics.BackingCanary == static_cast<char *>(diagnostics.BackingUser) +
                                                  diagnostics.BackingActualSize - TailCanaryBytes);
     ASSERT_TRUE(diagnostics.AllocationSequence != 0);

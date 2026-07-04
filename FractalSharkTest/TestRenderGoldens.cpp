@@ -171,6 +171,75 @@ RunGoldenCase(const GoldenCase &c)
               << "    (png: " << pngPath.string() << ")\n";
 }
 
+void
+RenderSmallOutputPathCase(const std::filesystem::path &basename,
+                          const std::filesystem::path &expectedPngPath)
+{
+    const RenderAlgorithm *alg = LookupAlgorithm("Cpu64");
+    if (!alg) {
+        TestFramework::Fail(__FILE__, __LINE__, "unknown algorithm: Cpu64");
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(expectedPngPath, ec);
+
+    RenderRequest req;
+    req.Width = 32;
+    req.Height = 32;
+    req.ViewSource = RenderRequest::ViewSourceKind::Builtin;
+    req.BuiltinView = 0;
+    req.Algorithm = *alg;
+    req.Antialiasing = 1;
+    req.OutPngBasename = basename.wstring();
+    req.Quiet = true;
+
+    std::string err;
+    Fractal fractal(req.Width,
+                    req.Height,
+                    /*nativeWindow=*/nullptr,
+                    /*UseSensoCursor=*/false,
+                    req.CommitCapBytes);
+    int rc = RenderToPng(req, fractal, &err);
+    if (rc != 0) {
+        std::ostringstream oss;
+        oss << "RenderToPng failed for output path case (rc=" << rc << "): " << err;
+        TestFramework::Fail(__FILE__, __LINE__, oss.str());
+    }
+
+    auto bytes = ReadFileBytes(expectedPngPath);
+    if (bytes.empty()) {
+        std::ostringstream oss;
+        oss << "rendered PNG missing or empty for output path case: " << expectedPngPath.string();
+        TestFramework::Fail(__FILE__, __LINE__, oss.str());
+    }
+}
+
+void
+RunOutputPathHandlingCases()
+{
+    auto outDir = GoldensOutDir() / "path.cases";
+    std::error_code ec;
+    std::filesystem::create_directories(outDir, ec);
+
+    auto dottedDir = outDir / "dotted.dir";
+    std::filesystem::create_directories(dottedDir, ec);
+
+    auto dottedBasename = dottedDir / "no-extension";
+    auto dottedExpected = dottedBasename;
+    dottedExpected += ".png";
+    RenderSmallOutputPathCase(dottedBasename, dottedExpected);
+
+    auto existingExtension = outDir / "already.png";
+    RenderSmallOutputPathCase(existingExtension, existingExtension);
+
+#ifdef _WIN32
+    auto unicodeBasename = outDir / std::filesystem::path(L"unicode-\u00e9-\u6d4b");
+    auto unicodeExpected = unicodeBasename;
+    unicodeExpected += ".png";
+    RenderSmallOutputPathCase(unicodeBasename, unicodeExpected);
+#endif
+}
+
 } // namespace
 
 TEST(RenderGolden_view0_cpu64) { RunGoldenCase(kCases[0]); }
@@ -195,4 +264,8 @@ TEST(RenderGolden_view5_cpu64_bla_v2) { RunGoldenCase(kCases[9]); }
 
 TEST(RenderGolden_view5_cpu32_rc_bla_v2) { RunGoldenCase(kCases[10]); }
 
-TEST(RenderGolden_view5_cpu64_rc_bla_v2) { RunGoldenCase(kCases[11]); }
+TEST(RenderGolden_view5_cpu64_rc_bla_v2)
+{
+    RunGoldenCase(kCases[11]);
+    RunOutputPathHandlingCases();
+}

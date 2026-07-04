@@ -3001,7 +3001,7 @@ Fractal::CleanupThreads(bool all)
         while (continueCriteria) {
             for (size_t i = 0; i < savesInProgress.size(); i++) {
                 auto &it = savesInProgress[i];
-                if (it->m_Destructable) {
+                if (it->m_Destructable.load(std::memory_order_acquire)) {
                     savesInProgress.erase(savesInProgress.begin() + i);
                     ret = true;
                     break;

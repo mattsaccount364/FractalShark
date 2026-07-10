@@ -30,6 +30,7 @@
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -216,6 +217,21 @@ ComputeHalleyStep_mpf_coord_from_deriv(mpf_complex &step_coord,         // coord
 // ------------------------------------------------------------
 static const char *NRCheckpointFilename = "nr_checkpoint.txt";
 
+const char *
+NRCheckpointPhaseName(NRCheckpointPhase phase)
+{
+    switch (phase) {
+        case NRCheckpointPhase::Main:
+            return "main";
+        case NRCheckpointPhase::Final:
+            return "final";
+        case NRCheckpointPhase::Complete:
+            return "complete";
+    }
+
+    return "main";
+}
+
 static std::string
 ReconstructMpfString(const std::string &digits, mp_exp_t exp)
 {
@@ -244,6 +260,7 @@ struct NRCheckpointParams {
     uint64_t period;
     mp_bitcnt_t coord_prec;
     uint32_t iteration;
+    NRCheckpointPhase phase;
     int scaleExp2;
     uint64_t numIterationsAtFind;
     uint64_t innerIteration;
@@ -295,7 +312,8 @@ WriteNRCheckpoint(const NRCheckpointParams &p)
       << "period: " << p.period << "\n"
       << "coord_prec: " << p.coord_prec << "\n"
       << "scaleExp2: " << p.scaleExp2 << "\n"
-      << "iteration: " << p.iteration << "\n";
+      << "iteration: " << p.iteration << "\n"
+      << "phase: " << NRCheckpointPhaseName(p.phase) << "\n";
 
     WriteMpfField(f, "c_re", p.c_re, ndigits);
     WriteMpfField(f, "c_im", p.c_im, ndigits);
@@ -367,6 +385,7 @@ struct CheckpointSnapshot {
     uint64_t period, innerIteration, numIterationsAtFind;
     mp_bitcnt_t coord_prec, deriv_prec;
     uint32_t iteration;
+    NRCheckpointPhase phase;
     int scaleExp2;
     HDRFloat<double> d2r, d2i;
     DiagnosticState diag;
@@ -398,6 +417,7 @@ struct CheckpointSnapshot {
         innerIteration = iters;
         numIterationsAtFind = src.numIterationsAtFind;
         iteration = src.iteration;
+        phase = src.phase;
         scaleExp2 = src.scaleExp2;
         d2r = src.d2r;
         d2i = src.d2i;
@@ -420,10 +440,27 @@ struct CheckpointSnapshot {
     NRCheckpointParams
     ToParams() const
     {
-        return {c.re,   c.im,       c0.re,     c0.im,     sqrRadius,           intrinsicRadius,
-                period, coord_prec, iteration, scaleExp2, numIterationsAtFind, innerIteration,
-                z.re,   z.im,       dzdc.re,   dzdc.im,   deriv_prec,          d2r,
-                d2i,    diag};
+        return {c.re,
+                c.im,
+                c0.re,
+                c0.im,
+                sqrRadius,
+                intrinsicRadius,
+                period,
+                coord_prec,
+                iteration,
+                phase,
+                scaleExp2,
+                numIterationsAtFind,
+                innerIteration,
+                z.re,
+                z.im,
+                dzdc.re,
+                dzdc.im,
+                deriv_prec,
+                d2r,
+                d2i,
+                diag};
     }
 };
 
@@ -538,8 +575,8 @@ private:
     {
         std::cout << "RefinePeriodicPoint: NR checkpoint "
                   << (saved ? "saved" : "not saved because policy is PreserveExisting") << " at NR iter "
-                  << params.iteration << " innerIter " << params.innerIteration << " period "
-                  << params.period << std::endl;
+                  << params.iteration << " phase " << NRCheckpointPhaseName(params.phase)
+                  << " innerIter " << params.innerIteration << " period " << params.period << std::endl;
     }
 
     std::mutex m_Mutex;
@@ -555,6 +592,7 @@ private:
 struct InnerLoopCheckpointData {
     uint64_t innerIteration{0};
     mp_bitcnt_t deriv_prec{0};
+    NRCheckpointPhase phase{NRCheckpointPhase::Main};
 };
 
 // Read a "label: " prefix from the stream.  Returns false if the label
@@ -603,6 +641,82 @@ SkipCheckpointComments(std::ifstream &f)
     }
 }
 
+static NRCheckpointPhase
+ReadCheckpointPhase(std::ifstream &f)
+{
+    f >> std::ws;
+
+    std::string token;
+    if (!(f >> token)) {
+        throw std::runtime_error(
+            "NR checkpoint missing required phase field; refusing to resume or overwrite it.");
+    }
+
+    if (token != "phase:") {
+        throw std::runtime_error(
+            "NR checkpoint missing required phase field; refusing to resume or overwrite it.");
+    }
+
+    std::string value;
+    if (!(f >> value)) {
+        throw std::runtime_error(
+            "NR checkpoint missing required phase value; refusing to resume or overwrite it.");
+    }
+
+    if (value == "main") {
+        return NRCheckpointPhase::Main;
+    } else if (value == "final") {
+        return NRCheckpointPhase::Final;
+    } else if (value == "complete") {
+        return NRCheckpointPhase::Complete;
+    }
+
+    throw std::runtime_error("NR checkpoint has invalid phase value: " + value +
+                             "; refusing to resume or overwrite it.");
+}
+
+struct NRCheckpointHeader {
+    uint64_t period;
+    mp_bitcnt_t coordPrec;
+    int scaleExp2;
+    uint32_t iteration;
+    NRCheckpointPhase phase;
+};
+
+static bool
+ReadNRCheckpointHeader(std::ifstream &f, NRCheckpointHeader &header)
+{
+    if (!ReadLabel(f, "period"))
+        return false;
+    f >> header.period;
+    if (!ReadLabel(f, "coord_prec"))
+        return false;
+    f >> header.coordPrec;
+    if (!ReadLabel(f, "scaleExp2"))
+        return false;
+    f >> header.scaleExp2;
+    if (!ReadLabel(f, "iteration"))
+        return false;
+    f >> header.iteration;
+
+    if (!f)
+        return false;
+
+    header.phase = ReadCheckpointPhase(f);
+    return true;
+}
+
+static void
+ValidateExistingNRCheckpointPhase()
+{
+    std::ifstream f(NRCheckpointFilename);
+    if (!f)
+        return;
+
+    NRCheckpointHeader header{};
+    ReadNRCheckpointHeader(f, header);
+}
+
 // Reads checkpoint with label verification on every field.
 // Returns true if the checkpoint matches expected_period/expected_prec.
 static bool
@@ -621,27 +735,14 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
     if (!f)
         return false;
 
-    uint64_t file_period;
-    mp_bitcnt_t file_prec;
-    int file_scaleExp2;
-    uint32_t file_iter;
-
-    if (!ReadLabel(f, "period"))
-        return false;
-    f >> file_period;
-    if (!ReadLabel(f, "coord_prec"))
-        return false;
-    f >> file_prec;
-    if (!ReadLabel(f, "scaleExp2"))
-        return false;
-    f >> file_scaleExp2;
-    if (!ReadLabel(f, "iteration"))
-        return false;
-    f >> file_iter;
-
-    if (!f || file_period != expected_period || file_prec != expected_prec) {
+    NRCheckpointHeader header{};
+    if (!ReadNRCheckpointHeader(f, header) || header.period != expected_period ||
+        header.coordPrec != expected_prec) {
         return false;
     }
+
+    inner = {};
+    inner.phase = header.phase;
 
     mp_exp_t exp_re, exp_im;
     std::string digits_re, digits_im;
@@ -652,7 +753,7 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
 
     mpf_set_str(c.re, ReconstructMpfString(digits_re, exp_re).c_str(), 10);
     mpf_set_str(c.im, ReconstructMpfString(digits_im, exp_im).c_str(), 10);
-    out_iteration = file_iter;
+    out_iteration = header.iteration;
 
     // Skip candidate, radius, intrinsicRadius
     mp_exp_t skip_exp;
@@ -671,7 +772,6 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
         return false;
     f >> skip_numIters;
 
-    inner = {};
     uint64_t innerIter = 0;
     if (!ReadLabel(f, "innerIteration"))
         return false;
@@ -772,21 +872,17 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
     if (!f)
         return false;
 
-    if (!ReadLabel(f, "period"))
+    NRCheckpointHeader header{};
+    if (!ReadNRCheckpointHeader(f, header))
         return false;
-    f >> out.period;
-    if (!ReadLabel(f, "coord_prec"))
-        return false;
-    f >> out.coord_prec;
-    if (!ReadLabel(f, "scaleExp2"))
-        return false;
-    f >> out.scaleExp2;
-    if (!ReadLabel(f, "iteration"))
-        return false;
-    f >> out.iteration;
 
-    if (!f)
-        return false;
+    out.period = header.period;
+    out.coord_prec = header.coordPrec;
+    out.scaleExp2 = header.scaleExp2;
+    out.iteration = header.iteration;
+    out.phase = header.phase;
+    out.innerIteration = 0;
+    out.diag = {};
 
     mp_exp_t exp_cre, exp_cim, exp_candre, exp_candim, exp_rad, exp_ir;
     std::string d_cre, d_cim, d_candre, d_candim, d_rad, d_ir;
@@ -827,7 +923,6 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
     out.intrinsicRadius = toHP(d_ir, exp_ir);
 
     // Best-effort: skip innerIteration through d2i, then read diagnostics.
-    out.diag = {};
     auto skipLabel = [&](const char *label) { return ReadLabel(f, label); };
 
     // Skip innerIteration, deriv_prec, z, dzdc, d2r, d2i
@@ -840,6 +935,7 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
 
     if (!skipLabel("innerIteration") || !(f >> skipU64))
         return true;
+    out.innerIteration = skipU64;
     if (!skipLabel("deriv_prec") || !(f >> skipBitcnt))
         return true;
     if (!ReadLabeledMpfField(f, "z_re", skipExp, skipStr))
@@ -1055,8 +1151,40 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         DiagnosticState *diagState; // outer diagState for live updates
     };
 
+    auto onProgress = [](uint64_t itersCompleted, void *ctx) {
+        auto *pctx = static_cast<ProgressContext *>(ctx);
+
+        // Compute inner-loop diagnostics from live z values.
+        const double zr = mpf_get_d(pctx->params->z_re);
+        const double zi = mpf_get_d(pctx->params->z_im);
+        const double z_mag2 = zr * zr + zi * zi;
+        const double inner_pct =
+            (pctx->params->period > 0)
+                ? static_cast<double>(itersCompleted) / static_cast<double>(pctx->params->period) * 100.0
+                : 0.0;
+
+        pctx->diagState->z_mag2 = z_mag2;
+        pctx->diagState->inner_pct = inner_pct;
+        pctx->params->diag.z_mag2 = z_mag2;
+        pctx->params->diag.inner_pct = inner_pct;
+
+        pctx->writer->TriggerWrite(std::make_unique<CheckpointSnapshot>(*pctx->params, itersCompleted));
+    };
+
+    auto updateCandidateDistance = [&]() {
+        mpf_complex_sub(dc, c_coord, c0_coord);
+        mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
+        long distExp2;
+        double distMant = mpf_get_d_2exp(&distExp2, abs2_c);
+        diagState.c_cand_dist2 = HDRFloat<double>(static_cast<int32_t>(distExp2), distMant);
+        HdrReduce(diagState.c_cand_dist2);
+    };
+
     uint32_t startIter = 0;
     uint64_t innerStartIter = 0;
+    uint64_t finalInnerStartIter = 0;
+    bool resumeFinalPass = false;
+    bool checkpointComplete = false;
 
     // Check for NR checkpoint file — resume automatically if found.
     {
@@ -1072,7 +1200,18 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                                          d2r_hdr,
                                          d2i_hdr,
                                          diagState)) {
-            if (inner.innerIteration > 0) {
+            if (inner.phase == NRCheckpointPhase::Complete) {
+                std::cout << "RefinePeriodicPoint: checkpoint is already complete at iter " << savedIter
+                          << "; skipping main and final NR phases." << std::endl;
+                startIter = savedIter;
+                checkpointComplete = true;
+            } else if (inner.phase == NRCheckpointPhase::Final) {
+                std::cout << "RefinePeriodicPoint: resuming final correction at innerIter "
+                          << inner.innerIteration << "; skipping main NR loop." << std::endl;
+                startIter = savedIter;
+                finalInnerStartIter = inner.innerIteration;
+                resumeFinalPass = true;
+            } else if (inner.innerIteration > 0) {
                 // Resuming mid-inner-loop: outer loop at savedIter, inner at innerIteration
                 std::cout << "RefinePeriodicPoint: resuming from checkpoint iter " << savedIter
                           << " innerIter " << inner.innerIteration << std::endl;
@@ -1090,19 +1229,10 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     // targetExp is authoritative — always restore after checkpoint read
     // (the reader zeros diagState, which would lose a pre-set targetExp).
     diagState.targetExp = targetExp;
-
-    // Compute initial |c - cand|² so even first progress checkpoint has a real value.
-    {
-        mpf_complex_sub(dc, c_coord, c0_coord);
-        mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
-        long dist_exp2;
-        double dist_mant = mpf_get_d_2exp(&dist_exp2, abs2_c);
-        diagState.c_cand_dist2 = HDRFloat<double>(static_cast<int32_t>(dist_exp2), dist_mant);
-        HdrReduce(diagState.c_cand_dist2);
-    }
+    updateCandidateDistance();
 
     uint32_t it = startIter;
-    for (; it < max_nr_iters; ++it) {
+    for (; !resumeFinalPass && !checkpointComplete && it < max_nr_iters; ++it) {
 
         std::cout << "  Refinement iter " << it << " of " << max_nr_iters << std::endl;
 
@@ -1111,34 +1241,29 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         uint64_t completed = 0;
 
         // Checkpoint context for progress callbacks.
-        NRCheckpointParams periodicParams{
-            c_coord.re,          c_coord.im, c0_coord.re, c0_coord.im, sqrRadius_coord,
-            intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
-            numIterationsAtFind, 0,          z_coord.re,  z_coord.im,  dzdc_deriv.re,
-            dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState};
+        NRCheckpointParams periodicParams{c_coord.re,
+                                          c_coord.im,
+                                          c0_coord.re,
+                                          c0_coord.im,
+                                          sqrRadius_coord,
+                                          intrinsicRadius_mpf,
+                                          period,
+                                          coord_prec,
+                                          it,
+                                          NRCheckpointPhase::Main,
+                                          scaleExp2_for_deriv_choice,
+                                          numIterationsAtFind,
+                                          0,
+                                          z_coord.re,
+                                          z_coord.im,
+                                          dzdc_deriv.re,
+                                          dzdc_deriv.im,
+                                          deriv_prec,
+                                          d2r_hdr,
+                                          d2i_hdr,
+                                          diagState};
 
         ProgressContext progressCtx{&periodicParams, &checkpointWriter, &diagState};
-
-        auto onProgress = [](uint64_t itersCompleted, void *ctx) {
-            auto *pctx = static_cast<ProgressContext *>(ctx);
-
-            // Compute inner-loop diagnostics from live z values.
-            const double zr = mpf_get_d(pctx->params->z_re);
-            const double zi = mpf_get_d(pctx->params->z_im);
-            const double z_mag2 = zr * zr + zi * zi;
-            const double inner_pct = (pctx->params->period > 0)
-                                         ? static_cast<double>(itersCompleted) /
-                                               static_cast<double>(pctx->params->period) * 100.0
-                                         : 0.0;
-
-            pctx->diagState->z_mag2 = z_mag2;
-            pctx->diagState->inner_pct = inner_pct;
-            pctx->params->diag.z_mag2 = z_mag2;
-            pctx->params->diag.inner_pct = inner_pct;
-
-            pctx->writer->TriggerWrite(
-                std::make_unique<CheckpointSnapshot>(*pctx->params, itersCompleted));
-        };
 
         completed = EvaluateCriticalOrbitAndDerivs(backend,
                                                    c_coord,
@@ -1161,12 +1286,29 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
             diagState.inner_pct =
                 (period > 0) ? static_cast<double>(completed) / static_cast<double>(period) * 100.0
                              : 0.0;
+            updateCandidateDistance();
 
-            checkpointWriter.WriteAndWait(
-                {c_coord.re,          c_coord.im, c0_coord.re, c0_coord.im, sqrRadius_coord,
-                 intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
-                 numIterationsAtFind, completed,  z_coord.re,  z_coord.im,  dzdc_deriv.re,
-                 dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState});
+            checkpointWriter.WriteAndWait({c_coord.re,
+                                           c_coord.im,
+                                           c0_coord.re,
+                                           c0_coord.im,
+                                           sqrRadius_coord,
+                                           intrinsicRadius_mpf,
+                                           period,
+                                           coord_prec,
+                                           it,
+                                           NRCheckpointPhase::Main,
+                                           scaleExp2_for_deriv_choice,
+                                           numIterationsAtFind,
+                                           completed,
+                                           z_coord.re,
+                                           z_coord.im,
+                                           dzdc_deriv.re,
+                                           dzdc_deriv.im,
+                                           deriv_prec,
+                                           d2r_hdr,
+                                           d2i_hdr,
+                                           diagState});
             std::cout << "RefinePeriodicPoint: aborted at NR iter " << it << " innerIter " << completed
                       << "\n";
             break;
@@ -1262,6 +1404,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         // c <- c - step
         mpf_sub(c_coord.re, c_coord.re, step_coord.re);
         mpf_sub(c_coord.im, c_coord.im, step_coord.im);
+        updateCandidateDistance();
 
         // ------------------------------------------------------------
         // Imagina error estimate (HDRFloat)
@@ -1312,13 +1455,29 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
 
         // Write checkpoint after each step (with diagnostics).
-        checkpointWriter.TriggerWrite(std::make_unique<CheckpointSnapshot>(
-            NRCheckpointParams{
-                c_coord.re,          c_coord.im, c0_coord.re, c0_coord.im, sqrRadius_coord,
-                intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
-                numIterationsAtFind, 0,          z_coord.re,  z_coord.im,  dzdc_deriv.re,
-                dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState},
-            0));
+        checkpointWriter.TriggerWrite(
+            std::make_unique<CheckpointSnapshot>(NRCheckpointParams{c_coord.re,
+                                                                    c_coord.im,
+                                                                    c0_coord.re,
+                                                                    c0_coord.im,
+                                                                    sqrRadius_coord,
+                                                                    intrinsicRadius_mpf,
+                                                                    period,
+                                                                    coord_prec,
+                                                                    it,
+                                                                    NRCheckpointPhase::Main,
+                                                                    scaleExp2_for_deriv_choice,
+                                                                    numIterationsAtFind,
+                                                                    0,
+                                                                    z_coord.re,
+                                                                    z_coord.im,
+                                                                    dzdc_deriv.re,
+                                                                    dzdc_deriv.im,
+                                                                    deriv_prec,
+                                                                    d2r_hdr,
+                                                                    d2i_hdr,
+                                                                    diagState},
+                                                 0));
 
         // Print diagnostics between outer iterations.
         std::cout << "  NR step " << it << " diag: rho2_exp2=" << rho2_hdr.getExp()
@@ -1348,47 +1507,129 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
     }
 
-    // Skip final correction + accept/reject if aborted.
-    if (!AbortMonitor::GetStopCalculatingGlobal()) {
+    // Skip final correction + accept/reject if aborted or already completed.
+    if (!checkpointComplete && !AbortMonitor::GetStopCalculatingGlobal()) {
         // ---------------- Imagina final correction pass ----------------
         // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
-        {
-            EvaluateCriticalOrbitAndDerivs(
-                backend, c_coord, period, z_coord, dzdc_deriv, d2r_hdr, d2i_hdr, coord_prec, deriv_prec);
+        std::cout << "RefinePeriodicPoint: starting final correction phase at innerIter "
+                  << finalInnerStartIter << std::endl;
 
+        NRCheckpointParams finalParams{c_coord.re,
+                                       c_coord.im,
+                                       c0_coord.re,
+                                       c0_coord.im,
+                                       sqrRadius_coord,
+                                       intrinsicRadius_mpf,
+                                       period,
+                                       coord_prec,
+                                       it,
+                                       NRCheckpointPhase::Final,
+                                       scaleExp2_for_deriv_choice,
+                                       numIterationsAtFind,
+                                       finalInnerStartIter,
+                                       z_coord.re,
+                                       z_coord.im,
+                                       dzdc_deriv.re,
+                                       dzdc_deriv.im,
+                                       deriv_prec,
+                                       d2r_hdr,
+                                       d2i_hdr,
+                                       diagState};
+
+        if (!resumeFinalPass) {
+            checkpointWriter.WriteAndWait(finalParams);
+        }
+
+        ProgressContext finalProgressCtx{&finalParams, &checkpointWriter, &diagState};
+
+        const uint64_t finalCompleted = EvaluateCriticalOrbitAndDerivs(backend,
+                                                                       c_coord,
+                                                                       period,
+                                                                       z_coord,
+                                                                       dzdc_deriv,
+                                                                       d2r_hdr,
+                                                                       d2i_hdr,
+                                                                       coord_prec,
+                                                                       deriv_prec,
+                                                                       finalInnerStartIter,
+                                                                       onProgress,
+                                                                       &finalProgressCtx);
+
+        if (finalCompleted < period || AbortMonitor::GetStopCalculatingGlobal()) {
+            const double zr = mpf_get_d(z_coord.re);
+            const double zi = mpf_get_d(z_coord.im);
+            diagState.z_mag2 = zr * zr + zi * zi;
+            diagState.inner_pct =
+                (period > 0) ? static_cast<double>(finalCompleted) / static_cast<double>(period) * 100.0
+                             : 0.0;
+            updateCandidateDistance();
+
+            checkpointWriter.WriteAndWait({c_coord.re,
+                                           c_coord.im,
+                                           c0_coord.re,
+                                           c0_coord.im,
+                                           sqrRadius_coord,
+                                           intrinsicRadius_mpf,
+                                           period,
+                                           coord_prec,
+                                           it,
+                                           NRCheckpointPhase::Final,
+                                           scaleExp2_for_deriv_choice,
+                                           numIterationsAtFind,
+                                           finalCompleted,
+                                           z_coord.re,
+                                           z_coord.im,
+                                           dzdc_deriv.re,
+                                           dzdc_deriv.im,
+                                           deriv_prec,
+                                           d2r_hdr,
+                                           d2i_hdr,
+                                           diagState});
+            std::cout << "RefinePeriodicPoint: aborted during final correction at innerIter "
+                      << finalCompleted << "\n";
+        } else {
             if (ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
                     step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
                 mpf_sub(c_coord.re, c_coord.re, step_coord.re);
                 mpf_sub(c_coord.im, c_coord.im, step_coord.im);
             }
+
+            // ---------------- Imagina accept/reject: stay within radius ----------------
+            mpf_complex_sub(dc, c_coord, c0_coord);
+            mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
+
+            if (mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
+                mpf_set(c_coord.re, c0_coord.re);
+                mpf_set(c_coord.im, c0_coord.im);
+                it = 0;
+            }
+            updateCandidateDistance();
+
+            // Keep checkpoint file — user can resume or re-refine later.
+            checkpointWriter.TriggerWrite(
+                std::make_unique<CheckpointSnapshot>(NRCheckpointParams{c_coord.re,
+                                                                        c_coord.im,
+                                                                        c0_coord.re,
+                                                                        c0_coord.im,
+                                                                        sqrRadius_coord,
+                                                                        intrinsicRadius_mpf,
+                                                                        period,
+                                                                        coord_prec,
+                                                                        it,
+                                                                        NRCheckpointPhase::Complete,
+                                                                        scaleExp2_for_deriv_choice,
+                                                                        numIterationsAtFind,
+                                                                        0,
+                                                                        z_coord.re,
+                                                                        z_coord.im,
+                                                                        dzdc_deriv.re,
+                                                                        dzdc_deriv.im,
+                                                                        deriv_prec,
+                                                                        d2r_hdr,
+                                                                        d2i_hdr,
+                                                                        diagState},
+                                                     0));
         }
-
-        // ---------------- Imagina accept/reject: stay within radius ----------------
-        mpf_complex_sub(dc, c_coord, c0_coord);
-        mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
-
-        // Update |c - cand|² diagnostic.
-        {
-            long dist_exp2;
-            double dist_mant = mpf_get_d_2exp(&dist_exp2, abs2_c);
-            diagState.c_cand_dist2 = HDRFloat<double>(static_cast<int32_t>(dist_exp2), dist_mant);
-            HdrReduce(diagState.c_cand_dist2);
-        }
-
-        if (mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
-            mpf_set(c_coord.re, c0_coord.re);
-            mpf_set(c_coord.im, c0_coord.im);
-            it = 0;
-        }
-
-        // Keep checkpoint file — user can resume or re-refine later.
-        checkpointWriter.TriggerWrite(std::make_unique<CheckpointSnapshot>(
-            NRCheckpointParams{
-                c_coord.re,          c_coord.im, c0_coord.re, c0_coord.im, sqrRadius_coord,
-                intrinsicRadius_mpf, period,     coord_prec,  it,          scaleExp2_for_deriv_choice,
-                numIterationsAtFind, 0,          z_coord.re,  z_coord.im,  dzdc_deriv.re,
-                dzdc_deriv.im,       deriv_prec, d2r_hdr,     d2i_hdr,     diagState},
-            0));
     }
 
     // ---------------- cleanup ----------------
@@ -1449,6 +1690,8 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(
     uint64_t numIterationsAtFind,
     NRCheckpointSavePolicy checkpointSavePolicy) const
 {
+    ValidateExistingNRCheckpointPhase();
+
     // ---- Convert inputs to MPF at coord_prec ----
     mpf_complex c;
     mpf_complex_init(c, coord_prec);

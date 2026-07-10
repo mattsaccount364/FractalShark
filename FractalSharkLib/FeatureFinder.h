@@ -23,16 +23,22 @@ struct DiagnosticState {
     HDRFloat<double> c_cand_dist2{}; // |c - cand|² — distance from seed; should shrink each NR step
 };
 
+enum class NRCheckpointPhase { Main, Final, Complete };
+
+const char *NRCheckpointPhaseName(NRCheckpointPhase phase);
+
 struct NRCheckpointData {
     uint64_t period;
     mp_bitcnt_t coord_prec;
     int scaleExp2;
     uint32_t iteration;
+    NRCheckpointPhase phase;
     HighPrecision c_re, c_im;
     HighPrecision cand_re, cand_im;
     HighPrecision sqrRadius;
     HighPrecision intrinsicRadius;
     uint64_t numIterationsAtFind;
+    uint64_t innerIteration;
     DiagnosticState diag;
 };
 

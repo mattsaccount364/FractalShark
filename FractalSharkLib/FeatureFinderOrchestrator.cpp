@@ -701,26 +701,38 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
         return false;
     }
 
+    const bool checkpointComplete = ckpt.phase == NRCheckpointPhase::Complete;
     std::cout << "Resuming NR refinement: period=" << ckpt.period << " prec(bits)=" << ckpt.coord_prec
-              << " iter=" << ckpt.iteration << std::endl;
+              << " iter=" << ckpt.iteration << " phase=" << NRCheckpointPhaseName(ckpt.phase)
+              << " innerIter=" << ckpt.innerIteration
+              << (checkpointComplete ? "; complete checkpoint uses c_* coordinates."
+                                     : "; feature seed uses cand_* coordinates.")
+              << std::endl;
 
     // Keep resumed radius invariants separate: constructor/search radius is linear,
     // candidate.sqrRadius_hp is squared for Phase B, and intrinsicRadius drives final zoom.
+    const HighPrecision &featureX = checkpointComplete ? ckpt.c_re : ckpt.cand_re;
+    const HighPrecision &featureY = checkpointComplete ? ckpt.c_im : ckpt.cand_im;
     auto fs = std::make_unique<FeatureSummary>(
-        ckpt.cand_re, ckpt.cand_im, ckpt.intrinsicRadius, FeatureFinderMode::Direct);
+        featureX, featureY, ckpt.intrinsicRadius, FeatureFinderMode::Direct);
 
     HDRFloat<double> residual2{}; // not stored in checkpoint, use default
 
-    fs->SetCandidate(ckpt.cand_re,
-                     ckpt.cand_im,
-                     (IterTypeFull)ckpt.period,
-                     residual2,
-                     ckpt.sqrRadius,
-                     ckpt.scaleExp2,
-                     ckpt.coord_prec);
+    if (!checkpointComplete) {
+        fs->SetCandidate(ckpt.cand_re,
+                         ckpt.cand_im,
+                         (IterTypeFull)ckpt.period,
+                         residual2,
+                         ckpt.sqrRadius,
+                         ckpt.scaleExp2,
+                         ckpt.coord_prec);
+    }
 
     // Set intrinsic radius so ComputeZoomFactor works correctly
-    fs->SetFound(ckpt.cand_re, ckpt.cand_im, (IterTypeFull)ckpt.period, residual2, ckpt.intrinsicRadius);
+    fs->SetFound(featureX, featureY, (IterTypeFull)ckpt.period, residual2, ckpt.intrinsicRadius);
+    if (checkpointComplete) {
+        fs->SetRefined();
+    }
     fs->SetNumIterationsAtFind(ckpt.numIterationsAtFind);
 
     // Save current iteration settings so we can restore them if NR fails/aborts.
@@ -737,8 +749,8 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
     m_FeatureSummaries.clear();
     m_FeatureSummaries.emplace_back(std::move(fs));
 
-    // ZoomToFoundFeature will call RefinePeriodicPoint_HighPrecision,
-    // which will detect the checkpoint file and resume the NR iteration.
+    // Non-complete checkpoints still refine through the checkpoint-aware NR path.
+    // Complete checkpoints have no candidate, so ZoomToFoundFeature only recenters and renders.
     auto *feature = m_FeatureSummaries.back().get();
     const HighPrecision z = feature->ComputeZoomFactor(m_Fractal.m_Ptz);
     const bool ok = ZoomToFoundFeature(*feature, &z);

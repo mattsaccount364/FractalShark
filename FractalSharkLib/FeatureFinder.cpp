@@ -595,39 +595,6 @@ struct InnerLoopCheckpointData {
     NRCheckpointPhase phase{NRCheckpointPhase::Main};
 };
 
-// Read a "label: " prefix from the stream.  Returns false if the label
-// doesn't match or the stream is in a bad state.
-static bool
-ReadLabel(std::ifstream &f, const char *expected)
-{
-    for (;;) {
-        f >> std::ws;
-        if (f.peek() != '#')
-            break;
-
-        std::string comment;
-        std::getline(f, comment);
-    }
-
-    std::string token;
-    if (!(f >> token))
-        return false;
-
-    // Token should be "expected:"
-    std::string want = std::string(expected) + ":";
-    return token == want;
-}
-
-// Read a labeled mpf field: "label: exp digits"
-static bool
-ReadLabeledMpfField(std::ifstream &f, const char *label, mp_exp_t &exp, std::string &digits)
-{
-    if (!ReadLabel(f, label))
-        return false;
-    f >> exp >> digits;
-    return f.good() || f.eof();
-}
-
 static void
 SkipCheckpointComments(std::ifstream &f)
 {
@@ -641,10 +608,83 @@ SkipCheckpointComments(std::ifstream &f)
     }
 }
 
+[[noreturn]] static void
+ThrowMissingOrMislabeledCheckpointField(const char *label)
+{
+    throw std::runtime_error("NR checkpoint missing or mislabeled required field '" +
+                             std::string(label) + "'; refusing to resume or overwrite it.");
+}
+
+[[noreturn]] static void
+ThrowInvalidCheckpointField(const char *label)
+{
+    throw std::runtime_error("NR checkpoint has invalid required value for field '" +
+                             std::string(label) + "'; refusing to resume or overwrite it.");
+}
+
+static void
+ReadRequiredLabel(std::ifstream &f, const char *expected)
+{
+    SkipCheckpointComments(f);
+
+    std::string token;
+    if (!(f >> token) || token != std::string(expected) + ":")
+        ThrowMissingOrMislabeledCheckpointField(expected);
+}
+
+template <typename Value>
+static void
+ReadRequiredField(std::ifstream &f, const char *label, Value &value)
+{
+    ReadRequiredLabel(f, label);
+    if (!(f >> value))
+        ThrowInvalidCheckpointField(label);
+}
+
+static void
+ReadRequiredMpfField(std::ifstream &f, const char *label, mp_exp_t &exp, std::string &digits)
+{
+    ReadRequiredLabel(f, label);
+    if (!(f >> exp >> digits))
+        ThrowInvalidCheckpointField(label);
+
+    size_t firstDigit = (digits.starts_with('-')) ? 1 : 0;
+    if (firstDigit == digits.size() ||
+        !std::all_of(
+            digits.begin() + firstDigit, digits.end(), [](char ch) { return ch >= '0' && ch <= '9'; })) {
+        ThrowInvalidCheckpointField(label);
+    }
+}
+
+static void
+ReadRequiredHdrField(std::ifstream &f, const char *label, HDRFloat<double> &value)
+{
+    int64_t exponent;
+    double mantissa;
+    ReadRequiredLabel(f, label);
+    if (!(f >> exponent >> mantissa) || exponent < std::numeric_limits<int32_t>::min() ||
+        exponent > std::numeric_limits<int32_t>::max() || !std::isfinite(mantissa)) {
+        ThrowInvalidCheckpointField(label);
+    }
+
+    value = HDRFloat<double>(static_cast<int32_t>(exponent), mantissa);
+}
+
+static void
+ReadRequiredDiagnosticFlag(std::ifstream &f, const char *label, bool &value)
+{
+    int intValue;
+    ReadRequiredField(f, label, intValue);
+    if (intValue != 0 && intValue != 1)
+        ThrowInvalidCheckpointField(label);
+
+    value = (intValue != 0);
+}
+
 static NRCheckpointPhase
 ReadCheckpointPhase(std::ifstream &f)
 {
-    f >> std::ws;
+    SkipCheckpointComments(f);
 
     std::string token;
     if (!(f >> token)) {
@@ -683,38 +723,71 @@ struct NRCheckpointHeader {
     NRCheckpointPhase phase;
 };
 
-static bool
-ReadNRCheckpointHeader(std::ifstream &f, NRCheckpointHeader &header)
+static NRCheckpointHeader
+ReadNRCheckpointHeader(std::ifstream &f)
 {
-    if (!ReadLabel(f, "period"))
-        return false;
-    f >> header.period;
-    if (!ReadLabel(f, "coord_prec"))
-        return false;
-    f >> header.coordPrec;
-    if (!ReadLabel(f, "scaleExp2"))
-        return false;
-    f >> header.scaleExp2;
-    if (!ReadLabel(f, "iteration"))
-        return false;
-    f >> header.iteration;
-
-    if (!f)
-        return false;
-
+    NRCheckpointHeader header{};
+    ReadRequiredField(f, "period", header.period);
+    ReadRequiredField(f, "coord_prec", header.coordPrec);
+    ReadRequiredField(f, "scaleExp2", header.scaleExp2);
+    ReadRequiredField(f, "iteration", header.iteration);
     header.phase = ReadCheckpointPhase(f);
-    return true;
+    return header;
+}
+
+static bool
+OpenExistingNRCheckpoint(std::ifstream &f)
+{
+    f.open(NRCheckpointFilename);
+    if (f)
+        return true;
+
+    if (!std::filesystem::exists(NRCheckpointFilename))
+        return false;
+
+    throw std::runtime_error(
+        "Unable to open existing NR checkpoint; refusing to resume or overwrite it.");
+}
+
+static void
+ReadOptionalCheckpointDiagnostics(std::ifstream &f, DiagnosticState &diag)
+{
+    diag = {};
+    SkipCheckpointComments(f);
+    if (f.peek() == std::ifstream::traits_type::eof())
+        return;
+
+    ReadRequiredField(f, "z_mag2", diag.z_mag2);
+    if (!std::isfinite(diag.z_mag2))
+        ThrowInvalidCheckpointField("z_mag2");
+    ReadRequiredHdrField(f, "c_cand_dist2", diag.c_cand_dist2);
+    ReadRequiredField(f, "inner_pct", diag.inner_pct);
+    if (!std::isfinite(diag.inner_pct))
+        ThrowInvalidCheckpointField("inner_pct");
+    ReadRequiredField(f, "targetExp", diag.targetExp);
+    ReadRequiredDiagnosticFlag(f, "diag_valid", diag.valid);
+
+    if (diag.valid) {
+        ReadRequiredHdrField(f, "rho2", diag.rho2);
+        ReadRequiredHdrField(f, "err", diag.err);
+        ReadRequiredHdrField(f, "step_norm", diag.step_norm);
+        ReadRequiredDiagnosticFlag(f, "wantHalley", diag.wantHalley);
+        ReadRequiredField(f, "normalized_bits", diag.normalized_bits);
+        ReadRequiredField(f, "est_remaining", diag.est_remaining);
+    }
+
+    std::string previewZoom;
+    ReadRequiredField(f, "previewZoom", previewZoom);
 }
 
 static void
 ValidateExistingNRCheckpointPhase()
 {
-    std::ifstream f(NRCheckpointFilename);
-    if (!f)
+    std::ifstream f;
+    if (!OpenExistingNRCheckpoint(f))
         return;
 
-    NRCheckpointHeader header{};
-    ReadNRCheckpointHeader(f, header);
+    ReadNRCheckpointHeader(f);
 }
 
 // Reads checkpoint with label verification on every field.
@@ -731,135 +804,69 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
                              HDRFloat<double> &out_d2i,
                              DiagnosticState &out_diag)
 {
-    std::ifstream f(NRCheckpointFilename);
-    if (!f)
+    std::ifstream f;
+    if (!OpenExistingNRCheckpoint(f))
         return false;
 
-    NRCheckpointHeader header{};
-    if (!ReadNRCheckpointHeader(f, header) || header.period != expected_period ||
-        header.coordPrec != expected_prec) {
-        return false;
-    }
-
-    inner = {};
-    inner.phase = header.phase;
+    const NRCheckpointHeader header = ReadNRCheckpointHeader(f);
 
     mp_exp_t exp_re, exp_im;
     std::string digits_re, digits_im;
-    if (!ReadLabeledMpfField(f, "c_re", exp_re, digits_re))
-        return false;
-    if (!ReadLabeledMpfField(f, "c_im", exp_im, digits_im))
-        return false;
-
-    mpf_set_str(c.re, ReconstructMpfString(digits_re, exp_re).c_str(), 10);
-    mpf_set_str(c.im, ReconstructMpfString(digits_im, exp_im).c_str(), 10);
-    out_iteration = header.iteration;
+    ReadRequiredMpfField(f, "c_re", exp_re, digits_re);
+    ReadRequiredMpfField(f, "c_im", exp_im, digits_im);
 
     // Skip candidate, radius, intrinsicRadius
     mp_exp_t skip_exp;
     std::string skip_str;
-    if (!ReadLabeledMpfField(f, "cand_re", skip_exp, skip_str))
-        return false;
-    if (!ReadLabeledMpfField(f, "cand_im", skip_exp, skip_str))
-        return false;
-    if (!ReadLabeledMpfField(f, "sqrRadius", skip_exp, skip_str))
-        return false;
-    if (!ReadLabeledMpfField(f, "intrinsicRadius", skip_exp, skip_str))
-        return false;
+    ReadRequiredMpfField(f, "cand_re", skip_exp, skip_str);
+    ReadRequiredMpfField(f, "cand_im", skip_exp, skip_str);
+    ReadRequiredMpfField(f, "sqrRadius", skip_exp, skip_str);
+    ReadRequiredMpfField(f, "intrinsicRadius", skip_exp, skip_str);
 
     uint64_t skip_numIters;
-    if (!ReadLabel(f, "numIterationsAtFind"))
-        return false;
-    f >> skip_numIters;
+    ReadRequiredField(f, "numIterationsAtFind", skip_numIters);
 
     uint64_t innerIter = 0;
-    if (!ReadLabel(f, "innerIteration"))
-        return false;
-    f >> innerIter;
-
-    if (!ReadLabel(f, "deriv_prec"))
-        return false;
-    f >> inner.deriv_prec;
+    mp_bitcnt_t derivPrec;
+    ReadRequiredField(f, "innerIteration", innerIter);
+    ReadRequiredField(f, "deriv_prec", derivPrec);
 
     mp_exp_t z_exp_re, z_exp_im, dz_exp_re, dz_exp_im;
     std::string z_d_re, z_d_im, dz_d_re, dz_d_im;
-    if (!ReadLabeledMpfField(f, "z_re", z_exp_re, z_d_re))
+    ReadRequiredMpfField(f, "z_re", z_exp_re, z_d_re);
+    ReadRequiredMpfField(f, "z_im", z_exp_im, z_d_im);
+    ReadRequiredMpfField(f, "dzdc_re", dz_exp_re, dz_d_re);
+    ReadRequiredMpfField(f, "dzdc_im", dz_exp_im, dz_d_im);
+
+    HDRFloat<double> d2r, d2i;
+    ReadRequiredHdrField(f, "d2r", d2r);
+    ReadRequiredHdrField(f, "d2i", d2i);
+
+    DiagnosticState diag;
+    ReadOptionalCheckpointDiagnostics(f, diag);
+
+    if (header.period != expected_period || header.coordPrec != expected_prec)
         return false;
-    if (!ReadLabeledMpfField(f, "z_im", z_exp_im, z_d_im))
-        return false;
-    if (!ReadLabeledMpfField(f, "dzdc_re", dz_exp_re, dz_d_re))
-        return false;
-    if (!ReadLabeledMpfField(f, "dzdc_im", dz_exp_im, dz_d_im))
-        return false;
 
-    int64_t d2r_exp, d2i_exp;
-    double d2r_mant, d2i_mant;
-    if (!ReadLabel(f, "d2r"))
-        return false;
-    f >> d2r_exp >> d2r_mant;
-    if (!ReadLabel(f, "d2i"))
-        return false;
-    f >> d2i_exp >> d2i_mant;
+    auto setMpf =
+        [](mpf_ptr destination, const std::string &digits, mp_exp_t exponent, const char *label) {
+            const std::string value = ReconstructMpfString(digits, exponent);
+            if (mpf_set_str(destination, value.c_str(), 10) != 0)
+                ThrowInvalidCheckpointField(label);
+        };
 
-    if (!f) {
-        return false;
-    }
+    setMpf(c.re, digits_re, exp_re, "c_re");
+    setMpf(c.im, digits_im, exp_im, "c_im");
+    setMpf(out_z.re, z_d_re, z_exp_re, "z_re");
+    setMpf(out_z.im, z_d_im, z_exp_im, "z_im");
+    setMpf(out_dzdc.re, dz_d_re, dz_exp_re, "dzdc_re");
+    setMpf(out_dzdc.im, dz_d_im, dz_exp_im, "dzdc_im");
 
-    inner.innerIteration = innerIter;
-
-    mpf_set_str(out_z.re, ReconstructMpfString(z_d_re, z_exp_re).c_str(), 10);
-    mpf_set_str(out_z.im, ReconstructMpfString(z_d_im, z_exp_im).c_str(), 10);
-    mpf_set_str(out_dzdc.re, ReconstructMpfString(dz_d_re, dz_exp_re).c_str(), 10);
-    mpf_set_str(out_dzdc.im, ReconstructMpfString(dz_d_im, dz_exp_im).c_str(), 10);
-    out_d2r = HDRFloat<double>(static_cast<int32_t>(d2r_exp), d2r_mant);
-    out_d2i = HDRFloat<double>(static_cast<int32_t>(d2i_exp), d2i_mant);
-
-    SkipCheckpointComments(f);
-
-    // Best-effort read of diagnostic fields (not required for resume).
-    // Checkpoints without these fields still load successfully.
-    // Do NOT zero out_diag here — preserve previous step's convergence
-    // data so abort checkpoints retain the last valid diagnostics.
-    auto readDbl = [&](const char *label, double &val) {
-        return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
-    };
-    auto readInt = [&](const char *label, int &val) {
-        return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
-    };
-    auto readHdr = [&](const char *label, HDRFloat<double> &val) {
-        int64_t exp;
-        double mant;
-        if (!ReadLabel(f, label) || !(f >> exp >> mant) || (!f.good() && !f.eof()))
-            return false;
-        val = HDRFloat<double>(static_cast<int32_t>(exp), mant);
-        return true;
-    };
-
-    if (!readDbl("z_mag2", out_diag.z_mag2))
-        return true;
-    if (!readHdr("c_cand_dist2", out_diag.c_cand_dist2))
-        return true;
-    if (!readDbl("inner_pct", out_diag.inner_pct))
-        return true;
-    if (!readInt("targetExp", out_diag.targetExp))
-        return true;
-
-    int validInt = 0;
-    if (!readInt("diag_valid", validInt))
-        return true;
-    out_diag.valid = (validInt != 0);
-
-    if (out_diag.valid) {
-        int wantHalleyInt = 0;
-        bool ok = readHdr("rho2", out_diag.rho2) && readHdr("err", out_diag.err) &&
-                  readHdr("step_norm", out_diag.step_norm) && readInt("wantHalley", wantHalleyInt) &&
-                  readInt("normalized_bits", out_diag.normalized_bits) &&
-                  readInt("est_remaining", out_diag.est_remaining);
-        if (!ok) {
-            out_diag.valid = false;
-        }
-        out_diag.wantHalley = (wantHalleyInt != 0);
-    }
+    out_iteration = header.iteration;
+    inner = {innerIter, derivPrec, header.phase};
+    out_d2r = d2r;
+    out_d2i = d2i;
+    out_diag = diag;
 
     return true;
 }
@@ -868,13 +875,11 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
 bool
 ReadFullNRCheckpoint(NRCheckpointData &out)
 {
-    std::ifstream f(NRCheckpointFilename);
-    if (!f)
+    std::ifstream f;
+    if (!OpenExistingNRCheckpoint(f))
         return false;
 
-    NRCheckpointHeader header{};
-    if (!ReadNRCheckpointHeader(f, header))
-        return false;
+    const NRCheckpointHeader header = ReadNRCheckpointHeader(f);
 
     out.period = header.period;
     out.coord_prec = header.coordPrec;
@@ -887,113 +892,46 @@ ReadFullNRCheckpoint(NRCheckpointData &out)
     mp_exp_t exp_cre, exp_cim, exp_candre, exp_candim, exp_rad, exp_ir;
     std::string d_cre, d_cim, d_candre, d_candim, d_rad, d_ir;
 
-    if (!ReadLabeledMpfField(f, "c_re", exp_cre, d_cre))
-        return false;
-    if (!ReadLabeledMpfField(f, "c_im", exp_cim, d_cim))
-        return false;
-    if (!ReadLabeledMpfField(f, "cand_re", exp_candre, d_candre))
-        return false;
-    if (!ReadLabeledMpfField(f, "cand_im", exp_candim, d_candim))
-        return false;
-    if (!ReadLabeledMpfField(f, "sqrRadius", exp_rad, d_rad))
-        return false;
-    if (!ReadLabeledMpfField(f, "intrinsicRadius", exp_ir, d_ir))
-        return false;
+    ReadRequiredMpfField(f, "c_re", exp_cre, d_cre);
+    ReadRequiredMpfField(f, "c_im", exp_cim, d_cim);
+    ReadRequiredMpfField(f, "cand_re", exp_candre, d_candre);
+    ReadRequiredMpfField(f, "cand_im", exp_candim, d_candim);
+    ReadRequiredMpfField(f, "sqrRadius", exp_rad, d_rad);
+    ReadRequiredMpfField(f, "intrinsicRadius", exp_ir, d_ir);
 
-    if (!ReadLabel(f, "numIterationsAtFind"))
-        return false;
-    f >> out.numIterationsAtFind;
+    ReadRequiredField(f, "numIterationsAtFind", out.numIterationsAtFind);
 
-    if (!f)
-        return false;
-
-    auto toHP = [&out](const std::string &digits, mp_exp_t exp) -> HighPrecision {
+    auto toHP = [&out](const std::string &digits, mp_exp_t exp, const char *label) -> HighPrecision {
         std::string s = ReconstructMpfString(digits, exp);
         HighPrecision hp{HighPrecision::SetPrecision::True, out.coord_prec};
-        mpf_set_str(hp.backend(), s.c_str(), 10);
+        if (mpf_set_str(hp.backend(), s.c_str(), 10) != 0)
+            ThrowInvalidCheckpointField(label);
         MpfNormalize(hp.backend());
         return hp;
     };
 
-    out.c_re = toHP(d_cre, exp_cre);
-    out.c_im = toHP(d_cim, exp_cim);
-    out.cand_re = toHP(d_candre, exp_candre);
-    out.cand_im = toHP(d_candim, exp_candim);
-    out.sqrRadius = toHP(d_rad, exp_rad);
-    out.intrinsicRadius = toHP(d_ir, exp_ir);
+    out.c_re = toHP(d_cre, exp_cre, "c_re");
+    out.c_im = toHP(d_cim, exp_cim, "c_im");
+    out.cand_re = toHP(d_candre, exp_candre, "cand_re");
+    out.cand_im = toHP(d_candim, exp_candim, "cand_im");
+    out.sqrRadius = toHP(d_rad, exp_rad, "sqrRadius");
+    out.intrinsicRadius = toHP(d_ir, exp_ir, "intrinsicRadius");
 
-    // Best-effort: skip innerIteration through d2i, then read diagnostics.
-    auto skipLabel = [&](const char *label) { return ReadLabel(f, label); };
-
-    // Skip innerIteration, deriv_prec, z, dzdc, d2r, d2i
-    uint64_t skipU64;
-    mp_bitcnt_t skipBitcnt;
+    mp_bitcnt_t derivPrec;
     mp_exp_t skipExp;
     std::string skipStr;
-    int64_t skipI64;
-    double skipDbl;
+    HDRFloat<double> ignoredHdr;
 
-    if (!skipLabel("innerIteration") || !(f >> skipU64))
-        return true;
-    out.innerIteration = skipU64;
-    if (!skipLabel("deriv_prec") || !(f >> skipBitcnt))
-        return true;
-    if (!ReadLabeledMpfField(f, "z_re", skipExp, skipStr))
-        return true;
-    if (!ReadLabeledMpfField(f, "z_im", skipExp, skipStr))
-        return true;
-    if (!ReadLabeledMpfField(f, "dzdc_re", skipExp, skipStr))
-        return true;
-    if (!ReadLabeledMpfField(f, "dzdc_im", skipExp, skipStr))
-        return true;
-    if (!skipLabel("d2r") || !(f >> skipI64 >> skipDbl))
-        return true;
-    if (!skipLabel("d2i") || !(f >> skipI64 >> skipDbl))
-        return true;
+    ReadRequiredField(f, "innerIteration", out.innerIteration);
+    ReadRequiredField(f, "deriv_prec", derivPrec);
+    ReadRequiredMpfField(f, "z_re", skipExp, skipStr);
+    ReadRequiredMpfField(f, "z_im", skipExp, skipStr);
+    ReadRequiredMpfField(f, "dzdc_re", skipExp, skipStr);
+    ReadRequiredMpfField(f, "dzdc_im", skipExp, skipStr);
+    ReadRequiredHdrField(f, "d2r", ignoredHdr);
+    ReadRequiredHdrField(f, "d2i", ignoredHdr);
 
-    SkipCheckpointComments(f);
-
-    // Read diagnostic fields (new format: z_mag2, inner_pct, targetExp, diag_valid, ...)
-    auto readDbl = [&](const char *label, double &val) {
-        return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
-    };
-    auto readInt = [&](const char *label, int &val) {
-        return ReadLabel(f, label) && (f >> val, f.good() || f.eof());
-    };
-    auto readHdr = [&](const char *label, HDRFloat<double> &val) {
-        int64_t exp;
-        double mant;
-        if (!ReadLabel(f, label) || !(f >> exp >> mant) || (!f.good() && !f.eof()))
-            return false;
-        val = HDRFloat<double>(static_cast<int32_t>(exp), mant);
-        return true;
-    };
-
-    if (!readDbl("z_mag2", out.diag.z_mag2))
-        return true;
-    if (!readHdr("c_cand_dist2", out.diag.c_cand_dist2))
-        return true;
-    if (!readDbl("inner_pct", out.diag.inner_pct))
-        return true;
-    if (!readInt("targetExp", out.diag.targetExp))
-        return true;
-
-    int validInt = 0;
-    if (!readInt("diag_valid", validInt))
-        return true;
-    out.diag.valid = (validInt != 0);
-
-    if (out.diag.valid) {
-        int wantHalleyInt = 0;
-        bool ok = readHdr("rho2", out.diag.rho2) && readHdr("err", out.diag.err) &&
-                  readHdr("step_norm", out.diag.step_norm) && readInt("wantHalley", wantHalleyInt) &&
-                  readInt("normalized_bits", out.diag.normalized_bits) &&
-                  readInt("est_remaining", out.diag.est_remaining);
-        if (!ok) {
-            out.diag.valid = false;
-        }
-        out.diag.wantHalley = (wantHalleyInt != 0);
-    }
+    ReadOptionalCheckpointDiagnostics(f, out.diag);
 
     return true;
 }

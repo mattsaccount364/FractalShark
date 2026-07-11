@@ -34,6 +34,19 @@ UpgradeLog*
 *.suo.old
 *.sln.old
 
+Checkpoints/*.txt
+Checkpoints/Bugged
+FractalShark/BenchmarkResults.txt
+FractalShark/nr_checkpoint.txt
+FractalShark/*.png
+Notes/FractalShark.bbl
+Notes/FractalShark.blg
+Notes/FractalShark.lof
+Notes/FractalShark.lot
+Notes/FractalShark.out
+Notes/FractalShark.toc
+Notes/__pycache__/
+Notes/plan_autozoom_movie.md
 
 ###############################################################################
 # Third-Party Libraries / Dependencies

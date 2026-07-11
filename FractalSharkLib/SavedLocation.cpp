@@ -153,7 +153,7 @@ CaptureEnteredLocation(const Fractal &fractal)
 void
 EnqueueEnteredLocation(Fractal &fractal, const EnteredLocation &location)
 {
-    HighPrecision::defaultPrecisionInBits(Fractal::MaxPrecisionLame);
+    HighPrecision::defaultPrecisionInBits(FractalLimits::MaxPrecisionLame);
     PointZoomBBConverter view{HighPrecision(location.Real),
                               HighPrecision(location.Imaginary),
                               HighPrecision(location.Zoom),

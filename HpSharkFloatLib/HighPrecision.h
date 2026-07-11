@@ -30,6 +30,11 @@ void Hex64StringToMpf_Exact(const std::string &s, mpf_t out);
 
 void MpfNormalize(mpf_t val);
 
+namespace FractalLimits {
+    static constexpr size_t MaxDigits = 4 * 1024 * 1024;
+    static constexpr size_t MaxPrecisionLame = 4'000'000;
+}
+
 template <HPDestructor Destructor> class HighPrecisionT {
 public:
     // Friend the other version of HighPrecisionT so we can copy between them.
@@ -361,9 +366,8 @@ public:
     std::string
     str() const
     {
-        constexpr size_t number_of_chars = 128 * 1024;
-        std::vector<char> temp(number_of_chars);
-        gmp_snprintf(temp.data(), number_of_chars, "%.Fe", m_Data);
+        std::vector<char> temp(FractalLimits::MaxDigits);
+        gmp_snprintf(temp.data(), FractalLimits::MaxDigits, "%.Fe", m_Data);
         std::string result(temp.data());
         return result;
     }

@@ -63,11 +63,6 @@ public:
     bool GetStopCalculating() const;
     void ResetStopCalculating();
 
-    // Kludgy.  Resets at end of function.
-    // Roughly 50000 digits of precision (50000 * 3.321)
-    // SetPrecision(166050, minX, minY, maxX, maxY);
-    static constexpr size_t MaxPrecisionLame = 500000;
-
     uint64_t GetPrecision() const;
     static uint64_t GetPrecision(const PointZoomBBConverter &ptz, bool requiresReuse);
     void SetPrecision();

@@ -8,8 +8,7 @@ ViewPresetResult GetViewPreset(
     int32_t defaultCompressionExpLow,
     int32_t defaultCompressionExpIntermediate) {
 
-    constexpr auto MaxPrecisionLame = 1000000;
-    HighPrecision::defaultPrecisionInBits(MaxPrecisionLame);
+    HighPrecision::defaultPrecisionInBits(FractalLimits::MaxPrecisionLame);
 
     ViewPresetResult result;
     result.numIterations = defaultIterations;
@@ -20,10 +19,10 @@ ViewPresetResult GetViewPreset(
     result.setLADefaultsMaxPerf = false;
     result.warningMessage = L"";
 
-    result.minX.precisionInBits(MaxPrecisionLame);
-    result.minY.precisionInBits(MaxPrecisionLame);
-    result.maxX.precisionInBits(MaxPrecisionLame);
-    result.maxY.precisionInBits(MaxPrecisionLame);
+    result.minX.precisionInBits(FractalLimits::MaxPrecisionLame);
+    result.minY.precisionInBits(FractalLimits::MaxPrecisionLame);
+    result.maxX.precisionInBits(FractalLimits::MaxPrecisionLame);
+    result.maxY.precisionInBits(FractalLimits::MaxPrecisionLame);
 
     switch (view) {
         case 1:

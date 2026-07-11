@@ -1143,17 +1143,25 @@ MainWindow::MenuLoadEnterLocation()
                 // Move the dialog box to the calculated position
                 SetWindowPos(hDlg, NULL, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 
-                // Set the text in the text boxes to the values in the strings.
-                SetDlgItemTextA(hDlg, IDC_EDIT_REAL, values->Real.c_str());
-                SetDlgItemTextA(hDlg, IDC_EDIT_IMAG, values->Imaginary.c_str());
-                SetDlgItemTextA(hDlg, IDC_EDIT_ZOOM, values->Zoom.c_str());
-                SetDlgItemTextA(hDlg, IDC_EDIT_ITERATIONS, values->ItersToString().c_str());
-
-                // Subclass the edit controls
+                // Configure the high-precision fields before assigning their potentially
+                // multi-megabyte decimal representations.
+                constexpr WPARAM maxEnterLocationTextChars = FractalLimits::MaxPrecisionLame - 1;
                 HWND hEditReal = GetDlgItem(hDlg, IDC_EDIT_REAL);
                 HWND hEditImag = GetDlgItem(hDlg, IDC_EDIT_IMAG);
                 HWND hEditZoom = GetDlgItem(hDlg, IDC_EDIT_ZOOM);
                 HWND hEditIterations = GetDlgItem(hDlg, IDC_EDIT_ITERATIONS);
+
+                SendMessageA(hEditReal, EM_SETLIMITTEXT, maxEnterLocationTextChars, 0);
+                SendMessageA(hEditImag, EM_SETLIMITTEXT, maxEnterLocationTextChars, 0);
+                SendMessageA(hEditZoom, EM_SETLIMITTEXT, maxEnterLocationTextChars, 0);
+
+                // Set the text in the text boxes to the values in the strings.
+                SetWindowTextA(hEditReal, values->Real.c_str());
+                SetWindowTextA(hEditImag, values->Imaginary.c_str());
+                SetWindowTextA(hEditZoom, values->Zoom.c_str());
+                SetWindowTextA(hEditIterations, values->ItersToString().c_str());
+
+                // Subclass the edit controls
 
                 auto OriginalEditProcReal =
                     (WNDPROC)SetWindowLongPtr(hEditReal, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);

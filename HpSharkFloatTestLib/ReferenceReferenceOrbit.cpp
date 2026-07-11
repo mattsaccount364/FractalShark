@@ -67,9 +67,9 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
     auto zImag = std::make_unique<HpSharkFloat<SharkFloatParams>>(*cImag);
 
     // Intermediate multiply results
-    auto resultX2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();   // z_real^2
-    auto result2XY = std::make_unique<HpSharkFloat<SharkFloatParams>>();  // 2 * z_real * z_imag
-    auto resultY2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();   // z_imag^2
+    auto resultX2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();  // z_real^2
+    auto result2XY = std::make_unique<HpSharkFloat<SharkFloatParams>>(); // 2 * z_real * z_imag
+    auto resultY2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();  // z_imag^2
 
     // Intermediate add results (new z values)
     auto newZReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -329,3 +329,15 @@ template void EvaluateOrbitAndDerivative<SharkParamsNR7>(
     typename SharkParamsNR7::Float *,
     typename SharkParamsNR7::Float *,
     DebugHostCombo<SharkParamsNR7> &);
+
+template void EvaluateOrbitAndDerivative<SharkParamsNR9>(
+    const HpSharkFloat<SharkParamsNR9> *,
+    const HpSharkFloat<SharkParamsNR9> *,
+    uint64_t,
+    HpSharkFloat<SharkParamsNR9> *,
+    HpSharkFloat<SharkParamsNR9> *,
+    HpSharkFloat<SharkParamsNR9> *,
+    HpSharkFloat<SharkParamsNR9> *,
+    typename SharkParamsNR9::Float *,
+    typename SharkParamsNR9::Float *,
+    DebugHostCombo<SharkParamsNR9> &);

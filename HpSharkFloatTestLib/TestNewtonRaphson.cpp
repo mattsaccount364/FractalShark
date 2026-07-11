@@ -12,6 +12,7 @@
 #include "ReferenceAdd.h"
 #include "ReferenceNTT2.h"
 #include "ReferenceReferenceOrbit.h"
+#include "ReferenceReferenceOrbit2.h"
 #include "TestTracker.h"
 
 #include <cstdint>
@@ -190,7 +191,12 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     auto hpZI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto hpDzdcR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto hpDzdcI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto hp2ZR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto hp2ZI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto hp2DzdcR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto hp2DzdcI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     DebugHostCombo<SharkFloatParams> debugHostCombo;
+    DebugHostCombo<SharkFloatParams> debugHostCombo2;
 
     // MPIR comparison temporaries
     mpf_t mpirZR, mpirZI, mpirDzdcR, mpirDzdcI;
@@ -204,6 +210,18 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     mpf_init(iterDiffZI);
     mpf_init(iterDiffDzdcR);
     mpf_init(iterDiffDzdcI);
+
+    mpf_t ref2ZR, ref2ZI, ref2DzdcR, ref2DzdcI;
+    mpf_init(ref2ZR);
+    mpf_init(ref2ZI);
+    mpf_init(ref2DzdcR);
+    mpf_init(ref2DzdcI);
+
+    mpf_t ref2DiffZR, ref2DiffZI, ref2DiffDzdcR, ref2DiffDzdcI;
+    mpf_init(ref2DiffZR);
+    mpf_init(ref2DiffZI);
+    mpf_init(ref2DiffDzdcR);
+    mpf_init(ref2DiffDzdcI);
 
     // Tolerance for per-iteration comparison
     const int singleOpMargin = 98;
@@ -226,6 +244,7 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     mpf_div_2exp(tolerance, tolerance, toleranceBits);
 
     bool allWithinTolerance = true;
+    bool ref2WithinTolerance = true;
     uint32_t hpConvergedIter = maxNewtonIters;
 
     // Per-iteration time tracking for summary table
@@ -287,13 +306,48 @@ RunNewtonRaphsonTest(TestTracker &Tests,
 
             // CPU-ref vs MPIR comparison
             mpf_sub(iterDiffZR, zR, mpirZR);
+            mpf_sub(iterDiffZI, zI, mpirZI);
             mpf_sub(iterDiffDzdcR, dzdcR, mpirDzdcR);
+            mpf_sub(iterDiffDzdcI, dzdcI, mpirDzdcI);
             char buf[256];
+            gmp_snprintf(buf, sizeof(buf), "    CPU iter %u z_real diff:    %+.6Fe", it, iterDiffZR);
+            std::cout << buf << std::endl;
+            gmp_snprintf(buf, sizeof(buf), "    CPU iter %u dzdc_real diff: %+.6Fe", it, iterDiffDzdcR);
+            std::cout << buf << std::endl;
+
+            typename SharkFloatParams::Float hp2D2r{}, hp2D2i{};
+            BenchmarkTimer cpu2Timer;
+            cpu2Timer.StartTimer();
+            EvaluateOrbitAndDerivative2<SharkFloatParams>(hpCR.get(),
+                                                          hpCI.get(),
+                                                          period,
+                                                          hp2ZR.get(),
+                                                          hp2ZI.get(),
+                                                          hp2DzdcR.get(),
+                                                          hp2DzdcI.get(),
+                                                          &hp2D2r,
+                                                          &hp2D2i,
+                                                          debugHostCombo2);
+            cpu2Timer.StopTimer();
+            const double cpu2Ms = static_cast<double>(cpu2Timer.GetDeltaInMs());
+            iterTiming.cpuRef2Ms = cpu2Ms;
+            std::cout << "    CPU-ref2 fused inner loop timeMs: " << cpu2Ms << std::endl;
+
+            hp2ZR->HpGpuToMpf(ref2ZR);
+            hp2ZI->HpGpuToMpf(ref2ZI);
+            hp2DzdcR->HpGpuToMpf(ref2DzdcR);
+            hp2DzdcI->HpGpuToMpf(ref2DzdcI);
+
+            mpf_sub(ref2DiffZR, ref2ZR, mpirZR);
+            mpf_sub(ref2DiffZI, ref2ZI, mpirZI);
+            mpf_sub(ref2DiffDzdcR, ref2DzdcR, mpirDzdcR);
+            mpf_sub(ref2DiffDzdcI, ref2DzdcI, mpirDzdcI);
+
             gmp_snprintf(
-                buf, sizeof(buf), "    CPU iter %u z_real diff:    %+.6Fe", it, iterDiffZR);
+                buf, sizeof(buf), "    CPU-ref2 iter %u z_real diff:    %+.6Fe", it, ref2DiffZR);
             std::cout << buf << std::endl;
             gmp_snprintf(
-                buf, sizeof(buf), "    CPU iter %u dzdc_real diff: %+.6Fe", it, iterDiffDzdcR);
+                buf, sizeof(buf), "    CPU-ref2 iter %u dzdc_real diff: %+.6Fe", it, ref2DiffDzdcR);
             std::cout << buf << std::endl;
         }
 
@@ -354,6 +408,15 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                 allWithinTolerance = false;
             if (!checkIterTolerance(iterDiffDzdcI, mpirDzdcI))
                 allWithinTolerance = false;
+
+            if (!checkIterTolerance(ref2DiffZR, mpirZR))
+                ref2WithinTolerance = false;
+            if (!checkIterTolerance(ref2DiffZI, mpirZI))
+                ref2WithinTolerance = false;
+            if (!checkIterTolerance(ref2DiffDzdcR, mpirDzdcR))
+                ref2WithinTolerance = false;
+            if (!checkIterTolerance(ref2DiffDzdcI, mpirDzdcI))
+                ref2WithinTolerance = false;
         }
 
         perIterTimings.push_back(iterTiming);
@@ -433,6 +496,8 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     std::cout << testName << ": MPIR converged in iters " << hpConvergedIter << std::endl;
     std::cout << testName << ": per-iteration z/dzdc tolerance "
               << (allWithinTolerance ? "PASS" : "FAIL") << std::endl;
+    std::cout << testName << ": CPU-ref2 per-iteration z/dzdc tolerance "
+              << (ref2WithinTolerance ? "PASS" : "FAIL") << std::endl;
 
     // Always print the summary table (internal — no caller table needed)
     PrintPerfSummaryTable(testName, useMT, perIterTimings, "MPIR");
@@ -460,6 +525,18 @@ RunNewtonRaphsonTest(TestTracker &Tests,
         }
     }
 
+    {
+        std::string tolName = std::string(testName) + "_Ref2PerIterTolerance";
+        char tolStr[256];
+        gmp_snprintf(tolStr, sizeof(tolStr), "2^-(exponent:%d)", toleranceBits);
+        if (ref2WithinTolerance) {
+            Tests.MarkSuccess(nullptr, testBase + 2, tolName);
+        } else {
+            Tests.MarkFailed(
+                nullptr, testBase + 2, tolName, "per-iteration diff exceeded tolerance", tolStr);
+        }
+    }
+
     // Cleanup
     mpf_clear(cR);
     mpf_clear(cI);
@@ -481,6 +558,14 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     mpf_clear(iterDiffZI);
     mpf_clear(iterDiffDzdcR);
     mpf_clear(iterDiffDzdcI);
+    mpf_clear(ref2ZR);
+    mpf_clear(ref2ZI);
+    mpf_clear(ref2DzdcR);
+    mpf_clear(ref2DzdcI);
+    mpf_clear(ref2DiffZR);
+    mpf_clear(ref2DiffZI);
+    mpf_clear(ref2DiffDzdcR);
+    mpf_clear(ref2DiffDzdcI);
     mpf_clear(tolerance);
     mpf_clear(absDiff);
     mpf_clear(absRef);

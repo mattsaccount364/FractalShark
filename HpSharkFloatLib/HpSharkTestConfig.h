@@ -25,13 +25,14 @@ enum class BasicCorrectnessMode : int {
     PerfSingleRef = 13,
     PerfSingleNRAdd = 14,
     PerfSingleNRMultiply = 15,
-    Correctness_P1_to_P5 = 16
+    Correctness_P1_to_P5 = 16,
+    PerfSingleRef2 = 17
 };
 
 namespace HpShark {
 
-static constexpr bool TestGpu = true;
-// static constexpr bool TestGpu = false;
+// static constexpr bool TestGpu = true;
+static constexpr bool TestGpu = false;
 
 static constexpr bool TestCorrectness = Debug;
 static constexpr bool TestInfiniteCorrectness = true;

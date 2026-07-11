@@ -50,10 +50,14 @@
     <ClInclude Include="ReferenceAdd.h" />
     <ClInclude Include="ReferenceNTT2.h" />
     <ClInclude Include="ReferenceReferenceOrbit.h" />
+    <ClInclude Include="ReferenceReferenceOrbit2.h" />
     <ClInclude Include="ShowMostEfficientSizes.h" />
     <ClInclude Include="TestNewtonRaphson.h" />
     <ClInclude Include="Tests.h" />
     <ClInclude Include="TestTracker.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="ReferenceOrbit2GpuStub.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Conversion.cpp" />
@@ -66,6 +70,7 @@
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceNTT2.cpp" />
     <ClCompile Include="ReferenceReferenceOrbit.cpp" />
+    <ClCompile Include="ReferenceReferenceOrbit2.cpp" />
     <ClCompile Include="ShowMostEfficientSizes.cpp" />
     <ClCompile Include="TestNewtonRaphson.cpp" />
     <ClCompile Include="Tests.cpp" />

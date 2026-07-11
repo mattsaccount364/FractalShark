@@ -8,7 +8,12 @@ enum class Operator {
     Add,
     MultiplyNTT,
     ReferenceOrbit,
+    ReferenceOrbit2,
 };
+
+template <Operator sharkOperator>
+inline constexpr bool IsReferenceOrbitOperator =
+    sharkOperator == Operator::ReferenceOrbit || sharkOperator == Operator::ReferenceOrbit2;
 
 template <Operator sharkOperator>
 const char *
@@ -20,6 +25,8 @@ OperatorToString()
         return "Operator::MultiplyNTT";
     } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
         return "Operator::ReferenceOrbit";
+    } else if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
+        return "Operator::ReferenceOrbit2";
     } else {
         return "Unknown";
     }

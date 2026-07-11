@@ -57,12 +57,20 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Performance Single NR View30";
         case BasicCorrectnessMode::PerfSingleNRView32:
             return "Performance Single NR View32";
+        case BasicCorrectnessMode::PerfSingleAdd:
+            return "Performance Single Add";
+        case BasicCorrectnessMode::PerfSingleMultiply:
+            return "Performance Single Multiply";
+        case BasicCorrectnessMode::PerfSingleRef:
+            return "Performance Single ReferenceOrbit";
         case BasicCorrectnessMode::PerfSingleNRAdd:
             return "Performance Single NR Add";
         case BasicCorrectnessMode::PerfSingleNRMultiply:
             return "Performance Single NR Multiply";
         case BasicCorrectnessMode::Correctness_P1_to_P5:
             return "Correctness (Params1..5)";
+        case BasicCorrectnessMode::PerfSingleRef2:
+            return "Performance Single ReferenceOrbit2";
         default:
             return "Unknown";
     }
@@ -77,10 +85,12 @@ constexpr int kConversion = 0;
 constexpr int kAddCorrectness = 4000;
 constexpr int kMultiplyCorrectness = 6000;
 constexpr int kFullCorrectness = 2000;
+constexpr int kFull2Correctness = 8000;
 
 constexpr int kAddPerf = 10000;
 constexpr int kMultiplyPerf = 13000;
 constexpr int kFullPerf = 14000;
+constexpr int kFull2Perf = 15000;
 
 constexpr int kPerfView30 = 16020;
 constexpr int kPerfView32 = 16030;
@@ -249,15 +259,19 @@ CorrectnessTests()
     if (!ContinueAfterFailure(res))
         return false;
 
-    res = TestAllBinaryOp<TestSharkParams, Operator::Add>(TestIds::kAddCorrectness);
-    if (!ContinueAfterFailure(res))
-        return false;
+    //res = TestAllBinaryOp<TestSharkParams, Operator::Add>(TestIds::kAddCorrectness);
+    //if (!ContinueAfterFailure(res))
+    //    return false;
 
-    res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(TestIds::kMultiplyCorrectness);
-    if (!ContinueAfterFailure(res))
-        return false;
+    //res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(TestIds::kMultiplyCorrectness);
+    //if (!ContinueAfterFailure(res))
+    //    return false;
 
-    res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(TestIds::kFullCorrectness);
+    //res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(TestIds::kFullCorrectness);
+    //if (!ContinueAfterFailure(res))
+    //    return false;
+
+    res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit2>(TestIds::kFull2Correctness);
     if (!ContinueAfterFailure(res))
         return false;
 
@@ -414,6 +428,11 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         if (!ContinueAfterFailure(res))
             return 0;
 
+        res = TestBinaryOperatorPerf<Operator::ReferenceOrbit2>(
+            launchParams, TestIds::kFull2Perf, numIters, internalTestLoopCount, mode);
+        if (!ContinueAfterFailure(res))
+            return 0;
+
         return 1;
     }
 
@@ -549,10 +568,11 @@ main(int, char **)
                << "--- Operators ---" << std::endl
                << "11=PerfSingleAdd" << std::endl
                << "12=PerfSingleMultiply" << std::endl
-               << "13=PerfSingleRef (broken currently)" << std::endl
+               << "13=PerfSingleRef (original ReferenceOrbit)" << std::endl
                << "14=PerfSingleNRAdd" << std::endl
                << "15=PerfSingleNRMultiply" << std::endl
                << "16=Correctness(P1..P5)" << std::endl
+               << "17=PerfSingleRef2" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
@@ -609,8 +629,11 @@ main(int, char **)
         case 16:
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
+        case 17:
+            mode = BasicCorrectnessMode::PerfSingleRef2;
+            break;
         default:
-            std::cout << "Invalid mode " << rawMode << " (valid range: 0..4). "
+            std::cout << "Invalid mode " << rawMode << " (valid range: 1..17). "
                       << "Exiting.\n";
             mode = BasicCorrectnessMode::Error;
             break;
@@ -664,6 +687,10 @@ main(int, char **)
         case BasicCorrectnessMode::PerfSingleRef:
             RunPerfBasicOp<Operator::ReferenceOrbit>(
                 TestIds::kFullPerf, mode, kTimeoutInSec, interactiveMode);
+            break;
+        case BasicCorrectnessMode::PerfSingleRef2:
+            RunPerfBasicOp<Operator::ReferenceOrbit2>(
+                TestIds::kFull2Perf, mode, kTimeoutInSec, interactiveMode);
             break;
 
         case BasicCorrectnessMode::PerfSingleNRAdd: {

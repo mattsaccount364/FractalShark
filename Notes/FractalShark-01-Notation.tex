@@ -29,6 +29,14 @@ $n_{\text{smooth}}$ & smooth (fractional) iteration count
              & $n_{\text{smooth}} = n - \log_2\!\log_2|z_n| + \mathrm{const}$;\;
                continuous coloring \\
 $N$          & limb count (multi-precision)  & \\
+$D$          & number of 32-bit \code{HpSharkFloat} limbs
+             & used in the fused NTT schedule; $D=N$ in that schedule \\
+$L$          & number of packed base-$2^b$ coefficients
+             & $L=\lceil 32D/b\rceil$ \\
+$M$          & power-of-two NTT length in the fused schedule
+             & $M\ge 2L$ \\
+$b$          & packed NTT coefficient width in bits
+             & $b=16$ for \code{ReferenceReference\-Orbit2} \\
 \hline
 \end{tabularx}
 \end{table}

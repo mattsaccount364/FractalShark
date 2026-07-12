@@ -146,6 +146,7 @@ struct GenericSharkFloatParams {
 
     static constexpr SharkNTT::PlanPrime NTTPlan =
         SharkNTT::BuildPlanPrime(GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
+    static constexpr SharkNTT::PlanPrime NTTPlan2 = SharkNTT::BuildPlanPrime2(GlobalNumUint32);
 
     using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
 };

@@ -137,19 +137,19 @@ PrintPlateauTable(const std::vector<Plateau> &plateaus)
 {
     std::cout << std::fixed << std::setprecision(3);
 
-    std::cout << "Idx  n32_min–n32_max   bits_min–bits_max     "
-                 "b    N     L_min-L_max   overhead_start-->end\n";
+    std::cout << "Idx  n32_min-n32_max   bits_min-bits_max     "
+                 "b    N     L_min-L_max   overhead_start->end\n";
 
     int idx = 0;
     for (const auto &p : plateaus) {
         double ov_start = overhead(p.N, p.L_min);
         double ov_end = overhead(p.N, p.L_max);
 
-        std::cout << std::setw(3) << idx++ << "  " << std::setw(6) << p.n32_min << "–" << std::setw(6)
-                  << p.n32_max << "   " << std::setw(8) << p.bits_min << "–" << std::setw(8)
+        std::cout << std::setw(3) << idx++ << "  " << std::setw(6) << p.n32_min << "-" << std::setw(6)
+                  << p.n32_max << "   " << std::setw(8) << p.bits_min << "-" << std::setw(8)
                   << p.bits_max << "   " << std::setw(2) << p.b << "  " << std::setw(6) << p.N << "   "
-                  << std::setw(6) << p.L_min << "–" << std::setw(6) << p.L_max << "   " << ov_start
-                  << "-->" << ov_end << "\n";
+                  << std::setw(6) << p.L_min << "-" << std::setw(6) << p.L_max << "   " << ov_start
+                  << "->" << ov_end << "\n";
     }
 }
 

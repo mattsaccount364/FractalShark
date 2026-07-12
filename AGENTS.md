@@ -87,7 +87,13 @@ diagnostics and reserve `OutputDebugStringA` for heap or panic paths.
 Preserve each edited text file's existing line-ending convention and avoid mixed endings. Files marked
 `eol=lf` in `.gitattributes`, including shell scripts, must remain LF-only. All tracked C++/CUDA
 source and header files ending in `.cpp`, `.h`, `.cu`, `.cuh`, `.cc`, `.hh`, or `.hpp` must be CRLF in
-the Windows working tree. After editing those files, verify with:
+the Windows working tree. After editing those files, run the normalizer from the repository root:
+
+```powershell
+python3 normalize_cpp_line_endings.py
+```
+
+Then verify with:
 
 ```powershell
 git ls-files --eol -- '*.cpp' '*.h' '*.cu' '*.cuh' '*.cc' '*.hh' '*.hpp'
@@ -127,8 +133,9 @@ rendering path: `CalcFractal(true)` followed by `SaveCurrentFractal`.
 
 ## Notes And Generated Files
 
-The LaTeX master is `Notes/FractalShark.tex`. Run `pdflatex -interaction=nonstopmode -halt-on-error`
-twice for cross-references; use another `-jobname` if the normal PDF is locked. Main and engineering
+The LaTeX master is `Notes/FractalShark.tex`. To build `Notes/FractalShark.pdf`, run
+`build.ps1` from the `Notes` directory; the script performs the required LaTeX and bibliography
+passes and opens the resulting PDF. Use another `-jobname` only if the normal PDF is locked. Main and engineering
 prose uses formal third-person American English; user documentation and development history may be
 informal. Avoid sensationalized language and bare `This` followed by a verb. Use pure TikZ figures,
 `\caption[short]{long}`, `\cref{}` for cross-references, `\eqref{}` where appropriate, `\code{}` for

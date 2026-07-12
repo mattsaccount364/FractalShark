@@ -48,6 +48,14 @@ CeilLog2U32(uint32_t x)
 }
 
 constexpr PlanPrime
+BuildPlanPrime2(int n32)
+{
+    constexpr int b = 16;
+    const uint64_t totalBits = static_cast<uint64_t>(n32) * 32ull;
+    return {n32, b, static_cast<int>(CeilDivU32(static_cast<uint32_t>(totalBits), b)), 0, 0, true};
+}
+
+constexpr PlanPrime
 BuildPlanPrime(int n32, int b_hint, int margin)
 {
     PlanPrime plan{};

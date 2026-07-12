@@ -1058,6 +1058,147 @@ final \code{HpSharkFloat} component.  The exponent alignment in
 essential because the product and linear terms need not share a common binary
 exponent before they are accumulated.
 
+\subsubsection{Formal Operation Schedule}
+\label{subsec:fused-ntt-operation-schedule}
+
+For this schedule, let $D$ be the number of 32-bit significand limbs, let
+$b=16$ be the packed coefficient width, let $L=\lceil32D/b\rceil$, and let
+$M$ be the power-of-two transform length.  The fixed plan satisfies
+$M\ge2L$ and, because it is the next power of two, $M=\Theta(D)$.  Thus
+$\mathcal{O}(M)=\mathcal{O}(D)$ and
+$\mathcal{O}(M\log M)=\mathcal{O}(D\log D)$.  This notation deliberately
+reserves $M$ for the transform length:
+$N$ already denotes the generic multi-precision limb count in
+\cref{sec:notation}.  A nonnegative significand is packed as
+\begin{equation}
+  q=\sum_{j=0}^{L-1}q_j2^{bj},
+  \qquad 0\le q_j<2^b.
+  \label{eq:fused-ntt-coefficient-packing}
+\end{equation}
+Let $\mathcal{T}_M$ denote the complete packed, twisted, Montgomery-domain
+forward NTT, and let $\mathcal{T}_M^{-1}$ include the inverse NTT, untwisting,
+inverse-length scaling, and conversion out of Montgomery form.  For a spectrum
+$Q$, define the exponent-alignment map
+\begin{equation}
+  \left(\mathcal{S}_sQ\right)_k
+  =2^{s\bmod b}\psi^{\lfloor s/b\rfloor(2k+1)}Q_k\pmod p,
+  \qquad 0\le k<M.
+  \label{eq:fused-ntt-spectrum-shift}
+\end{equation}
+It applies a whole-coefficient shift through the twist factor and a remaining
+bit shift through the power of two.  The implementation realizes
+\eqref{eq:fused-ntt-spectrum-shift} with two Montgomery multiplications per
+frequency index.  The shift $s$ includes the binary factor in $2x_ny_n$.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+  fused stage/.style={draw, rounded corners, align=center, inner sep=5pt,
+                      font=\small},
+  fused arrow/.style={-{Stealth[length=2mm]}, thick},
+  node distance=6mm]
+  \node[fused stage] (forward) {
+    $\begin{gathered}
+      X=\mathcal{T}_M(x_n),\quad Y=\mathcal{T}_M(y_n),\\
+      A=\mathcal{T}_M(a),\quad B=\mathcal{T}_M(b)
+    \end{gathered}$\\[-1mm]
+    four forward NTTs; $\mathcal{O}(M\log M)$};
+
+  \node[fused stage, below=of forward] (products) {
+    $\begin{gathered}
+      P_{xx,k}=X_k\otimes X_k,\\
+      P_{yy,k}=Y_k\otimes Y_k,\\
+      P_{xy,k}=X_k\otimes Y_k
+    \end{gathered}$\\[-1mm]
+    three pointwise Montgomery products; $\mathcal{O}(M)$};
+
+  \node[fused stage, below=of products] (accumulate) {
+    $\begin{gathered}
+      \text{Real:}\quad
+      \begin{aligned}
+        R_k^{[0]}&=0,&
+        R_k^{[1]}&=R_k^{[0]}\oplus\mathcal{S}_{s_{xx}}P_{xx,k},\\
+        R_k^{[2]}&=R_k^{[1]}\ominus\mathcal{S}_{s_{yy}}P_{yy,k},&
+        R_k^{[3]}&=R_k^{[2]}\oplus\mathcal{S}_{s_a}A_k;
+      \end{aligned}\\[1mm]
+      \text{Imaginary:}\quad
+      \begin{aligned}
+        I_k^{[0]}&=0,&
+        I_k^{[1]}&=I_k^{[0]}\oplus\mathcal{S}_{s_{2xy}}P_{xy,k},\\
+        I_k^{[2]}&=I_k^{[1]}\oplus\mathcal{S}_{s_b}B_k.
+      \end{aligned}
+    \end{gathered}$\\[-1mm]
+    five independent spectrum insertions; $\mathcal{O}(M)$};
+
+  \node[fused stage, below=of accumulate] (inverse) {
+    $\begin{gathered}
+      r=\mathcal{T}_M^{-1}(R^{[3]}),\\
+      i=\mathcal{T}_M^{-1}(I^{[2]})
+    \end{gathered}$\\[-1mm]
+    two inverse NTTs; $\mathcal{O}(M\log M)$};
+
+  \node[fused stage, below=of inverse] (finalize) {
+    $\begin{aligned}
+      x_{n+1}&=\operatorname{Normalize}_{2^{32}}
+        \!\left(\operatorname{Carry}_{2^{32}}
+        \!\left(\operatorname{Unpack}_{b\mathbin{\to}32}(r)\right)\right),\\
+      y_{n+1}&=\operatorname{Normalize}_{2^{32}}
+        \!\left(\operatorname{Carry}_{2^{32}}
+        \!\left(\operatorname{Unpack}_{b\mathbin{\to}32}(i)\right)\right)
+    \end{aligned}$\\[-1mm]
+    two signed carry/normalization streams; $\mathcal{O}(D)$};
+
+  \draw[fused arrow] (forward) -- (products);
+  \draw[fused arrow] (products) -- (accumulate);
+  \draw[fused arrow] (accumulate) -- (inverse);
+  \draw[fused arrow] (inverse) -- (finalize);
+\end{tikzpicture}
+\caption[Fused NTT orbit operation schedule]{Formal Ref2 orbit-only operation
+schedule.  $\otimes$, $\oplus$, and $\ominus$ denote Montgomery multiplication,
+addition, and subtraction in $\mathbb{Z}_p$, respectively.  Each occurrence of
+$\mathcal{S}$ is one exponent-aligned spectrum insertion.  The real and
+imaginary recurrence components remain separate until their independently
+finalized high-precision values form $z_{n+1}=x_{n+1}+i\,y_{n+1}$.}
+\label{fig:fused-ntt-reference-operation-schedule}
+\end{figure}
+
+\Cref{fig:fused-ntt-reference-operation-schedule} is an operation schedule,
+not an algebraic approximation.  The three product spectra and all five linear
+spectrum insertions are exact field operations when the range condition in
+\cref{subsec:fused-ntt-range} holds.  The four transforms are performed for
+every iteration in the present CPU prototype, including the transforms of the
+constant components $a$ and $b$.
+
+With the first Newton--Raphson derivative, write
+$u_n=d_{x,n}$ and $v_n=d_{y,n}$, and form
+\begin{equation}
+  U=\mathcal{T}_M(u_n),\qquad V=\mathcal{T}_M(v_n),\qquad E=\mathcal{T}_M(1).
+  \label{eq:fused-ntt-derivative-forward}
+\end{equation}
+The two derivative components are accumulated by the same mathematical
+schedule:
+\begin{align}
+  D_{x,k}^{[0]} &= 0, \notag\\
+  D_{x,k}^{[1]} &= D_{x,k}^{[0]}\oplus\mathcal{S}_{s_{2xu}}(X_k\otimes U_k), \notag\\
+  D_{x,k}^{[2]} &= D_{x,k}^{[1]}\ominus\mathcal{S}_{s_{2yv}}(Y_k\otimes V_k), \notag\\
+  D_{x,k}^{[3]} &= D_{x,k}^{[2]}\oplus\mathcal{S}_{s_1}E_k, &
+  d_{x,n+1} &=
+    \operatorname{Finalize}\!\left(\mathcal{T}_M^{-1}(D_x^{[3]})\right).
+  \label{eq:fused-ntt-derivative-real-schedule}
+\end{align}
+\begin{align}
+  D_{y,k}^{[0]} &= 0, \notag\\
+  D_{y,k}^{[1]} &= D_{y,k}^{[0]}\oplus\mathcal{S}_{s_{2yu}}(Y_k\otimes U_k), \notag\\
+  D_{y,k}^{[2]} &= D_{y,k}^{[1]}\oplus\mathcal{S}_{s_{2xv}}(X_k\otimes V_k), &
+  d_{y,n+1} &=
+    \operatorname{Finalize}\!\left(\mathcal{T}_M^{-1}(D_y^{[2]})\right).
+  \label{eq:fused-ntt-derivative-imag-schedule}
+\end{align}
+Here $\operatorname{Finalize}$ denotes the unpack, signed carry propagation,
+and normalization displayed in \cref{fig:fused-ntt-reference-operation-schedule}.
+Thus, the derivative extension adds three forward NTTs, four pointwise products,
+five spectrum insertions, two inverse NTTs, and two carry/normalization streams.
+
 \subsubsection{Why Fusion Does Not Eliminate the Final Carry}
 \label{subsec:fused-ntt-carry}
 
@@ -1080,20 +1221,106 @@ exponent.  Thus, Ref2 does not eliminate carry propagation; it performs exactly
 one final carry/normalization pass for each completed output component, after
 every product and linear term for that component has already been combined.
 
+\subsubsection{Numeric Domains, Word Widths, and Exactness Bounds}
+\label{subsec:fused-ntt-range}
+
+The schedule crosses three deliberately different numeric domains.  First,
+the final significand is represented by $D$ positional base-$2^{32}$ limbs.
+These limbs require carry and borrow propagation only in the two
+$\operatorname{Finalize}$ operations shown in
+\cref{fig:fused-ntt-reference-operation-schedule}.  Second, every NTT value
+is a canonical 64-bit residue in the field
+\begin{equation}
+  \mathbb{Z}_p,\qquad
+  p=2^{64}-2^{32}+1.
+  \label{eq:fused-ntt-prime-field}
+\end{equation}
+Third, a field multiplication uses a full 64-by-64-to-128-bit intermediate
+before Montgomery reduction.  A 64-bit product truncated before that reduction
+would be incorrect; the host and CUDA Montgomery implementations therefore
+explicitly retain the high half of each product and the carry from the ensuing
+128-bit addition.
+
+The 64-bit wrap in a field addition is intentional.  For canonical residues
+$0\le u,v<p$, \code{AddP} first evaluates
+\begin{equation}
+  s=(u+v)\bmod2^{64}.
+  \label{eq:fused-ntt-word-add}
+\end{equation}
+If $u+v<2^{64}$, the usual conditional subtraction of $p$ reduces $s$ when
+needed.  If $u+v\ge2^{64}$, the detected word carry means that unsigned
+evaluation of $s-p$ gives
+\begin{equation}
+  s-p\bmod2^{64}=u+v-p,
+  \label{eq:fused-ntt-word-add-overflow}
+\end{equation}
+which is the canonical residue because $u+v<2p$.  The analogous unsigned
+wrap in \code{SubP} implements $u-v\pmod p$.  Neither operation is a
+base-$2^{32}$ limb carry, and neither loses field information.
+
+The more important bound concerns recovery of an ordinary signed integer
+coefficient after the inverse NTT.  Let $B=2^b$, let $r_t=s_t\bmod b$, and
+let $\mathcal{P}$ and $\mathcal{L}$ be the product and linear terms,
+respectively, that contribute to one completed component.  Before reduction
+modulo $p$, the magnitude of every packed coefficient is bounded by
+\begin{equation}
+  \left|w_j\right|
+  \le B_{\mathrm{component}}
+  =\sum_{t\in\mathcal{P}}2^{r_t}L(B-1)^2
+   +\sum_{t\in\mathcal{L}}2^{r_t}(B-1).
+  \label{eq:fused-ntt-component-bound}
+\end{equation}
+The whole-coefficient part $\lfloor s_t/b\rfloor$ changes the location of a
+term but not the coefficient magnitude; only $r_t$ scales a coefficient.
+For example, the real orbit component has two product terms and one linear
+term, while the imaginary component has one product term, whose $s_{2xy}$
+already includes the factor~2, and one linear term.
+
+Signed unpacking interprets residues above $(p-1)/2$ as negative.  Therefore
+the sufficient no-aliasing condition is
+\begin{equation}
+  B_{\mathrm{component}} < \frac{p-1}{2}
+  = 2^{63}-2^{31}.
+  \label{eq:fused-ntt-no-alias-bound}
+\end{equation}
+Under \eqref{eq:fused-ntt-no-alias-bound}, reduction modulo $p$ is injective
+on every possible signed coefficient in the schedule, so inverse-transform
+residues reconstruct the intended signed limbs.  If the bound is violated,
+the NTT and Montgomery arithmetic can remain perfectly valid while two
+different integer coefficients share one field residue; signed unpacking would
+then recover an aliased value.  Such aliasing is a semantic range failure, not
+a native 64-bit or 128-bit overflow.
+
+The plan builder enforces the ordinary single-product headroom condition
+\begin{equation}
+  2b+\log_2M\le64,
+  \label{eq:fused-ntt-plan-headroom}
+\end{equation}
+and Ref2 additionally asserts a no-wrap transform length $M\ge2L$ for the
+linearly shifted $c$ term.  Those conditions prevent cyclic convolution and
+bound an unshifted product, but they alone do not prove
+\eqref{eq:fused-ntt-no-alias-bound} for a sum of exponent-aligned terms.  The
+prototype restricts product alignment to fewer than 16 bits and the linear
+term to one mantissa width plus or minus those 16 bits.  Exactness consequently
+depends on evaluating \eqref{eq:fused-ntt-component-bound} for the permitted
+term shifts and chosen plan.  The bound is a required implementation invariant;
+modular field arithmetic by itself cannot establish it.
+
 \begin{table}[!htbp]
 \centering
 \caption[Reference-orbit operation schedule]{Per-iteration operation counts.
-$P$ counts high-precision NTT convolution products, $A$ counts mathematical
-binary add/subtract combinations, and $C$ counts logical base-$2^{32}$
-carry-propagation and normalization streams.  NTT butterfly additions are
-modular field operations and are excluded from $C$.}
+$F$ and $I$ count forward and inverse NTTs, $P$ counts pointwise
+high-precision products, $S$ counts exponent-aligned spectrum insertions, and
+$A$ counts mathematical binary add/subtract combinations.  $C$ counts logical
+base-$2^{32}$ carry-propagation and normalization streams.  NTT butterfly and
+spectrum additions are modular field operations and are excluded from $C$.}
 \label{tab:fused-reference-operation-counts}
-\begin{tabular}{lrrrr}
+\begin{tabular}{lrrrrrrr}
 \hline
-\textbf{Workload} & $P$ & $A$ & $C_{\mathrm{Ref1}}$ & $C_{\mathrm{Ref2}}$ \\
+\textbf{Workload} & $F$ & $P$ & $S$ & $I$ & $A$ & $C_{\mathrm{Ref1}}$ & $C_{\mathrm{Ref2}}$ \\
 \hline
-Orbit only & 3 & 3 & 6 & 2 \\
-Orbit plus first derivative & 7 & 6 & 13 & 4 \\
+Orbit only & 4 & 3 & 5 & 2 & 3 & 6 & 2 \\
+Orbit plus first derivative & 7 & 7 & 10 & 4 & 6 & 13 & 4 \\
 \hline
 \end{tabular}
 \end{table}
@@ -1109,7 +1336,7 @@ remaining insertions perform the three nontrivial add/subtract combinations.
 
 Each insertion still has a cost.  \code{AddShiftedSpectrum} applies the
 exponent shift and sign by modular scaling and a modular field addition or
-subtraction at every frequency index.  That work is $O(N)$ and is not free.
+subtraction at every frequency index.  That work is $O(M)=O(D)$ and is not free.
 It has no cross-limb carry dependency, however, and it neither materializes an
 intermediate \code{HpSharkFloat} nor invokes the separate high-precision
 \code{AddHelper} pipeline.  The orbit-only schedule consequently replaces the

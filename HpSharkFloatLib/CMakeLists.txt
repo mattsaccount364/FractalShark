@@ -10,6 +10,9 @@ set(HPSHARK_GENERATED_CU_FILES
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_P.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_NR.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_Dbl.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference2_P.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference2_NR.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference2_Dbl.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_MultiplyNTT_P.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_MultiplyNTT_NR.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_MultiplyNTT_Dbl.cu

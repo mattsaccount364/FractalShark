@@ -32,7 +32,7 @@ enum class BasicCorrectnessMode : int {
 namespace HpShark {
 
 // static constexpr bool TestGpu = true;
-static constexpr bool TestGpu = false;
+static constexpr bool TestGpu = true;
 
 static constexpr bool TestCorrectness = Debug;
 static constexpr bool TestInfiniteCorrectness = true;
@@ -41,7 +41,7 @@ static constexpr bool TestMPIRImpl = true; // Debug;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
 // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool TestReferenceImpl = Debug;
+static constexpr bool TestReferenceImpl = true;
 
 } // namespace HpShark
 

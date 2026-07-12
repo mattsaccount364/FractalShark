@@ -212,6 +212,48 @@ ResolveCommonExponent(int32_t &commonExpOut,
     return !any;
 }
 
+template <class SharkFloatParams, class... Terms>
+static void
+AssertFixedPlanAlignment(int32_t commonExp,
+                         const FusedTerm<SharkFloatParams> &first,
+                         const Terms &...terms)
+{
+    constexpr uint64_t MantissaBits = static_cast<uint64_t>(SharkFloatParams::GlobalNumUint32) * 32ull;
+    constexpr uint64_t MaxRelativeAlignmentBits = 16;
+
+    bool hasProduct = false;
+    const auto assertProductAlignment = [&](const FusedTerm<SharkFloatParams> &term) {
+        if (term.IsZero || term.Kind != TermKind::Product)
+            return;
+
+        assert(term.Exponent >= commonExp);
+        const auto shiftBits =
+            static_cast<uint64_t>(static_cast<int64_t>(term.Exponent) - static_cast<int64_t>(commonExp));
+        assert(shiftBits < MaxRelativeAlignmentBits);
+        hasProduct = true;
+    };
+
+    assertProductAlignment(first);
+    (assertProductAlignment(terms), ...);
+
+    if (!hasProduct)
+        return;
+
+    const auto assertLinearAlignment = [&](const FusedTerm<SharkFloatParams> &term) {
+        if (term.IsZero || term.Kind != TermKind::Linear)
+            return;
+
+        assert(term.Exponent >= commonExp);
+        const auto shiftBits =
+            static_cast<uint64_t>(static_cast<int64_t>(term.Exponent) - static_cast<int64_t>(commonExp));
+        assert(shiftBits >= MantissaBits - MaxRelativeAlignmentBits);
+        assert(shiftBits <= MantissaBits + MaxRelativeAlignmentBits);
+    };
+
+    assertLinearAlignment(first);
+    (assertLinearAlignment(terms), ...);
+}
+
 template <class SharkFloatParams>
 static uint64_t
 ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &x, int64_t q, int b)
@@ -436,7 +478,7 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
                          FusedSpectra<PlanN, EnableDerivative> &spectra,
                          bool isZero,
                          int32_t commonExp,
-                         uint64_t (&dest)[PlanN],
+                         uint64_t *dest,
                          const FusedTerm<SharkFloatParams> &first,
                          const Terms &...terms)
 {
@@ -478,7 +520,7 @@ template <class SharkFloatParams, uint32_t PlanN, uint32_t CoefficientCount, uin
 static void
 UnpackResiduesToSignedLimbs(const uint64_t *normalResidues,
                             const SharkNTT::PlanPrime &plan,
-                            int64_t (&limbs)[Ddigits])
+                            int64_t *limbs)
 {
     assert(static_cast<uint32_t>(plan.N) == PlanN);
     std::fill_n(limbs, Ddigits, int64_t{0});
@@ -520,8 +562,8 @@ static void
 InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
                              const SharkNTT::PlanPrime &plan,
                              SharkNTT::RootTables &roots,
-                             uint64_t (&spectrum)[PlanN],
-                             int64_t (&limbs)[Ddigits])
+                             uint64_t *spectrum,
+                             int64_t *limbs)
 {
     assert(static_cast<uint32_t>(plan.N) == PlanN);
     BitReverseInplace64(spectrum, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages));
@@ -541,7 +583,7 @@ InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
 template <class SharkFloatParams, uint32_t Ddigits, uint32_t MagnitudeCapacity>
 static void
 PropagateSignedLimbsToMagnitude(const int64_t *limbs,
-                                uint32_t (&magnitude)[MagnitudeCapacity],
+                                uint32_t *magnitude,
                                 uint32_t &magnitudeLength,
                                 bool &negative)
 {
@@ -646,13 +688,13 @@ template <class SharkFloatParams, uint32_t Ddigits>
 static void
 FinalizeSignedStream(const FinalizationStream<SharkFloatParams, Ddigits> &stream)
 {
-    uint32_t magnitude[Ddigits + 2];
+    auto magnitude{std::make_unique<uint32_t[]>(Ddigits + 2)};
     uint32_t magnitudeLength = 0;
     bool negative = false;
-    PropagateSignedLimbsToMagnitude<SharkFloatParams, Ddigits>(
-        stream.Limbs, magnitude, magnitudeLength, negative);
+    PropagateSignedLimbsToMagnitude<SharkFloatParams, Ddigits, Ddigits + 2>(
+        stream.Limbs, magnitude.get(), magnitudeLength, negative);
     NormalizeMagnitudeToHpFloat<SharkFloatParams>(
-        magnitude, magnitudeLength, stream.CommonExp, negative, stream.Out);
+        magnitude.get(), magnitudeLength, stream.CommonExp, negative, stream.Out);
 }
 
 template <class SharkFloatParams, uint32_t PlanN, bool EnableDerivative>
@@ -702,15 +744,19 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                         HpSharkFloat<SharkFloatParams> *outDzdcImag,
                         DebugHostCombo<SharkFloatParams> &debugHostCombo)
 {
-    constexpr SharkNTT::PlanPrime plan = SharkNTT::BuildPlanPrime(
-        SharkFloatParams::GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
+    // Match the regular reference NTT plan, but use base 2^16 so the fused sum retains
+    // Goldilocks-prime headroom for small relative exponent alignments.
+    constexpr SharkNTT::PlanPrime plan =
+        SharkNTT::BuildPlanPrime(SharkFloatParams::GlobalNumUint32, 16, 0);
     constexpr uint32_t PlanN = static_cast<uint32_t>(plan.N);
-    constexpr uint32_t CoefficientCount = static_cast<uint32_t>(2 * plan.L - 1);
+    // A product occupies coefficients [0, 2L - 2].  The c term is shifted by one
+    // mantissa width and can occupy coefficient 2L - 1.
+    constexpr uint32_t CoefficientCount = static_cast<uint32_t>(2 * plan.L);
     constexpr uint32_t Ddigits =
-        static_cast<uint32_t>(((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u);
+        static_cast<uint32_t>(((uint64_t)((CoefficientCount - 1) * plan.b + 64) + 31u) / 32u + 2u);
 
     static_assert(plan.ok, "Prime plan build failed (check b/N headroom constraints)");
-    static_assert(plan.N >= 2 * plan.L, "No-wrap condition violated: need N >= 2*L");
+    static_assert(plan.N >= CoefficientCount, "No-wrap condition violated for the fused c term");
     static_assert((SharkNTT::PHI % (2ull * static_cast<uint64_t>(plan.N))) == 0ull);
 
     const FusedTerm<SharkFloatParams> realZ2 =
@@ -727,6 +773,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     int32_t imagCommonExp = 0;
     const bool realIsZero = ResolveCommonExponent(realCommonExp, realZ2, realNegY2, realC);
     const bool imagIsZero = ResolveCommonExponent(imagCommonExp, imagTwoZY, imagC);
+    AssertFixedPlanAlignment(realCommonExp, realZ2, realNegY2, realC);
+    AssertFixedPlanAlignment(imagCommonExp, imagTwoZY, imagC);
 
     PrintPlan(plan);
 
@@ -734,40 +782,49 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     SharkNTT::BuildRoots<SharkFloatParams>(
         static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
 
-    FusedSpectra<PlanN, SharkFloatParams::EnableNewtonRaphson> spectra;
-    PrepareNormalSpectra(debugHostCombo, plan, roots, zReal, zImag, cReal, cImag, spectra);
+    auto spectra{std::make_unique<FusedSpectra<PlanN, SharkFloatParams::EnableNewtonRaphson>>()};
+    PrepareNormalSpectra(debugHostCombo, plan, roots, zReal, zImag, cReal, cImag, *spectra);
 
-    uint64_t realSpectrum[PlanN];
-    uint64_t imagSpectrum[PlanN];
+    auto realSpectrum{std::make_unique<uint64_t[]>(PlanN)};
+    auto imagSpectrum{std::make_unique<uint64_t[]>(PlanN)};
     AccumulateOutputSpectrum(debugHostCombo,
                              plan,
                              roots,
-                             spectra,
+                             *spectra,
                              realIsZero,
                              realCommonExp,
-                             realSpectrum,
+                             realSpectrum.get(),
                              realZ2,
                              realNegY2,
                              realC);
-    AccumulateOutputSpectrum(
-        debugHostCombo, plan, roots, spectra, imagIsZero, imagCommonExp, imagSpectrum, imagTwoZY, imagC);
+    AccumulateOutputSpectrum(debugHostCombo,
+                             plan,
+                             roots,
+                             *spectra,
+                             imagIsZero,
+                             imagCommonExp,
+                             imagSpectrum.get(),
+                             imagTwoZY,
+                             imagC);
 
-    int64_t realLimbs[Ddigits];
-    int64_t imagLimbs[Ddigits];
+    auto realLimbs{std::make_unique<int64_t[]>(Ddigits)};
+    auto imagLimbs{std::make_unique<int64_t[]>(Ddigits)};
     if (realIsZero)
-        std::fill_n(realLimbs, Ddigits, int64_t{0});
+        std::fill_n(realLimbs.get(), Ddigits, int64_t{0});
     else
         InverseSpectrumToSignedLimbs<SharkFloatParams, PlanN, CoefficientCount, Ddigits>(
-            debugHostCombo, plan, roots, realSpectrum, realLimbs);
+            debugHostCombo, plan, roots, realSpectrum.get(), realLimbs.get());
 
     if (imagIsZero)
-        std::fill_n(imagLimbs, Ddigits, int64_t{0});
+        std::fill_n(imagLimbs.get(), Ddigits, int64_t{0});
     else
         InverseSpectrumToSignedLimbs<SharkFloatParams, PlanN, CoefficientCount, Ddigits>(
-            debugHostCombo, plan, roots, imagSpectrum, imagLimbs);
+            debugHostCombo, plan, roots, imagSpectrum.get(), imagLimbs.get());
 
-    const FinalizationStream<SharkFloatParams, Ddigits> realStream{realLimbs, realCommonExp, outReal};
-    const FinalizationStream<SharkFloatParams, Ddigits> imagStream{imagLimbs, imagCommonExp, outImag};
+    const FinalizationStream<SharkFloatParams, Ddigits> realStream{
+        realLimbs.get(), realCommonExp, outReal};
+    const FinalizationStream<SharkFloatParams, Ddigits> imagStream{
+        imagLimbs.get(), imagCommonExp, outImag};
     FinalizeSignedStream(realStream);
     FinalizeSignedStream(imagStream);
 
@@ -778,7 +835,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         assert(outDzdcReal != nullptr);
         assert(outDzdcImag != nullptr);
 
-        PrepareDerivativeSpectra(debugHostCombo, plan, roots, *dzdcReal, *dzdcImag, *one, spectra);
+        PrepareDerivativeSpectra(debugHostCombo, plan, roots, *dzdcReal, *dzdcImag, *one, *spectra);
 
         const FusedTerm<SharkFloatParams> dzdcRealW0 =
             MakeProductTerm(zReal, SpectrumId::ZReal, *dzdcReal, SpectrumId::DzdcReal, false, 1);
@@ -802,7 +859,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         AccumulateOutputSpectrum(debugHostCombo,
                                  plan,
                                  roots,
-                                 spectra,
+                                 *spectra,
                                  dzdcRealIsZero,
                                  dzdcRealCommonExp,
                                  dzdcRealSpectrum,
@@ -812,31 +869,31 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         AccumulateOutputSpectrum(debugHostCombo,
                                  plan,
                                  roots,
-                                 spectra,
+                                 *spectra,
                                  dzdcImagIsZero,
                                  dzdcImagCommonExp,
                                  dzdcImagSpectrum,
                                  dzdcImagW2,
                                  dzdcImagW3);
 
-        int64_t dzdcRealLimbs[Ddigits];
-        int64_t dzdcImagLimbs[Ddigits];
+        auto dzdcRealLimbs{std::make_unique<int64_t[]>(Ddigits)};
+        auto dzdcImagLimbs{std::make_unique<int64_t[]>(Ddigits)};
         if (dzdcRealIsZero)
-            std::fill_n(dzdcRealLimbs, Ddigits, int64_t{0});
+            std::fill_n(dzdcRealLimbs.get(), Ddigits, int64_t{0});
         else
             InverseSpectrumToSignedLimbs<SharkFloatParams, PlanN, CoefficientCount, Ddigits>(
-                debugHostCombo, plan, roots, dzdcRealSpectrum, dzdcRealLimbs);
+                debugHostCombo, plan, roots, dzdcRealSpectrum, dzdcRealLimbs.get());
 
         if (dzdcImagIsZero)
-            std::fill_n(dzdcImagLimbs, Ddigits, int64_t{0});
+            std::fill_n(dzdcImagLimbs.get(), Ddigits, int64_t{0});
         else
             InverseSpectrumToSignedLimbs<SharkFloatParams, PlanN, CoefficientCount, Ddigits>(
-                debugHostCombo, plan, roots, dzdcImagSpectrum, dzdcImagLimbs);
+                debugHostCombo, plan, roots, dzdcImagSpectrum, dzdcImagLimbs.get());
 
         const FinalizationStream<SharkFloatParams, Ddigits> dzdcRealStream{
-            dzdcRealLimbs, dzdcRealCommonExp, outDzdcReal};
+            dzdcRealLimbs.get(), dzdcRealCommonExp, outDzdcReal};
         const FinalizationStream<SharkFloatParams, Ddigits> dzdcImagStream{
-            dzdcImagLimbs, dzdcImagCommonExp, outDzdcImag};
+            dzdcImagLimbs.get(), dzdcImagCommonExp, outDzdcImag};
         FinalizeSignedStream(dzdcRealStream);
         FinalizeSignedStream(dzdcImagStream);
     }

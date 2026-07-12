@@ -57,9 +57,6 @@
     <ClInclude Include="TestTracker.h" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="ReferenceOrbit2GpuStub.cu" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="Conversion.cpp" />
     <ClCompile Include="HpSharkFloatTestLib.cpp" />
     <ClCompile Include="KernelInvokeAddCorrectness.cpp" />

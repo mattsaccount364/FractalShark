@@ -49,6 +49,7 @@
       <FileType>Document</FileType>
     </ClInclude>
     <ClInclude Include="KernelInvokeReferencePerf_cu.h" />
+    <ClInclude Include="KernelInvokeReference2Perf_cu.h" />
     <ClInclude Include="MultiplyNTTCudaSetup_cu.h" />
     <ClInclude Include="KernelTestMultiplyNTT_cu.h" />
   </ItemGroup>
@@ -115,6 +116,9 @@
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_P.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_NR.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference_Dbl.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference2_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference2_NR.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_HpSharkReference2_Dbl.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_P.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_NR.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_MultiplyNTT_Dbl.cu" />

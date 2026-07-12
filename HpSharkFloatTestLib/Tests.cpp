@@ -9,7 +9,6 @@
 #include "PerfTimingResult.h"
 #include "ReferenceAdd.h"
 #include "ReferenceNTT2.h"
-#include "ReferenceOrbit2GpuStub.h"
 #include "ReferenceReferenceOrbit.h"
 #include "ReferenceReferenceOrbit2.h"
 #include "Tests.h"
@@ -448,8 +447,7 @@ HpSharkReferenceResultsToFile(const std::string &filename,
     std::string add_Result2DEStr = "Add.Result2_D_E: " + results.Add.Result2_D_E.ToHexString();
 
     std::string periodicityStatusStr = "PeriodicityStatus: " + results.PeriodicityStrResult();
-    std::string outputIterationStr =
-        "OutputIterCount: " + std::to_string(results.OutputIterCount);
+    std::string outputIterationStr = "OutputIterCount: " + std::to_string(results.OutputIterCount);
 
     // Open file in text mode
     std::ofstream outFile(filename, std::ios::out);
@@ -600,7 +598,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
         // SharkFloatParams::Float{0}}); // Initial value
 
         MpfSquaringHelper squaringHelper;
-        if constexpr (IsReferenceOrbitOperator<sharkOperator>) {
+        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
             squaringHelper.helpers[0].result = xSquared;
             squaringHelper.helpers[0].operandA = recurrenceX;
             squaringHelper.helpers[0].operandB = recurrenceX;
@@ -682,22 +680,35 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     }
                 }
 
-                if (useMT) {
-                    squaringHelper.Dispatch();
-                    mpf_mul(
-                        twoXY, recurrenceX, recurrenceY); // xy (main thread, concurrent with helpers)
-                    squaringHelper.WaitForDone();
+                if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+                    if (useMT) {
+                        squaringHelper.Dispatch();
+                        mpf_mul(twoXY,
+                                recurrenceX,
+                                recurrenceY); // xy (main thread, concurrent with helpers)
+                        squaringHelper.WaitForDone();
+                    } else {
+                        // ST: all multiplies sequential
+                        mpf_mul(xSquared, recurrenceX, recurrenceX);
+                        mpf_mul(ySquared, recurrenceY, recurrenceY);
+                        mpf_mul(twoXY, recurrenceX, recurrenceY);
+                    }
+
+                    mpf_mul_ui(twoXY, twoXY, 2);        // 2xy
+                    mpf_sub(tempX, xSquared, ySquared); // x^2 - y^2
+                    mpf_add(recurrenceX, tempX, mpfX);  // x^2 - y^2 + a
                 } else {
-                    // ST: all multiplies sequential
-                    mpf_mul(xSquared, recurrenceX, recurrenceX);
-                    mpf_mul(ySquared, recurrenceY, recurrenceY);
+                    // Ref2 expresses the real component as (x + y) * (x - y),
+                    // rather than independently squaring x and y.
+                    mpf_add(tempX, recurrenceX, recurrenceY);
+                    mpf_sub(tempY, recurrenceX, recurrenceY);
+                    mpf_mul(xSquared, tempX, tempY);
                     mpf_mul(twoXY, recurrenceX, recurrenceY);
+                    mpf_mul_ui(twoXY, twoXY, 2);          // 2xy
+                    mpf_add(recurrenceX, xSquared, mpfX); // (x + y) * (x - y) + a
                 }
 
-                mpf_mul_ui(twoXY, twoXY, 2);        // 2xy
-                mpf_sub(tempX, xSquared, ySquared); // x^2 - y^2
-                mpf_add(recurrenceX, tempX, mpfX);  // x^2 - y^2 + a
-                mpf_add(recurrenceY, twoXY, mpfY);  // 2xy + b
+                mpf_add(recurrenceY, twoXY, mpfY); // 2xy + b
 
                 typename SharkFloatParams::Float tempZX = double_zx + cx_cast;
                 typename SharkFloatParams::Float tempZY = double_zy + cy_cast;
@@ -719,7 +730,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             }
         }
 
-        if constexpr (IsReferenceOrbitOperator<sharkOperator>) {
+        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
             if (useMT) {
                 squaringHelper.ShutdownHelpers();
             }
@@ -855,51 +866,60 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 {
                     ScopedBenchmarkStopper stopper{timer};
-                    if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-                        for (;;) {
-                            // Bound the number of iterations per kernel launch.  Do not exceed the
-                            // MaxOutputIters limit.
-                            constexpr auto MaxOutputIters =
-                                HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
-                            const uint64_t itersToRun = (numIters - totalExecutedIters > MaxOutputIters)
-                                                            ? MaxOutputIters
-                                                            : (numIters - totalExecutedIters);
-                            assert(itersToRun > 0);
-                            assert(itersToRun <= MaxOutputIters);
+                    for (;;) {
+                        // Bound the number of iterations per kernel launch.  Do not exceed the
+                        // MaxOutputIters limit.
+                        constexpr auto MaxOutputIters =
+                            HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
+                        const uint64_t itersToRun = (numIters - totalExecutedIters > MaxOutputIters)
+                                                        ? MaxOutputIters
+                                                        : (numIters - totalExecutedIters);
+                        assert(itersToRun > 0);
+                        assert(itersToRun <= MaxOutputIters);
 
+                        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
                             session.InvokeChunk(itersToRun);
+                        } else {
+                            HpShark::InvokeHpSharkReference2Kernel(launchParams, combo, itersToRun);
+                        }
 
-                            totalExecutedIters += combo.OutputIterCount;
+                        totalExecutedIters += combo.OutputIterCount;
 
-                            for (uint64_t i = 0; i < combo.OutputIterCount; ++i) {
-                                hpSharkReferenceOrbit.push_back(combo.OutputIters[i]);
+                        for (uint64_t i = 0; i < combo.OutputIterCount; ++i) {
+                            hpSharkReferenceOrbit.push_back(combo.OutputIters[i]);
+                        }
+
+                        if (combo.OutputIterCount == 0 &&
+                            combo.PeriodicityStatus == PeriodicityResult::Unknown) {
+                            Tests.MarkFailed(&launchParams,
+                                             testNum,
+                                             "GPU reference orbit progress",
+                                             "GPU reference orbit made no progress",
+                                             "a nonzero iteration count or a terminal result");
+                            break;
+                        }
+
+                        if constexpr (SharkFloatParams::EnablePeriodicity) {
+                            if (combo.PeriodicityStatus == PeriodicityResult::PeriodFound ||
+                                combo.PeriodicityStatus == PeriodicityResult::Escaped ||
+                                combo.PeriodicityStatus == PeriodicityResult::Unknown || // error
+                                totalExecutedIters >= numIters) {
+
+                                // Sanity check: if periodicity is enabled, we should never exit
+                                // with "Unknown"
+                                if (combo.PeriodicityStatus == PeriodicityResult::Unknown) {
+                                    Environment::DebugBreakpoint();
+                                }
+                            } else {
+                                continue;
                             }
 
-                            if constexpr (SharkFloatParams::EnablePeriodicity) {
-                                if (combo.PeriodicityStatus == PeriodicityResult::PeriodFound ||
-                                    combo.PeriodicityStatus == PeriodicityResult::Escaped ||
-                                    combo.PeriodicityStatus == PeriodicityResult::Unknown || // error
-                                    totalExecutedIters >= numIters) {
-
-                                    // Sanity check: if periodicity is enabled, we should never exit
-                                    // with "Unknown"
-                                    if (combo.PeriodicityStatus == PeriodicityResult::Unknown) {
-                                        Environment::DebugBreakpoint();
-                                    }
-                                } else {
-                                    continue;
-                                }
-
+                            break;
+                        } else {
+                            if (totalExecutedIters >= numIters) {
                                 break;
-                            } else {
-                                if (totalExecutedIters >= numIters) {
-                                    break;
-                                }
                             }
                         }
-                    } else {
-                        HpShark::InvokeReferenceOrbit2GpuStub(combo);
-                        totalExecutedIters = combo.OutputIterCount;
                     }
                 }
 
@@ -943,17 +963,13 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs()
                           << " ms, iters=" << cpuRefOrbitResult->IterationsExecuted << std::endl;
                 if (timingOut) {
-                    if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-                        timingOut->cpuRefMs = static_cast<double>(cpuRefTimer.GetDeltaInMs());
-                    } else {
-                        timingOut->cpuRef2Ms = static_cast<double>(cpuRefTimer.GetDeltaInMs());
-                    }
+                    timingOut->cpuMs = static_cast<double>(cpuRefTimer.GetDeltaInMs());
                 }
                 std::cout << "CPU ref periodicity: "
                           << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult) << std::endl;
             }
 
-            if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+            if constexpr (IsReferenceOrbitOperator<sharkOperator>) {
                 if constexpr (HpShark::TestMPIRImpl) {
                     if (hpSharkReferenceOrbit.size() != hostReferenceOrbit.size()) {
                         std::cout << "Error: Host and GPU reference orbit size mismatch: host="
@@ -1157,71 +1173,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     DebugHostCombo<SharkFloatParams> debugHostCombo;
                     ChecksumsCheck<SharkFloatParams>(debugHostCombo, *debugGpuCombo);
                 }
-            } else {
-                if constexpr (HpShark::TestReferenceImpl && HpShark::TestMPIRImpl) {
-                    if (cpuRefOrbitResult->Orbit.size() != hostReferenceOrbit.size()) {
-                        std::cout << "Error: MPIR host and CPU ref orbit size mismatch: mpir="
-                                  << hostReferenceOrbit.size()
-                                  << " cpuRef=" << cpuRefOrbitResult->Orbit.size() << std::endl;
-                        Environment::DebugBreakpoint();
-                    } else {
-                        bool cpuOrbitMatch = true;
-                        for (size_t i = 0; i < hostReferenceOrbit.size(); ++i) {
-                            auto hostValX = hostReferenceOrbit[i].x;
-                            auto hostValY = hostReferenceOrbit[i].y;
-                            auto cpuValX = cpuRefOrbitResult->Orbit[i].x;
-                            auto cpuValY = cpuRefOrbitResult->Orbit[i].y;
-
-                            HdrReduce(hostValX);
-                            HdrReduce(hostValY);
-                            HdrReduce(cpuValX);
-                            HdrReduce(cpuValY);
-
-                            if (hostValX != cpuValX || hostValY != cpuValY) {
-                                std::cout << "Error: MPIR host and CPU ref orbit mismatch at idx " << i
-                                          << ": mpir.x=" << hostValX.template ToString<false>()
-                                          << " mpir.y=" << hostValY.template ToString<false>()
-                                          << " cpu.x=" << cpuValX.template ToString<false>()
-                                          << " cpu.y=" << cpuValY.template ToString<false>()
-                                          << std::endl;
-                                cpuOrbitMatch = false;
-                                Environment::DebugBreakpoint();
-                                break;
-                            }
-                        }
-                        if (cpuOrbitMatch) {
-                            std::cout << "MPIR host and CPU ref orbit match, length="
-                                      << hostReferenceOrbit.size() << std::endl;
-                        }
-                    }
-
-                    if (cpuRefOrbitResult->PeriodResult != hostPeriodicityResult) {
-                        std::cout << "Error: CPU ref periodicity mismatch: mpir="
-                                  << PeriodicityStrResult(hostPeriodicityResult)
-                                  << " cpuRef=" << PeriodicityStrResult(cpuRefOrbitResult->PeriodResult)
-                                  << std::endl;
-                        Environment::DebugBreakpoint();
-                    }
-
-                    if (cpuRefOrbitResult->IterationsExecuted != hostIterationsExecuted) {
-                        std::cout << "Error: CPU ref iteration count mismatch: mpir="
-                                  << hostIterationsExecuted
-                                  << " cpuRef=" << cpuRefOrbitResult->IterationsExecuted << std::endl;
-                        Environment::DebugBreakpoint();
-                    }
-                }
-
-                const bool hasSentinel =
-                    combo.OutputIterCount == 0 && combo.PeriodicityStatus == PeriodicityResult::Unknown;
-                if (hasSentinel) {
-                    Tests.MarkSuccess(&launchParams, testNum, "GPU Ref2 stub sentinel");
-                } else {
-                    Tests.MarkFailed(&launchParams,
-                                     testNum,
-                                     "GPU Ref2 stub sentinel",
-                                     "The stub did not return its sentinel result",
-                                     "zero iterations and Unknown periodicity");
-                }
             }
         }
     }
@@ -1351,8 +1302,7 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
         uint64_t totalMultiplyCountResults{};
         std::cerr << "MultiplyCount distribution:" << std::endl;
         for (const auto &pair : countOfCountsMultiply) {
-            std::cerr << "Count: " << pair.first << " occurred " << pair.second
-                      << " times" << std::endl;
+            std::cerr << "Count: " << pair.first << " occurred " << pair.second << " times" << std::endl;
             totalMultiplyCountGpu += pair.first * pair.second;
             totalMultiplyCountResults += pair.second;
         }
@@ -1361,8 +1311,8 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
         std::cerr << "GPU total normalize count: " << normalizeCount << std::endl;
 
         std::cerr << "GPU total multiply count: " << totalMultiplyCountGpu << std::endl;
-        std::cerr << "GPU result count (should be total num threads): "
-                  << totalMultiplyCountResults << std::endl;
+        std::cerr << "GPU result count (should be total num threads): " << totalMultiplyCountResults
+                  << std::endl;
         std::cerr << "Host count: " << debugHostCombo.MultiplyCounts.multiplyCount << std::endl;
 
         if (totalMultiplyCountGpu != debugHostCombo.MultiplyCounts.multiplyCount) {
@@ -1429,8 +1379,7 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
 
                 std::cerr << "Checksum(base16): 0x" << std::hex << cuda.Checksum << std::dec
                           << std::endl;
-                std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose)
-                          << std::endl;
+                std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose) << std::endl;
                 std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(cuda.ChecksumPurpose)
                           << std::endl;
 
@@ -1448,8 +1397,7 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
                 }
 
                 std::cerr << std::endl;
-                std::cerr << "ArrayToChecksum32 length: " << host.ArrayToChecksum32.size()
-                          << std::endl;
+                std::cerr << "ArrayToChecksum32 length: " << host.ArrayToChecksum32.size() << std::endl;
 
                 std::cerr << "ArrayToChecksum64(base16 words): " << std::endl;
                 for (size_t j = 0; j < host.ArrayToChecksum64.size(); ++j) {
@@ -1457,13 +1405,11 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
                 }
 
                 std::cerr << std::endl;
-                std::cerr << "ArrayToChecksum64 length: " << host.ArrayToChecksum64.size()
-                          << std::endl;
+                std::cerr << "ArrayToChecksum64 length: " << host.ArrayToChecksum64.size() << std::endl;
 
                 std::cerr << "Checksum(base16): 0x" << std::hex << host.Checksum << std::dec
                           << std::endl;
-                std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose)
-                          << std::endl;
+                std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose) << std::endl;
                 std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(host.ChecksumPurpose)
                           << std::endl;
 
@@ -2259,12 +2205,20 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     // x_(n + 1) = x_n * x_n - y_n * y_n + a
     // y_(n + 1) = 2 * x_n * y_n + b
 
-    mpf_mul(xSquared, mpfX, mpfX);        // x^2
-    mpf_mul(ySquared, mpfY, mpfY);        // y^2
+    if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+        mpf_mul(xSquared, mpfX, mpfX);        // x^2
+        mpf_mul(ySquared, mpfY, mpfY);        // y^2
+        mpf_sub(tempX, xSquared, ySquared);   // x^2 - y^2
+        mpf_add(mpfHostResultX, tempX, mpfA); // x^2 - y^2 + a
+    } else {
+        mpf_add(tempX, mpfX, mpfY);
+        mpf_sub(tempY, mpfX, mpfY);
+        mpf_mul(mpfHostResultX, tempX, tempY); // (x + y) * (x - y)
+        mpf_add(mpfHostResultX, mpfHostResultX, mpfA);
+    }
+
     mpf_mul(twoXY, mpfX, mpfY);           // xy
     mpf_mul_ui(twoXY, twoXY, 2);          // 2xy
-    mpf_sub(tempX, xSquared, ySquared);   // x^2 - y^2
-    mpf_add(mpfHostResultX, tempX, mpfA); // x^2 - y^2 + a
     mpf_add(mpfHostResultY, twoXY, mpfB); // 2xy + b
 
     // Print host result
@@ -2369,39 +2323,30 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
 
         {
             ScopedBenchmarkStopper stopper{timer};
-            HpShark::InvokeReferenceOrbit2GpuStub(combo);
+            HpShark::InvokeHpSharkReference2Kernel(launchParams, combo, 1);
         }
+
+        *gpuResultXX = combo.Multiply.A;
+        *gpuResultYY = combo.Multiply.B;
 
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "GPU stub timeMs: " << timer.GetDeltaInMs() << std::endl;
-        }
-
-        const bool hasSentinel =
-            combo.OutputIterCount == 0 && combo.PeriodicityStatus == PeriodicityResult::Unknown;
-        if (hasSentinel) {
-            Tests.MarkSuccess(&launchParams, testNum, "GPU Ref2 stub sentinel");
-        } else {
-            Tests.MarkFailed(&launchParams,
-                             testNum,
-                             "GPU Ref2 stub sentinel",
-                             "The stub did not return its sentinel result",
-                             "zero iterations and Unknown periodicity");
+            std::cout << "GPU Ref2 timeMs: " << timer.GetDeltaInMs() << std::endl;
         }
     }
 
     std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
 
-    if constexpr (HpShark::TestGpu && sharkOperator == Operator::ReferenceOrbit) {
+    if constexpr (HpShark::TestGpu && IsReferenceOrbitOperator<sharkOperator>) {
         bool testSucceeded = true;
 
         constexpr auto numTerms = 2;
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::ReferenceOrbit>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
             launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultX, *gpuResultXX);
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::ReferenceOrbit>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
             launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultY, *gpuResultYY);
     }
 
@@ -3424,8 +3369,8 @@ TestTernarySpecial21(const HpShark::LaunchParams &launchParams,
         std::cout << std::endl;
     }
 
-    std::cout << "Test " << std::dec << testNum
-              << ", exponentOverride2_exp2: " << exponentOverride2 << std::endl;
+    std::cout << "Test " << std::dec << testNum << ", exponentOverride2_exp2: " << exponentOverride2
+              << std::endl;
 
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>(allFs.data(), 0, false);
     auto yNum =
@@ -3707,7 +3652,8 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
         timings.push_back(timing);
     }
 
-    PrintPerfSummaryTable("View5", useMT, timings);
+    constexpr const char *cpuLabel = sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
+    PrintPerfSummaryTable("View5", useMT, timings, "MPIR", cpuLabel);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -3825,7 +3771,8 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
         timings.push_back(timing);
     }
 
-    PrintPerfSummaryTable("View30", useMT, timings);
+    constexpr const char *cpuLabel = sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
+    PrintPerfSummaryTable("View30", useMT, timings, "MPIR", cpuLabel);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -3937,7 +3884,8 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
         timings.push_back(timing);
     }
 
-    PrintPerfSummaryTable("View32", useMT, timings);
+    constexpr const char *cpuLabel = sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
+    PrintPerfSummaryTable("View32", useMT, timings, "MPIR", cpuLabel);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);

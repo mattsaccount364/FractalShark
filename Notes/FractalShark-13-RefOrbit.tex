@@ -216,6 +216,15 @@ the perturbation update form used elsewhere in the codebase.  For better
 performance it likely makes sense to implement both forms and compare their behavior
 empirically.
 
+The experimental \code{ReferenceReferenceOrbit2} path retains the expanded
+equations but changes their arithmetic schedule.  Rather than materializing the
+three products before the addition stage, it constructs each final component in
+the NTT domain and defers base-$2^{32}$ carry propagation until its complete sum
+has been formed.  The method removes the separate high-precision add/subtract
+pipeline, but not the final carry propagation required for each result;
+\cref{subsec:fused-ntt-reference-step,subsec:fused-ntt-periodicity} describes
+the construction, operation schedule, and periodicity test.
+
 \section{Compression and Reference Orbit Reuse Modes}
 \label{subsec:ref-orbit-compression-reuse}
 

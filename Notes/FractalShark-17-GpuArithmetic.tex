@@ -1015,6 +1015,187 @@ synchronization across all simultaneously computed products and is
 central to the practical performance of GPU-resident reference-orbit
 computation.
 
+\subsection{Fused NTT Reference-Orbit Step}
+\label{subsec:fused-ntt-reference-step}
+
+The test-only CPU implementation \code{ReferenceReferenceOrbit2} applies the
+same NTT machinery to the complete Mandelbrot recurrence, rather than using an
+NTT multiplication stage followed by a distinct high-precision addition stage.
+Let
+\begin{equation}
+  z_n = x_n + i\,y_n
+  \quad\text{and}\quad
+  c = a + i\,b.
+  \label{eq:fused-reference-components}
+\end{equation}
+The iteration is therefore
+\begin{align}
+  x_{n+1} &= x_n^2 - y_n^2 + a,
+  \label{eq:fused-reference-real} \\
+  y_{n+1} &= 2x_ny_n + b.
+  \label{eq:fused-reference-imag}
+\end{align}
+
+The fused implementation forward-transforms the limb streams for $x_n$, $y_n$,
+$a$, and $b$.  It constructs the two output spectra by pointwise accumulation
+of the corresponding products and exponent-aligned linear terms:
+\begin{align}
+  \widehat{X}_{n+1} &=
+      \widehat{x_n}\,\widehat{x_n}
+      - \widehat{y_n}\,\widehat{y_n}
+      + \widehat{a},
+  \label{eq:fused-reference-real-spectrum} \\
+  \widehat{Y}_{n+1} &=
+      2\,\widehat{x_n}\,\widehat{y_n}
+      + \widehat{b}.
+  \label{eq:fused-reference-imag-spectrum}
+\end{align}
+Here hats denote the twisted NTT-domain representation, and multiplication
+denotes pointwise multiplication.  Each spectrum is then inverse-transformed,
+converted to signed limbs, carry-propagated, and normalized once to produce its
+final \code{HpSharkFloat} component.  The exponent alignment in
+\cref{eq:fused-reference-real-spectrum,eq:fused-reference-imag-spectrum} is
+essential because the product and linear terms need not share a common binary
+exponent before they are accumulated.
+
+\subsubsection{Why Fusion Does Not Eliminate the Final Carry}
+\label{subsec:fused-ntt-carry}
+
+Fusion is valid because the NTT is linear over its prime field.  After each
+term has been shifted to the selected common exponent, the transform of a sum
+is the sum of the transforms.  Consequently, \code{AccumulateOutputSpectrum}
+can form a component such as \cref{eq:fused-reference-real-spectrum} by
+combining the pointwise product spectra with the transformed linear term before
+an inverse transform.  \code{AddShiftedSpectrum} performs those signed,
+exponent-aligned additions and subtractions modulo the NTT prime.  They are
+field operations, not high-precision base-$2^{32}$ additions, and therefore do
+not require a cross-limb carry or borrow pass at that point.
+
+The inverse NTT does not produce a normalized \code{HpSharkFloat} directly.
+Its coefficients are unpacked into overlapping signed limb contributions.  The
+inverse-to-signed-limb, signed-limb propagation, and normalization stages first
+reconstruct those signed limbs, then perform the necessary base-$2^{32}$ carry
+and borrow propagation, and finally select the normalized mantissa window and
+exponent.  Thus, Ref2 does not eliminate carry propagation; it performs exactly
+one final carry/normalization pass for each completed output component, after
+every product and linear term for that component has already been combined.
+
+\begin{table}[!htbp]
+\centering
+\caption[Reference-orbit operation schedule]{Per-iteration operation counts.
+$P$ counts high-precision NTT convolution products, $A$ counts mathematical
+binary add/subtract combinations, and $C$ counts logical base-$2^{32}$
+carry-propagation and normalization streams.  NTT butterfly additions are
+modular field operations and are excluded from $C$.}
+\label{tab:fused-reference-operation-counts}
+\begin{tabular}{lrrrr}
+\hline
+\textbf{Workload} & $P$ & $A$ & $C_{\mathrm{Ref1}}$ & $C_{\mathrm{Ref2}}$ \\
+\hline
+Orbit only & 3 & 3 & 6 & 2 \\
+Orbit plus first derivative & 7 & 6 & 13 & 4 \\
+\hline
+\end{tabular}
+\end{table}
+
+For the orbit alone, both implementations retain the same three expensive
+high-precision products: $x_n^2$, $y_n^2$, and $x_ny_n$.  Both also retain the
+same three mathematical binary combinations: two in
+$x_n^2-y_n^2+a$ and one in $2x_ny_n+b$.  Ref2 does not remove those operations;
+it changes where the three combinations occur.  The real spectrum receives
+three terms and the imaginary spectrum receives two, for five total term
+insertions.  After each output spectrum has received its first term, the
+remaining insertions perform the three nontrivial add/subtract combinations.
+
+Each insertion still has a cost.  \code{AddShiftedSpectrum} applies the
+exponent shift and sign by modular scaling and a modular field addition or
+subtraction at every frequency index.  That work is $O(N)$ and is not free.
+It has no cross-limb carry dependency, however, and it neither materializes an
+intermediate \code{HpSharkFloat} nor invokes the separate high-precision
+\code{AddHelper} pipeline.  The orbit-only schedule consequently replaces the
+three product finalizations and three add-candidate carry streams of Ref1 with
+two final carry streams in Ref2, avoiding four carry/normalization streams per
+iteration.
+
+With the first derivative enabled, both paths retain seven high-precision NTT
+products: the three orbit products and four products for the derivative update.
+The four final component expressions contain six mathematical binary
+add/subtract combinations.  Ref2 accumulates ten spectrum terms: three and two
+for the orbit's real and imaginary outputs, respectively, and three and two for
+the derivative's real and imaginary outputs.  It then finalizes four completed
+components.  Ref1 instead carries seven product outputs and six add candidates,
+for thirteen logical carry streams; Ref2 uses four, avoiding nine such streams
+per iteration.
+
+The original add implementation may process corresponding orbit and derivative
+candidates in the same program pass, but each candidate remains a distinct
+logical carry-propagating stream.  The table consequently counts work that a
+GPU implementation must resolve, rather than merely counting host function
+calls.  The HDRFloat second-derivative recurrence is not represented by a
+\code{HpSharkFloat} limb stream and is excluded from these counts.  The expected
+benefit is therefore specifically the removal of separate carry-resolved
+intermediate and add/subtract streams; its magnitude still requires GPU
+measurement.
+
+\subsubsection{Periodicity Detection from Fused State}
+\label{subsec:fused-ntt-periodicity}
+
+The fused schedule preserves the state required for periodicity detection.  At
+the start of iteration $n$, the preceding fused finalization has already
+produced normalized $x_n$ and $y_n$.  The periodicity-enabled CPU path also
+retains an HDRFloat derivative estimate
+\(d_n=d_{x,n}+i\,d_{y,n}\).  It converts the current orbit components to the
+same HDRFloat representation and evaluates
+\begin{align}
+  n_2 &= \max\!\left(\lvert x_n\rvert,\lvert y_n\rvert\right), \\
+  r_0 &= \max\!\left(\lvert d_{x,n}\rvert,\lvert d_{y,n}\rvert\right), \\
+  n_3 &= 2R_{\max}r_0.
+  \label{eq:fused-reference-periodicity-threshold}
+\end{align}
+The orbit is considered maybe periodic when \(n_2<n_3\).  No separately
+materialized values of $x_n^2$, $2x_ny_n$, or $y_n^2$ are needed for this test.
+
+When the test does not terminate the orbit, the HDRFloat periodicity derivative
+is advanced from the same individual orbit components:
+\begin{align}
+  d_{x,n+1} &= 2(x_nd_{x,n}-y_nd_{y,n})+1, \\
+  d_{y,n+1} &= 2(x_nd_{y,n}+y_nd_{x,n}).
+  \label{eq:fused-reference-periodicity-derivative}
+\end{align}
+The next fused NTT step then produces the normalized high-precision
+\(x_{n+1},y_{n+1}\) pair for the following iteration.  Periodicity therefore
+fits naturally before the next transform-domain evaluation and introduces no
+separate high-precision add/subtract carry pass.  Raw NTT residues cannot be
+used for the magnitude comparison: they represent coefficients modulo the NTT
+prime and must first be inverse-transformed and finalized into orbit components.
+
+For Newton--Raphson use, let the first orbit derivative be
+$d_n = u_n + i\,v_n = \partial z_n / \partial c$.  The same fused construction
+forms its two components:
+\begin{align}
+  u_{n+1} &= 2(x_nu_n - y_nv_n) + 1,
+  \label{eq:fused-reference-derivative-real} \\
+  v_{n+1} &= 2(y_nu_n + x_nv_n).
+  \label{eq:fused-reference-derivative-imag}
+\end{align}
+The associated second derivative remains a separate HDRFloat recurrence,
+\begin{equation}
+  \frac{\partial^2 z_{n+1}}{\partial c^2}
+  = 2\left(d_n^2 + z_n\frac{\partial^2 z_n}{\partial c^2}\right),
+  \label{eq:fused-reference-second-derivative}
+\end{equation}
+which is evaluated before the fused high-precision orbit and first-derivative
+step.
+
+The original \code{ReferenceReferenceOrbit} path first materializes and
+normalizes $x_n^2$, $2x_ny_n$, and $y_n^2$, then supplies them to a separate
+addition routine.  By contrast, the fused path reuses its forward spectra for
+both final orbit components and avoids materializing those three intermediate
+high-precision values.  This scheduling can reduce intermediate storage and
+normalization work, but it is a CPU test implementation that rebuilds NTT state
+for each step.  Its performance relative to the original path consequently
+requires measurement rather than inference from the arithmetic alone.
+
 \subsection{Amortizing Synchronization via Simultaneous Products}
 \label{subsec:amortize-sync}
 

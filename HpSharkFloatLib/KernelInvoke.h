@@ -45,6 +45,11 @@ void InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                                   uint64_t numIters);
 
 template <class SharkFloatParams>
+void InvokeHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
+                                   HpSharkReferenceResults<SharkFloatParams> &combo,
+                                   uint64_t numIters);
+
+template <class SharkFloatParams>
 void InitHpSharkKernelProd(const HpShark::LaunchParams &launchParams,
                            HpSharkReferenceResults<SharkFloatParams> &combo,
                            mpf_t srcX,
@@ -167,5 +172,24 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
                                             void (*onProgress)(uint64_t, void *) = nullptr,
                                             void *progressContext = nullptr,
                                             uint64_t progressInterval = 64);
+
+// Test-only Ref2 placeholder matching the Ref1 Newton/derivative GPU interface.
+// It intentionally reports no completed work until Ref2 receives a CUDA implementation.
+template <class SharkFloatParams>
+uint64_t EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
+                                             const mpf_t cImag,
+                                             uint64_t period,
+                                             mpf_t outZReal,
+                                             mpf_t outZImag,
+                                             mpf_t outDzdcReal,
+                                             mpf_t outDzdcImag,
+                                             HDRFloat<double> &outD2Real,
+                                             HDRFloat<double> &outD2Imag,
+                                             const HpShark::LaunchParams &externalLaunchParams = {0, 0},
+                                             uint64_t startIter = 0,
+                                             bool (*shouldAbort)() = nullptr,
+                                             void (*onProgress)(uint64_t, void *) = nullptr,
+                                             void *progressContext = nullptr,
+                                             uint64_t progressInterval = 64);
 
 } // namespace HpShark

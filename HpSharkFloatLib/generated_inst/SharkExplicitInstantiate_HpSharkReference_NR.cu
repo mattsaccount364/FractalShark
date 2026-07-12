@@ -52,4 +52,3 @@ ExplicitlyInstantiate(SharkParamsNR12);
 } // namespace HpShark
 
 #undef ExplicitlyInstantiate
-

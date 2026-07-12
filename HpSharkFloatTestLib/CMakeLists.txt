@@ -8,7 +8,6 @@ target_sources(HpSharkFloatTestLib PRIVATE
     KernelInvokeNTTCorrectness.cpp
     KernelInvokeNTTPerf.cpp
     KernelInvokeReferenceCorrectness.cpp
-    ReferenceOrbit2GpuStub.cu
     ReferenceAdd.cpp
     ReferenceNTT2.cpp
     ReferenceReferenceOrbit.cpp

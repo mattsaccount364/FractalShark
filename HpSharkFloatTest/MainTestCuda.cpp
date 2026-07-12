@@ -117,6 +117,33 @@ ContinueAfterFailure(bool res)
     return PressKey() != 'q';
 }
 
+enum class ReferenceImplementation : int { Ref1 = 1, Ref2 = 2 };
+
+static const char *
+ReferenceImplementationToString(ReferenceImplementation referenceImplementation)
+{
+    switch (referenceImplementation) {
+        case ReferenceImplementation::Ref1:
+            return "Ref1 (Operator::ReferenceOrbit)";
+        case ReferenceImplementation::Ref2:
+            return "Ref2 (Operator::ReferenceOrbit2)";
+        default:
+            return "Unknown";
+    }
+}
+
+static bool
+RequiresReferenceImplementation(BasicCorrectnessMode mode)
+{
+    return mode == BasicCorrectnessMode::PerfSub || mode == BasicCorrectnessMode::PerfSweep ||
+           mode == BasicCorrectnessMode::PerfSingleView30 ||
+           mode == BasicCorrectnessMode::PerfSingleView32 ||
+           mode == BasicCorrectnessMode::PerfSingleView5 ||
+           mode == BasicCorrectnessMode::PerfSingleNRView5 ||
+           mode == BasicCorrectnessMode::PerfSingleNRView30 ||
+           mode == BasicCorrectnessMode::PerfSingleNRView32;
+}
+
 /// Robust console line input using Environment console input (no std::getline mixing).
 /// - If user provides any input (even invalid), interactive mode becomes true.
 /// - If interactive mode is true, subsequent prompts wait indefinitely.
@@ -259,17 +286,17 @@ CorrectnessTests()
     if (!ContinueAfterFailure(res))
         return false;
 
-    //res = TestAllBinaryOp<TestSharkParams, Operator::Add>(TestIds::kAddCorrectness);
-    //if (!ContinueAfterFailure(res))
-    //    return false;
+    // res = TestAllBinaryOp<TestSharkParams, Operator::Add>(TestIds::kAddCorrectness);
+    // if (!ContinueAfterFailure(res))
+    //     return false;
 
-    //res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(TestIds::kMultiplyCorrectness);
-    //if (!ContinueAfterFailure(res))
-    //    return false;
+    // res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(TestIds::kMultiplyCorrectness);
+    // if (!ContinueAfterFailure(res))
+    //     return false;
 
-    //res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(TestIds::kFullCorrectness);
-    //if (!ContinueAfterFailure(res))
-    //    return false;
+    // res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(TestIds::kFullCorrectness);
+    // if (!ContinueAfterFailure(res))
+    //     return false;
 
     res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit2>(TestIds::kFull2Correctness);
     if (!ContinueAfterFailure(res))
@@ -314,9 +341,12 @@ RunCorrectnessTest(BasicCorrectnessMode mode)
 // Performance modes (split into smaller dispatchable functions)
 // -----------------------------------------------------------------------------
 
+template <Operator referenceOperator>
 static int
 RunPerfFullSweep(int numIters, int internalTestLoopCount)
 {
+    static_assert(IsReferenceOrbitOperator<referenceOperator>);
+
     bool res = true;
     TestTracker Tests;
 
@@ -346,19 +376,19 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
     };
 
     for (const auto &[numBlocks, numThreads] : blockThreadPairs) {
-        res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
+        res = TestFullReferencePerfView30<referenceOperator>(
             Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
 
-        res = TestFullReferencePerfView32<Operator::ReferenceOrbit>(
+        res = TestFullReferencePerfView32<referenceOperator>(
             Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
 
-        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+        res = TestFullReferencePerfView5<referenceOperator>(
             Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
         if (!ContinueAfterFailure(res))
             return 0;
@@ -368,9 +398,12 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
     return Tests.CheckAllTestsPassed();
 }
 
+template <Operator referenceOperator>
 static int
 RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 {
+    static_assert(IsReferenceOrbitOperator<referenceOperator>);
+
     // Only run for perf modes.
     if (mode != BasicCorrectnessMode::PerfSub && mode != BasicCorrectnessMode::PerfSweep &&
         mode != BasicCorrectnessMode::PerfSingleView30 &&
@@ -423,13 +456,10 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         if (!ContinueAfterFailure(res))
             return 0;
 
-        res = TestBinaryOperatorPerf<Operator::ReferenceOrbit>(
-            launchParams, TestIds::kFullPerf, numIters, internalTestLoopCount, mode);
-        if (!ContinueAfterFailure(res))
-            return 0;
-
-        res = TestBinaryOperatorPerf<Operator::ReferenceOrbit2>(
-            launchParams, TestIds::kFull2Perf, numIters, internalTestLoopCount, mode);
+        constexpr int referenceTestBase =
+            referenceOperator == Operator::ReferenceOrbit ? TestIds::kFullPerf : TestIds::kFull2Perf;
+        res = TestBinaryOperatorPerf<referenceOperator>(
+            launchParams, referenceTestBase, numIters, internalTestLoopCount, mode);
         if (!ContinueAfterFailure(res))
             return 0;
 
@@ -438,46 +468,46 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 
     if (mode == BasicCorrectnessMode::PerfSingleView30) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(Tests,
-                                                                         launchParams.NumBlocks,
-                                                                         launchParams.ThreadsPerBlock,
-                                                                         TestIds::kPerfView30,
-                                                                         numIters,
-                                                                         internalTestLoopCount,
-                                                                         useMT);
+        auto res = TestFullReferencePerfView30<referenceOperator>(Tests,
+                                                                  launchParams.NumBlocks,
+                                                                  launchParams.ThreadsPerBlock,
+                                                                  TestIds::kPerfView30,
+                                                                  numIters,
+                                                                  internalTestLoopCount,
+                                                                  useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleView5) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(Tests,
-                                                                        launchParams.NumBlocks,
-                                                                        launchParams.ThreadsPerBlock,
-                                                                        TestIds::kPerfView5,
-                                                                        numIters,
-                                                                        internalTestLoopCount,
-                                                                        useMT);
+        auto res = TestFullReferencePerfView5<referenceOperator>(Tests,
+                                                                 launchParams.NumBlocks,
+                                                                 launchParams.ThreadsPerBlock,
+                                                                 TestIds::kPerfView5,
+                                                                 numIters,
+                                                                 internalTestLoopCount,
+                                                                 useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleView32) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView32<Operator::ReferenceOrbit>(Tests,
-                                                                         launchParams.NumBlocks,
-                                                                         launchParams.ThreadsPerBlock,
-                                                                         TestIds::kPerfView32,
-                                                                         numIters,
-                                                                         internalTestLoopCount,
-                                                                         useMT);
+        auto res = TestFullReferencePerfView32<referenceOperator>(Tests,
+                                                                  launchParams.NumBlocks,
+                                                                  launchParams.ThreadsPerBlock,
+                                                                  TestIds::kPerfView32,
+                                                                  numIters,
+                                                                  internalTestLoopCount,
+                                                                  useMT);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
         TestTracker Tests;
-        auto res = TestNewtonRaphsonView5<SharkParamsNR7>(
+        auto res = TestNewtonRaphsonView5<SharkParamsNR7, referenceOperator>(
             Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
         if (!ContinueAfterFailure(res))
             return 0;
@@ -485,7 +515,7 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView30) {
         TestTracker Tests;
-        auto res = TestNewtonRaphsonView30<SharkParamsNR7>(
+        auto res = TestNewtonRaphsonView30<SharkParamsNR7, referenceOperator>(
             Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
         if (!ContinueAfterFailure(res))
             return 0;
@@ -493,14 +523,14 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView32) {
         TestTracker Tests;
-        auto res = TestNewtonRaphsonView32<SharkParamsNR9>(
+        auto res = TestNewtonRaphsonView32<SharkParamsNR9, referenceOperator>(
             Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSweep) {
-        if (!RunPerfFullSweep(numIters, internalTestLoopCount))
+        if (!RunPerfFullSweep<referenceOperator>(numIters, internalTestLoopCount))
             return 0;
     }
 
@@ -642,6 +672,20 @@ main(int, char **)
     std::cout << "Selected mode: " << static_cast<int>(mode) << " ("
               << BasicCorrectnessModeToString(mode) << ")\n";
 
+    ReferenceImplementation referenceImplementation = ReferenceImplementation::Ref1;
+    if (RequiresReferenceImplementation(mode)) {
+        const auto referencePrompt =
+            PromptIntWithTimeout("Reference implementation? Default=1 (1=Ref1, 2=Ref2):",
+                                 static_cast<int>(ReferenceImplementation::Ref1),
+                                 kTimeoutInSec,
+                                 interactiveMode);
+        if (referencePrompt.value == static_cast<int>(ReferenceImplementation::Ref2)) {
+            referenceImplementation = ReferenceImplementation::Ref2;
+        }
+        std::cout << "Selected reference: " << ReferenceImplementationToString(referenceImplementation)
+                  << '\n';
+    }
+
     // Verbose
     if (mode != BasicCorrectnessMode::Error) {
         auto v =
@@ -674,7 +718,11 @@ main(int, char **)
         case BasicCorrectnessMode::PerfSingleNRView5:
         case BasicCorrectnessMode::PerfSingleNRView30:
         case BasicCorrectnessMode::PerfSingleNRView32:
-            RunPerfModes(mode, kTimeoutInSec, interactiveMode);
+            if (referenceImplementation == ReferenceImplementation::Ref1) {
+                RunPerfModes<Operator::ReferenceOrbit>(mode, kTimeoutInSec, interactiveMode);
+            } else {
+                RunPerfModes<Operator::ReferenceOrbit2>(mode, kTimeoutInSec, interactiveMode);
+            }
             break;
 
         case BasicCorrectnessMode::PerfSingleAdd:

@@ -27,6 +27,12 @@ IsLeader(const cooperative_groups::thread_block &block)
 }
 
 static __device__ uint32_t
+GridThreadRank(const cooperative_groups::thread_block &block)
+{
+    return block.thread_index().x + block.group_index().x * blockDim.x;
+}
+
+static __device__ uint32_t
 ReverseBits32(uint32_t value, int bitCount)
 {
     value = (value >> 16) | (value << 16);
@@ -233,9 +239,14 @@ ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &value, int64_t bitIndex, in
 }
 
 static __device__ void
-BitReverseInplace64(uint64_t *values, uint32_t n, uint32_t stages)
+BitReverseInplace64(cooperative_groups::grid_group &grid,
+                    cooperative_groups::thread_block &block,
+                    uint64_t *values,
+                    uint32_t n,
+                    uint32_t stages)
 {
-    for (uint32_t i = 0; i < n; ++i) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t i = GridThreadRank(block); i < n; i += gridSize) {
         const uint32_t j = ReverseBits32(i, static_cast<int>(stages)) & (n - 1u);
         if (j > i) {
             const uint64_t temp = values[i];
@@ -260,17 +271,21 @@ NTTRadix2(cooperative_groups::grid_group &grid,
         const uint32_t width = 1u << stage;
         const uint32_t half = width >> 1;
         const uint32_t base = half - 1u;
-        for (uint32_t k = 0; k < n; k += width) {
-            for (uint32_t j = 0; j < half; ++j) {
-                const uint32_t i0 = k + j;
-                const uint32_t i1 = i0 + half;
-                const uint64_t u = values[i0];
-                const uint64_t t = MontgomeryMulSerial<SharkFloatParams>(
-                    grid, block, debugCombo, values[i1], twiddles[base + j]);
-                values[i0] = AddPSerial(u, t);
-                values[i1] = SubPSerial(u, t);
-            }
+        const uint32_t butterflyCount = n >> 1;
+        const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+        for (uint32_t butterfly = GridThreadRank(block); butterfly < butterflyCount;
+             butterfly += gridSize) {
+            const uint32_t group = butterfly / half;
+            const uint32_t j = butterfly % half;
+            const uint32_t i0 = group * width + j;
+            const uint32_t i1 = i0 + half;
+            const uint64_t u = values[i0];
+            const uint64_t t = MontgomeryMulSerial<SharkFloatParams>(
+                grid, block, debugCombo, values[i1], twiddles[base + j]);
+            values[i0] = AddPSerial(u, t);
+            values[i1] = SubPSerial(u, t);
         }
+        grid.sync();
     }
 }
 
@@ -287,9 +302,12 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
 
     const uint32_t stages = CountTrailingZeros(activeN);
     SharkNTT::RootTables &roots = workspace.Roots;
-    roots.N = static_cast<int32_t>(activeN);
-    roots.stages = static_cast<int32_t>(stages);
-    roots.total_twiddles = activeN - 1;
+    if (IsLeader<SharkFloatParams>(block)) {
+        roots.N = static_cast<int32_t>(activeN);
+        roots.stages = static_cast<int32_t>(stages);
+        roots.total_twiddles = activeN - 1;
+    }
+    grid.sync();
 
     constexpr uint64_t Generator = SharkNTT::FindGeneratorConstexpr();
     const uint64_t generatorMont =
@@ -301,45 +319,44 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
     const uint64_t omega = MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, psi, psi);
     const uint64_t omegaInverse =
         MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, SharkNTT::PHI - 1ull);
-    const uint64_t one = ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1);
 
-    roots.psi_pows[0] = one;
-    roots.psi_inv_pows[0] = one;
-    for (uint32_t i = 1; i < activeN; ++i) {
-        roots.psi_pows[i] =
-            MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, roots.psi_pows[i - 1], psi);
-        roots.psi_inv_pows[i] = MontgomeryMulSerial<SharkFloatParams>(
-            grid, block, debugCombo, roots.psi_inv_pows[i - 1], psiInverse);
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
+        roots.psi_pows[i] = MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psi, i);
+        roots.psi_inv_pows[i] =
+            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psiInverse, i);
     }
+    grid.sync();
 
     uint32_t offset = 0;
     for (uint32_t stage = 1; stage <= stages; ++stage) {
         const uint32_t width = 1u << stage;
         const uint32_t half = width >> 1;
-        roots.stage_omegas[stage - 1] =
-            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, activeN / width);
-        roots.stage_omegas_inv[stage - 1] = MontgomeryPowSerial<SharkFloatParams>(
-            grid, block, debugCombo, omegaInverse, activeN / width);
-        uint64_t forward = one;
-        uint64_t inverse = one;
-        for (uint32_t j = 0; j < half; ++j) {
-            roots.stage_twiddles_fwd[offset + j] = forward;
-            roots.stage_twiddles_inv[offset + j] = inverse;
-            forward = MontgomeryMulSerial<SharkFloatParams>(
-                grid, block, debugCombo, forward, roots.stage_omegas[stage - 1]);
-            inverse = MontgomeryMulSerial<SharkFloatParams>(
-                grid, block, debugCombo, inverse, roots.stage_omegas_inv[stage - 1]);
+        if (IsLeader<SharkFloatParams>(block)) {
+            roots.stage_omegas[stage - 1] =
+                MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, activeN / width);
+            roots.stage_omegas_inv[stage - 1] = MontgomeryPowSerial<SharkFloatParams>(
+                grid, block, debugCombo, omegaInverse, activeN / width);
         }
+        grid.sync();
+        for (uint32_t j = GridThreadRank(block); j < half; j += gridSize) {
+            roots.stage_twiddles_fwd[offset + j] = MontgomeryPowSerial<SharkFloatParams>(
+                grid, block, debugCombo, roots.stage_omegas[stage - 1], j);
+            roots.stage_twiddles_inv[offset + j] = MontgomeryPowSerial<SharkFloatParams>(
+                grid, block, debugCombo, roots.stage_omegas_inv[stage - 1], j);
+        }
+        grid.sync();
         offset += half;
     }
 
-    roots.Ninvm_mont = one;
-    const uint64_t inverseTwo = ToMontgomerySerial<SharkFloatParams>(
-        grid, block, debugCombo, (SharkNTT::MagicPrime + 1ull) >> 1);
-    for (uint32_t stage = 0; stage < stages; ++stage)
+    if (IsLeader<SharkFloatParams>(block)) {
+        const uint64_t inverseTwo = ToMontgomerySerial<SharkFloatParams>(
+            grid, block, debugCombo, (SharkNTT::MagicPrime + 1ull) >> 1);
         roots.Ninvm_mont =
-            MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, roots.Ninvm_mont, inverseTwo);
-    workspace.CachedN = activeN;
+            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, inverseTwo, stages);
+        workspace.CachedN = activeN;
+    }
+    grid.sync();
 }
 
 template <class SharkFloatParams>
@@ -353,7 +370,8 @@ PackTwistForward(cooperative_groups::grid_group &grid,
                  uint64_t *out)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    for (uint32_t i = 0; i < activeN; ++i) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
         const uint64_t coefficient =
             i < static_cast<uint32_t>(plan.L)
                 ? ReadBitsSimple(value, static_cast<int64_t>(i) * plan.b, plan.b)
@@ -362,7 +380,9 @@ PackTwistForward(cooperative_groups::grid_group &grid,
             grid, block, debugCombo, coefficient % SharkNTT::MagicPrime);
         out[i] = MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, mont, roots.psi_pows[i]);
     }
-    BitReverseInplace64(out, activeN, static_cast<uint32_t>(plan.stages));
+    grid.sync();
+    BitReverseInplace64(grid, block, out, activeN, static_cast<uint32_t>(plan.stages));
+    grid.sync();
     NTTRadix2<SharkFloatParams, false>(grid, block, debugCombo, out, activeN, plan.stages, roots);
 }
 
@@ -399,7 +419,8 @@ WriteShiftedSpectrum(cooperative_groups::grid_group &grid,
     const uint64_t bitScale =
         ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
     const uint64_t zeroMont = ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 0);
-    for (uint32_t i = 0; i < static_cast<uint32_t>(plan.N); ++i) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t i = GridThreadRank(block); i < static_cast<uint32_t>(plan.N); i += gridSize) {
         const uint64_t chunkScale =
             chunkShift == 0 ? ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1)
                             : PsiPowerMont<SharkFloatParams>(
@@ -410,6 +431,7 @@ WriteShiftedSpectrum(cooperative_groups::grid_group &grid,
             MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
         dest[i] = negative ? SubPSerial(zeroMont, shifted) : shifted;
     }
+    grid.sync();
 }
 
 template <class SharkFloatParams>
@@ -428,7 +450,8 @@ AddShiftedSpectrum(cooperative_groups::grid_group &grid,
     const uint32_t bitShift = static_cast<uint32_t>(shiftBits % static_cast<uint64_t>(plan.b));
     const uint64_t bitScale =
         ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
-    for (uint32_t i = 0; i < static_cast<uint32_t>(plan.N); ++i) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t i = GridThreadRank(block); i < static_cast<uint32_t>(plan.N); i += gridSize) {
         const uint64_t chunkScale =
             chunkShift == 0 ? ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1)
                             : PsiPowerMont<SharkFloatParams>(
@@ -439,6 +462,7 @@ AddShiftedSpectrum(cooperative_groups::grid_group &grid,
             MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
         dest[i] = negative ? SubPSerial(dest[i], shifted) : AddPSerial(dest[i], shifted);
     }
+    grid.sync();
 }
 
 template <class SharkFloatParams>
@@ -487,9 +511,11 @@ AccumulateOutputSpectrum(cooperative_groups::grid_group &grid,
         if (term.Kind == TermKind::Product) {
             const uint64_t *a = GetSpectrum(workspace, term.A);
             const uint64_t *b = GetSpectrum(workspace, term.B);
-            for (uint32_t i = 0; i < activeN; ++i)
+            const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+            for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize)
                 workspace.Product[i] =
                     MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, a[i], b[i]);
+            grid.sync();
             if (hasDestinationValue) {
                 AddShiftedSpectrum<SharkFloatParams>(grid,
                                                      block,
@@ -557,14 +583,17 @@ FunnelShiftLeft(const IntT *data, int index, int count, int bitOffset)
 
 template <class SharkFloatParams>
 __device__ void
-UnpackResiduesToSignedLimbs(const uint64_t *residues,
+UnpackResiduesToSignedLimbs(cooperative_groups::grid_group &grid,
+                            cooperative_groups::thread_block &block,
+                            const uint64_t *residues,
                             const SharkNTT::PlanPrime &plan,
                             uint32_t coefficientCount,
                             int64_t *limbs,
                             uint32_t limbCount)
 {
     const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
-    for (uint32_t j = 0; j < limbCount; ++j) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t j = GridThreadRank(block); j < limbCount; j += gridSize) {
         const uint64_t firstBit = j >= 3 ? static_cast<uint64_t>(j - 3) * 32ull : 0ull;
         const uint64_t lastBit = (static_cast<uint64_t>(j) + 1ull) * 32ull - 1ull;
         const uint64_t firstCoefficient = firstBit / static_cast<uint64_t>(plan.b);
@@ -602,6 +631,7 @@ UnpackResiduesToSignedLimbs(const uint64_t *residues,
         }
         limbs[j] = total;
     }
+    grid.sync();
 }
 
 template <class SharkFloatParams>
@@ -617,15 +647,19 @@ InverseSpectrumToSignedLimbs(cooperative_groups::grid_group &grid,
                              uint32_t limbCount)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    BitReverseInplace64(spectrum, activeN, static_cast<uint32_t>(plan.stages));
+    BitReverseInplace64(grid, block, spectrum, activeN, static_cast<uint32_t>(plan.stages));
+    grid.sync();
     NTTRadix2<SharkFloatParams, true>(grid, block, debugCombo, spectrum, activeN, plan.stages, roots);
-    for (uint32_t i = 0; i < activeN; ++i) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
         uint64_t value = MontgomeryMulSerial<SharkFloatParams>(
             grid, block, debugCombo, spectrum[i], roots.psi_inv_pows[i]);
         value = MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, value, roots.Ninvm_mont);
         spectrum[i] = FromMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, value);
     }
-    UnpackResiduesToSignedLimbs<SharkFloatParams>(spectrum, plan, coefficientCount, limbs, limbCount);
+    grid.sync();
+    UnpackResiduesToSignedLimbs<SharkFloatParams>(
+        grid, block, spectrum, plan, coefficientCount, limbs, limbCount);
 }
 
 static __device__ int32_t
@@ -750,12 +784,15 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     }
 
     if (requiredBits == 0) {
-        SetZero(&combo->Multiply.A);
-        SetZero(&combo->Multiply.B);
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            SetZero(&combo->Multiply.DzdcReal);
-            SetZero(&combo->Multiply.DzdcImag);
+        if (IsLeader<SharkFloatParams>(block)) {
+            SetZero(&combo->Multiply.A);
+            SetZero(&combo->Multiply.B);
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                SetZero(&combo->Multiply.DzdcReal);
+                SetZero(&combo->Multiply.DzdcImag);
+            }
         }
+        grid.sync();
         return;
     }
 
@@ -763,7 +800,9 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     const uint64_t requiredCoefficients = (requiredBits + basePlan.b - 1ull) / basePlan.b;
     const uint64_t requiredN = CeilPowerOfTwo(requiredCoefficients);
     if (requiredN > HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN || requiredN < 2) {
-        combo->PeriodicityStatus = PeriodicityResult::Unknown;
+        if (IsLeader<SharkFloatParams>(block))
+            combo->PeriodicityStatus = PeriodicityResult::Unknown;
+        grid.sync();
         return;
     }
     const uint32_t activeN = static_cast<uint32_t>(requiredN);
@@ -785,7 +824,8 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     PackTwistForward<SharkFloatParams>(
         grid, block, debugCombo, cImag, plan, workspace.Roots, workspace.CImag);
     if (realZero) {
-        SetZero(&combo->Multiply.A);
+        if (IsLeader<SharkFloatParams>(block))
+            SetZero(&combo->Multiply.A);
     } else {
         AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                    block,
@@ -806,15 +846,19 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        activeN,
                                                        workspace.RealLimbs,
                                                        limbCount);
-        FinalizeSignedStream<SharkFloatParams>(workspace.RealLimbs,
-                                               limbCount,
-                                               realExponent,
-                                               workspace.MagnitudeDigits,
-                                               workspace.Magnitude,
-                                               &combo->Multiply.A);
+        if (IsLeader<SharkFloatParams>(block)) {
+            FinalizeSignedStream<SharkFloatParams>(workspace.RealLimbs,
+                                                   limbCount,
+                                                   realExponent,
+                                                   workspace.MagnitudeDigits,
+                                                   workspace.Magnitude,
+                                                   &combo->Multiply.A);
+        }
     }
+    grid.sync();
     if (imagZero) {
-        SetZero(&combo->Multiply.B);
+        if (IsLeader<SharkFloatParams>(block))
+            SetZero(&combo->Multiply.B);
     } else {
         AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                    block,
@@ -835,13 +879,16 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        activeN,
                                                        workspace.ImagLimbs,
                                                        limbCount);
-        FinalizeSignedStream<SharkFloatParams>(workspace.ImagLimbs,
-                                               limbCount,
-                                               imagExponent,
-                                               workspace.MagnitudeDigits,
-                                               workspace.Magnitude,
-                                               &combo->Multiply.B);
+        if (IsLeader<SharkFloatParams>(block)) {
+            FinalizeSignedStream<SharkFloatParams>(workspace.ImagLimbs,
+                                                   limbCount,
+                                                   imagExponent,
+                                                   workspace.MagnitudeDigits,
+                                                   workspace.Magnitude,
+                                                   &combo->Multiply.B);
+        }
     }
+    grid.sync();
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         PackTwistForward<SharkFloatParams>(grid,
@@ -861,7 +908,8 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         PackTwistForward<SharkFloatParams>(
             grid, block, debugCombo, combo->Add.One, plan, workspace.Roots, workspace.One);
         if (dzdcRealZero) {
-            SetZero(&combo->Multiply.DzdcReal);
+            if (IsLeader<SharkFloatParams>(block))
+                SetZero(&combo->Multiply.DzdcReal);
         } else {
             AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                        block,
@@ -882,15 +930,19 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                            activeN,
                                                            workspace.DzdcRealLimbs,
                                                            limbCount);
-            FinalizeSignedStream<SharkFloatParams>(workspace.DzdcRealLimbs,
-                                                   limbCount,
-                                                   dzdcRealExponent,
-                                                   workspace.MagnitudeDigits,
-                                                   workspace.Magnitude,
-                                                   &combo->Multiply.DzdcReal);
+            if (IsLeader<SharkFloatParams>(block)) {
+                FinalizeSignedStream<SharkFloatParams>(workspace.DzdcRealLimbs,
+                                                       limbCount,
+                                                       dzdcRealExponent,
+                                                       workspace.MagnitudeDigits,
+                                                       workspace.Magnitude,
+                                                       &combo->Multiply.DzdcReal);
+            }
         }
+        grid.sync();
         if (dzdcImagZero) {
-            SetZero(&combo->Multiply.DzdcImag);
+            if (IsLeader<SharkFloatParams>(block))
+                SetZero(&combo->Multiply.DzdcImag);
         } else {
             AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                        block,
@@ -911,13 +963,16 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                            activeN,
                                                            workspace.DzdcImagLimbs,
                                                            limbCount);
-            FinalizeSignedStream<SharkFloatParams>(workspace.DzdcImagLimbs,
-                                                   limbCount,
-                                                   dzdcImagExponent,
-                                                   workspace.MagnitudeDigits,
-                                                   workspace.Magnitude,
-                                                   &combo->Multiply.DzdcImag);
+            if (IsLeader<SharkFloatParams>(block)) {
+                FinalizeSignedStream<SharkFloatParams>(workspace.DzdcImagLimbs,
+                                                       limbCount,
+                                                       dzdcImagExponent,
+                                                       workspace.MagnitudeDigits,
+                                                       workspace.Magnitude,
+                                                       &combo->Multiply.DzdcImag);
+            }
         }
+        grid.sync();
     }
 }
 
@@ -1019,7 +1074,7 @@ __maxnreg__(HpShark::RegisterLimit)
     }
 
     grid.sync();
-    if (leader) { 
+    if (leader) {
         combo->OutputIterCount = 0;
         combo->PeriodicityStatus = PeriodicityResult::Continue;
     }
@@ -1037,8 +1092,7 @@ __maxnreg__(HpShark::RegisterLimit)
             Reference2Detail::UpdateD2<SharkFloatParams>(combo);
         grid.sync();
 
-        if (leader)
-            Reference2Detail::FusedReferenceOrbitStep<SharkFloatParams>(grid, block, debugCombo, combo);
+        Reference2Detail::FusedReferenceOrbitStep<SharkFloatParams>(grid, block, debugCombo, combo);
         grid.sync();
         if (combo->PeriodicityStatus == PeriodicityResult::Unknown)
             break;

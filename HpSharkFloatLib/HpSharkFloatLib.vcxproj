@@ -36,6 +36,7 @@
     </ClCompile>
     <ClInclude Include="HpSharkFloat_cu.h" />
     <ClInclude Include="KernelHpSharkReferenceOrbit_cu.h" />
+    <ClInclude Include="KernelHpSharkReferenceOrbit2_cu.h" />
     <ClInclude Include="AbortMonitor.h" />
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="DbgHeap.h" />
@@ -75,6 +76,7 @@
     <ClInclude Include="HpSharkScratchMemory.h" />
     <ClInclude Include="HpSharkTestConfig.h" />
     <ClInclude Include="KernelHpSharkReferenceOrbit.h" />
+    <ClInclude Include="KernelHpSharkReferenceOrbit2.h" />
     <ClInclude Include="MontgomeryCoreConstexpr.h" />
     <ClInclude Include="MpirComplex.h" />
     <ClInclude Include="MpirOrbitEval.h" />
@@ -125,6 +127,9 @@
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_P.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_NR.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_ReferenceGpuLoop_Dbl.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_Reference2GpuLoop_P.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_Reference2GpuLoop_NR.cu" />
+    <CudaCompile Include="generated_inst\SharkExplicitInstantiate_Reference2GpuLoop_Dbl.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_P.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_NR.cu" />
     <CudaCompile Include="generated_inst\SharkExplicitInstantiate_SharkNTT_Primitives_Dbl.cu" />

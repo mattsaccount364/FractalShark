@@ -19,6 +19,9 @@ set(HPSHARK_GENERATED_CU_FILES
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_P.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_NR.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_Dbl.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_Reference2GpuLoop_P.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_Reference2GpuLoop_NR.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_Reference2GpuLoop_Dbl.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_P.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_NR.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_Dbl.cu

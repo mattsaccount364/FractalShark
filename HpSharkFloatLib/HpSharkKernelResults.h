@@ -63,6 +63,36 @@ template <class SharkFloatParams> struct HpSharkAddComboResults {
     alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcImag; // W2 + W3
 };
 
+// Ref2 deliberately evaluates its fused NTT pipeline on one CUDA thread.  The
+// descriptor lives on the device; every pointed-to buffer is allocated once by
+// the Ref2 invocation glue and reused for the lifetime of the orbit session.
+template <class SharkFloatParams> struct HpSharkReference2Workspace {
+    static constexpr uint32_t MaxFusedN = 32u * 1024u * 1024u;
+    static constexpr uint32_t MaxFusedStages = 25;
+    static constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
+
+    uint64_t *ZReal;
+    uint64_t *ZImag;
+    uint64_t *CReal;
+    uint64_t *CImag;
+    uint64_t *DzdcReal;
+    uint64_t *DzdcImag;
+    uint64_t *One;
+    uint64_t *RealOutput;
+    uint64_t *ImagOutput;
+    uint64_t *DzdcRealOutput;
+    uint64_t *DzdcImagOutput;
+    uint64_t *Product;
+    int64_t *RealLimbs;
+    int64_t *ImagLimbs;
+    int64_t *DzdcRealLimbs;
+    int64_t *DzdcImagLimbs;
+    uint32_t *MagnitudeDigits;
+    uint32_t *Magnitude;
+    SharkNTT::RootTables Roots;
+    uint32_t CachedN;
+};
+
 template <class SharkFloatParams> struct HpSharkReferenceResults {
 
     alignas(16) typename SharkFloatParams::Float RadiusY;
@@ -79,11 +109,17 @@ template <class SharkFloatParams> struct HpSharkReferenceResults {
     static constexpr auto MaxOutputIters = 1024;
     alignas(16) typename SharkFloatParams::ReferenceIterT OutputIters[MaxOutputIters];
 
+    // Device-visible Ref2 storage descriptor.  It is null until the Ref2
+    // invocation path initializes its fixed-capacity workspace.
+    alignas(16) HpSharkReference2Workspace<SharkFloatParams> *Reference2Workspace;
+
     // Host only
     alignas(16) HpSharkReferenceResults<SharkFloatParams> *comboGpu;
     alignas(16) uint64_t *d_tempProducts;
     alignas(16) uintptr_t stream; // cudaStream_t
     alignas(16) void *kernelArgs[3];
+    alignas(16) void *d_reference2WorkspaceStorage;
+    alignas(16) size_t reference2WorkspaceStorageBytes;
 };
 #ifdef _MSC_VER
 #pragma warning(pop)

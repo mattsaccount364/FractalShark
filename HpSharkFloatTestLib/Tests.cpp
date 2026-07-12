@@ -2316,39 +2316,42 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    //if constexpr (HpShark::TestGpu && sharkOperator == Operator::ReferenceOrbit2) {
-    //    BenchmarkTimer timer;
-    //    HpShark::GpuOrbitSession<SharkFloatParams> session(launchParams, emptyRadius, aNum, bNum);
-    //    auto &combo = session.GetCombo();
+    if constexpr (HpShark::TestGpu && sharkOperator == Operator::ReferenceOrbit2) {
+        BenchmarkTimer timer;
 
-    //    {
-    //        ScopedBenchmarkStopper stopper{timer};
-    //        HpShark::InvokeHpSharkReference2Kernel(launchParams, combo, 1);
-    //    }
+        auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
+        combo->Add.C_A = aNum;
+        combo->Add.E_B = bNum;
+        combo->Multiply.A = aNum;
+        combo->Multiply.B = bNum;
+        combo->RadiusY = {};
 
-    //    *gpuResultXX = combo.Multiply.A;
-    //    *gpuResultYY = combo.Multiply.B;
+        HpShark::InvokeHpSharkReference2KernelCorrectness<SharkFloatParams>(
+            launchParams, timer, *combo, &debugGpuCombo);
 
-    //    Tests.AddTime(testNum, timer.GetDeltaInMs());
+        *gpuResultXX = combo->Multiply.A;
+        *gpuResultYY = combo->Multiply.B;
 
-    //    if (SharkVerbose == VerboseMode::Debug) {
-    //        std::cout << "GPU Ref2 timeMs: " << timer.GetDeltaInMs() << std::endl;
-    //    }
-    //}
+        Tests.AddTime(testNum, timer.GetDeltaInMs());
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "GPU Ref2 timeMs: " << timer.GetDeltaInMs() << std::endl;
+        }
+    }
 
     std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
 
-    //if constexpr (HpShark::TestGpu && IsReferenceOrbitOperator<sharkOperator>) {
-    //    bool testSucceeded = true;
+    if constexpr (HpShark::TestGpu && IsReferenceOrbitOperator<sharkOperator>) {
+        bool testSucceeded = true;
 
-    //    constexpr auto numTerms = 2;
+        constexpr auto numTerms = 2;
 
-    //    testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-    //        launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultX, *gpuResultXX);
+        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
+            launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultX, *gpuResultXX);
 
-    //    testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-    //        launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultY, *gpuResultYY);
-    //}
+        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
+            launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultY, *gpuResultYY);
+    }
 
     // Clean up MPIR variables
     mpf_clear(xSquared);

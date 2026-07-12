@@ -49,6 +49,11 @@ void InvokeHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                                    HpSharkReferenceResults<SharkFloatParams> &combo,
                                    uint64_t numIters);
 
+// Initializes Ref2's persistent descriptor and backing workspace for callers
+// that need setup to occur outside the timed kernel-launch interval.
+template <class SharkFloatParams>
+void InitializeHpSharkReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo);
+
 template <class SharkFloatParams>
 void InitHpSharkKernelProd(const HpShark::LaunchParams &launchParams,
                            HpSharkReferenceResults<SharkFloatParams> &combo,
@@ -139,6 +144,12 @@ void InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launch
                                              DebugGpuCombo *debugCombo);
 
 template <class SharkFloatParams>
+void InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchParams,
+                                              BenchmarkTimer &timer,
+                                              HpSharkReferenceResults<SharkFloatParams> &combo,
+                                              DebugGpuCombo *debugCombo);
+
+template <class SharkFloatParams>
 void InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                         BenchmarkTimer &timer,
                                         HpSharkComboResults<SharkFloatParams> &combo,
@@ -173,8 +184,9 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
                                             void *progressContext = nullptr,
                                             uint64_t progressInterval = 64);
 
-// Test-only Ref2 placeholder matching the Ref1 Newton/derivative GPU interface.
-// It intentionally reports no completed work until Ref2 receives a CUDA implementation.
+// Serial CUDA Ref2 counterpart to the Ref1 Newton/derivative GPU interface.
+// It preserves the Ref1 invocation/checkpoint contract while using Ref2's
+// fixed-capacity fused NTT workspace internally.
 template <class SharkFloatParams>
 uint64_t EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
                                              const mpf_t cImag,

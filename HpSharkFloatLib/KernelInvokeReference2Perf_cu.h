@@ -3,9 +3,11 @@
 #include "Exceptions.h"
 #include "HpSharkFloat.h"
 #include "KernelInvoke.h"
+#include "KernelInvokeInternal.h"
 #include "LaunchParams.h"
 
-#include <cuda_runtime.h>
+#include <algorithm>
+#include <chrono>
 #include <memory>
 #include <sstream>
 
@@ -13,50 +15,166 @@ namespace HpShark {
 
 namespace Detail {
 
-template <class SharkFloatParams>
-__global__ void
-HpSharkReference2GpuKernel(HpSharkReferenceResults<SharkFloatParams> *combo)
-{
-    combo->OutputIterCount = 0;
-    combo->PeriodicityStatus = PeriodicityResult::Unknown;
-}
-
 inline void
 CheckReference2Cuda(cudaError_t error, const char *operation)
 {
     if (error == cudaSuccess)
         return;
-
     std::ostringstream message;
     message << operation << " failed: " << cudaGetErrorString(error) << " (code "
             << static_cast<int>(error) << ")";
     throw FractalSharkSeriousException(message.str());
 }
 
+inline size_t
+AlignReference2(size_t value, size_t alignment)
+{
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
+template <class SharkFloatParams>
+size_t
+Reference2WorkspaceStorageBytes()
+{
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    constexpr size_t spectrumCount = SharkFloatParams::EnableNewtonRaphson ? 14u : 9u;
+    constexpr size_t limbCount = SharkFloatParams::EnableNewtonRaphson ? 4u : 2u;
+    size_t bytes = 0;
+    bytes = AlignReference2(bytes, alignof(uint64_t));
+    bytes += spectrumCount * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
+    bytes = AlignReference2(bytes, alignof(int64_t));
+    bytes += limbCount * static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(int64_t);
+    bytes = AlignReference2(bytes, alignof(uint32_t));
+    bytes += 2u * static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(uint32_t);
+    bytes = AlignReference2(bytes, alignof(uint64_t));
+    bytes += 4u * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
+    bytes += 2u * static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
+    return bytes;
+}
+
+template <class SharkFloatParams>
+void
+InitializeReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo)
+{
+    if (combo.Reference2Workspace != nullptr)
+        return;
+
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    const size_t bytes = Reference2WorkspaceStorageBytes<SharkFloatParams>();
+    void *storage = nullptr;
+    Workspace *deviceDescriptor = nullptr;
+    try {
+        CheckReference2Cuda(cudaMalloc(&storage, bytes), "cudaMalloc(Reference2 workspace storage)");
+        CheckReference2Cuda(cudaMemset(storage, 0, bytes), "cudaMemset(Reference2 workspace storage)");
+        auto *base = static_cast<uint8_t *>(storage);
+        size_t offset = 0;
+        auto allocate = [&](size_t count, size_t elementSize, size_t alignment) {
+            offset = AlignReference2(offset, alignment);
+            void *result = base + offset;
+            offset += count * elementSize;
+            return result;
+        };
+        auto spectrum = [&] {
+            return static_cast<uint64_t *>(
+                allocate(Workspace::MaxFusedN, sizeof(uint64_t), alignof(uint64_t)));
+        };
+        auto limbs = [&] {
+            return static_cast<int64_t *>(
+                allocate(Workspace::MaxFusedLimbs, sizeof(int64_t), alignof(int64_t)));
+        };
+
+        Workspace descriptor{};
+        descriptor.ZReal = spectrum();
+        descriptor.ZImag = spectrum();
+        descriptor.CReal = spectrum();
+        descriptor.CImag = spectrum();
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            descriptor.DzdcReal = spectrum();
+            descriptor.DzdcImag = spectrum();
+            descriptor.One = spectrum();
+        }
+        descriptor.RealOutput = spectrum();
+        descriptor.ImagOutput = spectrum();
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            descriptor.DzdcRealOutput = spectrum();
+            descriptor.DzdcImagOutput = spectrum();
+        }
+        descriptor.Product = spectrum();
+        descriptor.RealLimbs = limbs();
+        descriptor.ImagLimbs = limbs();
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            descriptor.DzdcRealLimbs = limbs();
+            descriptor.DzdcImagLimbs = limbs();
+        }
+        descriptor.MagnitudeDigits = static_cast<uint32_t *>(
+            allocate(Workspace::MaxFusedLimbs, sizeof(uint32_t), alignof(uint32_t)));
+        descriptor.Magnitude = static_cast<uint32_t *>(
+            allocate(Workspace::MaxFusedLimbs, sizeof(uint32_t), alignof(uint32_t)));
+        descriptor.Roots.stage_omegas = static_cast<uint64_t *>(
+            allocate(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
+        descriptor.Roots.stage_omegas_inv = static_cast<uint64_t *>(
+            allocate(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
+        descriptor.Roots.psi_pows = spectrum();
+        descriptor.Roots.psi_inv_pows = spectrum();
+        descriptor.Roots.stage_twiddles_fwd = spectrum();
+        descriptor.Roots.stage_twiddles_inv = spectrum();
+
+        CheckReference2Cuda(cudaMalloc(&deviceDescriptor, sizeof(Workspace)),
+                            "cudaMalloc(Reference2 descriptor)");
+        CheckReference2Cuda(
+            cudaMemcpy(deviceDescriptor, &descriptor, sizeof(Workspace), cudaMemcpyHostToDevice),
+            "cudaMemcpy(Reference2 descriptor H2D)");
+        CheckReference2Cuda(cudaMemcpy(&combo.comboGpu->Reference2Workspace,
+                                       &deviceDescriptor,
+                                       sizeof(deviceDescriptor),
+                                       cudaMemcpyHostToDevice),
+                            "cudaMemcpy(Reference2 descriptor pointer H2D)");
+
+        combo.Reference2Workspace = deviceDescriptor;
+        combo.d_reference2WorkspaceStorage = storage;
+        combo.reference2WorkspaceStorageBytes = bytes;
+    } catch (...) {
+        if (deviceDescriptor != nullptr)
+            cudaFree(deviceDescriptor);
+        if (storage != nullptr)
+            cudaFree(storage);
+        throw;
+    }
+}
+
 } // namespace Detail
 
-// Ref2's CUDA entry point deliberately remains incomplete.  It has the same
-// invocation contract as the production reference-orbit kernel so test code
-// validates its result normally and reports the missing implementation.
+template <class SharkFloatParams>
+void
+InitializeHpSharkReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo)
+{
+    Detail::InitializeReference2Workspace(combo);
+}
+
 template <class SharkFloatParams>
 void
 InvokeHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                               HpSharkReferenceResults<SharkFloatParams> &combo,
                               uint64_t numIters)
 {
-    (void)launchParams;
-    (void)numIters;
-
-    const auto stream = *reinterpret_cast<cudaStream_t *>(&combo.stream);
-    Detail::HpSharkReference2GpuKernel<SharkFloatParams><<<1, 1, 0, stream>>>(combo.comboGpu);
-    Detail::CheckReference2Cuda(cudaGetLastError(), "HpSharkReference2GpuKernel launch");
-    Detail::CheckReference2Cuda(cudaStreamSynchronize(stream),
-                                "HpSharkReference2GpuKernel synchronization");
+    InitializeHpSharkReference2Workspace(combo);
+    Detail::CheckReference2Cuda(
+        cudaMemcpy(
+            &combo.comboGpu->MaxRuntimeIters, &numIters, sizeof(numIters), cudaMemcpyHostToDevice),
+        "cudaMemcpy(Reference2 MaxRuntimeIters H2D)");
+    ComputeHpSharkReference2GpuLoop<SharkFloatParams>(
+        launchParams, *reinterpret_cast<cudaStream_t *>(&combo.stream), combo.kernelArgs);
+    auto *reference2Workspace = combo.Reference2Workspace;
+    void *reference2WorkspaceStorage = combo.d_reference2WorkspaceStorage;
+    const size_t reference2WorkspaceStorageBytes = combo.reference2WorkspaceStorageBytes;
     Detail::CheckReference2Cuda(cudaMemcpy(&combo,
                                            combo.comboGpu,
                                            sizeof(HpSharkReferenceResults<SharkFloatParams>),
                                            cudaMemcpyDeviceToHost),
-                                "HpSharkReference2GpuKernel result copy");
+                                "cudaMemcpy(Reference2 results D2H)");
+    combo.Reference2Workspace = reference2Workspace;
+    combo.d_reference2WorkspaceStorage = reference2WorkspaceStorage;
+    combo.reference2WorkspaceStorageBytes = reference2WorkspaceStorageBytes;
 }
 
 template <class SharkFloatParams>
@@ -81,36 +199,78 @@ EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
         return 0;
     }
 
-    (void)shouldAbort;
-    (void)onProgress;
-    (void)progressContext;
-    (void)progressInterval;
+    if (startIter > period)
+        return startIter;
 
-    constexpr int precBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
-    typename SharkFloatParams::Float hdrRadiusY{1.0f};
-
+    constexpr int PrecBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
+    typename SharkFloatParams::Float radiusY{1.0f};
     auto hpCR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto hpCI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     hpCR->MpfToHpGpu(
-        *reinterpret_cast<const mpf_t *>(&cReal[0]), precBits, InjectNoiseInLowOrder::Disable);
+        *reinterpret_cast<const mpf_t *>(&cReal[0]), PrecBits, InjectNoiseInLowOrder::Disable);
     hpCI->MpfToHpGpu(
-        *reinterpret_cast<const mpf_t *>(&cImag[0]), precBits, InjectNoiseInLowOrder::Disable);
+        *reinterpret_cast<const mpf_t *>(&cImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
 
-    GpuOrbitSession<SharkFloatParams> session(externalLaunchParams, hdrRadiusY, *hpCR, *hpCI);
+    GpuOrbitSession<SharkFloatParams> session(externalLaunchParams, radiusY, *hpCR, *hpCI);
     auto &combo = session.GetCombo();
-
-    if (period > startIter) {
-        InvokeHpSharkReference2Kernel(externalLaunchParams, combo, period - startIter);
+    if (startIter == 0) {
+        combo.Multiply.A = HpSharkFloat<SharkFloatParams>{};
+        combo.Multiply.B = HpSharkFloat<SharkFloatParams>{};
+        combo.Multiply.DzdcReal = HpSharkFloat<SharkFloatParams>{};
+        combo.Multiply.DzdcImag = HpSharkFloat<SharkFloatParams>{};
+        combo.d2Real = typename SharkFloatParams::Float{};
+        combo.d2Imag = typename SharkFloatParams::Float{};
+    } else {
+        combo.Multiply.A.MpfToHpGpu(
+            *reinterpret_cast<const mpf_t *>(&outZReal[0]), PrecBits, InjectNoiseInLowOrder::Disable);
+        combo.Multiply.B.MpfToHpGpu(
+            *reinterpret_cast<const mpf_t *>(&outZImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
+        combo.Multiply.DzdcReal.MpfToHpGpu(
+            *reinterpret_cast<const mpf_t *>(&outDzdcReal[0]), PrecBits, InjectNoiseInLowOrder::Disable);
+        combo.Multiply.DzdcImag.MpfToHpGpu(
+            *reinterpret_cast<const mpf_t *>(&outDzdcImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
+        combo.d2Real = typename SharkFloatParams::Float{outD2Real};
+        combo.d2Imag = typename SharkFloatParams::Float{outD2Imag};
     }
+    combo.dzdcX = typename SharkFloatParams::Float{};
+    combo.dzdcY = typename SharkFloatParams::Float{};
+    combo.PeriodicityStatus = PeriodicityResult::Continue;
 
-    combo.Multiply.A.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZReal[0]));
-    combo.Multiply.B.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZImag[0]));
-    combo.Multiply.DzdcReal.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outDzdcReal[0]));
-    combo.Multiply.DzdcImag.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outDzdcImag[0]));
-    outD2Real = HDRFloat<double>(combo.d2Real);
-    outD2Imag = HDRFloat<double>(combo.d2Imag);
+    SharkNTT::RootTables savedRoots;
+    Detail::CheckReference2Cuda(
+        cudaMemcpy(
+            &savedRoots, &combo.comboGpu->Multiply.Roots, sizeof(savedRoots), cudaMemcpyDeviceToHost),
+        "cudaMemcpy(Reference2 roots D2H)");
+    Detail::CheckReference2Cuda(
+        cudaMemcpy(combo.comboGpu, &combo, sizeof(combo), cudaMemcpyHostToDevice),
+        "cudaMemcpy(Reference2 initial state H2D)");
+    Detail::CheckReference2Cuda(
+        cudaMemcpy(
+            &combo.comboGpu->Multiply.Roots, &savedRoots, sizeof(savedRoots), cudaMemcpyHostToDevice),
+        "cudaMemcpy(Reference2 roots H2D)");
 
-    return startIter;
+    constexpr uint64_t ChunkSize = HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
+    uint64_t done = startIter;
+    uint64_t chunks = 0;
+    while (done < period) {
+        const uint64_t chunk = std::min(ChunkSize, period - done);
+        InvokeHpSharkReference2Kernel(externalLaunchParams, combo, chunk);
+        done += combo.OutputIterCount;
+        ++chunks;
+
+        combo.Multiply.A.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZReal[0]));
+        combo.Multiply.B.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outZImag[0]));
+        combo.Multiply.DzdcReal.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outDzdcReal[0]));
+        combo.Multiply.DzdcImag.HpGpuToMpf(*reinterpret_cast<mpf_t *>(&outDzdcImag[0]));
+        outD2Real = HDRFloat<double>(combo.d2Real);
+        outD2Imag = HDRFloat<double>(combo.d2Imag);
+
+        if (onProgress && (progressInterval == 0 || chunks % progressInterval == 0))
+            onProgress(done, progressContext);
+        if ((shouldAbort && shouldAbort()) || combo.OutputIterCount == 0)
+            break;
+    }
+    return done;
 }
 
 } // namespace HpShark

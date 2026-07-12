@@ -2,7 +2,9 @@
 #include "Exceptions.h"
 #include "KernelInvoke.h"
 #include "KernelInvokeInternal.h"
+
 #include <sstream>
+#include <utility>
 
 namespace HpShark {
 
@@ -301,8 +303,128 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
     combo.d_tempProducts = nullptr;
 }
 
+template <class SharkFloatParams>
+void
+InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchParams,
+                                         BenchmarkTimer &timer,
+                                         HpSharkReferenceResults<SharkFloatParams> &combo,
+                                         DebugGpuCombo *debugCombo)
+{
+    constexpr uint64_t numIters = 1;
+    constexpr size_t bytesToAllocate =
+        (HpShark::AdditionalUInt64Global + HpShark::CalculateMaxFrameSize<SharkFloatParams>()) *
+        sizeof(uint64_t);
+
+    auto checkCuda = [](cudaError_t error, const char *operation) {
+        if (error == cudaSuccess)
+            return;
+        std::ostringstream oss;
+        oss << operation << " failed: " << cudaGetErrorString(error) << " (code "
+            << static_cast<int>(error) << ")";
+        throw FractalSharkSeriousException(oss.str());
+    };
+
+    combo.Reference2Workspace = nullptr;
+    combo.d_reference2WorkspaceStorage = nullptr;
+    combo.reference2WorkspaceStorageBytes = 0;
+    combo.comboGpu = nullptr;
+    combo.d_tempProducts = nullptr;
+    combo.stream = 0;
+    combo.kernelArgs[0] = (void *)&combo.comboGpu;
+    combo.kernelArgs[1] = (void *)&combo.d_tempProducts;
+    combo.kernelArgs[2] = nullptr;
+
+    auto cleanup = [&] {
+        cudaError_t cleanupError = cudaSuccess;
+        const char *cleanupOperation = nullptr;
+        auto freeAllocation = [&](auto *&allocation, const char *operation) {
+            if (allocation == nullptr)
+                return;
+            const cudaError_t error = cudaFree(allocation);
+            if (cleanupError == cudaSuccess && error != cudaSuccess) {
+                cleanupError = error;
+                cleanupOperation = operation;
+            }
+            allocation = nullptr;
+        };
+
+        freeAllocation(combo.Reference2Workspace, "cudaFree(Reference2 descriptor)");
+        freeAllocation(combo.d_reference2WorkspaceStorage, "cudaFree(Reference2 workspace storage)");
+        combo.reference2WorkspaceStorageBytes = 0;
+        freeAllocation(combo.comboGpu, "cudaFree(Reference2 combo)");
+        freeAllocation(combo.d_tempProducts, "cudaFree(Reference2 scratch)");
+        combo.kernelArgs[0] = nullptr;
+        combo.kernelArgs[1] = nullptr;
+        combo.kernelArgs[2] = nullptr;
+        return std::pair{cleanupError, cleanupOperation};
+    };
+
+    try {
+        checkCuda(cudaMalloc(&combo.d_tempProducts, bytesToAllocate), "cudaMalloc(Reference2 scratch)");
+        const uint8_t byteToSet = HpShark::TestInitCudaMemory ? 0xCD : 0;
+        checkCuda(cudaMemset(combo.d_tempProducts, byteToSet, bytesToAllocate),
+                  "cudaMemset(Reference2 scratch)");
+        checkCuda(cudaMalloc(&combo.comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>)),
+                  "cudaMalloc(Reference2 combo)");
+        checkCuda(cudaMemcpy(combo.comboGpu,
+                             &combo,
+                             sizeof(HpSharkReferenceResults<SharkFloatParams>),
+                             cudaMemcpyHostToDevice),
+                  "cudaMemcpy(Reference2 combo H2D)");
+
+        InitializeHpSharkReference2Workspace(combo);
+        checkCuda(
+            cudaMemcpy(
+                &combo.comboGpu->MaxRuntimeIters, &numIters, sizeof(numIters), cudaMemcpyHostToDevice),
+            "cudaMemcpy(Reference2 MaxRuntimeIters H2D)");
+
+        {
+            ScopedBenchmarkStopper stopper{timer};
+            ComputeHpSharkReference2GpuLoop<SharkFloatParams>(
+                launchParams, *reinterpret_cast<cudaStream_t *>(&combo.stream), combo.kernelArgs);
+        }
+
+        auto *comboGpu = combo.comboGpu;
+        auto *tempProducts = combo.d_tempProducts;
+        auto *reference2Workspace = combo.Reference2Workspace;
+        void *reference2WorkspaceStorage = combo.d_reference2WorkspaceStorage;
+        const size_t reference2WorkspaceStorageBytes = combo.reference2WorkspaceStorageBytes;
+        const cudaError_t copyError = cudaMemcpy(
+            &combo, comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+        combo.comboGpu = comboGpu;
+        combo.d_tempProducts = tempProducts;
+        combo.Reference2Workspace = reference2Workspace;
+        combo.d_reference2WorkspaceStorage = reference2WorkspaceStorage;
+        combo.reference2WorkspaceStorageBytes = reference2WorkspaceStorageBytes;
+        checkCuda(copyError, "cudaMemcpy(Reference2 results D2H)");
+
+        if (debugCombo != nullptr) {
+            if constexpr (HpShark::DebugGlobalState) {
+                debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
+                checkCuda(
+                    cudaMemcpy(debugCombo->MultiplyCounts.data(),
+                               &combo.d_tempProducts[HpShark::AdditionalMultipliesOffset],
+                               SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
+                               cudaMemcpyDeviceToHost),
+                    "cudaMemcpy(Reference2 debug multiply counts D2H)");
+            }
+        }
+
+        const auto [cleanupError, cleanupOperation] = cleanup();
+        checkCuda(cleanupError, cleanupOperation);
+    } catch (...) {
+        cleanup();
+        throw;
+    }
+}
+
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(                            \
+        const HpShark::LaunchParams &launchParams,                                                      \
+        BenchmarkTimer &timer,                                                                          \
+        HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
+        DebugGpuCombo *debugCombo);                                                                     \
+    template void InvokeHpSharkReference2KernelCorrectness<SharkFloatParams>(                           \
         const HpShark::LaunchParams &launchParams,                                                      \
         BenchmarkTimer &timer,                                                                          \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \

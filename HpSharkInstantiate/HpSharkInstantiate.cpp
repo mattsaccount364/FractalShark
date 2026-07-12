@@ -254,13 +254,35 @@ template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
             R"(template void InvokeHpSharkReference2Kernel<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams,
     HpSharkReferenceResults<SharkFloatParams> &combo,
-    uint64_t numIters);)";
+    uint64_t numIters);
+template void InitializeHpSharkReference2Workspace<SharkFloatParams>(
+    HpSharkReferenceResults<SharkFloatParams> &combo);
+template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
+    const mpf_t, const mpf_t, uint64_t,
+    mpf_t, mpf_t, mpf_t, mpf_t,
+    HDRFloat<double> &, HDRFloat<double> &,
+    const HpShark::LaunchParams &,
+    uint64_t,
+    bool (*)(),
+    void (*)(uint64_t, void *),
+    void *,
+    uint64_t);)";
 
         b.push_back(
             Batch{"HpSharkReference2", "../KernelInvokeReference2Perf_cu.h", templates, "HpShark"});
     }
 
-    // 5) Add kernels
+    // 5) Ref2's cooperative loop is instantiated separately from the
+    // invocation wrapper, exactly as the Ref1 ReferenceGpuLoop batch is.
+    {
+        constexpr auto templates =
+            R"(template void ComputeHpSharkReference2GpuLoop<SharkFloatParams>(
+    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
+
+        b.push_back(Batch{"Reference2GpuLoop", "../KernelHpSharkReferenceOrbit2_cu.h", templates, ""});
+    }
+
+    // 6) Add kernels
     {
         constexpr auto templates =
             R"(template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
@@ -271,7 +293,7 @@ template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParam
         b.push_back(Batch{"AddKernels", "../KernelTestAdd_cu.h", templates, ""});
     }
 
-    // 6) Multiply NTT kernels
+    // 7) Multiply NTT kernels
     {
         constexpr auto templates =
             R"(template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
@@ -282,7 +304,7 @@ template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(
         b.push_back(Batch{"MultiplyNTT", "../KernelTestMultiplyNTT_cu.h", templates, ""});
     }
 
-    // 7) SharkNTT primitives are already fully-qualified as SharkNTT::..., so no wrapper needed.
+    // 8) SharkNTT primitives are already fully-qualified as SharkNTT::..., so no wrapper needed.
     {
         constexpr auto templates =
             R"(template void SharkNTT::BuildRoots<SharkFloatParams>(uint32_t, uint32_t, SharkNTT::RootTables &);

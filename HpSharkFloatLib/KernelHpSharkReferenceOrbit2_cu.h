@@ -805,7 +805,11 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         grid.sync();
         return;
     }
-    const uint32_t activeN = static_cast<uint32_t>(requiredN);
+    const uint32_t cachedN = workspace.CachedN;
+    assert(cachedN == 0 || (cachedN <= HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN &&
+                            (cachedN & (cachedN - 1u)) == 0));
+    const uint32_t activeN =
+        requiredN > static_cast<uint64_t>(cachedN) ? static_cast<uint32_t>(requiredN) : cachedN;
     const SharkNTT::PlanPrime plan{basePlan.n32,
                                    basePlan.b,
                                    basePlan.L,

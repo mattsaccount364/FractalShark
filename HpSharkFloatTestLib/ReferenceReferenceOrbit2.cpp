@@ -1301,7 +1301,10 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                   << " requiredN=" << requiredN << " capacity=" << MaxFusedN << '\n';
         assert(false);
     }
-    const uint32_t activeN = static_cast<uint32_t>(requiredN);
+    const uint32_t cachedN = *workspace.CachedN;
+    assert(cachedN == 0 || (cachedN <= MaxFusedN && (cachedN & (cachedN - 1u)) == 0));
+    const uint32_t activeN =
+        requiredN > static_cast<uint64_t>(cachedN) ? static_cast<uint32_t>(requiredN) : cachedN;
     assert(activeN >= 2u);
     assert((SharkNTT::PHI % (2ull * activeN)) == 0ull);
     const SharkNTT::PlanPrime plan{basePlan.n32,
@@ -1508,6 +1511,7 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
     FusedWorkspace workspace = GetGlobalFusedWorkspace<SharkFloatParams>();
     auto &global = GetGlobalFusedWorkspaceStorage<SharkFloatParams>();
+    global.CachedN = 0;
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         HpSharkFloat<SharkFloatParams> *outZReal = global.OutputZReal.get();
@@ -1825,6 +1829,7 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
 {
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
     FusedWorkspace workspace = GetGlobalFusedWorkspace<SharkFloatParams>();
+    GetGlobalFusedWorkspaceStorage<SharkFloatParams>().CachedN = 0;
     EvaluateOrbitAndDerivative2Impl<SharkFloatParams>(cReal,
                                                       cImag,
                                                       period,

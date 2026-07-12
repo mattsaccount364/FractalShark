@@ -353,10 +353,11 @@ PackTwistForward(cooperative_groups::grid_group &grid,
                  uint64_t *out)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    for (uint32_t i = 0; i < activeN; ++i)
-        out[i] = 0;
-    for (int i = 0; i < plan.L; ++i) {
-        const uint64_t coefficient = ReadBitsSimple(value, static_cast<int64_t>(i) * plan.b, plan.b);
+    for (uint32_t i = 0; i < activeN; ++i) {
+        const uint64_t coefficient =
+            i < static_cast<uint32_t>(plan.L)
+                ? ReadBitsSimple(value, static_cast<int64_t>(i) * plan.b, plan.b)
+                : 0;
         const uint64_t mont = ToMontgomerySerial<SharkFloatParams>(
             grid, block, debugCombo, coefficient % SharkNTT::MagicPrime);
         out[i] = MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, mont, roots.psi_pows[i]);
@@ -379,6 +380,36 @@ PsiPowerMont(cooperative_groups::grid_group &grid,
         return roots.psi_pows[reduced];
     return SubPSerial(ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 0),
                       roots.psi_pows[reduced - static_cast<uint64_t>(plan.N)]);
+}
+
+template <class SharkFloatParams>
+__device__ void
+WriteShiftedSpectrum(cooperative_groups::grid_group &grid,
+                     cooperative_groups::thread_block &block,
+                     DebugGlobalCount<SharkFloatParams> *debugCombo,
+                     const SharkNTT::PlanPrime &plan,
+                     const SharkNTT::RootTables &roots,
+                     const uint64_t *source,
+                     uint64_t shiftBits,
+                     bool negative,
+                     uint64_t *dest)
+{
+    const uint64_t chunkShift = shiftBits / static_cast<uint64_t>(plan.b);
+    const uint32_t bitShift = static_cast<uint32_t>(shiftBits % static_cast<uint64_t>(plan.b));
+    const uint64_t bitScale =
+        ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
+    const uint64_t zeroMont = ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 0);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(plan.N); ++i) {
+        const uint64_t chunkScale =
+            chunkShift == 0 ? ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1)
+                            : PsiPowerMont<SharkFloatParams>(
+                                  grid, block, debugCombo, plan, roots, chunkShift * (1ull + 2ull * i));
+        const uint64_t scale =
+            MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, chunkScale, bitScale);
+        const uint64_t shifted =
+            MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
+        dest[i] = negative ? SubPSerial(zeroMont, shifted) : shifted;
+    }
 }
 
 template <class SharkFloatParams>
@@ -441,18 +472,13 @@ AccumulateOutputSpectrum(cooperative_groups::grid_group &grid,
                          const SharkNTT::PlanPrime &plan,
                          const SharkNTT::RootTables &roots,
                          HpSharkReference2Workspace<SharkFloatParams> &workspace,
-                         bool isZero,
                          int32_t commonExponent,
                          uint64_t *dest,
                          const FusedTerm<SharkFloatParams> *terms,
                          uint32_t count)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    for (uint32_t i = 0; i < activeN; ++i)
-        dest[i] = 0;
-    if (isZero)
-        return;
-
+    bool hasDestinationValue = false;
     for (uint32_t termIndex = 0; termIndex < count; ++termIndex) {
         const FusedTerm<SharkFloatParams> &term = terms[termIndex];
         if (term.IsZero)
@@ -464,20 +490,40 @@ AccumulateOutputSpectrum(cooperative_groups::grid_group &grid,
             for (uint32_t i = 0; i < activeN; ++i)
                 workspace.Product[i] =
                     MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, a[i], b[i]);
-            AddShiftedSpectrum<SharkFloatParams>(
-                grid, block, debugCombo, plan, roots, workspace.Product, shift, term.IsNegative, dest);
+            if (hasDestinationValue) {
+                AddShiftedSpectrum<SharkFloatParams>(grid,
+                                                     block,
+                                                     debugCombo,
+                                                     plan,
+                                                     roots,
+                                                     workspace.Product,
+                                                     shift,
+                                                     term.IsNegative,
+                                                     dest);
+            } else {
+                WriteShiftedSpectrum<SharkFloatParams>(grid,
+                                                       block,
+                                                       debugCombo,
+                                                       plan,
+                                                       roots,
+                                                       workspace.Product,
+                                                       shift,
+                                                       term.IsNegative,
+                                                       dest);
+            }
         } else {
-            AddShiftedSpectrum<SharkFloatParams>(grid,
-                                                 block,
-                                                 debugCombo,
-                                                 plan,
-                                                 roots,
-                                                 GetSpectrum(workspace, term.A),
-                                                 shift,
-                                                 term.IsNegative,
-                                                 dest);
+            const uint64_t *source = GetSpectrum(workspace, term.A);
+            if (hasDestinationValue) {
+                AddShiftedSpectrum<SharkFloatParams>(
+                    grid, block, debugCombo, plan, roots, source, shift, term.IsNegative, dest);
+            } else {
+                WriteShiftedSpectrum<SharkFloatParams>(
+                    grid, block, debugCombo, plan, roots, source, shift, term.IsNegative, dest);
+            }
         }
+        hasDestinationValue = true;
     }
+    assert(hasDestinationValue);
 }
 
 template <class IntT>
@@ -517,29 +563,44 @@ UnpackResiduesToSignedLimbs(const uint64_t *residues,
                             int64_t *limbs,
                             uint32_t limbCount)
 {
-    for (uint32_t i = 0; i < limbCount; ++i)
-        limbs[i] = 0;
     const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
-    for (uint32_t i = 0; i < coefficientCount; ++i) {
-        const uint64_t residue = residues[i];
-        if (residue == 0)
-            continue;
-        const bool negative = residue > halfPrime;
-        const uint64_t magnitude = negative ? SharkNTT::MagicPrime - residue : residue;
-        const uint64_t shiftedBits = static_cast<uint64_t>(i) * static_cast<uint64_t>(plan.b);
-        const uint32_t q = static_cast<uint32_t>(shiftedBits >> 5);
-        const int r = static_cast<int>(shiftedBits & 31);
-        const uint64_t lo = r == 0 ? magnitude : magnitude << r;
-        const uint64_t hi = r == 0 ? 0ull : magnitude >> (64 - r);
-        const int64_t sign = negative ? -1 : 1;
-        if (q < limbCount)
-            limbs[q] += sign * static_cast<uint32_t>(lo);
-        if (q + 1 < limbCount)
-            limbs[q + 1] += sign * static_cast<uint32_t>(lo >> 32);
-        if (q + 2 < limbCount)
-            limbs[q + 2] += sign * static_cast<uint32_t>(hi);
-        if (q + 3 < limbCount)
-            limbs[q + 3] += sign * static_cast<uint32_t>(hi >> 32);
+    for (uint32_t j = 0; j < limbCount; ++j) {
+        const uint64_t firstBit = j >= 3 ? static_cast<uint64_t>(j - 3) * 32ull : 0ull;
+        const uint64_t lastBit = (static_cast<uint64_t>(j) + 1ull) * 32ull - 1ull;
+        const uint64_t firstCoefficient = firstBit / static_cast<uint64_t>(plan.b);
+        const uint64_t lastCoefficient = lastBit / static_cast<uint64_t>(plan.b);
+        int64_t total = 0;
+        for (uint64_t i = firstCoefficient; i <= lastCoefficient && i < coefficientCount; ++i) {
+            const uint64_t residue = residues[i];
+            if (residue == 0)
+                continue;
+            const bool negative = residue > halfPrime;
+            const uint64_t magnitude = negative ? SharkNTT::MagicPrime - residue : residue;
+            const uint64_t shiftedBits = i * static_cast<uint64_t>(plan.b);
+            const uint32_t q = static_cast<uint32_t>(shiftedBits >> 5);
+            if (q > j || j - q > 3)
+                continue;
+            const int r = static_cast<int>(shiftedBits & 31);
+            const uint64_t lo = r == 0 ? magnitude : magnitude << r;
+            const uint64_t hi = r == 0 ? 0ull : magnitude >> (64 - r);
+            uint32_t contribution = 0;
+            switch (j - q) {
+                case 0:
+                    contribution = static_cast<uint32_t>(lo);
+                    break;
+                case 1:
+                    contribution = static_cast<uint32_t>(lo >> 32);
+                    break;
+                case 2:
+                    contribution = static_cast<uint32_t>(hi);
+                    break;
+                case 3:
+                    contribution = static_cast<uint32_t>(hi >> 32);
+                    break;
+            }
+            total += negative ? -static_cast<int64_t>(contribution) : static_cast<int64_t>(contribution);
+        }
+        limbs[j] = total;
     }
 }
 
@@ -723,32 +784,19 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         grid, block, debugCombo, cReal, plan, workspace.Roots, workspace.CReal);
     PackTwistForward<SharkFloatParams>(
         grid, block, debugCombo, cImag, plan, workspace.Roots, workspace.CImag);
-    AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                               block,
-                                               debugCombo,
-                                               plan,
-                                               workspace.Roots,
-                                               workspace,
-                                               realZero,
-                                               realExponent,
-                                               workspace.RealOutput,
-                                               realTerms,
-                                               3);
-    AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                               block,
-                                               debugCombo,
-                                               plan,
-                                               workspace.Roots,
-                                               workspace,
-                                               imagZero,
-                                               imagExponent,
-                                               workspace.ImagOutput,
-                                               imagTerms,
-                                               2);
-    if (realZero)
-        for (uint32_t i = 0; i < limbCount; ++i)
-            workspace.RealLimbs[i] = 0;
-    else
+    if (realZero) {
+        SetZero(&combo->Multiply.A);
+    } else {
+        AccumulateOutputSpectrum<SharkFloatParams>(grid,
+                                                   block,
+                                                   debugCombo,
+                                                   plan,
+                                                   workspace.Roots,
+                                                   workspace,
+                                                   realExponent,
+                                                   workspace.RealOutput,
+                                                   realTerms,
+                                                   3);
         InverseSpectrumToSignedLimbs<SharkFloatParams>(grid,
                                                        block,
                                                        debugCombo,
@@ -758,10 +806,26 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        activeN,
                                                        workspace.RealLimbs,
                                                        limbCount);
-    if (imagZero)
-        for (uint32_t i = 0; i < limbCount; ++i)
-            workspace.ImagLimbs[i] = 0;
-    else
+        FinalizeSignedStream<SharkFloatParams>(workspace.RealLimbs,
+                                               limbCount,
+                                               realExponent,
+                                               workspace.MagnitudeDigits,
+                                               workspace.Magnitude,
+                                               &combo->Multiply.A);
+    }
+    if (imagZero) {
+        SetZero(&combo->Multiply.B);
+    } else {
+        AccumulateOutputSpectrum<SharkFloatParams>(grid,
+                                                   block,
+                                                   debugCombo,
+                                                   plan,
+                                                   workspace.Roots,
+                                                   workspace,
+                                                   imagExponent,
+                                                   workspace.ImagOutput,
+                                                   imagTerms,
+                                                   2);
         InverseSpectrumToSignedLimbs<SharkFloatParams>(grid,
                                                        block,
                                                        debugCombo,
@@ -771,18 +835,13 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        activeN,
                                                        workspace.ImagLimbs,
                                                        limbCount);
-    FinalizeSignedStream<SharkFloatParams>(workspace.RealLimbs,
-                                           limbCount,
-                                           realExponent,
-                                           workspace.MagnitudeDigits,
-                                           workspace.Magnitude,
-                                           &combo->Multiply.A);
-    FinalizeSignedStream<SharkFloatParams>(workspace.ImagLimbs,
-                                           limbCount,
-                                           imagExponent,
-                                           workspace.MagnitudeDigits,
-                                           workspace.Magnitude,
-                                           &combo->Multiply.B);
+        FinalizeSignedStream<SharkFloatParams>(workspace.ImagLimbs,
+                                               limbCount,
+                                               imagExponent,
+                                               workspace.MagnitudeDigits,
+                                               workspace.Magnitude,
+                                               &combo->Multiply.B);
+    }
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         PackTwistForward<SharkFloatParams>(grid,
@@ -801,32 +860,19 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                            workspace.DzdcImag);
         PackTwistForward<SharkFloatParams>(
             grid, block, debugCombo, combo->Add.One, plan, workspace.Roots, workspace.One);
-        AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                   block,
-                                                   debugCombo,
-                                                   plan,
-                                                   workspace.Roots,
-                                                   workspace,
-                                                   dzdcRealZero,
-                                                   dzdcRealExponent,
-                                                   workspace.DzdcRealOutput,
-                                                   dzdcRealTerms,
-                                                   3);
-        AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                   block,
-                                                   debugCombo,
-                                                   plan,
-                                                   workspace.Roots,
-                                                   workspace,
-                                                   dzdcImagZero,
-                                                   dzdcImagExponent,
-                                                   workspace.DzdcImagOutput,
-                                                   dzdcImagTerms,
-                                                   2);
-        if (dzdcRealZero)
-            for (uint32_t i = 0; i < limbCount; ++i)
-                workspace.DzdcRealLimbs[i] = 0;
-        else
+        if (dzdcRealZero) {
+            SetZero(&combo->Multiply.DzdcReal);
+        } else {
+            AccumulateOutputSpectrum<SharkFloatParams>(grid,
+                                                       block,
+                                                       debugCombo,
+                                                       plan,
+                                                       workspace.Roots,
+                                                       workspace,
+                                                       dzdcRealExponent,
+                                                       workspace.DzdcRealOutput,
+                                                       dzdcRealTerms,
+                                                       3);
             InverseSpectrumToSignedLimbs<SharkFloatParams>(grid,
                                                            block,
                                                            debugCombo,
@@ -836,10 +882,26 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                            activeN,
                                                            workspace.DzdcRealLimbs,
                                                            limbCount);
-        if (dzdcImagZero)
-            for (uint32_t i = 0; i < limbCount; ++i)
-                workspace.DzdcImagLimbs[i] = 0;
-        else
+            FinalizeSignedStream<SharkFloatParams>(workspace.DzdcRealLimbs,
+                                                   limbCount,
+                                                   dzdcRealExponent,
+                                                   workspace.MagnitudeDigits,
+                                                   workspace.Magnitude,
+                                                   &combo->Multiply.DzdcReal);
+        }
+        if (dzdcImagZero) {
+            SetZero(&combo->Multiply.DzdcImag);
+        } else {
+            AccumulateOutputSpectrum<SharkFloatParams>(grid,
+                                                       block,
+                                                       debugCombo,
+                                                       plan,
+                                                       workspace.Roots,
+                                                       workspace,
+                                                       dzdcImagExponent,
+                                                       workspace.DzdcImagOutput,
+                                                       dzdcImagTerms,
+                                                       2);
             InverseSpectrumToSignedLimbs<SharkFloatParams>(grid,
                                                            block,
                                                            debugCombo,
@@ -849,18 +911,13 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                            activeN,
                                                            workspace.DzdcImagLimbs,
                                                            limbCount);
-        FinalizeSignedStream<SharkFloatParams>(workspace.DzdcRealLimbs,
-                                               limbCount,
-                                               dzdcRealExponent,
-                                               workspace.MagnitudeDigits,
-                                               workspace.Magnitude,
-                                               &combo->Multiply.DzdcReal);
-        FinalizeSignedStream<SharkFloatParams>(workspace.DzdcImagLimbs,
-                                               limbCount,
-                                               dzdcImagExponent,
-                                               workspace.MagnitudeDigits,
-                                               workspace.Magnitude,
-                                               &combo->Multiply.DzdcImag);
+            FinalizeSignedStream<SharkFloatParams>(workspace.DzdcImagLimbs,
+                                                   limbCount,
+                                                   dzdcImagExponent,
+                                                   workspace.MagnitudeDigits,
+                                                   workspace.Magnitude,
+                                                   &combo->Multiply.DzdcImag);
+        }
     }
 }
 
@@ -962,7 +1019,7 @@ __maxnreg__(HpShark::RegisterLimit)
     }
 
     grid.sync();
-    if (leader) {
+    if (leader) { 
         combo->OutputIterCount = 0;
         combo->PeriodicityStatus = PeriodicityResult::Continue;
     }

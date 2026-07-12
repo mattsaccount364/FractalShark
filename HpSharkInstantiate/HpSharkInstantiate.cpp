@@ -251,12 +251,20 @@ template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
     // 4) Add kernels
     {
         constexpr auto templates =
-            R"(template void InvokeHpSharkReference2Kernel<SharkFloatParams>(
+            R"(template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+InitHpSharkReference2Kernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
+                                              const typename SharkFloatParams::Float hdrRadiusY,
+                                              const mpf_t,
+                                              const mpf_t);
+template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+InitHpSharkReference2Kernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
+                                              const typename SharkFloatParams::Float hdrRadiusY,
+                                              const HpSharkFloat<SharkFloatParams> &xNum,
+                                              const HpSharkFloat<SharkFloatParams> &yNum);
+template void InvokeHpSharkReference2Kernel<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams,
     HpSharkReferenceResults<SharkFloatParams> &combo,
     uint64_t numIters);
-template void InitializeHpSharkReference2Workspace<SharkFloatParams>(
-    HpSharkReferenceResults<SharkFloatParams> &combo);
 template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
     const mpf_t, const mpf_t, uint64_t,
     mpf_t, mpf_t, mpf_t, mpf_t,

@@ -145,10 +145,40 @@ InitializeReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo)
 } // namespace Detail
 
 template <class SharkFloatParams>
-void
-InitializeHpSharkReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo)
+std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
+                            const typename SharkFloatParams::Float hdrRadiusY,
+                            const mpf_t srcX,
+                            const mpf_t srcY)
 {
-    Detail::InitializeReference2Workspace(combo);
+    auto inputX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto inputY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    inputX->MpfToHpGpu(
+        srcX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
+    inputY->MpfToHpGpu(
+        srcY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
+
+    return InitHpSharkReference2Kernel<SharkFloatParams>(launchParams, hdrRadiusY, *inputX, *inputY);
+}
+
+template <class SharkFloatParams>
+std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
+                            const typename SharkFloatParams::Float hdrRadiusY,
+                            const HpSharkFloat<SharkFloatParams> &xNum,
+                            const HpSharkFloat<SharkFloatParams> &yNum)
+{
+    // Keep Ref2's setup separate from Ref1's public lifecycle.  The common
+    // combo/stream/root initialization intentionally remains the Ref1 setup,
+    // then Ref2 adds its fixed-capacity workspace before the first launch.
+    auto combo = InitHpSharkReferenceKernel<SharkFloatParams>(launchParams, hdrRadiusY, xNum, yNum);
+    try {
+        Detail::InitializeReference2Workspace(*combo);
+    } catch (...) {
+        ShutdownHpSharkReferenceKernel<SharkFloatParams>(launchParams, *combo, nullptr);
+        throw;
+    }
+    return combo;
 }
 
 template <class SharkFloatParams>
@@ -157,7 +187,6 @@ InvokeHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                               HpSharkReferenceResults<SharkFloatParams> &combo,
                               uint64_t numIters)
 {
-    InitializeHpSharkReference2Workspace(combo);
     Detail::CheckReference2Cuda(
         cudaMemcpy(
             &combo.comboGpu->MaxRuntimeIters, &numIters, sizeof(numIters), cudaMemcpyHostToDevice),
@@ -211,7 +240,7 @@ EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
     hpCI->MpfToHpGpu(
         *reinterpret_cast<const mpf_t *>(&cImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
 
-    GpuOrbitSession<SharkFloatParams> session(externalLaunchParams, radiusY, *hpCR, *hpCI);
+    GpuOrbitSession2<SharkFloatParams> session(externalLaunchParams, radiusY, *hpCR, *hpCI);
     auto &combo = session.GetCombo();
     if (startIter == 0) {
         combo.Multiply.A = HpSharkFloat<SharkFloatParams>{};

@@ -40,6 +40,20 @@ std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReferenceK
     const HpSharkFloat<SharkFloatParams> &yNum);
 
 template <class SharkFloatParams>
+std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReference2Kernel(
+    const HpShark::LaunchParams &launchParams,
+    const typename SharkFloatParams::Float hdrRadiusY,
+    const mpf_t srcX,
+    const mpf_t srcY);
+
+template <class SharkFloatParams>
+std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReference2Kernel(
+    const HpShark::LaunchParams &launchParams,
+    const typename SharkFloatParams::Float hdrRadiusY,
+    const HpSharkFloat<SharkFloatParams> &xNum,
+    const HpSharkFloat<SharkFloatParams> &yNum);
+
+template <class SharkFloatParams>
 void InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                                   HpSharkReferenceResults<SharkFloatParams> &combo,
                                   uint64_t numIters);
@@ -48,11 +62,6 @@ template <class SharkFloatParams>
 void InvokeHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                                    HpSharkReferenceResults<SharkFloatParams> &combo,
                                    uint64_t numIters);
-
-// Initializes Ref2's persistent descriptor and backing workspace for callers
-// that need setup to occur outside the timed kernel-launch interval.
-template <class SharkFloatParams>
-void InitializeHpSharkReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo);
 
 template <class SharkFloatParams>
 void InitHpSharkKernelProd(const HpShark::LaunchParams &launchParams,
@@ -110,6 +119,63 @@ public:
     InvokeChunk(uint64_t numIters)
     {
         InvokeHpSharkReferenceKernel<SharkFloatParams>(m_LaunchParams, *m_Combo, numIters);
+    }
+
+    HpSharkReferenceResults<SharkFloatParams> &
+    GetCombo()
+    {
+        return *m_Combo;
+    }
+
+    const HpSharkReferenceResults<SharkFloatParams> &
+    GetCombo() const
+    {
+        return *m_Combo;
+    }
+};
+
+// Ref2 owns an additional fixed-capacity fused-NTT workspace, so it must use
+// its own initializer even though it shares the Ref1 shutdown contract.
+template <class SharkFloatParams> class GpuOrbitSession2 {
+    std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> m_Combo;
+    HpShark::LaunchParams m_LaunchParams;
+    DebugGpuCombo *m_DebugCombo;
+
+public:
+    GpuOrbitSession2(const HpShark::LaunchParams &launchParams,
+                     typename SharkFloatParams::Float hdrRadiusY,
+                     const mpf_t srcX,
+                     const mpf_t srcY,
+                     DebugGpuCombo *debugCombo = nullptr)
+        : m_Combo{InitHpSharkReference2Kernel<SharkFloatParams>(launchParams, hdrRadiusY, srcX, srcY)},
+          m_LaunchParams{launchParams}, m_DebugCombo{debugCombo}
+    {
+    }
+
+    GpuOrbitSession2(const HpShark::LaunchParams &launchParams,
+                     typename SharkFloatParams::Float hdrRadiusY,
+                     const HpSharkFloat<SharkFloatParams> &xNum,
+                     const HpSharkFloat<SharkFloatParams> &yNum,
+                     DebugGpuCombo *debugCombo = nullptr)
+        : m_Combo{InitHpSharkReference2Kernel<SharkFloatParams>(launchParams, hdrRadiusY, xNum, yNum)},
+          m_LaunchParams{launchParams}, m_DebugCombo{debugCombo}
+    {
+    }
+
+    ~GpuOrbitSession2()
+    {
+        ShutdownHpSharkReferenceKernel<SharkFloatParams>(m_LaunchParams, *m_Combo, m_DebugCombo);
+    }
+
+    GpuOrbitSession2(const GpuOrbitSession2 &) = delete;
+    GpuOrbitSession2 &operator=(const GpuOrbitSession2 &) = delete;
+    GpuOrbitSession2(GpuOrbitSession2 &&) = delete;
+    GpuOrbitSession2 &operator=(GpuOrbitSession2 &&) = delete;
+
+    void
+    InvokeChunk(uint64_t numIters)
+    {
+        InvokeHpSharkReference2Kernel<SharkFloatParams>(m_LaunchParams, *m_Combo, numIters);
     }
 
     HpSharkReferenceResults<SharkFloatParams> &

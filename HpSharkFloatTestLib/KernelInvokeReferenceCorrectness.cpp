@@ -65,8 +65,8 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
                          SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw));
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemset(debug checksum region) failed: " << cudaGetErrorString(err)
-                << " (code " << static_cast<int>(err) << ")";
+            oss << "cudaMemset(debug checksum region) failed: " << cudaGetErrorString(err) << " (code "
+                << static_cast<int>(err) << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -89,8 +89,8 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
                      cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
         std::ostringstream oss;
-        oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
-            << static_cast<int>(err) << ")";
+        oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+            << ")";
         throw FractalSharkSeriousException(oss.str());
     }
 
@@ -222,8 +222,8 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
         throw FractalSharkSeriousException(oss.str());
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
-                << static_cast<int>(err) << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+                << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -243,8 +243,8 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
                      cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
         std::ostringstream oss;
-        oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
-            << static_cast<int>(err) << ")";
+        oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+            << ")";
         throw FractalSharkSeriousException(oss.str());
     }
 
@@ -311,9 +311,6 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
                                          DebugGpuCombo *debugCombo)
 {
     constexpr uint64_t numIters = 1;
-    constexpr size_t bytesToAllocate =
-        (HpShark::AdditionalUInt64Global + HpShark::CalculateMaxFrameSize<SharkFloatParams>()) *
-        sizeof(uint64_t);
 
     auto checkCuda = [](cudaError_t error, const char *operation) {
         if (error == cudaSuccess)
@@ -324,55 +321,11 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
         throw FractalSharkSeriousException(oss.str());
     };
 
-    combo.Reference2Workspace = nullptr;
-    combo.d_reference2WorkspaceStorage = nullptr;
-    combo.reference2WorkspaceStorageBytes = 0;
-    combo.comboGpu = nullptr;
-    combo.d_tempProducts = nullptr;
-    combo.stream = 0;
-    combo.kernelArgs[0] = (void *)&combo.comboGpu;
-    combo.kernelArgs[1] = (void *)&combo.d_tempProducts;
-    combo.kernelArgs[2] = nullptr;
-
-    auto cleanup = [&] {
-        cudaError_t cleanupError = cudaSuccess;
-        const char *cleanupOperation = nullptr;
-        auto freeAllocation = [&](auto *&allocation, const char *operation) {
-            if (allocation == nullptr)
-                return;
-            const cudaError_t error = cudaFree(allocation);
-            if (cleanupError == cudaSuccess && error != cudaSuccess) {
-                cleanupError = error;
-                cleanupOperation = operation;
-            }
-            allocation = nullptr;
-        };
-
-        freeAllocation(combo.Reference2Workspace, "cudaFree(Reference2 descriptor)");
-        freeAllocation(combo.d_reference2WorkspaceStorage, "cudaFree(Reference2 workspace storage)");
-        combo.reference2WorkspaceStorageBytes = 0;
-        freeAllocation(combo.comboGpu, "cudaFree(Reference2 combo)");
-        freeAllocation(combo.d_tempProducts, "cudaFree(Reference2 scratch)");
-        combo.kernelArgs[0] = nullptr;
-        combo.kernelArgs[1] = nullptr;
-        combo.kernelArgs[2] = nullptr;
-        return std::pair{cleanupError, cleanupOperation};
-    };
+    auto initialized = InitHpSharkReference2Kernel<SharkFloatParams>(
+        launchParams, combo.RadiusY, combo.Add.C_A, combo.Add.E_B);
+    combo = *initialized;
 
     try {
-        checkCuda(cudaMalloc(&combo.d_tempProducts, bytesToAllocate), "cudaMalloc(Reference2 scratch)");
-        const uint8_t byteToSet = HpShark::TestInitCudaMemory ? 0xCD : 0;
-        checkCuda(cudaMemset(combo.d_tempProducts, byteToSet, bytesToAllocate),
-                  "cudaMemset(Reference2 scratch)");
-        checkCuda(cudaMalloc(&combo.comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>)),
-                  "cudaMalloc(Reference2 combo)");
-        checkCuda(cudaMemcpy(combo.comboGpu,
-                             &combo,
-                             sizeof(HpSharkReferenceResults<SharkFloatParams>),
-                             cudaMemcpyHostToDevice),
-                  "cudaMemcpy(Reference2 combo H2D)");
-
-        InitializeHpSharkReference2Workspace(combo);
         checkCuda(
             cudaMemcpy(
                 &combo.comboGpu->MaxRuntimeIters, &numIters, sizeof(numIters), cudaMemcpyHostToDevice),
@@ -397,25 +350,12 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
         combo.d_reference2WorkspaceStorage = reference2WorkspaceStorage;
         combo.reference2WorkspaceStorageBytes = reference2WorkspaceStorageBytes;
         checkCuda(copyError, "cudaMemcpy(Reference2 results D2H)");
-
-        if (debugCombo != nullptr) {
-            if constexpr (HpShark::DebugGlobalState) {
-                debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
-                checkCuda(
-                    cudaMemcpy(debugCombo->MultiplyCounts.data(),
-                               &combo.d_tempProducts[HpShark::AdditionalMultipliesOffset],
-                               SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
-                               cudaMemcpyDeviceToHost),
-                    "cudaMemcpy(Reference2 debug multiply counts D2H)");
-            }
-        }
-
-        const auto [cleanupError, cleanupOperation] = cleanup();
-        checkCuda(cleanupError, cleanupOperation);
     } catch (...) {
-        cleanup();
+        ShutdownHpSharkReferenceKernel<SharkFloatParams>(launchParams, combo, debugCombo);
         throw;
     }
+
+    ShutdownHpSharkReferenceKernel<SharkFloatParams>(launchParams, combo, debugCombo);
 }
 
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \

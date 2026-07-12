@@ -24,6 +24,7 @@
 #include <map>
 #include <sstream>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include "KernelInvoke.h"
@@ -857,8 +858,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             std::vector<typename SharkFloatParams::ReferenceIterT> hpSharkReferenceOrbit;
             uint64_t totalExecutedIters = 0;
 
-            HpShark::GpuOrbitSession<SharkFloatParams> session(
-                launchParams, hdrRadiusY, *xNum, *yNum, debugGpuCombo.get());
+            using GpuOrbitSessionType = std::conditional_t<sharkOperator == Operator::ReferenceOrbit,
+                                                           HpShark::GpuOrbitSession<SharkFloatParams>,
+                                                           HpShark::GpuOrbitSession2<SharkFloatParams>>;
+            GpuOrbitSessionType session(launchParams, hdrRadiusY, *xNum, *yNum, debugGpuCombo.get());
             auto &combo = session.GetCombo();
 
             {
@@ -877,11 +880,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         assert(itersToRun > 0);
                         assert(itersToRun <= MaxOutputIters);
 
-                        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-                            session.InvokeChunk(itersToRun);
-                        } else {
-                            HpShark::InvokeHpSharkReference2Kernel(launchParams, combo, itersToRun);
-                        }
+                        session.InvokeChunk(itersToRun);
 
                         totalExecutedIters += combo.OutputIterCount;
 
@@ -4084,8 +4083,7 @@ TestAllBinaryOp(int testBase)
             "7236.34234e5234523");
     }
 
-    if constexpr (sharkOperator == Operator::Add ||
-                  sharkOperator == Operator::ReferenceOrbit2) {
+    if constexpr (sharkOperator == Operator::Add || sharkOperator == Operator::ReferenceOrbit2) {
         static constexpr auto SpecificTest1 = -129;
         static constexpr auto SpecificTest2 = -128;
         static constexpr auto SpecificTest3 = -127;

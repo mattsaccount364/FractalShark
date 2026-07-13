@@ -63,13 +63,20 @@ template <class SharkFloatParams> struct HpSharkAddComboResults {
     alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcImag; // W2 + W3
 };
 
-// Ref2 deliberately evaluates its fused NTT pipeline on one CUDA thread.  The
-// descriptor lives on the device; every pointed-to buffer is allocated once by
-// the Ref2 invocation glue and reused for the lifetime of the orbit session.
+// Ref2 evaluates its fused NTT pipeline cooperatively. The descriptor lives on
+// the device; every pointed-to buffer is allocated once by the Ref2 invocation
+// glue and reused for the lifetime of the orbit session.
+struct alignas(16) HpSharkReference2CarryPrefixDescriptor {
+    uint64_t Transform;
+    uint32_t State;
+    uint32_t Padding;
+};
+
 template <class SharkFloatParams> struct HpSharkReference2Workspace {
     static constexpr uint32_t MaxFusedN = 32u * 1024u * 1024u;
     static constexpr uint32_t MaxFusedStages = 25;
     static constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
+    static constexpr uint32_t MaxCarryPrefixParts = (MaxFusedLimbs + 31u) / 32u;
 
     uint64_t *ZReal;
     uint64_t *ZImag;
@@ -89,6 +96,9 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     int64_t *DzdcImagLimbs;
     uint32_t *MagnitudeDigits;
     uint32_t *Magnitude;
+    uint64_t *CarryPrefixTransforms;
+    HpSharkReference2CarryPrefixDescriptor *CarryPrefixDescriptors;
+    uint32_t *CarryPrefixControl;
     SharkNTT::RootTables Roots;
     uint32_t CachedN;
 };

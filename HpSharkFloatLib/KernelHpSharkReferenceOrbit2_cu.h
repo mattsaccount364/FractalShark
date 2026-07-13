@@ -726,67 +726,356 @@ CountLeadingZeros(uint32_t value)
     return __clz(value);
 }
 
-template <class SharkFloatParams>
-__device__ void
-FinalizeSignedStream(const int64_t *limbs,
-                     uint32_t limbCount,
-                     int32_t commonExponent,
-                     uint32_t *digits,
-                     uint32_t *magnitude,
-                     HpSharkFloat<SharkFloatParams> *out)
+constexpr int32_t CarryPrefixMin = -8;
+constexpr int32_t CarryPrefixMax = 7;
+constexpr uint32_t CarryPrefixStateCount = CarryPrefixMax - CarryPrefixMin + 1;
+constexpr uint32_t CarryPrefixMaxWarps = 32;
+
+enum class CarryPrefixDescriptorState : uint32_t {
+    Empty = 0,
+    Aggregate = 1,
+    Prefix = 2,
+};
+
+static __device__ uint64_t
+CarryPrefixIdentity()
+{
+    uint64_t transform = 0;
+    for (uint32_t input = 0; input < CarryPrefixStateCount; ++input)
+        transform |= static_cast<uint64_t>(input) << (input * 4u);
+    return transform;
+}
+
+static __device__ int32_t
+ApplyCarryPrefix(uint64_t transform, int32_t carry)
+{
+    assert(carry >= CarryPrefixMin && carry <= CarryPrefixMax);
+    const uint32_t input = static_cast<uint32_t>(carry - CarryPrefixMin);
+    const uint32_t output = static_cast<uint32_t>((transform >> (input * 4u)) & 0xFu);
+    return static_cast<int32_t>(output) + CarryPrefixMin;
+}
+
+static __device__ uint64_t
+ComposeCarryPrefixes(uint64_t earlier, uint64_t later)
+{
+    uint64_t combined = 0;
+    for (uint32_t input = 0; input < CarryPrefixStateCount; ++input) {
+        const int32_t afterEarlier =
+            static_cast<int32_t>((earlier >> (input * 4u)) & 0xFu) + CarryPrefixMin;
+        const uint32_t afterLater = static_cast<uint32_t>(
+            (later >> (static_cast<uint32_t>(afterEarlier - CarryPrefixMin) * 4u)) & 0xFu);
+        combined |= static_cast<uint64_t>(afterLater) << (input * 4u);
+    }
+    return combined;
+}
+
+static __device__ int32_t
+CarryOutForSignedLimb(int64_t limb, int32_t carryIn)
 {
     constexpr int64_t Base = 1ll << 32;
-    constexpr uint32_t Capacity = HpSharkReference2Workspace<SharkFloatParams>::MaxFusedLimbs;
-    uint32_t digitLength = 0;
-    int64_t carry = 0;
-    for (uint32_t i = 0; i < limbCount; ++i) {
-        const int64_t sum = limbs[i] + carry;
-        digits[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(sum));
-        carry = (sum - static_cast<int64_t>(digits[digitLength - 1])) / Base;
-    }
-    while (carry != 0 && carry != -1 && digitLength < Capacity) {
-        digits[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(carry));
-        carry = (carry - static_cast<int64_t>(digits[digitLength - 1])) / Base;
-    }
+    const int64_t sum = limb + carryIn;
+    const uint32_t digit = static_cast<uint32_t>(static_cast<uint64_t>(sum));
+    return static_cast<int32_t>((sum - static_cast<int64_t>(digit)) / Base);
+}
 
-    bool negative = carry < 0;
-    uint32_t magnitudeLength = 0;
-    if (!negative) {
-        while (digitLength > 0 && digits[digitLength - 1] == 0)
-            --digitLength;
-        for (uint32_t i = 0; i < digitLength; ++i)
-            magnitude[magnitudeLength++] = digits[i];
-    } else {
-        uint64_t addOne = 1;
-        for (uint32_t i = 0; i < digitLength; ++i) {
-            const uint64_t sum = static_cast<uint32_t>(~digits[i]) + addOne;
-            magnitude[magnitudeLength++] = static_cast<uint32_t>(sum);
-            addOne = sum >> 32;
-        }
-        if (addOne != 0 && magnitudeLength < Capacity)
-            magnitude[magnitudeLength++] = static_cast<uint32_t>(addOne);
-        while (magnitudeLength > 0 && magnitude[magnitudeLength - 1] == 0)
-            --magnitudeLength;
-        if (magnitudeLength == 0)
-            negative = false;
+static __device__ uint64_t
+MakeSignedCarryPrefix(int64_t limb)
+{
+    uint64_t transform = 0;
+    for (int32_t carryIn = CarryPrefixMin; carryIn <= CarryPrefixMax; ++carryIn) {
+        const int32_t carryOut = CarryOutForSignedLimb(limb, carryIn);
+        assert(carryOut >= CarryPrefixMin && carryOut <= CarryPrefixMax);
+        const uint32_t input = static_cast<uint32_t>(carryIn - CarryPrefixMin);
+        const uint32_t output = static_cast<uint32_t>(carryOut - CarryPrefixMin);
+        transform |= static_cast<uint64_t>(output) << (input * 4u);
     }
+    return transform;
+}
 
-    if (magnitudeLength == 0) {
-        SetZero(out);
+static __device__ uint64_t
+MakeAddOneCarryPrefix(uint32_t digit)
+{
+    uint64_t transform = 0;
+    for (uint32_t input = 0; input < CarryPrefixStateCount; ++input) {
+        const bool carryIn = input == 1u;
+        const uint32_t output = carryIn && digit == 0u ? 1u : 0u;
+        transform |= static_cast<uint64_t>(output) << (input * 4u);
+    }
+    return transform;
+}
+
+static __device__ uint64_t
+ShuffleUpCarryPrefix(unsigned mask, uint64_t value, int offset)
+{
+    const uint32_t low = __shfl_up_sync(mask, static_cast<uint32_t>(value), offset);
+    const uint32_t high = __shfl_up_sync(mask, static_cast<uint32_t>(value >> 32u), offset);
+    return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
+}
+
+static __device__ uint64_t
+ShuffleDownCarryPrefix(unsigned mask, uint64_t value, int offset)
+{
+    const uint32_t low = __shfl_down_sync(mask, static_cast<uint32_t>(value), offset);
+    const uint32_t high = __shfl_down_sync(mask, static_cast<uint32_t>(value >> 32u), offset);
+    return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
+}
+
+static __device__ void
+BuildSignedCarryPrefixes(cooperative_groups::grid_group &grid,
+                         cooperative_groups::thread_block &block,
+                         const int64_t *limbs,
+                         uint32_t limbCount,
+                         uint64_t *transforms)
+{
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize)
+        transforms[index] = MakeSignedCarryPrefix(limbs[index]);
+    grid.sync();
+}
+
+static __device__ void
+BuildAddOneCarryPrefixes(cooperative_groups::grid_group &grid,
+                         cooperative_groups::thread_block &block,
+                         const uint32_t *digits,
+                         uint32_t digitCount,
+                         uint64_t *transforms)
+{
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t index = GridThreadRank(block); index < digitCount; index += gridSize)
+        transforms[index] = MakeAddOneCarryPrefix(digits[index]);
+    grid.sync();
+}
+
+static __device__ void
+PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
+                         cooperative_groups::thread_block &block,
+                         uint64_t *transforms,
+                         uint32_t count,
+                         HpSharkReference2CarryPrefixDescriptor *descriptors,
+                         uint64_t *sharedStorage)
+{
+    if (count == 0u)
         return;
+
+    constexpr uint32_t Empty = static_cast<uint32_t>(CarryPrefixDescriptorState::Empty);
+    constexpr uint32_t Aggregate = static_cast<uint32_t>(CarryPrefixDescriptorState::Aggregate);
+    constexpr uint32_t Prefix = static_cast<uint32_t>(CarryPrefixDescriptorState::Prefix);
+    const uint32_t blockSize = block.dim_threads().x;
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    const uint32_t numParts = (count + blockSize - 1u) / blockSize;
+    const uint32_t threadIndex = block.thread_index().x;
+    const uint32_t lane = threadIndex & 31u;
+    const uint32_t warp = threadIndex >> 5u;
+    const uint32_t numWarps = (blockSize + 31u) >> 5u;
+    const unsigned warpMask = __activemask();
+    uint64_t *warpAggregates = sharedStorage;
+    uint64_t *warpPrefixes = sharedStorage + CarryPrefixMaxWarps;
+    uint64_t *broadcast = sharedStorage + 2u * CarryPrefixMaxWarps;
+
+    // Workspace descriptors are sized for the supported cooperative launch
+    // minimum of one warp per block. Ref2's launch calculator selects a warp
+    // multiple, which also keeps the intra-warp scan well-defined.
+    assert(blockSize >= 32u && (blockSize & 31u) == 0u);
+    assert(numWarps <= CarryPrefixMaxWarps);
+
+    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize) {
+        descriptors[part].Transform = CarryPrefixIdentity();
+        descriptors[part].State = Empty;
+    }
+    grid.sync();
+
+    for (uint32_t part = block.group_index().x; part < numParts; part += gridDim.x) {
+        const uint32_t base = part * blockSize;
+        const uint32_t index = base + threadIndex;
+        const bool hasValue = index < count;
+        uint64_t inclusive = hasValue ? transforms[index] : CarryPrefixIdentity();
+
+        for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+            const uint64_t previous =
+                ShuffleUpCarryPrefix(warpMask, inclusive, static_cast<int>(offset));
+            if (lane >= offset)
+                inclusive = ComposeCarryPrefixes(previous, inclusive);
+        }
+
+        const uint32_t warpEnd = (warp + 1u) * 32u;
+        const uint32_t warpLastThread = (warpEnd < blockSize ? warpEnd : blockSize) - 1u;
+        if (threadIndex == warpLastThread)
+            warpAggregates[warp] = inclusive;
+        __syncthreads();
+
+        if (warp == 0u) {
+            uint64_t warpInclusive = lane < numWarps ? warpAggregates[lane] : CarryPrefixIdentity();
+            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+                const uint64_t previous =
+                    ShuffleUpCarryPrefix(warpMask, warpInclusive, static_cast<int>(offset));
+                if (lane >= offset && lane < numWarps)
+                    warpInclusive = ComposeCarryPrefixes(previous, warpInclusive);
+            }
+
+            if (lane < numWarps) {
+                const uint64_t previous = ShuffleUpCarryPrefix(warpMask, warpInclusive, 1);
+                warpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : previous;
+            }
+            if (lane == numWarps - 1u)
+                warpAggregates[0] = warpInclusive;
+        }
+        __syncthreads();
+
+        const uint64_t aggregate = warpAggregates[0];
+        if (threadIndex == 0u) {
+            descriptors[part].Transform = aggregate;
+            __threadfence();
+            atomicExch(&descriptors[part].State, Aggregate);
+        }
+        __syncthreads();
+
+        if (threadIndex == 0u) {
+            uint64_t exclusive = CarryPrefixIdentity();
+            int32_t previousPart = static_cast<int32_t>(part) - 1;
+            while (previousPart >= 0) {
+                auto &descriptor = descriptors[previousPart];
+                uint32_t state;
+                do {
+                    state = atomicAdd(&descriptor.State, 0u);
+                    if (state == Empty)
+                        __nanosleep(64);
+                } while (state == Empty);
+                __threadfence();
+
+                const uint64_t transform = descriptor.Transform;
+                exclusive = ComposeCarryPrefixes(transform, exclusive);
+                if (state == Prefix)
+                    break;
+                --previousPart;
+            }
+            broadcast[0] = exclusive;
+        }
+        __syncthreads();
+
+        const uint64_t exclusivePart = broadcast[0];
+        if (threadIndex == 0u) {
+            descriptors[part].Transform = ComposeCarryPrefixes(exclusivePart, aggregate);
+            __threadfence();
+            atomicExch(&descriptors[part].State, Prefix);
+        }
+
+        const uint64_t warpExclusive = warpPrefixes[warp];
+        const uint64_t previous = ShuffleUpCarryPrefix(warpMask, inclusive, 1);
+        const uint64_t localExclusive = lane == 0u ? CarryPrefixIdentity() : previous;
+        if (hasValue) {
+            const uint64_t prefixWithinPart = ComposeCarryPrefixes(warpExclusive, localExclusive);
+            transforms[index] = ComposeCarryPrefixes(exclusivePart, prefixWithinPart);
+        }
+        __syncthreads();
     }
 
-    constexpr int ActualDigits = SharkFloatParams::GlobalNumUint32;
-    const int mostSignificant = static_cast<int>(magnitudeLength) - 1;
-    const int currentBit = mostSignificant * 32 + 31 - CountLeadingZeros(magnitude[mostSignificant]);
-    const int desiredBit = (ActualDigits - 1) * 32 + 31;
-    const int shift = currentBit - desiredBit;
-    for (int i = 0; i < ActualDigits; ++i) {
-        out->Digits[i] = shift > 0 ? FunnelShiftRight(magnitude, i, magnitudeLength, shift)
-                                   : FunnelShiftLeft(magnitude, i, magnitudeLength, -shift);
+    grid.sync();
+}
+
+template <class SharkFloatParams>
+__device__ void
+FinalizeSignedStream(cooperative_groups::grid_group &grid,
+                     cooperative_groups::thread_block &block,
+                     uint64_t *carryPrefixShared,
+                     HpSharkReference2Workspace<SharkFloatParams> &workspace,
+                     const int64_t *limbs,
+                     uint32_t limbCount,
+                     int32_t commonExponent,
+                     HpSharkFloat<SharkFloatParams> *out)
+{
+    constexpr uint32_t Capacity = HpSharkReference2Workspace<SharkFloatParams>::MaxFusedLimbs;
+    constexpr uint32_t DigitLengthControl = 0;
+    constexpr uint32_t NegativeControl = 1;
+    constexpr uint32_t HighestNonZeroControl = 2;
+    uint32_t *digits = workspace.MagnitudeDigits;
+    uint32_t *magnitude = workspace.Magnitude;
+    uint64_t *transforms = workspace.CarryPrefixTransforms;
+    uint32_t *control = workspace.CarryPrefixControl;
+
+    BuildSignedCarryPrefixes(grid, block, limbs, limbCount, transforms);
+    PrefixCarryTransformsDLB(
+        grid, block, transforms, limbCount, workspace.CarryPrefixDescriptors, carryPrefixShared);
+
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
+        const int32_t carryIn = ApplyCarryPrefix(transforms[index], 0);
+        digits[index] = static_cast<uint32_t>(static_cast<uint64_t>(limbs[index] + carryIn));
     }
-    out->Exponent = commonExponent + shift;
-    out->SetNegative(negative);
+    grid.sync();
+
+    if (IsLeader<SharkFloatParams>(block)) {
+        const int32_t finalCarryIn = ApplyCarryPrefix(transforms[limbCount - 1u], 0);
+        int32_t finalCarry = CarryOutForSignedLimb(limbs[limbCount - 1u], finalCarryIn);
+        uint32_t digitLength = limbCount;
+        while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
+            digits[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
+            finalCarry = CarryOutForSignedLimb(finalCarry, 0);
+        }
+        control[DigitLengthControl] = digitLength;
+        control[NegativeControl] = finalCarry < 0 ? 1u : 0u;
+    }
+    grid.sync();
+
+    uint32_t digitLength = control[DigitLengthControl];
+    const bool negative = control[NegativeControl] != 0u;
+    if (negative) {
+        BuildAddOneCarryPrefixes(grid, block, digits, digitLength, transforms);
+        PrefixCarryTransformsDLB(
+            grid, block, transforms, digitLength, workspace.CarryPrefixDescriptors, carryPrefixShared);
+        for (uint32_t index = GridThreadRank(block); index < digitLength; index += gridSize) {
+            const int32_t carryState = ApplyCarryPrefix(transforms[index], CarryPrefixMin + 1);
+            const uint32_t carryIn = static_cast<uint32_t>(carryState - CarryPrefixMin);
+            magnitude[index] = static_cast<uint32_t>(~digits[index]) + carryIn;
+        }
+        grid.sync();
+
+        if (IsLeader<SharkFloatParams>(block)) {
+            const int32_t carryState =
+                ApplyCarryPrefix(transforms[digitLength - 1u], CarryPrefixMin + 1);
+            const uint32_t carryIn = static_cast<uint32_t>(carryState - CarryPrefixMin);
+            const bool carryOut = digits[digitLength - 1u] == 0u && carryIn != 0u;
+            if (carryOut && digitLength < Capacity)
+                magnitude[digitLength++] = 1u;
+            control[DigitLengthControl] = digitLength;
+        }
+        grid.sync();
+        digitLength = control[DigitLengthControl];
+    } else {
+        for (uint32_t index = GridThreadRank(block); index < digitLength; index += gridSize)
+            magnitude[index] = digits[index];
+        grid.sync();
+    }
+
+    if (IsLeader<SharkFloatParams>(block))
+        control[HighestNonZeroControl] = 0u;
+    grid.sync();
+    for (uint32_t index = GridThreadRank(block); index < digitLength; index += gridSize) {
+        if (magnitude[index] != 0u)
+            atomicMax(&control[HighestNonZeroControl], index + 1u);
+    }
+    grid.sync();
+
+    if (IsLeader<SharkFloatParams>(block)) {
+        const uint32_t highestNonZeroPlusOne = control[HighestNonZeroControl];
+        if (highestNonZeroPlusOne == 0u) {
+            SetZero(out);
+        } else {
+            const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+            constexpr int ActualDigits = SharkFloatParams::GlobalNumUint32;
+            const int magnitudeLength = static_cast<int>(highestNonZero) + 1;
+            const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                   CountLeadingZeros(magnitude[highestNonZero]);
+            const int desiredBit = (ActualDigits - 1) * 32 + 31;
+            const int shift = currentBit - desiredBit;
+            for (int i = 0; i < ActualDigits; ++i) {
+                out->Digits[i] = shift > 0 ? FunnelShiftRight(magnitude, i, magnitudeLength, shift)
+                                           : FunnelShiftLeft(magnitude, i, magnitudeLength, -shift);
+            }
+            out->Exponent = commonExponent + shift;
+            out->SetNegative(negative);
+        }
+    }
+    grid.sync();
 }
 
 template <class SharkFloatParams>
@@ -794,6 +1083,7 @@ __device__ void
 FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                         cooperative_groups::thread_block &block,
                         DebugGlobalCount<SharkFloatParams> *debugCombo,
+                        uint64_t *carryPrefixShared,
                         HpSharkReferenceResults<SharkFloatParams> *combo)
 {
     auto &workspace = *combo->Reference2Workspace;
@@ -916,20 +1206,22 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                               normalCoefficientCounts,
                                                               normalLimbs,
                                                               limbCount);
-        if (IsLeader<SharkFloatParams>(block)) {
-            FinalizeSignedStream<SharkFloatParams>(workspace.RealLimbs,
-                                                   limbCount,
-                                                   realExponent,
-                                                   workspace.MagnitudeDigits,
-                                                   workspace.Magnitude,
-                                                   &combo->Multiply.A);
-            FinalizeSignedStream<SharkFloatParams>(workspace.ImagLimbs,
-                                                   limbCount,
-                                                   imagExponent,
-                                                   workspace.MagnitudeDigits,
-                                                   workspace.Magnitude,
-                                                   &combo->Multiply.B);
-        }
+        FinalizeSignedStream<SharkFloatParams>(grid,
+                                               block,
+                                               carryPrefixShared,
+                                               workspace,
+                                               workspace.RealLimbs,
+                                               limbCount,
+                                               realExponent,
+                                               &combo->Multiply.A);
+        FinalizeSignedStream<SharkFloatParams>(grid,
+                                               block,
+                                               carryPrefixShared,
+                                               workspace,
+                                               workspace.ImagLimbs,
+                                               limbCount,
+                                               imagExponent,
+                                               &combo->Multiply.B);
     } else {
         if (realZero) {
             if (IsLeader<SharkFloatParams>(block))
@@ -957,14 +1249,14 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                                   realCoefficientCount,
                                                                   realLimbs,
                                                                   limbCount);
-            if (IsLeader<SharkFloatParams>(block)) {
-                FinalizeSignedStream<SharkFloatParams>(workspace.RealLimbs,
-                                                       limbCount,
-                                                       realExponent,
-                                                       workspace.MagnitudeDigits,
-                                                       workspace.Magnitude,
-                                                       &combo->Multiply.A);
-            }
+            FinalizeSignedStream<SharkFloatParams>(grid,
+                                                   block,
+                                                   carryPrefixShared,
+                                                   workspace,
+                                                   workspace.RealLimbs,
+                                                   limbCount,
+                                                   realExponent,
+                                                   &combo->Multiply.A);
         }
         grid.sync();
         if (imagZero) {
@@ -993,14 +1285,14 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                                   imagCoefficientCount,
                                                                   imagLimbs,
                                                                   limbCount);
-            if (IsLeader<SharkFloatParams>(block)) {
-                FinalizeSignedStream<SharkFloatParams>(workspace.ImagLimbs,
-                                                       limbCount,
-                                                       imagExponent,
-                                                       workspace.MagnitudeDigits,
-                                                       workspace.Magnitude,
-                                                       &combo->Multiply.B);
-            }
+            FinalizeSignedStream<SharkFloatParams>(grid,
+                                                   block,
+                                                   carryPrefixShared,
+                                                   workspace,
+                                                   workspace.ImagLimbs,
+                                                   limbCount,
+                                                   imagExponent,
+                                                   &combo->Multiply.B);
         }
     }
     grid.sync();
@@ -1051,20 +1343,22 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                                   newtonRaphsonCoefficientCounts,
                                                                   newtonRaphsonLimbs,
                                                                   limbCount);
-            if (IsLeader<SharkFloatParams>(block)) {
-                FinalizeSignedStream<SharkFloatParams>(workspace.DzdcRealLimbs,
-                                                       limbCount,
-                                                       dzdcRealExponent,
-                                                       workspace.MagnitudeDigits,
-                                                       workspace.Magnitude,
-                                                       &combo->Multiply.DzdcReal);
-                FinalizeSignedStream<SharkFloatParams>(workspace.DzdcImagLimbs,
-                                                       limbCount,
-                                                       dzdcImagExponent,
-                                                       workspace.MagnitudeDigits,
-                                                       workspace.Magnitude,
-                                                       &combo->Multiply.DzdcImag);
-            }
+            FinalizeSignedStream<SharkFloatParams>(grid,
+                                                   block,
+                                                   carryPrefixShared,
+                                                   workspace,
+                                                   workspace.DzdcRealLimbs,
+                                                   limbCount,
+                                                   dzdcRealExponent,
+                                                   &combo->Multiply.DzdcReal);
+            FinalizeSignedStream<SharkFloatParams>(grid,
+                                                   block,
+                                                   carryPrefixShared,
+                                                   workspace,
+                                                   workspace.DzdcImagLimbs,
+                                                   limbCount,
+                                                   dzdcImagExponent,
+                                                   &combo->Multiply.DzdcImag);
         } else {
             if (dzdcRealZero) {
                 if (IsLeader<SharkFloatParams>(block))
@@ -1092,14 +1386,14 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                                       dzdcRealCoefficientCount,
                                                                       dzdcRealLimbs,
                                                                       limbCount);
-                if (IsLeader<SharkFloatParams>(block)) {
-                    FinalizeSignedStream<SharkFloatParams>(workspace.DzdcRealLimbs,
-                                                           limbCount,
-                                                           dzdcRealExponent,
-                                                           workspace.MagnitudeDigits,
-                                                           workspace.Magnitude,
-                                                           &combo->Multiply.DzdcReal);
-                }
+                FinalizeSignedStream<SharkFloatParams>(grid,
+                                                       block,
+                                                       carryPrefixShared,
+                                                       workspace,
+                                                       workspace.DzdcRealLimbs,
+                                                       limbCount,
+                                                       dzdcRealExponent,
+                                                       &combo->Multiply.DzdcReal);
             }
             grid.sync();
             if (dzdcImagZero) {
@@ -1128,14 +1422,14 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                                       dzdcImagCoefficientCount,
                                                                       dzdcImagLimbs,
                                                                       limbCount);
-                if (IsLeader<SharkFloatParams>(block)) {
-                    FinalizeSignedStream<SharkFloatParams>(workspace.DzdcImagLimbs,
-                                                           limbCount,
-                                                           dzdcImagExponent,
-                                                           workspace.MagnitudeDigits,
-                                                           workspace.Magnitude,
-                                                           &combo->Multiply.DzdcImag);
-                }
+                FinalizeSignedStream<SharkFloatParams>(grid,
+                                                       block,
+                                                       carryPrefixShared,
+                                                       workspace,
+                                                       workspace.DzdcImagLimbs,
+                                                       limbCount,
+                                                       dzdcImagExponent,
+                                                       &combo->Multiply.DzdcImag);
             }
         }
         grid.sync();
@@ -1230,6 +1524,7 @@ __maxnreg__(HpShark::RegisterLimit)
     namespace cg = cooperative_groups;
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
+    __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps + 1u];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
     if constexpr (HpShark::DebugGlobalState) {
@@ -1258,7 +1553,8 @@ __maxnreg__(HpShark::RegisterLimit)
             Reference2Detail::UpdateD2<SharkFloatParams>(combo);
         grid.sync();
 
-        Reference2Detail::FusedReferenceOrbitStep<SharkFloatParams>(grid, block, debugCombo, combo);
+        Reference2Detail::FusedReferenceOrbitStep<SharkFloatParams>(
+            grid, block, debugCombo, carryPrefixShared, combo);
         grid.sync();
         if (combo->PeriodicityStatus == PeriodicityResult::Unknown)
             break;

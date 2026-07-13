@@ -47,6 +47,13 @@ Reference2WorkspaceStorageBytes()
     bytes = AlignReference2(bytes, alignof(uint32_t));
     bytes += 2u * static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(uint32_t);
     bytes = AlignReference2(bytes, alignof(uint64_t));
+    bytes += static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(uint64_t);
+    bytes = AlignReference2(bytes, alignof(HpSharkReference2CarryPrefixDescriptor));
+    bytes += static_cast<size_t>(Workspace::MaxCarryPrefixParts) *
+             sizeof(HpSharkReference2CarryPrefixDescriptor);
+    bytes = AlignReference2(bytes, alignof(uint32_t));
+    bytes += 3u * sizeof(uint32_t);
+    bytes = AlignReference2(bytes, alignof(uint64_t));
     bytes += 4u * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
     bytes += 2u * static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
     return bytes;
@@ -110,6 +117,14 @@ InitializeReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo)
             allocate(Workspace::MaxFusedLimbs, sizeof(uint32_t), alignof(uint32_t)));
         descriptor.Magnitude = static_cast<uint32_t *>(
             allocate(Workspace::MaxFusedLimbs, sizeof(uint32_t), alignof(uint32_t)));
+        descriptor.CarryPrefixTransforms = static_cast<uint64_t *>(
+            allocate(Workspace::MaxFusedLimbs, sizeof(uint64_t), alignof(uint64_t)));
+        descriptor.CarryPrefixDescriptors = static_cast<HpSharkReference2CarryPrefixDescriptor *>(
+            allocate(Workspace::MaxCarryPrefixParts,
+                     sizeof(HpSharkReference2CarryPrefixDescriptor),
+                     alignof(HpSharkReference2CarryPrefixDescriptor)));
+        descriptor.CarryPrefixControl =
+            static_cast<uint32_t *>(allocate(3u, sizeof(uint32_t), alignof(uint32_t)));
         descriptor.Roots.stage_omegas = static_cast<uint64_t *>(
             allocate(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
         descriptor.Roots.stage_omegas_inv = static_cast<uint64_t *>(

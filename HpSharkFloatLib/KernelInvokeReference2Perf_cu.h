@@ -37,7 +37,9 @@ size_t
 Reference2WorkspaceStorageBytes()
 {
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    constexpr size_t spectrumCount = SharkFloatParams::EnableNewtonRaphson ? 14u : 9u;
+    // Four normal inputs, two normal outputs, and one product scratch. Newton-Raphson adds
+    // three inputs and two outputs. The four root tables are accounted for separately below.
+    constexpr size_t spectrumCount = 7u + (SharkFloatParams::EnableNewtonRaphson ? 5u : 0u);
     constexpr size_t limbCount = SharkFloatParams::EnableNewtonRaphson ? 4u : 2u;
     size_t bytes = 0;
     bytes = AlignReference2(bytes, alignof(uint64_t));
@@ -133,6 +135,9 @@ InitializeReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo)
         descriptor.Roots.psi_inv_pows = spectrum();
         descriptor.Roots.stage_twiddles_fwd = spectrum();
         descriptor.Roots.stage_twiddles_inv = spectrum();
+
+        if (offset != bytes)
+            throw FractalSharkSeriousException("Reference2 workspace size does not match its layout");
 
         CheckReference2Cuda(cudaMalloc(&deviceDescriptor, sizeof(Workspace)),
                             "cudaMalloc(Reference2 descriptor)");

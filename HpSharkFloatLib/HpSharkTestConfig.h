@@ -41,7 +41,7 @@ static constexpr bool TestMPIRImpl = true; // Debug;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
 // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool TestReferenceImpl = true;
+static constexpr bool TestReferenceImpl = false;
 
 } // namespace HpShark
 

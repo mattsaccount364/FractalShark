@@ -52,7 +52,7 @@ Reference2WorkspaceStorageBytes()
     bytes += static_cast<size_t>(Workspace::MaxCarryPrefixParts) *
              sizeof(HpSharkReference2CarryPrefixDescriptor);
     bytes = AlignReference2(bytes, alignof(uint32_t));
-    bytes += 3u * sizeof(uint32_t);
+    bytes += 4u * sizeof(uint32_t);
     bytes = AlignReference2(bytes, alignof(uint64_t));
     bytes += 4u * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
     bytes += 2u * static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
@@ -124,7 +124,7 @@ InitializeReference2Workspace(HpSharkReferenceResults<SharkFloatParams> &combo)
                      sizeof(HpSharkReference2CarryPrefixDescriptor),
                      alignof(HpSharkReference2CarryPrefixDescriptor)));
         descriptor.CarryPrefixControl =
-            static_cast<uint32_t *>(allocate(3u, sizeof(uint32_t), alignof(uint32_t)));
+            static_cast<uint32_t *>(allocate(4u, sizeof(uint32_t), alignof(uint32_t)));
         descriptor.Roots.stage_omegas = static_cast<uint64_t *>(
             allocate(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
         descriptor.Roots.stage_omegas_inv = static_cast<uint64_t *>(

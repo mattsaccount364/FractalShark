@@ -67,7 +67,8 @@ template <class SharkFloatParams> struct HpSharkAddComboResults {
 // the device; every pointed-to buffer is allocated once by the Ref2 invocation
 // glue and reused for the lifetime of the orbit session.
 struct alignas(16) HpSharkReference2CarryPrefixDescriptor {
-    uint64_t Transform;
+    uint64_t AggregateTransform;
+    uint64_t PrefixTransform;
     uint32_t State;
     uint32_t Padding;
 };

@@ -114,3 +114,8 @@ Others/
 ###############################################################################
 
 Thumbs.db
+
+# Checkpoints
+View34Checkpoints/Bugged/*.txt
+View34Checkpoints/nr_checkpoint*.txt
+View34Checkpoints/view34_coords.txt

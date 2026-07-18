@@ -2,9 +2,11 @@
 
 #include "AlgCmds.h"
 #include "Fractal.h"
+#include "FractalViewPresets.h"
 #include "MenuState.h"
 #include "MenuTree.h"
 #include "RenderAlgorithm.h"
+#include "ScopedMpir.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -145,4 +147,45 @@ TEST(MenuState_WindowSizeCommandsAreActions)
     ASSERT_TRUE(windowedSquare != nullptr);
     ASSERT_TRUE(windowed->checkKind == FractalShark::CheckKind::None);
     ASSERT_TRUE(windowedSquare->checkKind == FractalShark::CheckKind::None);
+}
+
+TEST(MenuTree_ExposesViews33And34)
+{
+    using FractalShark::FractalCommand;
+    using FractalShark::Item;
+    using FractalShark::Node;
+    using FractalShark::Popup;
+    using FractalShark::Radio;
+    using FractalShark::RadioGroup;
+    using FractalShark::Rule;
+    using FractalShark::Sep;
+    using FractalShark::Toggle;
+
+#include "MenuTreeDef.h"
+
+    const auto nodes = std::span<const Node>{menu};
+    const Node *view33 = FindMenuNode(nodes, IDM_VIEW33);
+    const Node *view34 = FindMenuNode(nodes, IDM_VIEW34);
+
+    ASSERT_TRUE(view33 != nullptr);
+    ASSERT_TRUE(view34 != nullptr);
+    ASSERT_TRUE(view33->text == L"#33 - 1e325221 - period 22,680,804");
+    ASSERT_TRUE(view34->text == L"#34 - 1e650452 - period 399,289,978");
+}
+
+TEST(ViewPresets_LoadViews33And34)
+{
+    MPIRPrecision restorePrecision{HighPrecision::defaultPrecisionInBits()};
+
+    const ViewPresetResult view33 = GetViewPreset(33, 1, 0, 0);
+    const ViewPresetResult view34 = GetViewPreset(34, 1, 0, 0);
+
+    ASSERT_EQ(view33.numIterations, 2'147'483'646ull);
+    ASSERT_EQ(view34.numIterations, 50'000'000'000ull);
+    ASSERT_EQ(view33.gpuAntialiasing, 1u);
+    ASSERT_EQ(view34.gpuAntialiasing, 1u);
+    ASSERT_TRUE(view33.minX < view33.maxX);
+    ASSERT_TRUE(view33.minY < view33.maxY);
+    ASSERT_TRUE(view34.minX < view34.maxX);
+    ASSERT_TRUE(view34.minY < view34.maxY);
 }

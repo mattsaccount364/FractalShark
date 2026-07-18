@@ -41,7 +41,7 @@ RemoveExistingRegularFile(const std::wstring &filename)
             throw FractalSharkSeriousException("Could not replace the selected output file");
         }
     }
-    if (error) {
+    if (error && error != std::errc::no_such_file_or_directory) {
         throw FractalSharkSeriousException("Could not inspect the selected output file");
     }
 }

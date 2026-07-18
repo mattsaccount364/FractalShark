@@ -2032,6 +2032,41 @@ ViewPresetResult GetViewPreset(
             break;
         }
 
+        case 33: {
+
+#include "LargeCoords33.h"
+
+            PointZoomBBConverter convert{HighPrecision{strX},
+                                         HighPrecision{strY},
+                                         HighPrecision{strZoomFactor},
+                                         PointZoomBBConverter::TestMode::Enabled};
+
+            result.minX = convert.GetMinX();
+            result.minY = convert.GetMinY();
+            result.maxX = convert.GetMaxX();
+            result.maxY = convert.GetMaxY();
+            result.numIterations = 2'147'483'646;
+            break;
+        }
+
+        case 34: {
+
+#include "LargeCoords34.h"
+
+            PointZoomBBConverter convert{HighPrecision{strX},
+                                         HighPrecision{strY},
+                                         HighPrecision{strZoomFactor},
+                                         PointZoomBBConverter::TestMode::Enabled};
+
+            result.minX = convert.GetMinX();
+            result.minY = convert.GetMinY();
+            result.maxX = convert.GetMaxX();
+            result.maxY = convert.GetMaxY();
+            result.iterType = IterTypeEnum::Bits64;
+            result.numIterations = 50'000'000'000llu;
+            break;
+        }
+
         case 0:
         default:
             // minX = HighPrecision{ "-2.5" };

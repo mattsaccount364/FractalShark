@@ -57,6 +57,53 @@ normalization steps, this approach enables high-precision multiply/add/subtract
 operations that are fast enough to make reference orbit computation practical at
 scales that would otherwise be prohibitive (\cref{fig:view32}).
 
+Finding Views~\#33 and~\#34 illustrates why the high-precision
+Newton--Raphson root finding described in \cref{sec:feature-finder} is needed.
+The exported render data report \code{ActualPeriodIfAny} values of
+\(22{,}680{,}804\) for View~\#33 and \(399{,}289{,}978\) for View~\#34.
+Because each view has periodicity, discovery reduces to finding the root of the
+period-\(p\) reference-orbit equation, \(z_p(c) = 0\), for the corresponding
+period~\(p\).  Once that root supplies the view coordinates, rendering the
+recorded coordinates is comparatively straightforward.
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{minipage}[t]{0.49\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{View33.png}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{View33_Imagina.png}
+  \end{minipage}
+  \caption[View \#33 at zoom $2.7575 \times 10^{325{,}221}$]{View \#33 rendered at zoom factor
+  \(2.75752728455719478744 \times 10^{325,221}\).  The left panel is rendered
+  by \FractalShark{}; the right panel is the corresponding Imagina render.}
+  \label{fig:view33}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{View34_1e650452-0.png}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{View34_1e650452-1.png}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{View34_1e650452-2.png}
+  \end{minipage}
+  \caption[View \#34 at zoom $1.4355 \times 10^{650{,}453}$]{View \#34 rendered at zoom factor
+  \(1.43548102609709058111 \times 10^{650,453}\).  The left and center panels
+  are \FractalShark{} render variants, and the right panel is the corresponding
+  Imagina render.  As of July 2026, the View~\#34 render required roughly
+  1.5 days on an RTX~5090.}
+  \label{fig:view34}
+\end{figure}
+
 \subsection{System Architecture and Execution Context}
 \label{subsec:ref-orbit-architecture}
 

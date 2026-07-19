@@ -358,31 +358,6 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     // Roots were device-allocated in CopyRootsToCuda; destroy like correctness does
     SharkNTT::DestroyRoots<SharkFloatParams>(true, combo.comboGpu->Multiply.Roots);
 
-    // Ref2 uses the same session/destruction contract as Ref1, with an
-    // additional fixed-capacity workspace that is allocated on first Ref2
-    // invocation and must be released before the combo storage disappears.
-    if (combo.Reference2Workspace != nullptr) {
-        cudaError_t cudaErr = cudaFree(combo.Reference2Workspace);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaFree(Reference2 descriptor) failed: " << cudaGetErrorString(cudaErr) << " (code "
-                << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-        combo.Reference2Workspace = nullptr;
-    }
-    if (combo.d_reference2WorkspaceStorage != nullptr) {
-        cudaError_t cudaErr = cudaFree(combo.d_reference2WorkspaceStorage);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaFree(Reference2 workspace storage) failed: " << cudaGetErrorString(cudaErr)
-                << " (code " << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-        combo.d_reference2WorkspaceStorage = nullptr;
-        combo.reference2WorkspaceStorageBytes = 0;
-    }
-
     {
         cudaError_t cudaErr = cudaFree(combo.comboGpu);
         if (cudaErr != cudaSuccess) {

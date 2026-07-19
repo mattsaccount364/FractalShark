@@ -294,9 +294,9 @@ CorrectnessTests()
     // if (!ContinueAfterFailure(res))
     //     return false;
 
-    // res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(TestIds::kFullCorrectness);
-    // if (!ContinueAfterFailure(res))
-    //     return false;
+    res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(TestIds::kFullCorrectness);
+    if (!ContinueAfterFailure(res))
+        return false;
 
     res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit2>(TestIds::kFull2Correctness);
     if (!ContinueAfterFailure(res))

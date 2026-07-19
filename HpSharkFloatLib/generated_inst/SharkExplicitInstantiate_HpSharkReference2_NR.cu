@@ -20,6 +20,10 @@
         const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
         uint64_t numIters);                                                                             \
+    template void ShutdownHpSharkReference2Kernel<SharkFloatParams>(                                    \
+        const HpShark::LaunchParams &launchParams,                                                      \
+        HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
+        DebugGpuCombo *debugCombo);                                                                     \
     template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(                            \
         const mpf_t,                                                                                    \
         const mpf_t,                                                                                    \

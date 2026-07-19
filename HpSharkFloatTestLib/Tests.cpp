@@ -1424,9 +1424,9 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
     }
 
     if (!ChecksumFailure) {
-        if (SharkVerbose == VerboseMode::Debug) {
+        //if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "Checksum test passed" << std::endl;
-        }
+        //}
     } else {
         std::cerr << "Checksum test failed" << std::endl;
         Environment::DebugBreakpoint();
@@ -2238,13 +2238,13 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         std::cout << "" << MpfToHex32String(mpfHostResultY) << std::endl;
     }
 
+    DebugHostCombo<SharkFloatParams> debugHostCombo{};
     DebugGpuCombo debugGpuCombo{};
     typename SharkFloatParams::Float emptyRadius{};
 
     // Test CPU reference implementation (HpSharkFloat-based, calls MultiplyHelperFFT2 + AddHelper)
     // Pattern matches TestCoreAdd/TestCoreMultiply: call CPU ref, then CheckAgainstHost vs MPIR.
     if constexpr (HpShark::TestReferenceImpl) {
-        DebugHostCombo<SharkFloatParams> debugHostCombo;
         std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>> cpuResult;
         if constexpr (sharkOperator == Operator::ReferenceOrbit) {
             cpuResult =
@@ -2338,7 +2338,9 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
+    if constexpr (HpShark::TestReferenceImpl) {
+        ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo);
+    }
 
     if constexpr (HpShark::TestGpu && IsReferenceOrbitOperator<sharkOperator>) {
         bool testSucceeded = true;
@@ -4267,3 +4269,4 @@ TestAllBinaryOp(int testBase)
 ExplicitInstantiateAll();
 
 OPERATOR_ONLY_INSTANTIATIONS();
+

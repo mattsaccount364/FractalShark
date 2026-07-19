@@ -76,6 +76,11 @@ void ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                                     HpSharkReferenceResults<SharkFloatParams> &combo,
                                     DebugGpuCombo *debugCombo);
 
+template <class SharkFloatParams>
+void ShutdownHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
+                                     HpSharkReferenceResults<SharkFloatParams> &combo,
+                                     DebugGpuCombo *debugCombo);
+
 // RAII wrapper for the GPU reference orbit lifecycle (Init/Invoke/Shutdown).
 // Ensures GPU resources (device memory, CUDA stream, NTT root tables) are
 // always cleaned up, even if an exception is thrown during the chunk loop.
@@ -134,8 +139,8 @@ public:
     }
 };
 
-// Ref2 owns an additional fixed-capacity fused-NTT workspace, so it must use
-// its own initializer even though it shares the Ref1 shutdown contract.
+// Ref2 owns an additional fixed-capacity fused-NTT workspace, so it uses the
+// matching Ref2 initialization, invocation, and shutdown lifecycle.
 template <class SharkFloatParams> class GpuOrbitSession2 {
     std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> m_Combo;
     HpShark::LaunchParams m_LaunchParams;
@@ -164,7 +169,7 @@ public:
 
     ~GpuOrbitSession2()
     {
-        ShutdownHpSharkReferenceKernel<SharkFloatParams>(m_LaunchParams, *m_Combo, m_DebugCombo);
+        ShutdownHpSharkReference2Kernel<SharkFloatParams>(m_LaunchParams, *m_Combo, m_DebugCombo);
     }
 
     GpuOrbitSession2(const GpuOrbitSession2 &) = delete;

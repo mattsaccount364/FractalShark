@@ -82,6 +82,12 @@ template <class SharkFloatParams> struct DebugStateHost {
                int callIndex,
                UseConvolution useConvolution);
 
+    void Reset(const HpSharkFloat<SharkFloatParams> &value,
+               DebugStatePurpose purpose,
+               int recursionDepth,
+               int callIndex,
+               UseConvolution useConvolution);
+
     std::string GetStr() const;
 
     /**
@@ -274,6 +280,29 @@ DebugStateHost<SharkFloatParams>::Reset(const uint64_t *arrayToChecksum,
         RecursionDepth = recursionDepth;
         CallIndex = callIndex;
 
+        Convolution = useConvolution;
+    }
+}
+
+template <class SharkFloatParams>
+void
+DebugStateHost<SharkFloatParams>::Reset(const HpSharkFloat<SharkFloatParams> &value,
+                                        DebugStatePurpose purpose,
+                                        int recursionDepth,
+                                        int callIndex,
+                                        UseConvolution useConvolution)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        Initialized = true;
+        ArrayToChecksum32.assign(value.Digits, value.Digits + SharkFloatParams::GlobalNumUint32);
+        ArrayToChecksum32.push_back(static_cast<uint32_t>(value.Exponent));
+        ArrayToChecksum32.push_back(value.GetNegative() ? 1u : 0u);
+        ArrayToChecksum64.clear();
+        Checksum = ComputeCRC64(ArrayToChecksum32, 0);
+
+        ChecksumPurpose = purpose;
+        RecursionDepth = recursionDepth;
+        CallIndex = callIndex;
         Convolution = useConvolution;
     }
 }

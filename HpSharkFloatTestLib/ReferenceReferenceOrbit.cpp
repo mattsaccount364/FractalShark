@@ -26,6 +26,23 @@
 //
 
 template <class SharkFloatParams>
+static void
+StoreReferenceDebugValue(DebugHostCombo<SharkFloatParams> &debugCombo,
+                         DebugStatePurpose purpose,
+                         const HpSharkFloat<SharkFloatParams> &value)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        constexpr auto callIndex = 0;
+        constexpr auto recursionDepth = 0;
+        constexpr auto useConvolution = UseConvolution::No;
+        auto &debugStates = debugCombo.States;
+        assert(static_cast<size_t>(purpose) < debugStates.size());
+        debugStates[static_cast<size_t>(purpose)].Reset(
+            value, purpose, recursionDepth, callIndex, useConvolution);
+    }
+}
+
+template <class SharkFloatParams>
 std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>>
 ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                      const HpSharkFloat<SharkFloatParams> *cImag,
@@ -36,6 +53,14 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
     auto result = std::make_unique<ReferenceOrbitResult<SharkFloatParams>>();
     result->IterationsExecuted = 0;
     result->PeriodResult = PeriodicityResult::Unknown;
+
+    if constexpr (HpShark::DebugChecksums) {
+        debugHostCombo.States.resize(static_cast<int>(DebugStatePurpose::NumPurposes));
+    }
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZReal, *cReal);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZImag, *cImag);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCReal, *cReal);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCImag, *cImag);
 
     // For NR types, use EvaluateOrbitAndDerivative which properly computes derivatives.
     // The basic orbit loop can't handle NR because the multiply/add pipelines require
@@ -48,17 +73,25 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
         typename SharkFloatParams::Float outD2Real{};
         typename SharkFloatParams::Float outD2Imag{};
 
-        EvaluateOrbitAndDerivative<SharkFloatParams>(
-            cReal, cImag, maxIters + 1,
-            outZReal.get(), outZImag.get(),
-            outDzdcReal.get(), outDzdcImag.get(),
-            &outD2Real, &outD2Imag,
-            debugHostCombo);
+        EvaluateOrbitAndDerivative<SharkFloatParams>(cReal,
+                                                     cImag,
+                                                     maxIters + 1,
+                                                     outZReal.get(),
+                                                     outZImag.get(),
+                                                     outDzdcReal.get(),
+                                                     outDzdcImag.get(),
+                                                     &outD2Real,
+                                                     &outD2Imag,
+                                                     debugHostCombo);
 
         result->FinalZReal = *outZReal;
         result->FinalZImag = *outZImag;
         result->IterationsExecuted = maxIters;
         result->PeriodResult = PeriodicityResult::Continue;
+        StoreReferenceDebugValue(
+            debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+        StoreReferenceDebugValue(
+            debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
         return result;
     }
 
@@ -127,6 +160,10 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                 result->PeriodResult = PeriodicityResult::PeriodFound;
                 result->FinalZReal = *zReal;
                 result->FinalZImag = *zImag;
+                StoreReferenceDebugValue(
+                    debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+                StoreReferenceDebugValue(
+                    debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
                 return result;
             } else {
                 auto dzdcXOrig = dzdcX;
@@ -144,12 +181,18 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                 result->PeriodResult = PeriodicityResult::Escaped;
                 result->FinalZReal = *zReal;
                 result->FinalZImag = *zImag;
+                StoreReferenceDebugValue(
+                    debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+                StoreReferenceDebugValue(
+                    debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
                 return result;
             }
         } else {
             // No periodicity — still store orbit point for comparison
-            typename SharkFloatParams::Float double_zx = zReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-            typename SharkFloatParams::Float double_zy = zImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            typename SharkFloatParams::Float double_zx =
+                zReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            typename SharkFloatParams::Float double_zy =
+                zImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
             result->Orbit.push_back({double_zx, double_zy});
         }
 
@@ -162,8 +205,12 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                                              resultX2.get(),
                                              result2XY.get(),
                                              resultY2.get(),
-                                             nullptr, nullptr,
-                                             nullptr, nullptr, nullptr, nullptr,
+                                             nullptr,
+                                             nullptr,
+                                             nullptr,
+                                             nullptr,
+                                             nullptr,
+                                             nullptr,
                                              debugHostCombo);
 
         //
@@ -177,8 +224,12 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                                     cImag,
                                     newZReal.get(),
                                     newZImag.get(),
-                                    nullptr, nullptr, nullptr, nullptr,
-                                    nullptr, nullptr,
+                                    nullptr,
+                                    nullptr,
+                                    nullptr,
+                                    nullptr,
+                                    nullptr,
+                                    nullptr,
                                     debugHostCombo);
 
         // Update z for next iteration
@@ -191,6 +242,8 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
 
     result->FinalZReal = *zReal;
     result->FinalZImag = *zImag;
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
     return result;
 }
 
@@ -205,17 +258,16 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
 
 template <class SharkFloatParams>
 void
-EvaluateOrbitAndDerivative(
-    const HpSharkFloat<SharkFloatParams> *cReal,
-    const HpSharkFloat<SharkFloatParams> *cImag,
-    uint64_t period,
-    HpSharkFloat<SharkFloatParams> *outZReal,
-    HpSharkFloat<SharkFloatParams> *outZImag,
-    HpSharkFloat<SharkFloatParams> *outDzdcReal,
-    HpSharkFloat<SharkFloatParams> *outDzdcImag,
-    typename SharkFloatParams::Float *outD2Real,
-    typename SharkFloatParams::Float *outD2Imag,
-    DebugHostCombo<SharkFloatParams> &debugHostCombo)
+EvaluateOrbitAndDerivative(const HpSharkFloat<SharkFloatParams> *cReal,
+                           const HpSharkFloat<SharkFloatParams> *cImag,
+                           uint64_t period,
+                           HpSharkFloat<SharkFloatParams> *outZReal,
+                           HpSharkFloat<SharkFloatParams> *outZImag,
+                           HpSharkFloat<SharkFloatParams> *outDzdcReal,
+                           HpSharkFloat<SharkFloatParams> *outDzdcImag,
+                           typename SharkFloatParams::Float *outD2Real,
+                           typename SharkFloatParams::Float *outD2Imag,
+                           DebugHostCombo<SharkFloatParams> &debugHostCombo)
 {
     static_assert(SharkFloatParams::EnableNewtonRaphson,
                   "EvaluateOrbitAndDerivative requires EnableNewtonRaphson = true");
@@ -248,10 +300,14 @@ EvaluateOrbitAndDerivative(
     for (uint64_t i = 0; i < period; ++i) {
         // d2 update BEFORE multiply/add (uses current z/dzdc, matches production order)
         {
-            typename SharkFloatParams::Float zr = zReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-            typename SharkFloatParams::Float zi = zImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-            typename SharkFloatParams::Float dzr = dzdcReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-            typename SharkFloatParams::Float dzi = dzdcImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            typename SharkFloatParams::Float zr =
+                zReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            typename SharkFloatParams::Float zi =
+                zImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            typename SharkFloatParams::Float dzr =
+                dzdcReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+            typename SharkFloatParams::Float dzi =
+                dzdcImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
 
             // dzdc²
             typename SharkFloatParams::Float dz2r = dzr * dzr - dzi * dzi;
@@ -274,20 +330,33 @@ EvaluateOrbitAndDerivative(
             local_d2i = typename SharkFloatParams::Float{2.0f} * sumi;
         }
 
-        MultiplyHelperFFT2<SharkFloatParams>(
-            zReal.get(), zImag.get(),
-            x2.get(), twoXY.get(), y2.get(),
-            dzdcReal.get(), dzdcImag.get(),
-            w0.get(), w1.get(), w2.get(), w3.get(),
-            debugHostCombo);
+        MultiplyHelperFFT2<SharkFloatParams>(zReal.get(),
+                                             zImag.get(),
+                                             x2.get(),
+                                             twoXY.get(),
+                                             y2.get(),
+                                             dzdcReal.get(),
+                                             dzdcImag.get(),
+                                             w0.get(),
+                                             w1.get(),
+                                             w2.get(),
+                                             w3.get(),
+                                             debugHostCombo);
 
-        AddHelper<SharkFloatParams>(
-            x2.get(), y2.get(), cReal,
-            twoXY.get(), cImag,
-            newZReal.get(), newZImag.get(),
-            w0.get(), w1.get(), w2.get(), w3.get(),
-            newDzdcReal.get(), newDzdcImag.get(),
-            debugHostCombo);
+        AddHelper<SharkFloatParams>(x2.get(),
+                                    y2.get(),
+                                    cReal,
+                                    twoXY.get(),
+                                    cImag,
+                                    newZReal.get(),
+                                    newZImag.get(),
+                                    w0.get(),
+                                    w1.get(),
+                                    w2.get(),
+                                    w3.get(),
+                                    newDzdcReal.get(),
+                                    newDzdcImag.get(),
+                                    debugHostCombo);
 
         *zReal = *newZReal;
         *zImag = *newZImag;
@@ -308,36 +377,33 @@ EvaluateOrbitAndDerivative(
 //
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
     template std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>>                                    \
-    ReferenceOrbitHelper<SharkFloatParams>(                                                             \
-        const HpSharkFloat<SharkFloatParams> *,                                                        \
-        const HpSharkFloat<SharkFloatParams> *,                                                        \
-        const typename SharkFloatParams::Float &,                                                      \
-        uint64_t,                                                                                      \
-        DebugHostCombo<SharkFloatParams> &);
+    ReferenceOrbitHelper<SharkFloatParams>(const HpSharkFloat<SharkFloatParams> *,                      \
+                                           const HpSharkFloat<SharkFloatParams> *,                      \
+                                           const typename SharkFloatParams::Float &,                    \
+                                           uint64_t,                                                    \
+                                           DebugHostCombo<SharkFloatParams> &);
 
 ExplicitInstantiateAll();
 
 // NR-specific function — only instantiated for NR-enabled param types
-template void EvaluateOrbitAndDerivative<SharkParamsNR7>(
-    const HpSharkFloat<SharkParamsNR7> *,
-    const HpSharkFloat<SharkParamsNR7> *,
-    uint64_t,
-    HpSharkFloat<SharkParamsNR7> *,
-    HpSharkFloat<SharkParamsNR7> *,
-    HpSharkFloat<SharkParamsNR7> *,
-    HpSharkFloat<SharkParamsNR7> *,
-    typename SharkParamsNR7::Float *,
-    typename SharkParamsNR7::Float *,
-    DebugHostCombo<SharkParamsNR7> &);
+template void EvaluateOrbitAndDerivative<SharkParamsNR7>(const HpSharkFloat<SharkParamsNR7> *,
+                                                         const HpSharkFloat<SharkParamsNR7> *,
+                                                         uint64_t,
+                                                         HpSharkFloat<SharkParamsNR7> *,
+                                                         HpSharkFloat<SharkParamsNR7> *,
+                                                         HpSharkFloat<SharkParamsNR7> *,
+                                                         HpSharkFloat<SharkParamsNR7> *,
+                                                         typename SharkParamsNR7::Float *,
+                                                         typename SharkParamsNR7::Float *,
+                                                         DebugHostCombo<SharkParamsNR7> &);
 
-template void EvaluateOrbitAndDerivative<SharkParamsNR9>(
-    const HpSharkFloat<SharkParamsNR9> *,
-    const HpSharkFloat<SharkParamsNR9> *,
-    uint64_t,
-    HpSharkFloat<SharkParamsNR9> *,
-    HpSharkFloat<SharkParamsNR9> *,
-    HpSharkFloat<SharkParamsNR9> *,
-    HpSharkFloat<SharkParamsNR9> *,
-    typename SharkParamsNR9::Float *,
-    typename SharkParamsNR9::Float *,
-    DebugHostCombo<SharkParamsNR9> &);
+template void EvaluateOrbitAndDerivative<SharkParamsNR9>(const HpSharkFloat<SharkParamsNR9> *,
+                                                         const HpSharkFloat<SharkParamsNR9> *,
+                                                         uint64_t,
+                                                         HpSharkFloat<SharkParamsNR9> *,
+                                                         HpSharkFloat<SharkParamsNR9> *,
+                                                         HpSharkFloat<SharkParamsNR9> *,
+                                                         HpSharkFloat<SharkParamsNR9> *,
+                                                         typename SharkParamsNR9::Float *,
+                                                         typename SharkParamsNR9::Float *,
+                                                         DebugHostCombo<SharkParamsNR9> &);

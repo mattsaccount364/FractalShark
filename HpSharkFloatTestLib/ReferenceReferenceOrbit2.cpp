@@ -45,6 +45,23 @@ StoreReference2DebugState(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 }
 
+template <class SharkFloatParams>
+static void
+StoreReference2DebugValue(DebugHostCombo<SharkFloatParams> &debugCombo,
+                          DebugStatePurpose purpose,
+                          const HpSharkFloat<SharkFloatParams> &value)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        constexpr auto callIndex = 0;
+        constexpr auto recursionDepth = 0;
+        constexpr auto useConvolution = UseConvolution::No;
+        auto &debugStates = debugCombo.States;
+        assert(static_cast<size_t>(purpose) < debugStates.size());
+        debugStates[static_cast<size_t>(purpose)].Reset(
+            value, purpose, recursionDepth, callIndex, useConvolution);
+    }
+}
+
 template <class UInt>
 static void
 PrintHexValue(const char *label, UInt value)
@@ -1364,25 +1381,13 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     if (maxRequiredBits == 0) {
         SetZero(outReal);
         SetZero(outImag);
-        StoreReference2DebugState(debugHostCombo,
-                                  DebugStatePurpose::Result_Add1,
-                                  outReal->Digits,
-                                  SharkFloatParams::GlobalNumUint32);
-        StoreReference2DebugState(debugHostCombo,
-                                  DebugStatePurpose::Result_Add2,
-                                  outImag->Digits,
-                                  SharkFloatParams::GlobalNumUint32);
+        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
+        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             SetZero(outDzdcReal);
             SetZero(outDzdcImag);
-            StoreReference2DebugState(debugHostCombo,
-                                      DebugStatePurpose::Result_AddDzdc1,
-                                      outDzdcReal->Digits,
-                                      SharkFloatParams::GlobalNumUint32);
-            StoreReference2DebugState(debugHostCombo,
-                                      DebugStatePurpose::Result_AddDzdc2,
-                                      outDzdcImag->Digits,
-                                      SharkFloatParams::GlobalNumUint32);
+            StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
+            StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
         }
         return;
     }
@@ -1503,14 +1508,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                              debugHostCombo,
                              DebugStatePurpose::FinalAdd2);
     }
-    StoreReference2DebugState(debugHostCombo,
-                              DebugStatePurpose::Result_Add1,
-                              outReal->Digits,
-                              SharkFloatParams::GlobalNumUint32);
-    StoreReference2DebugState(debugHostCombo,
-                              DebugStatePurpose::Result_Add2,
-                              outImag->Digits,
-                              SharkFloatParams::GlobalNumUint32);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
     PrintHpValue("fused outReal", *outReal);
     PrintHpValue("fused outImag", *outImag);
 
@@ -1596,14 +1595,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                  debugHostCombo,
                                  DebugStatePurpose::FinalAddDzdc2);
         }
-        StoreReference2DebugState(debugHostCombo,
-                                  DebugStatePurpose::Result_AddDzdc1,
-                                  outDzdcReal->Digits,
-                                  SharkFloatParams::GlobalNumUint32);
-        StoreReference2DebugState(debugHostCombo,
-                                  DebugStatePurpose::Result_AddDzdc2,
-                                  outDzdcImag->Digits,
-                                  SharkFloatParams::GlobalNumUint32);
+        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
+        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
         PrintHpValue("fused outDzdcReal", *outDzdcReal);
         PrintHpValue("fused outDzdcImag", *outDzdcImag);
     }
@@ -1651,6 +1644,11 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
         debugHostCombo.States.resize(static_cast<int>(DebugStatePurpose::NumPurposes));
     }
 
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZReal, *cReal);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZImag, *cImag);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCReal, *cReal);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCImag, *cImag);
+
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
     FusedWorkspace workspace = GetGlobalFusedWorkspace<SharkFloatParams>();
     auto &global = GetGlobalFusedWorkspaceStorage<SharkFloatParams>();
@@ -1686,6 +1684,10 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
         PrintHpValue("ReferenceOrbit2 NR final dzdcImag", *outDzdcImag);
         PrintHdrValue("ReferenceOrbit2 NR final d2Real", outD2Real);
         PrintHdrValue("ReferenceOrbit2 NR final d2Imag", outD2Imag);
+        StoreReference2DebugValue(
+            debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+        StoreReference2DebugValue(
+            debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
         return result;
     }
 
@@ -1754,6 +1756,10 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                 result->PeriodResult = PeriodicityResult::PeriodFound;
                 result->FinalZReal = *zReal;
                 result->FinalZImag = *zImag;
+                StoreReference2DebugValue(
+                    debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+                StoreReference2DebugValue(
+                    debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
                 return result;
             } else {
                 auto dzdcXOrig = dzdcX;
@@ -1777,6 +1783,10 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                 result->PeriodResult = PeriodicityResult::Escaped;
                 result->FinalZReal = *zReal;
                 result->FinalZImag = *zImag;
+                StoreReference2DebugValue(
+                    debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+                StoreReference2DebugValue(
+                    debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
                 return result;
             }
         } else {
@@ -1814,6 +1824,8 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
     result->FinalZImag = *zImag;
     PrintHpValue("ReferenceOrbit2 final zReal", result->FinalZReal);
     PrintHpValue("ReferenceOrbit2 final zImag", result->FinalZImag);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
     return result;
 }
 

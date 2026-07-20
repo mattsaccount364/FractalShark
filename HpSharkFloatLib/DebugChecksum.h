@@ -256,6 +256,35 @@ template <class SharkFloatParams> struct DebugState {
     }
 
     __device__ void
+    Reset(UseConvolution useConvolution,
+          cooperative_groups::grid_group &grid,
+          cooperative_groups::thread_block &block,
+          const HpSharkFloat<SharkFloatParams> &value,
+          DebugStatePurpose purpose,
+          int recursionDepth,
+          int callIndex)
+    {
+        if constexpr (HpShark::DebugChecksums) {
+            Data.Initialized = 1;
+            Data.Checksum = 0;
+            Data.Block = block.group_index().x;
+            Data.Thread = block.thread_index().x;
+            Data.ArraySize = SharkFloatParams::GlobalNumUint32 + 2u;
+            Data.ChecksumPurpose = purpose;
+
+            const uint64_t digitChecksum =
+                ComputeCRC64(grid, block, value.Digits, SharkFloatParams::GlobalNumUint32, 0);
+            const uint32_t metadata[2] = {static_cast<uint32_t>(value.Exponent),
+                                          value.GetNegative() ? 1u : 0u};
+            const F64Pair checksum = fletcher64_chunk_words(metadata, 0, 2, unpack_seed(digitChecksum));
+            Data.Checksum = pack_crc(checksum);
+            Data.RecursionDepth = recursionDepth;
+            Data.CallIndex = callIndex;
+            Data.Convolution = useConvolution;
+        }
+    }
+
+    __device__ void
     Erase(cooperative_groups::grid_group &grid,
           cooperative_groups::thread_block &block,
           DebugStatePurpose purpose,

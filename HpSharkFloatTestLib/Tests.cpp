@@ -23,6 +23,7 @@
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -1423,13 +1424,13 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    if (!ChecksumFailure) {
-        //if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "Checksum test passed" << std::endl;
-        //}
-    } else {
+    if (ChecksumFailure) {
         std::cerr << "Checksum test failed" << std::endl;
         Environment::DebugBreakpoint();
+    } else if constexpr (HpShark::DebugChecksums) {
+        std::cout << "Checksum test passed" << std::endl;
+    } else {
+        std::cout << "Checksum test skipped (disabled in this build)" << std::endl;
     }
 }
 
@@ -2144,6 +2145,24 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
     mpf_clear(mpfDzdcI);
 }
 
+template <class SharkFloatParams>
+static void
+ValidateReferenceAssignment(const char *implementation,
+                            const char *component,
+                            const HpSharkFloat<SharkFloatParams> &source,
+                            const HpSharkFloat<SharkFloatParams> &destination)
+{
+    const bool digitsMatch = std::memcmp(source.Digits,
+                                         destination.Digits,
+                                         SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t)) == 0;
+    if (!digitsMatch || source.Exponent != destination.Exponent ||
+        source.GetNegative() != destination.GetNegative()) {
+        std::ostringstream message;
+        message << implementation << ' ' << component << " changed during host assignment";
+        throw std::runtime_error(message.str());
+    }
+}
+
 template <class SharkFloatParams, Operator sharkOperator>
 void
 TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
@@ -2307,6 +2326,8 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         // *gpuResultYY = combo.Add.Result2_D_E;
         *gpuResultXX = combo->Multiply.A;
         *gpuResultYY = combo->Multiply.B;
+        ValidateReferenceAssignment("Ref1", "real result", combo->Multiply.A, *gpuResultXX);
+        ValidateReferenceAssignment("Ref1", "imaginary result", combo->Multiply.B, *gpuResultYY);
 
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
@@ -2330,6 +2351,8 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
 
         *gpuResultXX = combo->Multiply.A;
         *gpuResultYY = combo->Multiply.B;
+        ValidateReferenceAssignment("Ref2", "real result", combo->Multiply.A, *gpuResultXX);
+        ValidateReferenceAssignment("Ref2", "imaginary result", combo->Multiply.B, *gpuResultYY);
 
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
@@ -4269,4 +4292,3 @@ TestAllBinaryOp(int testBase)
 ExplicitInstantiateAll();
 
 OPERATOR_ONLY_INSTANTIATIONS();
-

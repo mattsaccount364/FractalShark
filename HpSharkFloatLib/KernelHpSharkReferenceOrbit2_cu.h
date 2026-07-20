@@ -3,6 +3,7 @@
 #include "LaunchParamsCalculator.h"
 #include "MultiplyNTT.cu"
 
+#include <cuda/atomic>
 #include <sstream>
 
 namespace Reference2Detail {
@@ -45,6 +46,21 @@ StoreReference2DebugState(DebugState<SharkFloatParams> *debugStates,
         grid.sync();
         StoreCurrentDebugState<SharkFloatParams, ArrayType>(
             debugStates, grid, block, purpose, arrayToChecksum, arraySize);
+        grid.sync();
+    }
+}
+
+template <class SharkFloatParams>
+__device__ void
+StoreReference2DebugValue(DebugState<SharkFloatParams> *debugStates,
+                          cooperative_groups::grid_group &grid,
+                          cooperative_groups::thread_block &block,
+                          DebugStatePurpose purpose,
+                          const HpSharkFloat<SharkFloatParams> &value)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        grid.sync();
+        StoreCurrentDebugValue<SharkFloatParams>(debugStates, grid, block, purpose, value);
         grid.sync();
     }
 }
@@ -881,16 +897,15 @@ ShuffleCarryPrefix(unsigned mask, uint64_t value, int sourceLane)
 static __device__ void
 PublishCarryPrefixState(uint32_t *state, CarryPrefixDescriptorState value)
 {
-    const uint32_t rawValue = static_cast<uint32_t>(value);
-    asm volatile("membar.gl;\n\tst.global.u32 [%0], %1;\n\t" ::"l"(state), "r"(rawValue) : "memory");
+    cuda::atomic_ref<uint32_t, cuda::thread_scope_device> atomicState(*state);
+    atomicState.store(static_cast<uint32_t>(value), cuda::memory_order_release);
 }
 
 static __device__ uint32_t
-LoadCarryPrefixState(const uint32_t *state)
+LoadCarryPrefixState(uint32_t *state)
 {
-    uint32_t value;
-    asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(value) : "l"(state) : "memory");
-    return value;
+    cuda::atomic_ref<uint32_t, cuda::thread_scope_device> atomicState(*state);
+    return atomicState.load(cuda::memory_order_acquire);
 }
 
 static __device__ uint64_t
@@ -1292,31 +1307,15 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             }
         }
         grid.sync();
-        StoreReference2DebugState(debugStates,
-                                  grid,
-                                  block,
-                                  DebugStatePurpose::Result_Add1,
-                                  combo->Multiply.A.Digits,
-                                  SharkFloatParams::GlobalNumUint32);
-        StoreReference2DebugState(debugStates,
-                                  grid,
-                                  block,
-                                  DebugStatePurpose::Result_Add2,
-                                  combo->Multiply.B.Digits,
-                                  SharkFloatParams::GlobalNumUint32);
+        StoreReference2DebugValue(
+            debugStates, grid, block, DebugStatePurpose::Result_Add1, combo->Multiply.A);
+        StoreReference2DebugValue(
+            debugStates, grid, block, DebugStatePurpose::Result_Add2, combo->Multiply.B);
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            StoreReference2DebugState(debugStates,
-                                      grid,
-                                      block,
-                                      DebugStatePurpose::Result_AddDzdc1,
-                                      combo->Multiply.DzdcReal.Digits,
-                                      SharkFloatParams::GlobalNumUint32);
-            StoreReference2DebugState(debugStates,
-                                      grid,
-                                      block,
-                                      DebugStatePurpose::Result_AddDzdc2,
-                                      combo->Multiply.DzdcImag.Digits,
-                                      SharkFloatParams::GlobalNumUint32);
+            StoreReference2DebugValue(
+                debugStates, grid, block, DebugStatePurpose::Result_AddDzdc1, combo->Multiply.DzdcReal);
+            StoreReference2DebugValue(
+                debugStates, grid, block, DebugStatePurpose::Result_AddDzdc2, combo->Multiply.DzdcImag);
         }
         return;
     }
@@ -1522,18 +1521,10 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         }
     }
     grid.sync();
-    StoreReference2DebugState(debugStates,
-                              grid,
-                              block,
-                              DebugStatePurpose::Result_Add1,
-                              combo->Multiply.A.Digits,
-                              SharkFloatParams::GlobalNumUint32);
-    StoreReference2DebugState(debugStates,
-                              grid,
-                              block,
-                              DebugStatePurpose::Result_Add2,
-                              combo->Multiply.B.Digits,
-                              SharkFloatParams::GlobalNumUint32);
+    StoreReference2DebugValue(
+        debugStates, grid, block, DebugStatePurpose::Result_Add1, combo->Multiply.A);
+    StoreReference2DebugValue(
+        debugStates, grid, block, DebugStatePurpose::Result_Add2, combo->Multiply.B);
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         const HpSharkFloat<SharkFloatParams> *newtonRaphsonForwardValues[3] = {
@@ -1711,18 +1702,10 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             }
         }
         grid.sync();
-        StoreReference2DebugState(debugStates,
-                                  grid,
-                                  block,
-                                  DebugStatePurpose::Result_AddDzdc1,
-                                  combo->Multiply.DzdcReal.Digits,
-                                  SharkFloatParams::GlobalNumUint32);
-        StoreReference2DebugState(debugStates,
-                                  grid,
-                                  block,
-                                  DebugStatePurpose::Result_AddDzdc2,
-                                  combo->Multiply.DzdcImag.Digits,
-                                  SharkFloatParams::GlobalNumUint32);
+        StoreReference2DebugValue(
+            debugStates, grid, block, DebugStatePurpose::Result_AddDzdc1, combo->Multiply.DzdcReal);
+        StoreReference2DebugValue(
+            debugStates, grid, block, DebugStatePurpose::Result_AddDzdc2, combo->Multiply.DzdcImag);
     }
 }
 
@@ -1836,6 +1819,15 @@ __maxnreg__(HpShark::RegisterLimit)
     }
     grid.sync();
 
+    Reference2Detail::StoreReference2DebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceEntryZReal, combo->Multiply.A);
+    Reference2Detail::StoreReference2DebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceEntryZImag, combo->Multiply.B);
+    Reference2Detail::StoreReference2DebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceEntryCReal, combo->Add.C_A);
+    Reference2Detail::StoreReference2DebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceEntryCImag, combo->Add.E_B);
+
     for (uint64_t iteration = 0; iteration < combo->MaxRuntimeIters; ++iteration) {
         bool stop = false;
         if (leader)
@@ -1859,6 +1851,12 @@ __maxnreg__(HpShark::RegisterLimit)
         grid.sync();
         (void)stop;
     }
+
+    grid.sync();
+    Reference2Detail::StoreReference2DebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceExitZReal, combo->Multiply.A);
+    Reference2Detail::StoreReference2DebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceExitZImag, combo->Multiply.B);
 }
 
 template <class SharkFloatParams>

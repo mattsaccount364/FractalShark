@@ -11,6 +11,21 @@
 //
 
 template <class SharkFloatParams>
+__device__ void
+StoreReferenceDebugValue(DebugState<SharkFloatParams> *debugStates,
+                         cg::grid_group &grid,
+                         cg::thread_block &block,
+                         DebugStatePurpose purpose,
+                         const HpSharkFloat<SharkFloatParams> &value)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        grid.sync();
+        StoreCurrentDebugValue<SharkFloatParams>(debugStates, grid, block, purpose, value);
+        grid.sync();
+    }
+}
+
+template <class SharkFloatParams>
 __device__ [[nodiscard]] PeriodicityResult
 ReferenceHelper(cg::grid_group &grid,
                 cg::thread_block &block,
@@ -179,6 +194,12 @@ __maxnreg__(HpShark::RegisterLimit)
     auto *dzdcX = &combo->dzdcX;
     auto *dzdcY = &combo->dzdcY;
 
+    DebugState<SharkFloatParams> *debugStates = nullptr;
+    if constexpr (HpShark::DebugChecksums) {
+        debugStates = reinterpret_cast<DebugState<SharkFloatParams> *>(
+            &tempData[HpShark::AdditionalChecksumsOffset]);
+    }
+
     typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);
     typename SharkFloatParams::Float cy_cast = combo->Add.E_B.ToHDRFloat<SharkFloatParams::SubType>(0);
 
@@ -198,6 +219,15 @@ __maxnreg__(HpShark::RegisterLimit)
         debugGlobalState[CurBlock * block.dim_threads().x + CurThread].DebugMultiplyErase();
     }
 
+    StoreReferenceDebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceEntryZReal, combo->Multiply.A);
+    StoreReferenceDebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceEntryZImag, combo->Multiply.B);
+    StoreReferenceDebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceEntryCReal, combo->Add.C_A);
+    StoreReferenceDebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceEntryCImag, combo->Add.E_B);
+
     // MaxRuntimeIters had better be <= HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters
     for (uint64_t i = 0; i < combo->MaxRuntimeIters; ++i) {
         const auto shouldContinue =
@@ -207,6 +237,12 @@ __maxnreg__(HpShark::RegisterLimit)
             break;
         }
     }
+
+    grid.sync();
+    StoreReferenceDebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceExitZReal, combo->Multiply.A);
+    StoreReferenceDebugValue(
+        debugStates, grid, block, DebugStatePurpose::ReferenceExitZImag, combo->Multiply.B);
 }
 
 template <class SharkFloatParams>

@@ -103,6 +103,12 @@ enum class DebugStatePurpose {
     Result_Add2,
     Result_AddDzdc1,
     Result_AddDzdc2,
+    ReferenceEntryZReal,
+    ReferenceEntryZImag,
+    ReferenceEntryCReal,
+    ReferenceEntryCImag,
+    ReferenceExitZReal,
+    ReferenceExitZImag,
     NumPurposes
 };
 
@@ -193,7 +199,13 @@ inline constexpr std::array<const char *, static_cast<size_t>(DebugStatePurpose:
                              "Result_Add1",
                              "Result_Add2",
                              "Result_AddDzdc1",
-                             "Result_AddDzdc2"};
+                             "Result_AddDzdc2",
+                             "ReferenceEntryZReal",
+                             "ReferenceEntryZImag",
+                             "ReferenceEntryCReal",
+                             "ReferenceEntryCImag",
+                             "ReferenceExitZReal",
+                             "ReferenceExitZImag"};
 
 inline constexpr const char *
 DebugStatePurposeToString(DebugStatePurpose purpose)

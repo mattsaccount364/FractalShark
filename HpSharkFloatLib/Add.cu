@@ -485,6 +485,22 @@ StoreCurrentDebugStateAdd(DebugState<SharkFloatParams> *SharkRestrict debugState
         UseConvolutionHere, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
+template <class SharkFloatParams, DebugStatePurpose Purpose>
+static __device__ SharkForceInlineReleaseOnly void
+StoreCurrentDebugValueAdd(DebugState<SharkFloatParams> *SharkRestrict debugStates,
+                          cooperative_groups::grid_group &grid,
+                          cooperative_groups::thread_block &block,
+                          const HpSharkFloat<SharkFloatParams> &value)
+{
+    constexpr auto curPurpose = static_cast<int32_t>(Purpose);
+    constexpr auto recursionDepth = 0;
+    constexpr auto useConvolution = UseConvolution::No;
+    constexpr auto callIndex = 0;
+
+    debugStates[curPurpose].Reset(
+        useConvolution, grid, block, value, Purpose, recursionDepth, callIndex);
+}
+
 #include "Add_ABC.h"
 #include "Add_DE.h"
 
@@ -876,7 +892,7 @@ AddHelperSeparates(cg::grid_group &grid,
             debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_Add2>(
             debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 87,
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 93,
                       "Unexpected number of purposes");
 
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::ADigits, uint32_t>(
@@ -1329,16 +1345,16 @@ AddHelperSeparates(cg::grid_group &grid,
 
     if constexpr (HpShark::DebugChecksums) {
         grid.sync();
-        StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_Add1, uint32_t>(
-            debugStates, grid, block, Out_A_B_C->Digits, numActualDigits);
-        StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_Add2, uint32_t>(
-            debugStates, grid, block, Out_D_E->Digits, numActualDigits);
+        StoreCurrentDebugValueAdd<SharkFloatParams, DebugStatePurpose::Result_Add1>(
+            debugStates, grid, block, *Out_A_B_C);
+        StoreCurrentDebugValueAdd<SharkFloatParams, DebugStatePurpose::Result_Add2>(
+            debugStates, grid, block, *Out_D_E);
 
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_AddDzdc1, uint32_t>(
-                debugStates, grid, block, Out_DzdcReal->Digits, numActualDigits);
-            StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_AddDzdc2, uint32_t>(
-                debugStates, grid, block, Out_DzdcImag->Digits, numActualDigits);
+            StoreCurrentDebugValueAdd<SharkFloatParams, DebugStatePurpose::Result_AddDzdc1>(
+                debugStates, grid, block, *Out_DzdcReal);
+            StoreCurrentDebugValueAdd<SharkFloatParams, DebugStatePurpose::Result_AddDzdc2>(
+                debugStates, grid, block, *Out_DzdcImag);
         }
 
         grid.sync();

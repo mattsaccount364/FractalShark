@@ -2910,6 +2910,23 @@ StoreCurrentDebugState(DebugState<SharkFloatParams> *SharkRestrict debugStates,
         UseConvolutionHere, grid, block, arrayToChecksum, arraySize, purpose, RecursionDepth, CallIndex);
 }
 
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+StoreCurrentDebugValue(DebugState<SharkFloatParams> *SharkRestrict debugStates,
+                       cooperative_groups::grid_group &grid,
+                       cooperative_groups::thread_block &block,
+                       DebugStatePurpose purpose,
+                       const HpSharkFloat<SharkFloatParams> &value)
+{
+    const auto curPurpose = static_cast<int32_t>(purpose);
+    constexpr auto recursionDepth = 0;
+    constexpr auto useConvolution = UseConvolution::No;
+    constexpr auto callIndex = 0;
+
+    debugStates[curPurpose].Reset(
+        useConvolution, grid, block, value, purpose, recursionDepth, callIndex);
+}
+
 // Look for CalculateNTTFrameSize
 // and make sure the number of NewN arrays we're using here fits within that limit.
 // The list here should go up to ScratchMemoryArraysForMultiply.
@@ -3479,7 +3496,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
             debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(
             debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 87,
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 93,
                       "Unexpected number of purposes");
     }
 
@@ -3677,8 +3694,7 @@ PrintMaxActiveBlocks(const HpShark::LaunchParams &launchParams, void *kernelFn, 
             return;
         }
 
-        std::cout << "Available shared memory per block bytes: " << availableSharedMemory
-                  << std::endl;
+        std::cout << "Available shared memory per block bytes: " << availableSharedMemory << std::endl;
     }
 
     // Check the number of multiprocessors on the device
@@ -3728,8 +3744,7 @@ PrintMaxActiveBlocks(const HpShark::LaunchParams &launchParams, void *kernelFn, 
                       << std::endl;
             return;
         }
-        std::cout << "Max threads per multiprocessor: " << maxThreadsPerMultiprocessor
-                  << std::endl;
+        std::cout << "Max threads per multiprocessor: " << maxThreadsPerMultiprocessor << std::endl;
     }
 
     // Check if this device supports cooperative launches

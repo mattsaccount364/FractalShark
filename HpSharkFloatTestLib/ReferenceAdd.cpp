@@ -273,6 +273,21 @@ GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
     return retval;
 }
 
+template <class SharkFloatParams, DebugStatePurpose Purpose>
+static const DebugStateHost<SharkFloatParams> &
+GetCurrentDebugValue(std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
+                     const HpSharkFloat<SharkFloatParams> &value)
+{
+    constexpr auto curPurpose = static_cast<int>(Purpose);
+    constexpr auto callIndex = 0;
+    constexpr auto useConvolution = UseConvolution::No;
+    constexpr auto recursionDepth = 0;
+
+    auto &result = debugStates[curPurpose];
+    result.Reset(value, Purpose, recursionDepth, callIndex, useConvolution);
+    return result;
+}
+
 static bool
 CompareMagnitudes2Way(const int32_t effExpA,
                       const int32_t effExpB,
@@ -926,8 +941,8 @@ NormalizeAndCopyResult_Single(const char *prefixOutStr,
     int32_t desiredBit = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << prefixOutStr << " CLZ(base16) of wordIndex[" << msdResult << "] = 0x"
-                  << std::hex << clzResult << "\n"
+        std::cout << prefixOutStr << " CLZ(base16) of wordIndex[" << msdResult << "] = 0x" << std::hex
+                  << clzResult << "\n"
                   << prefixOutStr << " currentBit(base16) = 0x" << currentBit << "\n"
                   << prefixOutStr << " desiredBit(base16) = 0x" << desiredBit << std::dec << "\n";
     }
@@ -1792,12 +1807,10 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
 
     if constexpr (HpShark::DebugChecksums) {
         const auto &debugResultState_ABC =
-            GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add1, uint32_t>(
-                debugStates, OutXY1->Digits, SharkFloatParams::GlobalNumUint32);
+            GetCurrentDebugValue<SharkFloatParams, DebugStatePurpose::Result_Add1>(debugStates, *OutXY1);
 
         const auto &debugResultState_DE =
-            GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2, uint32_t>(
-                debugStates, OutXY2->Digits, SharkFloatParams::GlobalNumUint32);
+            GetCurrentDebugValue<SharkFloatParams, DebugStatePurpose::Result_Add2>(debugStates, *OutXY2);
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "OutXY1->Digits checksum: " << debugResultState_ABC.GetStr() << std::endl;
@@ -1806,11 +1819,11 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
 
         if constexpr (NR) {
             const auto &debugNrResultDzdcReal =
-                GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_AddDzdc1, uint32_t>(
-                    debugStates, OutDzdcReal->Digits, SharkFloatParams::GlobalNumUint32);
+                GetCurrentDebugValue<SharkFloatParams, DebugStatePurpose::Result_AddDzdc1>(debugStates,
+                                                                                           *OutDzdcReal);
             const auto &debugNrResultDzdcImag =
-                GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_AddDzdc2, uint32_t>(
-                    debugStates, OutDzdcImag->Digits, SharkFloatParams::GlobalNumUint32);
+                GetCurrentDebugValue<SharkFloatParams, DebugStatePurpose::Result_AddDzdc2>(debugStates,
+                                                                                           *OutDzdcImag);
 
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "OutDzdcReal->Digits checksum: " << debugNrResultDzdcReal.GetStr()

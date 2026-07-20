@@ -1,12 +1,69 @@
 #include "DbgHeap.h"
+#include "DebugChecksumHost.h"
 #include "Exceptions.h"
 #include "KernelInvoke.h"
 #include "KernelInvokeInternal.h"
 
+#include <cstring>
 #include <sstream>
 #include <utility>
 
 namespace HpShark {
+
+template <class SharkFloatParams>
+static bool
+ReferenceValuesEqual(const HpSharkFloat<SharkFloatParams> &left,
+                     const HpSharkFloat<SharkFloatParams> &right)
+{
+    return std::memcmp(
+               left.Digits, right.Digits, SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t)) == 0 &&
+           left.Exponent == right.Exponent && left.GetNegative() == right.GetNegative();
+}
+
+template <class SharkFloatParams>
+static void
+ValidateReferenceReadback(const char *implementation,
+                          const char *component,
+                          const HpSharkFloat<SharkFloatParams> &directValue,
+                          const HpSharkFloat<SharkFloatParams> &structureValue)
+{
+    if (!ReferenceValuesEqual(directValue, structureValue)) {
+        std::ostringstream message;
+        message << implementation << ' ' << component
+                << " differs between direct member readback and full-structure readback";
+        throw FractalSharkSeriousException(message.str());
+    }
+}
+
+template <class SharkFloatParams>
+static void
+ValidateReferenceExitChecksum(const char *implementation,
+                              const char *component,
+                              const HpSharkFloat<SharkFloatParams> &directValue,
+                              DebugStatePurpose purpose,
+                              const DebugGpuCombo &debugCombo)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        const size_t index = static_cast<size_t>(purpose);
+        if (index >= debugCombo.States.size()) {
+            std::ostringstream message;
+            message << implementation << ' ' << component << " exit checksum is missing";
+            throw FractalSharkSeriousException(message.str());
+        }
+
+        DebugStateHost<SharkFloatParams> hostState;
+        hostState.Reset(directValue, purpose, 0, 0, UseConvolution::No);
+        const DebugStateRaw &deviceState = debugCombo.States[index];
+        if (deviceState.Initialized != 1 || deviceState.ChecksumPurpose != purpose ||
+            deviceState.ArraySize != hostState.ArrayToChecksum32.size() ||
+            deviceState.Checksum != hostState.Checksum) {
+            std::ostringstream message;
+            message << implementation << ' ' << component
+                    << " differs between the kernel-exit checksum and direct member readback";
+            throw FractalSharkSeriousException(message.str());
+        }
+    }
+}
 
 //
 // Note: This test ignores the period because it executes only one iteration.
@@ -236,6 +293,29 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
             launchParams, *reinterpret_cast<cudaStream_t *>(&combo.stream), kernelArgs);
     }
 
+    HpSharkFloat<SharkFloatParams> directResultReal;
+    HpSharkFloat<SharkFloatParams> directResultImag;
+    err = cudaMemcpy(&directResultReal,
+                     &combo.comboGpu->Multiply.A,
+                     sizeof(directResultReal),
+                     cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaMemcpy(Ref1 real result D2H) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw FractalSharkSeriousException(oss.str());
+    }
+    err = cudaMemcpy(&directResultImag,
+                     &combo.comboGpu->Multiply.B,
+                     sizeof(directResultImag),
+                     cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaMemcpy(Ref1 imaginary result D2H) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw FractalSharkSeriousException(oss.str());
+    }
+
     // Copy everything back (device pointer -> host struct).
     err = cudaMemcpy(&combo,
                      combo.comboGpu,
@@ -247,6 +327,9 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
             << ")";
         throw FractalSharkSeriousException(oss.str());
     }
+
+    ValidateReferenceReadback("Ref1", "real result", directResultReal, combo.Multiply.A);
+    ValidateReferenceReadback("Ref1", "imaginary result", directResultImag, combo.Multiply.B);
 
     // ---------------------------------------------------------------------
     // Optional debug readback (keep the correctness behavior).
@@ -264,6 +347,17 @@ InvokeHpSharkReferenceKernelCorrectness(const HpShark::LaunchParams &launchParam
                     << static_cast<int>(err) << ")";
                 throw FractalSharkSeriousException(oss.str());
             }
+
+            ValidateReferenceExitChecksum("Ref1",
+                                          "real result",
+                                          directResultReal,
+                                          DebugStatePurpose::ReferenceExitZReal,
+                                          *debugCombo);
+            ValidateReferenceExitChecksum("Ref1",
+                                          "imaginary result",
+                                          directResultImag,
+                                          DebugStatePurpose::ReferenceExitZImag,
+                                          *debugCombo);
         }
 
         if constexpr (HpShark::DebugGlobalState) {
@@ -655,6 +749,29 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
             launchParams, *reinterpret_cast<cudaStream_t *>(&combo.stream), kernelArgs);
     }
 
+    HpSharkFloat<SharkFloatParams> directResultReal;
+    HpSharkFloat<SharkFloatParams> directResultImag;
+    err = cudaMemcpy(&directResultReal,
+                     &combo.comboGpu->Multiply.A,
+                     sizeof(directResultReal),
+                     cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaMemcpy(Ref2 real result D2H) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw FractalSharkSeriousException(oss.str());
+    }
+    err = cudaMemcpy(&directResultImag,
+                     &combo.comboGpu->Multiply.B,
+                     sizeof(directResultImag),
+                     cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        std::ostringstream oss;
+        oss << "cudaMemcpy(Ref2 imaginary result D2H) failed: " << cudaGetErrorString(err) << " (code "
+            << static_cast<int>(err) << ")";
+        throw FractalSharkSeriousException(oss.str());
+    }
+
     // Copy everything back (device pointer -> host struct).
     err = cudaMemcpy(&combo,
                      combo.comboGpu,
@@ -666,6 +783,9 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
             << ")";
         throw FractalSharkSeriousException(oss.str());
     }
+
+    ValidateReferenceReadback("Ref2", "real result", directResultReal, combo.Multiply.A);
+    ValidateReferenceReadback("Ref2", "imaginary result", directResultImag, combo.Multiply.B);
 
     // ---------------------------------------------------------------------
     // Optional debug readback (keep the correctness behavior).
@@ -683,6 +803,17 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
                     << static_cast<int>(err) << ")";
                 throw FractalSharkSeriousException(oss.str());
             }
+
+            ValidateReferenceExitChecksum("Ref2",
+                                          "real result",
+                                          directResultReal,
+                                          DebugStatePurpose::ReferenceExitZReal,
+                                          *debugCombo);
+            ValidateReferenceExitChecksum("Ref2",
+                                          "imaginary result",
+                                          directResultImag,
+                                          DebugStatePurpose::ReferenceExitZImag,
+                                          *debugCombo);
         }
 
         if constexpr (HpShark::DebugGlobalState) {

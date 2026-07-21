@@ -78,6 +78,7 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     static constexpr uint32_t MaxFusedStages = 25;
     static constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
     static constexpr uint32_t MaxCarryPrefixParts = (MaxFusedLimbs + 31u) / 32u;
+    static constexpr uint32_t CarryPrefixControlCount = 5u;
 
     uint64_t *ZReal;
     uint64_t *ZImag;

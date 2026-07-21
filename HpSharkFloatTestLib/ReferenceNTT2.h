@@ -16,4 +16,5 @@ void MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                         HpSharkFloat<SharkFloatParams> *OutW1,
                         HpSharkFloat<SharkFloatParams> *OutW2,
                         HpSharkFloat<SharkFloatParams> *OutW3,
-                        DebugHostCombo<SharkFloatParams> &debugCombo);
+                        DebugHostCombo<SharkFloatParams> &debugCombo,
+                        bool initializeDebugStates = true);

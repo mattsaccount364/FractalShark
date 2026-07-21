@@ -2861,18 +2861,6 @@ UntwistScaleFromMont_3Way_GridStride(cooperative_groups::grid_group &grid,
 
 } // namespace SharkNTT
 
-template <class SharkFloatParams, DebugStatePurpose Purpose>
-__device__ SharkForceInlineReleaseOnly static void
-EraseCurrentDebugState(DebugState<SharkFloatParams> *debugStates,
-                       cooperative_groups::grid_group &grid,
-                       cooperative_groups::thread_block &block)
-{
-    constexpr auto RecursionDepth = 0;
-    constexpr auto CallIndex = 0;
-    constexpr auto curPurpose = static_cast<int>(Purpose);
-    debugStates[curPurpose].Erase(grid, block, Purpose, RecursionDepth, CallIndex);
-}
-
 template <class SharkFloatParams, DebugStatePurpose Purpose, typename ArrayType>
 static __device__ SharkForceInlineReleaseOnly void
 StoreCurrentDebugState(DebugState<SharkFloatParams> *SharkRestrict debugStates,
@@ -3395,7 +3383,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     }
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, bool InitializeDebugStates = true>
 static __device__ SharkForceInlineReleaseOnly void
 MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
                              const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
@@ -3438,69 +3426,10 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     }
 
     if constexpr (HpShark::DebugChecksums) {
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Invalid>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::CDigits>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::DDigits>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::EDigits>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::AHalfHigh>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::AHalfLow>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::BHalfHigh>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::BHalfLow>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::XDiff>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::YDiff>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0XX>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0XY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0YY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1XX>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1XY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1YY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XX>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2YY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3XX>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3XY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3YY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z4XX>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z4XY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z4YY>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm1>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm2>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm3>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm4>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm5>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm6>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1_offsetXX>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1_offsetXY>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1_offsetYY>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XX>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XY>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128YY>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd1>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd2>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd3>(debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetXX>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetXY>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetYY>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add1>(
-            debugStates, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(
-            debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 93,
-                      "Unexpected number of purposes");
-    }
+        if constexpr (InitializeDebugStates) {
+            EraseAllDebugStates(debugStates, grid, block);
+        }
 
-    if constexpr (HpShark::DebugChecksums) {
         StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits, uint32_t>(
             debugStates, grid, block, A->Digits, NewN);
         StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits, uint32_t>(

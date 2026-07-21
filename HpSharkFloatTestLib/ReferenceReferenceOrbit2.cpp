@@ -986,12 +986,13 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
                                 uint32_t *digits,
                                 uint32_t *magnitude,
                                 uint32_t magnitudeCapacity,
+                                uint32_t &digitLength,
                                 uint32_t &magnitudeLength,
                                 bool &negative)
 {
     constexpr int64_t Base = 1ll << 32;
     assert(magnitudeCapacity >= limbCount + 2);
-    uint32_t digitLength = 0;
+    digitLength = 0;
 
     const auto appendDigit = [&](uint32_t digit) {
         assert(digitLength < magnitudeCapacity);
@@ -1039,9 +1040,10 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
 
     negative = (carry < 0);
     if (!negative) {
-        while (digitLength > 0 && digits[digitLength - 1] == 0)
-            --digitLength;
-        for (uint32_t i = 0; i < digitLength; ++i) {
+        uint32_t nonzeroDigitLength = digitLength;
+        while (nonzeroDigitLength > 0 && digits[nonzeroDigitLength - 1] == 0)
+            --nonzeroDigitLength;
+        for (uint32_t i = 0; i < nonzeroDigitLength; ++i) {
             appendMagnitude(digits[i]);
         }
         PrintArray("propagated magnitude", magnitude, magnitudeLength);
@@ -1121,15 +1123,24 @@ FinalizeSignedStream(const FinalizationStream<SharkFloatParams> &stream,
                      uint32_t *magnitude,
                      uint32_t magnitudeCapacity,
                      DebugHostCombo<SharkFloatParams> &debugCombo,
+                     DebugStatePurpose digitsPurpose,
                      DebugStatePurpose magnitudePurpose)
 {
     if (IsDebugTraceEnabled())
         std::cout << "  FinalizeSignedStream commonExp=" << stream.CommonExp << '\n';
     PrintArray("finalization limbs", stream.Limbs, stream.LimbCount);
+    uint32_t digitLength = 0;
     uint32_t magnitudeLength = 0;
     bool negative = false;
-    PropagateSignedLimbsToMagnitude<SharkFloatParams>(
-        stream.Limbs, stream.LimbCount, digits, magnitude, magnitudeCapacity, magnitudeLength, negative);
+    PropagateSignedLimbsToMagnitude<SharkFloatParams>(stream.Limbs,
+                                                      stream.LimbCount,
+                                                      digits,
+                                                      magnitude,
+                                                      magnitudeCapacity,
+                                                      digitLength,
+                                                      magnitudeLength,
+                                                      negative);
+    StoreReference2DebugState(debugCombo, digitsPurpose, digits, digitLength);
     StoreReference2DebugState(debugCombo, magnitudePurpose, magnitude, magnitudeLength);
     NormalizeMagnitudeToHpFloat<SharkFloatParams>(
         magnitude, magnitudeLength, stream.CommonExp, negative, stream.Out);
@@ -1475,6 +1486,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                              workspace.Magnitude,
                              MaxFusedLimbs,
                              debugHostCombo,
+                             DebugStatePurpose::SignedCarry1,
                              DebugStatePurpose::FinalAdd1);
     }
 
@@ -1506,6 +1518,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                              workspace.Magnitude,
                              MaxFusedLimbs,
                              debugHostCombo,
+                             DebugStatePurpose::SignedCarry2,
                              DebugStatePurpose::FinalAdd2);
     }
     StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
@@ -1562,6 +1575,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                  workspace.Magnitude,
                                  MaxFusedLimbs,
                                  debugHostCombo,
+                                 DebugStatePurpose::SignedCarryDzdc1,
                                  DebugStatePurpose::FinalAddDzdc1);
         }
 
@@ -1593,6 +1607,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                  workspace.Magnitude,
                                  MaxFusedLimbs,
                                  debugHostCombo,
+                                 DebugStatePurpose::SignedCarryDzdc2,
                                  DebugStatePurpose::FinalAddDzdc2);
         }
         StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
@@ -1640,9 +1655,7 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
     result->IterationsExecuted = 0;
     result->PeriodResult = PeriodicityResult::Unknown;
 
-    if constexpr (HpShark::DebugChecksums) {
-        debugHostCombo.States.resize(static_cast<int>(DebugStatePurpose::NumPurposes));
-    }
+    EraseAllDebugStates(debugHostCombo);
 
     StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZReal, *cReal);
     StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZImag, *cImag);

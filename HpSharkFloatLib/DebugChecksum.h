@@ -700,4 +700,25 @@ template <class SharkFloatParams> struct DebugState {
     DebugStateRaw Data;
 };
 
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+EraseAllDebugStates(DebugState<SharkFloatParams> *debugStates,
+                    cooperative_groups::grid_group &grid,
+                    cooperative_groups::thread_block &block)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        const uint32_t threadIndex =
+            block.thread_index().x + block.group_index().x * block.dim_threads().x;
+        const uint32_t threadCount = static_cast<uint32_t>(grid.size());
+        constexpr uint32_t purposeCount = static_cast<uint32_t>(DebugStatePurpose::NumPurposes);
+
+        for (uint32_t purposeIndex = threadIndex; purposeIndex < purposeCount;
+             purposeIndex += threadCount) {
+            debugStates[purposeIndex].Erase(
+                grid, block, static_cast<DebugStatePurpose>(purposeIndex), 0, 0);
+        }
+        grid.sync();
+    }
+}
+
 #endif // __CUDACC__

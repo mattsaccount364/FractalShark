@@ -122,7 +122,7 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
     workspaceBytes += static_cast<size_t>(Workspace::MaxCarryPrefixParts) *
                       sizeof(HpSharkReference2CarryPrefixDescriptor);
     workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint32_t));
-    workspaceBytes += 4u * sizeof(uint32_t);
+    workspaceBytes += static_cast<size_t>(Workspace::CarryPrefixControlCount) * sizeof(uint32_t);
     workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint64_t));
     workspaceBytes += 4u * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
     workspaceBytes += 2u * static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
@@ -197,8 +197,8 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         allocateWorkspace(Workspace::MaxCarryPrefixParts,
                           sizeof(HpSharkReference2CarryPrefixDescriptor),
                           alignof(HpSharkReference2CarryPrefixDescriptor)));
-    workspace.CarryPrefixControl =
-        static_cast<uint32_t *>(allocateWorkspace(4u, sizeof(uint32_t), alignof(uint32_t)));
+    workspace.CarryPrefixControl = static_cast<uint32_t *>(
+        allocateWorkspace(Workspace::CarryPrefixControlCount, sizeof(uint32_t), alignof(uint32_t)));
     workspace.Roots.stage_omegas = static_cast<uint64_t *>(
         allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
     workspace.Roots.stage_omegas_inv = static_cast<uint64_t *>(

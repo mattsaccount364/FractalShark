@@ -54,9 +54,7 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
     result->IterationsExecuted = 0;
     result->PeriodResult = PeriodicityResult::Unknown;
 
-    if constexpr (HpShark::DebugChecksums) {
-        debugHostCombo.States.resize(static_cast<int>(DebugStatePurpose::NumPurposes));
-    }
+    EraseAllDebugStates(debugHostCombo);
     StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZReal, *cReal);
     StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZImag, *cImag);
     StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCReal, *cReal);
@@ -211,7 +209,8 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                                              nullptr,
                                              nullptr,
                                              nullptr,
-                                             debugHostCombo);
+                                             debugHostCombo,
+                                             false);
 
         //
         // Step 3: Add — z^2 + c
@@ -230,7 +229,8 @@ ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
                                     nullptr,
                                     nullptr,
                                     nullptr,
-                                    debugHostCombo);
+                                    debugHostCombo,
+                                    false);
 
         // Update z for next iteration
         *zReal = *newZReal;
@@ -341,7 +341,8 @@ EvaluateOrbitAndDerivative(const HpSharkFloat<SharkFloatParams> *cReal,
                                              w1.get(),
                                              w2.get(),
                                              w3.get(),
-                                             debugHostCombo);
+                                             debugHostCombo,
+                                             false);
 
         AddHelper<SharkFloatParams>(x2.get(),
                                     y2.get(),
@@ -356,7 +357,8 @@ EvaluateOrbitAndDerivative(const HpSharkFloat<SharkFloatParams> *cReal,
                                     w3.get(),
                                     newDzdcReal.get(),
                                     newDzdcImag.get(),
-                                    debugHostCombo);
+                                    debugHostCombo,
+                                    false);
 
         *zReal = *newZReal;
         *zImag = *newZImag;

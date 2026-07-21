@@ -524,15 +524,15 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                    HpSharkFloat<SharkFloatParams> *OutW1,
                    HpSharkFloat<SharkFloatParams> *OutW2,
                    HpSharkFloat<SharkFloatParams> *OutW3,
-                   DebugHostCombo<SharkFloatParams> &debugCombo)
+                   DebugHostCombo<SharkFloatParams> &debugCombo,
+                   bool initializeDebugStates)
 {
     using namespace SharkNTT;
 
     auto &debugStates = debugCombo.States;
 
-    if constexpr (HpShark::DebugChecksums) {
-        constexpr auto NewDebugStateSize = static_cast<int>(DebugStatePurpose::NumPurposes);
-        debugStates.resize(NewDebugStateSize);
+    if (initializeDebugStates) {
+        EraseAllDebugStates(debugCombo);
     }
 
     // x must be a positive constant expression
@@ -845,6 +845,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                                        HpSharkFloat<SharkFloatParams> *,                \
                                                        HpSharkFloat<SharkFloatParams> *,                \
                                                        HpSharkFloat<SharkFloatParams> *,                \
-                                                       DebugHostCombo<SharkFloatParams> &);
+                                                       DebugHostCombo<SharkFloatParams> &,              \
+                                                       bool);
 
 ExplicitInstantiateAll();

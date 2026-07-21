@@ -252,6 +252,7 @@ DebugStateHost<SharkFloatParams>::Reset(const uint32_t *arrayToChecksum,
     if constexpr (HpShark::DebugChecksums) {
         Initialized = true;
         ArrayToChecksum32.assign(arrayToChecksum, arrayToChecksum + arraySize);
+        ArrayToChecksum64.clear();
         Checksum = ComputeCRC64(ArrayToChecksum32, 0);
 
         ChecksumPurpose = purpose;
@@ -273,6 +274,7 @@ DebugStateHost<SharkFloatParams>::Reset(const uint64_t *arrayToChecksum,
 {
     if constexpr (HpShark::DebugChecksums) {
         Initialized = true;
+        ArrayToChecksum32.clear();
         ArrayToChecksum64.assign(arrayToChecksum, arrayToChecksum + arraySize);
         Checksum = ComputeCRC64(ArrayToChecksum64, 0);
 
@@ -334,3 +336,13 @@ template <class SharkFloatParams> struct DebugHostCombo {
     std::vector<DebugStateHost<SharkFloatParams>> States;
     DebugMultiplyCountHost<SharkFloatParams> MultiplyCounts;
 };
+
+template <class SharkFloatParams>
+void
+EraseAllDebugStates(DebugHostCombo<SharkFloatParams> &debugCombo)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        debugCombo.States.assign(static_cast<size_t>(DebugStatePurpose::NumPurposes),
+                                 DebugStateHost<SharkFloatParams>{});
+    }
+}

@@ -35,6 +35,11 @@
 
 #include "Environment.h"
 
+template <class SharkFloatParams>
+bool ChecksumsCheck(const HpShark::LaunchParams &launchParams,
+                    const DebugHostCombo<SharkFloatParams> &debugHostCombo,
+                    const DebugGpuCombo &debugGpuCombo);
+
 static constexpr bool EnableTestSign1 = true;
 static constexpr bool EnableTestSign2 = true;
 static constexpr bool EnableTestSign3 = true;
@@ -1171,7 +1176,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
                 if constexpr (HpShark::DebugGlobalState) {
                     DebugHostCombo<SharkFloatParams> debugHostCombo;
-                    ChecksumsCheck<SharkFloatParams>(debugHostCombo, *debugGpuCombo);
+                    (void)ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, *debugGpuCombo);
                 }
             }
         }
@@ -1274,7 +1279,7 @@ CheckAgainstHost(const HpShark::LaunchParams &launchParams,
 }
 
 template <class SharkFloatParams>
-void
+bool
 ChecksumsCheck(const HpShark::LaunchParams &launchParams,
                const DebugHostCombo<SharkFloatParams> &debugHostCombo,
                const DebugGpuCombo &debugGpuCombo)
@@ -1344,30 +1349,37 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
 
     if constexpr (HpShark::TestGpu && HpShark::DebugChecksums) {
         const auto &debugResultsHost = debugHostCombo.States;
-        assert(debugResultsHost.size() <= debugGpuCombo.States.size());
+        if (debugResultsHost.size() > debugGpuCombo.States.size()) {
+            std::cerr << "Error: GPU checksum table has " << debugGpuCombo.States.size()
+                      << " slots, but the host table has " << debugResultsHost.size() << std::endl;
+            ChecksumFailure = true;
+        }
 
         // Note that the hosts results should be exactly the right size, whereas
         // the CUDA results may be larger due to the way the kernel is written.
-        for (size_t i = 0; i < debugResultsHost.size(); ++i) {
+        const size_t comparableStateCount =
+            std::min(debugResultsHost.size(), debugGpuCombo.States.size());
+        for (size_t i = 0; i < comparableStateCount; ++i) {
             const auto &host = debugResultsHost[i];
             const auto &cuda = debugGpuCombo.States[i];
 
-            // Skip entries that were never written on either side
-            // (e.g., NR debug slots when running non-NR types)
-            if (!host.Initialized && cuda.Initialized != 1) {
-                continue;
-            }
+            const bool hostInitialized = host.Initialized;
+            const bool cudaInitialized = cuda.Initialized == 1;
+            const size_t hostArraySize = host.ArrayToChecksum32.size() + host.ArrayToChecksum64.size();
+            const bool metadataMatches = host.ChecksumPurpose == cuda.ChecksumPurpose &&
+                                         host.RecursionDepth == cuda.RecursionDepth &&
+                                         host.CallIndex == cuda.CallIndex &&
+                                         host.Convolution == cuda.Convolution;
+            const bool stateMatches = hostInitialized == cudaInitialized && metadataMatches &&
+                                      host.Checksum == cuda.Checksum && hostArraySize == cuda.ArraySize;
 
-            const auto maxHostArraySize =
-                std::max(host.ArrayToChecksum32.size(), host.ArrayToChecksum64.size());
-
-            if (host.Initialized != (cuda.Initialized == 1) || host.Checksum != cuda.Checksum ||
-                host.ChecksumPurpose != cuda.ChecksumPurpose || host.CallIndex != cuda.CallIndex ||
-                maxHostArraySize != cuda.ArraySize) {
+            if (!stateMatches) {
 
                 std::cerr << "======================================" << std::endl;
                 std::cerr << "Error: Checksum mismatch at index(base16) 0x" << std::hex << i
                           << std::endl;
+                std::cerr << "Expected slot: "
+                          << DebugStatePurposeToString(static_cast<DebugStatePurpose>(i)) << std::endl;
                 std::cerr << "GPU:" << std::endl;
 
                 // Print all fields of cuda:
@@ -1379,9 +1391,14 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
 
                 std::cerr << "Checksum(base16): 0x" << std::hex << cuda.Checksum << std::dec
                           << std::endl;
-                std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose) << std::endl;
-                std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(cuda.ChecksumPurpose)
-                          << std::endl;
+                if (cudaInitialized) {
+                    std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose)
+                              << std::endl;
+                    std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(cuda.ChecksumPurpose)
+                              << std::endl;
+                } else {
+                    std::cerr << "Checkpoint status: not written (erased)" << std::endl;
+                }
 
                 std::cerr << "RecursionDepth: " << cuda.RecursionDepth << std::endl;
                 std::cerr << "CallIndex: " << cuda.CallIndex << std::endl;
@@ -1409,9 +1426,14 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
 
                 std::cerr << "Checksum(base16): 0x" << std::hex << host.Checksum << std::dec
                           << std::endl;
-                std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose) << std::endl;
-                std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(host.ChecksumPurpose)
-                          << std::endl;
+                if (hostInitialized) {
+                    std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose)
+                              << std::endl;
+                    std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(host.ChecksumPurpose)
+                              << std::endl;
+                } else {
+                    std::cerr << "Checkpoint status: not written (erased)" << std::endl;
+                }
 
                 std::cerr << "RecursionDepth: " << host.RecursionDepth << std::endl;
                 std::cerr << "CallIndex: " << host.CallIndex << std::endl;
@@ -1432,6 +1454,8 @@ ChecksumsCheck(const HpShark::LaunchParams &launchParams,
     } else {
         std::cout << "Checksum test skipped (disabled in this build)" << std::endl;
     }
+
+    return !ChecksumFailure;
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
@@ -1719,7 +1743,9 @@ TestCoreAdd(const HpShark::LaunchParams &launchParams,
             }
         }
 
-        ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo);
+        if (!ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo)) {
+            Tests.MarkFailed(&launchParams, testNum, "Checksums", "checksum mismatch", "exact match");
+        }
     }
 
     if constexpr (HpShark::TestGpu) {
@@ -2076,7 +2102,9 @@ TestCoreMultiply(const HpShark::LaunchParams &launchParams,
             }
         }
 
-        ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo);
+        if (!ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo)) {
+            Tests.MarkFailed(&launchParams, testNum, "Checksums", "checksum mismatch", "exact match");
+        }
     }
 
     if constexpr (HpShark::TestGpu) {
@@ -2362,7 +2390,9 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     }
 
     if constexpr (HpShark::TestReferenceImpl) {
-        ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo);
+        if (!ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo)) {
+            Tests.MarkFailed(&launchParams, testNum, "Checksums", "checksum mismatch", "exact match");
+        }
     }
 
     if constexpr (HpShark::TestGpu && IsReferenceOrbitOperator<sharkOperator>) {

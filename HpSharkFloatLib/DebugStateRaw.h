@@ -88,6 +88,11 @@ enum class DebugStatePurpose {
     Final128W1,
     Final128W2,
     Final128W3,
+    // Ref2 signed carry propagation
+    SignedCarry1,
+    SignedCarry2,
+    SignedCarryDzdc1,
+    SignedCarryDzdc2,
     // Add stages
     FinalAdd1,
     FinalAdd2,
@@ -187,6 +192,10 @@ inline constexpr std::array<const char *, static_cast<size_t>(DebugStatePurpose:
                              "Final128W1",
                              "Final128W2",
                              "Final128W3",
+                             "SignedCarry1",
+                             "SignedCarry2",
+                             "SignedCarryDzdc1",
+                             "SignedCarryDzdc2",
                              "FinalAdd1",
                              "FinalAdd2",
                              "FinalAdd3",

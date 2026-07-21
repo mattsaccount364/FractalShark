@@ -109,7 +109,7 @@ ReferenceHelper(cg::grid_group &grid,
     // Note: no synchronization needed here because d2 is only read/written by
     // block 0 thread 0, and multiply does not depend on d2.
 
-    MultiplyHelperNTTV2Separates<SharkFloatParams>(
+    MultiplyHelperNTTV2Separates<SharkFloatParams, false>(
         reference->Multiply.Roots,
         &reference->Multiply.A,
         &reference->Multiply.B,
@@ -132,7 +132,7 @@ ReferenceHelper(cg::grid_group &grid,
     // ResultXY = Add.C_A * Add.E_B = Z_real * Z_imaginary
     // And just above we've multiplied ResultXY by 2.
 
-    AddHelperSeparates<SharkFloatParams>(
+    AddHelperSeparates<SharkFloatParams, false>(
         grid,
         block,
         &reference->Multiply.ResultX2,  // x^2 = Z_real^2
@@ -166,6 +166,13 @@ __maxnreg__(HpShark::RegisterLimit)
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
 
+    DebugState<SharkFloatParams> *debugStates = nullptr;
+    if constexpr (HpShark::DebugChecksums) {
+        debugStates = reinterpret_cast<DebugState<SharkFloatParams> *>(
+            &tempData[HpShark::AdditionalChecksumsOffset]);
+        EraseAllDebugStates(debugStates, grid, block);
+    }
+
     // Call the AddHelper function
     constexpr auto currentIteration = 0;
 
@@ -174,8 +181,22 @@ __maxnreg__(HpShark::RegisterLimit)
         // Correctness checking of all this should take place via the integrated loop version just below.
         return;
     } else {
+        StoreReferenceDebugValue(
+            debugStates, grid, block, DebugStatePurpose::ReferenceEntryZReal, combo->Multiply.A);
+        StoreReferenceDebugValue(
+            debugStates, grid, block, DebugStatePurpose::ReferenceEntryZImag, combo->Multiply.B);
+        StoreReferenceDebugValue(
+            debugStates, grid, block, DebugStatePurpose::ReferenceEntryCReal, combo->Add.C_A);
+        StoreReferenceDebugValue(
+            debugStates, grid, block, DebugStatePurpose::ReferenceEntryCImag, combo->Add.E_B);
+
         [[maybe_unused]] const auto shouldContinue = ReferenceHelper<SharkFloatParams>(
             grid, block, currentIteration, nullptr, nullptr, nullptr, nullptr, combo, tempData);
+
+        StoreReferenceDebugValue(
+            debugStates, grid, block, DebugStatePurpose::ReferenceExitZReal, combo->Multiply.A);
+        StoreReferenceDebugValue(
+            debugStates, grid, block, DebugStatePurpose::ReferenceExitZImag, combo->Multiply.B);
     }
 }
 
@@ -198,6 +219,7 @@ __maxnreg__(HpShark::RegisterLimit)
     if constexpr (HpShark::DebugChecksums) {
         debugStates = reinterpret_cast<DebugState<SharkFloatParams> *>(
             &tempData[HpShark::AdditionalChecksumsOffset]);
+        EraseAllDebugStates(debugStates, grid, block);
     }
 
     typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);

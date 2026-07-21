@@ -803,6 +803,29 @@ enum class CarryPrefixDescriptorState : uint32_t {
     Prefix = 2,
 };
 
+constexpr uint32_t CarryPrefixDescriptorStateBits = 2u;
+constexpr uint32_t CarryPrefixDescriptorStateMask = (1u << CarryPrefixDescriptorStateBits) - 1u;
+constexpr uint32_t CarryPrefixDescriptorGenerationMax = 0xffffffffu >> CarryPrefixDescriptorStateBits;
+
+static __device__ uint32_t
+PackCarryPrefixDescriptorState(uint32_t generation, CarryPrefixDescriptorState state)
+{
+    assert(generation > 0u && generation <= CarryPrefixDescriptorGenerationMax);
+    return (generation << CarryPrefixDescriptorStateBits) | static_cast<uint32_t>(state);
+}
+
+static __device__ uint32_t
+CarryPrefixDescriptorGeneration(uint32_t packedState)
+{
+    return packedState >> CarryPrefixDescriptorStateBits;
+}
+
+static __device__ CarryPrefixDescriptorState
+UnpackCarryPrefixDescriptorState(uint32_t packedState)
+{
+    return static_cast<CarryPrefixDescriptorState>(packedState & CarryPrefixDescriptorStateMask);
+}
+
 static __device__ uint64_t
 CarryPrefixIdentity()
 {
@@ -895,10 +918,10 @@ ShuffleCarryPrefix(unsigned mask, uint64_t value, int sourceLane)
 }
 
 static __device__ void
-PublishCarryPrefixState(uint32_t *state, CarryPrefixDescriptorState value)
+PublishCarryPrefixState(uint32_t *state, uint32_t generation, CarryPrefixDescriptorState value)
 {
     cuda::atomic_ref<uint32_t, cuda::thread_scope_device> atomicState(*state);
-    atomicState.store(static_cast<uint32_t>(value), cuda::memory_order_release);
+    atomicState.store(PackCarryPrefixDescriptorState(generation, value), cuda::memory_order_release);
 }
 
 static __device__ uint32_t
@@ -942,6 +965,7 @@ BuildAddOneCarryPrefixes(cooperative_groups::grid_group &grid,
     grid.sync();
 }
 
+template <class SharkFloatParams>
 static __device__ void
 PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                          cooperative_groups::thread_block &block,
@@ -954,10 +978,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     if (count == 0u)
         return;
 
-    constexpr uint32_t Empty = static_cast<uint32_t>(CarryPrefixDescriptorState::Empty);
-    constexpr uint32_t Aggregate = static_cast<uint32_t>(CarryPrefixDescriptorState::Aggregate);
-    constexpr uint32_t Prefix = static_cast<uint32_t>(CarryPrefixDescriptorState::Prefix);
     constexpr uint32_t ProcessorTicketControl = 0;
+    constexpr uint32_t GenerationControl = 4;
     const uint32_t blockSize = block.dim_threads().x;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     const uint32_t numParts = (count + blockSize - 1u) / blockSize;
@@ -976,11 +998,27 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     assert(blockSize >= 32u && (blockSize & 31u) == 0u);
     assert(numWarps <= CarryPrefixMaxWarps);
 
-    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
-        descriptors[part].State = Empty;
-    if (GridThreadRank(block) == 0u)
+    if (GridThreadRank(block) == 0u) {
+        const uint32_t currentGeneration = control[GenerationControl];
+        control[GenerationControl] =
+            currentGeneration >= CarryPrefixDescriptorGenerationMax ? 0u : currentGeneration + 1u;
         control[ProcessorTicketControl] = 0u;
+    }
     grid.sync();
+
+    uint32_t generation = control[GenerationControl];
+    if (generation == 0u) {
+        constexpr uint32_t descriptorCount =
+            HpSharkReference2Workspace<SharkFloatParams>::MaxCarryPrefixParts;
+        for (uint32_t part = GridThreadRank(block); part < descriptorCount; part += gridSize)
+            descriptors[part].State = 0u;
+        grid.sync();
+        if (GridThreadRank(block) == 0u)
+            control[GenerationControl] = 1u;
+        grid.sync();
+        generation = control[GenerationControl];
+    }
+    assert(generation > 0u);
 
     if (threadIndex == 0u)
         broadcast[0] = atomicAdd(&control[ProcessorTicketControl], 1u);
@@ -1032,7 +1070,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         const uint64_t aggregate = warpAggregates[0];
         if (threadIndex == 0u) {
             descriptors[part].AggregateTransform = aggregate;
-            PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Aggregate);
+            PublishCarryPrefixState(
+                &descriptors[part].State, generation, CarryPrefixDescriptorState::Aggregate);
         }
         __syncthreads();
 
@@ -1041,29 +1080,34 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
             int32_t previousPart = static_cast<int32_t>(part) - 1;
             while (previousPart >= 0) {
                 const int32_t descriptorIndex = previousPart - static_cast<int32_t>(lane);
-                uint32_t state = Empty;
+                CarryPrefixDescriptorState state = CarryPrefixDescriptorState::Empty;
                 uint64_t transform = CarryPrefixIdentity();
                 if (descriptorIndex >= 0) {
                     int spin = 0;
                     do {
-                        state = LoadCarryPrefixState(&descriptors[descriptorIndex].State);
-                        if (state != Empty)
-                            break;
+                        const uint32_t packedState =
+                            LoadCarryPrefixState(&descriptors[descriptorIndex].State);
+                        if (CarryPrefixDescriptorGeneration(packedState) == generation) {
+                            state = UnpackCarryPrefixDescriptorState(packedState);
+                            if (state != CarryPrefixDescriptorState::Empty)
+                                break;
+                        }
                         if (++spin == 64) {
                             __nanosleep(64);
                             spin = 0;
                         }
                     } while (true);
 
-                    assert(state == Aggregate || state == Prefix);
+                    assert(state == CarryPrefixDescriptorState::Aggregate ||
+                           state == CarryPrefixDescriptorState::Prefix);
                     transform =
-                        state == Prefix
+                        state == CarryPrefixDescriptorState::Prefix
                             ? LoadCarryPrefixTransform(&descriptors[descriptorIndex].PrefixTransform)
                             : LoadCarryPrefixTransform(&descriptors[descriptorIndex].AggregateTransform);
                 }
 
-                const uint32_t prefixMask =
-                    __ballot_sync(warpMask, descriptorIndex >= 0 && state == Prefix);
+                const uint32_t prefixMask = __ballot_sync(
+                    warpMask, descriptorIndex >= 0 && state == CarryPrefixDescriptorState::Prefix);
                 if (prefixMask != 0u) {
                     const int prefixLane = __ffs(prefixMask) - 1;
                     const uint64_t publishedPrefix = ShuffleCarryPrefix(warpMask, transform, prefixLane);
@@ -1105,7 +1149,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         const uint64_t exclusivePart = broadcast[0];
         if (threadIndex == 0u) {
             descriptors[part].PrefixTransform = ComposeCarryPrefixes(exclusivePart, aggregate);
-            PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Prefix);
+            PublishCarryPrefixState(
+                &descriptors[part].State, generation, CarryPrefixDescriptorState::Prefix);
         }
 
         const uint64_t warpExclusive = warpPrefixes[warp];
@@ -1132,6 +1177,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
                      uint32_t limbCount,
                      int32_t commonExponent,
                      HpSharkFloat<SharkFloatParams> *out,
+                     DebugStatePurpose digitsPurpose,
                      DebugStatePurpose magnitudePurpose)
 {
     constexpr uint32_t Capacity = HpSharkReference2Workspace<SharkFloatParams>::MaxFusedLimbs;
@@ -1145,13 +1191,13 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     assert(limbCount > 0u && limbCount <= Capacity);
 
     BuildSignedCarryPrefixes(grid, block, limbs, limbCount, transforms);
-    PrefixCarryTransformsDLB(grid,
-                             block,
-                             transforms,
-                             limbCount,
-                             workspace.CarryPrefixDescriptors,
-                             control,
-                             carryPrefixShared);
+    PrefixCarryTransformsDLB<SharkFloatParams>(grid,
+                                               block,
+                                               transforms,
+                                               limbCount,
+                                               workspace.CarryPrefixDescriptors,
+                                               control,
+                                               carryPrefixShared);
 
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
@@ -1175,15 +1221,16 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
 
     uint32_t digitLength = control[DigitLengthControl];
     const bool negative = control[NegativeControl] != 0u;
+    StoreReference2DebugState(debugStates, grid, block, digitsPurpose, digits, digitLength);
     if (negative) {
         BuildAddOneCarryPrefixes(grid, block, digits, digitLength, transforms);
-        PrefixCarryTransformsDLB(grid,
-                                 block,
-                                 transforms,
-                                 digitLength,
-                                 workspace.CarryPrefixDescriptors,
-                                 control,
-                                 carryPrefixShared);
+        PrefixCarryTransformsDLB<SharkFloatParams>(grid,
+                                                   block,
+                                                   transforms,
+                                                   digitLength,
+                                                   workspace.CarryPrefixDescriptors,
+                                                   control,
+                                                   carryPrefixShared);
         for (uint32_t index = GridThreadRank(block); index < digitLength; index += gridSize) {
             const int32_t carryState = ApplyCarryPrefix(transforms[index], CarryPrefixMin + 1);
             const uint32_t carryIn = static_cast<uint32_t>(carryState - CarryPrefixMin);
@@ -1418,6 +1465,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                limbCount,
                                                realExponent,
                                                &combo->Multiply.A,
+                                               DebugStatePurpose::SignedCarry1,
                                                DebugStatePurpose::FinalAdd1);
         FinalizeSignedStream<SharkFloatParams>(grid,
                                                block,
@@ -1428,6 +1476,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                limbCount,
                                                imagExponent,
                                                &combo->Multiply.B,
+                                               DebugStatePurpose::SignedCarry2,
                                                DebugStatePurpose::FinalAdd2);
     } else {
         if (realZero) {
@@ -1472,6 +1521,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    limbCount,
                                                    realExponent,
                                                    &combo->Multiply.A,
+                                                   DebugStatePurpose::SignedCarry1,
                                                    DebugStatePurpose::FinalAdd1);
         }
         grid.sync();
@@ -1517,6 +1567,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    limbCount,
                                                    imagExponent,
                                                    &combo->Multiply.B,
+                                                   DebugStatePurpose::SignedCarry2,
                                                    DebugStatePurpose::FinalAdd2);
         }
     }
@@ -1599,6 +1650,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    limbCount,
                                                    dzdcRealExponent,
                                                    &combo->Multiply.DzdcReal,
+                                                   DebugStatePurpose::SignedCarryDzdc1,
                                                    DebugStatePurpose::FinalAddDzdc1);
             FinalizeSignedStream<SharkFloatParams>(grid,
                                                    block,
@@ -1609,6 +1661,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    limbCount,
                                                    dzdcImagExponent,
                                                    &combo->Multiply.DzdcImag,
+                                                   DebugStatePurpose::SignedCarryDzdc2,
                                                    DebugStatePurpose::FinalAddDzdc2);
         } else {
             if (dzdcRealZero) {
@@ -1653,6 +1706,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        limbCount,
                                                        dzdcRealExponent,
                                                        &combo->Multiply.DzdcReal,
+                                                       DebugStatePurpose::SignedCarryDzdc1,
                                                        DebugStatePurpose::FinalAddDzdc1);
             }
             grid.sync();
@@ -1698,6 +1752,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        limbCount,
                                                        dzdcImagExponent,
                                                        &combo->Multiply.DzdcImag,
+                                                       DebugStatePurpose::SignedCarryDzdc2,
                                                        DebugStatePurpose::FinalAddDzdc2);
             }
         }
@@ -1810,6 +1865,7 @@ __maxnreg__(HpShark::RegisterLimit)
     if constexpr (HpShark::DebugChecksums) {
         debugStates = reinterpret_cast<DebugState<SharkFloatParams> *>(
             &tempData[HpShark::AdditionalChecksumsOffset]);
+        EraseAllDebugStates(debugStates, grid, block);
     }
 
     grid.sync();

@@ -28,4 +28,5 @@ void AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
                const HpSharkFloat<SharkFloatParams> *W3,
                HpSharkFloat<SharkFloatParams> *OutDzdcReal,
                HpSharkFloat<SharkFloatParams> *OutDzdcImag,
-               DebugHostCombo<SharkFloatParams> &debugHostCombo);
+               DebugHostCombo<SharkFloatParams> &debugHostCombo,
+               bool initializeDebugStates = true);

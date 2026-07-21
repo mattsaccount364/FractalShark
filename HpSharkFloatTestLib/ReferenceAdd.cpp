@@ -926,6 +926,15 @@ NormalizeAndCopyResult_Single(const char *prefixOutStr,
     propagatedResult.push_back(static_cast<uint32_t>(carry));
     numActualDigitsPlusGuard++;
 
+    const bool isZero = std::ranges::all_of(propagatedResult, [](uint64_t digit) { return digit == 0; });
+    if (isZero) {
+        std::fill_n(ResultOut->Digits, actualDigits, 0u);
+        exponent = 0;
+        ResultOut->Exponent = 0;
+        ResultOut->SetNegative(false);
+        return;
+    }
+
     // --- 2) Locate most‐significant non‐zero word ---
     int32_t msdResult = 0;
     for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
@@ -1070,13 +1079,13 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
           const HpSharkFloat<SharkFloatParams> *W3,
           HpSharkFloat<SharkFloatParams> *OutDzdcReal,
           HpSharkFloat<SharkFloatParams> *OutDzdcImag,
-          DebugHostCombo<SharkFloatParams> &debugHostCombo)
+          DebugHostCombo<SharkFloatParams> &debugHostCombo,
+          bool initializeDebugStates)
 {
     auto &debugStates = debugHostCombo.States;
 
-    if constexpr (HpShark::DebugChecksums) {
-        constexpr auto NewDebugStateSize = static_cast<int>(DebugStatePurpose::NumPurposes);
-        debugStates.resize(NewDebugStateSize);
+    if (initializeDebugStates) {
+        EraseAllDebugStates(debugHostCombo);
     }
 
     // Refer to incoming digit arrays.
@@ -1852,6 +1861,7 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
                                               const HpSharkFloat<SharkFloatParams> *,                   \
                                               HpSharkFloat<SharkFloatParams> *,                         \
                                               HpSharkFloat<SharkFloatParams> *,                         \
-                                              DebugHostCombo<SharkFloatParams> &);
+                                              DebugHostCombo<SharkFloatParams> &,                       \
+                                              bool);
 
 ExplicitInstantiateAll();

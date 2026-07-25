@@ -874,19 +874,6 @@ constexpr int32_t CarryPrefixMax = 7;
 constexpr uint32_t CarryPrefixStateCount = CarryPrefixMax - CarryPrefixMin + 1;
 constexpr uint32_t CarryPrefixMaxWarps = 32;
 
-static __device__ uint32_t
-WarpReduceMax(unsigned mask, uint32_t value)
-{
-    const uint32_t lane = threadIdx.x & 31u;
-    const uint32_t activeLanes = __popc(mask);
-    for (uint32_t offset = 16u; offset > 0u; offset >>= 1u) {
-        const uint32_t other = __shfl_down_sync(mask, value, static_cast<int>(offset));
-        if (lane + offset < activeLanes)
-            value = value > other ? value : other;
-    }
-    return value;
-}
-
 template <class SharkFloatParams>
 __device__ uint32_t
 FindHighestNonZeroPlusOne(cooperative_groups::grid_group &grid,
@@ -897,16 +884,13 @@ FindHighestNonZeroPlusOne(cooperative_groups::grid_group &grid,
                           uint64_t *sharedStorage)
 {
     const uint32_t threadIndex = block.thread_index().x;
-    const uint32_t blockSize = block.dim_threads().x;
-    const uint32_t lane = threadIndex & 31u;
-    const uint32_t warp = threadIndex >> 5u;
-    const uint32_t numWarps = (blockSize + 31u) >> 5u;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
-    MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
+    uint32_t *blockMaximum = reinterpret_cast<uint32_t *>(sharedStorage);
 
     if (IsLeader<SharkFloatParams>(block))
         *result = 0u;
+    if (threadIndex == 0u)
+        *blockMaximum = 0u;
     grid.sync();
 
     uint32_t localMaximum = 0u;
@@ -915,22 +899,71 @@ FindHighestNonZeroPlusOne(cooperative_groups::grid_group &grid,
             localMaximum = index + 1u;
     }
 
-    localMaximum = WarpReduceMax(__activemask(), localMaximum);
-    if (lane == 0u)
-        sharedStorage[warp] = localMaximum;
+    if (localMaximum != 0u)
+        atomicMax(blockMaximum, localMaximum);
     __syncthreads();
 
-    if (threadIndex == 0u) {
-        uint32_t blockMaximum = 0u;
-        for (uint32_t warpIndex = 0; warpIndex < numWarps; ++warpIndex) {
-            const uint32_t warpMaximum = static_cast<uint32_t>(sharedStorage[warpIndex]);
-            blockMaximum = blockMaximum > warpMaximum ? blockMaximum : warpMaximum;
-        }
-        if (blockMaximum != 0u)
-            atomicMax(result, blockMaximum);
-    }
+    if (threadIndex == 0u && *blockMaximum != 0u)
+        atomicMax(result, *blockMaximum);
     grid.sync();
-    return *result;
+
+    const uint32_t highestNonZeroPlusOne = *result;
+    if constexpr (HpShark::Debug) {
+        for (uint32_t index = GridThreadRank(block); index < count; index += gridSize) {
+            if (index >= highestNonZeroPlusOne)
+                MattsCudaAssert(values[index] == 0u);
+            if (index + 1u == highestNonZeroPlusOne)
+                MattsCudaAssert(values[index] != 0u);
+        }
+        grid.sync();
+    }
+    return highestNonZeroPlusOne;
+}
+
+template <class SharkFloatParams>
+__device__ uint32_t
+FindLowestNonZero(cooperative_groups::grid_group &grid,
+                  cooperative_groups::thread_block &block,
+                  const uint32_t *values,
+                  uint32_t count,
+                  uint32_t *result,
+                  uint64_t *sharedStorage)
+{
+    const uint32_t threadIndex = block.thread_index().x;
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    uint32_t *blockMinimum = reinterpret_cast<uint32_t *>(sharedStorage);
+
+    if (IsLeader<SharkFloatParams>(block))
+        *result = count;
+    if (threadIndex == 0u)
+        *blockMinimum = count;
+    grid.sync();
+
+    uint32_t localMinimum = count;
+    for (uint32_t index = GridThreadRank(block); index < count; index += gridSize) {
+        if (values[index] != 0u)
+            localMinimum = localMinimum < index ? localMinimum : index;
+    }
+
+    if (localMinimum != count)
+        atomicMin(blockMinimum, localMinimum);
+    __syncthreads();
+
+    if (threadIndex == 0u && *blockMinimum != count)
+        atomicMin(result, *blockMinimum);
+    grid.sync();
+
+    const uint32_t lowestNonZero = *result;
+    if constexpr (HpShark::Debug) {
+        for (uint32_t index = GridThreadRank(block); index < count; index += gridSize) {
+            if (index < lowestNonZero)
+                MattsCudaAssert(values[index] == 0u);
+            if (index == lowestNonZero)
+                MattsCudaAssert(values[index] != 0u);
+        }
+        grid.sync();
+    }
+    return lowestNonZero;
 }
 
 enum class CarryPrefixDescriptorState : uint32_t {
@@ -1018,18 +1051,6 @@ MakeSignedCarryPrefix(int64_t limb)
 }
 
 static __device__ uint64_t
-MakeAddOneCarryPrefix(uint32_t digit)
-{
-    uint64_t transform = 0;
-    for (uint32_t input = 0; input < CarryPrefixStateCount; ++input) {
-        const bool carryIn = input == 1u;
-        const uint32_t output = carryIn && digit == 0u ? 1u : 0u;
-        transform |= static_cast<uint64_t>(output) << (input * 4u);
-    }
-    return transform;
-}
-
-static __device__ uint64_t
 ShuffleUpCarryPrefix(unsigned mask, uint64_t value, int offset)
 {
     const uint32_t low = __shfl_up_sync(mask, static_cast<uint32_t>(value), offset);
@@ -1093,19 +1114,6 @@ BuildSignedCarryPrefixes(cooperative_groups::grid_group &grid,
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize)
         transforms[index] = MakeSignedCarryPrefix(limbs[index]);
-    grid.sync();
-}
-
-static __device__ void
-BuildAddOneCarryPrefixes(cooperative_groups::grid_group &grid,
-                         cooperative_groups::thread_block &block,
-                         const uint32_t *digits,
-                         uint32_t digitCount,
-                         uint64_t *transforms)
-{
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t index = GridThreadRank(block); index < digitCount; index += gridSize)
-        transforms[index] = MakeAddOneCarryPrefix(digits[index]);
     grid.sync();
 }
 
@@ -1286,7 +1294,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     constexpr uint32_t Capacity = HpSharkReference2Workspace<SharkFloatParams>::MaxFusedLimbs;
     constexpr uint32_t DigitLengthControl = 1;
     constexpr uint32_t NegativeControl = 2;
-    constexpr uint32_t HighestNonZeroControl = 3;
+    constexpr uint32_t NonZeroReductionControl = 3;
     uint32_t *digits = workspace.MagnitudeDigits;
     uint32_t *magnitude = workspace.Magnitude;
     uint64_t *transforms = workspace.CarryPrefixTransforms;
@@ -1326,28 +1334,26 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     const bool negative = control[NegativeControl] != 0u;
     StoreReference2DebugState(debugStates, grid, block, digitsPurpose, digits, digitLength);
     if (negative) {
-        BuildAddOneCarryPrefixes(grid, block, digits, digitLength, transforms);
-        PrefixCarryTransformsDLB<SharkFloatParams>(grid,
-                                                   block,
-                                                   transforms,
-                                                   digitLength,
-                                                   workspace.CarryPrefixDescriptors,
-                                                   control,
-                                                   carryPrefixShared);
+        // In (~digits) + 1, the carry reaches the lowest nonzero digit and stops there.
+        // Locating that digit avoids a second cross-block carry-prefix scan.
+        const uint32_t lowestNonZero = FindLowestNonZero<SharkFloatParams>(
+            grid, block, digits, digitLength, &control[NonZeroReductionControl], carryPrefixShared);
         for (uint32_t index = GridThreadRank(block); index < digitLength; index += gridSize) {
-            const int32_t carryState = ApplyCarryPrefix(transforms[index], CarryPrefixMin + 1);
-            const uint32_t carryIn = static_cast<uint32_t>(carryState - CarryPrefixMin);
-            magnitude[index] = static_cast<uint32_t>(~digits[index]) + carryIn;
+            if (index < lowestNonZero)
+                magnitude[index] = 0u;
+            else if (index == lowestNonZero)
+                magnitude[index] = 0u - digits[index];
+            else
+                magnitude[index] = ~digits[index];
         }
         grid.sync();
 
         if (IsLeader<SharkFloatParams>(block)) {
-            const int32_t carryState =
-                ApplyCarryPrefix(transforms[digitLength - 1u], CarryPrefixMin + 1);
-            const uint32_t carryIn = static_cast<uint32_t>(carryState - CarryPrefixMin);
-            const bool carryOut = digits[digitLength - 1u] == 0u && carryIn != 0u;
-            if (carryOut && digitLength < Capacity)
-                magnitude[digitLength++] = 1u;
+            if (lowestNonZero == digitLength) {
+                MattsCudaAssert(digitLength < Capacity);
+                if (digitLength < Capacity)
+                    magnitude[digitLength++] = 1u;
+            }
             control[DigitLengthControl] = digitLength;
         }
         grid.sync();
@@ -1359,7 +1365,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     }
 
     const uint32_t highestNonZeroPlusOne = FindHighestNonZeroPlusOne<SharkFloatParams>(
-        grid, block, magnitude, digitLength, &control[HighestNonZeroControl], carryPrefixShared);
+        grid, block, magnitude, digitLength, &control[NonZeroReductionControl], carryPrefixShared);
     StoreReference2DebugState(
         debugStates, grid, block, magnitudePurpose, magnitude, highestNonZeroPlusOne);
 

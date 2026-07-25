@@ -1093,10 +1093,8 @@ PrepareSignedCarryPrefixes(cooperative_groups::grid_group &grid,
                            const int64_t *limbs,
                            uint32_t limbCount,
                            uint64_t *transforms,
-                           HpSharkReference2CarryPrefixDescriptor *descriptors,
-                           uint32_t *control)
+                           HpSharkReference2CarryPrefixDescriptor *descriptors)
 {
-    constexpr uint32_t ProcessorTicketControl = 0;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize)
         transforms[index] = MakeSignedCarryPrefix(limbs[index]);
@@ -1105,8 +1103,6 @@ PrepareSignedCarryPrefixes(cooperative_groups::grid_group &grid,
     const uint32_t numParts = (limbCount + blockSize - 1u) / blockSize;
     for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
         PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
-    if (GridThreadRank(block) == 0u)
-        control[ProcessorTicketControl] = 0u;
     grid.sync();
 }
 
@@ -1116,13 +1112,11 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                          uint64_t *transforms,
                          uint32_t count,
                          HpSharkReference2CarryPrefixDescriptor *descriptors,
-                         uint32_t *control,
                          uint64_t *sharedStorage)
 {
     if (count == 0u)
         return;
 
-    constexpr uint32_t ProcessorTicketControl = 0;
     const uint32_t blockSize = block.dim_threads().x;
     const uint32_t numParts = (count + blockSize - 1u) / blockSize;
     const uint32_t threadIndex = block.thread_index().x;
@@ -1132,8 +1126,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     const unsigned warpMask = __activemask();
     uint64_t *warpAggregates = sharedStorage;
     uint64_t *warpPrefixes = sharedStorage + CarryPrefixMaxWarps;
-    uint64_t *processorIdStorage = sharedStorage + 2u * CarryPrefixMaxWarps;
-    uint64_t *exclusiveStorage = processorIdStorage + 1u;
+    uint64_t *exclusiveStorage = sharedStorage + 2u * CarryPrefixMaxWarps;
 
     // Workspace descriptors are sized for the supported cooperative launch
     // minimum of one warp per block. Ref2's launch calculator selects a warp
@@ -1141,12 +1134,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
     MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
 
-    // Execution-order IDs ensure that lookback never waits on a stripe owned by a block that has
-    // not started running. The cooperative grid size is already the processor count.
-    if (threadIndex == 0u)
-        processorIdStorage[0] = atomicAdd(&control[ProcessorTicketControl], 1u);
-    __syncthreads();
-    const uint32_t processorId = static_cast<uint32_t>(processorIdStorage[0]);
+    const uint32_t processorId = block.group_index().x;
     const uint32_t activeProcessors = gridDim.x;
     for (uint32_t part = processorId; part < numParts; part += activeProcessors) {
         const uint32_t base = part * blockSize;
@@ -1154,6 +1142,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         const bool hasValue = index < count;
         uint64_t inclusive = hasValue ? transforms[index] : CarryPrefixIdentity();
 
+#pragma unroll
         for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
             const uint64_t previous =
                 ShuffleUpCarryPrefix(warpMask, inclusive, static_cast<int>(offset));
@@ -1184,10 +1173,9 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
             aggregate = ShuffleCarryPrefix(warpMask, warpInclusive, static_cast<int>(numWarps - 1u));
         }
 
-        if (threadIndex == 0u)
+        if (threadIndex == 0u) {
             PublishCarryPrefixDescriptorAggregate(descriptors[part], aggregate);
 
-        if (threadIndex == 0u) {
             uint64_t exclusive = CarryPrefixIdentity();
             int32_t previousPart = static_cast<int32_t>(part) - 1;
             while (previousPart >= 0) {
@@ -1252,9 +1240,9 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
                      DebugStatePurpose magnitudePurpose)
 {
     constexpr uint32_t Capacity = HpSharkReference2Workspace<SharkFloatParams>::MaxFusedLimbs;
-    constexpr uint32_t DigitLengthControl = 1;
-    constexpr uint32_t NegativeControl = 2;
-    constexpr uint32_t NonZeroReductionControl = 3;
+    constexpr uint32_t DigitLengthControl = 0;
+    constexpr uint32_t NegativeControl = 1;
+    constexpr uint32_t NonZeroReductionControl = 2;
     uint32_t *digits = workspace.MagnitudeDigits;
     uint32_t *magnitude = workspace.Magnitude;
     uint64_t *transforms = workspace.CarryPrefixTransforms;
@@ -1262,14 +1250,9 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
 
     PrepareSignedCarryPrefixes(
-        grid, block, limbs, limbCount, transforms, workspace.CarryPrefixDescriptors, control);
-    PrefixCarryTransformsDLB(grid,
-                             block,
-                             transforms,
-                             limbCount,
-                             workspace.CarryPrefixDescriptors,
-                             control,
-                             carryPrefixShared);
+        grid, block, limbs, limbCount, transforms, workspace.CarryPrefixDescriptors);
+    PrefixCarryTransformsDLB(
+        grid, block, transforms, limbCount, workspace.CarryPrefixDescriptors, carryPrefixShared);
 
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
@@ -1915,7 +1898,7 @@ __maxnreg__(HpShark::RegisterLimit)
     namespace cg = cooperative_groups;
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
-    __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps + 2u];
+    __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps + 1u];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
     DebugState<SharkFloatParams> *debugStates = nullptr;

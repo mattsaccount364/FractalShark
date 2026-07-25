@@ -972,29 +972,6 @@ enum class CarryPrefixDescriptorState : uint32_t {
     Prefix = 2,
 };
 
-constexpr uint32_t CarryPrefixDescriptorStateBits = 2u;
-constexpr uint32_t CarryPrefixDescriptorStateMask = (1u << CarryPrefixDescriptorStateBits) - 1u;
-constexpr uint32_t CarryPrefixDescriptorGenerationMax = 0xffffffffu >> CarryPrefixDescriptorStateBits;
-
-static __device__ uint32_t
-PackCarryPrefixDescriptorState(uint32_t generation, CarryPrefixDescriptorState state)
-{
-    MattsCudaAssert(generation > 0u && generation <= CarryPrefixDescriptorGenerationMax);
-    return (generation << CarryPrefixDescriptorStateBits) | static_cast<uint32_t>(state);
-}
-
-static __device__ uint32_t
-CarryPrefixDescriptorGeneration(uint32_t packedState)
-{
-    return packedState >> CarryPrefixDescriptorStateBits;
-}
-
-static __device__ CarryPrefixDescriptorState
-UnpackCarryPrefixDescriptorState(uint32_t packedState)
-{
-    return static_cast<CarryPrefixDescriptorState>(packedState & CarryPrefixDescriptorStateMask);
-}
-
 static __device__ uint64_t
 CarryPrefixIdentity()
 {
@@ -1017,6 +994,7 @@ static __device__ uint64_t
 ComposeCarryPrefixes(uint64_t earlier, uint64_t later)
 {
     uint64_t combined = 0;
+#pragma unroll
     for (uint32_t input = 0; input < CarryPrefixStateCount; ++input) {
         const int32_t afterEarlier =
             static_cast<int32_t>((earlier >> (input * 4u)) & 0xFu) + CarryPrefixMin;
@@ -1059,10 +1037,10 @@ ShuffleUpCarryPrefix(unsigned mask, uint64_t value, int offset)
 }
 
 static __device__ void
-PublishCarryPrefixState(uint32_t *state, uint32_t generation, CarryPrefixDescriptorState value)
+PublishCarryPrefixState(uint32_t *state, CarryPrefixDescriptorState value)
 {
     cuda::atomic_ref<uint32_t, cuda::thread_scope_device> atomicState(*state);
-    atomicState.store(PackCarryPrefixDescriptorState(generation, value), cuda::memory_order_release);
+    atomicState.store(static_cast<uint32_t>(value), cuda::memory_order_release);
 }
 
 static __device__ uint32_t
@@ -1088,20 +1066,17 @@ StoreCarryPrefixTransform(uint64_t *transform, uint64_t value)
 
 static __device__ void
 PublishCarryPrefixDescriptorAggregate(HpSharkReference2CarryPrefixDescriptor &descriptor,
-                                      uint32_t generation,
                                       uint64_t aggregate)
 {
     StoreCarryPrefixTransform(&descriptor.AggregateTransform, aggregate);
-    PublishCarryPrefixState(&descriptor.State, generation, CarryPrefixDescriptorState::Aggregate);
+    PublishCarryPrefixState(&descriptor.State, CarryPrefixDescriptorState::Aggregate);
 }
 
 static __device__ void
-PublishCarryPrefixDescriptorPrefix(HpSharkReference2CarryPrefixDescriptor &descriptor,
-                                   uint32_t generation,
-                                   uint64_t prefix)
+PublishCarryPrefixDescriptorPrefix(HpSharkReference2CarryPrefixDescriptor &descriptor, uint64_t prefix)
 {
     StoreCarryPrefixTransform(&descriptor.PrefixTransform, prefix);
-    PublishCarryPrefixState(&descriptor.State, generation, CarryPrefixDescriptorState::Prefix);
+    PublishCarryPrefixState(&descriptor.State, CarryPrefixDescriptorState::Prefix);
 }
 
 static __device__ void
@@ -1117,7 +1092,6 @@ BuildSignedCarryPrefixes(cooperative_groups::grid_group &grid,
     grid.sync();
 }
 
-template <class SharkFloatParams>
 static __device__ void
 PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                          cooperative_groups::thread_block &block,
@@ -1131,7 +1105,6 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         return;
 
     constexpr uint32_t ProcessorTicketControl = 0;
-    constexpr uint32_t GenerationControl = 4;
     const uint32_t blockSize = block.dim_threads().x;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     const uint32_t numParts = (count + blockSize - 1u) / blockSize;
@@ -1150,27 +1123,11 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
     MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
 
-    if (GridThreadRank(block) == 0u) {
-        const uint32_t currentGeneration = control[GenerationControl];
-        control[GenerationControl] =
-            currentGeneration >= CarryPrefixDescriptorGenerationMax ? 0u : currentGeneration + 1u;
+    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
+        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
+    if (GridThreadRank(block) == 0u)
         control[ProcessorTicketControl] = 0u;
-    }
     grid.sync();
-
-    uint32_t generation = control[GenerationControl];
-    if (generation == 0u) {
-        constexpr uint32_t descriptorCount =
-            HpSharkReference2Workspace<SharkFloatParams>::MaxCarryPrefixParts;
-        for (uint32_t part = GridThreadRank(block); part < descriptorCount; part += gridSize)
-            descriptors[part].State = 0u;
-        grid.sync();
-        if (GridThreadRank(block) == 0u)
-            control[GenerationControl] = 1u;
-        grid.sync();
-        generation = control[GenerationControl];
-    }
-    MattsCudaAssert(generation > 0u);
 
     if (threadIndex == 0u)
         broadcast[0] = atomicAdd(&control[ProcessorTicketControl], 1u);
@@ -1221,7 +1178,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
 
         const uint64_t aggregate = warpAggregates[0];
         if (threadIndex == 0u)
-            PublishCarryPrefixDescriptorAggregate(descriptors[part], generation, aggregate);
+            PublishCarryPrefixDescriptorAggregate(descriptors[part], aggregate);
         __syncthreads();
 
         if (threadIndex == 0u) {
@@ -1231,12 +1188,10 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                 CarryPrefixDescriptorState state = CarryPrefixDescriptorState::Empty;
                 int spin = 0;
                 do {
-                    const uint32_t packedState = LoadCarryPrefixState(&descriptors[previousPart].State);
-                    if (CarryPrefixDescriptorGeneration(packedState) == generation) {
-                        state = UnpackCarryPrefixDescriptorState(packedState);
-                        if (state != CarryPrefixDescriptorState::Empty)
-                            break;
-                    }
+                    state = static_cast<CarryPrefixDescriptorState>(
+                        LoadCarryPrefixState(&descriptors[previousPart].State));
+                    if (state != CarryPrefixDescriptorState::Empty)
+                        break;
                     if (++spin == 64) {
                         __nanosleep(64);
                         spin = 0;
@@ -1244,7 +1199,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                 } while (true);
 
                 MattsCudaAssert(state == CarryPrefixDescriptorState::Aggregate ||
-                       state == CarryPrefixDescriptorState::Prefix);
+                                state == CarryPrefixDescriptorState::Prefix);
                 const uint64_t transform =
                     state == CarryPrefixDescriptorState::Prefix
                         ? LoadCarryPrefixTransform(&descriptors[previousPart].PrefixTransform)
@@ -1261,7 +1216,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         const uint64_t exclusivePart = broadcast[0];
         if (threadIndex == 0u) {
             const uint64_t prefix = ComposeCarryPrefixes(exclusivePart, aggregate);
-            PublishCarryPrefixDescriptorPrefix(descriptors[part], generation, prefix);
+            PublishCarryPrefixDescriptorPrefix(descriptors[part], prefix);
         }
 
         const uint64_t warpExclusive = warpPrefixes[warp];
@@ -1302,13 +1257,13 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
 
     BuildSignedCarryPrefixes(grid, block, limbs, limbCount, transforms);
-    PrefixCarryTransformsDLB<SharkFloatParams>(grid,
-                                               block,
-                                               transforms,
-                                               limbCount,
-                                               workspace.CarryPrefixDescriptors,
-                                               control,
-                                               carryPrefixShared);
+    PrefixCarryTransformsDLB(grid,
+                             block,
+                             transforms,
+                             limbCount,
+                             workspace.CarryPrefixDescriptors,
+                             control,
+                             carryPrefixShared);
 
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {

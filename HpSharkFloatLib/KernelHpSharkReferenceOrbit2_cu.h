@@ -901,22 +901,6 @@ ShuffleUpCarryPrefix(unsigned mask, uint64_t value, int offset)
     return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
 }
 
-static __device__ uint64_t
-ShuffleDownCarryPrefix(unsigned mask, uint64_t value, int offset)
-{
-    const uint32_t low = __shfl_down_sync(mask, static_cast<uint32_t>(value), offset);
-    const uint32_t high = __shfl_down_sync(mask, static_cast<uint32_t>(value >> 32u), offset);
-    return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
-}
-
-static __device__ uint64_t
-ShuffleCarryPrefix(unsigned mask, uint64_t value, int sourceLane)
-{
-    const uint32_t low = __shfl_sync(mask, static_cast<uint32_t>(value), sourceLane);
-    const uint32_t high = __shfl_sync(mask, static_cast<uint32_t>(value >> 32u), sourceLane);
-    return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
-}
-
 static __device__ void
 PublishCarryPrefixState(uint32_t *state, uint32_t generation, CarryPrefixDescriptorState value)
 {
@@ -932,11 +916,35 @@ LoadCarryPrefixState(uint32_t *state)
 }
 
 static __device__ uint64_t
-LoadCarryPrefixTransform(const uint64_t *transform)
+LoadCarryPrefixTransform(uint64_t *transform)
 {
-    uint64_t value;
-    asm volatile("ld.global.cg.u64 %0, [%1];" : "=l"(value) : "l"(transform) : "memory");
-    return value;
+    cuda::atomic_ref<uint64_t, cuda::thread_scope_device> atomicTransform(*transform);
+    return atomicTransform.load(cuda::memory_order_relaxed);
+}
+
+static __device__ void
+StoreCarryPrefixTransform(uint64_t *transform, uint64_t value)
+{
+    cuda::atomic_ref<uint64_t, cuda::thread_scope_device> atomicTransform(*transform);
+    atomicTransform.store(value, cuda::memory_order_relaxed);
+}
+
+static __device__ void
+PublishCarryPrefixDescriptorAggregate(HpSharkReference2CarryPrefixDescriptor &descriptor,
+                                      uint32_t generation,
+                                      uint64_t aggregate)
+{
+    StoreCarryPrefixTransform(&descriptor.AggregateTransform, aggregate);
+    PublishCarryPrefixState(&descriptor.State, generation, CarryPrefixDescriptorState::Aggregate);
+}
+
+static __device__ void
+PublishCarryPrefixDescriptorPrefix(HpSharkReference2CarryPrefixDescriptor &descriptor,
+                                   uint32_t generation,
+                                   uint64_t prefix)
+{
+    StoreCarryPrefixTransform(&descriptor.PrefixTransform, prefix);
+    PublishCarryPrefixState(&descriptor.State, generation, CarryPrefixDescriptorState::Prefix);
 }
 
 static __device__ void
@@ -1068,89 +1076,48 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         __syncthreads();
 
         const uint64_t aggregate = warpAggregates[0];
-        if (threadIndex == 0u) {
-            descriptors[part].AggregateTransform = aggregate;
-            PublishCarryPrefixState(
-                &descriptors[part].State, generation, CarryPrefixDescriptorState::Aggregate);
-        }
+        if (threadIndex == 0u)
+            PublishCarryPrefixDescriptorAggregate(descriptors[part], generation, aggregate);
         __syncthreads();
 
-        uint64_t exclusive = CarryPrefixIdentity();
-        if (warp == 0u) {
+        if (threadIndex == 0u) {
+            uint64_t exclusive = CarryPrefixIdentity();
             int32_t previousPart = static_cast<int32_t>(part) - 1;
             while (previousPart >= 0) {
-                const int32_t descriptorIndex = previousPart - static_cast<int32_t>(lane);
                 CarryPrefixDescriptorState state = CarryPrefixDescriptorState::Empty;
-                uint64_t transform = CarryPrefixIdentity();
-                if (descriptorIndex >= 0) {
-                    int spin = 0;
-                    do {
-                        const uint32_t packedState =
-                            LoadCarryPrefixState(&descriptors[descriptorIndex].State);
-                        if (CarryPrefixDescriptorGeneration(packedState) == generation) {
-                            state = UnpackCarryPrefixDescriptorState(packedState);
-                            if (state != CarryPrefixDescriptorState::Empty)
-                                break;
-                        }
-                        if (++spin == 64) {
-                            __nanosleep(64);
-                            spin = 0;
-                        }
-                    } while (true);
-
-                    assert(state == CarryPrefixDescriptorState::Aggregate ||
-                           state == CarryPrefixDescriptorState::Prefix);
-                    transform =
-                        state == CarryPrefixDescriptorState::Prefix
-                            ? LoadCarryPrefixTransform(&descriptors[descriptorIndex].PrefixTransform)
-                            : LoadCarryPrefixTransform(&descriptors[descriptorIndex].AggregateTransform);
-                }
-
-                const uint32_t prefixMask = __ballot_sync(
-                    warpMask, descriptorIndex >= 0 && state == CarryPrefixDescriptorState::Prefix);
-                if (prefixMask != 0u) {
-                    const int prefixLane = __ffs(prefixMask) - 1;
-                    const uint64_t publishedPrefix = ShuffleCarryPrefix(warpMask, transform, prefixLane);
-                    uint64_t window =
-                        lane < static_cast<uint32_t>(prefixLane) ? transform : CarryPrefixIdentity();
-#pragma unroll
-                    for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                        const uint64_t lower =
-                            ShuffleDownCarryPrefix(warpMask, window, static_cast<int>(offset));
-                        if (lane + offset < 32u)
-                            window = ComposeCarryPrefixes(lower, window);
+                int spin = 0;
+                do {
+                    const uint32_t packedState = LoadCarryPrefixState(&descriptors[previousPart].State);
+                    if (CarryPrefixDescriptorGeneration(packedState) == generation) {
+                        state = UnpackCarryPrefixDescriptorState(packedState);
+                        if (state != CarryPrefixDescriptorState::Empty)
+                            break;
                     }
-                    if (lane == 0u) {
-                        const uint64_t throughPublishedPrefix =
-                            ComposeCarryPrefixes(publishedPrefix, window);
-                        exclusive = ComposeCarryPrefixes(throughPublishedPrefix, exclusive);
+                    if (++spin == 64) {
+                        __nanosleep(64);
+                        spin = 0;
                     }
+                } while (true);
+
+                assert(state == CarryPrefixDescriptorState::Aggregate ||
+                       state == CarryPrefixDescriptorState::Prefix);
+                const uint64_t transform =
+                    state == CarryPrefixDescriptorState::Prefix
+                        ? LoadCarryPrefixTransform(&descriptors[previousPart].PrefixTransform)
+                        : LoadCarryPrefixTransform(&descriptors[previousPart].AggregateTransform);
+                exclusive = ComposeCarryPrefixes(transform, exclusive);
+                if (state == CarryPrefixDescriptorState::Prefix)
                     break;
-                }
-
-                uint64_t window = descriptorIndex >= 0 ? transform : CarryPrefixIdentity();
-#pragma unroll
-                for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                    const uint64_t lower =
-                        ShuffleDownCarryPrefix(warpMask, window, static_cast<int>(offset));
-                    if (lane + offset < 32u)
-                        window = ComposeCarryPrefixes(lower, window);
-                }
-                if (lane == 0u)
-                    exclusive = ComposeCarryPrefixes(window, exclusive);
-                previousPart -= 32;
+                --previousPart;
             }
-        }
-
-        if (threadIndex == 0u)
             broadcast[0] = exclusive;
+        }
         __syncthreads();
 
         const uint64_t exclusivePart = broadcast[0];
         if (threadIndex == 0u) {
-            descriptors[part].PrefixTransform = ComposeCarryPrefixes(exclusivePart, aggregate);
-            PublishCarryPrefixState(
-                &descriptors[part].State, generation, CarryPrefixDescriptorState::Prefix);
+            const uint64_t prefix = ComposeCarryPrefixes(exclusivePart, aggregate);
+            PublishCarryPrefixDescriptorPrefix(descriptors[part], generation, prefix);
         }
 
         const uint64_t warpExclusive = warpPrefixes[warp];

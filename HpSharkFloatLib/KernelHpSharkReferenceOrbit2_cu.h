@@ -1036,6 +1036,14 @@ ShuffleUpCarryPrefix(unsigned mask, uint64_t value, int offset)
     return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
 }
 
+static __device__ uint64_t
+ShuffleCarryPrefix(unsigned mask, uint64_t value, int sourceLane)
+{
+    const uint32_t low = __shfl_sync(mask, static_cast<uint32_t>(value), sourceLane);
+    const uint32_t high = __shfl_sync(mask, static_cast<uint32_t>(value >> 32u), sourceLane);
+    return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
+}
+
 static __device__ void
 PublishCarryPrefixState(uint32_t *state, CarryPrefixDescriptorState value)
 {
@@ -1080,15 +1088,25 @@ PublishCarryPrefixDescriptorPrefix(HpSharkReference2CarryPrefixDescriptor &descr
 }
 
 static __device__ void
-BuildSignedCarryPrefixes(cooperative_groups::grid_group &grid,
-                         cooperative_groups::thread_block &block,
-                         const int64_t *limbs,
-                         uint32_t limbCount,
-                         uint64_t *transforms)
+PrepareSignedCarryPrefixes(cooperative_groups::grid_group &grid,
+                           cooperative_groups::thread_block &block,
+                           const int64_t *limbs,
+                           uint32_t limbCount,
+                           uint64_t *transforms,
+                           HpSharkReference2CarryPrefixDescriptor *descriptors,
+                           uint32_t *control)
 {
+    constexpr uint32_t ProcessorTicketControl = 0;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize)
         transforms[index] = MakeSignedCarryPrefix(limbs[index]);
+
+    const uint32_t blockSize = block.dim_threads().x;
+    const uint32_t numParts = (limbCount + blockSize - 1u) / blockSize;
+    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
+        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
+    if (GridThreadRank(block) == 0u)
+        control[ProcessorTicketControl] = 0u;
     grid.sync();
 }
 
@@ -1106,7 +1124,6 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
 
     constexpr uint32_t ProcessorTicketControl = 0;
     const uint32_t blockSize = block.dim_threads().x;
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     const uint32_t numParts = (count + blockSize - 1u) / blockSize;
     const uint32_t threadIndex = block.thread_index().x;
     const uint32_t lane = threadIndex & 31u;
@@ -1115,7 +1132,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     const unsigned warpMask = __activemask();
     uint64_t *warpAggregates = sharedStorage;
     uint64_t *warpPrefixes = sharedStorage + CarryPrefixMaxWarps;
-    uint64_t *broadcast = sharedStorage + 2u * CarryPrefixMaxWarps;
+    uint64_t *processorIdStorage = sharedStorage + 2u * CarryPrefixMaxWarps;
+    uint64_t *exclusiveStorage = processorIdStorage + 1u;
 
     // Workspace descriptors are sized for the supported cooperative launch
     // minimum of one warp per block. Ref2's launch calculator selects a warp
@@ -1123,22 +1141,13 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
     MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
 
-    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
-        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
-    if (GridThreadRank(block) == 0u)
-        control[ProcessorTicketControl] = 0u;
-    grid.sync();
-
+    // Execution-order IDs ensure that lookback never waits on a stripe owned by a block that has
+    // not started running. The cooperative grid size is already the processor count.
     if (threadIndex == 0u)
-        broadcast[0] = atomicAdd(&control[ProcessorTicketControl], 1u);
+        processorIdStorage[0] = atomicAdd(&control[ProcessorTicketControl], 1u);
     __syncthreads();
-    const uint32_t processorId = static_cast<uint32_t>(broadcast[0]);
-    grid.sync();
-    const uint32_t activeProcessors = control[ProcessorTicketControl];
-    MattsCudaAssert(activeProcessors == gridDim.x);
-
-    // Processor IDs reflect execution order. Every resident cooperative block owns one stripe,
-    // so a processor waiting on an earlier partition never depends on an unscheduled block.
+    const uint32_t processorId = static_cast<uint32_t>(processorIdStorage[0]);
+    const uint32_t activeProcessors = gridDim.x;
     for (uint32_t part = processorId; part < numParts; part += activeProcessors) {
         const uint32_t base = part * blockSize;
         const uint32_t index = base + threadIndex;
@@ -1158,6 +1167,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
             warpAggregates[warp] = inclusive;
         __syncthreads();
 
+        uint64_t aggregate = CarryPrefixIdentity();
         if (warp == 0u) {
             uint64_t warpInclusive = lane < numWarps ? warpAggregates[lane] : CarryPrefixIdentity();
             for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
@@ -1171,15 +1181,11 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
             if (lane < numWarps) {
                 warpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : previous;
             }
-            if (lane == numWarps - 1u)
-                warpAggregates[0] = warpInclusive;
+            aggregate = ShuffleCarryPrefix(warpMask, warpInclusive, static_cast<int>(numWarps - 1u));
         }
-        __syncthreads();
 
-        const uint64_t aggregate = warpAggregates[0];
         if (threadIndex == 0u)
             PublishCarryPrefixDescriptorAggregate(descriptors[part], aggregate);
-        __syncthreads();
 
         if (threadIndex == 0u) {
             uint64_t exclusive = CarryPrefixIdentity();
@@ -1209,11 +1215,11 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                     break;
                 --previousPart;
             }
-            broadcast[0] = exclusive;
+            exclusiveStorage[0] = exclusive;
         }
         __syncthreads();
 
-        const uint64_t exclusivePart = broadcast[0];
+        const uint64_t exclusivePart = exclusiveStorage[0];
         if (threadIndex == 0u) {
             const uint64_t prefix = ComposeCarryPrefixes(exclusivePart, aggregate);
             PublishCarryPrefixDescriptorPrefix(descriptors[part], prefix);
@@ -1226,9 +1232,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
             const uint64_t prefixWithinPart = ComposeCarryPrefixes(warpExclusive, localExclusive);
             transforms[index] = ComposeCarryPrefixes(exclusivePart, prefixWithinPart);
         }
-        __syncthreads();
+        // The next partition's aggregate barrier protects shared scratch reuse.
     }
-
     grid.sync();
 }
 
@@ -1256,7 +1261,8 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     uint32_t *control = workspace.CarryPrefixControl;
     MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
 
-    BuildSignedCarryPrefixes(grid, block, limbs, limbCount, transforms);
+    PrepareSignedCarryPrefixes(
+        grid, block, limbs, limbCount, transforms, workspace.CarryPrefixDescriptors, control);
     PrefixCarryTransformsDLB(grid,
                              block,
                              transforms,
@@ -1909,7 +1915,7 @@ __maxnreg__(HpShark::RegisterLimit)
     namespace cg = cooperative_groups;
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
-    __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps + 1u];
+    __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps + 2u];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
     DebugState<SharkFloatParams> *debugStates = nullptr;

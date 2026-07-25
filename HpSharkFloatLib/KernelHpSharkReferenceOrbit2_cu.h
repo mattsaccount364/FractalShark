@@ -83,17 +83,6 @@ StoreReference2DebugValue(DebugState<SharkFloatParams> *debugStates,
     }
 }
 
-static __device__ uint32_t
-ReverseBits32(uint32_t value, int bitCount)
-{
-    value = (value >> 16) | (value << 16);
-    value = ((value & 0x00ff00ffu) << 8) | ((value & 0xff00ff00u) >> 8);
-    value = ((value & 0x0f0f0f0fu) << 4) | ((value & 0xf0f0f0f0u) >> 4);
-    value = ((value & 0x33333333u) << 2) | ((value & 0xccccccccu) >> 2);
-    value = ((value & 0x55555555u) << 1) | ((value & 0xaaaaaaaau) >> 1);
-    return value >> (32 - bitCount);
-}
-
 static __device__ uint64_t
 CeilPowerOfTwo(uint64_t value)
 {
@@ -356,23 +345,26 @@ BitReverseInplace64Batch(cooperative_groups::grid_group &grid,
                          uint32_t n,
                          uint32_t stages)
 {
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t i = GridThreadRank(block); i < n; i += gridSize) {
-        const uint32_t j = ReverseBits32(i, static_cast<int>(stages)) & (n - 1u);
-        if (j > i) {
-#pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                const uint64_t temp = values[buffer][i];
-                values[buffer][i] = values[buffer][j];
-                values[buffer][j] = temp;
-            }
-        }
+    static_assert(BatchSize >= 1 && BatchSize <= 4);
+    if constexpr (BatchSize == 1) {
+        SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::OneWay>(
+            grid, block, values[0], nullptr, nullptr, nullptr, n, stages);
+    } else if constexpr (BatchSize == 2) {
+        SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::TwoWay>(
+            grid, block, values[0], values[1], nullptr, nullptr, n, stages);
+    } else if constexpr (BatchSize == 3) {
+        SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::ThreeWay>(
+            grid, block, values[0], values[1], values[2], nullptr, n, stages);
+    } else {
+        SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::FourWay>(
+            grid, block, values[0], values[1], values[2], values[3], n, stages);
     }
 }
 
 template <class SharkFloatParams, bool Inverse, int BatchSize>
 __device__ void
-NTTRadix2Batch(cooperative_groups::grid_group &grid,
+NTTRadix2Batch(uint64_t *sharedData,
+               cooperative_groups::grid_group &grid,
                cooperative_groups::thread_block &block,
                DebugGlobalCount<SharkFloatParams> *debugCombo,
                uint64_t *const values[BatchSize],
@@ -380,30 +372,39 @@ NTTRadix2Batch(cooperative_groups::grid_group &grid,
                uint32_t stages,
                SharkNTT::RootTables &roots)
 {
-    uint64_t *twiddles = Inverse ? roots.stage_twiddles_inv : roots.stage_twiddles_fwd;
-    for (uint32_t stage = 1; stage <= stages; ++stage) {
-        const uint32_t width = 1u << stage;
-        const uint32_t half = width >> 1;
-        const uint32_t base = half - 1u;
-        const uint32_t butterflyCount = n >> 1;
-        const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-        for (uint32_t butterfly = GridThreadRank(block); butterfly < butterflyCount;
-             butterfly += gridSize) {
-            const uint32_t group = butterfly / half;
-            const uint32_t j = butterfly % half;
-            const uint32_t i0 = group * width + j;
-            const uint32_t i1 = i0 + half;
-            const uint64_t twiddle = twiddles[base + j];
-#pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                const uint64_t u = values[buffer][i0];
-                const uint64_t t = MontgomeryMulSerial<SharkFloatParams>(
-                    grid, block, debugCombo, values[buffer][i1], twiddle);
-                values[buffer][i0] = AddPSerial(u, t);
-                values[buffer][i1] = SubPSerial(u, t);
-            }
-        }
-        grid.sync();
+    static_assert(BatchSize >= 1 && BatchSize <= 4);
+    MattsCudaAssert(static_cast<uint32_t>(roots.N) == n);
+    MattsCudaAssert(static_cast<uint32_t>(roots.stages) == stages);
+    if constexpr (BatchSize == 1) {
+        SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::OneWay, Inverse>(
+            sharedData, grid, block, debugCombo, nullptr, values[0], nullptr, nullptr, nullptr, roots);
+    } else if constexpr (BatchSize == 2) {
+        SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::TwoWay, Inverse>(
+            sharedData, grid, block, debugCombo, nullptr, values[0], values[1], nullptr, nullptr, roots);
+    } else if constexpr (BatchSize == 3) {
+        SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::ThreeWay, Inverse>(
+            sharedData,
+            grid,
+            block,
+            debugCombo,
+            nullptr,
+            values[0],
+            values[1],
+            values[2],
+            nullptr,
+            roots);
+    } else {
+        SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::FourWay, Inverse>(
+            sharedData,
+            grid,
+            block,
+            debugCombo,
+            nullptr,
+            values[0],
+            values[1],
+            values[2],
+            values[3],
+            roots);
     }
 }
 
@@ -510,6 +511,7 @@ template <class SharkFloatParams, int BatchSize>
 __device__ void
 PackTwistForwardBatch(cooperative_groups::grid_group &grid,
                       cooperative_groups::thread_block &block,
+                      uint64_t *sharedData,
                       DebugGlobalCount<SharkFloatParams> *debugCombo,
                       DebugState<SharkFloatParams> *debugStates,
                       const HpSharkFloat<SharkFloatParams> *const values[BatchSize],
@@ -544,7 +546,7 @@ PackTwistForwardBatch(cooperative_groups::grid_group &grid,
         grid, block, outputs, activeN, static_cast<uint32_t>(plan.stages));
     grid.sync();
     NTTRadix2Batch<SharkFloatParams, false, BatchSize>(
-        grid, block, debugCombo, outputs, activeN, plan.stages, roots);
+        sharedData, grid, block, debugCombo, outputs, activeN, plan.stages, roots);
 #pragma unroll
     for (int buffer = 0; buffer < BatchSize; ++buffer) {
         StoreReference2DebugState(
@@ -812,6 +814,7 @@ template <class SharkFloatParams, int BatchSize>
 __device__ void
 InverseSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                  cooperative_groups::thread_block &block,
+                                 uint64_t *sharedData,
                                  DebugGlobalCount<SharkFloatParams> *debugCombo,
                                  DebugState<SharkFloatParams> *debugStates,
                                  const SharkNTT::PlanPrime &plan,
@@ -828,7 +831,7 @@ InverseSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
         grid, block, spectra, activeN, static_cast<uint32_t>(plan.stages));
     grid.sync();
     NTTRadix2Batch<SharkFloatParams, true, BatchSize>(
-        grid, block, debugCombo, spectra, activeN, plan.stages, roots);
+        sharedData, grid, block, debugCombo, spectra, activeN, plan.stages, roots);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
 #pragma unroll
@@ -1344,6 +1347,7 @@ template <class SharkFloatParams>
 __device__ void
 FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                         cooperative_groups::thread_block &block,
+                        uint64_t *sharedData,
                         DebugGlobalCount<SharkFloatParams> *debugCombo,
                         DebugState<SharkFloatParams> *debugStates,
                         uint64_t *carryPrefixShared,
@@ -1429,8 +1433,9 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         return;
     }
     const uint32_t cachedN = workspace.CachedN;
-    MattsCudaAssert(cachedN == 0 || (cachedN <= HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN &&
-                            (cachedN & (cachedN - 1u)) == 0));
+    MattsCudaAssert(cachedN == 0 ||
+                    (cachedN <= HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN &&
+                     (cachedN & (cachedN - 1u)) == 0));
     const uint32_t activeN =
         requiredN > static_cast<uint64_t>(cachedN) ? static_cast<uint32_t>(requiredN) : cachedN;
     const SharkNTT::PlanPrime plan{basePlan.n32,
@@ -1455,6 +1460,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                         DebugStatePurpose::Z2W0};
     PackTwistForwardBatch<SharkFloatParams, 4>(grid,
                                                block,
+                                               sharedData,
                                                debugCombo,
                                                debugStates,
                                                normalForwardValues,
@@ -1498,6 +1504,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                           DebugStatePurpose::UnpackYY};
         InverseSpectraToSignedLimbsBatch<SharkFloatParams, 2>(grid,
                                                               block,
+                                                              sharedData,
                                                               debugCombo,
                                                               debugStates,
                                                               plan,
@@ -1553,6 +1560,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             const DebugStatePurpose realLimbsPurpose[1] = {DebugStatePurpose::UnpackXX};
             InverseSpectraToSignedLimbsBatch<SharkFloatParams, 1>(grid,
                                                                   block,
+                                                                  sharedData,
                                                                   debugCombo,
                                                                   debugStates,
                                                                   plan,
@@ -1598,6 +1606,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             const DebugStatePurpose imagLimbsPurpose[1] = {DebugStatePurpose::UnpackYY};
             InverseSpectraToSignedLimbsBatch<SharkFloatParams, 1>(grid,
                                                                   block,
+                                                                  sharedData,
                                                                   debugCombo,
                                                                   debugStates,
                                                                   plan,
@@ -1638,6 +1647,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             DebugStatePurpose::Z2W1, DebugStatePurpose::Z2W2, DebugStatePurpose::Z2W3};
         PackTwistForwardBatch<SharkFloatParams, 3>(grid,
                                                    block,
+                                                   sharedData,
                                                    debugCombo,
                                                    debugStates,
                                                    newtonRaphsonForwardValues,
@@ -1681,6 +1691,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                                      DebugStatePurpose::UnpackW1};
             InverseSpectraToSignedLimbsBatch<SharkFloatParams, 2>(grid,
                                                                   block,
+                                                                  sharedData,
                                                                   debugCombo,
                                                                   debugStates,
                                                                   plan,
@@ -1736,6 +1747,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                 const DebugStatePurpose dzdcRealLimbsPurpose[1] = {DebugStatePurpose::UnpackW0};
                 InverseSpectraToSignedLimbsBatch<SharkFloatParams, 1>(grid,
                                                                       block,
+                                                                      sharedData,
                                                                       debugCombo,
                                                                       debugStates,
                                                                       plan,
@@ -1781,6 +1793,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                 const DebugStatePurpose dzdcImagLimbsPurpose[1] = {DebugStatePurpose::UnpackW1};
                 InverseSpectraToSignedLimbsBatch<SharkFloatParams, 1>(grid,
                                                                       block,
+                                                                      sharedData,
                                                                       debugCombo,
                                                                       debugStates,
                                                                       plan,
@@ -1898,6 +1911,7 @@ __maxnreg__(HpShark::RegisterLimit)
     namespace cg = cooperative_groups;
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
+    extern __shared__ uint64_t sharedData[];
     __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps + 1u];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
@@ -1943,7 +1957,7 @@ __maxnreg__(HpShark::RegisterLimit)
         grid.sync();
 
         Reference2Detail::FusedReferenceOrbitStep<SharkFloatParams>(
-            grid, block, debugCombo, debugStates, carryPrefixShared, combo);
+            grid, block, sharedData, debugCombo, debugStates, carryPrefixShared, combo);
         grid.sync();
         if (combo->PeriodicityStatus == PeriodicityResult::Unknown)
             break;

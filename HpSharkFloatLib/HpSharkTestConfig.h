@@ -33,8 +33,6 @@ namespace HpShark {
 
 // static constexpr bool TestGpu = true;
 static constexpr bool TestGpu = true;
-
-static constexpr bool TestCorrectness = Debug;
 static constexpr bool TestInfiniteCorrectness = true;
 static constexpr auto TestForceSameSign = false;
 static constexpr bool TestMPIRImpl = true; // Debug;

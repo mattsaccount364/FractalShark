@@ -8,6 +8,24 @@
 
 namespace Reference2Detail {
 
+#ifdef _DEBUG
+static __device__ SharkForceInlineReleaseOnly void
+MattsCudaAssert(bool cond)
+{
+    if (!cond) {
+        //  asm("brkpt;");
+        for (;;)
+            ;
+    }
+}
+#else
+static __device__ SharkForceInlineReleaseOnly void
+MattsCudaAssert(bool)
+{
+    // no-op in release builds
+}
+#endif
+
 enum class SpectrumId : uint8_t { ZReal, ZImag, DzdcReal, DzdcImag, CReal, CImag, One };
 enum class TermKind : uint8_t { Product, Linear };
 
@@ -170,7 +188,7 @@ IsZero(const HpSharkFloat<SharkFloatParams> &value)
 {
     // Ref2 finalization keeps every nonzero value normalized to the high bit of the top limb.
     const uint32_t top = value.Digits[SharkFloatParams::GlobalNumUint32 - 1];
-    assert(top == 0u || (top & 0x8000'0000u) != 0u);
+    MattsCudaAssert(top == 0u || (top & 0x8000'0000u) != 0u);
     return top == 0u;
 }
 
@@ -222,7 +240,7 @@ ToNormalizedHDRFloat(const HpSharkFloat<SharkFloatParams> &value)
     if (high == 0u)
         return Hdr{};
 
-    assert((high & 0x8000'0000u) != 0u);
+    MattsCudaAssert((high & 0x8000'0000u) != 0u);
     const uint32_t low = TopIndex > 0 ? value.Digits[TopIndex - 1] : 0u;
     const uint64_t window = (static_cast<uint64_t>(high) << 32u) | low;
     const int32_t finalExponent = MantissaExponent + value.Exponent;
@@ -699,7 +717,7 @@ AccumulateOutputSpectrum(cooperative_groups::grid_group &grid,
         }
         hasDestinationValue = true;
     }
-    assert(hasDestinationValue);
+    MattsCudaAssert(hasDestinationValue);
     StoreReference2DebugState(debugStates, grid, block, checksumPurpose, dest, activeN);
 }
 
@@ -884,8 +902,8 @@ FindHighestNonZeroPlusOne(cooperative_groups::grid_group &grid,
     const uint32_t warp = threadIndex >> 5u;
     const uint32_t numWarps = (blockSize + 31u) >> 5u;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    assert(blockSize >= 32u && (blockSize & 31u) == 0u);
-    assert(numWarps <= CarryPrefixMaxWarps);
+    MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
+    MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
 
     if (IsLeader<SharkFloatParams>(block))
         *result = 0u;
@@ -928,7 +946,7 @@ constexpr uint32_t CarryPrefixDescriptorGenerationMax = 0xffffffffu >> CarryPref
 static __device__ uint32_t
 PackCarryPrefixDescriptorState(uint32_t generation, CarryPrefixDescriptorState state)
 {
-    assert(generation > 0u && generation <= CarryPrefixDescriptorGenerationMax);
+    MattsCudaAssert(generation > 0u && generation <= CarryPrefixDescriptorGenerationMax);
     return (generation << CarryPrefixDescriptorStateBits) | static_cast<uint32_t>(state);
 }
 
@@ -956,7 +974,7 @@ CarryPrefixIdentity()
 static __device__ int32_t
 ApplyCarryPrefix(uint64_t transform, int32_t carry)
 {
-    assert(carry >= CarryPrefixMin && carry <= CarryPrefixMax);
+    MattsCudaAssert(carry >= CarryPrefixMin && carry <= CarryPrefixMax);
     const uint32_t input = static_cast<uint32_t>(carry - CarryPrefixMin);
     const uint32_t output = static_cast<uint32_t>((transform >> (input * 4u)) & 0xFu);
     return static_cast<int32_t>(output) + CarryPrefixMin;
@@ -991,7 +1009,7 @@ MakeSignedCarryPrefix(int64_t limb)
     uint64_t transform = 0;
     for (int32_t carryIn = CarryPrefixMin; carryIn <= CarryPrefixMax; ++carryIn) {
         const int32_t carryOut = CarryOutForSignedLimb(limb, carryIn);
-        assert(carryOut >= CarryPrefixMin && carryOut <= CarryPrefixMax);
+        MattsCudaAssert(carryOut >= CarryPrefixMin && carryOut <= CarryPrefixMax);
         const uint32_t input = static_cast<uint32_t>(carryIn - CarryPrefixMin);
         const uint32_t output = static_cast<uint32_t>(carryOut - CarryPrefixMin);
         transform |= static_cast<uint64_t>(output) << (input * 4u);
@@ -1121,8 +1139,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     // Workspace descriptors are sized for the supported cooperative launch
     // minimum of one warp per block. Ref2's launch calculator selects a warp
     // multiple, which also keeps the intra-warp scan well-defined.
-    assert(blockSize >= 32u && (blockSize & 31u) == 0u);
-    assert(numWarps <= CarryPrefixMaxWarps);
+    MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
+    MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
 
     if (GridThreadRank(block) == 0u) {
         const uint32_t currentGeneration = control[GenerationControl];
@@ -1144,7 +1162,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         grid.sync();
         generation = control[GenerationControl];
     }
-    assert(generation > 0u);
+    MattsCudaAssert(generation > 0u);
 
     if (threadIndex == 0u)
         broadcast[0] = atomicAdd(&control[ProcessorTicketControl], 1u);
@@ -1152,7 +1170,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     const uint32_t processorId = static_cast<uint32_t>(broadcast[0]);
     grid.sync();
     const uint32_t activeProcessors = control[ProcessorTicketControl];
-    assert(activeProcessors == gridDim.x);
+    MattsCudaAssert(activeProcessors == gridDim.x);
 
     // Processor IDs reflect execution order. Every resident cooperative block owns one stripe,
     // so a processor waiting on an earlier partition never depends on an unscheduled block.
@@ -1217,7 +1235,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                     }
                 } while (true);
 
-                assert(state == CarryPrefixDescriptorState::Aggregate ||
+                MattsCudaAssert(state == CarryPrefixDescriptorState::Aggregate ||
                        state == CarryPrefixDescriptorState::Prefix);
                 const uint64_t transform =
                     state == CarryPrefixDescriptorState::Prefix
@@ -1273,7 +1291,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     uint32_t *magnitude = workspace.Magnitude;
     uint64_t *transforms = workspace.CarryPrefixTransforms;
     uint32_t *control = workspace.CarryPrefixControl;
-    assert(limbCount > 0u && limbCount <= Capacity);
+    MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
 
     BuildSignedCarryPrefixes(grid, block, limbs, limbCount, transforms);
     PrefixCarryTransformsDLB<SharkFloatParams>(grid,
@@ -1368,7 +1386,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     grid.sync();
     if constexpr (HpShark::Debug) {
         if (IsLeader<SharkFloatParams>(block) && highestNonZeroPlusOne != 0u)
-            assert((out->Digits[SharkFloatParams::GlobalNumUint32 - 1] & 0x8000'0000u) != 0u);
+            MattsCudaAssert((out->Digits[SharkFloatParams::GlobalNumUint32 - 1] & 0x8000'0000u) != 0u);
     }
 }
 
@@ -1461,7 +1479,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         return;
     }
     const uint32_t cachedN = workspace.CachedN;
-    assert(cachedN == 0 || (cachedN <= HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN &&
+    MattsCudaAssert(cachedN == 0 || (cachedN <= HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN &&
                             (cachedN & (cachedN - 1u)) == 0));
     const uint32_t activeN =
         requiredN > static_cast<uint64_t>(cachedN) ? static_cast<uint32_t>(requiredN) : cachedN;

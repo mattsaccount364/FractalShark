@@ -168,21 +168,80 @@ template <class SharkFloatParams>
 __device__ bool
 IsZero(const HpSharkFloat<SharkFloatParams> &value)
 {
-    for (int i = 0; i < SharkFloatParams::GlobalNumUint32; ++i) {
-        if (value.Digits[i] != 0)
-            return false;
+    // Ref2 finalization keeps every nonzero value normalized to the high bit of the top limb.
+    const uint32_t top = value.Digits[SharkFloatParams::GlobalNumUint32 - 1];
+    assert(top == 0u || (top & 0x8000'0000u) != 0u);
+    return top == 0u;
+}
+
+template <class SharkFloatParams, int OutputCount>
+__device__ void
+SetZeroBatch(cooperative_groups::grid_group &grid,
+             cooperative_groups::thread_block &block,
+             HpSharkFloat<SharkFloatParams> *const (&outputs)[OutputCount])
+{
+    constexpr uint32_t DigitCount = SharkFloatParams::GlobalNumUint32;
+    constexpr uint32_t TotalDigits = OutputCount * DigitCount;
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t flatIndex = GridThreadRank(block); flatIndex < TotalDigits; flatIndex += gridSize) {
+        const uint32_t outputIndex = flatIndex / DigitCount;
+        const uint32_t digitIndex = flatIndex % DigitCount;
+        outputs[outputIndex]->Digits[digitIndex] = 0u;
     }
-    return true;
+
+    if (IsLeader<SharkFloatParams>(block)) {
+#pragma unroll
+        for (int outputIndex = 0; outputIndex < OutputCount; ++outputIndex) {
+            outputs[outputIndex]->Exponent = -100'000'000;
+            outputs[outputIndex]->SetNegative(false);
+        }
+    }
 }
 
 template <class SharkFloatParams>
 __device__ void
-SetZero(HpSharkFloat<SharkFloatParams> *out)
+SetZero(cooperative_groups::grid_group &grid,
+        cooperative_groups::thread_block &block,
+        HpSharkFloat<SharkFloatParams> *out)
 {
-    for (int i = 0; i < SharkFloatParams::GlobalNumUint32; ++i)
-        out->Digits[i] = 0;
-    out->Exponent = -100'000'000;
-    out->SetNegative(false);
+    HpSharkFloat<SharkFloatParams> *outputs[1] = {out};
+    SetZeroBatch<SharkFloatParams, 1>(grid, block, outputs);
+}
+
+template <class SharkFloatParams>
+__device__ typename SharkFloatParams::Float
+ToNormalizedHDRFloat(const HpSharkFloat<SharkFloatParams> &value)
+{
+    using SubType = typename SharkFloatParams::SubType;
+    using Hdr = typename SharkFloatParams::Float;
+    constexpr int TopIndex = SharkFloatParams::GlobalNumUint32 - 1;
+    constexpr int MsbInWindow = 63;
+    constexpr int32_t MantissaExponent = TopIndex * 32 + 31;
+
+    const uint32_t high = value.Digits[TopIndex];
+    if (high == 0u)
+        return Hdr{};
+
+    assert((high & 0x8000'0000u) != 0u);
+    const uint32_t low = TopIndex > 0 ? value.Digits[TopIndex - 1] : 0u;
+    const uint64_t window = (static_cast<uint64_t>(high) << 32u) | low;
+    const int32_t finalExponent = MantissaExponent + value.Exponent;
+
+    if constexpr (std::is_same_v<SubType, CudaDblflt<dblflt>>) {
+        double mantissa = static_cast<double>(window) / static_cast<double>(1ull << MsbInWindow);
+        if (value.GetNegative())
+            mantissa = -mantissa;
+        HDRFloat<double> temporary(finalExponent, mantissa);
+        HdrReduce(temporary);
+        return Hdr{temporary};
+    } else {
+        SubType mantissa = SubType(window) / std::ldexp(SubType(1), MsbInWindow);
+        if (value.GetNegative())
+            mantissa = -mantissa;
+        Hdr result(finalExponent, mantissa);
+        HdrReduce(result);
+        return result;
+    }
 }
 
 template <class SharkFloatParams>
@@ -797,6 +856,65 @@ constexpr int32_t CarryPrefixMax = 7;
 constexpr uint32_t CarryPrefixStateCount = CarryPrefixMax - CarryPrefixMin + 1;
 constexpr uint32_t CarryPrefixMaxWarps = 32;
 
+static __device__ uint32_t
+WarpReduceMax(unsigned mask, uint32_t value)
+{
+    const uint32_t lane = threadIdx.x & 31u;
+    const uint32_t activeLanes = __popc(mask);
+    for (uint32_t offset = 16u; offset > 0u; offset >>= 1u) {
+        const uint32_t other = __shfl_down_sync(mask, value, static_cast<int>(offset));
+        if (lane + offset < activeLanes)
+            value = value > other ? value : other;
+    }
+    return value;
+}
+
+template <class SharkFloatParams>
+__device__ uint32_t
+FindHighestNonZeroPlusOne(cooperative_groups::grid_group &grid,
+                          cooperative_groups::thread_block &block,
+                          const uint32_t *values,
+                          uint32_t count,
+                          uint32_t *result,
+                          uint64_t *sharedStorage)
+{
+    const uint32_t threadIndex = block.thread_index().x;
+    const uint32_t blockSize = block.dim_threads().x;
+    const uint32_t lane = threadIndex & 31u;
+    const uint32_t warp = threadIndex >> 5u;
+    const uint32_t numWarps = (blockSize + 31u) >> 5u;
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    assert(blockSize >= 32u && (blockSize & 31u) == 0u);
+    assert(numWarps <= CarryPrefixMaxWarps);
+
+    if (IsLeader<SharkFloatParams>(block))
+        *result = 0u;
+    grid.sync();
+
+    uint32_t localMaximum = 0u;
+    for (uint32_t index = GridThreadRank(block); index < count; index += gridSize) {
+        if (values[index] != 0u)
+            localMaximum = index + 1u;
+    }
+
+    localMaximum = WarpReduceMax(__activemask(), localMaximum);
+    if (lane == 0u)
+        sharedStorage[warp] = localMaximum;
+    __syncthreads();
+
+    if (threadIndex == 0u) {
+        uint32_t blockMaximum = 0u;
+        for (uint32_t warpIndex = 0; warpIndex < numWarps; ++warpIndex) {
+            const uint32_t warpMaximum = static_cast<uint32_t>(sharedStorage[warpIndex]);
+            blockMaximum = blockMaximum > warpMaximum ? blockMaximum : warpMaximum;
+        }
+        if (blockMaximum != 0u)
+            atomicMax(result, blockMaximum);
+    }
+    grid.sync();
+    return *result;
+}
+
 enum class CarryPrefixDescriptorState : uint32_t {
     Empty = 0,
     Aggregate = 1,
@@ -1222,39 +1340,36 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
         grid.sync();
     }
 
-    if (IsLeader<SharkFloatParams>(block))
-        control[HighestNonZeroControl] = 0u;
-    grid.sync();
-    for (uint32_t index = GridThreadRank(block); index < digitLength; index += gridSize) {
-        if (magnitude[index] != 0u)
-            atomicMax(&control[HighestNonZeroControl], index + 1u);
-    }
-    grid.sync();
-
-    const uint32_t highestNonZeroPlusOne = control[HighestNonZeroControl];
+    const uint32_t highestNonZeroPlusOne = FindHighestNonZeroPlusOne<SharkFloatParams>(
+        grid, block, magnitude, digitLength, &control[HighestNonZeroControl], carryPrefixShared);
     StoreReference2DebugState(
         debugStates, grid, block, magnitudePurpose, magnitude, highestNonZeroPlusOne);
 
-    if (IsLeader<SharkFloatParams>(block)) {
-        if (highestNonZeroPlusOne == 0u) {
-            SetZero(out);
-        } else {
-            const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
-            constexpr int ActualDigits = SharkFloatParams::GlobalNumUint32;
-            const int magnitudeLength = static_cast<int>(highestNonZero) + 1;
-            const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
-                                   CountLeadingZeros(magnitude[highestNonZero]);
-            const int desiredBit = (ActualDigits - 1) * 32 + 31;
-            const int shift = currentBit - desiredBit;
-            for (int i = 0; i < ActualDigits; ++i) {
-                out->Digits[i] = shift > 0 ? FunnelShiftRight(magnitude, i, magnitudeLength, shift)
-                                           : FunnelShiftLeft(magnitude, i, magnitudeLength, -shift);
-            }
+    if (highestNonZeroPlusOne == 0u) {
+        SetZero(grid, block, out);
+    } else {
+        const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+        constexpr int ActualDigits = SharkFloatParams::GlobalNumUint32;
+        const int magnitudeLength = static_cast<int>(highestNonZero) + 1;
+        const int currentBit =
+            static_cast<int>(highestNonZero) * 32 + 31 - CountLeadingZeros(magnitude[highestNonZero]);
+        const int desiredBit = (ActualDigits - 1) * 32 + 31;
+        const int shift = currentBit - desiredBit;
+        if (IsLeader<SharkFloatParams>(block)) {
             out->Exponent = commonExponent + shift;
             out->SetNegative(negative);
         }
+        for (int i = static_cast<int>(GridThreadRank(block)); i < ActualDigits;
+             i += static_cast<int>(gridSize)) {
+            out->Digits[i] = shift > 0 ? FunnelShiftRight(magnitude, i, magnitudeLength, shift)
+                                       : FunnelShiftLeft(magnitude, i, magnitudeLength, -shift);
+        }
     }
     grid.sync();
+    if constexpr (HpShark::Debug) {
+        if (IsLeader<SharkFloatParams>(block) && highestNonZeroPlusOne != 0u)
+            assert((out->Digits[SharkFloatParams::GlobalNumUint32 - 1] & 0x8000'0000u) != 0u);
+    }
 }
 
 template <class SharkFloatParams>
@@ -1312,13 +1427,15 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     }
 
     if (requiredBits == 0) {
-        if (IsLeader<SharkFloatParams>(block)) {
-            SetZero(&combo->Multiply.A);
-            SetZero(&combo->Multiply.B);
-            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                SetZero(&combo->Multiply.DzdcReal);
-                SetZero(&combo->Multiply.DzdcImag);
-            }
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            HpSharkFloat<SharkFloatParams> *outputs[4] = {&combo->Multiply.A,
+                                                          &combo->Multiply.B,
+                                                          &combo->Multiply.DzdcReal,
+                                                          &combo->Multiply.DzdcImag};
+            SetZeroBatch<SharkFloatParams, 4>(grid, block, outputs);
+        } else {
+            HpSharkFloat<SharkFloatParams> *outputs[2] = {&combo->Multiply.A, &combo->Multiply.B};
+            SetZeroBatch<SharkFloatParams, 2>(grid, block, outputs);
         }
         grid.sync();
         StoreReference2DebugValue(
@@ -1447,8 +1564,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                DebugStatePurpose::FinalAdd2);
     } else {
         if (realZero) {
-            if (IsLeader<SharkFloatParams>(block))
-                SetZero(&combo->Multiply.A);
+            SetZero(grid, block, &combo->Multiply.A);
         } else {
             AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                        block,
@@ -1493,8 +1609,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         }
         grid.sync();
         if (imagZero) {
-            if (IsLeader<SharkFloatParams>(block))
-                SetZero(&combo->Multiply.B);
+            SetZero(grid, block, &combo->Multiply.B);
         } else {
             AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                        block,
@@ -1632,8 +1747,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    DebugStatePurpose::FinalAddDzdc2);
         } else {
             if (dzdcRealZero) {
-                if (IsLeader<SharkFloatParams>(block))
-                    SetZero(&combo->Multiply.DzdcReal);
+                SetZero(grid, block, &combo->Multiply.DzdcReal);
             } else {
                 AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                            block,
@@ -1678,8 +1792,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             }
             grid.sync();
             if (dzdcImagZero) {
-                if (IsLeader<SharkFloatParams>(block))
-                    SetZero(&combo->Multiply.DzdcImag);
+                SetZero(grid, block, &combo->Multiply.DzdcImag);
             } else {
                 AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                            block,
@@ -1737,12 +1850,10 @@ UpdateD2(HpSharkReferenceResults<SharkFloatParams> *combo)
 {
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         using Hdr = typename SharkFloatParams::Float;
-        const Hdr zr = combo->Multiply.A.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-        const Hdr zi = combo->Multiply.B.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-        const Hdr dzr =
-            combo->Multiply.DzdcReal.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-        const Hdr dzi =
-            combo->Multiply.DzdcImag.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+        const Hdr zr = ToNormalizedHDRFloat(combo->Multiply.A);
+        const Hdr zi = ToNormalizedHDRFloat(combo->Multiply.B);
+        const Hdr dzr = ToNormalizedHDRFloat(combo->Multiply.DzdcReal);
+        const Hdr dzi = ToNormalizedHDRFloat(combo->Multiply.DzdcImag);
         Hdr dz2r = dzr * dzr - dzi * dzi;
         HdrReduce(dz2r);
         Hdr dz2i = Hdr{2.0f} * (dzr * dzi);
@@ -1770,8 +1881,8 @@ CheckPeriodicity(HpSharkReferenceResults<SharkFloatParams> *combo, uint64_t iter
         return false;
     } else {
         using Hdr = typename SharkFloatParams::Float;
-        Hdr zx = combo->Multiply.A.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-        Hdr zy = combo->Multiply.B.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+        Hdr zx = ToNormalizedHDRFloat(combo->Multiply.A);
+        Hdr zy = ToNormalizedHDRFloat(combo->Multiply.B);
         if (iteration < HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters) {
             combo->OutputIters[iteration].x = zx;
             combo->OutputIters[iteration].y = zy;
@@ -1794,8 +1905,8 @@ CheckPeriodicity(HpSharkReferenceResults<SharkFloatParams> *combo, uint64_t iter
         const Hdr dx = combo->dzdcX;
         combo->dzdcX = Hdr{2.0f} * (zx * combo->dzdcX - zy * combo->dzdcY) + Hdr{1.0f};
         combo->dzdcY = Hdr{2.0f} * (zx * combo->dzdcY + zy * dx);
-        const Hdr cx = combo->Add.C_A.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
-        const Hdr cy = combo->Add.E_B.template ToHDRFloat<typename SharkFloatParams::SubType>(0);
+        const Hdr cx = ToNormalizedHDRFloat(combo->Add.C_A);
+        const Hdr cy = ToNormalizedHDRFloat(combo->Add.E_B);
         const Hdr tx = zx + cx;
         const Hdr ty = zy + cy;
         const Hdr size = tx * tx + ty * ty;

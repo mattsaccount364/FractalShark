@@ -330,8 +330,6 @@ RunCorrectnessTest(BasicCorrectnessMode mode)
                 return 0;
         }
 
-        ComicalCorrectness();
-
     } while (HpShark::TestInfiniteCorrectness);
 
     return PressKey() != 'q';

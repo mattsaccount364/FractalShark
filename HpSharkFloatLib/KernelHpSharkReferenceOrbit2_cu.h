@@ -252,7 +252,7 @@ ToNormalizedHDRFloat(const HpSharkFloat<SharkFloatParams> &value)
 }
 
 template <class SharkFloatParams>
-__device__ FusedTerm<SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly FusedTerm<SharkFloatParams>
 MakeProductTerm(const HpSharkFloat<SharkFloatParams> &a,
                 SpectrumId aId,
                 const HpSharkFloat<SharkFloatParams> &b,
@@ -271,7 +271,7 @@ MakeProductTerm(const HpSharkFloat<SharkFloatParams> &a,
 }
 
 template <class SharkFloatParams>
-__device__ FusedTerm<SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly FusedTerm<SharkFloatParams>
 MakeLinearTerm(const HpSharkFloat<SharkFloatParams> &a, SpectrumId aId, bool negate)
 {
     if (IsZero(a))
@@ -280,34 +280,59 @@ MakeLinearTerm(const HpSharkFloat<SharkFloatParams> &a, SpectrumId aId, bool neg
 }
 
 template <class SharkFloatParams>
-__device__ bool
-ResolveCommonExponent(const FusedTerm<SharkFloatParams> *terms, uint32_t count, int32_t *commonExponent)
+__device__ SharkForceInlineReleaseOnly void
+IncludeTermInCommonExponent(FusedTerm<SharkFloatParams> term, bool &any, int32_t &common)
 {
+    if (term.IsZero)
+        return;
+    common = any && common < term.Exponent ? common : term.Exponent;
+    any = true;
+}
+
+template <class SharkFloatParams, class... RemainingTerms>
+__device__ SharkForceInlineReleaseOnly bool
+ResolveCommonExponent(int32_t *commonExponent,
+                      FusedTerm<SharkFloatParams> firstTerm,
+                      RemainingTerms... remainingTerms)
+{
+    static_assert((std::is_same_v<FusedTerm<SharkFloatParams>, RemainingTerms> && ...));
     bool any = false;
     int32_t common = 0;
-    for (uint32_t i = 0; i < count; ++i) {
-        if (terms[i].IsZero)
-            continue;
-        common = any && common < terms[i].Exponent ? common : terms[i].Exponent;
-        any = true;
-    }
+    IncludeTermInCommonExponent(firstTerm, any, common);
+    (IncludeTermInCommonExponent(remainingTerms, any, common), ...);
     *commonExponent = any ? common : 0;
     return !any;
 }
 
 template <class SharkFloatParams>
-__device__ uint64_t
-RequiredBitsForTerms(int32_t commonExponent, const FusedTerm<SharkFloatParams> *terms, uint32_t count)
+__device__ SharkForceInlineReleaseOnly uint64_t
+RequiredBitsForTerm(int32_t commonExponent, FusedTerm<SharkFloatParams> term)
 {
     constexpr uint64_t MantissaBits = static_cast<uint64_t>(SharkFloatParams::GlobalNumUint32) * 32ull;
-    uint64_t required = 0;
-    for (uint32_t i = 0; i < count; ++i) {
-        if (terms[i].IsZero)
-            continue;
-        const uint64_t shift = static_cast<uint64_t>(terms[i].Exponent - commonExponent);
-        const uint64_t width = terms[i].Kind == TermKind::Product ? 2ull * MantissaBits : MantissaBits;
-        required = required > shift + width ? required : shift + width;
-    }
+    if (term.IsZero)
+        return 0;
+    const uint64_t shift = static_cast<uint64_t>(term.Exponent - commonExponent);
+    const uint64_t width = term.Kind == TermKind::Product ? 2ull * MantissaBits : MantissaBits;
+    return shift + width;
+}
+
+template <class SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly void
+IncludeTermInRequiredBits(int32_t commonExponent, FusedTerm<SharkFloatParams> term, uint64_t &required)
+{
+    const uint64_t termBits = RequiredBitsForTerm(commonExponent, term);
+    required = required > termBits ? required : termBits;
+}
+
+template <class SharkFloatParams, class... RemainingTerms>
+__device__ SharkForceInlineReleaseOnly uint64_t
+RequiredBitsForTerms(int32_t commonExponent,
+                     FusedTerm<SharkFloatParams> firstTerm,
+                     RemainingTerms... remainingTerms)
+{
+    static_assert((std::is_same_v<FusedTerm<SharkFloatParams>, RemainingTerms> && ...));
+    uint64_t required = RequiredBitsForTerm(commonExponent, firstTerm);
+    (IncludeTermInRequiredBits(commonExponent, remainingTerms, required), ...);
     return required;
 }
 
@@ -634,7 +659,7 @@ AddShiftedSpectrum(cooperative_groups::grid_group &grid,
 }
 
 template <class SharkFloatParams>
-__device__ uint64_t *
+__device__ SharkForceInlineReleaseOnly uint64_t *
 GetSpectrum(HpSharkReference2Workspace<SharkFloatParams> &workspace, SpectrumId id)
 {
     switch (id) {
@@ -657,7 +682,52 @@ GetSpectrum(HpSharkReference2Workspace<SharkFloatParams> &workspace, SpectrumId 
 }
 
 template <class SharkFloatParams>
-__device__ void
+__device__ SharkForceInlineReleaseOnly void
+AccumulateOutputTerm(cooperative_groups::grid_group &grid,
+                     cooperative_groups::thread_block &block,
+                     DebugGlobalCount<SharkFloatParams> *debugCombo,
+                     const SharkNTT::PlanPrime &plan,
+                     const SharkNTT::RootTables &roots,
+                     HpSharkReference2Workspace<SharkFloatParams> &workspace,
+                     int32_t commonExponent,
+                     uint64_t *dest,
+                     FusedTerm<SharkFloatParams> term,
+                     bool &hasDestinationValue)
+{
+    if (term.IsZero)
+        return;
+    const uint32_t activeN = static_cast<uint32_t>(plan.N);
+    const uint64_t shift = static_cast<uint64_t>(term.Exponent - commonExponent);
+    if (term.Kind == TermKind::Product) {
+        const uint64_t *a = GetSpectrum(workspace, term.A);
+        const uint64_t *b = GetSpectrum(workspace, term.B);
+        const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+        for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize)
+            workspace.Product[i] =
+                MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, a[i], b[i]);
+        grid.sync();
+        if (hasDestinationValue) {
+            AddShiftedSpectrum<SharkFloatParams>(
+                grid, block, debugCombo, plan, roots, workspace.Product, shift, term.IsNegative, dest);
+        } else {
+            WriteShiftedSpectrum<SharkFloatParams>(
+                grid, block, debugCombo, plan, roots, workspace.Product, shift, term.IsNegative, dest);
+        }
+    } else {
+        const uint64_t *source = GetSpectrum(workspace, term.A);
+        if (hasDestinationValue) {
+            AddShiftedSpectrum<SharkFloatParams>(
+                grid, block, debugCombo, plan, roots, source, shift, term.IsNegative, dest);
+        } else {
+            WriteShiftedSpectrum<SharkFloatParams>(
+                grid, block, debugCombo, plan, roots, source, shift, term.IsNegative, dest);
+        }
+    }
+    hasDestinationValue = true;
+}
+
+template <class SharkFloatParams, class... RemainingTerms>
+__device__ SharkForceInlineReleaseOnly void
 AccumulateOutputSpectrum(cooperative_groups::grid_group &grid,
                          cooperative_groups::thread_block &block,
                          DebugGlobalCount<SharkFloatParams> *debugCombo,
@@ -667,59 +737,35 @@ AccumulateOutputSpectrum(cooperative_groups::grid_group &grid,
                          HpSharkReference2Workspace<SharkFloatParams> &workspace,
                          int32_t commonExponent,
                          uint64_t *dest,
-                         const FusedTerm<SharkFloatParams> *terms,
-                         uint32_t count,
-                         DebugStatePurpose checksumPurpose)
+                         DebugStatePurpose checksumPurpose,
+                         FusedTerm<SharkFloatParams> firstTerm,
+                         RemainingTerms... remainingTerms)
 {
-    const uint32_t activeN = static_cast<uint32_t>(plan.N);
+    static_assert((std::is_same_v<FusedTerm<SharkFloatParams>, RemainingTerms> && ...));
     bool hasDestinationValue = false;
-    for (uint32_t termIndex = 0; termIndex < count; ++termIndex) {
-        const FusedTerm<SharkFloatParams> &term = terms[termIndex];
-        if (term.IsZero)
-            continue;
-        const uint64_t shift = static_cast<uint64_t>(term.Exponent - commonExponent);
-        if (term.Kind == TermKind::Product) {
-            const uint64_t *a = GetSpectrum(workspace, term.A);
-            const uint64_t *b = GetSpectrum(workspace, term.B);
-            const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-            for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize)
-                workspace.Product[i] =
-                    MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, a[i], b[i]);
-            grid.sync();
-            if (hasDestinationValue) {
-                AddShiftedSpectrum<SharkFloatParams>(grid,
-                                                     block,
-                                                     debugCombo,
-                                                     plan,
-                                                     roots,
-                                                     workspace.Product,
-                                                     shift,
-                                                     term.IsNegative,
-                                                     dest);
-            } else {
-                WriteShiftedSpectrum<SharkFloatParams>(grid,
-                                                       block,
-                                                       debugCombo,
-                                                       plan,
-                                                       roots,
-                                                       workspace.Product,
-                                                       shift,
-                                                       term.IsNegative,
-                                                       dest);
-            }
-        } else {
-            const uint64_t *source = GetSpectrum(workspace, term.A);
-            if (hasDestinationValue) {
-                AddShiftedSpectrum<SharkFloatParams>(
-                    grid, block, debugCombo, plan, roots, source, shift, term.IsNegative, dest);
-            } else {
-                WriteShiftedSpectrum<SharkFloatParams>(
-                    grid, block, debugCombo, plan, roots, source, shift, term.IsNegative, dest);
-            }
-        }
-        hasDestinationValue = true;
-    }
+    AccumulateOutputTerm(grid,
+                         block,
+                         debugCombo,
+                         plan,
+                         roots,
+                         workspace,
+                         commonExponent,
+                         dest,
+                         firstTerm,
+                         hasDestinationValue);
+    (AccumulateOutputTerm(grid,
+                          block,
+                          debugCombo,
+                          plan,
+                          roots,
+                          workspace,
+                          commonExponent,
+                          dest,
+                          remainingTerms,
+                          hasDestinationValue),
+     ...);
     MattsCudaAssert(hasDestinationValue);
+    const uint32_t activeN = static_cast<uint32_t>(plan.N);
     StoreReference2DebugState(debugStates, grid, block, checksumPurpose, dest, activeN);
 }
 
@@ -1359,41 +1405,51 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     const auto &cReal = combo->Add.C_A;
     const auto &cImag = combo->Add.E_B;
 
-    FusedTerm<SharkFloatParams> realTerms[3] = {
-        MakeProductTerm(zReal, SpectrumId::ZReal, zReal, SpectrumId::ZReal, false, 0),
-        MakeProductTerm(zImag, SpectrumId::ZImag, zImag, SpectrumId::ZImag, true, 0),
-        MakeLinearTerm(cReal, SpectrumId::CReal, false)};
-    FusedTerm<SharkFloatParams> imagTerms[2] = {
-        MakeProductTerm(zReal, SpectrumId::ZReal, zImag, SpectrumId::ZImag, false, 1),
-        MakeLinearTerm(cImag, SpectrumId::CImag, false)};
+    const FusedTerm<SharkFloatParams> realZSquareTerm =
+        MakeProductTerm(zReal, SpectrumId::ZReal, zReal, SpectrumId::ZReal, false, 0);
+    const FusedTerm<SharkFloatParams> realNegativeZImagSquareTerm =
+        MakeProductTerm(zImag, SpectrumId::ZImag, zImag, SpectrumId::ZImag, true, 0);
+    const FusedTerm<SharkFloatParams> realConstantTerm = MakeLinearTerm(cReal, SpectrumId::CReal, false);
+    const FusedTerm<SharkFloatParams> imagDoubleProductTerm =
+        MakeProductTerm(zReal, SpectrumId::ZReal, zImag, SpectrumId::ZImag, false, 1);
+    const FusedTerm<SharkFloatParams> imagConstantTerm = MakeLinearTerm(cImag, SpectrumId::CImag, false);
     int32_t realExponent;
     int32_t imagExponent;
-    const bool realZero = ResolveCommonExponent(realTerms, 3, &realExponent);
-    const bool imagZero = ResolveCommonExponent(imagTerms, 2, &imagExponent);
-    uint64_t requiredBits = RequiredBitsForTerms(realExponent, realTerms, 3);
-    const uint64_t imagBits = RequiredBitsForTerms(imagExponent, imagTerms, 2);
+    const bool realZero = ResolveCommonExponent(
+        &realExponent, realZSquareTerm, realNegativeZImagSquareTerm, realConstantTerm);
+    const bool imagZero = ResolveCommonExponent(&imagExponent, imagDoubleProductTerm, imagConstantTerm);
+    uint64_t requiredBits = RequiredBitsForTerms(
+        realExponent, realZSquareTerm, realNegativeZImagSquareTerm, realConstantTerm);
+    const uint64_t imagBits =
+        RequiredBitsForTerms(imagExponent, imagDoubleProductTerm, imagConstantTerm);
     requiredBits = requiredBits > imagBits ? requiredBits : imagBits;
 
-    FusedTerm<SharkFloatParams> dzdcRealTerms[3]{};
-    FusedTerm<SharkFloatParams> dzdcImagTerms[2]{};
+    FusedTerm<SharkFloatParams> dzdcRealZRealTerm{};
+    FusedTerm<SharkFloatParams> dzdcRealNegativeZImagTerm{};
+    FusedTerm<SharkFloatParams> dzdcRealOneTerm{};
+    FusedTerm<SharkFloatParams> dzdcImagZImagTerm{};
+    FusedTerm<SharkFloatParams> dzdcImagZRealTerm{};
     int32_t dzdcRealExponent = 0;
     int32_t dzdcImagExponent = 0;
     bool dzdcRealZero = true;
     bool dzdcImagZero = true;
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        dzdcRealTerms[0] = MakeProductTerm(
+        dzdcRealZRealTerm = MakeProductTerm(
             zReal, SpectrumId::ZReal, combo->Multiply.DzdcReal, SpectrumId::DzdcReal, false, 1);
-        dzdcRealTerms[1] = MakeProductTerm(
+        dzdcRealNegativeZImagTerm = MakeProductTerm(
             zImag, SpectrumId::ZImag, combo->Multiply.DzdcImag, SpectrumId::DzdcImag, true, 1);
-        dzdcRealTerms[2] = MakeLinearTerm(combo->Add.One, SpectrumId::One, false);
-        dzdcImagTerms[0] = MakeProductTerm(
+        dzdcRealOneTerm = MakeLinearTerm(combo->Add.One, SpectrumId::One, false);
+        dzdcImagZImagTerm = MakeProductTerm(
             zImag, SpectrumId::ZImag, combo->Multiply.DzdcReal, SpectrumId::DzdcReal, false, 1);
-        dzdcImagTerms[1] = MakeProductTerm(
+        dzdcImagZRealTerm = MakeProductTerm(
             zReal, SpectrumId::ZReal, combo->Multiply.DzdcImag, SpectrumId::DzdcImag, false, 1);
-        dzdcRealZero = ResolveCommonExponent(dzdcRealTerms, 3, &dzdcRealExponent);
-        dzdcImagZero = ResolveCommonExponent(dzdcImagTerms, 2, &dzdcImagExponent);
-        const uint64_t dzdcRealBits = RequiredBitsForTerms(dzdcRealExponent, dzdcRealTerms, 3);
-        const uint64_t dzdcImagBits = RequiredBitsForTerms(dzdcImagExponent, dzdcImagTerms, 2);
+        dzdcRealZero = ResolveCommonExponent(
+            &dzdcRealExponent, dzdcRealZRealTerm, dzdcRealNegativeZImagTerm, dzdcRealOneTerm);
+        dzdcImagZero = ResolveCommonExponent(&dzdcImagExponent, dzdcImagZImagTerm, dzdcImagZRealTerm);
+        const uint64_t dzdcRealBits = RequiredBitsForTerms(
+            dzdcRealExponent, dzdcRealZRealTerm, dzdcRealNegativeZImagTerm, dzdcRealOneTerm);
+        const uint64_t dzdcImagBits =
+            RequiredBitsForTerms(dzdcImagExponent, dzdcImagZImagTerm, dzdcImagZRealTerm);
         requiredBits = requiredBits > dzdcRealBits ? requiredBits : dzdcRealBits;
         requiredBits = requiredBits > dzdcImagBits ? requiredBits : dzdcImagBits;
     }
@@ -1480,9 +1536,10 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    workspace,
                                                    realExponent,
                                                    workspace.RealOutput,
-                                                   realTerms,
-                                                   3,
-                                                   DebugStatePurpose::Z2_Perm1);
+                                                   DebugStatePurpose::Z2_Perm1,
+                                                   realZSquareTerm,
+                                                   realNegativeZImagSquareTerm,
+                                                   realConstantTerm);
         AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                    block,
                                                    debugCombo,
@@ -1492,9 +1549,9 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    workspace,
                                                    imagExponent,
                                                    workspace.ImagOutput,
-                                                   imagTerms,
-                                                   2,
-                                                   DebugStatePurpose::Z2_Perm2);
+                                                   DebugStatePurpose::Z2_Perm2,
+                                                   imagDoubleProductTerm,
+                                                   imagConstantTerm);
         uint64_t *normalSpectra[2] = {workspace.RealOutput, workspace.ImagOutput};
         const uint32_t normalCoefficientCounts[2] = {activeN, activeN};
         int64_t *normalLimbs[2] = {workspace.RealLimbs, workspace.ImagLimbs};
@@ -1550,9 +1607,10 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        workspace,
                                                        realExponent,
                                                        workspace.RealOutput,
-                                                       realTerms,
-                                                       3,
-                                                       DebugStatePurpose::Z2_Perm1);
+                                                       DebugStatePurpose::Z2_Perm1,
+                                                       realZSquareTerm,
+                                                       realNegativeZImagSquareTerm,
+                                                       realConstantTerm);
             uint64_t *realSpectrum[1] = {workspace.RealOutput};
             const uint32_t realCoefficientCount[1] = {activeN};
             int64_t *realLimbs[1] = {workspace.RealLimbs};
@@ -1596,9 +1654,9 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        workspace,
                                                        imagExponent,
                                                        workspace.ImagOutput,
-                                                       imagTerms,
-                                                       2,
-                                                       DebugStatePurpose::Z2_Perm2);
+                                                       DebugStatePurpose::Z2_Perm2,
+                                                       imagDoubleProductTerm,
+                                                       imagConstantTerm);
             uint64_t *imagSpectrum[1] = {workspace.ImagOutput};
             const uint32_t imagCoefficientCount[1] = {activeN};
             int64_t *imagLimbs[1] = {workspace.ImagLimbs};
@@ -1667,9 +1725,10 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        workspace,
                                                        dzdcRealExponent,
                                                        workspace.DzdcRealOutput,
-                                                       dzdcRealTerms,
-                                                       3,
-                                                       DebugStatePurpose::Z2_PermW0);
+                                                       DebugStatePurpose::Z2_PermW0,
+                                                       dzdcRealZRealTerm,
+                                                       dzdcRealNegativeZImagTerm,
+                                                       dzdcRealOneTerm);
             AccumulateOutputSpectrum<SharkFloatParams>(grid,
                                                        block,
                                                        debugCombo,
@@ -1679,9 +1738,9 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        workspace,
                                                        dzdcImagExponent,
                                                        workspace.DzdcImagOutput,
-                                                       dzdcImagTerms,
-                                                       2,
-                                                       DebugStatePurpose::Z2_PermW1);
+                                                       DebugStatePurpose::Z2_PermW1,
+                                                       dzdcImagZImagTerm,
+                                                       dzdcImagZRealTerm);
             uint64_t *newtonRaphsonSpectra[2] = {workspace.DzdcRealOutput, workspace.DzdcImagOutput};
             const uint32_t newtonRaphsonCoefficientCounts[2] = {activeN, activeN};
             int64_t *newtonRaphsonLimbs[2] = {workspace.DzdcRealLimbs, workspace.DzdcImagLimbs};
@@ -1737,9 +1796,10 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                            workspace,
                                                            dzdcRealExponent,
                                                            workspace.DzdcRealOutput,
-                                                           dzdcRealTerms,
-                                                           3,
-                                                           DebugStatePurpose::Z2_PermW0);
+                                                           DebugStatePurpose::Z2_PermW0,
+                                                           dzdcRealZRealTerm,
+                                                           dzdcRealNegativeZImagTerm,
+                                                           dzdcRealOneTerm);
                 uint64_t *dzdcRealSpectrum[1] = {workspace.DzdcRealOutput};
                 const uint32_t dzdcRealCoefficientCount[1] = {activeN};
                 int64_t *dzdcRealLimbs[1] = {workspace.DzdcRealLimbs};
@@ -1783,9 +1843,9 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                            workspace,
                                                            dzdcImagExponent,
                                                            workspace.DzdcImagOutput,
-                                                           dzdcImagTerms,
-                                                           2,
-                                                           DebugStatePurpose::Z2_PermW1);
+                                                           DebugStatePurpose::Z2_PermW1,
+                                                           dzdcImagZImagTerm,
+                                                           dzdcImagZRealTerm);
                 uint64_t *dzdcImagSpectrum[1] = {workspace.DzdcImagOutput};
                 const uint32_t dzdcImagCoefficientCount[1] = {activeN};
                 int64_t *dzdcImagLimbs[1] = {workspace.DzdcImagLimbs};

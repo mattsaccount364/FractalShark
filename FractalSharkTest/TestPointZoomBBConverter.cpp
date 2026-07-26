@@ -1,7 +1,7 @@
-#include "TestFramework.h"
 #include "FeatureFinder.h"
 #include "FeatureSummary.h"
 #include "PointZoomBBConverter.h"
+#include "TestFramework.h"
 
 using TestMode = PointZoomBBConverter::TestMode;
 
@@ -22,8 +22,7 @@ TEST(DefaultConstruction)
 TEST(PointZoomConstruction_Origin)
 {
     // pt = (0,0), zoom = 1 → bounds = [-2,-2] to [2,2] (Factor = 2)
-    PointZoomBBConverter pz(
-        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
 
     ASSERT_TRUE(pz.GetMinX() == HighPrecision{-2});
     ASSERT_TRUE(pz.GetMinY() == HighPrecision{-2});
@@ -38,8 +37,7 @@ TEST(PointZoomConstruction_Origin)
 TEST(PointZoomConstruction_NonOrigin)
 {
     // pt = (1,2), zoom = 4 → min = pt - 2/4 = pt - 0.5, max = pt + 0.5
-    PointZoomBBConverter pz(
-        HighPrecision{1}, HighPrecision{2}, HighPrecision{4}, TestMode::Enabled);
+    PointZoomBBConverter pz(HighPrecision{1}, HighPrecision{2}, HighPrecision{4}, TestMode::Enabled);
 
     ASSERT_TRUE(pz.GetMinX() == HighPrecision{0.5});
     ASSERT_TRUE(pz.GetMinY() == HighPrecision{1.5});
@@ -123,8 +121,7 @@ TEST(BoundingBoxConstruction)
 {
     // bb [-2,-2,2,2] → pt = (0,0), zoom = Factor*2/deltaY = 2*2/4 = 1
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     ASSERT_TRUE(pz.GetPtX() == HighPrecision{0});
     ASSERT_TRUE(pz.GetPtY() == HighPrecision{0});
@@ -138,8 +135,7 @@ TEST(BoundingBoxConstruction_ZeroDeltaY)
 {
     // When minY == maxY, deltaY is zero → zoom factor falls back to 1
     PointZoomBBConverter pz(
-        HighPrecision{-1}, HighPrecision{3}, HighPrecision{1}, HighPrecision{3},
-        TestMode::Enabled);
+        HighPrecision{-1}, HighPrecision{3}, HighPrecision{1}, HighPrecision{3}, TestMode::Enabled);
 
     ASSERT_TRUE(pz.GetZoomFactor() == HighPrecision{1});
 }
@@ -151,24 +147,21 @@ TEST(BoundingBoxConstruction_ZeroDeltaY)
 TEST(Degenerate_ZeroWidth)
 {
     PointZoomBBConverter pz(
-        HighPrecision{0}, HighPrecision{-1}, HighPrecision{0}, HighPrecision{1},
-        TestMode::Enabled);
+        HighPrecision{0}, HighPrecision{-1}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
     ASSERT_TRUE(pz.Degenerate());
 }
 
 TEST(Degenerate_ZeroHeight)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-1}, HighPrecision{0}, HighPrecision{1}, HighPrecision{0},
-        TestMode::Enabled);
+        HighPrecision{-1}, HighPrecision{0}, HighPrecision{1}, HighPrecision{0}, TestMode::Enabled);
     ASSERT_TRUE(pz.Degenerate());
 }
 
 TEST(Degenerate_Normal)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-1}, HighPrecision{-1}, HighPrecision{1}, HighPrecision{1},
-        TestMode::Enabled);
+        HighPrecision{-1}, HighPrecision{-1}, HighPrecision{1}, HighPrecision{1}, TestMode::Enabled);
     ASSERT_FALSE(pz.Degenerate());
 }
 
@@ -180,8 +173,7 @@ TEST(XScreenToCalcRoundtrip)
 {
     // Bounds [-2,-2,2,2], screen 100×100
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     // Pixel 0 → calc -2 → pixel 0
     {
@@ -203,8 +195,7 @@ TEST(XScreenToCalcRoundtrip)
 TEST(YScreenToCalcRoundtrip)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     // Pixel 0 (top) → calc maxY (2) → pixel 0
     {
@@ -226,8 +217,7 @@ TEST(YScreenToCalcRoundtrip)
 TEST(CoordinateRoundtrip_WithAntialiasing)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     // With 2x antialiasing, the effective resolution is 200×200 for a 100×100 screen.
     // Pixel 100 (middle of the 200-wide supersampled space) → calc 0
@@ -242,8 +232,7 @@ TEST(CoordinateRoundtrip_WithAntialiasing)
 TEST(GetDeltaXY)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     // deltaX = (maxX - minX) / (width * aa) = 4 / (100*1) = 0.04
     HighPrecision dx = pz.GetDeltaX(100, 1);
@@ -263,8 +252,7 @@ TEST(GetDeltaXY)
 
 TEST(ZoomedAtCenter)
 {
-    PointZoomBBConverter pz(
-        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
     // Bounds: [-2,-2,2,2]
 
     // Zoom in: scale = -0.3 → divisor = 1/(1+2*(-0.3)) = 1/0.4 = 2.5
@@ -287,8 +275,7 @@ TEST(ZoomedAtCenter)
 
 TEST(ZoomInPlace)
 {
-    PointZoomBBConverter pz1(
-        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz1(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
     PointZoomBBConverter pz2 = pz1;
 
     PointZoomBBConverter zoomed = pz1.ZoomedAtCenter(-0.3);
@@ -303,8 +290,7 @@ TEST(ZoomInPlace)
 TEST(ZoomedRecentered)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     // Recenter on (1,1) with no scale change (scale=0 → divisor=1 → no zoom)
     PointZoomBBConverter zoomed = pz.ZoomedRecentered(HighPrecision{1}, HighPrecision{1}, 0.0);
@@ -322,8 +308,7 @@ TEST(ZoomedRecentered)
 TEST(ZoomedTowardPoint)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     // Zoom toward (1,0) with scale=0.5 (expand outward)
     // leftWeight = (1-(-2))/4 = 0.75, rightWeight = 0.25
@@ -332,8 +317,7 @@ TEST(ZoomedTowardPoint)
     // newMaxX = 2 + 4*0.25*0.5 = 2.5
     // newMinY = -2 - 4*0.5*0.5 = -3
     // newMaxY = 2 + 4*0.5*0.5 = 3
-    PointZoomBBConverter zoomed =
-        pz.ZoomedTowardPoint(HighPrecision{1}, HighPrecision{0}, 0.5);
+    PointZoomBBConverter zoomed = pz.ZoomedTowardPoint(HighPrecision{1}, HighPrecision{0}, 0.5);
 
     ASSERT_NEAR(static_cast<double>(zoomed.GetMinX()), -3.5, 1e-10);
     ASSERT_NEAR(static_cast<double>(zoomed.GetMaxX()), 2.5, 1e-10);
@@ -348,8 +332,7 @@ TEST(ZoomedTowardPoint)
 TEST(SquareAspectRatio_AlreadySquare)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     double origWidth = static_cast<double>(pz.GetMaxX()) - static_cast<double>(pz.GetMinX());
     double origHeight = static_cast<double>(pz.GetMaxY()) - static_cast<double>(pz.GetMinY());
@@ -367,8 +350,7 @@ TEST(SquareAspectRatio_Wide)
 {
     // Square bounds on a wide screen → X bounds should expand
     PointZoomBBConverter pz(
-        HighPrecision{-1}, HighPrecision{-1}, HighPrecision{1}, HighPrecision{1},
-        TestMode::Enabled);
+        HighPrecision{-1}, HighPrecision{-1}, HighPrecision{1}, HighPrecision{1}, TestMode::Enabled);
 
     pz.SquareAspectRatio(200, 100);
 
@@ -383,8 +365,7 @@ TEST(SquareAspectRatio_Tall)
 {
     // Square bounds on a tall screen → Y bounds should expand
     PointZoomBBConverter pz(
-        HighPrecision{-1}, HighPrecision{-1}, HighPrecision{1}, HighPrecision{1},
-        TestMode::Enabled);
+        HighPrecision{-1}, HighPrecision{-1}, HighPrecision{1}, HighPrecision{1}, TestMode::Enabled);
 
     pz.SquareAspectRatio(100, 200);
 
@@ -397,8 +378,7 @@ TEST(SquareAspectRatio_Tall)
 TEST(SquareAspectRatio_ZeroDims)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-1}, HighPrecision{-1}, HighPrecision{1}, HighPrecision{1},
-        TestMode::Enabled);
+        HighPrecision{-1}, HighPrecision{-1}, HighPrecision{1}, HighPrecision{1}, TestMode::Enabled);
 
     double origMinX = static_cast<double>(pz.GetMinX());
 
@@ -417,8 +397,7 @@ TEST(SquareAspectRatio_ZeroDims)
 TEST(Recentered)
 {
     PointZoomBBConverter pz(
-        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2},
-        TestMode::Enabled);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, TestMode::Enabled);
 
     PointZoomBBConverter rc = pz.Recentered(HighPrecision{5}, HighPrecision{3});
 
@@ -439,12 +418,10 @@ TEST(Recentered)
 TEST(PointZoomAndBBConsistency)
 {
     // Build from point+zoom and from bounding box — should agree
-    PointZoomBBConverter fromPt(
-        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter fromPt(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
 
     PointZoomBBConverter fromBB(
-        fromPt.GetMinX(), fromPt.GetMinY(), fromPt.GetMaxX(), fromPt.GetMaxY(),
-        TestMode::Enabled);
+        fromPt.GetMinX(), fromPt.GetMinY(), fromPt.GetMaxX(), fromPt.GetMaxY(), TestMode::Enabled);
 
     ASSERT_TRUE(fromBB.GetPtX() == fromPt.GetPtX());
     ASSERT_TRUE(fromBB.GetPtY() == fromPt.GetPtY());
@@ -459,13 +436,11 @@ TEST(PointZoomAndBBConsistency)
 TEST(RadiusCalculation)
 {
     // Point+zoom: radius = (maxY - minY) / 2 = (2-(-2))/2 = 2
-    PointZoomBBConverter pz(
-        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
     ASSERT_TRUE(pz.GetRadius() == HighPrecision{2});
 
     // Non-origin: radius = (2.5-1.5)/2 = 0.5
-    PointZoomBBConverter pz2(
-        HighPrecision{1}, HighPrecision{2}, HighPrecision{4}, TestMode::Enabled);
+    PointZoomBBConverter pz2(HighPrecision{1}, HighPrecision{2}, HighPrecision{4}, TestMode::Enabled);
     ASSERT_TRUE(pz2.GetRadius() == HighPrecision{0.5});
 }
 
@@ -475,8 +450,7 @@ TEST(RadiusCalculation)
 
 TEST(SetPrecision)
 {
-    PointZoomBBConverter pz(
-        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
 
     pz.SetPrecision(512);
 

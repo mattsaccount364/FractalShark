@@ -1,5 +1,5 @@
-#include "TestFramework.h"
 #include "ATInfo.h"
+#include "TestFramework.h"
 
 #include <cmath>
 
@@ -10,8 +10,8 @@ using FC = FloatComplex<double>;
 
 // Helper: build a minimal ATInfo with known coefficients for testing
 static ATInfoD
-MakeSimpleATInfo(double sqrEscapeRadius, double thresholdC, double stepLength,
-                 FC refC, FC zCoeff, FC cCoeff)
+MakeSimpleATInfo(
+    double sqrEscapeRadius, double thresholdC, double stepLength, FC refC, FC zCoeff, FC cCoeff)
 {
     ATInfoD at;
     at.StepLength = static_cast<uint64_t>(stepLength);
@@ -29,9 +29,9 @@ MakeSimpleATInfo(double sqrEscapeRadius, double thresholdC, double stepLength,
     } else {
         at.InvZCoeff = FC(0.0, 0.0);
     }
-    at.CCoeffInvZCoeff = FC(
-        cCoeff.getRe() * at.InvZCoeff.getRe() - cCoeff.getIm() * at.InvZCoeff.getIm(),
-        cCoeff.getRe() * at.InvZCoeff.getIm() + cCoeff.getIm() * at.InvZCoeff.getRe());
+    at.CCoeffInvZCoeff =
+        FC(cCoeff.getRe() * at.InvZCoeff.getRe() - cCoeff.getIm() * at.InvZCoeff.getIm(),
+           cCoeff.getRe() * at.InvZCoeff.getIm() + cCoeff.getIm() * at.InvZCoeff.getRe());
     at.CCoeffNormSqr = cCoeff.norm_squared();
     at.RefCNormSqr = refC.norm_squared();
     at.factor = std::pow(2.0, 32);

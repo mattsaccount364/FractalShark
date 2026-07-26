@@ -1,6 +1,6 @@
+#include "CudaDblflt.h"
 #include "TestFramework.h"
 #include "dblflt.h"
-#include "CudaDblflt.h"
 
 #include <cmath>
 #include <sstream>

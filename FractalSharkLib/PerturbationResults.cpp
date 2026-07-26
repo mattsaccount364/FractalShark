@@ -539,8 +539,8 @@ requires(PExtras != PerturbExtras::MaxCompression)
     metafile << "MaxIterationsPerPixel: " << this->GetMaxIterations() << std::endl;
     metafile << "Period: " << m_PeriodMaybeZero << std::endl;
     metafile << "CompressionErrorExponent_exp2: " << m_CompressionErrorExp << std::endl;
-    metafile << "IntermediateCompressionErrorExponent_exp2: "
-             << m_IntermediateCompressionErrorExp << std::endl;
+    metafile << "IntermediateCompressionErrorExponent_exp2: " << m_IntermediateCompressionErrorExp
+             << std::endl;
     metafile << "UncompressedIterationsInOrbit: " << GetCountOrbitEntries() << std::endl;
 
     if constexpr (Introspection::TestPExtras<PExtras>::value) {
@@ -1961,8 +1961,7 @@ InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Di
     out << "m_MaxIterations: " << GetMaxIterations() << std::endl;
     out << "m_PeriodMaybeZero: " << m_PeriodMaybeZero << std::endl;
     out << "m_CompressionErrorExp_exp2: " << m_CompressionErrorExp << std::endl;
-    out << "m_IntermediateCompressionErrorExp_exp2: " << m_IntermediateCompressionErrorExp
-        << std::endl;
+    out << "m_IntermediateCompressionErrorExp_exp2: " << m_IntermediateCompressionErrorExp << std::endl;
     out << "m_RefOrbitOptions: " << static_cast<int>(m_RefOrbitOptions) << std::endl;
     out << "m_FullOrbitSize: " << m_FullOrbit.GetSize() << std::endl;
     out << "m_UncompressedItersInOrbit: " << GetCountOrbitEntries() << std::endl;
@@ -1970,16 +1969,13 @@ InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Di
 
     // Write out all values in m_FullOrbit:
     for (size_t i = 0; i < GetCompressedOrUncompressedOrbitSize(); i++) {
-        out << "m_FullOrbit[" << i << "].x: " << HdrToString<false>(m_FullOrbit[i].x)
-            << std::endl;
-        out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y)
-            << std::endl;
+        out << "m_FullOrbit[" << i << "].x: " << HdrToString<false>(m_FullOrbit[i].x) << std::endl;
+        out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y) << std::endl;
 
         if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-            out << "m_FullOrbit[" << i
-                << "].CompressionIndex: " << m_FullOrbit[i].u.f.CompressionIndex << std::endl;
-            out << "m_FullOrbit[" << i << "].Rebase(bool): " << m_FullOrbit[i].u.f.Rebase
+            out << "m_FullOrbit[" << i << "].CompressionIndex: " << m_FullOrbit[i].u.f.CompressionIndex
                 << std::endl;
+            out << "m_FullOrbit[" << i << "].Rebase(bool): " << m_FullOrbit[i].u.f.Rebase << std::endl;
         }
     }
 

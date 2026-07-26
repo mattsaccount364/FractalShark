@@ -75,8 +75,7 @@ RunAllTests()
     }
 
     std::cout << "\n========================================\n"
-              << passed << " passed, " << failed << " failed, " << total
-              << " total\n";
+              << passed << " passed, " << failed << " failed, " << total << " total\n";
 
     if (failed > 0) {
         std::cout << "RESULT: FAILED\n";

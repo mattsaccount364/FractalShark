@@ -8,8 +8,7 @@ SerialCarryPropagation(
     uint64_t *final128,
     const int32_t numActualDigitsPlusGuard,
     uint32_t *carry, // global memory array for intermediate carries (length numActualDigitsPlusGuard+1)
-    int32_t
-        &outExponent,
+    int32_t &outExponent,
     bool sameSign,
     cg::thread_block &block,
     cg::grid_group &grid)
@@ -204,21 +203,29 @@ Phase1_DE(cg::thread_block &block,
         // NR: same computation with NR inputs and NR output buffer
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             uint64_t nrAlignedA = 0, nrAlignedB = 0;
-            GetCorrespondingLimbs<SharkFloatParams>(
-                nrExtD, numActualDigits, numActualDigitsPlusGuard,
-                nrExtE, numActualDigits, numActualDigitsPlusGuard,
-                nrShiftD, nrShiftE, nrDIsBiggerMagnitude, nrDiffDE, i,
-                nrAlignedA, nrAlignedB);
+            GetCorrespondingLimbs<SharkFloatParams>(nrExtD,
+                                                    numActualDigits,
+                                                    numActualDigitsPlusGuard,
+                                                    nrExtE,
+                                                    numActualDigits,
+                                                    numActualDigitsPlusGuard,
+                                                    nrShiftD,
+                                                    nrShiftE,
+                                                    nrDIsBiggerMagnitude,
+                                                    nrDiffDE,
+                                                    i,
+                                                    nrAlignedA,
+                                                    nrAlignedB);
 
             uint64_t nrPrelim;
             if (nrSameSignDE) {
                 nrPrelim = nrAlignedA + nrAlignedB;
             } else if (nrDIsBiggerMagnitude) {
-                nrPrelim = static_cast<uint64_t>(
-                    static_cast<int64_t>(nrAlignedA) - static_cast<int64_t>(nrAlignedB));
+                nrPrelim = static_cast<uint64_t>(static_cast<int64_t>(nrAlignedA) -
+                                                 static_cast<int64_t>(nrAlignedB));
             } else {
-                nrPrelim = static_cast<uint64_t>(
-                    static_cast<int64_t>(nrAlignedB) - static_cast<int64_t>(nrAlignedA));
+                nrPrelim = static_cast<uint64_t>(static_cast<int64_t>(nrAlignedB) -
+                                                 static_cast<int64_t>(nrAlignedA));
             }
             nrFinal128_DE[i] = nrPrelim;
         }

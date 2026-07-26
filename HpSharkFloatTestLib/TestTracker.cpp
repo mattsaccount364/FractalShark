@@ -92,13 +92,11 @@ TestTracker::CheckAllTestsPassed() const
         if (anyFailed) {
             failedTests++;
             std::cout << "Test " << i << " FAILED"
-                      << " [blocks=" << t.NumBlocks
-                      << ", threadsPerBlock=" << t.ThreadsPerBlock << "] " << failedVariants
-                      << "\n";
+                      << " [blocks=" << t.NumBlocks << ", threadsPerBlock=" << t.ThreadsPerBlock << "] "
+                      << failedVariants << "\n";
         } else if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "Test " << i << " PASSED"
-                      << " [blocks=" << t.NumBlocks
-                      << ", threadsPerBlock=" << t.ThreadsPerBlock << "] "
+                      << " [blocks=" << t.NumBlocks << ", threadsPerBlock=" << t.ThreadsPerBlock << "] "
                       << "TimeMs: " << t.TestMs << "\n";
         }
     }
@@ -113,8 +111,7 @@ TestTracker::CheckAllTestsPassed() const
         for (size_t k = 0; k < topN; ++k) {
             auto ms = slow[k].first;
             auto idx = slow[k].second;
-            std::cout << "  Test " << idx << ": timeMs=" << ms
-                      << " [blocks=" << m_Tests[idx].NumBlocks
+            std::cout << "  Test " << idx << ": timeMs=" << ms << " [blocks=" << m_Tests[idx].NumBlocks
                       << ", threadsPerBlock=" << m_Tests[idx].ThreadsPerBlock << "]\n";
         }
     }
@@ -125,16 +122,15 @@ TestTracker::CheckAllTestsPassed() const
     }
 
     if (!failedByVariant.empty()) {
-        std::cout << "Some tests failed! (failed=" << failedTests << ", ran=" << ranTests
-                  << ")\n";
+        std::cout << "Some tests failed! (failed=" << failedTests << ", ran=" << ranTests << ")\n";
         for (const auto &kv : failedByVariant) {
             const std::string &desc = kv.first;
             const size_t failed = kv.second;
             const size_t ran = ranByVariant[desc];
             const double pct = ran ? (failed * 100.0) / double(ran) : 0.0;
 
-            std::cout << "  Variant \"" << desc << "\": failed=" << failed
-                      << ", ran=" << ran << ", percent=" << pct << "%\n";
+            std::cout << "  Variant \"" << desc << "\": failed=" << failed << ", ran=" << ran
+                      << ", percent=" << pct << "%\n";
         }
         return false;
     }

@@ -15,25 +15,25 @@
 #define _WIN32_WINNT 0x0A00
 #endif
 
-#include <windows.h>
-#include <windowsx.h>
 #include <commctrl.h>
 #include <shellapi.h>
+#include <windows.h>
+#include <windowsx.h>
 
 #pragma comment(lib, "comctl32.lib")
 
-#include <string>
-#include <vector>
-#include <memory>
-#include <format>
-#include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <algorithm>
-#include <thread>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <format>
+#include <fstream>
 #include <iomanip>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
 
 #include "DbgHeap.h"
 #include "OpenGLContext.h"

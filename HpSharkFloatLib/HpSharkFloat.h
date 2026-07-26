@@ -22,7 +22,7 @@
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 #define SharkRestrict __restrict__
-//#define SharkRestrict
+// #define SharkRestrict
 
 namespace HpShark {
 
@@ -71,7 +71,7 @@ static constexpr auto RegisterLimit = 127;
 static constexpr auto ConstantSharedRequiredBytes = 0;
 
 static constexpr bool DebugChecksums = Debug;
-//static constexpr bool DebugChecksums = true;
+// static constexpr bool DebugChecksums = true;
 static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
 static constexpr bool TestInitCudaMemory = true;
 
@@ -96,8 +96,7 @@ is_pow2_u32(uint32_t v)
     return v && ((v & (v - 1u)) == 0u);
 }
 
-template <int32_t pNumDigits, bool Periodicity, bool NewtonRaphson = false,
-          typename SubTypeT = float>
+template <int32_t pNumDigits, bool Periodicity, bool NewtonRaphson = false, typename SubTypeT = float>
 struct GenericSharkFloatParams {
     using Float = HDRFloat<SubTypeT>;
     using SubType = SubTypeT;

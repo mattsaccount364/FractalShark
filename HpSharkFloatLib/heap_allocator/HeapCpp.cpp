@@ -80,7 +80,8 @@ __declspec(allocate(".fs_alloc$z")) const PF InitSegEnd = (PF)1;
 
 #ifdef _MSC_VER
 // Called by MSVC for objects in our init_seg (instead of atexit)
-static int __cdecl myexit(PF pf)
+static int __cdecl
+myexit(PF pf)
 {
     if (cxpf >= 200) {
         HeapPanic("Static destructor limit exceeded");
@@ -1460,7 +1461,8 @@ realpath(const char *fname, char *resolved_name)
     return _fullpath(resolved_name, fname, _MAX_PATH);
 }
 
-FS_RESTRICT void *__cdecl _aligned_malloc(size_t size, size_t alignment)
+FS_RESTRICT void *__cdecl
+_aligned_malloc(size_t size, size_t alignment)
 {
     if (alignment == 0 || !IsPow2(alignment)) {
         errno = EINVAL;
@@ -1470,9 +1472,14 @@ FS_RESTRICT void *__cdecl _aligned_malloc(size_t size, size_t alignment)
     return CppAlignedMalloc(size, alignment);
 }
 
-void __cdecl _aligned_free(void *ptr) { free(ptr); }
+void __cdecl
+_aligned_free(void *ptr)
+{
+    free(ptr);
+}
 
-void *__cdecl _aligned_realloc(void *ptr, size_t size, size_t alignment)
+void *__cdecl
+_aligned_realloc(void *ptr, size_t size, size_t alignment)
 {
     if (alignment == 0 || !IsPow2(alignment)) {
         errno = EINVAL;
@@ -1482,7 +1489,8 @@ void *__cdecl _aligned_realloc(void *ptr, size_t size, size_t alignment)
     return CppAlignedRealloc(ptr, size, alignment, false);
 }
 
-size_t __cdecl _aligned_msize(void *ptr, size_t /*alignment*/, size_t /*offset*/)
+size_t __cdecl
+_aligned_msize(void *ptr, size_t /*alignment*/, size_t /*offset*/)
 {
     if (!ptr) {
         return 0;

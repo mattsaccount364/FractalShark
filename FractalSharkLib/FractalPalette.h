@@ -1,7 +1,7 @@
 #pragma once
 
-#include "PngParallelSave.h"
 #include "GPU_Types.h"
+#include "PngParallelSave.h"
 
 #include <cstdint>
 #include <vector>

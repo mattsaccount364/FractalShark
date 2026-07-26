@@ -11,7 +11,9 @@
 
 class Crc64 {
 public:
-    static uint64_t Compute(const void *data, size_t len) {
+    static uint64_t
+    Compute(const void *data, size_t len)
+    {
         const uint64_t *table = Table();
         uint64_t crc = 0;
         const auto *p = static_cast<const uint8_t *>(data);
@@ -21,7 +23,9 @@ public:
         return crc;
     }
 
-    static std::string ToHex(uint64_t value) {
+    static std::string
+    ToHex(uint64_t value)
+    {
         static constexpr char kHex[] = "0123456789abcdef";
         std::string out(16, '0');
         for (int i = 15; i >= 0; --i) {
@@ -32,7 +36,9 @@ public:
     }
 
 private:
-    static const uint64_t *Table() {
+    static const uint64_t *
+    Table()
+    {
         static const auto table = []() {
             std::array<uint64_t, 256> t{};
             constexpr uint64_t kPoly = 0x42F0E1EBA9EA3693ULL;

@@ -8,8 +8,7 @@ public:
     TrayIcon(const TrayIcon &) = delete;
     TrayIcon &operator=(const TrayIcon &) = delete;
 
-    bool Create(HWND parentWnd, UINT callbackMessage,
-                const wchar_t *tooltip, HICON icon, UINT menuId);
+    bool Create(HWND parentWnd, UINT callbackMessage, const wchar_t *tooltip, HICON icon, UINT menuId);
     void Remove();
 
     bool SetIcon(HICON icon);
@@ -19,8 +18,16 @@ public:
 
     LRESULT OnTrayNotification(WPARAM wParam, LPARAM lParam);
 
-    bool IsEnabled() const { return m_Enabled; }
-    bool IsVisible() const { return m_Enabled && !m_Hidden; }
+    bool
+    IsEnabled() const
+    {
+        return m_Enabled;
+    }
+    bool
+    IsVisible() const
+    {
+        return m_Enabled && !m_Hidden;
+    }
 
 private:
     NOTIFYICONDATA m_Nid{};

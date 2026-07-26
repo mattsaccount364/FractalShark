@@ -1,5 +1,7 @@
 #include <stdio.h>
 
-void SomeNonUsedSymbolToWorkAroundLinkerIssue() {
+void
+SomeNonUsedSymbolToWorkAroundLinkerIssue()
+{
     printf("SomeNonUsedSymbolToWorkAroundLinkerIssue\n");
 }

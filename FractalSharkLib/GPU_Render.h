@@ -13,8 +13,8 @@
 #include "GPU_Types.h"
 
 #include <atomic>
-#include <mutex>
 #include <condition_variable>
+#include <mutex>
 
 // This is the main class that does the rendering on the GPU
 class GPURenderer {
@@ -24,17 +24,16 @@ public:
 
     static uint32_t TestCudaIsWorking();
 
-    template<typename IterType, class T>
-    uint32_t Render(
-        RenderAlgorithm algorithm,
-        T cx,
-        T cy,
-        T dx,
-        T dy,
-        IterType n_iterations,
-        int iteration_precision);
+    template <typename IterType, class T>
+    uint32_t Render(RenderAlgorithm algorithm,
+                    T cx,
+                    T cy,
+                    T dx,
+                    T dy,
+                    IterType n_iterations,
+                    int iteration_precision);
 
-    template<typename IterType, class T>
+    template <typename IterType, class T>
     uint32_t RenderPerturbBLAScaled(
         RenderAlgorithm algorithm,
         const GPUPerturbResults<IterType, T, PerturbExtras::Bad> *double_perturb,
@@ -48,7 +47,7 @@ public:
         IterType n_iterations,
         int iteration_precision);
 
-    template<typename IterType>
+    template <typename IterType>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
         const GPUPerturbResults<IterType, MattDblflt, PerturbExtras::Disable> *results,
@@ -62,86 +61,80 @@ public:
         IterType n_iterations,
         int iteration_precision);
 
-    template<typename IterType, class T>
-    uint32_t RenderPerturbBLA(
-        RenderAlgorithm algorithm,
-        const GPUPerturbResults<IterType, T, PerturbExtras::Disable> *results,
-        BLAS<IterType, T> *blas,
-        T cx,
-        T cy,
-        T dx,
-        T dy,
-        T centerX,
-        T centerY,
-        IterType n_iterations,
-        int iteration_precision);
+    template <typename IterType, class T>
+    uint32_t RenderPerturbBLA(RenderAlgorithm algorithm,
+                              const GPUPerturbResults<IterType, T, PerturbExtras::Disable> *results,
+                              BLAS<IterType, T> *blas,
+                              T cx,
+                              T cy,
+                              T dx,
+                              T dy,
+                              T centerX,
+                              T centerY,
+                              IterType n_iterations,
+                              int iteration_precision);
 
-    template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
+    template <typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
     uint32_t RenderPerturbLAv2(
-        RenderAlgorithm algorithm,
-        T cx,
-        T cy,
-        T dx,
-        T dy,
-        T centerX,
-        T centerY,
-        IterType n_iterations);
+        RenderAlgorithm algorithm, T cx, T cy, T dx, T dy, T centerX, T centerY, IterType n_iterations);
 
     // Side effect is this initializes CUDA the first time it's run
-    template<typename IterType>
-    uint32_t InitializeMemory(
-        uint32_t w, // original width * antialiasing
-        uint32_t h, // original height * antialiasing
-        uint32_t antialiasing, // w and h are ech scaled up by this amt
-        const Color16 *palInterleaved,
-        uint32_t palIters,
-        uint32_t paletteAuxDepth,
-        uint64_t paletteGeneration,
-        bool expectedReuse);
+    template <typename IterType>
+    uint32_t InitializeMemory(uint32_t w,            // original width * antialiasing
+                              uint32_t h,            // original height * antialiasing
+                              uint32_t antialiasing, // w and h are ech scaled up by this amt
+                              const Color16 *palInterleaved,
+                              uint32_t palIters,
+                              uint32_t paletteAuxDepth,
+                              uint64_t paletteGeneration,
+                              bool expectedReuse);
 
-    template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>
-    uint32_t InitializePerturb(
-        size_t GenerationNumber1,
-        const GPUPerturbResults<IterType, T1, PExtras> *Perturb1,
-        size_t GenerationNumber2,
-        const GPUPerturbResults<IterType, T2, PExtras> *Perturb2,
-        const LAReference<IterType, T1, SubType, PExtras> *LaReferenceHost);
+    template <typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>
+    uint32_t InitializePerturb(size_t GenerationNumber1,
+                               const GPUPerturbResults<IterType, T1, PExtras> *Perturb1,
+                               size_t GenerationNumber2,
+                               const GPUPerturbResults<IterType, T2, PExtras> *Perturb2,
+                               const LAReference<IterType, T1, SubType, PExtras> *LaReferenceHost);
 
-    template<typename IterType>
-    void ClearMemory();
+    template <typename IterType> void ClearMemory();
 
     static const char *ConvertErrorToString(uint32_t err);
 
     // Match in Fractal.cpp
-    static const int32_t NB_THREADS_W = 16;  // W=16, H=8 previously seemed OK
+    static const int32_t NB_THREADS_W = 16; // W=16, H=8 previously seemed OK
     static const int32_t NB_THREADS_H = 8;
 
-    static const int32_t NB_THREADS_W_AA = 16;  // W=16, H=8 previously seemed OK
+    static const int32_t NB_THREADS_W_AA = 16; // W=16, H=8 previously seemed OK
     static const int32_t NB_THREADS_H_AA = 8;
 
 public:
-    template<typename IterType>
-    uint32_t RenderCurrent(
-        IterType n_iterations,
-        IterType *iter_buffer,
-        Color16 *color_buffer,
-        ReductionResults *reduction_results,
-        bool progressive = false);
+    template <typename IterType>
+    uint32_t RenderCurrent(IterType n_iterations,
+                           IterType *iter_buffer,
+                           Color16 *color_buffer,
+                           ReductionResults *reduction_results,
+                           bool progressive = false);
 
     uint32_t SyncComputeStream();
     uint32_t SyncDisplayStream();
     uint32_t QueryComputeStream();
     uint32_t EnqueueComputeDoneCallback();
 
-    void ResetComputeDoneFlag() {
+    void
+    ResetComputeDoneFlag()
+    {
         m_ComputeDoneFlag.store(false, std::memory_order_release);
     }
 
-    bool IsComputeDone() const {
+    bool
+    IsComputeDone() const
+    {
         return m_ComputeDoneFlag.load(std::memory_order_acquire);
     }
 
-    void SignalComputeDone() {
+    void
+    SignalComputeDone()
+    {
         m_ComputeDoneFlag.store(true, std::memory_order_release);
         if (m_ComputeDoneMutex && m_ComputeDoneCV) {
             std::lock_guard lk(*m_ComputeDoneMutex);
@@ -149,53 +142,48 @@ public:
         }
     }
 
-    void SetComputeDoneNotification(std::mutex *mutex, std::condition_variable *cv) {
+    void
+    SetComputeDoneNotification(std::mutex *mutex, std::condition_variable *cv)
+    {
         m_ComputeDoneMutex = mutex;
         m_ComputeDoneCV = cv;
     }
 
-    uint32_t GetWidth() const { return m_Width; }
-    uint32_t GetHeight() const { return m_Height; }
+    uint32_t
+    GetWidth() const
+    {
+        return m_Width;
+    }
+    uint32_t
+    GetHeight() const
+    {
+        return m_Height;
+    }
 
 private:
     bool MemoryInitialized() const;
     void ResetPalettesOnly();
 
-    enum class ResetLocals {
-        Yes,
-        No
-    };
-    enum class ResetPalettes {
-        Yes,
-        No
-    };
+    enum class ResetLocals { Yes, No };
+    enum class ResetPalettes { Yes, No };
 
-    enum class ResetPerturb {
-        Yes,
-        No
-    };
+    enum class ResetPerturb { Yes, No };
 
-    enum class ResetStreams {
-        No,
-        Destroy
-    };
+    enum class ResetStreams { No, Destroy };
 
-    void ResetMemory(
-        ResetLocals locals,
-        ResetPalettes palettes,
-        ResetPerturb perturb,
-        ResetStreams streams);
+    void ResetMemory(ResetLocals locals,
+                     ResetPalettes palettes,
+                     ResetPerturb perturb,
+                     ResetStreams streams);
     void ClearLocals();
 
-    template<typename IterType>
-    uint32_t RunAntialiasing(IterType n_iterations, cudaStream_t stream);
+    template <typename IterType> uint32_t RunAntialiasing(IterType n_iterations, cudaStream_t stream);
 
-    template<typename IterType>
-    uint32_t ExtractItersAndColors(
-        IterType *iter_buffer,
-        Color16 *color_buffer,
-        ReductionResults *reduction_results,
-        cudaStream_t stream);
+    template <typename IterType>
+    uint32_t ExtractItersAndColors(IterType *iter_buffer,
+                                   Color16 *color_buffer,
+                                   ReductionResults *reduction_results,
+                                   cudaStream_t stream);
 
     void *OutputIterMatrix;
     ReductionResults *OutputReductionResults;
@@ -226,5 +214,4 @@ private:
     PerturbResultsCollection m_PerturbResults;
 };
 
-
-#endif //GPGPU_RENDER_GPU_HPP
+#endif // GPGPU_RENDER_GPU_HPP

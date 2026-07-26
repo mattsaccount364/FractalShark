@@ -331,9 +331,15 @@ Phase1_ABC(cg::thread_block &block,
 
         int32_t nrBaseExp;
         switch (nrOrdering) {
-            case ThreeWayLargestOrdering::A_GT_AllOthers: nrBaseExp = nrEffExpA; break;
-            case ThreeWayLargestOrdering::B_GT_AllOthers: nrBaseExp = nrEffExpB; break;
-            case ThreeWayLargestOrdering::C_GT_AllOthers: nrBaseExp = nrEffExpC; break;
+            case ThreeWayLargestOrdering::A_GT_AllOthers:
+                nrBaseExp = nrEffExpA;
+                break;
+            case ThreeWayLargestOrdering::B_GT_AllOthers:
+                nrBaseExp = nrEffExpB;
+                break;
+            case ThreeWayLargestOrdering::C_GT_AllOthers:
+                nrBaseExp = nrEffExpC;
+                break;
             default:
                 assert(false);
                 for (;;)
@@ -346,19 +352,43 @@ Phase1_ABC(cg::thread_block &block,
 
         switch (nrOrdering) {
             case ThreeWayLargestOrdering::A_GT_AllOthers:
-                nrExtX = nrExtA; nrsX = nrIsNegA; nrShX = nrShiftA;
-                nrExtY = nrExtB; nrsY = nrIsNegB; nrShY = nrShiftB; nrDiffY = nrDiffB;
-                nrExtZ = nrExtC; nrsZ = nrIsNegC; nrShZ = nrShiftC; nrDiffZ = nrDiffC;
+                nrExtX = nrExtA;
+                nrsX = nrIsNegA;
+                nrShX = nrShiftA;
+                nrExtY = nrExtB;
+                nrsY = nrIsNegB;
+                nrShY = nrShiftB;
+                nrDiffY = nrDiffB;
+                nrExtZ = nrExtC;
+                nrsZ = nrIsNegC;
+                nrShZ = nrShiftC;
+                nrDiffZ = nrDiffC;
                 break;
             case ThreeWayLargestOrdering::B_GT_AllOthers:
-                nrExtX = nrExtB; nrsX = nrIsNegB; nrShX = nrShiftB;
-                nrExtY = nrExtA; nrsY = nrIsNegA; nrShY = nrShiftA; nrDiffY = nrDiffA;
-                nrExtZ = nrExtC; nrsZ = nrIsNegC; nrShZ = nrShiftC; nrDiffZ = nrDiffC;
+                nrExtX = nrExtB;
+                nrsX = nrIsNegB;
+                nrShX = nrShiftB;
+                nrExtY = nrExtA;
+                nrsY = nrIsNegA;
+                nrShY = nrShiftA;
+                nrDiffY = nrDiffA;
+                nrExtZ = nrExtC;
+                nrsZ = nrIsNegC;
+                nrShZ = nrShiftC;
+                nrDiffZ = nrDiffC;
                 break;
             case ThreeWayLargestOrdering::C_GT_AllOthers:
-                nrExtX = nrExtC; nrsX = nrIsNegC; nrShX = nrShiftC;
-                nrExtY = nrExtA; nrsY = nrIsNegA; nrShY = nrShiftA; nrDiffY = nrDiffA;
-                nrExtZ = nrExtB; nrsZ = nrIsNegB; nrShZ = nrShiftB; nrDiffZ = nrDiffB;
+                nrExtX = nrExtC;
+                nrsX = nrIsNegC;
+                nrShX = nrShiftC;
+                nrExtY = nrExtA;
+                nrsY = nrIsNegA;
+                nrShY = nrShiftA;
+                nrDiffY = nrDiffA;
+                nrExtZ = nrExtB;
+                nrsZ = nrIsNegB;
+                nrShZ = nrShiftB;
+                nrDiffZ = nrDiffB;
                 break;
             default:
                 assert(false);
@@ -387,16 +417,29 @@ Phase1_ABC(cg::thread_block &block,
 
             // NR: same computation with NR inputs and NR output buffers
             if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                uint64_t nrXi = GetNormalizedDigit(nrExtX, actualDigits, numActualDigitsPlusGuard, nrShX, i);
+                uint64_t nrXi =
+                    GetNormalizedDigit(nrExtX, actualDigits, numActualDigitsPlusGuard, nrShX, i);
                 uint64_t nrYi = GetShiftedNormalizedDigit<SharkFloatParams>(
                     nrExtY, actualDigits, numActualDigitsPlusGuard, nrShY, nrDiffY, i);
                 uint64_t nrZi = GetShiftedNormalizedDigit<SharkFloatParams>(
                     nrExtZ, actualDigits, numActualDigitsPlusGuard, nrShZ, nrDiffZ, i);
 
-                nrExtResultTrue[i] = CoreThreeWayAdd(nrXi, nrsX, nrYi, nrsY, nrZi, nrsZ,
-                                                     /*X_gtY=*/true, nrOutSignTrue);
-                nrExtResultFalse[i] = CoreThreeWayAdd(nrXi, nrsX, nrYi, nrsY, nrZi, nrsZ,
-                                                      /*X_gtY=*/false, nrOutSignFalse);
+                nrExtResultTrue[i] = CoreThreeWayAdd(nrXi,
+                                                     nrsX,
+                                                     nrYi,
+                                                     nrsY,
+                                                     nrZi,
+                                                     nrsZ,
+                                                     /*X_gtY=*/true,
+                                                     nrOutSignTrue);
+                nrExtResultFalse[i] = CoreThreeWayAdd(nrXi,
+                                                      nrsX,
+                                                      nrYi,
+                                                      nrsY,
+                                                      nrZi,
+                                                      nrsZ,
+                                                      /*X_gtY=*/false,
+                                                      nrOutSignFalse);
             }
         }
     }
@@ -748,7 +791,7 @@ PPeval_transfer(const PPTransfer3 &t, int streamIdx, int32_t c_in)
 //    c_out = b(stream, c_mid)
 // r is their composition.
 // NumStreams defaults to 3 (orbit only); 6 when NR is enabled.
-template<int NumStreams = 3>
+template <int NumStreams = 3>
 __device__ SharkForceInlineReleaseOnly static PPTransfer3
 PPcompose_transfer(const PPTransfer3 &a, const PPTransfer3 &b)
 {
@@ -831,7 +874,7 @@ PPset_field_constexpr(uint64_t bits, int streamIdx, int c_in, int c_out)
 
 // C++17/20 constexpr builder: runs entirely at compile time.
 // NumStreams defaults to 3 (orbit only); 6 when NR is enabled.
-template<int NumStreams = 3>
+template <int NumStreams = 3>
 constexpr PPTransfer3
 make_PPIdentity()
 {
@@ -848,12 +891,13 @@ make_PPIdentity()
 }
 
 // Warp-shuffle helpers for PPTransfer3, handling 32-bit or 64-bit PP bit widths.
-template<int NumStreams>
+template <int NumStreams>
 __device__ SharkForceInlineReleaseOnly static PPTransfer3
 shfl_up_pp(unsigned mask, PPTransfer3 val, int offset)
 {
     if constexpr (NumStreams <= 3) {
-        return PPTransfer3{static_cast<uint64_t>(__shfl_up_sync(mask, static_cast<uint32_t>(val.bits), offset))};
+        return PPTransfer3{
+            static_cast<uint64_t>(__shfl_up_sync(mask, static_cast<uint32_t>(val.bits), offset))};
     } else {
         uint32_t lo = __shfl_up_sync(mask, static_cast<uint32_t>(val.bits & 0xFFFFFFFFu), offset);
         uint32_t hi = __shfl_up_sync(mask, static_cast<uint32_t>(val.bits >> 32), offset);
@@ -861,12 +905,13 @@ shfl_up_pp(unsigned mask, PPTransfer3 val, int offset)
     }
 }
 
-template<int NumStreams>
+template <int NumStreams>
 __device__ SharkForceInlineReleaseOnly static PPTransfer3
 shfl_down_pp(unsigned mask, PPTransfer3 val, int offset)
 {
     if constexpr (NumStreams <= 3) {
-        return PPTransfer3{static_cast<uint64_t>(__shfl_down_sync(mask, static_cast<uint32_t>(val.bits), offset))};
+        return PPTransfer3{
+            static_cast<uint64_t>(__shfl_down_sync(mask, static_cast<uint32_t>(val.bits), offset))};
     } else {
         uint32_t lo = __shfl_down_sync(mask, static_cast<uint32_t>(val.bits & 0xFFFFFFFFu), offset);
         uint32_t hi = __shfl_down_sync(mask, static_cast<uint32_t>(val.bits >> 32), offset);
@@ -874,12 +919,13 @@ shfl_down_pp(unsigned mask, PPTransfer3 val, int offset)
     }
 }
 
-template<int NumStreams>
+template <int NumStreams>
 __device__ SharkForceInlineReleaseOnly static PPTransfer3
 shfl_pp(unsigned mask, PPTransfer3 val, int srcLane)
 {
     if constexpr (NumStreams <= 3) {
-        return PPTransfer3{static_cast<uint64_t>(__shfl_sync(mask, static_cast<uint32_t>(val.bits), srcLane))};
+        return PPTransfer3{
+            static_cast<uint64_t>(__shfl_sync(mask, static_cast<uint32_t>(val.bits), srcLane))};
     } else {
         uint32_t lo = __shfl_sync(mask, static_cast<uint32_t>(val.bits & 0xFFFFFFFFu), srcLane);
         uint32_t hi = __shfl_sync(mask, static_cast<uint32_t>(val.bits >> 32), srcLane);
@@ -1939,9 +1985,9 @@ CarryPropagation_ABC_PPv5(
     // Release-publish as membar + store (ptxas-safe on sm_120).
     auto store_desc = [](DescType *addr, DescType v) {
         if constexpr (sizeof(DescType) == 8) {
-            asm volatile("membar.gl;\n\tst.global.u64 [%0], %1;\n\t" :: "l"(addr), "l"(v) : "memory");
+            asm volatile("membar.gl;\n\tst.global.u64 [%0], %1;\n\t" ::"l"(addr), "l"(v) : "memory");
         } else {
-            asm volatile("membar.gl;\n\tst.global.u32 [%0], %1;\n\t" :: "l"(addr), "r"(v) : "memory");
+            asm volatile("membar.gl;\n\tst.global.u32 [%0], %1;\n\t" ::"l"(addr), "r"(v) : "memory");
         }
     };
 
@@ -2242,8 +2288,8 @@ CarryPropagation_ABC_PPv5(
 
                 // Exclusive prefix for each warp: pref[0]=I, pref[w]=inclusive[w-1]
                 const PPTransfer3 prevPP = shfl_up_pp<NumStreams>(m, x, 1);
-                const PPTransfer3 pref =
-                    (lane == 0) ? make_PPIdentity<NumStreams>() : PPTransfer3{prevPP.bits & PP_BITS_MASK};
+                const PPTransfer3 pref = (lane == 0) ? make_PPIdentity<NumStreams>()
+                                                     : PPTransfer3{prevPP.bits & PP_BITS_MASK};
                 warpPref[lane] = static_cast<PPStorageType>(pref.bits & PP_BITS_MASK);
 
                 // Full partition aggregate in warpAgg[0]
@@ -2346,7 +2392,8 @@ CarryPropagation_ABC_PPv5(
                 static_cast<PPStorageType>(exclPart.bits & PP_BITS_MASK);
         }
         block.sync();
-        exclPart = PPTransfer3{static_cast<uint64_t>(reinterpret_cast<PPStorageType *>(broadcast)[0]) & PP_BITS_MASK};
+        exclPart = PPTransfer3{static_cast<uint64_t>(reinterpret_cast<PPStorageType *>(broadcast)[0]) &
+                               PP_BITS_MASK};
 
         // Publish inclusive prefix P_i = A_i ∘ E_i
         if (threadIdx.x == 0) {

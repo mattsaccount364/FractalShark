@@ -28,44 +28,46 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
- /*
-  * Release 1.2
-  *
-  * (1) Deployed new implementation of div_dblflt() and sqrt_dblflt() based on
-  *     Newton-Raphson iteration, providing significant speedup.
-  * (2) Added new function rsqrt_dblflt() which provides reciprocal square root.
-  *
-  * Release 1.1
-  *
-  * (1) Fixed a bug affecting add_dblflt() and sub_dblflt() that in very rare
-  *     cases returned results with reduced accuracy.
-  * (2) Replaced the somewhat inaccurate error bounds with the experimentally
-  *     observed maximum relative error.
-  */
+/*
+ * Release 1.2
+ *
+ * (1) Deployed new implementation of div_dblflt() and sqrt_dblflt() based on
+ *     Newton-Raphson iteration, providing significant speedup.
+ * (2) Added new function rsqrt_dblflt() which provides reciprocal square root.
+ *
+ * Release 1.1
+ *
+ * (1) Fixed a bug affecting add_dblflt() and sub_dblflt() that in very rare
+ *     cases returned results with reduced accuracy.
+ * (2) Replaced the somewhat inaccurate error bounds with the experimentally
+ *     observed maximum relative error.
+ */
 
 #if !defined(dblflt_H_)
 #define dblflt_H_
 
-#include <math.h>       /* import sqrt() */
 #include "dblflt.h"
+#include <math.h> /* import sqrt() */
 
-  /* The head of a double-float number is stored in the most significant part
-     of a double2 (the y-component). The tail is stored in the least significant
-     part of the double2 (the x-component). All double-float operands must be
-     normalized on both input to and return from all basic operations, i.e. the
-     magnitude of the tail shall be <= 0.5 ulp of the head.
-  */
-  // TODO evaluate alignment issues with HDRFloat packing
-  // If we move to single-exponent complex, we may be able to 
-  // use float2 for dblflt?
-  //typedef float2 dblflt;
+/* The head of a double-float number is stored in the most significant part
+   of a double2 (the y-component). The tail is stored in the least significant
+   part of the double2 (the x-component). All double-float operands must be
+   normalized on both input to and return from all basic operations, i.e. the
+   magnitude of the tail shall be <= 0.5 ulp of the head.
+*/
+// TODO evaluate alignment issues with HDRFloat packing
+// If we move to single-exponent complex, we may be able to
+// use float2 for dblflt?
+// typedef float2 dblflt;
 
-  /* Create a double-float from two doubles. No normalization is performed,
-     so the head and tail components passed in must satisfy the normalization
-     requirement. To create a double-float from two arbitrary float-precision
-     numbers, use add_float_to_dblflt().
-  */
-__device__ __forceinline__ dblflt make_dblflt(float head, float tail) {
+/* Create a double-float from two doubles. No normalization is performed,
+   so the head and tail components passed in must satisfy the normalization
+   requirement. To create a double-float from two arbitrary float-precision
+   numbers, use add_float_to_dblflt().
+*/
+__device__ __forceinline__ dblflt
+make_dblflt(float head, float tail)
+{
     dblflt z;
     z.tail = tail;
     z.head = head;
@@ -73,17 +75,23 @@ __device__ __forceinline__ dblflt make_dblflt(float head, float tail) {
 }
 
 /* Return the head of a double-float number */
-__device__ __forceinline__ float get_dblflt_head(dblflt a) {
+__device__ __forceinline__ float
+get_dblflt_head(dblflt a)
+{
     return a.head;
 }
 
 /* Return the tail of a double-float number */
-__device__ __forceinline__ float get_dblflt_tail(dblflt a) {
+__device__ __forceinline__ float
+get_dblflt_tail(dblflt a)
+{
     return a.tail;
 }
 
 /* Compute error-free sum of two unordered doubles. See Knuth, TAOCP vol. 2 */
-__device__ __forceinline__ dblflt add_float_to_dblflt(float a, float b) {
+__device__ __forceinline__ dblflt
+add_float_to_dblflt(float a, float b)
+{
     float t1, t2;
     dblflt z;
     z.head = __fadd_rn(a, b);
@@ -96,7 +104,9 @@ __device__ __forceinline__ dblflt add_float_to_dblflt(float a, float b) {
 }
 
 /* Compute error-free product of two doubles. Take full advantage of FMA */
-__device__ __forceinline__ dblflt mul_double_to_dblflt(float a, float b) {
+__device__ __forceinline__ dblflt
+mul_double_to_dblflt(float a, float b)
+{
     dblflt z;
     z.head = __fmul_rn(a, b);
     z.tail = __fmaf_rn(a, b, -z.head);
@@ -104,7 +114,9 @@ __device__ __forceinline__ dblflt mul_double_to_dblflt(float a, float b) {
 }
 
 /* Negate a double-float number, by separately negating head and tail */
-__device__ __forceinline__ dblflt neg_dblflt(dblflt a) {
+__device__ __forceinline__ dblflt
+neg_dblflt(dblflt a)
+{
     dblflt z;
     z.head = -a.head;
     z.tail = -a.tail;
@@ -118,7 +130,9 @@ __device__ __forceinline__ dblflt neg_dblflt(dblflt a) {
    Floating-Point Numbers for GPU Computation. Retrieved on 7/12/2011
    from http://andrewthall.org/papers/df64_qf128.pdf.
 */
-__device__ __forceinline__ dblflt add_dblflt(dblflt a, dblflt b) {
+__device__ __forceinline__ dblflt
+add_dblflt(dblflt a, dblflt b)
+{
     dblflt z;
     float t1, t2, t3, t4, t5, e;
     t1 = __fadd_rn(a.head, b.head);
@@ -143,7 +157,9 @@ __device__ __forceinline__ dblflt add_dblflt(dblflt a, dblflt b) {
    Floating-Point Numbers for GPU Computation. Retrieved on 7/12/2011
    from http://andrewthall.org/papers/df64_qf128.pdf.
 */
-__device__ __forceinline__ dblflt sub_dblflt(dblflt a, dblflt b) {
+__device__ __forceinline__ dblflt
+sub_dblflt(dblflt a, dblflt b)
+{
     dblflt z;
     float t1, t2, t3, t4, t5, e;
     t1 = __fadd_rn(a.head, -b.head);
@@ -166,7 +182,9 @@ __device__ __forceinline__ dblflt sub_dblflt(dblflt a, dblflt b) {
    relative error observed with 10 billion test cases was 5.238480533564479e-32
    (~= 2**-103.9125).
 */
-__device__ __forceinline__ dblflt mul_dblflt(dblflt a, dblflt b) {
+__device__ __forceinline__ dblflt
+mul_dblflt(dblflt a, dblflt b)
+{
     dblflt t, z;
     float e;
     t.head = __fmul_rn(a.head, b.head);
@@ -179,7 +197,9 @@ __device__ __forceinline__ dblflt mul_dblflt(dblflt a, dblflt b) {
     return z;
 }
 
-__device__ __forceinline__ dblflt mul_dblflt2x(dblflt a, dblflt b) {
+__device__ __forceinline__ dblflt
+mul_dblflt2x(dblflt a, dblflt b)
+{
     dblflt t, z;
     float e;
     t.head = __fmul_rn(a.head, b.head);
@@ -194,16 +214,18 @@ __device__ __forceinline__ dblflt mul_dblflt2x(dblflt a, dblflt b) {
     return z;
 }
 
-__device__ __forceinline__ dblflt sqr_dblflt(dblflt a) {
+__device__ __forceinline__ dblflt
+sqr_dblflt(dblflt a)
+{
     dblflt t, z;
     float e;
-    //t.head = __fmul_rn(a.head, a.head);
-    //t.tail = __fmaf_rn(a.head, a.head, -t.head);
-    //t.tail = __fmaf_rn(a.tail, a.tail, t.tail);
-    //t.tail = __fmaf_rn(a.head, a.tail, t.tail);
-    //t.tail = __fmaf_rn(a.tail, a.head, t.tail);
-    //z.head = e = __fadd_rn(t.head, t.tail);
-    //z.tail = __fadd_rn(t.head - e, t.tail);
+    // t.head = __fmul_rn(a.head, a.head);
+    // t.tail = __fmaf_rn(a.head, a.head, -t.head);
+    // t.tail = __fmaf_rn(a.tail, a.tail, t.tail);
+    // t.tail = __fmaf_rn(a.head, a.tail, t.tail);
+    // t.tail = __fmaf_rn(a.tail, a.head, t.tail);
+    // z.head = e = __fadd_rn(t.head, t.tail);
+    // z.tail = __fadd_rn(t.head - e, t.tail);
 
     t.head = __fmul_rn(a.head, a.head);
     t.tail = __fmaf_rn(a.head, a.head, -t.head);
@@ -216,7 +238,9 @@ __device__ __forceinline__ dblflt sqr_dblflt(dblflt a) {
     return z;
 }
 
-__device__ __forceinline__ dblflt shiftleft_dblflt(dblflt a) {
+__device__ __forceinline__ dblflt
+shiftleft_dblflt(dblflt a)
+{
     dblflt z;
     z.tail = __fmul_rn(a.tail, 2.0f);
     z.head = __fmul_rn(a.head, 2.0f);
@@ -231,7 +255,9 @@ __device__ __forceinline__ dblflt shiftleft_dblflt(dblflt a) {
    maximum relative error observed with 10 billion test cases was
    1.0161322480099059e-31 (~= 2**-102.9566).
 */
-__device__ __forceinline__ dblflt div_dblflt(dblflt a, dblflt b) {
+__device__ __forceinline__ dblflt
+div_dblflt(dblflt a, dblflt b)
+{
     dblflt t, z;
     float e, r;
     r = 1.0 / b.head;
@@ -256,11 +282,14 @@ __device__ __forceinline__ dblflt div_dblflt(dblflt a, dblflt b) {
    relative error observed with 10 billion test cases was
    3.7564109505601846e-32 (~= 2**-104.3923).
 */
-__device__ __forceinline__ dblflt sqrt_dblflt(dblflt a) {
+__device__ __forceinline__ dblflt
+sqrt_dblflt(dblflt a)
+{
     dblflt t, z;
     double e, y, s, r;
     r = rsqrt(a.head);
-    if (a.head == 0.0f) r = 0.0;
+    if (a.head == 0.0f)
+        r = 0.0;
     y = __fmul_rn(a.head, r);
     s = __fmaf_rn(y, -y, a.head);
     r = __fmul_rn(0.5, r);
@@ -282,7 +311,9 @@ __device__ __forceinline__ dblflt sqrt_dblflt(dblflt a) {
    the maximum relative error observed with 10 billion test cases was
    6.4937771666026349e-32 (~= 2**-103.6026)
 */
-__device__ __forceinline__ dblflt rsqrt_dblflt(dblflt a) {
+__device__ __forceinline__ dblflt
+rsqrt_dblflt(dblflt a)
+{
     dblflt z;
     double r, s, e;
     r = rsqrt(a.head);
@@ -304,11 +335,15 @@ __device__ __forceinline__ dblflt rsqrt_dblflt(dblflt a) {
     return z;
 }
 
-__device__ __forceinline__ double dblflt_to_double(dblflt a) {
+__device__ __forceinline__ double
+dblflt_to_double(dblflt a)
+{
     return (double)a.head + (double)a.tail;
 }
 
-__device__ __forceinline__ dblflt double_to_dblflt(double a) {
+__device__ __forceinline__ dblflt
+double_to_dblflt(double a)
+{
     // ?? 2^23 = 8388608.0
     dblflt res;
     res.head = (float)a;

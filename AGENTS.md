@@ -87,10 +87,11 @@ diagnostics and reserve `OutputDebugStringA` for heap or panic paths.
 Preserve each edited text file's existing line-ending convention and avoid mixed endings. Files marked
 `eol=lf` in `.gitattributes`, including shell scripts, must remain LF-only. All tracked C++/CUDA
 source and header files ending in `.cpp`, `.h`, `.cu`, `.cuh`, `.cc`, `.hh`, or `.hpp` must be CRLF in
-the Windows working tree. After editing those files, run the normalizer from the repository root:
+the Windows working tree. After editing those files, run the formatter from the repository root. It
+finds and runs `clang-format` and normalizes all tracked C++/CUDA files to CRLF:
 
 ```powershell
-python3 normalize_cpp_line_endings.py
+.\format_cpp_sources.ps1
 ```
 
 Then verify with:
@@ -148,4 +149,4 @@ outputs unless they are intentional fixtures. Follow `SECURITY.md` for vulnerabi
 ## Agent Guardrails
 
 Do not run `git add` or `git commit`; leave changes unstaged for review. Do not modify source files in
-plan-only workflows. Run the configured clang-format executable on modified C++/CUDA files.
+plan-only workflows. After modifying C++/CUDA files, run `.\format_cpp_sources.ps1`.

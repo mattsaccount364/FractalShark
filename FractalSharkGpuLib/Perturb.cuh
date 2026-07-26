@@ -194,10 +194,7 @@ public:
         }
 
         CUDA_CRAP
-        SeqWorkspace()
-            : compressed_index{}, uncompressed_index{}, zx{}, zy{}
-        {
-        }
+        SeqWorkspace() : compressed_index{}, uncompressed_index{}, zx{}, zy{} {}
 
         IterType compressed_index;
         IterType uncompressed_index;

@@ -9,9 +9,8 @@ template <class SubType>
 CUDA_CRAP_BOTH HDRFloat<SubType>
 HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp) const
 {
-    static_assert(std::is_same_v<SubType, float> ||
-                  std::is_same_v<SubType, double> ||
-                  std::is_same_v<SubType, CudaDblflt<dblflt>>,
+    static_assert(std::is_same_v<SubType, float> || std::is_same_v<SubType, double> ||
+                      std::is_same_v<SubType, CudaDblflt<dblflt>>,
                   "ToHDRFloat: SubType must be float, double, or CudaDblflt<dblflt>");
 
     // CLZ helpers (host/device friendly)
@@ -56,8 +55,7 @@ HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp) const
     if constexpr (std::is_same_v<SubType, CudaDblflt<dblflt>>) {
         // Convert via double, then construct HDRFloat<CudaDblflt> from HDRFloat<double>.
         // The HDRFloat constructor handles double → CudaDblflt conversion.
-        double mant_d = static_cast<double>(window64) /
-                        static_cast<double>(1ull << msbInWindow);
+        double mant_d = static_cast<double>(window64) / static_cast<double>(1ull << msbInWindow);
         if (IsNegative)
             mant_d = -mant_d;
         HDRFloat<double> temp(finalExp, mant_d);

@@ -21,8 +21,7 @@ struct ViewPresetResult {
     std::wstring warningMessage;
 };
 
-ViewPresetResult GetViewPreset(
-    size_t view,
-    IterTypeFull defaultIterations,
-    int32_t defaultCompressionExpLow,
-    int32_t defaultCompressionExpIntermediate);
+ViewPresetResult GetViewPreset(size_t view,
+                               IterTypeFull defaultIterations,
+                               int32_t defaultCompressionExpLow,
+                               int32_t defaultCompressionExpIntermediate);

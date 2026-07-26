@@ -3,59 +3,52 @@
 #include "HDRFloat.h"
 #include "HDRFloatComplex.h"
 
-template<typename IterType, class T, PerturbExtras PExtras>
-class PerturbationResults;
+template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;
 
-template<typename IterType, class T, PerturbExtras PExtras>
-class TemplateHelpers {
+template <typename IterType, class T, PerturbExtras PExtras> class TemplateHelpers {
 
 public:
     // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
-    using SubType = typename SubTypeChooser<
-        std::is_fundamental<T>::value,
-        T>::type;
+    using SubType = typename SubTypeChooser<std::is_fundamental<T>::value, T>::type;
 
-    static constexpr bool IsHDR =
-        std::is_same<T, ::HDRFloat<float>>::value ||
-        std::is_same<T, ::HDRFloat<double>>::value ||
-        std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
-        std::is_same<T, ::HDRFloat<CudaDblflt<dblflt>>>::value;
+    static constexpr bool IsHDR = std::is_same<T, ::HDRFloat<float>>::value ||
+                                  std::is_same<T, ::HDRFloat<double>>::value ||
+                                  std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+                                  std::is_same<T, ::HDRFloat<CudaDblflt<dblflt>>>::value;
 
-    template<class LocalSubType>
+    template <class LocalSubType>
     using HDRFloatComplex =
-        std::conditional<IsHDR,
-        ::HDRFloatComplex<LocalSubType>,
-        ::FloatComplex<LocalSubType>>::type;
+        std::conditional<IsHDR, ::HDRFloatComplex<LocalSubType>, ::FloatComplex<LocalSubType>>::type;
 };
 
-template<typename IterType, class T, PerturbExtras PExtras>
-class GPUPerturbResults;
+template <typename IterType, class T, PerturbExtras PExtras> class GPUPerturbResults;
 
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 class RuntimeDecompressor : public TemplateHelpers<IterType, T, PExtras> {
 public:
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
 
-    template<class LocalSubType>
+    template <class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    RuntimeDecompressor(const PerturbationResults<IterType, T, PExtras> &results) :
-        results(results),
-        CachedIter1{},
-        CachedIter2{} {
+    RuntimeDecompressor(const PerturbationResults<IterType, T, PExtras> &results)
+        : results(results), CachedIter1{}, CachedIter2{}
+    {
     }
 
     RuntimeDecompressor(const RuntimeDecompressor &other) = default;
 
-    void GetCompressedComplex(size_t uncompressed_index, T &outX, T &outY) const {
+    void
+    GetCompressedComplex(size_t uncompressed_index, T &outX, T &outY) const
+    {
         auto runOneIter = [&](auto &zx, auto &zy) {
             auto zx_old = zx;
             zx = zx * zx - zy * zy + results.m_OrbitXLow;
             HdrReduce(zx);
-            zy = T{ 2 } * zx_old * zy + results.m_OrbitYLow;
+            zy = T{2} * zx_old * zy + results.m_OrbitYLow;
             HdrReduce(zy);
-            };
+        };
 
         if (CachedIter1.UncompressedIter == uncompressed_index) {
             outX = CachedIter1.zx;
@@ -71,11 +64,10 @@ public:
 
         auto LinearScan = [&](CachedIter<T> &iter, CachedIter<T> &other) -> bool {
             if (iter.UncompressedIter + 1 == uncompressed_index) {
-                bool condition =
-                    (iter.CompressedIter + 1 < results.GetCompressedOrbitSize() &&
-                        (iter.UncompressedIter + 1 <
-                            results.m_FullOrbit[iter.CompressedIter + 1].u.f.CompressionIndex)) ||
-                    iter.CompressedIter + 1 == results.GetCompressedOrbitSize();
+                bool condition = (iter.CompressedIter + 1 < results.GetCompressedOrbitSize() &&
+                                  (iter.UncompressedIter + 1 <
+                                   results.m_FullOrbit[iter.CompressedIter + 1].u.f.CompressionIndex)) ||
+                                 iter.CompressedIter + 1 == results.GetCompressedOrbitSize();
 
                 if (condition) {
                     other = iter;
@@ -86,14 +78,15 @@ public:
                     iter.CompressedIter++;
                     iter.zx = results.m_FullOrbit[iter.CompressedIter].x;
                     iter.zy = results.m_FullOrbit[iter.CompressedIter].y;
-                    iter.UncompressedIter = results.m_FullOrbit[iter.CompressedIter].u.f.CompressionIndex;
+                    iter.UncompressedIter =
+                        results.m_FullOrbit[iter.CompressedIter].u.f.CompressionIndex;
                 }
 
                 return true;
             }
 
             return false;
-            };
+        };
 
         bool ret = LinearScan(CachedIter1, CachedIter2);
         if (ret) {
@@ -132,17 +125,17 @@ public:
             }
 
             return high;
-            };
-
+        };
 
         auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
 
         T zx = results.m_FullOrbit[BestCompressedIndexGuess].x;
         T zy = results.m_FullOrbit[BestCompressedIndexGuess].y;
 
-        for (size_t cur_uncompressed_index = results.m_FullOrbit[BestCompressedIndexGuess].u.f.CompressionIndex;
-            cur_uncompressed_index < results.GetCountOrbitEntries();
-            cur_uncompressed_index++) {
+        for (size_t cur_uncompressed_index =
+                 results.m_FullOrbit[BestCompressedIndexGuess].u.f.CompressionIndex;
+             cur_uncompressed_index < results.GetCountOrbitEntries();
+             cur_uncompressed_index++) {
 
             if (cur_uncompressed_index == uncompressed_index) {
                 CachedIter2 = CachedIter1;
@@ -160,28 +153,22 @@ public:
         return;
     }
 
-    template<class U>
-    HDRFloatComplex<U> GetCompressedComplex(size_t uncompressed_index) const {
+    template <class U>
+    HDRFloatComplex<U>
+    GetCompressedComplex(size_t uncompressed_index) const
+    {
         T outX, outY;
         GetCompressedComplex(uncompressed_index, outX, outY);
-        return { outX, outY };
+        return {outX, outY};
     }
 
 private:
-    template<typename CacheT>
-    struct CachedIter {
-        CachedIter() :
-            zx{},
-            zy{},
-            UncompressedIter{ UINT64_MAX - 1 },
-            CompressedIter{ UINT64_MAX - 1 } {
-        }
+    template <typename CacheT> struct CachedIter {
+        CachedIter() : zx{}, zy{}, UncompressedIter{UINT64_MAX - 1}, CompressedIter{UINT64_MAX - 1} {}
 
-        CachedIter(CacheT zx, CacheT zy, size_t uncompressed_iter, size_t compressed_iter) :
-            zx(zx),
-            zy(zy),
-            UncompressedIter(uncompressed_iter),
-            CompressedIter(compressed_iter) {
+        CachedIter(CacheT zx, CacheT zy, size_t uncompressed_iter, size_t compressed_iter)
+            : zx(zx), zy(zy), UncompressedIter(uncompressed_iter), CompressedIter(compressed_iter)
+        {
         }
 
         CachedIter &operator=(const CachedIter &other) = default;
@@ -200,23 +187,18 @@ private:
 
 #ifndef __CUDACC__
 
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 class IntermediateRuntimeDecompressor : public TemplateHelpers<IterType, T, PExtras> {
 public:
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
 
-    template<class LocalSubType>
+    template <class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    IntermediateRuntimeDecompressor(const PerturbationResults<IterType, T, PExtras> &results) :
-        results(results),
-        m_CachedIter{},
-        cx{},
-        cy{},
-        Two{},
-        Zero{},
-        Temp{} {
+    IntermediateRuntimeDecompressor(const PerturbationResults<IterType, T, PExtras> &results)
+        : results(results), m_CachedIter{}, cx{}, cy{}, Two{}, Zero{}, Temp{}
+    {
         mpf_init2(cx, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set(cx, *results.GetHiX().backendRaw());
 
@@ -236,7 +218,8 @@ public:
 
     IntermediateRuntimeDecompressor(const IntermediateRuntimeDecompressor &other) = default;
 
-    ~IntermediateRuntimeDecompressor() {
+    ~IntermediateRuntimeDecompressor()
+    {
         mpf_clear(cx);
         mpf_clear(cy);
         mpf_clear(Two);
@@ -247,30 +230,26 @@ public:
         }
     }
 
-    void GetReuseEntries(
-        size_t uncompressed_index,
-        const mpf_t *&outX,
-        const mpf_t *&outY) const {
+    void
+    GetReuseEntries(size_t uncompressed_index, const mpf_t *&outX, const mpf_t *&outY) const
+    {
 
-        auto runOneIter = [&](
-            mpf_t zx,
-            mpf_t zy) {
+        auto runOneIter = [&](mpf_t zx, mpf_t zy) {
+            // auto zx_old = zx;
+            // zx = zx * zx - zy * zy + cx;
+            // zy = Two * zx_old * zy + cy;
 
-                // auto zx_old = zx;
-                // zx = zx * zx - zy * zy + cx;
-                // zy = Two * zx_old * zy + cy;
+            mpf_set(Temp[0], zx);
 
-                mpf_set(Temp[0], zx);
+            mpf_mul(Temp[1], zx, zx);
+            mpf_mul(Temp[2], zy, zy);
+            mpf_sub(Temp[3], Temp[1], Temp[2]);
+            mpf_add(zx, Temp[3], cx);
 
-                mpf_mul(Temp[1], zx, zx);
-                mpf_mul(Temp[2], zy, zy);
-                mpf_sub(Temp[3], Temp[1], Temp[2]);
-                mpf_add(zx, Temp[3], cx);
-
-                mpf_mul(Temp[4], Temp[0], zy);
-                mpf_mul(Temp[4], Temp[4], Two);
-                mpf_add(zy, Temp[4], cy);
-            };
+            mpf_mul(Temp[4], Temp[0], zy);
+            mpf_mul(Temp[4], Temp[4], Two);
+            mpf_add(zy, Temp[4], cy);
+        };
 
         if (m_CachedIter.UncompressedIter == uncompressed_index) {
             outX = &m_CachedIter.zx;
@@ -291,14 +270,12 @@ public:
 
         auto LinearScan = [&](CachedIter &iter) -> void {
             assert(iter.UncompressedIter + 1 == uncompressed_index);
-            assert(
-                results.m_ReuseX.size() == results.m_ReuseY.size() &&
-                results.m_ReuseX.size() == results.m_ReuseIndices.size());
+            assert(results.m_ReuseX.size() == results.m_ReuseY.size() &&
+                   results.m_ReuseX.size() == results.m_ReuseIndices.size());
 
             bool condition =
                 (iter.CompressedIter + 1 < results.m_ReuseX.size() &&
-                    (iter.UncompressedIter + 1 <
-                        results.m_ReuseIndices[iter.CompressedIter + 1])) ||
+                 (iter.UncompressedIter + 1 < results.m_ReuseIndices[iter.CompressedIter + 1])) ||
                 iter.CompressedIter + 1 == results.m_ReuseX.size();
 
             if (condition) {
@@ -310,7 +287,7 @@ public:
                 mpf_set(iter.zy, *results.m_ReuseY[iter.CompressedIter].backendRaw());
                 iter.UncompressedIter = results.m_ReuseIndices[iter.CompressedIter];
             }
-            };
+        };
 
         LinearScan(m_CachedIter);
         outX = &m_CachedIter.zx;
@@ -319,17 +296,15 @@ public:
 
 private:
     struct CachedIter {
-        CachedIter() :
-            zx{},
-            zy{},
-            UncompressedIter{ UINT64_MAX - 1 },
-            CompressedIter{ UINT64_MAX - 1 } {
+        CachedIter() : zx{}, zy{}, UncompressedIter{UINT64_MAX - 1}, CompressedIter{UINT64_MAX - 1}
+        {
 
             mpf_init2(zx, AuthoritativeReuseExtraPrecisionInBits);
             mpf_init2(zy, AuthoritativeReuseExtraPrecisionInBits);
         }
 
-        ~CachedIter() {
+        ~CachedIter()
+        {
             mpf_clear(zx);
             mpf_clear(zy);
         }
@@ -355,23 +330,18 @@ private:
     mutable mpf_t Temp[5];
 };
 
-template<typename IterType, class T, PerturbExtras PExtras>
+template <typename IterType, class T, PerturbExtras PExtras>
 class IntermediateMaxRuntimeDecompressor : public TemplateHelpers<IterType, T, PExtras> {
 public:
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
 
-    template<class LocalSubType>
+    template <class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    IntermediateMaxRuntimeDecompressor(const PerturbationResults<IterType, T, PExtras> &results) :
-        results(results),
-        m_CachedIter{},
-        cx{},
-        cy{},
-        Two{},
-        Zero{},
-        Temp{} {
+    IntermediateMaxRuntimeDecompressor(const PerturbationResults<IterType, T, PExtras> &results)
+        : results(results), m_CachedIter{}, cx{}, cy{}, Two{}, Zero{}, Temp{}
+    {
         mpf_init2(cx, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set(cx, *results.GetHiX().backendRaw());
 
@@ -391,7 +361,8 @@ public:
 
     IntermediateMaxRuntimeDecompressor(const IntermediateMaxRuntimeDecompressor &other) = default;
 
-    ~IntermediateMaxRuntimeDecompressor() {
+    ~IntermediateMaxRuntimeDecompressor()
+    {
         mpf_clear(cx);
         mpf_clear(cy);
         mpf_clear(Two);
@@ -402,30 +373,26 @@ public:
         }
     }
 
-    void GetReuseEntries(
-        size_t uncompressed_index,
-        const mpf_t *&outX,
-        const mpf_t *&outY) const {
+    void
+    GetReuseEntries(size_t uncompressed_index, const mpf_t *&outX, const mpf_t *&outY) const
+    {
 
-        auto runOneIter = [&](
-            mpf_t zx,
-            mpf_t zy) {
+        auto runOneIter = [&](mpf_t zx, mpf_t zy) {
+            // auto zx_old = zx;
+            // zx = zx * zx - zy * zy + cx;
+            // zy = Two * zx_old * zy + cy;
 
-                // auto zx_old = zx;
-                // zx = zx * zx - zy * zy + cx;
-                // zy = Two * zx_old * zy + cy;
+            mpf_set(Temp[0], zx);
 
-                mpf_set(Temp[0], zx);
+            mpf_mul(Temp[1], zx, zx);
+            mpf_mul(Temp[2], zy, zy);
+            mpf_sub(Temp[3], Temp[1], Temp[2]);
+            mpf_add(zx, Temp[3], cx);
 
-                mpf_mul(Temp[1], zx, zx);
-                mpf_mul(Temp[2], zy, zy);
-                mpf_sub(Temp[3], Temp[1], Temp[2]);
-                mpf_add(zx, Temp[3], cx);
-
-                mpf_mul(Temp[4], Temp[0], zy);
-                mpf_mul(Temp[4], Temp[4], Two);
-                mpf_add(zy, Temp[4], cy);
-            };
+            mpf_mul(Temp[4], Temp[0], zy);
+            mpf_mul(Temp[4], Temp[4], Two);
+            mpf_add(zy, Temp[4], cy);
+        };
 
         if (m_CachedIter.UncompressedIter == uncompressed_index) {
             outX = &m_CachedIter.zx;
@@ -446,14 +413,12 @@ public:
 
         auto LinearScan = [&](CachedIter &iter) -> void {
             assert(iter.UncompressedIter + 1 == uncompressed_index);
-            assert(
-                results.m_ReuseX.size() == results.m_ReuseY.size() &&
-                results.m_ReuseX.size() == results.m_ReuseIndices.size());
+            assert(results.m_ReuseX.size() == results.m_ReuseY.size() &&
+                   results.m_ReuseX.size() == results.m_ReuseIndices.size());
 
             bool condition =
                 (iter.CompressedIter + 1 < results.m_ReuseX.size() &&
-                    (iter.UncompressedIter + 1 <
-                        results.m_ReuseIndices[iter.CompressedIter + 1])) ||
+                 (iter.UncompressedIter + 1 < results.m_ReuseIndices[iter.CompressedIter + 1])) ||
                 iter.CompressedIter + 1 == results.m_ReuseX.size();
 
             if (condition) {
@@ -465,7 +430,7 @@ public:
                 mpf_set(iter.zy, *results.m_ReuseY[iter.CompressedIter].backendRaw());
                 iter.UncompressedIter = results.m_ReuseIndices[iter.CompressedIter];
             }
-            };
+        };
 
         LinearScan(m_CachedIter);
         outX = &m_CachedIter.zx;
@@ -474,17 +439,15 @@ public:
 
 private:
     struct CachedIter {
-        CachedIter() :
-            zx{},
-            zy{},
-            UncompressedIter{ UINT64_MAX - 1 },
-            CompressedIter{ UINT64_MAX - 1 } {
+        CachedIter() : zx{}, zy{}, UncompressedIter{UINT64_MAX - 1}, CompressedIter{UINT64_MAX - 1}
+        {
 
             mpf_init2(zx, AuthoritativeReuseExtraPrecisionInBits);
             mpf_init2(zy, AuthoritativeReuseExtraPrecisionInBits);
         }
 
-        ~CachedIter() {
+        ~CachedIter()
+        {
             mpf_clear(zx);
             mpf_clear(zy);
         }

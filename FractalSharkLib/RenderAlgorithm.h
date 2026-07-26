@@ -1545,23 +1545,24 @@ public:
                                RenderAlgCompileTime>
         : Algorithm{Alg.Algorithm}, AlgorithmStr{Alg.AlgorithmStr}, UseLocalColor{Alg.UseLocalColor},
           RequiresCompression{Alg.RequiresCompression},
-          RequiresReferencePoints{Alg.RequiresReferencePoints}, Gpu{Alg.Gpu}, TestInclude{Alg.TestInclude}
+          RequiresReferencePoints{Alg.RequiresReferencePoints}, Gpu{Alg.Gpu},
+          TestInclude{Alg.TestInclude}
     {
     }
 
     constexpr RenderAlgorithm(const RenderAlgorithm &other)
         : Algorithm{other.Algorithm}, AlgorithmStr{other.AlgorithmStr},
           UseLocalColor{other.UseLocalColor}, RequiresCompression{other.RequiresCompression},
-          RequiresReferencePoints{other.RequiresReferencePoints},
-          Gpu{other.Gpu}, TestInclude{other.TestInclude}
+          RequiresReferencePoints{other.RequiresReferencePoints}, Gpu{other.Gpu},
+          TestInclude{other.TestInclude}
     {
     }
 
     constexpr RenderAlgorithm(RenderAlgorithm &&other)
         : Algorithm{other.Algorithm}, AlgorithmStr{other.AlgorithmStr},
           UseLocalColor{other.UseLocalColor}, RequiresCompression{other.RequiresCompression},
-          RequiresReferencePoints{other.RequiresReferencePoints},
-          Gpu{other.Gpu}, TestInclude{other.TestInclude}
+          RequiresReferencePoints{other.RequiresReferencePoints}, Gpu{other.Gpu},
+          TestInclude{other.TestInclude}
     {
     }
 

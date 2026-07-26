@@ -17,8 +17,7 @@ public:
     INT_PTR DoModal(HINSTANCE hInst);
 
 private:
-    static INT_PTR CALLBACK StaticDlgProc(HWND hDlg, UINT msg,
-                                          WPARAM wParam, LPARAM lParam);
+    static INT_PTR CALLBACK StaticDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
     INT_PTR HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
     BOOL OnInitDialog();

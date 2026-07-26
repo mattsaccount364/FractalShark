@@ -37,13 +37,14 @@
 
 namespace {
 
-    //--------------------------------------------------------------------------------------------------
-    // Bit utilities
-    //--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
+// Bit utilities
+//--------------------------------------------------------------------------------------------------
 
-    // Reverse the lowest `bit_count` bits of a 32-bit value (manual since MSVC lacks
-    // __builtin_bitreverse32).
-    static inline uint32_t ReverseBits32(uint32_t value, int bit_count)
+// Reverse the lowest `bit_count` bits of a 32-bit value (manual since MSVC lacks
+// __builtin_bitreverse32).
+static inline uint32_t
+ReverseBits32(uint32_t value, int bit_count)
 {
     value = (value >> 16) | (value << 16);
     value = ((value & 0x00ff00ffu) << 8) | ((value & 0xff00ff00u) >> 8);
@@ -55,7 +56,6 @@ namespace {
     return value >> shift;
 }
 
-    
 template <class SharkFloatParams, DebugStatePurpose Purpose, typename ArrayType>
 const DebugStateHost<SharkFloatParams> &
 GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
@@ -71,7 +71,6 @@ GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
     retval.Reset(arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, UseConvolution);
     return retval;
 }
-
 
 static void
 BitReverseInplace64(uint64_t *A, uint32_t N, uint32_t stages)
@@ -529,7 +528,7 @@ DigitNormalizeFromFinal128(const uint64_t *final128,
     highest_nonzero = -1;
 
     const u64 *p = final128;
-    //const u64 *end = final128 + 2 * Ddigits;
+    // const u64 *end = final128 + 2 * Ddigits;
 
     for (size_t i = 0; i < Ddigits; ++i, p += 2) {
         const u64 lo = p[0];
@@ -623,7 +622,6 @@ Normalize(HpSharkFloat<SharkFloatParams> &out,
     NormalizeCombineExponents<SharkFloatParams>(
         a, b, digits, highest_nonzero, additionalFactorOfTwo, out);
 }
-
 
 } // namespace
 
@@ -787,7 +785,6 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
 
             uint64_t v = MulP(X[(size_t)i], roots.psi_inv_pows[(size_t)i]);
             X[(size_t)i] = MulP(v, Ninv_std);
-
         }
 
         // 7) Unpack -> Final128 -> Normalize (already in standard domain)

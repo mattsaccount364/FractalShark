@@ -3,11 +3,9 @@
 #include "BLA.h"
 #include <vector>
 
-template<typename IterType, class T, PerturbExtras PExtras>
-class BLAS;
+template <typename IterType, class T, PerturbExtras PExtras> class BLAS;
 
-template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
-class GPU_BLAS {
+template <typename IterType, class T, class GPUBLA_TYPE, int32_t LM2> class GPU_BLAS {
 public:
     GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>> &B, cudaStream_t stream);
     ~GPU_BLAS();
@@ -21,17 +19,18 @@ public:
     GPU_BLAS &operator=(GPU_BLAS &&other) = delete;
 
 #ifdef __CUDA_ARCH__
-    CUDA_CRAP const GPUBLA_TYPE *LookupBackwards(
-        const GPUBLA_TYPE *__restrict__ *altB,
-        /*T* curBR2,*/
-        //const GPUBLA_TYPE * __restrict__ nullBla,
-        IterType m,
-        T z2) const;
+    CUDA_CRAP const GPUBLA_TYPE *LookupBackwards(const GPUBLA_TYPE *__restrict__ *altB,
+                                                 /*T* curBR2,*/
+                                                 // const GPUBLA_TYPE * __restrict__ nullBla,
+                                                 IterType m,
+                                                 T z2) const;
 #endif
 
     static constexpr size_t m_NumLevels = LM2 + 2;
 
-    CUDA_CRAP GPUBLA_TYPE **GetB() const {
+    CUDA_CRAP GPUBLA_TYPE **
+    GetB() const
+    {
         return m_B;
     }
 

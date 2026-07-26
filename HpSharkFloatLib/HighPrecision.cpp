@@ -162,8 +162,7 @@ Hex64StringToMpf_Exact(const std::string &s, mpf_t out)
     {
         std::string tok;
         expect(static_cast<bool>(iss >> tok), "Missing 'actualLimbsUsed:' token");
-        expect(tok == "actualLimbsUsed:" || tok == "actualLimbsUsed:",
-               "Expected 'actualLimbsUsed:'");
+        expect(tok == "actualLimbsUsed:" || tok == "actualLimbsUsed:", "Expected 'actualLimbsUsed:'");
     }
 
     long actualLimbsUsed = 0; // signed; may be negative

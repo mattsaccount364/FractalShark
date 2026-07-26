@@ -21,8 +21,7 @@ InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,
         sizeof(uint64_t);
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts "
-                  << std::endl;
+        std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts " << std::endl;
     }
 
     cudaError_t err = cudaSuccess;
@@ -72,8 +71,8 @@ InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,
         throw FractalSharkSeriousException(oss.str());
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
-                << static_cast<int>(err) << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+                << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }
@@ -193,8 +192,8 @@ InvokeMultiplyNTTKernelPerf(const HpShark::LaunchParams &launchParams,
         throw FractalSharkSeriousException(oss.str());
         if (err != cudaSuccess) {
             std::ostringstream oss;
-            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code "
-                << static_cast<int>(err) << ")";
+            oss << "cudaMemcpy failed: " << cudaGetErrorString(err) << " (code " << static_cast<int>(err)
+                << ")";
             throw FractalSharkSeriousException(oss.str());
         }
     }

@@ -149,10 +149,9 @@ CudaLaunchConfig::compute(const void *kernelFunc, size_t dynSmemBytes)
     blocks = chosenBlocks;
     status = cudaSuccess;
 
-    std::cout << "CudaLaunchConfig: blocks=" << blocks
-              << " threadsPerBlock=" << threadsPerBlock << " blocksPerSM=" << blocksPerSM
-              << " SMs=" << smCount << " sharedMemBytes=" << dynamicSmemBytes
-              << std::endl;
+    std::cout << "CudaLaunchConfig: blocks=" << blocks << " threadsPerBlock=" << threadsPerBlock
+              << " blocksPerSM=" << blocksPerSM << " SMs=" << smCount
+              << " sharedMemBytes=" << dynamicSmemBytes << std::endl;
 
     return status;
 }

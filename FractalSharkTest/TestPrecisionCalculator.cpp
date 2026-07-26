@@ -1,7 +1,7 @@
-#include "TestFramework.h"
-#include "PrecisionCalculator.h"
-#include "PointZoomBBConverter.h"
 #include "HDRFloat.h"
+#include "PointZoomBBConverter.h"
+#include "PrecisionCalculator.h"
+#include "TestFramework.h"
 
 #include <cmath>
 
@@ -23,8 +23,7 @@ TEST(PC_FromConverter_DefaultZoom)
     // Bounds [-2,-2,2,2], zoom=1 → deltaX=deltaY=4
     // HighPrecision→HDRFloat uses GMP [0.5,1.0) convention: 4.0 = 0.5 × 2^3 → exp=3
     // max(|3|,|3|) = 3 → 3 + 120 = 123
-    PointZoomBBConverter pz(
-        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
 
     uint64_t prec = PrecisionCalculator::GetPrecision(pz, false);
     ASSERT_EQ(prec, 3 + MinExtra);
@@ -32,8 +31,7 @@ TEST(PC_FromConverter_DefaultZoom)
 
 TEST(PC_FromConverter_WithReuse)
 {
-    PointZoomBBConverter pz(
-        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
 
     uint64_t prec = PrecisionCalculator::GetPrecision(pz, true);
     ASSERT_EQ(prec, 3 + ReuseExtra);
@@ -66,9 +64,7 @@ TEST(PC_FromConverter_DeepZoom)
 TEST(PC_FromBoundingBox)
 {
     uint64_t prec = PrecisionCalculator::GetPrecision(
-        HighPrecision{-2}, HighPrecision{-2},
-        HighPrecision{2}, HighPrecision{2},
-        false);
+        HighPrecision{-2}, HighPrecision{-2}, HighPrecision{2}, HighPrecision{2}, false);
     // Same as converter: delta=4 → GMP exp=3 → 3+120=123
     ASSERT_EQ(prec, 3 + MinExtra);
 }
@@ -79,9 +75,7 @@ TEST(PC_FromBoundingBox_AsymmetricDeltas)
     // deltaY = |0.001 - 0| = 0.001 → GMP: ~0.512 × 2^(-9) → exp=-9
     // max(|4|, |-9|) = 9 → 9 + 120 = 129
     uint64_t prec = PrecisionCalculator::GetPrecision(
-        HighPrecision{0.0}, HighPrecision{0.0},
-        HighPrecision{10.0}, HighPrecision{0.001},
-        false);
+        HighPrecision{0.0}, HighPrecision{0.0}, HighPrecision{10.0}, HighPrecision{0.001}, false);
     ASSERT_EQ(prec, 9 + MinExtra);
 }
 
@@ -93,8 +87,7 @@ TEST(PC_FromRadii_HighPrecision)
 {
     // radiusX = 0.5 → GMP: 0.5 × 2^0 → exp=0
     // max(|0|, |0|) = 0 → 0 + 120 = 120
-    uint64_t prec = PrecisionCalculator::GetPrecision(
-        HighPrecision{0.5}, HighPrecision{0.5}, false);
+    uint64_t prec = PrecisionCalculator::GetPrecision(HighPrecision{0.5}, HighPrecision{0.5}, false);
     ASSERT_EQ(prec, 0 + MinExtra);
 }
 

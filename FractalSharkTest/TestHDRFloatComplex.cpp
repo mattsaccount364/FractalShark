@@ -1,6 +1,6 @@
-#include "TestFramework.h"
-#include "HDRFloatComplex.h"
 #include "HDRFloat.h"
+#include "HDRFloatComplex.h"
+#include "TestFramework.h"
 
 #include <cmath>
 #include <limits>
@@ -206,10 +206,8 @@ TEST(HDRFC_IO_DecimalRoundtrip)
     HDRCd restored;
     restored.FromIStream<false>(iss);
 
-    ASSERT_NEAR(static_cast<double>(restored.getRe()),
-                static_cast<double>(original.getRe()), 1e-10);
-    ASSERT_NEAR(static_cast<double>(restored.getIm()),
-                static_cast<double>(original.getIm()), 1e-10);
+    ASSERT_NEAR(static_cast<double>(restored.getRe()), static_cast<double>(original.getRe()), 1e-10);
+    ASSERT_NEAR(static_cast<double>(restored.getIm()), static_cast<double>(original.getIm()), 1e-10);
 }
 
 TEST(HDRFC_IO_HexRoundtrip)
@@ -247,8 +245,7 @@ TEST(HDRFC_ExponentDiffIgnored)
 
     HDRCd sum = bigC + tinyC;
     // tiny should be ignored: result ≈ bigC
-    ASSERT_NEAR(static_cast<double>(sum.getRe()),
-                static_cast<double>(bigC.getRe()), 1e-10);
+    ASSERT_NEAR(static_cast<double>(sum.getRe()), static_cast<double>(bigC.getRe()), 1e-10);
 }
 
 TEST(HDRFC_SharedExponentPrecision)

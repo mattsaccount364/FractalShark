@@ -31,9 +31,9 @@ void Hex64StringToMpf_Exact(const std::string &s, mpf_t out);
 void MpfNormalize(mpf_t val);
 
 namespace FractalLimits {
-    static constexpr size_t MaxDigits = 4 * 1024 * 1024;
-    static constexpr size_t MaxPrecisionLame = 4'000'000;
-}
+static constexpr size_t MaxDigits = 4 * 1024 * 1024;
+static constexpr size_t MaxPrecisionLame = 4'000'000;
+} // namespace FractalLimits
 
 template <HPDestructor Destructor> class HighPrecisionT {
 public:
@@ -56,7 +56,8 @@ public:
     InitMpf2(uint64_t precisionInBits)
     {
         if (precisionInBits > MaxPrecisionBits) {
-            throw FractalSharkSeriousException("Requested precision is too high.  This is probably a bug..");
+            throw FractalSharkSeriousException(
+                "Requested precision is too high.  This is probably a bug..");
         }
 
         mpf_init2(m_Data, precisionInBits);
@@ -393,7 +394,8 @@ public:
     defaultPrecisionInBits(uint64_t prec)
     {
         if (prec > MaxPrecisionBits) {
-            throw FractalSharkSeriousException("Requested precision is too high.  This is probably a bug..");
+            throw FractalSharkSeriousException(
+                "Requested precision is too high.  This is probably a bug..");
         }
 
         mpf_set_default_prec(prec);

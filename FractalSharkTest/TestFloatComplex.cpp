@@ -1,5 +1,5 @@
-#include "TestFramework.h"
 #include "FloatComplex.h"
+#include "TestFramework.h"
 
 #include <cmath>
 #include <sstream>

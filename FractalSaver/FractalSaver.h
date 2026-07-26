@@ -8,5 +8,4 @@
 
 #include "resource.h"
 
-
 #endif // !defined(AFX_FRACTALSAVER_H__63773FC0_BE94_4B8E_B642_DB721D4EF2F0__INCLUDED_)

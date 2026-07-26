@@ -8,5 +8,4 @@
 
 #include "resource.h"
 
-
 #endif // !defined(AFX_FRACTALS_H__D86A55F2_4976_4837_BB98_91888CD9BE35__INCLUDED_)

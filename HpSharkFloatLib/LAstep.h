@@ -13,10 +13,7 @@ template <typename IterType, class Float, class SubType> class GPU_LAInfoDeep;
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras> class LAstep {
 public:
     CUDA_CRAP
-    LAstep()
-        : step{}, nextStageLAindex{}, LAjdeep{}, Refp1Deep{}, newDzDeep{}, unusable{true}
-    {
-    }
+    LAstep() : step{}, nextStageLAindex{}, LAjdeep{}, Refp1Deep{}, newDzDeep{}, unusable{true} {}
 
     IterType step;
     IterType nextStageLAindex;
@@ -64,9 +61,10 @@ LAstep<IterType, Float, SubType, PExtras>::EvaluateDzdz(HDRFloatComplex &dz,
 }
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
-CUDA_CRAP void LAstep<IterType, Float, SubType, PExtras>::EvaluateDzdcDeep(HDRFloatComplex &dz,
-                                                                        HDRFloatComplex &dzdc,
-                                                                        const Float &ScalingFactor) const
+CUDA_CRAP void
+LAstep<IterType, Float, SubType, PExtras>::EvaluateDzdcDeep(HDRFloatComplex &dz,
+                                                            HDRFloatComplex &dzdc,
+                                                            const Float &ScalingFactor) const
 {
     LAjdeep->EvaluateDzdc(dz, dzdc, ScalingFactor);
 }
@@ -94,7 +92,6 @@ LAstep<IterType, Float, SubType, PExtras>::Evaluate(HDRFloatComplex &dz, HDRFloa
 {
     return LAjdeep->Evaluate(dz, DeltaSub0);
 }
-
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP LAstep<IterType, Float, SubType, PExtras>::HDRFloatComplex
@@ -124,10 +121,7 @@ LAstep<IterType, Float, SubType, PExtras>::getZ(HDRFloatComplex DeltaSubN)
 template <typename IterType, class Float, class SubType> class GPU_LAstep {
 public:
     CUDA_CRAP
-    GPU_LAstep()
-        : step{}, nextStageLAindex{}, LAjdeep{}, Refp1Deep{}, newDzDeep{}, unusable{true}
-    {
-    }
+    GPU_LAstep() : step{}, nextStageLAindex{}, LAjdeep{}, Refp1Deep{}, newDzDeep{}, unusable{true} {}
 
     IterType step;
     IterType nextStageLAindex;

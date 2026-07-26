@@ -1,5 +1,5 @@
-#include "TestFramework.h"
 #include "BLA.h"
+#include "TestFramework.h"
 
 #include <cmath>
 
@@ -159,7 +159,7 @@ TEST(BLA_CompositionMatchesSequential)
 {
     // Two arbitrary BLA steps
     BLAd step1(4.0, 1.5, 0.5, 0.3, -0.2, 1); // A1=(1.5,0.5), B1=(0.3,-0.2)
-    BLAd step2(4.0, 0.8, -0.6, 0.1, 0.4, 1);  // A2=(0.8,-0.6), B2=(0.1,0.4)
+    BLAd step2(4.0, 0.8, -0.6, 0.1, 0.4, 1); // A2=(0.8,-0.6), B2=(0.1,0.4)
 
     // Input perturbation
     double dzR = 0.01, dzI = -0.02;
@@ -212,10 +212,9 @@ TEST(BLA_PerturbationSingleStep)
     //        = (-0.001003, -0.001996)
     double dz1_re = dcR, dz1_im = dcI;
     // Direct (with quadratic term):
-    double direct_re = 2.0 * z_n_re * dz1_re - 2.0 * z_n_im * dz1_im +
-                       (dz1_re * dz1_re - dz1_im * dz1_im) + dcR;
-    double direct_im = 2.0 * z_n_re * dz1_im + 2.0 * z_n_im * dz1_re +
-                       2.0 * dz1_re * dz1_im + dcI;
+    double direct_re =
+        2.0 * z_n_re * dz1_re - 2.0 * z_n_im * dz1_im + (dz1_re * dz1_re - dz1_im * dz1_im) + dcR;
+    double direct_im = 2.0 * z_n_re * dz1_im + 2.0 * z_n_im * dz1_re + 2.0 * dz1_re * dz1_im + dcI;
 
     // BLA approximation (linear only):
     double blaR = dz1_re, blaI = dz1_im;
@@ -247,8 +246,10 @@ TEST(BLA_MultiStepOrbit)
 
     // Compute short reference orbit
     double z_re[4], z_im[4];
-    z_re[0] = 0.0;       z_im[0] = 0.0;
-    z_re[1] = c_re;      z_im[1] = c_im;
+    z_re[0] = 0.0;
+    z_im[0] = 0.0;
+    z_re[1] = c_re;
+    z_im[1] = c_im;
     z_re[2] = z_re[1] * z_re[1] - z_im[1] * z_im[1] + c_re;
     z_im[2] = 2.0 * z_re[1] * z_im[1] + c_im;
     z_re[3] = z_re[2] * z_re[2] - z_im[2] * z_im[2] + c_re;
@@ -358,4 +359,3 @@ TEST(BLA_OrbitLoopDirectComparison)
     ASSERT_NEAR(dz_bla_re, dz_direct_re, 1e-10);
     ASSERT_NEAR(dz_bla_im, dz_direct_im, 1e-10);
 }
-

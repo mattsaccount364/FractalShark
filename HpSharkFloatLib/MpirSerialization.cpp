@@ -73,8 +73,8 @@ mpf_inp_raw_stream(std::istream &f, mpf_ptr X)
 // This is byte-for-byte compatible with mpz_export(order=1, size=1, endian=1,
 // nails=0, x) plus a big-endian signed length prefix.
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -87,8 +87,7 @@ static_assert(offsetof(__mpf_struct, _mp_size) == offsetof(__mpf_struct, _mp_pre
               "_mp_size offset drift");
 static_assert(offsetof(__mpf_struct, _mp_exp) > offsetof(__mpf_struct, _mp_size),
               "_mp_exp offset drift");
-static_assert(offsetof(__mpf_struct, _mp_d) > offsetof(__mpf_struct, _mp_exp),
-              "_mp_d offset drift");
+static_assert(offsetof(__mpf_struct, _mp_d) > offsetof(__mpf_struct, _mp_exp), "_mp_d offset drift");
 
 namespace MpirSerialization {
 
@@ -134,10 +133,9 @@ mpz_inp_raw_stream(mpz_ptr x, std::istream &fp)
 {
     unsigned char hdr[4];
     fp.read(reinterpret_cast<char *>(hdr), 4);
-    int32_t raw = static_cast<int32_t>((static_cast<uint32_t>(hdr[0]) << 24) |
-                                       (static_cast<uint32_t>(hdr[1]) << 16) |
-                                       (static_cast<uint32_t>(hdr[2]) << 8) |
-                                       static_cast<uint32_t>(hdr[3]));
+    int32_t raw = static_cast<int32_t>(
+        (static_cast<uint32_t>(hdr[0]) << 24) | (static_cast<uint32_t>(hdr[1]) << 16) |
+        (static_cast<uint32_t>(hdr[2]) << 8) | static_cast<uint32_t>(hdr[3]));
     if (raw == 0) {
         mpz_set_ui(x, 0);
         return 4;

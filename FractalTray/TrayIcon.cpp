@@ -1,12 +1,11 @@
 #include "stdafx.h"
 #include "TrayIcon.h"
 
-TrayIcon::~TrayIcon() {
-    Remove();
-}
+TrayIcon::~TrayIcon() { Remove(); }
 
-bool TrayIcon::Create(HWND parentWnd, UINT callbackMessage,
-                      const wchar_t *tooltip, HICON icon, UINT menuId) {
+bool
+TrayIcon::Create(HWND parentWnd, UINT callbackMessage, const wchar_t *tooltip, HICON icon, UINT menuId)
+{
     if (!parentWnd || !::IsWindow(parentWnd)) {
         m_Enabled = false;
         return false;
@@ -26,28 +25,39 @@ bool TrayIcon::Create(HWND parentWnd, UINT callbackMessage,
     return m_Enabled;
 }
 
-void TrayIcon::Remove() {
-    if (!m_Enabled) return;
+void
+TrayIcon::Remove()
+{
+    if (!m_Enabled)
+        return;
     m_Nid.uFlags = 0;
     Shell_NotifyIcon(NIM_DELETE, &m_Nid);
     m_Enabled = false;
 }
 
-bool TrayIcon::SetIcon(HICON icon) {
-    if (!m_Enabled) return false;
+bool
+TrayIcon::SetIcon(HICON icon)
+{
+    if (!m_Enabled)
+        return false;
     m_Nid.uFlags = NIF_ICON;
     m_Nid.hIcon = icon;
     return Shell_NotifyIcon(NIM_MODIFY, &m_Nid) != FALSE;
 }
 
-bool TrayIcon::SetTooltipText(const wchar_t *tip) {
-    if (!m_Enabled) return false;
+bool
+TrayIcon::SetTooltipText(const wchar_t *tip)
+{
+    if (!m_Enabled)
+        return false;
     m_Nid.uFlags = NIF_TIP;
     wcsncpy_s(m_Nid.szTip, tip, _TRUNCATE);
     return Shell_NotifyIcon(NIM_MODIFY, &m_Nid) != FALSE;
 }
 
-void TrayIcon::Show() {
+void
+TrayIcon::Show()
+{
     if (m_Enabled && m_Hidden) {
         m_Nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
         Shell_NotifyIcon(NIM_ADD, &m_Nid);
@@ -55,7 +65,9 @@ void TrayIcon::Show() {
     }
 }
 
-void TrayIcon::Hide() {
+void
+TrayIcon::Hide()
+{
     if (m_Enabled && !m_Hidden) {
         m_Nid.uFlags = NIF_ICON;
         Shell_NotifyIcon(NIM_DELETE, &m_Nid);
@@ -63,13 +75,16 @@ void TrayIcon::Hide() {
     }
 }
 
-LRESULT TrayIcon::OnTrayNotification(WPARAM wParam, LPARAM lParam) {
-    if (wParam != m_Nid.uID) return 0;
+LRESULT
+TrayIcon::OnTrayNotification(WPARAM wParam, LPARAM lParam)
+{
+    if (wParam != m_Nid.uID)
+        return 0;
 
     if (LOWORD(lParam) == WM_RBUTTONUP) {
-        HMENU hMenu = LoadMenu(
-            GetModuleHandle(nullptr), MAKEINTRESOURCE(m_MenuId));
-        if (!hMenu) return 0;
+        HMENU hMenu = LoadMenu(GetModuleHandle(nullptr), MAKEINTRESOURCE(m_MenuId));
+        if (!hMenu)
+            return 0;
 
         HMENU hSubMenu = GetSubMenu(hMenu, 0);
         if (!hSubMenu) {

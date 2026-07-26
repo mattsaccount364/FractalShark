@@ -5,11 +5,11 @@
 
 #include "../KernelTestMultiplyNTT_cu.h"
 
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams, \
-    void *kernelArgs[]); \
-    template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>( \
-    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]); \
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+    template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
+                                                          void *kernelArgs[]);                          \
+    template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(                                      \
+        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);           \
     /* end */
 
 ExplicitlyInstantiate(SharkParams1);

@@ -17,10 +17,7 @@ public:
                          ::FloatComplex<SubType>>::type;
 
     CUDA_CRAP
-    ATResult()
-        : dz{}, dzdc{}, dzdc2{}, bla_iterations{}, bla_steps{}
-    {
-    }
+    ATResult() : dz{}, dzdc{}, dzdc2{}, bla_iterations{}, bla_steps{} {}
 
     FloatComplexT dz;
     FloatComplexT dzdc;

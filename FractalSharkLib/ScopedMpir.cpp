@@ -1,8 +1,8 @@
 #include "stdafx.h"
 
 #include "Environment.h"
-#include "ScopedMpir.h"
 #include "HighPrecision.h"
+#include "ScopedMpir.h"
 #include "Vectors.h"
 
 thread_local uint8_t MPIRBoundedAllocator::Allocated[NumBlocks][BytesPerBlock];
@@ -18,44 +18,38 @@ bool MPIRBumpAllocator::InstalledBumpAllocator = false;
 
 static constexpr bool DebugInstrument = false;
 
-MPIRBoundedAllocator::MPIRBoundedAllocator() :
-    ExistingMalloc{},
-    ExistingRealloc{},
-    ExistingFree{} {
-}
+MPIRBoundedAllocator::MPIRBoundedAllocator() : ExistingMalloc{}, ExistingRealloc{}, ExistingFree{} {}
 
-MPIRBoundedAllocator::~MPIRBoundedAllocator() {
+MPIRBoundedAllocator::~MPIRBoundedAllocator()
+{
     if (ExistingMalloc == nullptr) {
         return;
     }
 
-    mp_set_memory_functions(
-        ExistingMalloc,
-        ExistingRealloc,
-        ExistingFree);
+    mp_set_memory_functions(ExistingMalloc, ExistingRealloc, ExistingFree);
 }
 
-bool MPIRBumpAllocator::IsBumpAllocatorInstalled() {
+bool
+MPIRBumpAllocator::IsBumpAllocatorInstalled()
+{
     return InstalledBumpAllocator;
 }
 
-void MPIRBoundedAllocator::InitScopedAllocators() {
-    mp_get_memory_functions(
-        &ExistingMalloc,
-        &ExistingRealloc,
-        &ExistingFree);
+void
+MPIRBoundedAllocator::InitScopedAllocators()
+{
+    mp_get_memory_functions(&ExistingMalloc, &ExistingRealloc, &ExistingFree);
 
     s_ExistingMalloc = ExistingMalloc;
     s_ExistingRealloc = ExistingRealloc;
     s_ExistingFree = ExistingFree;
 
-    mp_set_memory_functions(
-        NewMalloc,
-        NewRealloc,
-        NewFree);
+    mp_set_memory_functions(NewMalloc, NewRealloc, NewFree);
 }
 
-void MPIRBoundedAllocator::InitTls() {
+void
+MPIRBoundedAllocator::InitTls()
+{
     memset(Allocated, 0, sizeof(Allocated));
     memset(AllocationsAndFrees, 0, sizeof(AllocationsAndFrees));
     AllocatedIndex = 0;
@@ -67,7 +61,9 @@ void MPIRBoundedAllocator::InitTls() {
     TlsInitialized = true;
 }
 
-void MPIRBoundedAllocator::ShutdownTls() {
+void
+MPIRBoundedAllocator::ShutdownTls()
+{
     // If there are any allocations left, we have a memory leak.
     if constexpr (DebugInstrument) {
         for (size_t i = 0; i < NumBlocks; i++) {
@@ -80,7 +76,9 @@ void MPIRBoundedAllocator::ShutdownTls() {
     TlsInitialized = false;
 }
 
-void *MPIRBoundedAllocator::NewMalloc(size_t size) {
+void *
+MPIRBoundedAllocator::NewMalloc(size_t size)
+{
     if (!TlsInitialized) {
         return s_ExistingMalloc(size);
     }
@@ -101,9 +99,7 @@ void *MPIRBoundedAllocator::NewMalloc(size_t size) {
                 auto oldVal = MaxAllocatedDebug.load(std::memory_order_seq_cst);
                 if (AllocationsAndFrees[AllocatedIndex] > oldVal) {
                     auto result = MaxAllocatedDebug.compare_exchange_weak(
-                        oldVal,
-                        AllocationsAndFrees[AllocatedIndex],
-                        std::memory_order_seq_cst);
+                        oldVal, AllocationsAndFrees[AllocatedIndex], std::memory_order_seq_cst);
 
                     if (result) {
                         break;
@@ -137,15 +133,17 @@ void *MPIRBoundedAllocator::NewMalloc(size_t size) {
     }
 }
 
-void *MPIRBoundedAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_size) {
+void *
+MPIRBoundedAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_size)
+{
     if (!TlsInitialized) {
         return s_ExistingRealloc(ptr, old_size, new_size);
     }
 
     // This one is like new_malloc, but copy in the prior data.
-    //auto ret = NewMalloc(new_size);
-    //auto minimum_size = std::min(old_size, new_size);
-    //memcpy(ret, ptr, minimum_size);
+    // auto ret = NewMalloc(new_size);
+    // auto minimum_size = std::min(old_size, new_size);
+    // memcpy(ret, ptr, minimum_size);
 
     if constexpr (DebugInstrument) {
         Environment::DebugBreakpoint();
@@ -153,7 +151,9 @@ void *MPIRBoundedAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_si
     return nullptr;
 }
 
-void MPIRBoundedAllocator::NewFree(void *ptr, size_t size) {
+void
+MPIRBoundedAllocator::NewFree(void *ptr, size_t size)
+{
     // Check if ptr falls within this thread's Allocated blocks.
     // Handles both uninitialized threads and memory allocated by the
     // default allocator before the custom allocator was installed.
@@ -187,12 +187,14 @@ void MPIRBoundedAllocator::NewFree(void *ptr, size_t size) {
 //////////////////////////////////////////////////////////////////////////
 
 ThreadMemory::ThreadMemory()
-    : m_Bump{ std::make_unique<GrowableVector<uint8_t>>(AddPointOptions::EnableWithoutSave, L"") },
-    m_FreedMemory{},
-    m_FreedMemorySize{} {
+    : m_Bump{std::make_unique<GrowableVector<uint8_t>>(AddPointOptions::EnableWithoutSave, L"")},
+      m_FreedMemory{}, m_FreedMemorySize{}
+{
 }
 
-void *ThreadMemory::Allocate(size_t size) {
+void *
+ThreadMemory::Allocate(size_t size)
+{
     // Search the list in reverse order, so we find the most recently freed memory first.
     for (size_t i = m_FreedMemory.size(); i-- > 0;) {
         if (m_FreedMemorySize[i] >= size) {
@@ -210,7 +212,9 @@ void *ThreadMemory::Allocate(size_t size) {
     return m_Bump->GetData() + m_Bump->GetSize() - size;
 }
 
-void ThreadMemory::Free(void *ptr, size_t size) {
+void
+ThreadMemory::Free(void *ptr, size_t size)
+{
     // Note: stores the pointer and size in a vector, so that we can reuse it later.
     static constexpr size_t maxFreedMemory = 4;
     size_t alignedSize = (size + 63) & ~63;
@@ -235,21 +239,15 @@ void *(*MPIRBumpAllocator::s_ExistingRealloc)(void *, size_t, size_t) = nullptr;
 void (*MPIRBumpAllocator::s_ExistingFree)(void *, size_t) = nullptr;
 thread_local bool MPIRBumpAllocator::TlsInitialized = false;
 
-MPIRBumpAllocator::MPIRBumpAllocator() :
-    ExistingMalloc{},
-    ExistingRealloc{},
-    ExistingFree{} {
-}
+MPIRBumpAllocator::MPIRBumpAllocator() : ExistingMalloc{}, ExistingRealloc{}, ExistingFree{} {}
 
-MPIRBumpAllocator::~MPIRBumpAllocator() {
+MPIRBumpAllocator::~MPIRBumpAllocator()
+{
     if (ExistingMalloc == nullptr) {
         return;
     }
 
-    mp_set_memory_functions(
-        ExistingMalloc,
-        ExistingRealloc,
-        ExistingFree);
+    mp_set_memory_functions(ExistingMalloc, ExistingRealloc, ExistingFree);
 
     for (size_t i = 0; i < NumAllocators; i++) {
         m_Allocated[i].reset();
@@ -258,20 +256,16 @@ MPIRBumpAllocator::~MPIRBumpAllocator() {
     InstalledBumpAllocator = false;
 }
 
-void MPIRBumpAllocator::InitScopedAllocators() {
-    mp_get_memory_functions(
-        &ExistingMalloc,
-        &ExistingRealloc,
-        &ExistingFree);
+void
+MPIRBumpAllocator::InitScopedAllocators()
+{
+    mp_get_memory_functions(&ExistingMalloc, &ExistingRealloc, &ExistingFree);
 
     s_ExistingMalloc = ExistingMalloc;
     s_ExistingRealloc = ExistingRealloc;
     s_ExistingFree = ExistingFree;
 
-    mp_set_memory_functions(
-        NewMalloc,
-        NewRealloc,
-        NewFree);
+    mp_set_memory_functions(NewMalloc, NewRealloc, NewFree);
 
     InstalledBumpAllocator = true;
 
@@ -290,14 +284,18 @@ void MPIRBumpAllocator::InitScopedAllocators() {
     }
 }
 
-void MPIRBumpAllocator::InitTls() {
+void
+MPIRBumpAllocator::InitTls()
+{
     // Atomically increment m_MaxIndex and use the result as the index for this thread.
     // Returns the previous value of m_MaxIndex.
     m_ThreadIndex = m_MaxIndex.fetch_add(1, std::memory_order_seq_cst);
     TlsInitialized = true;
 }
 
-void MPIRBumpAllocator::ShutdownTls() {
+void
+MPIRBumpAllocator::ShutdownTls()
+{
     // Can we really check for leaks here given how we're using it?
     // Whatever.  Be careful LOLZ
 
@@ -305,15 +303,21 @@ void MPIRBumpAllocator::ShutdownTls() {
     m_Allocated[m_ThreadIndex].reset();
 }
 
-std::unique_ptr<ThreadMemory> MPIRBumpAllocator::GetAllocated(size_t index) {
+std::unique_ptr<ThreadMemory>
+MPIRBumpAllocator::GetAllocated(size_t index)
+{
     return std::move(m_Allocated[index]);
 }
 
-size_t MPIRBumpAllocator::GetAllocatorIndex() {
+size_t
+MPIRBumpAllocator::GetAllocatorIndex()
+{
     return m_ThreadIndex;
 }
 
-void *MPIRBumpAllocator::NewMalloc(size_t size) {
+void *
+MPIRBumpAllocator::NewMalloc(size_t size)
+{
     if (!TlsInitialized) {
         return s_ExistingMalloc(size);
     }
@@ -322,7 +326,9 @@ void *MPIRBumpAllocator::NewMalloc(size_t size) {
     return curAllocator.Allocate(size);
 }
 
-void *MPIRBumpAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_size) {
+void *
+MPIRBumpAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_size)
+{
     if (!TlsInitialized) {
         return s_ExistingRealloc(ptr, old_size, new_size);
     }
@@ -333,10 +339,12 @@ void *MPIRBumpAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_size)
     memcpy(newLoc, ptr, minSize);
     return newLoc;
 
-    //return realloc(ptr, new_size);
+    // return realloc(ptr, new_size);
 }
 
-void MPIRBumpAllocator::NewFree(void *ptr, size_t size) {
+void
+MPIRBumpAllocator::NewFree(void *ptr, size_t size)
+{
     if (!TlsInitialized) {
         s_ExistingFree(ptr, size);
         return;
@@ -348,18 +356,21 @@ void MPIRBumpAllocator::NewFree(void *ptr, size_t size) {
     }
 }
 
-MPIRPrecision::MPIRPrecision(size_t bits) : m_SavedBits(HighPrecision::defaultPrecisionInBits()) {
+MPIRPrecision::MPIRPrecision(size_t bits) : m_SavedBits(HighPrecision::defaultPrecisionInBits())
+{
     HighPrecision::defaultPrecisionInBits(bits);
 }
 
-MPIRPrecision::~MPIRPrecision() {
-    HighPrecision::defaultPrecisionInBits(m_SavedBits);
-}
+MPIRPrecision::~MPIRPrecision() { HighPrecision::defaultPrecisionInBits(m_SavedBits); }
 
-void MPIRPrecision::reset(size_t bits) {
+void
+MPIRPrecision::reset(size_t bits)
+{
     HighPrecision::defaultPrecisionInBits(bits);
 }
 
-void MPIRPrecision::reset() {
+void
+MPIRPrecision::reset()
+{
     HighPrecision::defaultPrecisionInBits(m_SavedBits);
 }

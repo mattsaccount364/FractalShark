@@ -115,8 +115,7 @@ ItersMemoryContainer::ItersMemoryContainer(ItersMemoryContainer &&other) noexcep
     : m_Width{std::move(other.m_Width)}, m_Height{std::move(other.m_Height)},
       m_Total{std::move(other.m_Total)}, m_OutputWidth{std::move(other.m_OutputWidth)},
       m_OutputHeight{std::move(other.m_OutputHeight)}, m_OutputTotal{std::move(other.m_OutputTotal)},
-      m_RoundedWidth{std::move(other.m_RoundedWidth)},
-      m_RoundedHeight{std::move(other.m_RoundedHeight)},
+      m_RoundedWidth{std::move(other.m_RoundedWidth)}, m_RoundedHeight{std::move(other.m_RoundedHeight)},
       m_RoundedTotal{std::move(other.m_RoundedTotal)},
       m_RoundedOutputColorWidth{std::move(other.m_RoundedOutputColorWidth)},
       m_RoundedOutputColorHeight{std::move(other.m_RoundedOutputColorHeight)},
@@ -124,11 +123,9 @@ ItersMemoryContainer::ItersMemoryContainer(ItersMemoryContainer &&other) noexcep
       m_RoundedOutputColorMemory{std::move(other.m_RoundedOutputColorMemory)},
       m_Antialiasing{std::move(other.m_Antialiasing)}, m_IterType{std::move(other.m_IterType)},
       m_Iters32Filename{std::move(other.m_Iters32Filename)},
-      m_ItersMemory32{std::move(other.m_ItersMemory32)},
-      m_ItersArray32{std::move(other.m_ItersArray32)},
+      m_ItersMemory32{std::move(other.m_ItersMemory32)}, m_ItersArray32{std::move(other.m_ItersArray32)},
       m_Iters64Filename{std::move(other.m_Iters64Filename)},
-      m_ItersMemory64{std::move(other.m_ItersMemory64)},
-      m_ItersArray64{std::move(other.m_ItersArray64)}
+      m_ItersMemory64{std::move(other.m_ItersMemory64)}, m_ItersArray64{std::move(other.m_ItersArray64)}
 {
 }
 

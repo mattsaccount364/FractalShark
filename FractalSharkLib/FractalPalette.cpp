@@ -6,9 +6,7 @@
 #include <vector>
 
 FractalPalette::FractalPalette()
-    : m_WhichPalette{FractalPaletteType::Default},
-      m_PaletteRotate{0},
-      m_PaletteDepthIndex{2},
+    : m_WhichPalette{FractalPaletteType::Default}, m_PaletteRotate{0}, m_PaletteDepthIndex{2},
       m_PaletteAuxDepth{0}
 {
 }
@@ -38,10 +36,11 @@ FractalPalette::InitializeAllPalettes()
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, 0, max_val);
         PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] =
+            (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
     };
 
-    auto PatrioticPaletteGen= [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
+    auto PatrioticPaletteGen = [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
         Environment::SetCurrentThreadName(L"Fractal::PatrioticPaletteGen");
         int depth_total = (int)(1 << Depth);
 
@@ -61,15 +60,17 @@ FractalPalette::InitializeAllPalettes()
         const auto BG = (int)(((double)0x31 / (double)0xFF) * max_val);
         const auto BB = (int)(((double)0x61 / (double)0xFF) * max_val);
 
-        m_PalInterleaved[WhichPalette][PaletteIndex].push_back(
-            {static_cast<uint16_t>(max_val), static_cast<uint16_t>(max_val),
-             static_cast<uint16_t>(max_val), 0});
+        m_PalInterleaved[WhichPalette][PaletteIndex].push_back({static_cast<uint16_t>(max_val),
+                                                                static_cast<uint16_t>(max_val),
+                                                                static_cast<uint16_t>(max_val),
+                                                                0});
 
         PalTransition(WhichPalette, PaletteIndex, depth_total, RR, RG, RB);
         PalTransition(WhichPalette, PaletteIndex, depth_total, BR, BG, BB);
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, max_val);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] =
+            (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
     };
 
     auto SummerPaletteGen = [&](FractalPaletteType WhichPalette, size_t PaletteIndex, size_t Depth) {
@@ -86,7 +87,8 @@ FractalPalette::InitializeAllPalettes()
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val * 2 / 3, 0);
         PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] =
+            (uint32_t)m_PalInterleaved[WhichPalette][PaletteIndex].size();
     };
 
     for (size_t i = 0; i < FractalPaletteType::Num; i++) {
@@ -94,12 +96,18 @@ FractalPalette::InitializeAllPalettes()
     }
 
     std::vector<std::unique_ptr<std::thread>> threads;
-    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 0, 5));
-    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 1, 6));
-    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 2, 8));
-    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 3, 12));
-    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 4, 16));
-    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 5, 20));
+    threads.push_back(
+        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 0, 5));
+    threads.push_back(
+        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 1, 6));
+    threads.push_back(
+        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 2, 8));
+    threads.push_back(
+        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 3, 12));
+    threads.push_back(
+        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 4, 16));
+    threads.push_back(
+        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 5, 20));
 
     threads.push_back(
         std::make_unique<std::thread>(PatrioticPaletteGen, FractalPaletteType::Patriotic, 0, 5));
@@ -117,9 +125,12 @@ FractalPalette::InitializeAllPalettes()
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 0, 5));
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 1, 6));
     threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 2, 8));
-    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 3, 12));
-    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 4, 16));
-    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 5, 20));
+    threads.push_back(
+        std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 3, 12));
+    threads.push_back(
+        std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 4, 16));
+    threads.push_back(
+        std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 5, 20));
 
     for (auto &it : threads) {
         it->join();

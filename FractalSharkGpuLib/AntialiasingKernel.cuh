@@ -1,17 +1,16 @@
 #pragma once
 
-template<typename IterType, uint32_t Antialiasing, bool ScaledColor>
-__global__
-void
-antialiasing_kernel(
-    const IterType *__restrict__ OutputIterMatrix,
-    uint32_t Width,
-    uint32_t Height,
-    AntialiasedColors OutputColorMatrix,
-    Palette Pals,
-    int local_color_width,
-    int local_color_height,
-    IterType n_iterations) {
+template <typename IterType, uint32_t Antialiasing, bool ScaledColor>
+__global__ void
+antialiasing_kernel(const IterType *__restrict__ OutputIterMatrix,
+                    uint32_t Width,
+                    uint32_t Height,
+                    AntialiasedColors OutputColorMatrix,
+                    Palette Pals,
+                    int local_color_width,
+                    int local_color_height,
+                    IterType n_iterations)
+{
     const int output_x = blockIdx.x * blockDim.x + threadIdx.x;
     const int output_y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -22,7 +21,7 @@ antialiasing_kernel(
     constexpr auto totalAA = Antialiasing * Antialiasing;
 
     // TODO reduction
-    //if constexpr (ScaledColor) {
+    // if constexpr (ScaledColor) {
     //    IterType maxIters = 0, minIters;
     //    for (size_t input_x = output_x * Antialiasing;
     //        input_x < (output_x + 1) * Antialiasing;
@@ -40,14 +39,11 @@ antialiasing_kernel(
     size_t acc_g = 0;
     size_t acc_b = 0;
 
-    for (size_t input_x = output_x * Antialiasing;
-        input_x < (output_x + 1) * Antialiasing;
-        input_x++) {
-        for (size_t input_y = output_y * Antialiasing;
-            input_y < (output_y + 1) * Antialiasing;
-            input_y++) {
+    for (size_t input_x = output_x * Antialiasing; input_x < (output_x + 1) * Antialiasing; input_x++) {
+        for (size_t input_y = output_y * Antialiasing; input_y < (output_y + 1) * Antialiasing;
+             input_y++) {
 
-            //size_t idx = input_y * Width + input_x;
+            // size_t idx = input_y * Width + input_x;
             size_t idx = ConvertLocToIndex(input_x, input_y, Width);
             IterType numIters = OutputIterMatrix[idx];
 

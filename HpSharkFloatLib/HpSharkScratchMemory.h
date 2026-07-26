@@ -42,9 +42,8 @@ template <class SharkFloatParams>
 static constexpr auto
 CalculateKaratsubaFrameSize()
 {
-    constexpr auto arrays = SharkFloatParams::EnableNewtonRaphson
-                                ? ScratchMemoryArraysForMultiplyNR
-                                : ScratchMemoryArraysForMultiply;
+    constexpr auto arrays = SharkFloatParams::EnableNewtonRaphson ? ScratchMemoryArraysForMultiplyNR
+                                                                  : ScratchMemoryArraysForMultiply;
     constexpr auto retval = arrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
     constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
     return retval + alignAt16BytesConstant;
@@ -54,9 +53,8 @@ template <class SharkFloatParams>
 static constexpr auto
 CalculateNTTFrameSize()
 {
-    constexpr auto arrays = SharkFloatParams::EnableNewtonRaphson
-                                ? ScratchMemoryArraysForMultiplyNR
-                                : ScratchMemoryArraysForMultiply;
+    constexpr auto arrays = SharkFloatParams::EnableNewtonRaphson ? ScratchMemoryArraysForMultiplyNR
+                                                                  : ScratchMemoryArraysForMultiply;
     constexpr auto retval = arrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
     constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
     return retval + alignAt16BytesConstant;
@@ -75,9 +73,8 @@ template <class SharkFloatParams>
 static constexpr auto
 CalculateAddFrameSize()
 {
-    constexpr auto arrays = SharkFloatParams::EnableNewtonRaphson
-                                ? ScratchMemoryArraysForAddNR
-                                : ScratchMemoryArraysForAdd;
+    constexpr auto arrays =
+        SharkFloatParams::EnableNewtonRaphson ? ScratchMemoryArraysForAddNR : ScratchMemoryArraysForAdd;
     return arrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
 }
 

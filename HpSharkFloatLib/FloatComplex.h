@@ -31,8 +31,7 @@ public:
             if constexpr (!isDblFlt) {
                 // Output the mantissa and exponent as doubles:
                 ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
-                   << " mantissaImag: " << static_cast<double>(this->mantissaImag)
-                   << " exp2: 0";
+                   << " mantissaImag: " << static_cast<double>(this->mantissaImag) << " exp2: 0";
             } else {
                 ss << this->mantissaReal.template ToString<IntegerOutput>();
                 ss << " ";

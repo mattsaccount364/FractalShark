@@ -1,24 +1,17 @@
 #pragma once
 
-#include "HighPrecision.h"
 #include "GPU_Render.h"
+#include "HighPrecision.h"
 #include "Vectors.h"
 
-enum class IterTypeEnum {
-    Bits32,
-    Bits64
-};
+enum class IterTypeEnum { Bits32, Bits64 };
 
 // Holds the number of iterations it took to decide if
 // we were in or not in the fractal.  Has a number
 // for every point on the screen.
 struct ItersMemoryContainer {
     ItersMemoryContainer();
-    ItersMemoryContainer(
-        IterTypeEnum type,
-        size_t width,
-        size_t height,
-        size_t total_antialiasing);
+    ItersMemoryContainer(IterTypeEnum type, size_t width, size_t height, size_t total_antialiasing);
     ItersMemoryContainer(ItersMemoryContainer &&) noexcept;
     ItersMemoryContainer &operator=(ItersMemoryContainer &&) noexcept;
     ~ItersMemoryContainer();
@@ -26,8 +19,10 @@ struct ItersMemoryContainer {
     ItersMemoryContainer(ItersMemoryContainer &) = delete;
     ItersMemoryContainer &operator=(const ItersMemoryContainer &);
 
-    template<typename IterType>
-    IterType *GetIters() {
+    template <typename IterType>
+    IterType *
+    GetIters()
+    {
         if constexpr (std::is_same<IterType, uint32_t>::value) {
             return m_ItersMemory32.GetData();
         } else {
@@ -35,8 +30,10 @@ struct ItersMemoryContainer {
         }
     }
 
-    template<typename IterType>
-    IterType **GetItersArray() {
+    template <typename IterType>
+    IterType **
+    GetItersArray()
+    {
         if constexpr (sizeof(IterType) == sizeof(uint32_t)) {
             return m_ItersArray32.data();
         } else {

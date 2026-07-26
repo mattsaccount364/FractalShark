@@ -2,21 +2,24 @@
 
 //////////////////////////////////////////////////////////////////////////////
 
-PerturbResultsCollection::PerturbResultsCollection() {
+PerturbResultsCollection::PerturbResultsCollection()
+{
     m_Results1.Init();
     m_Results2.Init();
 }
 
-PerturbResultsCollection::~PerturbResultsCollection() {
+PerturbResultsCollection::~PerturbResultsCollection()
+{
     DeleteAllInternal(m_Results1);
     DeleteAllInternal(m_Results2);
 }
 
-template<typename Type, PerturbExtras PExtras>
-void PerturbResultsCollection::SetPtr32(
-    size_t GenerationNumber,
-    InternalResults &Results,
-    GPUPerturbSingleResults<uint32_t, Type, PExtras> *ptr) {
+template <typename Type, PerturbExtras PExtras>
+void
+PerturbResultsCollection::SetPtr32(size_t GenerationNumber,
+                                   InternalResults &Results,
+                                   GPUPerturbSingleResults<uint32_t, Type, PExtras> *ptr)
+{
 
     if (Results.m_GenerationNumber == GenerationNumber) {
         return;
@@ -105,11 +108,12 @@ void PerturbResultsCollection::SetPtr32(
     }
 }
 
-template<typename Type, PerturbExtras PExtras>
-void PerturbResultsCollection::SetPtr64(
-    size_t GenerationNumber,
-    InternalResults &Results,
-    GPUPerturbSingleResults<uint64_t, Type, PExtras> *ptr) {
+template <typename Type, PerturbExtras PExtras>
+void
+PerturbResultsCollection::SetPtr64(size_t GenerationNumber,
+                                   InternalResults &Results,
+                                   GPUPerturbSingleResults<uint64_t, Type, PExtras> *ptr)
+{
 
     if (Results.m_GenerationNumber == GenerationNumber) {
         return;
@@ -198,8 +202,11 @@ void PerturbResultsCollection::SetPtr64(
     }
 }
 
-template<typename IterType, typename Type, PerturbExtras PExtras>
-void PerturbResultsCollection::SetPtr1(size_t GenerationNumber1, GPUPerturbSingleResults<IterType, Type, PExtras> *ptr) {
+template <typename IterType, typename Type, PerturbExtras PExtras>
+void
+PerturbResultsCollection::SetPtr1(size_t GenerationNumber1,
+                                  GPUPerturbSingleResults<IterType, Type, PExtras> *ptr)
+{
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         SetPtr32<Type, PExtras>(GenerationNumber1, m_Results1, ptr);
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
@@ -207,8 +214,11 @@ void PerturbResultsCollection::SetPtr1(size_t GenerationNumber1, GPUPerturbSingl
     }
 }
 
-template<typename IterType, typename Type, PerturbExtras PExtras>
-void PerturbResultsCollection::SetPtr2(size_t GenerationNumber2, GPUPerturbSingleResults<IterType, Type, PExtras> *ptr) {
+template <typename IterType, typename Type, PerturbExtras PExtras>
+void
+PerturbResultsCollection::SetPtr2(size_t GenerationNumber2,
+                                  GPUPerturbSingleResults<IterType, Type, PExtras> *ptr)
+{
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         SetPtr32<Type, PExtras>(GenerationNumber2, m_Results2, ptr);
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
@@ -216,11 +226,12 @@ void PerturbResultsCollection::SetPtr2(size_t GenerationNumber2, GPUPerturbSingl
     }
 }
 
-template<typename Type, typename SubType>
-void PerturbResultsCollection::SetLaReferenceInternal32(
-    size_t LaGenerationNumber,
-    InternalResults &Results,
-    GPU_LAReference<uint32_t, Type, SubType> *LaReference) {
+template <typename Type, typename SubType>
+void
+PerturbResultsCollection::SetLaReferenceInternal32(size_t LaGenerationNumber,
+                                                   InternalResults &Results,
+                                                   GPU_LAReference<uint32_t, Type, SubType> *LaReference)
+{
 
     if (LaGenerationNumber == Results.m_LaGenerationNumber) {
         return;
@@ -249,11 +260,12 @@ void PerturbResultsCollection::SetLaReferenceInternal32(
     }
 }
 
-template<typename Type, typename SubType>
-void PerturbResultsCollection::SetLaReferenceInternal64(
-    size_t LaGenerationNumber,
-    InternalResults &Results,
-    GPU_LAReference<uint64_t, Type, SubType> *LaReference) {
+template <typename Type, typename SubType>
+void
+PerturbResultsCollection::SetLaReferenceInternal64(size_t LaGenerationNumber,
+                                                   InternalResults &Results,
+                                                   GPU_LAReference<uint64_t, Type, SubType> *LaReference)
+{
 
     if (LaGenerationNumber == Results.m_LaGenerationNumber) {
         return;
@@ -282,11 +294,12 @@ void PerturbResultsCollection::SetLaReferenceInternal64(
     }
 }
 
-template<typename IterType, typename Type, typename SubType>
-void PerturbResultsCollection::SetLaReferenceInternal(
-    size_t LaGenerationNumber,
-    InternalResults &Results,
-    GPU_LAReference<IterType, Type, SubType> *LaReference) {
+template <typename IterType, typename Type, typename SubType>
+void
+PerturbResultsCollection::SetLaReferenceInternal(size_t LaGenerationNumber,
+                                                 InternalResults &Results,
+                                                 GPU_LAReference<IterType, Type, SubType> *LaReference)
+{
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         SetLaReferenceInternal32<Type, SubType>(LaGenerationNumber, Results, LaReference);
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
@@ -294,15 +307,18 @@ void PerturbResultsCollection::SetLaReferenceInternal(
     }
 }
 
-template<typename IterType, typename Type, typename SubType>
-void PerturbResultsCollection::SetLaReference1(
-    size_t LaGenerationNumber,
-    GPU_LAReference<IterType, Type, SubType> *LaReference) {
+template <typename IterType, typename Type, typename SubType>
+void
+PerturbResultsCollection::SetLaReference1(size_t LaGenerationNumber,
+                                          GPU_LAReference<IterType, Type, SubType> *LaReference)
+{
     SetLaReferenceInternal(LaGenerationNumber, m_Results1, LaReference);
 }
 
-template<typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetPtrInternal32(InternalResults &Results) {
+template <typename Type, PerturbExtras PExtras>
+GPUPerturbSingleResults<uint32_t, Type, PExtras> *
+PerturbResultsCollection::GetPtrInternal32(InternalResults &Results)
+{
     if constexpr (std::is_same<Type, float>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32FloatDisable;
@@ -366,8 +382,10 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetP
     }
 }
 
-template<typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetPtrInternal64(InternalResults &Results) {
+template <typename Type, PerturbExtras PExtras>
+GPUPerturbSingleResults<uint64_t, Type, PExtras> *
+PerturbResultsCollection::GetPtrInternal64(InternalResults &Results)
+{
     if constexpr (std::is_same<Type, float>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64FloatDisable;
@@ -431,8 +449,10 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetP
     }
 }
 
-template<typename IterType, typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<IterType, Type, PExtras> *PerturbResultsCollection::GetPtrInternal(InternalResults &Results) {
+template <typename IterType, typename Type, PerturbExtras PExtras>
+GPUPerturbSingleResults<IterType, Type, PExtras> *
+PerturbResultsCollection::GetPtrInternal(InternalResults &Results)
+{
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         return GetPtrInternal32<Type, PExtras>(Results);
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
@@ -440,9 +460,10 @@ GPUPerturbSingleResults<IterType, Type, PExtras> *PerturbResultsCollection::GetP
     }
 }
 
-template<typename Type, typename SubType>
-GPU_LAReference<uint32_t, Type, SubType> *PerturbResultsCollection::GetLaReferenceInternal32(
-    InternalResults &Results) {
+template <typename Type, typename SubType>
+GPU_LAReference<uint32_t, Type, SubType> *
+PerturbResultsCollection::GetLaReferenceInternal32(InternalResults &Results)
+{
     if constexpr (std::is_same<Type, float>::value) {
         return Results.m_LaReference32Float;
     } else if constexpr (std::is_same<Type, double>::value) {
@@ -458,9 +479,10 @@ GPU_LAReference<uint32_t, Type, SubType> *PerturbResultsCollection::GetLaReferen
     }
 }
 
-template<typename Type, typename SubType>
-GPU_LAReference<uint64_t, Type, SubType> *PerturbResultsCollection::GetLaReferenceInternal64(
-    InternalResults &Results) {
+template <typename Type, typename SubType>
+GPU_LAReference<uint64_t, Type, SubType> *
+PerturbResultsCollection::GetLaReferenceInternal64(InternalResults &Results)
+{
     if constexpr (std::is_same<Type, float>::value) {
         return Results.m_LaReference64Float;
     } else if constexpr (std::is_same<Type, double>::value) {
@@ -476,9 +498,10 @@ GPU_LAReference<uint64_t, Type, SubType> *PerturbResultsCollection::GetLaReferen
     }
 }
 
-template<typename IterType, typename Type, typename SubType>
-GPU_LAReference<IterType, Type, SubType> *PerturbResultsCollection::GetLaReferenceInternal(
-    InternalResults &Results) {
+template <typename IterType, typename Type, typename SubType>
+GPU_LAReference<IterType, Type, SubType> *
+PerturbResultsCollection::GetLaReferenceInternal(InternalResults &Results)
+{
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         return GetLaReferenceInternal32<Type, SubType>(Results);
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
@@ -486,43 +509,61 @@ GPU_LAReference<IterType, Type, SubType> *PerturbResultsCollection::GetLaReferen
     }
 }
 
-template<typename IterType, typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<IterType, Type, PExtras> *PerturbResultsCollection::GetPtr1() {
+template <typename IterType, typename Type, PerturbExtras PExtras>
+GPUPerturbSingleResults<IterType, Type, PExtras> *
+PerturbResultsCollection::GetPtr1()
+{
     return GetPtrInternal<IterType, Type, PExtras>(m_Results1);
 }
 
-template<typename IterType, typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<IterType, Type, PExtras> *PerturbResultsCollection::GetPtr2() {
+template <typename IterType, typename Type, PerturbExtras PExtras>
+GPUPerturbSingleResults<IterType, Type, PExtras> *
+PerturbResultsCollection::GetPtr2()
+{
     return GetPtrInternal<IterType, Type, PExtras>(m_Results2);
 }
 
-size_t PerturbResultsCollection::GetHostGenerationNumber1() const {
+size_t
+PerturbResultsCollection::GetHostGenerationNumber1() const
+{
     return m_Results1.m_GenerationNumber;
 }
 
-size_t PerturbResultsCollection::GetHostGenerationNumber2() const {
+size_t
+PerturbResultsCollection::GetHostGenerationNumber2() const
+{
     return m_Results2.m_GenerationNumber;
 }
 
-size_t PerturbResultsCollection::GetHostLaGenerationNumber1() const {
+size_t
+PerturbResultsCollection::GetHostLaGenerationNumber1() const
+{
     return m_Results1.m_LaGenerationNumber;
 }
 
-size_t PerturbResultsCollection::GetHostLaGenerationNumber2() const {
+size_t
+PerturbResultsCollection::GetHostLaGenerationNumber2() const
+{
     return m_Results2.m_LaGenerationNumber;
 }
 
-template<typename IterType, typename Type, typename SubType>
-GPU_LAReference<IterType, Type, SubType> *PerturbResultsCollection::GetLaReference1() {
+template <typename IterType, typename Type, typename SubType>
+GPU_LAReference<IterType, Type, SubType> *
+PerturbResultsCollection::GetLaReference1()
+{
     return GetLaReferenceInternal<IterType, Type, SubType>(m_Results1);
 }
 
-template<typename IterType, typename Type, typename SubType>
-GPU_LAReference<IterType, Type, SubType> *PerturbResultsCollection::GetLaReference2() {
+template <typename IterType, typename Type, typename SubType>
+GPU_LAReference<IterType, Type, SubType> *
+PerturbResultsCollection::GetLaReference2()
+{
     return GetLaReferenceInternal<IterType, Type, SubType>(m_Results2);
 }
 
-void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
+void
+PerturbResultsCollection::DeleteAllInternal(InternalResults &Results)
+{
     Results.m_GenerationNumber = 0;
     Results.m_LaGenerationNumber = 0;
 
@@ -741,7 +782,9 @@ void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
     }
 }
 
-void PerturbResultsCollection::DeleteAll() {
+void
+PerturbResultsCollection::DeleteAll()
+{
     DeleteAllInternal(m_Results1);
     DeleteAllInternal(m_Results2);
 }

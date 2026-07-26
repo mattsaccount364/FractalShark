@@ -5,11 +5,11 @@
 
 #include "../KernelTestAdd_cu.h"
 
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams, \
-    void *kernelArgs[]); \
-    template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams, \
-    void *kernelArgs[]); \
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+    template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,            \
+                                                  void *kernelArgs[]);                                  \
+    template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,    \
+                                                          void *kernelArgs[]);                          \
     /* end */
 
 ExplicitlyInstantiate(SharkParamsNR1);

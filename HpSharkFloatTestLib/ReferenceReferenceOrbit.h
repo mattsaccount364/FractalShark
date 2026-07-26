@@ -38,26 +38,25 @@ template <class SharkFloatParams> struct ReferenceOrbitResult {
 // Periodicity detection and escape checking are included when
 // SharkFloatParams::EnablePeriodicity is true.
 template <class SharkFloatParams>
-std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>>
-ReferenceOrbitHelper(const HpSharkFloat<SharkFloatParams> *cReal,
-                     const HpSharkFloat<SharkFloatParams> *cImag,
-                     const typename SharkFloatParams::Float &radiusY,
-                     uint64_t maxIters,
-                     DebugHostCombo<SharkFloatParams> &debugHostCombo);
+std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>> ReferenceOrbitHelper(
+    const HpSharkFloat<SharkFloatParams> *cReal,
+    const HpSharkFloat<SharkFloatParams> *cImag,
+    const typename SharkFloatParams::Float &radiusY,
+    uint64_t maxIters,
+    DebugHostCombo<SharkFloatParams> &debugHostCombo);
 
 // Newton-Raphson inner loop: iterates z = z^2 + c for `period`
 // steps, tracking both z_p and dz/dc_p using HpSharkFloat arithmetic.
 // Also accumulates d2 (second derivative) in SharkFloatParams::Float
 // (HDRFloat), matching production EvaluateCriticalOrbitAndDerivsST.
 template <class SharkFloatParams>
-void EvaluateOrbitAndDerivative(
-    const HpSharkFloat<SharkFloatParams> *cReal,
-    const HpSharkFloat<SharkFloatParams> *cImag,
-    uint64_t period,
-    HpSharkFloat<SharkFloatParams> *outZReal,
-    HpSharkFloat<SharkFloatParams> *outZImag,
-    HpSharkFloat<SharkFloatParams> *outDzdcReal,
-    HpSharkFloat<SharkFloatParams> *outDzdcImag,
-    typename SharkFloatParams::Float *outD2Real,
-    typename SharkFloatParams::Float *outD2Imag,
-    DebugHostCombo<SharkFloatParams> &debugHostCombo);
+void EvaluateOrbitAndDerivative(const HpSharkFloat<SharkFloatParams> *cReal,
+                                const HpSharkFloat<SharkFloatParams> *cImag,
+                                uint64_t period,
+                                HpSharkFloat<SharkFloatParams> *outZReal,
+                                HpSharkFloat<SharkFloatParams> *outZImag,
+                                HpSharkFloat<SharkFloatParams> *outDzdcReal,
+                                HpSharkFloat<SharkFloatParams> *outDzdcImag,
+                                typename SharkFloatParams::Float *outD2Real,
+                                typename SharkFloatParams::Float *outD2Imag,
+                                DebugHostCombo<SharkFloatParams> &debugHostCombo);

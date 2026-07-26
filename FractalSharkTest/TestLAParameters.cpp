@@ -1,5 +1,5 @@
-#include "TestFramework.h"
 #include "LAParameters.h"
+#include "TestFramework.h"
 
 #include <cmath>
 

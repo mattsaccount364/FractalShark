@@ -167,8 +167,7 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
     mpf_abs(abs_val, mpf_value);
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits)
-                  << std::endl;
+        std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits) << std::endl;
     }
 
     // Determine the sign
@@ -268,8 +267,7 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
         auto originalDataStr = VectorUintToHexString(dataCopy);
         auto shiftedDataStr = VectorUintToHexString(data);
         std::cout << "Original data: " << originalDataStr << std::endl;
-        std::cout << "Shifted data: " << shiftedDataStr << ", shiftBits: " << shiftBits
-                  << std::endl;
+        std::cout << "Shifted data: " << shiftedDataStr << ", shiftBits: " << shiftBits << std::endl;
         std::cout << "Shift bits: " << shiftBits << std::endl;
     }
 

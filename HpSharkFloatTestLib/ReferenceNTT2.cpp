@@ -33,8 +33,7 @@ PrintPlan(const PlanPrime &plan)
 {
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "PlanPrime: n32=" << plan.n32 << " b=" << plan.b << " L=" << plan.L
-                  << " N=" << plan.N << " stages=" << plan.stages << " ok=" << plan.ok
-                  << std::endl;
+                  << " N=" << plan.N << " stages=" << plan.stages << " ok=" << plan.ok << std::endl;
     }
 }
 
@@ -637,8 +636,10 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                 GetCurrentDebugState<SharkFloatParams, step1Y>(debugStates, Y.data(), (size_t)plan.N);
 
             if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "After twist+bitrev, debugXState checksum: " << debugXState.GetStr() << "\n";
-                std::cout << "After twist+bitrev, debugYState checksum: " << debugYState.GetStr() << "\n";
+                std::cout << "After twist+bitrev, debugXState checksum: " << debugXState.GetStr()
+                          << "\n";
+                std::cout << "After twist+bitrev, debugYState checksum: " << debugYState.GetStr()
+                          << "\n";
             }
         }
 
@@ -794,39 +795,63 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
     // Derivative products (only when NR enabled)
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         // W0 = dzdcR * 2zR
-        run_conv.template operator()<DebugStatePurpose::Z0W0, DebugStatePurpose::Z1W0,
-                                     DebugStatePurpose::Z2W0, DebugStatePurpose::Z3W0,
-                                     DebugStatePurpose::Z2_PermW0, DebugStatePurpose::Z2_PermW0b,
+        run_conv.template operator()<DebugStatePurpose::Z0W0,
+                                     DebugStatePurpose::Z1W0,
+                                     DebugStatePurpose::Z2W0,
+                                     DebugStatePurpose::Z3W0,
+                                     DebugStatePurpose::Z2_PermW0,
+                                     DebugStatePurpose::Z2_PermW0b,
                                      DebugStatePurpose::UnpackW0,
                                      DebugStatePurpose::Final128W0>(
-            OutW0, *dzdcReal, *A, includeAdditionalFactorOfTwo,
+            OutW0,
+            *dzdcReal,
+            *A,
+            includeAdditionalFactorOfTwo,
             dzdcReal->GetNegative() ^ A->GetNegative());
 
         // W1 = dzdcI * 2zI
-        run_conv.template operator()<DebugStatePurpose::Z0W1, DebugStatePurpose::Z1W1,
-                                     DebugStatePurpose::Z2W1, DebugStatePurpose::Z3W1,
-                                     DebugStatePurpose::Z2_PermW1, DebugStatePurpose::Z2_PermW1b,
+        run_conv.template operator()<DebugStatePurpose::Z0W1,
+                                     DebugStatePurpose::Z1W1,
+                                     DebugStatePurpose::Z2W1,
+                                     DebugStatePurpose::Z3W1,
+                                     DebugStatePurpose::Z2_PermW1,
+                                     DebugStatePurpose::Z2_PermW1b,
                                      DebugStatePurpose::UnpackW1,
                                      DebugStatePurpose::Final128W1>(
-            OutW1, *dzdcImag, *B, includeAdditionalFactorOfTwo,
+            OutW1,
+            *dzdcImag,
+            *B,
+            includeAdditionalFactorOfTwo,
             dzdcImag->GetNegative() ^ B->GetNegative());
 
         // W2 = dzdcR * 2zI
-        run_conv.template operator()<DebugStatePurpose::Z0W2, DebugStatePurpose::Z1W2,
-                                     DebugStatePurpose::Z2W2, DebugStatePurpose::Z3W2,
-                                     DebugStatePurpose::Z2_PermW2, DebugStatePurpose::Z2_PermW2b,
+        run_conv.template operator()<DebugStatePurpose::Z0W2,
+                                     DebugStatePurpose::Z1W2,
+                                     DebugStatePurpose::Z2W2,
+                                     DebugStatePurpose::Z3W2,
+                                     DebugStatePurpose::Z2_PermW2,
+                                     DebugStatePurpose::Z2_PermW2b,
                                      DebugStatePurpose::UnpackW2,
                                      DebugStatePurpose::Final128W2>(
-            OutW2, *dzdcReal, *B, includeAdditionalFactorOfTwo,
+            OutW2,
+            *dzdcReal,
+            *B,
+            includeAdditionalFactorOfTwo,
             dzdcReal->GetNegative() ^ B->GetNegative());
 
         // W3 = dzdcI * 2zR
-        run_conv.template operator()<DebugStatePurpose::Z0W3, DebugStatePurpose::Z1W3,
-                                     DebugStatePurpose::Z2W3, DebugStatePurpose::Z3W3,
-                                     DebugStatePurpose::Z2_PermW3, DebugStatePurpose::Z2_PermW3b,
+        run_conv.template operator()<DebugStatePurpose::Z0W3,
+                                     DebugStatePurpose::Z1W3,
+                                     DebugStatePurpose::Z2W3,
+                                     DebugStatePurpose::Z3W3,
+                                     DebugStatePurpose::Z2_PermW3,
+                                     DebugStatePurpose::Z2_PermW3b,
                                      DebugStatePurpose::UnpackW3,
                                      DebugStatePurpose::Final128W3>(
-            OutW3, *dzdcImag, *A, includeAdditionalFactorOfTwo,
+            OutW3,
+            *dzdcImag,
+            *A,
+            includeAdditionalFactorOfTwo,
             dzdcImag->GetNegative() ^ A->GetNegative());
     }
 

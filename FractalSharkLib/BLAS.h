@@ -2,14 +2,12 @@
 
 #include "BLA.h"
 #include "PerturbationResultsHelpers.h"
-#include <vector>
 #include <memory>
+#include <vector>
 
-template<typename IterType, class T, PerturbExtras PExtras>
-class PerturbationResults;
+template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;
 
-template<typename IterType, class T, PerturbExtras PExtras = PerturbExtras::Disable>
-class BLAS {
+template <typename IterType, class T, PerturbExtras PExtras = PerturbExtras::Disable> class BLAS {
 private:
     static constexpr size_t BLA_BITS = 23;
     static constexpr int32_t BLA_STARTING_LEVEL = 3;
@@ -18,7 +16,7 @@ public:
     size_t m_M;
     size_t m_L;
     std::vector<std::vector<BLA<T>>> m_B;
-    int32_t m_LM2;//Level -1 is not attainable due to Zero R
+    int32_t m_LM2; // Level -1 is not attainable due to Zero R
     static constexpr int32_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     BLAS(PerturbationResults<IterType, T, PExtras> &results);

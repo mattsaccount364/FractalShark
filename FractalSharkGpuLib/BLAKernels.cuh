@@ -1,22 +1,20 @@
 #pragma once
 
-
-template<class HDRFloatType>
-struct SharedMemStruct {
+template <class HDRFloatType> struct SharedMemStruct {
     using GPUBLA_TYPE = BLA<HDRFloatType>;
     const GPUBLA_TYPE *__restrict__ altB[32];
-    //GPUBLA_TYPE nullBla;
-    //struct {
-    //    //HDRFloatType curBR2[16];
-    //    //GPUReferenceIter<HDRFloatType> CurResult;
-    //    //HDRFloatType NextX1;
-    //    //HDRFloatType NextY1;
-    //} PerThread[NB_THREADS_W][NB_THREADS_H];
+    // GPUBLA_TYPE nullBla;
+    // struct {
+    //     //HDRFloatType curBR2[16];
+    //     //GPUReferenceIter<HDRFloatType> CurResult;
+    //     //HDRFloatType NextX1;
+    //     //HDRFloatType NextY1;
+    // } PerThread[NB_THREADS_W][NB_THREADS_H];
 };
 
-template<typename IterType, int32_t LM2>
-__global__
-void mandel_1x_double_perturb_bla(
+template <typename IterType, int32_t LM2>
+__global__ void
+mandel_1x_double_perturb_bla(
     IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     GPUPerturbSingleResults<IterType, double, PerturbExtras::Disable> PerturbDouble,
@@ -29,25 +27,25 @@ void mandel_1x_double_perturb_bla(
     double dy,
     double centerX,
     double centerY,
-    IterType n_iterations) {
+    IterType n_iterations)
+{
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
-    //size_t idx = width * Y + X;
+    // size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * Y + X;
     size_t idx = ConvertLocToIndex(X, Y, width);
 
-    //if (OutputIterMatrix[idx] != 0) {
-    //    return;
-    //}
+    // if (OutputIterMatrix[idx] != 0) {
+    //     return;
+    // }
 
     using GPUBLA_TYPE = BLA<double>;
     char __shared__ SharedMem[sizeof(SharedMemStruct<double>)];
-    auto *shared =
-        reinterpret_cast<SharedMemStruct<double>*>(SharedMem);
+    auto *shared = reinterpret_cast<SharedMemStruct<double> *>(SharedMem);
 
     if (threadIdx.x == 0 && threadIdx.y == 0) {
         GPUBLA_TYPE **elts = doubleBlas.GetB();
@@ -72,7 +70,8 @@ void mandel_1x_double_perturb_bla(
 
     while (iter < n_iterations) {
         const BLA<double> *b = nullptr;
-        while ((b = doubleBlas.LookupBackwards(shared->altB, RefIteration, DeltaNormSquared)) != nullptr) {
+        while ((b = doubleBlas.LookupBackwards(shared->altB, RefIteration, DeltaNormSquared)) !=
+               nullptr) {
             int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
@@ -129,11 +128,9 @@ void mandel_1x_double_perturb_bla(
         PerturbDouble.GetIterRandom(RefIteration, tempZX, tempZY);
 
         DeltaSubNX = DeltaSubNXOrig * (tempZX * 2 + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (tempZY * 2 + DeltaSubNYOrig) +
-            DeltaSub0X;
+                     DeltaSubNYOrig * (tempZY * 2 + DeltaSubNYOrig) + DeltaSub0X;
         DeltaSubNY = DeltaSubNXOrig * (tempZY * 2 + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (tempZX * 2 + DeltaSubNXOrig) +
-            DeltaSub0Y;
+                     DeltaSubNYOrig * (tempZX * 2 + DeltaSubNXOrig) + DeltaSub0Y;
 
         ++RefIteration;
 
@@ -153,8 +150,7 @@ void mandel_1x_double_perturb_bla(
             break;
         }
 
-        if (normSquared < DeltaNormSquared ||
-            RefIteration >= PerturbDouble.GetCountOrbitEntries() - 1) {
+        if (normSquared < DeltaNormSquared || RefIteration >= PerturbDouble.GetCountOrbitEntries() - 1) {
             DeltaSubNX = tempZX;
             DeltaSubNY = tempZY;
             DeltaNormSquared = normSquared;
@@ -167,32 +163,31 @@ void mandel_1x_double_perturb_bla(
     OutputIterMatrix[idx] = iter;
 }
 
-//#define DEVICE_STATIC_INTRINSIC_QUALIFIERS  static __device__ __forceinline__
+// #define DEVICE_STATIC_INTRINSIC_QUALIFIERS  static __device__ __forceinline__
 
-//#if (defined(_MSC_VER) && defined(_WIN64)) || defined(__LP64__)
-//#define PXL_GLOBAL_PTR   "l"
-//#else
-//#define PXL_GLOBAL_PTR   "r"
-//#endif
+// #if (defined(_MSC_VER) && defined(_WIN64)) || defined(__LP64__)
+// #define PXL_GLOBAL_PTR   "l"
+// #else
+// #define PXL_GLOBAL_PTR   "r"
+// #endif
 
-//DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l1(const void* const ptr)
+// DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l1(const void* const ptr)
 //{
-//    asm("prefetch.global.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
-//}
+//     asm("prefetch.global.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
+// }
 //
-//DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_uniform(const void* const ptr)
+// DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_uniform(const void* const ptr)
 //{
-//    asm("prefetchu.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
-//}
+//     asm("prefetchu.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
+// }
 //
-//DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l2(const void* const ptr)
+// DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l2(const void* const ptr)
 //{
-//    asm("prefetch.global.L2 [%0];" : : PXL_GLOBAL_PTR(ptr));
-//}
+//     asm("prefetch.global.L2 [%0];" : : PXL_GLOBAL_PTR(ptr));
+// }
 
-template<typename IterType, class HDRFloatType, int32_t LM2>
-__global__
-void
+template <typename IterType, class HDRFloatType, int32_t LM2>
+__global__ void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
 mandel_1xHDR_float_perturb_bla(
     IterType *OutputIterMatrix,
@@ -207,25 +202,25 @@ mandel_1xHDR_float_perturb_bla(
     const HDRFloatType dy,
     const HDRFloatType centerX,
     const HDRFloatType centerY,
-    IterType n_iterations) {
+    IterType n_iterations)
+{
     const int X = blockIdx.x * blockDim.x + threadIdx.x;
     const int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
-    //size_t idx = width * Y + X;
+    // size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * Y + X;
     size_t idx = ConvertLocToIndex(X, Y, width);
 
-    //if (OutputIterMatrix[idx] != 0) { 
-    //    return;
-    //}
+    // if (OutputIterMatrix[idx] != 0) {
+    //     return;
+    // }
 
     using GPUBLA_TYPE = BLA<HDRFloatType>;
     char __shared__ SharedMem[sizeof(SharedMemStruct<HDRFloatType>)];
-    auto *shared =
-        reinterpret_cast<SharedMemStruct<HDRFloatType>*>(SharedMem);
+    auto *shared = reinterpret_cast<SharedMemStruct<HDRFloatType> *>(SharedMem);
 
     if (threadIdx.x == 0 && threadIdx.y == 0) {
         GPUBLA_TYPE **elts = blas.GetB();
@@ -234,14 +229,14 @@ mandel_1xHDR_float_perturb_bla(
             shared->altB[i] = elts[i];
         }
 
-        //const GPUBLA_TYPE nullBla{
-        //    HDRFloatType(),
-        //    HDRFloatType(1.0f),
-        //    HDRFloatType(),
-        //    HDRFloatType(),
-        //    HDRFloatType(),
-        //    0 };
-        //shared->nullBla = nullBla;
+        // const GPUBLA_TYPE nullBla{
+        //     HDRFloatType(),
+        //     HDRFloatType(1.0f),
+        //     HDRFloatType(),
+        //     HDRFloatType(),
+        //     HDRFloatType(),
+        //     0 };
+        // shared->nullBla = nullBla;
     }
 
     __syncthreads();
@@ -259,18 +254,18 @@ mandel_1xHDR_float_perturb_bla(
     const HDRFloatType Two = HDRFloatType(2);
 
     while (iter < n_iterations) {
-        //auto* next1X = &shared->PerThread[threadIdx.x][threadIdx.y].NextX1;
-        //auto* next1Y = &shared->PerThread[threadIdx.x][threadIdx.y].NextY1;
+        // auto* next1X = &shared->PerThread[threadIdx.x][threadIdx.y].NextX1;
+        // auto* next1Y = &shared->PerThread[threadIdx.x][threadIdx.y].NextY1;
         //__pipeline_memcpy_async(
-        //    next1X,
-        //    &Perturb.iters[RefIteration + 1].x,
-        //    sizeof(Perturb.iters[RefIteration + 1].x),
-        //    0);
+        //     next1X,
+        //     &Perturb.iters[RefIteration + 1].x,
+        //     sizeof(Perturb.iters[RefIteration + 1].x),
+        //     0);
         //__pipeline_memcpy_async(
-        //    next1Y,
-        //    &Perturb.iters[RefIteration + 1].y,
-        //    sizeof(Perturb.iters[RefIteration + 1].y),
-        //    0);
+        //     next1Y,
+        //     &Perturb.iters[RefIteration + 1].y,
+        //     sizeof(Perturb.iters[RefIteration + 1].y),
+        //     0);
         //__pipeline_commit();
 
         const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
@@ -285,48 +280,47 @@ mandel_1xHDR_float_perturb_bla(
 
         ++RefIteration;
 
-        //if (RefIteration >= Perturb.GetCountOrbitEntries()) {
-        //    // TODO this first RefIteration + l check bugs me
-        //    iter = 255;
-        //    break;
-        //}
+        // if (RefIteration >= Perturb.GetCountOrbitEntries()) {
+        //     // TODO this first RefIteration + l check bugs me
+        //     iter = 255;
+        //     break;
+        // }
 
         const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
         const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
 
-        //DeltaSubNX = DeltaSubNXOrig * tempSum2 -
-        //    DeltaSubNYOrig * tempSum1 +
-        //    DeltaSub0X;
-        //HdrReduce(DeltaSubNX);
+        // DeltaSubNX = DeltaSubNXOrig * tempSum2 -
+        //     DeltaSubNYOrig * tempSum1 +
+        //     DeltaSub0X;
+        // HdrReduce(DeltaSubNX);
 
-        //DeltaSubNX = HDRFloatType::custom_perturb1<false>(
-        //    DeltaSubNXOrig,
-        //    tempSum2,
-        //    DeltaSubNYOrig,
-        //    tempSum1,
-        //    DeltaSub0X);
+        // DeltaSubNX = HDRFloatType::custom_perturb1<false>(
+        //     DeltaSubNXOrig,
+        //     tempSum2,
+        //     DeltaSubNYOrig,
+        //     tempSum1,
+        //     DeltaSub0X);
 
-        //DeltaSubNY = HDRFloatType::custom_perturb1<true>(
-        //    DeltaSubNXOrig,
-        //    tempSum1,
-        //    DeltaSubNYOrig,
-        //    tempSum2,
-        //    DeltaSub0Y);
+        // DeltaSubNY = HDRFloatType::custom_perturb1<true>(
+        //     DeltaSubNXOrig,
+        //     tempSum1,
+        //     DeltaSubNYOrig,
+        //     tempSum2,
+        //     DeltaSub0Y);
 
-        HDRFloatType::custom_perturb2(
-            DeltaSubNX,
-            DeltaSubNY,
-            DeltaSubNXOrig,
-            tempSum2,
-            DeltaSubNYOrig,
-            tempSum1,
-            DeltaSub0X,
-            DeltaSub0Y);
+        HDRFloatType::custom_perturb2(DeltaSubNX,
+                                      DeltaSubNY,
+                                      DeltaSubNXOrig,
+                                      tempSum2,
+                                      DeltaSubNYOrig,
+                                      tempSum1,
+                                      DeltaSub0X,
+                                      DeltaSub0Y);
 
-        //DeltaSubNY = DeltaSubNXOrig * tempSum1 +
-        //    DeltaSubNYOrig * tempSum2 +
-        //    DeltaSub0Y;
-        //HdrReduce(DeltaSubNY);
+        // DeltaSubNY = DeltaSubNXOrig * tempSum1 +
+        //     DeltaSubNYOrig * tempSum2 +
+        //     DeltaSub0Y;
+        // HdrReduce(DeltaSubNY);
 
         //__pipeline_wait_prior(0);
 
@@ -359,12 +353,11 @@ mandel_1xHDR_float_perturb_bla(
         const BLA<HDRFloatType> *b = nullptr;
 
         for (;;) {
-            b = blas.LookupBackwards(
-                shared->altB,
-                /*shared->PerThread[threadIdx.x][threadIdx.y].curBR2,*/
-                //&shared->nullBla,
-                RefIteration,
-                DeltaNormSquared);
+            b = blas.LookupBackwards(shared->altB,
+                                     /*shared->PerThread[threadIdx.x][threadIdx.y].curBR2,*/
+                                     //&shared->nullBla,
+                                     RefIteration,
+                                     DeltaNormSquared);
             if (b == nullptr) {
                 break;
             }
@@ -381,8 +374,8 @@ mandel_1xHDR_float_perturb_bla(
             const bool res1 = (RefIteration + l >= Perturb.GetCountOrbitEntries());
             const bool res2 = (iter + l >= n_iterations);
             const bool res3 = (RefIteration + l < Perturb.GetCountOrbitEntries() - 1);
-            //const bool res4 = l == 0; // nullBla
-            const bool res12 = (/*res4 || */res1 || res2) == false;
+            // const bool res4 = l == 0; // nullBla
+            const bool res12 = (/*res4 || */ res1 || res2) == false;
             if (res12 && res3) {
                 iter += l;
                 RefIteration += l;
@@ -411,8 +404,9 @@ mandel_1xHDR_float_perturb_bla(
                 //__pipeline_commit();
                 //__pipeline_wait_prior(0);
 
-                //HDRFloatType tempZX = shared->PerThread[threadIdx.x][threadIdx.y].CurResult.x + DeltaSubNX;
-                //HDRFloatType tempZY = shared->PerThread[threadIdx.x][threadIdx.y].CurResult.y + DeltaSubNY;
+                // HDRFloatType tempZX = shared->PerThread[threadIdx.x][threadIdx.y].CurResult.x +
+                // DeltaSubNX; HDRFloatType tempZY =
+                // shared->PerThread[threadIdx.x][threadIdx.y].CurResult.y + DeltaSubNY;
                 HDRFloatType tempZX;
                 HDRFloatType tempZY;
                 Perturb.GetIterRandom(RefIteration, tempZX, tempZY);

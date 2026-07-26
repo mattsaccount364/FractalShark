@@ -5,11 +5,11 @@
 
 #include "../HpSharkFloat_cu.h"
 
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template class HpSharkFloat<SharkFloatParams>; \
-    template std::string Uint32ToMpf<SharkFloatParams>( \
-    const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val); \
-    template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits); \
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+    template class HpSharkFloat<SharkFloatParams>;                                                      \
+    template std::string Uint32ToMpf<SharkFloatParams>(                                                 \
+        const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);                                  \
+    template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);         \
     /* end */
 
 ExplicitlyInstantiate(SharkParamsDbl1);

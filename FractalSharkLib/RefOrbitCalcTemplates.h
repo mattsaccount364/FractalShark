@@ -32,7 +32,8 @@ InstantiateIsPerturbationResultUsefulHere(HDRFloat<CudaDblflt<MattDblflt>>,
 
 #define InstantiateAddPerturbationReferencePoint(IterTypeT, T, SubTypeT, PExtras, RefOrbitExtras)       \
     template void                                                                                       \
-    RefOrbitCalc::AddPerturbationReferencePoint<IterTypeT, T, SubTypeT, PExtras, RefOrbitExtras>(const PointZoomBBConverter &);
+    RefOrbitCalc::AddPerturbationReferencePoint<IterTypeT, T, SubTypeT, PExtras, RefOrbitExtras>(       \
+        const PointZoomBBConverter &);
 
 InstantiateAddPerturbationReferencePoint(
     uint32_t, float, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable);

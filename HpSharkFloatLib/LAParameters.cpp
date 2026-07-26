@@ -105,14 +105,12 @@ LAParameters::WriteMetadata(std::ofstream &metafile) const
     metafile << "DetectionMethod: " << m_DetectionMethod << std::endl;
     metafile << "LAThresholdScale(exp2): " << m_LAThresholdScaleExponent << std::endl;
     metafile << "LAThresholdCScale(exp2): " << m_LAThresholdCScaleExponent << std::endl;
-    metafile << "Stage0PeriodDetectionThreshold2(exp2): "
-             << m_Stage0PeriodDetectionThreshold2Exponent << std::endl;
-    metafile << "PeriodDetectionThreshold2(exp2): " << m_PeriodDetectionThreshold2Exponent
+    metafile << "Stage0PeriodDetectionThreshold2(exp2): " << m_Stage0PeriodDetectionThreshold2Exponent
              << std::endl;
-    metafile << "Stage0PeriodDetectionThreshold(exp2): "
-             << m_Stage0PeriodDetectionThresholdExponent << std::endl;
-    metafile << "PeriodDetectionThreshold(exp2): " << m_PeriodDetectionThresholdExponent
+    metafile << "PeriodDetectionThreshold2(exp2): " << m_PeriodDetectionThreshold2Exponent << std::endl;
+    metafile << "Stage0PeriodDetectionThreshold(exp2): " << m_Stage0PeriodDetectionThresholdExponent
              << std::endl;
+    metafile << "PeriodDetectionThreshold(exp2): " << m_PeriodDetectionThresholdExponent << std::endl;
     return true;
 }
 

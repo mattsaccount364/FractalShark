@@ -2,18 +2,18 @@
 
 //////////////////////////////////////////////////////////////////////////////
 
-template<typename IterType>
-__global__
-void mandel_4x_float(
-    IterType *OutputIterMatrix,
-    AntialiasedColors OutputColorMatrix,
-    int width,
-    int height,
-    GQF::gqf_real cx,
-    GQF::gqf_real cy,
-    GQF::gqf_real dx,
-    GQF::gqf_real dy,
-    IterType n_iterations) {
+template <typename IterType>
+__global__ void
+mandel_4x_float(IterType *OutputIterMatrix,
+                AntialiasedColors OutputColorMatrix,
+                int width,
+                int height,
+                GQF::gqf_real cx,
+                GQF::gqf_real cy,
+                GQF::gqf_real dx,
+                GQF::gqf_real dy,
+                IterType n_iterations)
+{
 
     using namespace GQF;
     int X = blockIdx.x * blockDim.x + threadIdx.x;
@@ -22,7 +22,7 @@ void mandel_4x_float(
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * (height - Y - 1) + X;
     size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     // Approach 2
@@ -74,18 +74,18 @@ void mandel_4x_float(
     OutputIterMatrix[idx] = iter;
 }
 
-template<typename IterType>
-__global__
-void mandel_4x_double(
-    IterType *OutputIterMatrix,
-    AntialiasedColors OutputColorMatrix,
-    int width,
-    int height,
-    GQD::gqd_real cx,
-    GQD::gqd_real cy,
-    GQD::gqd_real dx,
-    GQD::gqd_real dy,
-    IterType n_iterations) {
+template <typename IterType>
+__global__ void
+mandel_4x_double(IterType *OutputIterMatrix,
+                 AntialiasedColors OutputColorMatrix,
+                 int width,
+                 int height,
+                 GQD::gqd_real cx,
+                 GQD::gqd_real cy,
+                 GQD::gqd_real dx,
+                 GQD::gqd_real dy,
+                 IterType n_iterations)
+{
     using namespace GQD;
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -93,7 +93,7 @@ void mandel_4x_double(
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * (height - Y - 1) + X;
     size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     // Approach 2
@@ -139,16 +139,18 @@ void mandel_4x_double(
     OutputIterMatrix[idx] = iter;
 }
 
-
 /*
 *
 * Nvidia double double library (128-bit precision)
 
-We have released a library that contains code for negation, addition, subtraction, multiplication, division, and square root of double-double operands using a simple C-style interface.
+We have released a library that contains code for negation, addition, subtraction, multiplication,
+division, and square root of double-double operands using a simple C-style interface.
 
-Developers whose applications require precision beyond double precision will likely find this helpful, as double-double offers almost twice the precision of double precision.
+Developers whose applications require precision beyond double precision will likely find this helpful, as
+double-double offers almost twice the precision of double precision.
 
-It is available in the CUDA Registered Developer Page. The tar file also contains a simple example ( solution of a quadratic equation with different precisions)
+It is available in the CUDA Registered Developer Page. The tar file also contains a simple example (
+solution of a quadratic equation with different precisions)
 
 $ ./example_dd
 
@@ -168,25 +170,25 @@ x2 = 1.00000000010e-05 ax2**2+bx2+c = 0.00000000000e+00
 
 */
 
-template<typename IterType>
-__global__
-void mandel_2x_double(
-    IterType *OutputIterMatrix,
-    AntialiasedColors OutputColorMatrix,
-    int width,
-    int height,
-    dbldbl cx,
-    dbldbl cy,
-    dbldbl dx,
-    dbldbl dy,
-    IterType n_iterations) {
+template <typename IterType>
+__global__ void
+mandel_2x_double(IterType *OutputIterMatrix,
+                 AntialiasedColors OutputColorMatrix,
+                 int width,
+                 int height,
+                 dbldbl cx,
+                 dbldbl cy,
+                 dbldbl dx,
+                 dbldbl dy,
+                 IterType n_iterations)
+{
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * (height - Y - 1) + X;
     size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     //// Approach 1
@@ -247,65 +249,65 @@ void mandel_2x_double(
     //    }
     //}
 
-    //dbldbl cx2 = add_double_to_dbldbl(cx.y, cx.x);
-    //dbldbl cy2 = add_double_to_dbldbl(cy.y, cy.x);
+    // dbldbl cx2 = add_double_to_dbldbl(cx.y, cx.x);
+    // dbldbl cy2 = add_double_to_dbldbl(cy.y, cy.x);
 
-    //dbldbl dx2 = add_double_to_dbldbl(dx.y, dx.x);
-    //dbldbl dy2 = add_double_to_dbldbl(dy.y, dy.x);
+    // dbldbl dx2 = add_double_to_dbldbl(dx.y, dx.x);
+    // dbldbl dy2 = add_double_to_dbldbl(dy.y, dy.x);
 
-    //dbldbl X2 = add_double_to_dbldbl(X, 0);
-    //dbldbl Y2 = add_double_to_dbldbl(Y, 0);
+    // dbldbl X2 = add_double_to_dbldbl(X, 0);
+    // dbldbl Y2 = add_double_to_dbldbl(Y, 0);
 
-    //dbldbl x0;
-    //x0 = add_dbldbl(cx2, mul_dbldbl(dx2, X2));
+    // dbldbl x0;
+    // x0 = add_dbldbl(cx2, mul_dbldbl(dx2, X2));
 
-    //dbldbl y0;
-    //y0 = add_dbldbl(cy2, mul_dbldbl(dy2, Y2));
+    // dbldbl y0;
+    // y0 = add_dbldbl(cy2, mul_dbldbl(dy2, Y2));
 
-    //dbldbl x = add_double_to_dbldbl(0, 0);
-    //dbldbl y = add_double_to_dbldbl(0, 0);
+    // dbldbl x = add_double_to_dbldbl(0, 0);
+    // dbldbl y = add_double_to_dbldbl(0, 0);
 
-    //dbldbl two;
-    //two = add_double_to_dbldbl(2.0, 0);
+    // dbldbl two;
+    // two = add_double_to_dbldbl(2.0, 0);
 
-    //int iter = 0;
-    //dbldbl zrsqr = mul_dbldbl(x, x);
-    //dbldbl zisqr = mul_dbldbl(y, y);
+    // int iter = 0;
+    // dbldbl zrsqr = mul_dbldbl(x, x);
+    // dbldbl zisqr = mul_dbldbl(y, y);
 
-    //while (get_dbldbl_head(add_dbldbl(zrsqr, zisqr)) < 4.0 && iter < n_iterations)
+    // while (get_dbldbl_head(add_dbldbl(zrsqr, zisqr)) < 4.0 && iter < n_iterations)
     //{
-    //    y = mul_dbldbl(x, y);
-    //    y = shiftleft_dbldbl(y);
-    //    y = add_dbldbl(y, y0);
-    //    x = sub_dbldbl(zrsqr, zisqr);
-    //    x = add_dbldbl(x, x0);
-    //    zrsqr = sqr_dbldbl(x);
-    //    zisqr = sqr_dbldbl(y);
-    //    iter++;
-    //}
+    //     y = mul_dbldbl(x, y);
+    //     y = shiftleft_dbldbl(y);
+    //     y = add_dbldbl(y, y0);
+    //     x = sub_dbldbl(zrsqr, zisqr);
+    //     x = add_dbldbl(x, x0);
+    //     zrsqr = sqr_dbldbl(x);
+    //     zisqr = sqr_dbldbl(y);
+    //     iter++;
+    // }
 
-    //OutputIterMatrix[idx] = iter;
+    // OutputIterMatrix[idx] = iter;
 }
 
-template<typename IterType, int iteration_precision>
-__global__
-void mandel_1x_double(
-    IterType *OutputIterMatrix,
-    AntialiasedColors OutputColorMatrix,
-    int width,
-    int height,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    IterType n_iterations) {
+template <typename IterType, int iteration_precision>
+__global__ void
+mandel_1x_double(IterType *OutputIterMatrix,
+                 AntialiasedColors OutputColorMatrix,
+                 int width,
+                 int height,
+                 double cx,
+                 double cy,
+                 double dx,
+                 double dy,
+                 IterType n_iterations)
+{
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * (height - Y - 1) + X;
     size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     double x0 = cx + dx * X;
@@ -326,13 +328,13 @@ void mandel_1x_double(
         xtemp2 = 2.0 * x;
         y = __fma_rd(xtemp2, y, y0);
         x = xtemp;
-        };
+    };
 
     while (x * x + y * y < 4.0 && iter < n_iterations) {
-        //xtemp = x * x - y * y + x0;
-        //y = 2.0 * x * y + y0;
-        //x = xtemp;
-        //iter++;
+        // xtemp = x * x - y * y + x0;
+        // y = 2.0 * x * y + y0;
+        // x = xtemp;
+        // iter++;
 
         if (iteration_precision == 1) {
             MANDEL_1X_DOUBLE();
@@ -381,63 +383,64 @@ void mandel_1x_double(
     OutputIterMatrix[idx] = iter;
 }
 
-template<typename IterType, int iteration_precision>
-__global__
-void mandel_2x_float(
-    IterType *OutputIterMatrix,
-    AntialiasedColors OutputColorMatrix,
-    int width,
-    int height,
-    dblflt cx,
-    dblflt cy,
-    dblflt dx,
-    dblflt dy,
-    IterType n_iterations) {
+template <typename IterType, int iteration_precision>
+__global__ void
+mandel_2x_float(IterType *OutputIterMatrix,
+                AntialiasedColors OutputColorMatrix,
+                int width,
+                int height,
+                dblflt cx,
+                dblflt cy,
+                dblflt dx,
+                dblflt dy,
+                IterType n_iterations)
+{
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * (height - Y - 1) + X;
     size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     ////// Approach 1
     //// TODO need to take dblflt as parameters to this
     //// convert high precision to dblflt?
 
-    //dblflt cx2 = add_float_to_dblflt(cx.y, cx.x);
-    //dblflt cy2 = add_float_to_dblflt(cy.y, cy.x);
+    // dblflt cx2 = add_float_to_dblflt(cx.y, cx.x);
+    // dblflt cy2 = add_float_to_dblflt(cy.y, cy.x);
 
-    //dblflt dx2 = add_float_to_dblflt(dx.y, dx.x);
-    //dblflt dy2 = add_float_to_dblflt(dy.y, dy.x);
+    // dblflt dx2 = add_float_to_dblflt(dx.y, dx.x);
+    // dblflt dy2 = add_float_to_dblflt(dy.y, dy.x);
 
-    //dblflt X2 = add_float_to_dblflt(X, 0);
-    //dblflt Y2 = add_float_to_dblflt(Y, 0);
+    // dblflt X2 = add_float_to_dblflt(X, 0);
+    // dblflt Y2 = add_float_to_dblflt(Y, 0);
 
-    //dblflt x0;
-    //x0 = add_dblflt(cx2, mul_dblflt(dx2, X2));
+    // dblflt x0;
+    // x0 = add_dblflt(cx2, mul_dblflt(dx2, X2));
 
-    //dblflt y0;
-    //y0 = add_dblflt(cy2, mul_dblflt(dy2, Y2));
+    // dblflt y0;
+    // y0 = add_dblflt(cy2, mul_dblflt(dy2, Y2));
 
-    //dblflt x = add_float_to_dblflt(0, 0);
-    //dblflt y = add_float_to_dblflt(0, 0);
+    // dblflt x = add_float_to_dblflt(0, 0);
+    // dblflt y = add_float_to_dblflt(0, 0);
 
-    //int iter = 0;
-    //dblflt xtemp;
-    //dblflt two;
-    //two = add_float_to_dblflt(2.0, 0);
+    // int iter = 0;
+    // dblflt xtemp;
+    // dblflt two;
+    // two = add_float_to_dblflt(2.0, 0);
 
-    //dblflt xtemp2, xtemp3;
-    //dblflt ytemp2, ytemp3;
+    // dblflt xtemp2, xtemp3;
+    // dblflt ytemp2, ytemp3;
     //// while (x * x + y * y < 4.0 && iter < n_iterations)
-    //while (get_dblflt_head(add_dblflt(mul_dblflt(x, x), mul_dblflt(y, y))) < 4.0 && iter < n_iterations)
+    // while (get_dblflt_head(add_dblflt(mul_dblflt(x, x), mul_dblflt(y, y))) < 4.0 && iter <
+    // n_iterations)
     //{
-    //    //xtemp = x * x - y * y + x0;
-    //    //y = 2.0 * x * y + y0;
-    //    //x = xtemp;
-    //    //iter++;
+    //     //xtemp = x * x - y * y + x0;
+    //     //y = 2.0 * x * y + y0;
+    //     //x = xtemp;
+    //     //iter++;
 
     //    //xtemp = add_dblflt(sub_dblflt(mul_dblflt(x, x), mul_dblflt(y, y)), x0);
     //    //y = add_dblflt(mul_dblflt(two, mul_dblflt(x, y)), y0);
@@ -452,7 +455,6 @@ void mandel_2x_float(
     //    x = xtemp;
     //    iter++;
     //}
-
 
     // Approach 2
     // // For reference
@@ -502,7 +504,7 @@ void mandel_2x_float(
         x = add_dblflt(x, x0);
         zrsqr = sqr_dblflt(x);
         zisqr = sqr_dblflt(y);
-        };
+    };
 
     while (zrsqr.head + zisqr.head < 4.0f && iter < n_iterations) {
         if (iteration_precision == 1) {
@@ -552,35 +554,35 @@ void mandel_2x_float(
     OutputIterMatrix[idx] = iter;
 }
 
-template<typename IterType, int iteration_precision>
-__global__
-void mandel_hdr_float(
-    IterType *OutputIterMatrix,
-    AntialiasedColors OutputColorMatrix,
-    int width,
-    int height,
-    HDRFloat<CudaDblflt<dblflt>> cx,
-    HDRFloat<CudaDblflt<dblflt>> cy,
-    HDRFloat<CudaDblflt<dblflt>> dx,
-    HDRFloat<CudaDblflt<dblflt>> dy,
-    IterType n_iterations) {
+template <typename IterType, int iteration_precision>
+__global__ void
+mandel_hdr_float(IterType *OutputIterMatrix,
+                 AntialiasedColors OutputColorMatrix,
+                 int width,
+                 int height,
+                 HDRFloat<CudaDblflt<dblflt>> cx,
+                 HDRFloat<CudaDblflt<dblflt>> cy,
+                 HDRFloat<CudaDblflt<dblflt>> dx,
+                 HDRFloat<CudaDblflt<dblflt>> dy,
+                 IterType n_iterations)
+{
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * (height - Y - 1) + X;
     size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
-    HDRFloat<CudaDblflt<dblflt>> X2{ (float)X };
-    HDRFloat<CudaDblflt<dblflt>> Y2{ (float)Y };
+    HDRFloat<CudaDblflt<dblflt>> X2{(float)X};
+    HDRFloat<CudaDblflt<dblflt>> Y2{(float)Y};
 
     X2.Reduce();
     Y2.Reduce();
 
-    HDRFloat<CudaDblflt<dblflt>> x0{ cx + dx * X2 };
-    HDRFloat<CudaDblflt<dblflt>> y0{ cy + dy * Y2 };
+    HDRFloat<CudaDblflt<dblflt>> x0{cx + dx * X2};
+    HDRFloat<CudaDblflt<dblflt>> y0{cy + dy * Y2};
 
     x0.Reduce();
     y0.Reduce();
@@ -592,42 +594,42 @@ void mandel_hdr_float(
     HDRFloat<CudaDblflt<dblflt>> zrsqr{};
     HDRFloat<CudaDblflt<dblflt>> zisqr{};
 
-    //HDRFloat<CudaDblflt<dblflt>> zrsq2{};
-    //HDRFloat<CudaDblflt<dblflt>> zisq2{};
+    // HDRFloat<CudaDblflt<dblflt>> zrsq2{};
+    // HDRFloat<CudaDblflt<dblflt>> zisq2{};
     HDRFloat<CudaDblflt<dblflt>> zsq_sum{};
 
-    HDRFloat<CudaDblflt<dblflt>> Two{ 2.0f };
-    HDRFloat<CudaDblflt<dblflt>> Four{ 4.0f };
+    HDRFloat<CudaDblflt<dblflt>> Two{2.0f};
+    HDRFloat<CudaDblflt<dblflt>> Four{4.0f};
 
-    //auto MANDEL_2X_FLOAT = [&]() {
-    //    y.Reduce();
-    //    x.Reduce();
-    //    y = x * y * Two + y0;
-    //    x = zrsqr - zisqr + x0;
-    //    zrsqr = x.square();
-    //    zrsqr.Reduce();
-    //    zisqr = y.square();
-    //    zisqr.Reduce();
-    //    zsq_sum = zrsqr + zisqr;
-    //    zsq_sum.Reduce();
-    //};
+    // auto MANDEL_2X_FLOAT = [&]() {
+    //     y.Reduce();
+    //     x.Reduce();
+    //     y = x * y * Two + y0;
+    //     x = zrsqr - zisqr + x0;
+    //     zrsqr = x.square();
+    //     zrsqr.Reduce();
+    //     zisqr = y.square();
+    //     zisqr.Reduce();
+    //     zsq_sum = zrsqr + zisqr;
+    //     zsq_sum.Reduce();
+    // };
 
     auto MANDEL_2X_FLOAT = [&]() {
         y.Reduce();
         x.Reduce();
-        //double tempProd = x.toDouble() * y.toDouble() * 2.0 + y0.toDouble();
+        // double tempProd = x.toDouble() * y.toDouble() * 2.0 + y0.toDouble();
         y = x * y * Two + y0;
-        //y = HDRFloat<CudaDblflt<dblflt>>(tempProd);
+        // y = HDRFloat<CudaDblflt<dblflt>>(tempProd);
         x = zrsqr - zisqr + x0;
-        //double tempProd2 = zrsqr.toDouble() - zisqr.toDouble() + x0.toDouble();
-        //x = HDRFloat<CudaDblflt<dblflt>>(tempProd2);
+        // double tempProd2 = zrsqr.toDouble() - zisqr.toDouble() + x0.toDouble();
+        // x = HDRFloat<CudaDblflt<dblflt>>(tempProd2);
         zrsqr = x * x;
         zrsqr.Reduce();
         zisqr = y * y;
         zisqr.Reduce();
         zsq_sum = zrsqr + zisqr;
         zsq_sum.Reduce();
-        };
+    };
 
     while (zsq_sum.compareToBothPositiveReduced(Four) < 0 && iter < n_iterations) {
         if (iteration_precision == 1) {
@@ -677,25 +679,25 @@ void mandel_hdr_float(
     OutputIterMatrix[idx] = iter;
 }
 
-template<typename IterType, int iteration_precision>
-__global__
-void mandel_1x_float(
-    IterType *OutputIterMatrix,
-    AntialiasedColors OutputColorMatrix,
-    int width,
-    int height,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    IterType n_iterations) {
+template <typename IterType, int iteration_precision>
+__global__ void
+mandel_1x_float(IterType *OutputIterMatrix,
+                AntialiasedColors OutputColorMatrix,
+                int width,
+                int height,
+                float cx,
+                float cy,
+                float dx,
+                float dy,
+                IterType n_iterations)
+{
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * (height - Y - 1) + X;
     size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     float x0 = cx + dx * X;
@@ -734,13 +736,13 @@ void mandel_1x_float(
         xtemp2 = 2.0f * x;
         y = __fmaf_rd(xtemp2, y, y0);
         x = xtemp;
-        };
+    };
 
     while (x * x + y * y < 4.0 && iter < n_iterations) {
-        //xtemp = x * x - y * y + x0;
-        //y = 2.0 * x * y + y0;
-        //x = xtemp;
-        //iter++;
+        // xtemp = x * x - y * y + x0;
+        // y = 2.0 * x * y + y0;
+        // x = xtemp;
+        // iter++;
 
         if (iteration_precision == 1) {
             MANDEL_1X_FLOAT();

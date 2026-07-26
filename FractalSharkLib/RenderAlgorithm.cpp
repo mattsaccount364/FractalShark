@@ -1,7 +1,9 @@
 #include "stdafx.h"
 #include "RenderAlgorithm.h"
 
-RenderAlgorithm &RenderAlgorithm::operator=(const RenderAlgorithm &other) {
+RenderAlgorithm &
+RenderAlgorithm::operator=(const RenderAlgorithm &other)
+{
     if (this != &other) {
         this->Algorithm = other.Algorithm;
         this->AlgorithmStr = other.AlgorithmStr;
@@ -15,6 +17,8 @@ RenderAlgorithm &RenderAlgorithm::operator=(const RenderAlgorithm &other) {
     return *this;
 }
 
-RenderAlgorithm &RenderAlgorithm::operator=(RenderAlgorithm &&other) {
+RenderAlgorithm &
+RenderAlgorithm::operator=(RenderAlgorithm &&other)
+{
     return *this = other;
 }

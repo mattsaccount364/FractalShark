@@ -5,9 +5,9 @@
 
 #include "../KernelHpSharkReferenceOrbit_cu.h"
 
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>( \
-    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]); \
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
+        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);           \
     /* end */
 
 ExplicitlyInstantiate(SharkParams1);

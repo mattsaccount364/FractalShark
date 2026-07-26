@@ -2,29 +2,26 @@
 
 #pragma once
 
+#include "ATInfo.h"
 #include "HDRFloat.h"
 #include "HDRFloatComplex.h"
-#include "LAstep.h"
-#include "ATInfo.h"
-#include  "LAInfoI.h"
 #include "LAInfoDeep.h"
+#include "LAInfoI.h"
+#include "LAstep.h"
 
-template<typename IterType, class Float, class SubType>
-class GPU_LAInfoDeep {
+template <typename IterType, class Float, class SubType> class GPU_LAInfoDeep {
 public:
-    static constexpr bool IsHDR =
-        std::is_same<Float, ::HDRFloat<float>>::value ||
-        std::is_same<Float, ::HDRFloat<double>>::value ||
-        std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
-        std::is_same<Float, ::HDRFloat<CudaDblflt<dblflt>>>::value;
+    static constexpr bool IsHDR = std::is_same<Float, ::HDRFloat<float>>::value ||
+                                  std::is_same<Float, ::HDRFloat<double>>::value ||
+                                  std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+                                  std::is_same<Float, ::HDRFloat<CudaDblflt<dblflt>>>::value;
     using HDRFloat = Float;
     using HDRFloatComplex =
-        std::conditional<
-        std::is_same<Float, ::HDRFloat<float>>::value ||
-        std::is_same<Float, ::HDRFloat<double>>::value ||
-        std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
-        ::HDRFloatComplex<SubType>,
-        ::FloatComplex<SubType>>::type;
+        std::conditional<std::is_same<Float, ::HDRFloat<float>>::value ||
+                             std::is_same<Float, ::HDRFloat<double>>::value ||
+                             std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
+                         ::HDRFloatComplex<SubType>,
+                         ::FloatComplex<SubType>>::type;
 
     HDRFloatComplex Ref;
     HDRFloatComplex ZCoeff;
@@ -34,11 +31,11 @@ public:
     HDRFloat MinMag;
     LAInfoI<IterType> LAi;
 
-    template<class Float2, class SubType2>
+    template <class Float2, class SubType2>
     CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType> &operator=(
         const GPU_LAInfoDeep<IterType, Float2, SubType2> &other);
 
-    template<class Float2, class SubType2, PerturbExtras PExtras2>
+    template <class Float2, class SubType2, PerturbExtras PExtras2>
     CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType> &operator=(
         const LAInfoDeep<IterType, Float2, SubType2, PExtras2> &other);
 
@@ -49,11 +46,12 @@ public:
     CUDA_CRAP const LAInfoI<IterType> &GetLAi() const;
 };
 
-template<typename IterType, class Float, class SubType>
-template<class Float2, class SubType2>
-CUDA_CRAP
-GPU_LAInfoDeep<IterType, Float, SubType> &GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
-    const GPU_LAInfoDeep<IterType, Float2, SubType2> &other) {
+template <typename IterType, class Float, class SubType>
+template <class Float2, class SubType2>
+CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType> &
+GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
+    const GPU_LAInfoDeep<IterType, Float2, SubType2> &other)
+{
     if (this == &other) {
         return *this;
     }
@@ -71,11 +69,12 @@ GPU_LAInfoDeep<IterType, Float, SubType> &GPU_LAInfoDeep<IterType, Float, SubTyp
     return *this;
 }
 
-template<typename IterType, class Float, class SubType>
-template<class Float2, class SubType2, PerturbExtras PExtras2>
-CUDA_CRAP
-GPU_LAInfoDeep<IterType, Float, SubType> &GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
-    const LAInfoDeep<IterType, Float2, SubType2, PExtras2> &other) {
+template <typename IterType, class Float, class SubType>
+template <class Float2, class SubType2, PerturbExtras PExtras2>
+CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType> &
+GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
+    const LAInfoDeep<IterType, Float2, SubType2, PExtras2> &other)
+{
 
     this->Ref = HDRFloatComplex(other.Ref);
     this->LAThreshold = HDRFloat(other.LAThreshold);
@@ -87,9 +86,10 @@ GPU_LAInfoDeep<IterType, Float, SubType> &GPU_LAInfoDeep<IterType, Float, SubTyp
     return *this;
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP
-GPU_LAstep<IterType, Float, SubType> GPU_LAInfoDeep<IterType, Float, SubType>::Prepare(HDRFloatComplex dz) const {
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP GPU_LAstep<IterType, Float, SubType>
+GPU_LAInfoDeep<IterType, Float, SubType>::Prepare(HDRFloatComplex dz) const
+{
     //*2 is + 1
     HDRFloatComplex newdz = dz * (Ref * HDRFloat(2) + dz);
     newdz.Reduce();
@@ -105,25 +105,30 @@ GPU_LAstep<IterType, Float, SubType> GPU_LAInfoDeep<IterType, Float, SubType>::P
     return temp;
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP
-GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex GPU_LAInfoDeep<IterType, Float, SubType>::getRef() const {
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex
+GPU_LAInfoDeep<IterType, Float, SubType>::getRef() const
+{
     return Ref;
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP
-GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat GPU_LAInfoDeep<IterType, Float, SubType>::getLAThresholdC() const {
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat
+GPU_LAInfoDeep<IterType, Float, SubType>::getLAThresholdC() const
+{
     return LAThresholdC;
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP
-GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex GPU_LAInfoDeep<IterType, Float, SubType>::Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) const {
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex
+GPU_LAInfoDeep<IterType, Float, SubType>::Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) const
+{
     return newdz * ZCoeff + dc * CCoeff;
 }
 
-template<typename IterType, class Float, class SubType>
-CUDA_CRAP const LAInfoI<IterType> &GPU_LAInfoDeep<IterType, Float, SubType>::GetLAi() const {
+template <typename IterType, class Float, class SubType>
+CUDA_CRAP const LAInfoI<IterType> &
+GPU_LAInfoDeep<IterType, Float, SubType>::GetLAi() const
+{
     return this->LAi;
 }

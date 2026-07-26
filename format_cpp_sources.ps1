@@ -5,7 +5,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $sourcePatterns = @('*.cpp', '*.h', '*.cu', '*.cuh', '*.cc', '*.hh', '*.hpp')
+$excludedSourcePatterns = @(
+    'FractalSharkLib/LargeCoords*.h',
+    'FractalSharkLib/QuadDouble/Original/*',
+    'FractalSharkLib/WPngImage/*'
+)
 $repositoryRoot = $PSScriptRoot
+$script:excludedSourcePathCount = 0
 
 function Get-ClangFormatPath {
     $attemptedLocations = [System.Collections.Generic.List[string]]::new()
@@ -74,11 +80,31 @@ function Get-TrackedSourcePaths {
         throw 'git ls-files failed while locating tracked C++/CUDA files.'
     }
 
-    return @(
-        ($relativePaths -split [char]0) |
-            Where-Object { $_ } |
-            ForEach-Object { Join-Path $repositoryRoot $_ }
-    )
+    $sourcePaths = [System.Collections.Generic.List[string]]::new()
+    $script:excludedSourcePathCount = 0
+
+    foreach ($relativePath in $relativePaths -split [char]0) {
+        if (-not $relativePath) {
+            continue
+        }
+
+        $isExcluded = $false
+        foreach ($excludedSourcePattern in $excludedSourcePatterns) {
+            if ($relativePath -like $excludedSourcePattern) {
+                $isExcluded = $true
+                break
+            }
+        }
+
+        if ($isExcluded) {
+            $script:excludedSourcePathCount++
+            continue
+        }
+
+        $sourcePaths.Add((Join-Path $repositoryRoot $relativePath))
+    }
+
+    return @($sourcePaths)
 }
 
 function Normalize-CrlfLineEndings {
@@ -138,6 +164,7 @@ if ($missingPaths) {
 $clangFormatPath = Get-ClangFormatPath
 Write-Host "Using clang-format: $clangFormatPath"
 Write-Host "Formatting $($sourcePaths.Count) tracked C++/CUDA files."
+Write-Host "Excluded $excludedSourcePathCount upstream C++/CUDA files."
 
 Push-Location $repositoryRoot
 try {

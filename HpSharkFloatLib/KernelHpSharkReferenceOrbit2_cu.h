@@ -451,7 +451,6 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
         roots.stages = static_cast<int32_t>(stages);
         roots.total_twiddles = activeN - 1;
     }
-    grid.sync();
 
     constexpr uint64_t Generator = SharkNTT::FindGeneratorConstexpr();
     const uint64_t generatorMont =
@@ -485,7 +484,6 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
             }
         }
     }
-    grid.sync();
 
     uint32_t offset = 0;
     for (uint32_t stage = 1; stage <= stages; ++stage) {
@@ -518,7 +516,6 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
                 }
             }
         }
-        grid.sync();
         offset += half;
     }
 
@@ -529,6 +526,7 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
             MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, inverseTwo, stages);
         workspace.CachedN = activeN;
     }
+    // Root-table ranges are disjoint; publish the complete table once after all generators finish.
     grid.sync();
 }
 
@@ -705,7 +703,7 @@ AccumulateOutputTerm(cooperative_groups::grid_group &grid,
         for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize)
             workspace.Product[i] =
                 MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, a[i], b[i]);
-        grid.sync();
+        // The shifted pass has identical grid-stride ownership and supplies the publication barrier.
         if (hasDestinationValue) {
             AddShiftedSpectrum<SharkFloatParams>(
                 grid, block, debugCombo, plan, roots, workspace.Product, shift, term.IsNegative, dest);
@@ -1336,8 +1334,9 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
             else
                 magnitude[index] = ~digits[index];
         }
-        grid.sync();
 
+        // An appended carry cannot overlap the completed [0, digitLength) fill. The following barrier
+        // publishes both the magnitude and control writes.
         if (IsLeader<SharkFloatParams>(block)) {
             if (lowestNonZero == digitLength) {
                 MattsCudaAssert(digitLength < Capacity);
@@ -1462,7 +1461,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             HpSharkFloat<SharkFloatParams> *outputs[2] = {&combo->Multiply.A, &combo->Multiply.B};
             SetZeroBatch<SharkFloatParams, 2>(grid, block, outputs);
         }
-        grid.sync();
         StoreReference2DebugValue(
             debugStates, grid, block, DebugStatePurpose::Result_Add1, combo->Multiply.A);
         StoreReference2DebugValue(
@@ -1482,7 +1480,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     if (requiredN > HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN || requiredN < 2) {
         if (IsLeader<SharkFloatParams>(block))
             combo->PeriodicityStatus = PeriodicityResult::Unknown;
-        grid.sync();
         return;
     }
     const uint32_t cachedN = workspace.CachedN;
@@ -1638,7 +1635,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    DebugStatePurpose::SignedCarry1,
                                                    DebugStatePurpose::FinalAdd1);
         }
-        grid.sync();
         if (imagZero) {
             SetZero(grid, block, &combo->Multiply.B);
         } else {
@@ -1685,7 +1681,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    DebugStatePurpose::FinalAdd2);
         }
     }
-    grid.sync();
     StoreReference2DebugValue(
         debugStates, grid, block, DebugStatePurpose::Result_Add1, combo->Multiply.A);
     StoreReference2DebugValue(
@@ -1827,7 +1822,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        DebugStatePurpose::SignedCarryDzdc1,
                                                        DebugStatePurpose::FinalAddDzdc1);
             }
-            grid.sync();
             if (dzdcImagZero) {
                 SetZero(grid, block, &combo->Multiply.DzdcImag);
             } else {
@@ -1874,7 +1868,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                        DebugStatePurpose::FinalAddDzdc2);
             }
         }
-        grid.sync();
         StoreReference2DebugValue(
             debugStates, grid, block, DebugStatePurpose::Result_AddDzdc1, combo->Multiply.DzdcReal);
         StoreReference2DebugValue(
@@ -1985,12 +1978,10 @@ __maxnreg__(HpShark::RegisterLimit)
         EraseAllDebugStates(debugStates, grid, block);
     }
 
-    grid.sync();
     if (leader) {
         combo->OutputIterCount = 0;
         combo->PeriodicityStatus = PeriodicityResult::Continue;
     }
-    grid.sync();
 
     Reference2Detail::StoreReference2DebugValue(
         debugStates, grid, block, DebugStatePurpose::ReferenceEntryZReal, combo->Multiply.A);
@@ -2015,17 +2006,17 @@ __maxnreg__(HpShark::RegisterLimit)
 
         Reference2Detail::FusedReferenceOrbitStep<SharkFloatParams>(
             grid, block, sharedData, debugCombo, debugStates, carryPrefixShared, combo);
+        // FusedReferenceOrbitStep may return without a final barrier; this publishes every output and
+        // PeriodicityStatus before any thread consumes them.
         grid.sync();
         if (combo->PeriodicityStatus == PeriodicityResult::Unknown)
             break;
 
         if (leader)
             ++combo->OutputIterCount;
-        grid.sync();
         (void)stop;
     }
 
-    grid.sync();
     Reference2Detail::StoreReference2DebugValue(
         debugStates, grid, block, DebugStatePurpose::ReferenceExitZReal, combo->Multiply.A);
     Reference2Detail::StoreReference2DebugValue(

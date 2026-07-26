@@ -1252,16 +1252,13 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                     break;
                 --previousPart;
             }
+            const uint64_t prefix = ComposeCarryPrefixes(exclusive, aggregate);
+            PublishCarryPrefixDescriptorPrefix(descriptors[part], prefix);
             exclusiveStorage[0] = exclusive;
         }
         __syncthreads();
 
         const uint64_t exclusivePart = exclusiveStorage[0];
-        if (threadIndex == 0u) {
-            const uint64_t prefix = ComposeCarryPrefixes(exclusivePart, aggregate);
-            PublishCarryPrefixDescriptorPrefix(descriptors[part], prefix);
-        }
-
         const uint64_t warpExclusive = warpPrefixes[warp];
         const uint64_t previous = ShuffleUpCarryPrefix(warpMask, inclusive, 1);
         const uint64_t localExclusive = lane == 0u ? CarryPrefixIdentity() : previous;

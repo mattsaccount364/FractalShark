@@ -109,23 +109,27 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         return (value + alignment - 1) & ~(alignment - 1);
     };
 
+    constexpr size_t WorkspaceAlignment = 16u;
     size_t workspaceBytes = 0;
-    workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint64_t));
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
     workspaceBytes += spectrumCount * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, alignof(int64_t));
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
     workspaceBytes += limbCount * static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(int64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint32_t));
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
     workspaceBytes += 2u * static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(uint32_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint64_t));
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
     workspaceBytes += static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(uint64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, alignof(HpSharkReference2CarryPrefixDescriptor));
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
     workspaceBytes += static_cast<size_t>(Workspace::MaxCarryPrefixParts) *
                       sizeof(HpSharkReference2CarryPrefixDescriptor);
-    workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint32_t));
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
     workspaceBytes += static_cast<size_t>(Workspace::CarryPrefixControlCount) * sizeof(uint32_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint64_t));
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
+    workspaceBytes += static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
+    workspaceBytes += static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
+    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
     workspaceBytes += 4u * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
-    workspaceBytes += 2u * static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
 
     void *workspaceStorage = nullptr;
     {
@@ -157,11 +161,11 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
     };
     auto allocateSpectrum = [&] {
         return static_cast<uint64_t *>(
-            allocateWorkspace(Workspace::MaxFusedN, sizeof(uint64_t), alignof(uint64_t)));
+            allocateWorkspace(Workspace::MaxFusedN, sizeof(uint64_t), WorkspaceAlignment));
     };
     auto allocateLimbs = [&] {
         return static_cast<int64_t *>(
-            allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(int64_t), alignof(int64_t)));
+            allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(int64_t), WorkspaceAlignment));
     };
 
     Workspace workspace{};
@@ -187,21 +191,21 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         workspace.DzdcImagLimbs = allocateLimbs();
     }
     workspace.MagnitudeDigits = static_cast<uint32_t *>(
-        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), alignof(uint32_t)));
+        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
     workspace.Magnitude = static_cast<uint32_t *>(
-        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), alignof(uint32_t)));
+        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
     workspace.CarryPrefixTransforms = static_cast<uint64_t *>(
-        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint64_t), alignof(uint64_t)));
+        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint64_t), WorkspaceAlignment));
     workspace.CarryPrefixDescriptors = static_cast<HpSharkReference2CarryPrefixDescriptor *>(
         allocateWorkspace(Workspace::MaxCarryPrefixParts,
                           sizeof(HpSharkReference2CarryPrefixDescriptor),
-                          alignof(HpSharkReference2CarryPrefixDescriptor)));
+                          WorkspaceAlignment));
     workspace.CarryPrefixControl = static_cast<uint32_t *>(
-        allocateWorkspace(Workspace::CarryPrefixControlCount, sizeof(uint32_t), alignof(uint32_t)));
+        allocateWorkspace(Workspace::CarryPrefixControlCount, sizeof(uint32_t), WorkspaceAlignment));
     workspace.Roots.stage_omegas = static_cast<uint64_t *>(
-        allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
+        allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
     workspace.Roots.stage_omegas_inv = static_cast<uint64_t *>(
-        allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
+        allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
     workspace.Roots.psi_pows = allocateSpectrum();
     workspace.Roots.psi_inv_pows = allocateSpectrum();
     workspace.Roots.stage_twiddles_fwd = allocateSpectrum();

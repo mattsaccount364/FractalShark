@@ -1058,8 +1058,7 @@ FindLowestNonZeroBatch(cooperative_groups::grid_group &grid,
 #pragma unroll
         for (int buffer = 0; buffer < BatchSize; ++buffer) {
             if (enabled[buffer] && index < counts[buffer] && values[buffer][index] != 0u)
-                localMinimum[buffer] =
-                    localMinimum[buffer] < index ? localMinimum[buffer] : index;
+                localMinimum[buffer] = localMinimum[buffer] < index ? localMinimum[buffer] : index;
         }
     }
 
@@ -1310,13 +1309,12 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
 
 template <int BatchSize>
 __device__ void
-PrepareSignedCarryPrefixesBatch(
-    cooperative_groups::grid_group &grid,
-    cooperative_groups::thread_block &block,
-    int64_t *const limbs[BatchSize],
-    uint32_t limbCount,
-    uint64_t *const transforms[BatchSize],
-    HpSharkReference2CarryPrefixDescriptor *const descriptors[BatchSize])
+PrepareSignedCarryPrefixesBatch(cooperative_groups::grid_group &grid,
+                                cooperative_groups::thread_block &block,
+                                int64_t *const limbs[BatchSize],
+                                uint32_t limbCount,
+                                uint64_t *const transforms[BatchSize],
+                                HpSharkReference2CarryPrefixDescriptor *const descriptors[BatchSize])
 {
     static_assert(BatchSize >= 1 && BatchSize <= 4);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
@@ -1331,8 +1329,7 @@ PrepareSignedCarryPrefixesBatch(
     for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize) {
 #pragma unroll
         for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            PublishCarryPrefixState(
-                &descriptors[buffer][part].State, CarryPrefixDescriptorState::Empty);
+            PublishCarryPrefixState(&descriptors[buffer][part].State, CarryPrefixDescriptorState::Empty);
         }
     }
     grid.sync();
@@ -1340,13 +1337,12 @@ PrepareSignedCarryPrefixesBatch(
 
 template <int BatchSize>
 __device__ void
-PrefixCarryTransformsDLBBatch(
-    cooperative_groups::grid_group &grid,
-    cooperative_groups::thread_block &block,
-    uint64_t *const transforms[BatchSize],
-    uint32_t count,
-    HpSharkReference2CarryPrefixDescriptor *const descriptors[BatchSize],
-    uint64_t *sharedStorage)
+PrefixCarryTransformsDLBBatch(cooperative_groups::grid_group &grid,
+                              cooperative_groups::thread_block &block,
+                              uint64_t *const transforms[BatchSize],
+                              uint32_t count,
+                              HpSharkReference2CarryPrefixDescriptor *const descriptors[BatchSize],
+                              uint64_t *sharedStorage)
 {
     static_assert(BatchSize >= 1 && BatchSize <= 4);
     if (count == 0u)
@@ -1377,8 +1373,7 @@ PrefixCarryTransformsDLBBatch(
         uint64_t inclusive[BatchSize];
 #pragma unroll
         for (int buffer = 0; buffer < BatchSize; ++buffer)
-            inclusive[buffer] =
-                hasValue ? transforms[buffer][index] : CarryPrefixIdentity();
+            inclusive[buffer] = hasValue ? transforms[buffer][index] : CarryPrefixIdentity();
 
 #pragma unroll
         for (int buffer = 0; buffer < BatchSize; ++buffer) {
@@ -1412,8 +1407,7 @@ PrefixCarryTransformsDLBBatch(
             for (int buffer = 0; buffer < BatchSize; ++buffer) {
                 uint64_t *warpAggregates = sharedStorage + buffer * SharedWordsPerStream;
                 uint64_t *warpPrefixes = warpAggregates + CarryPrefixMaxWarps;
-                uint64_t warpInclusive =
-                    lane < numWarps ? warpAggregates[lane] : CarryPrefixIdentity();
+                uint64_t warpInclusive = lane < numWarps ? warpAggregates[lane] : CarryPrefixIdentity();
 #pragma unroll
                 for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
                     const uint64_t previous =
@@ -1433,8 +1427,7 @@ PrefixCarryTransformsDLBBatch(
         if (threadIndex == 0u) {
 #pragma unroll
             for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                PublishCarryPrefixDescriptorAggregate(
-                    descriptors[buffer][part], aggregates[buffer]);
+                PublishCarryPrefixDescriptorAggregate(descriptors[buffer][part], aggregates[buffer]);
             }
         }
 
@@ -1442,15 +1435,12 @@ PrefixCarryTransformsDLBBatch(
             warpTile.sync();
 #pragma unroll
             for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                const uint64_t exclusive =
-                    ResolveCarryPrefixWarp(descriptors[buffer], part, warpTile);
+                const uint64_t exclusive = ResolveCarryPrefixWarp(descriptors[buffer], part, warpTile);
                 if (lane == 0u) {
-                    const uint64_t prefix =
-                        ComposeCarryPrefixes(exclusive, aggregates[buffer]);
+                    const uint64_t prefix = ComposeCarryPrefixes(exclusive, aggregates[buffer]);
                     PublishCarryPrefixDescriptorPrefix(descriptors[buffer][part], prefix);
                     uint64_t *exclusiveStorage =
-                        sharedStorage + buffer * SharedWordsPerStream +
-                        2u * CarryPrefixMaxWarps;
+                        sharedStorage + buffer * SharedWordsPerStream + 2u * CarryPrefixMaxWarps;
                     exclusiveStorage[0] = exclusive;
                 }
             }
@@ -1464,14 +1454,11 @@ PrefixCarryTransformsDLBBatch(
             uint64_t *exclusiveStorage = warpPrefixes + CarryPrefixMaxWarps;
             const uint64_t exclusivePart = exclusiveStorage[0];
             const uint64_t warpExclusive = warpPrefixes[warp];
-            const uint64_t previous =
-                ShuffleUpCarryPrefix(warpTile, inclusive[buffer], 1);
+            const uint64_t previous = ShuffleUpCarryPrefix(warpTile, inclusive[buffer], 1);
             const uint64_t localExclusive = lane == 0u ? CarryPrefixIdentity() : previous;
             if (hasValue) {
-                const uint64_t prefixWithinPart =
-                    ComposeCarryPrefixes(warpExclusive, localExclusive);
-                transforms[buffer][index] =
-                    ComposeCarryPrefixes(exclusivePart, prefixWithinPart);
+                const uint64_t prefixWithinPart = ComposeCarryPrefixes(warpExclusive, localExclusive);
+                transforms[buffer][index] = ComposeCarryPrefixes(exclusivePart, prefixWithinPart);
             }
         }
         // The next partition's aggregate barrier protects shared scratch reuse.
@@ -1501,8 +1488,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     constexpr uint32_t NegativeControl = 1;
     constexpr uint32_t NonZeroReductionControl = 2;
     constexpr uint32_t DescriptorWords =
-        (Workspace::MaxCarryPrefixParts * sizeof(Descriptor) + sizeof(uint64_t) - 1u) /
-        sizeof(uint64_t);
+        (Workspace::MaxCarryPrefixParts * sizeof(Descriptor) + sizeof(uint64_t) - 1u) / sizeof(uint64_t);
     constexpr uint32_t ControlWords =
         (Workspace::CarryPrefixControlCount * sizeof(uint32_t) + sizeof(uint64_t) - 1u) /
         sizeof(uint64_t);
@@ -1512,8 +1498,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     uint64_t *scratch[BatchSize] = {workspace.RealOutput, workspace.ImagOutput};
     int64_t *limbs[BatchSize] = {workspace.RealLimbs, workspace.ImagLimbs};
     int32_t commonExponents[BatchSize] = {realExponent, imagExponent};
-    HpSharkFloat<SharkFloatParams> *outputs[BatchSize] = {
-        &combo->Multiply.A, &combo->Multiply.B};
+    HpSharkFloat<SharkFloatParams> *outputs[BatchSize] = {&combo->Multiply.A, &combo->Multiply.B};
     DebugStatePurpose digitsPurposes[BatchSize] = {DebugStatePurpose::SignedCarry1,
                                                    DebugStatePurpose::SignedCarry2};
     DebugStatePurpose magnitudePurposes[BatchSize] = {DebugStatePurpose::FinalAdd1,
@@ -1542,14 +1527,12 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
         transforms[buffer] = scratch[buffer];
         digits[buffer] = reinterpret_cast<uint32_t *>(scratch[buffer]);
         descriptors[buffer] = reinterpret_cast<Descriptor *>(scratch[buffer] + Capacity);
-        control[buffer] = reinterpret_cast<uint32_t *>(
-            scratch[buffer] + Capacity + DescriptorWords);
+        control[buffer] = reinterpret_cast<uint32_t *>(scratch[buffer] + Capacity + DescriptorWords);
     }
 
     MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
 
-    PrepareSignedCarryPrefixesBatch<BatchSize>(
-        grid, block, limbs, limbCount, transforms, descriptors);
+    PrepareSignedCarryPrefixesBatch<BatchSize>(grid, block, limbs, limbCount, transforms, descriptors);
     PrefixCarryTransformsDLBBatch<BatchSize>(
         grid, block, transforms, limbCount, descriptors, carryPrefixShared);
 
@@ -1559,8 +1542,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
         for (int buffer = 0; buffer < BatchSize; ++buffer) {
             const int64_t signedLimb = limbs[buffer][index];
             const int32_t carryIn = ApplyCarryPrefix(transforms[buffer][index], 0);
-            const uint32_t digit =
-                static_cast<uint32_t>(static_cast<uint64_t>(signedLimb + carryIn));
+            const uint32_t digit = static_cast<uint32_t>(static_cast<uint64_t>(signedLimb + carryIn));
             if (index + 1u == limbCount) {
                 int32_t finalCarry = CarryOutForSignedLimb(signedLimb, carryIn);
                 uint32_t digitLength = limbCount;
@@ -1600,12 +1582,8 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     if constexpr (HpShark::DebugChecksums) {
 #pragma unroll
         for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            StoreReference2DebugState(debugStates,
-                                      grid,
-                                      block,
-                                      digitsPurposes[buffer],
-                                      digits[buffer],
-                                      digitLengths[buffer]);
+            StoreReference2DebugState(
+                debugStates, grid, block, digitsPurposes[buffer], digits[buffer], digitLengths[buffer]);
         }
     }
 
@@ -1712,8 +1690,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
 #pragma unroll
             for (int buffer = 0; buffer < BatchSize; ++buffer) {
                 if (*nonZeroResults[buffer] != 0u) {
-                    MattsCudaAssert(
-                        (outputs[buffer]->Digits[ActualDigits - 1u] & 0x8000'0000u) != 0u);
+                    MattsCudaAssert((outputs[buffer]->Digits[ActualDigits - 1u] & 0x8000'0000u) != 0u);
                 }
             }
         }
@@ -1902,17 +1879,14 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                  dzdcImagZImagTerm,
                                  dzdcImagZRealTerm);
 
-    constexpr int FinalizationStreamCount =
-        SharkFloatParams::EnableNewtonRaphson ? 4 : 2;
-    uint64_t *spectra[FinalizationStreamCount] = {
-        workspace.RealOutput, workspace.ImagOutput};
+    constexpr int FinalizationStreamCount = SharkFloatParams::EnableNewtonRaphson ? 4 : 2;
+    uint64_t *spectra[FinalizationStreamCount] = {workspace.RealOutput, workspace.ImagOutput};
     uint32_t coefficientCounts[FinalizationStreamCount] = {activeN, activeN};
-    int64_t *limbs[FinalizationStreamCount] = {
-        workspace.RealLimbs, workspace.ImagLimbs};
-    DebugStatePurpose residuesPurposes[FinalizationStreamCount] = {
-        DebugStatePurpose::Z2_Perm4, DebugStatePurpose::Z2_Perm5};
-    DebugStatePurpose limbsPurposes[FinalizationStreamCount] = {
-        DebugStatePurpose::UnpackXX, DebugStatePurpose::UnpackYY};
+    int64_t *limbs[FinalizationStreamCount] = {workspace.RealLimbs, workspace.ImagLimbs};
+    DebugStatePurpose residuesPurposes[FinalizationStreamCount] = {DebugStatePurpose::Z2_Perm4,
+                                                                   DebugStatePurpose::Z2_Perm5};
+    DebugStatePurpose limbsPurposes[FinalizationStreamCount] = {DebugStatePurpose::UnpackXX,
+                                                                DebugStatePurpose::UnpackYY};
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         spectra[2] = workspace.DzdcRealOutput;
         spectra[3] = workspace.DzdcImagOutput;
@@ -1925,20 +1899,19 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         limbsPurposes[2] = DebugStatePurpose::UnpackW0;
         limbsPurposes[3] = DebugStatePurpose::UnpackW1;
     }
-    InverseSpectraToSignedLimbsBatch<SharkFloatParams, FinalizationStreamCount>(
-        grid,
-        block,
-        sharedData,
-        debugCombo,
-        debugStates,
-        plan,
-        workspace.Roots,
-        spectra,
-        coefficientCounts,
-        limbs,
-        limbCount,
-        residuesPurposes,
-        limbsPurposes);
+    InverseSpectraToSignedLimbsBatch<SharkFloatParams, FinalizationStreamCount>(grid,
+                                                                                block,
+                                                                                sharedData,
+                                                                                debugCombo,
+                                                                                debugStates,
+                                                                                plan,
+                                                                                workspace.Roots,
+                                                                                spectra,
+                                                                                coefficientCounts,
+                                                                                limbs,
+                                                                                limbCount,
+                                                                                residuesPurposes,
+                                                                                limbsPurposes);
     FinalizeSignedStream<SharkFloatParams>(grid,
                                            block,
                                            debugStates,
@@ -2050,8 +2023,7 @@ __maxnreg__(HpShark::RegisterLimit)
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
     extern __shared__ __align__(16) uint64_t sharedData[];
-    __shared__ uint64_t
-        carryPrefixShared[4u * (2u * Reference2Detail::CarryPrefixMaxWarps + 1u)];
+    __shared__ uint64_t carryPrefixShared[4u * (2u * Reference2Detail::CarryPrefixMaxWarps + 1u)];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
     DebugState<SharkFloatParams> *debugStates = nullptr;

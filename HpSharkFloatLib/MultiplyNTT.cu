@@ -1352,7 +1352,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     // ----------------------------------------------------------------------
     constexpr uint32_t MaxCachedStages = 7;
     [[maybe_unused]] constexpr uint32_t MaxCachedTwiddles =
-        (1u << MaxCachedStages) - 1; // = 63 // static assert on shared memory usage
+        (1u << MaxCachedStages) - 1; // = 127; the aligned copy includes one padding entry.
 
     // Reserve shared space for cached twiddles after the last tile buffer.
     auto *const s_twiddles_cached =
@@ -1366,7 +1366,14 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     if (cachedTwiddles > 0) {
         // Copy all twiddles for stages 1..cachedStages in one shot:
         // these are stage_twiddles[0 .. cachedTwiddles-1].
-        cg::memcpy_async(block, s_twiddles_cached, stage_twiddles, cachedTwiddles * sizeof(uint64_t));
+        auto alignWorkspace = [](size_t value, size_t alignment) {
+            return (value + alignment - 1) & ~(alignment - 1);
+        };
+
+        constexpr auto alignment = 16u;
+        const auto alignedSize = alignWorkspace(cachedTwiddles * sizeof(uint64_t), alignment);
+        cg::memcpy_async(
+            block, s_twiddles_cached, stage_twiddles, cuda::aligned_size_t<alignment>(alignedSize));
     }
 
     for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {

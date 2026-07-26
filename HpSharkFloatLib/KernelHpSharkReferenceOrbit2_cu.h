@@ -124,48 +124,17 @@ SubPSerial(uint64_t a, uint64_t b)
 
 template <class SharkFloatParams>
 __device__ uint64_t
-MontgomeryMulSerial(cooperative_groups::grid_group &grid,
-                    cooperative_groups::thread_block &block,
-                    DebugGlobalCount<SharkFloatParams> *debugCombo,
-                    uint64_t a,
-                    uint64_t b)
-{
-    return SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, a, b);
-}
-
-template <class SharkFloatParams>
-__device__ uint64_t
-ToMontgomerySerial(cooperative_groups::grid_group &grid,
-                   cooperative_groups::thread_block &block,
-                   DebugGlobalCount<SharkFloatParams> *debugCombo,
-                   uint64_t value)
-{
-    return SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, value);
-}
-
-template <class SharkFloatParams>
-__device__ uint64_t
-FromMontgomerySerial(cooperative_groups::grid_group &grid,
-                     cooperative_groups::thread_block &block,
-                     DebugGlobalCount<SharkFloatParams> *debugCombo,
-                     uint64_t value)
-{
-    return SharkNTT::FromMontgomery<SharkFloatParams>(grid, block, debugCombo, value);
-}
-
-template <class SharkFloatParams>
-__device__ uint64_t
 MontgomeryPowSerial(cooperative_groups::grid_group &grid,
                     cooperative_groups::thread_block &block,
                     DebugGlobalCount<SharkFloatParams> *debugCombo,
                     uint64_t aMont,
                     uint64_t exponent)
 {
-    uint64_t result = ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1);
+    uint64_t result = SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1);
     while (exponent != 0) {
         if ((exponent & 1ull) != 0)
-            result = MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, result, aMont);
-        aMont = MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, aMont, aMont);
+            result = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, result, aMont);
+        aMont = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, aMont, aMont);
         exponent >>= 1;
     }
     return result;
@@ -454,12 +423,12 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
 
     constexpr uint64_t Generator = SharkNTT::FindGeneratorConstexpr();
     const uint64_t generatorMont =
-        ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, Generator);
+        SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, Generator);
     const uint64_t psi = MontgomeryPowSerial<SharkFloatParams>(
         grid, block, debugCombo, generatorMont, SharkNTT::PHI / (2ull * activeN));
     const uint64_t psiInverse =
         MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psi, SharkNTT::PHI - 1ull);
-    const uint64_t omega = MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, psi, psi);
+    const uint64_t omega = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, psi, psi);
     const uint64_t omegaInverse =
         MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, SharkNTT::PHI - 1ull);
 
@@ -477,9 +446,9 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
             roots.psi_pows[i] = psiPower;
             roots.psi_inv_pows[i] = psiInversePower;
             if (i + gridSize < activeN) {
-                psiPower =
-                    MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, psiPower, psiStride);
-                psiInversePower = MontgomeryMulSerial<SharkFloatParams>(
+                psiPower = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, psiPower, psiStride);
+                psiInversePower = SharkNTT::MontgomeryMul<SharkFloatParams>(
                     grid, block, debugCombo, psiInversePower, psiInverseStride);
             }
         }
@@ -509,9 +478,9 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
                 roots.stage_twiddles_fwd[offset + j] = forwardTwiddle;
                 roots.stage_twiddles_inv[offset + j] = inverseTwiddle;
                 if (j + gridSize < half) {
-                    forwardTwiddle = MontgomeryMulSerial<SharkFloatParams>(
+                    forwardTwiddle = SharkNTT::MontgomeryMul<SharkFloatParams>(
                         grid, block, debugCombo, forwardTwiddle, forwardStride);
-                    inverseTwiddle = MontgomeryMulSerial<SharkFloatParams>(
+                    inverseTwiddle = SharkNTT::MontgomeryMul<SharkFloatParams>(
                         grid, block, debugCombo, inverseTwiddle, inverseStride);
                 }
             }
@@ -520,7 +489,7 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
     }
 
     if (IsLeader<SharkFloatParams>(block)) {
-        const uint64_t inverseTwo = ToMontgomerySerial<SharkFloatParams>(
+        const uint64_t inverseTwo = SharkNTT::ToMontgomery<SharkFloatParams>(
             grid, block, debugCombo, (SharkNTT::MagicPrime + 1ull) >> 1);
         roots.Ninvm_mont =
             MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, inverseTwo, stages);
@@ -553,10 +522,10 @@ PackTwistForwardBatch(cooperative_groups::grid_group &grid,
                 i < static_cast<uint32_t>(plan.L)
                     ? ReadBitsSimple(*values[buffer], static_cast<int64_t>(i) * plan.b, plan.b)
                     : 0;
-            const uint64_t mont = ToMontgomerySerial<SharkFloatParams>(
+            const uint64_t mont = SharkNTT::ToMontgomery<SharkFloatParams>(
                 grid, block, debugCombo, coefficient % SharkNTT::MagicPrime);
-            outputs[buffer][i] =
-                MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, mont, roots.psi_pows[i]);
+            outputs[buffer][i] = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, mont, roots.psi_pows[i]);
         }
     }
     grid.sync();
@@ -589,7 +558,7 @@ PsiPowerMont(cooperative_groups::grid_group &grid,
     const uint64_t reduced = exponent % (2ull * static_cast<uint64_t>(plan.N));
     if (reduced < static_cast<uint64_t>(plan.N))
         return roots.psi_pows[reduced];
-    return SubPSerial(ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 0),
+    return SubPSerial(SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 0),
                       roots.psi_pows[reduced - static_cast<uint64_t>(plan.N)]);
 }
 
@@ -608,18 +577,18 @@ WriteShiftedSpectrum(cooperative_groups::grid_group &grid,
     const uint64_t chunkShift = shiftBits / static_cast<uint64_t>(plan.b);
     const uint32_t bitShift = static_cast<uint32_t>(shiftBits % static_cast<uint64_t>(plan.b));
     const uint64_t bitScale =
-        ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
-    const uint64_t zeroMont = ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 0);
+        SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
+    const uint64_t zeroMont = SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 0);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t i = GridThreadRank(block); i < static_cast<uint32_t>(plan.N); i += gridSize) {
         const uint64_t chunkScale =
-            chunkShift == 0 ? ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1)
+            chunkShift == 0 ? SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1)
                             : PsiPowerMont<SharkFloatParams>(
                                   grid, block, debugCombo, plan, roots, chunkShift * (1ull + 2ull * i));
         const uint64_t scale =
-            MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, chunkScale, bitScale);
+            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, chunkScale, bitScale);
         const uint64_t shifted =
-            MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
+            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
         dest[i] = negative ? SubPSerial(zeroMont, shifted) : shifted;
     }
     grid.sync();
@@ -640,17 +609,17 @@ AddShiftedSpectrum(cooperative_groups::grid_group &grid,
     const uint64_t chunkShift = shiftBits / static_cast<uint64_t>(plan.b);
     const uint32_t bitShift = static_cast<uint32_t>(shiftBits % static_cast<uint64_t>(plan.b));
     const uint64_t bitScale =
-        ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
+        SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t i = GridThreadRank(block); i < static_cast<uint32_t>(plan.N); i += gridSize) {
         const uint64_t chunkScale =
-            chunkShift == 0 ? ToMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, 1)
+            chunkShift == 0 ? SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1)
                             : PsiPowerMont<SharkFloatParams>(
                                   grid, block, debugCombo, plan, roots, chunkShift * (1ull + 2ull * i));
         const uint64_t scale =
-            MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, chunkScale, bitScale);
+            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, chunkScale, bitScale);
         const uint64_t shifted =
-            MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
+            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
         dest[i] = negative ? SubPSerial(dest[i], shifted) : AddPSerial(dest[i], shifted);
     }
     grid.sync();
@@ -702,7 +671,7 @@ AccumulateOutputTerm(cooperative_groups::grid_group &grid,
         const uint32_t gridSize = static_cast<uint32_t>(grid.size());
         for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize)
             workspace.Product[i] =
-                MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, a[i], b[i]);
+                SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, a[i], b[i]);
         // The shifted pass has identical grid-stride ownership and supplies the publication barrier.
         if (hasDestinationValue) {
             AddShiftedSpectrum<SharkFloatParams>(
@@ -880,11 +849,12 @@ InverseSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
     for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
 #pragma unroll
         for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            uint64_t value = MontgomeryMulSerial<SharkFloatParams>(
+            uint64_t value = SharkNTT::MontgomeryMul<SharkFloatParams>(
                 grid, block, debugCombo, spectra[buffer][i], roots.psi_inv_pows[i]);
-            value =
-                MontgomeryMulSerial<SharkFloatParams>(grid, block, debugCombo, value, roots.Ninvm_mont);
-            spectra[buffer][i] = FromMontgomerySerial<SharkFloatParams>(grid, block, debugCombo, value);
+            value = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, value, roots.Ninvm_mont);
+            spectra[buffer][i] =
+                SharkNTT::FromMontgomery<SharkFloatParams>(grid, block, debugCombo, value);
         }
     }
     grid.sync();
@@ -1084,6 +1054,14 @@ ShuffleUpCarryPrefix(unsigned mask, uint64_t value, int offset)
 }
 
 static __device__ uint64_t
+ShuffleDownCarryPrefix(unsigned mask, uint64_t value, int offset)
+{
+    const uint32_t low = __shfl_down_sync(mask, static_cast<uint32_t>(value), offset);
+    const uint32_t high = __shfl_down_sync(mask, static_cast<uint32_t>(value >> 32u), offset);
+    return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
+}
+
+static __device__ uint64_t
 ShuffleCarryPrefix(unsigned mask, uint64_t value, int sourceLane)
 {
     const uint32_t low = __shfl_sync(mask, static_cast<uint32_t>(value), sourceLane);
@@ -1132,6 +1110,84 @@ PublishCarryPrefixDescriptorPrefix(HpSharkReference2CarryPrefixDescriptor &descr
 {
     StoreCarryPrefixTransform(&descriptor.PrefixTransform, prefix);
     PublishCarryPrefixState(&descriptor.State, CarryPrefixDescriptorState::Prefix);
+}
+
+static __device__ uint64_t
+ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
+                       uint32_t part,
+                       uint32_t lane,
+                       unsigned warpMask)
+{
+    uint64_t exclusive = CarryPrefixIdentity();
+    int32_t previousPart = static_cast<int32_t>(part) - 1;
+    int spin = 0;
+
+    while (previousPart >= 0) {
+        const int32_t descriptorIndex = previousPart - static_cast<int32_t>(lane);
+        const bool validDescriptor = descriptorIndex >= 0;
+        CarryPrefixDescriptorState state = CarryPrefixDescriptorState::Empty;
+        uint32_t descriptorCount = 0;
+        bool foundPrefix = false;
+
+        do {
+            if (validDescriptor && state == CarryPrefixDescriptorState::Empty) {
+                state = static_cast<CarryPrefixDescriptorState>(
+                    LoadCarryPrefixState(&descriptors[descriptorIndex].State));
+            }
+
+            const unsigned validMask = __ballot_sync(warpMask, validDescriptor);
+            const unsigned readyMask =
+                __ballot_sync(warpMask, !validDescriptor || state != CarryPrefixDescriptorState::Empty);
+            const unsigned unresolvedMask = validMask & ~readyMask;
+            const uint32_t validCount = static_cast<uint32_t>(__popc(validMask));
+            const uint32_t contiguousReadyCount =
+                unresolvedMask == 0u ? validCount : static_cast<uint32_t>(__ffs(unresolvedMask) - 1);
+            const unsigned contiguousReadyMask =
+                contiguousReadyCount == 32u ? 0xFFFF'FFFFu : ((1u << contiguousReadyCount) - 1u);
+            const unsigned prefixMask =
+                __ballot_sync(warpMask, validDescriptor && state == CarryPrefixDescriptorState::Prefix) &
+                contiguousReadyMask;
+
+            if (prefixMask != 0u) {
+                descriptorCount = static_cast<uint32_t>(__ffs(prefixMask));
+                foundPrefix = true;
+            } else if (contiguousReadyCount == validCount) {
+                descriptorCount = validCount;
+            }
+
+            if (descriptorCount == 0u) {
+                if (++spin == 64) {
+                    __nanosleep(64);
+                    spin = 0;
+                }
+            }
+        } while (descriptorCount == 0u);
+
+        MattsCudaAssert(lane >= descriptorCount || state == CarryPrefixDescriptorState::Aggregate ||
+                        state == CarryPrefixDescriptorState::Prefix);
+        uint64_t transform = CarryPrefixIdentity();
+        if (lane < descriptorCount) {
+            transform = state == CarryPrefixDescriptorState::Prefix
+                            ? LoadCarryPrefixTransform(&descriptors[descriptorIndex].PrefixTransform)
+                            : LoadCarryPrefixTransform(&descriptors[descriptorIndex].AggregateTransform);
+        }
+
+        uint64_t windowTransform = transform;
+#pragma unroll
+        for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+            const uint64_t older = ShuffleDownCarryPrefix(warpMask, windowTransform, offset);
+            if (lane + offset < descriptorCount)
+                windowTransform = ComposeCarryPrefixes(older, windowTransform);
+        }
+
+        if (lane == 0u)
+            exclusive = ComposeCarryPrefixes(windowTransform, exclusive);
+        if (foundPrefix)
+            break;
+        previousPart -= static_cast<int32_t>(descriptorCount);
+    }
+
+    return ShuffleCarryPrefix(warpMask, exclusive, 0);
 }
 
 static __device__ void
@@ -1220,39 +1276,16 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
             aggregate = ShuffleCarryPrefix(warpMask, warpInclusive, static_cast<int>(numWarps - 1u));
         }
 
-        if (threadIndex == 0u) {
+        if (threadIndex == 0u)
             PublishCarryPrefixDescriptorAggregate(descriptors[part], aggregate);
 
-            uint64_t exclusive = CarryPrefixIdentity();
-            int32_t previousPart = static_cast<int32_t>(part) - 1;
-            while (previousPart >= 0) {
-                CarryPrefixDescriptorState state = CarryPrefixDescriptorState::Empty;
-                int spin = 0;
-                do {
-                    state = static_cast<CarryPrefixDescriptorState>(
-                        LoadCarryPrefixState(&descriptors[previousPart].State));
-                    if (state != CarryPrefixDescriptorState::Empty)
-                        break;
-                    if (++spin == 64) {
-                        __nanosleep(64);
-                        spin = 0;
-                    }
-                } while (true);
-
-                MattsCudaAssert(state == CarryPrefixDescriptorState::Aggregate ||
-                                state == CarryPrefixDescriptorState::Prefix);
-                const uint64_t transform =
-                    state == CarryPrefixDescriptorState::Prefix
-                        ? LoadCarryPrefixTransform(&descriptors[previousPart].PrefixTransform)
-                        : LoadCarryPrefixTransform(&descriptors[previousPart].AggregateTransform);
-                exclusive = ComposeCarryPrefixes(transform, exclusive);
-                if (state == CarryPrefixDescriptorState::Prefix)
-                    break;
-                --previousPart;
+        if (warp == 0u) {
+            const uint64_t exclusive = ResolveCarryPrefixWarp(descriptors, part, lane, warpMask);
+            if (lane == 0u) {
+                const uint64_t prefix = ComposeCarryPrefixes(exclusive, aggregate);
+                PublishCarryPrefixDescriptorPrefix(descriptors[part], prefix);
+                exclusiveStorage[0] = exclusive;
             }
-            const uint64_t prefix = ComposeCarryPrefixes(exclusive, aggregate);
-            PublishCarryPrefixDescriptorPrefix(descriptors[part], prefix);
-            exclusiveStorage[0] = exclusive;
         }
         __syncthreads();
 

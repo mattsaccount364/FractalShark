@@ -62,7 +62,7 @@ ssh matthew@localhost "cd ~/FractalShark && rm -- <deleted-repo-relative-path>"
 
 When validation depends on Git LFS assets, copy the materialized Windows files; pointer files are not
 valid runtime assets. Before reporting Linux success, confirm matching Windows and WSL `HEAD` values,
-compare overlaid text while ignoring CRLF/LF differences, rebuild the persistent target, and verify the
+compare overlaid text with its Windows counterpart, rebuild the persistent target, and verify the
 runnable binary is newer than its sources. Report both `HEAD` values, overlaid files, the persistent
 binary path, and commands run. Windows and Linux builds may run in parallel.
 
@@ -84,23 +84,11 @@ raw pointers for non-owning references; do not introduce `std::shared_ptr`. Defi
 `#pragma warning(push)`/`pop`; never suppress warnings project-wide. Use `std::cout` for ordinary
 diagnostics and reserve `OutputDebugStringA` for heap or panic paths.
 
-Preserve each edited text file's existing line-ending convention and avoid mixed endings. Files marked
-`eol=lf` in `.gitattributes`, including shell scripts, must remain LF-only. All tracked C++/CUDA
-source and header files ending in `.cpp`, `.h`, `.cu`, `.cuh`, `.cc`, `.hh`, or `.hpp` must be CRLF in
-the Windows working tree. After editing those files, run the formatter from the repository root. It
-finds and runs `clang-format` and normalizes all tracked C++/CUDA files to CRLF:
+After modifying C++/CUDA files, run the formatting script from the repository root:
 
 ```powershell
 .\format_cpp_sources.ps1
 ```
-
-Then verify with:
-
-```powershell
-git ls-files --eol -- '*.cpp' '*.h' '*.cu' '*.cuh' '*.cc' '*.hh' '*.hpp'
-```
-
-No matching file may report `w/lf` or `w/mixed`.
 
 ## Testing
 
@@ -149,4 +137,4 @@ outputs unless they are intentional fixtures. Follow `SECURITY.md` for vulnerabi
 ## Agent Guardrails
 
 Do not run `git add` or `git commit`; leave changes unstaged for review. Do not modify source files in
-plan-only workflows. After modifying C++/CUDA files, run `.\format_cpp_sources.ps1`.
+plan-only workflows.

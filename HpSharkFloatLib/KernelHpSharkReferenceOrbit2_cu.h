@@ -275,33 +275,45 @@ ResolveCommonExponent(int32_t *commonExponent,
 
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly uint64_t
-RequiredBitsForTerm(int32_t commonExponent, FusedTerm<SharkFloatParams> term)
+RequiredCoefficientsForTerm(int32_t commonExponent,
+                            const SharkNTT::PlanPrime &plan,
+                            FusedTerm<SharkFloatParams> term)
 {
-    constexpr uint64_t MantissaBits = static_cast<uint64_t>(SharkFloatParams::GlobalNumUint32) * 32ull;
     if (term.IsZero)
         return 0;
-    const uint64_t shift = static_cast<uint64_t>(term.Exponent - commonExponent);
-    const uint64_t width = term.Kind == TermKind::Product ? 2ull * MantissaBits : MantissaBits;
-    return shift + width;
+    MattsCudaAssert(plan.b > 0 && plan.L > 0);
+    const int64_t signedShift = static_cast<int64_t>(term.Exponent) - commonExponent;
+    MattsCudaAssert(signedShift >= 0);
+    // Only whole base-2^b chunks move the polynomial support. The residual bit shift scales
+    // coefficients in place, and its overflow is resolved by the post-inverse carry pass.
+    const uint64_t coefficientShift = static_cast<uint64_t>(signedShift) / static_cast<uint64_t>(plan.b);
+    const uint64_t inputCoefficients = static_cast<uint64_t>(plan.L);
+    const uint64_t termCoefficients =
+        term.Kind == TermKind::Product ? 2ull * inputCoefficients - 1ull : inputCoefficients;
+    return coefficientShift + termCoefficients;
 }
 
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
-IncludeTermInRequiredBits(int32_t commonExponent, FusedTerm<SharkFloatParams> term, uint64_t &required)
+IncludeTermInRequiredCoefficients(int32_t commonExponent,
+                                  const SharkNTT::PlanPrime &plan,
+                                  FusedTerm<SharkFloatParams> term,
+                                  uint64_t &required)
 {
-    const uint64_t termBits = RequiredBitsForTerm(commonExponent, term);
-    required = required > termBits ? required : termBits;
+    const uint64_t termCoefficients = RequiredCoefficientsForTerm(commonExponent, plan, term);
+    required = required > termCoefficients ? required : termCoefficients;
 }
 
 template <class SharkFloatParams, class... RemainingTerms>
 __device__ SharkForceInlineReleaseOnly uint64_t
-RequiredBitsForTerms(int32_t commonExponent,
-                     FusedTerm<SharkFloatParams> firstTerm,
-                     RemainingTerms... remainingTerms)
+RequiredCoefficientsForTerms(int32_t commonExponent,
+                             const SharkNTT::PlanPrime &plan,
+                             FusedTerm<SharkFloatParams> firstTerm,
+                             RemainingTerms... remainingTerms)
 {
     static_assert((std::is_same_v<FusedTerm<SharkFloatParams>, RemainingTerms> && ...));
-    uint64_t required = RequiredBitsForTerm(commonExponent, firstTerm);
-    (IncludeTermInRequiredBits(commonExponent, remainingTerms, required), ...);
+    uint64_t required = RequiredCoefficientsForTerm(commonExponent, plan, firstTerm);
+    (IncludeTermInRequiredCoefficients(commonExponent, plan, remainingTerms, required), ...);
     return required;
 }
 
@@ -1440,6 +1452,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     const auto &zImag = combo->Multiply.B;
     const auto &cReal = combo->Add.C_A;
     const auto &cImag = combo->Add.E_B;
+    constexpr SharkNTT::PlanPrime basePlan = SharkFloatParams::NTTPlan2;
 
     const FusedTerm<SharkFloatParams> realZSquareTerm =
         MakeProductTerm(zReal, SpectrumId::ZReal, zReal, SpectrumId::ZReal, false, 0);
@@ -1454,11 +1467,12 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     const bool realZero = ResolveCommonExponent(
         &realExponent, realZSquareTerm, realNegativeZImagSquareTerm, realConstantTerm);
     const bool imagZero = ResolveCommonExponent(&imagExponent, imagDoubleProductTerm, imagConstantTerm);
-    uint64_t requiredBits = RequiredBitsForTerms(
-        realExponent, realZSquareTerm, realNegativeZImagSquareTerm, realConstantTerm);
-    const uint64_t imagBits =
-        RequiredBitsForTerms(imagExponent, imagDoubleProductTerm, imagConstantTerm);
-    requiredBits = requiredBits > imagBits ? requiredBits : imagBits;
+    uint64_t requiredCoefficients = RequiredCoefficientsForTerms(
+        realExponent, basePlan, realZSquareTerm, realNegativeZImagSquareTerm, realConstantTerm);
+    const uint64_t imagCoefficients =
+        RequiredCoefficientsForTerms(imagExponent, basePlan, imagDoubleProductTerm, imagConstantTerm);
+    requiredCoefficients =
+        requiredCoefficients > imagCoefficients ? requiredCoefficients : imagCoefficients;
 
     FusedTerm<SharkFloatParams> dzdcRealZRealTerm{};
     FusedTerm<SharkFloatParams> dzdcRealNegativeZImagTerm{};
@@ -1482,15 +1496,17 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         dzdcRealZero = ResolveCommonExponent(
             &dzdcRealExponent, dzdcRealZRealTerm, dzdcRealNegativeZImagTerm, dzdcRealOneTerm);
         dzdcImagZero = ResolveCommonExponent(&dzdcImagExponent, dzdcImagZImagTerm, dzdcImagZRealTerm);
-        const uint64_t dzdcRealBits = RequiredBitsForTerms(
-            dzdcRealExponent, dzdcRealZRealTerm, dzdcRealNegativeZImagTerm, dzdcRealOneTerm);
-        const uint64_t dzdcImagBits =
-            RequiredBitsForTerms(dzdcImagExponent, dzdcImagZImagTerm, dzdcImagZRealTerm);
-        requiredBits = requiredBits > dzdcRealBits ? requiredBits : dzdcRealBits;
-        requiredBits = requiredBits > dzdcImagBits ? requiredBits : dzdcImagBits;
+        const uint64_t dzdcRealCoefficients = RequiredCoefficientsForTerms(
+            dzdcRealExponent, basePlan, dzdcRealZRealTerm, dzdcRealNegativeZImagTerm, dzdcRealOneTerm);
+        const uint64_t dzdcImagCoefficients = RequiredCoefficientsForTerms(
+            dzdcImagExponent, basePlan, dzdcImagZImagTerm, dzdcImagZRealTerm);
+        requiredCoefficients =
+            requiredCoefficients > dzdcRealCoefficients ? requiredCoefficients : dzdcRealCoefficients;
+        requiredCoefficients =
+            requiredCoefficients > dzdcImagCoefficients ? requiredCoefficients : dzdcImagCoefficients;
     }
 
-    if (requiredBits == 0) {
+    if (requiredCoefficients == 0) {
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             HpSharkFloat<SharkFloatParams> *outputs[4] = {&combo->Multiply.A,
                                                           &combo->Multiply.B,
@@ -1514,8 +1530,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         return;
     }
 
-    constexpr SharkNTT::PlanPrime basePlan = SharkFloatParams::NTTPlan2;
-    const uint64_t requiredCoefficients = (requiredBits + basePlan.b - 1ull) / basePlan.b;
     const uint64_t requiredN = CeilPowerOfTwo(requiredCoefficients);
     if (requiredN > HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN || requiredN < 2) {
         if (IsLeader<SharkFloatParams>(block))
@@ -1535,7 +1549,8 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                    static_cast<int>(CountTrailingZeros(activeN)),
                                    basePlan.ok};
     const uint32_t limbCount = (activeN * static_cast<uint32_t>(plan.b) + 31u) / 32u + 2u;
-    GenerateActiveRoots<SharkFloatParams>(grid, block, debugCombo, activeN, workspace);
+    if (activeN != cachedN)
+        GenerateActiveRoots<SharkFloatParams>(grid, block, debugCombo, activeN, workspace);
 
     const HpSharkFloat<SharkFloatParams> *normalForwardValues[4] = {&zReal, &zImag, &cReal, &cImag};
     uint64_t *normalForwardOutputs[4] = {

@@ -1293,21 +1293,30 @@ GenerateActiveRoots(DebugHostCombo<SharkFloatParams> &debugCombo,
 
 template <class SharkFloatParams, class... Terms>
 static uint64_t
-RequiredBitsForStream(int32_t commonExp, const FusedTerm<SharkFloatParams> &first, const Terms &...terms)
+RequiredCoefficientsForStream(int32_t commonExp,
+                              const SharkNTT::PlanPrime &plan,
+                              const FusedTerm<SharkFloatParams> &first,
+                              const Terms &...terms)
 {
-    constexpr uint64_t MantissaBits = static_cast<uint64_t>(SharkFloatParams::GlobalNumUint32) * 32ull;
-    uint64_t requiredBits = 0;
+    assert(plan.b > 0 && plan.L > 0);
+    uint64_t requiredCoefficients = 0;
     const auto includeTerm = [&](const FusedTerm<SharkFloatParams> &term) {
         if (term.IsZero)
             return;
         const int64_t signedShift = static_cast<int64_t>(term.Exponent) - commonExp;
         assert(signedShift >= 0);
-        const uint64_t width = term.Kind == TermKind::Product ? 2ull * MantissaBits : MantissaBits;
-        requiredBits = std::max(requiredBits, static_cast<uint64_t>(signedShift) + width);
+        // Match the GPU support calculation: sub-coefficient shifts are handled by carry
+        // propagation and do not require another NTT coefficient.
+        const uint64_t coefficientShift =
+            static_cast<uint64_t>(signedShift) / static_cast<uint64_t>(plan.b);
+        const uint64_t inputCoefficients = static_cast<uint64_t>(plan.L);
+        const uint64_t termCoefficients =
+            term.Kind == TermKind::Product ? 2ull * inputCoefficients - 1ull : inputCoefficients;
+        requiredCoefficients = std::max(requiredCoefficients, coefficientShift + termCoefficients);
     };
     includeTerm(first);
     (includeTerm(terms), ...);
-    return requiredBits;
+    return requiredCoefficients;
 }
 
 template <class SharkFloatParams>
@@ -1326,6 +1335,9 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                         FusedWorkspace &workspace,
                         DebugHostCombo<SharkFloatParams> &debugHostCombo)
 {
+    static constexpr const SharkNTT::PlanPrime &basePlan = SharkFloatParams::NTTPlan2;
+    assert(basePlan.ok);
+    assert(basePlan.b > 0);
     if (IsDebugTraceEnabled())
         std::cout << "ReferenceOrbit2 fused step begin\n";
     PrintHpValue("zReal", zReal);
@@ -1352,8 +1364,9 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     const bool realIsZero = ResolveCommonExponent(realCommonExp, realZ2, realNegY2, realC);
     const bool imagIsZero = ResolveCommonExponent(imagCommonExp, imagTwoZY, imagC);
 
-    uint64_t maxRequiredBits = std::max(RequiredBitsForStream(realCommonExp, realZ2, realNegY2, realC),
-                                        RequiredBitsForStream(imagCommonExp, imagTwoZY, imagC));
+    uint64_t maxRequiredCoefficients =
+        std::max(RequiredCoefficientsForStream(realCommonExp, basePlan, realZ2, realNegY2, realC),
+                 RequiredCoefficientsForStream(imagCommonExp, basePlan, imagTwoZY, imagC));
 
     int32_t dzdcRealCommonExp = 0;
     int32_t dzdcImagCommonExp = 0;
@@ -1377,19 +1390,22 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         dzdcRealIsZero =
             ResolveCommonExponent(dzdcRealCommonExp, dzdcRealW0, dzdcRealNegW1, dzdcRealOne);
         dzdcImagIsZero = ResolveCommonExponent(dzdcImagCommonExp, dzdcImagW2, dzdcImagW3);
-        maxRequiredBits =
-            std::max(maxRequiredBits,
-                     RequiredBitsForStream(dzdcRealCommonExp, dzdcRealW0, dzdcRealNegW1, dzdcRealOne));
-        maxRequiredBits =
-            std::max(maxRequiredBits, RequiredBitsForStream(dzdcImagCommonExp, dzdcImagW2, dzdcImagW3));
+        maxRequiredCoefficients =
+            std::max(maxRequiredCoefficients,
+                     RequiredCoefficientsForStream(
+                         dzdcRealCommonExp, basePlan, dzdcRealW0, dzdcRealNegW1, dzdcRealOne));
+        maxRequiredCoefficients =
+            std::max(maxRequiredCoefficients,
+                     RequiredCoefficientsForStream(dzdcImagCommonExp, basePlan, dzdcImagW2, dzdcImagW3));
     }
 
     if (IsDebugTraceEnabled()) {
-        std::cout << "maxRequiredBits=" << maxRequiredBits << " realCommonExp=" << realCommonExp
-                  << " imagCommonExp=" << imagCommonExp << std::endl;
+        std::cout << "maxRequiredCoefficients=" << maxRequiredCoefficients
+                  << " realCommonExp=" << realCommonExp << " imagCommonExp=" << imagCommonExp
+                  << std::endl;
     }
 
-    if (maxRequiredBits == 0) {
+    if (maxRequiredCoefficients == 0) {
         SetZero(outReal);
         SetZero(outImag);
         StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
@@ -1403,15 +1419,11 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         return;
     }
 
-    static constexpr const SharkNTT::PlanPrime &basePlan = SharkFloatParams::NTTPlan2;
-    assert(basePlan.ok);
-    assert(basePlan.b > 0);
-    const uint64_t coefficientBits = static_cast<uint64_t>(basePlan.b);
-    const uint64_t requiredCoefficients = (maxRequiredBits + coefficientBits - 1ull) / coefficientBits;
-    const uint64_t requiredN = CeilPowerOfTwo(requiredCoefficients);
+    const uint64_t requiredN = CeilPowerOfTwo(maxRequiredCoefficients);
     if (requiredN > MaxFusedN) {
-        std::cerr << "ReferenceOrbit2 fused workspace exceeded: requestedBits=" << maxRequiredBits
-                  << " requiredN=" << requiredN << " capacity=" << MaxFusedN << '\n';
+        std::cerr << "ReferenceOrbit2 fused workspace exceeded: requestedCoefficients="
+                  << maxRequiredCoefficients << " requiredN=" << requiredN << " capacity=" << MaxFusedN
+                  << '\n';
         assert(false);
     }
     const uint32_t cachedN = *workspace.CachedN;
@@ -1442,7 +1454,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
 
     PrintPlan(plan);
 
-    GenerateActiveRoots(debugHostCombo, activeN, workspace);
+    if (activeN != cachedN)
+        GenerateActiveRoots(debugHostCombo, activeN, workspace);
     SharkNTT::RootTables &roots = *workspace.Roots;
     if (IsDebugTraceEnabled()) {
         PrintArray("roots.stage_omegas", roots.stage_omegas, roots.stages);

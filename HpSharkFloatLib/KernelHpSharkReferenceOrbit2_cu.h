@@ -942,96 +942,158 @@ constexpr int32_t CarryPrefixMax = 7;
 constexpr uint32_t CarryPrefixStateCount = CarryPrefixMax - CarryPrefixMin + 1;
 constexpr uint32_t CarryPrefixMaxWarps = 32;
 
-template <class SharkFloatParams>
-__device__ uint32_t
-FindHighestNonZeroPlusOne(cooperative_groups::grid_group &grid,
-                          cooperative_groups::thread_block &block,
-                          const uint32_t *values,
-                          uint32_t count,
-                          uint32_t *result,
-                          uint64_t *sharedStorage)
+template <class SharkFloatParams, int BatchSize>
+__device__ void
+FindHighestNonZeroPlusOneBatch(cooperative_groups::grid_group &grid,
+                               cooperative_groups::thread_block &block,
+                               uint32_t *const values[BatchSize],
+                               const uint32_t counts[BatchSize],
+                               uint32_t *const results[BatchSize],
+                               uint64_t *sharedStorage)
 {
+    static_assert(BatchSize >= 1 && BatchSize <= 4);
     const uint32_t threadIndex = block.thread_index().x;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     uint32_t *blockMaximum = reinterpret_cast<uint32_t *>(sharedStorage);
 
-    if (IsLeader<SharkFloatParams>(block))
-        *result = 0u;
-    if (threadIndex == 0u)
-        *blockMaximum = 0u;
+    if (IsLeader<SharkFloatParams>(block)) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer)
+            *results[buffer] = 0u;
+    }
+    if (threadIndex == 0u) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer)
+            blockMaximum[buffer] = 0u;
+    }
     grid.sync();
 
-    uint32_t localMaximum = 0u;
-    for (uint32_t index = GridThreadRank(block); index < count; index += gridSize) {
-        if (values[index] != 0u)
-            localMaximum = index + 1u;
+    uint32_t maximumCount = 0u;
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer)
+        maximumCount = maximumCount > counts[buffer] ? maximumCount : counts[buffer];
+
+    uint32_t localMaximum[BatchSize]{};
+    for (uint32_t index = GridThreadRank(block); index < maximumCount; index += gridSize) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            if (index < counts[buffer] && values[buffer][index] != 0u)
+                localMaximum[buffer] = index + 1u;
+        }
     }
 
-    if (localMaximum != 0u)
-        atomicMax(blockMaximum, localMaximum);
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer) {
+        if (localMaximum[buffer] != 0u)
+            atomicMax(&blockMaximum[buffer], localMaximum[buffer]);
+    }
     __syncthreads();
 
-    if (threadIndex == 0u && *blockMaximum != 0u)
-        atomicMax(result, *blockMaximum);
+    if (threadIndex == 0u) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            if (blockMaximum[buffer] != 0u)
+                atomicMax(results[buffer], blockMaximum[buffer]);
+        }
+    }
     grid.sync();
 
-    const uint32_t highestNonZeroPlusOne = *result;
     if constexpr (HpShark::Debug) {
-        for (uint32_t index = GridThreadRank(block); index < count; index += gridSize) {
-            if (index >= highestNonZeroPlusOne)
-                MattsCudaAssert(values[index] == 0u);
-            if (index + 1u == highestNonZeroPlusOne)
-                MattsCudaAssert(values[index] != 0u);
+        for (uint32_t index = GridThreadRank(block); index < maximumCount; index += gridSize) {
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                if (index >= counts[buffer])
+                    continue;
+                const uint32_t highestNonZeroPlusOne = *results[buffer];
+                if (index >= highestNonZeroPlusOne)
+                    MattsCudaAssert(values[buffer][index] == 0u);
+                if (index + 1u == highestNonZeroPlusOne)
+                    MattsCudaAssert(values[buffer][index] != 0u);
+            }
         }
         grid.sync();
     }
-    return highestNonZeroPlusOne;
 }
 
-template <class SharkFloatParams>
-__device__ uint32_t
-FindLowestNonZero(cooperative_groups::grid_group &grid,
-                  cooperative_groups::thread_block &block,
-                  const uint32_t *values,
-                  uint32_t count,
-                  uint32_t *result,
-                  uint64_t *sharedStorage)
+template <class SharkFloatParams, int BatchSize>
+__device__ void
+FindLowestNonZeroBatch(cooperative_groups::grid_group &grid,
+                       cooperative_groups::thread_block &block,
+                       uint32_t *const values[BatchSize],
+                       const uint32_t counts[BatchSize],
+                       const bool enabled[BatchSize],
+                       uint32_t *const results[BatchSize],
+                       uint64_t *sharedStorage)
 {
+    static_assert(BatchSize >= 1 && BatchSize <= 4);
     const uint32_t threadIndex = block.thread_index().x;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     uint32_t *blockMinimum = reinterpret_cast<uint32_t *>(sharedStorage);
 
-    if (IsLeader<SharkFloatParams>(block))
-        *result = count;
-    if (threadIndex == 0u)
-        *blockMinimum = count;
+    if (IsLeader<SharkFloatParams>(block)) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer)
+            *results[buffer] = enabled[buffer] ? counts[buffer] : 0u;
+    }
+    if (threadIndex == 0u) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer)
+            blockMinimum[buffer] = enabled[buffer] ? counts[buffer] : 0u;
+    }
     grid.sync();
 
-    uint32_t localMinimum = count;
-    for (uint32_t index = GridThreadRank(block); index < count; index += gridSize) {
-        if (values[index] != 0u)
-            localMinimum = localMinimum < index ? localMinimum : index;
+    uint32_t maximumCount = 0u;
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer) {
+        if (enabled[buffer])
+            maximumCount = maximumCount > counts[buffer] ? maximumCount : counts[buffer];
     }
 
-    if (localMinimum != count)
-        atomicMin(blockMinimum, localMinimum);
+    uint32_t localMinimum[BatchSize];
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer)
+        localMinimum[buffer] = enabled[buffer] ? counts[buffer] : 0u;
+
+    for (uint32_t index = GridThreadRank(block); index < maximumCount; index += gridSize) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            if (enabled[buffer] && index < counts[buffer] && values[buffer][index] != 0u)
+                localMinimum[buffer] =
+                    localMinimum[buffer] < index ? localMinimum[buffer] : index;
+        }
+    }
+
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer) {
+        if (enabled[buffer] && localMinimum[buffer] != counts[buffer])
+            atomicMin(&blockMinimum[buffer], localMinimum[buffer]);
+    }
     __syncthreads();
 
-    if (threadIndex == 0u && *blockMinimum != count)
-        atomicMin(result, *blockMinimum);
+    if (threadIndex == 0u) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            if (enabled[buffer] && blockMinimum[buffer] != counts[buffer])
+                atomicMin(results[buffer], blockMinimum[buffer]);
+        }
+    }
     grid.sync();
 
-    const uint32_t lowestNonZero = *result;
     if constexpr (HpShark::Debug) {
-        for (uint32_t index = GridThreadRank(block); index < count; index += gridSize) {
-            if (index < lowestNonZero)
-                MattsCudaAssert(values[index] == 0u);
-            if (index == lowestNonZero)
-                MattsCudaAssert(values[index] != 0u);
+        for (uint32_t index = GridThreadRank(block); index < maximumCount; index += gridSize) {
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                if (!enabled[buffer] || index >= counts[buffer])
+                    continue;
+                const uint32_t lowestNonZero = *results[buffer];
+                if (index < lowestNonZero)
+                    MattsCudaAssert(values[buffer][index] == 0u);
+                if (index == lowestNonZero)
+                    MattsCudaAssert(values[buffer][index] != 0u);
+            }
         }
         grid.sync();
     }
-    return lowestNonZero;
 }
 
 enum class CarryPrefixDescriptorState : uint32_t {
@@ -1246,33 +1308,47 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
     return ShuffleCarryPrefix(tile, exclusive, 0);
 }
 
-static __device__ void
-PrepareSignedCarryPrefixes(cooperative_groups::grid_group &grid,
-                           cooperative_groups::thread_block &block,
-                           const int64_t *limbs,
-                           uint32_t limbCount,
-                           uint64_t *transforms,
-                           HpSharkReference2CarryPrefixDescriptor *descriptors)
+template <int BatchSize>
+__device__ void
+PrepareSignedCarryPrefixesBatch(
+    cooperative_groups::grid_group &grid,
+    cooperative_groups::thread_block &block,
+    int64_t *const limbs[BatchSize],
+    uint32_t limbCount,
+    uint64_t *const transforms[BatchSize],
+    HpSharkReference2CarryPrefixDescriptor *const descriptors[BatchSize])
 {
+    static_assert(BatchSize >= 1 && BatchSize <= 4);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize)
-        transforms[index] = MakeSignedCarryPrefix(limbs[index]);
+    for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer)
+            transforms[buffer][index] = MakeSignedCarryPrefix(limbs[buffer][index]);
+    }
 
     const uint32_t blockSize = block.dim_threads().x;
     const uint32_t numParts = (limbCount + blockSize - 1u) / blockSize;
-    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
-        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
+    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            PublishCarryPrefixState(
+                &descriptors[buffer][part].State, CarryPrefixDescriptorState::Empty);
+        }
+    }
     grid.sync();
 }
 
-static __device__ void
-PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
-                         cooperative_groups::thread_block &block,
-                         uint64_t *transforms,
-                         uint32_t count,
-                         HpSharkReference2CarryPrefixDescriptor *descriptors,
-                         uint64_t *sharedStorage)
+template <int BatchSize>
+__device__ void
+PrefixCarryTransformsDLBBatch(
+    cooperative_groups::grid_group &grid,
+    cooperative_groups::thread_block &block,
+    uint64_t *const transforms[BatchSize],
+    uint32_t count,
+    HpSharkReference2CarryPrefixDescriptor *const descriptors[BatchSize],
+    uint64_t *sharedStorage)
 {
+    static_assert(BatchSize >= 1 && BatchSize <= 4);
     if (count == 0u)
         return;
 
@@ -1284,9 +1360,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     const uint32_t numWarps = (blockSize + 31u) >> 5u;
     const cooperative_groups::thread_block_tile<32> warpTile =
         cooperative_groups::tiled_partition<32>(block);
-    uint64_t *warpAggregates = sharedStorage;
-    uint64_t *warpPrefixes = sharedStorage + CarryPrefixMaxWarps;
-    uint64_t *exclusiveStorage = sharedStorage + 2u * CarryPrefixMaxWarps;
+    constexpr uint32_t SharedWordsPerStream = 2u * CarryPrefixMaxWarps + 1u;
 
     // Workspace descriptors are sized for the supported cooperative launch
     // minimum of one warp per block. Ref2's launch calculator selects a warp
@@ -1300,60 +1374,105 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         const uint32_t base = part * blockSize;
         const uint32_t index = base + threadIndex;
         const bool hasValue = index < count;
-        uint64_t inclusive = hasValue ? transforms[index] : CarryPrefixIdentity();
+        uint64_t inclusive[BatchSize];
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer)
+            inclusive[buffer] =
+                hasValue ? transforms[buffer][index] : CarryPrefixIdentity();
 
 #pragma unroll
-        for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-            const uint64_t previous =
-                ShuffleUpCarryPrefix(warpTile, inclusive, static_cast<int>(offset));
-            if (lane >= offset)
-                inclusive = ComposeCarryPrefixes(previous, inclusive);
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+#pragma unroll
+            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+                const uint64_t previous =
+                    ShuffleUpCarryPrefix(warpTile, inclusive[buffer], static_cast<int>(offset));
+                if (lane >= offset)
+                    inclusive[buffer] = ComposeCarryPrefixes(previous, inclusive[buffer]);
+            }
         }
 
         const uint32_t warpEnd = (warp + 1u) * 32u;
         const uint32_t warpLastThread = (warpEnd < blockSize ? warpEnd : blockSize) - 1u;
-        if (threadIndex == warpLastThread)
-            warpAggregates[warp] = inclusive;
+        if (threadIndex == warpLastThread) {
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                uint64_t *warpAggregates = sharedStorage + buffer * SharedWordsPerStream;
+                warpAggregates[warp] = inclusive[buffer];
+            }
+        }
         __syncthreads();
 
-        uint64_t aggregate = CarryPrefixIdentity();
-        if (warp == 0u) {
-            uint64_t warpInclusive = lane < numWarps ? warpAggregates[lane] : CarryPrefixIdentity();
-            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                const uint64_t previous =
-                    ShuffleUpCarryPrefix(warpTile, warpInclusive, static_cast<int>(offset));
-                if (lane >= offset && lane < numWarps)
-                    warpInclusive = ComposeCarryPrefixes(previous, warpInclusive);
-            }
+        uint64_t aggregates[BatchSize];
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer)
+            aggregates[buffer] = CarryPrefixIdentity();
 
-            const uint64_t previous = ShuffleUpCarryPrefix(warpTile, warpInclusive, 1);
-            if (lane < numWarps) {
-                warpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : previous;
+        if (warp == 0u) {
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                uint64_t *warpAggregates = sharedStorage + buffer * SharedWordsPerStream;
+                uint64_t *warpPrefixes = warpAggregates + CarryPrefixMaxWarps;
+                uint64_t warpInclusive =
+                    lane < numWarps ? warpAggregates[lane] : CarryPrefixIdentity();
+#pragma unroll
+                for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+                    const uint64_t previous =
+                        ShuffleUpCarryPrefix(warpTile, warpInclusive, static_cast<int>(offset));
+                    if (lane >= offset && lane < numWarps)
+                        warpInclusive = ComposeCarryPrefixes(previous, warpInclusive);
+                }
+
+                const uint64_t previous = ShuffleUpCarryPrefix(warpTile, warpInclusive, 1);
+                if (lane < numWarps)
+                    warpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : previous;
+                aggregates[buffer] =
+                    ShuffleCarryPrefix(warpTile, warpInclusive, static_cast<int>(numWarps - 1u));
             }
-            aggregate = ShuffleCarryPrefix(warpTile, warpInclusive, static_cast<int>(numWarps - 1u));
         }
 
-        if (threadIndex == 0u)
-            PublishCarryPrefixDescriptorAggregate(descriptors[part], aggregate);
+        if (threadIndex == 0u) {
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                PublishCarryPrefixDescriptorAggregate(
+                    descriptors[buffer][part], aggregates[buffer]);
+            }
+        }
 
         if (warp == 0u) {
             warpTile.sync();
-            const uint64_t exclusive = ResolveCarryPrefixWarp(descriptors, part, warpTile);
-            if (lane == 0u) {
-                const uint64_t prefix = ComposeCarryPrefixes(exclusive, aggregate);
-                PublishCarryPrefixDescriptorPrefix(descriptors[part], prefix);
-                exclusiveStorage[0] = exclusive;
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                const uint64_t exclusive =
+                    ResolveCarryPrefixWarp(descriptors[buffer], part, warpTile);
+                if (lane == 0u) {
+                    const uint64_t prefix =
+                        ComposeCarryPrefixes(exclusive, aggregates[buffer]);
+                    PublishCarryPrefixDescriptorPrefix(descriptors[buffer][part], prefix);
+                    uint64_t *exclusiveStorage =
+                        sharedStorage + buffer * SharedWordsPerStream +
+                        2u * CarryPrefixMaxWarps;
+                    exclusiveStorage[0] = exclusive;
+                }
             }
         }
         __syncthreads();
 
-        const uint64_t exclusivePart = exclusiveStorage[0];
-        const uint64_t warpExclusive = warpPrefixes[warp];
-        const uint64_t previous = ShuffleUpCarryPrefix(warpTile, inclusive, 1);
-        const uint64_t localExclusive = lane == 0u ? CarryPrefixIdentity() : previous;
-        if (hasValue) {
-            const uint64_t prefixWithinPart = ComposeCarryPrefixes(warpExclusive, localExclusive);
-            transforms[index] = ComposeCarryPrefixes(exclusivePart, prefixWithinPart);
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            uint64_t *warpAggregates = sharedStorage + buffer * SharedWordsPerStream;
+            uint64_t *warpPrefixes = warpAggregates + CarryPrefixMaxWarps;
+            uint64_t *exclusiveStorage = warpPrefixes + CarryPrefixMaxWarps;
+            const uint64_t exclusivePart = exclusiveStorage[0];
+            const uint64_t warpExclusive = warpPrefixes[warp];
+            const uint64_t previous =
+                ShuffleUpCarryPrefix(warpTile, inclusive[buffer], 1);
+            const uint64_t localExclusive = lane == 0u ? CarryPrefixIdentity() : previous;
+            if (hasValue) {
+                const uint64_t prefixWithinPart =
+                    ComposeCarryPrefixes(warpExclusive, localExclusive);
+                transforms[buffer][index] =
+                    ComposeCarryPrefixes(exclusivePart, prefixWithinPart);
+            }
         }
         // The next partition's aggregate barrier protects shared scratch reuse.
     }
@@ -1367,112 +1486,237 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
                      DebugState<SharkFloatParams> *debugStates,
                      uint64_t *carryPrefixShared,
                      HpSharkReference2Workspace<SharkFloatParams> &workspace,
-                     const int64_t *limbs,
                      uint32_t limbCount,
-                     int32_t commonExponent,
-                     HpSharkFloat<SharkFloatParams> *out,
-                     DebugStatePurpose digitsPurpose,
-                     DebugStatePurpose magnitudePurpose)
+                     int32_t realExponent,
+                     int32_t imagExponent,
+                     int32_t dzdcRealExponent,
+                     int32_t dzdcImagExponent,
+                     HpSharkReferenceResults<SharkFloatParams> *combo)
 {
-    constexpr uint32_t Capacity = HpSharkReference2Workspace<SharkFloatParams>::MaxFusedLimbs;
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    using Descriptor = HpSharkReference2CarryPrefixDescriptor;
+    constexpr int BatchSize = SharkFloatParams::EnableNewtonRaphson ? 4 : 2;
+    constexpr uint32_t Capacity = Workspace::MaxFusedLimbs;
     constexpr uint32_t DigitLengthControl = 0;
     constexpr uint32_t NegativeControl = 1;
     constexpr uint32_t NonZeroReductionControl = 2;
-    uint32_t *digits = workspace.MagnitudeDigits;
-    uint32_t *magnitude = workspace.Magnitude;
-    uint64_t *transforms = workspace.CarryPrefixTransforms;
-    uint32_t *control = workspace.CarryPrefixControl;
+    constexpr uint32_t DescriptorWords =
+        (Workspace::MaxCarryPrefixParts * sizeof(Descriptor) + sizeof(uint64_t) - 1u) /
+        sizeof(uint64_t);
+    constexpr uint32_t ControlWords =
+        (Workspace::CarryPrefixControlCount * sizeof(uint32_t) + sizeof(uint64_t) - 1u) /
+        sizeof(uint64_t);
+    static_assert((Capacity * sizeof(uint64_t)) % alignof(Descriptor) == 0u);
+    static_assert(Capacity + DescriptorWords + ControlWords <= Workspace::MaxFusedN);
+
+    uint64_t *scratch[BatchSize] = {workspace.RealOutput, workspace.ImagOutput};
+    int64_t *limbs[BatchSize] = {workspace.RealLimbs, workspace.ImagLimbs};
+    int32_t commonExponents[BatchSize] = {realExponent, imagExponent};
+    HpSharkFloat<SharkFloatParams> *outputs[BatchSize] = {
+        &combo->Multiply.A, &combo->Multiply.B};
+    DebugStatePurpose digitsPurposes[BatchSize] = {DebugStatePurpose::SignedCarry1,
+                                                   DebugStatePurpose::SignedCarry2};
+    DebugStatePurpose magnitudePurposes[BatchSize] = {DebugStatePurpose::FinalAdd1,
+                                                      DebugStatePurpose::FinalAdd2};
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        scratch[2] = workspace.DzdcRealOutput;
+        scratch[3] = workspace.DzdcImagOutput;
+        limbs[2] = workspace.DzdcRealLimbs;
+        limbs[3] = workspace.DzdcImagLimbs;
+        commonExponents[2] = dzdcRealExponent;
+        commonExponents[3] = dzdcImagExponent;
+        outputs[2] = &combo->Multiply.DzdcReal;
+        outputs[3] = &combo->Multiply.DzdcImag;
+        digitsPurposes[2] = DebugStatePurpose::SignedCarryDzdc1;
+        digitsPurposes[3] = DebugStatePurpose::SignedCarryDzdc2;
+        magnitudePurposes[2] = DebugStatePurpose::FinalAddDzdc1;
+        magnitudePurposes[3] = DebugStatePurpose::FinalAddDzdc2;
+    }
+
+    uint64_t *transforms[BatchSize];
+    uint32_t *digits[BatchSize];
+    Descriptor *descriptors[BatchSize];
+    uint32_t *control[BatchSize];
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer) {
+        transforms[buffer] = scratch[buffer];
+        digits[buffer] = reinterpret_cast<uint32_t *>(scratch[buffer]);
+        descriptors[buffer] = reinterpret_cast<Descriptor *>(scratch[buffer] + Capacity);
+        control[buffer] = reinterpret_cast<uint32_t *>(
+            scratch[buffer] + Capacity + DescriptorWords);
+    }
+
     MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
 
-    PrepareSignedCarryPrefixes(
-        grid, block, limbs, limbCount, transforms, workspace.CarryPrefixDescriptors);
-    PrefixCarryTransformsDLB(
-        grid, block, transforms, limbCount, workspace.CarryPrefixDescriptors, carryPrefixShared);
+    PrepareSignedCarryPrefixesBatch<BatchSize>(
+        grid, block, limbs, limbCount, transforms, descriptors);
+    PrefixCarryTransformsDLBBatch<BatchSize>(
+        grid, block, transforms, limbCount, descriptors, carryPrefixShared);
 
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
-        const int32_t carryIn = ApplyCarryPrefix(transforms[index], 0);
-        digits[index] = static_cast<uint32_t>(static_cast<uint64_t>(limbs[index] + carryIn));
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            const int64_t signedLimb = limbs[buffer][index];
+            const int32_t carryIn = ApplyCarryPrefix(transforms[buffer][index], 0);
+            const uint32_t digit =
+                static_cast<uint32_t>(static_cast<uint64_t>(signedLimb + carryIn));
+            if (index + 1u == limbCount) {
+                int32_t finalCarry = CarryOutForSignedLimb(signedLimb, carryIn);
+                uint32_t digitLength = limbCount;
+                while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
+                    limbs[buffer][digitLength++] =
+                        static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
+                    finalCarry = CarryOutForSignedLimb(finalCarry, 0);
+                }
+                control[buffer][DigitLengthControl] = digitLength;
+                control[buffer][NegativeControl] = finalCarry < 0 ? 1u : 0u;
+            }
+            limbs[buffer][index] = digit;
+        }
     }
     grid.sync();
+
+    uint32_t digitLengths[BatchSize];
+    bool negative[BatchSize];
+    uint32_t maximumDigitLength = 0u;
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer) {
+        digitLengths[buffer] = control[buffer][DigitLengthControl];
+        negative[buffer] = control[buffer][NegativeControl] != 0u;
+        maximumDigitLength =
+            maximumDigitLength > digitLengths[buffer] ? maximumDigitLength : digitLengths[buffer];
+    }
+
+    for (uint32_t index = GridThreadRank(block); index < maximumDigitLength; index += gridSize) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            if (index < digitLengths[buffer])
+                digits[buffer][index] = static_cast<uint32_t>(limbs[buffer][index]);
+        }
+    }
+    grid.sync();
+
+    if constexpr (HpShark::DebugChecksums) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            StoreReference2DebugState(debugStates,
+                                      grid,
+                                      block,
+                                      digitsPurposes[buffer],
+                                      digits[buffer],
+                                      digitLengths[buffer]);
+        }
+    }
+
+    uint32_t *nonZeroResults[BatchSize];
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer)
+        nonZeroResults[buffer] = &control[buffer][NonZeroReductionControl];
+
+    // In (~digits) + 1, the carry reaches the lowest nonzero digit and stops there.
+    // Locating that digit avoids a second cross-block carry-prefix scan.
+    FindLowestNonZeroBatch<SharkFloatParams, BatchSize>(
+        grid, block, digits, digitLengths, negative, nonZeroResults, carryPrefixShared);
+
+    for (uint32_t index = GridThreadRank(block); index < maximumDigitLength; index += gridSize) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            if (!negative[buffer] || index >= digitLengths[buffer])
+                continue;
+            const uint32_t lowestNonZero = *nonZeroResults[buffer];
+            if (index < lowestNonZero)
+                digits[buffer][index] = 0u;
+            else if (index == lowestNonZero)
+                digits[buffer][index] = 0u - digits[buffer][index];
+            else
+                digits[buffer][index] = ~digits[buffer][index];
+        }
+    }
 
     if (IsLeader<SharkFloatParams>(block)) {
-        const int32_t finalCarryIn = ApplyCarryPrefix(transforms[limbCount - 1u], 0);
-        int32_t finalCarry = CarryOutForSignedLimb(limbs[limbCount - 1u], finalCarryIn);
-        uint32_t digitLength = limbCount;
-        while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
-            digits[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
-            finalCarry = CarryOutForSignedLimb(finalCarry, 0);
-        }
-        control[DigitLengthControl] = digitLength;
-        control[NegativeControl] = finalCarry < 0 ? 1u : 0u;
-    }
-    grid.sync();
-
-    uint32_t digitLength = control[DigitLengthControl];
-    const bool negative = control[NegativeControl] != 0u;
-    StoreReference2DebugState(debugStates, grid, block, digitsPurpose, digits, digitLength);
-    if (negative) {
-        // In (~digits) + 1, the carry reaches the lowest nonzero digit and stops there.
-        // Locating that digit avoids a second cross-block carry-prefix scan.
-        const uint32_t lowestNonZero = FindLowestNonZero<SharkFloatParams>(
-            grid, block, digits, digitLength, &control[NonZeroReductionControl], carryPrefixShared);
-        for (uint32_t index = GridThreadRank(block); index < digitLength; index += gridSize) {
-            if (index < lowestNonZero)
-                magnitude[index] = 0u;
-            else if (index == lowestNonZero)
-                magnitude[index] = 0u - digits[index];
-            else
-                magnitude[index] = ~digits[index];
-        }
-
-        // An appended carry cannot overlap the completed [0, digitLength) fill. The following barrier
-        // publishes both the magnitude and control writes.
-        if (IsLeader<SharkFloatParams>(block)) {
-            if (lowestNonZero == digitLength) {
-                MattsCudaAssert(digitLength < Capacity);
-                if (digitLength < Capacity)
-                    magnitude[digitLength++] = 1u;
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            if (negative[buffer] && *nonZeroResults[buffer] == digitLengths[buffer]) {
+                MattsCudaAssert(digitLengths[buffer] < Capacity);
+                if (digitLengths[buffer] < Capacity)
+                    digits[buffer][digitLengths[buffer]++] = 1u;
             }
-            control[DigitLengthControl] = digitLength;
-        }
-        grid.sync();
-        digitLength = control[DigitLengthControl];
-    } else {
-        for (uint32_t index = GridThreadRank(block); index < digitLength; index += gridSize)
-            magnitude[index] = digits[index];
-        grid.sync();
-    }
-
-    const uint32_t highestNonZeroPlusOne = FindHighestNonZeroPlusOne<SharkFloatParams>(
-        grid, block, magnitude, digitLength, &control[NonZeroReductionControl], carryPrefixShared);
-    StoreReference2DebugState(
-        debugStates, grid, block, magnitudePurpose, magnitude, highestNonZeroPlusOne);
-
-    if (highestNonZeroPlusOne == 0u) {
-        SetZero(grid, block, out);
-    } else {
-        const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
-        constexpr int ActualDigits = SharkFloatParams::GlobalNumUint32;
-        const int magnitudeLength = static_cast<int>(highestNonZero) + 1;
-        const int currentBit =
-            static_cast<int>(highestNonZero) * 32 + 31 - CountLeadingZeros(magnitude[highestNonZero]);
-        const int desiredBit = (ActualDigits - 1) * 32 + 31;
-        const int shift = currentBit - desiredBit;
-        if (IsLeader<SharkFloatParams>(block)) {
-            out->Exponent = commonExponent + shift;
-            out->SetNegative(negative);
-        }
-        for (int i = static_cast<int>(GridThreadRank(block)); i < ActualDigits;
-             i += static_cast<int>(gridSize)) {
-            out->Digits[i] = shift > 0 ? FunnelShiftRight(magnitude, i, magnitudeLength, shift)
-                                       : FunnelShiftLeft(magnitude, i, magnitudeLength, -shift);
+            control[buffer][DigitLengthControl] = digitLengths[buffer];
         }
     }
     grid.sync();
+
+#pragma unroll
+    for (int buffer = 0; buffer < BatchSize; ++buffer)
+        digitLengths[buffer] = control[buffer][DigitLengthControl];
+
+    FindHighestNonZeroPlusOneBatch<SharkFloatParams, BatchSize>(
+        grid, block, digits, digitLengths, nonZeroResults, carryPrefixShared);
+
+    if constexpr (HpShark::DebugChecksums) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            StoreReference2DebugState(debugStates,
+                                      grid,
+                                      block,
+                                      magnitudePurposes[buffer],
+                                      digits[buffer],
+                                      *nonZeroResults[buffer]);
+        }
+    }
+
+    constexpr uint32_t ActualDigits = SharkFloatParams::GlobalNumUint32;
+    constexpr uint32_t TotalOutputDigits = BatchSize * ActualDigits;
+    if (IsLeader<SharkFloatParams>(block)) {
+#pragma unroll
+        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+            const uint32_t highestNonZeroPlusOne = *nonZeroResults[buffer];
+            if (highestNonZeroPlusOne == 0u) {
+                outputs[buffer]->Exponent = -100'000'000;
+                outputs[buffer]->SetNegative(false);
+                continue;
+            }
+            const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+            const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                   CountLeadingZeros(digits[buffer][highestNonZero]);
+            const int desiredBit = (static_cast<int>(ActualDigits) - 1) * 32 + 31;
+            outputs[buffer]->Exponent = commonExponents[buffer] + currentBit - desiredBit;
+            outputs[buffer]->SetNegative(negative[buffer]);
+        }
+    }
+
+    for (uint32_t flatIndex = GridThreadRank(block); flatIndex < TotalOutputDigits;
+         flatIndex += gridSize) {
+        const uint32_t buffer = flatIndex / ActualDigits;
+        const int digitIndex = static_cast<int>(flatIndex % ActualDigits);
+        const uint32_t highestNonZeroPlusOne = *nonZeroResults[buffer];
+        if (highestNonZeroPlusOne == 0u) {
+            outputs[buffer]->Digits[digitIndex] = 0u;
+            continue;
+        }
+        const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+        const int magnitudeLength = static_cast<int>(highestNonZeroPlusOne);
+        const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                               CountLeadingZeros(digits[buffer][highestNonZero]);
+        const int desiredBit = (static_cast<int>(ActualDigits) - 1) * 32 + 31;
+        const int shift = currentBit - desiredBit;
+        outputs[buffer]->Digits[digitIndex] =
+            shift > 0 ? FunnelShiftRight(digits[buffer], digitIndex, magnitudeLength, shift)
+                      : FunnelShiftLeft(digits[buffer], digitIndex, magnitudeLength, -shift);
+    }
+    grid.sync();
+
     if constexpr (HpShark::Debug) {
-        if (IsLeader<SharkFloatParams>(block) && highestNonZeroPlusOne != 0u)
-            MattsCudaAssert((out->Digits[SharkFloatParams::GlobalNumUint32 - 1] & 0x8000'0000u) != 0u);
+        if (IsLeader<SharkFloatParams>(block)) {
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                if (*nonZeroResults[buffer] != 0u) {
+                    MattsCudaAssert(
+                        (outputs[buffer]->Digits[ActualDigits - 1u] & 0x8000'0000u) != 0u);
+                }
+            }
+        }
     }
 }
 
@@ -1658,126 +1902,59 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                  dzdcImagZImagTerm,
                                  dzdcImagZRealTerm);
 
+    constexpr int FinalizationStreamCount =
+        SharkFloatParams::EnableNewtonRaphson ? 4 : 2;
+    uint64_t *spectra[FinalizationStreamCount] = {
+        workspace.RealOutput, workspace.ImagOutput};
+    uint32_t coefficientCounts[FinalizationStreamCount] = {activeN, activeN};
+    int64_t *limbs[FinalizationStreamCount] = {
+        workspace.RealLimbs, workspace.ImagLimbs};
+    DebugStatePurpose residuesPurposes[FinalizationStreamCount] = {
+        DebugStatePurpose::Z2_Perm4, DebugStatePurpose::Z2_Perm5};
+    DebugStatePurpose limbsPurposes[FinalizationStreamCount] = {
+        DebugStatePurpose::UnpackXX, DebugStatePurpose::UnpackYY};
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        uint64_t *spectra[4] = {workspace.RealOutput,
-                                workspace.ImagOutput,
-                                workspace.DzdcRealOutput,
-                                workspace.DzdcImagOutput};
-        const uint32_t coefficientCounts[4] = {activeN, activeN, activeN, activeN};
-        int64_t *limbs[4] = {
-            workspace.RealLimbs, workspace.ImagLimbs, workspace.DzdcRealLimbs, workspace.DzdcImagLimbs};
-        const DebugStatePurpose residuesPurposes[4] = {DebugStatePurpose::Z2_Perm4,
-                                                       DebugStatePurpose::Z2_Perm5,
-                                                       DebugStatePurpose::Z2_PermW0b,
-                                                       DebugStatePurpose::Z2_PermW1b};
-        const DebugStatePurpose limbsPurposes[4] = {DebugStatePurpose::UnpackXX,
-                                                    DebugStatePurpose::UnpackYY,
-                                                    DebugStatePurpose::UnpackW0,
-                                                    DebugStatePurpose::UnpackW1};
-        InverseSpectraToSignedLimbsBatch<SharkFloatParams, 4>(grid,
-                                                              block,
-                                                              sharedData,
-                                                              debugCombo,
-                                                              debugStates,
-                                                              plan,
-                                                              workspace.Roots,
-                                                              spectra,
-                                                              coefficientCounts,
-                                                              limbs,
-                                                              limbCount,
-                                                              residuesPurposes,
-                                                              limbsPurposes);
-        FinalizeSignedStream<SharkFloatParams>(grid,
-                                               block,
-                                               debugStates,
-                                               carryPrefixShared,
-                                               workspace,
-                                               workspace.RealLimbs,
-                                               limbCount,
-                                               realExponent,
-                                               &combo->Multiply.A,
-                                               DebugStatePurpose::SignedCarry1,
-                                               DebugStatePurpose::FinalAdd1);
-        FinalizeSignedStream<SharkFloatParams>(grid,
-                                               block,
-                                               debugStates,
-                                               carryPrefixShared,
-                                               workspace,
-                                               workspace.ImagLimbs,
-                                               limbCount,
-                                               imagExponent,
-                                               &combo->Multiply.B,
-                                               DebugStatePurpose::SignedCarry2,
-                                               DebugStatePurpose::FinalAdd2);
-        FinalizeSignedStream<SharkFloatParams>(grid,
-                                               block,
-                                               debugStates,
-                                               carryPrefixShared,
-                                               workspace,
-                                               workspace.DzdcRealLimbs,
-                                               limbCount,
-                                               dzdcRealExponent,
-                                               &combo->Multiply.DzdcReal,
-                                               DebugStatePurpose::SignedCarryDzdc1,
-                                               DebugStatePurpose::FinalAddDzdc1);
-        FinalizeSignedStream<SharkFloatParams>(grid,
-                                               block,
-                                               debugStates,
-                                               carryPrefixShared,
-                                               workspace,
-                                               workspace.DzdcImagLimbs,
-                                               limbCount,
-                                               dzdcImagExponent,
-                                               &combo->Multiply.DzdcImag,
-                                               DebugStatePurpose::SignedCarryDzdc2,
-                                               DebugStatePurpose::FinalAddDzdc2);
+        spectra[2] = workspace.DzdcRealOutput;
+        spectra[3] = workspace.DzdcImagOutput;
+        coefficientCounts[2] = activeN;
+        coefficientCounts[3] = activeN;
+        limbs[2] = workspace.DzdcRealLimbs;
+        limbs[3] = workspace.DzdcImagLimbs;
+        residuesPurposes[2] = DebugStatePurpose::Z2_PermW0b;
+        residuesPurposes[3] = DebugStatePurpose::Z2_PermW1b;
+        limbsPurposes[2] = DebugStatePurpose::UnpackW0;
+        limbsPurposes[3] = DebugStatePurpose::UnpackW1;
+    }
+    InverseSpectraToSignedLimbsBatch<SharkFloatParams, FinalizationStreamCount>(
+        grid,
+        block,
+        sharedData,
+        debugCombo,
+        debugStates,
+        plan,
+        workspace.Roots,
+        spectra,
+        coefficientCounts,
+        limbs,
+        limbCount,
+        residuesPurposes,
+        limbsPurposes);
+    FinalizeSignedStream<SharkFloatParams>(grid,
+                                           block,
+                                           debugStates,
+                                           carryPrefixShared,
+                                           workspace,
+                                           limbCount,
+                                           realExponent,
+                                           imagExponent,
+                                           dzdcRealExponent,
+                                           dzdcImagExponent,
+                                           combo);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         StoreReference2DebugValue(
             debugStates, grid, block, DebugStatePurpose::Result_AddDzdc1, combo->Multiply.DzdcReal);
         StoreReference2DebugValue(
             debugStates, grid, block, DebugStatePurpose::Result_AddDzdc2, combo->Multiply.DzdcImag);
-    } else {
-        uint64_t *spectra[2] = {workspace.RealOutput, workspace.ImagOutput};
-        const uint32_t coefficientCounts[2] = {activeN, activeN};
-        int64_t *limbs[2] = {workspace.RealLimbs, workspace.ImagLimbs};
-        const DebugStatePurpose residuesPurposes[2] = {DebugStatePurpose::Z2_Perm4,
-                                                       DebugStatePurpose::Z2_Perm5};
-        const DebugStatePurpose limbsPurposes[2] = {DebugStatePurpose::UnpackXX,
-                                                    DebugStatePurpose::UnpackYY};
-        InverseSpectraToSignedLimbsBatch<SharkFloatParams, 2>(grid,
-                                                              block,
-                                                              sharedData,
-                                                              debugCombo,
-                                                              debugStates,
-                                                              plan,
-                                                              workspace.Roots,
-                                                              spectra,
-                                                              coefficientCounts,
-                                                              limbs,
-                                                              limbCount,
-                                                              residuesPurposes,
-                                                              limbsPurposes);
-        FinalizeSignedStream<SharkFloatParams>(grid,
-                                               block,
-                                               debugStates,
-                                               carryPrefixShared,
-                                               workspace,
-                                               workspace.RealLimbs,
-                                               limbCount,
-                                               realExponent,
-                                               &combo->Multiply.A,
-                                               DebugStatePurpose::SignedCarry1,
-                                               DebugStatePurpose::FinalAdd1);
-        FinalizeSignedStream<SharkFloatParams>(grid,
-                                               block,
-                                               debugStates,
-                                               carryPrefixShared,
-                                               workspace,
-                                               workspace.ImagLimbs,
-                                               limbCount,
-                                               imagExponent,
-                                               &combo->Multiply.B,
-                                               DebugStatePurpose::SignedCarry2,
-                                               DebugStatePurpose::FinalAdd2);
     }
     StoreReference2DebugValue(
         debugStates, grid, block, DebugStatePurpose::Result_Add1, combo->Multiply.A);
@@ -1873,7 +2050,8 @@ __maxnreg__(HpShark::RegisterLimit)
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
     extern __shared__ __align__(16) uint64_t sharedData[];
-    __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps + 1u];
+    __shared__ uint64_t
+        carryPrefixShared[4u * (2u * Reference2Detail::CarryPrefixMaxWarps + 1u)];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
     DebugState<SharkFloatParams> *debugStates = nullptr;

@@ -1046,26 +1046,26 @@ MakeSignedCarryPrefix(int64_t limb)
 }
 
 static __device__ uint64_t
-ShuffleUpCarryPrefix(unsigned mask, uint64_t value, int offset)
+ShuffleUpCarryPrefix(const cooperative_groups::thread_block_tile<32> &tile, uint64_t value, int offset)
 {
-    const uint32_t low = __shfl_up_sync(mask, static_cast<uint32_t>(value), offset);
-    const uint32_t high = __shfl_up_sync(mask, static_cast<uint32_t>(value >> 32u), offset);
+    const uint32_t low = tile.shfl_up(static_cast<uint32_t>(value), offset);
+    const uint32_t high = tile.shfl_up(static_cast<uint32_t>(value >> 32u), offset);
     return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
 }
 
 static __device__ uint64_t
-ShuffleDownCarryPrefix(unsigned mask, uint64_t value, int offset)
+ShuffleDownCarryPrefix(const cooperative_groups::thread_block_tile<32> &tile, uint64_t value, int offset)
 {
-    const uint32_t low = __shfl_down_sync(mask, static_cast<uint32_t>(value), offset);
-    const uint32_t high = __shfl_down_sync(mask, static_cast<uint32_t>(value >> 32u), offset);
+    const uint32_t low = tile.shfl_down(static_cast<uint32_t>(value), offset);
+    const uint32_t high = tile.shfl_down(static_cast<uint32_t>(value >> 32u), offset);
     return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
 }
 
 static __device__ uint64_t
-ShuffleCarryPrefix(unsigned mask, uint64_t value, int sourceLane)
+ShuffleCarryPrefix(const cooperative_groups::thread_block_tile<32> &tile, uint64_t value, int sourceLane)
 {
-    const uint32_t low = __shfl_sync(mask, static_cast<uint32_t>(value), sourceLane);
-    const uint32_t high = __shfl_sync(mask, static_cast<uint32_t>(value >> 32u), sourceLane);
+    const uint32_t low = tile.shfl(static_cast<uint32_t>(value), sourceLane);
+    const uint32_t high = tile.shfl(static_cast<uint32_t>(value >> 32u), sourceLane);
     return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u);
 }
 
@@ -1115,9 +1115,9 @@ PublishCarryPrefixDescriptorPrefix(HpSharkReference2CarryPrefixDescriptor &descr
 static __device__ uint64_t
 ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
                        uint32_t part,
-                       uint32_t lane,
-                       unsigned warpMask)
+                       const cooperative_groups::thread_block_tile<32> &tile)
 {
+    const uint32_t lane = tile.thread_rank();
     uint64_t exclusive = CarryPrefixIdentity();
     int32_t previousPart = static_cast<int32_t>(part) - 1;
     int spin = 0;
@@ -1127,6 +1127,7 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
         const bool validDescriptor = descriptorIndex >= 0;
         CarryPrefixDescriptorState state = CarryPrefixDescriptorState::Empty;
         uint32_t descriptorCount = 0;
+        uint32_t validDescriptorCount = 0;
         bool foundPrefix = false;
 
         do {
@@ -1135,24 +1136,25 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
                     LoadCarryPrefixState(&descriptors[descriptorIndex].State));
             }
 
-            const unsigned validMask = __ballot_sync(warpMask, validDescriptor);
+            const unsigned validMask = tile.ballot(validDescriptor);
             const unsigned readyMask =
-                __ballot_sync(warpMask, !validDescriptor || state != CarryPrefixDescriptorState::Empty);
+                tile.ballot(!validDescriptor || state != CarryPrefixDescriptorState::Empty);
             const unsigned unresolvedMask = validMask & ~readyMask;
-            const uint32_t validCount = static_cast<uint32_t>(__popc(validMask));
-            const uint32_t contiguousReadyCount =
-                unresolvedMask == 0u ? validCount : static_cast<uint32_t>(__ffs(unresolvedMask) - 1);
+            validDescriptorCount = static_cast<uint32_t>(__popc(validMask));
+            const uint32_t contiguousReadyCount = unresolvedMask == 0u
+                                                      ? validDescriptorCount
+                                                      : static_cast<uint32_t>(__ffs(unresolvedMask) - 1);
             const unsigned contiguousReadyMask =
                 contiguousReadyCount == 32u ? 0xFFFF'FFFFu : ((1u << contiguousReadyCount) - 1u);
             const unsigned prefixMask =
-                __ballot_sync(warpMask, validDescriptor && state == CarryPrefixDescriptorState::Prefix) &
+                tile.ballot(validDescriptor && state == CarryPrefixDescriptorState::Prefix) &
                 contiguousReadyMask;
 
             if (prefixMask != 0u) {
                 descriptorCount = static_cast<uint32_t>(__ffs(prefixMask));
                 foundPrefix = true;
-            } else if (contiguousReadyCount == validCount) {
-                descriptorCount = validCount;
+            } else if (contiguousReadyCount == validDescriptorCount) {
+                descriptorCount = validDescriptorCount;
             }
 
             if (descriptorCount == 0u) {
@@ -1163,6 +1165,7 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
             }
         } while (descriptorCount == 0u);
 
+        MattsCudaAssert(descriptorCount <= validDescriptorCount);
         MattsCudaAssert(lane >= descriptorCount || state == CarryPrefixDescriptorState::Aggregate ||
                         state == CarryPrefixDescriptorState::Prefix);
         uint64_t transform = CarryPrefixIdentity();
@@ -1175,7 +1178,7 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
         uint64_t windowTransform = transform;
 #pragma unroll
         for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-            const uint64_t older = ShuffleDownCarryPrefix(warpMask, windowTransform, offset);
+            const uint64_t older = ShuffleDownCarryPrefix(tile, windowTransform, offset);
             if (lane + offset < descriptorCount)
                 windowTransform = ComposeCarryPrefixes(older, windowTransform);
         }
@@ -1184,10 +1187,12 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
             exclusive = ComposeCarryPrefixes(windowTransform, exclusive);
         if (foundPrefix)
             break;
-        previousPart -= static_cast<int32_t>(descriptorCount);
+        const int32_t nextPreviousPart = previousPart - static_cast<int32_t>(descriptorCount);
+        MattsCudaAssert(nextPreviousPart < previousPart);
+        previousPart = nextPreviousPart;
     }
 
-    return ShuffleCarryPrefix(warpMask, exclusive, 0);
+    return ShuffleCarryPrefix(tile, exclusive, 0);
 }
 
 static __device__ void
@@ -1226,7 +1231,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     const uint32_t lane = threadIndex & 31u;
     const uint32_t warp = threadIndex >> 5u;
     const uint32_t numWarps = (blockSize + 31u) >> 5u;
-    const unsigned warpMask = __activemask();
+    const cooperative_groups::thread_block_tile<32> warpTile =
+        cooperative_groups::tiled_partition<32>(block);
     uint64_t *warpAggregates = sharedStorage;
     uint64_t *warpPrefixes = sharedStorage + CarryPrefixMaxWarps;
     uint64_t *exclusiveStorage = sharedStorage + 2u * CarryPrefixMaxWarps;
@@ -1248,7 +1254,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
 #pragma unroll
         for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
             const uint64_t previous =
-                ShuffleUpCarryPrefix(warpMask, inclusive, static_cast<int>(offset));
+                ShuffleUpCarryPrefix(warpTile, inclusive, static_cast<int>(offset));
             if (lane >= offset)
                 inclusive = ComposeCarryPrefixes(previous, inclusive);
         }
@@ -1264,23 +1270,24 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
             uint64_t warpInclusive = lane < numWarps ? warpAggregates[lane] : CarryPrefixIdentity();
             for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
                 const uint64_t previous =
-                    ShuffleUpCarryPrefix(warpMask, warpInclusive, static_cast<int>(offset));
+                    ShuffleUpCarryPrefix(warpTile, warpInclusive, static_cast<int>(offset));
                 if (lane >= offset && lane < numWarps)
                     warpInclusive = ComposeCarryPrefixes(previous, warpInclusive);
             }
 
-            const uint64_t previous = ShuffleUpCarryPrefix(warpMask, warpInclusive, 1);
+            const uint64_t previous = ShuffleUpCarryPrefix(warpTile, warpInclusive, 1);
             if (lane < numWarps) {
                 warpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : previous;
             }
-            aggregate = ShuffleCarryPrefix(warpMask, warpInclusive, static_cast<int>(numWarps - 1u));
+            aggregate = ShuffleCarryPrefix(warpTile, warpInclusive, static_cast<int>(numWarps - 1u));
         }
 
         if (threadIndex == 0u)
             PublishCarryPrefixDescriptorAggregate(descriptors[part], aggregate);
 
         if (warp == 0u) {
-            const uint64_t exclusive = ResolveCarryPrefixWarp(descriptors, part, lane, warpMask);
+            warpTile.sync();
+            const uint64_t exclusive = ResolveCarryPrefixWarp(descriptors, part, warpTile);
             if (lane == 0u) {
                 const uint64_t prefix = ComposeCarryPrefixes(exclusive, aggregate);
                 PublishCarryPrefixDescriptorPrefix(descriptors[part], prefix);
@@ -1291,7 +1298,7 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
 
         const uint64_t exclusivePart = exclusiveStorage[0];
         const uint64_t warpExclusive = warpPrefixes[warp];
-        const uint64_t previous = ShuffleUpCarryPrefix(warpMask, inclusive, 1);
+        const uint64_t previous = ShuffleUpCarryPrefix(warpTile, inclusive, 1);
         const uint64_t localExclusive = lane == 0u ? CarryPrefixIdentity() : previous;
         if (hasValue) {
             const uint64_t prefixWithinPart = ComposeCarryPrefixes(warpExclusive, localExclusive);
@@ -1994,7 +2001,7 @@ __maxnreg__(HpShark::RegisterLimit)
     namespace cg = cooperative_groups;
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
-    extern __shared__ uint64_t sharedData[];
+    extern __shared__ __align__(16) uint64_t sharedData[];
     __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps + 1u];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;

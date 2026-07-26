@@ -91,7 +91,6 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     uint64_t *ImagOutput;
     uint64_t *DzdcRealOutput;
     uint64_t *DzdcImagOutput;
-    uint64_t *Product;
     int64_t *RealLimbs;
     int64_t *ImagLimbs;
     int64_t *DzdcRealLimbs;

@@ -460,7 +460,7 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
 
     // Ref2 keeps its fused NTT intermediates in one fixed-capacity workspace.
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    constexpr size_t spectrumCount = 7u + (SharkFloatParams::EnableNewtonRaphson ? 5u : 0u);
+    constexpr size_t spectrumCount = 6u + (SharkFloatParams::EnableNewtonRaphson ? 5u : 0u);
     constexpr size_t limbCount = SharkFloatParams::EnableNewtonRaphson ? 4u : 2u;
     auto alignWorkspace = [](size_t value, size_t alignment) {
         return (value + alignment - 1) & ~(alignment - 1);
@@ -533,7 +533,6 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
         workspace.DzdcRealOutput = allocateSpectrum();
         workspace.DzdcImagOutput = allocateSpectrum();
     }
-    workspace.Product = allocateSpectrum();
     workspace.RealLimbs = allocateLimbs();
     workspace.ImagLimbs = allocateLimbs();
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {

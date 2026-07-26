@@ -574,178 +574,217 @@ PsiPowerMont(cooperative_groups::grid_group &grid,
                       roots.psi_pows[reduced - static_cast<uint64_t>(plan.N)]);
 }
 
-template <class SharkFloatParams>
-__device__ void
-WriteShiftedSpectrum(cooperative_groups::grid_group &grid,
-                     cooperative_groups::thread_block &block,
-                     DebugGlobalCount<SharkFloatParams> *debugCombo,
-                     const SharkNTT::PlanPrime &plan,
-                     const SharkNTT::RootTables &roots,
-                     const uint64_t *source,
-                     uint64_t shiftBits,
-                     bool negative,
-                     uint64_t *dest)
-{
-    const uint64_t chunkShift = shiftBits / static_cast<uint64_t>(plan.b);
-    const uint32_t bitShift = static_cast<uint32_t>(shiftBits % static_cast<uint64_t>(plan.b));
-    const uint64_t bitScale =
-        SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
-    const uint64_t zeroMont = SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 0);
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t i = GridThreadRank(block); i < static_cast<uint32_t>(plan.N); i += gridSize) {
-        const uint64_t chunkScale =
-            chunkShift == 0 ? SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1)
-                            : PsiPowerMont<SharkFloatParams>(
-                                  grid, block, debugCombo, plan, roots, chunkShift * (1ull + 2ull * i));
-        const uint64_t scale =
-            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, chunkScale, bitScale);
-        const uint64_t shifted =
-            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
-        dest[i] = negative ? SubPSerial(zeroMont, shifted) : shifted;
-    }
-    grid.sync();
-}
+struct SpectrumAlignment {
+    bool IsZero;
+    bool IsNegative;
+    uint64_t ChunkShift;
+    uint64_t BitScale;
+};
 
 template <class SharkFloatParams>
-__device__ void
-AddShiftedSpectrum(cooperative_groups::grid_group &grid,
-                   cooperative_groups::thread_block &block,
-                   DebugGlobalCount<SharkFloatParams> *debugCombo,
-                   const SharkNTT::PlanPrime &plan,
-                   const SharkNTT::RootTables &roots,
-                   const uint64_t *source,
-                   uint64_t shiftBits,
-                   bool negative,
-                   uint64_t *dest)
-{
-    const uint64_t chunkShift = shiftBits / static_cast<uint64_t>(plan.b);
-    const uint32_t bitShift = static_cast<uint32_t>(shiftBits % static_cast<uint64_t>(plan.b));
-    const uint64_t bitScale =
-        SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift);
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t i = GridThreadRank(block); i < static_cast<uint32_t>(plan.N); i += gridSize) {
-        const uint64_t chunkScale =
-            chunkShift == 0 ? SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1)
-                            : PsiPowerMont<SharkFloatParams>(
-                                  grid, block, debugCombo, plan, roots, chunkShift * (1ull + 2ull * i));
-        const uint64_t scale =
-            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, chunkScale, bitScale);
-        const uint64_t shifted =
-            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, source[i], scale);
-        dest[i] = negative ? SubPSerial(dest[i], shifted) : AddPSerial(dest[i], shifted);
-    }
-    grid.sync();
-}
-
-template <class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly uint64_t *
-GetSpectrum(HpSharkReference2Workspace<SharkFloatParams> &workspace, SpectrumId id)
-{
-    switch (id) {
-        case SpectrumId::ZReal:
-            return workspace.ZReal;
-        case SpectrumId::ZImag:
-            return workspace.ZImag;
-        case SpectrumId::DzdcReal:
-            return workspace.DzdcReal;
-        case SpectrumId::DzdcImag:
-            return workspace.DzdcImag;
-        case SpectrumId::CReal:
-            return workspace.CReal;
-        case SpectrumId::CImag:
-            return workspace.CImag;
-        case SpectrumId::One:
-            return workspace.One;
-    }
-    return workspace.ZReal;
-}
-
-template <class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly void
-AccumulateOutputTerm(cooperative_groups::grid_group &grid,
-                     cooperative_groups::thread_block &block,
-                     DebugGlobalCount<SharkFloatParams> *debugCombo,
-                     const SharkNTT::PlanPrime &plan,
-                     const SharkNTT::RootTables &roots,
-                     HpSharkReference2Workspace<SharkFloatParams> &workspace,
-                     int32_t commonExponent,
-                     uint64_t *dest,
-                     FusedTerm<SharkFloatParams> term,
-                     bool &hasDestinationValue)
+__device__ SharkForceInlineReleaseOnly SpectrumAlignment
+MakeSpectrumAlignment(cooperative_groups::grid_group &grid,
+                      cooperative_groups::thread_block &block,
+                      DebugGlobalCount<SharkFloatParams> *debugCombo,
+                      const SharkNTT::PlanPrime &plan,
+                      int32_t commonExponent,
+                      FusedTerm<SharkFloatParams> term)
 {
     if (term.IsZero)
-        return;
-    const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    const uint64_t shift = static_cast<uint64_t>(term.Exponent - commonExponent);
-    if (term.Kind == TermKind::Product) {
-        const uint64_t *a = GetSpectrum(workspace, term.A);
-        const uint64_t *b = GetSpectrum(workspace, term.B);
-        const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-        for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize)
-            workspace.Product[i] =
-                SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, a[i], b[i]);
-        // The shifted pass has identical grid-stride ownership and supplies the publication barrier.
-        if (hasDestinationValue) {
-            AddShiftedSpectrum<SharkFloatParams>(
-                grid, block, debugCombo, plan, roots, workspace.Product, shift, term.IsNegative, dest);
-        } else {
-            WriteShiftedSpectrum<SharkFloatParams>(
-                grid, block, debugCombo, plan, roots, workspace.Product, shift, term.IsNegative, dest);
-        }
-    } else {
-        const uint64_t *source = GetSpectrum(workspace, term.A);
-        if (hasDestinationValue) {
-            AddShiftedSpectrum<SharkFloatParams>(
-                grid, block, debugCombo, plan, roots, source, shift, term.IsNegative, dest);
-        } else {
-            WriteShiftedSpectrum<SharkFloatParams>(
-                grid, block, debugCombo, plan, roots, source, shift, term.IsNegative, dest);
-        }
-    }
-    hasDestinationValue = true;
+        return {true, false, 0, 0};
+
+    const uint64_t shiftBits = static_cast<uint64_t>(term.Exponent - commonExponent);
+    const uint32_t bitShift = static_cast<uint32_t>(shiftBits % static_cast<uint64_t>(plan.b));
+    return {false,
+            term.IsNegative,
+            shiftBits / static_cast<uint64_t>(plan.b),
+            SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1ull << bitShift)};
 }
 
-template <class SharkFloatParams, class... RemainingTerms>
-__device__ SharkForceInlineReleaseOnly void
-AccumulateOutputSpectrum(cooperative_groups::grid_group &grid,
+template <class SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly uint64_t
+ScaleSpectrumCoefficient(cooperative_groups::grid_group &grid,
                          cooperative_groups::thread_block &block,
                          DebugGlobalCount<SharkFloatParams> *debugCombo,
-                         DebugState<SharkFloatParams> *debugStates,
                          const SharkNTT::PlanPrime &plan,
                          const SharkNTT::RootTables &roots,
-                         HpSharkReference2Workspace<SharkFloatParams> &workspace,
-                         int32_t commonExponent,
-                         uint64_t *dest,
-                         DebugStatePurpose checksumPurpose,
-                         FusedTerm<SharkFloatParams> firstTerm,
-                         RemainingTerms... remainingTerms)
+                         const SpectrumAlignment &alignment,
+                         uint64_t oneMont,
+                         uint64_t value,
+                         uint32_t index)
 {
-    static_assert((std::is_same_v<FusedTerm<SharkFloatParams>, RemainingTerms> && ...));
-    bool hasDestinationValue = false;
-    AccumulateOutputTerm(grid,
-                         block,
-                         debugCombo,
-                         plan,
-                         roots,
-                         workspace,
-                         commonExponent,
-                         dest,
-                         firstTerm,
-                         hasDestinationValue);
-    (AccumulateOutputTerm(grid,
-                          block,
-                          debugCombo,
-                          plan,
-                          roots,
-                          workspace,
-                          commonExponent,
-                          dest,
-                          remainingTerms,
-                          hasDestinationValue),
-     ...);
-    MattsCudaAssert(hasDestinationValue);
+    const uint64_t chunkScale =
+        alignment.ChunkShift == 0
+            ? oneMont
+            : PsiPowerMont<SharkFloatParams>(
+                  grid, block, debugCombo, plan, roots, alignment.ChunkShift * (1ull + 2ull * index));
+    const uint64_t scale = SharkNTT::MontgomeryMul<SharkFloatParams>(
+        grid, block, debugCombo, chunkScale, alignment.BitScale);
+    return SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, value, scale);
+}
+
+template <class SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly uint64_t
+AccumulateSpectrumCoefficient(uint64_t accumulator, uint64_t value, bool negative)
+{
+    return negative ? SubPSerial(accumulator, value) : AddPSerial(accumulator, value);
+}
+
+template <class SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly void
+AccumulateFixedOutputSpectra(cooperative_groups::grid_group &grid,
+                             cooperative_groups::thread_block &block,
+                             DebugGlobalCount<SharkFloatParams> *debugCombo,
+                             DebugState<SharkFloatParams> *debugStates,
+                             const SharkNTT::PlanPrime &plan,
+                             const SharkNTT::RootTables &roots,
+                             HpSharkReference2Workspace<SharkFloatParams> &workspace,
+                             int32_t realExponent,
+                             FusedTerm<SharkFloatParams> realZSquareTerm,
+                             FusedTerm<SharkFloatParams> realNegativeZImagSquareTerm,
+                             FusedTerm<SharkFloatParams> realConstantTerm,
+                             int32_t imagExponent,
+                             FusedTerm<SharkFloatParams> imagDoubleProductTerm,
+                             FusedTerm<SharkFloatParams> imagConstantTerm,
+                             int32_t dzdcRealExponent,
+                             FusedTerm<SharkFloatParams> dzdcRealZRealTerm,
+                             FusedTerm<SharkFloatParams> dzdcRealNegativeZImagTerm,
+                             FusedTerm<SharkFloatParams> dzdcRealOneTerm,
+                             int32_t dzdcImagExponent,
+                             FusedTerm<SharkFloatParams> dzdcImagZImagTerm,
+                             FusedTerm<SharkFloatParams> dzdcImagZRealTerm)
+{
+    const SpectrumAlignment realZSquare =
+        MakeSpectrumAlignment(grid, block, debugCombo, plan, realExponent, realZSquareTerm);
+    const SpectrumAlignment realNegativeZImagSquare =
+        MakeSpectrumAlignment(grid, block, debugCombo, plan, realExponent, realNegativeZImagSquareTerm);
+    const SpectrumAlignment realConstant =
+        MakeSpectrumAlignment(grid, block, debugCombo, plan, realExponent, realConstantTerm);
+    const SpectrumAlignment imagDoubleProduct =
+        MakeSpectrumAlignment(grid, block, debugCombo, plan, imagExponent, imagDoubleProductTerm);
+    const SpectrumAlignment imagConstant =
+        MakeSpectrumAlignment(grid, block, debugCombo, plan, imagExponent, imagConstantTerm);
+
+    SpectrumAlignment dzdcRealZReal{};
+    SpectrumAlignment dzdcRealNegativeZImag{};
+    SpectrumAlignment dzdcRealOne{};
+    SpectrumAlignment dzdcImagZImag{};
+    SpectrumAlignment dzdcImagZReal{};
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        dzdcRealZReal =
+            MakeSpectrumAlignment(grid, block, debugCombo, plan, dzdcRealExponent, dzdcRealZRealTerm);
+        dzdcRealNegativeZImag = MakeSpectrumAlignment(
+            grid, block, debugCombo, plan, dzdcRealExponent, dzdcRealNegativeZImagTerm);
+        dzdcRealOne =
+            MakeSpectrumAlignment(grid, block, debugCombo, plan, dzdcRealExponent, dzdcRealOneTerm);
+        dzdcImagZImag =
+            MakeSpectrumAlignment(grid, block, debugCombo, plan, dzdcImagExponent, dzdcImagZImagTerm);
+        dzdcImagZReal =
+            MakeSpectrumAlignment(grid, block, debugCombo, plan, dzdcImagExponent, dzdcImagZRealTerm);
+    }
+
+    const uint64_t zeroMont = SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 0);
+    const uint64_t oneMont = SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1);
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    StoreReference2DebugState(debugStates, grid, block, checksumPurpose, dest, activeN);
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
+        uint64_t real = zeroMont;
+        if (!realZSquare.IsZero) {
+            const uint64_t product = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, workspace.ZReal[i], workspace.ZReal[i]);
+            const uint64_t value = ScaleSpectrumCoefficient(
+                grid, block, debugCombo, plan, roots, realZSquare, oneMont, product, i);
+            real = AccumulateSpectrumCoefficient<SharkFloatParams>(real, value, realZSquare.IsNegative);
+        }
+        if (!realNegativeZImagSquare.IsZero) {
+            const uint64_t product = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, workspace.ZImag[i], workspace.ZImag[i]);
+            const uint64_t value = ScaleSpectrumCoefficient(
+                grid, block, debugCombo, plan, roots, realNegativeZImagSquare, oneMont, product, i);
+            real = AccumulateSpectrumCoefficient<SharkFloatParams>(
+                real, value, realNegativeZImagSquare.IsNegative);
+        }
+        if (!realConstant.IsZero) {
+            const uint64_t value = ScaleSpectrumCoefficient(
+                grid, block, debugCombo, plan, roots, realConstant, oneMont, workspace.CReal[i], i);
+            real = AccumulateSpectrumCoefficient<SharkFloatParams>(real, value, realConstant.IsNegative);
+        }
+        workspace.RealOutput[i] = real;
+
+        uint64_t imag = zeroMont;
+        if (!imagDoubleProduct.IsZero) {
+            const uint64_t product = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, workspace.ZReal[i], workspace.ZImag[i]);
+            const uint64_t value = ScaleSpectrumCoefficient(
+                grid, block, debugCombo, plan, roots, imagDoubleProduct, oneMont, product, i);
+            imag = AccumulateSpectrumCoefficient<SharkFloatParams>(
+                imag, value, imagDoubleProduct.IsNegative);
+        }
+        if (!imagConstant.IsZero) {
+            const uint64_t value = ScaleSpectrumCoefficient(
+                grid, block, debugCombo, plan, roots, imagConstant, oneMont, workspace.CImag[i], i);
+            imag = AccumulateSpectrumCoefficient<SharkFloatParams>(imag, value, imagConstant.IsNegative);
+        }
+        workspace.ImagOutput[i] = imag;
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            uint64_t dzdcReal = zeroMont;
+            if (!dzdcRealZReal.IsZero) {
+                const uint64_t product = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, workspace.ZReal[i], workspace.DzdcReal[i]);
+                const uint64_t value = ScaleSpectrumCoefficient(
+                    grid, block, debugCombo, plan, roots, dzdcRealZReal, oneMont, product, i);
+                dzdcReal = AccumulateSpectrumCoefficient<SharkFloatParams>(
+                    dzdcReal, value, dzdcRealZReal.IsNegative);
+            }
+            if (!dzdcRealNegativeZImag.IsZero) {
+                const uint64_t product = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, workspace.ZImag[i], workspace.DzdcImag[i]);
+                const uint64_t value = ScaleSpectrumCoefficient(
+                    grid, block, debugCombo, plan, roots, dzdcRealNegativeZImag, oneMont, product, i);
+                dzdcReal = AccumulateSpectrumCoefficient<SharkFloatParams>(
+                    dzdcReal, value, dzdcRealNegativeZImag.IsNegative);
+            }
+            if (!dzdcRealOne.IsZero) {
+                const uint64_t value = ScaleSpectrumCoefficient(
+                    grid, block, debugCombo, plan, roots, dzdcRealOne, oneMont, workspace.One[i], i);
+                dzdcReal = AccumulateSpectrumCoefficient<SharkFloatParams>(
+                    dzdcReal, value, dzdcRealOne.IsNegative);
+            }
+            workspace.DzdcRealOutput[i] = dzdcReal;
+
+            uint64_t dzdcImag = zeroMont;
+            if (!dzdcImagZImag.IsZero) {
+                const uint64_t product = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, workspace.ZImag[i], workspace.DzdcReal[i]);
+                const uint64_t value = ScaleSpectrumCoefficient(
+                    grid, block, debugCombo, plan, roots, dzdcImagZImag, oneMont, product, i);
+                dzdcImag = AccumulateSpectrumCoefficient<SharkFloatParams>(
+                    dzdcImag, value, dzdcImagZImag.IsNegative);
+            }
+            if (!dzdcImagZReal.IsZero) {
+                const uint64_t product = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, workspace.ZReal[i], workspace.DzdcImag[i]);
+                const uint64_t value = ScaleSpectrumCoefficient(
+                    grid, block, debugCombo, plan, roots, dzdcImagZReal, oneMont, product, i);
+                dzdcImag = AccumulateSpectrumCoefficient<SharkFloatParams>(
+                    dzdcImag, value, dzdcImagZReal.IsNegative);
+            }
+            workspace.DzdcImagOutput[i] = dzdcImag;
+        }
+    }
+    grid.sync();
+
+    StoreReference2DebugState(
+        debugStates, grid, block, DebugStatePurpose::Z2_Perm1, workspace.RealOutput, activeN);
+    StoreReference2DebugState(
+        debugStates, grid, block, DebugStatePurpose::Z2_Perm2, workspace.ImagOutput, activeN);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        StoreReference2DebugState(
+            debugStates, grid, block, DebugStatePurpose::Z2_PermW0, workspace.DzdcRealOutput, activeN);
+        StoreReference2DebugState(
+            debugStates, grid, block, DebugStatePurpose::Z2_PermW1, workspace.DzdcImagOutput, activeN);
+    }
 }
 
 template <class IntT>
@@ -1575,52 +1614,79 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                normalPackedPurposes,
                                                normalForwardPurposes);
 
-    if (!realZero && !imagZero) {
-        AccumulateOutputSpectrum<SharkFloatParams>(grid,
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        const HpSharkFloat<SharkFloatParams> *newtonRaphsonForwardValues[3] = {
+            &combo->Multiply.DzdcReal, &combo->Multiply.DzdcImag, &combo->Add.One};
+        uint64_t *newtonRaphsonForwardOutputs[3] = {
+            workspace.DzdcReal, workspace.DzdcImag, workspace.One};
+        const DebugStatePurpose newtonRaphsonPackedPurposes[3] = {
+            DebugStatePurpose::Z0W1, DebugStatePurpose::Z0W2, DebugStatePurpose::Z0W3};
+        const DebugStatePurpose newtonRaphsonForwardPurposes[3] = {
+            DebugStatePurpose::Z2W1, DebugStatePurpose::Z2W2, DebugStatePurpose::Z2W3};
+        PackTwistForwardBatch<SharkFloatParams, 3>(grid,
                                                    block,
+                                                   sharedData,
                                                    debugCombo,
                                                    debugStates,
+                                                   newtonRaphsonForwardValues,
                                                    plan,
                                                    workspace.Roots,
-                                                   workspace,
-                                                   realExponent,
-                                                   workspace.RealOutput,
-                                                   DebugStatePurpose::Z2_Perm1,
-                                                   realZSquareTerm,
-                                                   realNegativeZImagSquareTerm,
-                                                   realConstantTerm);
-        AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                   block,
-                                                   debugCombo,
-                                                   debugStates,
-                                                   plan,
-                                                   workspace.Roots,
-                                                   workspace,
-                                                   imagExponent,
-                                                   workspace.ImagOutput,
-                                                   DebugStatePurpose::Z2_Perm2,
-                                                   imagDoubleProductTerm,
-                                                   imagConstantTerm);
-        uint64_t *normalSpectra[2] = {workspace.RealOutput, workspace.ImagOutput};
-        const uint32_t normalCoefficientCounts[2] = {activeN, activeN};
-        int64_t *normalLimbs[2] = {workspace.RealLimbs, workspace.ImagLimbs};
-        const DebugStatePurpose normalResiduesPurposes[2] = {DebugStatePurpose::Z2_Perm4,
-                                                             DebugStatePurpose::Z2_Perm5};
-        const DebugStatePurpose normalLimbsPurposes[2] = {DebugStatePurpose::UnpackXX,
-                                                          DebugStatePurpose::UnpackYY};
-        InverseSpectraToSignedLimbsBatch<SharkFloatParams, 2>(grid,
+                                                   newtonRaphsonForwardOutputs,
+                                                   newtonRaphsonPackedPurposes,
+                                                   newtonRaphsonForwardPurposes);
+    }
+
+    AccumulateFixedOutputSpectra(grid,
+                                 block,
+                                 debugCombo,
+                                 debugStates,
+                                 plan,
+                                 workspace.Roots,
+                                 workspace,
+                                 realExponent,
+                                 realZSquareTerm,
+                                 realNegativeZImagSquareTerm,
+                                 realConstantTerm,
+                                 imagExponent,
+                                 imagDoubleProductTerm,
+                                 imagConstantTerm,
+                                 dzdcRealExponent,
+                                 dzdcRealZRealTerm,
+                                 dzdcRealNegativeZImagTerm,
+                                 dzdcRealOneTerm,
+                                 dzdcImagExponent,
+                                 dzdcImagZImagTerm,
+                                 dzdcImagZRealTerm);
+
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        uint64_t *spectra[4] = {workspace.RealOutput,
+                                workspace.ImagOutput,
+                                workspace.DzdcRealOutput,
+                                workspace.DzdcImagOutput};
+        const uint32_t coefficientCounts[4] = {activeN, activeN, activeN, activeN};
+        int64_t *limbs[4] = {
+            workspace.RealLimbs, workspace.ImagLimbs, workspace.DzdcRealLimbs, workspace.DzdcImagLimbs};
+        const DebugStatePurpose residuesPurposes[4] = {DebugStatePurpose::Z2_Perm4,
+                                                       DebugStatePurpose::Z2_Perm5,
+                                                       DebugStatePurpose::Z2_PermW0b,
+                                                       DebugStatePurpose::Z2_PermW1b};
+        const DebugStatePurpose limbsPurposes[4] = {DebugStatePurpose::UnpackXX,
+                                                    DebugStatePurpose::UnpackYY,
+                                                    DebugStatePurpose::UnpackW0,
+                                                    DebugStatePurpose::UnpackW1};
+        InverseSpectraToSignedLimbsBatch<SharkFloatParams, 4>(grid,
                                                               block,
                                                               sharedData,
                                                               debugCombo,
                                                               debugStates,
                                                               plan,
                                                               workspace.Roots,
-                                                              normalSpectra,
-                                                              normalCoefficientCounts,
-                                                              normalLimbs,
+                                                              spectra,
+                                                              coefficientCounts,
+                                                              limbs,
                                                               limbCount,
-                                                              normalResiduesPurposes,
-                                                              normalLimbsPurposes);
+                                                              residuesPurposes,
+                                                              limbsPurposes);
         FinalizeSignedStream<SharkFloatParams>(grid,
                                                block,
                                                debugStates,
@@ -1643,291 +1709,81 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                &combo->Multiply.B,
                                                DebugStatePurpose::SignedCarry2,
                                                DebugStatePurpose::FinalAdd2);
+        FinalizeSignedStream<SharkFloatParams>(grid,
+                                               block,
+                                               debugStates,
+                                               carryPrefixShared,
+                                               workspace,
+                                               workspace.DzdcRealLimbs,
+                                               limbCount,
+                                               dzdcRealExponent,
+                                               &combo->Multiply.DzdcReal,
+                                               DebugStatePurpose::SignedCarryDzdc1,
+                                               DebugStatePurpose::FinalAddDzdc1);
+        FinalizeSignedStream<SharkFloatParams>(grid,
+                                               block,
+                                               debugStates,
+                                               carryPrefixShared,
+                                               workspace,
+                                               workspace.DzdcImagLimbs,
+                                               limbCount,
+                                               dzdcImagExponent,
+                                               &combo->Multiply.DzdcImag,
+                                               DebugStatePurpose::SignedCarryDzdc2,
+                                               DebugStatePurpose::FinalAddDzdc2);
+        StoreReference2DebugValue(
+            debugStates, grid, block, DebugStatePurpose::Result_AddDzdc1, combo->Multiply.DzdcReal);
+        StoreReference2DebugValue(
+            debugStates, grid, block, DebugStatePurpose::Result_AddDzdc2, combo->Multiply.DzdcImag);
     } else {
-        if (realZero) {
-            SetZero(grid, block, &combo->Multiply.A);
-        } else {
-            AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                       block,
-                                                       debugCombo,
-                                                       debugStates,
-                                                       plan,
-                                                       workspace.Roots,
-                                                       workspace,
-                                                       realExponent,
-                                                       workspace.RealOutput,
-                                                       DebugStatePurpose::Z2_Perm1,
-                                                       realZSquareTerm,
-                                                       realNegativeZImagSquareTerm,
-                                                       realConstantTerm);
-            uint64_t *realSpectrum[1] = {workspace.RealOutput};
-            const uint32_t realCoefficientCount[1] = {activeN};
-            int64_t *realLimbs[1] = {workspace.RealLimbs};
-            const DebugStatePurpose realResiduesPurpose[1] = {DebugStatePurpose::Z2_Perm4};
-            const DebugStatePurpose realLimbsPurpose[1] = {DebugStatePurpose::UnpackXX};
-            InverseSpectraToSignedLimbsBatch<SharkFloatParams, 1>(grid,
-                                                                  block,
-                                                                  sharedData,
-                                                                  debugCombo,
-                                                                  debugStates,
-                                                                  plan,
-                                                                  workspace.Roots,
-                                                                  realSpectrum,
-                                                                  realCoefficientCount,
-                                                                  realLimbs,
-                                                                  limbCount,
-                                                                  realResiduesPurpose,
-                                                                  realLimbsPurpose);
-            FinalizeSignedStream<SharkFloatParams>(grid,
-                                                   block,
-                                                   debugStates,
-                                                   carryPrefixShared,
-                                                   workspace,
-                                                   workspace.RealLimbs,
-                                                   limbCount,
-                                                   realExponent,
-                                                   &combo->Multiply.A,
-                                                   DebugStatePurpose::SignedCarry1,
-                                                   DebugStatePurpose::FinalAdd1);
-        }
-        if (imagZero) {
-            SetZero(grid, block, &combo->Multiply.B);
-        } else {
-            AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                       block,
-                                                       debugCombo,
-                                                       debugStates,
-                                                       plan,
-                                                       workspace.Roots,
-                                                       workspace,
-                                                       imagExponent,
-                                                       workspace.ImagOutput,
-                                                       DebugStatePurpose::Z2_Perm2,
-                                                       imagDoubleProductTerm,
-                                                       imagConstantTerm);
-            uint64_t *imagSpectrum[1] = {workspace.ImagOutput};
-            const uint32_t imagCoefficientCount[1] = {activeN};
-            int64_t *imagLimbs[1] = {workspace.ImagLimbs};
-            const DebugStatePurpose imagResiduesPurpose[1] = {DebugStatePurpose::Z2_Perm5};
-            const DebugStatePurpose imagLimbsPurpose[1] = {DebugStatePurpose::UnpackYY};
-            InverseSpectraToSignedLimbsBatch<SharkFloatParams, 1>(grid,
-                                                                  block,
-                                                                  sharedData,
-                                                                  debugCombo,
-                                                                  debugStates,
-                                                                  plan,
-                                                                  workspace.Roots,
-                                                                  imagSpectrum,
-                                                                  imagCoefficientCount,
-                                                                  imagLimbs,
-                                                                  limbCount,
-                                                                  imagResiduesPurpose,
-                                                                  imagLimbsPurpose);
-            FinalizeSignedStream<SharkFloatParams>(grid,
-                                                   block,
-                                                   debugStates,
-                                                   carryPrefixShared,
-                                                   workspace,
-                                                   workspace.ImagLimbs,
-                                                   limbCount,
-                                                   imagExponent,
-                                                   &combo->Multiply.B,
-                                                   DebugStatePurpose::SignedCarry2,
-                                                   DebugStatePurpose::FinalAdd2);
-        }
+        uint64_t *spectra[2] = {workspace.RealOutput, workspace.ImagOutput};
+        const uint32_t coefficientCounts[2] = {activeN, activeN};
+        int64_t *limbs[2] = {workspace.RealLimbs, workspace.ImagLimbs};
+        const DebugStatePurpose residuesPurposes[2] = {DebugStatePurpose::Z2_Perm4,
+                                                       DebugStatePurpose::Z2_Perm5};
+        const DebugStatePurpose limbsPurposes[2] = {DebugStatePurpose::UnpackXX,
+                                                    DebugStatePurpose::UnpackYY};
+        InverseSpectraToSignedLimbsBatch<SharkFloatParams, 2>(grid,
+                                                              block,
+                                                              sharedData,
+                                                              debugCombo,
+                                                              debugStates,
+                                                              plan,
+                                                              workspace.Roots,
+                                                              spectra,
+                                                              coefficientCounts,
+                                                              limbs,
+                                                              limbCount,
+                                                              residuesPurposes,
+                                                              limbsPurposes);
+        FinalizeSignedStream<SharkFloatParams>(grid,
+                                               block,
+                                               debugStates,
+                                               carryPrefixShared,
+                                               workspace,
+                                               workspace.RealLimbs,
+                                               limbCount,
+                                               realExponent,
+                                               &combo->Multiply.A,
+                                               DebugStatePurpose::SignedCarry1,
+                                               DebugStatePurpose::FinalAdd1);
+        FinalizeSignedStream<SharkFloatParams>(grid,
+                                               block,
+                                               debugStates,
+                                               carryPrefixShared,
+                                               workspace,
+                                               workspace.ImagLimbs,
+                                               limbCount,
+                                               imagExponent,
+                                               &combo->Multiply.B,
+                                               DebugStatePurpose::SignedCarry2,
+                                               DebugStatePurpose::FinalAdd2);
     }
     StoreReference2DebugValue(
         debugStates, grid, block, DebugStatePurpose::Result_Add1, combo->Multiply.A);
     StoreReference2DebugValue(
         debugStates, grid, block, DebugStatePurpose::Result_Add2, combo->Multiply.B);
-
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        const HpSharkFloat<SharkFloatParams> *newtonRaphsonForwardValues[3] = {
-            &combo->Multiply.DzdcReal, &combo->Multiply.DzdcImag, &combo->Add.One};
-        uint64_t *newtonRaphsonForwardOutputs[3] = {
-            workspace.DzdcReal, workspace.DzdcImag, workspace.One};
-        const DebugStatePurpose newtonRaphsonPackedPurposes[3] = {
-            DebugStatePurpose::Z0W1, DebugStatePurpose::Z0W2, DebugStatePurpose::Z0W3};
-        const DebugStatePurpose newtonRaphsonForwardPurposes[3] = {
-            DebugStatePurpose::Z2W1, DebugStatePurpose::Z2W2, DebugStatePurpose::Z2W3};
-        PackTwistForwardBatch<SharkFloatParams, 3>(grid,
-                                                   block,
-                                                   sharedData,
-                                                   debugCombo,
-                                                   debugStates,
-                                                   newtonRaphsonForwardValues,
-                                                   plan,
-                                                   workspace.Roots,
-                                                   newtonRaphsonForwardOutputs,
-                                                   newtonRaphsonPackedPurposes,
-                                                   newtonRaphsonForwardPurposes);
-
-        if (!dzdcRealZero && !dzdcImagZero) {
-            AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                       block,
-                                                       debugCombo,
-                                                       debugStates,
-                                                       plan,
-                                                       workspace.Roots,
-                                                       workspace,
-                                                       dzdcRealExponent,
-                                                       workspace.DzdcRealOutput,
-                                                       DebugStatePurpose::Z2_PermW0,
-                                                       dzdcRealZRealTerm,
-                                                       dzdcRealNegativeZImagTerm,
-                                                       dzdcRealOneTerm);
-            AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                       block,
-                                                       debugCombo,
-                                                       debugStates,
-                                                       plan,
-                                                       workspace.Roots,
-                                                       workspace,
-                                                       dzdcImagExponent,
-                                                       workspace.DzdcImagOutput,
-                                                       DebugStatePurpose::Z2_PermW1,
-                                                       dzdcImagZImagTerm,
-                                                       dzdcImagZRealTerm);
-            uint64_t *newtonRaphsonSpectra[2] = {workspace.DzdcRealOutput, workspace.DzdcImagOutput};
-            const uint32_t newtonRaphsonCoefficientCounts[2] = {activeN, activeN};
-            int64_t *newtonRaphsonLimbs[2] = {workspace.DzdcRealLimbs, workspace.DzdcImagLimbs};
-            const DebugStatePurpose newtonRaphsonResiduesPurposes[2] = {DebugStatePurpose::Z2_PermW0b,
-                                                                        DebugStatePurpose::Z2_PermW1b};
-            const DebugStatePurpose newtonRaphsonLimbsPurposes[2] = {DebugStatePurpose::UnpackW0,
-                                                                     DebugStatePurpose::UnpackW1};
-            InverseSpectraToSignedLimbsBatch<SharkFloatParams, 2>(grid,
-                                                                  block,
-                                                                  sharedData,
-                                                                  debugCombo,
-                                                                  debugStates,
-                                                                  plan,
-                                                                  workspace.Roots,
-                                                                  newtonRaphsonSpectra,
-                                                                  newtonRaphsonCoefficientCounts,
-                                                                  newtonRaphsonLimbs,
-                                                                  limbCount,
-                                                                  newtonRaphsonResiduesPurposes,
-                                                                  newtonRaphsonLimbsPurposes);
-            FinalizeSignedStream<SharkFloatParams>(grid,
-                                                   block,
-                                                   debugStates,
-                                                   carryPrefixShared,
-                                                   workspace,
-                                                   workspace.DzdcRealLimbs,
-                                                   limbCount,
-                                                   dzdcRealExponent,
-                                                   &combo->Multiply.DzdcReal,
-                                                   DebugStatePurpose::SignedCarryDzdc1,
-                                                   DebugStatePurpose::FinalAddDzdc1);
-            FinalizeSignedStream<SharkFloatParams>(grid,
-                                                   block,
-                                                   debugStates,
-                                                   carryPrefixShared,
-                                                   workspace,
-                                                   workspace.DzdcImagLimbs,
-                                                   limbCount,
-                                                   dzdcImagExponent,
-                                                   &combo->Multiply.DzdcImag,
-                                                   DebugStatePurpose::SignedCarryDzdc2,
-                                                   DebugStatePurpose::FinalAddDzdc2);
-        } else {
-            if (dzdcRealZero) {
-                SetZero(grid, block, &combo->Multiply.DzdcReal);
-            } else {
-                AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                           block,
-                                                           debugCombo,
-                                                           debugStates,
-                                                           plan,
-                                                           workspace.Roots,
-                                                           workspace,
-                                                           dzdcRealExponent,
-                                                           workspace.DzdcRealOutput,
-                                                           DebugStatePurpose::Z2_PermW0,
-                                                           dzdcRealZRealTerm,
-                                                           dzdcRealNegativeZImagTerm,
-                                                           dzdcRealOneTerm);
-                uint64_t *dzdcRealSpectrum[1] = {workspace.DzdcRealOutput};
-                const uint32_t dzdcRealCoefficientCount[1] = {activeN};
-                int64_t *dzdcRealLimbs[1] = {workspace.DzdcRealLimbs};
-                const DebugStatePurpose dzdcRealResiduesPurpose[1] = {DebugStatePurpose::Z2_PermW0b};
-                const DebugStatePurpose dzdcRealLimbsPurpose[1] = {DebugStatePurpose::UnpackW0};
-                InverseSpectraToSignedLimbsBatch<SharkFloatParams, 1>(grid,
-                                                                      block,
-                                                                      sharedData,
-                                                                      debugCombo,
-                                                                      debugStates,
-                                                                      plan,
-                                                                      workspace.Roots,
-                                                                      dzdcRealSpectrum,
-                                                                      dzdcRealCoefficientCount,
-                                                                      dzdcRealLimbs,
-                                                                      limbCount,
-                                                                      dzdcRealResiduesPurpose,
-                                                                      dzdcRealLimbsPurpose);
-                FinalizeSignedStream<SharkFloatParams>(grid,
-                                                       block,
-                                                       debugStates,
-                                                       carryPrefixShared,
-                                                       workspace,
-                                                       workspace.DzdcRealLimbs,
-                                                       limbCount,
-                                                       dzdcRealExponent,
-                                                       &combo->Multiply.DzdcReal,
-                                                       DebugStatePurpose::SignedCarryDzdc1,
-                                                       DebugStatePurpose::FinalAddDzdc1);
-            }
-            if (dzdcImagZero) {
-                SetZero(grid, block, &combo->Multiply.DzdcImag);
-            } else {
-                AccumulateOutputSpectrum<SharkFloatParams>(grid,
-                                                           block,
-                                                           debugCombo,
-                                                           debugStates,
-                                                           plan,
-                                                           workspace.Roots,
-                                                           workspace,
-                                                           dzdcImagExponent,
-                                                           workspace.DzdcImagOutput,
-                                                           DebugStatePurpose::Z2_PermW1,
-                                                           dzdcImagZImagTerm,
-                                                           dzdcImagZRealTerm);
-                uint64_t *dzdcImagSpectrum[1] = {workspace.DzdcImagOutput};
-                const uint32_t dzdcImagCoefficientCount[1] = {activeN};
-                int64_t *dzdcImagLimbs[1] = {workspace.DzdcImagLimbs};
-                const DebugStatePurpose dzdcImagResiduesPurpose[1] = {DebugStatePurpose::Z2_PermW1b};
-                const DebugStatePurpose dzdcImagLimbsPurpose[1] = {DebugStatePurpose::UnpackW1};
-                InverseSpectraToSignedLimbsBatch<SharkFloatParams, 1>(grid,
-                                                                      block,
-                                                                      sharedData,
-                                                                      debugCombo,
-                                                                      debugStates,
-                                                                      plan,
-                                                                      workspace.Roots,
-                                                                      dzdcImagSpectrum,
-                                                                      dzdcImagCoefficientCount,
-                                                                      dzdcImagLimbs,
-                                                                      limbCount,
-                                                                      dzdcImagResiduesPurpose,
-                                                                      dzdcImagLimbsPurpose);
-                FinalizeSignedStream<SharkFloatParams>(grid,
-                                                       block,
-                                                       debugStates,
-                                                       carryPrefixShared,
-                                                       workspace,
-                                                       workspace.DzdcImagLimbs,
-                                                       limbCount,
-                                                       dzdcImagExponent,
-                                                       &combo->Multiply.DzdcImag,
-                                                       DebugStatePurpose::SignedCarryDzdc2,
-                                                       DebugStatePurpose::FinalAddDzdc2);
-            }
-        }
-        StoreReference2DebugValue(
-            debugStates, grid, block, DebugStatePurpose::Result_AddDzdc1, combo->Multiply.DzdcReal);
-        StoreReference2DebugValue(
-            debugStates, grid, block, DebugStatePurpose::Result_AddDzdc2, combo->Multiply.DzdcImag);
-    }
+    return;
 }
 
 template <class SharkFloatParams>

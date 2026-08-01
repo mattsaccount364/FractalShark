@@ -76,9 +76,17 @@ struct alignas(16) HpSharkReference2CarryPrefixDescriptor {
 template <class SharkFloatParams> struct HpSharkReference2Workspace {
     static constexpr uint32_t MaxFusedN = 32u * 1024u * 1024u;
     static constexpr uint32_t MaxFusedStages = 25;
+    static constexpr uint32_t MinFusedN =
+        SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L));
+    static constexpr uint32_t MinFusedStages = SharkNTT::CeilLog2U32(MinFusedN);
+    static constexpr uint32_t PlanCacheEntryCount = MaxFusedStages - MinFusedStages + 1u;
+    static constexpr uint32_t PsiArenaSize = 2u * MaxFusedN - MinFusedN;
     static constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
     static constexpr uint32_t MaxCarryPrefixParts = (MaxFusedLimbs + 31u) / 32u;
     static constexpr uint32_t CarryPrefixControlCount = 3u;
+
+    static_assert(MinFusedN >= 2u && (MinFusedN & (MinFusedN - 1u)) == 0u);
+    static_assert(PlanCacheEntryCount <= 32u);
 
     uint64_t *ZReal;
     uint64_t *ZImag;
@@ -100,8 +108,16 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     uint64_t *CarryPrefixTransforms;
     HpSharkReference2CarryPrefixDescriptor *CarryPrefixDescriptors;
     uint32_t *CarryPrefixControl;
-    SharkNTT::RootTables Roots;
-    uint32_t CachedN;
+    uint64_t *StageOmegas;
+    uint64_t *StageOmegasInverse;
+    uint64_t *PsiPowersArena;
+    uint64_t *PsiInversePowersArena;
+    uint64_t *ForwardTwiddles;
+    uint64_t *InverseTwiddles;
+    SharkNTT::PlanPrime Plans[PlanCacheEntryCount];
+    SharkNTT::RootTables PlanRoots[PlanCacheEntryCount];
+    uint32_t ValidPlanMask;
+    uint32_t GeneratedStages;
 };
 
 template <class SharkFloatParams> struct HpSharkReferenceResults {

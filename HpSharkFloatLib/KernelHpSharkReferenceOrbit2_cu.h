@@ -416,22 +416,28 @@ NTTRadix2Batch(uint64_t *sharedData,
 
 template <class SharkFloatParams>
 __device__ void
-GenerateActiveRoots(cooperative_groups::grid_group &grid,
-                    cooperative_groups::thread_block &block,
-                    DebugGlobalCount<SharkFloatParams> *debugCombo,
-                    uint32_t activeN,
-                    HpSharkReference2Workspace<SharkFloatParams> &workspace)
+GenerateCachedPlan(cooperative_groups::grid_group &grid,
+                   cooperative_groups::thread_block &block,
+                   DebugGlobalCount<SharkFloatParams> *debugCombo,
+                   uint32_t activeN,
+                   HpSharkReference2Workspace<SharkFloatParams> &workspace)
 {
-    if (workspace.CachedN == activeN)
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    MattsCudaAssert(activeN >= Workspace::MinFusedN && activeN <= Workspace::MaxFusedN);
+    MattsCudaAssert((activeN & (activeN - 1u)) == 0u);
+    const uint32_t stages = CountTrailingZeros(activeN);
+    MattsCudaAssert(stages >= Workspace::MinFusedStages);
+    const uint32_t slot = stages - Workspace::MinFusedStages;
+    MattsCudaAssert(slot < Workspace::PlanCacheEntryCount);
+    const uint32_t planBit = 1u << slot;
+    if ((workspace.ValidPlanMask & planBit) != 0u)
         return;
 
-    const uint32_t stages = CountTrailingZeros(activeN);
-    SharkNTT::RootTables &roots = workspace.Roots;
-    if (IsLeader<SharkFloatParams>(block)) {
-        roots.N = static_cast<int32_t>(activeN);
-        roots.stages = static_cast<int32_t>(stages);
-        roots.total_twiddles = activeN - 1;
-    }
+    MattsCudaAssert(stages <= Workspace::MaxFusedStages);
+    const SharkNTT::PlanPrime &plan = workspace.Plans[slot];
+    SharkNTT::RootTables &roots = workspace.PlanRoots[slot];
+    MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
+    MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
 
     constexpr uint64_t Generator = SharkNTT::FindGeneratorConstexpr();
     const uint64_t generatorMont =
@@ -466,10 +472,11 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
         }
     }
 
-    uint32_t offset = 0;
-    for (uint32_t stage = 1; stage <= stages; ++stage) {
+    const uint32_t firstMissingStage = workspace.GeneratedStages + 1u;
+    for (uint32_t stage = firstMissingStage; stage <= stages; ++stage) {
         const uint32_t width = 1u << stage;
         const uint32_t half = width >> 1;
+        const uint32_t offset = half - 1u;
         if (IsLeader<SharkFloatParams>(block)) {
             roots.stage_omegas[stage - 1] =
                 MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, activeN / width);
@@ -497,17 +504,18 @@ GenerateActiveRoots(cooperative_groups::grid_group &grid,
                 }
             }
         }
-        offset += half;
     }
 
     if (IsLeader<SharkFloatParams>(block)) {
+        if (workspace.GeneratedStages < stages)
+            workspace.GeneratedStages = stages;
         const uint64_t inverseTwo = SharkNTT::ToMontgomery<SharkFloatParams>(
             grid, block, debugCombo, (SharkNTT::MagicPrime + 1ull) >> 1);
         roots.Ninvm_mont =
             MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, inverseTwo, stages);
-        workspace.CachedN = activeN;
+        workspace.ValidPlanMask |= planBit;
     }
-    // Root-table ranges are disjoint; publish the complete table once after all generators finish.
+    // Each psi range is disjoint. Shared stages and the validity bit are published together.
     grid.sync();
 }
 
@@ -1796,21 +1804,15 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             combo->PeriodicityStatus = PeriodicityResult::Unknown;
         return;
     }
-    const uint32_t cachedN = workspace.CachedN;
-    MattsCudaAssert(cachedN == 0 ||
-                    (cachedN <= HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN &&
-                     (cachedN & (cachedN - 1u)) == 0));
-    const uint32_t activeN =
-        requiredN > static_cast<uint64_t>(cachedN) ? static_cast<uint32_t>(requiredN) : cachedN;
-    const SharkNTT::PlanPrime plan{basePlan.n32,
-                                   basePlan.b,
-                                   basePlan.L,
-                                   static_cast<int>(activeN),
-                                   static_cast<int>(CountTrailingZeros(activeN)),
-                                   basePlan.ok};
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    const uint32_t activeN = static_cast<uint32_t>(requiredN);
+    MattsCudaAssert(activeN >= Workspace::MinFusedN);
+    const uint32_t planSlot = CountTrailingZeros(activeN) - Workspace::MinFusedStages;
+    MattsCudaAssert(planSlot < Workspace::PlanCacheEntryCount);
+    GenerateCachedPlan<SharkFloatParams>(grid, block, debugCombo, activeN, workspace);
+    const SharkNTT::PlanPrime &plan = workspace.Plans[planSlot];
+    SharkNTT::RootTables &roots = workspace.PlanRoots[planSlot];
     const uint32_t limbCount = (activeN * static_cast<uint32_t>(plan.b) + 31u) / 32u + 2u;
-    if (activeN != cachedN)
-        GenerateActiveRoots<SharkFloatParams>(grid, block, debugCombo, activeN, workspace);
 
     const HpSharkFloat<SharkFloatParams> *normalForwardValues[4] = {&zReal, &zImag, &cReal, &cImag};
     uint64_t *normalForwardOutputs[4] = {
@@ -1830,7 +1832,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                debugStates,
                                                normalForwardValues,
                                                plan,
-                                               workspace.Roots,
+                                               roots,
                                                normalForwardOutputs,
                                                normalPackedPurposes,
                                                normalForwardPurposes);
@@ -1851,7 +1853,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    debugStates,
                                                    newtonRaphsonForwardValues,
                                                    plan,
-                                                   workspace.Roots,
+                                                   roots,
                                                    newtonRaphsonForwardOutputs,
                                                    newtonRaphsonPackedPurposes,
                                                    newtonRaphsonForwardPurposes);
@@ -1862,7 +1864,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                  debugCombo,
                                  debugStates,
                                  plan,
-                                 workspace.Roots,
+                                 roots,
                                  workspace,
                                  realExponent,
                                  realZSquareTerm,
@@ -1905,7 +1907,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                                                 debugCombo,
                                                                                 debugStates,
                                                                                 plan,
-                                                                                workspace.Roots,
+                                                                                roots,
                                                                                 spectra,
                                                                                 coefficientCounts,
                                                                                 limbs,

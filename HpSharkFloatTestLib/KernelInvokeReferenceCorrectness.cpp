@@ -481,7 +481,8 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
     workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint32_t));
     workspaceBytes += static_cast<size_t>(Workspace::CarryPrefixControlCount) * sizeof(uint32_t);
     workspaceBytes = alignWorkspace(workspaceBytes, alignof(uint64_t));
-    workspaceBytes += 4u * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
+    workspaceBytes += 2u * static_cast<size_t>(Workspace::PsiArenaSize) * sizeof(uint64_t);
+    workspaceBytes += 2u * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
     workspaceBytes += 2u * static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
 
     void *workspaceStorage = nullptr;
@@ -551,14 +552,37 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
                           alignof(HpSharkReference2CarryPrefixDescriptor)));
     workspace.CarryPrefixControl = static_cast<uint32_t *>(
         allocateWorkspace(Workspace::CarryPrefixControlCount, sizeof(uint32_t), alignof(uint32_t)));
-    workspace.Roots.stage_omegas = static_cast<uint64_t *>(
+    workspace.StageOmegas = static_cast<uint64_t *>(
         allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
-    workspace.Roots.stage_omegas_inv = static_cast<uint64_t *>(
+    workspace.StageOmegasInverse = static_cast<uint64_t *>(
         allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), alignof(uint64_t)));
-    workspace.Roots.psi_pows = allocateSpectrum();
-    workspace.Roots.psi_inv_pows = allocateSpectrum();
-    workspace.Roots.stage_twiddles_fwd = allocateSpectrum();
-    workspace.Roots.stage_twiddles_inv = allocateSpectrum();
+    workspace.PsiPowersArena = static_cast<uint64_t *>(
+        allocateWorkspace(Workspace::PsiArenaSize, sizeof(uint64_t), alignof(uint64_t)));
+    workspace.PsiInversePowersArena = static_cast<uint64_t *>(
+        allocateWorkspace(Workspace::PsiArenaSize, sizeof(uint64_t), alignof(uint64_t)));
+    workspace.ForwardTwiddles = allocateSpectrum();
+    workspace.InverseTwiddles = allocateSpectrum();
+    for (uint32_t slot = 0; slot < Workspace::PlanCacheEntryCount; ++slot) {
+        const uint32_t stages = Workspace::MinFusedStages + slot;
+        const uint32_t n = 1u << stages;
+        const uint32_t psiOffset = n - Workspace::MinFusedN;
+        workspace.Plans[slot] = {SharkFloatParams::NTTPlan2.n32,
+                                 SharkFloatParams::NTTPlan2.b,
+                                 SharkFloatParams::NTTPlan2.L,
+                                 static_cast<int>(n),
+                                 static_cast<int>(stages),
+                                 SharkFloatParams::NTTPlan2.ok};
+        workspace.PlanRoots[slot] = {static_cast<int32_t>(stages),
+                                     workspace.StageOmegas,
+                                     workspace.StageOmegasInverse,
+                                     static_cast<int32_t>(n),
+                                     workspace.PsiPowersArena + psiOffset,
+                                     workspace.PsiInversePowersArena + psiOffset,
+                                     0,
+                                     workspace.ForwardTwiddles,
+                                     workspace.InverseTwiddles,
+                                     n - 1u};
+    }
 
     if (workspaceOffset != workspaceBytes)
         throw FractalSharkSeriousException("Reference2 workspace size does not match its layout");

@@ -142,6 +142,17 @@ constexpr uint32_t MaxFusedN = 32u * 1024u * 1024u;
 constexpr uint32_t MaxFusedStages = 25;
 constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
 
+template <class SharkFloatParams> struct FusedPlanCacheTraits {
+    static constexpr uint32_t MinFusedN =
+        SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L));
+    static constexpr uint32_t MinFusedStages = SharkNTT::CeilLog2U32(MinFusedN);
+    static constexpr uint32_t EntryCount = MaxFusedStages - MinFusedStages + 1u;
+    static constexpr uint32_t PsiArenaSize = 2u * MaxFusedN - MinFusedN;
+
+    static_assert(MinFusedN >= 2u && (MinFusedN & (MinFusedN - 1u)) == 0u);
+    static_assert(EntryCount <= 32u);
+};
+
 struct FusedWorkspace {
     uint64_t *ZReal;
     uint64_t *ZImag;
@@ -161,11 +172,15 @@ struct FusedWorkspace {
     int64_t *DzdcImagLimbs;
     uint32_t *MagnitudeDigits;
     uint32_t *Magnitude;
-    SharkNTT::RootTables *Roots;
-    uint32_t *CachedN;
+    SharkNTT::PlanPrime *Plans;
+    SharkNTT::RootTables *PlanRoots;
+    uint32_t *ValidPlanMask;
+    uint32_t *GeneratedStages;
 };
 
 template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
+    using Cache = FusedPlanCacheTraits<SharkFloatParams>;
+
     std::unique_ptr<uint64_t[]> ZReal;
     std::unique_ptr<uint64_t[]> ZImag;
     std::unique_ptr<uint64_t[]> CReal;
@@ -186,8 +201,8 @@ template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
     std::unique_ptr<uint32_t[]> Magnitude;
     std::unique_ptr<uint64_t[]> StageOmegas;
     std::unique_ptr<uint64_t[]> StageOmegasInverse;
-    std::unique_ptr<uint64_t[]> PsiPowers;
-    std::unique_ptr<uint64_t[]> PsiInversePowers;
+    std::unique_ptr<uint64_t[]> PsiPowersArena;
+    std::unique_ptr<uint64_t[]> PsiInversePowersArena;
     std::unique_ptr<uint64_t[]> ForwardTwiddles;
     std::unique_ptr<uint64_t[]> InverseTwiddles;
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OrbitZReal;
@@ -203,8 +218,10 @@ template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OutputZImag;
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OutputDzdcReal;
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OutputDzdcImag;
-    SharkNTT::RootTables Roots{};
-    uint32_t CachedN = 0;
+    SharkNTT::PlanPrime Plans[Cache::EntryCount]{};
+    SharkNTT::RootTables PlanRoots[Cache::EntryCount]{};
+    uint32_t ValidPlanMask = 0;
+    uint32_t GeneratedStages = 0;
 };
 
 template <class SharkFloatParams>
@@ -219,6 +236,7 @@ template <class SharkFloatParams>
 static void
 EnsureGlobalFusedWorkspace()
 {
+    using Cache = FusedPlanCacheTraits<SharkFloatParams>;
     auto &global = GetGlobalFusedWorkspaceStorage<SharkFloatParams>();
     if (!global.ZReal) {
         global.ZReal = std::make_unique<uint64_t[]>(MaxFusedN);
@@ -238,20 +256,31 @@ EnsureGlobalFusedWorkspace()
         global.Magnitude = std::make_unique<uint32_t[]>(MaxFusedLimbs);
         global.StageOmegas = std::make_unique<uint64_t[]>(MaxFusedStages);
         global.StageOmegasInverse = std::make_unique<uint64_t[]>(MaxFusedStages);
-        global.PsiPowers = std::make_unique<uint64_t[]>(MaxFusedN);
-        global.PsiInversePowers = std::make_unique<uint64_t[]>(MaxFusedN);
+        global.PsiPowersArena = std::make_unique<uint64_t[]>(Cache::PsiArenaSize);
+        global.PsiInversePowersArena = std::make_unique<uint64_t[]>(Cache::PsiArenaSize);
         global.ForwardTwiddles = std::make_unique<uint64_t[]>(MaxFusedN);
         global.InverseTwiddles = std::make_unique<uint64_t[]>(MaxFusedN);
-        global.Roots = {0,
-                        global.StageOmegas.get(),
-                        global.StageOmegasInverse.get(),
-                        0,
-                        global.PsiPowers.get(),
-                        global.PsiInversePowers.get(),
-                        0,
-                        global.ForwardTwiddles.get(),
-                        global.InverseTwiddles.get(),
-                        0};
+        for (uint32_t slot = 0; slot < Cache::EntryCount; ++slot) {
+            const uint32_t stages = Cache::MinFusedStages + slot;
+            const uint32_t n = 1u << stages;
+            const uint32_t psiOffset = n - Cache::MinFusedN;
+            global.Plans[slot] = {SharkFloatParams::NTTPlan2.n32,
+                                  SharkFloatParams::NTTPlan2.b,
+                                  SharkFloatParams::NTTPlan2.L,
+                                  static_cast<int>(n),
+                                  static_cast<int>(stages),
+                                  SharkFloatParams::NTTPlan2.ok};
+            global.PlanRoots[slot] = {static_cast<int32_t>(stages),
+                                      global.StageOmegas.get(),
+                                      global.StageOmegasInverse.get(),
+                                      static_cast<int32_t>(n),
+                                      global.PsiPowersArena.get() + psiOffset,
+                                      global.PsiInversePowersArena.get() + psiOffset,
+                                      0,
+                                      global.ForwardTwiddles.get(),
+                                      global.InverseTwiddles.get(),
+                                      n - 1u};
+        }
     }
 
     if (!global.OrbitZReal) {
@@ -304,8 +333,10 @@ GetGlobalFusedWorkspace()
             global.DzdcImagLimbs.get(),
             global.MagnitudeDigits.get(),
             global.Magnitude.get(),
-            &global.Roots,
-            &global.CachedN};
+            global.Plans,
+            global.PlanRoots,
+            &global.ValidPlanMask,
+            &global.GeneratedStages};
 }
 
 template <class SharkFloatParams> struct FinalizationStream {
@@ -1229,19 +1260,26 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
 
 template <class SharkFloatParams>
 static void
-GenerateActiveRoots(DebugHostCombo<SharkFloatParams> &debugCombo,
-                    uint32_t activeN,
-                    FusedWorkspace &workspace)
+GenerateCachedPlan(DebugHostCombo<SharkFloatParams> &debugCombo,
+                   uint32_t activeN,
+                   FusedWorkspace &workspace)
 {
-    if (*workspace.CachedN == activeN)
+    using Cache = FusedPlanCacheTraits<SharkFloatParams>;
+    assert(activeN >= Cache::MinFusedN && activeN <= MaxFusedN);
+    assert((activeN & (activeN - 1u)) == 0u);
+    const uint32_t stages = CountTrailingZeros(activeN);
+    assert(stages >= Cache::MinFusedStages);
+    const uint32_t slot = stages - Cache::MinFusedStages;
+    assert(slot < Cache::EntryCount);
+    const uint32_t planBit = 1u << slot;
+    if ((*workspace.ValidPlanMask & planBit) != 0u)
         return;
 
-    const uint32_t stages = CountTrailingZeros(activeN);
-    assert(activeN <= MaxFusedN && stages <= MaxFusedStages);
-    auto &roots = *workspace.Roots;
-    roots.N = static_cast<int32_t>(activeN);
-    roots.stages = static_cast<int32_t>(stages);
-    roots.total_twiddles = activeN - 1;
+    assert(stages <= MaxFusedStages);
+    const auto &plan = workspace.Plans[slot];
+    auto &roots = workspace.PlanRoots[slot];
+    assert(static_cast<uint32_t>(plan.N) == activeN);
+    assert(static_cast<uint32_t>(roots.N) == activeN);
 
     const uint64_t generator = SharkNTT::FindGeneratorConstexpr();
     const uint64_t generatorMont = SharkNTT::ToMontgomery<SharkFloatParams>(generator);
@@ -1262,10 +1300,11 @@ GenerateActiveRoots(DebugHostCombo<SharkFloatParams> &debugCombo,
             SharkNTT::MontgomeryMul<SharkFloatParams>(roots.psi_inv_pows[i - 1], psiInverseMont);
     }
 
-    uint32_t offset = 0;
-    for (uint32_t stage = 1; stage <= stages; ++stage) {
+    const uint32_t firstMissingStage = *workspace.GeneratedStages + 1u;
+    for (uint32_t stage = firstMissingStage; stage <= stages; ++stage) {
         const uint32_t m = 1u << stage;
         const uint32_t half = m >> 1;
+        const uint32_t offset = half - 1u;
         roots.stage_omegas[stage - 1] =
             SharkNTT::MontgomeryPow<SharkFloatParams>(omegaMont, activeN / m);
         roots.stage_omegas_inv[stage - 1] =
@@ -1279,15 +1318,16 @@ GenerateActiveRoots(DebugHostCombo<SharkFloatParams> &debugCombo,
             inverse =
                 SharkNTT::MontgomeryMul<SharkFloatParams>(inverse, roots.stage_omegas_inv[stage - 1]);
         }
-        offset += half;
     }
+    if (*workspace.GeneratedStages < stages)
+        *workspace.GeneratedStages = stages;
 
     roots.Ninvm_mont = oneMont;
     const uint64_t inverseTwo =
         SharkNTT::ToMontgomery<SharkFloatParams>((SharkNTT::MagicPrime + 1) >> 1);
     for (uint32_t stage = 0; stage < stages; ++stage)
         roots.Ninvm_mont = SharkNTT::MontgomeryMul<SharkFloatParams>(roots.Ninvm_mont, inverseTwo);
-    *workspace.CachedN = activeN;
+    *workspace.ValidPlanMask |= planBit;
     (void)debugCombo;
 }
 
@@ -1332,6 +1372,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                         HpSharkFloat<SharkFloatParams> *outImag,
                         HpSharkFloat<SharkFloatParams> *outDzdcReal,
                         HpSharkFloat<SharkFloatParams> *outDzdcImag,
+                        uint64_t iteration,
+                        uint32_t &previousActiveN,
                         FusedWorkspace &workspace,
                         DebugHostCombo<SharkFloatParams> &debugHostCombo)
 {
@@ -1426,18 +1468,24 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                   << '\n';
         assert(false);
     }
-    const uint32_t cachedN = *workspace.CachedN;
-    assert(cachedN == 0 || (cachedN <= MaxFusedN && (cachedN & (cachedN - 1u)) == 0));
-    const uint32_t activeN =
-        requiredN > static_cast<uint64_t>(cachedN) ? static_cast<uint32_t>(requiredN) : cachedN;
+    using Cache = FusedPlanCacheTraits<SharkFloatParams>;
+    const uint32_t activeN = static_cast<uint32_t>(requiredN);
+    assert(activeN >= Cache::MinFusedN);
     assert(activeN >= 2u);
     assert((SharkNTT::PHI % (2ull * activeN)) == 0ull);
-    const SharkNTT::PlanPrime plan{basePlan.n32,
-                                   basePlan.b,
-                                   basePlan.L,
-                                   static_cast<int>(activeN),
-                                   static_cast<int>(CountTrailingZeros(activeN)),
-                                   basePlan.ok};
+    const uint32_t planSlot = CountTrailingZeros(activeN) - Cache::MinFusedStages;
+    assert(planSlot < Cache::EntryCount);
+    if (activeN != previousActiveN) {
+        //if (IsDebugTraceEnabled()) {
+            std::cout << "ReferenceOrbit2 plan changed: iteration=" << iteration
+                      << " previousN=" << previousActiveN << " activeN=" << activeN
+                      << " planSlot=" << planSlot << '\n';
+        //}
+        previousActiveN = activeN; // Set a breakpoint here to observe every plan transition.
+    }
+    GenerateCachedPlan(debugHostCombo, activeN, workspace);
+    const SharkNTT::PlanPrime &plan = workspace.Plans[planSlot];
+    SharkNTT::RootTables &roots = workspace.PlanRoots[planSlot];
     const uint32_t coefficientCount = activeN;
     const uint32_t limbCount = (coefficientCount * static_cast<uint32_t>(plan.b) + 31u) / 32u + 2u;
     assert(limbCount <= MaxFusedLimbs);
@@ -1454,9 +1502,6 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
 
     PrintPlan(plan);
 
-    if (activeN != cachedN)
-        GenerateActiveRoots(debugHostCombo, activeN, workspace);
-    SharkNTT::RootTables &roots = *workspace.Roots;
     if (IsDebugTraceEnabled()) {
         PrintArray("roots.stage_omegas", roots.stage_omegas, roots.stages);
         PrintArray("roots.stage_omegas_inv", roots.stage_omegas_inv, roots.stages);
@@ -1678,7 +1723,6 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
     FusedWorkspace workspace = GetGlobalFusedWorkspace<SharkFloatParams>();
     auto &global = GetGlobalFusedWorkspaceStorage<SharkFloatParams>();
-    global.CachedN = 0;
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         HpSharkFloat<SharkFloatParams> *outZReal = global.OutputZReal.get();
@@ -1736,6 +1780,7 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
     const typename SharkFloatParams::Float cyCast =
         cImag->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
 
+    uint32_t previousActiveN = 0;
     for (uint64_t i = 0; i < maxIters; ++i) {
         if (IsDebugTraceEnabled())
             std::cout << "ReferenceOrbit2 iteration " << i << " begin\n";
@@ -1834,6 +1879,8 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                                                   newZImag,
                                                   nullptr,
                                                   nullptr,
+                                                  i,
+                                                  previousActiveN,
                                                   workspace,
                                                   debugHostCombo);
 
@@ -1900,6 +1947,7 @@ EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams> *cReal,
         PrintHpValue("derivative one", *one);
     }
 
+    uint32_t previousActiveN = 0;
     for (uint64_t i = 0; i < period; ++i) {
         if (IsDebugTraceEnabled())
             std::cout << "EvaluateOrbitAndDerivative2 iteration " << i << " begin\n";
@@ -1959,6 +2007,8 @@ EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams> *cReal,
                                                   newZImag,
                                                   newDzdcReal,
                                                   newDzdcImag,
+                                                  i,
+                                                  previousActiveN,
                                                   workspace,
                                                   debugHostCombo);
 
@@ -2010,7 +2060,6 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
 {
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
     FusedWorkspace workspace = GetGlobalFusedWorkspace<SharkFloatParams>();
-    GetGlobalFusedWorkspaceStorage<SharkFloatParams>().CachedN = 0;
     EvaluateOrbitAndDerivative2Impl<SharkFloatParams>(cReal,
                                                       cImag,
                                                       period,

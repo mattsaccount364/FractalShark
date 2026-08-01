@@ -863,158 +863,275 @@ CountLeadingZeros(uint32_t value)
     return __clz(value);
 }
 
+constexpr uint32_t FinalizationDigitLengthControl = 0;
+constexpr uint32_t FinalizationNegativeControl = 1;
+constexpr uint32_t FinalizationNonZeroReductionControl = 2;
+
 constexpr int32_t CarryPrefixMin = -8;
 constexpr int32_t CarryPrefixMax = 7;
 constexpr uint32_t CarryPrefixStateCount = CarryPrefixMax - CarryPrefixMin + 1;
 constexpr uint32_t CarryPrefixMaxWarps = 32;
 
-template <class SharkFloatParams, int BatchSize>
+template <class SharkFloatParams>
 __device__ void
-FindHighestNonZeroPlusOneBatch(cooperative_groups::grid_group &grid,
-                               cooperative_groups::thread_block &block,
-                               uint32_t *const values[BatchSize],
-                               const uint32_t counts[BatchSize],
-                               uint32_t *const results[BatchSize],
-                               uint64_t *sharedStorage)
+FindHighestNonZeroPlusOne(cooperative_groups::grid_group &grid,
+                          cooperative_groups::thread_block &block,
+                          uint32_t *realDigits,
+                          uint32_t *realControl,
+                          uint32_t *imagDigits,
+                          uint32_t *imagControl,
+                          uint32_t *dzdcRealDigits,
+                          uint32_t *dzdcRealControl,
+                          uint32_t *dzdcImagDigits,
+                          uint32_t *dzdcImagControl,
+                          uint64_t *sharedStorage)
 {
-    static_assert(BatchSize >= 1 && BatchSize <= 4);
     const uint32_t threadIndex = block.thread_index().x;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     uint32_t *blockMaximum = reinterpret_cast<uint32_t *>(sharedStorage);
+    const uint32_t realCount = realControl[FinalizationDigitLengthControl];
+    const uint32_t imagCount = imagControl[FinalizationDigitLengthControl];
+    const uint32_t dzdcRealCount =
+        SharkFloatParams::EnableNewtonRaphson ? dzdcRealControl[FinalizationDigitLengthControl] : 0u;
+    const uint32_t dzdcImagCount =
+        SharkFloatParams::EnableNewtonRaphson ? dzdcImagControl[FinalizationDigitLengthControl] : 0u;
 
     if (IsLeader<SharkFloatParams>(block)) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer)
-            *results[buffer] = 0u;
+        realControl[FinalizationNonZeroReductionControl] = 0u;
+        imagControl[FinalizationNonZeroReductionControl] = 0u;
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            dzdcRealControl[FinalizationNonZeroReductionControl] = 0u;
+            dzdcImagControl[FinalizationNonZeroReductionControl] = 0u;
+        }
     }
     if (threadIndex == 0u) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer)
-            blockMaximum[buffer] = 0u;
+        blockMaximum[0] = 0u;
+        blockMaximum[1] = 0u;
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            blockMaximum[2] = 0u;
+            blockMaximum[3] = 0u;
+        }
     }
     grid.sync();
 
-    uint32_t maximumCount = 0u;
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer)
-        maximumCount = maximumCount > counts[buffer] ? maximumCount : counts[buffer];
+    uint32_t maximumCount = realCount > imagCount ? realCount : imagCount;
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        maximumCount = maximumCount > dzdcRealCount ? maximumCount : dzdcRealCount;
+        maximumCount = maximumCount > dzdcImagCount ? maximumCount : dzdcImagCount;
+    }
 
-    uint32_t localMaximum[BatchSize]{};
+    uint32_t realLocalMaximum = 0u;
+    uint32_t imagLocalMaximum = 0u;
+    uint32_t dzdcRealLocalMaximum = 0u;
+    uint32_t dzdcImagLocalMaximum = 0u;
     for (uint32_t index = GridThreadRank(block); index < maximumCount; index += gridSize) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            if (index < counts[buffer] && values[buffer][index] != 0u)
-                localMaximum[buffer] = index + 1u;
+        if (index < realCount && realDigits[index] != 0u)
+            realLocalMaximum = index + 1u;
+        if (index < imagCount && imagDigits[index] != 0u)
+            imagLocalMaximum = index + 1u;
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            if (index < dzdcRealCount && dzdcRealDigits[index] != 0u)
+                dzdcRealLocalMaximum = index + 1u;
+            if (index < dzdcImagCount && dzdcImagDigits[index] != 0u)
+                dzdcImagLocalMaximum = index + 1u;
         }
     }
 
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer) {
-        if (localMaximum[buffer] != 0u)
-            atomicMax(&blockMaximum[buffer], localMaximum[buffer]);
+    if (realLocalMaximum != 0u)
+        atomicMax(&blockMaximum[0], realLocalMaximum);
+    if (imagLocalMaximum != 0u)
+        atomicMax(&blockMaximum[1], imagLocalMaximum);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        if (dzdcRealLocalMaximum != 0u)
+            atomicMax(&blockMaximum[2], dzdcRealLocalMaximum);
+        if (dzdcImagLocalMaximum != 0u)
+            atomicMax(&blockMaximum[3], dzdcImagLocalMaximum);
     }
     __syncthreads();
 
     if (threadIndex == 0u) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            if (blockMaximum[buffer] != 0u)
-                atomicMax(results[buffer], blockMaximum[buffer]);
+        if (blockMaximum[0] != 0u)
+            atomicMax(&realControl[FinalizationNonZeroReductionControl], blockMaximum[0]);
+        if (blockMaximum[1] != 0u)
+            atomicMax(&imagControl[FinalizationNonZeroReductionControl], blockMaximum[1]);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            if (blockMaximum[2] != 0u)
+                atomicMax(&dzdcRealControl[FinalizationNonZeroReductionControl], blockMaximum[2]);
+            if (blockMaximum[3] != 0u)
+                atomicMax(&dzdcImagControl[FinalizationNonZeroReductionControl], blockMaximum[3]);
         }
     }
     grid.sync();
 
     if constexpr (HpShark::Debug) {
         for (uint32_t index = GridThreadRank(block); index < maximumCount; index += gridSize) {
-#pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                if (index >= counts[buffer])
-                    continue;
-                const uint32_t highestNonZeroPlusOne = *results[buffer];
-                if (index >= highestNonZeroPlusOne)
-                    MattsCudaAssert(values[buffer][index] == 0u);
-                if (index + 1u == highestNonZeroPlusOne)
-                    MattsCudaAssert(values[buffer][index] != 0u);
+            const uint32_t realHighest = realControl[FinalizationNonZeroReductionControl];
+            const uint32_t imagHighest = imagControl[FinalizationNonZeroReductionControl];
+            if (index < realCount) {
+                if (index >= realHighest)
+                    MattsCudaAssert(realDigits[index] == 0u);
+                if (index + 1u == realHighest)
+                    MattsCudaAssert(realDigits[index] != 0u);
+            }
+            if (index < imagCount) {
+                if (index >= imagHighest)
+                    MattsCudaAssert(imagDigits[index] == 0u);
+                if (index + 1u == imagHighest)
+                    MattsCudaAssert(imagDigits[index] != 0u);
+            }
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                const uint32_t dzdcRealHighest = dzdcRealControl[FinalizationNonZeroReductionControl];
+                const uint32_t dzdcImagHighest = dzdcImagControl[FinalizationNonZeroReductionControl];
+                if (index < dzdcRealCount) {
+                    if (index >= dzdcRealHighest)
+                        MattsCudaAssert(dzdcRealDigits[index] == 0u);
+                    if (index + 1u == dzdcRealHighest)
+                        MattsCudaAssert(dzdcRealDigits[index] != 0u);
+                }
+                if (index < dzdcImagCount) {
+                    if (index >= dzdcImagHighest)
+                        MattsCudaAssert(dzdcImagDigits[index] == 0u);
+                    if (index + 1u == dzdcImagHighest)
+                        MattsCudaAssert(dzdcImagDigits[index] != 0u);
+                }
             }
         }
         grid.sync();
     }
 }
 
-template <class SharkFloatParams, int BatchSize>
+template <class SharkFloatParams>
 __device__ void
-FindLowestNonZeroBatch(cooperative_groups::grid_group &grid,
-                       cooperative_groups::thread_block &block,
-                       uint32_t *const values[BatchSize],
-                       const uint32_t counts[BatchSize],
-                       const bool enabled[BatchSize],
-                       uint32_t *const results[BatchSize],
-                       uint64_t *sharedStorage)
+FindLowestNonZero(cooperative_groups::grid_group &grid,
+                  cooperative_groups::thread_block &block,
+                  uint32_t *realDigits,
+                  uint32_t *realControl,
+                  uint32_t *imagDigits,
+                  uint32_t *imagControl,
+                  uint32_t *dzdcRealDigits,
+                  uint32_t *dzdcRealControl,
+                  uint32_t *dzdcImagDigits,
+                  uint32_t *dzdcImagControl,
+                  uint64_t *sharedStorage)
 {
-    static_assert(BatchSize >= 1 && BatchSize <= 4);
     const uint32_t threadIndex = block.thread_index().x;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     uint32_t *blockMinimum = reinterpret_cast<uint32_t *>(sharedStorage);
+    const uint32_t realCount = realControl[FinalizationDigitLengthControl];
+    const uint32_t imagCount = imagControl[FinalizationDigitLengthControl];
+    const bool realEnabled = realControl[FinalizationNegativeControl] != 0u;
+    const bool imagEnabled = imagControl[FinalizationNegativeControl] != 0u;
+    const uint32_t dzdcRealCount =
+        SharkFloatParams::EnableNewtonRaphson ? dzdcRealControl[FinalizationDigitLengthControl] : 0u;
+    const uint32_t dzdcImagCount =
+        SharkFloatParams::EnableNewtonRaphson ? dzdcImagControl[FinalizationDigitLengthControl] : 0u;
+    const bool dzdcRealEnabled =
+        SharkFloatParams::EnableNewtonRaphson && dzdcRealControl[FinalizationNegativeControl] != 0u;
+    const bool dzdcImagEnabled =
+        SharkFloatParams::EnableNewtonRaphson && dzdcImagControl[FinalizationNegativeControl] != 0u;
 
     if (IsLeader<SharkFloatParams>(block)) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer)
-            *results[buffer] = enabled[buffer] ? counts[buffer] : 0u;
+        realControl[FinalizationNonZeroReductionControl] = realEnabled ? realCount : 0u;
+        imagControl[FinalizationNonZeroReductionControl] = imagEnabled ? imagCount : 0u;
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            dzdcRealControl[FinalizationNonZeroReductionControl] = dzdcRealEnabled ? dzdcRealCount : 0u;
+            dzdcImagControl[FinalizationNonZeroReductionControl] = dzdcImagEnabled ? dzdcImagCount : 0u;
+        }
     }
     if (threadIndex == 0u) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer)
-            blockMinimum[buffer] = enabled[buffer] ? counts[buffer] : 0u;
+        blockMinimum[0] = realEnabled ? realCount : 0u;
+        blockMinimum[1] = imagEnabled ? imagCount : 0u;
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            blockMinimum[2] = dzdcRealEnabled ? dzdcRealCount : 0u;
+            blockMinimum[3] = dzdcImagEnabled ? dzdcImagCount : 0u;
+        }
     }
     grid.sync();
 
-    uint32_t maximumCount = 0u;
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer) {
-        if (enabled[buffer])
-            maximumCount = maximumCount > counts[buffer] ? maximumCount : counts[buffer];
+    uint32_t maximumCount = realEnabled ? realCount : 0u;
+    maximumCount = imagEnabled && imagCount > maximumCount ? imagCount : maximumCount;
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        maximumCount = dzdcRealEnabled && dzdcRealCount > maximumCount ? dzdcRealCount : maximumCount;
+        maximumCount = dzdcImagEnabled && dzdcImagCount > maximumCount ? dzdcImagCount : maximumCount;
     }
 
-    uint32_t localMinimum[BatchSize];
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer)
-        localMinimum[buffer] = enabled[buffer] ? counts[buffer] : 0u;
+    uint32_t realLocalMinimum = realEnabled ? realCount : 0u;
+    uint32_t imagLocalMinimum = imagEnabled ? imagCount : 0u;
+    uint32_t dzdcRealLocalMinimum = dzdcRealEnabled ? dzdcRealCount : 0u;
+    uint32_t dzdcImagLocalMinimum = dzdcImagEnabled ? dzdcImagCount : 0u;
 
     for (uint32_t index = GridThreadRank(block); index < maximumCount; index += gridSize) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            if (enabled[buffer] && index < counts[buffer] && values[buffer][index] != 0u)
-                localMinimum[buffer] = localMinimum[buffer] < index ? localMinimum[buffer] : index;
+        if (realEnabled && index < realCount && realDigits[index] != 0u)
+            realLocalMinimum = realLocalMinimum < index ? realLocalMinimum : index;
+        if (imagEnabled && index < imagCount && imagDigits[index] != 0u)
+            imagLocalMinimum = imagLocalMinimum < index ? imagLocalMinimum : index;
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            if (dzdcRealEnabled && index < dzdcRealCount && dzdcRealDigits[index] != 0u)
+                dzdcRealLocalMinimum = dzdcRealLocalMinimum < index ? dzdcRealLocalMinimum : index;
+            if (dzdcImagEnabled && index < dzdcImagCount && dzdcImagDigits[index] != 0u)
+                dzdcImagLocalMinimum = dzdcImagLocalMinimum < index ? dzdcImagLocalMinimum : index;
         }
     }
 
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer) {
-        if (enabled[buffer] && localMinimum[buffer] != counts[buffer])
-            atomicMin(&blockMinimum[buffer], localMinimum[buffer]);
+    if (realEnabled && realLocalMinimum != realCount)
+        atomicMin(&blockMinimum[0], realLocalMinimum);
+    if (imagEnabled && imagLocalMinimum != imagCount)
+        atomicMin(&blockMinimum[1], imagLocalMinimum);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        if (dzdcRealEnabled && dzdcRealLocalMinimum != dzdcRealCount)
+            atomicMin(&blockMinimum[2], dzdcRealLocalMinimum);
+        if (dzdcImagEnabled && dzdcImagLocalMinimum != dzdcImagCount)
+            atomicMin(&blockMinimum[3], dzdcImagLocalMinimum);
     }
     __syncthreads();
 
     if (threadIndex == 0u) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            if (enabled[buffer] && blockMinimum[buffer] != counts[buffer])
-                atomicMin(results[buffer], blockMinimum[buffer]);
+        if (realEnabled && blockMinimum[0] != realCount)
+            atomicMin(&realControl[FinalizationNonZeroReductionControl], blockMinimum[0]);
+        if (imagEnabled && blockMinimum[1] != imagCount)
+            atomicMin(&imagControl[FinalizationNonZeroReductionControl], blockMinimum[1]);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            if (dzdcRealEnabled && blockMinimum[2] != dzdcRealCount) {
+                atomicMin(&dzdcRealControl[FinalizationNonZeroReductionControl], blockMinimum[2]);
+            }
+            if (dzdcImagEnabled && blockMinimum[3] != dzdcImagCount) {
+                atomicMin(&dzdcImagControl[FinalizationNonZeroReductionControl], blockMinimum[3]);
+            }
         }
     }
     grid.sync();
 
     if constexpr (HpShark::Debug) {
         for (uint32_t index = GridThreadRank(block); index < maximumCount; index += gridSize) {
-#pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                if (!enabled[buffer] || index >= counts[buffer])
-                    continue;
-                const uint32_t lowestNonZero = *results[buffer];
-                if (index < lowestNonZero)
-                    MattsCudaAssert(values[buffer][index] == 0u);
-                if (index == lowestNonZero)
-                    MattsCudaAssert(values[buffer][index] != 0u);
+            const uint32_t realLowest = realControl[FinalizationNonZeroReductionControl];
+            const uint32_t imagLowest = imagControl[FinalizationNonZeroReductionControl];
+            if (realEnabled && index < realCount) {
+                if (index < realLowest)
+                    MattsCudaAssert(realDigits[index] == 0u);
+                if (index == realLowest)
+                    MattsCudaAssert(realDigits[index] != 0u);
+            }
+            if (imagEnabled && index < imagCount) {
+                if (index < imagLowest)
+                    MattsCudaAssert(imagDigits[index] == 0u);
+                if (index == imagLowest)
+                    MattsCudaAssert(imagDigits[index] != 0u);
+            }
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                const uint32_t dzdcRealLowest = dzdcRealControl[FinalizationNonZeroReductionControl];
+                const uint32_t dzdcImagLowest = dzdcImagControl[FinalizationNonZeroReductionControl];
+                if (dzdcRealEnabled && index < dzdcRealCount) {
+                    if (index < dzdcRealLowest)
+                        MattsCudaAssert(dzdcRealDigits[index] == 0u);
+                    if (index == dzdcRealLowest)
+                        MattsCudaAssert(dzdcRealDigits[index] != 0u);
+                }
+                if (dzdcImagEnabled && index < dzdcImagCount) {
+                    if (index < dzdcImagLowest)
+                        MattsCudaAssert(dzdcImagDigits[index] == 0u);
+                    if (index == dzdcImagLowest)
+                        MattsCudaAssert(dzdcImagDigits[index] != 0u);
+                }
             }
         }
         grid.sync();
@@ -1233,44 +1350,62 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors,
     return ShuffleCarryPrefix(tile, exclusive, 0);
 }
 
-template <int BatchSize>
+template <class SharkFloatParams>
 __device__ void
-PrepareSignedCarryPrefixesBatch(cooperative_groups::grid_group &grid,
-                                cooperative_groups::thread_block &block,
-                                int64_t *const limbs[BatchSize],
-                                uint32_t limbCount,
-                                uint64_t *const transforms[BatchSize],
-                                HpSharkReference2CarryPrefixDescriptor *const descriptors[BatchSize])
+PrepareSignedCarryPrefixes(cooperative_groups::grid_group &grid,
+                           cooperative_groups::thread_block &block,
+                           uint32_t limbCount,
+                           int64_t *realLimbs,
+                           uint64_t *realTransforms,
+                           HpSharkReference2CarryPrefixDescriptor *realDescriptors,
+                           int64_t *imagLimbs,
+                           uint64_t *imagTransforms,
+                           HpSharkReference2CarryPrefixDescriptor *imagDescriptors,
+                           int64_t *dzdcRealLimbs,
+                           uint64_t *dzdcRealTransforms,
+                           HpSharkReference2CarryPrefixDescriptor *dzdcRealDescriptors,
+                           int64_t *dzdcImagLimbs,
+                           uint64_t *dzdcImagTransforms,
+                           HpSharkReference2CarryPrefixDescriptor *dzdcImagDescriptors)
 {
-    static_assert(BatchSize >= 1 && BatchSize <= 4);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer)
-            transforms[buffer][index] = MakeSignedCarryPrefix(limbs[buffer][index]);
+        realTransforms[index] = MakeSignedCarryPrefix(realLimbs[index]);
+        imagTransforms[index] = MakeSignedCarryPrefix(imagLimbs[index]);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            dzdcRealTransforms[index] = MakeSignedCarryPrefix(dzdcRealLimbs[index]);
+            dzdcImagTransforms[index] = MakeSignedCarryPrefix(dzdcImagLimbs[index]);
+        }
     }
 
     const uint32_t blockSize = block.dim_threads().x;
     const uint32_t numParts = (limbCount + blockSize - 1u) / blockSize;
     for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            PublishCarryPrefixState(&descriptors[buffer][part].State, CarryPrefixDescriptorState::Empty);
+        PublishCarryPrefixState(&realDescriptors[part].State, CarryPrefixDescriptorState::Empty);
+        PublishCarryPrefixState(&imagDescriptors[part].State, CarryPrefixDescriptorState::Empty);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            PublishCarryPrefixState(&dzdcRealDescriptors[part].State, CarryPrefixDescriptorState::Empty);
+            PublishCarryPrefixState(&dzdcImagDescriptors[part].State, CarryPrefixDescriptorState::Empty);
         }
     }
     grid.sync();
 }
 
-template <int BatchSize>
+template <class SharkFloatParams>
 __device__ void
-PrefixCarryTransformsDLBBatch(cooperative_groups::grid_group &grid,
-                              cooperative_groups::thread_block &block,
-                              uint64_t *const transforms[BatchSize],
-                              uint32_t count,
-                              HpSharkReference2CarryPrefixDescriptor *const descriptors[BatchSize],
-                              uint64_t *sharedStorage)
+PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
+                         cooperative_groups::thread_block &block,
+                         uint32_t count,
+                         uint64_t *realTransforms,
+                         HpSharkReference2CarryPrefixDescriptor *realDescriptors,
+                         uint64_t *imagTransforms,
+                         HpSharkReference2CarryPrefixDescriptor *imagDescriptors,
+                         uint64_t *dzdcRealTransforms,
+                         HpSharkReference2CarryPrefixDescriptor *dzdcRealDescriptors,
+                         uint64_t *dzdcImagTransforms,
+                         HpSharkReference2CarryPrefixDescriptor *dzdcImagDescriptors,
+                         uint64_t *sharedStorage)
 {
-    static_assert(BatchSize >= 1 && BatchSize <= 4);
     if (count == 0u)
         return;
 
@@ -1283,6 +1418,18 @@ PrefixCarryTransformsDLBBatch(cooperative_groups::grid_group &grid,
     const cooperative_groups::thread_block_tile<32> warpTile =
         cooperative_groups::tiled_partition<32>(block);
     constexpr uint32_t SharedWordsPerStream = 2u * CarryPrefixMaxWarps + 1u;
+    uint64_t *realWarpAggregates = sharedStorage;
+    uint64_t *realWarpPrefixes = realWarpAggregates + CarryPrefixMaxWarps;
+    uint64_t *realExclusiveStorage = realWarpPrefixes + CarryPrefixMaxWarps;
+    uint64_t *imagWarpAggregates = sharedStorage + SharedWordsPerStream;
+    uint64_t *imagWarpPrefixes = imagWarpAggregates + CarryPrefixMaxWarps;
+    uint64_t *imagExclusiveStorage = imagWarpPrefixes + CarryPrefixMaxWarps;
+    uint64_t *dzdcRealWarpAggregates = sharedStorage + 2u * SharedWordsPerStream;
+    uint64_t *dzdcRealWarpPrefixes = dzdcRealWarpAggregates + CarryPrefixMaxWarps;
+    uint64_t *dzdcRealExclusiveStorage = dzdcRealWarpPrefixes + CarryPrefixMaxWarps;
+    uint64_t *dzdcImagWarpAggregates = sharedStorage + 3u * SharedWordsPerStream;
+    uint64_t *dzdcImagWarpPrefixes = dzdcImagWarpAggregates + CarryPrefixMaxWarps;
+    uint64_t *dzdcImagExclusiveStorage = dzdcImagWarpPrefixes + CarryPrefixMaxWarps;
 
     // Workspace descriptors are sized for the supported cooperative launch
     // minimum of one warp per block. Ref2's launch calculator selects a warp
@@ -1296,95 +1443,199 @@ PrefixCarryTransformsDLBBatch(cooperative_groups::grid_group &grid,
         const uint32_t base = part * blockSize;
         const uint32_t index = base + threadIndex;
         const bool hasValue = index < count;
-        uint64_t inclusive[BatchSize];
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer)
-            inclusive[buffer] = hasValue ? transforms[buffer][index] : CarryPrefixIdentity();
+        uint64_t realInclusive = hasValue ? realTransforms[index] : CarryPrefixIdentity();
+        uint64_t imagInclusive = hasValue ? imagTransforms[index] : CarryPrefixIdentity();
+        uint64_t dzdcRealInclusive = SharkFloatParams::EnableNewtonRaphson && hasValue
+                                         ? dzdcRealTransforms[index]
+                                         : CarryPrefixIdentity();
+        uint64_t dzdcImagInclusive = SharkFloatParams::EnableNewtonRaphson && hasValue
+                                         ? dzdcImagTransforms[index]
+                                         : CarryPrefixIdentity();
 
 #pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+        for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+            const uint64_t previous =
+                ShuffleUpCarryPrefix(warpTile, realInclusive, static_cast<int>(offset));
+            if (lane >= offset)
+                realInclusive = ComposeCarryPrefixes(previous, realInclusive);
+        }
+#pragma unroll
+        for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+            const uint64_t previous =
+                ShuffleUpCarryPrefix(warpTile, imagInclusive, static_cast<int>(offset));
+            if (lane >= offset)
+                imagInclusive = ComposeCarryPrefixes(previous, imagInclusive);
+        }
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
 #pragma unroll
             for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
                 const uint64_t previous =
-                    ShuffleUpCarryPrefix(warpTile, inclusive[buffer], static_cast<int>(offset));
+                    ShuffleUpCarryPrefix(warpTile, dzdcRealInclusive, static_cast<int>(offset));
                 if (lane >= offset)
-                    inclusive[buffer] = ComposeCarryPrefixes(previous, inclusive[buffer]);
+                    dzdcRealInclusive = ComposeCarryPrefixes(previous, dzdcRealInclusive);
+            }
+#pragma unroll
+            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+                const uint64_t previous =
+                    ShuffleUpCarryPrefix(warpTile, dzdcImagInclusive, static_cast<int>(offset));
+                if (lane >= offset)
+                    dzdcImagInclusive = ComposeCarryPrefixes(previous, dzdcImagInclusive);
             }
         }
 
         const uint32_t warpEnd = (warp + 1u) * 32u;
         const uint32_t warpLastThread = (warpEnd < blockSize ? warpEnd : blockSize) - 1u;
         if (threadIndex == warpLastThread) {
-#pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                uint64_t *warpAggregates = sharedStorage + buffer * SharedWordsPerStream;
-                warpAggregates[warp] = inclusive[buffer];
+            realWarpAggregates[warp] = realInclusive;
+            imagWarpAggregates[warp] = imagInclusive;
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                dzdcRealWarpAggregates[warp] = dzdcRealInclusive;
+                dzdcImagWarpAggregates[warp] = dzdcImagInclusive;
             }
         }
         __syncthreads();
 
-        uint64_t aggregates[BatchSize];
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer)
-            aggregates[buffer] = CarryPrefixIdentity();
+        uint64_t realAggregate = CarryPrefixIdentity();
+        uint64_t imagAggregate = CarryPrefixIdentity();
+        uint64_t dzdcRealAggregate = CarryPrefixIdentity();
+        uint64_t dzdcImagAggregate = CarryPrefixIdentity();
 
         if (warp == 0u) {
+            uint64_t realWarpInclusive =
+                lane < numWarps ? realWarpAggregates[lane] : CarryPrefixIdentity();
 #pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                uint64_t *warpAggregates = sharedStorage + buffer * SharedWordsPerStream;
-                uint64_t *warpPrefixes = warpAggregates + CarryPrefixMaxWarps;
-                uint64_t warpInclusive = lane < numWarps ? warpAggregates[lane] : CarryPrefixIdentity();
+            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+                const uint64_t previous =
+                    ShuffleUpCarryPrefix(warpTile, realWarpInclusive, static_cast<int>(offset));
+                if (lane >= offset && lane < numWarps)
+                    realWarpInclusive = ComposeCarryPrefixes(previous, realWarpInclusive);
+            }
+            const uint64_t realPrevious = ShuffleUpCarryPrefix(warpTile, realWarpInclusive, 1);
+            if (lane < numWarps)
+                realWarpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : realPrevious;
+            realAggregate =
+                ShuffleCarryPrefix(warpTile, realWarpInclusive, static_cast<int>(numWarps - 1u));
+
+            uint64_t imagWarpInclusive =
+                lane < numWarps ? imagWarpAggregates[lane] : CarryPrefixIdentity();
+#pragma unroll
+            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+                const uint64_t previous =
+                    ShuffleUpCarryPrefix(warpTile, imagWarpInclusive, static_cast<int>(offset));
+                if (lane >= offset && lane < numWarps)
+                    imagWarpInclusive = ComposeCarryPrefixes(previous, imagWarpInclusive);
+            }
+            const uint64_t imagPrevious = ShuffleUpCarryPrefix(warpTile, imagWarpInclusive, 1);
+            if (lane < numWarps)
+                imagWarpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : imagPrevious;
+            imagAggregate =
+                ShuffleCarryPrefix(warpTile, imagWarpInclusive, static_cast<int>(numWarps - 1u));
+
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                uint64_t dzdcRealWarpInclusive =
+                    lane < numWarps ? dzdcRealWarpAggregates[lane] : CarryPrefixIdentity();
 #pragma unroll
                 for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
                     const uint64_t previous =
-                        ShuffleUpCarryPrefix(warpTile, warpInclusive, static_cast<int>(offset));
-                    if (lane >= offset && lane < numWarps)
-                        warpInclusive = ComposeCarryPrefixes(previous, warpInclusive);
+                        ShuffleUpCarryPrefix(warpTile, dzdcRealWarpInclusive, static_cast<int>(offset));
+                    if (lane >= offset && lane < numWarps) {
+                        dzdcRealWarpInclusive = ComposeCarryPrefixes(previous, dzdcRealWarpInclusive);
+                    }
                 }
+                const uint64_t dzdcRealPrevious =
+                    ShuffleUpCarryPrefix(warpTile, dzdcRealWarpInclusive, 1);
+                if (lane < numWarps) {
+                    dzdcRealWarpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : dzdcRealPrevious;
+                }
+                dzdcRealAggregate =
+                    ShuffleCarryPrefix(warpTile, dzdcRealWarpInclusive, static_cast<int>(numWarps - 1u));
 
-                const uint64_t previous = ShuffleUpCarryPrefix(warpTile, warpInclusive, 1);
-                if (lane < numWarps)
-                    warpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : previous;
-                aggregates[buffer] =
-                    ShuffleCarryPrefix(warpTile, warpInclusive, static_cast<int>(numWarps - 1u));
+                uint64_t dzdcImagWarpInclusive =
+                    lane < numWarps ? dzdcImagWarpAggregates[lane] : CarryPrefixIdentity();
+#pragma unroll
+                for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+                    const uint64_t previous =
+                        ShuffleUpCarryPrefix(warpTile, dzdcImagWarpInclusive, static_cast<int>(offset));
+                    if (lane >= offset && lane < numWarps) {
+                        dzdcImagWarpInclusive = ComposeCarryPrefixes(previous, dzdcImagWarpInclusive);
+                    }
+                }
+                const uint64_t dzdcImagPrevious =
+                    ShuffleUpCarryPrefix(warpTile, dzdcImagWarpInclusive, 1);
+                if (lane < numWarps) {
+                    dzdcImagWarpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : dzdcImagPrevious;
+                }
+                dzdcImagAggregate =
+                    ShuffleCarryPrefix(warpTile, dzdcImagWarpInclusive, static_cast<int>(numWarps - 1u));
             }
         }
 
         if (threadIndex == 0u) {
-#pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                PublishCarryPrefixDescriptorAggregate(descriptors[buffer][part], aggregates[buffer]);
+            PublishCarryPrefixDescriptorAggregate(realDescriptors[part], realAggregate);
+            PublishCarryPrefixDescriptorAggregate(imagDescriptors[part], imagAggregate);
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                PublishCarryPrefixDescriptorAggregate(dzdcRealDescriptors[part], dzdcRealAggregate);
+                PublishCarryPrefixDescriptorAggregate(dzdcImagDescriptors[part], dzdcImagAggregate);
             }
         }
 
         if (warp == 0u) {
             warpTile.sync();
-#pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                const uint64_t exclusive = ResolveCarryPrefixWarp(descriptors[buffer], part, warpTile);
+            const uint64_t realExclusive = ResolveCarryPrefixWarp(realDescriptors, part, warpTile);
+            const uint64_t imagExclusive = ResolveCarryPrefixWarp(imagDescriptors, part, warpTile);
+            if (lane == 0u) {
+                PublishCarryPrefixDescriptorPrefix(realDescriptors[part],
+                                                   ComposeCarryPrefixes(realExclusive, realAggregate));
+                PublishCarryPrefixDescriptorPrefix(imagDescriptors[part],
+                                                   ComposeCarryPrefixes(imagExclusive, imagAggregate));
+                realExclusiveStorage[0] = realExclusive;
+                imagExclusiveStorage[0] = imagExclusive;
+            }
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                const uint64_t dzdcRealExclusive =
+                    ResolveCarryPrefixWarp(dzdcRealDescriptors, part, warpTile);
+                const uint64_t dzdcImagExclusive =
+                    ResolveCarryPrefixWarp(dzdcImagDescriptors, part, warpTile);
                 if (lane == 0u) {
-                    const uint64_t prefix = ComposeCarryPrefixes(exclusive, aggregates[buffer]);
-                    PublishCarryPrefixDescriptorPrefix(descriptors[buffer][part], prefix);
-                    uint64_t *exclusiveStorage =
-                        sharedStorage + buffer * SharedWordsPerStream + 2u * CarryPrefixMaxWarps;
-                    exclusiveStorage[0] = exclusive;
+                    PublishCarryPrefixDescriptorPrefix(
+                        dzdcRealDescriptors[part],
+                        ComposeCarryPrefixes(dzdcRealExclusive, dzdcRealAggregate));
+                    PublishCarryPrefixDescriptorPrefix(
+                        dzdcImagDescriptors[part],
+                        ComposeCarryPrefixes(dzdcImagExclusive, dzdcImagAggregate));
+                    dzdcRealExclusiveStorage[0] = dzdcRealExclusive;
+                    dzdcImagExclusiveStorage[0] = dzdcImagExclusive;
                 }
             }
         }
         __syncthreads();
 
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            uint64_t *warpAggregates = sharedStorage + buffer * SharedWordsPerStream;
-            uint64_t *warpPrefixes = warpAggregates + CarryPrefixMaxWarps;
-            uint64_t *exclusiveStorage = warpPrefixes + CarryPrefixMaxWarps;
-            const uint64_t exclusivePart = exclusiveStorage[0];
-            const uint64_t warpExclusive = warpPrefixes[warp];
-            const uint64_t previous = ShuffleUpCarryPrefix(warpTile, inclusive[buffer], 1);
-            const uint64_t localExclusive = lane == 0u ? CarryPrefixIdentity() : previous;
+        const uint64_t realPrevious = ShuffleUpCarryPrefix(warpTile, realInclusive, 1);
+        const uint64_t realLocalExclusive = lane == 0u ? CarryPrefixIdentity() : realPrevious;
+        const uint64_t imagPrevious = ShuffleUpCarryPrefix(warpTile, imagInclusive, 1);
+        const uint64_t imagLocalExclusive = lane == 0u ? CarryPrefixIdentity() : imagPrevious;
+        if (hasValue) {
+            realTransforms[index] =
+                ComposeCarryPrefixes(realExclusiveStorage[0],
+                                     ComposeCarryPrefixes(realWarpPrefixes[warp], realLocalExclusive));
+            imagTransforms[index] =
+                ComposeCarryPrefixes(imagExclusiveStorage[0],
+                                     ComposeCarryPrefixes(imagWarpPrefixes[warp], imagLocalExclusive));
+        }
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const uint64_t dzdcRealPrevious = ShuffleUpCarryPrefix(warpTile, dzdcRealInclusive, 1);
+            const uint64_t dzdcRealLocalExclusive =
+                lane == 0u ? CarryPrefixIdentity() : dzdcRealPrevious;
+            const uint64_t dzdcImagPrevious = ShuffleUpCarryPrefix(warpTile, dzdcImagInclusive, 1);
+            const uint64_t dzdcImagLocalExclusive =
+                lane == 0u ? CarryPrefixIdentity() : dzdcImagPrevious;
             if (hasValue) {
-                const uint64_t prefixWithinPart = ComposeCarryPrefixes(warpExclusive, localExclusive);
-                transforms[buffer][index] = ComposeCarryPrefixes(exclusivePart, prefixWithinPart);
+                dzdcRealTransforms[index] = ComposeCarryPrefixes(
+                    dzdcRealExclusiveStorage[0],
+                    ComposeCarryPrefixes(dzdcRealWarpPrefixes[warp], dzdcRealLocalExclusive));
+                dzdcImagTransforms[index] = ComposeCarryPrefixes(
+                    dzdcImagExclusiveStorage[0],
+                    ComposeCarryPrefixes(dzdcImagWarpPrefixes[warp], dzdcImagLocalExclusive));
             }
         }
         // The next partition's aggregate barrier protects shared scratch reuse.
@@ -1408,11 +1659,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
 {
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
     using Descriptor = HpSharkReference2CarryPrefixDescriptor;
-    constexpr int BatchSize = SharkFloatParams::EnableNewtonRaphson ? 4 : 2;
     constexpr uint32_t Capacity = Workspace::MaxFusedLimbs;
-    constexpr uint32_t DigitLengthControl = 0;
-    constexpr uint32_t NegativeControl = 1;
-    constexpr uint32_t NonZeroReductionControl = 2;
     constexpr uint32_t DescriptorWords =
         (Workspace::MaxCarryPrefixParts * sizeof(Descriptor) + sizeof(uint64_t) - 1u) / sizeof(uint64_t);
     constexpr uint32_t ControlWords =
@@ -1421,202 +1668,486 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     static_assert((Capacity * sizeof(uint64_t)) % alignof(Descriptor) == 0u);
     static_assert(Capacity + DescriptorWords + ControlWords <= Workspace::MaxFusedN);
 
-    uint64_t *scratch[BatchSize] = {workspace.RealOutput, workspace.ImagOutput};
-    int64_t *limbs[BatchSize] = {workspace.RealLimbs, workspace.ImagLimbs};
-    int32_t commonExponents[BatchSize] = {realExponent, imagExponent};
-    HpSharkFloat<SharkFloatParams> *outputs[BatchSize] = {&combo->Multiply.A, &combo->Multiply.B};
-    DebugStatePurpose digitsPurposes[BatchSize] = {DebugStatePurpose::SignedCarry1,
-                                                   DebugStatePurpose::SignedCarry2};
-    DebugStatePurpose magnitudePurposes[BatchSize] = {DebugStatePurpose::FinalAdd1,
-                                                      DebugStatePurpose::FinalAdd2};
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        scratch[2] = workspace.DzdcRealOutput;
-        scratch[3] = workspace.DzdcImagOutput;
-        limbs[2] = workspace.DzdcRealLimbs;
-        limbs[3] = workspace.DzdcImagLimbs;
-        commonExponents[2] = dzdcRealExponent;
-        commonExponents[3] = dzdcImagExponent;
-        outputs[2] = &combo->Multiply.DzdcReal;
-        outputs[3] = &combo->Multiply.DzdcImag;
-        digitsPurposes[2] = DebugStatePurpose::SignedCarryDzdc1;
-        digitsPurposes[3] = DebugStatePurpose::SignedCarryDzdc2;
-        magnitudePurposes[2] = DebugStatePurpose::FinalAddDzdc1;
-        magnitudePurposes[3] = DebugStatePurpose::FinalAddDzdc2;
-    }
+    uint64_t *realTransforms = workspace.RealOutput;
+    int64_t *realLimbs = workspace.RealLimbs;
+    uint32_t *realDigits = reinterpret_cast<uint32_t *>(realTransforms);
+    Descriptor *realDescriptors = reinterpret_cast<Descriptor *>(realTransforms + Capacity);
+    uint32_t *realControl = reinterpret_cast<uint32_t *>(realTransforms + Capacity + DescriptorWords);
+    HpSharkFloat<SharkFloatParams> *realOutput = &combo->Multiply.A;
 
-    uint64_t *transforms[BatchSize];
-    uint32_t *digits[BatchSize];
-    Descriptor *descriptors[BatchSize];
-    uint32_t *control[BatchSize];
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer) {
-        transforms[buffer] = scratch[buffer];
-        digits[buffer] = reinterpret_cast<uint32_t *>(scratch[buffer]);
-        descriptors[buffer] = reinterpret_cast<Descriptor *>(scratch[buffer] + Capacity);
-        control[buffer] = reinterpret_cast<uint32_t *>(scratch[buffer] + Capacity + DescriptorWords);
+    uint64_t *imagTransforms = workspace.ImagOutput;
+    int64_t *imagLimbs = workspace.ImagLimbs;
+    uint32_t *imagDigits = reinterpret_cast<uint32_t *>(imagTransforms);
+    Descriptor *imagDescriptors = reinterpret_cast<Descriptor *>(imagTransforms + Capacity);
+    uint32_t *imagControl = reinterpret_cast<uint32_t *>(imagTransforms + Capacity + DescriptorWords);
+    HpSharkFloat<SharkFloatParams> *imagOutput = &combo->Multiply.B;
+
+    uint64_t *dzdcRealTransforms = nullptr;
+    int64_t *dzdcRealLimbs = nullptr;
+    uint32_t *dzdcRealDigits = nullptr;
+    Descriptor *dzdcRealDescriptors = nullptr;
+    uint32_t *dzdcRealControl = nullptr;
+    HpSharkFloat<SharkFloatParams> *dzdcRealOutput = nullptr;
+    uint64_t *dzdcImagTransforms = nullptr;
+    int64_t *dzdcImagLimbs = nullptr;
+    uint32_t *dzdcImagDigits = nullptr;
+    Descriptor *dzdcImagDescriptors = nullptr;
+    uint32_t *dzdcImagControl = nullptr;
+    HpSharkFloat<SharkFloatParams> *dzdcImagOutput = nullptr;
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        dzdcRealTransforms = workspace.DzdcRealOutput;
+        dzdcRealLimbs = workspace.DzdcRealLimbs;
+        dzdcRealDigits = reinterpret_cast<uint32_t *>(dzdcRealTransforms);
+        dzdcRealDescriptors = reinterpret_cast<Descriptor *>(dzdcRealTransforms + Capacity);
+        dzdcRealControl = reinterpret_cast<uint32_t *>(dzdcRealTransforms + Capacity + DescriptorWords);
+        dzdcRealOutput = &combo->Multiply.DzdcReal;
+        dzdcImagTransforms = workspace.DzdcImagOutput;
+        dzdcImagLimbs = workspace.DzdcImagLimbs;
+        dzdcImagDigits = reinterpret_cast<uint32_t *>(dzdcImagTransforms);
+        dzdcImagDescriptors = reinterpret_cast<Descriptor *>(dzdcImagTransforms + Capacity);
+        dzdcImagControl = reinterpret_cast<uint32_t *>(dzdcImagTransforms + Capacity + DescriptorWords);
+        dzdcImagOutput = &combo->Multiply.DzdcImag;
     }
 
     MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
 
-    PrepareSignedCarryPrefixesBatch<BatchSize>(grid, block, limbs, limbCount, transforms, descriptors);
-    PrefixCarryTransformsDLBBatch<BatchSize>(
-        grid, block, transforms, limbCount, descriptors, carryPrefixShared);
+    PrepareSignedCarryPrefixes<SharkFloatParams>(grid,
+                                                 block,
+                                                 limbCount,
+                                                 realLimbs,
+                                                 realTransforms,
+                                                 realDescriptors,
+                                                 imagLimbs,
+                                                 imagTransforms,
+                                                 imagDescriptors,
+                                                 dzdcRealLimbs,
+                                                 dzdcRealTransforms,
+                                                 dzdcRealDescriptors,
+                                                 dzdcImagLimbs,
+                                                 dzdcImagTransforms,
+                                                 dzdcImagDescriptors);
+    PrefixCarryTransformsDLB<SharkFloatParams>(grid,
+                                               block,
+                                               limbCount,
+                                               realTransforms,
+                                               realDescriptors,
+                                               imagTransforms,
+                                               imagDescriptors,
+                                               dzdcRealTransforms,
+                                               dzdcRealDescriptors,
+                                               dzdcImagTransforms,
+                                               dzdcImagDescriptors,
+                                               carryPrefixShared);
 
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            const int64_t signedLimb = limbs[buffer][index];
-            const int32_t carryIn = ApplyCarryPrefix(transforms[buffer][index], 0);
-            const uint32_t digit = static_cast<uint32_t>(static_cast<uint64_t>(signedLimb + carryIn));
+        const int64_t realSignedLimb = realLimbs[index];
+        const int32_t realCarryIn = ApplyCarryPrefix(realTransforms[index], 0);
+        const uint32_t realDigit =
+            static_cast<uint32_t>(static_cast<uint64_t>(realSignedLimb + realCarryIn));
+        if (index + 1u == limbCount) {
+            int32_t finalCarry = CarryOutForSignedLimb(realSignedLimb, realCarryIn);
+            uint32_t digitLength = limbCount;
+            while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
+                realLimbs[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
+                finalCarry = CarryOutForSignedLimb(finalCarry, 0);
+            }
+            realControl[FinalizationDigitLengthControl] = digitLength;
+            realControl[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
+        }
+        realLimbs[index] = realDigit;
+
+        const int64_t imagSignedLimb = imagLimbs[index];
+        const int32_t imagCarryIn = ApplyCarryPrefix(imagTransforms[index], 0);
+        const uint32_t imagDigit =
+            static_cast<uint32_t>(static_cast<uint64_t>(imagSignedLimb + imagCarryIn));
+        if (index + 1u == limbCount) {
+            int32_t finalCarry = CarryOutForSignedLimb(imagSignedLimb, imagCarryIn);
+            uint32_t digitLength = limbCount;
+            while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
+                imagLimbs[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
+                finalCarry = CarryOutForSignedLimb(finalCarry, 0);
+            }
+            imagControl[FinalizationDigitLengthControl] = digitLength;
+            imagControl[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
+        }
+        imagLimbs[index] = imagDigit;
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const int64_t dzdcRealSignedLimb = dzdcRealLimbs[index];
+            const int32_t dzdcRealCarryIn = ApplyCarryPrefix(dzdcRealTransforms[index], 0);
+            const uint32_t dzdcRealDigit =
+                static_cast<uint32_t>(static_cast<uint64_t>(dzdcRealSignedLimb + dzdcRealCarryIn));
             if (index + 1u == limbCount) {
-                int32_t finalCarry = CarryOutForSignedLimb(signedLimb, carryIn);
+                int32_t finalCarry = CarryOutForSignedLimb(dzdcRealSignedLimb, dzdcRealCarryIn);
                 uint32_t digitLength = limbCount;
                 while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
-                    limbs[buffer][digitLength++] =
+                    dzdcRealLimbs[digitLength++] =
                         static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
                     finalCarry = CarryOutForSignedLimb(finalCarry, 0);
                 }
-                control[buffer][DigitLengthControl] = digitLength;
-                control[buffer][NegativeControl] = finalCarry < 0 ? 1u : 0u;
+                dzdcRealControl[FinalizationDigitLengthControl] = digitLength;
+                dzdcRealControl[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
             }
-            limbs[buffer][index] = digit;
+            dzdcRealLimbs[index] = dzdcRealDigit;
+
+            const int64_t dzdcImagSignedLimb = dzdcImagLimbs[index];
+            const int32_t dzdcImagCarryIn = ApplyCarryPrefix(dzdcImagTransforms[index], 0);
+            const uint32_t dzdcImagDigit =
+                static_cast<uint32_t>(static_cast<uint64_t>(dzdcImagSignedLimb + dzdcImagCarryIn));
+            if (index + 1u == limbCount) {
+                int32_t finalCarry = CarryOutForSignedLimb(dzdcImagSignedLimb, dzdcImagCarryIn);
+                uint32_t digitLength = limbCount;
+                while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
+                    dzdcImagLimbs[digitLength++] =
+                        static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
+                    finalCarry = CarryOutForSignedLimb(finalCarry, 0);
+                }
+                dzdcImagControl[FinalizationDigitLengthControl] = digitLength;
+                dzdcImagControl[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
+            }
+            dzdcImagLimbs[index] = dzdcImagDigit;
         }
     }
     grid.sync();
 
-    uint32_t digitLengths[BatchSize];
-    bool negative[BatchSize];
-    uint32_t maximumDigitLength = 0u;
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer) {
-        digitLengths[buffer] = control[buffer][DigitLengthControl];
-        negative[buffer] = control[buffer][NegativeControl] != 0u;
+    const uint32_t realDigitLength = realControl[FinalizationDigitLengthControl];
+    const uint32_t imagDigitLength = imagControl[FinalizationDigitLengthControl];
+    uint32_t maximumDigitLength = realDigitLength > imagDigitLength ? realDigitLength : imagDigitLength;
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        const uint32_t dzdcRealDigitLength = dzdcRealControl[FinalizationDigitLengthControl];
+        const uint32_t dzdcImagDigitLength = dzdcImagControl[FinalizationDigitLengthControl];
         maximumDigitLength =
-            maximumDigitLength > digitLengths[buffer] ? maximumDigitLength : digitLengths[buffer];
+            maximumDigitLength > dzdcRealDigitLength ? maximumDigitLength : dzdcRealDigitLength;
+        maximumDigitLength =
+            maximumDigitLength > dzdcImagDigitLength ? maximumDigitLength : dzdcImagDigitLength;
     }
 
     for (uint32_t index = GridThreadRank(block); index < maximumDigitLength; index += gridSize) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            if (index < digitLengths[buffer])
-                digits[buffer][index] = static_cast<uint32_t>(limbs[buffer][index]);
+        if (index < realDigitLength)
+            realDigits[index] = static_cast<uint32_t>(realLimbs[index]);
+        if (index < imagDigitLength)
+            imagDigits[index] = static_cast<uint32_t>(imagLimbs[index]);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            if (index < dzdcRealControl[FinalizationDigitLengthControl])
+                dzdcRealDigits[index] = static_cast<uint32_t>(dzdcRealLimbs[index]);
+            if (index < dzdcImagControl[FinalizationDigitLengthControl])
+                dzdcImagDigits[index] = static_cast<uint32_t>(dzdcImagLimbs[index]);
         }
     }
     grid.sync();
 
     if constexpr (HpShark::DebugChecksums) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            StoreReference2DebugState(
-                debugStates, grid, block, digitsPurposes[buffer], digits[buffer], digitLengths[buffer]);
+        StoreReference2DebugState(debugStates,
+                                  grid,
+                                  block,
+                                  DebugStatePurpose::SignedCarry1,
+                                  realDigits,
+                                  realControl[FinalizationDigitLengthControl]);
+        StoreReference2DebugState(debugStates,
+                                  grid,
+                                  block,
+                                  DebugStatePurpose::SignedCarry2,
+                                  imagDigits,
+                                  imagControl[FinalizationDigitLengthControl]);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            StoreReference2DebugState(debugStates,
+                                      grid,
+                                      block,
+                                      DebugStatePurpose::SignedCarryDzdc1,
+                                      dzdcRealDigits,
+                                      dzdcRealControl[FinalizationDigitLengthControl]);
+            StoreReference2DebugState(debugStates,
+                                      grid,
+                                      block,
+                                      DebugStatePurpose::SignedCarryDzdc2,
+                                      dzdcImagDigits,
+                                      dzdcImagControl[FinalizationDigitLengthControl]);
         }
     }
 
-    uint32_t *nonZeroResults[BatchSize];
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer)
-        nonZeroResults[buffer] = &control[buffer][NonZeroReductionControl];
-
     // In (~digits) + 1, the carry reaches the lowest nonzero digit and stops there.
     // Locating that digit avoids a second cross-block carry-prefix scan.
-    FindLowestNonZeroBatch<SharkFloatParams, BatchSize>(
-        grid, block, digits, digitLengths, negative, nonZeroResults, carryPrefixShared);
+    FindLowestNonZero<SharkFloatParams>(grid,
+                                        block,
+                                        realDigits,
+                                        realControl,
+                                        imagDigits,
+                                        imagControl,
+                                        dzdcRealDigits,
+                                        dzdcRealControl,
+                                        dzdcImagDigits,
+                                        dzdcImagControl,
+                                        carryPrefixShared);
 
     for (uint32_t index = GridThreadRank(block); index < maximumDigitLength; index += gridSize) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            if (!negative[buffer] || index >= digitLengths[buffer])
-                continue;
-            const uint32_t lowestNonZero = *nonZeroResults[buffer];
+        if (realControl[FinalizationNegativeControl] != 0u && index < realDigitLength) {
+            const uint32_t lowestNonZero = realControl[FinalizationNonZeroReductionControl];
             if (index < lowestNonZero)
-                digits[buffer][index] = 0u;
+                realDigits[index] = 0u;
             else if (index == lowestNonZero)
-                digits[buffer][index] = 0u - digits[buffer][index];
+                realDigits[index] = 0u - realDigits[index];
             else
-                digits[buffer][index] = ~digits[buffer][index];
+                realDigits[index] = ~realDigits[index];
+        }
+        if (imagControl[FinalizationNegativeControl] != 0u && index < imagDigitLength) {
+            const uint32_t lowestNonZero = imagControl[FinalizationNonZeroReductionControl];
+            if (index < lowestNonZero)
+                imagDigits[index] = 0u;
+            else if (index == lowestNonZero)
+                imagDigits[index] = 0u - imagDigits[index];
+            else
+                imagDigits[index] = ~imagDigits[index];
+        }
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const uint32_t dzdcRealDigitLength = dzdcRealControl[FinalizationDigitLengthControl];
+            if (dzdcRealControl[FinalizationNegativeControl] != 0u && index < dzdcRealDigitLength) {
+                const uint32_t lowestNonZero = dzdcRealControl[FinalizationNonZeroReductionControl];
+                if (index < lowestNonZero)
+                    dzdcRealDigits[index] = 0u;
+                else if (index == lowestNonZero)
+                    dzdcRealDigits[index] = 0u - dzdcRealDigits[index];
+                else
+                    dzdcRealDigits[index] = ~dzdcRealDigits[index];
+            }
+
+            const uint32_t dzdcImagDigitLength = dzdcImagControl[FinalizationDigitLengthControl];
+            if (dzdcImagControl[FinalizationNegativeControl] != 0u && index < dzdcImagDigitLength) {
+                const uint32_t lowestNonZero = dzdcImagControl[FinalizationNonZeroReductionControl];
+                if (index < lowestNonZero)
+                    dzdcImagDigits[index] = 0u;
+                else if (index == lowestNonZero)
+                    dzdcImagDigits[index] = 0u - dzdcImagDigits[index];
+                else
+                    dzdcImagDigits[index] = ~dzdcImagDigits[index];
+            }
         }
     }
 
     if (IsLeader<SharkFloatParams>(block)) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            if (negative[buffer] && *nonZeroResults[buffer] == digitLengths[buffer]) {
-                MattsCudaAssert(digitLengths[buffer] < Capacity);
-                if (digitLengths[buffer] < Capacity)
-                    digits[buffer][digitLengths[buffer]++] = 1u;
+        uint32_t currentRealDigitLength = realControl[FinalizationDigitLengthControl];
+        if (realControl[FinalizationNegativeControl] != 0u &&
+            realControl[FinalizationNonZeroReductionControl] == currentRealDigitLength) {
+            MattsCudaAssert(currentRealDigitLength < Capacity);
+            if (currentRealDigitLength < Capacity)
+                realDigits[currentRealDigitLength++] = 1u;
+        }
+        realControl[FinalizationDigitLengthControl] = currentRealDigitLength;
+
+        uint32_t currentImagDigitLength = imagControl[FinalizationDigitLengthControl];
+        if (imagControl[FinalizationNegativeControl] != 0u &&
+            imagControl[FinalizationNonZeroReductionControl] == currentImagDigitLength) {
+            MattsCudaAssert(currentImagDigitLength < Capacity);
+            if (currentImagDigitLength < Capacity)
+                imagDigits[currentImagDigitLength++] = 1u;
+        }
+        imagControl[FinalizationDigitLengthControl] = currentImagDigitLength;
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            uint32_t currentDzdcRealDigitLength = dzdcRealControl[FinalizationDigitLengthControl];
+            if (dzdcRealControl[FinalizationNegativeControl] != 0u &&
+                dzdcRealControl[FinalizationNonZeroReductionControl] == currentDzdcRealDigitLength) {
+                MattsCudaAssert(currentDzdcRealDigitLength < Capacity);
+                if (currentDzdcRealDigitLength < Capacity)
+                    dzdcRealDigits[currentDzdcRealDigitLength++] = 1u;
             }
-            control[buffer][DigitLengthControl] = digitLengths[buffer];
+            dzdcRealControl[FinalizationDigitLengthControl] = currentDzdcRealDigitLength;
+
+            uint32_t currentDzdcImagDigitLength = dzdcImagControl[FinalizationDigitLengthControl];
+            if (dzdcImagControl[FinalizationNegativeControl] != 0u &&
+                dzdcImagControl[FinalizationNonZeroReductionControl] == currentDzdcImagDigitLength) {
+                MattsCudaAssert(currentDzdcImagDigitLength < Capacity);
+                if (currentDzdcImagDigitLength < Capacity)
+                    dzdcImagDigits[currentDzdcImagDigitLength++] = 1u;
+            }
+            dzdcImagControl[FinalizationDigitLengthControl] = currentDzdcImagDigitLength;
         }
     }
     grid.sync();
 
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer)
-        digitLengths[buffer] = control[buffer][DigitLengthControl];
-
-    FindHighestNonZeroPlusOneBatch<SharkFloatParams, BatchSize>(
-        grid, block, digits, digitLengths, nonZeroResults, carryPrefixShared);
+    FindHighestNonZeroPlusOne<SharkFloatParams>(grid,
+                                                block,
+                                                realDigits,
+                                                realControl,
+                                                imagDigits,
+                                                imagControl,
+                                                dzdcRealDigits,
+                                                dzdcRealControl,
+                                                dzdcImagDigits,
+                                                dzdcImagControl,
+                                                carryPrefixShared);
 
     if constexpr (HpShark::DebugChecksums) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
+        StoreReference2DebugState(debugStates,
+                                  grid,
+                                  block,
+                                  DebugStatePurpose::FinalAdd1,
+                                  realDigits,
+                                  realControl[FinalizationNonZeroReductionControl]);
+        StoreReference2DebugState(debugStates,
+                                  grid,
+                                  block,
+                                  DebugStatePurpose::FinalAdd2,
+                                  imagDigits,
+                                  imagControl[FinalizationNonZeroReductionControl]);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             StoreReference2DebugState(debugStates,
                                       grid,
                                       block,
-                                      magnitudePurposes[buffer],
-                                      digits[buffer],
-                                      *nonZeroResults[buffer]);
+                                      DebugStatePurpose::FinalAddDzdc1,
+                                      dzdcRealDigits,
+                                      dzdcRealControl[FinalizationNonZeroReductionControl]);
+            StoreReference2DebugState(debugStates,
+                                      grid,
+                                      block,
+                                      DebugStatePurpose::FinalAddDzdc2,
+                                      dzdcImagDigits,
+                                      dzdcImagControl[FinalizationNonZeroReductionControl]);
         }
     }
 
     constexpr uint32_t ActualDigits = SharkFloatParams::GlobalNumUint32;
-    constexpr uint32_t TotalOutputDigits = BatchSize * ActualDigits;
+    constexpr int DesiredBit = (static_cast<int>(ActualDigits) - 1) * 32 + 31;
     if (IsLeader<SharkFloatParams>(block)) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            const uint32_t highestNonZeroPlusOne = *nonZeroResults[buffer];
-            if (highestNonZeroPlusOne == 0u) {
-                outputs[buffer]->Exponent = -100'000'000;
-                outputs[buffer]->SetNegative(false);
-                continue;
-            }
-            const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+        const uint32_t realHighestNonZeroPlusOne = realControl[FinalizationNonZeroReductionControl];
+        if (realHighestNonZeroPlusOne == 0u) {
+            realOutput->Exponent = -100'000'000;
+            realOutput->SetNegative(false);
+        } else {
+            const uint32_t highestNonZero = realHighestNonZeroPlusOne - 1u;
             const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
-                                   CountLeadingZeros(digits[buffer][highestNonZero]);
-            const int desiredBit = (static_cast<int>(ActualDigits) - 1) * 32 + 31;
-            outputs[buffer]->Exponent = commonExponents[buffer] + currentBit - desiredBit;
-            outputs[buffer]->SetNegative(negative[buffer]);
+                                   CountLeadingZeros(realDigits[highestNonZero]);
+            realOutput->Exponent = realExponent + currentBit - DesiredBit;
+            realOutput->SetNegative(realControl[FinalizationNegativeControl] != 0u);
+        }
+
+        const uint32_t imagHighestNonZeroPlusOne = imagControl[FinalizationNonZeroReductionControl];
+        if (imagHighestNonZeroPlusOne == 0u) {
+            imagOutput->Exponent = -100'000'000;
+            imagOutput->SetNegative(false);
+        } else {
+            const uint32_t highestNonZero = imagHighestNonZeroPlusOne - 1u;
+            const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                   CountLeadingZeros(imagDigits[highestNonZero]);
+            imagOutput->Exponent = imagExponent + currentBit - DesiredBit;
+            imagOutput->SetNegative(imagControl[FinalizationNegativeControl] != 0u);
+        }
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const uint32_t dzdcRealHighestNonZeroPlusOne =
+                dzdcRealControl[FinalizationNonZeroReductionControl];
+            if (dzdcRealHighestNonZeroPlusOne == 0u) {
+                dzdcRealOutput->Exponent = -100'000'000;
+                dzdcRealOutput->SetNegative(false);
+            } else {
+                const uint32_t highestNonZero = dzdcRealHighestNonZeroPlusOne - 1u;
+                const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                       CountLeadingZeros(dzdcRealDigits[highestNonZero]);
+                dzdcRealOutput->Exponent = dzdcRealExponent + currentBit - DesiredBit;
+                dzdcRealOutput->SetNegative(dzdcRealControl[FinalizationNegativeControl] != 0u);
+            }
+
+            const uint32_t dzdcImagHighestNonZeroPlusOne =
+                dzdcImagControl[FinalizationNonZeroReductionControl];
+            if (dzdcImagHighestNonZeroPlusOne == 0u) {
+                dzdcImagOutput->Exponent = -100'000'000;
+                dzdcImagOutput->SetNegative(false);
+            } else {
+                const uint32_t highestNonZero = dzdcImagHighestNonZeroPlusOne - 1u;
+                const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                       CountLeadingZeros(dzdcImagDigits[highestNonZero]);
+                dzdcImagOutput->Exponent = dzdcImagExponent + currentBit - DesiredBit;
+                dzdcImagOutput->SetNegative(dzdcImagControl[FinalizationNegativeControl] != 0u);
+            }
         }
     }
 
-    for (uint32_t flatIndex = GridThreadRank(block); flatIndex < TotalOutputDigits;
-         flatIndex += gridSize) {
-        const uint32_t buffer = flatIndex / ActualDigits;
-        const int digitIndex = static_cast<int>(flatIndex % ActualDigits);
-        const uint32_t highestNonZeroPlusOne = *nonZeroResults[buffer];
-        if (highestNonZeroPlusOne == 0u) {
-            outputs[buffer]->Digits[digitIndex] = 0u;
-            continue;
+    for (uint32_t digit = GridThreadRank(block); digit < ActualDigits; digit += gridSize) {
+        const int digitIndex = static_cast<int>(digit);
+        {
+            const uint32_t highestNonZeroPlusOne = realControl[FinalizationNonZeroReductionControl];
+            if (highestNonZeroPlusOne == 0u) {
+                realOutput->Digits[digitIndex] = 0u;
+            } else {
+                const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+                const int magnitudeLength = static_cast<int>(highestNonZeroPlusOne);
+                const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                       CountLeadingZeros(realDigits[highestNonZero]);
+                const int shift = currentBit - DesiredBit;
+                realOutput->Digits[digitIndex] =
+                    shift > 0 ? FunnelShiftRight(realDigits, digitIndex, magnitudeLength, shift)
+                              : FunnelShiftLeft(realDigits, digitIndex, magnitudeLength, -shift);
+            }
         }
-        const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
-        const int magnitudeLength = static_cast<int>(highestNonZeroPlusOne);
-        const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
-                               CountLeadingZeros(digits[buffer][highestNonZero]);
-        const int desiredBit = (static_cast<int>(ActualDigits) - 1) * 32 + 31;
-        const int shift = currentBit - desiredBit;
-        outputs[buffer]->Digits[digitIndex] =
-            shift > 0 ? FunnelShiftRight(digits[buffer], digitIndex, magnitudeLength, shift)
-                      : FunnelShiftLeft(digits[buffer], digitIndex, magnitudeLength, -shift);
+
+        {
+            const uint32_t highestNonZeroPlusOne = imagControl[FinalizationNonZeroReductionControl];
+            if (highestNonZeroPlusOne == 0u) {
+                imagOutput->Digits[digitIndex] = 0u;
+            } else {
+                const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+                const int magnitudeLength = static_cast<int>(highestNonZeroPlusOne);
+                const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                       CountLeadingZeros(imagDigits[highestNonZero]);
+                const int shift = currentBit - DesiredBit;
+                imagOutput->Digits[digitIndex] =
+                    shift > 0 ? FunnelShiftRight(imagDigits, digitIndex, magnitudeLength, shift)
+                              : FunnelShiftLeft(imagDigits, digitIndex, magnitudeLength, -shift);
+            }
+        }
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            {
+                const uint32_t highestNonZeroPlusOne =
+                    dzdcRealControl[FinalizationNonZeroReductionControl];
+                if (highestNonZeroPlusOne == 0u) {
+                    dzdcRealOutput->Digits[digitIndex] = 0u;
+                } else {
+                    const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+                    const int magnitudeLength = static_cast<int>(highestNonZeroPlusOne);
+                    const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                           CountLeadingZeros(dzdcRealDigits[highestNonZero]);
+                    const int shift = currentBit - DesiredBit;
+                    dzdcRealOutput->Digits[digitIndex] =
+                        shift > 0 ? FunnelShiftRight(dzdcRealDigits, digitIndex, magnitudeLength, shift)
+                                  : FunnelShiftLeft(dzdcRealDigits, digitIndex, magnitudeLength, -shift);
+                }
+            }
+
+            {
+                const uint32_t highestNonZeroPlusOne =
+                    dzdcImagControl[FinalizationNonZeroReductionControl];
+                if (highestNonZeroPlusOne == 0u) {
+                    dzdcImagOutput->Digits[digitIndex] = 0u;
+                } else {
+                    const uint32_t highestNonZero = highestNonZeroPlusOne - 1u;
+                    const int magnitudeLength = static_cast<int>(highestNonZeroPlusOne);
+                    const int currentBit = static_cast<int>(highestNonZero) * 32 + 31 -
+                                           CountLeadingZeros(dzdcImagDigits[highestNonZero]);
+                    const int shift = currentBit - DesiredBit;
+                    dzdcImagOutput->Digits[digitIndex] =
+                        shift > 0 ? FunnelShiftRight(dzdcImagDigits, digitIndex, magnitudeLength, shift)
+                                  : FunnelShiftLeft(dzdcImagDigits, digitIndex, magnitudeLength, -shift);
+                }
+            }
+        }
     }
     grid.sync();
 
     if constexpr (HpShark::Debug) {
         if (IsLeader<SharkFloatParams>(block)) {
-#pragma unroll
-            for (int buffer = 0; buffer < BatchSize; ++buffer) {
-                if (*nonZeroResults[buffer] != 0u) {
-                    MattsCudaAssert((outputs[buffer]->Digits[ActualDigits - 1u] & 0x8000'0000u) != 0u);
+            if (realControl[FinalizationNonZeroReductionControl] != 0u) {
+                MattsCudaAssert((realOutput->Digits[ActualDigits - 1u] & 0x8000'0000u) != 0u);
+            }
+            if (imagControl[FinalizationNonZeroReductionControl] != 0u) {
+                MattsCudaAssert((imagOutput->Digits[ActualDigits - 1u] & 0x8000'0000u) != 0u);
+            }
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                if (dzdcRealControl[FinalizationNonZeroReductionControl] != 0u) {
+                    MattsCudaAssert((dzdcRealOutput->Digits[ActualDigits - 1u] & 0x8000'0000u) != 0u);
+                }
+                if (dzdcImagControl[FinalizationNonZeroReductionControl] != 0u) {
+                    MattsCudaAssert((dzdcImagOutput->Digits[ActualDigits - 1u] & 0x8000'0000u) != 0u);
                 }
             }
         }

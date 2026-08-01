@@ -502,6 +502,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
          uint64_t numIters,
          int64_t expectedPeriod,
          PeriodicityResult expectedResult,
+         uint32_t actualPrecisionLimbs,
          bool useMT = true,
          PerfTimingResult *timingOut = nullptr)
 {
@@ -867,7 +868,19 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             using GpuOrbitSessionType = std::conditional_t<sharkOperator == Operator::ReferenceOrbit,
                                                            HpShark::GpuOrbitSession<SharkFloatParams>,
                                                            HpShark::GpuOrbitSession2<SharkFloatParams>>;
-            GpuOrbitSessionType session(launchParams, hdrRadiusY, *xNum, *yNum, debugGpuCombo.get());
+            GpuOrbitSessionType session = [&]() {
+                if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+                    return GpuOrbitSessionType(
+                        launchParams, hdrRadiusY, *xNum, *yNum, debugGpuCombo.get());
+                } else {
+                    return GpuOrbitSessionType(launchParams,
+                                               hdrRadiusY,
+                                               *xNum,
+                                               *yNum,
+                                               actualPrecisionLimbs,
+                                               debugGpuCombo.get());
+                }
+            }();
             auto &combo = session.GetCombo();
 
             {
@@ -960,8 +973,12 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                         cpuRefOrbitResult = ReferenceOrbitHelper<SharkFloatParams>(
                             xNum.get(), yNum.get(), hdrRadiusY, numIters, debugHostCombo);
                     } else {
-                        cpuRefOrbitResult = ReferenceOrbit2Helper<SharkFloatParams>(
-                            xNum.get(), yNum.get(), hdrRadiusY, numIters, debugHostCombo);
+                        cpuRefOrbitResult = ReferenceOrbit2Helper<SharkFloatParams>(xNum.get(),
+                                                                                    yNum.get(),
+                                                                                    hdrRadiusY,
+                                                                                    numIters,
+                                                                                    actualPrecisionLimbs,
+                                                                                    debugHostCombo);
                     }
                 }
 
@@ -1252,7 +1269,8 @@ TestPerfRandom(const HpShark::LaunchParams &launchParams,
                                               typename SharkFloatParams::Float{},
                                               numIters,
                                               unknownPeriod,
-                                              expectedResult);
+                                              expectedResult,
+                                              SharkFloatParams::GlobalNumUint32);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -2297,8 +2315,8 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
             cpuResult =
                 ReferenceOrbitHelper<SharkFloatParams>(&aNum, &bNum, emptyRadius, 1, debugHostCombo);
         } else {
-            cpuResult =
-                ReferenceOrbit2Helper<SharkFloatParams>(&aNum, &bNum, emptyRadius, 1, debugHostCombo);
+            cpuResult = ReferenceOrbit2Helper<SharkFloatParams>(
+                &aNum, &bNum, emptyRadius, 1, SharkFloatParams::GlobalNumUint32, debugHostCombo);
         }
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -3615,6 +3633,11 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
     HpShark::LaunchParams launchParams{numBlocks, numThreads};
 
     using SharkFloatParams = SharkParams7;
+    constexpr uint32_t StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
+    constexpr uint32_t ActualPrecisionLimbs = 15'000;
+    static_assert(StoragePrecisionLimbs == 16'384);
+    static_assert(ActualPrecisionLimbs > StoragePrecisionLimbs / 2u);
+    static_assert(ActualPrecisionLimbs <= StoragePrecisionLimbs);
 
     static_assert(IsReferenceOrbitOperator<sharkOperator>,
                   "Only reference-orbit operators are supported");
@@ -3704,6 +3727,7 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
                                                   maxIters,
                                                   expectedPeriod,
                                                   expectedResult,
+                                                  ActualPrecisionLimbs,
                                                   useMT,
                                                   &timing);
         timings.push_back(timing);
@@ -3823,6 +3847,7 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
                                                   maxIters,
                                                   expectedPeriod,
                                                   expectedResult,
+                                                  SharkFloatParams::GlobalNumUint32,
                                                   useMT,
                                                   &timing);
         timings.push_back(timing);
@@ -3936,6 +3961,7 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
                                                   maxIters,
                                                   expectedPeriod,
                                                   expectedResult,
+                                                  SharkFloatParams::GlobalNumUint32,
                                                   useMT,
                                                   &timing);
         timings.push_back(timing);

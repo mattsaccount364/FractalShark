@@ -583,6 +583,8 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
                                      workspace.InverseTwiddles,
                                      n - 1u};
     }
+    workspace.ActualPrecisionLimbs = SharkFloatParams::GlobalNumUint32;
+    workspace.IgnoredPrecisionBits = 0;
 
     if (workspaceOffset != workspaceBytes)
         throw FractalSharkSeriousException("Reference2 workspace size does not match its layout");

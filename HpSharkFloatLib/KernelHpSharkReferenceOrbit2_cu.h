@@ -227,13 +227,18 @@ MakeProductTerm(const HpSharkFloat<SharkFloatParams> &a,
                 const HpSharkFloat<SharkFloatParams> &b,
                 SpectrumId bId,
                 bool negate,
-                int32_t exponentOffset)
+                int32_t exponentOffset,
+                uint32_t ignoredPrecisionBits)
 {
     if (IsZero(a) || IsZero(b))
         return {true, false, 0, TermKind::Product, aId, bId};
+    const int64_t exponent = static_cast<int64_t>(a.Exponent) + static_cast<int64_t>(b.Exponent) +
+                             static_cast<int64_t>(exponentOffset) +
+                             2ll * static_cast<int64_t>(ignoredPrecisionBits);
+    MattsCudaAssert(exponent >= INT32_MIN && exponent <= INT32_MAX);
     return {false,
             static_cast<bool>(a.GetNegative() ^ b.GetNegative() ^ negate),
-            static_cast<int32_t>(a.Exponent + b.Exponent + exponentOffset),
+            static_cast<int32_t>(exponent),
             TermKind::Product,
             aId,
             bId};
@@ -241,11 +246,22 @@ MakeProductTerm(const HpSharkFloat<SharkFloatParams> &a,
 
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly FusedTerm<SharkFloatParams>
-MakeLinearTerm(const HpSharkFloat<SharkFloatParams> &a, SpectrumId aId, bool negate)
+MakeLinearTerm(const HpSharkFloat<SharkFloatParams> &a,
+               SpectrumId aId,
+               bool negate,
+               uint32_t ignoredPrecisionBits)
 {
     if (IsZero(a))
         return {true, false, 0, TermKind::Linear, aId, aId};
-    return {false, static_cast<bool>(a.GetNegative() ^ negate), a.Exponent, TermKind::Linear, aId, aId};
+    const int64_t exponent =
+        static_cast<int64_t>(a.Exponent) + static_cast<int64_t>(ignoredPrecisionBits);
+    MattsCudaAssert(exponent >= INT32_MIN && exponent <= INT32_MAX);
+    return {false,
+            static_cast<bool>(a.GetNegative() ^ negate),
+            static_cast<int32_t>(exponent),
+            TermKind::Linear,
+            aId,
+            aId};
 }
 
 template <class SharkFloatParams>
@@ -530,6 +546,7 @@ PackTwistForwardBatch(cooperative_groups::grid_group &grid,
                       const SharkNTT::PlanPrime &plan,
                       SharkNTT::RootTables &roots,
                       uint64_t *const outputs[BatchSize],
+                      uint32_t inputBitOffset,
                       const DebugStatePurpose packedPurposes[BatchSize],
                       const DebugStatePurpose forwardPurposes[BatchSize])
 {
@@ -538,10 +555,12 @@ PackTwistForwardBatch(cooperative_groups::grid_group &grid,
     for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
 #pragma unroll
         for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            const uint64_t coefficient =
-                i < static_cast<uint32_t>(plan.L)
-                    ? ReadBitsSimple(*values[buffer], static_cast<int64_t>(i) * plan.b, plan.b)
-                    : 0;
+            const uint64_t coefficient = i < static_cast<uint32_t>(plan.L)
+                                             ? ReadBitsSimple(*values[buffer],
+                                                              static_cast<int64_t>(inputBitOffset) +
+                                                                  static_cast<int64_t>(i) * plan.b,
+                                                              plan.b)
+                                             : 0;
             const uint64_t mont = SharkNTT::ToMontgomery<SharkFloatParams>(
                 grid, block, debugCombo, coefficient % SharkNTT::MagicPrime);
             outputs[buffer][i] = SharkNTT::MontgomeryMul<SharkFloatParams>(
@@ -1720,16 +1739,19 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     const auto &zImag = combo->Multiply.B;
     const auto &cReal = combo->Add.C_A;
     const auto &cImag = combo->Add.E_B;
-    constexpr SharkNTT::PlanPrime basePlan = SharkFloatParams::NTTPlan2;
+    const SharkNTT::PlanPrime basePlan = workspace.Plans[0];
+    const uint32_t ignoredPrecisionBits = workspace.IgnoredPrecisionBits;
 
-    const FusedTerm<SharkFloatParams> realZSquareTerm =
-        MakeProductTerm(zReal, SpectrumId::ZReal, zReal, SpectrumId::ZReal, false, 0);
-    const FusedTerm<SharkFloatParams> realNegativeZImagSquareTerm =
-        MakeProductTerm(zImag, SpectrumId::ZImag, zImag, SpectrumId::ZImag, true, 0);
-    const FusedTerm<SharkFloatParams> realConstantTerm = MakeLinearTerm(cReal, SpectrumId::CReal, false);
-    const FusedTerm<SharkFloatParams> imagDoubleProductTerm =
-        MakeProductTerm(zReal, SpectrumId::ZReal, zImag, SpectrumId::ZImag, false, 1);
-    const FusedTerm<SharkFloatParams> imagConstantTerm = MakeLinearTerm(cImag, SpectrumId::CImag, false);
+    const FusedTerm<SharkFloatParams> realZSquareTerm = MakeProductTerm(
+        zReal, SpectrumId::ZReal, zReal, SpectrumId::ZReal, false, 0, ignoredPrecisionBits);
+    const FusedTerm<SharkFloatParams> realNegativeZImagSquareTerm = MakeProductTerm(
+        zImag, SpectrumId::ZImag, zImag, SpectrumId::ZImag, true, 0, ignoredPrecisionBits);
+    const FusedTerm<SharkFloatParams> realConstantTerm =
+        MakeLinearTerm(cReal, SpectrumId::CReal, false, ignoredPrecisionBits);
+    const FusedTerm<SharkFloatParams> imagDoubleProductTerm = MakeProductTerm(
+        zReal, SpectrumId::ZReal, zImag, SpectrumId::ZImag, false, 1, ignoredPrecisionBits);
+    const FusedTerm<SharkFloatParams> imagConstantTerm =
+        MakeLinearTerm(cImag, SpectrumId::CImag, false, ignoredPrecisionBits);
     int32_t realExponent;
     int32_t imagExponent;
     const bool realZero = ResolveCommonExponent(
@@ -1752,15 +1774,35 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     bool dzdcRealZero = true;
     bool dzdcImagZero = true;
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        dzdcRealZRealTerm = MakeProductTerm(
-            zReal, SpectrumId::ZReal, combo->Multiply.DzdcReal, SpectrumId::DzdcReal, false, 1);
-        dzdcRealNegativeZImagTerm = MakeProductTerm(
-            zImag, SpectrumId::ZImag, combo->Multiply.DzdcImag, SpectrumId::DzdcImag, true, 1);
-        dzdcRealOneTerm = MakeLinearTerm(combo->Add.One, SpectrumId::One, false);
-        dzdcImagZImagTerm = MakeProductTerm(
-            zImag, SpectrumId::ZImag, combo->Multiply.DzdcReal, SpectrumId::DzdcReal, false, 1);
-        dzdcImagZRealTerm = MakeProductTerm(
-            zReal, SpectrumId::ZReal, combo->Multiply.DzdcImag, SpectrumId::DzdcImag, false, 1);
+        dzdcRealZRealTerm = MakeProductTerm(zReal,
+                                            SpectrumId::ZReal,
+                                            combo->Multiply.DzdcReal,
+                                            SpectrumId::DzdcReal,
+                                            false,
+                                            1,
+                                            ignoredPrecisionBits);
+        dzdcRealNegativeZImagTerm = MakeProductTerm(zImag,
+                                                    SpectrumId::ZImag,
+                                                    combo->Multiply.DzdcImag,
+                                                    SpectrumId::DzdcImag,
+                                                    true,
+                                                    1,
+                                                    ignoredPrecisionBits);
+        dzdcRealOneTerm = MakeLinearTerm(combo->Add.One, SpectrumId::One, false, ignoredPrecisionBits);
+        dzdcImagZImagTerm = MakeProductTerm(zImag,
+                                            SpectrumId::ZImag,
+                                            combo->Multiply.DzdcReal,
+                                            SpectrumId::DzdcReal,
+                                            false,
+                                            1,
+                                            ignoredPrecisionBits);
+        dzdcImagZRealTerm = MakeProductTerm(zReal,
+                                            SpectrumId::ZReal,
+                                            combo->Multiply.DzdcImag,
+                                            SpectrumId::DzdcImag,
+                                            false,
+                                            1,
+                                            ignoredPrecisionBits);
         dzdcRealZero = ResolveCommonExponent(
             &dzdcRealExponent, dzdcRealZRealTerm, dzdcRealNegativeZImagTerm, dzdcRealOneTerm);
         dzdcImagZero = ResolveCommonExponent(&dzdcImagExponent, dzdcImagZImagTerm, dzdcImagZRealTerm);
@@ -1834,6 +1876,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                plan,
                                                roots,
                                                normalForwardOutputs,
+                                               ignoredPrecisionBits,
                                                normalPackedPurposes,
                                                normalForwardPurposes);
 
@@ -1855,6 +1898,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    plan,
                                                    roots,
                                                    newtonRaphsonForwardOutputs,
+                                                   ignoredPrecisionBits,
                                                    newtonRaphsonPackedPurposes,
                                                    newtonRaphsonForwardPurposes);
     }

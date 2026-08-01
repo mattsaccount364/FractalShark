@@ -44,14 +44,16 @@ std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReference2
     const HpShark::LaunchParams &launchParams,
     const typename SharkFloatParams::Float hdrRadiusY,
     const mpf_t srcX,
-    const mpf_t srcY);
+    const mpf_t srcY,
+    uint32_t actualPrecisionLimbs);
 
 template <class SharkFloatParams>
 std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReference2Kernel(
     const HpShark::LaunchParams &launchParams,
     const typename SharkFloatParams::Float hdrRadiusY,
     const HpSharkFloat<SharkFloatParams> &xNum,
-    const HpSharkFloat<SharkFloatParams> &yNum);
+    const HpSharkFloat<SharkFloatParams> &yNum,
+    uint32_t actualPrecisionLimbs);
 
 template <class SharkFloatParams>
 void InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
@@ -151,8 +153,10 @@ public:
                      typename SharkFloatParams::Float hdrRadiusY,
                      const mpf_t srcX,
                      const mpf_t srcY,
+                     uint32_t actualPrecisionLimbs,
                      DebugGpuCombo *debugCombo = nullptr)
-        : m_Combo{InitHpSharkReference2Kernel<SharkFloatParams>(launchParams, hdrRadiusY, srcX, srcY)},
+        : m_Combo{InitHpSharkReference2Kernel<SharkFloatParams>(
+              launchParams, hdrRadiusY, srcX, srcY, actualPrecisionLimbs)},
           m_LaunchParams{launchParams}, m_DebugCombo{debugCombo}
     {
     }
@@ -161,8 +165,10 @@ public:
                      typename SharkFloatParams::Float hdrRadiusY,
                      const HpSharkFloat<SharkFloatParams> &xNum,
                      const HpSharkFloat<SharkFloatParams> &yNum,
+                     uint32_t actualPrecisionLimbs,
                      DebugGpuCombo *debugCombo = nullptr)
-        : m_Combo{InitHpSharkReference2Kernel<SharkFloatParams>(launchParams, hdrRadiusY, xNum, yNum)},
+        : m_Combo{InitHpSharkReference2Kernel<SharkFloatParams>(
+              launchParams, hdrRadiusY, xNum, yNum, actualPrecisionLimbs)},
           m_LaunchParams{launchParams}, m_DebugCombo{debugCombo}
     {
     }

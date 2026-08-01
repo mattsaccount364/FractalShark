@@ -310,6 +310,7 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                                                               hpDzdcI.get(),
                                                               &hpD2r,
                                                               &hpD2i,
+                                                              SharkFloatParams::GlobalNumUint32,
                                                               debugHostCombo);
             }
             cpuTimer.StopTimer();
@@ -475,6 +476,7 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                                                           hpDzdcI.get(),
                                                           &finalD2r,
                                                           &finalD2i,
+                                                          SharkFloatParams::GlobalNumUint32,
                                                           debugHostCombo);
         }
 

@@ -18,7 +18,8 @@ std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
 InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                             const typename SharkFloatParams::Float hdrRadiusY,
                             const mpf_t srcX,
-                            const mpf_t srcY)
+                            const mpf_t srcY,
+                            uint32_t actualPrecisionLimbs)
 {
     auto inputX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto inputY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -29,7 +30,8 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
     inputY->MpfToHpGpu(
         srcY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
 
-    return InitHpSharkReference2Kernel<SharkFloatParams>(launchParams, hdrRadiusY, *inputX, *inputY);
+    return InitHpSharkReference2Kernel<SharkFloatParams>(
+        launchParams, hdrRadiusY, *inputX, *inputY, actualPrecisionLimbs);
 }
 
 template <class SharkFloatParams>
@@ -37,8 +39,18 @@ std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
 InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                             const typename SharkFloatParams::Float hdrRadiusY,
                             const HpSharkFloat<SharkFloatParams> &xNum,
-                            const HpSharkFloat<SharkFloatParams> &yNum)
+                            const HpSharkFloat<SharkFloatParams> &yNum,
+                            uint32_t actualPrecisionLimbs)
 {
+    constexpr uint32_t storagePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
+    if (actualPrecisionLimbs <= storagePrecisionLimbs / 2u ||
+        actualPrecisionLimbs > storagePrecisionLimbs) {
+        throw FractalSharkSeriousException(
+            "Ref2 actual precision is outside the storage precision bucket");
+    }
+    const SharkNTT::PlanPrime precisionPlan =
+        SharkNTT::BuildPlanPrime2(static_cast<int>(actualPrecisionLimbs));
+
     auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
 
     combo->RadiusY = hdrRadiusY;
@@ -218,12 +230,12 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         const uint32_t stages = Workspace::MinFusedStages + slot;
         const uint32_t n = 1u << stages;
         const uint32_t psiOffset = n - Workspace::MinFusedN;
-        workspace.Plans[slot] = {SharkFloatParams::NTTPlan2.n32,
-                                 SharkFloatParams::NTTPlan2.b,
-                                 SharkFloatParams::NTTPlan2.L,
+        workspace.Plans[slot] = {precisionPlan.n32,
+                                 precisionPlan.b,
+                                 precisionPlan.L,
                                  static_cast<int>(n),
                                  static_cast<int>(stages),
-                                 SharkFloatParams::NTTPlan2.ok};
+                                 precisionPlan.ok};
         workspace.PlanRoots[slot] = {static_cast<int32_t>(stages),
                                      workspace.StageOmegas,
                                      workspace.StageOmegasInverse,
@@ -235,6 +247,8 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                                      workspace.InverseTwiddles,
                                      n - 1u};
     }
+    workspace.ActualPrecisionLimbs = actualPrecisionLimbs;
+    workspace.IgnoredPrecisionBits = (storagePrecisionLimbs - actualPrecisionLimbs) * 32u;
 
     if (workspaceOffset != workspaceBytes)
         throw FractalSharkSeriousException("Reference2 workspace size does not match its layout");
@@ -610,7 +624,8 @@ EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
     hpCI->MpfToHpGpu(
         *reinterpret_cast<const mpf_t *>(&cImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
 
-    GpuOrbitSession2<SharkFloatParams> session(externalLaunchParams, radiusY, *hpCR, *hpCI);
+    GpuOrbitSession2<SharkFloatParams> session(
+        externalLaunchParams, radiusY, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32);
     auto &combo = session.GetCombo();
     if (startIter == 0) {
         combo.Multiply.A = HpSharkFloat<SharkFloatParams>{};

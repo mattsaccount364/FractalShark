@@ -11,6 +11,7 @@ std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>> ReferenceOrbit2Helper(
     const HpSharkFloat<SharkFloatParams> *cImag,
     const typename SharkFloatParams::Float &radiusY,
     uint64_t maxIters,
+    uint32_t actualPrecisionLimbs,
     DebugHostCombo<SharkFloatParams> &debugHostCombo);
 
 template <class SharkFloatParams>
@@ -23,4 +24,5 @@ void EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                                  HpSharkFloat<SharkFloatParams> *outDzdcImag,
                                  typename SharkFloatParams::Float *outD2Real,
                                  typename SharkFloatParams::Float *outD2Imag,
+                                 uint32_t actualPrecisionLimbs,
                                  DebugHostCombo<SharkFloatParams> &debugHostCombo);

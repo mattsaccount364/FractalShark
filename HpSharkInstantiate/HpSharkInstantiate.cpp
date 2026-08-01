@@ -255,12 +255,14 @@ template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
 InitHpSharkReference2Kernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
                                               const typename SharkFloatParams::Float hdrRadiusY,
                                               const mpf_t,
-                                              const mpf_t);
+                                              const mpf_t,
+                                              uint32_t);
 template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
 InitHpSharkReference2Kernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
                                               const typename SharkFloatParams::Float hdrRadiusY,
                                               const HpSharkFloat<SharkFloatParams> &xNum,
-                                              const HpSharkFloat<SharkFloatParams> &yNum);
+                                              const HpSharkFloat<SharkFloatParams> &yNum,
+                                              uint32_t);
 template void InvokeHpSharkReference2Kernel<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams,
     HpSharkReferenceResults<SharkFloatParams> &combo,

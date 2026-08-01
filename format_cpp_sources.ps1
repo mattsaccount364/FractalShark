@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param()
+param(
+    [ValidateRange(1, 256)]
+    [int]$ThrottleLimit = [Math]::Max(1, [Environment]::ProcessorCount)
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -147,6 +150,70 @@ function Normalize-CrlfLineEndings {
     return $false
 }
 
+function Format-SourcePaths {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ClangFormatPath,
+
+        [Parameter(Mandatory)]
+        [string[]]$SourcePaths,
+
+        [Parameter(Mandatory)]
+        [int]$MaximumConcurrency
+    )
+
+    $activeProcesses = [System.Collections.Generic.List[object]]::new()
+    $failedPaths = [System.Collections.Generic.List[string]]::new()
+
+    function Collect-CompletedFormats {
+        param([switch]$WaitForOne)
+
+        do {
+            $completedFormats = @($activeProcesses | Where-Object { $_.Process.HasExited })
+            if ($completedFormats) {
+                foreach ($completedFormat in $completedFormats) {
+                    if ($completedFormat.Process.ExitCode -ne 0) {
+                        $failedPaths.Add("$($completedFormat.SourcePath) (exit code $($completedFormat.Process.ExitCode))")
+                    }
+
+                    $completedFormat.Process.Dispose()
+                    $activeProcesses.Remove($completedFormat)
+                }
+
+                return
+            }
+
+            if ($WaitForOne) {
+                Start-Sleep -Milliseconds 25
+            }
+        } while ($WaitForOne)
+    }
+
+    foreach ($sourcePath in $SourcePaths) {
+        while ($activeProcesses.Count -ge $MaximumConcurrency) {
+            Collect-CompletedFormats -WaitForOne
+        }
+
+        $process = Start-Process -FilePath $ClangFormatPath `
+            -ArgumentList "-style=file -i -- `"$sourcePath`"" `
+            -WorkingDirectory $repositoryRoot `
+            -NoNewWindow `
+            -PassThru
+        $activeProcesses.Add([pscustomobject]@{
+                Process = $process
+                SourcePath = $sourcePath
+            })
+    }
+
+    while ($activeProcesses.Count -gt 0) {
+        Collect-CompletedFormats -WaitForOne
+    }
+
+    if ($failedPaths) {
+        throw "clang-format failed for: $($failedPaths -join '; ')"
+    }
+}
+
 if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot '.clang-format') -PathType Leaf)) {
     throw ".clang-format was not found in $repositoryRoot."
 }
@@ -165,15 +232,11 @@ $clangFormatPath = Get-ClangFormatPath
 Write-Host "Using clang-format: $clangFormatPath"
 Write-Host "Formatting $($sourcePaths.Count) tracked C++/CUDA files."
 Write-Host "Excluded $excludedSourcePathCount upstream C++/CUDA files."
+Write-Host "Using up to $ThrottleLimit concurrent clang-format processes."
 
 Push-Location $repositoryRoot
 try {
-    foreach ($sourcePath in $sourcePaths) {
-        & $clangFormatPath -style=file -i -- $sourcePath
-        if ($LASTEXITCODE -ne 0) {
-            throw "clang-format failed for $sourcePath with exit code $LASTEXITCODE."
-        }
-    }
+    Format-SourcePaths -ClangFormatPath $clangFormatPath -SourcePaths $sourcePaths -MaximumConcurrency $ThrottleLimit
 } finally {
     Pop-Location
 }

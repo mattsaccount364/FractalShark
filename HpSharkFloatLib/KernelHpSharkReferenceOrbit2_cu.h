@@ -123,24 +123,6 @@ SubPSerial(uint64_t a, uint64_t b)
 }
 
 template <class SharkFloatParams>
-__device__ uint64_t
-MontgomeryPowSerial(cooperative_groups::grid_group &grid,
-                    cooperative_groups::thread_block &block,
-                    DebugGlobalCount<SharkFloatParams> *debugCombo,
-                    uint64_t aMont,
-                    uint64_t exponent)
-{
-    uint64_t result = SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1);
-    while (exponent != 0) {
-        if ((exponent & 1ull) != 0)
-            result = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, result, aMont);
-        aMont = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, aMont, aMont);
-        exponent >>= 1;
-    }
-    return result;
-}
-
-template <class SharkFloatParams>
 __device__ bool
 IsZero(const HpSharkFloat<SharkFloatParams> &value)
 {
@@ -430,111 +412,6 @@ NTTRadix2Batch(uint64_t *sharedData,
     }
 }
 
-template <class SharkFloatParams>
-__device__ void
-GenerateCachedPlan(cooperative_groups::grid_group &grid,
-                   cooperative_groups::thread_block &block,
-                   DebugGlobalCount<SharkFloatParams> *debugCombo,
-                   uint32_t activeN,
-                   HpSharkReference2Workspace<SharkFloatParams> &workspace)
-{
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    MattsCudaAssert(activeN >= Workspace::MinFusedN && activeN <= Workspace::MaxFusedN);
-    MattsCudaAssert((activeN & (activeN - 1u)) == 0u);
-    const uint32_t stages = CountTrailingZeros(activeN);
-    MattsCudaAssert(stages >= Workspace::MinFusedStages);
-    const uint32_t slot = stages - Workspace::MinFusedStages;
-    MattsCudaAssert(slot < Workspace::PlanCacheEntryCount);
-    const uint32_t planBit = 1u << slot;
-    if ((workspace.ValidPlanMask & planBit) != 0u)
-        return;
-
-    MattsCudaAssert(stages <= Workspace::MaxFusedStages);
-    const SharkNTT::PlanPrime &plan = workspace.Plans[slot];
-    SharkNTT::RootTables &roots = workspace.PlanRoots[slot];
-    MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
-    MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
-
-    constexpr uint64_t Generator = SharkNTT::FindGeneratorConstexpr();
-    const uint64_t generatorMont =
-        SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, Generator);
-    const uint64_t psi = MontgomeryPowSerial<SharkFloatParams>(
-        grid, block, debugCombo, generatorMont, SharkNTT::PHI / (2ull * activeN));
-    const uint64_t psiInverse =
-        MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psi, SharkNTT::PHI - 1ull);
-    const uint64_t omega = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, psi, psi);
-    const uint64_t omegaInverse =
-        MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, SharkNTT::PHI - 1ull);
-
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    const uint32_t rank = GridThreadRank(block);
-    if (rank < activeN) {
-        uint64_t psiPower = MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psi, rank);
-        uint64_t psiInversePower =
-            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psiInverse, rank);
-        const uint64_t psiStride =
-            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psi, gridSize);
-        const uint64_t psiInverseStride =
-            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psiInverse, gridSize);
-        for (uint32_t i = rank; i < activeN; i += gridSize) {
-            roots.psi_pows[i] = psiPower;
-            roots.psi_inv_pows[i] = psiInversePower;
-            if (i + gridSize < activeN) {
-                psiPower = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                    grid, block, debugCombo, psiPower, psiStride);
-                psiInversePower = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                    grid, block, debugCombo, psiInversePower, psiInverseStride);
-            }
-        }
-    }
-
-    const uint32_t firstMissingStage = workspace.GeneratedStages + 1u;
-    for (uint32_t stage = firstMissingStage; stage <= stages; ++stage) {
-        const uint32_t width = 1u << stage;
-        const uint32_t half = width >> 1;
-        const uint32_t offset = half - 1u;
-        if (IsLeader<SharkFloatParams>(block)) {
-            roots.stage_omegas[stage - 1] =
-                MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, activeN / width);
-            roots.stage_omegas_inv[stage - 1] = MontgomeryPowSerial<SharkFloatParams>(
-                grid, block, debugCombo, omegaInverse, activeN / width);
-        }
-        grid.sync();
-        if (rank < half) {
-            uint64_t forwardTwiddle = MontgomeryPowSerial<SharkFloatParams>(
-                grid, block, debugCombo, roots.stage_omegas[stage - 1], rank);
-            uint64_t inverseTwiddle = MontgomeryPowSerial<SharkFloatParams>(
-                grid, block, debugCombo, roots.stage_omegas_inv[stage - 1], rank);
-            const uint64_t forwardStride = MontgomeryPowSerial<SharkFloatParams>(
-                grid, block, debugCombo, roots.stage_omegas[stage - 1], gridSize);
-            const uint64_t inverseStride = MontgomeryPowSerial<SharkFloatParams>(
-                grid, block, debugCombo, roots.stage_omegas_inv[stage - 1], gridSize);
-            for (uint32_t j = rank; j < half; j += gridSize) {
-                roots.stage_twiddles_fwd[offset + j] = forwardTwiddle;
-                roots.stage_twiddles_inv[offset + j] = inverseTwiddle;
-                if (j + gridSize < half) {
-                    forwardTwiddle = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                        grid, block, debugCombo, forwardTwiddle, forwardStride);
-                    inverseTwiddle = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                        grid, block, debugCombo, inverseTwiddle, inverseStride);
-                }
-            }
-        }
-    }
-
-    if (IsLeader<SharkFloatParams>(block)) {
-        if (workspace.GeneratedStages < stages)
-            workspace.GeneratedStages = stages;
-        const uint64_t inverseTwo = SharkNTT::ToMontgomery<SharkFloatParams>(
-            grid, block, debugCombo, (SharkNTT::MagicPrime + 1ull) >> 1);
-        roots.Ninvm_mont =
-            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, inverseTwo, stages);
-        workspace.ValidPlanMask |= planBit;
-    }
-    // Each psi range is disjoint. Shared stages and the validity bit are published together.
-    grid.sync();
-}
-
 template <class SharkFloatParams, int BatchSize>
 __device__ void
 PackTwistForwardBatch(cooperative_groups::grid_group &grid,
@@ -666,6 +543,7 @@ AccumulateFixedOutputSpectra(cooperative_groups::grid_group &grid,
                              const SharkNTT::PlanPrime &plan,
                              const SharkNTT::RootTables &roots,
                              HpSharkReference2Workspace<SharkFloatParams> &workspace,
+                             const HpSharkReference2ConstantSpectra &constantSpectra,
                              int32_t realExponent,
                              FusedTerm<SharkFloatParams> realZSquareTerm,
                              FusedTerm<SharkFloatParams> realNegativeZImagSquareTerm,
@@ -732,8 +610,15 @@ AccumulateFixedOutputSpectra(cooperative_groups::grid_group &grid,
                 real, value, realNegativeZImagSquare.IsNegative);
         }
         if (!realConstant.IsZero) {
-            const uint64_t value = ScaleSpectrumCoefficient(
-                grid, block, debugCombo, plan, roots, realConstant, oneMont, workspace.CReal[i], i);
+            const uint64_t value = ScaleSpectrumCoefficient(grid,
+                                                            block,
+                                                            debugCombo,
+                                                            plan,
+                                                            roots,
+                                                            realConstant,
+                                                            oneMont,
+                                                            constantSpectra.CReal[i],
+                                                            i);
             real = AccumulateSpectrumCoefficient<SharkFloatParams>(real, value, realConstant.IsNegative);
         }
         workspace.RealOutput[i] = real;
@@ -748,8 +633,15 @@ AccumulateFixedOutputSpectra(cooperative_groups::grid_group &grid,
                 imag, value, imagDoubleProduct.IsNegative);
         }
         if (!imagConstant.IsZero) {
-            const uint64_t value = ScaleSpectrumCoefficient(
-                grid, block, debugCombo, plan, roots, imagConstant, oneMont, workspace.CImag[i], i);
+            const uint64_t value = ScaleSpectrumCoefficient(grid,
+                                                            block,
+                                                            debugCombo,
+                                                            plan,
+                                                            roots,
+                                                            imagConstant,
+                                                            oneMont,
+                                                            constantSpectra.CImag[i],
+                                                            i);
             imag = AccumulateSpectrumCoefficient<SharkFloatParams>(imag, value, imagConstant.IsNegative);
         }
         workspace.ImagOutput[i] = imag;
@@ -773,8 +665,15 @@ AccumulateFixedOutputSpectra(cooperative_groups::grid_group &grid,
                     dzdcReal, value, dzdcRealNegativeZImag.IsNegative);
             }
             if (!dzdcRealOne.IsZero) {
-                const uint64_t value = ScaleSpectrumCoefficient(
-                    grid, block, debugCombo, plan, roots, dzdcRealOne, oneMont, workspace.One[i], i);
+                const uint64_t value = ScaleSpectrumCoefficient(grid,
+                                                                block,
+                                                                debugCombo,
+                                                                plan,
+                                                                roots,
+                                                                dzdcRealOne,
+                                                                oneMont,
+                                                                constantSpectra.One[i],
+                                                                i);
                 dzdcReal = AccumulateSpectrumCoefficient<SharkFloatParams>(
                     dzdcReal, value, dzdcRealOne.IsNegative);
             }
@@ -1851,56 +1750,103 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     MattsCudaAssert(activeN >= Workspace::MinFusedN);
     const uint32_t planSlot = CountTrailingZeros(activeN) - Workspace::MinFusedStages;
     MattsCudaAssert(planSlot < Workspace::PlanCacheEntryCount);
-    GenerateCachedPlan<SharkFloatParams>(grid, block, debugCombo, activeN, workspace);
     const SharkNTT::PlanPrime &plan = workspace.Plans[planSlot];
     SharkNTT::RootTables &roots = workspace.PlanRoots[planSlot];
+    MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
+    MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
+    HpSharkReference2ConstantSpectra constantSpectra = workspace.ConstantSpectra[planSlot];
     const uint32_t limbCount = (activeN * static_cast<uint32_t>(plan.b) + 31u) / 32u + 2u;
 
-    const HpSharkFloat<SharkFloatParams> *normalForwardValues[4] = {&zReal, &zImag, &cReal, &cImag};
-    uint64_t *normalForwardOutputs[4] = {
-        workspace.ZReal, workspace.ZImag, workspace.CReal, workspace.CImag};
-    const DebugStatePurpose normalPackedPurposes[4] = {DebugStatePurpose::Z0XX,
-                                                       DebugStatePurpose::Z0YY,
-                                                       DebugStatePurpose::Z0XY,
-                                                       DebugStatePurpose::Z0W0};
-    const DebugStatePurpose normalForwardPurposes[4] = {DebugStatePurpose::Z2XX,
-                                                        DebugStatePurpose::Z2YY,
-                                                        DebugStatePurpose::Z2XY,
-                                                        DebugStatePurpose::Z2W0};
-    PackTwistForwardBatch<SharkFloatParams, 4>(grid,
-                                               block,
-                                               sharedData,
-                                               debugCombo,
-                                               debugStates,
-                                               normalForwardValues,
-                                               plan,
-                                               roots,
-                                               normalForwardOutputs,
-                                               ignoredPrecisionBits,
-                                               normalPackedPurposes,
-                                               normalForwardPurposes);
-
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        const HpSharkFloat<SharkFloatParams> *newtonRaphsonForwardValues[3] = {
-            &combo->Multiply.DzdcReal, &combo->Multiply.DzdcImag, &combo->Add.One};
-        uint64_t *newtonRaphsonForwardOutputs[3] = {
-            workspace.DzdcReal, workspace.DzdcImag, workspace.One};
-        const DebugStatePurpose newtonRaphsonPackedPurposes[3] = {
-            DebugStatePurpose::Z0W1, DebugStatePurpose::Z0W2, DebugStatePurpose::Z0W3};
-        const DebugStatePurpose newtonRaphsonForwardPurposes[3] = {
-            DebugStatePurpose::Z2W1, DebugStatePurpose::Z2W2, DebugStatePurpose::Z2W3};
-        PackTwistForwardBatch<SharkFloatParams, 3>(grid,
+    if constexpr (HpShark::DebugChecksums) {
+        constantSpectra = {workspace.CRealArena, workspace.CImagArena, workspace.OneArena};
+        const HpSharkFloat<SharkFloatParams> *normalForwardValues[4] = {&zReal, &zImag, &cReal, &cImag};
+        uint64_t *normalForwardOutputs[4] = {
+            workspace.ZReal, workspace.ZImag, constantSpectra.CReal, constantSpectra.CImag};
+        const DebugStatePurpose normalPackedPurposes[4] = {DebugStatePurpose::Z0XX,
+                                                           DebugStatePurpose::Z0YY,
+                                                           DebugStatePurpose::Z0XY,
+                                                           DebugStatePurpose::Z0W0};
+        const DebugStatePurpose normalForwardPurposes[4] = {DebugStatePurpose::Z2XX,
+                                                            DebugStatePurpose::Z2YY,
+                                                            DebugStatePurpose::Z2XY,
+                                                            DebugStatePurpose::Z2W0};
+        PackTwistForwardBatch<SharkFloatParams, 4>(grid,
                                                    block,
                                                    sharedData,
                                                    debugCombo,
                                                    debugStates,
-                                                   newtonRaphsonForwardValues,
+                                                   normalForwardValues,
                                                    plan,
                                                    roots,
-                                                   newtonRaphsonForwardOutputs,
+                                                   normalForwardOutputs,
                                                    ignoredPrecisionBits,
-                                                   newtonRaphsonPackedPurposes,
-                                                   newtonRaphsonForwardPurposes);
+                                                   normalPackedPurposes,
+                                                   normalForwardPurposes);
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const HpSharkFloat<SharkFloatParams> *newtonRaphsonForwardValues[3] = {
+                &combo->Multiply.DzdcReal, &combo->Multiply.DzdcImag, &combo->Add.One};
+            uint64_t *newtonRaphsonForwardOutputs[3] = {
+                workspace.DzdcReal, workspace.DzdcImag, constantSpectra.One};
+            const DebugStatePurpose newtonRaphsonPackedPurposes[3] = {
+                DebugStatePurpose::Z0W1, DebugStatePurpose::Z0W2, DebugStatePurpose::Z0W3};
+            const DebugStatePurpose newtonRaphsonForwardPurposes[3] = {
+                DebugStatePurpose::Z2W1, DebugStatePurpose::Z2W2, DebugStatePurpose::Z2W3};
+            PackTwistForwardBatch<SharkFloatParams, 3>(grid,
+                                                       block,
+                                                       sharedData,
+                                                       debugCombo,
+                                                       debugStates,
+                                                       newtonRaphsonForwardValues,
+                                                       plan,
+                                                       roots,
+                                                       newtonRaphsonForwardOutputs,
+                                                       ignoredPrecisionBits,
+                                                       newtonRaphsonPackedPurposes,
+                                                       newtonRaphsonForwardPurposes);
+        }
+    } else if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        const HpSharkFloat<SharkFloatParams> *forwardValues[4] = {
+            &zReal, &zImag, &combo->Multiply.DzdcReal, &combo->Multiply.DzdcImag};
+        uint64_t *forwardOutputs[4] = {
+            workspace.ZReal, workspace.ZImag, workspace.DzdcReal, workspace.DzdcImag};
+        const DebugStatePurpose packedPurposes[4] = {DebugStatePurpose::Z0XX,
+                                                     DebugStatePurpose::Z0YY,
+                                                     DebugStatePurpose::Z0W1,
+                                                     DebugStatePurpose::Z0W2};
+        const DebugStatePurpose forwardPurposes[4] = {DebugStatePurpose::Z2XX,
+                                                      DebugStatePurpose::Z2YY,
+                                                      DebugStatePurpose::Z2W1,
+                                                      DebugStatePurpose::Z2W2};
+        PackTwistForwardBatch<SharkFloatParams, 4>(grid,
+                                                   block,
+                                                   sharedData,
+                                                   debugCombo,
+                                                   debugStates,
+                                                   forwardValues,
+                                                   plan,
+                                                   roots,
+                                                   forwardOutputs,
+                                                   ignoredPrecisionBits,
+                                                   packedPurposes,
+                                                   forwardPurposes);
+    } else {
+        const HpSharkFloat<SharkFloatParams> *forwardValues[2] = {&zReal, &zImag};
+        uint64_t *forwardOutputs[2] = {workspace.ZReal, workspace.ZImag};
+        const DebugStatePurpose packedPurposes[2] = {DebugStatePurpose::Z0XX, DebugStatePurpose::Z0YY};
+        const DebugStatePurpose forwardPurposes[2] = {DebugStatePurpose::Z2XX, DebugStatePurpose::Z2YY};
+        PackTwistForwardBatch<SharkFloatParams, 2>(grid,
+                                                   block,
+                                                   sharedData,
+                                                   debugCombo,
+                                                   debugStates,
+                                                   forwardValues,
+                                                   plan,
+                                                   roots,
+                                                   forwardOutputs,
+                                                   ignoredPrecisionBits,
+                                                   packedPurposes,
+                                                   forwardPurposes);
     }
 
     AccumulateFixedOutputSpectra(grid,
@@ -1910,6 +1856,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                  plan,
                                  roots,
                                  workspace,
+                                 constantSpectra,
                                  realExponent,
                                  realZSquareTerm,
                                  realNegativeZImagSquareTerm,

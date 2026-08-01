@@ -4,6 +4,7 @@
 #include "HpSharkFloat.h"
 #include "KernelInvoke.h"
 #include "KernelInvokeInternal.h"
+#include "KernelInvokeReference2Setup.h"
 #include "LaunchParams.h"
 
 #include <algorithm>
@@ -42,15 +43,6 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                             const HpSharkFloat<SharkFloatParams> &yNum,
                             uint32_t actualPrecisionLimbs)
 {
-    constexpr uint32_t storagePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
-    if (actualPrecisionLimbs <= storagePrecisionLimbs / 2u ||
-        actualPrecisionLimbs > storagePrecisionLimbs) {
-        throw FractalSharkSeriousException(
-            "Ref2 actual precision is outside the storage precision bucket");
-    }
-    const SharkNTT::PlanPrime precisionPlan =
-        SharkNTT::BuildPlanPrime2(static_cast<int>(actualPrecisionLimbs));
-
     auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
 
     combo->RadiusY = hdrRadiusY;
@@ -113,170 +105,14 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    // Ref2 keeps its fused NTT intermediates in one fixed-capacity workspace.
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    constexpr size_t spectrumCount = 6u + (SharkFloatParams::EnableNewtonRaphson ? 5u : 0u);
-    constexpr size_t limbCount = SharkFloatParams::EnableNewtonRaphson ? 4u : 2u;
-    auto alignWorkspace = [](size_t value, size_t alignment) {
-        return (value + alignment - 1) & ~(alignment - 1);
-    };
-
-    constexpr size_t WorkspaceAlignment = 16u;
-    size_t workspaceBytes = 0;
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += spectrumCount * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += limbCount * static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(int64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += 2u * static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(uint32_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += static_cast<size_t>(Workspace::MaxFusedLimbs) * sizeof(uint64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += static_cast<size_t>(Workspace::MaxCarryPrefixParts) *
-                      sizeof(HpSharkReference2CarryPrefixDescriptor);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += static_cast<size_t>(Workspace::CarryPrefixControlCount) * sizeof(uint32_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += static_cast<size_t>(Workspace::MaxFusedStages) * sizeof(uint64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += 2u * static_cast<size_t>(Workspace::PsiArenaSize) * sizeof(uint64_t);
-    workspaceBytes = alignWorkspace(workspaceBytes, WorkspaceAlignment);
-    workspaceBytes += 2u * static_cast<size_t>(Workspace::MaxFusedN) * sizeof(uint64_t);
-
-    void *workspaceStorage = nullptr;
-    {
-        cudaError_t cudaErr = cudaMalloc(&workspaceStorage, workspaceBytes);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaMalloc(Reference2 workspace storage) failed: " << cudaGetErrorString(cudaErr)
-                << " (code " << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-    }
-    {
-        cudaError_t cudaErr = cudaMemset(workspaceStorage, 0, workspaceBytes);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaMemset(Reference2 workspace storage) failed: " << cudaGetErrorString(cudaErr)
-                << " (code " << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-    }
-
-    auto *workspaceBase = static_cast<uint8_t *>(workspaceStorage);
-    size_t workspaceOffset = 0;
-    auto allocateWorkspace = [&](size_t count, size_t elementSize, size_t alignment) {
-        workspaceOffset = alignWorkspace(workspaceOffset, alignment);
-        void *result = workspaceBase + workspaceOffset;
-        workspaceOffset += count * elementSize;
-        return result;
-    };
-    auto allocateSpectrum = [&] {
-        return static_cast<uint64_t *>(
-            allocateWorkspace(Workspace::MaxFusedN, sizeof(uint64_t), WorkspaceAlignment));
-    };
-    auto allocateLimbs = [&] {
-        return static_cast<int64_t *>(
-            allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(int64_t), WorkspaceAlignment));
-    };
-
-    Workspace workspace{};
-    workspace.ZReal = allocateSpectrum();
-    workspace.ZImag = allocateSpectrum();
-    workspace.CReal = allocateSpectrum();
-    workspace.CImag = allocateSpectrum();
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        workspace.DzdcReal = allocateSpectrum();
-        workspace.DzdcImag = allocateSpectrum();
-        workspace.One = allocateSpectrum();
-    }
-    workspace.RealOutput = allocateSpectrum();
-    workspace.ImagOutput = allocateSpectrum();
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        workspace.DzdcRealOutput = allocateSpectrum();
-        workspace.DzdcImagOutput = allocateSpectrum();
-    }
-    workspace.RealLimbs = allocateLimbs();
-    workspace.ImagLimbs = allocateLimbs();
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        workspace.DzdcRealLimbs = allocateLimbs();
-        workspace.DzdcImagLimbs = allocateLimbs();
-    }
-    workspace.MagnitudeDigits = static_cast<uint32_t *>(
-        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
-    workspace.Magnitude = static_cast<uint32_t *>(
-        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
-    workspace.CarryPrefixTransforms = static_cast<uint64_t *>(
-        allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint64_t), WorkspaceAlignment));
-    workspace.CarryPrefixDescriptors = static_cast<HpSharkReference2CarryPrefixDescriptor *>(
-        allocateWorkspace(Workspace::MaxCarryPrefixParts,
-                          sizeof(HpSharkReference2CarryPrefixDescriptor),
-                          WorkspaceAlignment));
-    workspace.CarryPrefixControl = static_cast<uint32_t *>(
-        allocateWorkspace(Workspace::CarryPrefixControlCount, sizeof(uint32_t), WorkspaceAlignment));
-    workspace.StageOmegas = static_cast<uint64_t *>(
-        allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
-    workspace.StageOmegasInverse = static_cast<uint64_t *>(
-        allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
-    workspace.PsiPowersArena = static_cast<uint64_t *>(
-        allocateWorkspace(Workspace::PsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
-    workspace.PsiInversePowersArena = static_cast<uint64_t *>(
-        allocateWorkspace(Workspace::PsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
-    workspace.ForwardTwiddles = allocateSpectrum();
-    workspace.InverseTwiddles = allocateSpectrum();
-    for (uint32_t slot = 0; slot < Workspace::PlanCacheEntryCount; ++slot) {
-        const uint32_t stages = Workspace::MinFusedStages + slot;
-        const uint32_t n = 1u << stages;
-        const uint32_t psiOffset = n - Workspace::MinFusedN;
-        workspace.Plans[slot] = {precisionPlan.n32,
-                                 precisionPlan.b,
-                                 precisionPlan.L,
-                                 static_cast<int>(n),
-                                 static_cast<int>(stages),
-                                 precisionPlan.ok};
-        workspace.PlanRoots[slot] = {static_cast<int32_t>(stages),
-                                     workspace.StageOmegas,
-                                     workspace.StageOmegasInverse,
-                                     static_cast<int32_t>(n),
-                                     workspace.PsiPowersArena + psiOffset,
-                                     workspace.PsiInversePowersArena + psiOffset,
-                                     0,
-                                     workspace.ForwardTwiddles,
-                                     workspace.InverseTwiddles,
-                                     n - 1u};
-    }
-    workspace.ActualPrecisionLimbs = actualPrecisionLimbs;
-    workspace.IgnoredPrecisionBits = (storagePrecisionLimbs - actualPrecisionLimbs) * 32u;
-
-    if (workspaceOffset != workspaceBytes)
-        throw FractalSharkSeriousException("Reference2 workspace size does not match its layout");
-
-    Workspace *workspaceGpu = nullptr;
-    {
-        cudaError_t cudaErr = cudaMalloc(&workspaceGpu, sizeof(Workspace));
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaMalloc(Reference2 workspace descriptor) failed: " << cudaGetErrorString(cudaErr)
-                << " (code " << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-    }
-    {
-        cudaError_t cudaErr =
-            cudaMemcpy(workspaceGpu, &workspace, sizeof(Workspace), cudaMemcpyHostToDevice);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaMemcpy(Reference2 workspace descriptor H2D) failed: "
-                << cudaGetErrorString(cudaErr) << " (code " << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-    }
-
-    combo->Reference2Workspace = workspaceGpu;
-    combo->d_reference2WorkspaceStorage = workspaceStorage;
-    combo->reference2WorkspaceStorageBytes = workspaceBytes;
+    const auto workspaceAllocation = Reference2HostSetup::CreateWorkspace(
+        xNum,
+        yNum,
+        SharkFloatParams::EnableNewtonRaphson ? &combo->Add.One : nullptr,
+        actualPrecisionLimbs);
+    combo->Reference2Workspace = workspaceAllocation.Descriptor;
+    combo->d_reference2WorkspaceStorage = workspaceAllocation.Storage;
+    combo->reference2WorkspaceStorageBytes = workspaceAllocation.StorageBytes;
 
     // Host only
     combo->kernelArgs[0] = (void *)&combo->comboGpu;
@@ -396,16 +232,6 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    // Build NTT plan + roots exactly like correctness path
-    {
-        SharkNTT::RootTables NTTRoots;
-        SharkNTT::BuildRoots<SharkFloatParams>(
-            SharkFloatParams::NTTPlan.N, SharkFloatParams::NTTPlan.stages, NTTRoots);
-
-        CopyRootsToCuda<SharkFloatParams>(combo->comboGpu->Multiply.Roots, NTTRoots);
-        SharkNTT::DestroyRoots<SharkFloatParams>(false, NTTRoots);
-    }
-
     cudaDeviceProp prop;
     int deviceId = 0;
 
@@ -511,9 +337,6 @@ ShutdownHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    // Roots were device-allocated in CopyRootsToCuda; destroy like correctness does
-    SharkNTT::DestroyRoots<SharkFloatParams>(true, combo.comboGpu->Multiply.Roots);
-
     {
         cudaError_t cudaErr = cudaFree(combo.Reference2Workspace);
         if (cudaErr != cudaSuccess) {
@@ -525,31 +348,6 @@ ShutdownHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         combo.Reference2Workspace = nullptr;
     }
     {
-        cudaError_t cudaErr = cudaFree(combo.d_reference2WorkspaceStorage);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaFree(Reference2 workspace storage) failed: " << cudaGetErrorString(cudaErr)
-                << " (code " << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-        combo.d_reference2WorkspaceStorage = nullptr;
-        combo.reference2WorkspaceStorageBytes = 0;
-    }
-
-    // Ref2 uses the same session/destruction contract as Ref1, with an
-    // additional fixed-capacity workspace that is allocated on first Ref2
-    // invocation and must be released before the combo storage disappears.
-    if (combo.Reference2Workspace != nullptr) {
-        cudaError_t cudaErr = cudaFree(combo.Reference2Workspace);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaFree(Reference2 descriptor) failed: " << cudaGetErrorString(cudaErr) << " (code "
-                << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-        combo.Reference2Workspace = nullptr;
-    }
-    if (combo.d_reference2WorkspaceStorage != nullptr) {
         cudaError_t cudaErr = cudaFree(combo.d_reference2WorkspaceStorage);
         if (cudaErr != cudaSuccess) {
             std::ostringstream oss;
@@ -650,17 +448,6 @@ EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
     combo.dzdcY = typename SharkFloatParams::Float{};
     combo.PeriodicityStatus = PeriodicityResult::Continue;
 
-    SharkNTT::RootTables savedRoots;
-    {
-        cudaError_t cudaErr = cudaMemcpy(
-            &savedRoots, &combo.comboGpu->Multiply.Roots, sizeof(savedRoots), cudaMemcpyDeviceToHost);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaMemcpy(Reference2 roots D2H) failed: " << cudaGetErrorString(cudaErr)
-                << " (code " << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-    }
     {
         cudaError_t cudaErr = cudaMemcpy(combo.comboGpu, &combo, sizeof(combo), cudaMemcpyHostToDevice);
         if (cudaErr != cudaSuccess) {
@@ -670,17 +457,6 @@ EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
             throw FractalSharkSeriousException(oss.str());
         }
     }
-    {
-        cudaError_t cudaErr = cudaMemcpy(
-            &combo.comboGpu->Multiply.Roots, &savedRoots, sizeof(savedRoots), cudaMemcpyHostToDevice);
-        if (cudaErr != cudaSuccess) {
-            std::ostringstream oss;
-            oss << "cudaMemcpy(Reference2 roots H2D) failed: " << cudaGetErrorString(cudaErr)
-                << " (code " << static_cast<int>(cudaErr) << ")";
-            throw FractalSharkSeriousException(oss.str());
-        }
-    }
-
     constexpr uint64_t ChunkSize = HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
     uint64_t done = startIter;
     uint64_t chunks = 0;

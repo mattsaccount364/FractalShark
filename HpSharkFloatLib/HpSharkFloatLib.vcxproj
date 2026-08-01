@@ -51,6 +51,7 @@
     </ClInclude>
     <ClInclude Include="KernelInvokeReferencePerf_cu.h" />
     <ClInclude Include="KernelInvokeReference2Perf_cu.h" />
+    <ClInclude Include="KernelInvokeReference2Setup.h" />
     <ClInclude Include="MultiplyNTTCudaSetup_cu.h" />
     <ClInclude Include="KernelTestMultiplyNTT_cu.h" />
   </ItemGroup>

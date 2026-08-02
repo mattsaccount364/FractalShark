@@ -849,14 +849,18 @@ template <class SharkFloatParams, int BatchSize>
 __device__ void
 UnpackResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                  cooperative_groups::thread_block &block,
-                                 const uint64_t *const residues[BatchSize],
+                                 DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                 const uint64_t *const spectra[BatchSize],
                                  const SharkNTT::PlanPrime &plan,
+                                 const SharkNTT::RootTables &roots,
                                  const uint32_t coefficientCounts[BatchSize],
                                  int64_t *const limbs[BatchSize],
                                  uint32_t limbCount)
 {
     const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    // Inverse NTT leaves twisted Montgomery coefficients. Untwist each coefficient only when it is
+    // consumed, then keep the existing canonical limb buffer as the carry-prefix input.
     for (uint32_t j = GridThreadRank(block); j < limbCount; j += gridSize) {
         const uint64_t firstBit = j >= 3 ? static_cast<uint64_t>(j - 3) * 32ull : 0ull;
         const uint64_t lastBit = (static_cast<uint64_t>(j) + 1ull) * 32ull - 1ull;
@@ -867,7 +871,11 @@ UnpackResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
             int64_t total = 0;
             for (uint64_t i = firstCoefficient; i <= lastCoefficient && i < coefficientCounts[buffer];
                  ++i) {
-                const uint64_t residue = residues[buffer][i];
+                uint64_t residue = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, spectra[buffer][i], roots.psi_inv_pows[i]);
+                residue = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, residue, roots.Ninvm_mont);
+                residue = SharkNTT::FromMontgomery<SharkFloatParams>(grid, block, debugCombo, residue);
                 if (residue == 0)
                     continue;
                 const bool negative = residue > halfPrime;
@@ -916,36 +924,17 @@ InverseSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                  const uint32_t coefficientCounts[BatchSize],
                                  int64_t *const limbs[BatchSize],
                                  uint32_t limbCount,
-                                 const DebugStatePurpose residuesPurposes[BatchSize],
                                  const DebugStatePurpose limbsPurposes[BatchSize])
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     NTTRadix2Batch<SharkFloatParams, true, BatchSize>(
         sharedData, grid, block, debugCombo, spectra, activeN, plan.stages, roots);
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
-#pragma unroll
-        for (int buffer = 0; buffer < BatchSize; ++buffer) {
-            uint64_t value = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                grid, block, debugCombo, spectra[buffer][i], roots.psi_inv_pows[i]);
-            value = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                grid, block, debugCombo, value, roots.Ninvm_mont);
-            spectra[buffer][i] =
-                SharkNTT::FromMontgomery<SharkFloatParams>(grid, block, debugCombo, value);
-        }
-    }
-    grid.sync();
-#pragma unroll
-    for (int buffer = 0; buffer < BatchSize; ++buffer) {
-        StoreReference2DebugState(
-            debugStates, grid, block, residuesPurposes[buffer], spectra[buffer], activeN);
-    }
     const uint64_t *residueViews[BatchSize];
 #pragma unroll
     for (int buffer = 0; buffer < BatchSize; ++buffer)
         residueViews[buffer] = spectra[buffer];
     UnpackResiduesToSignedLimbsBatch<SharkFloatParams, BatchSize>(
-        grid, block, residueViews, plan, coefficientCounts, limbs, limbCount);
+        grid, block, debugCombo, residueViews, plan, roots, coefficientCounts, limbs, limbCount);
 #pragma unroll
     for (int buffer = 0; buffer < BatchSize; ++buffer) {
         StoreReference2DebugState(debugStates,
@@ -1865,6 +1854,50 @@ EmitPackedCarryPrefixDigits(uint32_t packedInclusive,
     }
 }
 
+template <class SharkFloatParams>
+__device__ void
+InitializeCarryPrefixTransformsDLB(cooperative_groups::grid_group &grid,
+                                   cooperative_groups::thread_block &block,
+                                   uint32_t count,
+                                   uint32_t capacity,
+                                   HpSharkReference2PackedCarryPrefixDescriptor *descriptors,
+                                   uint64_t *sharedStorage)
+{
+    if (count == 0u)
+        return;
+
+    const uint32_t blockSize = block.dim_threads().x;
+    const uint32_t numParts = (count + blockSize - 1u) / blockSize;
+    const uint32_t threadIndex = block.thread_index().x;
+    const uint32_t lane = threadIndex & 31u;
+    const uint32_t warp = threadIndex >> 5u;
+    const uint32_t numWarps = (blockSize + 31u) >> 5u;
+    uint32_t *packedCarryPrefixShared = reinterpret_cast<uint32_t *>(sharedStorage);
+    uint32_t *packedLookbackStates = packedCarryPrefixShared + CarryPrefixLookbackStatesOffset;
+
+    MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
+    MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
+    MattsCudaAssert(capacity >= count);
+
+    const uint32_t lookbackWindowsPerBatch = numWarps * 32u;
+    const uint32_t lookbackBatchCount =
+        numWarps == 1u ? 1u : (numParts + lookbackWindowsPerBatch - 1u) / lookbackWindowsPerBatch;
+    MattsCudaAssert(lookbackBatchCount != 0u);
+    MattsCudaAssert(numParts <= (1u << 30u) / lookbackBatchCount);
+
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    const uint32_t processorId = block.group_index().x;
+    const uint32_t firstPart = processorId < numParts ? processorId : 0u;
+    const uint32_t firstToken = MakeCarryPrefixLookbackToken(firstPart, 0u, lookbackBatchCount);
+    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
+        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
+    if (lane == 0u)
+        StoreCarryPrefixLookbackStatus(
+            &packedLookbackStates[warp],
+            PackCarryPrefixLookbackStatus(firstToken, CarryPrefixLookbackStatus::Pending));
+    // The caller's later grid barrier, after inverse unpack, publishes this initialization.
+}
+
 // Build the four active stream transfers, resolve one packed DLB prefix, and emit
 // the corresponding digits. Newton-Raphson uses all four packed bytes so the
 // reference orbit and both derivative streams share this complete carry path.
@@ -1910,6 +1943,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
     MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
     MattsCudaAssert(capacity >= count);
+    // Descriptors and lookback states were initialized before inverse unpack; its trailing barrier
+    // publishes them before this DLB pass begins.
 
     const uint32_t lookbackWindowsPerBatch = numWarps * 32u;
     const uint32_t lookbackBatchCount =
@@ -1917,18 +1952,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     MattsCudaAssert(lookbackBatchCount != 0u);
     MattsCudaAssert(numParts <= (1u << 30u) / lookbackBatchCount);
 
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     const uint32_t processorId = block.group_index().x;
     const uint32_t activeProcessors = gridDim.x;
-    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
-        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
-    const uint32_t firstPart = processorId < numParts ? processorId : 0u;
-    const uint32_t firstToken = MakeCarryPrefixLookbackToken(firstPart, 0u, lookbackBatchCount);
-    if (lane == 0u)
-        StoreCarryPrefixLookbackStatus(
-            &packedLookbackStates[warp],
-            PackCarryPrefixLookbackStatus(firstToken, CarryPrefixLookbackStatus::Pending));
-    grid.sync();
 
     for (uint32_t part = processorId; part < numParts; part += activeProcessors) {
         // Form the inclusive transform for this thread, then reduce the block to one aggregate.
@@ -2577,6 +2602,11 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
     const HpSharkReference2ConstantSpectra constantSpectra = workspace.ConstantSpectra[planSlot];
     const uint32_t limbCount = (activeN * static_cast<uint32_t>(plan.b) + 31u) / 32u + 2u;
+    const uint32_t carryPrefixCapacity = workspace.ActiveMaxFusedLimbs;
+    auto *carryPrefixDescriptors = reinterpret_cast<HpSharkReference2PackedCarryPrefixDescriptor *>(
+        workspace.RealOutput + carryPrefixCapacity);
+    InitializeCarryPrefixTransformsDLB<SharkFloatParams>(
+        grid, block, limbCount, carryPrefixCapacity, carryPrefixDescriptors, carryPrefixShared);
 
     if constexpr (HpShark::DebugChecksums) {
         // The constant spectra are prepared once per cached plan. Both the old packed and forward
@@ -2669,8 +2699,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     uint64_t *spectra[FinalizationStreamCount] = {workspace.RealOutput, workspace.ImagOutput};
     uint32_t coefficientCounts[FinalizationStreamCount] = {activeN, activeN};
     int64_t *limbs[FinalizationStreamCount] = {workspace.RealLimbs, workspace.ImagLimbs};
-    DebugStatePurpose residuesPurposes[FinalizationStreamCount] = {DebugStatePurpose::Z2_Perm4,
-                                                                   DebugStatePurpose::Z2_Perm5};
     DebugStatePurpose limbsPurposes[FinalizationStreamCount] = {DebugStatePurpose::UnpackXX,
                                                                 DebugStatePurpose::UnpackYY};
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
@@ -2680,8 +2708,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         coefficientCounts[3] = activeN;
         limbs[2] = workspace.DzdcRealLimbs;
         limbs[3] = workspace.DzdcImagLimbs;
-        residuesPurposes[2] = DebugStatePurpose::Z2_PermW0b;
-        residuesPurposes[3] = DebugStatePurpose::Z2_PermW1b;
         limbsPurposes[2] = DebugStatePurpose::UnpackW0;
         limbsPurposes[3] = DebugStatePurpose::UnpackW1;
     }
@@ -2696,7 +2722,6 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                                                 coefficientCounts,
                                                                                 limbs,
                                                                                 limbCount,
-                                                                                residuesPurposes,
                                                                                 limbsPurposes);
     FinalizeSignedStream<SharkFloatParams>(grid,
                                            block,

@@ -68,6 +68,7 @@ static constexpr uint32_t Reference2CacheVersion = 4;
 namespace Reference2CacheDetail {
 
 inline constexpr std::array<char, 8> CacheMagic{'F', 'S', 'R', '2', 'C', 'A', 'C', 'H'};
+inline constexpr wchar_t CacheDirectoryName[] = L"Ref2PreparedTemp";
 
 inline constexpr size_t
 Align(size_t value, size_t alignment)
@@ -150,7 +151,7 @@ CachePath(int64_t testNumber,
          << L"-nr" << (SharkFloatParams::EnableNewtonRaphson ? 1 : 0) << L"-a" << actualPrecisionLimbs
          << L"-test" << testNumber << L"-iter" << sequence << L"-stage" << minFusedStages << L"-"
          << maxFusedStages << L".r2cache";
-    return name.str();
+    return std::wstring{CacheDirectoryName} + L"/" + name.str();
 }
 
 template <class SharkFloatParams>
@@ -361,6 +362,9 @@ SaveHpSharkReference2Tables(const Reference2PreparedTables<SharkFloatParams> &pr
 {
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
     const Reference2CacheDetail::CacheLayout<SharkFloatParams> layout(minFusedStages, maxFusedStages);
+    if (!Environment::DirectoryCreate(Reference2CacheDetail::CacheDirectoryName) ||
+        !Environment::DirectoryExists(Reference2CacheDetail::CacheDirectoryName))
+        throw FractalSharkSeriousException("Unable to create Ref2 prepared-table cache directory");
     const auto target = Reference2CacheDetail::CachePath<SharkFloatParams>(
         testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     const auto temporary = target + L".tmp";

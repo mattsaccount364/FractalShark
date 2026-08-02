@@ -43,6 +43,25 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                             const HpSharkFloat<SharkFloatParams> &yNum,
                             uint32_t actualPrecisionLimbs)
 {
+    auto prepared =
+        PrepareHpSharkReference2Tables<SharkFloatParams>(launchParams, xNum, yNum, actualPrecisionLimbs);
+    const size_t storageBytes = prepared->GetStorageBytes();
+    auto combo =
+        InitHpSharkReference2Kernel<SharkFloatParams>(launchParams, hdrRadiusY, xNum, yNum, *prepared);
+    combo->Reference2Workspace = prepared->ReleaseDescriptor();
+    combo->d_reference2WorkspaceStorage = prepared->ReleaseStorage();
+    combo->reference2WorkspaceStorageBytes = storageBytes;
+    return combo;
+}
+
+template <class SharkFloatParams>
+std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
+                            const typename SharkFloatParams::Float hdrRadiusY,
+                            const HpSharkFloat<SharkFloatParams> &xNum,
+                            const HpSharkFloat<SharkFloatParams> &yNum,
+                            Reference2PreparedTables<SharkFloatParams> &preparedTables)
+{
     auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
 
     combo->RadiusY = hdrRadiusY;
@@ -55,7 +74,7 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
     combo->dzdcY = typename SharkFloatParams::Float{0};
     combo->OutputIterCount = 0;
     combo->MaxRuntimeIters = 0; // Set below
-    combo->Reference2Workspace = nullptr;
+    combo->Reference2Workspace = preparedTables.GetDeviceDescriptor();
     combo->d_reference2WorkspaceStorage = nullptr;
     combo->reference2WorkspaceStorageBytes = 0;
 
@@ -104,15 +123,6 @@ InitHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
             }
         }
     }
-
-    const auto workspaceAllocation = Reference2HostSetup::CreateWorkspace(
-        xNum,
-        yNum,
-        SharkFloatParams::EnableNewtonRaphson ? &combo->Add.One : nullptr,
-        actualPrecisionLimbs);
-    combo->Reference2Workspace = workspaceAllocation.Descriptor;
-    combo->d_reference2WorkspaceStorage = workspaceAllocation.Storage;
-    combo->reference2WorkspaceStorageBytes = workspaceAllocation.StorageBytes;
 
     // Host only
     combo->kernelArgs[0] = (void *)&combo->comboGpu;
@@ -294,6 +304,9 @@ InvokeHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
                               uint64_t numIters)
 {
     auto *comboGpu = combo.comboGpu;
+    auto *reference2Workspace = combo.Reference2Workspace;
+    void *reference2WorkspaceStorage = combo.d_reference2WorkspaceStorage;
+    const size_t reference2WorkspaceStorageBytes = combo.reference2WorkspaceStorageBytes;
     {
         cudaError_t res =
             cudaMemcpy(&comboGpu->MaxRuntimeIters, &numIters, sizeof(uint64_t), cudaMemcpyHostToDevice);
@@ -319,6 +332,10 @@ InvokeHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
             throw FractalSharkSeriousException(oss.str());
         }
     }
+    // The device copy borrows the workspace. Keep ownership exclusively in the host session.
+    combo.Reference2Workspace = reference2Workspace;
+    combo.d_reference2WorkspaceStorage = reference2WorkspaceStorage;
+    combo.reference2WorkspaceStorageBytes = reference2WorkspaceStorageBytes;
 }
 
 template <class SharkFloatParams>
@@ -337,7 +354,7 @@ ShutdownHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    {
+    if (combo.d_reference2WorkspaceStorage != nullptr) {
         cudaError_t cudaErr = cudaFree(combo.Reference2Workspace);
         if (cudaErr != cudaSuccess) {
             std::ostringstream oss;
@@ -346,9 +363,7 @@ ShutdownHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
             throw FractalSharkSeriousException(oss.str());
         }
         combo.Reference2Workspace = nullptr;
-    }
-    {
-        cudaError_t cudaErr = cudaFree(combo.d_reference2WorkspaceStorage);
+        cudaErr = cudaFree(combo.d_reference2WorkspaceStorage);
         if (cudaErr != cudaSuccess) {
             std::ostringstream oss;
             oss << "cudaFree(Reference2 workspace storage) failed: " << cudaGetErrorString(cudaErr)
@@ -357,6 +372,8 @@ ShutdownHpSharkReference2Kernel(const HpShark::LaunchParams &launchParams,
         }
         combo.d_reference2WorkspaceStorage = nullptr;
         combo.reference2WorkspaceStorageBytes = 0;
+    } else {
+        combo.Reference2Workspace = nullptr;
     }
 
     {
@@ -400,6 +417,7 @@ EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
                                     HDRFloat<double> &outD2Real,
                                     HDRFloat<double> &outD2Imag,
                                     const HpShark::LaunchParams &externalLaunchParams,
+                                    Reference2PreparedTables<SharkFloatParams> *preparedTables,
                                     uint64_t startIter,
                                     bool (*shouldAbort)(),
                                     void (*onProgress)(uint64_t, void *),
@@ -422,8 +440,14 @@ EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
     hpCI->MpfToHpGpu(
         *reinterpret_cast<const mpf_t *>(&cImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
 
+    std::unique_ptr<Reference2PreparedTables<SharkFloatParams>> ownedPreparedTables;
+    if (preparedTables == nullptr) {
+        ownedPreparedTables = PrepareHpSharkReference2Tables<SharkFloatParams>(
+            externalLaunchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32);
+        preparedTables = ownedPreparedTables.get();
+    }
     GpuOrbitSession2<SharkFloatParams> session(
-        externalLaunchParams, radiusY, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32);
+        externalLaunchParams, radiusY, *hpCR, *hpCI, *preparedTables);
     auto &combo = session.GetCombo();
     if (startIter == 0) {
         combo.Multiply.A = HpSharkFloat<SharkFloatParams>{};

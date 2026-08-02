@@ -412,6 +412,127 @@ NTTRadix2Batch(uint64_t *sharedData,
     }
 }
 
+template <class SharkFloatParams>
+__device__ uint64_t
+MontgomeryPowSerial(cooperative_groups::grid_group &grid,
+                    cooperative_groups::thread_block &block,
+                    DebugGlobalCount<SharkFloatParams> *debugCombo,
+                    uint64_t value,
+                    uint64_t exponent)
+{
+    uint64_t result = SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, 1);
+    while (exponent != 0) {
+        if ((exponent & 1ull) != 0)
+            result = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, result, value);
+        value = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, value, value);
+        exponent >>= 1;
+    }
+    return result;
+}
+
+template <class SharkFloatParams>
+__device__ void
+GenerateCachedPlan(cooperative_groups::grid_group &grid,
+                   cooperative_groups::thread_block &block,
+                   DebugGlobalCount<SharkFloatParams> *debugCombo,
+                   uint32_t activeN,
+                   HpSharkReference2Workspace<SharkFloatParams> &workspace)
+{
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    MattsCudaAssert(activeN >= Workspace::MinFusedN && activeN <= Workspace::MaxFusedN);
+    MattsCudaAssert((activeN & (activeN - 1u)) == 0u);
+    const uint32_t stages = CountTrailingZeros(activeN);
+    MattsCudaAssert(stages >= Workspace::MinFusedStages);
+    const uint32_t slot = stages - Workspace::MinFusedStages;
+    MattsCudaAssert(slot < Workspace::PlanCacheEntryCount);
+    const uint32_t planBit = 1u << slot;
+    if ((workspace.ValidPlanMask & planBit) != 0u)
+        return;
+
+    const SharkNTT::PlanPrime &plan = workspace.Plans[slot];
+    SharkNTT::RootTables &roots = workspace.PlanRoots[slot];
+    MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
+    MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
+
+    constexpr uint64_t Generator = SharkNTT::FindGeneratorConstexpr();
+    const uint64_t generatorMont =
+        SharkNTT::ToMontgomery<SharkFloatParams>(grid, block, debugCombo, Generator);
+    const uint64_t psi = MontgomeryPowSerial<SharkFloatParams>(
+        grid, block, debugCombo, generatorMont, SharkNTT::PHI / (2ull * activeN));
+    const uint64_t psiInverse =
+        MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psi, SharkNTT::PHI - 1ull);
+    const uint64_t omega = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, psi, psi);
+    const uint64_t omegaInverse =
+        MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, SharkNTT::PHI - 1ull);
+
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    const uint32_t rank = GridThreadRank(block);
+    if (rank < activeN) {
+        uint64_t psiPower = MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psi, rank);
+        uint64_t psiInversePower =
+            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psiInverse, rank);
+        const uint64_t psiStride =
+            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psi, gridSize);
+        const uint64_t psiInverseStride =
+            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, psiInverse, gridSize);
+        for (uint32_t index = rank; index < activeN; index += gridSize) {
+            roots.psi_pows[index] = psiPower;
+            roots.psi_inv_pows[index] = psiInversePower;
+            if (index + gridSize < activeN) {
+                psiPower = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, psiPower, psiStride);
+                psiInversePower = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, psiInversePower, psiInverseStride);
+            }
+        }
+    }
+
+    const uint32_t firstMissingStage = workspace.GeneratedStages + 1u;
+    for (uint32_t stage = firstMissingStage; stage <= stages; ++stage) {
+        const uint32_t width = 1u << stage;
+        const uint32_t half = width >> 1u;
+        const uint32_t offset = half - 1u;
+        if (IsLeader<SharkFloatParams>(block)) {
+            roots.stage_omegas[stage - 1u] =
+                MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, omega, activeN / width);
+            roots.stage_omegas_inv[stage - 1u] = MontgomeryPowSerial<SharkFloatParams>(
+                grid, block, debugCombo, omegaInverse, activeN / width);
+        }
+        grid.sync();
+        if (rank < half) {
+            uint64_t forwardTwiddle = MontgomeryPowSerial<SharkFloatParams>(
+                grid, block, debugCombo, roots.stage_omegas[stage - 1u], rank);
+            uint64_t inverseTwiddle = MontgomeryPowSerial<SharkFloatParams>(
+                grid, block, debugCombo, roots.stage_omegas_inv[stage - 1u], rank);
+            const uint64_t forwardStride = MontgomeryPowSerial<SharkFloatParams>(
+                grid, block, debugCombo, roots.stage_omegas[stage - 1u], gridSize);
+            const uint64_t inverseStride = MontgomeryPowSerial<SharkFloatParams>(
+                grid, block, debugCombo, roots.stage_omegas_inv[stage - 1u], gridSize);
+            for (uint32_t index = rank; index < half; index += gridSize) {
+                roots.stage_twiddles_fwd[offset + index] = forwardTwiddle;
+                roots.stage_twiddles_inv[offset + index] = inverseTwiddle;
+                if (index + gridSize < half) {
+                    forwardTwiddle = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                        grid, block, debugCombo, forwardTwiddle, forwardStride);
+                    inverseTwiddle = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                        grid, block, debugCombo, inverseTwiddle, inverseStride);
+                }
+            }
+        }
+    }
+
+    if (IsLeader<SharkFloatParams>(block)) {
+        if (workspace.GeneratedStages < stages)
+            workspace.GeneratedStages = stages;
+        const uint64_t inverseTwo = SharkNTT::ToMontgomery<SharkFloatParams>(
+            grid, block, debugCombo, (SharkNTT::MagicPrime + 1ull) >> 1u);
+        roots.Ninvm_mont =
+            MontgomeryPowSerial<SharkFloatParams>(grid, block, debugCombo, inverseTwo, stages);
+        workspace.ValidPlanMask |= planBit;
+    }
+    grid.sync();
+}
+
 template <class SharkFloatParams, int BatchSize>
 __device__ void
 PackTwistForwardBatch(cooperative_groups::grid_group &grid,
@@ -2271,16 +2392,18 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     }
 
     const uint64_t requiredN = CeilPowerOfTwo(requiredCoefficients);
-    if (requiredN > HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN || requiredN < 2) {
+    if (requiredN > HpSharkReference2Workspace<SharkFloatParams>::MaxFusedN) {
         if (IsLeader<SharkFloatParams>(block))
             combo->PeriodicityStatus = PeriodicityResult::Unknown;
         return;
     }
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    const uint32_t activeN = static_cast<uint32_t>(requiredN);
+    const uint32_t activeN =
+        requiredN < Workspace::MinFusedN ? Workspace::MinFusedN : static_cast<uint32_t>(requiredN);
     MattsCudaAssert(activeN >= Workspace::MinFusedN);
     const uint32_t planSlot = CountTrailingZeros(activeN) - Workspace::MinFusedStages;
     MattsCudaAssert(planSlot < Workspace::PlanCacheEntryCount);
+    MattsCudaAssert((workspace.ValidPlanMask & (1u << planSlot)) != 0u);
     const SharkNTT::PlanPrime &plan = workspace.Plans[planSlot];
     SharkNTT::RootTables &roots = workspace.PlanRoots[planSlot];
     MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
@@ -2541,6 +2664,89 @@ CheckPeriodicity(HpSharkReferenceResults<SharkFloatParams> *combo, uint64_t iter
 template <class SharkFloatParams>
 __global__ void
 __maxnreg__(HpShark::RegisterLimit)
+    HpSharkReference2SetupKernel(HpSharkReference2Workspace<SharkFloatParams> *workspace,
+                                 const HpSharkFloat<SharkFloatParams> *cReal,
+                                 const HpSharkFloat<SharkFloatParams> *cImag,
+                                 const HpSharkFloat<SharkFloatParams> *one,
+                                 uint64_t *tempData)
+{
+    namespace cg = cooperative_groups;
+    cg::grid_group grid = cg::this_grid();
+    cg::thread_block block = cg::this_thread_block();
+    extern __shared__ __align__(16) uint64_t sharedData[];
+    DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
+    DebugState<SharkFloatParams> *debugStates = nullptr;
+    if constexpr (HpShark::DebugGlobalState) {
+        debugCombo = reinterpret_cast<DebugGlobalCount<SharkFloatParams> *>(
+            &tempData[HpShark::AdditionalGlobalSyncSpace]);
+        if (Reference2Detail::IsLeader<SharkFloatParams>(block))
+            debugCombo->DebugMultiplyErase();
+    }
+    if constexpr (HpShark::DebugChecksums) {
+        debugStates = reinterpret_cast<DebugState<SharkFloatParams> *>(
+            &tempData[HpShark::AdditionalChecksumsOffset]);
+        EraseAllDebugStates(debugStates, grid, block);
+    }
+
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    for (uint32_t slot = 0; slot < Workspace::PlanCacheEntryCount; ++slot) {
+        const uint32_t activeN = 1u << (Workspace::MinFusedStages + slot);
+        Reference2Detail::GenerateCachedPlan<SharkFloatParams>(
+            grid, block, debugCombo, activeN, *workspace);
+
+        const SharkNTT::PlanPrime &plan = workspace->Plans[slot];
+        SharkNTT::RootTables &roots = workspace->PlanRoots[slot];
+        const HpSharkReference2ConstantSpectra spectra = workspace->ConstantSpectra[slot];
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            const HpSharkFloat<SharkFloatParams> *values[3] = {cReal, cImag, one};
+            uint64_t *outputs[3] = {spectra.CReal, spectra.CImag, spectra.One};
+            const DebugStatePurpose packedPurposes[3] = {
+                DebugStatePurpose::Z0XY, DebugStatePurpose::Z0W0, DebugStatePurpose::Z0W3};
+            const DebugStatePurpose forwardPurposes[3] = {
+                DebugStatePurpose::Z2XY, DebugStatePurpose::Z2W0, DebugStatePurpose::Z2W3};
+            Reference2Detail::PackTwistForwardBatch<SharkFloatParams, 3>(grid,
+                                                                         block,
+                                                                         sharedData,
+                                                                         debugCombo,
+                                                                         debugStates,
+                                                                         values,
+                                                                         plan,
+                                                                         roots,
+                                                                         outputs,
+                                                                         workspace->IgnoredPrecisionBits,
+                                                                         packedPurposes,
+                                                                         forwardPurposes);
+        } else {
+            const HpSharkFloat<SharkFloatParams> *values[2] = {cReal, cImag};
+            uint64_t *outputs[2] = {spectra.CReal, spectra.CImag};
+            const DebugStatePurpose packedPurposes[2] = {DebugStatePurpose::Z0XY,
+                                                         DebugStatePurpose::Z0W0};
+            const DebugStatePurpose forwardPurposes[2] = {DebugStatePurpose::Z2XY,
+                                                          DebugStatePurpose::Z2W0};
+            Reference2Detail::PackTwistForwardBatch<SharkFloatParams, 2>(grid,
+                                                                         block,
+                                                                         sharedData,
+                                                                         debugCombo,
+                                                                         debugStates,
+                                                                         values,
+                                                                         plan,
+                                                                         roots,
+                                                                         outputs,
+                                                                         workspace->IgnoredPrecisionBits,
+                                                                         packedPurposes,
+                                                                         forwardPurposes);
+        }
+        grid.sync();
+    }
+
+    constexpr uint32_t FullPlanMask =
+        Workspace::PlanCacheEntryCount == 32u ? ~0u : (1u << Workspace::PlanCacheEntryCount) - 1u;
+    Reference2Detail::MattsCudaAssert(workspace->ValidPlanMask == FullPlanMask);
+}
+
+template <class SharkFloatParams>
+__global__ void
+__maxnreg__(HpShark::RegisterLimit)
     HpSharkReference2GpuLoop(HpSharkReferenceResults<SharkFloatParams> *combo, uint64_t *tempData)
 {
     namespace cg = cooperative_groups;
@@ -2606,6 +2812,68 @@ __maxnreg__(HpShark::RegisterLimit)
         debugStates, grid, block, DebugStatePurpose::ReferenceExitZReal, combo->Multiply.A);
     Reference2Detail::StoreReference2DebugValue(
         debugStates, grid, block, DebugStatePurpose::ReferenceExitZImag, combo->Multiply.B);
+}
+
+template <class SharkFloatParams>
+void
+ComputeHpSharkReference2Setup(const HpShark::LaunchParams &launchParams,
+                              cudaStream_t &stream,
+                              void *kernelArgs[])
+{
+    constexpr auto SharedMemSize = HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>();
+    const cudaError_t attribute = cudaFuncSetAttribute(HpSharkReference2SetupKernel<SharkFloatParams>,
+                                                       cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                       SharedMemSize);
+    if (attribute != cudaSuccess) {
+        std::ostringstream message;
+        message << "cudaFuncSetAttribute(HpSharkReference2SetupKernel) failed: "
+                << cudaGetErrorString(attribute);
+        throw FractalSharkSeriousException(message.str());
+    }
+
+    HpShark::LaunchParams resolved{launchParams};
+    if (resolved.NumBlocks == 0) {
+        HpShark::CudaLaunchConfig config;
+        const cudaError_t result = config.compute(
+            reinterpret_cast<const void *>(HpSharkReference2SetupKernel<SharkFloatParams>),
+            SharedMemSize,
+            resolved);
+        if (result != cudaSuccess) {
+            std::ostringstream message;
+            message << "LaunchConfig.compute(HpSharkReference2SetupKernel) failed: "
+                    << cudaGetErrorString(result);
+            throw FractalSharkSeriousException(message.str());
+        }
+    }
+
+    const cudaError_t launch = cudaLaunchCooperativeKernel(
+        reinterpret_cast<void *>(HpSharkReference2SetupKernel<SharkFloatParams>),
+        dim3(resolved.NumBlocks),
+        dim3(resolved.ThreadsPerBlock),
+        kernelArgs,
+        SharedMemSize,
+        stream);
+    if (launch != cudaSuccess) {
+        std::ostringstream message;
+        message << "cudaLaunchCooperativeKernel(HpSharkReference2SetupKernel) failed: "
+                << cudaGetErrorString(launch) << " | blocks=" << resolved.NumBlocks
+                << " threads=" << resolved.ThreadsPerBlock;
+        throw FractalSharkSeriousException(message.str());
+    }
+    const cudaError_t immediate = cudaGetLastError();
+    if (immediate != cudaSuccess) {
+        std::ostringstream message;
+        message << "cudaGetLastError() after HpSharkReference2SetupKernel launch failed: "
+                << cudaGetErrorString(immediate);
+        throw FractalSharkSeriousException(message.str());
+    }
+    const cudaError_t synchronized = cudaDeviceSynchronize();
+    if (synchronized != cudaSuccess) {
+        std::ostringstream message;
+        message << "cudaDeviceSynchronize() after HpSharkReference2SetupKernel failed: "
+                << cudaGetErrorString(synchronized);
+        throw FractalSharkSeriousException(message.str());
+    }
 }
 
 template <class SharkFloatParams>

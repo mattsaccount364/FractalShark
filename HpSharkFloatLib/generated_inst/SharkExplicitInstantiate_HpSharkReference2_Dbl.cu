@@ -18,6 +18,13 @@
                                                   const HpSharkFloat<SharkFloatParams> &xNum,           \
                                                   const HpSharkFloat<SharkFloatParams> &yNum,           \
                                                   uint32_t);                                            \
+    template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>                                 \
+    InitHpSharkReference2Kernel<SharkFloatParams>(                                                      \
+        const HpShark::LaunchParams &launchParams,                                                      \
+        const typename SharkFloatParams::Float hdrRadiusY,                                              \
+        const HpSharkFloat<SharkFloatParams> &xNum,                                                     \
+        const HpSharkFloat<SharkFloatParams> &yNum,                                                     \
+        Reference2PreparedTables<SharkFloatParams> &preparedTables);                                    \
     template void InvokeHpSharkReference2Kernel<SharkFloatParams>(                                      \
         const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
@@ -37,6 +44,7 @@
         HDRFloat<double> &,                                                                             \
         HDRFloat<double> &,                                                                             \
         const HpShark::LaunchParams &,                                                                  \
+        Reference2PreparedTables<SharkFloatParams> *,                                                   \
         uint64_t,                                                                                       \
         bool (*)(),                                                                                     \
         void (*)(uint64_t, void *),                                                                     \

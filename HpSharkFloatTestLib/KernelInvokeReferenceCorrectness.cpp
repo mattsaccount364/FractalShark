@@ -405,6 +405,20 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
                                          HpSharkReferenceResults<SharkFloatParams> &combo,
                                          DebugGpuCombo *debugCombo)
 {
+    auto prepared = PrepareHpSharkReference2Tables<SharkFloatParams>(
+        launchParams, combo.Add.C_A, combo.Add.E_B, SharkFloatParams::GlobalNumUint32);
+    InvokeHpSharkReference2KernelCorrectness<SharkFloatParams>(
+        launchParams, timer, combo, debugCombo, *prepared);
+}
+
+template <class SharkFloatParams>
+void
+InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchParams,
+                                         BenchmarkTimer &timer,
+                                         HpSharkReferenceResults<SharkFloatParams> &combo,
+                                         DebugGpuCombo *debugCombo,
+                                         Reference2PreparedTables<SharkFloatParams> &preparedTables)
+{
     // Match TestPerf-style invocation, but correctness assumes exactly one iteration.
     constexpr uint64_t kNumIters = 1;
 
@@ -459,14 +473,7 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
         }
     }
 
-    const auto workspaceAllocation = Reference2HostSetup::CreateWorkspace(
-        combo.Add.C_A,
-        combo.Add.E_B,
-        SharkFloatParams::EnableNewtonRaphson ? &combo.Add.One : nullptr,
-        SharkFloatParams::GlobalNumUint32);
-    combo.Reference2Workspace = workspaceAllocation.Descriptor;
-    combo.d_reference2WorkspaceStorage = workspaceAllocation.Storage;
-    combo.reference2WorkspaceStorageBytes = workspaceAllocation.StorageBytes;
+    combo.Reference2Workspace = preparedTables.GetDeviceDescriptor();
 
     // ---------------------------------------------------------------------
     // Allocate + shallow-copy combo to device (TestPerf style).
@@ -703,20 +710,6 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
         }
     }
 
-    err = cudaFree(combo.Reference2Workspace);
-    if (err != cudaSuccess) {
-        std::ostringstream oss;
-        oss << "cudaFree(combo.Reference2Workspace) failed: " << cudaGetErrorString(err) << " (code "
-            << static_cast<int>(err) << ")";
-        throw FractalSharkSeriousException(oss.str());
-    }
-    err = cudaFree(combo.d_reference2WorkspaceStorage);
-    if (err != cudaSuccess) {
-        std::ostringstream oss;
-        oss << "cudaFree(combo.d_reference2WorkspaceStorage) failed: " << cudaGetErrorString(err)
-            << " (code " << static_cast<int>(err) << ")";
-        throw FractalSharkSeriousException(oss.str());
-    }
     err = cudaFree(combo.comboGpu);
     if (err != cudaSuccess) {
         std::ostringstream oss;
@@ -749,7 +742,13 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
         const HpShark::LaunchParams &launchParams,                                                      \
         BenchmarkTimer &timer,                                                                          \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
-        DebugGpuCombo *debugCombo);
+        DebugGpuCombo *debugCombo);                                                                     \
+    template void InvokeHpSharkReference2KernelCorrectness<SharkFloatParams>(                           \
+        const HpShark::LaunchParams &launchParams,                                                      \
+        BenchmarkTimer &timer,                                                                          \
+        HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
+        DebugGpuCombo *debugCombo,                                                                      \
+        Reference2PreparedTables<SharkFloatParams> &preparedTables);
 
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
 

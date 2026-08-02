@@ -123,6 +123,8 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     SharkNTT::PlanPrime Plans[PlanCacheEntryCount];
     SharkNTT::RootTables PlanRoots[PlanCacheEntryCount];
     HpSharkReference2ConstantSpectra ConstantSpectra[PlanCacheEntryCount];
+    uint32_t ValidPlanMask;
+    uint32_t GeneratedStages;
     uint32_t ActualPrecisionLimbs;
     uint32_t IgnoredPrecisionBits;
 };

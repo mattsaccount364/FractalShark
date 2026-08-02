@@ -25,6 +25,22 @@ enum class Operator;
 
 namespace HpShark {
 
+template <class SharkFloatParams> class Reference2PreparedTables;
+
+template <class SharkFloatParams>
+std::unique_ptr<Reference2PreparedTables<SharkFloatParams>> PrepareHpSharkReference2Tables(
+    const HpShark::LaunchParams &launchParams,
+    const HpSharkFloat<SharkFloatParams> &cReal,
+    const HpSharkFloat<SharkFloatParams> &cImag,
+    uint32_t actualPrecisionLimbs);
+
+template <class SharkFloatParams>
+std::unique_ptr<Reference2PreparedTables<SharkFloatParams>> PrepareHpSharkReference2Tables(
+    const HpShark::LaunchParams &launchParams,
+    const mpf_t cReal,
+    const mpf_t cImag,
+    uint32_t actualPrecisionLimbs);
+
 template <class SharkFloatParams>
 std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReferenceKernel(
     const HpShark::LaunchParams &launchParams,
@@ -54,6 +70,14 @@ std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReference2
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
     uint32_t actualPrecisionLimbs);
+
+template <class SharkFloatParams>
+std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReference2Kernel(
+    const HpShark::LaunchParams &launchParams,
+    const typename SharkFloatParams::Float hdrRadiusY,
+    const HpSharkFloat<SharkFloatParams> &xNum,
+    const HpSharkFloat<SharkFloatParams> &yNum,
+    Reference2PreparedTables<SharkFloatParams> &preparedTables);
 
 template <class SharkFloatParams>
 void InvokeHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
@@ -141,8 +165,8 @@ public:
     }
 };
 
-// Ref2 owns an additional fixed-capacity fused-NTT workspace, so it uses the
-// matching Ref2 initialization, invocation, and shutdown lifecycle.
+// Ref2 uses an additional fixed-capacity fused-NTT workspace. A session can
+// either own an internally prepared workspace or borrow one prepared by its caller.
 template <class SharkFloatParams> class GpuOrbitSession2 {
     std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> m_Combo;
     HpShark::LaunchParams m_LaunchParams;
@@ -157,6 +181,18 @@ public:
                      DebugGpuCombo *debugCombo = nullptr)
         : m_Combo{InitHpSharkReference2Kernel<SharkFloatParams>(
               launchParams, hdrRadiusY, srcX, srcY, actualPrecisionLimbs)},
+          m_LaunchParams{launchParams}, m_DebugCombo{debugCombo}
+    {
+    }
+
+    GpuOrbitSession2(const HpShark::LaunchParams &launchParams,
+                     typename SharkFloatParams::Float hdrRadiusY,
+                     const HpSharkFloat<SharkFloatParams> &xNum,
+                     const HpSharkFloat<SharkFloatParams> &yNum,
+                     Reference2PreparedTables<SharkFloatParams> &preparedTables,
+                     DebugGpuCombo *debugCombo = nullptr)
+        : m_Combo{InitHpSharkReference2Kernel<SharkFloatParams>(
+              launchParams, hdrRadiusY, xNum, yNum, preparedTables)},
           m_LaunchParams{launchParams}, m_DebugCombo{debugCombo}
     {
     }
@@ -227,6 +263,14 @@ void InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launc
                                               DebugGpuCombo *debugCombo);
 
 template <class SharkFloatParams>
+void InvokeHpSharkReference2KernelCorrectness(
+    const HpShark::LaunchParams &launchParams,
+    BenchmarkTimer &timer,
+    HpSharkReferenceResults<SharkFloatParams> &combo,
+    DebugGpuCombo *debugCombo,
+    Reference2PreparedTables<SharkFloatParams> &preparedTables);
+
+template <class SharkFloatParams>
 void InvokeMultiplyNTTKernelCorrectness(const HpShark::LaunchParams &launchParams,
                                         BenchmarkTimer &timer,
                                         HpSharkComboResults<SharkFloatParams> &combo,
@@ -265,20 +309,22 @@ uint64_t EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
 // It preserves the Ref1 invocation/checkpoint contract while using Ref2's
 // fixed-capacity fused NTT workspace internally.
 template <class SharkFloatParams>
-uint64_t EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
-                                             const mpf_t cImag,
-                                             uint64_t period,
-                                             mpf_t outZReal,
-                                             mpf_t outZImag,
-                                             mpf_t outDzdcReal,
-                                             mpf_t outDzdcImag,
-                                             HDRFloat<double> &outD2Real,
-                                             HDRFloat<double> &outD2Imag,
-                                             const HpShark::LaunchParams &externalLaunchParams = {0, 0},
-                                             uint64_t startIter = 0,
-                                             bool (*shouldAbort)() = nullptr,
-                                             void (*onProgress)(uint64_t, void *) = nullptr,
-                                             void *progressContext = nullptr,
-                                             uint64_t progressInterval = 64);
+uint64_t EvaluateCriticalOrbitAndDerivs2_GPU(
+    const mpf_t cReal,
+    const mpf_t cImag,
+    uint64_t period,
+    mpf_t outZReal,
+    mpf_t outZImag,
+    mpf_t outDzdcReal,
+    mpf_t outDzdcImag,
+    HDRFloat<double> &outD2Real,
+    HDRFloat<double> &outD2Imag,
+    const HpShark::LaunchParams &externalLaunchParams = {0, 0},
+    Reference2PreparedTables<SharkFloatParams> *preparedTables = nullptr,
+    uint64_t startIter = 0,
+    bool (*shouldAbort)() = nullptr,
+    void (*onProgress)(uint64_t, void *) = nullptr,
+    void *progressContext = nullptr,
+    uint64_t progressInterval = 64);
 
 } // namespace HpShark

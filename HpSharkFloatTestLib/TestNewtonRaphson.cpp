@@ -9,6 +9,7 @@
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
 #include "KernelInvoke.h"
+#include "KernelInvokeReference2Setup.h"
 #include "MpirOrbitEval.h"
 #include "PerfTimingResult.h"
 #include "ReferenceAdd.h"
@@ -267,6 +268,14 @@ RunNewtonRaphsonTest(TestTracker &Tests,
         std::cout << "  " << testName << " Newton iter " << it << std::endl;
 
         PerfTimingResult iterTiming;
+        std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
+        if constexpr (referenceOperator == Operator::ReferenceOrbit2 &&
+                      (HpShark::TestReferenceImpl || HpShark::TestGpu)) {
+            hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
+            hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
+            preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
+                launchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32);
+        }
 
         // ---- MPIR inner loop (ground truth, gated on TestMPIRImpl) ----
         HDRFloat<double> mpirD2r{}, mpirD2i{};
@@ -284,8 +293,10 @@ RunNewtonRaphsonTest(TestTracker &Tests,
         // ---- Selected CPU reference inner loop (if TestReferenceImpl) ----
         typename SharkFloatParams::Float hpD2r{}, hpD2i{};
         if constexpr (HpShark::TestReferenceImpl) {
-            hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
-            hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
+            if constexpr (referenceOperator == Operator::ReferenceOrbit) {
+                hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
+                hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
+            }
 
             BenchmarkTimer cpuTimer;
             cpuTimer.StartTimer();
@@ -311,7 +322,8 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                                                               &hpD2r,
                                                               &hpD2i,
                                                               SharkFloatParams::GlobalNumUint32,
-                                                              debugHostCombo);
+                                                              debugHostCombo,
+                                                              preparedTables.get());
             }
             cpuTimer.StopTimer();
             const double cpuMs = static_cast<double>(cpuTimer.GetDeltaInMs());
@@ -365,16 +377,18 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                                                                                       launchParams);
                 } else {
                     gpuIterationsCompleted =
-                        HpShark::EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(cR,
-                                                                                       cI,
-                                                                                       period,
-                                                                                       gpuZR,
-                                                                                       gpuZI,
-                                                                                       gpuDzdcR,
-                                                                                       gpuDzdcI,
-                                                                                       gpuD2r,
-                                                                                       gpuD2i,
-                                                                                       launchParams);
+                        HpShark::EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
+                            cR,
+                            cI,
+                            period,
+                            gpuZR,
+                            gpuZI,
+                            gpuDzdcR,
+                            gpuDzdcI,
+                            gpuD2r,
+                            gpuD2i,
+                            launchParams,
+                            preparedTables.get());
                 }
                 gpuTimer.StopTimer();
                 const double gpuMs = static_cast<double>(gpuTimer.GetDeltaInMs());
@@ -453,6 +467,11 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     if constexpr (HpShark::TestReferenceImpl) {
         hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
         hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
+        std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
+        if constexpr (referenceOperator == Operator::ReferenceOrbit2) {
+            preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
+                launchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32);
+        }
 
         typename SharkFloatParams::Float finalD2r{}, finalD2i{};
         if constexpr (referenceOperator == Operator::ReferenceOrbit) {
@@ -477,7 +496,8 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                                                           &finalD2r,
                                                           &finalD2i,
                                                           SharkFloatParams::GlobalNumUint32,
-                                                          debugHostCombo);
+                                                          debugHostCombo,
+                                                          preparedTables.get());
         }
 
         hpZR->HpGpuToMpf(zR);

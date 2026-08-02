@@ -263,6 +263,13 @@ InitHpSharkReference2Kernel<SharkFloatParams>(const HpShark::LaunchParams &launc
                                               const HpSharkFloat<SharkFloatParams> &xNum,
                                               const HpSharkFloat<SharkFloatParams> &yNum,
                                               uint32_t);
+template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+InitHpSharkReference2Kernel<SharkFloatParams>(
+    const HpShark::LaunchParams &launchParams,
+    const typename SharkFloatParams::Float hdrRadiusY,
+    const HpSharkFloat<SharkFloatParams> &xNum,
+    const HpSharkFloat<SharkFloatParams> &yNum,
+    Reference2PreparedTables<SharkFloatParams> &preparedTables);
 template void InvokeHpSharkReference2Kernel<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams,
     HpSharkReferenceResults<SharkFloatParams> &combo,
@@ -276,6 +283,7 @@ template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
     mpf_t, mpf_t, mpf_t, mpf_t,
     HDRFloat<double> &, HDRFloat<double> &,
     const HpShark::LaunchParams &,
+    Reference2PreparedTables<SharkFloatParams> *,
     uint64_t,
     bool (*)(),
     void (*)(uint64_t, void *),
@@ -291,6 +299,8 @@ template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
     {
         constexpr auto templates =
             R"(template void ComputeHpSharkReference2GpuLoop<SharkFloatParams>(
+    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
+template void ComputeHpSharkReference2Setup<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
 
         b.push_back(Batch{"Reference2GpuLoop", "../KernelHpSharkReferenceOrbit2_cu.h", templates, ""});

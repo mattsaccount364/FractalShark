@@ -160,6 +160,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
                        const HpSharkFloat<SharkFloatParams> &gpuResult)
 {
     bool testSucceeded = true;
+    const mp_bitcnt_t comparisonPrecBits = mpf_get_prec(mpfHostResult);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << std::endl << hostCustomOrGpu << " result: " << std::endl;
@@ -169,13 +170,13 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
 
     // Convert gpuResult --> mpfXGpuResult
     mpf_t mpfXGpuResult;
-    mpf_init(mpfXGpuResult);
+    mpf_init2(mpfXGpuResult, comparisonPrecBits);
     gpuResult.HpGpuToMpf(mpfXGpuResult);
 
     // Compute absolute difference: mpfDiffAbs = |mpfHostResult - mpfXGpuResult|
     mpf_t mpfDiff, mpfDiffAbs;
-    mpf_init(mpfDiff);
-    mpf_init(mpfDiffAbs);
+    mpf_init2(mpfDiff, comparisonPrecBits);
+    mpf_init2(mpfDiffAbs, comparisonPrecBits);
     mpf_sub(mpfDiff, mpfHostResult, mpfXGpuResult);
     mpf_abs(mpfDiffAbs, mpfDiff);
 
@@ -210,7 +211,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
 
     // Compute |host| into mpfAbsHost
     mpf_t mpfAbsHost;
-    mpf_init(mpfAbsHost);
+    mpf_init2(mpfAbsHost, comparisonPrecBits);
     mpf_abs(mpfAbsHost, mpfHostResult);
 
     // compute floor(log2(1/err)) in high precision
@@ -220,7 +221,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
             return static_cast<int>(totalPrecBits);
         }
 
-        mpf_init2(invErr, totalPrecBits);
+        mpf_init2(invErr, comparisonPrecBits);
         mpf_ui_div(invErr, 1, err); // invErr = 1/err
 
         mp_exp_t exp;
@@ -267,10 +268,10 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
     // CASE B: host is not "tiny," so do a normal relative-error check
     else {
         mpf_t relativeError;
-        mpf_init(relativeError);
+        mpf_init2(relativeError, comparisonPrecBits);
         {
             mpf_t tmp;
-            mpf_init(tmp);
+            mpf_init2(tmp, comparisonPrecBits);
             mpf_div(tmp, mpfDiffAbs, mpfAbsHost);
             mpf_abs(relativeError, tmp);
             mpf_clear(tmp);
@@ -327,6 +328,8 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
                 const mpf_t mpfHostResult,
                 const HpSharkFloat<SharkFloatParams> &gpuResult)
 {
+    const mp_bitcnt_t comparisonPrecBits = mpf_get_prec(mpfHostResult);
+
     // 1) Optional verbose print of GPU result
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << std::endl
@@ -353,9 +356,9 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
     mpf_t mpfDiff;
     mpf_t mpfDiffAbs;
 
-    mpf_init(mpfXGpu);
-    mpf_init(mpfDiff);
-    mpf_init(mpfDiffAbs);
+    mpf_init2(mpfXGpu, comparisonPrecBits);
+    mpf_init2(mpfDiff, comparisonPrecBits);
+    mpf_init2(mpfDiffAbs, comparisonPrecBits);
 
     gpuResult.HpGpuToMpf(mpfXGpu);
     mpf_sub(mpfDiff, mpfHostResult, mpfXGpu);
@@ -365,7 +368,7 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
     bool hostIsZero{false};
     {
         mpf_t mpfZero;
-        mpf_init(mpfZero);
+        mpf_init2(mpfZero, comparisonPrecBits);
         mpf_set_ui(mpfZero, 0);
 
         hostIsZero = (mpf_cmp(mpfHostResult, mpfZero) == 0);
@@ -2279,14 +2282,16 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     mpf_t tempX;
     mpf_t tempY;
 
-    mpf_init(xSquared);
-    mpf_init(ySquared);
-    mpf_init(twoXY);
-    mpf_init(tempX);
-    mpf_init(tempY);
+    constexpr mp_bitcnt_t hostCalculationPrecBits =
+        2 * HpSharkFloat<SharkFloatParams>::DefaultPrecBits + 4;
+    mpf_init2(xSquared, hostCalculationPrecBits);
+    mpf_init2(ySquared, hostCalculationPrecBits);
+    mpf_init2(twoXY, hostCalculationPrecBits);
+    mpf_init2(tempX, hostCalculationPrecBits);
+    mpf_init2(tempY, hostCalculationPrecBits);
 
-    mpf_init(mpfHostResultX);
-    mpf_init(mpfHostResultY);
+    mpf_init2(mpfHostResultX, hostCalculationPrecBits);
+    mpf_init2(mpfHostResultY, hostCalculationPrecBits);
 
     // x_(n + 1) = x_n * x_n - y_n * y_n + a
     // y_(n + 1) = 2 * x_n * y_n + b

@@ -993,6 +993,13 @@ constexpr int32_t CarryPrefixMin = -8;
 constexpr int32_t CarryPrefixMax = 7;
 constexpr uint32_t CarryPrefixStateCount = CarryPrefixMax - CarryPrefixMin + 1;
 constexpr uint32_t CarryPrefixMaxWarps = 32;
+constexpr uint32_t CarryPrefixWarpAggregatesOffset = 0u;
+constexpr uint32_t CarryPrefixWarpPrefixesOffset = CarryPrefixWarpAggregatesOffset + CarryPrefixMaxWarps;
+constexpr uint32_t CarryPrefixLookbackTransformsOffset =
+    CarryPrefixWarpPrefixesOffset + CarryPrefixMaxWarps;
+constexpr uint32_t CarryPrefixLookbackStatesOffset =
+    CarryPrefixLookbackTransformsOffset + CarryPrefixMaxWarps;
+constexpr uint32_t CarryPrefixControlSlot = 0u;
 
 template <class SharkFloatParams>
 __device__ void
@@ -1266,6 +1273,30 @@ enum class CarryPrefixDescriptorState : uint32_t {
     Prefix = 2,
 };
 
+enum class CarryPrefixLookbackStatus : uint32_t {
+    Pending = 0,
+    Ready = 1,
+    Prefix = 2,
+    End = 3,
+};
+
+constexpr uint32_t CarryPrefixLookbackStatusMask = 3u;
+
+static __device__ uint32_t
+MakeCarryPrefixLookbackToken(uint32_t part, uint32_t batch, uint32_t batchCount)
+{
+    const uint64_t token = static_cast<uint64_t>(part) * batchCount + batch;
+    MattsCudaAssert(token < (1ull << 30u));
+    return static_cast<uint32_t>(token);
+}
+
+static __device__ uint32_t
+PackCarryPrefixLookbackStatus(uint32_t token, CarryPrefixLookbackStatus status)
+{
+    MattsCudaAssert(token < (1u << 30u));
+    return (token << 2u) | static_cast<uint32_t>(status);
+}
+
 static __device__ int32_t
 CarryOutForSignedLimb(int64_t limb, int32_t carryIn)
 {
@@ -1332,7 +1363,7 @@ ComposeCarryPrefixBytes(uint32_t earlier, uint32_t later)
     return outputAtBase == outputAfterStep ? outputAtBase : outputAtBase | (earlierThreshold << 4u);
 }
 
-static __device__ uint32_t
+static __device__ SharkForceInlineReleaseOnly uint32_t
 ComposePackedCarryPrefixes(uint32_t earlier, uint32_t later)
 {
     uint32_t combined = ComposeCarryPrefixBytes(earlier & 0xFFu, later & 0xFFu);
@@ -1396,6 +1427,31 @@ LoadCarryPrefixTransform(uint32_t *transform)
     return atomicTransform.load(cuda::memory_order_relaxed);
 }
 
+static __device__ uint32_t
+LoadCarryPrefixLookbackStatus(uint32_t *status)
+{
+    cuda::atomic_ref<uint32_t, cuda::thread_scope_block> atomicStatus(*status);
+    return atomicStatus.load(cuda::memory_order_acquire);
+}
+
+static __device__ void
+StoreCarryPrefixLookbackStatus(uint32_t *status, uint32_t value)
+{
+    cuda::atomic_ref<uint32_t, cuda::thread_scope_block> atomicStatus(*status);
+    atomicStatus.store(value, cuda::memory_order_release);
+}
+
+static __device__ bool
+IsCarryPrefixLookbackComplete(uint32_t *control, uint32_t token, uint32_t lane)
+{
+    if (control == nullptr)
+        return false;
+
+    const uint32_t loadedControl = lane == 0u ? LoadCarryPrefixLookbackStatus(control) : 0u;
+    const uint32_t controlStatus = __shfl_sync(0xFFFF'FFFFu, loadedControl, 0);
+    return controlStatus == PackCarryPrefixLookbackStatus(token, CarryPrefixLookbackStatus::Ready);
+}
+
 static __device__ void
 StoreCarryPrefixTransform(uint32_t *transform, uint32_t value)
 {
@@ -1420,9 +1476,9 @@ PublishCarryPrefixDescriptorPrefix(HpSharkReference2PackedCarryPrefixDescriptor 
 }
 
 static __device__ uint32_t
-ResolveCarryPrefixWarp(HpSharkReference2PackedCarryPrefixDescriptor *descriptors,
-                       uint32_t part,
-                       uint32_t lane)
+ResolveCarryPrefixHistory(HpSharkReference2PackedCarryPrefixDescriptor *descriptors,
+                          uint32_t part,
+                          uint32_t lane)
 {
     constexpr uint32_t Identity = 0xFFFF'FFFFu;
     uint32_t exclusive = Identity;
@@ -1503,6 +1559,334 @@ ResolveCarryPrefixWarp(HpSharkReference2PackedCarryPrefixDescriptor *descriptors
     return __shfl_sync(0xFFFF'FFFFu, exclusive, 0);
 }
 
+static __device__ uint32_t
+ResolveCarryPrefixWindow(HpSharkReference2PackedCarryPrefixDescriptor *descriptors,
+                         uint32_t part,
+                         uint32_t window,
+                         uint32_t lane,
+                         uint32_t controlToken,
+                         uint32_t *lookbackControl,
+                         uint32_t *windowStatus,
+                         bool *cancelled)
+{
+    constexpr uint32_t Identity = 0xFFFF'FFFFu;
+    const int32_t windowStart = static_cast<int32_t>(part) - 1 - static_cast<int32_t>(window * 32u);
+    *windowStatus = static_cast<uint32_t>(CarryPrefixLookbackStatus::Pending);
+    *cancelled = false;
+
+    if (windowStart < 0) {
+        if (IsCarryPrefixLookbackComplete(lookbackControl, controlToken, lane)) {
+            *cancelled = true;
+            return Identity;
+        }
+        *windowStatus = static_cast<uint32_t>(CarryPrefixLookbackStatus::End);
+        return Identity;
+    }
+
+    const int32_t descriptorIndex = windowStart - static_cast<int32_t>(lane);
+    const bool validDescriptor = descriptorIndex >= 0;
+    CarryPrefixDescriptorState state = CarryPrefixDescriptorState::Empty;
+    uint32_t descriptorCount = 0u;
+    uint32_t validDescriptorCount = 0u;
+    bool foundPrefix = false;
+    int spin = 0;
+
+    do {
+        if (IsCarryPrefixLookbackComplete(lookbackControl, controlToken, lane)) {
+            *cancelled = true;
+            return Identity;
+        }
+
+        if (validDescriptor && state == CarryPrefixDescriptorState::Empty) {
+            state = static_cast<CarryPrefixDescriptorState>(
+                LoadCarryPrefixState(&descriptors[descriptorIndex].State));
+        }
+
+        const unsigned validMask = __ballot_sync(0xFFFF'FFFFu, validDescriptor);
+        const unsigned readyMask =
+            __ballot_sync(0xFFFF'FFFFu, !validDescriptor || state != CarryPrefixDescriptorState::Empty);
+        const unsigned unresolvedMask = validMask & ~readyMask;
+        validDescriptorCount = static_cast<uint32_t>(__popc(validMask));
+        const uint32_t contiguousReadyCount = unresolvedMask == 0u
+                                                  ? validDescriptorCount
+                                                  : static_cast<uint32_t>(__ffs(unresolvedMask) - 1);
+        const unsigned contiguousReadyMask =
+            contiguousReadyCount == 32u ? 0xFFFF'FFFFu : ((1u << contiguousReadyCount) - 1u);
+        const unsigned prefixMask =
+            __ballot_sync(0xFFFF'FFFFu, validDescriptor && state == CarryPrefixDescriptorState::Prefix) &
+            contiguousReadyMask;
+
+        if (prefixMask != 0u) {
+            descriptorCount = static_cast<uint32_t>(__ffs(prefixMask));
+            foundPrefix = true;
+        } else if (contiguousReadyCount == validDescriptorCount) {
+            descriptorCount = validDescriptorCount;
+        }
+
+        if (descriptorCount == 0u) {
+            if (++spin == 64) {
+                __nanosleep(64);
+                spin = 0;
+            }
+        }
+    } while (descriptorCount == 0u);
+
+    MattsCudaAssert(descriptorCount <= validDescriptorCount);
+    MattsCudaAssert(lane >= descriptorCount || state == CarryPrefixDescriptorState::Aggregate ||
+                    state == CarryPrefixDescriptorState::Prefix);
+    uint32_t transform = Identity;
+    if (lane < descriptorCount) {
+        transform = state == CarryPrefixDescriptorState::Prefix
+                        ? LoadCarryPrefixTransform(&descriptors[descriptorIndex].PrefixTransform)
+                        : LoadCarryPrefixTransform(&descriptors[descriptorIndex].AggregateTransform);
+    }
+
+    uint32_t windowTransform = transform;
+#pragma unroll
+    for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
+        const uint32_t older = __shfl_down_sync(0xFFFF'FFFFu, windowTransform, offset);
+        if (lane + offset < descriptorCount)
+            windowTransform = ComposePackedCarryPrefixes(older, windowTransform);
+    }
+
+    if (foundPrefix)
+        *windowStatus = static_cast<uint32_t>(CarryPrefixLookbackStatus::Prefix);
+    else if (windowStart < 32)
+        *windowStatus = static_cast<uint32_t>(CarryPrefixLookbackStatus::End);
+    else
+        *windowStatus = static_cast<uint32_t>(CarryPrefixLookbackStatus::Ready);
+
+    return __shfl_sync(0xFFFF'FFFFu, windowTransform, 0);
+}
+
+static __device__ uint32_t
+ResolveCarryPrefixBlockExclusive(HpSharkReference2PackedCarryPrefixDescriptor *descriptors,
+                                 uint32_t part,
+                                 uint32_t lane,
+                                 uint32_t warp,
+                                 uint32_t numWarps,
+                                 uint32_t lookbackBatchCount,
+                                 uint32_t *packedLookbackTransforms,
+                                 uint32_t *packedLookbackStates)
+{
+    constexpr uint32_t Identity = 0xFFFF'FFFFu;
+    const uint32_t initialToken = MakeCarryPrefixLookbackToken(part, 0u, lookbackBatchCount);
+
+    if (warp == 0u && lane == 0u)
+        StoreCarryPrefixLookbackStatus(
+            &packedLookbackStates[CarryPrefixControlSlot],
+            PackCarryPrefixLookbackStatus(initialToken, CarryPrefixLookbackStatus::Pending));
+
+    if (numWarps == 1u) {
+        const uint32_t packedBlockExclusive = ResolveCarryPrefixHistory(descriptors, part, lane);
+        if (warp == 0u && lane == 0u) {
+            packedLookbackTransforms[CarryPrefixControlSlot] = packedBlockExclusive;
+            StoreCarryPrefixLookbackStatus(
+                &packedLookbackStates[CarryPrefixControlSlot],
+                PackCarryPrefixLookbackStatus(initialToken, CarryPrefixLookbackStatus::Ready));
+        }
+        return packedBlockExclusive;
+    }
+
+    if (warp == 0u) {
+        // Warp zero consumes the per-warp windows in order and owns the control slot.
+        uint32_t batch = 0u;
+        uint32_t accumulated = Identity;
+        bool done = false;
+        while (!done) {
+            const uint32_t token = MakeCarryPrefixLookbackToken(part, batch, lookbackBatchCount);
+            uint32_t windowStatus = static_cast<uint32_t>(CarryPrefixLookbackStatus::Pending);
+            bool cancelled = false;
+            const uint32_t windowTransform = ResolveCarryPrefixWindow(
+                descriptors, part, batch * numWarps, lane, token, nullptr, &windowStatus, &cancelled);
+            MattsCudaAssert(!cancelled);
+
+            uint32_t lane0Done = 0u;
+            uint32_t nextBatch = batch;
+            if (lane == 0u) {
+                uint32_t batchTransform = windowTransform;
+                bool batchDone =
+                    windowStatus == static_cast<uint32_t>(CarryPrefixLookbackStatus::Prefix) ||
+                    windowStatus == static_cast<uint32_t>(CarryPrefixLookbackStatus::End);
+
+                if (!batchDone) {
+                    for (uint32_t windowWarp = 1u; windowWarp < numWarps; ++windowWarp) {
+                        uint32_t slotStatus = 0u;
+                        int spin = 0;
+                        do {
+                            slotStatus =
+                                LoadCarryPrefixLookbackStatus(&packedLookbackStates[windowWarp]);
+                            if (slotStatus == PackCarryPrefixLookbackStatus(
+                                                  token, CarryPrefixLookbackStatus::Ready) ||
+                                slotStatus == PackCarryPrefixLookbackStatus(
+                                                  token, CarryPrefixLookbackStatus::Prefix) ||
+                                slotStatus ==
+                                    PackCarryPrefixLookbackStatus(token, CarryPrefixLookbackStatus::End))
+                                break;
+                            if (++spin == 64) {
+                                __nanosleep(64);
+                                spin = 0;
+                            }
+                        } while (true);
+
+                        const CarryPrefixLookbackStatus status = static_cast<CarryPrefixLookbackStatus>(
+                            slotStatus & CarryPrefixLookbackStatusMask);
+                        batchTransform = ComposePackedCarryPrefixes(packedLookbackTransforms[windowWarp],
+                                                                    batchTransform);
+                        if (status == CarryPrefixLookbackStatus::Prefix ||
+                            status == CarryPrefixLookbackStatus::End) {
+                            batchDone = true;
+                            break;
+                        }
+                    }
+                }
+
+                accumulated = ComposePackedCarryPrefixes(batchTransform, accumulated);
+                if (batchDone) {
+                    packedLookbackTransforms[CarryPrefixControlSlot] = accumulated;
+                    StoreCarryPrefixLookbackStatus(
+                        &packedLookbackStates[CarryPrefixControlSlot],
+                        PackCarryPrefixLookbackStatus(token, CarryPrefixLookbackStatus::Ready));
+                    lane0Done = 1u;
+                } else {
+                    nextBatch = batch + 1u;
+                    const uint32_t nextToken =
+                        MakeCarryPrefixLookbackToken(part, nextBatch, lookbackBatchCount);
+                    StoreCarryPrefixLookbackStatus(
+                        &packedLookbackStates[CarryPrefixControlSlot],
+                        PackCarryPrefixLookbackStatus(nextToken, CarryPrefixLookbackStatus::Pending));
+                }
+            }
+
+            done = __shfl_sync(0xFFFF'FFFFu, lane0Done, 0) != 0u;
+            if (!done)
+                batch = __shfl_sync(0xFFFF'FFFFu, nextBatch, 0);
+        }
+    } else {
+        // Other warps resolve one window, then follow the coordinator command.
+        for (uint32_t batch = 0u; batch < lookbackBatchCount; ++batch) {
+            const uint32_t token = MakeCarryPrefixLookbackToken(part, batch, lookbackBatchCount);
+            uint32_t windowStatus = static_cast<uint32_t>(CarryPrefixLookbackStatus::Pending);
+            bool cancelled = false;
+            const uint32_t windowTransform = ResolveCarryPrefixWindow(descriptors,
+                                                                      part,
+                                                                      batch * numWarps + warp,
+                                                                      lane,
+                                                                      token,
+                                                                      packedLookbackStates,
+                                                                      &windowStatus,
+                                                                      &cancelled);
+            if (cancelled)
+                break;
+
+            if (lane == 0u) {
+                packedLookbackTransforms[warp] = windowTransform;
+                StoreCarryPrefixLookbackStatus(
+                    &packedLookbackStates[warp],
+                    PackCarryPrefixLookbackStatus(token,
+                                                  static_cast<CarryPrefixLookbackStatus>(windowStatus)));
+            }
+
+            bool complete = false;
+            bool advance = false;
+            do {
+                const uint32_t controlStatus =
+                    lane == 0u
+                        ? LoadCarryPrefixLookbackStatus(&packedLookbackStates[CarryPrefixControlSlot])
+                        : 0u;
+                const uint32_t command = __shfl_sync(0xFFFF'FFFFu, controlStatus, 0);
+                const uint32_t nextToken =
+                    batch + 1u < lookbackBatchCount
+                        ? MakeCarryPrefixLookbackToken(part, batch + 1u, lookbackBatchCount)
+                        : 0u;
+                if (command == PackCarryPrefixLookbackStatus(token, CarryPrefixLookbackStatus::Ready)) {
+                    complete = true;
+                } else if (batch + 1u < lookbackBatchCount &&
+                           command == PackCarryPrefixLookbackStatus(nextToken,
+                                                                    CarryPrefixLookbackStatus::Ready)) {
+                    complete = true;
+                } else if (batch + 1u < lookbackBatchCount &&
+                           command == PackCarryPrefixLookbackStatus(
+                                          nextToken, CarryPrefixLookbackStatus::Pending)) {
+                    advance = true;
+                } else if (lane == 0u) {
+                    __nanosleep(64);
+                }
+            } while (!complete && !advance);
+
+            if (complete)
+                break;
+        }
+    }
+
+    return packedLookbackTransforms[CarryPrefixControlSlot];
+}
+
+template <class SharkFloatParams>
+static __device__ void
+EmitPackedCarryPrefixDigits(uint32_t packedInclusive,
+                            uint32_t packedBlockExclusive,
+                            uint32_t packedWarpPrefix,
+                            uint32_t lane,
+                            bool hasValue,
+                            uint32_t index,
+                            uint32_t count,
+                            uint32_t capacity,
+                            const int64_t *realLimbs,
+                            uint32_t *realDigits,
+                            uint32_t *realControl,
+                            const int64_t *imagLimbs,
+                            uint32_t *imagDigits,
+                            uint32_t *imagControl,
+                            const int64_t *dzdcRealLimbs,
+                            uint32_t *dzdcRealDigits,
+                            uint32_t *dzdcRealControl,
+                            const int64_t *dzdcImagLimbs,
+                            uint32_t *dzdcImagDigits,
+                            uint32_t *dzdcImagControl)
+{
+    constexpr uint32_t Identity = 0xFFFF'FFFFu;
+    const uint32_t previous = __shfl_up_sync(0xFFFF'FFFFu, packedInclusive, 1);
+    const uint32_t packedLocalExclusive = lane == 0u ? Identity : previous;
+    if (!hasValue)
+        return;
+
+    const uint32_t packedExclusive = ComposePackedCarryPrefixes(
+        packedBlockExclusive, ComposePackedCarryPrefixes(packedWarpPrefix, packedLocalExclusive));
+    const uint32_t packedCarries = ApplyPackedCarryPrefix(packedExclusive, 0);
+
+    StoreSignedCarryDigit(realLimbs[index],
+                          static_cast<int32_t>(packedCarries & 0xFFu) + CarryPrefixMin,
+                          index,
+                          count,
+                          capacity,
+                          realDigits,
+                          realControl);
+    StoreSignedCarryDigit(imagLimbs[index],
+                          static_cast<int32_t>((packedCarries >> 8u) & 0xFFu) + CarryPrefixMin,
+                          index,
+                          count,
+                          capacity,
+                          imagDigits,
+                          imagControl);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        StoreSignedCarryDigit(dzdcRealLimbs[index],
+                              static_cast<int32_t>((packedCarries >> 16u) & 0xFFu) + CarryPrefixMin,
+                              index,
+                              count,
+                              capacity,
+                              dzdcRealDigits,
+                              dzdcRealControl);
+        StoreSignedCarryDigit(dzdcImagLimbs[index],
+                              static_cast<int32_t>((packedCarries >> 24u) & 0xFFu) + CarryPrefixMin,
+                              index,
+                              count,
+                              capacity,
+                              dzdcImagDigits,
+                              dzdcImagControl);
+    }
+}
+
 // Build the four active stream transfers, resolve one packed DLB prefix, and emit
 // the corresponding digits. Newton-Raphson uses all four packed bytes so the
 // reference orbit and both derivative streams share this complete carry path.
@@ -1537,22 +1921,39 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     const uint32_t lane = threadIndex & 31u;
     const uint32_t warp = threadIndex >> 5u;
     const uint32_t numWarps = (blockSize + 31u) >> 5u;
-    uint32_t *packedWarpAggregates = reinterpret_cast<uint32_t *>(sharedStorage);
-    uint32_t *packedWarpPrefixes = packedWarpAggregates + CarryPrefixMaxWarps;
-    uint32_t *packedExclusiveStorage = packedWarpPrefixes + CarryPrefixMaxWarps;
+    // Shared scratch is partitioned into warp aggregates, warp prefixes, lookback transforms, and
+    // per-warp lookback states. Slot zero is the coordinator's control/transform slot.
+    uint32_t *packedCarryPrefixShared = reinterpret_cast<uint32_t *>(sharedStorage);
+    uint32_t *packedWarpAggregates = packedCarryPrefixShared + CarryPrefixWarpAggregatesOffset;
+    uint32_t *packedWarpPrefixes = packedCarryPrefixShared + CarryPrefixWarpPrefixesOffset;
+    uint32_t *packedLookbackTransforms = packedCarryPrefixShared + CarryPrefixLookbackTransformsOffset;
+    uint32_t *packedLookbackStates = packedCarryPrefixShared + CarryPrefixLookbackStatesOffset;
 
     MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
     MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
     MattsCudaAssert(capacity >= count);
 
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
-        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
-    grid.sync();
+    const uint32_t lookbackWindowsPerBatch = numWarps * 32u;
+    const uint32_t lookbackBatchCount =
+        numWarps == 1u ? 1u : (numParts + lookbackWindowsPerBatch - 1u) / lookbackWindowsPerBatch;
+    MattsCudaAssert(lookbackBatchCount != 0u);
+    MattsCudaAssert(numParts <= (1u << 30u) / lookbackBatchCount);
 
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     const uint32_t processorId = block.group_index().x;
     const uint32_t activeProcessors = gridDim.x;
+    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
+        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
+    const uint32_t firstPart = processorId < numParts ? processorId : 0u;
+    const uint32_t firstToken = MakeCarryPrefixLookbackToken(firstPart, 0u, lookbackBatchCount);
+    if (lane == 0u)
+        StoreCarryPrefixLookbackStatus(
+            &packedLookbackStates[warp],
+            PackCarryPrefixLookbackStatus(firstToken, CarryPrefixLookbackStatus::Pending));
+    grid.sync();
+
     for (uint32_t part = processorId; part < numParts; part += activeProcessors) {
+        // Form the inclusive transform for this thread, then reduce the block to one aggregate.
         const uint32_t base = part * blockSize;
         const uint32_t index = base + threadIndex;
         const bool hasValue = index < count;
@@ -1600,58 +2001,45 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         if (threadIndex == 0u)
             PublishCarryPrefixDescriptorAggregate(descriptors[part], packedAggregate);
 
-        if (threadIndex < 32u) {
-            __syncwarp(0xFFFF'FFFFu);
-            const uint32_t packedExclusive = ResolveCarryPrefixWarp(descriptors, part, lane);
-            if (lane == 0u) {
-                PublishCarryPrefixDescriptorPrefix(
-                    descriptors[part], ComposePackedCarryPrefixes(packedExclusive, packedAggregate));
-                packedExclusiveStorage[0] = packedExclusive;
-            }
+        // Resolve all earlier descriptor aggregates and publish this block's exclusive prefix.
+        const uint32_t resolvedBlockExclusive =
+            ResolveCarryPrefixBlockExclusive(descriptors,
+                                             part,
+                                             lane,
+                                             warp,
+                                             numWarps,
+                                             lookbackBatchCount,
+                                             packedLookbackTransforms,
+                                             packedLookbackStates);
+
+        if (threadIndex == 0u) {
+            PublishCarryPrefixDescriptorPrefix(
+                descriptors[part], ComposePackedCarryPrefixes(resolvedBlockExclusive, packedAggregate));
         }
         __syncthreads();
 
-        const uint32_t previous = __shfl_up_sync(0xFFFF'FFFFu, packedInclusive, 1);
-        const uint32_t packedLocalExclusive = lane == 0u ? Identity : previous;
-        if (hasValue) {
-            const uint32_t packedExclusive = ComposePackedCarryPrefixes(
-                packedExclusiveStorage[0],
-                ComposePackedCarryPrefixes(packedWarpPrefixes[warp], packedLocalExclusive));
-            const uint32_t packedCarries = ApplyPackedCarryPrefix(packedExclusive, 0);
-
-            StoreSignedCarryDigit(realLimbs[index],
-                                  static_cast<int32_t>(packedCarries & 0xFFu) + CarryPrefixMin,
-                                  index,
-                                  count,
-                                  capacity,
-                                  realDigits,
-                                  realControl);
-            StoreSignedCarryDigit(imagLimbs[index],
-                                  static_cast<int32_t>((packedCarries >> 8u) & 0xFFu) + CarryPrefixMin,
-                                  index,
-                                  count,
-                                  capacity,
-                                  imagDigits,
-                                  imagControl);
-            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                StoreSignedCarryDigit(
-                    dzdcRealLimbs[index],
-                    static_cast<int32_t>((packedCarries >> 16u) & 0xFFu) + CarryPrefixMin,
-                    index,
-                    count,
-                    capacity,
-                    dzdcRealDigits,
-                    dzdcRealControl);
-                StoreSignedCarryDigit(
-                    dzdcImagLimbs[index],
-                    static_cast<int32_t>((packedCarries >> 24u) & 0xFFu) + CarryPrefixMin,
-                    index,
-                    count,
-                    capacity,
-                    dzdcImagDigits,
-                    dzdcImagControl);
-            }
-        }
+        // Apply the block, warp, and local prefixes to each active stream.
+        const uint32_t packedBlockExclusive = packedLookbackTransforms[CarryPrefixControlSlot];
+        EmitPackedCarryPrefixDigits<SharkFloatParams>(packedInclusive,
+                                                      packedBlockExclusive,
+                                                      packedWarpPrefixes[warp],
+                                                      lane,
+                                                      hasValue,
+                                                      index,
+                                                      count,
+                                                      capacity,
+                                                      realLimbs,
+                                                      realDigits,
+                                                      realControl,
+                                                      imagLimbs,
+                                                      imagDigits,
+                                                      imagControl,
+                                                      dzdcRealLimbs,
+                                                      dzdcRealDigits,
+                                                      dzdcRealControl,
+                                                      dzdcImagLimbs,
+                                                      dzdcImagDigits,
+                                                      dzdcImagControl);
         // The next partition's aggregate barrier protects shared scratch reuse.
     }
     grid.sync();
@@ -2559,7 +2947,7 @@ __maxnreg__(HpShark::RegisterLimit)
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
     extern __shared__ __align__(16) uint64_t sharedData[];
-    __shared__ uint64_t carryPrefixShared[(2u * Reference2Detail::CarryPrefixMaxWarps + 2u) / 2u];
+    __shared__ uint64_t carryPrefixShared[2u * Reference2Detail::CarryPrefixMaxWarps];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
     DebugState<SharkFloatParams> *debugStates = nullptr;

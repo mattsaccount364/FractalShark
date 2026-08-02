@@ -50,6 +50,117 @@ constexpr std::array<ImaginaResourceEntry, 6> kImaginaResources{{
 
 } // namespace Environment
 
+struct Environment::MappedFile::Impl {
+    HANDLE file{INVALID_HANDLE_VALUE};
+    HANDLE mapping{};
+    uint8_t *data{};
+    size_t size{};
+};
+
+Environment::MappedFile::MappedFile() : m_Impl{std::make_unique<Impl>()} {}
+
+Environment::MappedFile::~MappedFile()
+{
+    if (m_Impl == nullptr)
+        return;
+    if (m_Impl->data != nullptr)
+        ::UnmapViewOfFile(m_Impl->data);
+    if (m_Impl->mapping != nullptr)
+        ::CloseHandle(m_Impl->mapping);
+    if (m_Impl->file != INVALID_HANDLE_VALUE)
+        ::CloseHandle(m_Impl->file);
+}
+
+std::unique_ptr<Environment::MappedFile>
+Environment::MappedFile::CreateWrite(const wchar_t *path, size_t bytes)
+{
+    if (path == nullptr || bytes == 0)
+        return nullptr;
+    auto mapped = std::unique_ptr<MappedFile>(new MappedFile{});
+    mapped->m_Impl->file = ::CreateFileW(path,
+                                         GENERIC_READ | GENERIC_WRITE,
+                                         FILE_SHARE_READ,
+                                         nullptr,
+                                         CREATE_ALWAYS,
+                                         FILE_ATTRIBUTE_NORMAL,
+                                         nullptr);
+    if (mapped->m_Impl->file == INVALID_HANDLE_VALUE)
+        return nullptr;
+
+    LARGE_INTEGER size{};
+    size.QuadPart = static_cast<LONGLONG>(bytes);
+    if (!::SetFilePointerEx(mapped->m_Impl->file, size, nullptr, FILE_BEGIN) ||
+        !::SetEndOfFile(mapped->m_Impl->file))
+        return nullptr;
+
+    mapped->m_Impl->mapping = ::CreateFileMappingW(
+        mapped->m_Impl->file, nullptr, PAGE_READWRITE, size.HighPart, size.LowPart, nullptr);
+    if (mapped->m_Impl->mapping == nullptr)
+        return nullptr;
+    mapped->m_Impl->data = static_cast<uint8_t *>(
+        ::MapViewOfFile(mapped->m_Impl->mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
+    if (mapped->m_Impl->data == nullptr)
+        return nullptr;
+    mapped->m_Impl->size = bytes;
+    return mapped;
+}
+
+std::unique_ptr<Environment::MappedFile>
+Environment::MappedFile::OpenRead(const wchar_t *path)
+{
+    if (path == nullptr)
+        return nullptr;
+    auto mapped = std::unique_ptr<MappedFile>(new MappedFile{});
+    mapped->m_Impl->file = ::CreateFileW(path,
+                                         GENERIC_READ,
+                                         FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                         nullptr,
+                                         OPEN_EXISTING,
+                                         FILE_ATTRIBUTE_NORMAL,
+                                         nullptr);
+    if (mapped->m_Impl->file == INVALID_HANDLE_VALUE)
+        return nullptr;
+    LARGE_INTEGER size{};
+    if (!::GetFileSizeEx(mapped->m_Impl->file, &size) || size.QuadPart <= 0)
+        return nullptr;
+    mapped->m_Impl->size = static_cast<size_t>(size.QuadPart);
+    mapped->m_Impl->mapping =
+        ::CreateFileMappingW(mapped->m_Impl->file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+    if (mapped->m_Impl->mapping == nullptr)
+        return nullptr;
+    mapped->m_Impl->data =
+        static_cast<uint8_t *>(::MapViewOfFile(mapped->m_Impl->mapping, FILE_MAP_READ, 0, 0, 0));
+    if (mapped->m_Impl->data == nullptr)
+        return nullptr;
+    return mapped;
+}
+
+uint8_t *
+Environment::MappedFile::Data()
+{
+    return m_Impl != nullptr ? m_Impl->data : nullptr;
+}
+
+const uint8_t *
+Environment::MappedFile::Data() const
+{
+    return m_Impl != nullptr ? m_Impl->data : nullptr;
+}
+
+size_t
+Environment::MappedFile::Size() const
+{
+    return m_Impl != nullptr ? m_Impl->size : 0;
+}
+
+bool
+Environment::MappedFile::Flush()
+{
+    return m_Impl != nullptr && m_Impl->data != nullptr &&
+           ::FlushViewOfFile(m_Impl->data, m_Impl->size) != FALSE &&
+           ::FlushFileBuffers(m_Impl->file) != FALSE;
+}
+
 // =========================================================================
 // File handle operations
 // =========================================================================
@@ -416,6 +527,13 @@ bool
 Environment::FileDelete(const wchar_t *path)
 {
     return ::DeleteFileW(path) != FALSE;
+}
+
+bool
+Environment::FileRename(const wchar_t *sourcePath, const wchar_t *destinationPath, bool replaceExisting)
+{
+    const DWORD flags = replaceExisting ? MOVEFILE_REPLACE_EXISTING : 0;
+    return ::MoveFileExW(sourcePath, destinationPath, flags) != FALSE;
 }
 
 std::optional<uint64_t>

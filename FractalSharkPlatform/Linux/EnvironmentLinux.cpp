@@ -22,8 +22,10 @@
 #include <malloc.h> // malloc_usable_size
 #include <pthread.h>
 #include <signal.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
+#include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -167,6 +169,92 @@ int g_ConsolePending = -1;
 } // anonymous namespace
 
 } // namespace Environment
+
+struct Environment::MappedFile::Impl {
+    int file{-1};
+    void *data{MAP_FAILED};
+    size_t size{};
+};
+
+Environment::MappedFile::MappedFile() : m_Impl{std::make_unique<Impl>()} {}
+
+Environment::MappedFile::~MappedFile()
+{
+    if (m_Impl == nullptr)
+        return;
+    if (m_Impl->data != MAP_FAILED)
+        ::munmap(m_Impl->data, m_Impl->size);
+    if (m_Impl->file >= 0)
+        ::close(m_Impl->file);
+}
+
+std::unique_ptr<Environment::MappedFile>
+Environment::MappedFile::CreateWrite(const wchar_t *path, size_t bytes)
+{
+    if (path == nullptr || bytes == 0)
+        return nullptr;
+    const std::string utf8Path = WideToUtf8(path);
+    auto mapped = std::unique_ptr<MappedFile>(new MappedFile{});
+    mapped->m_Impl->file = ::open(utf8Path.c_str(), O_CREAT | O_TRUNC | O_RDWR, 0644);
+    if (mapped->m_Impl->file < 0)
+        return nullptr;
+    if (::ftruncate(mapped->m_Impl->file, static_cast<off_t>(bytes)) != 0)
+        return nullptr;
+    mapped->m_Impl->data =
+        ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, mapped->m_Impl->file, 0);
+    if (mapped->m_Impl->data == MAP_FAILED)
+        return nullptr;
+    mapped->m_Impl->size = bytes;
+    return mapped;
+}
+
+std::unique_ptr<Environment::MappedFile>
+Environment::MappedFile::OpenRead(const wchar_t *path)
+{
+    if (path == nullptr)
+        return nullptr;
+    const std::string utf8Path = WideToUtf8(path);
+    auto mapped = std::unique_ptr<MappedFile>(new MappedFile{});
+    mapped->m_Impl->file = ::open(utf8Path.c_str(), O_RDONLY);
+    if (mapped->m_Impl->file < 0)
+        return nullptr;
+    struct stat status{};
+    if (::fstat(mapped->m_Impl->file, &status) != 0 || status.st_size <= 0)
+        return nullptr;
+    mapped->m_Impl->size = static_cast<size_t>(status.st_size);
+    mapped->m_Impl->data =
+        ::mmap(nullptr, mapped->m_Impl->size, PROT_READ, MAP_PRIVATE, mapped->m_Impl->file, 0);
+    if (mapped->m_Impl->data == MAP_FAILED)
+        return nullptr;
+    return mapped;
+}
+
+uint8_t *
+Environment::MappedFile::Data()
+{
+    return m_Impl != nullptr && m_Impl->data != MAP_FAILED ? static_cast<uint8_t *>(m_Impl->data)
+                                                           : nullptr;
+}
+
+const uint8_t *
+Environment::MappedFile::Data() const
+{
+    return m_Impl != nullptr && m_Impl->data != MAP_FAILED ? static_cast<const uint8_t *>(m_Impl->data)
+                                                           : nullptr;
+}
+
+size_t
+Environment::MappedFile::Size() const
+{
+    return m_Impl != nullptr ? m_Impl->size : 0;
+}
+
+bool
+Environment::MappedFile::Flush()
+{
+    return m_Impl != nullptr && m_Impl->data != MAP_FAILED &&
+           ::msync(m_Impl->data, m_Impl->size, MS_SYNC) == 0 && ::fsync(m_Impl->file) == 0;
+}
 
 // =========================================================================
 // File handle operations (for PerturbationResults delete-on-close)
@@ -642,6 +730,16 @@ Environment::FileDelete(const wchar_t *path)
 {
     std::string u8 = WideToUtf8(path);
     return ::unlink(u8.c_str()) == 0;
+}
+
+bool
+Environment::FileRename(const wchar_t *sourcePath, const wchar_t *destinationPath, bool replaceExisting)
+{
+    const std::string source = WideToUtf8(sourcePath);
+    const std::string destination = WideToUtf8(destinationPath);
+    if (!replaceExisting && ::access(destination.c_str(), F_OK) == 0)
+        return false;
+    return ::rename(source.c_str(), destination.c_str()) == 0;
 }
 
 std::optional<uint64_t>

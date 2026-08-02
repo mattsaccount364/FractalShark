@@ -9,6 +9,7 @@
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
 #include "KernelInvoke.h"
+#include "KernelInvokeReference2Cache.h"
 #include "KernelInvokeReference2Setup.h"
 #include "MpirOrbitEval.h"
 #include "PerfTimingResult.h"
@@ -273,8 +274,8 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                       (HpShark::TestReferenceImpl || HpShark::TestGpu)) {
             hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
             hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
-            preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
-                launchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32);
+            preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+                launchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32, testBase, it);
         }
 
         // ---- MPIR inner loop (ground truth, gated on TestMPIRImpl) ----
@@ -469,8 +470,8 @@ RunNewtonRaphsonTest(TestTracker &Tests,
         hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
         std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
         if constexpr (referenceOperator == Operator::ReferenceOrbit2) {
-            preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
-                launchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32);
+            preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+                launchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32, testBase, maxNewtonIters);
         }
 
         typename SharkFloatParams::Float finalD2r{}, finalD2i{};

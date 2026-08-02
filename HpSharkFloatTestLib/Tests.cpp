@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "KernelInvoke.h"
+#include "KernelInvokeReference2Cache.h"
 #include "KernelInvokeReference2Setup.h"
 
 #include "Add.h"
@@ -1268,8 +1269,8 @@ TestPerfRandom(const HpShark::LaunchParams &launchParams,
     const auto expectedResult = PeriodicityResult::Continue;
     std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, *xNum, *yNum, SharkFloatParams::GlobalNumUint32);
+        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+            launchParams, *xNum, *yNum, SharkFloatParams::GlobalNumUint32, testNum);
     }
 
     TestPerf<SharkFloatParams, sharkOperator>(launchParams,
@@ -2327,8 +2328,8 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     typename SharkFloatParams::Float emptyRadius{};
     std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, aNum, bNum, SharkFloatParams::GlobalNumUint32);
+        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+            launchParams, aNum, bNum, SharkFloatParams::GlobalNumUint32, testNum);
     }
 
     // Test CPU reference implementation (HpSharkFloat-based, calls MultiplyHelperFFT2 + AddHelper)
@@ -3736,8 +3737,8 @@ TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
 
     std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, ActualPrecisionLimbs);
+        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+            launchParams, mpfX, mpfY, ActualPrecisionLimbs, testBase);
     }
 
     std::vector<PerfTimingResult> timings;
@@ -3865,8 +3866,8 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
 
     std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, SharkFloatParams::GlobalNumUint32);
+        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+            launchParams, mpfX, mpfY, SharkFloatParams::GlobalNumUint32, testBase);
     }
 
     std::vector<PerfTimingResult> timings;
@@ -3985,8 +3986,8 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
 
     std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, SharkFloatParams::GlobalNumUint32);
+        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+            launchParams, mpfX, mpfY, SharkFloatParams::GlobalNumUint32, testBase);
     }
 
     std::vector<PerfTimingResult> timings;

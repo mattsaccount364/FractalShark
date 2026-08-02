@@ -51,6 +51,7 @@
     </ClInclude>
     <ClInclude Include="KernelInvokeReferencePerf_cu.h" />
     <ClInclude Include="KernelInvokeReference2Perf_cu.h" />
+    <ClInclude Include="KernelInvokeReference2Cache.h" />
     <ClInclude Include="KernelInvokeReference2Setup.h" />
     <ClInclude Include="MultiplyNTTCudaSetup_cu.h" />
     <ClInclude Include="KernelTestMultiplyNTT_cu.h" />
@@ -96,6 +97,7 @@
     <ClCompile Include="heap_allocator\HeapPanic.cpp" />
     <ClCompile Include="heap_allocator\llist.cpp" />
     <ClCompile Include="HighPrecision.cpp" />
+    <ClCompile Include="KernelInvokeReference2Cache.cpp" />
     <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="LaunchParamsCalculator.cpp" />
     <ClCompile Include="MpirComplex.cpp" />

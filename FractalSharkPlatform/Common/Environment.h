@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -298,9 +299,36 @@ size_t FileWrite(void *fileHandle, const void *data, size_t bytes);
 // Delete a single file.  Returns true on success.
 bool FileDelete(const wchar_t *path);
 
+// Rename a file.  If replaceExisting is true, replace an existing destination when supported.
+bool FileRename(const wchar_t *sourcePath, const wchar_t *destinationPath, bool replaceExisting);
+
 // Size of a regular file in bytes, or std::nullopt if the path does not
 // exist, is not a regular file, or cannot be queried.
 std::optional<uint64_t> FileSizeBytes(const wchar_t *path);
+
+// Read-only or writable file-backed memory mapping.  The implementation owns the file and mapping
+// handles and releases them when the MappedFile is destroyed.
+class MappedFile {
+public:
+    static std::unique_ptr<MappedFile> CreateWrite(const wchar_t *path, size_t bytes);
+    static std::unique_ptr<MappedFile> OpenRead(const wchar_t *path);
+
+    ~MappedFile();
+
+    MappedFile(const MappedFile &) = delete;
+    MappedFile &operator=(const MappedFile &) = delete;
+
+    uint8_t *Data();
+    const uint8_t *Data() const;
+    size_t Size() const;
+    bool Flush();
+
+private:
+    struct Impl;
+
+    MappedFile();
+    std::unique_ptr<Impl> m_Impl;
+};
 
 // =========================================================================
 // Embedded resources

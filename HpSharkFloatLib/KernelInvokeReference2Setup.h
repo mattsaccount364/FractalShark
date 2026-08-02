@@ -60,6 +60,12 @@ public:
         return m_HostDescriptor;
     }
 
+    void
+    UpdateHostDescriptor(const Workspace &descriptor)
+    {
+        m_HostDescriptor = descriptor;
+    }
+
     size_t
     GetStorageBytes() const
     {

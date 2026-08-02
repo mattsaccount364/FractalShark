@@ -37,6 +37,7 @@ target_sources(HpSharkFloatLib PRIVATE
     MpirSerialization.cpp
     AbortMonitor.cpp
     BenchmarkTimer.cpp
+    KernelInvokeReference2Cache.cpp
     LaunchParamsCalculator.cpp
     TestVerbose.cpp
     ${HPSHARK_GENERATED_CU_FILES}

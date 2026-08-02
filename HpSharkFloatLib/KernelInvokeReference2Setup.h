@@ -98,6 +98,17 @@ public:
 
 namespace Reference2SetupDetail {
 
+template <class SharkFloatParams>
+void
+ValidateStageRange(uint32_t minFusedStages, uint32_t maxFusedStages)
+{
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    if (minFusedStages < Workspace::MinFusedStages || maxFusedStages > Workspace::MaxFusedStages ||
+        minFusedStages > maxFusedStages) {
+        throw FractalSharkSeriousException("Ref2 fused stage range is outside the workspace limits");
+    }
+}
+
 inline void
 CheckCuda(cudaError_t error, const char *operation)
 {
@@ -112,7 +123,7 @@ CheckCuda(cudaError_t error, const char *operation)
 
 template <class SharkFloatParams>
 std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
-AllocatePreparedTables(uint32_t actualPrecisionLimbs)
+AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, uint32_t maxFusedStages)
 {
     using PreparedTables = Reference2PreparedTables<SharkFloatParams>;
     using Workspace = typename PreparedTables::Workspace;
@@ -121,6 +132,14 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
     constexpr size_t ConstantArenaCount = 2u + (SharkFloatParams::EnableNewtonRaphson ? 1u : 0u);
     constexpr size_t LimbCount = SharkFloatParams::EnableNewtonRaphson ? 4u : 2u;
     constexpr size_t WorkspaceAlignment = 16u;
+
+    ValidateStageRange<SharkFloatParams>(minFusedStages, maxFusedStages);
+    const uint32_t activeMinFusedN = 1u << minFusedStages;
+    const uint32_t activeMaxFusedN = 1u << maxFusedStages;
+    const uint32_t activePsiArenaSize = 2u * activeMaxFusedN - activeMinFusedN;
+    const uint32_t activeMaxFusedLimbs = (activeMaxFusedN * 16u) / 32u + 4u;
+    const uint32_t activeMaxCarryPrefixParts = (activeMaxFusedLimbs + 31u) / 32u;
+    const uint32_t activePlanCacheEntryCount = maxFusedStages - minFusedStages + 1u;
 
     if (actualPrecisionLimbs <= StoragePrecisionLimbs / 2u ||
         actualPrecisionLimbs > StoragePrecisionLimbs) {
@@ -143,14 +162,14 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
     };
     // Keep this allocation sequence in exact lockstep with the Workspace pointer assignments below.
     // Any added, removed, or reordered workspace field must be changed in both places.
-    addAllocation(WorkingSpectrumCount, Workspace::MaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(ConstantArenaCount, Workspace::PsiArenaSize * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(LimbCount, Workspace::MaxFusedLimbs * sizeof(int64_t), WorkspaceAlignment);
-    addAllocation(2u, Workspace::MaxFusedLimbs * sizeof(uint32_t), WorkspaceAlignment);
-    addAllocation(1u, Workspace::MaxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(1u, Workspace::MaxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(2u, Workspace::PsiArenaSize * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(2u, Workspace::MaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(WorkingSpectrumCount, activeMaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(ConstantArenaCount, activePsiArenaSize * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(LimbCount, activeMaxFusedLimbs * sizeof(int64_t), WorkspaceAlignment);
+    addAllocation(2u, activeMaxFusedLimbs * sizeof(uint32_t), WorkspaceAlignment);
+    addAllocation(1u, maxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(1u, maxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(2u, activePsiArenaSize * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(2u, activeMaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
 
     void *workspaceStorage = nullptr;
     Workspace *workspaceGpu = nullptr;
@@ -170,15 +189,15 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
         };
         const auto allocateSpectrum = [&] {
             return static_cast<uint64_t *>(
-                allocateWorkspace(Workspace::MaxFusedN, sizeof(uint64_t), WorkspaceAlignment));
+                allocateWorkspace(activeMaxFusedN, sizeof(uint64_t), WorkspaceAlignment));
         };
         const auto allocateConstantArena = [&] {
             return static_cast<uint64_t *>(
-                allocateWorkspace(Workspace::PsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
+                allocateWorkspace(activePsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
         };
         const auto allocateLimbs = [&] {
             return static_cast<int64_t *>(
-                allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(int64_t), WorkspaceAlignment));
+                allocateWorkspace(activeMaxFusedLimbs, sizeof(int64_t), WorkspaceAlignment));
         };
 
         // Keep this assignment sequence in exact lockstep with the workspaceBytes sequence above.
@@ -206,26 +225,41 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
             workspace.DzdcImagLimbs = allocateLimbs();
         }
         workspace.MagnitudeDigits = static_cast<uint32_t *>(
-            allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
+            allocateWorkspace(activeMaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
         workspace.Magnitude = static_cast<uint32_t *>(
-            allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
+            allocateWorkspace(activeMaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
         workspace.StageOmegas = static_cast<uint64_t *>(
-            allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
+            allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
         workspace.StageOmegasInverse = static_cast<uint64_t *>(
-            allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
+            allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
         workspace.PsiPowersArena = static_cast<uint64_t *>(
-            allocateWorkspace(Workspace::PsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
+            allocateWorkspace(activePsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
         workspace.PsiInversePowersArena = static_cast<uint64_t *>(
-            allocateWorkspace(Workspace::PsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
+            allocateWorkspace(activePsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
         workspace.ForwardTwiddles = allocateSpectrum();
         workspace.InverseTwiddles = allocateSpectrum();
         workspace.ActualPrecisionLimbs = actualPrecisionLimbs;
         workspace.IgnoredPrecisionBits = (StoragePrecisionLimbs - actualPrecisionLimbs) * 32u;
+        workspace.ActiveMinFusedN = activeMinFusedN;
+        workspace.ActiveMaxFusedN = activeMaxFusedN;
+        workspace.ActiveMinFusedStages = minFusedStages;
+        workspace.ActiveMaxFusedStages = maxFusedStages;
+        workspace.ActiveMaxFusedLimbs = activeMaxFusedLimbs;
+        workspace.ActiveMaxCarryPrefixParts = activeMaxCarryPrefixParts;
+        workspace.ActivePlanCacheEntryCount = activePlanCacheEntryCount;
+        workspace.GeneratedStages = 0u;
 
-        for (uint32_t slot = 0; slot < Workspace::PlanCacheEntryCount; ++slot) {
-            const uint32_t stages = Workspace::MinFusedStages + slot;
+        workspace.Plans[0] = {precisionPlan.n32,
+                              precisionPlan.b,
+                              precisionPlan.L,
+                              static_cast<int>(Workspace::MinFusedN),
+                              static_cast<int>(Workspace::MinFusedStages),
+                              precisionPlan.ok};
+
+        for (uint32_t stages = minFusedStages; stages <= maxFusedStages; ++stages) {
+            const uint32_t slot = stages - Workspace::MinFusedStages;
             const uint32_t n = 1u << stages;
-            const uint32_t arenaOffset = n - Workspace::MinFusedN;
+            const uint32_t arenaOffset = n - activeMinFusedN;
             workspace.Plans[slot] = {precisionPlan.n32,
                                      precisionPlan.b,
                                      precisionPlan.L,
@@ -266,6 +300,15 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
     }
 }
 
+template <class SharkFloatParams>
+std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
+AllocatePreparedTables(uint32_t actualPrecisionLimbs)
+{
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    return AllocatePreparedTables<SharkFloatParams>(
+        actualPrecisionLimbs, Workspace::MinFusedStages, Workspace::MaxFusedStages);
+}
+
 } // namespace Reference2SetupDetail
 
 template <class SharkFloatParams>
@@ -273,10 +316,12 @@ std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
 PrepareHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
                                const HpSharkFloat<SharkFloatParams> &cReal,
                                const HpSharkFloat<SharkFloatParams> &cImag,
-                               uint32_t actualPrecisionLimbs)
+                               uint32_t actualPrecisionLimbs,
+                               uint32_t minFusedStages,
+                               uint32_t maxFusedStages)
 {
-    auto prepared =
-        Reference2SetupDetail::AllocatePreparedTables<SharkFloatParams>(actualPrecisionLimbs);
+    auto prepared = Reference2SetupDetail::AllocatePreparedTables<SharkFloatParams>(
+        actualPrecisionLimbs, minFusedStages, maxFusedStages);
     HpSharkFloat<SharkFloatParams> *inputsGpu = nullptr;
     uint64_t *tempData = nullptr;
     try {
@@ -329,9 +374,27 @@ PrepareHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
 template <class SharkFloatParams>
 std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
 PrepareHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
+                               const HpSharkFloat<SharkFloatParams> &cReal,
+                               const HpSharkFloat<SharkFloatParams> &cImag,
+                               uint32_t actualPrecisionLimbs)
+{
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    return PrepareHpSharkReference2Tables<SharkFloatParams>(launchParams,
+                                                            cReal,
+                                                            cImag,
+                                                            actualPrecisionLimbs,
+                                                            Workspace::MinFusedStages,
+                                                            Workspace::MaxFusedStages);
+}
+
+template <class SharkFloatParams>
+std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
+PrepareHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
                                const mpf_t cReal,
                                const mpf_t cImag,
-                               uint32_t actualPrecisionLimbs)
+                               uint32_t actualPrecisionLimbs,
+                               uint32_t minFusedStages,
+                               uint32_t maxFusedStages)
 {
     auto inputReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto inputImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -340,7 +403,23 @@ PrepareHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
     inputImag->MpfToHpGpu(
         cImag, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
     return PrepareHpSharkReference2Tables<SharkFloatParams>(
-        launchParams, *inputReal, *inputImag, actualPrecisionLimbs);
+        launchParams, *inputReal, *inputImag, actualPrecisionLimbs, minFusedStages, maxFusedStages);
+}
+
+template <class SharkFloatParams>
+std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
+PrepareHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
+                               const mpf_t cReal,
+                               const mpf_t cImag,
+                               uint32_t actualPrecisionLimbs)
+{
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    return PrepareHpSharkReference2Tables<SharkFloatParams>(launchParams,
+                                                            cReal,
+                                                            cImag,
+                                                            actualPrecisionLimbs,
+                                                            Workspace::MinFusedStages,
+                                                            Workspace::MaxFusedStages);
 }
 
 } // namespace HpShark

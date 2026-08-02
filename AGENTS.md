@@ -70,7 +70,8 @@ binary path, and commands run. Windows and Linux builds may run in parallel.
 
 Use `.clang-format`: 4-space indentation, no tabs, 105-column limit, right-aligned pointers/references,
 and `stdafx.h` first where used. Classes, methods, enums, and CMake targets use PascalCase. Member
-variables use `m_PascalCase`; locals and parameters use `camelCase`.
+variables use `m_PascalCase`; locals and parameters use `camelCase`. Avoid adding C++ default
+function parameters to new or modified interfaces; pass required values explicitly through callers.
 
 Portable command and menu contracts belong directly in `FractalShark`. Platform-specific GUI
 implementation belongs in `FractalShark::Win32` or `FractalShark::Linux`. Keep OS entry points and

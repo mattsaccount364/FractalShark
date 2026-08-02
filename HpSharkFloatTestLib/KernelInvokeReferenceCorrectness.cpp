@@ -405,8 +405,13 @@ InvokeHpSharkReference2KernelCorrectness(const HpShark::LaunchParams &launchPara
                                          HpSharkReferenceResults<SharkFloatParams> &combo,
                                          DebugGpuCombo *debugCombo)
 {
-    auto prepared = PrepareHpSharkReference2Tables<SharkFloatParams>(
-        launchParams, combo.Add.C_A, combo.Add.E_B, SharkFloatParams::GlobalNumUint32);
+    constexpr uint32_t RequiredStage = HpSharkReference2OneShotRequiredStage<SharkFloatParams>();
+    auto prepared = PrepareHpSharkReference2Tables<SharkFloatParams>(launchParams,
+                                                                     combo.Add.C_A,
+                                                                     combo.Add.E_B,
+                                                                     SharkFloatParams::GlobalNumUint32,
+                                                                     RequiredStage,
+                                                                     RequiredStage);
     InvokeHpSharkReference2KernelCorrectness<SharkFloatParams>(
         launchParams, timer, combo, debugCombo, *prepared);
 }

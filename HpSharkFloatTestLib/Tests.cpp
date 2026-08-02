@@ -2236,7 +2236,9 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
                        int testNum,
                        const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
                        const mpf_t *mpfInputX,
-                       size_t mpfInputLen)
+                       size_t mpfInputLen,
+                       uint32_t reference2MinFusedStages,
+                       uint32_t reference2MaxFusedStages)
 {
     static_assert(IsReferenceOrbitOperator<sharkOperator>,
                   "TestCoreReferenceOrbit requires a reference-orbit operator");
@@ -2329,7 +2331,14 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
         preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, aNum, bNum, SharkFloatParams::GlobalNumUint32, testNum);
+            launchParams,
+            aNum,
+            bNum,
+            SharkFloatParams::GlobalNumUint32,
+            testNum,
+            0,
+            reference2MinFusedStages,
+            reference2MaxFusedStages);
     }
 
     // Test CPU reference implementation (HpSharkFloat-based, calls MultiplyHelperFFT2 + AddHelper)
@@ -2473,7 +2482,9 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(const HpShark::LaunchParams &launch
                                              int testNum,
                                              const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
                                              const mpf_t *mpfInputX,
-                                             size_t mpfInputLen)
+                                             size_t mpfInputLen,
+                                             uint32_t reference2MinFusedStages,
+                                             uint32_t reference2MaxFusedStages)
 {
 
     if (SharkVerbose == VerboseMode::Debug) {
@@ -2499,11 +2510,17 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(const HpShark::LaunchParams &launch
         TestCoreMultiply<SharkFloatParams, sharkOperator>(
             launchParams, Tests, testNum, inputX, mpfInputX, mpfInputLen);
     } else if constexpr (IsReferenceOrbitOperator<sharkOperator>) {
-        TestCoreReferenceOrbit<SharkFloatParams, sharkOperator>(
-            launchParams, Tests, testNum, inputX, mpfInputX, mpfInputLen);
+        TestCoreReferenceOrbit<SharkFloatParams, sharkOperator>(launchParams,
+                                                                Tests,
+                                                                testNum,
+                                                                inputX,
+                                                                mpfInputX,
+                                                                mpfInputLen,
+                                                                reference2MinFusedStages,
+                                                                reference2MaxFusedStages);
     } else {
-        static_assert(HpShark::TestForceSameSign,
-                      "Unsupported operator for TestTernaryOperatorTwoNumbersRawNoSignChange");
+        throw FractalSharkSeriousException(
+            "Unsupported operator for TestTernaryOperatorTwoNumbersRawNoSignChange");
     }
 }
 
@@ -2514,7 +2531,9 @@ TestTernaryOperatorTwoNumbersRaw(const HpShark::LaunchParams &launchParams,
                                  int testNum,
                                  const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
                                  const mpf_t *mpfInputX,
-                                 size_t mpfInputLen)
+                                 size_t mpfInputLen,
+                                 uint32_t reference2MinFusedStages,
+                                 uint32_t reference2MaxFusedStages)
 {
 
     std::vector<HpSharkFloat<SharkFloatParams>> xNumCopy{};
@@ -2567,35 +2586,50 @@ TestTernaryOperatorTwoNumbersRaw(const HpShark::LaunchParams &launchParams,
             resetCopy();
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams,
+                Tests,
+                testNum,
+                xNumCopy,
+                mpfXCopy.get(),
+                mpfInputLen,
+                reference2MinFusedStages,
+                reference2MaxFusedStages);
             testNum++;
         }
 
         if constexpr (EnableTestSign2) {
             resetCopy();
-            if constexpr (!HpShark::TestForceSameSign) {
-                negateMpfAndHp(mpfXCopy[0], xNumCopy[0]);
-
-                negateMpfAndHp(mpfXCopy[3], xNumCopy[3]);
-            }
+            negateMpfAndHp(mpfXCopy[0], xNumCopy[0]);
+            negateMpfAndHp(mpfXCopy[3], xNumCopy[3]);
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams,
+                Tests,
+                testNum,
+                xNumCopy,
+                mpfXCopy.get(),
+                mpfInputLen,
+                reference2MinFusedStages,
+                reference2MaxFusedStages);
             testNum++;
         }
 
         if constexpr (EnableTestSign3) {
             resetCopy();
-            if constexpr (!HpShark::TestForceSameSign) {
-                negateMpfAndHp(mpfXCopy[1], xNumCopy[1]);
-
-                negateMpfAndHp(mpfXCopy[4], xNumCopy[4]);
-            }
+            negateMpfAndHp(mpfXCopy[1], xNumCopy[1]);
+            negateMpfAndHp(mpfXCopy[4], xNumCopy[4]);
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams,
+                Tests,
+                testNum,
+                xNumCopy,
+                mpfXCopy.get(),
+                mpfInputLen,
+                reference2MinFusedStages,
+                reference2MaxFusedStages);
             testNum++;
         }
 
@@ -2609,48 +2643,68 @@ TestTernaryOperatorTwoNumbersRaw(const HpShark::LaunchParams &launchParams,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams,
+                Tests,
+                testNum,
+                xNumCopy,
+                mpfXCopy.get(),
+                mpfInputLen,
+                reference2MinFusedStages,
+                reference2MaxFusedStages);
             testNum++;
         }
 
         if constexpr (EnableTestSign5) {
             resetCopy();
-            if constexpr (!HpShark::TestForceSameSign) {
-                negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
-            }
+            negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams,
+                Tests,
+                testNum,
+                xNumCopy,
+                mpfXCopy.get(),
+                mpfInputLen,
+                reference2MinFusedStages,
+                reference2MaxFusedStages);
             testNum++;
         }
 
         if constexpr (EnableTestSign6) {
             resetCopy();
-            if constexpr (!HpShark::TestForceSameSign) {
-                negateMpfAndHp(mpfXCopy[0], xNumCopy[0]);
-                negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
-
-                negateMpfAndHp(mpfXCopy[3], xNumCopy[3]);
-            }
+            negateMpfAndHp(mpfXCopy[0], xNumCopy[0]);
+            negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
+            negateMpfAndHp(mpfXCopy[3], xNumCopy[3]);
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams,
+                Tests,
+                testNum,
+                xNumCopy,
+                mpfXCopy.get(),
+                mpfInputLen,
+                reference2MinFusedStages,
+                reference2MaxFusedStages);
         }
 
         if constexpr (EnableTestSign7) {
             resetCopy();
-            if constexpr (!HpShark::TestForceSameSign) {
-                negateMpfAndHp(mpfXCopy[1], xNumCopy[1]);
-                negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
-
-                negateMpfAndHp(mpfXCopy[4], xNumCopy[4]);
-            }
+            negateMpfAndHp(mpfXCopy[1], xNumCopy[1]);
+            negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
+            negateMpfAndHp(mpfXCopy[4], xNumCopy[4]);
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams,
+                Tests,
+                testNum,
+                xNumCopy,
+                mpfXCopy.get(),
+                mpfInputLen,
+                reference2MinFusedStages,
+                reference2MaxFusedStages);
         }
 
         if constexpr (EnableTestSign8) {
@@ -2664,12 +2718,26 @@ TestTernaryOperatorTwoNumbersRaw(const HpShark::LaunchParams &launchParams,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams,
+                Tests,
+                testNum,
+                xNumCopy,
+                mpfXCopy.get(),
+                mpfInputLen,
+                reference2MinFusedStages,
+                reference2MaxFusedStages);
         }
 
     } else {
         TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-            launchParams, Tests, testNum, inputX, mpfXCopy.get(), mpfInputLen);
+            launchParams,
+            Tests,
+            testNum,
+            inputX,
+            mpfXCopy.get(),
+            mpfInputLen,
+            reference2MinFusedStages,
+            reference2MaxFusedStages);
     }
 
     for (size_t i = 0; i < mpfInputLen; ++i) {
@@ -2695,6 +2763,7 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
 
     // Copy mpfX and mpfY
     auto mpfCopy = std::make_unique<mpf_t[]>(mpfInLen);
+    constexpr uint32_t requiredStage = HpSharkReference2OneShotRequiredStage<SharkFloatParams>();
     for (size_t i = 0; i < mpfInLen; ++i) {
         mpf_init(mpfCopy[i]);
     }
@@ -2731,8 +2800,14 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
                                    InjectNoiseInLowOrder::Disable);
         }
 
-        TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, false>(
-            launchParams, Tests, testNum, xNumCopy, mpfCopy.get(), mpfInLen);
+        TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, false>(launchParams,
+                                                                                 Tests,
+                                                                                 testNum,
+                                                                                 xNumCopy,
+                                                                                 mpfCopy.get(),
+                                                                                 mpfInLen,
+                                                                                 requiredStage,
+                                                                                 requiredStage);
 
         testNum++;
     };
@@ -2768,18 +2843,14 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
         printTest(testNum);
         resetCopy();
 
-        if constexpr (!HpShark::TestForceSameSign) {
-            mpf_neg(mpfCopy[0], mpfCopy[0]);
-        }
+        mpf_neg(mpfCopy[0], mpfCopy[0]);
         curTest();
     }
 
     if constexpr (EnableTestSign3) {
         printTest(testNum);
         resetCopy();
-        if constexpr (!HpShark::TestForceSameSign) {
-            mpf_neg(mpfCopy[1], mpfCopy[1]);
-        }
+        mpf_neg(mpfCopy[1], mpfCopy[1]);
         curTest();
     }
 
@@ -2793,9 +2864,7 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
     if constexpr (EnableTestSign5) {
         printTest(testNum);
         resetCopy();
-        if constexpr (!HpShark::TestForceSameSign) {
-            mpf_neg(mpfCopy[2], mpfCopy[2]);
-        }
+        mpf_neg(mpfCopy[2], mpfCopy[2]);
         curTest();
     }
 
@@ -2809,21 +2878,17 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
     if constexpr (EnableTestSign7) {
         printTest(testNum);
         resetCopy();
-        if constexpr (!HpShark::TestForceSameSign) {
-            mpf_neg(mpfCopy[1], mpfCopy[1]);
-            mpf_neg(mpfCopy[2], mpfCopy[2]);
-        }
+        mpf_neg(mpfCopy[1], mpfCopy[1]);
+        mpf_neg(mpfCopy[2], mpfCopy[2]);
         curTest();
     }
 
     if constexpr (EnableTestSign8) {
         printTest(testNum);
         resetCopy();
-        if constexpr (!HpShark::TestForceSameSign) {
-            mpf_neg(mpfCopy[0], mpfCopy[0]);
-            mpf_neg(mpfCopy[1], mpfCopy[1]);
-            mpf_neg(mpfCopy[2], mpfCopy[2]);
-        }
+        mpf_neg(mpfCopy[0], mpfCopy[0]);
+        mpf_neg(mpfCopy[1], mpfCopy[1]);
+        mpf_neg(mpfCopy[2], mpfCopy[2]);
         curTest();
     }
 
@@ -2902,7 +2967,9 @@ TestTernarySpecial(const HpShark::LaunchParams &launchParams,
                    const HpSharkFloat<SharkFloatParams> &yNum,
                    const HpSharkFloat<SharkFloatParams> &zNum,
                    const HpSharkFloat<SharkFloatParams> &xNum2,
-                   const HpSharkFloat<SharkFloatParams> &yNum2)
+                   const HpSharkFloat<SharkFloatParams> &yNum2,
+                   uint32_t reference2MinFusedStages,
+                   uint32_t reference2MaxFusedStages)
 {
 
     static constexpr size_t NumMpfs = 5;
@@ -2928,8 +2995,14 @@ TestTernarySpecial(const HpShark::LaunchParams &launchParams,
     xNum2.HpGpuToMpf(mpfXCopy[3]);
     yNum2.HpGpuToMpf(mpfXCopy[4]);
 
-    TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, true>(
-        launchParams, Tests, testNum, xNumCopy, mpfXCopy, NumMpfs);
+    TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, true>(launchParams,
+                                                                            Tests,
+                                                                            testNum,
+                                                                            xNumCopy,
+                                                                            mpfXCopy,
+                                                                            NumMpfs,
+                                                                            reference2MinFusedStages,
+                                                                            reference2MaxFusedStages);
 
     // Clean up
     for (size_t i = 0; i < NumMpfs; ++i) {
@@ -2981,8 +3054,9 @@ TestTernarySpecialHelper(const HpShark::LaunchParams &launchParams,
     auto yNum2{std::make_unique<HpSharkFloat<SharkFloatParams>>(
         testData5Copy.Digits.data(), testData5Copy.Exponent, testData5Copy.Negative)};
 
+    constexpr uint32_t requiredStage = HpSharkReference2OneShotRequiredStage<SharkFloatParams>();
     TestTernarySpecial<SharkFloatParams, sharkOperator>(
-        launchParams, Tests, testNum, *xNum, *yNum, *zNum, *xNum2, *yNum2);
+        launchParams, Tests, testNum, *xNum, *yNum, *zNum, *xNum2, *yNum2, requiredStage, requiredStage);
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
@@ -3011,7 +3085,9 @@ TestTernarySpecial(const HpShark::LaunchParams &launchParams,
                    int testNum,
                    const HpSharkFloat<SharkFloatParams> &xNum,
                    const HpSharkFloat<SharkFloatParams> &yNum,
-                   const HpSharkFloat<SharkFloatParams> &zNum)
+                   const HpSharkFloat<SharkFloatParams> &zNum,
+                   uint32_t reference2MinFusedStages,
+                   uint32_t reference2MaxFusedStages)
 {
 
     TestTernarySpecial<SharkFloatParams, sharkOperator>(launchParams,
@@ -3020,8 +3096,10 @@ TestTernarySpecial(const HpShark::LaunchParams &launchParams,
                                                         xNum,
                                                         yNum,
                                                         zNum,
-                                                        xNum,  // Repeat
-                                                        yNum); // Repeat
+                                                        xNum, // Repeat
+                                                        yNum, // Repeat
+                                                        reference2MinFusedStages,
+                                                        reference2MaxFusedStages);
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
@@ -3417,6 +3495,34 @@ TestTernarySpecial20(const HpShark::LaunchParams &launchParams, TestTracker &Tes
                               0xFFFFFFEF, 0xB06FA6C3, 0x0000000F, 0xFFFFFFF4, 0x00000007, 0xFFFFFFFF});
 }
 
+static constexpr int32_t HpSharkReference2Special21MinExponentOverride = -512;
+static constexpr int32_t HpSharkReference2Special21MaxExponentOverride = 512;
+
+template <class SharkFloatParams>
+static constexpr uint32_t
+HpSharkReference2Special21RequiredStage()
+{
+    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+
+    // TestTernarySpecial21 constructs a one in the least-significant input limb and then
+    // normalizes it.  The lowest exponent in its sweep therefore gives the largest gap between
+    // the squared real and imaginary terms.
+    constexpr int64_t normalizedOneShift =
+        static_cast<int64_t>(SharkFloatParams::GlobalNumUint32) * 32ll - 1ll;
+    constexpr uint64_t maxProductExponentGap =
+        2ull * static_cast<uint64_t>(normalizedOneShift - HpSharkReference2Special21MinExponentOverride);
+    constexpr uint64_t coefficientShift =
+        maxProductExponentGap / static_cast<uint64_t>(SharkFloatParams::NTTPlan2.b);
+    constexpr uint64_t productCoefficientCount =
+        2ull * static_cast<uint64_t>(SharkFloatParams::NTTPlan2.L) - 1ull;
+    constexpr uint32_t requiredN =
+        SharkNTT::NextPow2U32(static_cast<uint32_t>(coefficientShift + productCoefficientCount));
+    constexpr uint32_t requiredStage = SharkNTT::CeilLog2U32(requiredN);
+    static_assert(requiredStage <= Workspace::MaxFusedStages);
+
+    return requiredStage > Workspace::MinFusedStages ? requiredStage : Workspace::MinFusedStages;
+}
+
 template <class SharkFloatParams, Operator sharkOperator>
 void
 TestTernarySpecial21(const HpShark::LaunchParams &launchParams, TestTracker &Tests, int testNum)
@@ -3483,7 +3589,14 @@ TestTernarySpecial21(const HpShark::LaunchParams &launchParams,
     auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>(allFs.data(), 0, false);
 
     TestTernarySpecial<SharkFloatParams, sharkOperator>(
-        launchParams, Tests, testNum, *xNum, *yNum, *zNum);
+        launchParams,
+        Tests,
+        testNum,
+        *xNum,
+        *yNum,
+        *zNum,
+        HpSharkReference2Workspace<SharkFloatParams>::MinFusedStages,
+        HpSharkReference2Special21RequiredStage<SharkFloatParams>());
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
@@ -4230,7 +4343,9 @@ TestAllBinaryOp(int testBase)
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest5);
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest6);
 
-        for (auto i = -512; i < 512; i++) {
+        for (auto i = HpSharkReference2Special21MinExponentOverride;
+             i < HpSharkReference2Special21MaxExponentOverride;
+             i++) {
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "Exponent adjustment: " << i << std::endl;
             }

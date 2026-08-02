@@ -34,7 +34,6 @@ namespace HpShark {
 // static constexpr bool TestGpu = true;
 static constexpr bool TestGpu = true;
 static constexpr bool TestInfiniteCorrectness = true;
-static constexpr auto TestForceSameSign = false;
 static constexpr bool TestMPIRImpl = false;
 
 // True to compare against the full host-side reference implementation, false is MPIR only

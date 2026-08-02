@@ -37,9 +37,27 @@ std::unique_ptr<Reference2PreparedTables<SharkFloatParams>> PrepareHpSharkRefere
 template <class SharkFloatParams>
 std::unique_ptr<Reference2PreparedTables<SharkFloatParams>> PrepareHpSharkReference2Tables(
     const HpShark::LaunchParams &launchParams,
+    const HpSharkFloat<SharkFloatParams> &cReal,
+    const HpSharkFloat<SharkFloatParams> &cImag,
+    uint32_t actualPrecisionLimbs,
+    uint32_t minFusedStages,
+    uint32_t maxFusedStages);
+
+template <class SharkFloatParams>
+std::unique_ptr<Reference2PreparedTables<SharkFloatParams>> PrepareHpSharkReference2Tables(
+    const HpShark::LaunchParams &launchParams,
     const mpf_t cReal,
     const mpf_t cImag,
     uint32_t actualPrecisionLimbs);
+
+template <class SharkFloatParams>
+std::unique_ptr<Reference2PreparedTables<SharkFloatParams>> PrepareHpSharkReference2Tables(
+    const HpShark::LaunchParams &launchParams,
+    const mpf_t cReal,
+    const mpf_t cImag,
+    uint32_t actualPrecisionLimbs,
+    uint32_t minFusedStages,
+    uint32_t maxFusedStages);
 
 template <class SharkFloatParams>
 std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> InitHpSharkReferenceKernel(

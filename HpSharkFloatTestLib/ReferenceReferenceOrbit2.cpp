@@ -176,6 +176,11 @@ struct FusedWorkspace {
     SharkNTT::PlanPrime *Plans;
     SharkNTT::RootTables *PlanRoots;
     HpSharkReference2ConstantSpectra *ConstantSpectra;
+    uint32_t ActiveMinFusedN;
+    uint32_t ActiveMaxFusedN;
+    uint32_t ActiveMinFusedStages;
+    uint32_t ActiveMaxFusedStages;
+    uint32_t ActiveMaxFusedLimbs;
 };
 
 template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
@@ -221,6 +226,11 @@ template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
     SharkNTT::PlanPrime Plans[Cache::EntryCount]{};
     SharkNTT::RootTables PlanRoots[Cache::EntryCount]{};
     HpSharkReference2ConstantSpectra ConstantSpectra[Cache::EntryCount]{};
+    uint32_t ActiveMinFusedN = Cache::MinFusedN;
+    uint32_t ActiveMaxFusedN = MaxFusedN;
+    uint32_t ActiveMinFusedStages = Cache::MinFusedStages;
+    uint32_t ActiveMaxFusedStages = MaxFusedStages;
+    uint32_t ActiveMaxFusedLimbs = MaxFusedLimbs;
     uint64_t LoadedPreparedTablesId = 0;
 };
 
@@ -341,7 +351,12 @@ GetGlobalFusedWorkspace()
             global.Magnitude.get(),
             global.Plans,
             global.PlanRoots,
-            global.ConstantSpectra};
+            global.ConstantSpectra,
+            global.ActiveMinFusedN,
+            global.ActiveMaxFusedN,
+            global.ActiveMinFusedStages,
+            global.ActiveMaxFusedStages,
+            global.ActiveMaxFusedLimbs};
 }
 
 template <class SharkFloatParams>
@@ -360,9 +375,17 @@ LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &pr
                                                          sizeof(deviceWorkspace),
                                                          cudaMemcpyDeviceToHost),
                                               "cudaMemcpy(Reference2 prepared descriptor D2H)");
-    constexpr uint32_t FullPlanMask = Cache::EntryCount == 32u ? ~0u : (1u << Cache::EntryCount) - 1u;
-    if (deviceWorkspace.ValidPlanMask != FullPlanMask)
+    const uint32_t firstSlot = deviceWorkspace.ActiveMinFusedStages - Cache::MinFusedStages;
+    const uint32_t activePlanMask = deviceWorkspace.ActivePlanCacheEntryCount == 32u
+                                        ? ~0u
+                                        : (1u << deviceWorkspace.ActivePlanCacheEntryCount) - 1u;
+    const uint32_t fullPlanMask = activePlanMask << firstSlot;
+    if (deviceWorkspace.ValidPlanMask != fullPlanMask)
         throw FractalSharkSeriousException("Reference2 prepared tables are incomplete");
+
+    const uint32_t activePsiArenaSize =
+        2u * deviceWorkspace.ActiveMaxFusedN - deviceWorkspace.ActiveMinFusedN;
+    const size_t globalPsiOffset = deviceWorkspace.ActiveMinFusedN - Cache::MinFusedN;
 
     const auto copy = [](void *destination, const void *source, size_t bytes, const char *operation) {
         HpShark::Reference2SetupDetail::CheckCuda(
@@ -370,47 +393,53 @@ LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &pr
     };
     copy(global.StageOmegas.get(),
          deviceWorkspace.StageOmegas,
-         MaxFusedStages * sizeof(uint64_t),
+         deviceWorkspace.ActiveMaxFusedStages * sizeof(uint64_t),
          "cudaMemcpy(Reference2 stage omegas D2H)");
     copy(global.StageOmegasInverse.get(),
          deviceWorkspace.StageOmegasInverse,
-         MaxFusedStages * sizeof(uint64_t),
+         deviceWorkspace.ActiveMaxFusedStages * sizeof(uint64_t),
          "cudaMemcpy(Reference2 inverse stage omegas D2H)");
-    copy(global.PsiPowersArena.get(),
+    copy(global.PsiPowersArena.get() + globalPsiOffset,
          deviceWorkspace.PsiPowersArena,
-         Cache::PsiArenaSize * sizeof(uint64_t),
+         activePsiArenaSize * sizeof(uint64_t),
          "cudaMemcpy(Reference2 psi arena D2H)");
-    copy(global.PsiInversePowersArena.get(),
+    copy(global.PsiInversePowersArena.get() + globalPsiOffset,
          deviceWorkspace.PsiInversePowersArena,
-         Cache::PsiArenaSize * sizeof(uint64_t),
+         activePsiArenaSize * sizeof(uint64_t),
          "cudaMemcpy(Reference2 inverse psi arena D2H)");
     copy(global.ForwardTwiddles.get(),
          deviceWorkspace.ForwardTwiddles,
-         MaxFusedN * sizeof(uint64_t),
+         deviceWorkspace.ActiveMaxFusedN * sizeof(uint64_t),
          "cudaMemcpy(Reference2 forward twiddles D2H)");
     copy(global.InverseTwiddles.get(),
          deviceWorkspace.InverseTwiddles,
-         MaxFusedN * sizeof(uint64_t),
+         deviceWorkspace.ActiveMaxFusedN * sizeof(uint64_t),
          "cudaMemcpy(Reference2 inverse twiddles D2H)");
-    copy(global.CRealArena.get(),
+    copy(global.CRealArena.get() + globalPsiOffset,
          deviceWorkspace.CRealArena,
-         Cache::PsiArenaSize * sizeof(uint64_t),
+         activePsiArenaSize * sizeof(uint64_t),
          "cudaMemcpy(Reference2 CReal spectra D2H)");
-    copy(global.CImagArena.get(),
+    copy(global.CImagArena.get() + globalPsiOffset,
          deviceWorkspace.CImagArena,
-         Cache::PsiArenaSize * sizeof(uint64_t),
+         activePsiArenaSize * sizeof(uint64_t),
          "cudaMemcpy(Reference2 CImag spectra D2H)");
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        copy(global.OneArena.get(),
+        copy(global.OneArena.get() + globalPsiOffset,
              deviceWorkspace.OneArena,
-             Cache::PsiArenaSize * sizeof(uint64_t),
+             activePsiArenaSize * sizeof(uint64_t),
              "cudaMemcpy(Reference2 One spectra D2H)");
     }
 
-    for (uint32_t slot = 0; slot < Cache::EntryCount; ++slot) {
+    for (uint32_t index = 0; index < deviceWorkspace.ActivePlanCacheEntryCount; ++index) {
+        const uint32_t slot = firstSlot + index;
         global.Plans[slot] = deviceWorkspace.Plans[slot];
         global.PlanRoots[slot].Ninvm_mont = deviceWorkspace.PlanRoots[slot].Ninvm_mont;
     }
+    global.ActiveMinFusedN = deviceWorkspace.ActiveMinFusedN;
+    global.ActiveMaxFusedN = deviceWorkspace.ActiveMaxFusedN;
+    global.ActiveMinFusedStages = deviceWorkspace.ActiveMinFusedStages;
+    global.ActiveMaxFusedStages = deviceWorkspace.ActiveMaxFusedStages;
+    global.ActiveMaxFusedLimbs = deviceWorkspace.ActiveMaxFusedLimbs;
     global.LoadedPreparedTablesId = preparedTables.GetId();
 }
 
@@ -1501,16 +1530,17 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     }
 
     const uint64_t requiredN = CeilPowerOfTwo(maxRequiredCoefficients);
-    if (requiredN > MaxFusedN) {
+    if (requiredN > workspace.ActiveMaxFusedN) {
         std::cerr << "ReferenceOrbit2 fused workspace exceeded: requestedCoefficients="
-                  << maxRequiredCoefficients << " requiredN=" << requiredN << " capacity=" << MaxFusedN
-                  << '\n';
+                  << maxRequiredCoefficients << " requiredN=" << requiredN
+                  << " capacity=" << workspace.ActiveMaxFusedN << '\n';
         assert(false);
     }
     using Cache = FusedPlanCacheTraits<SharkFloatParams>;
-    const uint32_t activeN =
-        requiredN < Cache::MinFusedN ? Cache::MinFusedN : static_cast<uint32_t>(requiredN);
-    assert(activeN >= Cache::MinFusedN);
+    const uint32_t activeN = requiredN < workspace.ActiveMinFusedN ? workspace.ActiveMinFusedN
+                                                                   : static_cast<uint32_t>(requiredN);
+    assert(activeN >= workspace.ActiveMinFusedN);
+    assert(activeN <= workspace.ActiveMaxFusedN);
     assert(activeN >= 2u);
     assert((SharkNTT::PHI % (2ull * activeN)) == 0ull);
     const uint32_t planSlot = CountTrailingZeros(activeN) - Cache::MinFusedStages;
@@ -1533,7 +1563,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     workspace.One = constantSpectra.One;
     const uint32_t coefficientCount = activeN;
     const uint32_t limbCount = (coefficientCount * static_cast<uint32_t>(plan.b) + 31u) / 32u + 2u;
-    assert(limbCount <= MaxFusedLimbs);
+    assert(limbCount <= workspace.ActiveMaxFusedLimbs);
 
     PrintTerm("real z^2", realZ2);
     PrintTerm("real -y^2", realNegY2);
@@ -1588,7 +1618,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         FinalizeSignedStream(realStream,
                              workspace.MagnitudeDigits,
                              workspace.Magnitude,
-                             MaxFusedLimbs,
+                             workspace.ActiveMaxFusedLimbs,
                              debugHostCombo,
                              DebugStatePurpose::SignedCarry1,
                              DebugStatePurpose::FinalAdd1);
@@ -1620,7 +1650,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         FinalizeSignedStream(imagStream,
                              workspace.MagnitudeDigits,
                              workspace.Magnitude,
-                             MaxFusedLimbs,
+                             workspace.ActiveMaxFusedLimbs,
                              debugHostCombo,
                              DebugStatePurpose::SignedCarry2,
                              DebugStatePurpose::FinalAdd2);
@@ -1678,7 +1708,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
             FinalizeSignedStream(dzdcRealStream,
                                  workspace.MagnitudeDigits,
                                  workspace.Magnitude,
-                                 MaxFusedLimbs,
+                                 workspace.ActiveMaxFusedLimbs,
                                  debugHostCombo,
                                  DebugStatePurpose::SignedCarryDzdc1,
                                  DebugStatePurpose::FinalAddDzdc1);
@@ -1710,7 +1740,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
             FinalizeSignedStream(dzdcImagStream,
                                  workspace.MagnitudeDigits,
                                  workspace.Magnitude,
-                                 MaxFusedLimbs,
+                                 workspace.ActiveMaxFusedLimbs,
                                  debugHostCombo,
                                  DebugStatePurpose::SignedCarryDzdc2,
                                  DebugStatePurpose::FinalAddDzdc2);

@@ -124,7 +124,27 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     uint32_t GeneratedStages;
     uint32_t ActualPrecisionLimbs;
     uint32_t IgnoredPrecisionBits;
+    uint32_t ActiveMinFusedN;
+    uint32_t ActiveMaxFusedN;
+    uint32_t ActiveMinFusedStages;
+    uint32_t ActiveMaxFusedStages;
+    uint32_t ActiveMaxFusedLimbs;
+    uint32_t ActiveMaxCarryPrefixParts;
+    uint32_t ActivePlanCacheEntryCount;
 };
+
+template <class SharkFloatParams>
+constexpr uint32_t
+HpSharkReference2OneShotRequiredStage()
+{
+    constexpr uint32_t productCoefficientCount =
+        2u * static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L) - 1u;
+    constexpr uint32_t productRequiredStage =
+        SharkNTT::CeilLog2U32(SharkNTT::NextPow2U32(productCoefficientCount));
+    constexpr uint32_t alignmentRequiredStage =
+        HpSharkReference2Workspace<SharkFloatParams>::MinFusedStages + 2u;
+    return productRequiredStage > alignmentRequiredStage ? productRequiredStage : alignmentRequiredStage;
+}
 
 template <class SharkFloatParams> struct HpSharkReferenceResults {
 

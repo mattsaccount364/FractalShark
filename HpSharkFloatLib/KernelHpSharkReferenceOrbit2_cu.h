@@ -439,10 +439,11 @@ GenerateCachedPlan(cooperative_groups::grid_group &grid,
                    HpSharkReference2Workspace<SharkFloatParams> &workspace)
 {
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    MattsCudaAssert(activeN >= Workspace::MinFusedN && activeN <= Workspace::MaxFusedN);
+    MattsCudaAssert(activeN >= workspace.ActiveMinFusedN && activeN <= workspace.ActiveMaxFusedN);
     MattsCudaAssert((activeN & (activeN - 1u)) == 0u);
     const uint32_t stages = CountTrailingZeros(activeN);
-    MattsCudaAssert(stages >= Workspace::MinFusedStages);
+    MattsCudaAssert(stages >= workspace.ActiveMinFusedStages &&
+                    stages <= workspace.ActiveMaxFusedStages);
     const uint32_t slot = stages - Workspace::MinFusedStages;
     MattsCudaAssert(slot < Workspace::PlanCacheEntryCount);
     const uint32_t planBit = 1u << slot;
@@ -1672,26 +1673,35 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
 {
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
     using Descriptor = HpSharkReference2PackedCarryPrefixDescriptor;
-    constexpr uint32_t Capacity = Workspace::MaxFusedLimbs;
-    constexpr uint32_t DescriptorWords =
+    constexpr uint32_t MaxCapacity = Workspace::MaxFusedLimbs;
+    constexpr uint32_t MaxDescriptorWords =
         (Workspace::MaxCarryPrefixParts * sizeof(Descriptor) + sizeof(uint64_t) - 1u) / sizeof(uint64_t);
-    constexpr uint32_t ControlWords =
+    constexpr uint32_t MaxControlWords =
         (Workspace::CarryPrefixControlCount * sizeof(uint32_t) + sizeof(uint64_t) - 1u) /
         sizeof(uint64_t);
-    static_assert((Capacity * sizeof(uint64_t)) % alignof(Descriptor) == 0u);
-    static_assert(Capacity + DescriptorWords + ControlWords <= Workspace::MaxFusedN);
+    static_assert((MaxCapacity * sizeof(uint64_t)) % alignof(Descriptor) == 0u);
+    static_assert(MaxCapacity + MaxDescriptorWords + MaxControlWords <= Workspace::MaxFusedN);
+    const uint32_t capacity = workspace.ActiveMaxFusedLimbs;
+    const uint32_t descriptorWords =
+        (workspace.ActiveMaxCarryPrefixParts * sizeof(Descriptor) + sizeof(uint64_t) - 1u) /
+        sizeof(uint64_t);
+    const uint32_t controlWords =
+        (Workspace::CarryPrefixControlCount * sizeof(uint32_t) + sizeof(uint64_t) - 1u) /
+        sizeof(uint64_t);
+    MattsCudaAssert(capacity <= MaxCapacity);
+    MattsCudaAssert(capacity + descriptorWords + controlWords <= workspace.ActiveMaxFusedN);
 
     uint64_t *realOutputArena = workspace.RealOutput;
     int64_t *realLimbs = workspace.RealLimbs;
     uint32_t *realDigits = reinterpret_cast<uint32_t *>(realOutputArena);
-    Descriptor *descriptors = reinterpret_cast<Descriptor *>(realOutputArena + Capacity);
-    uint32_t *realControl = reinterpret_cast<uint32_t *>(realOutputArena + Capacity + DescriptorWords);
+    Descriptor *descriptors = reinterpret_cast<Descriptor *>(realOutputArena + capacity);
+    uint32_t *realControl = reinterpret_cast<uint32_t *>(realOutputArena + capacity + descriptorWords);
     HpSharkFloat<SharkFloatParams> *realOutput = &combo->Multiply.A;
 
     uint64_t *imagOutputArena = workspace.ImagOutput;
     int64_t *imagLimbs = workspace.ImagLimbs;
     uint32_t *imagDigits = reinterpret_cast<uint32_t *>(imagOutputArena);
-    uint32_t *imagControl = reinterpret_cast<uint32_t *>(imagOutputArena + Capacity + DescriptorWords);
+    uint32_t *imagControl = reinterpret_cast<uint32_t *>(imagOutputArena + capacity + descriptorWords);
     HpSharkFloat<SharkFloatParams> *imagOutput = &combo->Multiply.B;
 
     int64_t *dzdcRealLimbs = nullptr;
@@ -1706,22 +1716,22 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
         dzdcRealLimbs = workspace.DzdcRealLimbs;
         dzdcRealDigits = reinterpret_cast<uint32_t *>(workspace.DzdcRealOutput);
         dzdcRealControl =
-            reinterpret_cast<uint32_t *>(workspace.DzdcRealOutput + Capacity + DescriptorWords);
+            reinterpret_cast<uint32_t *>(workspace.DzdcRealOutput + capacity + descriptorWords);
         dzdcRealOutput = &combo->Multiply.DzdcReal;
         dzdcImagLimbs = workspace.DzdcImagLimbs;
         dzdcImagDigits = reinterpret_cast<uint32_t *>(workspace.DzdcImagOutput);
         dzdcImagControl =
-            reinterpret_cast<uint32_t *>(workspace.DzdcImagOutput + Capacity + DescriptorWords);
+            reinterpret_cast<uint32_t *>(workspace.DzdcImagOutput + capacity + descriptorWords);
         dzdcImagOutput = &combo->Multiply.DzdcImag;
     }
 
-    MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
+    MattsCudaAssert(limbCount > 0u && limbCount <= capacity);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
 
     PrefixCarryTransformsDLB<SharkFloatParams>(grid,
                                                block,
                                                limbCount,
-                                               Capacity,
+                                               capacity,
                                                realLimbs,
                                                realDigits,
                                                realControl,
@@ -1840,8 +1850,8 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
         uint32_t currentRealDigitLength = realControl[FinalizationDigitLengthControl];
         if (realControl[FinalizationNegativeControl] != 0u &&
             realControl[FinalizationNonZeroReductionControl] == currentRealDigitLength) {
-            MattsCudaAssert(currentRealDigitLength < Capacity);
-            if (currentRealDigitLength < Capacity)
+            MattsCudaAssert(currentRealDigitLength < capacity);
+            if (currentRealDigitLength < capacity)
                 realDigits[currentRealDigitLength++] = 1u;
         }
         realControl[FinalizationDigitLengthControl] = currentRealDigitLength;
@@ -1849,8 +1859,8 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
         uint32_t currentImagDigitLength = imagControl[FinalizationDigitLengthControl];
         if (imagControl[FinalizationNegativeControl] != 0u &&
             imagControl[FinalizationNonZeroReductionControl] == currentImagDigitLength) {
-            MattsCudaAssert(currentImagDigitLength < Capacity);
-            if (currentImagDigitLength < Capacity)
+            MattsCudaAssert(currentImagDigitLength < capacity);
+            if (currentImagDigitLength < capacity)
                 imagDigits[currentImagDigitLength++] = 1u;
         }
         imagControl[FinalizationDigitLengthControl] = currentImagDigitLength;
@@ -1859,8 +1869,8 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
             uint32_t currentDzdcRealDigitLength = dzdcRealControl[FinalizationDigitLengthControl];
             if (dzdcRealControl[FinalizationNegativeControl] != 0u &&
                 dzdcRealControl[FinalizationNonZeroReductionControl] == currentDzdcRealDigitLength) {
-                MattsCudaAssert(currentDzdcRealDigitLength < Capacity);
-                if (currentDzdcRealDigitLength < Capacity)
+                MattsCudaAssert(currentDzdcRealDigitLength < capacity);
+                if (currentDzdcRealDigitLength < capacity)
                     dzdcRealDigits[currentDzdcRealDigitLength++] = 1u;
             }
             dzdcRealControl[FinalizationDigitLengthControl] = currentDzdcRealDigitLength;
@@ -1868,8 +1878,8 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
             uint32_t currentDzdcImagDigitLength = dzdcImagControl[FinalizationDigitLengthControl];
             if (dzdcImagControl[FinalizationNegativeControl] != 0u &&
                 dzdcImagControl[FinalizationNonZeroReductionControl] == currentDzdcImagDigitLength) {
-                MattsCudaAssert(currentDzdcImagDigitLength < Capacity);
-                if (currentDzdcImagDigitLength < Capacity)
+                MattsCudaAssert(currentDzdcImagDigitLength < capacity);
+                if (currentDzdcImagDigitLength < capacity)
                     dzdcImagDigits[currentDzdcImagDigitLength++] = 1u;
             }
             dzdcImagControl[FinalizationDigitLengthControl] = currentDzdcImagDigitLength;
@@ -2189,9 +2199,9 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
         return;
     }
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    const uint32_t activeN =
-        requiredN < Workspace::MinFusedN ? Workspace::MinFusedN : static_cast<uint32_t>(requiredN);
-    MattsCudaAssert(activeN >= Workspace::MinFusedN);
+    const uint32_t activeN = requiredN < workspace.ActiveMinFusedN ? workspace.ActiveMinFusedN
+                                                                   : static_cast<uint32_t>(requiredN);
+    MattsCudaAssert(activeN >= workspace.ActiveMinFusedN);
     const uint32_t planSlot = CountTrailingZeros(activeN) - Workspace::MinFusedStages;
     MattsCudaAssert(planSlot < Workspace::PlanCacheEntryCount);
     MattsCudaAssert((workspace.ValidPlanMask & (1u << planSlot)) != 0u);
@@ -2480,8 +2490,10 @@ __maxnreg__(HpShark::RegisterLimit)
     }
 
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    for (uint32_t slot = 0; slot < Workspace::PlanCacheEntryCount; ++slot) {
-        const uint32_t activeN = 1u << (Workspace::MinFusedStages + slot);
+    for (uint32_t stage = workspace->ActiveMinFusedStages; stage <= workspace->ActiveMaxFusedStages;
+         ++stage) {
+        const uint32_t slot = stage - Workspace::MinFusedStages;
+        const uint32_t activeN = 1u << stage;
         Reference2Detail::GenerateCachedPlan<SharkFloatParams>(
             grid, block, debugCombo, activeN, *workspace);
 
@@ -2530,9 +2542,12 @@ __maxnreg__(HpShark::RegisterLimit)
         grid.sync();
     }
 
-    constexpr uint32_t FullPlanMask =
-        Workspace::PlanCacheEntryCount == 32u ? ~0u : (1u << Workspace::PlanCacheEntryCount) - 1u;
-    Reference2Detail::MattsCudaAssert(workspace->ValidPlanMask == FullPlanMask);
+    const uint32_t firstSlot = workspace->ActiveMinFusedStages - Workspace::MinFusedStages;
+    const uint32_t activePlanMask = workspace->ActivePlanCacheEntryCount == 32u
+                                        ? ~0u
+                                        : (1u << workspace->ActivePlanCacheEntryCount) - 1u;
+    const uint32_t fullPlanMask = activePlanMask << firstSlot;
+    Reference2Detail::MattsCudaAssert(workspace->ValidPlanMask == fullPlanMask);
 }
 
 template <class SharkFloatParams>

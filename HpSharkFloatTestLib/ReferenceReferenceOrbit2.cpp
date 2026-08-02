@@ -699,23 +699,6 @@ ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &x, int64_t q, int b)
     return (b == 64) ? v : (v & ((1ull << b) - 1ull));
 }
 
-static void
-BitReverseInplace64(uint64_t *a, uint32_t N, uint32_t stages)
-{
-    for (uint32_t i = 0; i < N; ++i) {
-        const uint32_t j = ReverseBits32(i, static_cast<int>(stages)) & (N - 1u);
-        if (j > i) {
-            if (IsDebugTraceEnabled()) {
-                std::cout << "  bit reverse swap i=" << i << " j=" << j;
-                PrintHexValue("left", a[i]);
-                PrintHexValue("right", a[j]);
-                std::cout << '\n';
-            }
-            std::swap(a[i], a[j]);
-        }
-    }
-}
-
 template <class SharkFloatParams, bool inverse>
 static void
 NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
@@ -807,21 +790,20 @@ PackTwistForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                       x, static_cast<int64_t>(inputBitOffset) + static_cast<int64_t>(i) * plan.b, plan.b)
                 : 0;
         const uint64_t coeffMont = SharkNTT::ToMontgomery(debugCombo, coeff % SharkNTT::MagicPrime);
-        out[i] = SharkNTT::MontgomeryMul(debugCombo, coeffMont, roots.psi_pows[i]);
+        const uint32_t reverseIndex = ReverseBits32(i, static_cast<int>(plan.stages));
+        out[reverseIndex] = SharkNTT::MontgomeryMul(debugCombo, coeffMont, roots.psi_pows[i]);
         if (i < static_cast<uint32_t>(plan.L) && IsDebugTraceEnabled()) {
             std::cout << "  pack coefficient index=" << i;
             PrintHexValue("coefficient", coeff);
             PrintHexValue("coefficientMont", coeffMont);
             PrintHexValue("psi", roots.psi_pows[i]);
-            PrintHexValue("twisted", out[i]);
+            PrintHexValue("twisted", out[reverseIndex]);
             std::cout << '\n';
         }
     }
 
-    PrintArray("packed/twisted spectrum", out, activeN);
+    PrintArray("bit-reversed packed/twisted spectrum", out, activeN);
     StoreReference2DebugState(debugCombo, packedPurpose, out, activeN);
-    BitReverseInplace64(out, activeN, static_cast<uint32_t>(plan.stages));
-    PrintArray("bit-reversed spectrum", out, activeN);
     NTTRadix2<SharkFloatParams, false>(
         debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
     StoreReference2DebugState(debugCombo, forwardPurpose, out, activeN);
@@ -864,7 +846,8 @@ WriteShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
                                         : PsiPowerMont<SharkFloatParams>(plan, roots, psiExponent);
         const uint64_t scale = SharkNTT::MontgomeryMul(debugCombo, chunkScale, bitScale);
         const uint64_t shifted = SharkNTT::MontgomeryMul(debugCombo, source[i], scale);
-        dest[i] = negative ? SubP(zeroMont, shifted) : shifted;
+        const uint32_t reverseIndex = ReverseBits32(i, static_cast<int>(plan.stages));
+        dest[reverseIndex] = negative ? SubP(zeroMont, shifted) : shifted;
     }
 }
 
@@ -900,11 +883,12 @@ AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
                                         : PsiPowerMont<SharkFloatParams>(plan, roots, psiExponent);
         const uint64_t scale = SharkNTT::MontgomeryMul(debugCombo, chunkScale, bitScale);
         const uint64_t shifted = SharkNTT::MontgomeryMul(debugCombo, source[i], scale);
+        const uint32_t reverseIndex = ReverseBits32(i, static_cast<int>(plan.stages));
 
         if (negative)
-            dest[i] = SubP(dest[i], shifted);
+            dest[reverseIndex] = SubP(dest[reverseIndex], shifted);
         else
-            dest[i] = AddP(dest[i], shifted);
+            dest[reverseIndex] = AddP(dest[reverseIndex], shifted);
         if (IsDebugTraceEnabled()) {
             std::cout << "  shifted spectrum index=" << i;
             PrintHexValue("source", source[i]);
@@ -912,7 +896,7 @@ AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
             PrintHexValue("chunkScale", chunkScale);
             PrintHexValue("scale", scale);
             PrintHexValue("shifted", shifted);
-            PrintHexValue("dest", dest[i]);
+            PrintHexValue("dest", dest[reverseIndex]);
             std::cout << '\n';
         }
     }
@@ -1105,8 +1089,7 @@ InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= MaxFusedN);
-    PrintArray("inverse input spectrum", spectrum, activeN);
-    BitReverseInplace64(spectrum, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages));
+    PrintArray("inverse input bit-reversed spectrum", spectrum, activeN);
     NTTRadix2<SharkFloatParams, true>(
         debugCombo, spectrum, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
 
@@ -1304,8 +1287,6 @@ PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                      SharkNTT::RootTables &roots,
                      const HpSharkFloat<SharkFloatParams> &zReal,
                      const HpSharkFloat<SharkFloatParams> &zImag,
-                     const HpSharkFloat<SharkFloatParams> &cReal,
-                     const HpSharkFloat<SharkFloatParams> &cImag,
                      uint32_t inputBitOffset,
                      FusedWorkspace &workspace)
 {
@@ -1327,26 +1308,6 @@ PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                      inputBitOffset,
                      DebugStatePurpose::Z0YY,
                      DebugStatePurpose::Z2YY);
-    if constexpr (HpShark::DebugChecksums) {
-        PackTwistForward(debugHostCombo,
-                         cReal,
-                         plan,
-                         roots,
-                         workspace.CReal,
-                         MaxFusedN,
-                         inputBitOffset,
-                         DebugStatePurpose::Z0XY,
-                         DebugStatePurpose::Z2XY);
-        PackTwistForward(debugHostCombo,
-                         cImag,
-                         plan,
-                         roots,
-                         workspace.CImag,
-                         MaxFusedN,
-                         inputBitOffset,
-                         DebugStatePurpose::Z0W0,
-                         DebugStatePurpose::Z2W0);
-    }
 }
 
 template <class SharkFloatParams>
@@ -1356,7 +1317,6 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                          SharkNTT::RootTables &roots,
                          const HpSharkFloat<SharkFloatParams> &dzdcReal,
                          const HpSharkFloat<SharkFloatParams> &dzdcImag,
-                         const HpSharkFloat<SharkFloatParams> &one,
                          uint32_t inputBitOffset,
                          FusedWorkspace &workspace)
 {
@@ -1378,17 +1338,6 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                      inputBitOffset,
                      DebugStatePurpose::Z0W2,
                      DebugStatePurpose::Z2W2);
-    if constexpr (HpShark::DebugChecksums) {
-        PackTwistForward(debugHostCombo,
-                         one,
-                         plan,
-                         roots,
-                         workspace.One,
-                         MaxFusedN,
-                         inputBitOffset,
-                         DebugStatePurpose::Z0W3,
-                         DebugStatePurpose::Z2W3);
-    }
 }
 
 template <class SharkFloatParams, class... Terms>
@@ -1565,6 +1514,19 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     const uint32_t limbCount = (coefficientCount * static_cast<uint32_t>(plan.b) + 31u) / 32u + 2u;
     assert(limbCount <= workspace.ActiveMaxFusedLimbs);
 
+    if constexpr (HpShark::DebugChecksums) {
+        // The GPU reuses the cached final constant spectra instead of repacking constants each
+        // iteration. Keep both legacy constant checksum slots aligned with that cached data.
+        StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z0XY, workspace.CReal, activeN);
+        StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z2XY, workspace.CReal, activeN);
+        StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z0W0, workspace.CImag, activeN);
+        StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z2W0, workspace.CImag, activeN);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z0W3, workspace.One, activeN);
+            StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z2W3, workspace.One, activeN);
+        }
+    }
+
     PrintTerm("real z^2", realZ2);
     PrintTerm("real -y^2", realNegY2);
     PrintTerm("real c", realC);
@@ -1588,8 +1550,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         std::cout << '\n';
     }
 
-    PrepareNormalSpectra(
-        debugHostCombo, plan, roots, zReal, zImag, cReal, cImag, ignoredPrecisionBits, workspace);
+    PrepareNormalSpectra(debugHostCombo, plan, roots, zReal, zImag, ignoredPrecisionBits, workspace);
 
     if (realIsZero) {
         SetZero(outReal);
@@ -1668,7 +1629,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         assert(outDzdcImag != nullptr);
 
         PrepareDerivativeSpectra(
-            debugHostCombo, plan, roots, *dzdcReal, *dzdcImag, *one, ignoredPrecisionBits, workspace);
+            debugHostCombo, plan, roots, *dzdcReal, *dzdcImag, ignoredPrecisionBits, workspace);
         PrintTerm("dzdc real w0", dzdcRealW0);
         PrintTerm("dzdc real -w1", dzdcRealNegW1);
         PrintTerm("dzdc real one", dzdcRealOne);

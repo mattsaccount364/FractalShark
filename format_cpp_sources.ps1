@@ -8,6 +8,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $sourcePatterns = @('*.cpp', '*.h', '*.cu', '*.cuh', '*.cc', '*.hh', '*.hpp')
+$lineEndingOnlyPatterns = @(
+    '*.txt', '*.vcxproj', '*.props', '*.targets', '*.sln', '*.filters',
+    '*.rc', '*.rc2', '*.manifest', '*.nvsettings'
+)
 $excludedSourcePatterns = @(
     'FractalSharkLib/LargeCoords*.h',
     'FractalSharkLib/QuadDouble/Original/*',
@@ -110,6 +114,24 @@ function Get-TrackedSourcePaths {
     return @($sourcePaths)
 }
 
+function Get-TrackedLineEndingOnlyPaths {
+    $relativePaths = & git -C $repositoryRoot ls-files -z -- $lineEndingOnlyPatterns
+    if ($LASTEXITCODE -ne 0) {
+        throw 'git ls-files failed while locating tracked metadata files.'
+    }
+
+    $paths = [System.Collections.Generic.List[string]]::new()
+    foreach ($relativePath in $relativePaths -split [char]0) {
+        if (-not $relativePath) {
+            continue
+        }
+
+        $paths.Add((Join-Path $repositoryRoot $relativePath))
+    }
+
+    return @($paths)
+}
+
 function Normalize-CrlfLineEndings {
     param(
         [Parameter(Mandatory)]
@@ -177,7 +199,7 @@ function Format-SourcePaths {
                     }
 
                     $completedFormat.Process.Dispose()
-                    $activeProcesses.Remove($completedFormat)
+                    [void]$activeProcesses.Remove($completedFormat)
                 }
 
                 return
@@ -223,9 +245,12 @@ if (-not $sourcePaths) {
     throw 'No tracked C++/CUDA files were found.'
 }
 
-$missingPaths = @($sourcePaths | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
+$lineEndingOnlyPaths = Get-TrackedLineEndingOnlyPaths
+$lineEndingPaths = @($sourcePaths + $lineEndingOnlyPaths | Sort-Object -Unique)
+
+$missingPaths = @($lineEndingPaths | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
 if ($missingPaths) {
-    throw "Tracked C++/CUDA files are absent from the working tree: $($missingPaths -join '; ')"
+    throw "Tracked formatter files are absent from the working tree: $($missingPaths -join '; ')"
 }
 
 $clangFormatPath = Get-ClangFormatPath
@@ -241,5 +266,20 @@ try {
     Pop-Location
 }
 
-$normalizedCount = @($sourcePaths | Where-Object { Normalize-CrlfLineEndings -Path $_ }).Count
-Write-Host "Normalized line endings in $normalizedCount of $($sourcePaths.Count) tracked C++/CUDA files."
+$normalizedCount = 0
+$unchangedLineEndingCount = 0
+foreach ($lineEndingPath in $lineEndingPaths) {
+    if (Normalize-CrlfLineEndings -Path $lineEndingPath) {
+        $normalizedCount++
+    } else {
+        $unchangedLineEndingCount++
+    }
+}
+
+Write-Host ''
+Write-Host 'Formatter summary:'
+Write-Host "  clang-format attempted: $($sourcePaths.Count)"
+Write-Host "  clang-format exclusions: $excludedSourcePathCount"
+Write-Host "  line-ending candidates: $($lineEndingPaths.Count)"
+Write-Host "  line-ending files changed: $normalizedCount"
+Write-Host "  line-ending files unchanged: $unchangedLineEndingCount"

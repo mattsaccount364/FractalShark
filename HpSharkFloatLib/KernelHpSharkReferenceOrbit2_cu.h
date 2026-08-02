@@ -1265,39 +1265,6 @@ enum class CarryPrefixDescriptorState : uint32_t {
     Prefix = 2,
 };
 
-static __device__ uint64_t
-CarryPrefixIdentity()
-{
-    uint64_t transform = 0;
-    for (uint32_t input = 0; input < CarryPrefixStateCount; ++input)
-        transform |= static_cast<uint64_t>(input) << (input * 4u);
-    return transform;
-}
-
-static __device__ int32_t
-ApplyCarryPrefix(uint64_t transform, int32_t carry)
-{
-    MattsCudaAssert(carry >= CarryPrefixMin && carry <= CarryPrefixMax);
-    const uint32_t input = static_cast<uint32_t>(carry - CarryPrefixMin);
-    const uint32_t output = static_cast<uint32_t>((transform >> (input * 4u)) & 0xFu);
-    return static_cast<int32_t>(output) + CarryPrefixMin;
-}
-
-static __device__ uint64_t
-ComposeCarryPrefixes(uint64_t earlier, uint64_t later)
-{
-    uint64_t combined = 0;
-#pragma unroll
-    for (uint32_t input = 0; input < CarryPrefixStateCount; ++input) {
-        const int32_t afterEarlier =
-            static_cast<int32_t>((earlier >> (input * 4u)) & 0xFu) + CarryPrefixMin;
-        const uint32_t afterLater = static_cast<uint32_t>(
-            (later >> (static_cast<uint32_t>(afterEarlier - CarryPrefixMin) * 4u)) & 0xFu);
-        combined |= static_cast<uint64_t>(afterLater) << (input * 4u);
-    }
-    return combined;
-}
-
 static __device__ int32_t
 CarryOutForSignedLimb(int64_t limb, int32_t carryIn)
 {
@@ -1307,18 +1274,104 @@ CarryOutForSignedLimb(int64_t limb, int32_t carryIn)
     return static_cast<int32_t>((sum - static_cast<int64_t>(digit)) / Base);
 }
 
-static __device__ uint64_t
-MakeSignedCarryPrefix(int64_t limb)
+static __device__ uint32_t
+MakeSignedCarryPrefixByte(int64_t limb)
 {
-    uint64_t transform = 0;
-    for (int32_t carryIn = CarryPrefixMin; carryIn <= CarryPrefixMax; ++carryIn) {
-        const int32_t carryOut = CarryOutForSignedLimb(limb, carryIn);
-        MattsCudaAssert(carryOut >= CarryPrefixMin && carryOut <= CarryPrefixMax);
-        const uint32_t input = static_cast<uint32_t>(carryIn - CarryPrefixMin);
-        const uint32_t output = static_cast<uint32_t>(carryOut - CarryPrefixMin);
-        transform |= static_cast<uint64_t>(output) << (input * 4u);
+    constexpr int64_t Base = 1ll << 32;
+    const int32_t carryAtMin = CarryOutForSignedLimb(limb, CarryPrefixMin);
+    const int32_t carryAtMax = CarryOutForSignedLimb(limb, CarryPrefixMax);
+    MattsCudaAssert(carryAtMin >= CarryPrefixMin && carryAtMin <= CarryPrefixMax);
+    MattsCudaAssert(carryAtMax >= CarryPrefixMin && carryAtMax <= CarryPrefixMax);
+
+    const uint32_t output = static_cast<uint32_t>(carryAtMin - CarryPrefixMin);
+    if (carryAtMin == carryAtMax)
+        return output;
+
+    MattsCudaAssert(carryAtMax == carryAtMin + 1);
+    const int64_t transitionCarry = (static_cast<int64_t>(carryAtMin) + 1) * Base - limb;
+    const uint32_t threshold = static_cast<uint32_t>(transitionCarry - CarryPrefixMin);
+    MattsCudaAssert(threshold >= 1u && threshold < CarryPrefixStateCount);
+    return output | (threshold << 4u);
+}
+
+static __device__ uint32_t
+ApplyCarryPrefixByte(uint32_t transform, int32_t carry)
+{
+    MattsCudaAssert(carry >= CarryPrefixMin && carry <= CarryPrefixMax);
+    if (transform == 0xFFu)
+        return static_cast<uint32_t>(carry - CarryPrefixMin);
+
+    const uint32_t input = static_cast<uint32_t>(carry - CarryPrefixMin);
+    const uint32_t base = transform & 0xFu;
+    const uint32_t threshold = transform >> 4u;
+    return base + (threshold != 0u && input >= threshold ? 1u : 0u);
+}
+
+static __device__ uint32_t
+ComposeCarryPrefixBytes(uint32_t earlier, uint32_t later)
+{
+    if (earlier == 0xFFu)
+        return later;
+    if (later == 0xFFu)
+        return earlier;
+
+    const uint32_t earlierBase = earlier & 0xFu;
+    const uint32_t earlierThreshold = earlier >> 4u;
+    const uint32_t laterBase = later & 0xFu;
+    const uint32_t laterThreshold = later >> 4u;
+    if (laterThreshold == 0u)
+        return laterBase;
+    if (earlierThreshold == 0u)
+        return ApplyCarryPrefixByte(later, static_cast<int32_t>(earlierBase) + CarryPrefixMin);
+
+    const uint32_t outputAtBase =
+        ApplyCarryPrefixByte(later, static_cast<int32_t>(earlierBase) + CarryPrefixMin);
+    const uint32_t outputAfterStep =
+        ApplyCarryPrefixByte(later, static_cast<int32_t>(earlierBase + 1u) + CarryPrefixMin);
+    return outputAtBase == outputAfterStep ? outputAtBase : outputAtBase | (earlierThreshold << 4u);
+}
+
+static __device__ uint32_t
+ComposePackedCarryPrefixes(uint32_t earlier, uint32_t later)
+{
+    uint32_t combined = ComposeCarryPrefixBytes(earlier & 0xFFu, later & 0xFFu);
+    combined |= ComposeCarryPrefixBytes((earlier >> 8u) & 0xFFu, (later >> 8u) & 0xFFu) << 8u;
+    combined |= ComposeCarryPrefixBytes((earlier >> 16u) & 0xFFu, (later >> 16u) & 0xFFu) << 16u;
+    combined |= ComposeCarryPrefixBytes(earlier >> 24u, later >> 24u) << 24u;
+    return combined;
+}
+
+static __device__ uint32_t
+ApplyPackedCarryPrefix(uint32_t transform, int32_t carry)
+{
+    uint32_t packedStates = ApplyCarryPrefixByte(transform & 0xFFu, carry);
+    packedStates |= ApplyCarryPrefixByte((transform >> 8u) & 0xFFu, carry) << 8u;
+    packedStates |= ApplyCarryPrefixByte((transform >> 16u) & 0xFFu, carry) << 16u;
+    packedStates |= ApplyCarryPrefixByte(transform >> 24u, carry) << 24u;
+    return packedStates;
+}
+
+static __device__ void
+StoreSignedCarryDigit(int64_t signedLimb,
+                      int32_t carryIn,
+                      uint32_t index,
+                      uint32_t limbCount,
+                      uint32_t capacity,
+                      uint32_t *digits,
+                      uint32_t *control)
+{
+    digits[index] = static_cast<uint32_t>(static_cast<uint64_t>(signedLimb + carryIn));
+    if (index + 1u != limbCount)
+        return;
+
+    int32_t finalCarry = CarryOutForSignedLimb(signedLimb, carryIn);
+    uint32_t digitLength = limbCount;
+    while (finalCarry != 0 && finalCarry != -1 && digitLength < capacity) {
+        digits[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
+        finalCarry = CarryOutForSignedLimb(finalCarry, 0);
     }
-    return transform;
+    control[FinalizationDigitLengthControl] = digitLength;
+    control[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
 }
 
 static __device__ void
@@ -1335,39 +1388,43 @@ LoadCarryPrefixState(uint32_t *state)
     return atomicState.load(cuda::memory_order_acquire);
 }
 
-static __device__ uint64_t
-LoadCarryPrefixTransform(uint64_t *transform)
+static __device__ uint32_t
+LoadCarryPrefixTransform(uint32_t *transform)
 {
-    cuda::atomic_ref<uint64_t, cuda::thread_scope_device> atomicTransform(*transform);
+    cuda::atomic_ref<uint32_t, cuda::thread_scope_device> atomicTransform(*transform);
     return atomicTransform.load(cuda::memory_order_relaxed);
 }
 
 static __device__ void
-StoreCarryPrefixTransform(uint64_t *transform, uint64_t value)
+StoreCarryPrefixTransform(uint32_t *transform, uint32_t value)
 {
-    cuda::atomic_ref<uint64_t, cuda::thread_scope_device> atomicTransform(*transform);
+    cuda::atomic_ref<uint32_t, cuda::thread_scope_device> atomicTransform(*transform);
     atomicTransform.store(value, cuda::memory_order_relaxed);
 }
 
 static __device__ void
-PublishCarryPrefixDescriptorAggregate(HpSharkReference2CarryPrefixDescriptor &descriptor,
-                                      uint64_t aggregate)
+PublishCarryPrefixDescriptorAggregate(HpSharkReference2PackedCarryPrefixDescriptor &descriptor,
+                                      uint32_t aggregate)
 {
     StoreCarryPrefixTransform(&descriptor.AggregateTransform, aggregate);
     PublishCarryPrefixState(&descriptor.State, CarryPrefixDescriptorState::Aggregate);
 }
 
 static __device__ void
-PublishCarryPrefixDescriptorPrefix(HpSharkReference2CarryPrefixDescriptor &descriptor, uint64_t prefix)
+PublishCarryPrefixDescriptorPrefix(HpSharkReference2PackedCarryPrefixDescriptor &descriptor,
+                                   uint32_t prefix)
 {
     StoreCarryPrefixTransform(&descriptor.PrefixTransform, prefix);
     PublishCarryPrefixState(&descriptor.State, CarryPrefixDescriptorState::Prefix);
 }
 
-static __device__ uint64_t
-ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors, uint32_t part, uint32_t lane)
+static __device__ uint32_t
+ResolveCarryPrefixWarp(HpSharkReference2PackedCarryPrefixDescriptor *descriptors,
+                       uint32_t part,
+                       uint32_t lane)
 {
-    uint64_t exclusive = CarryPrefixIdentity();
+    constexpr uint32_t Identity = 0xFFFF'FFFFu;
+    uint32_t exclusive = Identity;
     int32_t previousPart = static_cast<int32_t>(part) - 1;
     int spin = 0;
 
@@ -1418,28 +1475,23 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors, uint
         MattsCudaAssert(descriptorCount <= validDescriptorCount);
         MattsCudaAssert(lane >= descriptorCount || state == CarryPrefixDescriptorState::Aggregate ||
                         state == CarryPrefixDescriptorState::Prefix);
-        uint64_t transform = CarryPrefixIdentity();
+        uint32_t transform = Identity;
         if (lane < descriptorCount) {
             transform = state == CarryPrefixDescriptorState::Prefix
                             ? LoadCarryPrefixTransform(&descriptors[descriptorIndex].PrefixTransform)
                             : LoadCarryPrefixTransform(&descriptors[descriptorIndex].AggregateTransform);
         }
 
-        uint64_t windowTransform = transform;
+        uint32_t windowTransform = transform;
 #pragma unroll
         for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-            const uint32_t olderLow =
-                __shfl_down_sync(0xFFFF'FFFFu, static_cast<uint32_t>(windowTransform), offset);
-            const uint32_t olderHigh =
-                __shfl_down_sync(0xFFFF'FFFFu, static_cast<uint32_t>(windowTransform >> 32u), offset);
-            const uint64_t older =
-                static_cast<uint64_t>(olderLow) | (static_cast<uint64_t>(olderHigh) << 32u);
+            const uint32_t older = __shfl_down_sync(0xFFFF'FFFFu, windowTransform, offset);
             if (lane + offset < descriptorCount)
-                windowTransform = ComposeCarryPrefixes(older, windowTransform);
+                windowTransform = ComposePackedCarryPrefixes(older, windowTransform);
         }
 
         if (lane == 0u)
-            exclusive = ComposeCarryPrefixes(windowTransform, exclusive);
+            exclusive = ComposePackedCarryPrefixes(windowTransform, exclusive);
         if (foundPrefix)
             break;
         const int32_t nextPreviousPart = previousPart - static_cast<int32_t>(descriptorCount);
@@ -1447,95 +1499,55 @@ ResolveCarryPrefixWarp(HpSharkReference2CarryPrefixDescriptor *descriptors, uint
         previousPart = nextPreviousPart;
     }
 
-    const uint32_t exclusiveLow = __shfl_sync(0xFFFF'FFFFu, static_cast<uint32_t>(exclusive), 0);
-    const uint32_t exclusiveHigh = __shfl_sync(0xFFFF'FFFFu, static_cast<uint32_t>(exclusive >> 32u), 0);
-    return static_cast<uint64_t>(exclusiveLow) | (static_cast<uint64_t>(exclusiveHigh) << 32u);
+    return __shfl_sync(0xFFFF'FFFFu, exclusive, 0);
 }
 
-template <class SharkFloatParams>
-__device__ void
-PrepareSignedCarryPrefixes(cooperative_groups::grid_group &grid,
-                           cooperative_groups::thread_block &block,
-                           uint32_t limbCount,
-                           int64_t *realLimbs,
-                           uint64_t *realTransforms,
-                           HpSharkReference2CarryPrefixDescriptor *realDescriptors,
-                           int64_t *imagLimbs,
-                           uint64_t *imagTransforms,
-                           HpSharkReference2CarryPrefixDescriptor *imagDescriptors,
-                           int64_t *dzdcRealLimbs,
-                           uint64_t *dzdcRealTransforms,
-                           HpSharkReference2CarryPrefixDescriptor *dzdcRealDescriptors,
-                           int64_t *dzdcImagLimbs,
-                           uint64_t *dzdcImagTransforms,
-                           HpSharkReference2CarryPrefixDescriptor *dzdcImagDescriptors)
-{
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
-        realTransforms[index] = MakeSignedCarryPrefix(realLimbs[index]);
-        imagTransforms[index] = MakeSignedCarryPrefix(imagLimbs[index]);
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            dzdcRealTransforms[index] = MakeSignedCarryPrefix(dzdcRealLimbs[index]);
-            dzdcImagTransforms[index] = MakeSignedCarryPrefix(dzdcImagLimbs[index]);
-        }
-    }
-
-    const uint32_t blockSize = block.dim_threads().x;
-    const uint32_t numParts = (limbCount + blockSize - 1u) / blockSize;
-    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize) {
-        PublishCarryPrefixState(&realDescriptors[part].State, CarryPrefixDescriptorState::Empty);
-        PublishCarryPrefixState(&imagDescriptors[part].State, CarryPrefixDescriptorState::Empty);
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            PublishCarryPrefixState(&dzdcRealDescriptors[part].State, CarryPrefixDescriptorState::Empty);
-            PublishCarryPrefixState(&dzdcImagDescriptors[part].State, CarryPrefixDescriptorState::Empty);
-        }
-    }
-    grid.sync();
-}
-
+// Build the four active stream transfers, resolve one packed DLB prefix, and emit
+// the corresponding digits. Newton-Raphson uses all four packed bytes so the
+// reference orbit and both derivative streams share this complete carry path.
 template <class SharkFloatParams>
 __device__ void
 PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
                          cooperative_groups::thread_block &block,
                          uint32_t count,
-                         uint64_t *realTransforms,
-                         HpSharkReference2CarryPrefixDescriptor *realDescriptors,
-                         uint64_t *imagTransforms,
-                         HpSharkReference2CarryPrefixDescriptor *imagDescriptors,
-                         uint64_t *dzdcRealTransforms,
-                         HpSharkReference2CarryPrefixDescriptor *dzdcRealDescriptors,
-                         uint64_t *dzdcImagTransforms,
-                         HpSharkReference2CarryPrefixDescriptor *dzdcImagDescriptors,
+                         uint32_t capacity,
+                         const int64_t *realLimbs,
+                         uint32_t *realDigits,
+                         uint32_t *realControl,
+                         const int64_t *imagLimbs,
+                         uint32_t *imagDigits,
+                         uint32_t *imagControl,
+                         const int64_t *dzdcRealLimbs,
+                         uint32_t *dzdcRealDigits,
+                         uint32_t *dzdcRealControl,
+                         const int64_t *dzdcImagLimbs,
+                         uint32_t *dzdcImagDigits,
+                         uint32_t *dzdcImagControl,
+                         HpSharkReference2PackedCarryPrefixDescriptor *descriptors,
                          uint64_t *sharedStorage)
 {
     if (count == 0u)
         return;
 
+    constexpr uint32_t Identity = 0xFFFF'FFFFu;
     const uint32_t blockSize = block.dim_threads().x;
     const uint32_t numParts = (count + blockSize - 1u) / blockSize;
     const uint32_t threadIndex = block.thread_index().x;
     const uint32_t lane = threadIndex & 31u;
     const uint32_t warp = threadIndex >> 5u;
     const uint32_t numWarps = (blockSize + 31u) >> 5u;
-    constexpr uint32_t SharedWordsPerStream = 2u * CarryPrefixMaxWarps + 1u;
-    uint64_t *realWarpAggregates = sharedStorage;
-    uint64_t *realWarpPrefixes = realWarpAggregates + CarryPrefixMaxWarps;
-    uint64_t *realExclusiveStorage = realWarpPrefixes + CarryPrefixMaxWarps;
-    uint64_t *imagWarpAggregates = sharedStorage + SharedWordsPerStream;
-    uint64_t *imagWarpPrefixes = imagWarpAggregates + CarryPrefixMaxWarps;
-    uint64_t *imagExclusiveStorage = imagWarpPrefixes + CarryPrefixMaxWarps;
-    uint64_t *dzdcRealWarpAggregates = sharedStorage + 2u * SharedWordsPerStream;
-    uint64_t *dzdcRealWarpPrefixes = dzdcRealWarpAggregates + CarryPrefixMaxWarps;
-    uint64_t *dzdcRealExclusiveStorage = dzdcRealWarpPrefixes + CarryPrefixMaxWarps;
-    uint64_t *dzdcImagWarpAggregates = sharedStorage + 3u * SharedWordsPerStream;
-    uint64_t *dzdcImagWarpPrefixes = dzdcImagWarpAggregates + CarryPrefixMaxWarps;
-    uint64_t *dzdcImagExclusiveStorage = dzdcImagWarpPrefixes + CarryPrefixMaxWarps;
+    uint32_t *packedWarpAggregates = reinterpret_cast<uint32_t *>(sharedStorage);
+    uint32_t *packedWarpPrefixes = packedWarpAggregates + CarryPrefixMaxWarps;
+    uint32_t *packedExclusiveStorage = packedWarpPrefixes + CarryPrefixMaxWarps;
 
-    // Workspace descriptors are sized for the supported cooperative launch
-    // minimum of one warp per block. Ref2's launch calculator selects a warp
-    // multiple, which also keeps the intra-warp scan well-defined.
     MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
     MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
+    MattsCudaAssert(capacity >= count);
+
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t part = GridThreadRank(block); part < numParts; part += gridSize)
+        PublishCarryPrefixState(&descriptors[part].State, CarryPrefixDescriptorState::Empty);
+    grid.sync();
 
     const uint32_t processorId = block.group_index().x;
     const uint32_t activeProcessors = gridDim.x;
@@ -1543,297 +1555,100 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
         const uint32_t base = part * blockSize;
         const uint32_t index = base + threadIndex;
         const bool hasValue = index < count;
-        uint64_t realInclusive = hasValue ? realTransforms[index] : CarryPrefixIdentity();
-        uint64_t imagInclusive = hasValue ? imagTransforms[index] : CarryPrefixIdentity();
-        uint64_t dzdcRealInclusive = SharkFloatParams::EnableNewtonRaphson && hasValue
-                                         ? dzdcRealTransforms[index]
-                                         : CarryPrefixIdentity();
-        uint64_t dzdcImagInclusive = SharkFloatParams::EnableNewtonRaphson && hasValue
-                                         ? dzdcImagTransforms[index]
-                                         : CarryPrefixIdentity();
+
+        uint32_t packedInclusive = Identity;
+        if (hasValue) {
+            packedInclusive = MakeSignedCarryPrefixByte(realLimbs[index]);
+            packedInclusive |= MakeSignedCarryPrefixByte(imagLimbs[index]) << 8u;
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                packedInclusive |= MakeSignedCarryPrefixByte(dzdcRealLimbs[index]) << 16u;
+                packedInclusive |= MakeSignedCarryPrefixByte(dzdcImagLimbs[index]) << 24u;
+            }
+        }
 
 #pragma unroll
         for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-            const uint32_t previousLow =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(realInclusive), offset);
-            const uint32_t previousHigh =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(realInclusive >> 32u), offset);
-            const uint64_t previous =
-                static_cast<uint64_t>(previousLow) | (static_cast<uint64_t>(previousHigh) << 32u);
+            const uint32_t previous = __shfl_up_sync(0xFFFF'FFFFu, packedInclusive, offset);
             if (lane >= offset)
-                realInclusive = ComposeCarryPrefixes(previous, realInclusive);
-        }
-#pragma unroll
-        for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-            const uint32_t previousLow =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(imagInclusive), offset);
-            const uint32_t previousHigh =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(imagInclusive >> 32u), offset);
-            const uint64_t previous =
-                static_cast<uint64_t>(previousLow) | (static_cast<uint64_t>(previousHigh) << 32u);
-            if (lane >= offset)
-                imagInclusive = ComposeCarryPrefixes(previous, imagInclusive);
-        }
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-#pragma unroll
-            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                const uint32_t previousLow =
-                    __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcRealInclusive), offset);
-                const uint32_t previousHigh = __shfl_up_sync(
-                    0xFFFF'FFFFu, static_cast<uint32_t>(dzdcRealInclusive >> 32u), offset);
-                const uint64_t previous =
-                    static_cast<uint64_t>(previousLow) | (static_cast<uint64_t>(previousHigh) << 32u);
-                if (lane >= offset)
-                    dzdcRealInclusive = ComposeCarryPrefixes(previous, dzdcRealInclusive);
-            }
-#pragma unroll
-            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                const uint32_t previousLow =
-                    __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcImagInclusive), offset);
-                const uint32_t previousHigh = __shfl_up_sync(
-                    0xFFFF'FFFFu, static_cast<uint32_t>(dzdcImagInclusive >> 32u), offset);
-                const uint64_t previous =
-                    static_cast<uint64_t>(previousLow) | (static_cast<uint64_t>(previousHigh) << 32u);
-                if (lane >= offset)
-                    dzdcImagInclusive = ComposeCarryPrefixes(previous, dzdcImagInclusive);
-            }
+                packedInclusive = ComposePackedCarryPrefixes(previous, packedInclusive);
         }
 
         const uint32_t warpEnd = (warp + 1u) * 32u;
         const uint32_t warpLastThread = (warpEnd < blockSize ? warpEnd : blockSize) - 1u;
-        if (threadIndex == warpLastThread) {
-            realWarpAggregates[warp] = realInclusive;
-            imagWarpAggregates[warp] = imagInclusive;
-            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                dzdcRealWarpAggregates[warp] = dzdcRealInclusive;
-                dzdcImagWarpAggregates[warp] = dzdcImagInclusive;
-            }
-        }
+        if (threadIndex == warpLastThread)
+            packedWarpAggregates[warp] = packedInclusive;
         __syncthreads();
 
-        uint64_t realAggregate = CarryPrefixIdentity();
-        uint64_t imagAggregate = CarryPrefixIdentity();
-        uint64_t dzdcRealAggregate = CarryPrefixIdentity();
-        uint64_t dzdcImagAggregate = CarryPrefixIdentity();
-
+        uint32_t packedAggregate = Identity;
         if (threadIndex < 32u) {
-            uint64_t realWarpInclusive =
-                lane < numWarps ? realWarpAggregates[lane] : CarryPrefixIdentity();
+            uint32_t packedWarpInclusive = lane < numWarps ? packedWarpAggregates[lane] : Identity;
 #pragma unroll
             for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                const uint32_t previousLow =
-                    __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(realWarpInclusive), offset);
-                const uint32_t previousHigh = __shfl_up_sync(
-                    0xFFFF'FFFFu, static_cast<uint32_t>(realWarpInclusive >> 32u), offset);
-                const uint64_t previous =
-                    static_cast<uint64_t>(previousLow) | (static_cast<uint64_t>(previousHigh) << 32u);
+                const uint32_t previous = __shfl_up_sync(0xFFFF'FFFFu, packedWarpInclusive, offset);
                 if (lane >= offset && lane < numWarps)
-                    realWarpInclusive = ComposeCarryPrefixes(previous, realWarpInclusive);
+                    packedWarpInclusive = ComposePackedCarryPrefixes(previous, packedWarpInclusive);
             }
-            const uint32_t realPreviousLow =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(realWarpInclusive), 1);
-            const uint32_t realPreviousHigh =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(realWarpInclusive >> 32u), 1);
-            const uint64_t realPrevious = static_cast<uint64_t>(realPreviousLow) |
-                                          (static_cast<uint64_t>(realPreviousHigh) << 32u);
+
+            const uint32_t previous = __shfl_up_sync(0xFFFF'FFFFu, packedWarpInclusive, 1);
             if (lane < numWarps)
-                realWarpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : realPrevious;
-            const uint32_t realAggregateLow = __shfl_sync(
-                0xFFFF'FFFFu, static_cast<uint32_t>(realWarpInclusive), static_cast<int>(numWarps - 1u));
-            const uint32_t realAggregateHigh =
-                __shfl_sync(0xFFFF'FFFFu,
-                            static_cast<uint32_t>(realWarpInclusive >> 32u),
-                            static_cast<int>(numWarps - 1u));
-            realAggregate = static_cast<uint64_t>(realAggregateLow) |
-                            (static_cast<uint64_t>(realAggregateHigh) << 32u);
-
-            uint64_t imagWarpInclusive =
-                lane < numWarps ? imagWarpAggregates[lane] : CarryPrefixIdentity();
-#pragma unroll
-            for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                const uint32_t previousLow =
-                    __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(imagWarpInclusive), offset);
-                const uint32_t previousHigh = __shfl_up_sync(
-                    0xFFFF'FFFFu, static_cast<uint32_t>(imagWarpInclusive >> 32u), offset);
-                const uint64_t previous =
-                    static_cast<uint64_t>(previousLow) | (static_cast<uint64_t>(previousHigh) << 32u);
-                if (lane >= offset && lane < numWarps)
-                    imagWarpInclusive = ComposeCarryPrefixes(previous, imagWarpInclusive);
-            }
-            const uint32_t imagPreviousLow =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(imagWarpInclusive), 1);
-            const uint32_t imagPreviousHigh =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(imagWarpInclusive >> 32u), 1);
-            const uint64_t imagPrevious = static_cast<uint64_t>(imagPreviousLow) |
-                                          (static_cast<uint64_t>(imagPreviousHigh) << 32u);
-            if (lane < numWarps)
-                imagWarpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : imagPrevious;
-            const uint32_t imagAggregateLow = __shfl_sync(
-                0xFFFF'FFFFu, static_cast<uint32_t>(imagWarpInclusive), static_cast<int>(numWarps - 1u));
-            const uint32_t imagAggregateHigh =
-                __shfl_sync(0xFFFF'FFFFu,
-                            static_cast<uint32_t>(imagWarpInclusive >> 32u),
-                            static_cast<int>(numWarps - 1u));
-            imagAggregate = static_cast<uint64_t>(imagAggregateLow) |
-                            (static_cast<uint64_t>(imagAggregateHigh) << 32u);
-
-            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                uint64_t dzdcRealWarpInclusive =
-                    lane < numWarps ? dzdcRealWarpAggregates[lane] : CarryPrefixIdentity();
-#pragma unroll
-                for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                    const uint32_t previousLow = __shfl_up_sync(
-                        0xFFFF'FFFFu, static_cast<uint32_t>(dzdcRealWarpInclusive), offset);
-                    const uint32_t previousHigh = __shfl_up_sync(
-                        0xFFFF'FFFFu, static_cast<uint32_t>(dzdcRealWarpInclusive >> 32u), offset);
-                    const uint64_t previous = static_cast<uint64_t>(previousLow) |
-                                              (static_cast<uint64_t>(previousHigh) << 32u);
-                    if (lane >= offset && lane < numWarps) {
-                        dzdcRealWarpInclusive = ComposeCarryPrefixes(previous, dzdcRealWarpInclusive);
-                    }
-                }
-                const uint32_t dzdcRealPreviousLow =
-                    __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcRealWarpInclusive), 1);
-                const uint32_t dzdcRealPreviousHigh =
-                    __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcRealWarpInclusive >> 32u), 1);
-                const uint64_t dzdcRealPrevious = static_cast<uint64_t>(dzdcRealPreviousLow) |
-                                                  (static_cast<uint64_t>(dzdcRealPreviousHigh) << 32u);
-                if (lane < numWarps) {
-                    dzdcRealWarpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : dzdcRealPrevious;
-                }
-                const uint32_t dzdcRealAggregateLow =
-                    __shfl_sync(0xFFFF'FFFFu,
-                                static_cast<uint32_t>(dzdcRealWarpInclusive),
-                                static_cast<int>(numWarps - 1u));
-                const uint32_t dzdcRealAggregateHigh =
-                    __shfl_sync(0xFFFF'FFFFu,
-                                static_cast<uint32_t>(dzdcRealWarpInclusive >> 32u),
-                                static_cast<int>(numWarps - 1u));
-                dzdcRealAggregate = static_cast<uint64_t>(dzdcRealAggregateLow) |
-                                    (static_cast<uint64_t>(dzdcRealAggregateHigh) << 32u);
-
-                uint64_t dzdcImagWarpInclusive =
-                    lane < numWarps ? dzdcImagWarpAggregates[lane] : CarryPrefixIdentity();
-#pragma unroll
-                for (uint32_t offset = 1u; offset < 32u; offset <<= 1u) {
-                    const uint32_t previousLow = __shfl_up_sync(
-                        0xFFFF'FFFFu, static_cast<uint32_t>(dzdcImagWarpInclusive), offset);
-                    const uint32_t previousHigh = __shfl_up_sync(
-                        0xFFFF'FFFFu, static_cast<uint32_t>(dzdcImagWarpInclusive >> 32u), offset);
-                    const uint64_t previous = static_cast<uint64_t>(previousLow) |
-                                              (static_cast<uint64_t>(previousHigh) << 32u);
-                    if (lane >= offset && lane < numWarps) {
-                        dzdcImagWarpInclusive = ComposeCarryPrefixes(previous, dzdcImagWarpInclusive);
-                    }
-                }
-                const uint32_t dzdcImagPreviousLow =
-                    __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcImagWarpInclusive), 1);
-                const uint32_t dzdcImagPreviousHigh =
-                    __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcImagWarpInclusive >> 32u), 1);
-                const uint64_t dzdcImagPrevious = static_cast<uint64_t>(dzdcImagPreviousLow) |
-                                                  (static_cast<uint64_t>(dzdcImagPreviousHigh) << 32u);
-                if (lane < numWarps) {
-                    dzdcImagWarpPrefixes[lane] = lane == 0u ? CarryPrefixIdentity() : dzdcImagPrevious;
-                }
-                const uint32_t dzdcImagAggregateLow =
-                    __shfl_sync(0xFFFF'FFFFu,
-                                static_cast<uint32_t>(dzdcImagWarpInclusive),
-                                static_cast<int>(numWarps - 1u));
-                const uint32_t dzdcImagAggregateHigh =
-                    __shfl_sync(0xFFFF'FFFFu,
-                                static_cast<uint32_t>(dzdcImagWarpInclusive >> 32u),
-                                static_cast<int>(numWarps - 1u));
-                dzdcImagAggregate = static_cast<uint64_t>(dzdcImagAggregateLow) |
-                                    (static_cast<uint64_t>(dzdcImagAggregateHigh) << 32u);
-            }
+                packedWarpPrefixes[lane] = lane == 0u ? Identity : previous;
+            packedAggregate =
+                __shfl_sync(0xFFFF'FFFFu, packedWarpInclusive, static_cast<int>(numWarps - 1u));
         }
 
-        if (threadIndex == 0u) {
-            PublishCarryPrefixDescriptorAggregate(realDescriptors[part], realAggregate);
-            PublishCarryPrefixDescriptorAggregate(imagDescriptors[part], imagAggregate);
-            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                PublishCarryPrefixDescriptorAggregate(dzdcRealDescriptors[part], dzdcRealAggregate);
-                PublishCarryPrefixDescriptorAggregate(dzdcImagDescriptors[part], dzdcImagAggregate);
-            }
-        }
+        if (threadIndex == 0u)
+            PublishCarryPrefixDescriptorAggregate(descriptors[part], packedAggregate);
 
         if (threadIndex < 32u) {
             __syncwarp(0xFFFF'FFFFu);
-            const uint64_t realExclusive = ResolveCarryPrefixWarp(realDescriptors, part, lane);
-            const uint64_t imagExclusive = ResolveCarryPrefixWarp(imagDescriptors, part, lane);
+            const uint32_t packedExclusive = ResolveCarryPrefixWarp(descriptors, part, lane);
             if (lane == 0u) {
-                PublishCarryPrefixDescriptorPrefix(realDescriptors[part],
-                                                   ComposeCarryPrefixes(realExclusive, realAggregate));
-                PublishCarryPrefixDescriptorPrefix(imagDescriptors[part],
-                                                   ComposeCarryPrefixes(imagExclusive, imagAggregate));
-                realExclusiveStorage[0] = realExclusive;
-                imagExclusiveStorage[0] = imagExclusive;
-            }
-            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                const uint64_t dzdcRealExclusive =
-                    ResolveCarryPrefixWarp(dzdcRealDescriptors, part, lane);
-                const uint64_t dzdcImagExclusive =
-                    ResolveCarryPrefixWarp(dzdcImagDescriptors, part, lane);
-                if (lane == 0u) {
-                    PublishCarryPrefixDescriptorPrefix(
-                        dzdcRealDescriptors[part],
-                        ComposeCarryPrefixes(dzdcRealExclusive, dzdcRealAggregate));
-                    PublishCarryPrefixDescriptorPrefix(
-                        dzdcImagDescriptors[part],
-                        ComposeCarryPrefixes(dzdcImagExclusive, dzdcImagAggregate));
-                    dzdcRealExclusiveStorage[0] = dzdcRealExclusive;
-                    dzdcImagExclusiveStorage[0] = dzdcImagExclusive;
-                }
+                PublishCarryPrefixDescriptorPrefix(
+                    descriptors[part], ComposePackedCarryPrefixes(packedExclusive, packedAggregate));
+                packedExclusiveStorage[0] = packedExclusive;
             }
         }
         __syncthreads();
 
-        const uint32_t realPreviousLow =
-            __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(realInclusive), 1);
-        const uint32_t realPreviousHigh =
-            __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(realInclusive >> 32u), 1);
-        const uint64_t realPrevious =
-            static_cast<uint64_t>(realPreviousLow) | (static_cast<uint64_t>(realPreviousHigh) << 32u);
-        const uint64_t realLocalExclusive = lane == 0u ? CarryPrefixIdentity() : realPrevious;
-        const uint32_t imagPreviousLow =
-            __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(imagInclusive), 1);
-        const uint32_t imagPreviousHigh =
-            __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(imagInclusive >> 32u), 1);
-        const uint64_t imagPrevious =
-            static_cast<uint64_t>(imagPreviousLow) | (static_cast<uint64_t>(imagPreviousHigh) << 32u);
-        const uint64_t imagLocalExclusive = lane == 0u ? CarryPrefixIdentity() : imagPrevious;
+        const uint32_t previous = __shfl_up_sync(0xFFFF'FFFFu, packedInclusive, 1);
+        const uint32_t packedLocalExclusive = lane == 0u ? Identity : previous;
         if (hasValue) {
-            realTransforms[index] =
-                ComposeCarryPrefixes(realExclusiveStorage[0],
-                                     ComposeCarryPrefixes(realWarpPrefixes[warp], realLocalExclusive));
-            imagTransforms[index] =
-                ComposeCarryPrefixes(imagExclusiveStorage[0],
-                                     ComposeCarryPrefixes(imagWarpPrefixes[warp], imagLocalExclusive));
-        }
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            const uint32_t dzdcRealPreviousLow =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcRealInclusive), 1);
-            const uint32_t dzdcRealPreviousHigh =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcRealInclusive >> 32u), 1);
-            const uint64_t dzdcRealPrevious = static_cast<uint64_t>(dzdcRealPreviousLow) |
-                                              (static_cast<uint64_t>(dzdcRealPreviousHigh) << 32u);
-            const uint64_t dzdcRealLocalExclusive =
-                lane == 0u ? CarryPrefixIdentity() : dzdcRealPrevious;
-            const uint32_t dzdcImagPreviousLow =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcImagInclusive), 1);
-            const uint32_t dzdcImagPreviousHigh =
-                __shfl_up_sync(0xFFFF'FFFFu, static_cast<uint32_t>(dzdcImagInclusive >> 32u), 1);
-            const uint64_t dzdcImagPrevious = static_cast<uint64_t>(dzdcImagPreviousLow) |
-                                              (static_cast<uint64_t>(dzdcImagPreviousHigh) << 32u);
-            const uint64_t dzdcImagLocalExclusive =
-                lane == 0u ? CarryPrefixIdentity() : dzdcImagPrevious;
-            if (hasValue) {
-                dzdcRealTransforms[index] = ComposeCarryPrefixes(
-                    dzdcRealExclusiveStorage[0],
-                    ComposeCarryPrefixes(dzdcRealWarpPrefixes[warp], dzdcRealLocalExclusive));
-                dzdcImagTransforms[index] = ComposeCarryPrefixes(
-                    dzdcImagExclusiveStorage[0],
-                    ComposeCarryPrefixes(dzdcImagWarpPrefixes[warp], dzdcImagLocalExclusive));
+            const uint32_t packedExclusive = ComposePackedCarryPrefixes(
+                packedExclusiveStorage[0],
+                ComposePackedCarryPrefixes(packedWarpPrefixes[warp], packedLocalExclusive));
+            const uint32_t packedCarries = ApplyPackedCarryPrefix(packedExclusive, 0);
+
+            StoreSignedCarryDigit(realLimbs[index],
+                                  static_cast<int32_t>(packedCarries & 0xFFu) + CarryPrefixMin,
+                                  index,
+                                  count,
+                                  capacity,
+                                  realDigits,
+                                  realControl);
+            StoreSignedCarryDigit(imagLimbs[index],
+                                  static_cast<int32_t>((packedCarries >> 8u) & 0xFFu) + CarryPrefixMin,
+                                  index,
+                                  count,
+                                  capacity,
+                                  imagDigits,
+                                  imagControl);
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                StoreSignedCarryDigit(
+                    dzdcRealLimbs[index],
+                    static_cast<int32_t>((packedCarries >> 16u) & 0xFFu) + CarryPrefixMin,
+                    index,
+                    count,
+                    capacity,
+                    dzdcRealDigits,
+                    dzdcRealControl);
+                StoreSignedCarryDigit(
+                    dzdcImagLimbs[index],
+                    static_cast<int32_t>((packedCarries >> 24u) & 0xFFu) + CarryPrefixMin,
+                    index,
+                    count,
+                    capacity,
+                    dzdcImagDigits,
+                    dzdcImagControl);
             }
         }
         // The next partition's aggregate barrier protects shared scratch reuse.
@@ -1856,7 +1671,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
                      HpSharkReferenceResults<SharkFloatParams> *combo)
 {
     using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    using Descriptor = HpSharkReference2CarryPrefixDescriptor;
+    using Descriptor = HpSharkReference2PackedCarryPrefixDescriptor;
     constexpr uint32_t Capacity = Workspace::MaxFusedLimbs;
     constexpr uint32_t DescriptorWords =
         (Workspace::MaxCarryPrefixParts * sizeof(Descriptor) + sizeof(uint64_t) - 1u) / sizeof(uint64_t);
@@ -1866,148 +1681,61 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     static_assert((Capacity * sizeof(uint64_t)) % alignof(Descriptor) == 0u);
     static_assert(Capacity + DescriptorWords + ControlWords <= Workspace::MaxFusedN);
 
-    uint64_t *realTransforms = workspace.RealOutput;
+    uint64_t *realOutputArena = workspace.RealOutput;
     int64_t *realLimbs = workspace.RealLimbs;
-    uint32_t *realDigits = reinterpret_cast<uint32_t *>(realTransforms);
-    Descriptor *realDescriptors = reinterpret_cast<Descriptor *>(realTransforms + Capacity);
-    uint32_t *realControl = reinterpret_cast<uint32_t *>(realTransforms + Capacity + DescriptorWords);
+    uint32_t *realDigits = reinterpret_cast<uint32_t *>(realOutputArena);
+    Descriptor *descriptors = reinterpret_cast<Descriptor *>(realOutputArena + Capacity);
+    uint32_t *realControl = reinterpret_cast<uint32_t *>(realOutputArena + Capacity + DescriptorWords);
     HpSharkFloat<SharkFloatParams> *realOutput = &combo->Multiply.A;
 
-    uint64_t *imagTransforms = workspace.ImagOutput;
+    uint64_t *imagOutputArena = workspace.ImagOutput;
     int64_t *imagLimbs = workspace.ImagLimbs;
-    uint32_t *imagDigits = reinterpret_cast<uint32_t *>(imagTransforms);
-    Descriptor *imagDescriptors = reinterpret_cast<Descriptor *>(imagTransforms + Capacity);
-    uint32_t *imagControl = reinterpret_cast<uint32_t *>(imagTransforms + Capacity + DescriptorWords);
+    uint32_t *imagDigits = reinterpret_cast<uint32_t *>(imagOutputArena);
+    uint32_t *imagControl = reinterpret_cast<uint32_t *>(imagOutputArena + Capacity + DescriptorWords);
     HpSharkFloat<SharkFloatParams> *imagOutput = &combo->Multiply.B;
 
-    uint64_t *dzdcRealTransforms = nullptr;
     int64_t *dzdcRealLimbs = nullptr;
     uint32_t *dzdcRealDigits = nullptr;
-    Descriptor *dzdcRealDescriptors = nullptr;
     uint32_t *dzdcRealControl = nullptr;
     HpSharkFloat<SharkFloatParams> *dzdcRealOutput = nullptr;
-    uint64_t *dzdcImagTransforms = nullptr;
     int64_t *dzdcImagLimbs = nullptr;
     uint32_t *dzdcImagDigits = nullptr;
-    Descriptor *dzdcImagDescriptors = nullptr;
     uint32_t *dzdcImagControl = nullptr;
     HpSharkFloat<SharkFloatParams> *dzdcImagOutput = nullptr;
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        dzdcRealTransforms = workspace.DzdcRealOutput;
         dzdcRealLimbs = workspace.DzdcRealLimbs;
-        dzdcRealDigits = reinterpret_cast<uint32_t *>(dzdcRealTransforms);
-        dzdcRealDescriptors = reinterpret_cast<Descriptor *>(dzdcRealTransforms + Capacity);
-        dzdcRealControl = reinterpret_cast<uint32_t *>(dzdcRealTransforms + Capacity + DescriptorWords);
+        dzdcRealDigits = reinterpret_cast<uint32_t *>(workspace.DzdcRealOutput);
+        dzdcRealControl =
+            reinterpret_cast<uint32_t *>(workspace.DzdcRealOutput + Capacity + DescriptorWords);
         dzdcRealOutput = &combo->Multiply.DzdcReal;
-        dzdcImagTransforms = workspace.DzdcImagOutput;
         dzdcImagLimbs = workspace.DzdcImagLimbs;
-        dzdcImagDigits = reinterpret_cast<uint32_t *>(dzdcImagTransforms);
-        dzdcImagDescriptors = reinterpret_cast<Descriptor *>(dzdcImagTransforms + Capacity);
-        dzdcImagControl = reinterpret_cast<uint32_t *>(dzdcImagTransforms + Capacity + DescriptorWords);
+        dzdcImagDigits = reinterpret_cast<uint32_t *>(workspace.DzdcImagOutput);
+        dzdcImagControl =
+            reinterpret_cast<uint32_t *>(workspace.DzdcImagOutput + Capacity + DescriptorWords);
         dzdcImagOutput = &combo->Multiply.DzdcImag;
     }
 
     MattsCudaAssert(limbCount > 0u && limbCount <= Capacity);
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
 
-    PrepareSignedCarryPrefixes<SharkFloatParams>(grid,
-                                                 block,
-                                                 limbCount,
-                                                 realLimbs,
-                                                 realTransforms,
-                                                 realDescriptors,
-                                                 imagLimbs,
-                                                 imagTransforms,
-                                                 imagDescriptors,
-                                                 dzdcRealLimbs,
-                                                 dzdcRealTransforms,
-                                                 dzdcRealDescriptors,
-                                                 dzdcImagLimbs,
-                                                 dzdcImagTransforms,
-                                                 dzdcImagDescriptors);
     PrefixCarryTransformsDLB<SharkFloatParams>(grid,
                                                block,
                                                limbCount,
-                                               realTransforms,
-                                               realDescriptors,
-                                               imagTransforms,
-                                               imagDescriptors,
-                                               dzdcRealTransforms,
-                                               dzdcRealDescriptors,
-                                               dzdcImagTransforms,
-                                               dzdcImagDescriptors,
+                                               Capacity,
+                                               realLimbs,
+                                               realDigits,
+                                               realControl,
+                                               imagLimbs,
+                                               imagDigits,
+                                               imagControl,
+                                               dzdcRealLimbs,
+                                               dzdcRealDigits,
+                                               dzdcRealControl,
+                                               dzdcImagLimbs,
+                                               dzdcImagDigits,
+                                               dzdcImagControl,
+                                               descriptors,
                                                carryPrefixShared);
-
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t index = GridThreadRank(block); index < limbCount; index += gridSize) {
-        const int64_t realSignedLimb = realLimbs[index];
-        const int32_t realCarryIn = ApplyCarryPrefix(realTransforms[index], 0);
-        const uint32_t realDigit =
-            static_cast<uint32_t>(static_cast<uint64_t>(realSignedLimb + realCarryIn));
-        if (index + 1u == limbCount) {
-            int32_t finalCarry = CarryOutForSignedLimb(realSignedLimb, realCarryIn);
-            uint32_t digitLength = limbCount;
-            while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
-                realLimbs[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
-                finalCarry = CarryOutForSignedLimb(finalCarry, 0);
-            }
-            realControl[FinalizationDigitLengthControl] = digitLength;
-            realControl[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
-        }
-        realLimbs[index] = realDigit;
-
-        const int64_t imagSignedLimb = imagLimbs[index];
-        const int32_t imagCarryIn = ApplyCarryPrefix(imagTransforms[index], 0);
-        const uint32_t imagDigit =
-            static_cast<uint32_t>(static_cast<uint64_t>(imagSignedLimb + imagCarryIn));
-        if (index + 1u == limbCount) {
-            int32_t finalCarry = CarryOutForSignedLimb(imagSignedLimb, imagCarryIn);
-            uint32_t digitLength = limbCount;
-            while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
-                imagLimbs[digitLength++] = static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
-                finalCarry = CarryOutForSignedLimb(finalCarry, 0);
-            }
-            imagControl[FinalizationDigitLengthControl] = digitLength;
-            imagControl[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
-        }
-        imagLimbs[index] = imagDigit;
-
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            const int64_t dzdcRealSignedLimb = dzdcRealLimbs[index];
-            const int32_t dzdcRealCarryIn = ApplyCarryPrefix(dzdcRealTransforms[index], 0);
-            const uint32_t dzdcRealDigit =
-                static_cast<uint32_t>(static_cast<uint64_t>(dzdcRealSignedLimb + dzdcRealCarryIn));
-            if (index + 1u == limbCount) {
-                int32_t finalCarry = CarryOutForSignedLimb(dzdcRealSignedLimb, dzdcRealCarryIn);
-                uint32_t digitLength = limbCount;
-                while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
-                    dzdcRealLimbs[digitLength++] =
-                        static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
-                    finalCarry = CarryOutForSignedLimb(finalCarry, 0);
-                }
-                dzdcRealControl[FinalizationDigitLengthControl] = digitLength;
-                dzdcRealControl[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
-            }
-            dzdcRealLimbs[index] = dzdcRealDigit;
-
-            const int64_t dzdcImagSignedLimb = dzdcImagLimbs[index];
-            const int32_t dzdcImagCarryIn = ApplyCarryPrefix(dzdcImagTransforms[index], 0);
-            const uint32_t dzdcImagDigit =
-                static_cast<uint32_t>(static_cast<uint64_t>(dzdcImagSignedLimb + dzdcImagCarryIn));
-            if (index + 1u == limbCount) {
-                int32_t finalCarry = CarryOutForSignedLimb(dzdcImagSignedLimb, dzdcImagCarryIn);
-                uint32_t digitLength = limbCount;
-                while (finalCarry != 0 && finalCarry != -1 && digitLength < Capacity) {
-                    dzdcImagLimbs[digitLength++] =
-                        static_cast<uint32_t>(static_cast<uint64_t>(finalCarry));
-                    finalCarry = CarryOutForSignedLimb(finalCarry, 0);
-                }
-                dzdcImagControl[FinalizationDigitLengthControl] = digitLength;
-                dzdcImagControl[FinalizationNegativeControl] = finalCarry < 0 ? 1u : 0u;
-            }
-            dzdcImagLimbs[index] = dzdcImagDigit;
-        }
-    }
-    grid.sync();
 
     const uint32_t realDigitLength = realControl[FinalizationDigitLengthControl];
     const uint32_t imagDigitLength = imagControl[FinalizationDigitLengthControl];
@@ -2020,20 +1748,6 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
         maximumDigitLength =
             maximumDigitLength > dzdcImagDigitLength ? maximumDigitLength : dzdcImagDigitLength;
     }
-
-    for (uint32_t index = GridThreadRank(block); index < maximumDigitLength; index += gridSize) {
-        if (index < realDigitLength)
-            realDigits[index] = static_cast<uint32_t>(realLimbs[index]);
-        if (index < imagDigitLength)
-            imagDigits[index] = static_cast<uint32_t>(imagLimbs[index]);
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            if (index < dzdcRealControl[FinalizationDigitLengthControl])
-                dzdcRealDigits[index] = static_cast<uint32_t>(dzdcRealLimbs[index]);
-            if (index < dzdcImagControl[FinalizationDigitLengthControl])
-                dzdcImagDigits[index] = static_cast<uint32_t>(dzdcImagLimbs[index]);
-        }
-    }
-    grid.sync();
 
     if constexpr (HpShark::DebugChecksums) {
         StoreReference2DebugState(debugStates,
@@ -2830,7 +2544,7 @@ __maxnreg__(HpShark::RegisterLimit)
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
     extern __shared__ __align__(16) uint64_t sharedData[];
-    __shared__ uint64_t carryPrefixShared[4u * (2u * Reference2Detail::CarryPrefixMaxWarps + 1u)];
+    __shared__ uint64_t carryPrefixShared[(2u * Reference2Detail::CarryPrefixMaxWarps + 2u) / 2u];
     const bool leader = Reference2Detail::IsLeader<SharkFloatParams>(block);
     DebugGlobalCount<SharkFloatParams> *debugCombo = nullptr;
     DebugState<SharkFloatParams> *debugStates = nullptr;

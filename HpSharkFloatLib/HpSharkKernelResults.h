@@ -63,12 +63,12 @@ template <class SharkFloatParams> struct HpSharkAddComboResults {
     alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcImag; // W2 + W3
 };
 
-// Ref2 evaluates its fused NTT pipeline cooperatively. The descriptor lives on
-// the device; every pointed-to buffer is allocated once by the Ref2 invocation
-// glue and reused for the lifetime of the orbit session.
-struct alignas(16) HpSharkReference2CarryPrefixDescriptor {
-    uint64_t AggregateTransform;
-    uint64_t PrefixTransform;
+// Ref2 evaluates its fused NTT pipeline cooperatively. The packed carry-prefix
+// descriptor lives on the device; every pointed-to buffer is allocated once by
+// the Ref2 invocation glue and reused for the lifetime of the orbit session.
+struct alignas(16) HpSharkReference2PackedCarryPrefixDescriptor {
+    uint32_t AggregateTransform;
+    uint32_t PrefixTransform;
     uint32_t State;
     uint32_t Padding;
 };
@@ -111,9 +111,6 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     int64_t *DzdcImagLimbs;
     uint32_t *MagnitudeDigits;
     uint32_t *Magnitude;
-    uint64_t *CarryPrefixTransforms;
-    HpSharkReference2CarryPrefixDescriptor *CarryPrefixDescriptors;
-    uint32_t *CarryPrefixControl;
     uint64_t *StageOmegas;
     uint64_t *StageOmegasInverse;
     uint64_t *PsiPowersArena;

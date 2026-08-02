@@ -141,15 +141,12 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
         workspaceBytes = alignWorkspace(workspaceBytes, alignment);
         workspaceBytes += count * elementSize;
     };
+    // Keep this allocation sequence in exact lockstep with the Workspace pointer assignments below.
+    // Any added, removed, or reordered workspace field must be changed in both places.
     addAllocation(WorkingSpectrumCount, Workspace::MaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(ConstantArenaCount, Workspace::PsiArenaSize * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(LimbCount, Workspace::MaxFusedLimbs * sizeof(int64_t), WorkspaceAlignment);
     addAllocation(2u, Workspace::MaxFusedLimbs * sizeof(uint32_t), WorkspaceAlignment);
-    addAllocation(1u, Workspace::MaxFusedLimbs * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(Workspace::MaxCarryPrefixParts,
-                  sizeof(HpSharkReference2CarryPrefixDescriptor),
-                  WorkspaceAlignment);
-    addAllocation(Workspace::CarryPrefixControlCount, sizeof(uint32_t), WorkspaceAlignment);
     addAllocation(1u, Workspace::MaxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(1u, Workspace::MaxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(2u, Workspace::PsiArenaSize * sizeof(uint64_t), WorkspaceAlignment);
@@ -184,6 +181,7 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
                 allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(int64_t), WorkspaceAlignment));
         };
 
+        // Keep this assignment sequence in exact lockstep with the workspaceBytes sequence above.
         Workspace workspace{};
         workspace.ZReal = allocateSpectrum();
         workspace.ZImag = allocateSpectrum();
@@ -211,14 +209,6 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
             allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
         workspace.Magnitude = static_cast<uint32_t *>(
             allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
-        workspace.CarryPrefixTransforms = static_cast<uint64_t *>(
-            allocateWorkspace(Workspace::MaxFusedLimbs, sizeof(uint64_t), WorkspaceAlignment));
-        workspace.CarryPrefixDescriptors = static_cast<HpSharkReference2CarryPrefixDescriptor *>(
-            allocateWorkspace(Workspace::MaxCarryPrefixParts,
-                              sizeof(HpSharkReference2CarryPrefixDescriptor),
-                              WorkspaceAlignment));
-        workspace.CarryPrefixControl = static_cast<uint32_t *>(
-            allocateWorkspace(Workspace::CarryPrefixControlCount, sizeof(uint32_t), WorkspaceAlignment));
         workspace.StageOmegas = static_cast<uint64_t *>(
             allocateWorkspace(Workspace::MaxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
         workspace.StageOmegasInverse = static_cast<uint64_t *>(

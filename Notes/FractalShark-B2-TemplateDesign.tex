@@ -10,10 +10,9 @@ the inner loops of both reference-orbit computation and per-pixel
 perturbation execute billions of arithmetic operations; virtual dispatch
 or run-time branch mispredictions on every iteration would impose
 measurable overhead.  Second, encoding precision contracts in the type
-system allows the compiler to verify that high-precision reference data
-is never silently truncated when it is handed to a lower-precision
-perturbation kernel, catching a class of errors that would otherwise
-manifest only as subtle rendering artifacts.
+system makes numeric conversions and storage formats explicit at template
+boundaries, which helps review the deliberate projection from high-precision
+recurrence state to reduced perturbation data.
 
 The template parameters fall into four largely orthogonal dimensions,
 described in the following subsections.
@@ -39,11 +38,12 @@ representation.
 \subsubsection{Reference-orbit type (\code{T})}
 \label{subsec:template-t}
 
-The parameter~\code{T} selects the numeric type used to store the
-reference orbit $\{z_n^\star\}$ and, by extension, the type in which the
-high-precision reference computation is performed.  It determines both
-the precision available during orbit iteration and the storage
-representation uploaded to the GPU for use by perturbation kernels.
+The parameter~\code{T} selects the numeric type used to store the emitted
+reference orbit $\{z_n^\star\}$ and the representation consumed by downstream
+perturbation code.  It does not select the recurrence arithmetic: CPU reference
+backends use MPIR internally, while CUDA Ref1 and Ref2 use a
+precision-specialized \code{HpSharkFloat} internally and convert emitted samples
+to~\code{T}.
 The principal choices are:
 
 \begin{itemize}
@@ -62,9 +62,6 @@ The principal choices are:
   \item \code{HDRFloat<CudaDblflt<MattDblflt>>}---the composition of
         the HDR exponent with the double-single mantissa, providing
         both extended range and extended precision.
-  \item \code{HpSharkFloat<SharkFloatParams>}---the GPU-resident
-        arbitrary-precision type used for reference-orbit computation
-        at extreme zoom depths (\cref{subsec:ref-orbit-gpu}).
 \end{itemize}
 
 \noindent
@@ -76,7 +73,7 @@ and as the orbit-storage type inside \code{RefOrbitCalc}.
 \subsubsection{Perturbation subtype (\code{SubType})}
 \label{subsec:template-subtype}
 
-While~\code{T} governs the precision of the shared reference orbit,
+While~\code{T} governs the stored precision of the shared reference orbit,
 per-pixel perturbation operates at a lower precision because each
 pixel evolves only a small delta $\Delta z_n$ relative to $z_n^\star$.
 The \code{SubType} parameter selects this lower-precision type.  It
@@ -188,7 +185,8 @@ can fold into kernel code:
 
 \begin{itemize}
   \item \code{GlobalNumUint32}---the number of 32-bit limbs in each
-        high-precision operand, derived from \code{pNumDigits}.  Because
+        high-precision operand.  Despite its name, \code{pNumDigits} is this
+        limb count, not a bit or decimal-digit count.  Because
         the compiler knows this value at template instantiation time,
         loop trip counts in the NTT multiply and carry-propagation
         kernels are compile-time constants, enabling aggressive
@@ -204,26 +202,29 @@ can fold into kernel code:
         derivative recurrence at each iteration.  This derivative is required by
         the Feature Finder's Newton's method solver
         (\cref{sec:feature-finder}).
-  \item \code{NTTPlan}---a compile-time NTT plan computed by
-        \code{SharkNTT::BuildPlanPrime} from \code{GlobalNumUint32},
-        fixing the NTT transform length and modular-arithmetic
-        parameters at compile time.
+  \item \code{NTTPlan}---the Ref1 compile-time NTT plan.  It is computed from
+        \code{GlobalNumUint32} by \code{SharkNTT::BuildPlanPrime}.  Ref2 also
+        has a compile-time base \code{NTTPlan2}, but its setup allocates and
+        caches larger active plans so exponent-shifted polynomial support can
+        select a transform length at run time.
 \end{itemize}
 
 \noindent
 Concrete aliases such as
 \code{SharkParams1}\,--\,\code{SharkParams12} fix
 \code{pNumDigits} to powers of two from $256$ through $524{,}288$
-(providing roughly $2{,}500$ to $5{,}000{,}000$ decimal digits of
-precision) with periodicity enabled and Newton--Raphson disabled.
+32-bit limbs.  The production range is therefore 8,192 through 16,777,216
+bits, or approximately 2,466 through 5,050,445 decimal digits, with
+periodicity enabled and Newton--Raphson disabled.
 Additional alias families---\code{SharkParamsNP*} (no periodicity),
 \code{SharkParamsNR*} (Newton--Raphson enabled),
 \code{SharkParamsDbl*} (\code{double} sub-type), and
 \code{SharkParamsDbf*} (\code{CudaDblflt} sub-type)---provide the
-remaining feature-flag and sub-type permutations.  Each alias is
-independently instantiated by the code generator described in
-\cref{subsec:template-explicit-inst}, yielding $12\times 5 = 60$
-parameter-set instantiations per GPU kernel template.
+remaining feature-flag and sub-type permutations.  Non-production and test
+families also include smaller 64- and 128-limb cases, so their alias sets should
+not be inferred from the twelve production buckets.  The code generator in
+\cref{subsec:template-explicit-inst} emits only the combinations requested by
+each kernel batch.
 
 The remaining sections collect operational engineering references for tests,
 kernels, display output, orbit interchange, and portability.

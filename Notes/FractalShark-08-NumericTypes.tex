@@ -77,21 +77,23 @@ methods.
 
 \subsection{Role of HDR in perturbation and reference orbits}
 
-The HDR representation plays a complementary role to perturbation (\cref{sec:perturbation-concept}). In the
-perturbation framework, the reference orbit (\cref{sec:ref-orbit-calc}) typically grows rapidly in magnitude
-and therefore demands high dynamic range, while perturbation deltas remain small
-and can often be represented using lower precision.
+The HDR representation plays a complementary role to perturbation
+(\cref{sec:perturbation-concept}).  It extends range, not significand precision.
+The application-authoritative CPU recurrence uses MPIR, and the CUDA
+reference-orbit recurrence uses fixed-width \code{HpSharkFloat}.  Both emit
+reduced HDR samples for downstream work.
 
 HDR arithmetic is used primarily for:
 \begin{itemize}
-\item computing reference orbits at deep zoom levels,
-\item evaluating linear and nonlinear terms involving large reference values,
-\item maintaining numerical stability across long iteration sequences.
+\item storing reduced reference-orbit samples and parameters,
+\item perturbation and linear-approximation arithmetic whose values require wide
+      range but only the selected mantissa precision, and
+\item GPU periodicity, escape, radius, and derivative calculations around the
+      \code{HpSharkFloat} orbit state.
 \end{itemize}
 
-By decoupling scale from precision, HDR arithmetic allows the reference orbit to
-be computed efficiently without sacrificing accuracy, while still enabling the
-mixed-precision structure exploited by perturbation rendering.
+HDR therefore enables the mixed-precision structure used by perturbation
+rendering; it does not replace the MPIR or \code{HpSharkFloat} recurrence.
 
 \subsection{Advantages over conventional representations}
 
@@ -146,18 +148,19 @@ extreme zoom levels while remaining compatible with GPU execution models.
 \node[typebox] (gqd) at (3.2, 2.8) {GQD};
 \node[bitlabel, right=1pt] at (gqd.east) {${\sim}$212\,b};
 
-% Row 3: arbitrary precision
-\node[typebox, fill=gray!12, minimum width=3.0cm] (mpir) at (1.6, 4.2)
-  {MPIR / HpSharkFloat};
-\node[bitlabel, right=1pt] at (mpir.east) {arbitrary};
+% Row 3: reference-orbit arithmetic
+\node[typebox, fill=gray!12] (mpir) at (0, 4.2) {MPIR};
+\node[bitlabel, right=1pt] at (mpir.east) {runtime-selected};
+\node[typebox, fill=gray!12] (hpshark) at (3.2, 4.2) {HpSharkFloat};
+\node[bitlabel, right=1pt] at (hpshark.east) {fixed specialization};
 
 % Arrows: increasing precision
 \draw[->, blue!40, thick] (float) -- (dblflt);
 \draw[->, blue!40, thick] (double) -- (dbldbl);
 \draw[->, blue!40, thick] (dblflt) -- (gqf);
 \draw[->, blue!40, thick] (dbldbl) -- (gqd);
-\draw[->, blue!40, thick] (gqf.north) -- ([xshift=-6pt]mpir.south west);
-\draw[->, blue!40, thick] (gqd.north) -- ([xshift=6pt]mpir.south east);
+\draw[->, blue!40, thick] (gqf.north) -- (mpir.south);
+\draw[->, blue!40, thick] (gqd.north) -- (hpshark.south);
 
 % Column labels
 \node[font=\tiny, gray, rotate=90, anchor=south] at (-1.3, 1.4)
@@ -232,9 +235,11 @@ extreme zoom levels while remaining compatible with GPU execution models.
   Numeric type hierarchy and HDR representation.
   (a)~The precision hierarchy of floating-point types available in
   \FractalShark{}, from native IEEE~754 types (bottom) through
-  multi-component expansion types to arbitrary-precision arithmetic (top).
-  The dashed outline indicates that any GPU-resident type may be wrapped by
-  \code{HDRFloat<T>} to provide wide dynamic range.
+  multi-component expansion types to the two reference-orbit arithmetic roles
+  at the top: runtime-selected MPIR and fixed-width \code{HpSharkFloat}
+  specializations.  The dashed outline indicates the mantissa types used by the
+  implemented \code{HDRFloat<T>} instantiations; it is not a claim that every
+  device type is wrapped.
   (b)~Comparison of the standard IEEE~754 \code{double} layout, where
   exponent and mantissa share a fixed bit budget, with the
   \code{HDRFloat<T>} representation, which stores an explicit integer
@@ -392,8 +397,8 @@ wrapper class; they use direct namespaced helper functions for arithmetic.
 \subsection{Precision hierarchy}
 \label{subsec:ep-hierarchy}
 
-The complete precision hierarchy available for per-pixel computation in
-\FractalShark{}, from lowest to highest:
+The numeric roles available in \FractalShark{}, from per-pixel formats through
+reference-orbit formats, are:
 
 \begin{center}
 \begin{tabularx}{\textwidth}{llrX}
@@ -406,13 +411,14 @@ The complete precision hierarchy available for per-pixel computation in
 \code{dbldbl}               & 2$\times$fp64 & ${\sim}104$ & academic \\
 \code{GQF::gqf\_real}       & 4$\times$fp32 & ${\sim}96$  & academic \\
 \code{GQD::gqd\_real}       & 4$\times$fp64 & ${\sim}212$ & academic \\
-MPIR / \code{HpSharkFloat}  & $N$ limbs     & arbitrary   & reference orbit only \\
+MPIR                         & runtime limbs & runtime-selected & CPU reference recurrence \\
+\code{HpSharkFloat}         & fixed 32-bit limbs & fixed by specialization & CUDA reference recurrence \\
 \hline
 \end{tabularx}
 \end{center}
 
-Any of these types can be combined with the \code{HDRFloat} exponent wrapper
-when wide dynamic range is also required.  In practice, the vast majority of
+Selected native and expansion mantissa types have \code{HDRFloat}
+instantiations when wide dynamic range is required.  In practice, the vast majority of
 rendering uses either \code{float}, \code{double}, or
 \code{HDRFloat<CudaDblflt<dblflt>>} as the perturbation delta type.
 

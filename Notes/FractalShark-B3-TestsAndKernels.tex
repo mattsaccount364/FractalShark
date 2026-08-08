@@ -38,10 +38,12 @@ requiring hours of computation; the test serves as an overnight
 stress benchmark rather than a routine regression check.
 
 % -----------------------------------------------------------------
-\subsection{Kernel List}
+\subsection{Selected Kernel Entry Points}
 \label{sec:kernel-list}
 
-This section simply lists all the CUDA kernels in \FractalShark{}.
+This section lists representative CUDA entry points.  It is intentionally not
+exhaustive: templated helpers, wrapper launch functions, generated
+specializations, and internal kernels change more frequently than this appendix.
 
 \begin{itemize}
 
@@ -63,10 +65,17 @@ This section simply lists all the CUDA kernels in \FractalShark{}.
     \item \code{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
   \end{itemize}
 
-\item \textbf{High-precision reference kernels} (\cref{subsec:ref-orbit-gpu})
+\item \textbf{High-precision Ref1 kernels} (\cref{subsec:ref-orbit-gpu})
   \begin{itemize}
     \item \code{HpSharkReferenceGpuKernel}
     \item \code{HpSharkReferenceGpuLoop}
+  \end{itemize}
+
+\item \textbf{Fused high-precision Ref2 kernels}
+  (\cref{subsec:fused-ntt-reference-step})
+  \begin{itemize}
+    \item \code{HpSharkReference2SetupKernel}
+    \item \code{HpSharkReference2GpuLoop}
   \end{itemize}
 
 \item \textbf{Utility kernels}

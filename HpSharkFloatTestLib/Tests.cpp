@@ -3913,13 +3913,18 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
 #include "../FractalSharkLib/LargeCoords30.h"
 
     using SharkFloatParams = SharkParams7;
+    constexpr uint32_t StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
+    constexpr uint32_t ActualPrecisionLimbs = 15'000;
+    static_assert(StoragePrecisionLimbs == 16'384);
+    static_assert(ActualPrecisionLimbs > StoragePrecisionLimbs / 2u);
+    static_assert(ActualPrecisionLimbs <= StoragePrecisionLimbs);
 
     HpShark::LaunchParams launchParams{numBlocks, numThreads};
     static_assert(IsReferenceOrbitOperator<sharkOperator>,
                   "Only reference-orbit operators are supported");
 
     mpf_set_default_prec(
-        HpSharkFloat<SharkFloatParams>::DefaultMpirBits); // Set precision for MPIR floating point
+        HpSharkFloat<SharkParamsNP7>::DefaultMpirBits); // Set precision for MPIR floating point
 
     const char *num1 = strX; //.c_str();
     const char *num2 = strY; //.c_str();
@@ -3985,7 +3990,7 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
     std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
         preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, SharkFloatParams::GlobalNumUint32, testBase);
+            launchParams, mpfX, mpfY, ActualPrecisionLimbs, testBase);
     }
 
     std::vector<PerfTimingResult> timings;
@@ -4008,7 +4013,7 @@ TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
                                                   maxIters,
                                                   expectedPeriod,
                                                   expectedResult,
-                                                  SharkFloatParams::GlobalNumUint32,
+                                                  ActualPrecisionLimbs,
                                                   useMT,
                                                   &timing,
                                                   preparedTables.get());
@@ -4040,13 +4045,18 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
 #include "../FractalSharkLib/LargeCoords32.h"
 
     using SharkFloatParams = SharkParams9;
+    constexpr uint32_t StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
+    constexpr uint32_t ActualPrecisionLimbs = 60'000;
+    static_assert(StoragePrecisionLimbs == 65'536);
+    static_assert(ActualPrecisionLimbs > StoragePrecisionLimbs / 2u);
+    static_assert(ActualPrecisionLimbs <= StoragePrecisionLimbs);
 
     HpShark::LaunchParams launchParams{numBlocks, numThreads};
     static_assert(IsReferenceOrbitOperator<sharkOperator>,
                   "Only reference-orbit operators are supported");
 
     mpf_set_default_prec(
-        HpSharkFloat<SharkFloatParams>::DefaultMpirBits); // Set precision for MPIR floating point
+        HpSharkFloat<SharkParamsNP9>::DefaultMpirBits); // Set precision for MPIR floating point
 
     const char *num1 = strX;
     const char *num2 = strY;
@@ -4105,7 +4115,7 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
     std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
         preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, SharkFloatParams::GlobalNumUint32, testBase);
+            launchParams, mpfX, mpfY, ActualPrecisionLimbs, testBase);
     }
 
     std::vector<PerfTimingResult> timings;
@@ -4129,7 +4139,7 @@ TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
                                                   maxIters,
                                                   expectedPeriod,
                                                   expectedResult,
-                                                  SharkFloatParams::GlobalNumUint32,
+                                                  ActualPrecisionLimbs,
                                                   useMT,
                                                   &timing,
                                                   preparedTables.get());

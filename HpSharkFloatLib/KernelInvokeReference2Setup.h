@@ -136,7 +136,7 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
     ValidateStageRange<SharkFloatParams>(minFusedStages, maxFusedStages);
     const uint32_t activeMinFusedN = 1u << minFusedStages;
     const uint32_t activeMaxFusedN = 1u << maxFusedStages;
-    const uint32_t activePsiArenaSize = 2u * activeMaxFusedN - activeMinFusedN;
+    const uint32_t activeFusedArenaSize = 2u * activeMaxFusedN - activeMinFusedN;
     const uint32_t activeMaxFusedLimbs = (activeMaxFusedN * 16u) / 32u + 4u;
     const uint32_t activeMaxCarryPrefixParts = (activeMaxFusedLimbs + 31u) / 32u;
     const uint32_t activePlanCacheEntryCount = maxFusedStages - minFusedStages + 1u;
@@ -163,12 +163,12 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
     // Keep this allocation sequence in exact lockstep with the Workspace pointer assignments below.
     // Any added, removed, or reordered workspace field must be changed in both places.
     addAllocation(WorkingSpectrumCount, activeMaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(ConstantArenaCount, activePsiArenaSize * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(ConstantArenaCount, activeFusedArenaSize * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(LimbCount, activeMaxFusedLimbs * sizeof(int64_t), WorkspaceAlignment);
     addAllocation(2u, activeMaxFusedLimbs * sizeof(uint32_t), WorkspaceAlignment);
     addAllocation(1u, maxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(1u, maxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(2u, activePsiArenaSize * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(1u, activeFusedArenaSize * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(2u, activeMaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
 
     void *workspaceStorage = nullptr;
@@ -193,7 +193,7 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
         };
         const auto allocateConstantArena = [&] {
             return static_cast<uint64_t *>(
-                allocateWorkspace(activePsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
+                allocateWorkspace(activeFusedArenaSize, sizeof(uint64_t), WorkspaceAlignment));
         };
         const auto allocateLimbs = [&] {
             return static_cast<int64_t *>(
@@ -232,10 +232,8 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
             allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
         workspace.StageOmegasInverse = static_cast<uint64_t *>(
             allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
-        workspace.PsiPowersArena = static_cast<uint64_t *>(
-            allocateWorkspace(activePsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
-        workspace.PsiInversePowersArena = static_cast<uint64_t *>(
-            allocateWorkspace(activePsiArenaSize, sizeof(uint64_t), WorkspaceAlignment));
+        workspace.OmegaPowersArena = static_cast<uint64_t *>(
+            allocateWorkspace(activeFusedArenaSize, sizeof(uint64_t), WorkspaceAlignment));
         workspace.ForwardTwiddles = allocateSpectrum();
         workspace.InverseTwiddles = allocateSpectrum();
         workspace.ActualPrecisionLimbs = actualPrecisionLimbs;
@@ -270,8 +268,10 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
                                          workspace.StageOmegas,
                                          workspace.StageOmegasInverse,
                                          static_cast<int32_t>(n),
-                                         workspace.PsiPowersArena + arenaOffset,
-                                         workspace.PsiInversePowersArena + arenaOffset,
+                                         nullptr,
+                                         nullptr,
+                                         workspace.OmegaPowersArena + arenaOffset,
+                                         0,
                                          0,
                                          workspace.ForwardTwiddles,
                                          workspace.InverseTwiddles,

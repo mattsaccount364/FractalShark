@@ -19,7 +19,7 @@ enum class DebugStatePurpose {
     BHalfLow,
     XDiff,
     YDiff,
-    // Forward NTT: after pack+twist
+    // Forward NTT: after input packing
     Z0XX,
     Z0XY,
     Z0YY,
@@ -60,7 +60,7 @@ enum class DebugStatePurpose {
     Z2_PermW1,
     Z2_PermW2,
     Z2_PermW3,
-    // After untwist
+    // After inverse coefficient normalization
     Z2_Perm4,
     Z2_Perm5,
     Z2_Perm6,

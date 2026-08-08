@@ -86,7 +86,7 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
         SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L));
     static constexpr uint32_t MinFusedStages = SharkNTT::CeilLog2U32(MinFusedN);
     static constexpr uint32_t PlanCacheEntryCount = MaxFusedStages - MinFusedStages + 1u;
-    static constexpr uint32_t PsiArenaSize = 2u * MaxFusedN - MinFusedN;
+    static constexpr uint32_t FusedArenaSize = 2u * MaxFusedN - MinFusedN;
     static constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
     static constexpr uint32_t MaxCarryPrefixParts = (MaxFusedLimbs + 31u) / 32u;
     static constexpr uint32_t CarryPrefixControlCount = 3u;
@@ -113,8 +113,7 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     uint32_t *Magnitude;
     uint64_t *StageOmegas;
     uint64_t *StageOmegasInverse;
-    uint64_t *PsiPowersArena;
-    uint64_t *PsiInversePowersArena;
+    uint64_t *OmegaPowersArena;
     uint64_t *ForwardTwiddles;
     uint64_t *InverseTwiddles;
     SharkNTT::PlanPrime Plans[PlanCacheEntryCount];

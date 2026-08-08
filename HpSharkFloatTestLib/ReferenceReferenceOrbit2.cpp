@@ -148,7 +148,7 @@ template <class SharkFloatParams> struct FusedPlanCacheTraits {
         SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L));
     static constexpr uint32_t MinFusedStages = SharkNTT::CeilLog2U32(MinFusedN);
     static constexpr uint32_t EntryCount = MaxFusedStages - MinFusedStages + 1u;
-    static constexpr uint32_t PsiArenaSize = 2u * MaxFusedN - MinFusedN;
+    static constexpr uint32_t FusedArenaSize = 2u * MaxFusedN - MinFusedN;
 
     static_assert(MinFusedN >= 2u && (MinFusedN & (MinFusedN - 1u)) == 0u);
     static_assert(EntryCount <= 32u);
@@ -206,8 +206,7 @@ template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
     std::unique_ptr<uint32_t[]> Magnitude;
     std::unique_ptr<uint64_t[]> StageOmegas;
     std::unique_ptr<uint64_t[]> StageOmegasInverse;
-    std::unique_ptr<uint64_t[]> PsiPowersArena;
-    std::unique_ptr<uint64_t[]> PsiInversePowersArena;
+    std::unique_ptr<uint64_t[]> OmegaPowersArena;
     std::unique_ptr<uint64_t[]> ForwardTwiddles;
     std::unique_ptr<uint64_t[]> InverseTwiddles;
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OrbitZReal;
@@ -251,8 +250,8 @@ EnsureGlobalFusedWorkspace()
     if (!global.ZReal) {
         global.ZReal = std::make_unique<uint64_t[]>(MaxFusedN);
         global.ZImag = std::make_unique<uint64_t[]>(MaxFusedN);
-        global.CRealArena = std::make_unique<uint64_t[]>(Cache::PsiArenaSize);
-        global.CImagArena = std::make_unique<uint64_t[]>(Cache::PsiArenaSize);
+        global.CRealArena = std::make_unique<uint64_t[]>(Cache::FusedArenaSize);
+        global.CImagArena = std::make_unique<uint64_t[]>(Cache::FusedArenaSize);
         global.RealOutput = std::make_unique<uint64_t[]>(MaxFusedN);
         global.ImagOutput = std::make_unique<uint64_t[]>(MaxFusedN);
         global.DzdcRealOutput = std::make_unique<uint64_t[]>(MaxFusedN);
@@ -266,14 +265,13 @@ EnsureGlobalFusedWorkspace()
         global.Magnitude = std::make_unique<uint32_t[]>(MaxFusedLimbs);
         global.StageOmegas = std::make_unique<uint64_t[]>(MaxFusedStages);
         global.StageOmegasInverse = std::make_unique<uint64_t[]>(MaxFusedStages);
-        global.PsiPowersArena = std::make_unique<uint64_t[]>(Cache::PsiArenaSize);
-        global.PsiInversePowersArena = std::make_unique<uint64_t[]>(Cache::PsiArenaSize);
+        global.OmegaPowersArena = std::make_unique<uint64_t[]>(Cache::FusedArenaSize);
         global.ForwardTwiddles = std::make_unique<uint64_t[]>(MaxFusedN);
         global.InverseTwiddles = std::make_unique<uint64_t[]>(MaxFusedN);
         for (uint32_t slot = 0; slot < Cache::EntryCount; ++slot) {
             const uint32_t stages = Cache::MinFusedStages + slot;
             const uint32_t n = 1u << stages;
-            const uint32_t psiOffset = n - Cache::MinFusedN;
+            const uint32_t arenaOffset = n - Cache::MinFusedN;
             global.Plans[slot] = {SharkFloatParams::NTTPlan2.n32,
                                   SharkFloatParams::NTTPlan2.b,
                                   SharkFloatParams::NTTPlan2.L,
@@ -284,14 +282,16 @@ EnsureGlobalFusedWorkspace()
                                       global.StageOmegas.get(),
                                       global.StageOmegasInverse.get(),
                                       static_cast<int32_t>(n),
-                                      global.PsiPowersArena.get() + psiOffset,
-                                      global.PsiInversePowersArena.get() + psiOffset,
+                                      nullptr,
+                                      nullptr,
+                                      global.OmegaPowersArena.get() + arenaOffset,
+                                      0,
                                       0,
                                       global.ForwardTwiddles.get(),
                                       global.InverseTwiddles.get(),
                                       n - 1u};
             global.ConstantSpectra[slot] = {
-                global.CRealArena.get() + psiOffset, global.CImagArena.get() + psiOffset, nullptr};
+                global.CRealArena.get() + arenaOffset, global.CImagArena.get() + arenaOffset, nullptr};
         }
     }
 
@@ -308,7 +308,7 @@ EnsureGlobalFusedWorkspace()
         if (!global.DzdcReal) {
             global.DzdcReal = std::make_unique<uint64_t[]>(MaxFusedN);
             global.DzdcImag = std::make_unique<uint64_t[]>(MaxFusedN);
-            global.OneArena = std::make_unique<uint64_t[]>(Cache::PsiArenaSize);
+            global.OneArena = std::make_unique<uint64_t[]>(Cache::FusedArenaSize);
             for (uint32_t slot = 0; slot < Cache::EntryCount; ++slot) {
                 const uint32_t n = 1u << (Cache::MinFusedStages + slot);
                 global.ConstantSpectra[slot].One = global.OneArena.get() + n - Cache::MinFusedN;
@@ -383,9 +383,9 @@ LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &pr
     if (deviceWorkspace.ValidPlanMask != fullPlanMask)
         throw FractalSharkSeriousException("Reference2 prepared tables are incomplete");
 
-    const uint32_t activePsiArenaSize =
+    const uint32_t activeFusedArenaSize =
         2u * deviceWorkspace.ActiveMaxFusedN - deviceWorkspace.ActiveMinFusedN;
-    const size_t globalPsiOffset = deviceWorkspace.ActiveMinFusedN - Cache::MinFusedN;
+    const size_t globalArenaOffset = deviceWorkspace.ActiveMinFusedN - Cache::MinFusedN;
 
     const auto copy = [](void *destination, const void *source, size_t bytes, const char *operation) {
         HpShark::Reference2SetupDetail::CheckCuda(
@@ -399,14 +399,10 @@ LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &pr
          deviceWorkspace.StageOmegasInverse,
          deviceWorkspace.ActiveMaxFusedStages * sizeof(uint64_t),
          "cudaMemcpy(Reference2 inverse stage omegas D2H)");
-    copy(global.PsiPowersArena.get() + globalPsiOffset,
-         deviceWorkspace.PsiPowersArena,
-         activePsiArenaSize * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 psi arena D2H)");
-    copy(global.PsiInversePowersArena.get() + globalPsiOffset,
-         deviceWorkspace.PsiInversePowersArena,
-         activePsiArenaSize * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 inverse psi arena D2H)");
+    copy(global.OmegaPowersArena.get() + globalArenaOffset,
+         deviceWorkspace.OmegaPowersArena,
+         activeFusedArenaSize * sizeof(uint64_t),
+         "cudaMemcpy(Reference2 omega arena D2H)");
     copy(global.ForwardTwiddles.get(),
          deviceWorkspace.ForwardTwiddles,
          deviceWorkspace.ActiveMaxFusedN * sizeof(uint64_t),
@@ -415,25 +411,25 @@ LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &pr
          deviceWorkspace.InverseTwiddles,
          deviceWorkspace.ActiveMaxFusedN * sizeof(uint64_t),
          "cudaMemcpy(Reference2 inverse twiddles D2H)");
-    copy(global.CRealArena.get() + globalPsiOffset,
+    copy(global.CRealArena.get() + globalArenaOffset,
          deviceWorkspace.CRealArena,
-         activePsiArenaSize * sizeof(uint64_t),
+         activeFusedArenaSize * sizeof(uint64_t),
          "cudaMemcpy(Reference2 CReal spectra D2H)");
-    copy(global.CImagArena.get() + globalPsiOffset,
+    copy(global.CImagArena.get() + globalArenaOffset,
          deviceWorkspace.CImagArena,
-         activePsiArenaSize * sizeof(uint64_t),
+         activeFusedArenaSize * sizeof(uint64_t),
          "cudaMemcpy(Reference2 CImag spectra D2H)");
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        copy(global.OneArena.get() + globalPsiOffset,
+        copy(global.OneArena.get() + globalArenaOffset,
              deviceWorkspace.OneArena,
-             activePsiArenaSize * sizeof(uint64_t),
+             activeFusedArenaSize * sizeof(uint64_t),
              "cudaMemcpy(Reference2 One spectra D2H)");
     }
 
     for (uint32_t index = 0; index < deviceWorkspace.ActivePlanCacheEntryCount; ++index) {
         const uint32_t slot = firstSlot + index;
         global.Plans[slot] = deviceWorkspace.Plans[slot];
-        global.PlanRoots[slot].Ninvm_mont = deviceWorkspace.PlanRoots[slot].Ninvm_mont;
+        global.PlanRoots[slot].Ninv = deviceWorkspace.PlanRoots[slot].Ninv;
     }
     global.ActiveMinFusedN = deviceWorkspace.ActiveMinFusedN;
     global.ActiveMaxFusedN = deviceWorkspace.ActiveMaxFusedN;
@@ -764,15 +760,15 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
 
 template <class SharkFloatParams>
 static void
-PackTwistForward(DebugHostCombo<SharkFloatParams> &debugCombo,
-                 const HpSharkFloat<SharkFloatParams> &x,
-                 const SharkNTT::PlanPrime &plan,
-                 SharkNTT::RootTables &roots,
-                 uint64_t *out,
-                 uint32_t capacity,
-                 uint32_t inputBitOffset,
-                 DebugStatePurpose packedPurpose,
-                 DebugStatePurpose forwardPurpose)
+PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
+            const HpSharkFloat<SharkFloatParams> &x,
+            const SharkNTT::PlanPrime &plan,
+            SharkNTT::RootTables &roots,
+            uint64_t *out,
+            uint32_t capacity,
+            uint32_t inputBitOffset,
+            DebugStatePurpose packedPurpose,
+            DebugStatePurpose forwardPurpose)
 {
     const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
@@ -791,34 +787,21 @@ PackTwistForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                 : 0;
         const uint64_t coeffMont = SharkNTT::ToMontgomery(debugCombo, coeff % SharkNTT::MagicPrime);
         const uint32_t reverseIndex = ReverseBits32(i, static_cast<int>(plan.stages));
-        out[reverseIndex] = SharkNTT::MontgomeryMul(debugCombo, coeffMont, roots.psi_pows[i]);
+        out[reverseIndex] = coeffMont;
         if (i < static_cast<uint32_t>(plan.L) && IsDebugTraceEnabled()) {
             std::cout << "  pack coefficient index=" << i;
             PrintHexValue("coefficient", coeff);
             PrintHexValue("coefficientMont", coeffMont);
-            PrintHexValue("psi", roots.psi_pows[i]);
-            PrintHexValue("twisted", out[reverseIndex]);
+            PrintHexValue("packed", out[reverseIndex]);
             std::cout << '\n';
         }
     }
 
-    PrintArray("bit-reversed packed/twisted spectrum", out, activeN);
+    PrintArray("bit-reversed packed spectrum", out, activeN);
     StoreReference2DebugState(debugCombo, packedPurpose, out, activeN);
     NTTRadix2<SharkFloatParams, false>(
         debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
     StoreReference2DebugState(debugCombo, forwardPurpose, out, activeN);
-}
-
-template <class SharkFloatParams>
-static uint64_t
-PsiPowerMont(const SharkNTT::PlanPrime &plan, const SharkNTT::RootTables &roots, uint64_t exponent)
-{
-    const uint64_t twoN = 2ull * static_cast<uint64_t>(plan.N);
-    const uint64_t reduced = exponent % twoN;
-    if (reduced < static_cast<uint64_t>(plan.N))
-        return roots.psi_pows[static_cast<size_t>(reduced)];
-    return SubP(SharkNTT::ToMontgomery<SharkFloatParams>(0),
-                roots.psi_pows[static_cast<size_t>(reduced - static_cast<uint64_t>(plan.N))]);
 }
 
 template <class SharkFloatParams>
@@ -840,10 +823,9 @@ WriteShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
     const uint64_t bitScale = SharkNTT::ToMontgomery(debugCombo, 1ull << bitShift);
     const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
     for (uint32_t i = 0; i < activeN; ++i) {
-        const uint64_t psiExponent = chunkShift * (1ull + 2ull * static_cast<uint64_t>(i));
-        const uint64_t chunkScale = (chunkShift == 0)
-                                        ? SharkNTT::ToMontgomery<SharkFloatParams>(1)
-                                        : PsiPowerMont<SharkFloatParams>(plan, roots, psiExponent);
+        const uint64_t phaseIndex = ((chunkShift % activeN) * static_cast<uint64_t>(i)) % activeN;
+        const uint64_t chunkScale = (chunkShift == 0) ? SharkNTT::ToMontgomery<SharkFloatParams>(1)
+                                                      : roots.omega_pows[phaseIndex];
         const uint64_t scale = SharkNTT::MontgomeryMul(debugCombo, chunkScale, bitScale);
         const uint64_t shifted = SharkNTT::MontgomeryMul(debugCombo, source[i], scale);
         const uint32_t reverseIndex = ReverseBits32(i, static_cast<int>(plan.stages));
@@ -877,10 +859,9 @@ AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 
     for (uint32_t i = 0; i < activeN; ++i) {
-        const uint64_t psiExponent = chunkShift * (1ull + 2ull * static_cast<uint64_t>(i));
-        const uint64_t chunkScale = (chunkShift == 0)
-                                        ? SharkNTT::ToMontgomery<SharkFloatParams>(1)
-                                        : PsiPowerMont<SharkFloatParams>(plan, roots, psiExponent);
+        const uint64_t phaseIndex = ((chunkShift % activeN) * static_cast<uint64_t>(i)) % activeN;
+        const uint64_t chunkScale = (chunkShift == 0) ? SharkNTT::ToMontgomery<SharkFloatParams>(1)
+                                                      : roots.omega_pows[phaseIndex];
         const uint64_t scale = SharkNTT::MontgomeryMul(debugCombo, chunkScale, bitScale);
         const uint64_t shifted = SharkNTT::MontgomeryMul(debugCombo, source[i], scale);
         const uint32_t reverseIndex = ReverseBits32(i, static_cast<int>(plan.stages));
@@ -892,7 +873,7 @@ AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
         if (IsDebugTraceEnabled()) {
             std::cout << "  shifted spectrum index=" << i;
             PrintHexValue("source", source[i]);
-            PrintHexValue("psiExponent", psiExponent);
+            PrintHexValue("phaseIndex", phaseIndex);
             PrintHexValue("chunkScale", chunkScale);
             PrintHexValue("scale", scale);
             PrintHexValue("shifted", shifted);
@@ -1094,12 +1075,9 @@ InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
         debugCombo, spectrum, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
 
     for (uint32_t i = 0; i < activeN; ++i) {
-        uint64_t v = SharkNTT::MontgomeryMul(debugCombo, spectrum[i], roots.psi_inv_pows[i]);
-        v = SharkNTT::MontgomeryMul(debugCombo, v, roots.Ninvm_mont);
-        spectrum[i] = SharkNTT::FromMontgomery(debugCombo, v);
+        spectrum[i] = SharkNTT::MontgomeryMul(debugCombo, spectrum[i], roots.Ninv);
         if (IsDebugTraceEnabled()) {
-            std::cout << "  inverse untwist index=" << i;
-            PrintHexValue("psiInv", roots.psi_inv_pows[i]);
+            std::cout << "  inverse normalize index=" << i;
             PrintHexValue("normalResidue", spectrum[i]);
             std::cout << '\n';
         }
@@ -1290,24 +1268,24 @@ PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                      uint32_t inputBitOffset,
                      FusedWorkspace &workspace)
 {
-    PackTwistForward(debugHostCombo,
-                     zReal,
-                     plan,
-                     roots,
-                     workspace.ZReal,
-                     MaxFusedN,
-                     inputBitOffset,
-                     DebugStatePurpose::Z0XX,
-                     DebugStatePurpose::Z2XX);
-    PackTwistForward(debugHostCombo,
-                     zImag,
-                     plan,
-                     roots,
-                     workspace.ZImag,
-                     MaxFusedN,
-                     inputBitOffset,
-                     DebugStatePurpose::Z0YY,
-                     DebugStatePurpose::Z2YY);
+    PackForward(debugHostCombo,
+                zReal,
+                plan,
+                roots,
+                workspace.ZReal,
+                MaxFusedN,
+                inputBitOffset,
+                DebugStatePurpose::Z0XX,
+                DebugStatePurpose::Z2XX);
+    PackForward(debugHostCombo,
+                zImag,
+                plan,
+                roots,
+                workspace.ZImag,
+                MaxFusedN,
+                inputBitOffset,
+                DebugStatePurpose::Z0YY,
+                DebugStatePurpose::Z2YY);
 }
 
 template <class SharkFloatParams>
@@ -1320,24 +1298,24 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                          uint32_t inputBitOffset,
                          FusedWorkspace &workspace)
 {
-    PackTwistForward(debugHostCombo,
-                     dzdcReal,
-                     plan,
-                     roots,
-                     workspace.DzdcReal,
-                     MaxFusedN,
-                     inputBitOffset,
-                     DebugStatePurpose::Z0W1,
-                     DebugStatePurpose::Z2W1);
-    PackTwistForward(debugHostCombo,
-                     dzdcImag,
-                     plan,
-                     roots,
-                     workspace.DzdcImag,
-                     MaxFusedN,
-                     inputBitOffset,
-                     DebugStatePurpose::Z0W2,
-                     DebugStatePurpose::Z2W2);
+    PackForward(debugHostCombo,
+                dzdcReal,
+                plan,
+                roots,
+                workspace.DzdcReal,
+                MaxFusedN,
+                inputBitOffset,
+                DebugStatePurpose::Z0W1,
+                DebugStatePurpose::Z2W1);
+    PackForward(debugHostCombo,
+                dzdcImag,
+                plan,
+                roots,
+                workspace.DzdcImag,
+                MaxFusedN,
+                inputBitOffset,
+                DebugStatePurpose::Z0W2,
+                DebugStatePurpose::Z2W2);
 }
 
 template <class SharkFloatParams, class... Terms>
@@ -1489,9 +1467,10 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     const uint32_t activeN = requiredN < workspace.ActiveMinFusedN ? workspace.ActiveMinFusedN
                                                                    : static_cast<uint32_t>(requiredN);
     assert(activeN >= workspace.ActiveMinFusedN);
+    assert(maxRequiredCoefficients <= activeN);
     assert(activeN <= workspace.ActiveMaxFusedN);
     assert(activeN >= 2u);
-    assert((SharkNTT::PHI % (2ull * activeN)) == 0ull);
+    assert((SharkNTT::PHI % activeN) == 0ull);
     const uint32_t planSlot = CountTrailingZeros(activeN) - Cache::MinFusedStages;
     assert(planSlot < Cache::EntryCount);
     if (activeN != previousActiveN) {
@@ -1542,11 +1521,11 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     if (IsDebugTraceEnabled()) {
         PrintArray("roots.stage_omegas", roots.stage_omegas, roots.stages);
         PrintArray("roots.stage_omegas_inv", roots.stage_omegas_inv, roots.stages);
-        PrintArray("roots.psi_pows", roots.psi_pows, roots.N);
-        PrintArray("roots.psi_inv_pows", roots.psi_inv_pows, roots.N);
+        PrintArray("roots.omega_pows", roots.omega_pows, roots.N);
         PrintArray("roots.stage_twiddles_fwd", roots.stage_twiddles_fwd, roots.total_twiddles);
         PrintArray("roots.stage_twiddles_inv", roots.stage_twiddles_inv, roots.total_twiddles);
         PrintHexValue("roots.Ninvm_mont", roots.Ninvm_mont);
+        PrintHexValue("roots.Ninv", roots.Ninv);
         std::cout << '\n';
     }
 

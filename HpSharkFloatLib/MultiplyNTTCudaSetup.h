@@ -18,7 +18,9 @@ struct RootTables {
     int32_t N;
     uint64_t *psi_pows;     // [N],  psi^i in Montgomery domain
     uint64_t *psi_inv_pows; // [N], (psi^{-1})^i in Montgomery
+    uint64_t *omega_pows;   // [N], ordinary cyclic omega^i in Montgomery domain (Ref2)
     uint64_t Ninvm_mont;    // N^{-1} in Montgomery form
+    uint64_t Ninv;          // N^{-1} in the standard residue domain
 
     // Flat table of per-stage twiddles in Montgomery domain:
     // For stage s (1-based), indices j = 0 .. (2^(s-1) - 1) live at:

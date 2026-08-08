@@ -146,6 +146,7 @@ BuildRoots(uint32_t N, uint32_t stages, RootTables &roots)
 {
     roots.stages = stages;
     roots.N = N;
+    roots.omega_pows = nullptr;
 
     // Existing allocations
     roots.stage_omegas = new uint64_t[stages];
@@ -193,6 +194,7 @@ BuildRoots(uint32_t N, uint32_t stages, RootTables &roots)
     for (uint32_t i = 0; i < stages; ++i)
         Ninvm = MontgomeryMul<SharkFloatParams>(Ninvm, inv2_m);
     roots.Ninvm_mont = Ninvm;
+    roots.Ninv = FromMontgomery<SharkFloatParams>(Ninvm);
 
     // -----------------------------
     // 4) per-stage twiddle lookup table for GPU
@@ -550,12 +552,14 @@ DestroyRoots(bool cuda, RootTables &roots)
         roots.stage_omegas_inv = nullptr;
         roots.psi_pows = nullptr;
         roots.psi_inv_pows = nullptr;
+        roots.omega_pows = nullptr;
         roots.stage_twiddles_fwd = nullptr;
         roots.stage_twiddles_inv = nullptr;
 
         roots.stages = 0;
         roots.N = 0;
         roots.Ninvm_mont = 0;
+        roots.Ninv = 0;
         roots.total_twiddles = 0;
     } else {
         RootTables localRoots;

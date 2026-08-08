@@ -845,22 +845,58 @@ FunnelShiftLeft(const IntT *data, int index, int count, int bitOffset)
     return (low << bit) | (high >> (32 - bit));
 }
 
+static __device__ SharkForceInlineReleaseOnly int64_t
+SignedResidueContribution(uint64_t residue,
+                          uint64_t coefficientIndex,
+                          uint32_t limbIndex,
+                          uint32_t bitsPerCoefficient,
+                          uint64_t halfPrime)
+{
+    if (residue == 0)
+        return 0;
+
+    const bool negative = residue > halfPrime;
+    const uint64_t magnitude = negative ? SharkNTT::MagicPrime - residue : residue;
+    const uint64_t shiftedBits = coefficientIndex * static_cast<uint64_t>(bitsPerCoefficient);
+    const uint32_t q = static_cast<uint32_t>(shiftedBits >> 5);
+    if (q > limbIndex || limbIndex - q > 3)
+        return 0;
+
+    const int r = static_cast<int>(shiftedBits & 31);
+    const uint64_t lo = r == 0 ? magnitude : magnitude << r;
+    const uint64_t hi = r == 0 ? 0ull : magnitude >> (64 - r);
+    uint32_t contribution = 0;
+    switch (limbIndex - q) {
+        case 0:
+            contribution = static_cast<uint32_t>(lo);
+            break;
+        case 1:
+            contribution = static_cast<uint32_t>(lo >> 32);
+            break;
+        case 2:
+            contribution = static_cast<uint32_t>(hi);
+            break;
+        case 3:
+            contribution = static_cast<uint32_t>(hi >> 32);
+            break;
+    }
+    return negative ? -static_cast<int64_t>(contribution) : static_cast<int64_t>(contribution);
+}
+
 template <class SharkFloatParams, int BatchSize>
 __device__ void
-UnpackResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
-                                 cooperative_groups::thread_block &block,
-                                 DebugGlobalCount<SharkFloatParams> *debugCombo,
-                                 const uint64_t *const spectra[BatchSize],
-                                 const SharkNTT::PlanPrime &plan,
-                                 const SharkNTT::RootTables &roots,
-                                 const uint32_t coefficientCounts[BatchSize],
-                                 int64_t *const limbs[BatchSize],
-                                 uint32_t limbCount)
+UnpackResiduesToSignedLimbsBatchScalar(cooperative_groups::grid_group &grid,
+                                       cooperative_groups::thread_block &block,
+                                       DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                       const uint64_t *const spectra[BatchSize],
+                                       const SharkNTT::PlanPrime &plan,
+                                       const SharkNTT::RootTables &roots,
+                                       const uint32_t coefficientCounts[BatchSize],
+                                       int64_t *const limbs[BatchSize],
+                                       uint32_t limbCount)
 {
     const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    // Inverse NTT leaves twisted Montgomery coefficients. Untwist each coefficient only when it is
-    // consumed, then keep the existing canonical limb buffer as the carry-prefix input.
     for (uint32_t j = GridThreadRank(block); j < limbCount; j += gridSize) {
         const uint64_t firstBit = j >= 3 ? static_cast<uint64_t>(j - 3) * 32ull : 0ull;
         const uint64_t lastBit = (static_cast<uint64_t>(j) + 1ull) * 32ull - 1ull;
@@ -876,37 +912,101 @@ UnpackResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                 residue = SharkNTT::MontgomeryMul<SharkFloatParams>(
                     grid, block, debugCombo, residue, roots.Ninvm_mont);
                 residue = SharkNTT::FromMontgomery<SharkFloatParams>(grid, block, debugCombo, residue);
-                if (residue == 0)
-                    continue;
-                const bool negative = residue > halfPrime;
-                const uint64_t magnitude = negative ? SharkNTT::MagicPrime - residue : residue;
-                const uint64_t shiftedBits = i * static_cast<uint64_t>(plan.b);
-                const uint32_t q = static_cast<uint32_t>(shiftedBits >> 5);
-                if (q > j || j - q > 3)
-                    continue;
-                const int r = static_cast<int>(shiftedBits & 31);
-                const uint64_t lo = r == 0 ? magnitude : magnitude << r;
-                const uint64_t hi = r == 0 ? 0ull : magnitude >> (64 - r);
-                uint32_t contribution = 0;
-                switch (j - q) {
-                    case 0:
-                        contribution = static_cast<uint32_t>(lo);
-                        break;
-                    case 1:
-                        contribution = static_cast<uint32_t>(lo >> 32);
-                        break;
-                    case 2:
-                        contribution = static_cast<uint32_t>(hi);
-                        break;
-                    case 3:
-                        contribution = static_cast<uint32_t>(hi >> 32);
-                        break;
-                }
                 total +=
-                    negative ? -static_cast<int64_t>(contribution) : static_cast<int64_t>(contribution);
+                    SignedResidueContribution(residue, i, j, static_cast<uint32_t>(plan.b), halfPrime);
             }
             limbs[buffer][j] = total;
         }
+    }
+    grid.sync();
+}
+
+constexpr uint32_t UnpackTileLimbs = 128u;
+constexpr uint32_t UnpackTileCoefficientHalo = 6u;
+constexpr uint32_t UnpackTileCoefficientCapacity = 2u * UnpackTileLimbs + UnpackTileCoefficientHalo;
+
+template <class SharkFloatParams, int BatchSize>
+__device__ void
+UnpackResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
+                                 cooperative_groups::thread_block &block,
+                                 uint64_t *sharedData,
+                                 DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                 const uint64_t *const spectra[BatchSize],
+                                 const SharkNTT::PlanPrime &plan,
+                                 const SharkNTT::RootTables &roots,
+                                 const uint32_t coefficientCounts[BatchSize],
+                                 int64_t *const limbs[BatchSize],
+                                 uint32_t limbCount)
+{
+    if (plan.b != 16) {
+        UnpackResiduesToSignedLimbsBatchScalar<SharkFloatParams, BatchSize>(
+            grid, block, debugCombo, spectra, plan, roots, coefficientCounts, limbs, limbCount);
+        return;
+    }
+
+    static_assert(BatchSize <= 4);
+    static_assert(BatchSize * UnpackTileCoefficientCapacity * sizeof(uint64_t) <=
+                  HpShark::CalculateNTTSharedMemorySize<SharkFloatParams>());
+
+    const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
+    const uint32_t threadIndex = block.thread_index().x;
+    const uint32_t blockIndex = block.group_index().x;
+    const uint32_t blockCount = static_cast<uint32_t>(gridDim.x);
+    const uint32_t tileCount = (limbCount + UnpackTileLimbs - 1u) / UnpackTileLimbs;
+
+    // Inverse NTT leaves twisted Montgomery coefficients. Ref2 uses b == 16, so each limb tile
+    // needs at most six coefficients of halo on its left; convert those coefficients once.
+    for (uint32_t tileIndex = blockIndex; tileIndex < tileCount; tileIndex += blockCount) {
+        const uint32_t limbBegin = tileIndex * UnpackTileLimbs;
+        const uint32_t limbEnd =
+            limbBegin + UnpackTileLimbs < limbCount ? limbBegin + UnpackTileLimbs : limbCount;
+        const uint32_t coefficientBegin = 2u * (limbBegin > 3u ? limbBegin - 3u : 0u);
+        const uint32_t coefficientEnd = 2u * limbEnd;
+        const uint32_t coefficientSpan = coefficientEnd - coefficientBegin;
+
+        for (uint32_t localCoefficient = threadIndex; localCoefficient < coefficientSpan;
+             localCoefficient += blockDim.x) {
+            const uint32_t coefficientIndex = coefficientBegin + localCoefficient;
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                uint64_t residue = 0;
+                if (coefficientIndex < coefficientCounts[buffer]) {
+                    residue =
+                        SharkNTT::MontgomeryMul<SharkFloatParams>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectra[buffer][coefficientIndex],
+                                                                  roots.psi_inv_pows[coefficientIndex]);
+                    residue = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                        grid, block, debugCombo, residue, roots.Ninvm_mont);
+                    residue =
+                        SharkNTT::FromMontgomery<SharkFloatParams>(grid, block, debugCombo, residue);
+                }
+                sharedData[buffer * UnpackTileCoefficientCapacity + localCoefficient] = residue;
+            }
+        }
+        block.sync();
+
+        for (uint32_t localLimb = threadIndex; localLimb < limbEnd - limbBegin;
+             localLimb += blockDim.x) {
+            const uint32_t j = limbBegin + localLimb;
+            const uint32_t firstCoefficient = 2u * (j > 3u ? j - 3u : 0u);
+            const uint32_t lastCoefficient = 2u * (j + 1u) - 1u;
+#pragma unroll
+            for (int buffer = 0; buffer < BatchSize; ++buffer) {
+                int64_t total = 0;
+                for (uint32_t i = firstCoefficient;
+                     i <= lastCoefficient && i < coefficientCounts[buffer];
+                     ++i) {
+                    const uint32_t localCoefficient = i - coefficientBegin;
+                    const uint64_t residue =
+                        sharedData[buffer * UnpackTileCoefficientCapacity + localCoefficient];
+                    total += SignedResidueContribution(residue, i, j, 16u, halfPrime);
+                }
+                limbs[buffer][j] = total;
+            }
+        }
+        block.sync();
     }
     grid.sync();
 }
@@ -933,8 +1033,16 @@ InverseSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
 #pragma unroll
     for (int buffer = 0; buffer < BatchSize; ++buffer)
         residueViews[buffer] = spectra[buffer];
-    UnpackResiduesToSignedLimbsBatch<SharkFloatParams, BatchSize>(
-        grid, block, debugCombo, residueViews, plan, roots, coefficientCounts, limbs, limbCount);
+    UnpackResiduesToSignedLimbsBatch<SharkFloatParams, BatchSize>(grid,
+                                                                  block,
+                                                                  sharedData,
+                                                                  debugCombo,
+                                                                  residueViews,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCounts,
+                                                                  limbs,
+                                                                  limbCount);
 #pragma unroll
     for (int buffer = 0; buffer < BatchSize; ++buffer) {
         StoreReference2DebugState(debugStates,

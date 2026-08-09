@@ -3380,8 +3380,8 @@ PrefixCarryTransformsDLB(cooperative_groups::grid_group &grid,
     MattsCudaAssert(blockSize >= 32u && (blockSize & 31u) == 0u);
     MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
     MattsCudaAssert(capacity >= count);
-    // Descriptors and lookback states were initialized before inverse unpack; its trailing barrier
-    // publishes them before this DLB pass begins.
+    // Descriptors and lookback states were initialized before the preceding publication barrier,
+    // which publishes them before this DLB pass begins.
 
     const uint32_t lookbackWindowsPerBatch = numWarps * 32u;
     const uint32_t lookbackBatchCount =
@@ -3491,6 +3491,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
                      cooperative_groups::thread_block &block,
                      DebugState<SharkFloatParams> *debugStates,
                      uint64_t *carryPrefixShared,
+                     HpSharkReference2PackedCarryPrefixDescriptor *carryPrefixDescriptors,
                      HpSharkReference2Workspace<SharkFloatParams> &workspace,
                      uint32_t limbCount,
                      int32_t realExponent,
@@ -3522,7 +3523,6 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     uint64_t *realOutputArena = workspace.RealOutput;
     int64_t *realLimbs = workspace.RealLimbs;
     uint32_t *realDigits = reinterpret_cast<uint32_t *>(realOutputArena);
-    Descriptor *descriptors = reinterpret_cast<Descriptor *>(realOutputArena + capacity);
     uint32_t *realControl = reinterpret_cast<uint32_t *>(realOutputArena + capacity + descriptorWords);
     HpSharkFloat<SharkFloatParams> *realOutput = &combo->Multiply.A;
 
@@ -3572,7 +3572,7 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
                                                dzdcImagLimbs,
                                                dzdcImagDigits,
                                                dzdcImagControl,
-                                               descriptors,
+                                               carryPrefixDescriptors,
                                                carryPrefixShared);
 
     const uint32_t realDigitLength = realControl[FinalizationDigitLengthControl];
@@ -4181,6 +4181,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                            block,
                                            debugStates,
                                            carryPrefixShared,
+                                           carryPrefixDescriptors,
                                            workspace,
                                            limbCount,
                                            realExponent,
@@ -4386,8 +4387,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
             const uint32_t limbCount = LinearLimbCount<SharkFloatParams>();
             const uint32_t carryPrefixCapacity = workspace.ActiveMaxFusedLimbs;
             auto *carryPrefixDescriptors =
-                reinterpret_cast<HpSharkReference2PackedCarryPrefixDescriptor *>(workspace.RealOutput +
-                                                                                 carryPrefixCapacity);
+                reinterpret_cast<HpSharkReference2PackedCarryPrefixDescriptor *>(workspace.ZReal);
             InitializeCarryPrefixTransformsDLB<SharkFloatParams>(
                 grid, block, limbCount, carryPrefixCapacity, carryPrefixDescriptors, carryPrefixShared);
             if constexpr (SharkFloatParams::EnableNewtonRaphson) {
@@ -4422,6 +4422,7 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                    block,
                                                    debugStates,
                                                    carryPrefixShared,
+                                                   carryPrefixDescriptors,
                                                    workspace,
                                                    limbCount,
                                                    realExponent,
@@ -4623,6 +4624,12 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                    dzdcP2Term,
                                    dzdcP3Term);
 
+    const uint32_t carryPrefixCapacity = workspace.ActiveMaxFusedLimbs;
+    auto *carryPrefixDescriptors =
+        reinterpret_cast<HpSharkReference2PackedCarryPrefixDescriptor *>(workspace.ZReal);
+    InitializeCarryPrefixTransformsDLB<SharkFloatParams>(
+        grid, block, limbCount, carryPrefixCapacity, carryPrefixDescriptors, carryPrefixShared);
+
     const uint32_t realCoefficientCount = realProductTerm.IsZero ? 0u : activeN;
     const uint32_t imagCoefficientCount = imagProductTerm.IsZero ? 0u : activeN;
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
@@ -4695,16 +4702,11 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
                                                 workspace.ImagLimbs,
                                                 DebugStatePurpose::UnpackYY);
     }
-    const uint32_t carryPrefixCapacity = workspace.ActiveMaxFusedLimbs;
-    auto *carryPrefixDescriptors = reinterpret_cast<HpSharkReference2PackedCarryPrefixDescriptor *>(
-        workspace.RealOutput + carryPrefixCapacity);
-    InitializeCarryPrefixTransformsDLB<SharkFloatParams>(
-        grid, block, limbCount, carryPrefixCapacity, carryPrefixDescriptors, carryPrefixShared);
-    grid.sync();
     FinalizeSignedStream<SharkFloatParams>(grid,
                                            block,
                                            debugStates,
                                            carryPrefixShared,
+                                           carryPrefixDescriptors,
                                            workspace,
                                            limbCount,
                                            realExponent,

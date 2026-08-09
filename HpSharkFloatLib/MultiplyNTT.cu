@@ -3253,7 +3253,8 @@ ForwardDIFLargeStages(uint64_t *sharedData,
                       uint64_t *SharkRestrict B,
                       uint64_t *SharkRestrict C,
                       uint64_t *SharkRestrict D,
-                      const RootTables &rootTables)
+                      const RootTables &rootTables,
+                      uint32_t highestStageIndex)
 {
     static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
     constexpr uint32_t TileSizeLog2 = 10u;
@@ -3267,7 +3268,7 @@ ForwardDIFLargeStages(uint64_t *sharedData,
     const uint32_t numWarpsGrid = static_cast<uint32_t>(gridSize / WarpSize);
     const uint32_t smallStageCount = numStages < TileSizeLog2 ? numStages : TileSizeLog2;
 
-    uint32_t stageIndex = numStages;
+    uint32_t stageIndex = highestStageIndex;
     while (stageIndex > smallStageCount + 1u) {
         ProcessRadix4DIFStagePairPipelined<SharkFloatParams, Mode>(sharedData,
                                                                    grid,

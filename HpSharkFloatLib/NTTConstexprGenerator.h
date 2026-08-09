@@ -8,6 +8,8 @@ namespace SharkNTT {
 static constexpr uint64_t MagicPrime = 0xFFFF'FFFF'0000'0001ull;
 static constexpr uint64_t MagicPrimeInv = 0xFFFF'FFFE'FFFF'FFFFull; // -p^{-1} mod 2^64
 static constexpr uint64_t R2 = 0xFFFF'FFFE'0000'0001ull;            // (2^64)^2 mod p
+static constexpr uint64_t SqrtInverseTwo = 0x0000'007F'FF7F'FF80ull;
+static constexpr uint64_t PHI = 0xFFFF'FFFF'0000'0000ull;
 
 struct U128 {
     uint64_t lo, hi;
@@ -70,9 +72,144 @@ PowModP(uint64_t a, uint64_t e)
     return r;
 }
 
+constexpr uint64_t
+Reference2InputScale(uint32_t stages)
+{
+    // These constants are s = (N * R)^(-1/2), generated with arbitrary-precision modular
+    // arithmetic.  Keeping the table constexpr avoids widening the existing generator's
+    // compile-time modular reducer, whose fast 64-bit fold is intended for its original use.
+    switch (stages) {
+        case 1u:
+            return 0x0080'007F'FF80'0000ull;
+        case 2u:
+            return 0x7FFF'FFFF'0000'0001ull;
+        case 3u:
+            return 0x0040'003F'FFC0'0000ull;
+        case 4u:
+            return 0xBFFF'FFFF'0000'0001ull;
+        case 5u:
+            return 0x0020'001F'FFE0'0000ull;
+        case 6u:
+            return 0xDFFF'FFFF'0000'0001ull;
+        case 7u:
+            return 0x0010'000F'FFF0'0000ull;
+        case 8u:
+            return 0xEFFF'FFFF'0000'0001ull;
+        case 9u:
+            return 0x0008'0007'FFF8'0000ull;
+        case 10u:
+            return 0xF7FF'FFFF'0000'0001ull;
+        case 11u:
+            return 0x0004'0003'FFFC'0000ull;
+        case 12u:
+            return 0xFBFF'FFFF'0000'0001ull;
+        case 13u:
+            return 0x0002'0001'FFFE'0000ull;
+        case 14u:
+            return 0xFDFF'FFFF'0000'0001ull;
+        case 15u:
+            return 0x0001'0000'FFFF'0000ull;
+        case 16u:
+            return 0xFEFF'FFFF'0000'0001ull;
+        case 17u:
+            return 0x0000'8000'7FFF'8000ull;
+        case 18u:
+            return 0xFF7F'FFFF'0000'0001ull;
+        case 19u:
+            return 0x0000'4000'3FFF'C000ull;
+        case 20u:
+            return 0xFFBF'FFFF'0000'0001ull;
+        case 21u:
+            return 0x0000'2000'1FFF'E000ull;
+        case 22u:
+            return 0xFFDF'FFFF'0000'0001ull;
+        case 23u:
+            return 0x0000'1000'0FFF'F000ull;
+        case 24u:
+            return 0xFFEF'FFFF'0000'0001ull;
+        case 25u:
+            return 0x0000'0800'07FF'F800ull;
+        default:
+            return 0ull;
+    }
+}
+
+constexpr uint64_t
+Reference2InputScaleR2(uint32_t stages)
+{
+    switch (stages) {
+        case 1u:
+            return 0xFFFF'FF7F'0080'0081ull;
+        case 2u:
+            return 0x7FFF'FFFF'8000'0000ull;
+        case 3u:
+            return 0xFFFF'FFBF'0040'0041ull;
+        case 4u:
+            return 0x3FFF'FFFF'C000'0000ull;
+        case 5u:
+            return 0xFFFF'FFDF'0020'0021ull;
+        case 6u:
+            return 0x1FFF'FFFF'E000'0000ull;
+        case 7u:
+            return 0xFFFF'FFEF'0010'0011ull;
+        case 8u:
+            return 0x0FFF'FFFF'F000'0000ull;
+        case 9u:
+            return 0xFFFF'FFF7'0008'0009ull;
+        case 10u:
+            return 0x07FF'FFFF'F800'0000ull;
+        case 11u:
+            return 0xFFFF'FFFB'0004'0005ull;
+        case 12u:
+            return 0x03FF'FFFF'FC00'0000ull;
+        case 13u:
+            return 0xFFFF'FFFD'0002'0003ull;
+        case 14u:
+            return 0x01FF'FFFF'FE00'0000ull;
+        case 15u:
+            return 0xFFFF'FFFE'0001'0002ull;
+        case 16u:
+            return 0x00FF'FFFF'FF00'0000ull;
+        case 17u:
+            return 0x7FFF'FFFF'0000'8001ull;
+        case 18u:
+            return 0x007F'FFFF'FF80'0000ull;
+        case 19u:
+            return 0xBFFF'FFFF'0000'4001ull;
+        case 20u:
+            return 0x003F'FFFF'FFC0'0000ull;
+        case 21u:
+            return 0xDFFF'FFFF'0000'2001ull;
+        case 22u:
+            return 0x001F'FFFF'FFE0'0000ull;
+        case 23u:
+            return 0xEFFF'FFFF'0000'1001ull;
+        case 24u:
+            return 0x000F'FFFF'FFF0'0000ull;
+        case 25u:
+            return 0xF7FF'FFFF'0000'0801ull;
+        default:
+            return 0ull;
+    }
+}
+
+constexpr bool
+ValidateReference2InputScales()
+{
+    for (uint32_t stages = 1u; stages <= 25u; ++stages) {
+        if (Reference2InputScale(stages) == 0ull || Reference2InputScaleR2(stages) == 0ull)
+            return false;
+    }
+    return true;
+}
+
+static_assert(MulModP(SqrtInverseTwo, SqrtInverseTwo) == (MagicPrime + 1ull) / 2ull);
+static_assert(ValidateReference2InputScales());
+static_assert(Reference2InputScale(16u) == 0xFEFF'FFFF'0000'0001ull);
+static_assert(Reference2InputScaleR2(16u) == 0x00FF'FFFF'FF00'0000ull);
+
 // Prime factorization of phi = p-1 = 2^32 * (2^32 - 1), and 2^32 - 1 = 3*5*17*257*65537
 constexpr std::array<uint64_t, 6> PHI_PRIME_FACTORS = {2ull, 3ull, 5ull, 17ull, 257ull, 65537ull};
-constexpr uint64_t PHI = 0xFFFF'FFFF'0000'0000ull;
 
 constexpr bool
 IsPrimitiveRoot(uint64_t g)

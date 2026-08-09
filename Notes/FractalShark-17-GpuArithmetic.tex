@@ -932,22 +932,18 @@ elements $i$ and $\mathrm{bitrev}(i)$ (with the $i < j$ guard ensuring
 each pair is swapped exactly once).
 
 \paragraph{DIT vs.\ DIF and the bit-reversal tradeoff.}
-The DIT formulation requires bit-reversal on the \emph{input}; the
-alternative decimation-in-frequency (DIF) formulation produces output in
-bit-reversed order, requiring the permutation \emph{after} the
-transform.  A mixed strategy---DIT for the forward transform and DIF for
-the inverse (or vice versa)---can cancel the remaining inverse
-permutation entirely, since the bit-reversed output of the forward
-transform would already be in the correct input order for a DIF inverse.
-This ``self-sorting'' approach would eliminate the last standalone
-permutation pass.
+DIT consumes bit-reversed input and produces natural-order output, whereas DIF
+consumes natural-order input and produces bit-reversed output.  A convolution
+can therefore connect a forward DIF transform directly to an inverse DIT
+transform: pointwise operations preserve the bit-reversed frequency order, and
+the inverse returns natural-order coefficients.  No standalone permutation is
+needed between packing and unpacking.
 
-\FractalShark{} currently uses DIT for both forward and inverse
-transforms; the forward bit-reversal has been fused into packing, but
-the inverse still incurs a separate permutation.  Adopting a DIT/DIF
-mixed strategy would remove this remaining pass and its associated
-memory traffic, at the cost of a different butterfly indexing pattern in
-the inverse transform.
+The general multiplication path described in this section instead uses DIT for
+both transforms and fuses its forward permutation into packing.  The production
+Ref2 reference-orbit path in \cref{subsec:fused-ntt-reference-step} uses the
+forward-DIF/inverse-DIT arrangement, eliminating the inverse permutation as
+well.
 
 After bit-reversal, iterative butterfly stages are applied:
 
@@ -1049,29 +1045,24 @@ scales by $N^{-1}$, and exits the Montgomery domain.  Finally,
 unpacking and carry normalization convert the prime-field
 coefficients back into a positional limb representation.
 
-Because multiple independent products (at minimum the three real-times-real
-channels $XX$, $YY$, $XY$ needed for complex multiplication, and up to
-seven channels when Newton--Raphson derivatives are included) share the
-same NTT length and modular-arithmetic parameters, multiway helpers advance the
-active channels through common phase boundaries.  Shared-memory microkernels,
-paired stages, and asynchronous staging can use different schedules within a
-phase.  This batching strategy, described in
-\cref{subsec:amortize-sync}, amortizes the cost of grid-wide
-synchronization across all simultaneously computed products and is
-central to the practical performance of GPU-resident reference-orbit
-computation.
+The generic complex-multiplication helpers can advance several independent
+products through common phase boundaries.  Ref2 specializes that principle for
+the recurrence itself: algebraic factorization reduces the orbit to two
+frequency-domain output streams, and enabling the first Newton--Raphson
+derivative raises the total to four.  Shared-memory microkernels, paired stages,
+and asynchronous twiddle staging then advance those streams together, as
+described in \cref{subsec:amortize-sync}.
 
 \subsection{Fused NTT Reference-Orbit Step}
 \label{subsec:fused-ntt-reference-step}
 
-The Ref2 CUDA path, centered on \code{GpuOrbitSession2}, applies NTT linearity to
-the complete Mandelbrot recurrence rather than following an NTT multiplication
-with a distinct high-precision addition.  Setup, loop, prepared-plan ownership,
-and generated precision specializations are implemented in the GPU library and
-covered by its tests.  \code{ReferenceReferenceOrbit2} is the corresponding host
-correctness model.  Ref2 is not currently wired into \code{RefOrbitCalc}
-application dispatch, as summarized in \cref{tab:reference-backend-status}.
-Let
+The Ref2 CUDA path, centered on \code{GpuOrbitSession2}, evaluates one complete
+Mandelbrot recurrence in a persistent cooperative kernel.  Setup prepares the
+root and twiddle tables for the supported transform lengths; it does not cache
+transforms of the linear constants.  At the start of each iteration, one grid
+leader constructs an exact support and alignment plan, after which all threads
+execute either a zero, linear-only, or NTT branch.  The mathematical NTT branch
+begins with
 \begin{equation}
   z_n = x_n + i\,y_n
   \quad\text{and}\quad
@@ -1086,204 +1077,179 @@ The iteration is therefore
   \label{eq:fused-reference-imag}
 \end{align}
 
-The setup kernel prepares spectra for the constant components $a$ and $b$ for
-every cached active plan.  Each iteration forward-transforms only the changing
-limb streams $x_n$ and $y_n$, then constructs the two output spectra by
-pointwise accumulation of products and exponent-aligned constant spectra:
+After the input components have been aligned to the common output exponents,
+write their base-$2^{16}$ coefficient polynomials as $X$ and $Y$.  The nonlinear
+part of \eqref{eq:fused-reference-real}--\eqref{eq:fused-reference-imag} is
+factored as
 \begin{align}
-  \widehat{X}_{n+1} &=
-      \widehat{x_n}\,\widehat{x_n}
-      - \widehat{y_n}\,\widehat{y_n}
-      + \widehat{a},
+  R &= (X+Y)(X-Y)=X^2-Y^2,
   \label{eq:fused-reference-real-spectrum} \\
-  \widehat{Y}_{n+1} &=
-      2\,\widehat{x_n}\,\widehat{y_n}
-      + \widehat{b}.
+  I &= 2XY.
   \label{eq:fused-reference-imag-spectrum}
 \end{align}
-Here hats denote the twisted NTT-domain representation, and multiplication
-denotes pointwise multiplication.  Each spectrum is then inverse-transformed,
-converted to signed limbs, carry-propagated, and normalized once to produce its
-final \code{HpSharkFloat} component.  The exponent alignment in
-\cref{eq:fused-reference-real-spectrum,eq:fused-reference-imag-spectrum} is
-essential because the product and linear terms need not share a common binary
-exponent before they are accumulated.
+The corresponding frequency-domain calculation uses one pointwise Montgomery
+product for each line: $(\widehat X+\widehat Y)(\widehat X-\widehat Y)$ and
+$2\widehat X\widehat Y$.  Thus, the orbit requires two products rather than
+materializing $X^2$, $Y^2$, and $XY$ separately.  The inverse transforms recover
+$R$ and $I$; signed unpack then adds $a$ and $b$ at their exact bit offsets before
+the only base-$2^{32}$ carry pass for each output component.
 
 \subsubsection{Formal Operation Schedule}
 \label{subsec:fused-ntt-operation-schedule}
 
-For this schedule, let $D$ be the number of 32-bit significand limbs, let
-$b=16$ be the packed coefficient width, let $L=\lceil32D/b\rceil=2D$, and let
-$M$ be the active power-of-two transform length.  The base plan has $M\ge2L$,
-but a fused step selects a common minimum exponent, computes the
-whole-coefficient support implied by all term shifts, and increases $M$ to the
-next power of two when necessary.  The workspace supports active lengths up to
-$2^{25}$ coefficients; an iteration whose required support exceeds that ceiling
-returns an unknown/error status.  For a fixed shift envelope,
-$\mathcal{O}(M)=\mathcal{O}(D)$ and
-$\mathcal{O}(M\log M)=\mathcal{O}(D\log D)$.  This notation deliberately
-reserves $M$ for the transform length:
-$N$ already denotes the generic multi-precision limb count in
-\cref{sec:notation}.  A nonnegative significand is packed as
+Let $D$ be the number of 32-bit significand limbs, let $b=16$ be the
+coefficient width, let $L=\lceil32D/b\rceil=2D$, and let $M$ be the active
+power-of-two transform length.  A nonnegative significand is packed as
 \begin{equation}
   q=\sum_{j=0}^{L-1}q_j2^{bj},
   \qquad 0\le q_j<2^b.
   \label{eq:fused-ntt-coefficient-packing}
 \end{equation}
-Let $\mathcal{T}_M$ denote the complete packed, twisted, Montgomery-domain
-forward NTT, and let $\mathcal{T}_M^{-1}$ include the inverse NTT, untwisting,
-inverse-length scaling, and conversion out of Montgomery form.  For a spectrum
-$Q$, define the exponent-alignment map
+For each state or derivative input, the iteration plan decomposes the required
+binary alignment as
 \begin{equation}
-  \left(\mathcal{S}_sQ\right)_k
-  =2^{s\bmod b}\psi^{\lfloor s/b\rfloor(2k+1)}Q_k\pmod p,
-  \qquad 0\le k<M.
-  \label{eq:fused-ntt-spectrum-shift}
+  \Delta=bh+r,
+  \qquad h=\left\lfloor\frac{\Delta}{b}\right\rfloor,
+  \qquad 0\le r<b.
+  \label{eq:fused-ntt-input-alignment}
 \end{equation}
-It applies a whole-coefficient shift through the twist factor and a remaining
-bit shift through the power of two.  The implementation realizes
-\eqref{eq:fused-ntt-spectrum-shift} with two Montgomery multiplications per
-frequency index.  The shift $s$ includes the binary factor in $2x_ny_n$.
+Packing applies the $h$-coefficient displacement and rechunks the residual
+$r$-bit displacement directly into 16-bit coefficients.  Sign is also applied
+at this point.  No post-transform alignment operator or negacyclic twist is
+required.  For an enabled product $FG$, the exact linear-convolution support is
+$\ell_F+\ell_G-1$.  The planner chooses the smallest supported power of two that
+covers the largest enabled support, subject to the $2^{25}$ workspace ceiling.
+Consequently, ordinary cyclic convolution modulo $t^M-1$ equals the required
+linear convolution.  A zero product has zero support, and an iteration with only
+linear contributions bypasses the NTT entirely.
+
+Ref2 also prepays inverse normalization and conversion from Montgomery form.
+Let $\mathcal{F}_M$ be the forward NTT, let $\mathcal{G}_M$ be the inverse-root
+transform without its $M^{-1}$ factor, and let the Montgomery radix be
+$\mathcal{R}=2^{64}$.  The generated input scale $s$ satisfies
+\begin{equation}
+  s^2=(M\mathcal{R})^{-1}\pmod p.
+  \label{eq:fused-ntt-input-scale}
+\end{equation}
+The table stores $s\mathcal{R}^2$, so packing one ordinary coefficient $q_j$
+computes
+\begin{equation}
+  \operatorname{MontMul}(q_j,s\mathcal{R}^2)
+  =q_js\mathcal{R}\pmod p.
+  \label{eq:fused-ntt-packed-scale}
+\end{equation}
+A pointwise Montgomery product retains one factor of $\mathcal{R}$, and the
+unnormalized inverse contributes $M$.  Therefore each recovered convolution
+coefficient $w_j$ has total scale
+\begin{equation}
+  M s^2\mathcal{R}\,w_j=w_j\pmod p.
+  \label{eq:fused-ntt-scale-cancellation}
+\end{equation}
+Production inverse output is already an ordinary residue: it needs neither a
+separate multiplication by $M^{-1}$ nor a separate conversion out of Montgomery
+form.
 
 \begin{figure}[!htbp]
 \centering
 \begin{tikzpicture}[
   fused stage/.style={draw, rounded corners, align=center, inner sep=5pt,
-                      font=\small},
+                      text width=0.82\textwidth, font=\small},
   fused arrow/.style={-{Stealth[length=2mm]}, thick},
-  node distance=6mm]
-  \node[fused stage] (forward) {
-    $\begin{gathered}
-      X=\mathcal{T}_M(x_n),\quad Y=\mathcal{T}_M(y_n),\\
-      A=\mathcal{T}_M(a),\quad B=\mathcal{T}_M(b)\ \text{(cached at setup)}
-    \end{gathered}$\\[-1mm]
-    two per-iteration forward NTTs; $\mathcal{O}(M\log M)$};
+  node distance=4mm]
+  \node[fused stage] (plan) {
+    \textbf{Iteration plan:} common exponents, exact product supports,
+    product and linear bit offsets, active $M$, and zero/linear/NTT branch};
 
-  \node[fused stage, below=of forward] (products) {
-    $\begin{gathered}
-      P_{xx,k}=X_k\otimes X_k,\\
-      P_{yy,k}=Y_k\otimes Y_k,\\
-      P_{xy,k}=X_k\otimes Y_k
-    \end{gathered}$\\[-1mm]
-    three pointwise Montgomery products; $\mathcal{O}(M)$};
+  \node[fused stage, below=of plan] (pack) {
+    \textbf{Aligned pack:} signed base-$2^{16}$ coefficients multiplied by
+    $s\mathcal{R}$; one or two leading forward-DIF stages may be fused here};
 
-  \node[fused stage, below=of products] (accumulate) {
-    $\begin{gathered}
-      \text{Real:}\quad
-      \begin{aligned}
-        R_k^{[0]}&=0,&
-        R_k^{[1]}&=R_k^{[0]}\oplus\mathcal{S}_{s_{xx}}P_{xx,k},\\
-        R_k^{[2]}&=R_k^{[1]}\ominus\mathcal{S}_{s_{yy}}P_{yy,k},&
-        R_k^{[3]}&=R_k^{[2]}\oplus\mathcal{S}_{s_a}A_k;
-      \end{aligned}\\[1mm]
-      \text{Imaginary:}\quad
-      \begin{aligned}
-        I_k^{[0]}&=0,&
-        I_k^{[1]}&=I_k^{[0]}\oplus\mathcal{S}_{s_{2xy}}P_{xy,k},\\
-        I_k^{[2]}&=I_k^{[1]}\oplus\mathcal{S}_{s_b}B_k.
-      \end{aligned}
-    \end{gathered}$\\[-1mm]
-    five independent spectrum insertions; $\mathcal{O}(M)$};
+  \node[fused stage, below=of pack] (forward) {
+    \textbf{Forward DIF:} remaining global stages followed by as many as ten
+    shared-memory stages; natural input becomes bit-reversed spectra};
 
-  \node[fused stage, below=of accumulate] (inverse) {
-    $\begin{gathered}
-      r=\mathcal{T}_M^{-1}(R^{[3]}),\\
-      i=\mathcal{T}_M^{-1}(I^{[2]})
-    \end{gathered}$\\[-1mm]
-    two inverse NTTs; $\mathcal{O}(M\log M)$};
+  \node[fused stage, below=of forward] (center) {
+    \textbf{Central shared-memory tile:}
+    $(X+Y)(X-Y)$ and $2XY$, plus the three derivative products when enabled;
+    the first as many as ten inverse-DIT stages follow immediately};
+
+  \node[fused stage, below=of center] (inverse) {
+    \textbf{Inverse DIT and aligned unpack:} remaining global inverse stages;
+    optional final radix--2 or radix--4 butterfly; signed residue decoding and
+    fused $a$, $b$, or $1$ contribution};
 
   \node[fused stage, below=of inverse] (finalize) {
-    $\begin{aligned}
-      x_{n+1}&=\operatorname{Normalize}_{2^{32}}
-        \!\left(\operatorname{Carry}_{2^{32}}
-        \!\left(\operatorname{Unpack}_{b\mathbin{\to}32}(r)\right)\right),\\
-      y_{n+1}&=\operatorname{Normalize}_{2^{32}}
-        \!\left(\operatorname{Carry}_{2^{32}}
-        \!\left(\operatorname{Unpack}_{b\mathbin{\to}32}(i)\right)\right)
-    \end{aligned}$\\[-1mm]
-    two signed carry/normalization streams; $\mathcal{O}(D)$};
+    \textbf{Finalization:} one base-$2^{32}$ carry/borrow and normalization
+    stream for each of the two orbit or four orbit-and-derivative components};
 
-  \draw[fused arrow] (forward) -- (products);
-  \draw[fused arrow] (products) -- (accumulate);
-  \draw[fused arrow] (accumulate) -- (inverse);
+  \draw[fused arrow] (plan) -- (pack);
+  \draw[fused arrow] (pack) -- (forward);
+  \draw[fused arrow] (forward) -- (center);
+  \draw[fused arrow] (center) -- (inverse);
   \draw[fused arrow] (inverse) -- (finalize);
 \end{tikzpicture}
-\caption[Fused NTT orbit operation schedule]{Formal Ref2 orbit-only operation
-schedule.  $\otimes$, $\oplus$, and $\ominus$ denote Montgomery multiplication,
-addition, and subtraction in $\mathbb{Z}_p$, respectively.  Each occurrence of
-$\mathcal{S}$ is one exponent-aligned spectrum insertion.  The real and
-imaginary recurrence components remain separate until their independently
-finalized high-precision values form $z_{n+1}=x_{n+1}+i\,y_{n+1}$.}
+\caption[Ref2 CUDA iteration pipeline]{Production Ref2 CUDA iteration pipeline.
+Forward DIF and inverse DIT meet in a 1024-coefficient shared-memory tile, where
+the recurrence products replace the forward spectra before inverse processing
+begins.  Linear terms enter during signed unpack rather than in the NTT domain.}
 \label{fig:fused-ntt-reference-operation-schedule}
 \end{figure}
 
-\Cref{fig:fused-ntt-reference-operation-schedule} is an operation schedule,
-not an algebraic approximation.  The three product spectra and all five linear
-spectrum insertions are exact field operations when the range condition in
-\cref{subsec:fused-ntt-range} holds.  The CUDA setup kernel caches $A$ and $B$;
-the two orbit transforms are repeated each iteration.
+\Cref{fig:fused-ntt-reference-operation-schedule} describes an exact rearrangement
+of the recurrence.  Transform linearity permits the additions, subtractions, and
+doubling in \eqref{eq:fused-reference-real-spectrum}--\eqref{eq:fused-reference-imag-spectrum}
+to occur independently at each frequency.  Only the nonlinear terms pass
+through the field transform.  The linear terms retain their original signed
+significands and join the corresponding output during unpack.
 
-With the first Newton--Raphson derivative, write
-$u_n=d_{x,n}$ and $v_n=d_{y,n}$, and form
+For the first Newton--Raphson derivative, write
+$u_n=d_{x,n}$ and $v_n=d_{y,n}$, with aligned coefficient polynomials $U$ and
+$V$.  A three-product complex multiplication forms
 \begin{equation}
-  U=\mathcal{T}_M(u_n),\qquad V=\mathcal{T}_M(v_n),\qquad
-  E=\mathcal{T}_M(1)\ \text{(cached at setup)}.
+  P_1=XU,\qquad
+  P_2=YV,\qquad
+  P_3=(X+Y)(U+V).
   \label{eq:fused-ntt-derivative-forward}
 \end{equation}
-The two derivative components are accumulated by the same mathematical
-schedule:
+The two nonlinear derivative outputs are then
 \begin{align}
-  D_{x,k}^{[0]} &= 0, \notag\\
-  D_{x,k}^{[1]} &= D_{x,k}^{[0]}\oplus\mathcal{S}_{s_{2xu}}(X_k\otimes U_k), \notag\\
-  D_{x,k}^{[2]} &= D_{x,k}^{[1]}\ominus\mathcal{S}_{s_{2yv}}(Y_k\otimes V_k), \notag\\
-  D_{x,k}^{[3]} &= D_{x,k}^{[2]}\oplus\mathcal{S}_{s_1}E_k, &
-  d_{x,n+1} &=
-    \operatorname{Finalize}\!\left(\mathcal{T}_M^{-1}(D_x^{[3]})\right).
-  \label{eq:fused-ntt-derivative-real-schedule}
-\end{align}
-\begin{align}
-  D_{y,k}^{[0]} &= 0, \notag\\
-  D_{y,k}^{[1]} &= D_{y,k}^{[0]}\oplus\mathcal{S}_{s_{2yu}}(Y_k\otimes U_k), \notag\\
-  D_{y,k}^{[2]} &= D_{y,k}^{[1]}\oplus\mathcal{S}_{s_{2xv}}(X_k\otimes V_k), &
-  d_{y,n+1} &=
-    \operatorname{Finalize}\!\left(\mathcal{T}_M^{-1}(D_y^{[2]})\right).
+  D_x &= 2(P_1-P_2)=2(XU-YV),
+  \label{eq:fused-ntt-derivative-real-schedule} \\
+  D_y &= 2(P_3-P_1-P_2)=2(XV+YU).
   \label{eq:fused-ntt-derivative-imag-schedule}
 \end{align}
-Here $\operatorname{Finalize}$ denotes the unpack, signed carry propagation,
-and normalization displayed in \cref{fig:fused-ntt-reference-operation-schedule}.
-Thus, the derivative extension adds two per-iteration forward NTTs, four pointwise products,
-five spectrum insertions, two inverse NTTs, and two carry/normalization streams.
+The derivative's real linear term $1$ is added only during signed unpack.
+Consequently, enabling the derivative adds two forward NTTs, three pointwise
+Montgomery products, two inverse NTTs, and two final carry streams.  The complete
+iteration uses four forward NTTs, five pointwise products, four inverse NTTs,
+and four final carry streams.
 
 \subsubsection{Why Fusion Does Not Eliminate the Final Carry}
 \label{subsec:fused-ntt-carry}
 
-Fusion is valid because the NTT is linear over its prime field.  After each
-term has been shifted to the selected common exponent, the transform of a sum
-is the sum of the transforms.  Consequently, \code{AccumulateFixedOutputSpectra}
-can form a component such as \cref{eq:fused-reference-real-spectrum} by
-combining the pointwise product spectra with the transformed linear term before
-an inverse transform.  \code{ScaleSpectrumCoefficient} supplies the modular
-scale used for the signed, exponent-aligned additions and subtractions modulo
-the NTT prime.  They are
-field operations, not high-precision base-$2^{32}$ additions, and therefore do
-not require a cross-limb carry or borrow pass at that point.
+The pointwise recurrence is carry-free because its additions and subtractions
+are operations in $\mathbb{Z}_p$.  After inverse transformation, however, one
+field coefficient can contribute bits to several positional limbs, and negative
+coefficients require borrows.  Ref2 first interprets each residue as a signed
+integer, places its contribution at the planned product bit offset, and adds the
+linear significand contribution at its independently planned bit offset.
 
-The inverse NTT does not produce a normalized \code{HpSharkFloat} directly.
-Its coefficients are unpacked into overlapping signed limb contributions.  The
-inverse-to-signed-limb, signed-limb propagation, and normalization stages first
-reconstruct those signed limbs, then perform the necessary base-$2^{32}$ carry
-and borrow propagation, and finally select the normalized mantissa window and
-exponent.  Thus, Ref2 does not eliminate carry propagation; it performs exactly
-one final carry/normalization pass for each completed output component, after
-every product and linear term for that component has already been combined.
+The resulting signed base-$2^{32}$ limbs are not yet a normalized
+\code{HpSharkFloat}.  A decoupled-look-back carry pass propagates carries and
+borrows across the complete component, after which finalization selects the
+normalized mantissa window and exponent.  Combining the nonlinear and linear
+terms before that pass is the relevant fusion: the orbit needs one carry stream
+for $x_{n+1}$ and one for $y_{n+1}$, while the derivative-enabled path needs one
+for each of its four completed components.  No algebraic rearrangement of the
+field transform can remove those final positional dependencies.
 
 \subsubsection{Numeric Domains, Word Widths, and Exactness Bounds}
 \label{subsec:fused-ntt-range}
 
 The schedule crosses three deliberately different numeric domains.  First,
 the final significand is represented by $D$ positional base-$2^{32}$ limbs.
-These limbs require carry and borrow propagation only in the two
-$\operatorname{Finalize}$ operations shown in
+These limbs require carry and borrow propagation once for each completed
+component shown in
 \cref{fig:fused-ntt-reference-operation-schedule}.  Second, every NTT value
 is a canonical 64-bit residue in the field
 \begin{equation}
@@ -1314,114 +1280,90 @@ which is the canonical residue because $u+v<2p$.  The analogous unsigned
 wrap in \code{SubP} implements $u-v\pmod p$.  Neither operation is a
 base-$2^{32}$ limb carry, and neither loses field information.
 
-The more important bound concerns recovery of an ordinary signed integer
-coefficient after the inverse NTT.  Let $B=2^b$, let $r_t=s_t\bmod b$, and
-let $\mathcal{P}$ and $\mathcal{L}$ be the product and linear terms,
-respectively, that contribute to one completed component.  Before reduction
-modulo $p$, the magnitude of every packed coefficient is bounded by
+The exactness condition concerns recovery of an ordinary signed integer
+coefficient after the inverse NTT.  For one completed nonlinear output, write
+$q_k$ as a sum of signed convolution terms,
 \begin{equation}
-  \left|w_j\right|
-  \le B_{\mathrm{component}}
-  =\sum_{t\in\mathcal{P}}2^{r_t}L(B-1)^2
-   +\sum_{t\in\mathcal{L}}2^{r_t}(B-1).
+  q_k=\sum_{r\in\mathcal{P}}\sigma_r
+      \sum_{i+j=k}f_{r,i}g_{r,j},
+  \qquad \sigma_r\in\{-2,-1,1,2\}.
   \label{eq:fused-ntt-component-bound}
 \end{equation}
-The whole-coefficient part $\lfloor s_t/b\rfloor$ changes the location of a
-term but not the coefficient magnitude; only $r_t$ scales a coefficient.
-For example, the real orbit component has two product terms and one linear
-term, while the imaginary component has one product term, whose $s_{2xy}$
-already includes the factor~2, and one linear term.
+The aligned coefficients $f_{r,i}$ and $g_{r,j}$ already include every whole-
+and residual-bit shift.  Product-specific support limits determine exactly
+which pairs occur in the inner sum.  The linear values $a$, $b$, and $1$ do not
+appear in \eqref{eq:fused-ntt-component-bound}, because they are added after
+inverse transformation and signed residue interpretation.
 
 Signed unpacking interprets residues above $(p-1)/2$ as negative.  Therefore
-the sufficient no-aliasing condition is
+the sufficient signed-recovery condition for every nonlinear coefficient is
 \begin{equation}
-  B_{\mathrm{component}} < \frac{p-1}{2}
+  \lvert q_k\rvert < \frac{p-1}{2}
   = 2^{63}-2^{31}.
   \label{eq:fused-ntt-no-alias-bound}
 \end{equation}
 Under \eqref{eq:fused-ntt-no-alias-bound}, reduction modulo $p$ is injective
-on every possible signed coefficient in the schedule, so inverse-transform
-residues reconstruct the intended signed limbs.  If the bound is violated,
-the NTT and Montgomery arithmetic can remain perfectly valid while two
-different integer coefficients share one field residue; signed unpacking would
-then recover an aliased value.  Such aliasing is a semantic range failure, not
-a native 64-bit or 128-bit overflow.
-
-The plan builder enforces the ordinary single-product headroom condition
+on the output interval, so inverse residues reconstruct the intended signed
+coefficients.  A useful conservative check follows directly from the fixed
+$b=16$ packing.  Let $B=2^{16}$ and bound every aligned input coefficient in
+magnitude by $B-1$.  At most $M$ coefficient pairs contribute to one output.
+The orbit components therefore satisfy
 \begin{equation}
-  2b+\log_2M\le64,
+  \lvert R_k\rvert,\ \lvert I_k\rvert
+  \le 2M(B-1)^2,
   \label{eq:fused-ntt-plan-headroom}
 \end{equation}
-and Ref2 additionally asserts a no-wrap transform length $M\ge2L$ for the
-linearly shifted $c$ term.  Those conditions prevent negacyclic wraparound and
-bound an unshifted product, but they alone do not prove
-\eqref{eq:fused-ntt-no-alias-bound} for a sum of exponent-aligned terms.  Ref2
-handles arbitrary whole 16-bit coefficient shifts by selecting a sufficiently
-large active plan, subject to the $2^{25}$ workspace ceiling, and handles the
-remaining shift in the range $0$ through $15$ bits by modular scaling.  The CUDA
-path enforces polynomial support at run time, but it does not separately check
-the signed coefficient-magnitude bound in
-\eqref{eq:fused-ntt-no-alias-bound}.  That bound remains a required numeric
-precondition and a validation gap; modular field arithmetic alone cannot
-establish it.
+and the final derivative components satisfy the conservative bound
+\begin{equation}
+  \lvert D_{x,k}\rvert,\ \lvert D_{y,k}\rvert
+  \le 4M(B-1)^2.
+  \label{eq:fused-ntt-derivative-headroom}
+\end{equation}
+At the maximum supported $M=2^{25}$, the latter is less than $2^{59}$ and
+therefore remains below the signed threshold in
+\eqref{eq:fused-ntt-no-alias-bound}.  The Gauss intermediate $P_3$ can be larger
+than one ordinary product, but it is used only through field identities; signed
+interpretation is applied to the final $D_x$ and $D_y$ coefficients.  The plan
+builder does not evaluate \eqref{eq:fused-ntt-no-alias-bound} independently for
+each iteration.  Its runtime responsibility is exact support, while the fixed
+coefficient width, recurrence, and transform ceiling provide the current range
+argument.  Any increase to those limits requires the bound to be revisited.
 
 \begin{table}[!htbp]
 \centering
-\caption[Reference-orbit operation schedule]{Per-iteration operation counts.
-$F$ and $I$ count forward and inverse NTTs, $P$ counts pointwise
-high-precision products, $S$ counts exponent-aligned spectrum insertions, and
-$A$ counts mathematical binary add/subtract combinations.  $C$ counts logical
-base-$2^{32}$ carry-propagation and normalization streams.  NTT butterfly and
-spectrum additions are modular field operations and are excluded from $C$.}
+\caption[Ref2 recurrence operation counts]{Production Ref2 per-iteration
+operation counts.  $F$ and $I$ count forward and inverse NTTs, $P$ counts
+pointwise Montgomery products per frequency, and $C$ counts final
+base-$2^{32}$ carry/normalization streams.  Linear inputs are fused during
+signed unpack and require no transform.}
 \label{tab:fused-reference-operation-counts}
-\begin{tabular}{lrrrrrrr}
+\begin{tabular}{lrrrrl}
 \hline
-\textbf{Workload} & $F$ & $P$ & $S$ & $I$ & $A$ & $C_{\mathrm{Ref1}}$ & $C_{\mathrm{Ref2}}$ \\
+\textbf{Workload} & $F$ & $P$ & $I$ & $C$ & \textbf{Linear inputs} \\
 \hline
-Orbit only & 2 & 3 & 5 & 2 & 3 & 6 & 2 \\
-Orbit plus first derivative & 4 & 7 & 10 & 4 & 6 & 13 & 4 \\
+Orbit only & 2 & 2 & 2 & 2 & $a,b$ \\
+Orbit plus first derivative & 4 & 5 & 4 & 4 & $a,b,1$ \\
 \hline
 \end{tabular}
 \end{table}
 
-For the orbit alone, both implementations retain the same three expensive
-high-precision products: $x_n^2$, $y_n^2$, and $x_ny_n$.  Both also retain the
-same three mathematical binary combinations: two in
-$x_n^2-y_n^2+a$ and one in $2x_ny_n+b$.  Ref2 does not remove those operations;
-it changes where the three combinations occur.  The real spectrum receives
-three terms and the imaginary spectrum receives two, for five total term
-insertions.  After each output spectrum has received its first term, the
-remaining insertions perform the three nontrivial add/subtract combinations.
+The two orbit products are mathematically sufficient because the difference of
+squares computes the real component directly.  The three derivative products
+are similarly sufficient because $P_3-P_1-P_2=XV+YU$.  The additional
+frequency-domain work consists only of a fixed number of modular additions,
+subtractions, and doublings.  That work is $\mathcal{O}(M)$ and has no
+cross-coefficient dependency, whereas each avoided product would have required
+another Montgomery multiplication at every frequency.
 
-Each insertion still has a cost.  \code{ScaleSpectrumCoefficient} applies the
-exponent shift and sign by modular scaling before a modular field addition or
-subtraction at every frequency index.  That work is $O(M)=O(D)$ and is not free.
-It has no cross-limb carry dependency, however, and it neither materializes an
-intermediate \code{HpSharkFloat} nor invokes the separate high-precision
-\code{AddHelper} pipeline.  The orbit-only schedule consequently replaces the
-three product finalizations and three add-candidate carry streams of Ref1 with
-two final carry streams in Ref2, avoiding four carry/normalization streams per
-iteration.
-
-With the first derivative enabled, both paths retain seven high-precision NTT
-products: the three orbit products and four products for the derivative update.
-The four final component expressions contain six mathematical binary
-add/subtract combinations.  Ref2 accumulates ten spectrum terms: three and two
-for the orbit's real and imaginary outputs, respectively, and three and two for
-the derivative's real and imaginary outputs.  It then finalizes four completed
-components.  Ref1 instead carries seven product outputs and six add candidates,
-for thirteen logical carry streams; Ref2 uses four, avoiding nine such streams
-per iteration.
-
-The original add implementation may process corresponding orbit and derivative
-candidates in the same program pass, but each candidate remains a distinct
-logical carry-propagating stream.  The table consequently counts work that a
-GPU implementation must resolve, rather than merely counting host function
-calls.  The HDRFloat second-derivative recurrence is not represented by a
-\code{HpSharkFloat} limb stream and is excluded from these counts.  The expected
-benefit is therefore specifically the removal of separate carry-resolved
-intermediate and add/subtract streams; its magnitude still requires GPU
-measurement.
+The operation counts also explain why fusion extends beyond the product
+algebra.  Neither the constant $c$ nor the derivative's $1$ consumes a forward
+transform, an inverse transform, or an intermediate high-precision
+normalization.  Each completed component receives all of its linear and
+nonlinear contributions before its sole carry stream.  The HDRFloat
+second-derivative recurrence is separate from these \code{HpSharkFloat} streams
+and is excluded from \cref{tab:fused-reference-operation-counts}.  The table
+identifies structural savings; their share of end-to-end time remains a
+hardware- and transform-length-dependent measurement.
 
 \subsubsection{Periodicity Detection from Fused State}
 \label{subsec:fused-ntt-periodicity}
@@ -1477,12 +1419,12 @@ The Ref1 CUDA path first materializes and
 normalizes $x_n^2$, $2x_ny_n$, and $y_n^2$, then supplies them to a separate
 addition routine.  By contrast, the fused path reuses its forward spectra for
 both final orbit components and avoids materializing those three intermediate
-high-precision values.  Ref2 reuses setup-time tables, cached constant spectra,
-and persistent workspace across loop invocations.  Its application-level
-performance relative to Ref1 still requires measurement because the application
-does not yet route reference-orbit work through Ref2.
+high-precision values.  Ref2 reuses setup-time root and twiddle tables and its
+persistent workspace across loop invocations.  The constants themselves remain
+ordinary signed values until unpack.  Application-level performance relative to
+Ref1 still requires measurement.
 
-\subsection{Amortizing Synchronization via Simultaneous Products}
+\subsection{Batched Transforms and Central Shared-Memory Fusion}
 \label{subsec:amortize-sync}
 
 Large NTTs require grid-wide producer--consumer boundaries between selected
@@ -1492,34 +1434,52 @@ the number of boundaries inside parts of the transform.  The relative costs of
 modular arithmetic, memory traffic, and synchronization depend on transform
 length and hardware.
 
-To reduce the amortized cost of these synchronization points, the implementation
-computes three related convolution products, $X\cdot Y$, $X^2$, and $Y^2$,
-within a single NTT pipeline. All three products share the same forward
-transforms, inverse transforms, twiddle scheduling, temporary buffers, and
-synchronization boundaries. As a result, the fixed cost of grid-wide
-coordination and memory visibility is shared while producing three
-mathematically independent convolution results.  The extra pointwise work is a
-small fixed number of Montgomery multiplications per frequency index; its share
-of run time is configuration-dependent.
+The production Ref2 path advances two streams for the orbit and four when the
+first derivative is enabled.  For sufficiently large transforms, packing
+performs the first one or two forward-DIF stages while coefficients are already
+being read and scaled.  Remaining large DIF stages operate in global memory.
+The central \code{FusedAlignedPointwiseTransform} then processes
+1024-coefficient tiles in shared memory.  It completes as many as ten forward
+stages, evaluates the recurrence from
+\eqref{eq:fused-reference-real-spectrum}--\eqref{eq:fused-ntt-derivative-imag-schedule},
+and immediately executes as many as ten inverse-DIT stages.  Forward and inverse
+twiddles for as many as seven stages are copied asynchronously into shared
+memory.  Each tile is loaded once and stored once across the central
+forward--product--inverse boundary.
 
-At the code level, this strategy is realized by a fused front-end that packs the
-input limb arrays, applies twist factors, and converts values into Montgomery
-form while producing multiple frequency-domain streams in a single pass. A
-single grid-stride pointwise multiplication phase then computes the three
-products concurrently. These are followed by a multiway inverse NTT, after
-which unified untwisting, scaling by $N^{-1}$, and conversion out
-of Montgomery representation are performed. Explicit grid-wide barriers appear
-only at true phase boundaries, serving as producer--consumer separators between
-global-memory stages rather than as fine-grained synchronization.
+The remaining large inverse stages continue in global memory.  Where the stage
+count permits, aligned unpack evaluates the final radix--2 or radix--4 inverse
+butterfly directly instead of materializing its complete output and reading it
+again.  The non-derivative path can use the radix--4 form; the four-stream path
+uses the radix--2 form.  Small transforms whose inverse already completes in the
+shared tile enter unpack as ordinary residues.
 
-In high-precision reference-orbit computation, cross terms and squared terms
-arise together.  Batching them reduces duplicated phases and amortizes common
-barriers.  The compile-time stream count is three for orbit computation and six
-when Newton--Raphson support is enabled; their packed masks occupy 18 and
-36~bits, respectively, in a 64-bit word.  A concrete use appears in
-\cref{subsec:ff-inner-gpu}, where derivative products share the multiway phase
-schedule.  End-to-end benefit remains a measurement question rather than a
-claim that synchronization has zero cost.
+The $b=16$ specialization maps one warp to 32 consecutive output limbs.  Each
+lane supplies the even and odd 16-bit coefficients associated with its limb,
+and warp shuffles distribute those residues to the neighboring limbs that need
+them.  The mapping accepts every product bit offset, including offsets not
+divisible by 16 or 32.  Each coefficient is normalized or has its final inverse
+butterfly evaluated once within a tile; only the small halo needed across tile
+boundaries is repeated.  Exact coefficient counts suppress out-of-support
+reads, a zero-product stream contributes nothing, and residues above
+$(p-1)/2$ retain their negative interpretation.  The same limb total receives
+the signed $a$, $b$, or derivative-$1$ contribution before it is written.
+Per-stream inputs remain explicit parameters throughout these batch operations;
+the implementation does not require thread-local stream arrays.
+
+The final decoupled-look-back carry phase is likewise batched across the two or
+four completed components.  Descriptor initialization is scheduled against an
+existing publication boundary, so it does not introduce a distinct mathematical
+phase.  With production checksum instrumentation disabled, these fusions remove
+several global write/read boundaries and standalone grid barriers.  Debug
+checksum mode retains a more visibly staged transform and normalized-Montgomery
+unpack path so intermediate states remain comparable with the host model.
+Accordingly, the production organization should be efficient for large
+significands: it minimizes the number of NTT streams and pointwise products,
+keeps the central data reuse on chip, eliminates explicit permutations and
+inverse normalization, and performs only one carry traversal per final
+component.  The relative contribution of each saving remains an empirical
+property of transform length and GPU hardware.
 
 
 \subsection{Checksum-Guided Debugging via Host--Device Cross-Validation}

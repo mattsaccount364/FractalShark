@@ -785,11 +785,426 @@ PackAlignedForwardCoefficient(cooperative_groups::grid_group &grid,
 }
 
 template <class SharkFloatParams>
+__device__ uint32_t
+ReadAlignedB16Half(const HpSharkFloat<SharkFloatParams> &value,
+                   uint32_t inputBitOffset,
+                   int64_t halfIndex,
+                   uint32_t coefficientCount)
+{
+    if (halfIndex < 0 || halfIndex >= static_cast<int64_t>(coefficientCount))
+        return 0u;
+
+    constexpr uint64_t TotalBits = static_cast<uint64_t>(SharkFloatParams::GlobalNumUint32) * 32ull;
+    const uint64_t sourceBit =
+        static_cast<uint64_t>(inputBitOffset) + static_cast<uint64_t>(halfIndex) * 16ull;
+    if ((inputBitOffset & 31u) != 0u || sourceBit + 16ull > TotalBits)
+        return static_cast<uint32_t>(ReadAlignedBits(value, inputBitOffset, sourceBit, 16));
+
+    const uint32_t wordIndex = (inputBitOffset >> 5u) + static_cast<uint32_t>(halfIndex >> 1u);
+    const uint32_t word = value.Digits[wordIndex];
+    return (halfIndex & 1ll) == 0ll ? word & 0xffffu : word >> 16u;
+}
+
+template <class SharkFloatParams>
+__device__ uint64_t
+ReadAlignedB16Coefficient(const HpSharkFloat<SharkFloatParams> &value,
+                          uint32_t inputBitOffset,
+                          uint32_t inputIndex,
+                          uint32_t coefficientCount,
+                          uint32_t residualBitShift)
+{
+    const uint32_t current =
+        ReadAlignedB16Half(value, inputBitOffset, static_cast<int64_t>(inputIndex), coefficientCount);
+    if (residualBitShift == 0u)
+        return current;
+
+    const uint32_t previous = ReadAlignedB16Half(
+        value, inputBitOffset, static_cast<int64_t>(inputIndex) - 1ll, coefficientCount);
+    return (static_cast<uint64_t>(previous >> (16u - residualBitShift)) |
+            (static_cast<uint64_t>(current) << residualBitShift)) &
+           0xffffull;
+}
+
+template <class SharkFloatParams>
+__device__ uint64_t
+PackAlignedForwardCoefficientScaled(cooperative_groups::grid_group &grid,
+                                    cooperative_groups::thread_block &block,
+                                    DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                    const HpSharkFloat<SharkFloatParams> *value,
+                                    const SharkNTT::PlanPrime &plan,
+                                    uint64_t inputScaleR2,
+                                    uint32_t outputIndex,
+                                    uint32_t inputBitOffset,
+                                    uint32_t coefficientShift,
+                                    uint32_t residualBitShift,
+                                    bool negative)
+{
+    MattsCudaAssert(plan.b == 16);
+    const bool hasCoefficient = outputIndex >= coefficientShift &&
+                                outputIndex - coefficientShift <
+                                    static_cast<uint32_t>(plan.L) + (residualBitShift != 0u ? 1u : 0u);
+    if (!hasCoefficient)
+        return 0ull;
+
+    const uint32_t inputIndex = outputIndex - coefficientShift;
+    const uint32_t sourceCoefficientCount =
+        static_cast<uint32_t>(plan.L) + (residualBitShift != 0u ? 1u : 0u);
+    const uint64_t coefficient = ReadAlignedB16Coefficient(
+        *value, inputBitOffset, inputIndex, sourceCoefficientCount, residualBitShift);
+    uint64_t packed = SharkNTT::MontgomeryMul(grid, block, debugCombo, coefficient, inputScaleR2);
+    if (negative)
+        packed = SubPSerial(0ull, packed);
+    return packed;
+}
+
+template <class SharkFloatParams>
+__device__ void
+PackAlignedForwardDIFPairOne(cooperative_groups::grid_group &grid,
+                             cooperative_groups::thread_block &block,
+                             DebugGlobalCount<SharkFloatParams> *debugCombo,
+                             const HpSharkFloat<SharkFloatParams> *value,
+                             uint64_t *output,
+                             const SharkNTT::PlanPrime &plan,
+                             uint64_t inputScaleR2,
+                             uint32_t j,
+                             uint32_t firstHalfSpan,
+                             uint32_t secondHalfSpan,
+                             const uint64_t *firstStageTwiddles,
+                             const uint64_t *secondStageTwiddles,
+                             uint32_t inputBitOffset,
+                             uint32_t coefficientShift,
+                             uint32_t residualBitShift,
+                             bool negative)
+{
+    const uint32_t index0 = j;
+    const uint32_t index1 = j + secondHalfSpan;
+    const uint32_t index2 = j + firstHalfSpan;
+    const uint32_t index3 = index2 + secondHalfSpan;
+    const uint64_t value0 = PackAlignedForwardCoefficientScaled(grid,
+                                                                block,
+                                                                debugCombo,
+                                                                value,
+                                                                plan,
+                                                                inputScaleR2,
+                                                                index0,
+                                                                inputBitOffset,
+                                                                coefficientShift,
+                                                                residualBitShift,
+                                                                negative);
+    const uint64_t value1 = PackAlignedForwardCoefficientScaled(grid,
+                                                                block,
+                                                                debugCombo,
+                                                                value,
+                                                                plan,
+                                                                inputScaleR2,
+                                                                index1,
+                                                                inputBitOffset,
+                                                                coefficientShift,
+                                                                residualBitShift,
+                                                                negative);
+    const uint64_t value2 = PackAlignedForwardCoefficientScaled(grid,
+                                                                block,
+                                                                debugCombo,
+                                                                value,
+                                                                plan,
+                                                                inputScaleR2,
+                                                                index2,
+                                                                inputBitOffset,
+                                                                coefficientShift,
+                                                                residualBitShift,
+                                                                negative);
+    const uint64_t value3 = PackAlignedForwardCoefficientScaled(grid,
+                                                                block,
+                                                                debugCombo,
+                                                                value,
+                                                                plan,
+                                                                inputScaleR2,
+                                                                index3,
+                                                                inputBitOffset,
+                                                                coefficientShift,
+                                                                residualBitShift,
+                                                                negative);
+    SharkNTT::StoreRadix4DIFStagePair<SharkFloatParams>(grid,
+                                                        block,
+                                                        debugCombo,
+                                                        output,
+                                                        index0,
+                                                        index1,
+                                                        index2,
+                                                        index3,
+                                                        value0,
+                                                        value1,
+                                                        value2,
+                                                        value3,
+                                                        firstStageTwiddles[j],
+                                                        firstStageTwiddles[j + secondHalfSpan],
+                                                        secondStageTwiddles[j]);
+}
+
+template <class SharkFloatParams>
+__device__ void
+PackAlignedForwardDIFRadix2One(cooperative_groups::grid_group &grid,
+                               cooperative_groups::thread_block &block,
+                               DebugGlobalCount<SharkFloatParams> *debugCombo,
+                               const HpSharkFloat<SharkFloatParams> *value,
+                               uint64_t *output,
+                               const SharkNTT::PlanPrime &plan,
+                               uint64_t inputScaleR2,
+                               uint32_t j,
+                               uint32_t halfSpan,
+                               const uint64_t *stageTwiddles,
+                               uint32_t inputBitOffset,
+                               uint32_t coefficientShift,
+                               uint32_t residualBitShift,
+                               bool negative)
+{
+    const uint32_t lowerIndex = j + halfSpan;
+    const uint64_t upper = PackAlignedForwardCoefficientScaled(grid,
+                                                               block,
+                                                               debugCombo,
+                                                               value,
+                                                               plan,
+                                                               inputScaleR2,
+                                                               j,
+                                                               inputBitOffset,
+                                                               coefficientShift,
+                                                               residualBitShift,
+                                                               negative);
+    const uint64_t lower = PackAlignedForwardCoefficientScaled(grid,
+                                                               block,
+                                                               debugCombo,
+                                                               value,
+                                                               plan,
+                                                               inputScaleR2,
+                                                               lowerIndex,
+                                                               inputBitOffset,
+                                                               coefficientShift,
+                                                               residualBitShift,
+                                                               negative);
+    SharkNTT::StoreRadix2Butterfly<SharkFloatParams>(
+        grid, block, debugCombo, output, j, lowerIndex, upper, lower, stageTwiddles[j]);
+}
+
+template <class SharkFloatParams>
+__device__ void
+PackAlignedForwardDIFLargeStages(cooperative_groups::grid_group &grid,
+                                 cooperative_groups::thread_block &block,
+                                 DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                 const SharkNTT::PlanPrime &plan,
+                                 const SharkNTT::RootTables &roots,
+                                 uint64_t inputScaleR2,
+                                 const HpSharkFloat<SharkFloatParams> *value0,
+                                 uint64_t *output0,
+                                 uint32_t inputBitOffset0,
+                                 uint32_t coefficientShift0,
+                                 uint32_t residualBitShift0,
+                                 bool negative0,
+                                 const HpSharkFloat<SharkFloatParams> *value1,
+                                 uint64_t *output1,
+                                 uint32_t inputBitOffset1,
+                                 uint32_t coefficientShift1,
+                                 uint32_t residualBitShift1,
+                                 bool negative1,
+                                 const HpSharkFloat<SharkFloatParams> *value2,
+                                 uint64_t *output2,
+                                 uint32_t inputBitOffset2,
+                                 uint32_t coefficientShift2,
+                                 uint32_t residualBitShift2,
+                                 bool negative2,
+                                 const HpSharkFloat<SharkFloatParams> *value3,
+                                 uint64_t *output3,
+                                 uint32_t inputBitOffset3,
+                                 uint32_t coefficientShift3,
+                                 uint32_t residualBitShift3,
+                                 bool negative3)
+{
+    MattsCudaAssert(plan.b == 16);
+    MattsCudaAssert(plan.stages > 10);
+    const uint32_t firstStageIndex = static_cast<uint32_t>(plan.stages);
+    const uint32_t firstHalfSpan = 1u << (firstStageIndex - 1u);
+    const uint32_t secondHalfSpan = firstHalfSpan >> 1u;
+    const uint64_t *firstStageTwiddles = roots.stage_twiddles_fwd + firstHalfSpan - 1u;
+    const uint64_t *secondStageTwiddles = roots.stage_twiddles_fwd + secondHalfSpan - 1u;
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t j = GridThreadRank(block); j < secondHalfSpan; j += gridSize) {
+        PackAlignedForwardDIFPairOne(grid,
+                                     block,
+                                     debugCombo,
+                                     value0,
+                                     output0,
+                                     plan,
+                                     inputScaleR2,
+                                     j,
+                                     firstHalfSpan,
+                                     secondHalfSpan,
+                                     firstStageTwiddles,
+                                     secondStageTwiddles,
+                                     inputBitOffset0,
+                                     coefficientShift0,
+                                     residualBitShift0,
+                                     negative0);
+        PackAlignedForwardDIFPairOne(grid,
+                                     block,
+                                     debugCombo,
+                                     value1,
+                                     output1,
+                                     plan,
+                                     inputScaleR2,
+                                     j,
+                                     firstHalfSpan,
+                                     secondHalfSpan,
+                                     firstStageTwiddles,
+                                     secondStageTwiddles,
+                                     inputBitOffset1,
+                                     coefficientShift1,
+                                     residualBitShift1,
+                                     negative1);
+        if (value2 != nullptr)
+            PackAlignedForwardDIFPairOne(grid,
+                                         block,
+                                         debugCombo,
+                                         value2,
+                                         output2,
+                                         plan,
+                                         inputScaleR2,
+                                         j,
+                                         firstHalfSpan,
+                                         secondHalfSpan,
+                                         firstStageTwiddles,
+                                         secondStageTwiddles,
+                                         inputBitOffset2,
+                                         coefficientShift2,
+                                         residualBitShift2,
+                                         negative2);
+        if (value3 != nullptr)
+            PackAlignedForwardDIFPairOne(grid,
+                                         block,
+                                         debugCombo,
+                                         value3,
+                                         output3,
+                                         plan,
+                                         inputScaleR2,
+                                         j,
+                                         firstHalfSpan,
+                                         secondHalfSpan,
+                                         firstStageTwiddles,
+                                         secondStageTwiddles,
+                                         inputBitOffset3,
+                                         coefficientShift3,
+                                         residualBitShift3,
+                                         negative3);
+    }
+    grid.sync();
+}
+
+template <class SharkFloatParams>
+__device__ void
+PackAlignedForwardDIFRadix2(cooperative_groups::grid_group &grid,
+                            cooperative_groups::thread_block &block,
+                            DebugGlobalCount<SharkFloatParams> *debugCombo,
+                            const SharkNTT::PlanPrime &plan,
+                            const SharkNTT::RootTables &roots,
+                            uint64_t inputScaleR2,
+                            const HpSharkFloat<SharkFloatParams> *value0,
+                            uint64_t *output0,
+                            uint32_t inputBitOffset0,
+                            uint32_t coefficientShift0,
+                            uint32_t residualBitShift0,
+                            bool negative0,
+                            const HpSharkFloat<SharkFloatParams> *value1,
+                            uint64_t *output1,
+                            uint32_t inputBitOffset1,
+                            uint32_t coefficientShift1,
+                            uint32_t residualBitShift1,
+                            bool negative1,
+                            const HpSharkFloat<SharkFloatParams> *value2,
+                            uint64_t *output2,
+                            uint32_t inputBitOffset2,
+                            uint32_t coefficientShift2,
+                            uint32_t residualBitShift2,
+                            bool negative2,
+                            const HpSharkFloat<SharkFloatParams> *value3,
+                            uint64_t *output3,
+                            uint32_t inputBitOffset3,
+                            uint32_t coefficientShift3,
+                            uint32_t residualBitShift3,
+                            bool negative3)
+{
+    MattsCudaAssert(plan.b == 16);
+    MattsCudaAssert(plan.stages == 11);
+    const uint32_t halfSpan = 1u << (static_cast<uint32_t>(plan.stages) - 1u);
+    const uint64_t *stageTwiddles = roots.stage_twiddles_fwd + halfSpan - 1u;
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t j = GridThreadRank(block); j < halfSpan; j += gridSize) {
+        PackAlignedForwardDIFRadix2One(grid,
+                                       block,
+                                       debugCombo,
+                                       value0,
+                                       output0,
+                                       plan,
+                                       inputScaleR2,
+                                       j,
+                                       halfSpan,
+                                       stageTwiddles,
+                                       inputBitOffset0,
+                                       coefficientShift0,
+                                       residualBitShift0,
+                                       negative0);
+        PackAlignedForwardDIFRadix2One(grid,
+                                       block,
+                                       debugCombo,
+                                       value1,
+                                       output1,
+                                       plan,
+                                       inputScaleR2,
+                                       j,
+                                       halfSpan,
+                                       stageTwiddles,
+                                       inputBitOffset1,
+                                       coefficientShift1,
+                                       residualBitShift1,
+                                       negative1);
+        if (value2 != nullptr)
+            PackAlignedForwardDIFRadix2One(grid,
+                                           block,
+                                           debugCombo,
+                                           value2,
+                                           output2,
+                                           plan,
+                                           inputScaleR2,
+                                           j,
+                                           halfSpan,
+                                           stageTwiddles,
+                                           inputBitOffset2,
+                                           coefficientShift2,
+                                           residualBitShift2,
+                                           negative2);
+        if (value3 != nullptr)
+            PackAlignedForwardDIFRadix2One(grid,
+                                           block,
+                                           debugCombo,
+                                           value3,
+                                           output3,
+                                           plan,
+                                           inputScaleR2,
+                                           j,
+                                           halfSpan,
+                                           stageTwiddles,
+                                           inputBitOffset3,
+                                           coefficientShift3,
+                                           residualBitShift3,
+                                           negative3);
+    }
+    grid.sync();
+}
+
+template <class SharkFloatParams>
 __device__ void
 PackAlignedInputsBatch(cooperative_groups::grid_group &grid,
                        cooperative_groups::thread_block &block,
                        DebugGlobalCount<SharkFloatParams> *debugCombo,
                        const SharkNTT::PlanPrime &plan,
+                       uint64_t inputScaleR2,
                        const HpSharkFloat<SharkFloatParams> *value0,
                        uint64_t *output0,
                        uint32_t inputBitOffset0,
@@ -807,26 +1222,28 @@ PackAlignedInputsBatch(cooperative_groups::grid_group &grid,
     const uint32_t rank = GridThreadRank(block);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t outputIndex = rank; outputIndex < activeN; outputIndex += gridSize) {
-        output0[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                             block,
-                                                             debugCombo,
-                                                             value0,
-                                                             plan,
-                                                             outputIndex,
-                                                             inputBitOffset0,
-                                                             coefficientShift0,
-                                                             residualBitShift0,
-                                                             negative0);
-        output1[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                             block,
-                                                             debugCombo,
-                                                             value1,
-                                                             plan,
-                                                             outputIndex,
-                                                             inputBitOffset1,
-                                                             coefficientShift1,
-                                                             residualBitShift1,
-                                                             negative1);
+        output0[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value0,
+                                                                   plan,
+                                                                   inputScaleR2,
+                                                                   outputIndex,
+                                                                   inputBitOffset0,
+                                                                   coefficientShift0,
+                                                                   residualBitShift0,
+                                                                   negative0);
+        output1[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value1,
+                                                                   plan,
+                                                                   inputScaleR2,
+                                                                   outputIndex,
+                                                                   inputBitOffset1,
+                                                                   coefficientShift1,
+                                                                   residualBitShift1,
+                                                                   negative1);
     }
     grid.sync();
 }
@@ -837,6 +1254,7 @@ PackAlignedInputsBatch(cooperative_groups::grid_group &grid,
                        cooperative_groups::thread_block &block,
                        DebugGlobalCount<SharkFloatParams> *debugCombo,
                        const SharkNTT::PlanPrime &plan,
+                       uint64_t inputScaleR2,
                        const HpSharkFloat<SharkFloatParams> *value0,
                        uint64_t *output0,
                        uint32_t inputBitOffset0,
@@ -866,46 +1284,50 @@ PackAlignedInputsBatch(cooperative_groups::grid_group &grid,
     const uint32_t rank = GridThreadRank(block);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t outputIndex = rank; outputIndex < activeN; outputIndex += gridSize) {
-        output0[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                             block,
-                                                             debugCombo,
-                                                             value0,
-                                                             plan,
-                                                             outputIndex,
-                                                             inputBitOffset0,
-                                                             coefficientShift0,
-                                                             residualBitShift0,
-                                                             negative0);
-        output1[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                             block,
-                                                             debugCombo,
-                                                             value1,
-                                                             plan,
-                                                             outputIndex,
-                                                             inputBitOffset1,
-                                                             coefficientShift1,
-                                                             residualBitShift1,
-                                                             negative1);
-        output2[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                             block,
-                                                             debugCombo,
-                                                             value2,
-                                                             plan,
-                                                             outputIndex,
-                                                             inputBitOffset2,
-                                                             coefficientShift2,
-                                                             residualBitShift2,
-                                                             negative2);
-        output3[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                             block,
-                                                             debugCombo,
-                                                             value3,
-                                                             plan,
-                                                             outputIndex,
-                                                             inputBitOffset3,
-                                                             coefficientShift3,
-                                                             residualBitShift3,
-                                                             negative3);
+        output0[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value0,
+                                                                   plan,
+                                                                   inputScaleR2,
+                                                                   outputIndex,
+                                                                   inputBitOffset0,
+                                                                   coefficientShift0,
+                                                                   residualBitShift0,
+                                                                   negative0);
+        output1[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value1,
+                                                                   plan,
+                                                                   inputScaleR2,
+                                                                   outputIndex,
+                                                                   inputBitOffset1,
+                                                                   coefficientShift1,
+                                                                   residualBitShift1,
+                                                                   negative1);
+        output2[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value2,
+                                                                   plan,
+                                                                   inputScaleR2,
+                                                                   outputIndex,
+                                                                   inputBitOffset2,
+                                                                   coefficientShift2,
+                                                                   residualBitShift2,
+                                                                   negative2);
+        output3[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value3,
+                                                                   plan,
+                                                                   inputScaleR2,
+                                                                   outputIndex,
+                                                                   inputBitOffset3,
+                                                                   coefficientShift3,
+                                                                   residualBitShift3,
+                                                                   negative3);
     }
     grid.sync();
 }
@@ -1756,7 +2178,7 @@ SignedResidueContribution(uint64_t residue,
     return negative ? -static_cast<int64_t>(contribution) : static_cast<int64_t>(contribution);
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, bool Normalize>
 __device__ void
 UnpackResiduesToSignedLimbsScalar(cooperative_groups::grid_group &grid,
                                   cooperative_groups::thread_block &block,
@@ -1777,8 +2199,10 @@ UnpackResiduesToSignedLimbsScalar(cooperative_groups::grid_group &grid,
         const uint64_t lastCoefficient = lastBit / static_cast<uint64_t>(plan.b);
         int64_t total = 0;
         for (uint64_t i = firstCoefficient; i <= lastCoefficient && i < coefficientCount; ++i) {
-            const uint64_t residue = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                grid, block, debugCombo, spectrum[i], roots.Ninv);
+            uint64_t residue = spectrum[i];
+            if constexpr (Normalize)
+                residue = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, spectrum[i], roots.Ninv);
             total +=
                 SignedResidueContribution(residue, i, j, static_cast<uint32_t>(plan.b), halfPrime, 0);
         }
@@ -1820,7 +2244,7 @@ SignedLinearLimbContribution(const HpSharkFloat<SharkFloatParams> *value,
     return value->GetNegative() ? -signedContribution : signedContribution;
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, bool Normalize>
 __device__ int64_t
 UnpackAlignedResidueLimbContribution(cooperative_groups::grid_group &grid,
                                      cooperative_groups::thread_block &block,
@@ -1847,8 +2271,10 @@ UnpackAlignedResidueLimbContribution(cooperative_groups::grid_group &grid,
     int64_t total = 0;
     if (firstBit >= productBitOffset || productBitOffset <= lastBit) {
         for (uint64_t i = firstCoefficient; i <= lastCoefficient && i < coefficientCount; ++i) {
-            const uint64_t residue = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                grid, block, debugCombo, spectrum[i], roots.Ninv);
+            uint64_t residue = spectrum[i];
+            if constexpr (Normalize)
+                residue = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, spectrum[i], roots.Ninv);
             total += SignedResidueContribution(
                 residue, i, limbIndex, static_cast<uint32_t>(plan.b), halfPrime, productBitOffset);
         }
@@ -1907,7 +2333,9 @@ GatherLinearToSignedLimbsBatch(cooperative_groups::grid_group &grid,
     grid.sync();
 }
 
-template <class SharkFloatParams>
+enum class AlignedUnpackMode : uint8_t { NormalizedMontgomery, StandardResidue };
+
+template <class SharkFloatParams, AlignedUnpackMode Mode>
 __device__ void UnpackAlignedResiduesToSignedLimbsB16(cooperative_groups::grid_group &grid,
                                                       cooperative_groups::thread_block &block,
                                                       DebugGlobalCount<SharkFloatParams> *debugCombo,
@@ -1922,7 +2350,7 @@ __device__ void UnpackAlignedResiduesToSignedLimbsB16(cooperative_groups::grid_g
                                                       int64_t *limbs,
                                                       uint32_t limbCount);
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, AlignedUnpackMode Mode>
 __device__ void
 UnpackAlignedResiduesToSignedLimbsOne(cooperative_groups::grid_group &grid,
                                       cooperative_groups::thread_block &block,
@@ -1939,41 +2367,44 @@ UnpackAlignedResiduesToSignedLimbsOne(cooperative_groups::grid_group &grid,
                                       uint32_t limbCount)
 {
     if (plan.b == 16) {
-        UnpackAlignedResiduesToSignedLimbsB16(grid,
-                                              block,
-                                              debugCombo,
-                                              spectrum,
-                                              plan,
-                                              roots,
-                                              coefficientCount,
-                                              productBitOffset,
-                                              linearValue,
-                                              linearInputBitOffset,
-                                              linearBitOffset,
-                                              limbs,
-                                              limbCount);
+        UnpackAlignedResiduesToSignedLimbsB16<SharkFloatParams, Mode>(grid,
+                                                                      block,
+                                                                      debugCombo,
+                                                                      spectrum,
+                                                                      plan,
+                                                                      roots,
+                                                                      coefficientCount,
+                                                                      productBitOffset,
+                                                                      linearValue,
+                                                                      linearInputBitOffset,
+                                                                      linearBitOffset,
+                                                                      limbs,
+                                                                      limbCount);
         return;
     }
 
     const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t limbIndex = GridThreadRank(block); limbIndex < limbCount; limbIndex += gridSize) {
-        limbs[limbIndex] = UnpackAlignedResidueLimbContribution(grid,
-                                                                block,
-                                                                debugCombo,
-                                                                spectrum,
-                                                                plan,
-                                                                roots,
-                                                                coefficientCount,
-                                                                productBitOffset,
-                                                                linearValue,
-                                                                linearInputBitOffset,
-                                                                linearBitOffset,
-                                                                limbIndex);
+        limbs[limbIndex] =
+            UnpackAlignedResidueLimbContribution<SharkFloatParams,
+                                                 Mode == AlignedUnpackMode::NormalizedMontgomery>(
+                grid,
+                block,
+                debugCombo,
+                spectrum,
+                plan,
+                roots,
+                coefficientCount,
+                productBitOffset,
+                linearValue,
+                linearInputBitOffset,
+                linearBitOffset,
+                limbIndex);
     }
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, AlignedUnpackMode Mode>
 __device__ void
 UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         cooperative_groups::thread_block &block,
@@ -1996,35 +2427,35 @@ UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         int64_t *limbs1,
                                         uint32_t limbCount)
 {
-    UnpackAlignedResiduesToSignedLimbsOne(grid,
-                                          block,
-                                          debugCombo,
-                                          spectrum0,
-                                          plan,
-                                          roots,
-                                          coefficientCount0,
-                                          productBitOffset0,
-                                          linearValue0,
-                                          linearInputBitOffset0,
-                                          linearBitOffset0,
-                                          limbs0,
-                                          limbCount);
-    UnpackAlignedResiduesToSignedLimbsOne(grid,
-                                          block,
-                                          debugCombo,
-                                          spectrum1,
-                                          plan,
-                                          roots,
-                                          coefficientCount1,
-                                          productBitOffset1,
-                                          linearValue1,
-                                          linearInputBitOffset1,
-                                          linearBitOffset1,
-                                          limbs1,
-                                          limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum0,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount0,
+                                                                  productBitOffset0,
+                                                                  linearValue0,
+                                                                  linearInputBitOffset0,
+                                                                  linearBitOffset0,
+                                                                  limbs0,
+                                                                  limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum1,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount1,
+                                                                  productBitOffset1,
+                                                                  linearValue1,
+                                                                  linearInputBitOffset1,
+                                                                  linearBitOffset1,
+                                                                  limbs1,
+                                                                  limbCount);
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, AlignedUnpackMode Mode>
 __device__ void
 UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         cooperative_groups::thread_block &block,
@@ -2061,58 +2492,58 @@ UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         int64_t *limbs3,
                                         uint32_t limbCount)
 {
-    UnpackAlignedResiduesToSignedLimbsOne(grid,
-                                          block,
-                                          debugCombo,
-                                          spectrum0,
-                                          plan,
-                                          roots,
-                                          coefficientCount0,
-                                          productBitOffset0,
-                                          linearValue0,
-                                          linearInputBitOffset0,
-                                          linearBitOffset0,
-                                          limbs0,
-                                          limbCount);
-    UnpackAlignedResiduesToSignedLimbsOne(grid,
-                                          block,
-                                          debugCombo,
-                                          spectrum1,
-                                          plan,
-                                          roots,
-                                          coefficientCount1,
-                                          productBitOffset1,
-                                          linearValue1,
-                                          linearInputBitOffset1,
-                                          linearBitOffset1,
-                                          limbs1,
-                                          limbCount);
-    UnpackAlignedResiduesToSignedLimbsOne(grid,
-                                          block,
-                                          debugCombo,
-                                          spectrum2,
-                                          plan,
-                                          roots,
-                                          coefficientCount2,
-                                          productBitOffset2,
-                                          linearValue2,
-                                          linearInputBitOffset2,
-                                          linearBitOffset2,
-                                          limbs2,
-                                          limbCount);
-    UnpackAlignedResiduesToSignedLimbsOne(grid,
-                                          block,
-                                          debugCombo,
-                                          spectrum3,
-                                          plan,
-                                          roots,
-                                          coefficientCount3,
-                                          productBitOffset3,
-                                          linearValue3,
-                                          linearInputBitOffset3,
-                                          linearBitOffset3,
-                                          limbs3,
-                                          limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum0,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount0,
+                                                                  productBitOffset0,
+                                                                  linearValue0,
+                                                                  linearInputBitOffset0,
+                                                                  linearBitOffset0,
+                                                                  limbs0,
+                                                                  limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum1,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount1,
+                                                                  productBitOffset1,
+                                                                  linearValue1,
+                                                                  linearInputBitOffset1,
+                                                                  linearBitOffset1,
+                                                                  limbs1,
+                                                                  limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum2,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount2,
+                                                                  productBitOffset2,
+                                                                  linearValue2,
+                                                                  linearInputBitOffset2,
+                                                                  linearBitOffset2,
+                                                                  limbs2,
+                                                                  limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum3,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount3,
+                                                                  productBitOffset3,
+                                                                  linearValue3,
+                                                                  linearInputBitOffset3,
+                                                                  linearBitOffset3,
+                                                                  limbs3,
+                                                                  limbCount);
 }
 
 static __device__ SharkForceInlineReleaseOnly uint64_t
@@ -2131,7 +2562,7 @@ ShuffleUpUint64(unsigned mask, uint64_t value, unsigned delta)
     return (static_cast<uint64_t>(high) << 32) | low;
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, AlignedUnpackMode Mode>
 static __device__ SharkForceInlineReleaseOnly uint64_t
 NormalizeB16ResidueForTile(cooperative_groups::grid_group &grid,
                            cooperative_groups::thread_block &block,
@@ -2148,11 +2579,13 @@ NormalizeB16ResidueForTile(cooperative_groups::grid_group &grid,
     const uint64_t index = static_cast<uint64_t>(coefficientIndex);
     if (index < firstCoefficient || index > lastCoefficient || index >= coefficientCount)
         return 0;
-    return SharkNTT::MontgomeryMul<SharkFloatParams>(
-        grid, block, debugCombo, spectrum[index], roots.Ninv);
+    if constexpr (Mode == AlignedUnpackMode::NormalizedMontgomery)
+        return SharkNTT::MontgomeryMul<SharkFloatParams>(
+            grid, block, debugCombo, spectrum[index], roots.Ninv);
+    return spectrum[index];
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, AlignedUnpackMode Mode>
 __device__ void
 UnpackAlignedResiduesToSignedLimbsB16(cooperative_groups::grid_group &grid,
                                       cooperative_groups::thread_block &block,
@@ -2215,25 +2648,25 @@ UnpackAlignedResiduesToSignedLimbsB16(cooperative_groups::grid_group &grid,
             const int64_t localEvenCoefficient = pairIndex * 2ll;
             const int64_t localOddCoefficient = localEvenCoefficient + 1ll;
             const uint64_t evenResidue =
-                NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                             block,
-                                                             debugCombo,
-                                                             spectrum,
-                                                             roots,
-                                                             coefficientCount,
-                                                             firstCoefficient,
-                                                             lastCoefficient,
-                                                             localEvenCoefficient);
+                NormalizeB16ResidueForTile<SharkFloatParams, Mode>(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   spectrum,
+                                                                   roots,
+                                                                   coefficientCount,
+                                                                   firstCoefficient,
+                                                                   lastCoefficient,
+                                                                   localEvenCoefficient);
             const uint64_t oddResidue =
-                NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                             block,
-                                                             debugCombo,
-                                                             spectrum,
-                                                             roots,
-                                                             coefficientCount,
-                                                             firstCoefficient,
-                                                             lastCoefficient,
-                                                             localOddCoefficient);
+                NormalizeB16ResidueForTile<SharkFloatParams, Mode>(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   spectrum,
+                                                                   roots,
+                                                                   coefficientCount,
+                                                                   firstCoefficient,
+                                                                   lastCoefficient,
+                                                                   localOddCoefficient);
 
             uint64_t haloEven1 = 0;
             uint64_t haloEven2 = 0;
@@ -2244,73 +2677,76 @@ UnpackAlignedResiduesToSignedLimbsB16(cooperative_groups::grid_group &grid,
             uint64_t haloOdd4 = 0;
             if (laneIndex == 0u) {
                 const int64_t tilePairIndex = static_cast<int64_t>(limbBegin) - productLimbOffset;
-                haloEven1 = NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                                         block,
-                                                                         debugCombo,
-                                                                         spectrum,
-                                                                         roots,
-                                                                         coefficientCount,
-                                                                         firstCoefficient,
-                                                                         lastCoefficient,
-                                                                         (tilePairIndex - 1ll) * 2ll);
-                haloEven2 = NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                                         block,
-                                                                         debugCombo,
-                                                                         spectrum,
-                                                                         roots,
-                                                                         coefficientCount,
-                                                                         firstCoefficient,
-                                                                         lastCoefficient,
-                                                                         (tilePairIndex - 2ll) * 2ll);
-                haloEven3 = NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                                         block,
-                                                                         debugCombo,
-                                                                         spectrum,
-                                                                         roots,
-                                                                         coefficientCount,
-                                                                         firstCoefficient,
-                                                                         lastCoefficient,
-                                                                         (tilePairIndex - 3ll) * 2ll);
-                haloOdd1 =
-                    NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum,
-                                                                 roots,
-                                                                 coefficientCount,
-                                                                 firstCoefficient,
-                                                                 lastCoefficient,
-                                                                 (tilePairIndex - 1ll) * 2ll + 1ll);
-                haloOdd2 =
-                    NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum,
-                                                                 roots,
-                                                                 coefficientCount,
-                                                                 firstCoefficient,
-                                                                 lastCoefficient,
-                                                                 (tilePairIndex - 2ll) * 2ll + 1ll);
-                haloOdd3 =
-                    NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum,
-                                                                 roots,
-                                                                 coefficientCount,
-                                                                 firstCoefficient,
-                                                                 lastCoefficient,
-                                                                 (tilePairIndex - 3ll) * 2ll + 1ll);
-                haloOdd4 =
-                    NormalizeB16ResidueForTile<SharkFloatParams>(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum,
-                                                                 roots,
-                                                                 coefficientCount,
-                                                                 firstCoefficient,
-                                                                 lastCoefficient,
-                                                                 (tilePairIndex - 4ll) * 2ll + 1ll);
+                haloEven1 =
+                    NormalizeB16ResidueForTile<SharkFloatParams, Mode>(grid,
+                                                                       block,
+                                                                       debugCombo,
+                                                                       spectrum,
+                                                                       roots,
+                                                                       coefficientCount,
+                                                                       firstCoefficient,
+                                                                       lastCoefficient,
+                                                                       (tilePairIndex - 1ll) * 2ll);
+                haloEven2 =
+                    NormalizeB16ResidueForTile<SharkFloatParams, Mode>(grid,
+                                                                       block,
+                                                                       debugCombo,
+                                                                       spectrum,
+                                                                       roots,
+                                                                       coefficientCount,
+                                                                       firstCoefficient,
+                                                                       lastCoefficient,
+                                                                       (tilePairIndex - 2ll) * 2ll);
+                haloEven3 =
+                    NormalizeB16ResidueForTile<SharkFloatParams, Mode>(grid,
+                                                                       block,
+                                                                       debugCombo,
+                                                                       spectrum,
+                                                                       roots,
+                                                                       coefficientCount,
+                                                                       firstCoefficient,
+                                                                       lastCoefficient,
+                                                                       (tilePairIndex - 3ll) * 2ll);
+                haloOdd1 = NormalizeB16ResidueForTile<SharkFloatParams, Mode>(
+                    grid,
+                    block,
+                    debugCombo,
+                    spectrum,
+                    roots,
+                    coefficientCount,
+                    firstCoefficient,
+                    lastCoefficient,
+                    (tilePairIndex - 1ll) * 2ll + 1ll);
+                haloOdd2 = NormalizeB16ResidueForTile<SharkFloatParams, Mode>(
+                    grid,
+                    block,
+                    debugCombo,
+                    spectrum,
+                    roots,
+                    coefficientCount,
+                    firstCoefficient,
+                    lastCoefficient,
+                    (tilePairIndex - 2ll) * 2ll + 1ll);
+                haloOdd3 = NormalizeB16ResidueForTile<SharkFloatParams, Mode>(
+                    grid,
+                    block,
+                    debugCombo,
+                    spectrum,
+                    roots,
+                    coefficientCount,
+                    firstCoefficient,
+                    lastCoefficient,
+                    (tilePairIndex - 3ll) * 2ll + 1ll);
+                haloOdd4 = NormalizeB16ResidueForTile<SharkFloatParams, Mode>(
+                    grid,
+                    block,
+                    debugCombo,
+                    spectrum,
+                    roots,
+                    coefficientCount,
+                    firstCoefficient,
+                    lastCoefficient,
+                    (tilePairIndex - 4ll) * 2ll + 1ll);
             }
 
             const uint64_t broadcastHaloEven1 = ShuffleUint64(FullWarpMask, haloEven1, 0);
@@ -2545,7 +2981,7 @@ UnpackResiduesToSignedLimbsOne(cooperative_groups::grid_group &grid,
                                uint32_t limbCount)
 {
     if (plan.b != 16) {
-        UnpackResiduesToSignedLimbsScalar(
+        UnpackResiduesToSignedLimbsScalar<SharkFloatParams, true>(
             grid, block, debugCombo, spectrum, plan, roots, coefficientCount, limbs, limbCount);
     } else {
         UnpackResiduesToSignedLimbsB16(
@@ -2869,26 +3305,27 @@ InverseAlignedSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     NTTRadix2Batch<SharkFloatParams, true>(
         sharedData, grid, block, debugCombo, spectrum0, spectrum1, activeN, plan.stages, roots);
-    UnpackAlignedResiduesToSignedLimbsBatch(grid,
-                                            block,
-                                            debugCombo,
-                                            plan,
-                                            roots,
-                                            spectrum0,
-                                            coefficientCount0,
-                                            productBitOffset0,
-                                            linearValue0,
-                                            linearInputBitOffset0,
-                                            linearBitOffset0,
-                                            limbs0,
-                                            spectrum1,
-                                            coefficientCount1,
-                                            productBitOffset1,
-                                            linearValue1,
-                                            linearInputBitOffset1,
-                                            linearBitOffset1,
-                                            limbs1,
-                                            limbCount);
+    UnpackAlignedResiduesToSignedLimbsBatch<SharkFloatParams, AlignedUnpackMode::NormalizedMontgomery>(
+        grid,
+        block,
+        debugCombo,
+        plan,
+        roots,
+        spectrum0,
+        coefficientCount0,
+        productBitOffset0,
+        linearValue0,
+        linearInputBitOffset0,
+        linearBitOffset0,
+        limbs0,
+        spectrum1,
+        coefficientCount1,
+        productBitOffset1,
+        linearValue1,
+        linearInputBitOffset1,
+        linearBitOffset1,
+        limbs1,
+        limbCount);
     if constexpr (!HpShark::DebugChecksums)
         grid.sync();
     StoreReference2DebugStateBatch<SharkFloatParams>(debugStates,
@@ -2956,40 +3393,41 @@ InverseAlignedSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                            activeN,
                                            plan.stages,
                                            roots);
-    UnpackAlignedResiduesToSignedLimbsBatch(grid,
-                                            block,
-                                            debugCombo,
-                                            plan,
-                                            roots,
-                                            spectrum0,
-                                            coefficientCount0,
-                                            productBitOffset0,
-                                            linearValue0,
-                                            linearInputBitOffset0,
-                                            linearBitOffset0,
-                                            limbs0,
-                                            spectrum1,
-                                            coefficientCount1,
-                                            productBitOffset1,
-                                            linearValue1,
-                                            linearInputBitOffset1,
-                                            linearBitOffset1,
-                                            limbs1,
-                                            spectrum2,
-                                            coefficientCount2,
-                                            productBitOffset2,
-                                            linearValue2,
-                                            linearInputBitOffset2,
-                                            linearBitOffset2,
-                                            limbs2,
-                                            spectrum3,
-                                            coefficientCount3,
-                                            productBitOffset3,
-                                            linearValue3,
-                                            linearInputBitOffset3,
-                                            linearBitOffset3,
-                                            limbs3,
-                                            limbCount);
+    UnpackAlignedResiduesToSignedLimbsBatch<SharkFloatParams, AlignedUnpackMode::NormalizedMontgomery>(
+        grid,
+        block,
+        debugCombo,
+        plan,
+        roots,
+        spectrum0,
+        coefficientCount0,
+        productBitOffset0,
+        linearValue0,
+        linearInputBitOffset0,
+        linearBitOffset0,
+        limbs0,
+        spectrum1,
+        coefficientCount1,
+        productBitOffset1,
+        linearValue1,
+        linearInputBitOffset1,
+        linearBitOffset1,
+        limbs1,
+        spectrum2,
+        coefficientCount2,
+        productBitOffset2,
+        linearValue2,
+        linearInputBitOffset2,
+        linearBitOffset2,
+        limbs2,
+        spectrum3,
+        coefficientCount3,
+        productBitOffset3,
+        linearValue3,
+        linearInputBitOffset3,
+        linearBitOffset3,
+        limbs3,
+        limbCount);
     if constexpr (!HpShark::DebugChecksums)
         grid.sync();
     StoreReference2DebugStateBatch<SharkFloatParams>(debugStates,
@@ -5821,37 +6259,104 @@ ExecuteReference2Iteration(cooperative_groups::grid_group &grid,
     SharkNTT::RootTables &roots = workspace.PlanRoots[iterationPlan.PlanSlot];
     MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
     MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
+    const uint32_t stageCount = static_cast<uint32_t>(plan.stages);
+    const uint32_t largeStageCount = stageCount > 10u ? stageCount - 10u : 0u;
 
     if constexpr (!HpShark::DebugChecksums) {
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            PackAlignedInputsBatch(grid,
-                                   block,
-                                   debugCombo,
-                                   plan,
-                                   &zReal,
-                                   workspace.ZReal,
-                                   workspace.IgnoredPrecisionBits,
-                                   iterationPlan.ZRealCoefficientShift,
-                                   iterationPlan.ZRealResidualBitShift,
-                                   zReal.GetNegative(),
-                                   &zImag,
-                                   workspace.ZImag,
-                                   workspace.IgnoredPrecisionBits,
-                                   iterationPlan.ZImagCoefficientShift,
-                                   iterationPlan.ZImagResidualBitShift,
-                                   zImag.GetNegative(),
-                                   &combo->Multiply.DzdcReal,
-                                   workspace.DzdcReal,
-                                   workspace.IgnoredPrecisionBits,
-                                   iterationPlan.DzdcRealCoefficientShift,
-                                   iterationPlan.DzdcRealResidualBitShift,
-                                   combo->Multiply.DzdcReal.GetNegative(),
-                                   &combo->Multiply.DzdcImag,
-                                   workspace.DzdcImag,
-                                   workspace.IgnoredPrecisionBits,
-                                   iterationPlan.DzdcImagCoefficientShift,
-                                   iterationPlan.DzdcImagResidualBitShift,
-                                   combo->Multiply.DzdcImag.GetNegative());
+            if (largeStageCount == 0u) {
+                PackAlignedInputsBatch(grid,
+                                       block,
+                                       debugCombo,
+                                       plan,
+                                       roots.Reference2InputScaleR2,
+                                       &zReal,
+                                       workspace.ZReal,
+                                       workspace.IgnoredPrecisionBits,
+                                       iterationPlan.ZRealCoefficientShift,
+                                       iterationPlan.ZRealResidualBitShift,
+                                       zReal.GetNegative(),
+                                       &zImag,
+                                       workspace.ZImag,
+                                       workspace.IgnoredPrecisionBits,
+                                       iterationPlan.ZImagCoefficientShift,
+                                       iterationPlan.ZImagResidualBitShift,
+                                       zImag.GetNegative(),
+                                       &combo->Multiply.DzdcReal,
+                                       workspace.DzdcReal,
+                                       workspace.IgnoredPrecisionBits,
+                                       iterationPlan.DzdcRealCoefficientShift,
+                                       iterationPlan.DzdcRealResidualBitShift,
+                                       combo->Multiply.DzdcReal.GetNegative(),
+                                       &combo->Multiply.DzdcImag,
+                                       workspace.DzdcImag,
+                                       workspace.IgnoredPrecisionBits,
+                                       iterationPlan.DzdcImagCoefficientShift,
+                                       iterationPlan.DzdcImagResidualBitShift,
+                                       combo->Multiply.DzdcImag.GetNegative());
+            } else if (largeStageCount >= 2u) {
+                PackAlignedForwardDIFLargeStages(grid,
+                                                 block,
+                                                 debugCombo,
+                                                 plan,
+                                                 roots,
+                                                 roots.Reference2InputScaleR2,
+                                                 &zReal,
+                                                 workspace.ZReal,
+                                                 workspace.IgnoredPrecisionBits,
+                                                 iterationPlan.ZRealCoefficientShift,
+                                                 iterationPlan.ZRealResidualBitShift,
+                                                 zReal.GetNegative(),
+                                                 &zImag,
+                                                 workspace.ZImag,
+                                                 workspace.IgnoredPrecisionBits,
+                                                 iterationPlan.ZImagCoefficientShift,
+                                                 iterationPlan.ZImagResidualBitShift,
+                                                 zImag.GetNegative(),
+                                                 &combo->Multiply.DzdcReal,
+                                                 workspace.DzdcReal,
+                                                 workspace.IgnoredPrecisionBits,
+                                                 iterationPlan.DzdcRealCoefficientShift,
+                                                 iterationPlan.DzdcRealResidualBitShift,
+                                                 combo->Multiply.DzdcReal.GetNegative(),
+                                                 &combo->Multiply.DzdcImag,
+                                                 workspace.DzdcImag,
+                                                 workspace.IgnoredPrecisionBits,
+                                                 iterationPlan.DzdcImagCoefficientShift,
+                                                 iterationPlan.DzdcImagResidualBitShift,
+                                                 combo->Multiply.DzdcImag.GetNegative());
+            } else {
+                PackAlignedForwardDIFRadix2(grid,
+                                            block,
+                                            debugCombo,
+                                            plan,
+                                            roots,
+                                            roots.Reference2InputScaleR2,
+                                            &zReal,
+                                            workspace.ZReal,
+                                            workspace.IgnoredPrecisionBits,
+                                            iterationPlan.ZRealCoefficientShift,
+                                            iterationPlan.ZRealResidualBitShift,
+                                            zReal.GetNegative(),
+                                            &zImag,
+                                            workspace.ZImag,
+                                            workspace.IgnoredPrecisionBits,
+                                            iterationPlan.ZImagCoefficientShift,
+                                            iterationPlan.ZImagResidualBitShift,
+                                            zImag.GetNegative(),
+                                            &combo->Multiply.DzdcReal,
+                                            workspace.DzdcReal,
+                                            workspace.IgnoredPrecisionBits,
+                                            iterationPlan.DzdcRealCoefficientShift,
+                                            iterationPlan.DzdcRealResidualBitShift,
+                                            combo->Multiply.DzdcReal.GetNegative(),
+                                            &combo->Multiply.DzdcImag,
+                                            workspace.DzdcImag,
+                                            workspace.IgnoredPrecisionBits,
+                                            iterationPlan.DzdcImagCoefficientShift,
+                                            iterationPlan.DzdcImagResidualBitShift,
+                                            combo->Multiply.DzdcImag.GetNegative());
+            }
             SharkNTT::ForwardDIFLargeStages<SharkFloatParams, SharkNTT::Multiway::FourWay>(
                 sharedData,
                 grid,
@@ -5861,7 +6366,10 @@ ExecuteReference2Iteration(cooperative_groups::grid_group &grid,
                 workspace.ZImag,
                 workspace.DzdcReal,
                 workspace.DzdcImag,
-                roots);
+                roots,
+                largeStageCount >= 2u   ? stageCount - 2u
+                : largeStageCount == 1u ? 10u
+                                        : stageCount);
             FusedAlignedPointwiseTransform<SharkFloatParams, SharkNTT::Multiway::FourWay>(
                 grid,
                 block,
@@ -5883,22 +6391,87 @@ ExecuteReference2Iteration(cooperative_groups::grid_group &grid,
                 hasFlag(HpSharkReference2PlanDzdcP2),
                 hasFlag(HpSharkReference2PlanDzdcP3));
         } else {
-            PackAlignedInputsBatch(grid,
-                                   block,
-                                   debugCombo,
-                                   plan,
-                                   &zReal,
-                                   workspace.ZReal,
-                                   workspace.IgnoredPrecisionBits,
-                                   iterationPlan.ZRealCoefficientShift,
-                                   iterationPlan.ZRealResidualBitShift,
-                                   zReal.GetNegative(),
-                                   &zImag,
-                                   workspace.ZImag,
-                                   workspace.IgnoredPrecisionBits,
-                                   iterationPlan.ZImagCoefficientShift,
-                                   iterationPlan.ZImagResidualBitShift,
-                                   zImag.GetNegative());
+            if (largeStageCount == 0u) {
+                PackAlignedInputsBatch(grid,
+                                       block,
+                                       debugCombo,
+                                       plan,
+                                       roots.Reference2InputScaleR2,
+                                       &zReal,
+                                       workspace.ZReal,
+                                       workspace.IgnoredPrecisionBits,
+                                       iterationPlan.ZRealCoefficientShift,
+                                       iterationPlan.ZRealResidualBitShift,
+                                       zReal.GetNegative(),
+                                       &zImag,
+                                       workspace.ZImag,
+                                       workspace.IgnoredPrecisionBits,
+                                       iterationPlan.ZImagCoefficientShift,
+                                       iterationPlan.ZImagResidualBitShift,
+                                       zImag.GetNegative());
+            } else if (largeStageCount >= 2u) {
+                PackAlignedForwardDIFLargeStages<SharkFloatParams>(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   plan,
+                                                                   roots,
+                                                                   roots.Reference2InputScaleR2,
+                                                                   &zReal,
+                                                                   workspace.ZReal,
+                                                                   workspace.IgnoredPrecisionBits,
+                                                                   iterationPlan.ZRealCoefficientShift,
+                                                                   iterationPlan.ZRealResidualBitShift,
+                                                                   zReal.GetNegative(),
+                                                                   &zImag,
+                                                                   workspace.ZImag,
+                                                                   workspace.IgnoredPrecisionBits,
+                                                                   iterationPlan.ZImagCoefficientShift,
+                                                                   iterationPlan.ZImagResidualBitShift,
+                                                                   zImag.GetNegative(),
+                                                                   nullptr,
+                                                                   nullptr,
+                                                                   0u,
+                                                                   0u,
+                                                                   0u,
+                                                                   false,
+                                                                   nullptr,
+                                                                   nullptr,
+                                                                   0u,
+                                                                   0u,
+                                                                   0u,
+                                                                   false);
+            } else {
+                PackAlignedForwardDIFRadix2<SharkFloatParams>(grid,
+                                                              block,
+                                                              debugCombo,
+                                                              plan,
+                                                              roots,
+                                                              roots.Reference2InputScaleR2,
+                                                              &zReal,
+                                                              workspace.ZReal,
+                                                              workspace.IgnoredPrecisionBits,
+                                                              iterationPlan.ZRealCoefficientShift,
+                                                              iterationPlan.ZRealResidualBitShift,
+                                                              zReal.GetNegative(),
+                                                              &zImag,
+                                                              workspace.ZImag,
+                                                              workspace.IgnoredPrecisionBits,
+                                                              iterationPlan.ZImagCoefficientShift,
+                                                              iterationPlan.ZImagResidualBitShift,
+                                                              zImag.GetNegative(),
+                                                              nullptr,
+                                                              nullptr,
+                                                              0u,
+                                                              0u,
+                                                              0u,
+                                                              false,
+                                                              nullptr,
+                                                              nullptr,
+                                                              0u,
+                                                              0u,
+                                                              0u,
+                                                              false);
+            }
             SharkNTT::ForwardDIFLargeStages<SharkFloatParams, SharkNTT::Multiway::TwoWay>(
                 sharedData,
                 grid,
@@ -5908,7 +6481,10 @@ ExecuteReference2Iteration(cooperative_groups::grid_group &grid,
                 workspace.ZImag,
                 nullptr,
                 nullptr,
-                roots);
+                roots,
+                largeStageCount >= 2u   ? stageCount - 2u
+                : largeStageCount == 1u ? 10u
+                                        : stageCount);
             FusedAlignedPointwiseTransform<SharkFloatParams, SharkNTT::Multiway::TwoWay>(
                 grid,
                 block,
@@ -5944,7 +6520,8 @@ ExecuteReference2Iteration(cooperative_groups::grid_group &grid,
                 workspace.DzdcRealOutput,
                 workspace.DzdcImagOutput,
                 roots);
-            UnpackAlignedResiduesToSignedLimbsBatch<SharkFloatParams>(
+            UnpackAlignedResiduesToSignedLimbsBatch<SharkFloatParams,
+                                                    AlignedUnpackMode::StandardResidue>(
                 grid,
                 block,
                 debugCombo,
@@ -5990,7 +6567,8 @@ ExecuteReference2Iteration(cooperative_groups::grid_group &grid,
                 nullptr,
                 nullptr,
                 roots);
-            UnpackAlignedResiduesToSignedLimbsBatch(
+            UnpackAlignedResiduesToSignedLimbsBatch<SharkFloatParams,
+                                                    AlignedUnpackMode::StandardResidue>(
                 grid,
                 block,
                 debugCombo,

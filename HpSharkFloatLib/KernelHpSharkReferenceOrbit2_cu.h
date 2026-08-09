@@ -1627,6 +1627,72 @@ GatherLinearToSignedLimbsBatch(cooperative_groups::grid_group &grid,
 }
 
 template <class SharkFloatParams>
+__device__ void UnpackAlignedResiduesToSignedLimbsB16(cooperative_groups::grid_group &grid,
+                                                      cooperative_groups::thread_block &block,
+                                                      DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                                      const uint64_t *spectrum,
+                                                      const SharkNTT::PlanPrime &plan,
+                                                      const SharkNTT::RootTables &roots,
+                                                      uint32_t coefficientCount,
+                                                      uint64_t productBitOffset,
+                                                      const HpSharkFloat<SharkFloatParams> *linearValue,
+                                                      uint32_t linearInputBitOffset,
+                                                      uint64_t linearBitOffset,
+                                                      int64_t *limbs,
+                                                      uint32_t limbCount);
+
+template <class SharkFloatParams>
+__device__ void
+UnpackAlignedResiduesToSignedLimbsOne(cooperative_groups::grid_group &grid,
+                                      cooperative_groups::thread_block &block,
+                                      DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                      const uint64_t *spectrum,
+                                      const SharkNTT::PlanPrime &plan,
+                                      const SharkNTT::RootTables &roots,
+                                      uint32_t coefficientCount,
+                                      uint64_t productBitOffset,
+                                      const HpSharkFloat<SharkFloatParams> *linearValue,
+                                      uint32_t linearInputBitOffset,
+                                      uint64_t linearBitOffset,
+                                      int64_t *limbs,
+                                      uint32_t limbCount)
+{
+    if (plan.b == 16) {
+        UnpackAlignedResiduesToSignedLimbsB16(grid,
+                                              block,
+                                              debugCombo,
+                                              spectrum,
+                                              plan,
+                                              roots,
+                                              coefficientCount,
+                                              productBitOffset,
+                                              linearValue,
+                                              linearInputBitOffset,
+                                              linearBitOffset,
+                                              limbs,
+                                              limbCount);
+        return;
+    }
+
+    const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t limbIndex = GridThreadRank(block); limbIndex < limbCount; limbIndex += gridSize) {
+        limbs[limbIndex] = UnpackAlignedResidueLimbContribution(grid,
+                                                                block,
+                                                                debugCombo,
+                                                                spectrum,
+                                                                plan,
+                                                                roots,
+                                                                coefficientCount,
+                                                                productBitOffset,
+                                                                linearValue,
+                                                                linearInputBitOffset,
+                                                                linearBitOffset,
+                                                                limbIndex);
+    }
+}
+
+template <class SharkFloatParams>
 __device__ void
 UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         cooperative_groups::thread_block &block,
@@ -1649,34 +1715,32 @@ UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         int64_t *limbs1,
                                         uint32_t limbCount)
 {
-    const uint32_t rank = GridThreadRank(block);
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t limbIndex = rank; limbIndex < limbCount; limbIndex += gridSize) {
-        limbs0[limbIndex] = UnpackAlignedResidueLimbContribution(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum0,
-                                                                 plan,
-                                                                 roots,
-                                                                 coefficientCount0,
-                                                                 productBitOffset0,
-                                                                 linearValue0,
-                                                                 linearInputBitOffset0,
-                                                                 linearBitOffset0,
-                                                                 limbIndex);
-        limbs1[limbIndex] = UnpackAlignedResidueLimbContribution(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum1,
-                                                                 plan,
-                                                                 roots,
-                                                                 coefficientCount1,
-                                                                 productBitOffset1,
-                                                                 linearValue1,
-                                                                 linearInputBitOffset1,
-                                                                 linearBitOffset1,
-                                                                 limbIndex);
-    }
+    UnpackAlignedResiduesToSignedLimbsOne(grid,
+                                          block,
+                                          debugCombo,
+                                          spectrum0,
+                                          plan,
+                                          roots,
+                                          coefficientCount0,
+                                          productBitOffset0,
+                                          linearValue0,
+                                          linearInputBitOffset0,
+                                          linearBitOffset0,
+                                          limbs0,
+                                          limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne(grid,
+                                          block,
+                                          debugCombo,
+                                          spectrum1,
+                                          plan,
+                                          roots,
+                                          coefficientCount1,
+                                          productBitOffset1,
+                                          linearValue1,
+                                          linearInputBitOffset1,
+                                          linearBitOffset1,
+                                          limbs1,
+                                          limbCount);
 }
 
 template <class SharkFloatParams>
@@ -1716,58 +1780,58 @@ UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         int64_t *limbs3,
                                         uint32_t limbCount)
 {
-    const uint32_t rank = GridThreadRank(block);
-    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-    for (uint32_t limbIndex = rank; limbIndex < limbCount; limbIndex += gridSize) {
-        limbs0[limbIndex] = UnpackAlignedResidueLimbContribution(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum0,
-                                                                 plan,
-                                                                 roots,
-                                                                 coefficientCount0,
-                                                                 productBitOffset0,
-                                                                 linearValue0,
-                                                                 linearInputBitOffset0,
-                                                                 linearBitOffset0,
-                                                                 limbIndex);
-        limbs1[limbIndex] = UnpackAlignedResidueLimbContribution(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum1,
-                                                                 plan,
-                                                                 roots,
-                                                                 coefficientCount1,
-                                                                 productBitOffset1,
-                                                                 linearValue1,
-                                                                 linearInputBitOffset1,
-                                                                 linearBitOffset1,
-                                                                 limbIndex);
-        limbs2[limbIndex] = UnpackAlignedResidueLimbContribution(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum2,
-                                                                 plan,
-                                                                 roots,
-                                                                 coefficientCount2,
-                                                                 productBitOffset2,
-                                                                 linearValue2,
-                                                                 linearInputBitOffset2,
-                                                                 linearBitOffset2,
-                                                                 limbIndex);
-        limbs3[limbIndex] = UnpackAlignedResidueLimbContribution(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 spectrum3,
-                                                                 plan,
-                                                                 roots,
-                                                                 coefficientCount3,
-                                                                 productBitOffset3,
-                                                                 linearValue3,
-                                                                 linearInputBitOffset3,
-                                                                 linearBitOffset3,
-                                                                 limbIndex);
-    }
+    UnpackAlignedResiduesToSignedLimbsOne(grid,
+                                          block,
+                                          debugCombo,
+                                          spectrum0,
+                                          plan,
+                                          roots,
+                                          coefficientCount0,
+                                          productBitOffset0,
+                                          linearValue0,
+                                          linearInputBitOffset0,
+                                          linearBitOffset0,
+                                          limbs0,
+                                          limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne(grid,
+                                          block,
+                                          debugCombo,
+                                          spectrum1,
+                                          plan,
+                                          roots,
+                                          coefficientCount1,
+                                          productBitOffset1,
+                                          linearValue1,
+                                          linearInputBitOffset1,
+                                          linearBitOffset1,
+                                          limbs1,
+                                          limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne(grid,
+                                          block,
+                                          debugCombo,
+                                          spectrum2,
+                                          plan,
+                                          roots,
+                                          coefficientCount2,
+                                          productBitOffset2,
+                                          linearValue2,
+                                          linearInputBitOffset2,
+                                          linearBitOffset2,
+                                          limbs2,
+                                          limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne(grid,
+                                          block,
+                                          debugCombo,
+                                          spectrum3,
+                                          plan,
+                                          roots,
+                                          coefficientCount3,
+                                          productBitOffset3,
+                                          linearValue3,
+                                          linearInputBitOffset3,
+                                          linearBitOffset3,
+                                          limbs3,
+                                          limbCount);
 }
 
 static __device__ SharkForceInlineReleaseOnly uint64_t
@@ -1784,6 +1848,284 @@ ShuffleUpUint64(unsigned mask, uint64_t value, unsigned delta)
     const uint32_t low = __shfl_up_sync(mask, static_cast<uint32_t>(value), delta);
     const uint32_t high = __shfl_up_sync(mask, static_cast<uint32_t>(value >> 32), delta);
     return (static_cast<uint64_t>(high) << 32) | low;
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly uint64_t
+NormalizeB16ResidueForTile(cooperative_groups::grid_group &grid,
+                           cooperative_groups::thread_block &block,
+                           DebugGlobalCount<SharkFloatParams> *debugCombo,
+                           const uint64_t *spectrum,
+                           const SharkNTT::RootTables &roots,
+                           uint32_t coefficientCount,
+                           uint64_t firstCoefficient,
+                           uint64_t lastCoefficient,
+                           int64_t coefficientIndex)
+{
+    if (coefficientIndex < 0)
+        return 0;
+    const uint64_t index = static_cast<uint64_t>(coefficientIndex);
+    if (index < firstCoefficient || index > lastCoefficient || index >= coefficientCount)
+        return 0;
+    return SharkNTT::MontgomeryMul<SharkFloatParams>(
+        grid, block, debugCombo, spectrum[index], roots.Ninv);
+}
+
+template <class SharkFloatParams>
+__device__ void
+UnpackAlignedResiduesToSignedLimbsB16(cooperative_groups::grid_group &grid,
+                                      cooperative_groups::thread_block &block,
+                                      DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                      const uint64_t *spectrum,
+                                      const SharkNTT::PlanPrime &plan,
+                                      const SharkNTT::RootTables &roots,
+                                      uint32_t coefficientCount,
+                                      uint64_t productBitOffset,
+                                      const HpSharkFloat<SharkFloatParams> *linearValue,
+                                      uint32_t linearInputBitOffset,
+                                      uint64_t linearBitOffset,
+                                      int64_t *limbs,
+                                      uint32_t limbCount)
+{
+    MattsCudaAssert(plan.b == 16);
+    constexpr uint32_t WarpSize = 32u;
+    constexpr unsigned FullWarpMask = 0xFFFF'FFFFu;
+    const uint32_t threadIndex = block.thread_index().x;
+    const uint32_t laneIndex = threadIndex & (WarpSize - 1u);
+    const uint32_t warpIndexInBlock = threadIndex / WarpSize;
+    const uint32_t warpsPerBlock = static_cast<uint32_t>(block.dim_threads().x / WarpSize);
+    const uint32_t globalWarpIndex =
+        static_cast<uint32_t>(block.group_index().x) * warpsPerBlock + warpIndexInBlock;
+    const uint32_t gridWarpCount = static_cast<uint32_t>(grid.size() / WarpSize);
+    const uint32_t tileCount = (limbCount + WarpSize - 1u) / WarpSize;
+    const int64_t productLimbOffset = static_cast<int64_t>(productBitOffset >> 5u);
+    const uint32_t productResidualBitOffset = static_cast<uint32_t>(productBitOffset & 31ull);
+    const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
+
+    for (uint32_t tileIndex = globalWarpIndex; tileIndex < tileCount; tileIndex += gridWarpCount) {
+        const uint32_t limbBegin = tileIndex * WarpSize;
+        const uint32_t remainingLimbs = limbCount - limbBegin;
+        const uint32_t tileLimbCount = remainingLimbs < WarpSize ? remainingLimbs : WarpSize;
+        const uint32_t limbEnd = limbBegin + tileLimbCount - 1u;
+        const uint32_t limbIndex = limbBegin + laneIndex;
+        const bool limbIsValid = laneIndex < tileLimbCount;
+
+        const uint64_t firstBit = limbBegin >= 3u ? static_cast<uint64_t>(limbBegin - 3u) * 32ull : 0ull;
+        const uint64_t lastBit = (static_cast<uint64_t>(limbEnd) + 1ull) * 32ull - 1ull;
+        const bool productOverlapsTile = productBitOffset <= lastBit;
+        uint64_t firstCoefficient = 0;
+        uint64_t lastCoefficient = 0;
+        if (productOverlapsTile) {
+            firstCoefficient =
+                firstBit > productBitOffset ? (firstBit - productBitOffset + 15ull) / 16ull : 0ull;
+            lastCoefficient = (lastBit - productBitOffset) / 16ull;
+            if (coefficientCount != 0u && lastCoefficient >= coefficientCount)
+                lastCoefficient = static_cast<uint64_t>(coefficientCount - 1u);
+        }
+        const bool hasProduct = productOverlapsTile && coefficientCount != 0u &&
+                                firstCoefficient <= lastCoefficient &&
+                                firstCoefficient < coefficientCount;
+
+        int64_t total = limbIsValid ? SignedLinearLimbContribution(
+                                          linearValue, linearInputBitOffset, linearBitOffset, limbIndex)
+                                    : 0;
+        if (hasProduct) {
+            const int64_t pairIndex = static_cast<int64_t>(limbIndex) - productLimbOffset;
+            const int64_t localEvenCoefficient = pairIndex * 2ll;
+            const int64_t localOddCoefficient = localEvenCoefficient + 1ll;
+            const uint64_t evenResidue =
+                NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             spectrum,
+                                                             roots,
+                                                             coefficientCount,
+                                                             firstCoefficient,
+                                                             lastCoefficient,
+                                                             localEvenCoefficient);
+            const uint64_t oddResidue =
+                NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             spectrum,
+                                                             roots,
+                                                             coefficientCount,
+                                                             firstCoefficient,
+                                                             lastCoefficient,
+                                                             localOddCoefficient);
+
+            uint64_t haloEven1 = 0;
+            uint64_t haloEven2 = 0;
+            uint64_t haloEven3 = 0;
+            uint64_t haloOdd1 = 0;
+            uint64_t haloOdd2 = 0;
+            uint64_t haloOdd3 = 0;
+            uint64_t haloOdd4 = 0;
+            if (laneIndex == 0u) {
+                const int64_t tilePairIndex = static_cast<int64_t>(limbBegin) - productLimbOffset;
+                haloEven1 = NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                                         block,
+                                                                         debugCombo,
+                                                                         spectrum,
+                                                                         roots,
+                                                                         coefficientCount,
+                                                                         firstCoefficient,
+                                                                         lastCoefficient,
+                                                                         (tilePairIndex - 1ll) * 2ll);
+                haloEven2 = NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                                         block,
+                                                                         debugCombo,
+                                                                         spectrum,
+                                                                         roots,
+                                                                         coefficientCount,
+                                                                         firstCoefficient,
+                                                                         lastCoefficient,
+                                                                         (tilePairIndex - 2ll) * 2ll);
+                haloEven3 = NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                                         block,
+                                                                         debugCombo,
+                                                                         spectrum,
+                                                                         roots,
+                                                                         coefficientCount,
+                                                                         firstCoefficient,
+                                                                         lastCoefficient,
+                                                                         (tilePairIndex - 3ll) * 2ll);
+                haloOdd1 =
+                    NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                                 block,
+                                                                 debugCombo,
+                                                                 spectrum,
+                                                                 roots,
+                                                                 coefficientCount,
+                                                                 firstCoefficient,
+                                                                 lastCoefficient,
+                                                                 (tilePairIndex - 1ll) * 2ll + 1ll);
+                haloOdd2 =
+                    NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                                 block,
+                                                                 debugCombo,
+                                                                 spectrum,
+                                                                 roots,
+                                                                 coefficientCount,
+                                                                 firstCoefficient,
+                                                                 lastCoefficient,
+                                                                 (tilePairIndex - 2ll) * 2ll + 1ll);
+                haloOdd3 =
+                    NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                                 block,
+                                                                 debugCombo,
+                                                                 spectrum,
+                                                                 roots,
+                                                                 coefficientCount,
+                                                                 firstCoefficient,
+                                                                 lastCoefficient,
+                                                                 (tilePairIndex - 3ll) * 2ll + 1ll);
+                haloOdd4 =
+                    NormalizeB16ResidueForTile<SharkFloatParams>(grid,
+                                                                 block,
+                                                                 debugCombo,
+                                                                 spectrum,
+                                                                 roots,
+                                                                 coefficientCount,
+                                                                 firstCoefficient,
+                                                                 lastCoefficient,
+                                                                 (tilePairIndex - 4ll) * 2ll + 1ll);
+            }
+
+            const uint64_t broadcastHaloEven1 = ShuffleUint64(FullWarpMask, haloEven1, 0);
+            const uint64_t broadcastHaloEven2 = ShuffleUint64(FullWarpMask, haloEven2, 0);
+            const uint64_t broadcastHaloEven3 = ShuffleUint64(FullWarpMask, haloEven3, 0);
+            const uint64_t broadcastHaloOdd1 = ShuffleUint64(FullWarpMask, haloOdd1, 0);
+            const uint64_t broadcastHaloOdd2 = ShuffleUint64(FullWarpMask, haloOdd2, 0);
+            const uint64_t broadcastHaloOdd3 = ShuffleUint64(FullWarpMask, haloOdd3, 0);
+            const uint64_t broadcastHaloOdd4 = ShuffleUint64(FullWarpMask, haloOdd4, 0);
+
+            for (uint32_t distance = 0; distance < 4u; ++distance) {
+                const int sourceLane = static_cast<int>(laneIndex) - static_cast<int>(distance);
+                const int safeSourceLane = sourceLane >= 0 ? sourceLane : 0;
+                uint64_t even = ShuffleUint64(FullWarpMask, evenResidue, safeSourceLane);
+                uint64_t odd = 0;
+                if (sourceLane < 0) {
+                    switch (distance) {
+                        case 1u:
+                            even = broadcastHaloEven1;
+                            break;
+                        case 2u:
+                            even = broadcastHaloEven2;
+                            break;
+                        default:
+                            even = broadcastHaloEven3;
+                            break;
+                    }
+                }
+
+                if (productResidualBitOffset < 16u) {
+                    odd = ShuffleUint64(FullWarpMask, oddResidue, safeSourceLane);
+                    if (sourceLane < 0) {
+                        switch (distance) {
+                            case 1u:
+                                odd = broadcastHaloOdd1;
+                                break;
+                            case 2u:
+                                odd = broadcastHaloOdd2;
+                                break;
+                            default:
+                                odd = broadcastHaloOdd3;
+                                break;
+                        }
+                    }
+                } else {
+                    const int oddSourceLane = sourceLane - 1;
+                    const int safeOddSourceLane = oddSourceLane >= 0 ? oddSourceLane : 0;
+                    odd = ShuffleUint64(FullWarpMask, oddResidue, safeOddSourceLane);
+                    if (oddSourceLane < 0) {
+                        switch (distance) {
+                            case 0u:
+                                odd = broadcastHaloOdd1;
+                                break;
+                            case 1u:
+                                odd = broadcastHaloOdd2;
+                                break;
+                            case 2u:
+                                odd = broadcastHaloOdd3;
+                                break;
+                            default:
+                                odd = broadcastHaloOdd4;
+                                break;
+                        }
+                    }
+                }
+
+                if (limbIsValid) {
+                    const int64_t evenPairIndex = pairIndex - static_cast<int64_t>(distance);
+                    if (evenPairIndex >= 0) {
+                        const uint64_t evenCoefficientIndex =
+                            static_cast<uint64_t>(evenPairIndex) * 2ull;
+                        if (evenCoefficientIndex < coefficientCount)
+                            total += SignedResidueContribution(
+                                even, evenCoefficientIndex, limbIndex, 16u, halfPrime, productBitOffset);
+
+                        const int64_t oddPairIndex =
+                            productResidualBitOffset < 16u ? evenPairIndex : evenPairIndex - 1ll;
+                        if (oddPairIndex >= 0) {
+                            const uint64_t oddCoefficientIndex =
+                                static_cast<uint64_t>(oddPairIndex) * 2ull + 1ull;
+                            if (oddCoefficientIndex < coefficientCount)
+                                total += SignedResidueContribution(odd,
+                                                                   oddCoefficientIndex,
+                                                                   limbIndex,
+                                                                   16u,
+                                                                   halfPrime,
+                                                                   productBitOffset);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (limbIsValid)
+            limbs[limbIndex] = total;
+    }
 }
 
 template <int ContributionPart>
@@ -4630,11 +4972,26 @@ FusedReferenceOrbitStep(cooperative_groups::grid_group &grid,
     InitializeCarryPrefixTransformsDLB<SharkFloatParams>(
         grid, block, limbCount, carryPrefixCapacity, carryPrefixDescriptors, carryPrefixShared);
 
-    const uint32_t realCoefficientCount = realProductTerm.IsZero ? 0u : activeN;
-    const uint32_t imagCoefficientCount = imagProductTerm.IsZero ? 0u : activeN;
+    MattsCudaAssert(realRequiredCoefficients <= activeN);
+    MattsCudaAssert(imagRequiredCoefficients <= activeN);
+    const uint32_t realCoefficientCount =
+        realProductTerm.IsZero ? 0u : static_cast<uint32_t>(realRequiredCoefficients);
+    const uint32_t imagCoefficientCount =
+        imagProductTerm.IsZero ? 0u : static_cast<uint32_t>(imagRequiredCoefficients);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        const uint64_t derivativeRequiredCoefficients =
+            derivativeP1RequiredCoefficients > derivativeP2RequiredCoefficients
+                ? (derivativeP1RequiredCoefficients > derivativeP3RequiredCoefficients
+                       ? derivativeP1RequiredCoefficients
+                       : derivativeP3RequiredCoefficients)
+                : (derivativeP2RequiredCoefficients > derivativeP3RequiredCoefficients
+                       ? derivativeP2RequiredCoefficients
+                       : derivativeP3RequiredCoefficients);
+        MattsCudaAssert(derivativeRequiredCoefficients <= activeN);
         const uint32_t dzdcCoefficientCount =
-            dzdcP1Term.IsZero && dzdcP2Term.IsZero && dzdcP3Term.IsZero ? 0u : activeN;
+            dzdcP1Term.IsZero && dzdcP2Term.IsZero && dzdcP3Term.IsZero
+                ? 0u
+                : static_cast<uint32_t>(derivativeRequiredCoefficients);
         InverseAlignedSpectraToSignedLimbsBatch<SharkFloatParams>(
             grid,
             block,

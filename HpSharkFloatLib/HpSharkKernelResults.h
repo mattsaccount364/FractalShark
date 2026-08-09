@@ -73,6 +73,56 @@ struct alignas(16) HpSharkReference2PackedCarryPrefixDescriptor {
     uint32_t Padding;
 };
 
+enum class HpSharkReference2IterationKind : uint32_t {
+    Zero = 0u,
+    LinearOnly = 1u,
+    Ntt = 2u,
+};
+
+constexpr uint32_t HpSharkReference2PlanRealProduct = 1u << 0;
+constexpr uint32_t HpSharkReference2PlanImagProduct = 1u << 1;
+constexpr uint32_t HpSharkReference2PlanDzdcP1 = 1u << 2;
+constexpr uint32_t HpSharkReference2PlanDzdcP2 = 1u << 3;
+constexpr uint32_t HpSharkReference2PlanDzdcP3 = 1u << 4;
+constexpr uint32_t HpSharkReference2PlanRealLinear = 1u << 5;
+constexpr uint32_t HpSharkReference2PlanImagLinear = 1u << 6;
+constexpr uint32_t HpSharkReference2PlanDzdcOne = 1u << 7;
+
+struct alignas(16) HpSharkReference2IterationPlan {
+    uint32_t Kind;
+    uint32_t PlanSlot;
+    uint32_t ActiveN;
+    uint32_t LimbCount;
+    uint32_t Flags;
+
+    uint32_t ZRealCoefficientShift;
+    uint32_t ZImagCoefficientShift;
+    uint32_t DzdcRealCoefficientShift;
+    uint32_t DzdcImagCoefficientShift;
+    uint32_t ZRealResidualBitShift;
+    uint32_t ZImagResidualBitShift;
+    uint32_t DzdcRealResidualBitShift;
+    uint32_t DzdcImagResidualBitShift;
+
+    uint32_t RealCoefficientCount;
+    uint32_t ImagCoefficientCount;
+    uint32_t DzdcRealCoefficientCount;
+    uint32_t DzdcImagCoefficientCount;
+
+    int32_t RealExponent;
+    int32_t ImagExponent;
+    int32_t DzdcRealExponent;
+    int32_t DzdcImagExponent;
+
+    uint64_t RealProductBitOffset;
+    uint64_t ImagProductBitOffset;
+    uint64_t DzdcRealProductBitOffset;
+    uint64_t DzdcImagProductBitOffset;
+    uint64_t RealLinearBitOffset;
+    uint64_t ImagLinearBitOffset;
+    uint64_t DzdcRealLinearBitOffset;
+};
+
 template <class SharkFloatParams> struct HpSharkReference2Workspace {
     static constexpr uint32_t MaxFusedN = 32u * 1024u * 1024u;
     static constexpr uint32_t MaxFusedStages = 25;
@@ -118,6 +168,7 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     uint32_t ActiveMaxFusedLimbs;
     uint32_t ActiveMaxCarryPrefixParts;
     uint32_t ActivePlanCacheEntryCount;
+    HpSharkReference2IterationPlan IterationPlan;
 };
 
 template <class SharkFloatParams>

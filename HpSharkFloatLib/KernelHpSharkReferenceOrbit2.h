@@ -21,7 +21,4 @@ CUDA_GLOBAL void HpSharkReference2GpuLoop(HpSharkReferenceResults<SharkFloatPara
 
 template <class SharkFloatParams>
 CUDA_GLOBAL void HpSharkReference2SetupKernel(HpSharkReference2Workspace<SharkFloatParams> *workspace,
-                                              const HpSharkFloat<SharkFloatParams> *cReal,
-                                              const HpSharkFloat<SharkFloatParams> *cImag,
-                                              const HpSharkFloat<SharkFloatParams> *one,
                                               uint64_t *tempData);

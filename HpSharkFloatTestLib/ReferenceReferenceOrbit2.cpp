@@ -148,7 +148,6 @@ template <class SharkFloatParams> struct FusedPlanCacheTraits {
         SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L));
     static constexpr uint32_t MinFusedStages = SharkNTT::CeilLog2U32(MinFusedN);
     static constexpr uint32_t EntryCount = MaxFusedStages - MinFusedStages + 1u;
-    static constexpr uint32_t FusedArenaSize = 2u * MaxFusedN - MinFusedN;
 
     static_assert(MinFusedN >= 2u && (MinFusedN & (MinFusedN - 1u)) == 0u);
     static_assert(EntryCount <= 32u);
@@ -157,11 +156,8 @@ template <class SharkFloatParams> struct FusedPlanCacheTraits {
 struct FusedWorkspace {
     uint64_t *ZReal;
     uint64_t *ZImag;
-    uint64_t *CReal;
-    uint64_t *CImag;
     uint64_t *DzdcReal;
     uint64_t *DzdcImag;
-    uint64_t *One;
     uint64_t *RealOutput;
     uint64_t *ImagOutput;
     uint64_t *DzdcRealOutput;
@@ -175,7 +171,6 @@ struct FusedWorkspace {
     uint32_t *Magnitude;
     SharkNTT::PlanPrime *Plans;
     SharkNTT::RootTables *PlanRoots;
-    HpSharkReference2ConstantSpectra *ConstantSpectra;
     uint32_t ActiveMinFusedN;
     uint32_t ActiveMaxFusedN;
     uint32_t ActiveMinFusedStages;
@@ -188,11 +183,8 @@ template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
 
     std::unique_ptr<uint64_t[]> ZReal;
     std::unique_ptr<uint64_t[]> ZImag;
-    std::unique_ptr<uint64_t[]> CRealArena;
-    std::unique_ptr<uint64_t[]> CImagArena;
     std::unique_ptr<uint64_t[]> DzdcReal;
     std::unique_ptr<uint64_t[]> DzdcImag;
-    std::unique_ptr<uint64_t[]> OneArena;
     std::unique_ptr<uint64_t[]> RealOutput;
     std::unique_ptr<uint64_t[]> ImagOutput;
     std::unique_ptr<uint64_t[]> DzdcRealOutput;
@@ -206,7 +198,6 @@ template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
     std::unique_ptr<uint32_t[]> Magnitude;
     std::unique_ptr<uint64_t[]> StageOmegas;
     std::unique_ptr<uint64_t[]> StageOmegasInverse;
-    std::unique_ptr<uint64_t[]> OmegaPowersArena;
     std::unique_ptr<uint64_t[]> ForwardTwiddles;
     std::unique_ptr<uint64_t[]> InverseTwiddles;
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OrbitZReal;
@@ -224,7 +215,6 @@ template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OutputDzdcImag;
     SharkNTT::PlanPrime Plans[Cache::EntryCount]{};
     SharkNTT::RootTables PlanRoots[Cache::EntryCount]{};
-    HpSharkReference2ConstantSpectra ConstantSpectra[Cache::EntryCount]{};
     uint32_t ActiveMinFusedN = Cache::MinFusedN;
     uint32_t ActiveMaxFusedN = MaxFusedN;
     uint32_t ActiveMinFusedStages = Cache::MinFusedStages;
@@ -250,8 +240,6 @@ EnsureGlobalFusedWorkspace()
     if (!global.ZReal) {
         global.ZReal = std::make_unique<uint64_t[]>(MaxFusedN);
         global.ZImag = std::make_unique<uint64_t[]>(MaxFusedN);
-        global.CRealArena = std::make_unique<uint64_t[]>(Cache::FusedArenaSize);
-        global.CImagArena = std::make_unique<uint64_t[]>(Cache::FusedArenaSize);
         global.RealOutput = std::make_unique<uint64_t[]>(MaxFusedN);
         global.ImagOutput = std::make_unique<uint64_t[]>(MaxFusedN);
         global.DzdcRealOutput = std::make_unique<uint64_t[]>(MaxFusedN);
@@ -265,13 +253,11 @@ EnsureGlobalFusedWorkspace()
         global.Magnitude = std::make_unique<uint32_t[]>(MaxFusedLimbs);
         global.StageOmegas = std::make_unique<uint64_t[]>(MaxFusedStages);
         global.StageOmegasInverse = std::make_unique<uint64_t[]>(MaxFusedStages);
-        global.OmegaPowersArena = std::make_unique<uint64_t[]>(Cache::FusedArenaSize);
         global.ForwardTwiddles = std::make_unique<uint64_t[]>(MaxFusedN);
         global.InverseTwiddles = std::make_unique<uint64_t[]>(MaxFusedN);
         for (uint32_t slot = 0; slot < Cache::EntryCount; ++slot) {
             const uint32_t stages = Cache::MinFusedStages + slot;
             const uint32_t n = 1u << stages;
-            const uint32_t arenaOffset = n - Cache::MinFusedN;
             global.Plans[slot] = {SharkFloatParams::NTTPlan2.n32,
                                   SharkFloatParams::NTTPlan2.b,
                                   SharkFloatParams::NTTPlan2.L,
@@ -284,14 +270,12 @@ EnsureGlobalFusedWorkspace()
                                       static_cast<int32_t>(n),
                                       nullptr,
                                       nullptr,
-                                      global.OmegaPowersArena.get() + arenaOffset,
+                                      nullptr,
                                       0,
                                       0,
                                       global.ForwardTwiddles.get(),
                                       global.InverseTwiddles.get(),
                                       n - 1u};
-            global.ConstantSpectra[slot] = {
-                global.CRealArena.get() + arenaOffset, global.CImagArena.get() + arenaOffset, nullptr};
         }
     }
 
@@ -308,11 +292,6 @@ EnsureGlobalFusedWorkspace()
         if (!global.DzdcReal) {
             global.DzdcReal = std::make_unique<uint64_t[]>(MaxFusedN);
             global.DzdcImag = std::make_unique<uint64_t[]>(MaxFusedN);
-            global.OneArena = std::make_unique<uint64_t[]>(Cache::FusedArenaSize);
-            for (uint32_t slot = 0; slot < Cache::EntryCount; ++slot) {
-                const uint32_t n = 1u << (Cache::MinFusedStages + slot);
-                global.ConstantSpectra[slot].One = global.OneArena.get() + n - Cache::MinFusedN;
-            }
         }
         if (!global.OrbitDzdcReal) {
             global.OrbitDzdcReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -333,11 +312,8 @@ GetGlobalFusedWorkspace()
     auto &global = GetGlobalFusedWorkspaceStorage<SharkFloatParams>();
     return {global.ZReal.get(),
             global.ZImag.get(),
-            global.CRealArena.get(),
-            global.CImagArena.get(),
             global.DzdcReal.get(),
             global.DzdcImag.get(),
-            global.OneArena.get(),
             global.RealOutput.get(),
             global.ImagOutput.get(),
             global.DzdcRealOutput.get(),
@@ -351,7 +327,6 @@ GetGlobalFusedWorkspace()
             global.Magnitude.get(),
             global.Plans,
             global.PlanRoots,
-            global.ConstantSpectra,
             global.ActiveMinFusedN,
             global.ActiveMaxFusedN,
             global.ActiveMinFusedStages,
@@ -383,10 +358,6 @@ LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &pr
     if (deviceWorkspace.ValidPlanMask != fullPlanMask)
         throw FractalSharkSeriousException("Reference2 prepared tables are incomplete");
 
-    const uint32_t activeFusedArenaSize =
-        2u * deviceWorkspace.ActiveMaxFusedN - deviceWorkspace.ActiveMinFusedN;
-    const size_t globalArenaOffset = deviceWorkspace.ActiveMinFusedN - Cache::MinFusedN;
-
     const auto copy = [](void *destination, const void *source, size_t bytes, const char *operation) {
         HpShark::Reference2SetupDetail::CheckCuda(
             cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost), operation);
@@ -399,10 +370,6 @@ LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &pr
          deviceWorkspace.StageOmegasInverse,
          deviceWorkspace.ActiveMaxFusedStages * sizeof(uint64_t),
          "cudaMemcpy(Reference2 inverse stage omegas D2H)");
-    copy(global.OmegaPowersArena.get() + globalArenaOffset,
-         deviceWorkspace.OmegaPowersArena,
-         activeFusedArenaSize * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 omega arena D2H)");
     copy(global.ForwardTwiddles.get(),
          deviceWorkspace.ForwardTwiddles,
          deviceWorkspace.ActiveMaxFusedN * sizeof(uint64_t),
@@ -411,21 +378,6 @@ LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &pr
          deviceWorkspace.InverseTwiddles,
          deviceWorkspace.ActiveMaxFusedN * sizeof(uint64_t),
          "cudaMemcpy(Reference2 inverse twiddles D2H)");
-    copy(global.CRealArena.get() + globalArenaOffset,
-         deviceWorkspace.CRealArena,
-         activeFusedArenaSize * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 CReal spectra D2H)");
-    copy(global.CImagArena.get() + globalArenaOffset,
-         deviceWorkspace.CImagArena,
-         activeFusedArenaSize * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 CImag spectra D2H)");
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        copy(global.OneArena.get() + globalArenaOffset,
-             deviceWorkspace.OneArena,
-             activeFusedArenaSize * sizeof(uint64_t),
-             "cudaMemcpy(Reference2 One spectra D2H)");
-    }
-
     for (uint32_t index = 0; index < deviceWorkspace.ActivePlanCacheEntryCount; ++index) {
         const uint32_t slot = firstSlot + index;
         global.Plans[slot] = deviceWorkspace.Plans[slot];
@@ -643,6 +595,51 @@ MakeLinearTerm(const HpSharkFloat<SharkFloatParams> &a,
             aId};
 }
 
+template <class SharkFloatParams>
+static bool
+ResolveAlignedValueExponent(int32_t &commonExponent,
+                            const HpSharkFloat<SharkFloatParams> &value0,
+                            const HpSharkFloat<SharkFloatParams> &value1)
+{
+    const bool value0Zero = IsZero(value0);
+    const bool value1Zero = IsZero(value1);
+    if (value0Zero && value1Zero) {
+        commonExponent = 0;
+        return true;
+    }
+    if (value0Zero) {
+        commonExponent = value1.Exponent;
+        return false;
+    }
+    if (value1Zero) {
+        commonExponent = value0.Exponent;
+        return false;
+    }
+    commonExponent = std::min(value0.Exponent, value1.Exponent);
+    return false;
+}
+
+template <class SharkFloatParams>
+static FusedTerm<SharkFloatParams>
+MakeAlignedProductTerm(bool isZero, int32_t exponent, SpectrumId aId, SpectrumId bId)
+{
+    return {isZero, false, isZero ? 0 : exponent, TermKind::Product, aId, bId};
+}
+
+static uint64_t
+AlignedCoefficientShift(int32_t valueExponent, int32_t commonExponent, uint32_t bitsPerCoefficient)
+{
+    const int64_t shiftBits = static_cast<int64_t>(valueExponent) - commonExponent;
+    return shiftBits <= 0 ? 0ull : static_cast<uint64_t>(shiftBits) / bitsPerCoefficient;
+}
+
+template <class SharkFloatParams>
+static uint32_t
+LinearLimbCount()
+{
+    return (SharkFloatParams::GlobalNumUint32 * 32u + 31u) / 32u + 2u;
+}
+
 template <class SharkFloatParams, class... Terms>
 static bool
 ResolveCommonExponent(int32_t &commonExpOut,
@@ -695,7 +692,32 @@ ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &x, int64_t q, int b)
     return (b == 64) ? v : (v & ((1ull << b) - 1ull));
 }
 
-template <class SharkFloatParams, bool inverse>
+template <class SharkFloatParams>
+static uint64_t
+ReadAlignedBits(const HpSharkFloat<SharkFloatParams> &value,
+                uint32_t inputBitOffset,
+                int64_t sourceBit,
+                int bitCount)
+{
+    constexpr int TotalBits = SharkFloatParams::GlobalNumUint32 * 32;
+    const int64_t lowerBit = static_cast<int64_t>(inputBitOffset);
+    const int64_t upperBit = static_cast<int64_t>(TotalBits);
+    const int64_t sourceEnd = sourceBit + static_cast<int64_t>(bitCount);
+    if (sourceEnd <= lowerBit || sourceBit >= upperBit)
+        return 0;
+
+    const int64_t readStart = sourceBit < lowerBit ? lowerBit : sourceBit;
+    const int64_t readEnd = sourceEnd > upperBit ? upperBit : sourceEnd;
+    if (readStart >= readEnd)
+        return 0;
+
+    const int leadingZeroBits = static_cast<int>(readStart - sourceBit);
+    const int availableBits = static_cast<int>(readEnd - readStart);
+    const uint64_t valueBits = ReadBitsSimple(value, readStart, availableBits);
+    return valueBits << leadingZeroBits;
+}
+
+template <class SharkFloatParams, bool inverse, bool forwardDIF = false>
 static void
 NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
           uint64_t *a,
@@ -717,6 +739,52 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
     } else {
         stageOmegas = rootTables.stage_omegas;
         stageTwiddles = rootTables.stage_twiddles_fwd;
+    }
+
+    if constexpr (forwardDIF) {
+        static_assert(!inverse);
+        for (uint32_t s = stages; s >= 1; --s) {
+            const uint32_t m = 1u << s;
+            const uint32_t half = m >> 1;
+            const uint64_t wM = stageOmegas[s - 1];
+            const uint32_t numTwid = 1u << (s - 1);
+            const uint32_t twBase = numTwid - 1u;
+
+            for (uint32_t k = 0; k < N; k += m) {
+                for (uint32_t j = 0; j < half; ++j) {
+                    const uint32_t i0 = k + j;
+                    const uint32_t i1 = i0 + half;
+                    const uint64_t u = a[i0];
+                    const uint64_t v = a[i1];
+                    const uint64_t w = stageTwiddles[twBase + j];
+                    const uint64_t sum = AddP(u, v);
+                    const uint64_t difference = SubP(u, v);
+                    const uint64_t product = SharkNTT::MontgomeryMul(debugCombo, difference, w);
+                    a[i0] = sum;
+                    a[i1] = product;
+                    if (IsDebugTraceEnabled()) {
+                        std::cout << "  forward DIF butterfly"
+                                  << " stage=" << s << " k=" << k << " j=" << j << " i0=" << i0
+                                  << " i1=" << i1;
+                        PrintHexValue("omega", wM);
+                        PrintHexValue("u", u);
+                        PrintHexValue("v", v);
+                        PrintHexValue("twiddle", w);
+                        PrintHexValue("sum", sum);
+                        PrintHexValue("difference", difference);
+                        PrintHexValue("product", product);
+                        std::cout << '\n';
+                    }
+                }
+            }
+            if (IsDebugTraceEnabled()) {
+                std::cout << "  forward DIF stage " << s << " output\n";
+                PrintArray("spectrum", a, N);
+            }
+            if (s == 1)
+                break;
+        }
+        return;
     }
 
     for (uint32_t s = 1; s <= stages; ++s) {
@@ -786,20 +854,75 @@ PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                       x, static_cast<int64_t>(inputBitOffset) + static_cast<int64_t>(i) * plan.b, plan.b)
                 : 0;
         const uint64_t coeffMont = SharkNTT::ToMontgomery(debugCombo, coeff % SharkNTT::MagicPrime);
-        const uint32_t reverseIndex = ReverseBits32(i, static_cast<int>(plan.stages));
-        out[reverseIndex] = coeffMont;
+        out[i] = coeffMont;
         if (i < static_cast<uint32_t>(plan.L) && IsDebugTraceEnabled()) {
             std::cout << "  pack coefficient index=" << i;
             PrintHexValue("coefficient", coeff);
             PrintHexValue("coefficientMont", coeffMont);
-            PrintHexValue("packed", out[reverseIndex]);
+            PrintHexValue("packed", out[i]);
             std::cout << '\n';
         }
     }
 
-    PrintArray("bit-reversed packed spectrum", out, activeN);
+    PrintArray("naturally packed spectrum", out, activeN);
     StoreReference2DebugState(debugCombo, packedPurpose, out, activeN);
-    NTTRadix2<SharkFloatParams, false>(
+    NTTRadix2<SharkFloatParams, false, true>(
+        debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
+    StoreReference2DebugState(debugCombo, forwardPurpose, out, activeN);
+}
+
+template <class SharkFloatParams>
+static void
+PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
+                   const HpSharkFloat<SharkFloatParams> &value,
+                   const SharkNTT::PlanPrime &plan,
+                   SharkNTT::RootTables &roots,
+                   uint64_t *out,
+                   uint32_t capacity,
+                   uint32_t inputBitOffset,
+                   uint32_t coefficientShift,
+                   uint32_t residualBitShift,
+                   bool negative,
+                   DebugStatePurpose packedPurpose,
+                   DebugStatePurpose forwardPurpose)
+{
+    const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
+    const uint32_t activeN = static_cast<uint32_t>(plan.N);
+    assert(activeN <= capacity);
+    assert(zeroMont == 0);
+    const uint32_t inputCoefficientCount =
+        static_cast<uint32_t>(plan.L) + (residualBitShift != 0u ? 1u : 0u);
+
+    for (uint32_t i = 0; i < activeN; ++i) {
+        uint64_t packed = 0;
+        const bool hasCoefficient =
+            i >= coefficientShift && i - coefficientShift < inputCoefficientCount;
+        if (hasCoefficient) {
+            const uint32_t inputIndex = i - coefficientShift;
+            const int64_t sourceBit = static_cast<int64_t>(inputBitOffset) +
+                                      static_cast<int64_t>(inputIndex) * static_cast<int64_t>(plan.b) -
+                                      static_cast<int64_t>(residualBitShift);
+            const uint64_t coefficient =
+                ReadAlignedBits(value, inputBitOffset, sourceBit, static_cast<int>(plan.b));
+            const uint64_t coefficientMont =
+                SharkNTT::ToMontgomery(debugCombo, coefficient % SharkNTT::MagicPrime);
+            packed = coefficientMont;
+            if (negative && coefficient != 0)
+                packed = SubP(zeroMont, packed);
+            if (IsDebugTraceEnabled()) {
+                std::cout << "  aligned pack coefficient index=" << i;
+                PrintHexValue("coefficient", coefficient);
+                PrintHexValue("coefficientMont", coefficientMont);
+                PrintHexValue("packed", packed);
+                std::cout << '\n';
+            }
+        }
+        out[i] = packed;
+    }
+
+    PrintArray("aligned naturally packed spectrum", out, activeN);
+    StoreReference2DebugState(debugCombo, packedPurpose, out, activeN);
+    NTTRadix2<SharkFloatParams, false, true>(
         debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
     StoreReference2DebugState(debugCombo, forwardPurpose, out, activeN);
 }
@@ -892,15 +1015,14 @@ GetSpectrum(FusedWorkspace &workspace, SpectrumId id)
         case SpectrumId::ZImag:
             return workspace.ZImag;
         case SpectrumId::CReal:
-            return workspace.CReal;
         case SpectrumId::CImag:
-            return workspace.CImag;
+        case SpectrumId::One:
+            assert(false);
+            return workspace.ZReal;
         case SpectrumId::DzdcReal:
             return workspace.DzdcReal;
         case SpectrumId::DzdcImag:
             return workspace.DzdcImag;
-        case SpectrumId::One:
-            return workspace.One;
     }
 
     assert(false);
@@ -1057,6 +1179,118 @@ UnpackResiduesToSignedLimbs(const uint64_t *normalResidues,
 }
 
 template <class SharkFloatParams>
+static int64_t
+SignedLinearLimbContribution(const HpSharkFloat<SharkFloatParams> *value,
+                             uint32_t inputBitOffset,
+                             uint64_t outputBitOffset,
+                             uint32_t limbIndex)
+{
+    if (value == nullptr)
+        return 0;
+
+    const uint64_t limbBit = static_cast<uint64_t>(limbIndex) * 32ull;
+    if (limbBit + 32ull <= outputBitOffset)
+        return 0;
+
+    uint32_t contribution = 0u;
+    if (limbBit < outputBitOffset) {
+        const uint32_t gap = static_cast<uint32_t>(outputBitOffset - limbBit);
+        if (gap < 32u) {
+            const uint32_t bitCount = 32u - gap;
+            const uint64_t source =
+                ReadBitsSimple(*value, static_cast<int64_t>(inputBitOffset), static_cast<int>(bitCount));
+            contribution = static_cast<uint32_t>(source << gap);
+        }
+    } else {
+        const uint64_t sourceBit = limbBit - outputBitOffset;
+        const uint64_t source =
+            ReadBitsSimple(*value, static_cast<int64_t>(inputBitOffset + sourceBit), 32);
+        contribution = static_cast<uint32_t>(source);
+    }
+
+    const int64_t signedContribution = static_cast<int64_t>(contribution);
+    return value->GetNegative() ? -signedContribution : signedContribution;
+}
+
+template <class SharkFloatParams>
+static void
+UnpackAlignedResiduesToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
+                                   const uint64_t *normalResidues,
+                                   const SharkNTT::PlanPrime &plan,
+                                   const SharkNTT::RootTables &roots,
+                                   uint32_t coefficientCount,
+                                   uint64_t productBitOffset,
+                                   const HpSharkFloat<SharkFloatParams> *linearValue,
+                                   uint32_t linearInputBitOffset,
+                                   uint64_t linearBitOffset,
+                                   int64_t *limbs,
+                                   uint32_t limbCount)
+{
+    assert(coefficientCount <= static_cast<uint32_t>(plan.N));
+    const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
+    for (uint32_t j = 0; j < limbCount; ++j) {
+        const uint64_t firstBit = j >= 3 ? static_cast<uint64_t>(j - 3) * 32ull : 0ull;
+        const uint64_t lastBit = (static_cast<uint64_t>(j) + 1ull) * 32ull - 1ull;
+        const uint64_t firstCoefficient =
+            firstBit > productBitOffset ? (firstBit - productBitOffset) / plan.b : 0ull;
+        const uint64_t lastCoefficient =
+            lastBit >= productBitOffset ? (lastBit - productBitOffset) / plan.b : 0ull;
+        int64_t total = 0;
+
+        if (firstBit >= productBitOffset || productBitOffset <= lastBit) {
+            for (uint64_t i = firstCoefficient; i <= lastCoefficient && i < coefficientCount; ++i) {
+                const uint64_t residue =
+                    SharkNTT::MontgomeryMul(debugCombo, normalResidues[i], roots.Ninv);
+                if (residue == 0)
+                    continue;
+
+                const bool negative = residue > halfPrime;
+                const uint64_t magnitude = negative ? SharkNTT::MagicPrime - residue : residue;
+                const uint64_t shiftedBits = productBitOffset + i * static_cast<uint64_t>(plan.b);
+                const uint32_t q = static_cast<uint32_t>(shiftedBits >> 5);
+                if (q > j || j - q > 3)
+                    continue;
+
+                const uint32_t bitShift = static_cast<uint32_t>(shiftedBits & 31ull);
+                const uint64_t low = bitShift == 0 ? magnitude : magnitude << bitShift;
+                const uint64_t high = bitShift == 0 ? 0ull : magnitude >> (64u - bitShift);
+                uint32_t contribution = 0u;
+                switch (j - q) {
+                    case 0:
+                        contribution = static_cast<uint32_t>(low);
+                        break;
+                    case 1:
+                        contribution = static_cast<uint32_t>(low >> 32);
+                        break;
+                    case 2:
+                        contribution = static_cast<uint32_t>(high);
+                        break;
+                    case 3:
+                        contribution = static_cast<uint32_t>(high >> 32);
+                        break;
+                }
+                total +=
+                    negative ? -static_cast<int64_t>(contribution) : static_cast<int64_t>(contribution);
+            }
+        }
+        total += SignedLinearLimbContribution(linearValue, linearInputBitOffset, linearBitOffset, j);
+        limbs[j] = total;
+    }
+    PrintArray("aligned signed limbs", limbs, limbCount);
+}
+
+template <class SharkFloatParams>
+static void
+GatherLinearToSignedLimbs(const HpSharkFloat<SharkFloatParams> *linearValue,
+                          uint32_t linearInputBitOffset,
+                          int64_t *limbs,
+                          uint32_t limbCount)
+{
+    for (uint32_t j = 0; j < limbCount; ++j)
+        limbs[j] = SignedLinearLimbContribution(linearValue, linearInputBitOffset, 0, j);
+}
+
+template <class SharkFloatParams>
 static void
 InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
                              const SharkNTT::PlanPrime &plan,
@@ -1087,6 +1321,44 @@ InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
     StoreReference2DebugState(debugCombo, residuesPurpose, spectrum, activeN);
 
     UnpackResiduesToSignedLimbs<SharkFloatParams>(spectrum, plan, coefficientCount, limbs, limbCount);
+    StoreReference2DebugState(
+        debugCombo, limbsPurpose, reinterpret_cast<const uint64_t *>(limbs), limbCount);
+}
+
+template <class SharkFloatParams>
+static void
+InverseAlignedSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
+                                    const SharkNTT::PlanPrime &plan,
+                                    SharkNTT::RootTables &roots,
+                                    uint64_t *spectrum,
+                                    uint32_t coefficientCount,
+                                    uint64_t productBitOffset,
+                                    const HpSharkFloat<SharkFloatParams> *linearValue,
+                                    uint32_t linearInputBitOffset,
+                                    uint64_t linearBitOffset,
+                                    int64_t *limbs,
+                                    uint32_t limbCount,
+                                    DebugStatePurpose residuesPurpose,
+                                    DebugStatePurpose limbsPurpose)
+{
+    const uint32_t activeN = static_cast<uint32_t>(plan.N);
+    assert(activeN <= MaxFusedN);
+    NTTRadix2<SharkFloatParams, true>(
+        debugCombo, spectrum, activeN, static_cast<uint32_t>(plan.stages), roots);
+
+    if (residuesPurpose != DebugStatePurpose::Invalid)
+        StoreReference2DebugState(debugCombo, residuesPurpose, spectrum, activeN);
+    UnpackAlignedResiduesToSignedLimbs(debugCombo,
+                                       spectrum,
+                                       plan,
+                                       roots,
+                                       coefficientCount,
+                                       productBitOffset,
+                                       linearValue,
+                                       linearInputBitOffset,
+                                       linearBitOffset,
+                                       limbs,
+                                       limbCount);
     StoreReference2DebugState(
         debugCombo, limbsPurpose, reinterpret_cast<const uint64_t *>(limbs), limbCount);
 }
@@ -1332,8 +1604,8 @@ RequiredCoefficientsForStream(int32_t commonExp,
             return;
         const int64_t signedShift = static_cast<int64_t>(term.Exponent) - commonExp;
         assert(signedShift >= 0);
-        // Match the GPU support calculation: sub-coefficient shifts are handled by carry
-        // propagation and do not require another NTT coefficient.
+        // The active aligned path below derives support from each packed operand's last coefficient,
+        // including the possible high digit introduced by a residual bit shift.
         const uint64_t coefficientShift =
             static_cast<uint64_t>(signedShift) / static_cast<uint64_t>(plan.b);
         const uint64_t inputCoefficients = static_cast<uint64_t>(plan.L);
@@ -1346,6 +1618,7 @@ RequiredCoefficientsForStream(int32_t commonExp,
     return requiredCoefficients;
 }
 
+#if 0
 template <class SharkFloatParams>
 static void
 FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
@@ -1693,6 +1966,510 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
 
     if (IsDebugTraceEnabled())
         std::cout << "ReferenceOrbit2 fused step end\n";
+}
+
+#endif
+
+template <class SharkFloatParams>
+static void
+FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
+                        const HpSharkFloat<SharkFloatParams> &zImag,
+                        const HpSharkFloat<SharkFloatParams> *dzdcReal,
+                        const HpSharkFloat<SharkFloatParams> *dzdcImag,
+                        const HpSharkFloat<SharkFloatParams> &cReal,
+                        const HpSharkFloat<SharkFloatParams> &cImag,
+                        const HpSharkFloat<SharkFloatParams> *one,
+                        HpSharkFloat<SharkFloatParams> *outReal,
+                        HpSharkFloat<SharkFloatParams> *outImag,
+                        HpSharkFloat<SharkFloatParams> *outDzdcReal,
+                        HpSharkFloat<SharkFloatParams> *outDzdcImag,
+                        uint64_t iteration,
+                        uint32_t &previousActiveN,
+                        uint32_t actualPrecisionLimbs,
+                        FusedWorkspace &workspace,
+                        DebugHostCombo<SharkFloatParams> &debugHostCombo)
+{
+    constexpr uint32_t storagePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
+    assert(actualPrecisionLimbs > storagePrecisionLimbs / 2u);
+    assert(actualPrecisionLimbs <= storagePrecisionLimbs);
+    const uint32_t ignoredPrecisionBits = (storagePrecisionLimbs - actualPrecisionLimbs) * 32u;
+    const SharkNTT::PlanPrime basePlan =
+        SharkNTT::BuildPlanPrime2(static_cast<int>(actualPrecisionLimbs));
+    assert(basePlan.ok);
+    assert(basePlan.b > 0);
+    const uint32_t bitsPerCoefficient = static_cast<uint32_t>(basePlan.b);
+
+    int32_t stateCommonExponent = 0;
+    const bool stateBothZero = ResolveAlignedValueExponent(stateCommonExponent, zReal, zImag);
+    const bool stateRealZero = IsZero(zReal);
+    const bool stateImagZero = IsZero(zImag);
+    const int64_t stateProductExponent64 = static_cast<int64_t>(stateCommonExponent) * 2ll +
+                                           2ll * static_cast<int64_t>(ignoredPrecisionBits);
+    assert(stateProductExponent64 >= INT32_MIN && stateProductExponent64 <= INT32_MAX);
+    const int32_t stateProductExponent = static_cast<int32_t>(stateProductExponent64);
+    const FusedTerm<SharkFloatParams> realProductTerm = MakeAlignedProductTerm<SharkFloatParams>(
+        stateBothZero, stateProductExponent, SpectrumId::ZReal, SpectrumId::ZImag);
+    const FusedTerm<SharkFloatParams> imagProductTerm = MakeAlignedProductTerm<SharkFloatParams>(
+        stateRealZero || stateImagZero, stateProductExponent, SpectrumId::ZReal, SpectrumId::ZImag);
+    const FusedTerm<SharkFloatParams> realConstantTerm =
+        MakeLinearTerm(cReal, SpectrumId::CReal, false, ignoredPrecisionBits);
+    const FusedTerm<SharkFloatParams> imagConstantTerm =
+        MakeLinearTerm(cImag, SpectrumId::CImag, false, ignoredPrecisionBits);
+
+    int32_t realExponent = 0;
+    int32_t imagExponent = 0;
+    ResolveCommonExponent(realExponent, realProductTerm, realConstantTerm);
+    ResolveCommonExponent(imagExponent, imagProductTerm, imagConstantTerm);
+
+    int32_t derivativeCommonExponent = 0;
+    int32_t derivativeProductExponent = 0;
+    int32_t dzdcRealExponent = 0;
+    int32_t dzdcImagExponent = 0;
+    bool derivativeBothZero = true;
+    bool derivativeRealZero = true;
+    bool derivativeImagZero = true;
+    FusedTerm<SharkFloatParams> dzdcP1Term =
+        MakeAlignedProductTerm<SharkFloatParams>(true, 0, SpectrumId::ZReal, SpectrumId::DzdcReal);
+    FusedTerm<SharkFloatParams> dzdcP2Term =
+        MakeAlignedProductTerm<SharkFloatParams>(true, 0, SpectrumId::ZImag, SpectrumId::DzdcImag);
+    FusedTerm<SharkFloatParams> dzdcP3Term =
+        MakeAlignedProductTerm<SharkFloatParams>(true, 0, SpectrumId::ZReal, SpectrumId::DzdcReal);
+    FusedTerm<SharkFloatParams> dzdcOneTerm{};
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        assert(dzdcReal != nullptr);
+        assert(dzdcImag != nullptr);
+        assert(one != nullptr);
+        derivativeBothZero = ResolveAlignedValueExponent(derivativeCommonExponent, *dzdcReal, *dzdcImag);
+        derivativeRealZero = IsZero(*dzdcReal);
+        derivativeImagZero = IsZero(*dzdcImag);
+        const int64_t derivativeProductExponent64 = static_cast<int64_t>(stateCommonExponent) +
+                                                    static_cast<int64_t>(derivativeCommonExponent) +
+                                                    2ll * static_cast<int64_t>(ignoredPrecisionBits);
+        assert(derivativeProductExponent64 >= INT32_MIN && derivativeProductExponent64 <= INT32_MAX);
+        derivativeProductExponent = static_cast<int32_t>(derivativeProductExponent64);
+        dzdcP1Term = MakeAlignedProductTerm<SharkFloatParams>(stateRealZero || derivativeRealZero,
+                                                              derivativeProductExponent,
+                                                              SpectrumId::ZReal,
+                                                              SpectrumId::DzdcReal);
+        dzdcP2Term = MakeAlignedProductTerm<SharkFloatParams>(stateImagZero || derivativeImagZero,
+                                                              derivativeProductExponent,
+                                                              SpectrumId::ZImag,
+                                                              SpectrumId::DzdcImag);
+        dzdcP3Term = MakeAlignedProductTerm<SharkFloatParams>(stateBothZero || derivativeBothZero,
+                                                              derivativeProductExponent,
+                                                              SpectrumId::ZReal,
+                                                              SpectrumId::DzdcReal);
+        dzdcOneTerm = MakeLinearTerm(*one, SpectrumId::One, false, ignoredPrecisionBits);
+        ResolveCommonExponent(dzdcRealExponent, dzdcP1Term, dzdcP2Term, dzdcP3Term, dzdcOneTerm);
+        ResolveCommonExponent(dzdcImagExponent, dzdcP1Term, dzdcP2Term, dzdcP3Term);
+    }
+
+    const uint64_t stateRealShiftBits =
+        stateRealZero ? 0ull : static_cast<uint64_t>(zReal.Exponent - stateCommonExponent);
+    const uint64_t stateImagShiftBits =
+        stateImagZero ? 0ull : static_cast<uint64_t>(zImag.Exponent - stateCommonExponent);
+    const uint64_t stateRealCoefficientShift =
+        AlignedCoefficientShift(zReal.Exponent, stateCommonExponent, bitsPerCoefficient);
+    const uint64_t stateImagCoefficientShift =
+        AlignedCoefficientShift(zImag.Exponent, stateCommonExponent, bitsPerCoefficient);
+    const uint64_t stateRealResidualBitShift = stateRealShiftBits % bitsPerCoefficient;
+    const uint64_t stateImagResidualBitShift = stateImagShiftBits % bitsPerCoefficient;
+    const uint64_t stateRealInputCoefficients =
+        static_cast<uint64_t>(basePlan.L) + (stateRealResidualBitShift != 0ull ? 1ull : 0ull);
+    const uint64_t stateImagInputCoefficients =
+        static_cast<uint64_t>(basePlan.L) + (stateImagResidualBitShift != 0ull ? 1ull : 0ull);
+    const uint64_t stateRealLastCoefficient =
+        stateRealCoefficientShift + stateRealInputCoefficients - 1ull;
+    const uint64_t stateImagLastCoefficient =
+        stateImagCoefficientShift + stateImagInputCoefficients - 1ull;
+    const uint64_t stateMaxLastCoefficient =
+        std::max(stateRealLastCoefficient, stateImagLastCoefficient);
+    const uint64_t realRequiredCoefficients =
+        stateBothZero ? 0ull : 2ull * stateMaxLastCoefficient + 1ull;
+    const uint64_t imagRequiredCoefficients =
+        (stateRealZero || stateImagZero) ? 0ull
+                                         : stateRealLastCoefficient + stateImagLastCoefficient + 1ull;
+    uint64_t requiredCoefficients = std::max(realRequiredCoefficients, imagRequiredCoefficients);
+
+    uint64_t derivativeRealShiftBits = 0;
+    uint64_t derivativeImagShiftBits = 0;
+    uint64_t derivativeRealCoefficientShift = 0;
+    uint64_t derivativeImagCoefficientShift = 0;
+    uint64_t derivativeRealResidualBitShift = 0;
+    uint64_t derivativeImagResidualBitShift = 0;
+    uint64_t derivativeRealInputCoefficients = 0;
+    uint64_t derivativeImagInputCoefficients = 0;
+    uint64_t derivativeRealLastCoefficient = 0;
+    uint64_t derivativeImagLastCoefficient = 0;
+    uint64_t derivativeMaxLastCoefficient = 0;
+    uint64_t derivativeP1RequiredCoefficients = 0;
+    uint64_t derivativeP2RequiredCoefficients = 0;
+    uint64_t derivativeP3RequiredCoefficients = 0;
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        derivativeRealShiftBits =
+            derivativeRealZero ? 0ull
+                               : static_cast<uint64_t>(dzdcReal->Exponent - derivativeCommonExponent);
+        derivativeImagShiftBits =
+            derivativeImagZero ? 0ull
+                               : static_cast<uint64_t>(dzdcImag->Exponent - derivativeCommonExponent);
+        derivativeRealCoefficientShift =
+            AlignedCoefficientShift(dzdcReal->Exponent, derivativeCommonExponent, bitsPerCoefficient);
+        derivativeImagCoefficientShift =
+            AlignedCoefficientShift(dzdcImag->Exponent, derivativeCommonExponent, bitsPerCoefficient);
+        derivativeRealResidualBitShift = derivativeRealShiftBits % bitsPerCoefficient;
+        derivativeImagResidualBitShift = derivativeImagShiftBits % bitsPerCoefficient;
+        derivativeRealInputCoefficients =
+            static_cast<uint64_t>(basePlan.L) + (derivativeRealResidualBitShift != 0ull ? 1ull : 0ull);
+        derivativeImagInputCoefficients =
+            static_cast<uint64_t>(basePlan.L) + (derivativeImagResidualBitShift != 0ull ? 1ull : 0ull);
+        derivativeRealLastCoefficient =
+            derivativeRealCoefficientShift + derivativeRealInputCoefficients - 1ull;
+        derivativeImagLastCoefficient =
+            derivativeImagCoefficientShift + derivativeImagInputCoefficients - 1ull;
+        derivativeMaxLastCoefficient =
+            std::max(derivativeRealLastCoefficient, derivativeImagLastCoefficient);
+        derivativeP1RequiredCoefficients =
+            dzdcP1Term.IsZero ? 0ull : stateRealLastCoefficient + derivativeRealLastCoefficient + 1ull;
+        derivativeP2RequiredCoefficients =
+            dzdcP2Term.IsZero ? 0ull : stateImagLastCoefficient + derivativeImagLastCoefficient + 1ull;
+        derivativeP3RequiredCoefficients =
+            dzdcP3Term.IsZero ? 0ull : stateMaxLastCoefficient + derivativeMaxLastCoefficient + 1ull;
+        requiredCoefficients = std::max(requiredCoefficients, derivativeP1RequiredCoefficients);
+        requiredCoefficients = std::max(requiredCoefficients, derivativeP2RequiredCoefficients);
+        requiredCoefficients = std::max(requiredCoefficients, derivativeP3RequiredCoefficients);
+    }
+
+    const bool hasLinearTerm = !realConstantTerm.IsZero || !imagConstantTerm.IsZero ||
+                               (SharkFloatParams::EnableNewtonRaphson && !dzdcOneTerm.IsZero);
+    if (requiredCoefficients == 0) {
+        if (!hasLinearTerm) {
+            SetZero(outReal);
+            SetZero(outImag);
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                SetZero(outDzdcReal);
+                SetZero(outDzdcImag);
+            }
+        } else {
+            const uint32_t limbCount = LinearLimbCount<SharkFloatParams>();
+            GatherLinearToSignedLimbs(realConstantTerm.IsZero ? nullptr : &cReal,
+                                      ignoredPrecisionBits,
+                                      workspace.RealLimbs,
+                                      limbCount);
+            GatherLinearToSignedLimbs(imagConstantTerm.IsZero ? nullptr : &cImag,
+                                      ignoredPrecisionBits,
+                                      workspace.ImagLimbs,
+                                      limbCount);
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                GatherLinearToSignedLimbs(dzdcOneTerm.IsZero ? nullptr : one,
+                                          ignoredPrecisionBits,
+                                          workspace.DzdcRealLimbs,
+                                          limbCount);
+                GatherLinearToSignedLimbs<SharkFloatParams>(
+                    nullptr, ignoredPrecisionBits, workspace.DzdcImagLimbs, limbCount);
+            }
+            FinalizeSignedStream({workspace.RealLimbs, limbCount, realExponent, outReal},
+                                 workspace.MagnitudeDigits,
+                                 workspace.Magnitude,
+                                 workspace.ActiveMaxFusedLimbs,
+                                 debugHostCombo,
+                                 DebugStatePurpose::SignedCarry1,
+                                 DebugStatePurpose::FinalAdd1);
+            FinalizeSignedStream({workspace.ImagLimbs, limbCount, imagExponent, outImag},
+                                 workspace.MagnitudeDigits,
+                                 workspace.Magnitude,
+                                 workspace.ActiveMaxFusedLimbs,
+                                 debugHostCombo,
+                                 DebugStatePurpose::SignedCarry2,
+                                 DebugStatePurpose::FinalAdd2);
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                FinalizeSignedStream({workspace.DzdcRealLimbs, limbCount, dzdcRealExponent, outDzdcReal},
+                                     workspace.MagnitudeDigits,
+                                     workspace.Magnitude,
+                                     workspace.ActiveMaxFusedLimbs,
+                                     debugHostCombo,
+                                     DebugStatePurpose::SignedCarryDzdc1,
+                                     DebugStatePurpose::FinalAddDzdc1);
+                FinalizeSignedStream({workspace.DzdcImagLimbs, limbCount, dzdcImagExponent, outDzdcImag},
+                                     workspace.MagnitudeDigits,
+                                     workspace.Magnitude,
+                                     workspace.ActiveMaxFusedLimbs,
+                                     debugHostCombo,
+                                     DebugStatePurpose::SignedCarryDzdc2,
+                                     DebugStatePurpose::FinalAddDzdc2);
+            }
+        }
+        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
+        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
+            StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
+        }
+        return;
+    }
+
+    const uint64_t requiredN = CeilPowerOfTwo(requiredCoefficients);
+    if (requiredN > workspace.ActiveMaxFusedN) {
+        std::cerr << "ReferenceOrbit2 fused workspace exceeded: requestedCoefficients="
+                  << requiredCoefficients << " requiredN=" << requiredN
+                  << " capacity=" << workspace.ActiveMaxFusedN << '\n';
+        assert(false);
+    }
+    using Cache = FusedPlanCacheTraits<SharkFloatParams>;
+    const uint32_t activeN = requiredN < workspace.ActiveMinFusedN ? workspace.ActiveMinFusedN
+                                                                   : static_cast<uint32_t>(requiredN);
+    assert(activeN >= workspace.ActiveMinFusedN);
+    assert(requiredCoefficients <= activeN);
+    assert(activeN <= workspace.ActiveMaxFusedN);
+    assert(activeN >= 2u);
+    assert((SharkNTT::PHI % activeN) == 0ull);
+    const uint32_t planSlot = CountTrailingZeros(activeN) - Cache::MinFusedStages;
+    assert(planSlot < Cache::EntryCount);
+    if (activeN != previousActiveN) {
+        if (IsDebugTraceEnabled())
+            std::cout << "ReferenceOrbit2 plan changed: iteration=" << iteration
+                      << " previousN=" << previousActiveN << " activeN=" << activeN
+                      << " planSlot=" << planSlot << '\n';
+        previousActiveN = activeN;
+    }
+
+    SharkNTT::PlanPrime plan = workspace.Plans[planSlot];
+    plan.n32 = basePlan.n32;
+    plan.L = basePlan.L;
+    SharkNTT::RootTables &roots = workspace.PlanRoots[planSlot];
+    const uint64_t realProductBitOffset =
+        realProductTerm.IsZero ? 0ull : static_cast<uint64_t>(realProductTerm.Exponent - realExponent);
+    const uint64_t imagProductBitOffset =
+        imagProductTerm.IsZero ? 0ull : static_cast<uint64_t>(imagProductTerm.Exponent - imagExponent);
+    const uint64_t derivativeProductBitOffset =
+        (dzdcP1Term.IsZero && dzdcP2Term.IsZero && dzdcP3Term.IsZero)
+            ? 0ull
+            : static_cast<uint64_t>(derivativeProductExponent - dzdcRealExponent);
+    const uint64_t realLinearBitOffset =
+        realConstantTerm.IsZero ? 0ull : static_cast<uint64_t>(realConstantTerm.Exponent - realExponent);
+    const uint64_t imagLinearBitOffset =
+        imagConstantTerm.IsZero ? 0ull : static_cast<uint64_t>(imagConstantTerm.Exponent - imagExponent);
+    const uint64_t derivativeLinearBitOffset =
+        dzdcOneTerm.IsZero ? 0ull : static_cast<uint64_t>(dzdcOneTerm.Exponent - dzdcRealExponent);
+    const uint64_t linearBits =
+        static_cast<uint64_t>(storagePrecisionLimbs) * 32ull - ignoredPrecisionBits;
+
+    uint64_t outputBits = realProductBitOffset + realRequiredCoefficients * bitsPerCoefficient;
+    outputBits =
+        std::max(outputBits, realLinearBitOffset + (realConstantTerm.IsZero ? 0ull : linearBits));
+    outputBits =
+        std::max(outputBits, imagProductBitOffset + imagRequiredCoefficients * bitsPerCoefficient);
+    outputBits =
+        std::max(outputBits, imagLinearBitOffset + (imagConstantTerm.IsZero ? 0ull : linearBits));
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        const uint64_t derivativeRequiredCoefficients =
+            std::max(derivativeP1RequiredCoefficients,
+                     std::max(derivativeP2RequiredCoefficients, derivativeP3RequiredCoefficients));
+        outputBits =
+            std::max(outputBits,
+                     derivativeProductBitOffset + derivativeRequiredCoefficients * bitsPerCoefficient);
+        outputBits =
+            std::max(outputBits, derivativeLinearBitOffset + (dzdcOneTerm.IsZero ? 0ull : linearBits));
+    }
+    const uint64_t limbCount64 = (outputBits + 31ull) / 32ull + 2ull;
+    assert(limbCount64 <= workspace.ActiveMaxFusedLimbs);
+    const uint32_t limbCount = static_cast<uint32_t>(limbCount64);
+
+    const uint32_t zRealResidualBitShift = static_cast<uint32_t>(stateRealResidualBitShift);
+    const uint32_t zImagResidualBitShift = static_cast<uint32_t>(stateImagResidualBitShift);
+    PackAlignedForward(debugHostCombo,
+                       zReal,
+                       plan,
+                       roots,
+                       workspace.ZReal,
+                       MaxFusedN,
+                       ignoredPrecisionBits,
+                       static_cast<uint32_t>(stateRealCoefficientShift),
+                       zRealResidualBitShift,
+                       zReal.GetNegative(),
+                       DebugStatePurpose::Z0XX,
+                       DebugStatePurpose::Z2XX);
+    PackAlignedForward(debugHostCombo,
+                       zImag,
+                       plan,
+                       roots,
+                       workspace.ZImag,
+                       MaxFusedN,
+                       ignoredPrecisionBits,
+                       static_cast<uint32_t>(stateImagCoefficientShift),
+                       zImagResidualBitShift,
+                       zImag.GetNegative(),
+                       DebugStatePurpose::Z0YY,
+                       DebugStatePurpose::Z2YY);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        const uint32_t dzdcRealResidualBitShift = static_cast<uint32_t>(derivativeRealResidualBitShift);
+        const uint32_t dzdcImagResidualBitShift = static_cast<uint32_t>(derivativeImagResidualBitShift);
+        PackAlignedForward(debugHostCombo,
+                           *dzdcReal,
+                           plan,
+                           roots,
+                           workspace.DzdcReal,
+                           MaxFusedN,
+                           ignoredPrecisionBits,
+                           static_cast<uint32_t>(derivativeRealCoefficientShift),
+                           dzdcRealResidualBitShift,
+                           dzdcReal->GetNegative(),
+                           DebugStatePurpose::Z0W1,
+                           DebugStatePurpose::Z2W1);
+        PackAlignedForward(debugHostCombo,
+                           *dzdcImag,
+                           plan,
+                           roots,
+                           workspace.DzdcImag,
+                           MaxFusedN,
+                           ignoredPrecisionBits,
+                           static_cast<uint32_t>(derivativeImagCoefficientShift),
+                           dzdcImagResidualBitShift,
+                           dzdcImag->GetNegative(),
+                           DebugStatePurpose::Z0W2,
+                           DebugStatePurpose::Z2W2);
+    }
+
+    const uint64_t zeroMont = SharkNTT::ToMontgomery(debugHostCombo, 0);
+    for (uint32_t i = 0; i < activeN; ++i) {
+        uint64_t real = zeroMont;
+        uint64_t imag = zeroMont;
+        if (!realProductTerm.IsZero) {
+            const uint64_t sum = AddP(workspace.ZReal[i], workspace.ZImag[i]);
+            const uint64_t difference = SubP(workspace.ZReal[i], workspace.ZImag[i]);
+            real = SharkNTT::MontgomeryMul(debugHostCombo, sum, difference);
+        }
+        if (!imagProductTerm.IsZero) {
+            const uint64_t product =
+                SharkNTT::MontgomeryMul(debugHostCombo, workspace.ZReal[i], workspace.ZImag[i]);
+            imag = AddP(product, product);
+        }
+        workspace.RealOutput[i] = real;
+        workspace.ImagOutput[i] = imag;
+
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            uint64_t derivativeReal = zeroMont;
+            uint64_t derivativeImag = zeroMont;
+            if (!dzdcP1Term.IsZero || !dzdcP2Term.IsZero || !dzdcP3Term.IsZero) {
+                const uint64_t p1 =
+                    SharkNTT::MontgomeryMul(debugHostCombo, workspace.ZReal[i], workspace.DzdcReal[i]);
+                const uint64_t p2 =
+                    SharkNTT::MontgomeryMul(debugHostCombo, workspace.ZImag[i], workspace.DzdcImag[i]);
+                const uint64_t stateSum = AddP(workspace.ZReal[i], workspace.ZImag[i]);
+                const uint64_t derivativeSum = AddP(workspace.DzdcReal[i], workspace.DzdcImag[i]);
+                const uint64_t p3 = SharkNTT::MontgomeryMul(debugHostCombo, stateSum, derivativeSum);
+                const uint64_t realDifference = SubP(p1, p2);
+                const uint64_t imagDifference = SubP(SubP(p3, p1), p2);
+                derivativeReal = AddP(realDifference, realDifference);
+                derivativeImag = AddP(imagDifference, imagDifference);
+            }
+            workspace.DzdcRealOutput[i] = derivativeReal;
+            workspace.DzdcImagOutput[i] = derivativeImag;
+        }
+    }
+    StoreReference2DebugState(
+        debugHostCombo, DebugStatePurpose::Z2_Perm1, workspace.RealOutput, activeN);
+    StoreReference2DebugState(
+        debugHostCombo, DebugStatePurpose::Z2_Perm2, workspace.ImagOutput, activeN);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        StoreReference2DebugState(
+            debugHostCombo, DebugStatePurpose::Z2_PermW0, workspace.DzdcRealOutput, activeN);
+        StoreReference2DebugState(
+            debugHostCombo, DebugStatePurpose::Z2_PermW1, workspace.DzdcImagOutput, activeN);
+    }
+
+    const uint32_t realCoefficientCount = realProductTerm.IsZero ? 0u : activeN;
+    const uint32_t imagCoefficientCount = imagProductTerm.IsZero ? 0u : activeN;
+    InverseAlignedSpectrumToSignedLimbs(debugHostCombo,
+                                        plan,
+                                        roots,
+                                        workspace.RealOutput,
+                                        realCoefficientCount,
+                                        realProductBitOffset,
+                                        realConstantTerm.IsZero ? nullptr : &cReal,
+                                        ignoredPrecisionBits,
+                                        realLinearBitOffset,
+                                        workspace.RealLimbs,
+                                        limbCount,
+                                        DebugStatePurpose::Invalid,
+                                        DebugStatePurpose::UnpackXX);
+    InverseAlignedSpectrumToSignedLimbs(debugHostCombo,
+                                        plan,
+                                        roots,
+                                        workspace.ImagOutput,
+                                        imagCoefficientCount,
+                                        imagProductBitOffset,
+                                        imagConstantTerm.IsZero ? nullptr : &cImag,
+                                        ignoredPrecisionBits,
+                                        imagLinearBitOffset,
+                                        workspace.ImagLimbs,
+                                        limbCount,
+                                        DebugStatePurpose::Invalid,
+                                        DebugStatePurpose::UnpackYY);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        const uint32_t derivativeCoefficientCount =
+            dzdcP1Term.IsZero && dzdcP2Term.IsZero && dzdcP3Term.IsZero ? 0u : activeN;
+        InverseAlignedSpectrumToSignedLimbs(debugHostCombo,
+                                            plan,
+                                            roots,
+                                            workspace.DzdcRealOutput,
+                                            derivativeCoefficientCount,
+                                            derivativeProductBitOffset,
+                                            dzdcOneTerm.IsZero ? nullptr : one,
+                                            ignoredPrecisionBits,
+                                            derivativeLinearBitOffset,
+                                            workspace.DzdcRealLimbs,
+                                            limbCount,
+                                            DebugStatePurpose::Invalid,
+                                            DebugStatePurpose::UnpackW0);
+        InverseAlignedSpectrumToSignedLimbs<SharkFloatParams>(debugHostCombo,
+                                                              plan,
+                                                              roots,
+                                                              workspace.DzdcImagOutput,
+                                                              derivativeCoefficientCount,
+                                                              derivativeProductBitOffset,
+                                                              nullptr,
+                                                              ignoredPrecisionBits,
+                                                              0,
+                                                              workspace.DzdcImagLimbs,
+                                                              limbCount,
+                                                              DebugStatePurpose::Invalid,
+                                                              DebugStatePurpose::UnpackW1);
+    }
+
+    FinalizeSignedStream({workspace.RealLimbs, limbCount, realExponent, outReal},
+                         workspace.MagnitudeDigits,
+                         workspace.Magnitude,
+                         workspace.ActiveMaxFusedLimbs,
+                         debugHostCombo,
+                         DebugStatePurpose::SignedCarry1,
+                         DebugStatePurpose::FinalAdd1);
+    FinalizeSignedStream({workspace.ImagLimbs, limbCount, imagExponent, outImag},
+                         workspace.MagnitudeDigits,
+                         workspace.Magnitude,
+                         workspace.ActiveMaxFusedLimbs,
+                         debugHostCombo,
+                         DebugStatePurpose::SignedCarry2,
+                         DebugStatePurpose::FinalAdd2);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
+    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        FinalizeSignedStream({workspace.DzdcRealLimbs, limbCount, dzdcRealExponent, outDzdcReal},
+                             workspace.MagnitudeDigits,
+                             workspace.Magnitude,
+                             workspace.ActiveMaxFusedLimbs,
+                             debugHostCombo,
+                             DebugStatePurpose::SignedCarryDzdc1,
+                             DebugStatePurpose::FinalAddDzdc1);
+        FinalizeSignedStream({workspace.DzdcImagLimbs, limbCount, dzdcImagExponent, outDzdcImag},
+                             workspace.MagnitudeDigits,
+                             workspace.Magnitude,
+                             workspace.ActiveMaxFusedLimbs,
+                             debugHostCombo,
+                             DebugStatePurpose::SignedCarryDzdc2,
+                             DebugStatePurpose::FinalAddDzdc2);
+        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
+        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
+    }
 }
 
 } // namespace

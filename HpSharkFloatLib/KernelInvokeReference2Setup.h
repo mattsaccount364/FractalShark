@@ -129,14 +129,12 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
     using Workspace = typename PreparedTables::Workspace;
     constexpr uint32_t StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
     constexpr size_t WorkingSpectrumCount = 4u + (SharkFloatParams::EnableNewtonRaphson ? 4u : 0u);
-    constexpr size_t ConstantArenaCount = 2u + (SharkFloatParams::EnableNewtonRaphson ? 1u : 0u);
     constexpr size_t LimbCount = SharkFloatParams::EnableNewtonRaphson ? 4u : 2u;
     constexpr size_t WorkspaceAlignment = 16u;
 
     ValidateStageRange<SharkFloatParams>(minFusedStages, maxFusedStages);
     const uint32_t activeMinFusedN = 1u << minFusedStages;
     const uint32_t activeMaxFusedN = 1u << maxFusedStages;
-    const uint32_t activeFusedArenaSize = 2u * activeMaxFusedN - activeMinFusedN;
     const uint32_t activeMaxFusedLimbs = (activeMaxFusedN * 16u) / 32u + 4u;
     const uint32_t activeMaxCarryPrefixParts = (activeMaxFusedLimbs + 31u) / 32u;
     const uint32_t activePlanCacheEntryCount = maxFusedStages - minFusedStages + 1u;
@@ -163,12 +161,10 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
     // Keep this allocation sequence in exact lockstep with the Workspace pointer assignments below.
     // Any added, removed, or reordered workspace field must be changed in both places.
     addAllocation(WorkingSpectrumCount, activeMaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(ConstantArenaCount, activeFusedArenaSize * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(LimbCount, activeMaxFusedLimbs * sizeof(int64_t), WorkspaceAlignment);
     addAllocation(2u, activeMaxFusedLimbs * sizeof(uint32_t), WorkspaceAlignment);
     addAllocation(1u, maxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(1u, maxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
-    addAllocation(1u, activeFusedArenaSize * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(2u, activeMaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
 
     void *workspaceStorage = nullptr;
@@ -191,10 +187,6 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
             return static_cast<uint64_t *>(
                 allocateWorkspace(activeMaxFusedN, sizeof(uint64_t), WorkspaceAlignment));
         };
-        const auto allocateConstantArena = [&] {
-            return static_cast<uint64_t *>(
-                allocateWorkspace(activeFusedArenaSize, sizeof(uint64_t), WorkspaceAlignment));
-        };
         const auto allocateLimbs = [&] {
             return static_cast<int64_t *>(
                 allocateWorkspace(activeMaxFusedLimbs, sizeof(int64_t), WorkspaceAlignment));
@@ -214,10 +206,6 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
             workspace.DzdcRealOutput = allocateSpectrum();
             workspace.DzdcImagOutput = allocateSpectrum();
         }
-        workspace.CRealArena = allocateConstantArena();
-        workspace.CImagArena = allocateConstantArena();
-        if constexpr (SharkFloatParams::EnableNewtonRaphson)
-            workspace.OneArena = allocateConstantArena();
         workspace.RealLimbs = allocateLimbs();
         workspace.ImagLimbs = allocateLimbs();
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
@@ -232,8 +220,6 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
             allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
         workspace.StageOmegasInverse = static_cast<uint64_t *>(
             allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
-        workspace.OmegaPowersArena = static_cast<uint64_t *>(
-            allocateWorkspace(activeFusedArenaSize, sizeof(uint64_t), WorkspaceAlignment));
         workspace.ForwardTwiddles = allocateSpectrum();
         workspace.InverseTwiddles = allocateSpectrum();
         workspace.ActualPrecisionLimbs = actualPrecisionLimbs;
@@ -257,7 +243,6 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
         for (uint32_t stages = minFusedStages; stages <= maxFusedStages; ++stages) {
             const uint32_t slot = stages - Workspace::MinFusedStages;
             const uint32_t n = 1u << stages;
-            const uint32_t arenaOffset = n - activeMinFusedN;
             workspace.Plans[slot] = {precisionPlan.n32,
                                      precisionPlan.b,
                                      precisionPlan.L,
@@ -270,16 +255,12 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
                                          static_cast<int32_t>(n),
                                          nullptr,
                                          nullptr,
-                                         workspace.OmegaPowersArena + arenaOffset,
+                                         nullptr,
                                          0,
                                          0,
                                          workspace.ForwardTwiddles,
                                          workspace.InverseTwiddles,
                                          n - 1u};
-            workspace.ConstantSpectra[slot] = {
-                workspace.CRealArena + arenaOffset,
-                workspace.CImagArena + arenaOffset,
-                SharkFloatParams::EnableNewtonRaphson ? workspace.OneArena + arenaOffset : nullptr};
         }
 
         if (workspaceOffset != workspaceBytes)
@@ -320,29 +301,12 @@ PrepareHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
                                uint32_t minFusedStages,
                                uint32_t maxFusedStages)
 {
+    (void)cReal;
+    (void)cImag;
     auto prepared = Reference2SetupDetail::AllocatePreparedTables<SharkFloatParams>(
         actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    HpSharkFloat<SharkFloatParams> *inputsGpu = nullptr;
     uint64_t *tempData = nullptr;
     try {
-        constexpr size_t InputCount = SharkFloatParams::EnableNewtonRaphson ? 3u : 2u;
-        Reference2SetupDetail::CheckCuda(cudaMalloc(&inputsGpu, InputCount * sizeof(*inputsGpu)),
-                                         "cudaMalloc(Reference2 setup inputs)");
-        Reference2SetupDetail::CheckCuda(
-            cudaMemcpy(inputsGpu, &cReal, sizeof(cReal), cudaMemcpyHostToDevice),
-            "cudaMemcpy(Reference2 CReal setup input H2D)");
-        Reference2SetupDetail::CheckCuda(
-            cudaMemcpy(inputsGpu + 1, &cImag, sizeof(cImag), cudaMemcpyHostToDevice),
-            "cudaMemcpy(Reference2 CImag setup input H2D)");
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            HpSharkFloat<SharkFloatParams> one;
-            one.template FromHDRFloat<typename SharkFloatParams::SubType>(
-                HDRFloat<typename SharkFloatParams::SubType>{typename SharkFloatParams::SubType(1.0)});
-            Reference2SetupDetail::CheckCuda(
-                cudaMemcpy(inputsGpu + 2, &one, sizeof(one), cudaMemcpyHostToDevice),
-                "cudaMemcpy(Reference2 One setup input H2D)");
-        }
-
         constexpr size_t TempBytes = HpShark::AdditionalUInt64Global * sizeof(uint64_t);
         Reference2SetupDetail::CheckCuda(cudaMalloc(&tempData, TempBytes),
                                          "cudaMalloc(Reference2 setup debug scratch)");
@@ -350,23 +314,16 @@ PrepareHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
                                          "cudaMemset(Reference2 setup debug scratch)");
 
         auto *workspace = prepared->GetDeviceDescriptor();
-        const auto *cRealGpu = inputsGpu;
-        const auto *cImagGpu = inputsGpu + 1;
-        const auto *oneGpu = SharkFloatParams::EnableNewtonRaphson ? inputsGpu + 2 : nullptr;
-        void *kernelArgs[] = {&workspace, &cRealGpu, &cImagGpu, &oneGpu, &tempData};
+        void *kernelArgs[] = {&workspace, &tempData};
         cudaStream_t stream{};
         ComputeHpSharkReference2Setup<SharkFloatParams>(launchParams, stream, kernelArgs);
 
         Reference2SetupDetail::CheckCuda(cudaFree(tempData), "cudaFree(Reference2 setup debug scratch)");
         tempData = nullptr;
-        Reference2SetupDetail::CheckCuda(cudaFree(inputsGpu), "cudaFree(Reference2 setup inputs)");
-        inputsGpu = nullptr;
         return prepared;
     } catch (...) {
         if (tempData != nullptr)
             cudaFree(tempData);
-        if (inputsGpu != nullptr)
-            cudaFree(inputsGpu);
         throw;
     }
 }

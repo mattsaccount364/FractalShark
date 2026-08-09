@@ -63,7 +63,7 @@ struct Reference2CacheHeader {
 };
 #pragma pack(pop)
 
-static constexpr uint32_t Reference2CacheVersion = 5;
+static constexpr uint32_t Reference2CacheVersion = 6;
 
 namespace Reference2CacheDetail {
 
@@ -81,17 +81,12 @@ template <class SharkFloatParams> struct CacheLayout {
 
     static constexpr size_t PayloadAlignment = 16u;
     size_t StageBytes;
-    size_t ArenaBytes;
     size_t TwiddleBytes;
     size_t NinvBytes;
     size_t StageOmegasOffset;
     size_t StageOmegasInverseOffset;
-    size_t OmegaPowersOffset;
     size_t ForwardTwiddlesOffset;
     size_t InverseTwiddlesOffset;
-    size_t CRealOffset;
-    size_t CImagOffset;
-    size_t OneOffset;
     size_t NinvOffset;
     size_t PayloadBytes;
     size_t PayloadOffset;
@@ -104,19 +99,12 @@ template <class SharkFloatParams> struct CacheLayout {
 
     CacheLayout(uint32_t minFusedStages, uint32_t maxFusedStages)
         : StageBytes(maxFusedStages * sizeof(uint64_t)),
-          ArenaBytes((2u * (static_cast<size_t>(1u) << maxFusedStages) -
-                      (static_cast<size_t>(1u) << minFusedStages)) *
-                     sizeof(uint64_t)),
           TwiddleBytes((static_cast<size_t>(1u) << maxFusedStages) * sizeof(uint64_t)),
           NinvBytes((maxFusedStages - minFusedStages + 1u) * sizeof(uint64_t)), StageOmegasOffset(0),
           StageOmegasInverseOffset(StageOmegasOffset + StageBytes),
-          OmegaPowersOffset(StageOmegasInverseOffset + StageBytes),
-          ForwardTwiddlesOffset(OmegaPowersOffset + ArenaBytes),
+          ForwardTwiddlesOffset(StageOmegasInverseOffset + StageBytes),
           InverseTwiddlesOffset(ForwardTwiddlesOffset + TwiddleBytes),
-          CRealOffset(InverseTwiddlesOffset + TwiddleBytes), CImagOffset(CRealOffset + ArenaBytes),
-          OneOffset(CImagOffset + ArenaBytes),
-          NinvOffset(OneOffset + (SharkFloatParams::EnableNewtonRaphson ? ArenaBytes : 0u)),
-          PayloadBytes(NinvOffset + NinvBytes),
+          NinvOffset(InverseTwiddlesOffset + TwiddleBytes), PayloadBytes(NinvOffset + NinvBytes),
           PayloadOffset(Align(sizeof(Reference2CacheHeader), PayloadAlignment)),
           FileBytes(PayloadOffset + PayloadBytes), MinFusedN(1u << minFusedStages),
           MaxFusedN(1u << maxFusedStages), MinFusedStages(minFusedStages),
@@ -241,10 +229,6 @@ CopyPreparedPayloadToCache(
                                         workspace.StageOmegasInverse,
                                         layout.StageBytes,
                                         "cudaMemcpy(Ref2 cache inverse stage omegas D2H)");
-    CopyDeviceToCache<SharkFloatParams>(payload + layout.OmegaPowersOffset,
-                                        workspace.OmegaPowersArena,
-                                        layout.ArenaBytes,
-                                        "cudaMemcpy(Ref2 cache omega powers D2H)");
     CopyDeviceToCache<SharkFloatParams>(payload + layout.ForwardTwiddlesOffset,
                                         workspace.ForwardTwiddles,
                                         layout.TwiddleBytes,
@@ -253,21 +237,6 @@ CopyPreparedPayloadToCache(
                                         workspace.InverseTwiddles,
                                         layout.TwiddleBytes,
                                         "cudaMemcpy(Ref2 cache inverse twiddles D2H)");
-    CopyDeviceToCache<SharkFloatParams>(payload + layout.CRealOffset,
-                                        workspace.CRealArena,
-                                        layout.ArenaBytes,
-                                        "cudaMemcpy(Ref2 cache CReal spectra D2H)");
-    CopyDeviceToCache<SharkFloatParams>(payload + layout.CImagOffset,
-                                        workspace.CImagArena,
-                                        layout.ArenaBytes,
-                                        "cudaMemcpy(Ref2 cache CImag spectra D2H)");
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        CopyDeviceToCache<SharkFloatParams>(payload + layout.OneOffset,
-                                            workspace.OneArena,
-                                            layout.ArenaBytes,
-                                            "cudaMemcpy(Ref2 cache One spectra D2H)");
-    }
-
     std::vector<uint64_t> ninv(layout.PlanCacheEntryCount);
     const uint32_t firstSlot = layout.MinFusedStages - Workspace::MinFusedStages;
     for (uint32_t index = 0; index < ninv.size(); ++index)
@@ -296,10 +265,6 @@ CopyCachePayloadToPrepared(const uint8_t *payload,
                                         payload + layout.StageOmegasInverseOffset,
                                         layout.StageBytes,
                                         "cudaMemcpy(Ref2 cache inverse stage omegas H2D)");
-    CopyCacheToDevice<SharkFloatParams>(workspace.OmegaPowersArena,
-                                        payload + layout.OmegaPowersOffset,
-                                        layout.ArenaBytes,
-                                        "cudaMemcpy(Ref2 cache omega powers H2D)");
     CopyCacheToDevice<SharkFloatParams>(workspace.ForwardTwiddles,
                                         payload + layout.ForwardTwiddlesOffset,
                                         layout.TwiddleBytes,
@@ -308,21 +273,6 @@ CopyCachePayloadToPrepared(const uint8_t *payload,
                                         payload + layout.InverseTwiddlesOffset,
                                         layout.TwiddleBytes,
                                         "cudaMemcpy(Ref2 cache inverse twiddles H2D)");
-    CopyCacheToDevice<SharkFloatParams>(workspace.CRealArena,
-                                        payload + layout.CRealOffset,
-                                        layout.ArenaBytes,
-                                        "cudaMemcpy(Ref2 cache CReal spectra H2D)");
-    CopyCacheToDevice<SharkFloatParams>(workspace.CImagArena,
-                                        payload + layout.CImagOffset,
-                                        layout.ArenaBytes,
-                                        "cudaMemcpy(Ref2 cache CImag spectra H2D)");
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        CopyCacheToDevice<SharkFloatParams>(workspace.OneArena,
-                                            payload + layout.OneOffset,
-                                            layout.ArenaBytes,
-                                            "cudaMemcpy(Ref2 cache One spectra H2D)");
-    }
-
     std::vector<uint64_t> ninv(layout.PlanCacheEntryCount);
     std::memcpy(ninv.data(), payload + layout.NinvOffset, layout.NinvBytes);
     const uint32_t firstSlot = layout.MinFusedStages - Workspace::MinFusedStages;

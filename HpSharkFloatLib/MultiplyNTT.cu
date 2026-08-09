@@ -1310,6 +1310,128 @@ ProcessLoadedTilePhase1SM(cooperative_groups::thread_block &block,
     }
 }
 
+template <class SharkFloatParams, Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly void
+ProcessLoadedTilePhase1DIFSM(cooperative_groups::thread_block &block,
+                             cooperative_groups::grid_group &grid,
+                             DebugGlobalCount<SharkFloatParams> *debugCombo,
+                             uint64_t *sharedDataA,
+                             uint64_t *sharedDataB,
+                             uint64_t *sharedDataC,
+                             uint64_t *sharedDataD,
+                             uint64_t *__restrict A,
+                             uint64_t *__restrict B,
+                             uint64_t *__restrict C,
+                             uint64_t *__restrict D,
+                             const uint64_t *sharedTwiddles,
+                             const uint64_t *__restrict stageTwiddles,
+                             uint32_t tile,
+                             uint32_t TS,
+                             uint32_t len,
+                             uint32_t S1,
+                             uint32_t cachedStages)
+{
+    static_assert(Mode != Multiway::SevenWay);
+
+    const uint32_t tid = block.thread_index().x;
+    const uint32_t step = block.size();
+
+    // Forward DIF stages run from the largest local span to the smallest one. The upper output
+    // remains a sum, while the lower output is the twiddled difference.
+    for (uint32_t stage = S1; stage > 0u; --stage) {
+        const uint32_t butterflySpan = 1u << stage;
+        const uint32_t halfSpan = butterflySpan >> 1u;
+        const uint32_t twiddleStageOffset = halfSpan - 1u;
+        const uint32_t totalPairs = len >> 1u;
+        const bool useSharedTwiddles = stage <= cachedStages && cachedStages > 0u;
+        const uint64_t *SharkRestrict twiddleBaseForStage =
+            useSharedTwiddles ? sharedTwiddles + twiddleStageOffset : stageTwiddles + twiddleStageOffset;
+
+        for (uint32_t pair = tid; pair < totalPairs; pair += step) {
+            const uint32_t group = pair / halfSpan;
+            const uint32_t j = pair - group * halfSpan;
+            const uint32_t index0 = group * butterflySpan + j;
+            const uint32_t index1 = index0 + halfSpan;
+            const uint64_t twiddle = twiddleBaseForStage[j];
+
+            if constexpr (Mode == Multiway::OneWay) {
+                const uint64_t upper = sharedDataA[index0];
+                const uint64_t lower = sharedDataA[index1];
+                sharedDataA[index0] = AddP(upper, lower);
+                sharedDataA[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upper, lower), twiddle);
+            } else if constexpr (Mode == Multiway::TwoWay) {
+                const uint64_t upperA = sharedDataA[index0];
+                const uint64_t lowerA = sharedDataA[index1];
+                const uint64_t upperB = sharedDataB[index0];
+                const uint64_t lowerB = sharedDataB[index1];
+                sharedDataA[index0] = AddP(upperA, lowerA);
+                sharedDataA[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperA, lowerA), twiddle);
+                sharedDataB[index0] = AddP(upperB, lowerB);
+                sharedDataB[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperB, lowerB), twiddle);
+            } else if constexpr (Mode == Multiway::ThreeWay) {
+                const uint64_t upperA = sharedDataA[index0];
+                const uint64_t lowerA = sharedDataA[index1];
+                const uint64_t upperB = sharedDataB[index0];
+                const uint64_t lowerB = sharedDataB[index1];
+                const uint64_t upperC = sharedDataC[index0];
+                const uint64_t lowerC = sharedDataC[index1];
+                sharedDataA[index0] = AddP(upperA, lowerA);
+                sharedDataA[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperA, lowerA), twiddle);
+                sharedDataB[index0] = AddP(upperB, lowerB);
+                sharedDataB[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperB, lowerB), twiddle);
+                sharedDataC[index0] = AddP(upperC, lowerC);
+                sharedDataC[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperC, lowerC), twiddle);
+            } else {
+                const uint64_t upperA = sharedDataA[index0];
+                const uint64_t lowerA = sharedDataA[index1];
+                const uint64_t upperB = sharedDataB[index0];
+                const uint64_t lowerB = sharedDataB[index1];
+                const uint64_t upperC = sharedDataC[index0];
+                const uint64_t lowerC = sharedDataC[index1];
+                const uint64_t upperD = sharedDataD[index0];
+                const uint64_t lowerD = sharedDataD[index1];
+                sharedDataA[index0] = AddP(upperA, lowerA);
+                sharedDataA[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperA, lowerA), twiddle);
+                sharedDataB[index0] = AddP(upperB, lowerB);
+                sharedDataB[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperB, lowerB), twiddle);
+                sharedDataC[index0] = AddP(upperC, lowerC);
+                sharedDataC[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperC, lowerC), twiddle);
+                sharedDataD[index0] = AddP(upperD, lowerD);
+                sharedDataD[index1] =
+                    MontgomeryMul(grid, block, debugCombo, SubP(upperD, lowerD), twiddle);
+            }
+        }
+
+        block.sync();
+    }
+
+    for (uint32_t index = block.thread_index().x; index < len; index += block.size()) {
+        if constexpr (Mode == Multiway::OneWay || Mode == Multiway::TwoWay ||
+                      Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
+            A[tile * TS + index] = sharedDataA[index];
+        }
+        if constexpr (Mode == Multiway::TwoWay || Mode == Multiway::ThreeWay ||
+                      Mode == Multiway::FourWay) {
+            B[tile * TS + index] = sharedDataB[index];
+        }
+        if constexpr (Mode == Multiway::ThreeWay || Mode == Multiway::FourWay) {
+            C[tile * TS + index] = sharedDataC[index];
+        }
+        if constexpr (Mode == Multiway::FourWay) {
+            D[tile * TS + index] = sharedDataD[index];
+        }
+    }
+}
+
 template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TileSizeLog2>
 static __device__ inline uint32_t
 SmallRadixPhase1_SM(uint64_t *sharedData,
@@ -1499,6 +1621,100 @@ SmallRadixPhase1_SM(uint64_t *sharedData,
 
     // Blocks with no assigned tile can still have the one-time twiddle copy outstanding. Drain it
     // before phase 2 reuses the same shared-memory allocation for per-warp pages.
+    cg::wait(block);
+    grid.sync();
+    return S1;
+}
+
+template <class SharkFloatParams, Multiway Mode, uint32_t TileSizeLog2>
+static __device__ inline uint32_t
+SmallRadixPhase1DIF_SM(uint64_t *sharedData,
+                       cooperative_groups::grid_group &grid,
+                       cooperative_groups::thread_block &block,
+                       DebugGlobalCount<SharkFloatParams> *debugCombo,
+                       uint64_t *__restrict A,
+                       uint64_t *__restrict B,
+                       uint64_t *__restrict C,
+                       uint64_t *__restrict D,
+                       uint32_t N,
+                       uint32_t stages,
+                       const uint64_t *__restrict stageTwiddles)
+{
+    static_assert(Mode != Multiway::SevenWay);
+
+    namespace cg = cooperative_groups;
+
+    constexpr uint32_t TS = 1u << TileSizeLog2;
+
+    auto countTrailingZeros = [](uint32_t value) -> uint32_t {
+        uint32_t count = 0;
+        while ((value & 1u) == 0u) {
+            value >>= 1u;
+            ++count;
+        }
+        return count;
+    };
+
+    const uint32_t S0 = stages < TileSizeLog2 ? stages : TileSizeLog2;
+    const uint32_t rem = N & (TS - 1u);
+    const uint32_t tailLength = rem == 0u ? TS : rem;
+    const uint32_t tailStageCapacity = rem == 0u ? TileSizeLog2 : countTrailingZeros(tailLength);
+    const uint32_t S1 = S0 < tailStageCapacity ? S0 : tailStageCapacity;
+    if (S1 == 0u)
+        return 0u;
+
+    const uint32_t tiles = (N + TS - 1u) / TS;
+    auto *const sharedDataA = sharedData;
+    auto *const sharedDataB = sharedDataA + TS;
+    auto *const sharedDataC = sharedDataB + TS;
+    auto *const sharedDataD = sharedDataC + TS;
+    auto *const sharedTwiddles = Mode == Multiway::FourWay ? sharedDataD + TS : sharedDataC + TS;
+
+    constexpr uint32_t MaxCachedStages = 7u;
+    const uint32_t cachedStages = S1 < MaxCachedStages ? S1 : MaxCachedStages;
+    const uint32_t cachedTwiddles = cachedStages > 0u ? (1u << cachedStages) - 1u : 0u;
+
+    if (cachedTwiddles > 0u) {
+        auto alignWorkspace = [](size_t value, size_t alignment) {
+            return (value + alignment - 1u) & ~(alignment - 1u);
+        };
+        constexpr auto alignment = 16u;
+        const auto alignedSize = alignWorkspace(cachedTwiddles * sizeof(uint64_t), alignment);
+        cg::memcpy_async(
+            block, sharedTwiddles, stageTwiddles, cuda::aligned_size_t<alignment>(alignedSize));
+    }
+
+    for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
+        const bool isLast = tile == tiles - 1u;
+        const bool hasNextTile = tile + gridDim.x < tiles;
+        const uint32_t len = isLast ? tailLength : TS;
+
+        LoadOneTilePhase1SM<SharkFloatParams, Mode>(
+            block, sharedDataA, sharedDataB, sharedDataC, sharedDataD, A, B, C, D, tile, TS, len);
+        cg::wait(block);
+        ProcessLoadedTilePhase1DIFSM<SharkFloatParams, Mode>(block,
+                                                             grid,
+                                                             debugCombo,
+                                                             sharedDataA,
+                                                             sharedDataB,
+                                                             sharedDataC,
+                                                             sharedDataD,
+                                                             A,
+                                                             B,
+                                                             C,
+                                                             D,
+                                                             sharedTwiddles,
+                                                             stageTwiddles,
+                                                             tile,
+                                                             TS,
+                                                             len,
+                                                             S1,
+                                                             cachedStages);
+
+        if (hasNextTile)
+            block.sync();
+    }
+
     cg::wait(block);
     grid.sync();
     return S1;
@@ -1979,6 +2195,339 @@ StoreRadix4StagePair(cooperative_groups::grid_group &grid,
     data[index3] = SubP(firstValue1, secondProduct1);
 }
 
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+StoreRadix4DIFStagePair(cooperative_groups::grid_group &grid,
+                        cooperative_groups::thread_block &block,
+                        DebugGlobalCount<SharkFloatParams> *debugCombo,
+                        uint64_t *SharkRestrict data,
+                        uint32_t index0,
+                        uint32_t index1,
+                        uint32_t index2,
+                        uint32_t index3,
+                        uint64_t value0,
+                        uint64_t value1,
+                        uint64_t value2,
+                        uint64_t value3,
+                        uint64_t firstStageTwiddle0,
+                        uint64_t firstStageTwiddle1,
+                        uint64_t secondStageTwiddle)
+{
+    const uint64_t firstValue0 = AddP(value0, value2);
+    const uint64_t firstValue1 = AddP(value1, value3);
+    const uint64_t firstProduct0 =
+        MontgomeryMul(grid, block, debugCombo, SubP(value0, value2), firstStageTwiddle0);
+    const uint64_t firstProduct1 =
+        MontgomeryMul(grid, block, debugCombo, SubP(value1, value3), firstStageTwiddle1);
+
+    const uint64_t secondValue0 = AddP(firstValue0, firstValue1);
+    const uint64_t secondValue1 =
+        MontgomeryMul(grid, block, debugCombo, SubP(firstValue0, firstValue1), secondStageTwiddle);
+    const uint64_t secondValue2 = AddP(firstProduct0, firstProduct1);
+    const uint64_t secondValue3 =
+        MontgomeryMul(grid, block, debugCombo, SubP(firstProduct0, firstProduct1), secondStageTwiddle);
+
+    data[index0] = secondValue0;
+    data[index1] = secondValue1;
+    data[index2] = secondValue2;
+    data[index3] = secondValue3;
+}
+
+template <class SharkFloatParams, Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly void
+ProcessRadix2DIFStage(cooperative_groups::grid_group &grid,
+                      cooperative_groups::thread_block &block,
+                      DebugGlobalCount<SharkFloatParams> *debugCombo,
+                      uint64_t *SharkRestrict A,
+                      uint64_t *SharkRestrict B,
+                      uint64_t *SharkRestrict C,
+                      uint64_t *SharkRestrict D,
+                      uint64_t *SharkRestrict E,
+                      uint64_t *SharkRestrict F,
+                      uint64_t *SharkRestrict G,
+                      const uint64_t *SharkRestrict stageTwiddleTable,
+                      uint32_t transformSize,
+                      uint32_t stageIndex,
+                      size_t globalThreadIndex,
+                      size_t gridSize)
+{
+    const uint32_t butterflySpan = 1u << stageIndex;
+    const uint32_t halfSpan = butterflySpan >> 1u;
+    const uint32_t twiddleStageOffset = halfSpan - 1u;
+    const size_t butterflyCount = static_cast<size_t>(transformSize) >> 1u;
+
+    for (size_t task = globalThreadIndex; task < butterflyCount; task += gridSize) {
+        const uint32_t blockIndex = static_cast<uint32_t>(task / halfSpan);
+        const uint32_t jIndex = static_cast<uint32_t>(task - static_cast<size_t>(blockIndex) * halfSpan);
+        const uint32_t upperIndex = blockIndex * butterflySpan + jIndex;
+        const uint32_t lowerIndex = upperIndex + halfSpan;
+        const uint64_t twiddle = stageTwiddleTable[twiddleStageOffset + jIndex];
+
+        if constexpr (Mode == Multiway::OneWay) {
+            const uint64_t upper = A[upperIndex];
+            const uint64_t lower = A[lowerIndex];
+            A[upperIndex] = AddP(upper, lower);
+            A[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upper, lower), twiddle);
+        } else if constexpr (Mode == Multiway::TwoWay) {
+            const uint64_t upperA = A[upperIndex];
+            const uint64_t lowerA = A[lowerIndex];
+            const uint64_t upperB = B[upperIndex];
+            const uint64_t lowerB = B[lowerIndex];
+            A[upperIndex] = AddP(upperA, lowerA);
+            A[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperA, lowerA), twiddle);
+            B[upperIndex] = AddP(upperB, lowerB);
+            B[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperB, lowerB), twiddle);
+        } else if constexpr (Mode == Multiway::ThreeWay) {
+            const uint64_t upperA = A[upperIndex];
+            const uint64_t lowerA = A[lowerIndex];
+            const uint64_t upperB = B[upperIndex];
+            const uint64_t lowerB = B[lowerIndex];
+            const uint64_t upperC = C[upperIndex];
+            const uint64_t lowerC = C[lowerIndex];
+            A[upperIndex] = AddP(upperA, lowerA);
+            A[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperA, lowerA), twiddle);
+            B[upperIndex] = AddP(upperB, lowerB);
+            B[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperB, lowerB), twiddle);
+            C[upperIndex] = AddP(upperC, lowerC);
+            C[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperC, lowerC), twiddle);
+        } else if constexpr (Mode == Multiway::FourWay) {
+            const uint64_t upperA = A[upperIndex];
+            const uint64_t lowerA = A[lowerIndex];
+            const uint64_t upperB = B[upperIndex];
+            const uint64_t lowerB = B[lowerIndex];
+            const uint64_t upperC = C[upperIndex];
+            const uint64_t lowerC = C[lowerIndex];
+            const uint64_t upperD = D[upperIndex];
+            const uint64_t lowerD = D[lowerIndex];
+            A[upperIndex] = AddP(upperA, lowerA);
+            A[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperA, lowerA), twiddle);
+            B[upperIndex] = AddP(upperB, lowerB);
+            B[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperB, lowerB), twiddle);
+            C[upperIndex] = AddP(upperC, lowerC);
+            C[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperC, lowerC), twiddle);
+            D[upperIndex] = AddP(upperD, lowerD);
+            D[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperD, lowerD), twiddle);
+        } else {
+            const uint64_t upperA = A[upperIndex];
+            const uint64_t lowerA = A[lowerIndex];
+            const uint64_t upperB = B[upperIndex];
+            const uint64_t lowerB = B[lowerIndex];
+            const uint64_t upperC = C[upperIndex];
+            const uint64_t lowerC = C[lowerIndex];
+            const uint64_t upperD = D[upperIndex];
+            const uint64_t lowerD = D[lowerIndex];
+            const uint64_t upperE = E[upperIndex];
+            const uint64_t lowerE = E[lowerIndex];
+            const uint64_t upperF = F[upperIndex];
+            const uint64_t lowerF = F[lowerIndex];
+            const uint64_t upperG = G[upperIndex];
+            const uint64_t lowerG = G[lowerIndex];
+            A[upperIndex] = AddP(upperA, lowerA);
+            A[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperA, lowerA), twiddle);
+            B[upperIndex] = AddP(upperB, lowerB);
+            B[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperB, lowerB), twiddle);
+            C[upperIndex] = AddP(upperC, lowerC);
+            C[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperC, lowerC), twiddle);
+            D[upperIndex] = AddP(upperD, lowerD);
+            D[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperD, lowerD), twiddle);
+            E[upperIndex] = AddP(upperE, lowerE);
+            E[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperE, lowerE), twiddle);
+            F[upperIndex] = AddP(upperF, lowerF);
+            F[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperF, lowerF), twiddle);
+            G[upperIndex] = AddP(upperG, lowerG);
+            G[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upperG, lowerG), twiddle);
+        }
+    }
+}
+
+template <class SharkFloatParams, Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly void
+ForwardDIFScalar(cooperative_groups::grid_group &grid,
+                 cooperative_groups::thread_block &block,
+                 DebugGlobalCount<SharkFloatParams> *debugCombo,
+                 uint64_t *SharkRestrict A,
+                 uint64_t *SharkRestrict B,
+                 uint64_t *SharkRestrict C,
+                 uint64_t *SharkRestrict D,
+                 uint64_t *SharkRestrict E,
+                 uint64_t *SharkRestrict F,
+                 uint64_t *SharkRestrict G,
+                 const uint64_t *SharkRestrict stageTwiddleTable,
+                 uint32_t transformSize,
+                 uint32_t numStages,
+                 size_t globalThreadIndex,
+                 size_t gridSize)
+{
+    for (uint32_t stageIndex = numStages; stageIndex > 0u; --stageIndex) {
+        ProcessRadix2DIFStage<SharkFloatParams, Mode>(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      A,
+                                                      B,
+                                                      C,
+                                                      D,
+                                                      E,
+                                                      F,
+                                                      G,
+                                                      stageTwiddleTable,
+                                                      transformSize,
+                                                      stageIndex,
+                                                      globalThreadIndex,
+                                                      gridSize);
+        grid.sync();
+    }
+}
+
+template <class SharkFloatParams, Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly void
+ProcessRadix4DIFStagePairPipelined(uint64_t *sharedData,
+                                   cooperative_groups::grid_group &grid,
+                                   cooperative_groups::thread_block &block,
+                                   DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                   uint64_t *SharkRestrict A,
+                                   uint64_t *SharkRestrict B,
+                                   uint64_t *SharkRestrict C,
+                                   uint64_t *SharkRestrict D,
+                                   const uint64_t *SharkRestrict stageTwiddleTable,
+                                   uint32_t transformSize,
+                                   uint32_t firstStageIndex,
+                                   uint32_t warpIndex,
+                                   uint32_t numWarpsGrid)
+{
+    static_assert(Mode != Multiway::SevenWay);
+
+    namespace cg = cooperative_groups;
+
+    constexpr uint32_t WarpSize = 32u;
+    constexpr uint32_t PlanesPerPage = 4u;
+    constexpr uint32_t PipelineSlots = 2u;
+    constexpr uint32_t MaxWarpsPerBlock = 512u / WarpSize;
+    constexpr size_t MaxPipelineBytes =
+        PipelineSlots * MaxWarpsPerBlock * PlanesPerPage * WarpSize * sizeof(uint64_t);
+    static_assert(MaxPipelineBytes == 32u * 1024u);
+
+    const auto warp = cg::tiled_partition<WarpSize>(block);
+    const uint32_t laneIndex = warp.thread_rank();
+    const uint32_t localWarpIndex = block.thread_index().x / WarpSize;
+    const uint32_t warpsPerBlock = block.size() / WarpSize;
+    const uint32_t slotStride = warpsPerBlock * PlanesPerPage * WarpSize;
+    uint64_t *const warpPage0 = sharedData + localWarpIndex * PlanesPerPage * WarpSize;
+    uint64_t *const warpPage1 = sharedData + slotStride + localWarpIndex * PlanesPerPage * WarpSize;
+
+    const uint32_t firstHalfSpan = 1u << (firstStageIndex - 1u);
+    const uint32_t secondHalfSpan = firstHalfSpan >> 1u;
+    const uint32_t combinedSpan = firstHalfSpan << 1u;
+    const uint64_t *const firstStageTwiddles = stageTwiddleTable + firstHalfSpan - 1u;
+    const uint64_t *const secondStageTwiddles = stageTwiddleTable + secondHalfSpan - 1u;
+    const uint32_t numJChunks = secondHalfSpan / WarpSize;
+    const uint32_t numBlocks = transformSize / combinedSpan;
+    const size_t totalTasks = static_cast<size_t>(numBlocks) * numJChunks;
+    const size_t tasksPerWarp = (totalTasks + numWarpsGrid - 1ull) / numWarpsGrid;
+    const size_t warpTaskBegin = static_cast<size_t>(warpIndex) * tasksPerWarp;
+    const size_t warpTaskEnd = min(totalTasks, warpTaskBegin + tasksPerWarp);
+
+    if (warpTaskBegin >= warpTaskEnd)
+        return;
+
+    constexpr size_t PlaneBytes = WarpSize * sizeof(uint64_t);
+    auto issuePage = [&](size_t taskIndex, uint64_t *page) {
+        const uint32_t blockIndex = static_cast<uint32_t>(taskIndex / numJChunks);
+        const uint32_t jChunkIndex =
+            static_cast<uint32_t>(taskIndex - static_cast<size_t>(blockIndex) * numJChunks);
+        const uint32_t pageBase = blockIndex * combinedSpan + jChunkIndex * WarpSize;
+
+        cg::memcpy_async(warp, page, A + pageBase, cuda::aligned_size_t<16>(PlaneBytes));
+        cg::memcpy_async(
+            warp, page + WarpSize, A + pageBase + secondHalfSpan, cuda::aligned_size_t<16>(PlaneBytes));
+        cg::memcpy_async(warp,
+                         page + 2u * WarpSize,
+                         A + pageBase + firstHalfSpan,
+                         cuda::aligned_size_t<16>(PlaneBytes));
+        cg::memcpy_async(warp,
+                         page + 3u * WarpSize,
+                         A + pageBase + firstHalfSpan + secondHalfSpan,
+                         cuda::aligned_size_t<16>(PlaneBytes));
+    };
+
+    auto processDirectArray = [&](uint64_t *data,
+                                  uint32_t index0,
+                                  uint32_t index1,
+                                  uint32_t index2,
+                                  uint32_t index3,
+                                  uint64_t firstTwiddle0,
+                                  uint64_t firstTwiddle1,
+                                  uint64_t secondTwiddle) {
+        StoreRadix4DIFStagePair(grid,
+                                block,
+                                debugCombo,
+                                data,
+                                index0,
+                                index1,
+                                index2,
+                                index3,
+                                data[index0],
+                                data[index1],
+                                data[index2],
+                                data[index3],
+                                firstTwiddle0,
+                                firstTwiddle1,
+                                secondTwiddle);
+    };
+
+    uint32_t currentSlot = 0u;
+    issuePage(warpTaskBegin, warpPage0);
+
+    for (size_t taskIndex = warpTaskBegin; taskIndex < warpTaskEnd; ++taskIndex) {
+        const uint32_t blockIndex = static_cast<uint32_t>(taskIndex / numJChunks);
+        const uint32_t jChunkIndex =
+            static_cast<uint32_t>(taskIndex - static_cast<size_t>(blockIndex) * numJChunks);
+        const uint32_t jIndex = jChunkIndex * WarpSize + laneIndex;
+        const uint32_t index0 = blockIndex * combinedSpan + jIndex;
+        const uint32_t index1 = index0 + secondHalfSpan;
+        const uint32_t index2 = index0 + firstHalfSpan;
+        const uint32_t index3 = index2 + secondHalfSpan;
+        const uint64_t firstTwiddle0 = firstStageTwiddles[jIndex];
+        const uint64_t firstTwiddle1 = firstStageTwiddles[jIndex + secondHalfSpan];
+        const uint64_t secondTwiddle = secondStageTwiddles[jIndex];
+
+        if constexpr (Mode != Multiway::OneWay)
+            processDirectArray(
+                B, index0, index1, index2, index3, firstTwiddle0, firstTwiddle1, secondTwiddle);
+        if constexpr (Mode == Multiway::ThreeWay || Mode == Multiway::FourWay)
+            processDirectArray(
+                C, index0, index1, index2, index3, firstTwiddle0, firstTwiddle1, secondTwiddle);
+        if constexpr (Mode == Multiway::FourWay)
+            processDirectArray(
+                D, index0, index1, index2, index3, firstTwiddle0, firstTwiddle1, secondTwiddle);
+
+        cg::wait(warp);
+
+        const bool hasNextTask = taskIndex + 1u < warpTaskEnd;
+        uint64_t *const currentPage = currentSlot == 0u ? warpPage0 : warpPage1;
+        if (hasNextTask) {
+            uint64_t *const nextPage = currentSlot == 0u ? warpPage1 : warpPage0;
+            issuePage(taskIndex + 1u, nextPage);
+        }
+
+        StoreRadix4DIFStagePair(grid,
+                                block,
+                                debugCombo,
+                                A,
+                                index0,
+                                index1,
+                                index2,
+                                index3,
+                                currentPage[laneIndex],
+                                currentPage[WarpSize + laneIndex],
+                                currentPage[2u * WarpSize + laneIndex],
+                                currentPage[3u * WarpSize + laneIndex],
+                                firstTwiddle0,
+                                firstTwiddle1,
+                                secondTwiddle);
+        currentSlot ^= 1u;
+    }
+}
+
 // Pair two large radix-2 stages for the regular TwoWay/ThreeWay transforms. One array is staged
 // through a four-plane per-warp page while the remaining arrays provide enough independent
 // Montgomery work to cover the copy. Pairing the stages removes one complete global read/write pass
@@ -2275,7 +2824,7 @@ ProcessRadix2StagePipelinedSevenWay(uint64_t *sharedData,
 // Multiway::FourWay  : operates on A, B, C, D in lockstep
 // Multiway::SevenWay : operates on A, B, C, D, E, F, G in lockstep
 // -----------------------------------------------------------------------------
-template <class SharkFloatParams, Multiway OneTwoThree, bool Inverse>
+template <class SharkFloatParams, Multiway OneTwoThree, bool Inverse, bool DecimationInFrequency = false>
 static __device__ SharkForceInlineReleaseOnly void
 NTTRadix2_GridStride(uint64_t *sharedData,
                      cooperative_groups::grid_group &grid,
@@ -2308,10 +2857,87 @@ NTTRadix2_GridStride(uint64_t *sharedData,
 
     const size_t gridSize = grid.size();
     const auto globalThreadIndex = block.thread_index().x + block.group_index().x * blockDim.x;
-
     const uint32_t laneIndex = static_cast<uint32_t>(globalThreadIndex & (warpSize - 1u));
     const uint32_t warpIndex = static_cast<uint32_t>(globalThreadIndex / warpSize);
     const uint32_t numWarpsGrid = static_cast<uint32_t>(gridSize / warpSize);
+
+    if constexpr (DecimationInFrequency) {
+        static_assert(!Inverse);
+        constexpr bool useScalarForwardDIF = false;
+        if constexpr (OneTwoThree == Multiway::SevenWay || useScalarForwardDIF) {
+            ForwardDIFScalar<SharkFloatParams, OneTwoThree>(grid,
+                                                            block,
+                                                            debugCombo,
+                                                            A,
+                                                            B,
+                                                            C,
+                                                            D,
+                                                            E,
+                                                            F,
+                                                            G,
+                                                            stageTwiddleTable,
+                                                            transformSize,
+                                                            numStages,
+                                                            static_cast<size_t>(globalThreadIndex),
+                                                            gridSize);
+            return;
+        } else {
+            const uint32_t smallStageCount = numStages < TileSizeLog2 ? numStages : TileSizeLog2;
+            uint32_t stageIndex = numStages;
+            while (stageIndex > smallStageCount + 1u) {
+                ProcessRadix4DIFStagePairPipelined<SharkFloatParams, OneTwoThree>(sharedData,
+                                                                                  grid,
+                                                                                  block,
+                                                                                  debugCombo,
+                                                                                  A,
+                                                                                  B,
+                                                                                  C,
+                                                                                  D,
+                                                                                  stageTwiddleTable,
+                                                                                  transformSize,
+                                                                                  stageIndex,
+                                                                                  warpIndex,
+                                                                                  numWarpsGrid);
+                grid.sync();
+                stageIndex -= 2u;
+            }
+
+            if (stageIndex > smallStageCount) {
+                ProcessRadix2DIFStage<SharkFloatParams, OneTwoThree>(
+                    grid,
+                    block,
+                    debugCombo,
+                    A,
+                    B,
+                    C,
+                    D,
+                    E,
+                    F,
+                    G,
+                    stageTwiddleTable,
+                    transformSize,
+                    stageIndex,
+                    static_cast<size_t>(globalThreadIndex),
+                    gridSize);
+                grid.sync();
+            }
+
+            if (smallStageCount > 0u) {
+                SmallRadixPhase1DIF_SM<SharkFloatParams, OneTwoThree, TileSizeLog2>(sharedData,
+                                                                                    grid,
+                                                                                    block,
+                                                                                    debugCombo,
+                                                                                    A,
+                                                                                    B,
+                                                                                    C,
+                                                                                    D,
+                                                                                    transformSize,
+                                                                                    numStages,
+                                                                                    stageTwiddleTable);
+            }
+        }
+        return;
+    }
 
     uint32_t firstLargeStage = 0;
 

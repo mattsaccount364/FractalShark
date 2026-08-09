@@ -85,6 +85,9 @@ raw pointers for non-owning references; do not introduce `std::shared_ptr`. Defi
 `#pragma warning(push)`/`pop`; never suppress warnings project-wide. Use `std::cout` for ordinary
 diagnostics and reserve `OutputDebugStringA` for heap or panic paths.
 
+Never add local arrays to CUDA code. Always pass parameters one at a time so they can be allocated in
+registers.
+
 After modifying C++/CUDA files, run the formatting script from the repository root:
 
 ```powershell

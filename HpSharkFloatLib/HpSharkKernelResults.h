@@ -73,12 +73,6 @@ struct alignas(16) HpSharkReference2PackedCarryPrefixDescriptor {
     uint32_t Padding;
 };
 
-struct HpSharkReference2ConstantSpectra {
-    uint64_t *CReal;
-    uint64_t *CImag;
-    uint64_t *One;
-};
-
 template <class SharkFloatParams> struct HpSharkReference2Workspace {
     static constexpr uint32_t MaxFusedN = 32u * 1024u * 1024u;
     static constexpr uint32_t MaxFusedStages = 25;
@@ -86,7 +80,6 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
         SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L));
     static constexpr uint32_t MinFusedStages = SharkNTT::CeilLog2U32(MinFusedN);
     static constexpr uint32_t PlanCacheEntryCount = MaxFusedStages - MinFusedStages + 1u;
-    static constexpr uint32_t FusedArenaSize = 2u * MaxFusedN - MinFusedN;
     static constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
     static constexpr uint32_t MaxCarryPrefixParts = (MaxFusedLimbs + 31u) / 32u;
     static constexpr uint32_t CarryPrefixControlCount = 3u;
@@ -96,11 +89,8 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
 
     uint64_t *ZReal;
     uint64_t *ZImag;
-    uint64_t *CRealArena;
-    uint64_t *CImagArena;
     uint64_t *DzdcReal;
     uint64_t *DzdcImag;
-    uint64_t *OneArena;
     uint64_t *RealOutput;
     uint64_t *ImagOutput;
     uint64_t *DzdcRealOutput;
@@ -113,12 +103,10 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     uint32_t *Magnitude;
     uint64_t *StageOmegas;
     uint64_t *StageOmegasInverse;
-    uint64_t *OmegaPowersArena;
     uint64_t *ForwardTwiddles;
     uint64_t *InverseTwiddles;
     SharkNTT::PlanPrime Plans[PlanCacheEntryCount];
     SharkNTT::RootTables PlanRoots[PlanCacheEntryCount];
-    HpSharkReference2ConstantSpectra ConstantSpectra[PlanCacheEntryCount];
     uint32_t ValidPlanMask;
     uint32_t GeneratedStages;
     uint32_t ActualPrecisionLimbs;

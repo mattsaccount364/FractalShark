@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [ValidateRange(1, 256)]
-    [int]$ThrottleLimit = [Math]::Max(1, [Environment]::ProcessorCount)
+    [int]$ThrottleLimit = [Math]::Max(1, [Environment]::ProcessorCount),
+
+    [switch]$All
 )
 
 Set-StrictMode -Version Latest
@@ -82,9 +84,16 @@ function Get-ClangFormatPath {
 }
 
 function Get-TrackedSourcePaths {
-    $relativePaths = & git -C $repositoryRoot ls-files -z -- $sourcePatterns
+    param([switch]$ChangedOnly)
+
+    if ($ChangedOnly) {
+        $relativePaths = & git -C $repositoryRoot diff --name-only --diff-filter=ACMRTUXB -z HEAD -- $sourcePatterns
+    } else {
+        $relativePaths = & git -C $repositoryRoot ls-files -z -- $sourcePatterns
+    }
+
     if ($LASTEXITCODE -ne 0) {
-        throw 'git ls-files failed while locating tracked C++/CUDA files.'
+        throw 'git failed while locating tracked C++/CUDA files.'
     }
 
     $sourcePaths = [System.Collections.Generic.List[string]]::new()
@@ -115,9 +124,16 @@ function Get-TrackedSourcePaths {
 }
 
 function Get-TrackedLineEndingOnlyPaths {
-    $relativePaths = & git -C $repositoryRoot ls-files -z -- $lineEndingOnlyPatterns
+    param([switch]$ChangedOnly)
+
+    if ($ChangedOnly) {
+        $relativePaths = & git -C $repositoryRoot diff --name-only --diff-filter=ACMRTUXB -z HEAD -- $lineEndingOnlyPatterns
+    } else {
+        $relativePaths = & git -C $repositoryRoot ls-files -z -- $lineEndingOnlyPatterns
+    }
+
     if ($LASTEXITCODE -ne 0) {
-        throw 'git ls-files failed while locating tracked metadata files.'
+        throw 'git failed while locating tracked metadata files.'
     }
 
     $paths = [System.Collections.Generic.List[string]]::new()
@@ -240,12 +256,14 @@ if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot '.clang-format') -Pa
     throw ".clang-format was not found in $repositoryRoot."
 }
 
-$sourcePaths = Get-TrackedSourcePaths
-if (-not $sourcePaths) {
+$changedOnly = -not $All
+$sourcePaths = @(Get-TrackedSourcePaths -ChangedOnly:$changedOnly)
+
+if (-not $sourcePaths -and $All) {
     throw 'No tracked C++/CUDA files were found.'
 }
 
-$lineEndingOnlyPaths = Get-TrackedLineEndingOnlyPaths
+$lineEndingOnlyPaths = @(Get-TrackedLineEndingOnlyPaths -ChangedOnly:$changedOnly)
 $lineEndingPaths = @($sourcePaths + $lineEndingOnlyPaths | Sort-Object -Unique)
 
 $missingPaths = @($lineEndingPaths | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
@@ -253,17 +271,32 @@ if ($missingPaths) {
     throw "Tracked formatter files are absent from the working tree: $($missingPaths -join '; ')"
 }
 
-$clangFormatPath = Get-ClangFormatPath
-Write-Host "Using clang-format: $clangFormatPath"
-Write-Host "Formatting $($sourcePaths.Count) tracked C++/CUDA files."
+if (-not $sourcePaths -and -not $lineEndingOnlyPaths) {
+    Write-Host 'No changed tracked formatter files were found.'
+    exit 0
+}
+
+if ($sourcePaths) {
+    $clangFormatPath = Get-ClangFormatPath
+    Write-Host "Using clang-format: $clangFormatPath"
+}
+
+if ($changedOnly) {
+    Write-Host "Formatting $($sourcePaths.Count) tracked C++/CUDA files changed from HEAD."
+} else {
+    Write-Host "Formatting $($sourcePaths.Count) tracked C++/CUDA files."
+}
+
 Write-Host "Excluded $excludedSourcePathCount upstream C++/CUDA files."
 Write-Host "Using up to $ThrottleLimit concurrent clang-format processes."
 
-Push-Location $repositoryRoot
-try {
-    Format-SourcePaths -ClangFormatPath $clangFormatPath -SourcePaths $sourcePaths -MaximumConcurrency $ThrottleLimit
-} finally {
-    Pop-Location
+if ($sourcePaths) {
+    Push-Location $repositoryRoot
+    try {
+        Format-SourcePaths -ClangFormatPath $clangFormatPath -SourcePaths $sourcePaths -MaximumConcurrency $ThrottleLimit
+    } finally {
+        Pop-Location
+    }
 }
 
 $normalizedCount = 0

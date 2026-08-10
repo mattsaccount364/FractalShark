@@ -1943,6 +1943,310 @@ AccumulateAlignedOutputSpectra(cooperative_groups::grid_group &grid,
     }
 }
 
+static __device__ SharkForceInlineReleaseOnly uint64_t
+ShuffleXorUint64Width(unsigned mask, uint64_t value, int laneMask, int width)
+{
+    const uint32_t low = __shfl_xor_sync(mask, static_cast<uint32_t>(value), laneMask, width);
+    const uint32_t high = __shfl_xor_sync(mask, static_cast<uint32_t>(value >> 32), laneMask, width);
+    return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32);
+}
+
+static __device__ SharkForceInlineReleaseOnly uint64_t
+ShuffleUint64Width(unsigned mask, uint64_t value, int sourceLane, int width)
+{
+    const uint32_t low = __shfl_sync(mask, static_cast<uint32_t>(value), sourceLane, width);
+    const uint32_t high = __shfl_sync(mask, static_cast<uint32_t>(value >> 32), sourceLane, width);
+    return static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32);
+}
+
+static __device__ SharkForceInlineReleaseOnly void
+RegroupWarpButterfly(uint64_t previousUpper,
+                     uint64_t previousLower,
+                     uint32_t shuffleDistance,
+                     bool ownsLowerInput,
+                     uint64_t &upper,
+                     uint64_t &lower)
+{
+    constexpr unsigned FullWarpMask = 0xFFFF'FFFFu;
+    constexpr int SubgroupWidth = 16;
+    const uint64_t ownValue = ownsLowerInput ? previousLower : previousUpper;
+    const uint64_t partnerCandidate = ownsLowerInput ? previousUpper : previousLower;
+    const uint64_t partner = ShuffleXorUint64Width(
+        FullWarpMask, partnerCandidate, static_cast<int>(shuffleDistance), SubgroupWidth);
+    upper = ownsLowerInput ? partner : ownValue;
+    lower = ownsLowerInput ? ownValue : partner;
+}
+
+static __device__ SharkForceInlineReleaseOnly uint64_t
+LoadWarpStageTwiddle(const uint64_t *twiddles, uint32_t stage, uint32_t subgroupLane)
+{
+    constexpr unsigned FullWarpMask = 0xFFFF'FFFFu;
+    constexpr int SubgroupWidth = 16;
+    const uint32_t halfSpan = 1u << (stage - 1u);
+    const uint32_t j = subgroupLane & (halfSpan - 1u);
+    uint64_t twiddle = 0ull;
+    if (subgroupLane < halfSpan)
+        twiddle = twiddles[halfSpan - 1u + subgroupLane];
+    return ShuffleUint64Width(FullWarpMask, twiddle, static_cast<int>(j), SubgroupWidth);
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+ApplyWarpDIFButterfly(cooperative_groups::grid_group &grid,
+                      cooperative_groups::thread_block &block,
+                      DebugGlobalCount<SharkFloatParams> *debugCombo,
+                      uint64_t twiddle,
+                      uint64_t &upper,
+                      uint64_t &lower)
+{
+    const uint64_t originalUpper = upper;
+    const uint64_t originalLower = lower;
+    upper = SharkNTT::AddP(originalUpper, originalLower);
+    lower = SharkNTT::MontgomeryMul<SharkFloatParams>(
+        grid, block, debugCombo, SharkNTT::SubP(originalUpper, originalLower), twiddle);
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+ApplyWarpDITButterfly(cooperative_groups::grid_group &grid,
+                      cooperative_groups::thread_block &block,
+                      DebugGlobalCount<SharkFloatParams> *debugCombo,
+                      uint64_t twiddle,
+                      uint64_t &upper,
+                      uint64_t &lower)
+{
+    const uint64_t originalUpper = upper;
+    const uint64_t product =
+        SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, lower, twiddle);
+    upper = SharkNTT::AddP(originalUpper, product);
+    lower = SharkNTT::SubP(originalUpper, product);
+}
+
+template <class SharkFloatParams, SharkNTT::Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly void
+ApplyReference2WarpPointwise(cooperative_groups::grid_group &grid,
+                             cooperative_groups::thread_block &block,
+                             DebugGlobalCount<SharkFloatParams> *debugCombo,
+                             bool realProductEnabled,
+                             bool imagProductEnabled,
+                             bool dzdcP1Enabled,
+                             bool dzdcP2Enabled,
+                             bool dzdcP3Enabled,
+                             uint64_t &zReal,
+                             uint64_t &zImag,
+                             uint64_t &dzdcReal,
+                             uint64_t &dzdcImag)
+{
+    const uint64_t zRealInput = zReal;
+    const uint64_t zImagInput = zImag;
+    uint64_t real = 0ull;
+    if (realProductEnabled) {
+        const uint64_t sum = AddPSerial(zRealInput, zImagInput);
+        const uint64_t difference = SubPSerial(zRealInput, zImagInput);
+        real = SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, sum, difference);
+    }
+
+    uint64_t imag = 0ull;
+    if (imagProductEnabled) {
+        const uint64_t product =
+            SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, zRealInput, zImagInput);
+        imag = AddPSerial(product, product);
+    }
+
+    if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+        const uint64_t dzdcRealInput = dzdcReal;
+        const uint64_t dzdcImagInput = dzdcImag;
+        uint64_t nextDzdcReal = 0ull;
+        uint64_t nextDzdcImag = 0ull;
+        if (dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled) {
+            const uint64_t p1 = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, zRealInput, dzdcRealInput);
+            const uint64_t p2 = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, zImagInput, dzdcImagInput);
+            const uint64_t stateSum = AddPSerial(zRealInput, zImagInput);
+            const uint64_t derivativeSum = AddPSerial(dzdcRealInput, dzdcImagInput);
+            const uint64_t p3 = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, stateSum, derivativeSum);
+            const uint64_t realDifference = SubPSerial(p1, p2);
+            const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
+            nextDzdcReal = AddPSerial(realDifference, realDifference);
+            nextDzdcImag = AddPSerial(imagDifference, imagDifference);
+        }
+        dzdcReal = nextDzdcReal;
+        dzdcImag = nextDzdcImag;
+    }
+
+    zReal = real;
+    zImag = imag;
+}
+
+template <class SharkFloatParams, SharkNTT::Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly void
+ProcessReference2WarpLocalCenter(cooperative_groups::grid_group &grid,
+                                 cooperative_groups::thread_block &block,
+                                 DebugGlobalCount<SharkFloatParams> *debugCombo,
+                                 uint64_t *sharedDataA,
+                                 uint64_t *sharedDataB,
+                                 uint64_t *sharedDataC,
+                                 uint64_t *sharedDataD,
+                                 const uint64_t *forwardTwiddles,
+                                 const uint64_t *inverseTwiddles,
+                                 uint32_t len,
+                                 bool realProductEnabled,
+                                 bool imagProductEnabled,
+                                 bool dzdcP1Enabled,
+                                 bool dzdcP2Enabled,
+                                 bool dzdcP3Enabled)
+{
+    static_assert(Mode == SharkNTT::Multiway::TwoWay || Mode == SharkNTT::Multiway::FourWay);
+    constexpr uint32_t WarpSize = 32u;
+    constexpr uint32_t SubgroupSize = 16u;
+    constexpr uint32_t CoefficientsPerSubgroup = 32u;
+    constexpr uint32_t CoefficientsPerWarp = 64u;
+    constexpr uint32_t WarpLocalStages = 5u;
+
+    const uint32_t threadIndex = block.thread_index().x;
+    const uint32_t laneIndex = threadIndex & (WarpSize - 1u);
+    const uint32_t subgroupLane = laneIndex & (SubgroupSize - 1u);
+    const uint32_t subgroupIndex = laneIndex / SubgroupSize;
+    const uint32_t warpIndex = threadIndex / WarpSize;
+    const uint32_t warpsPerBlock = block.size() / WarpSize;
+
+    for (uint32_t warpBase = warpIndex * CoefficientsPerWarp; warpBase < len;
+         warpBase += warpsPerBlock * CoefficientsPerWarp) {
+        const uint32_t groupBase = warpBase + subgroupIndex * CoefficientsPerSubgroup;
+        const uint32_t upperIndex = groupBase + subgroupLane;
+        const uint32_t lowerIndex = upperIndex + SubgroupSize;
+
+        uint64_t aUpper = sharedDataA[upperIndex];
+        uint64_t aLower = sharedDataA[lowerIndex];
+        uint64_t bUpper = sharedDataB[upperIndex];
+        uint64_t bLower = sharedDataB[lowerIndex];
+        uint64_t cUpper = 0ull;
+        uint64_t cLower = 0ull;
+        uint64_t dUpper = 0ull;
+        uint64_t dLower = 0ull;
+        if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+            cUpper = sharedDataC[upperIndex];
+            cLower = sharedDataC[lowerIndex];
+            dUpper = sharedDataD[upperIndex];
+            dLower = sharedDataD[lowerIndex];
+        }
+
+        uint64_t twiddle = LoadWarpStageTwiddle(forwardTwiddles, WarpLocalStages, subgroupLane);
+        ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
+        ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
+        if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, cUpper, cLower);
+            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, dUpper, dLower);
+        }
+
+        for (uint32_t stage = WarpLocalStages - 1u; stage > 0u; --stage) {
+            const uint32_t shuffleDistance = 1u << (stage - 1u);
+            const bool ownsLowerInput = (subgroupLane & shuffleDistance) != 0u;
+            uint64_t upper = 0ull;
+            uint64_t lower = 0ull;
+
+            RegroupWarpButterfly(aUpper, aLower, shuffleDistance, ownsLowerInput, upper, lower);
+            aUpper = upper;
+            aLower = lower;
+            RegroupWarpButterfly(bUpper, bLower, shuffleDistance, ownsLowerInput, upper, lower);
+            bUpper = upper;
+            bLower = lower;
+            if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+                RegroupWarpButterfly(cUpper, cLower, shuffleDistance, ownsLowerInput, upper, lower);
+                cUpper = upper;
+                cLower = lower;
+                RegroupWarpButterfly(dUpper, dLower, shuffleDistance, ownsLowerInput, upper, lower);
+                dUpper = upper;
+                dLower = lower;
+            }
+
+            twiddle = LoadWarpStageTwiddle(forwardTwiddles, stage, subgroupLane);
+            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
+            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
+            if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+                ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, cUpper, cLower);
+                ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, dUpper, dLower);
+            }
+        }
+
+        ApplyReference2WarpPointwise<SharkFloatParams, Mode>(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             realProductEnabled,
+                                                             imagProductEnabled,
+                                                             dzdcP1Enabled,
+                                                             dzdcP2Enabled,
+                                                             dzdcP3Enabled,
+                                                             aUpper,
+                                                             bUpper,
+                                                             cUpper,
+                                                             dUpper);
+        ApplyReference2WarpPointwise<SharkFloatParams, Mode>(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             realProductEnabled,
+                                                             imagProductEnabled,
+                                                             dzdcP1Enabled,
+                                                             dzdcP2Enabled,
+                                                             dzdcP3Enabled,
+                                                             aLower,
+                                                             bLower,
+                                                             cLower,
+                                                             dLower);
+
+        twiddle = LoadWarpStageTwiddle(inverseTwiddles, 1u, subgroupLane);
+        ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
+        ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
+        if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, cUpper, cLower);
+            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, dUpper, dLower);
+        }
+
+        for (uint32_t stage = 2u; stage <= WarpLocalStages; ++stage) {
+            const uint32_t shuffleDistance = 1u << (stage - 2u);
+            const bool ownsLowerInput = (subgroupLane & shuffleDistance) != 0u;
+            uint64_t upper = 0ull;
+            uint64_t lower = 0ull;
+
+            RegroupWarpButterfly(aUpper, aLower, shuffleDistance, ownsLowerInput, upper, lower);
+            aUpper = upper;
+            aLower = lower;
+            RegroupWarpButterfly(bUpper, bLower, shuffleDistance, ownsLowerInput, upper, lower);
+            bUpper = upper;
+            bLower = lower;
+            if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+                RegroupWarpButterfly(cUpper, cLower, shuffleDistance, ownsLowerInput, upper, lower);
+                cUpper = upper;
+                cLower = lower;
+                RegroupWarpButterfly(dUpper, dLower, shuffleDistance, ownsLowerInput, upper, lower);
+                dUpper = upper;
+                dLower = lower;
+            }
+
+            twiddle = LoadWarpStageTwiddle(inverseTwiddles, stage, subgroupLane);
+            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
+            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
+            if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+                ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, cUpper, cLower);
+                ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, dUpper, dLower);
+            }
+        }
+
+        sharedDataA[upperIndex] = aUpper;
+        sharedDataA[lowerIndex] = aLower;
+        sharedDataB[upperIndex] = bUpper;
+        sharedDataB[lowerIndex] = bLower;
+        if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+            sharedDataC[upperIndex] = cUpper;
+            sharedDataC[lowerIndex] = cLower;
+            sharedDataD[upperIndex] = dUpper;
+            sharedDataD[lowerIndex] = dLower;
+        }
+    }
+}
+
 template <class SharkFloatParams, SharkNTT::Multiway Mode>
 __device__ SharkForceInlineReleaseOnly void
 FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
@@ -2010,6 +2314,11 @@ FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
         const bool isLastTile = tile == tileCount - 1u;
         const bool hasNextTile = tile + gridDim.x < tileCount;
         const uint32_t len = isLastTile ? tailLength : TileSize;
+        constexpr uint32_t WarpLocalStages = 5u;
+        constexpr uint32_t CoefficientsPerWarp = 64u;
+        const bool useWarpLocalCenter = S1 > WarpLocalStages &&
+                                        (len & (CoefficientsPerWarp - 1u)) == 0u &&
+                                        (block.size() & 31u) == 0u;
         SharkNTT::LoadOneTilePhase1SM<SharkFloatParams, Mode>(block,
                                                               sharedDataA,
                                                               sharedDataB,
@@ -2023,84 +2332,140 @@ FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
                                                               TileSize,
                                                               len);
         cg::wait(block);
-        SharkNTT::ProcessLoadedTileDIFInPlace<SharkFloatParams, Mode>(block,
-                                                                      grid,
-                                                                      debugCombo,
-                                                                      sharedDataA,
-                                                                      sharedDataB,
-                                                                      sharedDataC,
-                                                                      sharedDataD,
-                                                                      forwardTwiddles,
-                                                                      roots.stage_twiddles_fwd,
-                                                                      len,
-                                                                      S1,
-                                                                      cachedStages);
+        SharkNTT::ProcessLoadedTileDIFInPlace<SharkFloatParams, Mode>(
+            block,
+            grid,
+            debugCombo,
+            sharedDataA,
+            sharedDataB,
+            sharedDataC,
+            sharedDataD,
+            forwardTwiddles,
+            roots.stage_twiddles_fwd,
+            len,
+            S1,
+            cachedStages,
+            useWarpLocalCenter ? WarpLocalStages : 0u);
+        if (useWarpLocalCenter) {
+            ProcessReference2WarpLocalCenter<SharkFloatParams, Mode>(grid,
+                                                                     block,
+                                                                     debugCombo,
+                                                                     sharedDataA,
+                                                                     sharedDataB,
+                                                                     sharedDataC,
+                                                                     sharedDataD,
+                                                                     forwardTwiddles,
+                                                                     inverseTwiddles,
+                                                                     len,
+                                                                     realProductEnabled,
+                                                                     imagProductEnabled,
+                                                                     dzdcP1Enabled,
+                                                                     dzdcP2Enabled,
+                                                                     dzdcP3Enabled);
+            block.sync();
 
-        const uint32_t rank = block.thread_index().x;
-        const uint32_t blockSize = block.size();
-        for (uint32_t i = rank; i < len; i += blockSize) {
-            const uint64_t zReal = sharedDataA[i];
-            const uint64_t zImag = sharedDataB[i];
-            uint64_t real = 0ull;
-            if (realProductEnabled) {
-                const uint64_t sum = AddPSerial(zReal, zImag);
-                const uint64_t difference = SubPSerial(zReal, zImag);
-                real =
-                    SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, sum, difference);
+            if (S1 > WarpLocalStages + 1u) {
+                SharkNTT::ProcessLoadedTileDITInPlace<SharkFloatParams, Mode>(block,
+                                                                              grid,
+                                                                              debugCombo,
+                                                                              sharedDataA,
+                                                                              sharedDataB,
+                                                                              sharedDataC,
+                                                                              sharedDataD,
+                                                                              inverseTwiddles,
+                                                                              roots.stage_twiddles_inv,
+                                                                              len,
+                                                                              WarpLocalStages + 1u,
+                                                                              S1 - 1u,
+                                                                              cachedStages);
             }
-            sharedDataA[i] = real;
 
-            uint64_t imag = 0ull;
-            if (imagProductEnabled) {
-                const uint64_t product =
-                    SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, zReal, zImag);
-                imag = AddPSerial(product, product);
-            }
-            sharedDataB[i] = imag;
-
-            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                const uint64_t dzdcRealInput = sharedDataC[i];
-                const uint64_t dzdcImagInput = sharedDataD[i];
-                uint64_t dzdcReal = 0ull;
-                uint64_t dzdcImag = 0ull;
-                if (dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled) {
-                    const uint64_t p1 = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                        grid, block, debugCombo, zReal, dzdcRealInput);
-                    const uint64_t p2 = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                        grid, block, debugCombo, zImag, dzdcImagInput);
-                    const uint64_t stateSum = AddPSerial(zReal, zImag);
-                    const uint64_t derivativeSum = AddPSerial(dzdcRealInput, dzdcImagInput);
-                    const uint64_t p3 = SharkNTT::MontgomeryMul<SharkFloatParams>(
-                        grid, block, debugCombo, stateSum, derivativeSum);
-                    const uint64_t realDifference = SubPSerial(p1, p2);
-                    const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
-                    dzdcReal = AddPSerial(realDifference, realDifference);
-                    dzdcImag = AddPSerial(imagDifference, imagDifference);
+            SharkNTT::ProcessLoadedTileDITFinalStageToGlobal<SharkFloatParams, Mode>(
+                block,
+                grid,
+                debugCombo,
+                sharedDataA,
+                sharedDataB,
+                sharedDataC,
+                sharedDataD,
+                output0,
+                output1,
+                output2,
+                output3,
+                inverseTwiddles,
+                roots.stage_twiddles_inv,
+                tile * TileSize,
+                len,
+                S1,
+                cachedStages);
+        } else {
+            const uint32_t rank = block.thread_index().x;
+            const uint32_t blockSize = block.size();
+            for (uint32_t i = rank; i < len; i += blockSize) {
+                const uint64_t zReal = sharedDataA[i];
+                const uint64_t zImag = sharedDataB[i];
+                uint64_t real = 0ull;
+                if (realProductEnabled) {
+                    const uint64_t sum = AddPSerial(zReal, zImag);
+                    const uint64_t difference = SubPSerial(zReal, zImag);
+                    real = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                        grid, block, debugCombo, sum, difference);
                 }
-                sharedDataC[i] = dzdcReal;
-                sharedDataD[i] = dzdcImag;
-            }
-        }
-        block.sync();
+                sharedDataA[i] = real;
 
-        SharkNTT::ProcessLoadedTileDITInPlace<SharkFloatParams, Mode>(block,
-                                                                      grid,
-                                                                      debugCombo,
-                                                                      sharedDataA,
-                                                                      sharedDataB,
-                                                                      sharedDataC,
-                                                                      sharedDataD,
-                                                                      inverseTwiddles,
-                                                                      roots.stage_twiddles_inv,
-                                                                      len,
-                                                                      S1,
-                                                                      cachedStages);
-        for (uint32_t i = rank; i < len; i += blockSize) {
-            output0[tile * TileSize + i] = sharedDataA[i];
-            output1[tile * TileSize + i] = sharedDataB[i];
-            if constexpr (Mode == SharkNTT::Multiway::FourWay) {
-                output2[tile * TileSize + i] = sharedDataC[i];
-                output3[tile * TileSize + i] = sharedDataD[i];
+                uint64_t imag = 0ull;
+                if (imagProductEnabled) {
+                    const uint64_t product =
+                        SharkNTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, zReal, zImag);
+                    imag = AddPSerial(product, product);
+                }
+                sharedDataB[i] = imag;
+
+                if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                    const uint64_t dzdcRealInput = sharedDataC[i];
+                    const uint64_t dzdcImagInput = sharedDataD[i];
+                    uint64_t dzdcReal = 0ull;
+                    uint64_t dzdcImag = 0ull;
+                    if (dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled) {
+                        const uint64_t p1 = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                            grid, block, debugCombo, zReal, dzdcRealInput);
+                        const uint64_t p2 = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                            grid, block, debugCombo, zImag, dzdcImagInput);
+                        const uint64_t stateSum = AddPSerial(zReal, zImag);
+                        const uint64_t derivativeSum = AddPSerial(dzdcRealInput, dzdcImagInput);
+                        const uint64_t p3 = SharkNTT::MontgomeryMul<SharkFloatParams>(
+                            grid, block, debugCombo, stateSum, derivativeSum);
+                        const uint64_t realDifference = SubPSerial(p1, p2);
+                        const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
+                        dzdcReal = AddPSerial(realDifference, realDifference);
+                        dzdcImag = AddPSerial(imagDifference, imagDifference);
+                    }
+                    sharedDataC[i] = dzdcReal;
+                    sharedDataD[i] = dzdcImag;
+                }
+            }
+            block.sync();
+
+            SharkNTT::ProcessLoadedTileDITInPlace<SharkFloatParams, Mode>(block,
+                                                                          grid,
+                                                                          debugCombo,
+                                                                          sharedDataA,
+                                                                          sharedDataB,
+                                                                          sharedDataC,
+                                                                          sharedDataD,
+                                                                          inverseTwiddles,
+                                                                          roots.stage_twiddles_inv,
+                                                                          len,
+                                                                          1u,
+                                                                          S1,
+                                                                          cachedStages);
+            for (uint32_t i = rank; i < len; i += blockSize) {
+                output0[tile * TileSize + i] = sharedDataA[i];
+                output1[tile * TileSize + i] = sharedDataB[i];
+                if constexpr (Mode == SharkNTT::Multiway::FourWay) {
+                    output2[tile * TileSize + i] = sharedDataC[i];
+                    output3[tile * TileSize + i] = sharedDataD[i];
+                }
             }
         }
         if (hasNextTile)

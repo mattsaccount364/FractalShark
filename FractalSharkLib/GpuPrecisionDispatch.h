@@ -30,6 +30,18 @@ BitsToSupportedLimbCount(uint64_t precBits)
     return RoundToSupportedLimbCount(rawLimbs);
 }
 
+// Ref2 consumes a precision window inside the selected storage bucket. Its
+// setup requires that window to cover more than half of the bucket, while the
+// input conversion cannot provide more limbs than the bucket stores.
+inline uint32_t
+GetRef2EffectivePrecisionLimbs(uint64_t requestedLimbs, uint32_t storageLimbs)
+{
+    const uint64_t minimumLimbs = static_cast<uint64_t>(storageLimbs) / 2u + 1u;
+    const uint64_t atLeastMinimum = requestedLimbs < minimumLimbs ? minimumLimbs : requestedLimbs;
+    const uint64_t atMostStorage = atLeastMinimum > storageLimbs ? storageLimbs : atLeastMinimum;
+    return static_cast<uint32_t>(atMostStorage);
+}
+
 // Production reference orbit family: periodicity enabled, SubType=float.
 struct SharkParamsBaseFamily {
     using P1 = SharkParams1;

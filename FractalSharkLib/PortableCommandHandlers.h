@@ -133,6 +133,7 @@ private:
     void OnPerturbationMt2PerturbMthighMtmed4();
     void OnPerturbationMultithread5Periodicity();
     void OnPerturbationGpu();
+    void OnPerturbationGpuRef2();
     void OnPerturbationLoad();
     void OnPerturbationSave();
 

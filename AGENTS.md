@@ -110,6 +110,10 @@ parallel host validation. If a test times out, terminate it explicitly before re
 `CrummyTest` is a functional suite invoked from the GUI menu. It must call `Drain()` and use the direct
 rendering path: `CalcFractal(true)` followed by `SaveCurrentFractal`.
 
+Keep NCU profiling scripts under `tools/NcuAnalysis/` and see
+`tools/NcuAnalysis\README.md`; when updating the Reference2Gpu profile analysis,
+re-run those scripts and refresh the per-line stall table.
+
 ## Rendering And Lifetime Invariants
 
 - Normal UI rendering uses the render-pool path, which renders into `workerIters` and publishes a

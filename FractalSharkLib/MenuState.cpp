@@ -139,6 +139,8 @@ MenuState::GetRadioSelection(RadioGroup group) const
                     return IDM_PERTURBATION_MULTITHREAD5_PERIODICITY;
                 case RefOrbitCalc::PerturbationAlg::GPU:
                     return IDM_PERTURBATION_GPU;
+                case RefOrbitCalc::PerturbationAlg::GPURef2:
+                    return IDM_PERTURBATION_GPU_REF2;
                 default:
                     return IDM_PERTURBATION_AUTO;
             }

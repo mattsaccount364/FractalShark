@@ -312,6 +312,9 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
         case FractalCommand::PerturbationGpu:
             OnPerturbationGpu();
             return;
+        case FractalCommand::PerturbationGpuRef2:
+            OnPerturbationGpuRef2();
+            return;
         case FractalCommand::PerturbationLoad:
             OnPerturbationLoad();
             return;
@@ -980,6 +983,13 @@ PortableCommandHandlers::OnPerturbationGpu()
 {
     GetFractal().EnqueueMutation(
         [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU); });
+}
+
+void
+PortableCommandHandlers::OnPerturbationGpuRef2()
+{
+    GetFractal().EnqueueMutation(
+        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPURef2); });
 }
 
 void

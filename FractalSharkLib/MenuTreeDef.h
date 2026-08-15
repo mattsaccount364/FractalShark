@@ -463,6 +463,10 @@ static const Node menu[] = {
               FractalCommand::PerturbationGpu,
               RG::PerturbationMode,
               R::EnableIfGpuActive),
+        Radio(L"GPU-Accelerated Ref2",
+              FractalCommand::PerturbationGpuRef2,
+              RG::PerturbationMode,
+              R::EnableIfGpuActive),
 
         Sep(),
         Item(L"Clear and Reload Reference Orbits", FractalCommand::PerturbationLoad),

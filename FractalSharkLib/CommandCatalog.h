@@ -169,6 +169,7 @@ enum class FractalCommand : uint32_t {
     PerturbationMultithread2PeriodicityPerturbMthighMtmed4 = 40519,
     PerturbationMultithread5Periodicity = 40520,
     PerturbationGpu = 40521,
+    PerturbationGpuRef2 = 40522,
 
     PerturbationLoad = 40530,
     PerturbationSave = 40531,

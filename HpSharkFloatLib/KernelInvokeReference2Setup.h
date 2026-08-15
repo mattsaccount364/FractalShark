@@ -261,7 +261,7 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
                                          workspace.ForwardTwiddles,
                                          workspace.InverseTwiddles,
                                          n - 1u,
-                                         SharkNTT::Reference2InputScaleR2(stages)};
+                                         SharkNTT::Reference2InputScaleR(stages)};
         }
 
         if (workspaceOffset != workspaceBytes)

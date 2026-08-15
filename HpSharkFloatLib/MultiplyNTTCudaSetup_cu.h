@@ -561,7 +561,7 @@ DestroyRoots(bool cuda, RootTables &roots)
         roots.Ninvm_mont = 0;
         roots.Ninv = 0;
         roots.total_twiddles = 0;
-        roots.Reference2InputScaleR2 = 0;
+        roots.Reference2InputScaleR = 0;
     } else {
         RootTables localRoots;
         auto err = cudaMemcpy(&localRoots, &roots, sizeof(RootTables), cudaMemcpyDeviceToHost);

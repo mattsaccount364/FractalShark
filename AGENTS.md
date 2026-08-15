@@ -88,6 +88,9 @@ diagnostics and reserve `OutputDebugStringA` for heap or panic paths.
 Never add local arrays to CUDA code. Always pass parameters one at a time so they can be allocated in
 registers.
 
+Do not introduce `#if 0` blocks. Remove obsolete code or preserve it through version control instead
+of leaving disabled implementations in the source tree.
+
 After modifying C++/CUDA files, run the formatting script from the repository root:
 
 ```powershell

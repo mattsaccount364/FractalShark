@@ -132,7 +132,7 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     static constexpr uint32_t PlanCacheEntryCount = MaxFusedStages - MinFusedStages + 1u;
     static constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
     static constexpr uint32_t MaxCarryPrefixParts = (MaxFusedLimbs + 31u) / 32u;
-    static constexpr uint32_t CarryPrefixControlCount = 3u;
+    static constexpr uint32_t CarryPrefixControlCount = 4u;
 
     static_assert(MinFusedN >= 2u && (MinFusedN & (MinFusedN - 1u)) == 0u);
     static_assert(PlanCacheEntryCount <= 32u);

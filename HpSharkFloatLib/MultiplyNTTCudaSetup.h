@@ -31,8 +31,8 @@ struct RootTables {
     // Total number of twiddle entries, for convenience
     uint32_t total_twiddles;
 
-    // Ref2 packed input conversion constant: MontgomeryMul(x, this) = x*s*R.
-    uint64_t Reference2InputScaleR2 = 0;
+    // Equivalent standard-domain multiplier: x * this = x*s*R (mod p).
+    uint64_t Reference2InputScaleR = 0;
 };
 
 template <class SharkFloatParams> uint64_t MontgomeryMul(uint64_t a, uint64_t b);

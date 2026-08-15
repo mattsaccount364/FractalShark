@@ -7,6 +7,7 @@ namespace SharkNTT {
 // Goldilocks prime p = 2^64 - 2^32 + 1
 static constexpr uint64_t MagicPrime = 0xFFFF'FFFF'0000'0001ull;
 static constexpr uint64_t MagicPrimeInv = 0xFFFF'FFFE'FFFF'FFFFull; // -p^{-1} mod 2^64
+static constexpr uint64_t MontgomeryR = 0x0000'0000'FFFF'FFFFull;   // 2^64 mod p
 static constexpr uint64_t R2 = 0xFFFF'FFFE'0000'0001ull;            // (2^64)^2 mod p
 static constexpr uint64_t SqrtInverseTwo = 0x0000'007F'FF7F'FF80ull;
 static constexpr uint64_t PHI = 0xFFFF'FFFF'0000'0000ull;
@@ -193,6 +194,12 @@ Reference2InputScaleR2(uint32_t stages)
     }
 }
 
+constexpr uint64_t
+Reference2InputScaleR(uint32_t stages)
+{
+    return MulModP(Reference2InputScale(stages), MontgomeryR);
+}
+
 constexpr bool
 ValidateReference2InputScales()
 {
@@ -203,10 +210,34 @@ ValidateReference2InputScales()
     return true;
 }
 
+constexpr bool
+ValidateReference2InputScaleMontgomeryValues()
+{
+    for (uint32_t stages = 1u; stages <= 25u; ++stages) {
+        if (MulModP(Reference2InputScaleR(stages), MontgomeryR) != Reference2InputScaleR2(stages))
+            return false;
+    }
+    return true;
+}
+
+constexpr bool
+ValidateReference2EvenScaleShifts()
+{
+    for (uint32_t stages = 2u; stages <= 24u; stages += 2u) {
+        const uint32_t shift = 32u - stages / 2u;
+        if (Reference2InputScaleR(stages) != (1ull << shift))
+            return false;
+    }
+    return true;
+}
+
 static_assert(MulModP(SqrtInverseTwo, SqrtInverseTwo) == (MagicPrime + 1ull) / 2ull);
 static_assert(ValidateReference2InputScales());
+static_assert(ValidateReference2InputScaleMontgomeryValues());
+static_assert(ValidateReference2EvenScaleShifts());
 static_assert(Reference2InputScale(16u) == 0xFEFF'FFFF'0000'0001ull);
 static_assert(Reference2InputScaleR2(16u) == 0x00FF'FFFF'FF00'0000ull);
+static_assert(Reference2InputScaleR(16u) == 0x0000'0000'0100'0000ull);
 
 // Prime factorization of phi = p-1 = 2^32 * (2^32 - 1), and 2^32 - 1 = 3*5*17*257*65537
 constexpr std::array<uint64_t, 6> PHI_PRIME_FACTORS = {2ull, 3ull, 5ull, 17ull, 257ull, 65537ull};

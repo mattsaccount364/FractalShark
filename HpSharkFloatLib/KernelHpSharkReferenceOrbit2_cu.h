@@ -5053,6 +5053,18 @@ PrefixAlignedB16CarryTransformsDLB(cooperative_groups::grid_group &grid,
     MattsCudaAssert(numWarps <= CarryPrefixMaxWarps);
     MattsCudaAssert(capacity >= count);
 
+    // Finalization consumes this control after the carry pass.  Initialize it before
+    // the pass so the carry pass's completion barrier publishes both the digits and
+    // the control state.
+    if (IsLeader<SharkFloatParams>(block)) {
+        realControl[FinalizationHighestNonZeroControl] = 0u;
+        imagControl[FinalizationHighestNonZeroControl] = 0u;
+        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+            dzdcRealControl[FinalizationHighestNonZeroControl] = 0u;
+            dzdcImagControl[FinalizationHighestNonZeroControl] = 0u;
+        }
+    }
+
     const uint32_t lookbackWindowsPerBatch = numWarps * WarpSize;
     const uint32_t lookbackBatchCount =
         numWarps == 1u ? 1u : (numParts + lookbackWindowsPerBatch - 1u) / lookbackWindowsPerBatch;
@@ -5487,18 +5499,15 @@ FinalizeSignedStream(cooperative_groups::grid_group &grid,
     MattsCudaAssert(limbCount > 0u && limbCount <= capacity);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
 
-    if (IsLeader<SharkFloatParams>(block)) {
-        realControl[FinalizationHighestNonZeroControl] = 0u;
-        imagControl[FinalizationHighestNonZeroControl] = 0u;
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            dzdcRealControl[FinalizationHighestNonZeroControl] = 0u;
-            dzdcImagControl[FinalizationHighestNonZeroControl] = 0u;
-        }
-    }
-    if (carryPrefixReady)
-        grid.sync();
-
     if (!carryPrefixReady) {
+        if (IsLeader<SharkFloatParams>(block)) {
+            realControl[FinalizationHighestNonZeroControl] = 0u;
+            imagControl[FinalizationHighestNonZeroControl] = 0u;
+            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+                dzdcRealControl[FinalizationHighestNonZeroControl] = 0u;
+                dzdcImagControl[FinalizationHighestNonZeroControl] = 0u;
+            }
+        }
         PrefixCarryTransformsDLB<SharkFloatParams>(grid,
                                                    block,
                                                    limbCount,
@@ -6624,7 +6633,6 @@ ExecuteReference2Iteration(cooperative_groups::grid_group &grid,
                 workspace.DzdcImagOutput,
                 roots);
             if (plan.b == 16) {
-                grid.sync();
                 PrefixAlignedB16CarryTransformsFourWay<SharkFloatParams,
                                                        AlignedUnpackMode::StandardResidue,
                                                        false>(
@@ -6723,7 +6731,6 @@ ExecuteReference2Iteration(cooperative_groups::grid_group &grid,
                 nullptr,
                 roots);
             if (plan.b == 16) {
-                grid.sync();
                 PrefixAlignedB16CarryTransformsTwoWay<SharkFloatParams,
                                                       AlignedUnpackMode::StandardResidue,
                                                       false>(

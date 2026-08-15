@@ -3462,6 +3462,12 @@ InverseDITLargeStages(uint64_t *sharedData,
         }
         grid.sync();
     }
+
+    // Publish the preceding fused small-stage output even when this transform has no
+    // large-stage loop.  Callers can therefore rely on this function as the inverse
+    // transform's completion barrier in every supported transform-size tier.
+    if (firstLargeStage == numStages)
+        grid.sync();
 }
 
 //==================================================================================================

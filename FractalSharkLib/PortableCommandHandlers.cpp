@@ -203,6 +203,9 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
         case FractalCommand::NrInnerLoopGpu:
             OnNrInnerLoopGpu();
             return;
+        case FractalCommand::NrInnerLoopGpuRef2:
+            OnNrInnerLoopGpuRef2();
+            return;
         case FractalCommand::NrInnerLoopCpu:
             OnNrInnerLoopCpu();
             return;
@@ -738,6 +741,13 @@ void
 PortableCommandHandlers::OnNrInnerLoopGpu()
 {
     GetFractal().EnqueueMutation([](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::GPU); });
+}
+
+void
+PortableCommandHandlers::OnNrInnerLoopGpuRef2()
+{
+    GetFractal().EnqueueMutation(
+        [](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::GPURef2); });
 }
 
 void

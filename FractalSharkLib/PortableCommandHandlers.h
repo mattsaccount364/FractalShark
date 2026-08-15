@@ -94,6 +94,7 @@ private:
     void OnFeatureFinderClear();
     void OnFeatureFinderResume();
     void OnNrInnerLoopGpu();
+    void OnNrInnerLoopGpuRef2();
     void OnNrInnerLoopCpu();
     void OnNrInnerLoopCpuSt();
 

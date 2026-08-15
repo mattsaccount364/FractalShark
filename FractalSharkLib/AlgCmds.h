@@ -45,6 +45,7 @@
 #define IDM_NR_INNERLOOP_GPU 40116
 #define IDM_NR_INNERLOOP_CPU 40117
 #define IDM_NR_INNERLOOP_CPUST 40118
+#define IDM_NR_INNERLOOP_GPU_REF2 40119
 
 //
 // ---------------------------------------------------------------------------

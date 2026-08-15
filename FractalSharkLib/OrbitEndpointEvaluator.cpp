@@ -7,6 +7,7 @@
 #include "MpirOrbitEval.h"
 
 #include "KernelInvoke.h"
+#include "KernelInvokeReference2Setup.h"
 
 uint64_t
 EvaluateCriticalOrbitAndDerivs(NRInnerLoopBackend backend,
@@ -39,6 +40,36 @@ EvaluateCriticalOrbitAndDerivs(NRInnerLoopBackend backend,
                         d2r,
                         d2i,
                         HpShark::LaunchParams{0, 0},
+                        startIter,
+                        AbortMonitor::GetStopCalculatingGlobal,
+                        onProgress,
+                        progressCtx);
+                });
+            break;
+
+        case NRInnerLoopBackend::GPURef2:
+            DispatchByLimbCount<SharkParamsNRFamily>(
+                BitsToSupportedLimbCount(coord_prec), [&]<class NRParams>() {
+                    const uint64_t requestedPrecisionLimbs =
+                        (static_cast<uint64_t>(coord_prec) + 31u) / 32u;
+                    const uint32_t effectivePrecisionLimbs = GetRef2EffectivePrecisionLimbs(
+                        requestedPrecisionLimbs, NRParams::GlobalNumUint32);
+                    const HpShark::LaunchParams launchParams{0, 0};
+                    auto preparedTables = HpShark::PrepareHpSharkReference2Tables<NRParams>(
+                        launchParams, c.re, c.im, effectivePrecisionLimbs);
+
+                    completed = HpShark::EvaluateCriticalOrbitAndDerivs2_GPU<NRParams>(
+                        c.re,
+                        c.im,
+                        period,
+                        z.re,
+                        z.im,
+                        dzdc.re,
+                        dzdc.im,
+                        d2r,
+                        d2i,
+                        launchParams,
+                        preparedTables.get(),
                         startIter,
                         AbortMonitor::GetStopCalculatingGlobal,
                         onProgress,

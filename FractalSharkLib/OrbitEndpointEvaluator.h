@@ -2,7 +2,7 @@
 
 // Thin dispatcher that evaluates the critical orbit z=z²+c for `period`
 // iterations, computing z + dzdc (MPIR) + d2 (HDRFloat).  Dispatches to
-// GPU, CPU multi-threaded, or CPU single-threaded backend.
+// GPU Ref1, GPU Ref2, CPU multi-threaded, or CPU single-threaded backend.
 //
 // This consolidates the backend-selection logic that was duplicated in
 // FeatureFinder's main NR loop and final correction pass.

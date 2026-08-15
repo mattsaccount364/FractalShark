@@ -288,6 +288,17 @@ template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
     bool (*)(),
     void (*)(uint64_t, void *),
     void *,
+    uint64_t);
+template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
+    const mpf_t, const mpf_t, uint64_t,
+    mpf_t, mpf_t, mpf_t, mpf_t,
+    HDRFloat<double> &, HDRFloat<double> &,
+    const HpShark::LaunchParams &,
+    uint32_t,
+    uint64_t,
+    bool (*)(),
+    void (*)(uint64_t, void *),
+    void *,
     uint64_t);)";
 
         b.push_back(

@@ -345,4 +345,26 @@ uint64_t EvaluateCriticalOrbitAndDerivs2_GPU(
     void *progressContext = nullptr,
     uint64_t progressInterval = 64);
 
+// Ref2 overload that prepares a precision-window table internally. The
+// caller supplies the effective precision in limbs after selecting a storage
+// bucket; this keeps the prepared-table implementation inside the CUDA library
+// while allowing host-side dispatch code to use the same precision logic.
+template <class SharkFloatParams>
+uint64_t EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
+                                             const mpf_t cImag,
+                                             uint64_t period,
+                                             mpf_t outZReal,
+                                             mpf_t outZImag,
+                                             mpf_t outDzdcReal,
+                                             mpf_t outDzdcImag,
+                                             HDRFloat<double> &outD2Real,
+                                             HDRFloat<double> &outD2Imag,
+                                             const HpShark::LaunchParams &externalLaunchParams,
+                                             uint32_t actualPrecisionLimbs,
+                                             uint64_t startIter,
+                                             bool (*shouldAbort)(),
+                                             void (*onProgress)(uint64_t, void *),
+                                             void *progressContext,
+                                             uint64_t progressInterval);
+
 } // namespace HpShark

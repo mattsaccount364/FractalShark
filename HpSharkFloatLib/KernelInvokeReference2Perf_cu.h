@@ -505,4 +505,50 @@ EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
     return done;
 }
 
+template <class SharkFloatParams>
+uint64_t
+EvaluateCriticalOrbitAndDerivs2_GPU(const mpf_t cReal,
+                                    const mpf_t cImag,
+                                    uint64_t period,
+                                    mpf_t outZReal,
+                                    mpf_t outZImag,
+                                    mpf_t outDzdcReal,
+                                    mpf_t outDzdcImag,
+                                    HDRFloat<double> &outD2Real,
+                                    HDRFloat<double> &outD2Imag,
+                                    const HpShark::LaunchParams &externalLaunchParams,
+                                    uint32_t actualPrecisionLimbs,
+                                    uint64_t startIter,
+                                    bool (*shouldAbort)(),
+                                    void (*onProgress)(uint64_t, void *),
+                                    void *progressContext,
+                                    uint64_t progressInterval)
+{
+    if constexpr (!SharkFloatParams::EnableNewtonRaphson) {
+        return 0;
+    }
+
+    if (startIter > period)
+        return startIter;
+
+    auto preparedTables = PrepareHpSharkReference2Tables<SharkFloatParams>(
+        externalLaunchParams, cReal, cImag, actualPrecisionLimbs);
+    return EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(cReal,
+                                                                 cImag,
+                                                                 period,
+                                                                 outZReal,
+                                                                 outZImag,
+                                                                 outDzdcReal,
+                                                                 outDzdcImag,
+                                                                 outD2Real,
+                                                                 outD2Imag,
+                                                                 externalLaunchParams,
+                                                                 preparedTables.get(),
+                                                                 startIter,
+                                                                 shouldAbort,
+                                                                 onProgress,
+                                                                 progressContext,
+                                                                 progressInterval);
+}
+
 } // namespace HpShark

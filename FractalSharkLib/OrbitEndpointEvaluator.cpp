@@ -7,7 +7,6 @@
 #include "MpirOrbitEval.h"
 
 #include "KernelInvoke.h"
-#include "KernelInvokeReference2Setup.h"
 
 uint64_t
 EvaluateCriticalOrbitAndDerivs(NRInnerLoopBackend backend,
@@ -55,9 +54,6 @@ EvaluateCriticalOrbitAndDerivs(NRInnerLoopBackend backend,
                     const uint32_t effectivePrecisionLimbs = GetRef2EffectivePrecisionLimbs(
                         requestedPrecisionLimbs, NRParams::GlobalNumUint32);
                     const HpShark::LaunchParams launchParams{0, 0};
-                    auto preparedTables = HpShark::PrepareHpSharkReference2Tables<NRParams>(
-                        launchParams, c.re, c.im, effectivePrecisionLimbs);
-
                     completed = HpShark::EvaluateCriticalOrbitAndDerivs2_GPU<NRParams>(
                         c.re,
                         c.im,
@@ -69,11 +65,12 @@ EvaluateCriticalOrbitAndDerivs(NRInnerLoopBackend backend,
                         d2r,
                         d2i,
                         launchParams,
-                        preparedTables.get(),
+                        effectivePrecisionLimbs,
                         startIter,
                         AbortMonitor::GetStopCalculatingGlobal,
                         onProgress,
-                        progressCtx);
+                        progressCtx,
+                        64);
                 });
             break;
 

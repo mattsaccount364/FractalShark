@@ -2355,6 +2355,23 @@ StoreRadix2Butterfly(cooperative_groups::grid_group &grid,
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
+StoreRadix2DIFButterfly(cooperative_groups::grid_group &grid,
+                        cooperative_groups::thread_block &block,
+                        DebugGlobalCount<SharkFloatParams> *debugCombo,
+                        uint64_t *SharkRestrict data,
+                        uint32_t upperIndex,
+                        uint32_t lowerIndex,
+                        uint64_t upper,
+                        uint64_t lower,
+                        uint64_t twiddle)
+{
+    // Unlike the DIT butterfly above, forward DIF applies the twiddle after subtraction.
+    data[upperIndex] = AddP(upper, lower);
+    data[lowerIndex] = MontgomeryMul(grid, block, debugCombo, SubP(upper, lower), twiddle);
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
 StoreRadix4StagePair(cooperative_groups::grid_group &grid,
                      cooperative_groups::thread_block &block,
                      DebugGlobalCount<SharkFloatParams> *debugCombo,

@@ -1021,7 +1021,7 @@ PackAlignedForwardDIFRadix2One(cooperative_groups::grid_group &grid,
                                                                coefficientShift,
                                                                residualBitShift,
                                                                negative);
-    SharkNTT::StoreRadix2Butterfly<SharkFloatParams>(
+    SharkNTT::StoreRadix2DIFButterfly<SharkFloatParams>(
         grid, block, debugCombo, output, j, lowerIndex, upper, lower, stageTwiddles[j]);
 }
 

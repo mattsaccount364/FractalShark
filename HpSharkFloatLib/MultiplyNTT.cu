@@ -857,7 +857,6 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
               uint64_t b)
 {
     // Debug instrumentation (optionally compiled out via if constexpr).
-    // Preserve the logical cost model even though the structured modulus makes the reduction cheaper.
     // Count as 7 "64-bit mul-equivalents": 3 for a*b, 3 for m*p, 1 for the add path.
     if constexpr (HpShark::DebugGlobalState) {
         DebugMultiplyIncrement<SharkFloatParams>(debugCombo, grid, block, 7);
@@ -874,59 +873,100 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
     //
     // We compute:
     //   t      = a * b           (128-bit)
-    //   m      = (tLo * NINV)    (mod R)
+    //   m      = (t_lo * NINV)   (mod R)
     //   mp     = m * p           (128-bit)
     //   u      = t + mp          (128-bit)
-    //   r      = uHi (upper 64 bits)
+    //   r      = u_hi (upper 64 bits)
     //
     // And finally, ensure r < p by subtracting p if needed.
     //
     // PTX is used to explicitly control 128-bit math via mul.lo/mul.hi and add.cc/addc.
     // ---------------------------------------------------------------------
 
-    // ---------------------------------------------------------------------
-    // Specialize the Montgomery reduction for the Goldilocks prime.  Let W = 2^32 and R = W^2:
-    //
-    //   p = R - W + 1
-    //   p^-1 = 1 + W (mod R), because (1 - W)(1 + W) = 1 - R
-    //   NINV = -p^-1 = -1 - W (mod R)
-    //
-    // Therefore m = tLo*NINV mod R needs only a shift and two subtractions.  Also:
-    //
-    //   m*p = m*R + m - m*W
-    //   m*W = (m >> 32)*R + ((m << 32) mod R)
-    //
-    // The low limb is m - (m << 32), and its borrow contributes to the high limb.  Keep the whole
-    // operation in one PTX block so dead values can be reused immediately instead of extending
-    // C++-visible live ranges in callers that inline this function many times.
-    // ---------------------------------------------------------------------
-    uint64_t result;
-    asm volatile("{\n\t"
-                 "  .reg .u64 tLo, m, scratch, mpLo, mpHi;\n\t"
-                 "  .reg .pred carryPredicate, gePredicate, reducePredicate;\n\t"
-                 "  mul.lo.u64 tLo, %1, %2;\n\t"
-                 "  mul.hi.u64 %0, %1, %2;\n\t"
-                 "  shl.b64 scratch, tLo, 32;\n\t"
-                 "  sub.u64 m, 0, tLo;\n\t"
-                 "  sub.u64 m, m, scratch;\n\t"
-                 "  shr.u64 mpHi, m, 32;\n\t"
-                 "  shl.b64 scratch, m, 32;\n\t"
-                 "  sub.cc.u64 mpLo, m, scratch;\n\t"
-                 "  subc.u64 mpHi, m, mpHi;\n\t"
-                 "  add.cc.u64 mpLo, tLo, mpLo;\n\t"
-                 "  addc.cc.u64 %0, %0, mpHi;\n\t"
-                 "  addc.u64 tLo, 0, 0;\n\t"
-                 "  mov.u64 m, 0xffffffff00000001;\n\t"
-                 "  setp.ne.u64 carryPredicate, tLo, 0;\n\t"
-                 "  setp.ge.u64 gePredicate, %0, m;\n\t"
-                 "  or.pred reducePredicate, carryPredicate, gePredicate;\n\t"
-                 "  sub.u64 %0, %0, m;\n\t"
-                 "  @!reducePredicate add.u64 %0, %0, m;\n\t"
-                 "}\n\t"
-                 : "=&l"(result)
-                 : "l"(a), "l"(b));
+    uint64_t t_lo, t_hi;   // 128-bit product of a*b
+    uint64_t m;            // m = t_lo * MagicPrimeInv (mod 2^64)
+    uint64_t mp_lo, mp_hi; // 128-bit product m * MagicPrime
 
-    return result; // Fully normalized Montgomery product mod p
+    // ---------------------------------------------------------------------
+    // Compute:
+    //   t_lo  = (a * b) low  64 bits
+    //   t_hi  = (a * b) high 64 bits
+    //   m     = (t_lo * MagicPrimeInv) mod 2^64   (Montgomery trick)
+    //   mp_lo = (m * MagicPrime) low  64 bits
+    //   mp_hi = (m * MagicPrime) high 64 bits
+    //
+    // All in a single asm block so the compiler can't interleave or reorder them.
+    // Using "=&l" marks outputs early-clobber, ensuring no operand overlap.
+    // ---------------------------------------------------------------------
+    asm("{\n\t"
+        "  mul.lo.u64 %0, %5, %6;   // t_lo = a * b (low 64 bits)\n\t"
+        "  mul.hi.u64 %1, %5, %6;   // t_hi = a * b (high 64 bits)\n\t"
+        "  mul.lo.u64 %2, %0, %7;   // m    = t_lo * MagicPrimeInv (mod 2^64)\n\t"
+        "  mul.lo.u64 %3, %2, %8;   // mp_lo = m * MagicPrime (low 64 bits)\n\t"
+        "  mul.hi.u64 %4, %2, %8;   // mp_hi = m * MagicPrime (high 64 bits)\n\t"
+        "}\n\t"
+        : "=&l"(t_lo), "=&l"(t_hi), "=&l"(m), "=&l"(mp_lo), "=&l"(mp_hi)
+        : "l"(a),
+          "l"(b),
+          "l"(SharkNTT::MagicPrimeInv), // constant folded into immediate or const space
+          "l"(SharkNTT::MagicPrime));   // same
+
+    uint64_t u_hi, carry1;
+
+    // ---------------------------------------------------------------------
+    // Now compute 128-bit addition:
+    //     u = t + mp
+    //
+    // We only need u_hi (upper 64 bits) for Montgomery reduction; u_lo is discarded.
+    // Reuse mp_lo as the low-sum scratch to reduce register pressure.
+    //
+    // add.cc        sets the carry flag (CC) from the low-limb addition.
+    // addc.cc       adds the high limbs *plus the carry*, again updating CC.
+    // addc          writes out the final carry (0 or 1) to carry1.
+    // ---------------------------------------------------------------------
+    asm("add.cc.u64  %0, %3, %4;\n\t" // mp_lo = t_lo + mp_lo   (sets carry0)
+        "addc.cc.u64 %1, %5, %6;\n\t" // u_hi = t_hi + mp_hi + carry0   (sets carry1)
+        "addc.u64    %2, 0, 0;\n\t"   // carry1 = final carry out
+        : "+l"(mp_lo), "=&l"(u_hi), "=&l"(carry1)
+        : "l"(t_lo), "l"(mp_lo), "l"(t_hi), "l"(mp_hi));
+
+    // Candidate Montgomery result before final correction
+    uint64_t r = u_hi;
+
+    // ---------------------------------------------------------------------
+    // Final conditional subtraction:
+    //
+    //   if (carry1 || r >= p)
+    //       r -= p;
+    //
+    // Implemented branchlessly using PTX predicates:
+    //
+    //   p_carry = (carry1 != 0)
+    //   p_ge    = (r >= p)
+    //   p_do    = p_carry || p_ge
+    //
+    // We perform:
+    //   r = r - p
+    //   if (!p_do) r = r + p   // undo subtraction when not needed
+    //
+    // This avoids warp divergence and yields a constant-latency path.
+    // ---------------------------------------------------------------------
+    {
+        uint64_t p = SharkNTT::MagicPrime;
+
+        asm volatile("{\n\t"
+                     "  .reg .pred p_carry, p_ge, p_do;\n\t"
+                     "  setp.ne.u64 p_carry, %1, 0;     // p_carry = (carry1 != 0)\n\t"
+                     "  setp.ge.u64 p_ge, %0, %2;       // p_ge = (r >= p)\n\t"
+                     "  or.pred p_do, p_carry, p_ge;    // p_do = p_carry || p_ge\n\t"
+                     "  sub.u64 %0, %0, %2;             // r = r - p   (tentative)\n\t"
+                     "  @!p_do add.u64 %0, %0, %2;      // if not doing reduction, restore r += p\n\t"
+                     "}\n\t"
+                     : "+l"(r)
+                     : "l"(carry1), "l"(p));
+    }
+
+    return r; // Fully normalized Montgomery product mod p
 }
 
 template <class SharkFloatParams>

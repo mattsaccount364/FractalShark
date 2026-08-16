@@ -1,4 +1,4 @@
-\section{GPU reference orbit backend}
+\section{GPU reference-orbit implementations}
 \label{subsec:ref-orbit-gpu}
 
 In many numerical algorithms, correctness and stability depend on arithmetic
@@ -13,8 +13,11 @@ repeatedly or at very high precision. This limitation creates a tension between
 numerical fidelity and throughput.
 
 To resolve this tension, high-precision arithmetic operations---in particular
-multiplication (\cref{sec:ntt-multiply}), addition, and subtraction (\cref{sec:hp-add}) of large significands---must be
-implemented with both mathematical rigor and architectural efficiency. Addition
+multiplication (\cref{sec:ntt-multiply}), addition, and subtraction
+(\cref{sec:hp-add}) of large significands---must be implemented with both
+mathematical rigor and architectural efficiency.  Ref1 exposes those operations
+as staged arithmetic primitives.  Ref2 instead specializes them for the complete
+Mandelbrot recurrence and fuses their intermediate representations.  Addition
 and subtraction are dominated by carry propagation across hundreds or thousands
 of limbs, while multiplication scales quadratically unless asymptotically faster
 algorithms are employed. For precisions relevant to deep zoom reference orbits,
@@ -107,33 +110,36 @@ recorded coordinates is comparatively straightforward.
 \subsection{System Architecture and Execution Context}
 \label{subsec:ref-orbit-architecture}
 
-The application-facing GPU reference-orbit backend is a stateful,
-precision-specialized execution engine.  It advances the recurrence
+The application-facing GPU reference-orbit implementations are stateful,
+precision-specialized execution engines.  Both advance the recurrence
 \[
 z_{n+1} \leftarrow z_n^2 + c
 \]
 at a compile-time-selected fixed precision by executing multiple iterations per
 kernel invocation, while the CPU orchestrates invocation, result collection,
-and termination.  In this chapter, \emph{Ref1} denotes that application path.
-\emph{Ref2} denotes the fused CUDA implementation described in
-\cref{subsec:fused-ntt-reference-step}; it is implemented and exercised by the
-GPU test library, but application dispatch does not currently select it.
+and termination.  \emph{Ref1} denotes the original staged multiply/add
+implementation.  \emph{Ref2} denotes the faster fused implementation described
+in \cref{subsec:fused-ntt-reference-step}.  They are peer application backends:
+both are selectable reference-orbit implementations, both support the GPU
+Newton--Raphson endpoint contract, and both have correctness and performance
+coverage in the GPU test library.
 
 \begin{table}[!htbp]
 \centering
-\caption[Reference-orbit backend status]{Reference-orbit backend status in the
-current codebase.  ``Application'' means that \code{RefOrbitCalc} can dispatch
-to the backend; ``test'' includes correctness and performance coverage in the
-GPU library.}
+\caption[Reference-orbit implementation status]{Reference-orbit implementation
+status in the current codebase.  ``Application'' means that \code{RefOrbitCalc}
+can dispatch to the backend; ``NR'' denotes the Feature Finder's
+Newton--Raphson endpoint evaluation; ``tests'' include correctness and
+performance coverage in the GPU library.}
 \label{tab:reference-backend-status}
 \small
 \begin{tabularx}{\textwidth}{lXXl}
 \hline
-\textbf{Backend} & \textbf{Arithmetic} & \textbf{Current role} & \textbf{Selected by Auto} \\
+\textbf{Backend} & \textbf{Arithmetic schedule} & \textbf{Current role} & \textbf{Selected by Auto} \\
 \hline
 Single-/multithreaded CPU & MPIR & Application reference path & Yes \\
-CUDA Ref1 & \code{HpSharkFloat} & Application and tests & No \\
-CUDA Ref2 & Fused fixed-width NTT & GPU library and tests & No \\
+CUDA Ref1 & Staged NTT multiply, then high-precision add & Application, NR, and tests & No \\
+CUDA Ref2 & Fused recurrence with one packed DLB carry phase & Application, NR, and tests & No \\
 \code{ReferenceReference\allowbreak Orbit2} & Host reference model & Correctness oracle & No \\
 \hline
 \end{tabularx}
@@ -141,24 +147,23 @@ CUDA Ref2 & Fused fixed-width NTT & GPU library and tests & No \\
 
 \paragraph{Division of responsibility.}
 The design follows a strict separation of concerns. The CPU is responsible for
-selecting a supported precision, initializing GPU resources, invoking the kernel
-in bounded iteration batches, and accumulating emitted iteration records into
-\code{PerturbationResults}. The GPU owns the Ref1 numerical state, executes its
-high-precision arithmetic pipeline, detects escape and periodicity, and reports
-the result to the host.
+selecting a supported precision, initializing the selected implementation's GPU
+resources, invoking its kernel in bounded iteration batches, and accumulating
+emitted iteration records into \code{PerturbationResults}. The GPU owns the
+selected numerical state, executes either the Ref1 or Ref2 high-precision
+pipeline, detects escape and periodicity, and reports the result to the host.
 
 \paragraph{Persistent backend state.}
-Reference orbit computation is centered around a persistent \emph{combo} object
+Reference-orbit computation is centered around a persistent \emph{combo} object
 (\code{HpSharkReferenceResults<SharkFloatParams>}) that encapsulates all state
 required to advance the orbit at a fixed precision. The combo contains:
 \begin{itemize}
   \item the high-precision orbit components in \code{Multiply.A} and
         \code{Multiply.B}, together with reduced-range \code{HDRFloat} radius
         and derivative state,
-  \item persistent arithmetic pipeline state for multiplication
-        (\code{Multiply}, implementing NTT-based convolution) and
-        addition (\code{Add}, implementing parallel-prefix carry
-        propagation),
+  \item the constants and shared arithmetic state in \code{Multiply} and
+        \code{Add}, used directly by Ref1's staged primitives and as input and
+        output storage by Ref2,
   \item a fixed-size output mailbox (\code{OutputIters},
         \code{Output\-Iter\-Count},
         \code{Max\-Output\-Iters}\,=\,1024),
@@ -167,15 +172,21 @@ required to advance the orbit at a fixed precision. The combo contains:
         the GPU-resident state, temporary device buffers, an associated CUDA
         stream, and cached kernel argument arrays.
 \end{itemize}
-The combo is initialized once, reused across multiple kernel invocations, and
-destroyed only after the reference orbit computation completes.
+Ref2 additionally attaches a fixed-capacity \code{Reference2Workspace} whose
+setup kernel prepares the plan, root, and twiddle tables for every active
+transform length.  The selected combo and, for Ref2, its workspace are
+initialized once, reused across multiple kernel invocations, and destroyed only
+after the reference-orbit computation completes.
 
 \paragraph{Batch-oriented kernel invocation.}
-Each call to \code{InvokeHpSharkReferenceKernel} launches a GPU kernel that
-advances the Mandelbrot recurrence by up to a specified number of iterations
-(\code{itersToRun}). Within a single invocation, the kernel performs multiple
-full iterations internally, combining high-precision squaring and addition on
-the GPU. As iterations progress, the kernel emits up to
+\code{GpuOrbitSession} and \code{GpuOrbitSession2} provide parallel RAII
+lifecycles for Ref1 and Ref2.  Their \code{InvokeChunk} methods call
+\code{InvokeHpSharkReferenceKernel} and
+\code{InvokeHpSharkReference2Kernel}, respectively.  Each call advances the
+Mandelbrot recurrence by up to a specified number of iterations
+(\code{itersToRun}). Within a single invocation, the selected cooperative
+kernel performs multiple full iterations internally. As iterations progress,
+the kernel emits up to
 \code{MaxOutputIters} iteration records into the combo’s output mailbox and
 updates \code{OutputIterCount} accordingly.
 
@@ -190,26 +201,26 @@ condition, or if the total requested iteration budget has been reached. In this
 model, the GPU owns the orbit state and determines orbit outcomes without
 CPU-side recomputation or correction.  ``Authoritative'' here describes control
 and data ownership within the selected application path; it does not mean exact
-real arithmetic.  Like every fixed-width backend, Ref1 discards information
-below its retained significand window.
+real arithmetic.  Like every fixed-width backend, both implementations discard
+information below the retained significand window.
 
 \paragraph{Precision specialization.}
-The entire lifecycle of a reference orbit computation is specialized by
+The entire lifecycle of a reference-orbit computation is specialized by
 \code{SharkFloatParams}. Precision is selected once at startup via
 \code{DispatchByLimbCount} and remains fixed for the lifetime of the combo
 object. This specialization ensures that kernel code, shared-memory usage, and arithmetic
 pipelines are fully specialized for the chosen precision, at the cost of
-supporting a finite, enumerated set of precisions.
+supporting a finite, enumerated set of storage precisions.  Ref2 also records an
+effective limb count inside the selected storage bucket and prepares only the
+transform-length window required by that effective precision.
 
 \medskip
 
 This architectural structure defines the execution context for the remainder of
-this section. The discussion begins with the underlying \code{HpSharkFloat}
-representation and then describes the internal arithmetic pipelines used within
-each kernel invocation, including high-precision addition, NTT-based
-multiplication, carry propagation, and normalization, explaining how these
-components are organized to maintain correctness and performance within the
-bounded-chunk execution model.
+this section. The discussion begins with the shared \code{HpSharkFloat}
+representation and arithmetic foundations, then presents Ref1's staged
+multiply/add implementation and Ref2's fused recurrence as two complete ways to
+implement the same bounded-chunk execution model.
 
 \subsection{High-Precision Floating-Point Representation}
 \label{subsec:hpfloat-model}
@@ -273,14 +284,17 @@ handling incompatible with parallel GPU architectures.
 Without reformulation, carry propagation becomes a synchronization
 bottleneck that erodes the benefits of fast high-precision multiplication.
 
-In \FractalShark{}'s current reference-orbit pipeline, this add/subtract path
-is retained primarily for architectural reasons rather than because isolated
-high-precision addition is an overwhelming GPU speedup. Carry propagation
-remains an expensive, synchronization-heavy part of the computation. Keeping
-the operation on the GPU nevertheless preserves an all-on-device reference-orbit
-pipeline: the orbit state stays resident, and a single kernel invocation can
-execute multiple full iterations internally instead of returning to the CPU
-after each iteration for the add/subtract step and then restarting the kernel.
+In \FractalShark{}'s Ref1 reference-orbit pipeline, this standalone
+add/subtract path follows the normalized NTT products.  It is retained primarily
+for architectural reasons rather than because isolated high-precision addition
+is an overwhelming GPU speedup. Carry propagation remains an expensive,
+synchronization-heavy part of the computation. Keeping the operation on the GPU
+nevertheless preserves an all-on-device reference-orbit pipeline: the orbit
+state stays resident, and a single kernel invocation can execute multiple full
+iterations internally instead of returning to the CPU after each iteration for
+the add/subtract step and then restarting the kernel.  Ref2 uses the same
+associative carry-transfer principle but specializes and packs it around complete
+recurrence outputs, as described in \cref{subsec:fused-ntt-carry}.
 
 \subsubsection{Numerical Representation}
 
@@ -1032,28 +1046,47 @@ high-order window, discards lower limbs that do not fit, and adjusts the product
 exponent by the normalization shift.  The resulting base-$2^{32}$ array is
 written to the destination \code{HpSharkFloat} with the product sign.
 
-\subsection{Pipeline synthesis}
+\subsection{Ref1: Staged NTT Multiply/Add Reference-Orbit Implementation}
 \label{subsec:ntt-pipeline-synthesis}
 
-Taken together, the stages described in this section form a single
-end-to-end GPU kernel invocation for high-precision multiplication.
-The forward path packs limbs into the NTT domain, applies twist
-factors, and performs a radix-2 forward NTT; pointwise Montgomery
-multiplications then produce the convolution in the frequency domain.
-The inverse path applies an inverse NTT, removes the twist factors,
-scales by $N^{-1}$, and exits the Montgomery domain.  Finally,
-unpacking and carry normalization convert the prime-field
-coefficients back into a positional limb representation.
+Ref1 implements one recurrence as two explicit high-precision arithmetic
+phases inside \code{ReferenceHelper}.  After the periodicity test and the
+optional HDRFloat second-derivative update,
+\code{MultiplyHelperNTTV2Separates} evaluates
+\begin{equation}
+  X_2=x_n^2,\qquad Y_2=y_n^2,\qquad XY_2=2x_ny_n.
+  \label{eq:ref1-materialized-products}
+\end{equation}
+The forward path packs limbs into the NTT domain, applies twist factors, and
+performs radix--2 forward NTTs.  Pointwise Montgomery multiplication produces
+the convolutions, and the inverse path applies the inverse NTT, removes the
+twists, scales by $N^{-1}$, and exits the Montgomery domain.  Unpacking and
+carry normalization then materialize three complete \code{HpSharkFloat}
+products.  The Newton--Raphson specialization also materializes the products
+needed by the first-derivative recurrence.
+
+The subsequent \code{AddHelperSeparates} aligns those normalized products with
+the constants and evaluates
+\begin{align}
+  x_{n+1} &= X_2-Y_2+c_x, \\
+  y_{n+1} &= XY_2+c_y.
+  \label{eq:ref1-staged-add}
+\end{align}
+It uses the standalone packed three-stream PPv5 addition from
+\cref{sec:hp-add}, including its own decoupled-look-back carry propagation and
+normalization.  Ref1 is therefore a deliberately staged implementation: the
+product phase finalizes positional carries before the recurrence's add/subtract
+phase begins.  Its persistent cooperative kernel repeats this schedule for every
+iteration in a host-requested chunk.
 
 The generic complex-multiplication helpers can advance several independent
 products through common phase boundaries.  Ref2 specializes that principle for
-the recurrence itself: algebraic factorization reduces the orbit to two
-frequency-domain output streams, and enabling the first Newton--Raphson
-derivative raises the total to four.  Shared-memory microkernels, paired stages,
-and asynchronous twiddle staging then advance those streams together, as
-described in \cref{subsec:amortize-sync}.
+the recurrence itself: algebraic factorization reduces the orbit to two final
+frequency-domain outputs, and enabling the first Newton--Raphson derivative
+raises the total to four.  It carries those outputs through one fused arithmetic
+and finalization schedule instead of materializing Ref1's intermediates.
 
-\subsection{Fused NTT Reference-Orbit Step}
+\subsection{Ref2: Fused NTT Reference-Orbit Implementation}
 \label{subsec:fused-ntt-reference-step}
 
 The Ref2 CUDA path, centered on \code{GpuOrbitSession2}, evaluates one complete
@@ -1179,8 +1212,9 @@ form.
     fused $a$, $b$, or $1$ contribution};
 
   \node[fused stage, below=of inverse] (finalize) {
-    \textbf{Finalization:} one base-$2^{32}$ carry/borrow and normalization
-    stream for each of the two orbit or four orbit-and-derivative components};
+    \textbf{Finalization:} one packed base-$2^{32}$ DLB phase with two orbit
+    carry lanes, or four orbit-and-derivative carry lanes, followed by
+    sign--magnitude and mantissa-window normalization};
 
   \draw[fused arrow] (plan) -- (pack);
   \draw[fused arrow] (pack) -- (forward);
@@ -1191,7 +1225,8 @@ form.
 \caption[Ref2 CUDA iteration pipeline]{Production Ref2 CUDA iteration pipeline.
 Forward DIF and inverse DIT meet in a 1024-coefficient shared-memory tile, where
 the recurrence products replace the forward spectra before inverse processing
-begins.  Linear terms enter during signed unpack rather than in the NTT domain.}
+begins.  Linear terms enter during signed unpack rather than in the NTT domain,
+and one packed decoupled-look-back traversal propagates all active result carries.}
 \label{fig:fused-ntt-reference-operation-schedule}
 \end{figure}
 
@@ -1220,9 +1255,10 @@ The two nonlinear derivative outputs are then
 \end{align}
 The derivative's real linear term $1$ is added only during signed unpack.
 Consequently, enabling the derivative adds two forward NTTs, three pointwise
-Montgomery products, two inverse NTTs, and two final carry streams.  The complete
-iteration uses four forward NTTs, five pointwise products, four inverse NTTs,
-and four final carry streams.
+Montgomery products, two inverse NTTs, and two logical carry lanes.  It does not
+add another DLB traversal.  The complete iteration uses four forward NTTs, five
+pointwise products, four inverse NTTs, and one packed DLB phase containing four
+independent lanes.
 
 \subsubsection{Why Fusion Does Not Eliminate the Final Carry}
 \label{subsec:fused-ntt-carry}
@@ -1232,16 +1268,46 @@ are operations in $\mathbb{Z}_p$.  After inverse transformation, however, one
 field coefficient can contribute bits to several positional limbs, and negative
 coefficients require borrows.  Ref2 first interprets each residue as a signed
 integer, places its contribution at the planned product bit offset, and adds the
-linear significand contribution at its independently planned bit offset.
+linear significand contribution at its independently planned bit offset.  For
+one completed component, let $\ell_i$ be the resulting signed contribution to
+base-$B$ limb $i$, where $B=2^{32}$, and let $c_i$ be its incoming carry.  The
+positional recurrence is
+\begin{align}
+  d_i &= (\ell_i+c_i) \bmod B, \\
+  c_{i+1} &= \frac{\ell_i+c_i-d_i}{B}.
+  \label{eq:ref2-signed-carry-recurrence}
+\end{align}
+The current coefficient bounds keep every carry in
+$S=\{-8,-7,\ldots,7\}$.  Each limb therefore defines a transfer function
+$f_i:S\rightarrow S$, $f_i(c_i)=c_{i+1}$.  For these signed limbs, $f_i$ is
+either constant or a one-step threshold function.  Ref2 stores its base output
+and threshold in one byte, and associative function composition gives the
+incoming carry at every limb through a prefix operation.
 
-The resulting signed base-$2^{32}$ limbs are not yet a normalized
-\code{HpSharkFloat}.  A decoupled-look-back carry pass propagates carries and
-borrows across the complete component, after which finalization selects the
-normalized mantissa window and exponent.  Combining the nonlinear and linear
-terms before that pass is the relevant fusion: the orbit needs one carry stream
-for $x_{n+1}$ and one for $y_{n+1}$, while the derivative-enabled path needs one
-for each of its four completed components.  No algebraic rearrangement of the
-field transform can remove those final positional dependencies.
+Ref2 packs four such bytes into one 32-bit transfer operator.  The low two bytes
+carry the real and imaginary orbit components; the upper bytes carry the real
+and imaginary first derivative when Newton--Raphson is enabled.  Composition
+acts independently on all active bytes, so
+\code{PrefixCarryTransformsDLB} and the base-$2^{16}$-specialized
+\code{PrefixAlignedB16CarryTransformsDLB} resolve one packed decoupled-look-back
+prefix over all result components.  Orbit-only execution has two independent
+logical carry lanes, and derivative execution has four, but both execute one
+descriptor sequence and one DLB traversal.
+
+The production base-$2^{16}$ path also constructs each signed limb and its
+packed carry transfer in the same warp, avoiding a materialize-and-reread round
+trip for the limb arrays.  Once the packed traversal emits base-$2^{32}$ digits,
+finalization converts negative digit strings to sign--magnitude form, locates
+the retained mantissa window, and writes the normalized \code{HpSharkFloat}
+values.  Locating the lowest nonzero digit handles the final two's-complement
+negation without a second cross-block carry-prefix scan.
+
+Combining nonlinear products, $c_x$, $c_y$, and the derivative's $1$ before
+\cref{eq:ref2-signed-carry-recurrence} is the relevant multiply/add fusion.  No
+algebraic rearrangement of the field transform can remove the final positional
+dependency, but Ref2 consolidates it into this one packed DLB phase instead of
+normalizing intermediate products and then invoking a separate high-precision
+addition.
 
 \subsubsection{Numeric Domains, Word Widths, and Exactness Bounds}
 \label{subsec:fused-ntt-range}
@@ -1331,18 +1397,18 @@ argument.  Any increase to those limits requires the bound to be revisited.
 
 \begin{table}[!htbp]
 \centering
-\caption[Ref2 recurrence operation counts]{Production Ref2 per-iteration
+\caption[Ref2 recurrence operation counts]{Production Ref2 nonzero NTT-branch per-iteration
 operation counts.  $F$ and $I$ count forward and inverse NTTs, $P$ counts
-pointwise Montgomery products per frequency, and $C$ counts final
-base-$2^{32}$ carry/normalization streams.  Linear inputs are fused during
-signed unpack and require no transform.}
+pointwise Montgomery products per frequency, $D$ counts packed DLB phases, and
+$C$ counts independent logical carry lanes inside that phase.  Linear inputs
+are fused during signed unpack and require no transform.}
 \label{tab:fused-reference-operation-counts}
-\begin{tabular}{lrrrrl}
+\begin{tabular}{lrrrrrl}
 \hline
-\textbf{Workload} & $F$ & $P$ & $I$ & $C$ & \textbf{Linear inputs} \\
+\textbf{Workload} & $F$ & $P$ & $I$ & $D$ & $C$ & \textbf{Linear inputs} \\
 \hline
-Orbit only & 2 & 2 & 2 & 2 & $a,b$ \\
-Orbit plus first derivative & 4 & 5 & 4 & 4 & $a,b,1$ \\
+Orbit only & 2 & 2 & 2 & 1 & 2 & $a,b$ \\
+Orbit plus first derivative & 4 & 5 & 4 & 1 & 4 & $a,b,1$ \\
 \hline
 \end{tabular}
 \end{table}
@@ -1359,7 +1425,8 @@ The operation counts also explain why fusion extends beyond the product
 algebra.  Neither the constant $c$ nor the derivative's $1$ consumes a forward
 transform, an inverse transform, or an intermediate high-precision
 normalization.  Each completed component receives all of its linear and
-nonlinear contributions before its sole carry stream.  The HDRFloat
+nonlinear contributions before its logical carry lane joins the packed DLB
+phase.  The HDRFloat
 second-derivative recurrence is separate from these \code{HpSharkFloat} streams
 and is excluded from \cref{tab:fused-reference-operation-counts}.  The table
 identifies structural savings; their share of end-to-end time remains a
@@ -1421,10 +1488,12 @@ addition routine.  By contrast, the fused path reuses its forward spectra for
 both final orbit components and avoids materializing those three intermediate
 high-precision values.  Ref2 reuses setup-time root and twiddle tables and its
 persistent workspace across loop invocations.  The constants themselves remain
-ordinary signed values until unpack.  Application-level performance relative to
-Ref1 still requires measurement.
+ordinary signed values until unpack.  Removing the intermediate products,
+standalone add stage, and extra carry traffic makes Ref2 the faster production
+implementation.  The size of the advantage remains dependent on transform
+length, launch configuration, and GPU hardware.
 
-\subsection{Batched Transforms and Central Shared-Memory Fusion}
+\subsubsection{Batched Transforms and Central Shared-Memory Fusion}
 \label{subsec:amortize-sync}
 
 Large NTTs require grid-wide producer--consumer boundaries between selected
@@ -1467,8 +1536,8 @@ the signed $a$, $b$, or derivative-$1$ contribution before it is written.
 Per-stream inputs remain explicit parameters throughout these batch operations;
 the implementation does not require thread-local stream arrays.
 
-The final decoupled-look-back carry phase is likewise batched across the two or
-four completed components.  Descriptor initialization is scheduled against an
+The final decoupled-look-back carry phase is one packed traversal across the two
+or four completed components.  Descriptor initialization is scheduled against an
 existing publication boundary, so it does not introduce a distinct mathematical
 phase.  With production checksum instrumentation disabled, these fusions remove
 several global write/read boundaries and standalone grid barriers.  Debug
@@ -1477,8 +1546,8 @@ unpack path so intermediate states remain comparable with the host model.
 Accordingly, the production organization should be efficient for large
 significands: it minimizes the number of NTT streams and pointwise products,
 keeps the central data reuse on chip, eliminates explicit permutations and
-inverse normalization, and performs only one carry traversal per final
-component.  The relative contribution of each saving remains an empirical
+inverse normalization, and performs one packed carry traversal for the complete
+result set.  The relative contribution of each saving remains an empirical
 property of transform length and GPU hardware.
 
 
@@ -1617,18 +1686,30 @@ bridges device execution and a trusted host reference, enabling rapid fault
 localization in complex GPU high-precision arithmetic kernels.
 
 \subsection{Usage in \FractalShark{}}
-At the application layer, the GPU reference orbit backend is exposed through
-the persistent \emph{combo} object described earlier and a simple three-stage
-lifecycle:
+At the application layer, \code{PerturbationAlg::GPU} and
+\code{PerturbationAlg::GPURef2} select Ref1 and Ref2.  The portable menu exposes
+both radio commands, and the CLI accepts \code{GPU} and \code{GPURef2} as render
+algorithm names.  \code{RefOrbitCalc} dispatches each selection through the same
+output-type families and appends the resulting uncompressed orbit samples to
+\code{PerturbationResults}.  Neither CUDA implementation is selected by
+\code{Auto}; both are explicit alternatives to the automatic CPU policy.
 
+The implementations expose parallel three-stage lifecycles:
 \begin{enumerate}
-  \item \code{InitHpSharkReferenceKernel}: allocates persistent device/host
-        state and binds the orbit parameters and launch configuration.
-  \item \code{InvokeHpSharkReferenceKernel}: advances the orbit in bounded
+  \item \code{InitHpSharkReferenceKernel} or
+        \code{InitHpSharkReference2Kernel} allocates persistent host/device
+        state and binds the orbit parameters and launch configuration.  Ref2
+        also prepares or attaches its fixed-capacity workspace and cached plans.
+  \item \code{InvokeHpSharkReferenceKernel} or
+        \code{InvokeHpSharkReference2Kernel} advances the orbit in bounded
         batches of at most \(\code{MaxOutputIters}\), streaming results through
         \code{OutputIters}.
-  \item \code{ShutdownHpSharkReferenceKernel}: frees the persistent resources.
+  \item \code{ShutdownHpSharkReferenceKernel} or
+        \code{ShutdownHpSharkReference2Kernel} frees the implementation's
+        persistent resources.
 \end{enumerate}
+\code{GpuOrbitSession} and \code{GpuOrbitSession2} wrap these paired interfaces
+with RAII so application code cannot omit the corresponding shutdown.
 
 Because the precision must be fixed at compile time for the \code{
 SharkFloatParams} specialization, \code{BitsToSupportedLimbCount} rounds the
@@ -1642,11 +1723,23 @@ largest specialization rather than reporting that the requested precision was
 unavailable.  Each invocation appends the emitted
 \code{OutputIters} records into the CPU-side \code{PerturbationResults}, while
 periodicity and escape are reported through \code{PeriodicityStatus}. From the
-rest of \FractalShark{}'s perspective, the backend therefore appears as a
+rest of \FractalShark{}'s perspective, each backend therefore appears as a
 batch-driven, fixed-precision reference-orbit engine whose internal arithmetic
-machinery remains encapsulated behind this host-facing lifecycle.
+machinery remains encapsulated behind the same host-facing contract.  Ref2 uses
+\code{GetRef2EffectivePrecisionLimbs} to restrict work to the requested precision
+inside the selected compile-time storage bucket.
 
-The same GPU high-precision arithmetic powers another major subsystem.  The
-next chapter describes the Feature Finder, which applies Newton--Raphson
-iteration at the selected fixed precision to locate periodic points
-embedded deep within the Mandelbrot set.
+The same implementation choice is available through \code{NRInnerLoopBackend}
+in the Feature Finder:
+\begin{itemize}
+    \item \code{GPU} dispatches to \code{EvaluateCriticalOrbitAndDerivs\_GPU}; and
+    \item \code{GPURef2} dispatches to \code{EvaluateCriticalOrbitAndDerivs2\_GPU}.
+\end{itemize}
+Both entry points return the final $z$, $\partial z/\partial c$, and HDRFloat
+second derivative; honor abort and
+progress callbacks; and interpret \code{startIter}>0 as checkpoint resume while
+\code{startIter}=0 requests fresh initialization.  Ref2 is therefore a complete
+application and Newton--Raphson implementation, not a test-only arithmetic
+experiment.  The next chapter describes how the Feature Finder uses this
+fixed-precision endpoint evaluation to locate periodic points embedded deep
+within the Mandelbrot set.

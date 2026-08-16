@@ -4,8 +4,6 @@
 #include "HighPrecision.h"
 #include "Vectors.h"
 
-enum class IterTypeEnum { Bits32, Bits64 };
-
 // Holds the number of iterations it took to decide if
 // we were in or not in the fractal.  Has a number
 // for every point on the screen.

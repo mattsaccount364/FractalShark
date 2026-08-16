@@ -1,5 +1,4 @@
-﻿#include "stdafx.h"
-#include "PointZoomBBConverter.h"
+﻿#include "PointZoomBBConverter.h"
 
 PointZoomBBConverter::PointZoomBBConverter(TestMode testMode)
     : m_MinX{}, m_MinY{}, m_MaxX{}, m_MaxY{}, m_PtX{}, m_PtY{}, m_ZoomFactor{}, m_Test{testMode}

@@ -30,7 +30,15 @@
     <ClInclude Include="MultiplyNTT_NormalizeWarpTiledV2.h" />
     <ClInclude Include="Vectors.h" />
     <ClInclude Include="KernelTestAdd_cu.h" />
+    <ClInclude Include="FractalViewPresets.h" />
+    <ClInclude Include="LargeCoords30.h" />
+    <ClInclude Include="LargeCoords32.h" />
+    <ClInclude Include="LargeCoords33.h" />
+    <ClInclude Include="LargeCoords34.h" />
+    <ClInclude Include="PointZoomBBConverter.h" />
     <ClCompile Include="AbortMonitor.cpp" />
+    <ClCompile Include="FractalViewPresets.cpp" />
+    <ClCompile Include="PointZoomBBConverter.cpp" />
     <ClCompile Include="BenchmarkTimer.cpp">
       <FileType>Document</FileType>
     </ClCompile>

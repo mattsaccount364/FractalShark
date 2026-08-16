@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "FractalViewPresets.h"
 #include "PointZoomBBConverter.h"
 

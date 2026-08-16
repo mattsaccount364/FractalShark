@@ -572,6 +572,8 @@ constexpr size_t AuthoritativeReuseExtraPrecisionInBits = 800;
 // using IterType = uint32_t;
 using IterTypeFull = uint64_t;
 
+enum class IterTypeEnum : int { Bits32 = 0, Bits64 = 1 };
+
 enum class PerturbExtras { Disable, Bad, SimpleCompression, MaxCompression };
 
 enum class CompressToDisk { Disable, SimpleCompression, MaxCompression, MaxCompressionImagina };

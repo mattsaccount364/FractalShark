@@ -71,6 +71,8 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Correctness (Params1..5)";
         case BasicCorrectnessMode::PerfSingleRef2:
             return "Performance Single ReferenceOrbit2";
+        case BasicCorrectnessMode::PerfSingleViewAny:
+            return "Performance Single View (any)";
         default:
             return "Unknown";
     }
@@ -95,6 +97,7 @@ constexpr int kFull2Perf = 15000;
 constexpr int kPerfView30 = 16020;
 constexpr int kPerfView32 = 16030;
 constexpr int kPerfView5 = 16010;
+constexpr int kPerfViewAny = 16100;
 
 constexpr int kPerfSweepStart = 1000;
 } // namespace TestIds
@@ -141,7 +144,8 @@ RequiresReferenceImplementation(BasicCorrectnessMode mode)
            mode == BasicCorrectnessMode::PerfSingleView5 ||
            mode == BasicCorrectnessMode::PerfSingleNRView5 ||
            mode == BasicCorrectnessMode::PerfSingleNRView30 ||
-           mode == BasicCorrectnessMode::PerfSingleNRView32;
+           mode == BasicCorrectnessMode::PerfSingleNRView32 ||
+           mode == BasicCorrectnessMode::PerfSingleViewAny;
 }
 
 /// Robust console line input using Environment console input (no std::getline mixing).
@@ -409,7 +413,8 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         mode != BasicCorrectnessMode::PerfSingleView5 &&
         mode != BasicCorrectnessMode::PerfSingleNRView5 &&
         mode != BasicCorrectnessMode::PerfSingleNRView30 &&
-        mode != BasicCorrectnessMode::PerfSingleNRView32) {
+        mode != BasicCorrectnessMode::PerfSingleNRView32 &&
+        mode != BasicCorrectnessMode::PerfSingleViewAny) {
         return 1;
     }
 
@@ -466,39 +471,58 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 
     if (mode == BasicCorrectnessMode::PerfSingleView30) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView30<referenceOperator>(Tests,
-                                                                  launchParams.NumBlocks,
-                                                                  launchParams.ThreadsPerBlock,
-                                                                  TestIds::kPerfView30,
-                                                                  numIters,
-                                                                  internalTestLoopCount,
-                                                                  useMT);
+        auto res = TestFullReferencePerfView<referenceOperator>(Tests,
+                                                                launchParams.NumBlocks,
+                                                                launchParams.ThreadsPerBlock,
+                                                                TestIds::kPerfView30,
+                                                                numIters,
+                                                                internalTestLoopCount,
+                                                                useMT,
+                                                                30);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleView5) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView5<referenceOperator>(Tests,
-                                                                 launchParams.NumBlocks,
-                                                                 launchParams.ThreadsPerBlock,
-                                                                 TestIds::kPerfView5,
-                                                                 numIters,
-                                                                 internalTestLoopCount,
-                                                                 useMT);
+        auto res = TestFullReferencePerfView<referenceOperator>(Tests,
+                                                                launchParams.NumBlocks,
+                                                                launchParams.ThreadsPerBlock,
+                                                                TestIds::kPerfView5,
+                                                                numIters,
+                                                                internalTestLoopCount,
+                                                                useMT,
+                                                                5);
         if (!ContinueAfterFailure(res))
             return 0;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleView32) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView32<referenceOperator>(Tests,
-                                                                  launchParams.NumBlocks,
-                                                                  launchParams.ThreadsPerBlock,
-                                                                  TestIds::kPerfView32,
-                                                                  numIters,
-                                                                  internalTestLoopCount,
-                                                                  useMT);
+        auto res = TestFullReferencePerfView<referenceOperator>(Tests,
+                                                                launchParams.NumBlocks,
+                                                                launchParams.ThreadsPerBlock,
+                                                                TestIds::kPerfView32,
+                                                                numIters,
+                                                                internalTestLoopCount,
+                                                                useMT,
+                                                                32);
+        if (!ContinueAfterFailure(res))
+            return 0;
+    }
+
+    if (mode == BasicCorrectnessMode::PerfSingleViewAny) {
+        TestTracker Tests;
+        auto view = PromptIntWithTimeout(
+            "View number (1..34)?  5/30/32 use verified baselines", 5, timeoutInSec, interactiveMode);
+        auto res = TestFullReferencePerfView<referenceOperator>(Tests,
+                                                                launchParams.NumBlocks,
+                                                                launchParams.ThreadsPerBlock,
+                                                                TestIds::kPerfViewAny,
+                                                                numIters,
+                                                                internalTestLoopCount,
+                                                                useMT,
+                                                                static_cast<size_t>(view.value));
         if (!ContinueAfterFailure(res))
             return 0;
     }
@@ -601,6 +625,7 @@ main(int, char **)
                << "15=PerfSingleNRMultiply" << std::endl
                << "16=Correctness(P1..P5)" << std::endl
                << "17=PerfSingleRef2" << std::endl
+               << "18=PerfSingle View (pick 1-34)" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
@@ -660,8 +685,11 @@ main(int, char **)
         case 17:
             mode = BasicCorrectnessMode::PerfSingleRef2;
             break;
+        case 18:
+            mode = BasicCorrectnessMode::PerfSingleViewAny;
+            break;
         default:
-            std::cout << "Invalid mode " << rawMode << " (valid range: 1..17). "
+            std::cout << "Invalid mode " << rawMode << " (valid range: 1..18). "
                       << "Exiting.\n";
             mode = BasicCorrectnessMode::Error;
             break;
@@ -716,6 +744,7 @@ main(int, char **)
         case BasicCorrectnessMode::PerfSingleNRView5:
         case BasicCorrectnessMode::PerfSingleNRView30:
         case BasicCorrectnessMode::PerfSingleNRView32:
+        case BasicCorrectnessMode::PerfSingleViewAny:
             if (referenceImplementation == ReferenceImplementation::Ref1) {
                 RunPerfModes<Operator::ReferenceOrbit>(mode, kTimeoutInSec, interactiveMode);
             } else {

@@ -655,7 +655,7 @@ TestNewtonRaphsonView30(TestTracker &Tests,
                         bool useMT,
                         int numRepeats)
 {
-#include "../FractalSharkLib/LargeCoords30.h"
+#include "LargeCoords30.h"
 
     constexpr uint64_t expectedPeriod = 669772;
 
@@ -690,7 +690,7 @@ TestNewtonRaphsonView32(TestTracker &Tests,
                         bool useMT,
                         int numRepeats)
 {
-#include "../FractalSharkLib/LargeCoords32.h"
+#include "LargeCoords32.h"
 
     constexpr uint64_t expectedPeriod = 27'209'300;
 

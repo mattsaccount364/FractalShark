@@ -15,7 +15,6 @@ target_sources(FractalSharkLib PRIVATE
     FeatureSummary.cpp
     Fractal.cpp
     FractalPalette.cpp
-    FractalViewPresets.cpp
     ImaginaOrbit.cpp
     ItersMemoryContainer.cpp
     LAReference.cpp
@@ -25,7 +24,6 @@ target_sources(FractalSharkLib PRIVATE
     OrbitParameterPack.cpp
     PerturbationResults.cpp
     PngParallelSave.cpp
-    PointZoomBBConverter.cpp
     PrecisionCalculator.cpp
     RecommendedSettings.cpp
     RefOrbitCalc.cpp

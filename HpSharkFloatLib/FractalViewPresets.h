@@ -1,8 +1,6 @@
 #pragma once
 
 #include "HighPrecision.h"
-#include "ItersMemoryContainer.h"
-#include "LAParameters.h"
 
 #include <string>
 

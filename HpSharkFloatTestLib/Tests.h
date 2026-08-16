@@ -71,4 +71,17 @@ bool TestFullReferencePerfView32(TestTracker &Tests,
                                  int internalTestLoopCount,
                                  bool useMT = true);
 
+// Generic "run view perf test" driver: delegates views 5/30/32 to the verified bespoke
+// implementations and, for any other preset 1..34, derives the centre + radius from the
+// shared ViewPreset bounding box and runs a perf-only reference orbit (no period assert).
+template <Operator sharkOperator>
+bool TestFullReferencePerfView(TestTracker &Tests,
+                               int numBlocks,
+                               int numThreads,
+                               int testBase,
+                               int numIters,
+                               int internalTestLoopCount,
+                               bool useMT, // no default: MainTestCuda always passes it explicitly
+                               size_t view);
+
 #include "TestNewtonRaphson.h"

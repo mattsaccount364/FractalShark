@@ -30,11 +30,13 @@ set(HPSHARK_GENERATED_CU_FILES
 add_library(HpSharkFloatLib STATIC)
 
 target_sources(HpSharkFloatLib PRIVATE
+    FractalViewPresets.cpp
     HighPrecision.cpp
     LAParameters.cpp
     MpirComplex.cpp
     MpirOrbitEval.cpp
     MpirSerialization.cpp
+    PointZoomBBConverter.cpp
     AbortMonitor.cpp
     BenchmarkTimer.cpp
     KernelInvokeReference2Cache.cpp

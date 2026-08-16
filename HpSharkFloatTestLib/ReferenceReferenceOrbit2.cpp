@@ -2255,11 +2255,11 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
 
     uint64_t outputBits = realProductBitOffset + realRequiredCoefficients * bitsPerCoefficient;
     outputBits =
-        std::max(outputBits, realLinearBitOffset + (realConstantTerm.IsZero ? 0ull : linearBits));
+        std::max(outputBits, realLinearBitOffset + (realConstantTerm.IsZero ? uint64_t{0} : linearBits));
     outputBits =
         std::max(outputBits, imagProductBitOffset + imagRequiredCoefficients * bitsPerCoefficient);
     outputBits =
-        std::max(outputBits, imagLinearBitOffset + (imagConstantTerm.IsZero ? 0ull : linearBits));
+        std::max(outputBits, imagLinearBitOffset + (imagConstantTerm.IsZero ? uint64_t{0} : linearBits));
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         const uint64_t derivativeRequiredCoefficients =
             std::max(derivativeP1RequiredCoefficients,
@@ -2268,7 +2268,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
             std::max(outputBits,
                      derivativeProductBitOffset + derivativeRequiredCoefficients * bitsPerCoefficient);
         outputBits =
-            std::max(outputBits, derivativeLinearBitOffset + (dzdcOneTerm.IsZero ? 0ull : linearBits));
+            std::max(outputBits, derivativeLinearBitOffset + (dzdcOneTerm.IsZero ? uint64_t{0} : linearBits));
     }
     const uint64_t limbCount64 = (outputBits + 31ull) / 32ull + 2ull;
     assert(limbCount64 <= workspace.ActiveMaxFusedLimbs);

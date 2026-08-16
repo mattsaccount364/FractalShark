@@ -3,6 +3,8 @@
 #include "CudaDblflt.h"
 #include "dblflt.h"
 
+#include <cmath>
+
 template <class SubType> class FloatComplex {
 
 private:
@@ -306,7 +308,7 @@ public:
     SubType CUDA_CRAP
     norm() const
     {
-        return SubType(sqrt(mantissaReal * mantissaReal + mantissaImag * mantissaImag));
+        return SubType(std::sqrt(mantissaReal * mantissaReal + mantissaImag * mantissaImag));
     }
 
     FloatComplex CUDA_CRAP
@@ -383,7 +385,7 @@ public:
     toComplex(SubType &re, SubType &img) const
     {
         // return new Complex(mantissaReal * MantExp.toExp(exp), mantissaImag * MantExp.toExp(exp));
-        auto d = typename SubType::getMultiplier(exp);
+        auto d = SubType{1};
         // return new Complex(MantExp.toDouble(mantissaReal, exp), MantExp.toDouble(mantissaImag, exp));
         re = mantissaReal * d;
         img = mantissaImag * d;

@@ -1,5 +1,7 @@
+#include "CommandLineOptions.h"
 #include "Conversion.h"
 #include "DbgHeap.h"
+#include "GpuPrecisionDispatch.h"
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
 #include "ShowMostEfficientSizes.h"
@@ -19,6 +21,7 @@
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <stdarg.h>
 #include <string>
@@ -157,7 +160,34 @@ RequiresReferenceImplementation(BasicCorrectnessMode mode)
 struct PromptResult {
     int value = 0;
     bool gotAnyInput = false; // user typed something (even if invalid)
+    bool parsed = false;
+    std::string input;
 };
+
+static std::string_view
+TrimPromptText(std::string_view text)
+{
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t')) {
+        text.remove_suffix(1);
+    }
+    return text;
+}
+
+static std::optional<CommandLineValueKind>
+TryParseLimbSelectionKeyword(std::string_view text)
+{
+    text = TrimPromptText(text);
+    if (text == "auto") {
+        return CommandLineValueKind::Auto;
+    }
+    if (text == "production") {
+        return CommandLineValueKind::Production;
+    }
+    return std::nullopt;
+}
 
 static bool
 TryParsePromptInt(std::string_view text, int &value)
@@ -254,6 +284,7 @@ PromptIntWithTimeout(const std::string &promptText,
 
     PromptResult out;
     out.gotAnyInput = !buf.empty();
+    out.input = buf;
 
     // Timeout case: only possible if we never went waitForever
     if (!pressedEnter && !waitForever && std::chrono::steady_clock::now() >= deadline) {
@@ -270,11 +301,346 @@ PromptIntWithTimeout(const std::string &promptText,
     int value = 0;
     if (TryParsePromptInt(buf, value)) {
         out.value = value;
+        out.parsed = true;
+    } else if (TryParseLimbSelectionKeyword(buf)) {
+        out.value = defaultValue;
     } else {
         std::cout << "(could not parse \"" << buf << "\", defaulting to " << defaultValue << ")\n";
         out.value = defaultValue;
     }
     return out;
+}
+
+template <typename T>
+static bool
+IsCommandLineSupplied(const CommandLineOptionValue<T> &option)
+{
+    return option.m_Kind != CommandLineValueKind::Omitted;
+}
+
+static int
+ResolveIntOption(const CommandLineOptionValue<int> &option,
+                 const std::string &promptText,
+                 int defaultValue,
+                 int timeoutInSec,
+                 bool &interactiveMode)
+{
+    if (option.m_Kind == CommandLineValueKind::Explicit) {
+        return option.m_Value;
+    }
+    if (option.m_Kind == CommandLineValueKind::Auto) {
+        return defaultValue;
+    }
+    return PromptIntWithTimeout(promptText, defaultValue, timeoutInSec, interactiveMode).value;
+}
+
+static bool
+IsRunPerfModesMode(BasicCorrectnessMode mode)
+{
+    return mode == BasicCorrectnessMode::PerfSub || mode == BasicCorrectnessMode::PerfSweep ||
+           mode == BasicCorrectnessMode::PerfSingleView30 ||
+           mode == BasicCorrectnessMode::PerfSingleView32 ||
+           mode == BasicCorrectnessMode::PerfSingleView5 ||
+           mode == BasicCorrectnessMode::PerfSingleNRView5 ||
+           mode == BasicCorrectnessMode::PerfSingleNRView30 ||
+           mode == BasicCorrectnessMode::PerfSingleNRView32 ||
+           mode == BasicCorrectnessMode::PerfSingleViewAny;
+}
+
+static bool
+IsRunPerfBasicOpMode(BasicCorrectnessMode mode)
+{
+    return mode == BasicCorrectnessMode::PerfSingleAdd ||
+           mode == BasicCorrectnessMode::PerfSingleMultiply ||
+           mode == BasicCorrectnessMode::PerfSingleRef || mode == BasicCorrectnessMode::PerfSingleRef2;
+}
+
+static bool
+IsFullReferenceViewMode(BasicCorrectnessMode mode)
+{
+    return mode == BasicCorrectnessMode::PerfSingleView30 ||
+           mode == BasicCorrectnessMode::PerfSingleView32 ||
+           mode == BasicCorrectnessMode::PerfSingleView5 ||
+           mode == BasicCorrectnessMode::PerfSingleViewAny;
+}
+
+static bool
+ValidateCommandLineApplicability(const CommandLineOptions &options, BasicCorrectnessMode mode)
+{
+    const bool isPerfModesMode = IsRunPerfModesMode(mode);
+    const bool isBasicOpMode = IsRunPerfBasicOpMode(mode);
+    const bool isSweepMode = mode == BasicCorrectnessMode::PerfSweep;
+    const bool isViewMode = IsFullReferenceViewMode(mode) || isSweepMode;
+
+    if ((IsCommandLineSupplied(options.m_CudaIterations) || IsCommandLineSupplied(options.m_NumIters) ||
+         IsCommandLineSupplied(options.m_NumBlocks) || IsCommandLineSupplied(options.m_NumThreads)) &&
+        !isPerfModesMode && !isBasicOpMode) {
+        std::cerr << "Performance options require a performance mode.\n";
+        return false;
+    }
+
+    if (IsCommandLineSupplied(options.m_MpirThreading) && !isPerfModesMode) {
+        std::cerr << "--mpir-threading is only valid for the view/operator performance modes.\n";
+        return false;
+    }
+
+    if (IsCommandLineSupplied(options.m_View) && mode != BasicCorrectnessMode::PerfSingleViewAny) {
+        std::cerr << "--view is only valid with mode 18 (PerfSingle View Any).\n";
+        return false;
+    }
+
+    if ((IsCommandLineSupplied(options.m_StorageLimbs) ||
+         IsCommandLineSupplied(options.m_EffectiveLimbs)) &&
+        !isViewMode) {
+        std::cerr << "Limb options require a full-reference view mode or the performance sweep.\n";
+        return false;
+    }
+
+    if (IsCommandLineSupplied(options.m_Reference) && !RequiresReferenceImplementation(mode)) {
+        std::cerr << "--reference is not used by the selected mode.\n";
+        return false;
+    }
+
+    return true;
+}
+
+struct FullReferencePerfLimbOptions {
+    CommandLineOptionValue<uint32_t> m_StorageLimbs;
+    CommandLineOptionValue<uint32_t> m_EffectiveLimbs;
+};
+
+static bool
+IsProductionLimbSelectionRequested(const FullReferencePerfLimbOptions &options)
+{
+    return options.m_StorageLimbs.m_Kind == CommandLineValueKind::Production ||
+           options.m_EffectiveLimbs.m_Kind == CommandLineValueKind::Production;
+}
+
+static FullReferencePerfLimbSelection
+ResolveAutomaticLimbSelection(Operator referenceOperator,
+                              const FullReferencePerfPrecision &precision,
+                              const FullReferencePerfLimbOptions &options)
+{
+    const FullReferencePerfLimbSelection &defaultSelection = IsProductionLimbSelectionRequested(options)
+                                                                 ? precision.m_ProductionSelection
+                                                                 : precision.m_DefaultSelection;
+    FullReferencePerfLimbSelection selection = defaultSelection;
+
+    if (options.m_StorageLimbs.m_Kind == CommandLineValueKind::Explicit) {
+        selection.m_StorageLimbs = options.m_StorageLimbs.m_Value;
+        if (options.m_EffectiveLimbs.m_Kind != CommandLineValueKind::Explicit) {
+            selection.m_EffectiveLimbs = GetFullReferencePerfEffectiveLimbs(
+                referenceOperator, precision.m_RequestedPrecisionLimbs, selection.m_StorageLimbs);
+        }
+    }
+    if (options.m_EffectiveLimbs.m_Kind == CommandLineValueKind::Explicit) {
+        selection.m_EffectiveLimbs = options.m_EffectiveLimbs.m_Value;
+    }
+
+    return selection;
+}
+
+static bool
+PromptSupportedLimbCount(const std::string &promptText,
+                         uint32_t defaultValue,
+                         int timeoutInSec,
+                         bool &interactiveMode,
+                         CommandLineOptionValue<uint32_t> &option)
+{
+    for (;;) {
+        const PromptResult prompt = PromptIntWithTimeout(
+            promptText, static_cast<int>(defaultValue), timeoutInSec, interactiveMode);
+        if (!prompt.gotAnyInput) {
+            option.m_Kind = CommandLineValueKind::Auto;
+            option.m_Value = defaultValue;
+            return true;
+        }
+
+        if (const auto keyword = TryParseLimbSelectionKeyword(prompt.input)) {
+            option.m_Kind = *keyword;
+            option.m_Value = defaultValue;
+            return true;
+        }
+
+        if (prompt.parsed && prompt.value >= 0 &&
+            IsSupportedLimbCount(static_cast<uint32_t>(prompt.value))) {
+            option.m_Kind = CommandLineValueKind::Explicit;
+            option.m_Value = static_cast<uint32_t>(prompt.value);
+            return true;
+        }
+
+        std::cout << "Storage limbs must be one of 256, 512, 1024, 2048, 4096, 8192, "
+                     "16384, 32768, 65536, 131072, 262144, or 524288; enter auto or "
+                     "production for a preset.\n";
+    }
+}
+
+static bool
+PromptEffectiveLimbCount(const std::string &promptText,
+                         uint32_t defaultValue,
+                         uint32_t minimumValue,
+                         uint32_t maximumValue,
+                         int timeoutInSec,
+                         bool &interactiveMode,
+                         CommandLineOptionValue<uint32_t> &option)
+{
+    for (;;) {
+        const PromptResult prompt = PromptIntWithTimeout(
+            promptText, static_cast<int>(defaultValue), timeoutInSec, interactiveMode);
+        if (!prompt.gotAnyInput) {
+            option.m_Kind = CommandLineValueKind::Auto;
+            option.m_Value = defaultValue;
+            return true;
+        }
+
+        if (const auto keyword = TryParseLimbSelectionKeyword(prompt.input)) {
+            option.m_Kind = *keyword;
+            option.m_Value = defaultValue;
+            return true;
+        }
+
+        if (prompt.parsed && prompt.value >= 0 && static_cast<uint32_t>(prompt.value) >= minimumValue &&
+            static_cast<uint32_t>(prompt.value) <= maximumValue) {
+            option.m_Kind = CommandLineValueKind::Explicit;
+            option.m_Value = static_cast<uint32_t>(prompt.value);
+            return true;
+        }
+
+        std::cout << "Effective limbs must be in the range " << minimumValue << ".." << maximumValue
+                  << "; enter auto or production for a preset.\n";
+    }
+}
+
+static bool
+PromptSweepLimbCount(const std::string &promptText,
+                     bool storageLimbs,
+                     int timeoutInSec,
+                     bool &interactiveMode,
+                     CommandLineOptionValue<uint32_t> &option)
+{
+    for (;;) {
+        const PromptResult prompt = PromptIntWithTimeout(promptText, 0, timeoutInSec, interactiveMode);
+        if (!prompt.gotAnyInput) {
+            option.m_Kind = CommandLineValueKind::Auto;
+            option.m_Value = 0;
+            return true;
+        }
+
+        if (const auto keyword = TryParseLimbSelectionKeyword(prompt.input)) {
+            option.m_Kind = *keyword;
+            option.m_Value = 0;
+            return true;
+        }
+
+        if (prompt.parsed && prompt.value > 0 &&
+            (!storageLimbs || IsSupportedLimbCount(static_cast<uint32_t>(prompt.value)))) {
+            option.m_Kind = CommandLineValueKind::Explicit;
+            option.m_Value = static_cast<uint32_t>(prompt.value);
+            return true;
+        }
+
+        if (storageLimbs) {
+            std::cout << "Enter a supported storage limb count, auto, or production.\n";
+        } else {
+            std::cout << "Enter a positive effective limb count, auto, or production.\n";
+        }
+    }
+}
+
+template <Operator referenceOperator>
+static bool
+ResolveSingleViewLimbSelection(const CommandLineOptions &options,
+                               size_t view,
+                               int timeoutInSec,
+                               bool &interactiveMode,
+                               FullReferencePerfLimbSelection &selection)
+{
+    const auto precision = GetFullReferencePerfPrecision(referenceOperator, view);
+    FullReferencePerfLimbOptions limbOptions{options.m_StorageLimbs, options.m_EffectiveLimbs};
+
+    const bool productionDefault = IsProductionLimbSelectionRequested(limbOptions);
+    const auto &defaultSelection =
+        productionDefault ? precision.m_ProductionSelection : precision.m_DefaultSelection;
+    if (limbOptions.m_StorageLimbs.m_Kind == CommandLineValueKind::Omitted) {
+        std::ostringstream prompt;
+        prompt << "Storage limbs? Default " << defaultSelection.m_StorageLimbs;
+        if (!productionDefault && precision.m_DefaultIsBenchmarkPreset) {
+            prompt << " (benchmark preset; production-derived storage "
+                   << precision.m_ProductionSelection.m_StorageLimbs << ", effective "
+                   << precision.m_ProductionSelection.m_EffectiveLimbs << ')';
+        } else {
+            prompt << " (production-derived)";
+        }
+        prompt << " (supported powers of two 256..524288):";
+        PromptSupportedLimbCount(prompt.str(),
+                                 defaultSelection.m_StorageLimbs,
+                                 timeoutInSec,
+                                 interactiveMode,
+                                 limbOptions.m_StorageLimbs);
+    }
+
+    if (limbOptions.m_EffectiveLimbs.m_Kind == CommandLineValueKind::Omitted) {
+        FullReferencePerfLimbOptions automaticOptions = limbOptions;
+        automaticOptions.m_EffectiveLimbs.m_Kind = CommandLineValueKind::Auto;
+        const auto automaticSelection =
+            ResolveAutomaticLimbSelection(referenceOperator, precision, automaticOptions);
+        std::ostringstream prompt;
+        prompt << "Effective limbs? Default " << automaticSelection.m_EffectiveLimbs << " (range "
+               << GetMinimumFullReferencePerfEffectiveLimbs(referenceOperator,
+                                                            automaticSelection.m_StorageLimbs)
+               << ".." << automaticSelection.m_StorageLimbs;
+        const bool effectiveProductionDefault = IsProductionLimbSelectionRequested(limbOptions);
+        if (!effectiveProductionDefault && precision.m_DefaultIsBenchmarkPreset &&
+            limbOptions.m_StorageLimbs.m_Kind != CommandLineValueKind::Explicit) {
+            prompt << "; benchmark preset; production-derived "
+                   << precision.m_ProductionSelection.m_EffectiveLimbs;
+        } else if (effectiveProductionDefault) {
+            prompt << "; production-derived";
+        }
+        prompt << "):";
+        PromptEffectiveLimbCount(prompt.str(),
+                                 automaticSelection.m_EffectiveLimbs,
+                                 GetMinimumFullReferencePerfEffectiveLimbs(
+                                     referenceOperator, automaticSelection.m_StorageLimbs),
+                                 automaticSelection.m_StorageLimbs,
+                                 timeoutInSec,
+                                 interactiveMode,
+                                 limbOptions.m_EffectiveLimbs);
+    }
+
+    selection = ResolveAutomaticLimbSelection(referenceOperator, precision, limbOptions);
+    if (!IsValidFullReferencePerfLimbSelection(referenceOperator, selection)) {
+        std::cerr << "Invalid limb selection for the selected reference implementation: storage="
+                  << selection.m_StorageLimbs << ", effective=" << selection.m_EffectiveLimbs << ".\n";
+        return false;
+    }
+    return true;
+}
+
+static bool
+ResolveSweepLimbOverride(const CommandLineOptions &options,
+                         int timeoutInSec,
+                         bool &interactiveMode,
+                         FullReferencePerfLimbOptions &limbOptions)
+{
+    limbOptions = FullReferencePerfLimbOptions{options.m_StorageLimbs, options.m_EffectiveLimbs};
+    if (limbOptions.m_StorageLimbs.m_Kind == CommandLineValueKind::Omitted) {
+        PromptSweepLimbCount(
+            "Storage limbs override for all sweep views? Default auto (saved benchmark presets):",
+            true,
+            timeoutInSec,
+            interactiveMode,
+            limbOptions.m_StorageLimbs);
+    }
+    if (limbOptions.m_EffectiveLimbs.m_Kind == CommandLineValueKind::Omitted) {
+        PromptSweepLimbCount(
+            "Effective limbs override for all sweep views? Default auto (saved benchmark presets):",
+            false,
+            timeoutInSec,
+            interactiveMode,
+            limbOptions.m_EffectiveLimbs);
+    }
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -345,7 +711,9 @@ RunCorrectnessTest(BasicCorrectnessMode mode)
 
 template <Operator referenceOperator>
 static int
-RunPerfFullSweep(int numIters, int internalTestLoopCount)
+RunPerfFullSweep(int numIters,
+                 int internalTestLoopCount,
+                 const FullReferencePerfLimbOptions &limbOptions)
 {
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
 
@@ -378,6 +746,15 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
     };
 
     for (const auto &[numBlocks, numThreads] : blockThreadPairs) {
+        const auto precision30 = GetFullReferencePerfPrecision(referenceOperator, 30);
+        const FullReferencePerfLimbSelection selection30 =
+            ResolveAutomaticLimbSelection(referenceOperator, precision30, limbOptions);
+        if (!IsValidFullReferencePerfLimbSelection(referenceOperator, selection30)) {
+            std::cerr << "Invalid sweep limb selection for view 30: storage="
+                      << selection30.m_StorageLimbs << ", effective=" << selection30.m_EffectiveLimbs
+                      << ".\n";
+            return 0;
+        }
         res = TestFullReferencePerfView<referenceOperator>(Tests,
                                                            numBlocks,
                                                            numThreads,
@@ -385,11 +762,21 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
                                                            numIters,
                                                            internalTestLoopCount,
                                                            true,
-                                                           30);
+                                                           30,
+                                                           selection30);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
 
+        const auto precision32 = GetFullReferencePerfPrecision(referenceOperator, 32);
+        const FullReferencePerfLimbSelection selection32 =
+            ResolveAutomaticLimbSelection(referenceOperator, precision32, limbOptions);
+        if (!IsValidFullReferencePerfLimbSelection(referenceOperator, selection32)) {
+            std::cerr << "Invalid sweep limb selection for view 32: storage="
+                      << selection32.m_StorageLimbs << ", effective=" << selection32.m_EffectiveLimbs
+                      << ".\n";
+            return 0;
+        }
         res = TestFullReferencePerfView<referenceOperator>(Tests,
                                                            numBlocks,
                                                            numThreads,
@@ -397,11 +784,20 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
                                                            numIters,
                                                            internalTestLoopCount,
                                                            true,
-                                                           32);
+                                                           32,
+                                                           selection32);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
 
+        const auto precision5 = GetFullReferencePerfPrecision(referenceOperator, 5);
+        const FullReferencePerfLimbSelection selection5 =
+            ResolveAutomaticLimbSelection(referenceOperator, precision5, limbOptions);
+        if (!IsValidFullReferencePerfLimbSelection(referenceOperator, selection5)) {
+            std::cerr << "Invalid sweep limb selection for view 5: storage=" << selection5.m_StorageLimbs
+                      << ", effective=" << selection5.m_EffectiveLimbs << ".\n";
+            return 0;
+        }
         res = TestFullReferencePerfView<referenceOperator>(Tests,
                                                            numBlocks,
                                                            numThreads,
@@ -409,7 +805,8 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
                                                            numIters,
                                                            internalTestLoopCount,
                                                            true,
-                                                           5);
+                                                           5,
+                                                           selection5);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
@@ -420,7 +817,10 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
 
 template <Operator referenceOperator>
 static int
-RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
+RunPerfModes(BasicCorrectnessMode mode,
+             int timeoutInSec,
+             bool &interactiveMode,
+             const CommandLineOptions &options)
 {
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
 
@@ -440,27 +840,67 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
                            mode == BasicCorrectnessMode::PerfSingleNRView30 ||
                            mode == BasicCorrectnessMode::PerfSingleNRView32);
 
-    auto loops = PromptIntWithTimeout(
-        "CUDA iteration count? Default 1000 (NR: 0=convergence)", 1000, timeoutInSec, interactiveMode);
-    const int internalTestLoopCount = loops.value;
+    const int internalTestLoopCount =
+        ResolveIntOption(options.m_CudaIterations,
+                         "CUDA iteration count? Default 1000 (NR: 0=convergence)",
+                         1000,
+                         timeoutInSec,
+                         interactiveMode);
 
     // NumIters: skip for NR convergence mode (internalTestLoopCount == 0)
     int numIters = 1;
     if (!(isNRMode && internalTestLoopCount == 0)) {
-        auto iters = PromptIntWithTimeout("NumIters? Default 5", 5, timeoutInSec, interactiveMode);
-        numIters = iters.value;
+        numIters = ResolveIntOption(
+            options.m_NumIters, "NumIters? Default 5", 5, timeoutInSec, interactiveMode);
     }
 
-    auto numBlocks =
-        PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
-    auto numThreads =
-        PromptIntWithTimeout("NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
-    const HpShark::LaunchParams launchParams{numBlocks.value, numThreads.value};
+    const int numBlocks = ResolveIntOption(
+        options.m_NumBlocks, "NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
+    const int numThreads = ResolveIntOption(
+        options.m_NumThreads, "NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
+    const HpShark::LaunchParams launchParams{numBlocks, numThreads};
 
     // MPIR threading option for view modes
-    auto mtPrompt =
-        PromptIntWithTimeout("MPIR threading? 0=MT(default), 1=ST:", 0, timeoutInSec, interactiveMode);
-    const bool useMT = (mtPrompt.value == 0);
+    const int mpirThreading = ResolveIntOption(options.m_MpirThreading,
+                                               "MPIR threading? 0=MT(default), 1=ST:",
+                                               0,
+                                               timeoutInSec,
+                                               interactiveMode);
+    const bool useMT = (mpirThreading == 0);
+
+    size_t selectedView = 0;
+    FullReferencePerfLimbSelection selectedLimbSelection;
+    if (IsFullReferenceViewMode(mode)) {
+        if (mode == BasicCorrectnessMode::PerfSingleView30) {
+            selectedView = 30;
+        } else if (mode == BasicCorrectnessMode::PerfSingleView32) {
+            selectedView = 32;
+        } else if (mode == BasicCorrectnessMode::PerfSingleView5) {
+            selectedView = 5;
+        } else {
+            const int view = ResolveIntOption(options.m_View,
+                                              "View number (1..34)?  5/30/32 use verified baselines",
+                                              5,
+                                              timeoutInSec,
+                                              interactiveMode);
+            if (view < 1 || view > 34) {
+                std::cerr << "View number must be in the range 1..34.\n";
+                return 0;
+            }
+            selectedView = static_cast<size_t>(view);
+        }
+
+        if (!ResolveSingleViewLimbSelection<referenceOperator>(
+                options, selectedView, timeoutInSec, interactiveMode, selectedLimbSelection)) {
+            return 0;
+        }
+    }
+
+    FullReferencePerfLimbOptions sweepLimbOptions;
+    if (mode == BasicCorrectnessMode::PerfSweep &&
+        !ResolveSweepLimbOverride(options, timeoutInSec, interactiveMode, sweepLimbOptions)) {
+        return 0;
+    }
 
     // If PerfSub is selected, run the operator perf suite first.
     if (mode == BasicCorrectnessMode::PerfSub) {
@@ -487,60 +927,21 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
         return 1;
     }
 
-    if (mode == BasicCorrectnessMode::PerfSingleView30) {
+    if (IsFullReferenceViewMode(mode)) {
         TestTracker Tests;
-        auto res = TestFullReferencePerfView<referenceOperator>(Tests,
-                                                                launchParams.NumBlocks,
-                                                                launchParams.ThreadsPerBlock,
-                                                                TestIds::kPerfView30,
-                                                                numIters,
-                                                                internalTestLoopCount,
-                                                                useMT,
-                                                                30);
-        if (!ContinueAfterFailure(res))
-            return 0;
-    }
-
-    if (mode == BasicCorrectnessMode::PerfSingleView5) {
-        TestTracker Tests;
-        auto res = TestFullReferencePerfView<referenceOperator>(Tests,
-                                                                launchParams.NumBlocks,
-                                                                launchParams.ThreadsPerBlock,
-                                                                TestIds::kPerfView5,
-                                                                numIters,
-                                                                internalTestLoopCount,
-                                                                useMT,
-                                                                5);
-        if (!ContinueAfterFailure(res))
-            return 0;
-    }
-
-    if (mode == BasicCorrectnessMode::PerfSingleView32) {
-        TestTracker Tests;
-        auto res = TestFullReferencePerfView<referenceOperator>(Tests,
-                                                                launchParams.NumBlocks,
-                                                                launchParams.ThreadsPerBlock,
-                                                                TestIds::kPerfView32,
-                                                                numIters,
-                                                                internalTestLoopCount,
-                                                                useMT,
-                                                                32);
-        if (!ContinueAfterFailure(res))
-            return 0;
-    }
-
-    if (mode == BasicCorrectnessMode::PerfSingleViewAny) {
-        TestTracker Tests;
-        auto view = PromptIntWithTimeout(
-            "View number (1..34)?  5/30/32 use verified baselines", 5, timeoutInSec, interactiveMode);
-        auto res = TestFullReferencePerfView<referenceOperator>(Tests,
-                                                                launchParams.NumBlocks,
-                                                                launchParams.ThreadsPerBlock,
-                                                                TestIds::kPerfViewAny,
-                                                                numIters,
-                                                                internalTestLoopCount,
-                                                                useMT,
-                                                                static_cast<size_t>(view.value));
+        auto res = TestFullReferencePerfView<referenceOperator>(
+            Tests,
+            launchParams.NumBlocks,
+            launchParams.ThreadsPerBlock,
+            static_cast<int>(mode == BasicCorrectnessMode::PerfSingleView30   ? TestIds::kPerfView30
+                             : mode == BasicCorrectnessMode::PerfSingleView32 ? TestIds::kPerfView32
+                             : mode == BasicCorrectnessMode::PerfSingleView5  ? TestIds::kPerfView5
+                                                                              : TestIds::kPerfViewAny),
+            numIters,
+            internalTestLoopCount,
+            useMT,
+            selectedView,
+            selectedLimbSelection);
         if (!ContinueAfterFailure(res))
             return 0;
     }
@@ -570,7 +971,7 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
     }
 
     if (mode == BasicCorrectnessMode::PerfSweep) {
-        if (!RunPerfFullSweep<referenceOperator>(numIters, internalTestLoopCount))
+        if (!RunPerfFullSweep<referenceOperator>(numIters, internalTestLoopCount, sweepLimbOptions))
             return 0;
     }
 
@@ -579,19 +980,24 @@ RunPerfModes(BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
 
 template <Operator op>
 static int
-RunPerfBasicOp(int testBase, BasicCorrectnessMode mode, int timeoutInSec, bool &interactiveMode)
+RunPerfBasicOp(int testBase,
+               BasicCorrectnessMode mode,
+               int timeoutInSec,
+               bool &interactiveMode,
+               const CommandLineOptions &options)
 {
-    auto iters = PromptIntWithTimeout("NumIters? Default 5", 5, timeoutInSec, interactiveMode);
-    auto loops =
-        PromptIntWithTimeout("CUDA iteration count? Default 1000", 1000, timeoutInSec, interactiveMode);
-    auto numBlocks =
-        PromptIntWithTimeout("NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
-    auto numThreads =
-        PromptIntWithTimeout("NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
-    const HpShark::LaunchParams launchParams{numBlocks.value, numThreads.value};
-
-    const int numIters = iters.value;
-    const int internalTestLoopCount = loops.value;
+    const int numIters =
+        ResolveIntOption(options.m_NumIters, "NumIters? Default 5", 5, timeoutInSec, interactiveMode);
+    const int internalTestLoopCount = ResolveIntOption(options.m_CudaIterations,
+                                                       "CUDA iteration count? Default 1000",
+                                                       1000,
+                                                       timeoutInSec,
+                                                       interactiveMode);
+    const int numBlocks = ResolveIntOption(
+        options.m_NumBlocks, "NumBlocks? Default 65, 0 for auto", 65, timeoutInSec, interactiveMode);
+    const int numThreads = ResolveIntOption(
+        options.m_NumThreads, "NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
+    const HpShark::LaunchParams launchParams{numBlocks, numThreads};
 
     auto res = TestBinaryOperatorPerf<op>(launchParams, testBase, numIters, internalTestLoopCount, mode);
     if (!ContinueAfterFailure(res))
@@ -604,8 +1010,19 @@ RunPerfBasicOp(int testBase, BasicCorrectnessMode mode, int timeoutInSec, bool &
 // main
 // -----------------------------------------------------------------------------
 int
-main(int, char **)
+main(int argc, char **argv)
 {
+    const CommandLineParseResult commandLine = ParseCommandLine(argc, argv);
+    if (commandLine.m_ShowHelp) {
+        std::cout << CommandLineUsage();
+        return 0;
+    }
+    if (!commandLine.m_Error.empty()) {
+        std::cerr << commandLine.m_Error << "\n\n" << CommandLineUsage();
+        return 1;
+    }
+
+    const CommandLineOptions &options = commandLine.m_Options;
     Environment::RegisterHeapCleanup();
 
     {
@@ -647,8 +1064,8 @@ main(int, char **)
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
-    int rawMode =
-        PromptIntWithTimeout(modePrompt.str(), defaultModeInt, kTimeoutInSec, interactiveMode).value;
+    const int rawMode = ResolveIntOption(
+        options.m_Mode, modePrompt.str(), defaultModeInt, kTimeoutInSec, interactiveMode);
 
     BasicCorrectnessMode mode = BasicCorrectnessMode::PerfSingleView5;
     switch (rawMode) {
@@ -713,17 +1130,30 @@ main(int, char **)
             break;
     }
 
+    if (mode == BasicCorrectnessMode::Error && IsCommandLineSupplied(options.m_Mode)) {
+        std::cerr << "Invalid command-line mode " << rawMode << " (valid range: 1..18).\n";
+        return 1;
+    }
+    if (mode != BasicCorrectnessMode::Error && !ValidateCommandLineApplicability(options, mode)) {
+        return 1;
+    }
+
     std::cout << "Selected mode: " << static_cast<int>(mode) << " ("
               << BasicCorrectnessModeToString(mode) << ")\n";
 
     ReferenceImplementation referenceImplementation = ReferenceImplementation::Ref1;
     if (RequiresReferenceImplementation(mode)) {
-        const auto referencePrompt =
-            PromptIntWithTimeout("Reference implementation? Default=1 (1=Ref1, 2=Ref2):",
-                                 static_cast<int>(ReferenceImplementation::Ref1),
-                                 kTimeoutInSec,
-                                 interactiveMode);
-        if (referencePrompt.value == static_cast<int>(ReferenceImplementation::Ref2)) {
+        const int referenceValue =
+            ResolveIntOption(options.m_Reference,
+                             "Reference implementation? Default=1 (1=Ref1, 2=Ref2):",
+                             static_cast<int>(ReferenceImplementation::Ref1),
+                             kTimeoutInSec,
+                             interactiveMode);
+        if (IsCommandLineSupplied(options.m_Reference) && referenceValue != 1 && referenceValue != 2) {
+            std::cerr << "--reference must be 1, 2, ref1, ref2, or auto.\n";
+            return 1;
+        }
+        if (referenceValue == static_cast<int>(ReferenceImplementation::Ref2)) {
             referenceImplementation = ReferenceImplementation::Ref2;
         }
         std::cout << "Selected reference: " << ReferenceImplementationToString(referenceImplementation)
@@ -732,9 +1162,9 @@ main(int, char **)
 
     // Verbose
     if (mode != BasicCorrectnessMode::Error) {
-        auto v =
-            PromptIntWithTimeout("Verbose? Default=0 (0=No, 1=Yes):", 0, kTimeoutInSec, interactiveMode);
-        SetVerboseMode(v.value ? VerboseMode::Debug : VerboseMode::None);
+        const int verbose = ResolveIntOption(
+            options.m_Verbose, "Verbose? Default=0 (0=No, 1=Yes):", 0, kTimeoutInSec, interactiveMode);
+        SetVerboseMode(verbose ? VerboseMode::Debug : VerboseMode::None);
     }
 
     // Explicit dispatch (don’t “call both and early-out”)
@@ -764,26 +1194,27 @@ main(int, char **)
         case BasicCorrectnessMode::PerfSingleNRView32:
         case BasicCorrectnessMode::PerfSingleViewAny:
             if (referenceImplementation == ReferenceImplementation::Ref1) {
-                RunPerfModes<Operator::ReferenceOrbit>(mode, kTimeoutInSec, interactiveMode);
+                RunPerfModes<Operator::ReferenceOrbit>(mode, kTimeoutInSec, interactiveMode, options);
             } else {
-                RunPerfModes<Operator::ReferenceOrbit2>(mode, kTimeoutInSec, interactiveMode);
+                RunPerfModes<Operator::ReferenceOrbit2>(mode, kTimeoutInSec, interactiveMode, options);
             }
             break;
 
         case BasicCorrectnessMode::PerfSingleAdd:
-            RunPerfBasicOp<Operator::Add>(TestIds::kAddPerf, mode, kTimeoutInSec, interactiveMode);
+            RunPerfBasicOp<Operator::Add>(
+                TestIds::kAddPerf, mode, kTimeoutInSec, interactiveMode, options);
             break;
         case BasicCorrectnessMode::PerfSingleMultiply:
             RunPerfBasicOp<Operator::MultiplyNTT>(
-                TestIds::kMultiplyPerf, mode, kTimeoutInSec, interactiveMode);
+                TestIds::kMultiplyPerf, mode, kTimeoutInSec, interactiveMode, options);
             break;
         case BasicCorrectnessMode::PerfSingleRef:
             RunPerfBasicOp<Operator::ReferenceOrbit>(
-                TestIds::kFullPerf, mode, kTimeoutInSec, interactiveMode);
+                TestIds::kFullPerf, mode, kTimeoutInSec, interactiveMode, options);
             break;
         case BasicCorrectnessMode::PerfSingleRef2:
             RunPerfBasicOp<Operator::ReferenceOrbit2>(
-                TestIds::kFull2Perf, mode, kTimeoutInSec, interactiveMode);
+                TestIds::kFull2Perf, mode, kTimeoutInSec, interactiveMode, options);
             break;
 
         case BasicCorrectnessMode::PerfSingleNRAdd: {

@@ -30,6 +30,28 @@ BitsToSupportedLimbCount(uint64_t precBits)
     return RoundToSupportedLimbCount(rawLimbs);
 }
 
+inline bool
+IsSupportedLimbCount(uint32_t limbCount)
+{
+    switch (limbCount) {
+        case 256:
+        case 512:
+        case 1024:
+        case 2048:
+        case 4096:
+        case 8192:
+        case 16384:
+        case 32768:
+        case 65536:
+        case 131072:
+        case 262144:
+        case 524288:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // Ref2 consumes a precision window inside the selected storage bucket. Its
 // setup requires that window to cover more than half of the bucket, while the
 // input conversion cannot provide more limbs than the bucket stores.

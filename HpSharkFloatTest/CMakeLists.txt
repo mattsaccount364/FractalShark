@@ -1,4 +1,5 @@
 add_executable(HpSharkFloatTest
+    CommandLineOptions.cpp
     MainTestCuda.cpp
 )
 

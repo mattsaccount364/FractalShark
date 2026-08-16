@@ -3794,6 +3794,8 @@ struct FullReferencePerfViewOverride {
     uint64_t m_DefaultMaxIters;
     int64_t m_ExpectedPeriod;
     PeriodicityResult m_ExpectedResult;
+    bool m_HasBenchmarkLimbSelection = false;
+    FullReferencePerfLimbSelection m_BenchmarkLimbSelection;
 };
 
 std::optional<FullReferencePerfViewOverride>
@@ -3821,7 +3823,9 @@ GetFullReferencePerfViewOverride(size_t view)
                 false,
                 20'000,
                 16'045,
-                PeriodicityResult::PeriodFound};
+                PeriodicityResult::PeriodFound,
+                true,
+                FullReferencePerfLimbSelection{16'384, 15'000}};
         case 30: {
 #include "LargeCoords30.h"
             return FullReferencePerfViewOverride{"View30",
@@ -3837,7 +3841,9 @@ GetFullReferencePerfViewOverride(size_t view)
                                                  true,
                                                  700'000,
                                                  669'772,
-                                                 PeriodicityResult::PeriodFound};
+                                                 PeriodicityResult::PeriodFound,
+                                                 true,
+                                                 FullReferencePerfLimbSelection{16'384, 15'000}};
         }
         case 32: {
 #include "LargeCoords32.h"
@@ -3854,7 +3860,9 @@ GetFullReferencePerfViewOverride(size_t view)
                                                  false,
                                                  30'000'000,
                                                  22'680'804,
-                                                 PeriodicityResult::PeriodFound};
+                                                 PeriodicityResult::PeriodFound,
+                                                 true,
+                                                 FullReferencePerfLimbSelection{65'536, 60'000}};
         }
         default:
             return std::nullopt;
@@ -3862,6 +3870,72 @@ GetFullReferencePerfViewOverride(size_t view)
 }
 
 } // namespace
+
+uint32_t
+GetMinimumFullReferencePerfEffectiveLimbs(Operator referenceOperator, uint32_t storageLimbs)
+{
+    if (referenceOperator == Operator::ReferenceOrbit2) {
+        return storageLimbs / 2u + 1u;
+    }
+    return 1;
+}
+
+uint32_t
+GetFullReferencePerfEffectiveLimbs(Operator referenceOperator,
+                                   uint64_t requestedLimbs,
+                                   uint32_t storageLimbs)
+{
+    if (referenceOperator == Operator::ReferenceOrbit2) {
+        return GetRef2EffectivePrecisionLimbs(requestedLimbs, storageLimbs);
+    }
+
+    return static_cast<uint32_t>(std::min(requestedLimbs, static_cast<uint64_t>(storageLimbs)));
+}
+
+bool
+IsValidFullReferencePerfLimbSelection(Operator referenceOperator,
+                                      const FullReferencePerfLimbSelection &selection)
+{
+    if (!IsSupportedLimbCount(selection.m_StorageLimbs)) {
+        return false;
+    }
+
+    const uint32_t minimumEffectiveLimbs =
+        GetMinimumFullReferencePerfEffectiveLimbs(referenceOperator, selection.m_StorageLimbs);
+    return selection.m_EffectiveLimbs >= minimumEffectiveLimbs &&
+           selection.m_EffectiveLimbs <= selection.m_StorageLimbs;
+}
+
+FullReferencePerfPrecision
+GetFullReferencePerfPrecision(Operator referenceOperator, size_t view)
+{
+    const auto preset = GetViewPreset(view,
+                                      /*defaultIterations=*/0,
+                                      /*defaultCompressionExpLow=*/0,
+                                      /*defaultCompressionExpIntermediate=*/0);
+    constexpr bool requiresReuse = false;
+    const uint64_t requiredPrecisionBits = PrecisionCalculator::GetPrecision(
+        preset.minX, preset.minY, preset.maxX, preset.maxY, requiresReuse);
+    const uint64_t requestedPrecisionLimbs = (requiredPrecisionBits + 31u) / 32u;
+    const uint32_t storagePrecisionLimbs = BitsToSupportedLimbCount(requiredPrecisionBits);
+    const uint32_t effectivePrecisionLimbs = GetFullReferencePerfEffectiveLimbs(
+        referenceOperator, requestedPrecisionLimbs, storagePrecisionLimbs);
+
+    FullReferencePerfLimbSelection defaultSelection{storagePrecisionLimbs, effectivePrecisionLimbs};
+    bool defaultIsBenchmarkPreset = false;
+    const auto viewOverride = GetFullReferencePerfViewOverride(view);
+    if (viewOverride && viewOverride->m_HasBenchmarkLimbSelection) {
+        defaultSelection = viewOverride->m_BenchmarkLimbSelection;
+        defaultIsBenchmarkPreset = true;
+    }
+
+    return FullReferencePerfPrecision{
+        requiredPrecisionBits,
+        requestedPrecisionLimbs,
+        FullReferencePerfLimbSelection{storagePrecisionLimbs, effectivePrecisionLimbs},
+        defaultSelection,
+        defaultIsBenchmarkPreset};
+}
 
 template <Operator sharkOperator>
 bool
@@ -3872,32 +3946,27 @@ TestFullReferencePerfView(TestTracker &Tests,
                           int numIters,
                           int internalTestLoopCount,
                           bool useMT,
-                          size_t view)
+                          size_t view,
+                          const FullReferencePerfLimbSelection &limbSelection)
 {
     static_assert(IsReferenceOrbitOperator<sharkOperator>, "Reference-orbit operators only");
 
+    const auto productionPrecision = GetFullReferencePerfPrecision(sharkOperator, view);
     const auto preset = GetViewPreset(view,
                                       /*defaultIterations=*/0,
                                       /*defaultCompressionExpLow=*/0,
                                       /*defaultCompressionExpIntermediate=*/0);
-    constexpr bool requiresReuse = false;
-    const uint64_t requiredPrecisionBits =
-        PrecisionCalculator::GetPrecision(preset.minX,
-                                          preset.minY,
-                                          preset.maxX,
-                                          preset.maxY,
-                                          requiresReuse);
-    const uint64_t requestedPrecisionLimbs = (requiredPrecisionBits + 31u) / 32u;
-    const uint32_t storagePrecisionLimbs = BitsToSupportedLimbCount(requiredPrecisionBits);
-
-    uint32_t effectivePrecisionLimbs;
-    if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        effectivePrecisionLimbs =
-            GetRef2EffectivePrecisionLimbs(requestedPrecisionLimbs, storagePrecisionLimbs);
-    } else {
-        effectivePrecisionLimbs = static_cast<uint32_t>(
-            std::min(requestedPrecisionLimbs, static_cast<uint64_t>(storagePrecisionLimbs)));
+    if (!IsValidFullReferencePerfLimbSelection(sharkOperator, limbSelection)) {
+        std::cout << "Invalid full-reference limb selection: storageLimbs="
+                  << limbSelection.m_StorageLimbs
+                  << ", effectiveLimbs=" << limbSelection.m_EffectiveLimbs << std::endl;
+        return false;
     }
+
+    const uint64_t requiredPrecisionBits = productionPrecision.m_RequiredPrecisionBits;
+    const uint64_t requestedPrecisionLimbs = productionPrecision.m_RequestedPrecisionLimbs;
+    const uint32_t storagePrecisionLimbs = limbSelection.m_StorageLimbs;
+    const uint32_t effectivePrecisionLimbs = limbSelection.m_EffectiveLimbs;
 
     const auto viewOverride = GetFullReferencePerfViewOverride(view);
     const std::string genericLabel = "View" + std::to_string(view);
@@ -3918,155 +3987,153 @@ TestFullReferencePerfView(TestTracker &Tests,
 
     std::cout << "View " << view << " precision: requiredBits=" << requiredPrecisionBits
               << ", requestedLimbs=" << requestedPrecisionLimbs
+              << ", productionStorageLimbs=" << productionPrecision.m_ProductionSelection.m_StorageLimbs
+              << ", productionEffectiveLimbs="
+              << productionPrecision.m_ProductionSelection.m_EffectiveLimbs
+              << ", defaultStorageLimbs=" << productionPrecision.m_DefaultSelection.m_StorageLimbs
+              << ", defaultEffectiveLimbs=" << productionPrecision.m_DefaultSelection.m_EffectiveLimbs
               << ", storageLimbs=" << storagePrecisionLimbs
               << ", effectiveLimbs=" << effectivePrecisionLimbs << std::endl;
 
     bool result = true;
-    DispatchByLimbCount<SharkParamsBaseFamily>(
-        storagePrecisionLimbs, [&]<class SharkFloatParams>() {
-            HpShark::LaunchParams launchParams{numBlocks, numThreads};
-            mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+    DispatchByLimbCount<SharkParamsBaseFamily>(storagePrecisionLimbs, [&]<class SharkFloatParams>() {
+        HpShark::LaunchParams launchParams{numBlocks, numThreads};
+        mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
-            const auto setDecimal = [](mpf_ptr target, const char *value, const char *name) {
-                if (mpf_set_str(target, value, 10) == -1) {
-                    std::cout << "Error setting " << name << std::endl;
-                }
-            };
-
-            mpf_t mpfX;
-            mpf_t mpfY;
-            mpf_t mpfZ;
-            mpf_t mpfRadiusY;
-            mpf_init(mpfZ);
-            mpf_init(mpfRadiusY);
-
-            if (viewOverride &&
-                viewOverride->m_InputEncoding == FullReferencePerfInputEncoding::ExactHex) {
-                Hex64StringToMpf_Exact(viewOverride->m_Num1Hex, mpfX);
-                Hex64StringToMpf_Exact(viewOverride->m_Num2Hex, mpfY);
-            } else if (viewOverride) {
-                mpf_init(mpfX);
-                mpf_init(mpfY);
-                setDecimal(mpfX, viewOverride->m_Num1, "mpfX");
-                setDecimal(mpfY, viewOverride->m_Num2, "mpfY");
-            } else {
-                Hex64StringToMpf_Exact(genericNum1, mpfX);
-                Hex64StringToMpf_Exact(genericNum2, mpfY);
+        const auto setDecimal = [](mpf_ptr target, const char *value, const char *name) {
+            if (mpf_set_str(target, value, 10) == -1) {
+                std::cout << "Error setting " << name << std::endl;
             }
+        };
 
-            if (viewOverride) {
-                setDecimal(mpfZ, viewOverride->m_Num3, "mpfZ");
-                setDecimal(mpfRadiusY, viewOverride->m_RadiusY, "mpfRadiusY");
-            } else {
-                setDecimal(mpfZ, "0", "mpfZ");
-                Hex64StringToMpf_Exact(genericRadiusY, mpfRadiusY);
-            }
+        mpf_t mpfX;
+        mpf_t mpfY;
+        mpf_t mpfZ;
+        mpf_t mpfRadiusY;
+        mpf_init(mpfZ);
+        mpf_init(mpfRadiusY);
 
-            mpf_t mpfTwo;
-            bool hasMpfTwo = false;
-            if (viewOverride && viewOverride->m_DoubleRadiusY) {
-                mpf_init(mpfTwo);
-                hasMpfTwo = true;
-                setDecimal(mpfTwo, "2", "mpfTwo");
-                mpf_mul(mpfRadiusY, mpfTwo, mpfRadiusY);
-            }
+        if (viewOverride && viewOverride->m_InputEncoding == FullReferencePerfInputEncoding::ExactHex) {
+            Hex64StringToMpf_Exact(viewOverride->m_Num1Hex, mpfX);
+            Hex64StringToMpf_Exact(viewOverride->m_Num2Hex, mpfY);
+        } else if (viewOverride) {
+            mpf_init(mpfX);
+            mpf_init(mpfY);
+            setDecimal(mpfX, viewOverride->m_Num1, "mpfX");
+            setDecimal(mpfY, viewOverride->m_Num2, "mpfY");
+        } else {
+            Hex64StringToMpf_Exact(genericNum1, mpfX);
+            Hex64StringToMpf_Exact(genericNum2, mpfY);
+        }
 
-            if (viewOverride &&
-                viewOverride->m_InputEncoding == FullReferencePerfInputEncoding::ExactHex &&
-                SharkVerbose == VerboseMode::Debug) {
-                const auto mpfXConvertStr = MpfToHex64StringInvertable(mpfX);
-                const auto mpfYConvertStr = MpfToHex64StringInvertable(mpfY);
-                std::cout << "Correct MPIR hex X: " << std::endl << mpfXConvertStr;
-                std::cout << "Correct MPIR hex Y: " << std::endl << mpfYConvertStr;
-                assert(mpfXConvertStr == viewOverride->m_Num1Hex);
-                assert(mpfYConvertStr == viewOverride->m_Num2Hex);
-            }
+        if (viewOverride) {
+            setDecimal(mpfZ, viewOverride->m_Num3, "mpfZ");
+            setDecimal(mpfRadiusY, viewOverride->m_RadiusY, "mpfRadiusY");
+        } else {
+            setDecimal(mpfZ, "0", "mpfZ");
+            Hex64StringToMpf_Exact(genericRadiusY, mpfRadiusY);
+        }
 
-            MpfNormalize(mpfX);
-            MpfNormalize(mpfY);
-            MpfNormalize(mpfZ);
-            MpfNormalize(mpfRadiusY);
+        mpf_t mpfTwo;
+        bool hasMpfTwo = false;
+        if (viewOverride && viewOverride->m_DoubleRadiusY) {
+            mpf_init(mpfTwo);
+            hasMpfTwo = true;
+            setDecimal(mpfTwo, "2", "mpfTwo");
+            mpf_mul(mpfRadiusY, mpfTwo, mpfRadiusY);
+        }
 
-            std::string num1;
-            std::string num2;
-            std::string num3;
-            std::string radiusYStr;
+        if (viewOverride && viewOverride->m_InputEncoding == FullReferencePerfInputEncoding::ExactHex &&
+            SharkVerbose == VerboseMode::Debug) {
+            const auto mpfXConvertStr = MpfToHex64StringInvertable(mpfX);
+            const auto mpfYConvertStr = MpfToHex64StringInvertable(mpfY);
+            std::cout << "Correct MPIR hex X: " << std::endl << mpfXConvertStr;
+            std::cout << "Correct MPIR hex Y: " << std::endl << mpfYConvertStr;
+            assert(mpfXConvertStr == viewOverride->m_Num1Hex);
+            assert(mpfYConvertStr == viewOverride->m_Num2Hex);
+        }
 
-            if (viewOverride && viewOverride->m_UseOriginalInputStrings) {
-                num1 = viewOverride->m_Num1;
-                num2 = viewOverride->m_Num2;
-                num3 = viewOverride->m_Num3;
-            } else {
-                num1 = MpfToString<SharkFloatParams>(
-                    mpfX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-                num2 = MpfToString<SharkFloatParams>(
-                    mpfY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-                num3 = MpfToString<SharkFloatParams>(
-                    mpfZ, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-            }
-            radiusYStr = viewOverride ? viewOverride->m_RadiusY : genericRadiusY;
+        MpfNormalize(mpfX);
+        MpfNormalize(mpfY);
+        MpfNormalize(mpfZ);
+        MpfNormalize(mpfRadiusY);
 
-            typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
-            if (!viewOverride || viewOverride->m_ReduceHdrRadiusY) {
-                HdrReduce(hdrRadiusY);
-            }
+        std::string num1;
+        std::string num2;
+        std::string num3;
+        std::string radiusYStr;
 
-            const uint64_t maxIters =
-                (internalTestLoopCount != 0)
-                    ? static_cast<uint64_t>(internalTestLoopCount)
-                    : (viewOverride ? viewOverride->m_DefaultMaxIters : 20'000);
-            const int64_t expectedPeriod = viewOverride ? viewOverride->m_ExpectedPeriod : -1;
-            const auto expectedResult =
-                viewOverride ? viewOverride->m_ExpectedResult : PeriodicityResult::Continue;
+        if (viewOverride && viewOverride->m_UseOriginalInputStrings) {
+            num1 = viewOverride->m_Num1;
+            num2 = viewOverride->m_Num2;
+            num3 = viewOverride->m_Num3;
+        } else {
+            num1 = MpfToString<SharkFloatParams>(mpfX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+            num2 = MpfToString<SharkFloatParams>(mpfY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+            num3 = MpfToString<SharkFloatParams>(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+        }
+        radiusYStr = viewOverride ? viewOverride->m_RadiusY : genericRadiusY;
 
-            std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
-            if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-                preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-                    launchParams, mpfX, mpfY, effectivePrecisionLimbs, testBase);
-            }
+        typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
+        if (!viewOverride || viewOverride->m_ReduceHdrRadiusY) {
+            HdrReduce(hdrRadiusY);
+        }
 
-            std::vector<PerfTimingResult> timings;
-            timings.reserve(numIters);
-            for (int i = 0; i < numIters; ++i) {
-                const int testNum = testBase + i;
-                PerfTimingResult timing;
-                TestPerf<SharkFloatParams, sharkOperator>(launchParams,
-                                                          Tests,
-                                                          testNum,
-                                                          num1.c_str(),
-                                                          num2.c_str(),
-                                                          num3.c_str(),
-                                                          radiusYStr.c_str(),
-                                                          mpfX,
-                                                          mpfY,
-                                                          mpfZ,
-                                                          hdrRadiusY,
-                                                          maxIters,
-                                                          expectedPeriod,
-                                                          expectedResult,
-                                                          effectivePrecisionLimbs,
-                                                          useMT,
-                                                          &timing,
-                                                          preparedTables.get());
-                timings.push_back(timing);
-            }
+        const uint64_t maxIters = (internalTestLoopCount != 0)
+                                      ? static_cast<uint64_t>(internalTestLoopCount)
+                                      : (viewOverride ? viewOverride->m_DefaultMaxIters : 20'000);
+        const int64_t expectedPeriod = viewOverride ? viewOverride->m_ExpectedPeriod : -1;
+        const auto expectedResult =
+            viewOverride ? viewOverride->m_ExpectedResult : PeriodicityResult::Continue;
 
-            constexpr const char *cpuLabel =
-                sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
-            if (!viewOverride) {
-                std::cout << "\nGeneric view-perf for view " << view << std::endl;
-            }
-            const char *summaryLabel = viewOverride ? viewOverride->m_Label : genericLabel.c_str();
-            PrintPerfSummaryTable(summaryLabel, useMT, timings, "MPIR", cpuLabel);
+        std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
+        if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
+            preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+                launchParams, mpfX, mpfY, effectivePrecisionLimbs, testBase);
+        }
 
-            mpf_clear(mpfX);
-            mpf_clear(mpfY);
-            mpf_clear(mpfZ);
-            mpf_clear(mpfRadiusY);
-            if (hasMpfTwo) {
-                mpf_clear(mpfTwo);
-            }
-        });
+        std::vector<PerfTimingResult> timings;
+        timings.reserve(numIters);
+        for (int i = 0; i < numIters; ++i) {
+            const int testNum = testBase + i;
+            PerfTimingResult timing;
+            TestPerf<SharkFloatParams, sharkOperator>(launchParams,
+                                                      Tests,
+                                                      testNum,
+                                                      num1.c_str(),
+                                                      num2.c_str(),
+                                                      num3.c_str(),
+                                                      radiusYStr.c_str(),
+                                                      mpfX,
+                                                      mpfY,
+                                                      mpfZ,
+                                                      hdrRadiusY,
+                                                      maxIters,
+                                                      expectedPeriod,
+                                                      expectedResult,
+                                                      effectivePrecisionLimbs,
+                                                      useMT,
+                                                      &timing,
+                                                      preparedTables.get());
+            timings.push_back(timing);
+        }
+
+        constexpr const char *cpuLabel =
+            sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
+        if (!viewOverride) {
+            std::cout << "\nGeneric view-perf for view " << view << std::endl;
+        }
+        const char *summaryLabel = viewOverride ? viewOverride->m_Label : genericLabel.c_str();
+        PrintPerfSummaryTable(summaryLabel, useMT, timings, "MPIR", cpuLabel);
+
+        mpf_clear(mpfX);
+        mpf_clear(mpfY);
+        mpf_clear(mpfZ);
+        mpf_clear(mpfRadiusY);
+        if (hasMpfTwo) {
+            mpf_clear(mpfTwo);
+        }
+    });
 
     return result;
 }
@@ -4403,19 +4470,23 @@ ExplicitInstantiateAll();
 OPERATOR_ONLY_INSTANTIATIONS();
 
 // Explicitly instantiate the generic view-perf driver (Operator-only, so once per reference orbit).
-template bool TestFullReferencePerfView<Operator::ReferenceOrbit>(TestTracker &,
-                                                                  int numBlocks,
-                                                                  int numThreads,
-                                                                  int testBase,
-                                                                  int numIters,
-                                                                  int internalTestLoopCount,
-                                                                  bool useMT,
-                                                                  size_t view);
-template bool TestFullReferencePerfView<Operator::ReferenceOrbit2>(TestTracker &,
-                                                                   int numBlocks,
-                                                                   int numThreads,
-                                                                   int testBase,
-                                                                   int numIters,
-                                                                   int internalTestLoopCount,
-                                                                   bool useMT,
-                                                                   size_t view);
+template bool TestFullReferencePerfView<Operator::ReferenceOrbit>(
+    TestTracker &,
+    int numBlocks,
+    int numThreads,
+    int testBase,
+    int numIters,
+    int internalTestLoopCount,
+    bool useMT,
+    size_t view,
+    const FullReferencePerfLimbSelection &limbSelection);
+template bool TestFullReferencePerfView<Operator::ReferenceOrbit2>(
+    TestTracker &,
+    int numBlocks,
+    int numThreads,
+    int testBase,
+    int numIters,
+    int internalTestLoopCount,
+    bool useMT,
+    size_t view,
+    const FullReferencePerfLimbSelection &limbSelection);

@@ -61,9 +61,11 @@
     <CudaLink />
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CommandLineOptions.cpp" />
     <ClCompile Include="MainTestCuda.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CommandLineOptions.h" />
     <ClInclude Include="MainTestCuda.h" />
   </ItemGroup>
   <ItemGroup>

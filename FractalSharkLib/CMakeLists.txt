@@ -24,7 +24,6 @@ target_sources(FractalSharkLib PRIVATE
     OrbitParameterPack.cpp
     PerturbationResults.cpp
     PngParallelSave.cpp
-    PrecisionCalculator.cpp
     RecommendedSettings.cpp
     RefOrbitCalc.cpp
     RenderAlgorithm.cpp

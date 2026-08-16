@@ -378,20 +378,38 @@ RunPerfFullSweep(int numIters, int internalTestLoopCount)
     };
 
     for (const auto &[numBlocks, numThreads] : blockThreadPairs) {
-        res = TestFullReferencePerfView30<referenceOperator>(
-            Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
+        res = TestFullReferencePerfView<referenceOperator>(Tests,
+                                                           numBlocks,
+                                                           numThreads,
+                                                           testBaseLocal,
+                                                           numIters,
+                                                           internalTestLoopCount,
+                                                           true,
+                                                           30);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
 
-        res = TestFullReferencePerfView32<referenceOperator>(
-            Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
+        res = TestFullReferencePerfView<referenceOperator>(Tests,
+                                                           numBlocks,
+                                                           numThreads,
+                                                           testBaseLocal,
+                                                           numIters,
+                                                           internalTestLoopCount,
+                                                           true,
+                                                           32);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
 
-        res = TestFullReferencePerfView5<referenceOperator>(
-            Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount);
+        res = TestFullReferencePerfView<referenceOperator>(Tests,
+                                                           numBlocks,
+                                                           numThreads,
+                                                           testBaseLocal,
+                                                           numIters,
+                                                           internalTestLoopCount,
+                                                           true,
+                                                           5);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;

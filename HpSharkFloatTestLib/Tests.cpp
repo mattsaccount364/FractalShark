@@ -1,8 +1,10 @@
 #include "BenchmarkTimer.h"
 #include "DbgHeap.h"
 #include "FractalViewPresets.h"
+#include "GpuPrecisionDispatch.h"
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
+#include "PrecisionCalculator.h"
 #include "TestTracker.h"
 #include "TestVerbose.h"
 
@@ -23,6 +25,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -3769,393 +3772,96 @@ TestBinaryOperatorPerf(const HpShark::LaunchParams &launchParams,
     return Tests.CheckAllTestsPassed();
 }
 
-template <Operator sharkOperator>
-bool
-TestFullReferencePerfView5([[maybe_unused]] TestTracker &Tests,
-                           [[maybe_unused]] int numBlocks,
-                           [[maybe_unused]] int numThreads,
-                           [[maybe_unused]] int testBase,
-                           [[maybe_unused]] int numIters,
-                           [[maybe_unused]] int internalTestLoopCount,
-                           [[maybe_unused]] bool useMT)
+namespace {
+
+enum class FullReferencePerfInputEncoding {
+    Decimal,
+    ExactHex,
+};
+
+struct FullReferencePerfViewOverride {
+    const char *m_Label;
+    const char *m_Num1;
+    const char *m_Num2;
+    const char *m_Num3;
+    const char *m_RadiusY;
+    const char *m_Num1Hex;
+    const char *m_Num2Hex;
+    FullReferencePerfInputEncoding m_InputEncoding;
+    bool m_UseOriginalInputStrings;
+    bool m_DoubleRadiusY;
+    bool m_ReduceHdrRadiusY;
+    uint64_t m_DefaultMaxIters;
+    int64_t m_ExpectedPeriod;
+    PeriodicityResult m_ExpectedResult;
+};
+
+std::optional<FullReferencePerfViewOverride>
+GetFullReferencePerfViewOverride(size_t view)
 {
-    HpShark::LaunchParams launchParams{numBlocks, numThreads};
-
-    using SharkFloatParams = SharkParams7;
-    constexpr uint32_t StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
-    constexpr uint32_t ActualPrecisionLimbs = 15'000;
-    static_assert(StoragePrecisionLimbs == 16'384);
-    static_assert(ActualPrecisionLimbs > StoragePrecisionLimbs / 2u);
-    static_assert(ActualPrecisionLimbs <= StoragePrecisionLimbs);
-
-    static_assert(IsReferenceOrbitOperator<sharkOperator>,
-                  "Only reference-orbit operators are supported");
-
-    mpf_set_default_prec(
-        HpSharkFloat<SharkParamsNP7>::DefaultMpirBits); // Set precision for MPIR floating point
-
-    const char *num1 = "-5."
-                       "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
-                       "29972505947379718e-01";
-    const char *num2 = "-5."
-                       "77570838903603842805108982201850558675551728458255317158378952895736909832155423"
-                       "61901805676878083e-01";
-    const char *num3 = "0";
-    const char *radiusYStr =
-        "0."
-        "00000000000000000000000000000000000000000000401444147896341553391537310767676"
-        "870110653199358192656";
-    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 20000;
-    constexpr auto expectedPeriod = 16045;
-    const auto expectedResult = PeriodicityResult::PeriodFound;
-
-    mpf_t mpfX;
-    mpf_t mpfY;
-    mpf_t mpfZ;
-    mpf_t mpfRadiusY;
-
-    mpf_init(mpfX);
-    mpf_init(mpfY);
-    mpf_init(mpfZ);
-    mpf_init(mpfRadiusY);
-
-    auto res = mpf_set_str(mpfX, num1, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfX" << std::endl;
-    }
-
-    res = mpf_set_str(mpfY, num2, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfY" << std::endl;
-    }
-
-    res = mpf_set_str(mpfZ, num3, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfZ" << std::endl;
-    }
-
-    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfRadiusY" << std::endl;
-    }
-
-    MpfNormalize(mpfX);
-    MpfNormalize(mpfY);
-    MpfNormalize(mpfZ);
-    MpfNormalize(mpfRadiusY);
-
-    // Convert mpfX/mpfY/mpfZ back to strings
-    auto convertedMpfX =
-        MpfToString<SharkFloatParams>(mpfX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-    auto convertedMpfY =
-        MpfToString<SharkFloatParams>(mpfY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-    auto convertedMpfZ =
-        MpfToString<SharkFloatParams>(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-
-    const typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
-
-    std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
-    if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, ActualPrecisionLimbs, testBase);
-    }
-
-    std::vector<PerfTimingResult> timings;
-    timings.reserve(numIters);
-
-    // TODO: SharkFloatParams is more precision than we need
-    for (int i = 0; i < numIters; i++) {
-        int testNum = testBase + i;
-
-        PerfTimingResult timing;
-        TestPerf<SharkFloatParams, sharkOperator>(launchParams,
-                                                  Tests,
-                                                  testNum,
-                                                  convertedMpfX.c_str(),
-                                                  convertedMpfY.c_str(),
-                                                  convertedMpfZ.c_str(),
-                                                  radiusYStr,
-                                                  mpfX,
-                                                  mpfY,
-                                                  mpfZ,
-                                                  hdrRadiusY,
-                                                  maxIters,
-                                                  expectedPeriod,
-                                                  expectedResult,
-                                                  ActualPrecisionLimbs,
-                                                  useMT,
-                                                  &timing,
-                                                  preparedTables.get());
-        timings.push_back(timing);
-    }
-
-    constexpr const char *cpuLabel = sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
-    PrintPerfSummaryTable("View5", useMT, timings, "MPIR", cpuLabel);
-
-    mpf_clear(mpfX);
-    mpf_clear(mpfY);
-    mpf_clear(mpfZ);
-    mpf_clear(mpfRadiusY);
-    return true;
-}
-
-template <Operator sharkOperator>
-bool
-TestFullReferencePerfView30([[maybe_unused]] TestTracker &Tests,
-                            [[maybe_unused]] int numBlocks,
-                            [[maybe_unused]] int numThreads,
-                            [[maybe_unused]] int testBase,
-                            [[maybe_unused]] int numIters,
-                            [[maybe_unused]] int internalTestLoopCount,
-                            [[maybe_unused]] bool useMT)
-{
-// TODO: this is kind of cheesy, it'd be nice to share the test
-// view parameters in FractalShark with the test in some reasonable way
+    switch (view) {
+        case 5:
+            return FullReferencePerfViewOverride{
+                "View5",
+                "-5."
+                "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
+                "29972505947379718e-01",
+                "-5."
+                "77570838903603842805108982201850558675551728458255317158378952895736909832155423"
+                "61901805676878083e-01",
+                "0",
+                "0."
+                "00000000000000000000000000000000000000000000401444147896341553391537310767676"
+                "870110653199358192656",
+                nullptr,
+                nullptr,
+                FullReferencePerfInputEncoding::Decimal,
+                false,
+                false,
+                false,
+                20'000,
+                16'045,
+                PeriodicityResult::PeriodFound};
+        case 30: {
 #include "LargeCoords30.h"
-
-    using SharkFloatParams = SharkParams7;
-    constexpr uint32_t StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
-    constexpr uint32_t ActualPrecisionLimbs = 15'000;
-    static_assert(StoragePrecisionLimbs == 16'384);
-    static_assert(ActualPrecisionLimbs > StoragePrecisionLimbs / 2u);
-    static_assert(ActualPrecisionLimbs <= StoragePrecisionLimbs);
-
-    HpShark::LaunchParams launchParams{numBlocks, numThreads};
-    static_assert(IsReferenceOrbitOperator<sharkOperator>,
-                  "Only reference-orbit operators are supported");
-
-    mpf_set_default_prec(
-        HpSharkFloat<SharkParamsNP7>::DefaultMpirBits); // Set precision for MPIR floating point
-
-    const char *num1 = strX; //.c_str();
-    const char *num2 = strY; //.c_str();
-    const char *num3 = "0";
-    const char *radiusYStr = "1.46269686645751934186e-114514";
-    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 700'000;
-    const auto expectedPeriod = 669772;
-    const auto expectedResult = PeriodicityResult::PeriodFound;
-
-    mpf_t mpfX;
-    mpf_t mpfY;
-    mpf_t mpfZ;
-    mpf_t mpfRadiusY;
-    mpf_t mpfTwo;
-
-    // mpfX/mpfY are initialized inside Hex64StringToMpf_Exact
-    mpf_init(mpfZ);
-    mpf_init(mpfRadiusY);
-    mpf_init(mpfTwo);
-
-    Hex64StringToMpf_Exact(strXHex, mpfX);
-    Hex64StringToMpf_Exact(strYHex, mpfY);
-
-    auto res = mpf_set_str(mpfZ, num3, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfZ" << std::endl;
-    }
-
-    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfRadiusY" << std::endl;
-    }
-
-    res = mpf_set_str(mpfTwo, "2", 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfTwo" << std::endl;
-    }
-
-    // Note: radiusY needs to be doubled because of the way we copied it here.
-    mpf_mul(mpfRadiusY, mpfTwo, mpfRadiusY);
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        auto mpfXConvertStr = MpfToHex64StringInvertable(mpfX);
-        std::cout << "Correct MPIR hex X: " << std::endl;
-        std::cout << "" << mpfXConvertStr;
-
-        auto mpfYConvertStr = MpfToHex64StringInvertable(mpfY);
-        std::cout << "Correct MPIR hex Y: " << std::endl;
-        std::cout << "" << mpfYConvertStr;
-
-        assert(mpfXConvertStr == strXHex);
-        assert(mpfYConvertStr == strYHex);
-    }
-
-    MpfNormalize(mpfX);
-    MpfNormalize(mpfY);
-    MpfNormalize(mpfZ);
-    MpfNormalize(mpfRadiusY);
-
-    typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
-    HdrReduce(hdrRadiusY);
-
-    std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
-    if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, ActualPrecisionLimbs, testBase);
-    }
-
-    std::vector<PerfTimingResult> timings;
-    timings.reserve(numIters);
-
-    for (int i = 0; i < numIters; i++) {
-        int testNum = testBase + i;
-        PerfTimingResult timing;
-        TestPerf<SharkFloatParams, sharkOperator>(launchParams,
-                                                  Tests,
-                                                  testNum,
-                                                  num1,
-                                                  num2,
-                                                  num3,
-                                                  radiusYStr,
-                                                  mpfX,
-                                                  mpfY,
-                                                  mpfZ,
-                                                  hdrRadiusY,
-                                                  maxIters,
-                                                  expectedPeriod,
-                                                  expectedResult,
-                                                  ActualPrecisionLimbs,
-                                                  useMT,
-                                                  &timing,
-                                                  preparedTables.get());
-        timings.push_back(timing);
-    }
-
-    constexpr const char *cpuLabel = sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
-    PrintPerfSummaryTable("View30", useMT, timings, "MPIR", cpuLabel);
-
-    mpf_clear(mpfX);
-    mpf_clear(mpfY);
-    mpf_clear(mpfZ);
-    mpf_clear(mpfRadiusY);
-    mpf_clear(mpfTwo);
-
-    return true;
-}
-
-template <Operator sharkOperator>
-bool
-TestFullReferencePerfView32([[maybe_unused]] TestTracker &Tests,
-                            [[maybe_unused]] int numBlocks,
-                            [[maybe_unused]] int numThreads,
-                            [[maybe_unused]] int testBase,
-                            [[maybe_unused]] int numIters,
-                            [[maybe_unused]] int internalTestLoopCount,
-                            [[maybe_unused]] bool useMT)
-{
+            return FullReferencePerfViewOverride{"View30",
+                                                 strX,
+                                                 strY,
+                                                 "0",
+                                                 "1.46269686645751934186e-114514",
+                                                 strXHex,
+                                                 strYHex,
+                                                 FullReferencePerfInputEncoding::ExactHex,
+                                                 true,
+                                                 true,
+                                                 true,
+                                                 700'000,
+                                                 669'772,
+                                                 PeriodicityResult::PeriodFound};
+        }
+        case 32: {
 #include "LargeCoords32.h"
-
-    using SharkFloatParams = SharkParams9;
-    constexpr uint32_t StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
-    constexpr uint32_t ActualPrecisionLimbs = 60'000;
-    static_assert(StoragePrecisionLimbs == 65'536);
-    static_assert(ActualPrecisionLimbs > StoragePrecisionLimbs / 2u);
-    static_assert(ActualPrecisionLimbs <= StoragePrecisionLimbs);
-
-    HpShark::LaunchParams launchParams{numBlocks, numThreads};
-    static_assert(IsReferenceOrbitOperator<sharkOperator>,
-                  "Only reference-orbit operators are supported");
-
-    mpf_set_default_prec(
-        HpSharkFloat<SharkParamsNP9>::DefaultMpirBits); // Set precision for MPIR floating point
-
-    const char *num1 = strX;
-    const char *num2 = strY;
-    const char *num3 = "0";
-    // radiusY ≈ 2 / zoom, zoom = 1.60610174675e+244240
-    const char *radiusYStr = "1.24525e-244240";
-    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 30'000'000;
-    constexpr auto expectedPeriod = 22'680'804;
-    const auto expectedResult = PeriodicityResult::PeriodFound;
-
-    mpf_t mpfX;
-    mpf_t mpfY;
-    mpf_t mpfZ;
-    mpf_t mpfRadiusY;
-
-    mpf_init(mpfX);
-    mpf_init(mpfY);
-    mpf_init(mpfZ);
-    mpf_init(mpfRadiusY);
-
-    auto res = mpf_set_str(mpfX, num1, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfX" << std::endl;
+            return FullReferencePerfViewOverride{"View32",
+                                                 strX,
+                                                 strY,
+                                                 "0",
+                                                 "1.24525e-244240",
+                                                 nullptr,
+                                                 nullptr,
+                                                 FullReferencePerfInputEncoding::Decimal,
+                                                 false,
+                                                 false,
+                                                 false,
+                                                 30'000'000,
+                                                 22'680'804,
+                                                 PeriodicityResult::PeriodFound};
+        }
+        default:
+            return std::nullopt;
     }
-
-    res = mpf_set_str(mpfY, num2, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfY" << std::endl;
-    }
-
-    res = mpf_set_str(mpfZ, num3, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfZ" << std::endl;
-    }
-
-    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfRadiusY" << std::endl;
-    }
-
-    MpfNormalize(mpfX);
-    MpfNormalize(mpfY);
-    MpfNormalize(mpfZ);
-    MpfNormalize(mpfRadiusY);
-
-    // Convert mpfX/mpfY/mpfZ back to strings
-    auto convertedMpfX =
-        MpfToString<SharkFloatParams>(mpfX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-    auto convertedMpfY =
-        MpfToString<SharkFloatParams>(mpfY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-    auto convertedMpfZ =
-        MpfToString<SharkFloatParams>(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-
-    const typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
-
-    std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
-    if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, ActualPrecisionLimbs, testBase);
-    }
-
-    std::vector<PerfTimingResult> timings;
-    timings.reserve(numIters);
-
-    for (int i = 0; i < numIters; i++) {
-        int testNum = testBase + i;
-
-        PerfTimingResult timing;
-        TestPerf<SharkFloatParams, sharkOperator>(launchParams,
-                                                  Tests,
-                                                  testNum,
-                                                  convertedMpfX.c_str(),
-                                                  convertedMpfY.c_str(),
-                                                  convertedMpfZ.c_str(),
-                                                  radiusYStr,
-                                                  mpfX,
-                                                  mpfY,
-                                                  mpfZ,
-                                                  hdrRadiusY,
-                                                  maxIters,
-                                                  expectedPeriod,
-                                                  expectedResult,
-                                                  ActualPrecisionLimbs,
-                                                  useMT,
-                                                  &timing,
-                                                  preparedTables.get());
-        timings.push_back(timing);
-    }
-
-    constexpr const char *cpuLabel = sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
-    PrintPerfSummaryTable("View32", useMT, timings, "MPIR", cpuLabel);
-
-    mpf_clear(mpfX);
-    mpf_clear(mpfY);
-    mpf_clear(mpfZ);
-    mpf_clear(mpfRadiusY);
-    return true;
 }
+
+} // namespace
 
 template <Operator sharkOperator>
 bool
@@ -4170,130 +3876,200 @@ TestFullReferencePerfView(TestTracker &Tests,
 {
     static_assert(IsReferenceOrbitOperator<sharkOperator>, "Reference-orbit operators only");
 
-    // Views with a bespoke, exactly-verified implementation keep their parameters as-is.
-    if (view == 5) {
-        return TestFullReferencePerfView5<sharkOperator>(
-            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount, useMT);
-    }
-    if (view == 30) {
-        return TestFullReferencePerfView30<sharkOperator>(
-            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount, useMT);
-    }
-    if (view == 32) {
-        return TestFullReferencePerfView32<sharkOperator>(
-            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount, useMT);
-    }
+    const auto preset = GetViewPreset(view,
+                                      /*defaultIterations=*/0,
+                                      /*defaultCompressionExpLow=*/0,
+                                      /*defaultCompressionExpIntermediate=*/0);
+    constexpr bool requiresReuse = false;
+    const uint64_t requiredPrecisionBits =
+        PrecisionCalculator::GetPrecision(preset.minX,
+                                          preset.minY,
+                                          preset.maxX,
+                                          preset.maxY,
+                                          requiresReuse);
+    const uint64_t requestedPrecisionLimbs = (requiredPrecisionBits + 31u) / 32u;
+    const uint32_t storagePrecisionLimbs = BitsToSupportedLimbCount(requiredPrecisionBits);
 
-    // Generic path for the remaining views: derive the centre + radius from the shared
-    // ViewPreset bounding box (bbox centre = ((minX+maxX)/2, (minY+maxY)/2), radius = half the
-    // Y-extent).  No verified expected period exists for these views, so the periodicity
-    // assertion is disabled (expectedPeriod = -1); we simply confirm the GPU reference orbit
-    // matches the CPU reference up to the iteration bound.  SharkParams9 (65536-limb storage)
-    // is used so the orbit fits.
-    using SharkFloatParams = SharkParams9;
-    constexpr uint32_t StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
-    constexpr uint32_t ActualPrecisionLimbs = 60'000;
-    static_assert(StoragePrecisionLimbs == 65'536);
-    static_assert(ActualPrecisionLimbs > StoragePrecisionLimbs / 2u);
-    static_assert(ActualPrecisionLimbs <= StoragePrecisionLimbs);
-
-    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 20'000;
-    constexpr auto expectedPeriod = -1; // -1 disables the periodicity assertion
-    const auto expectedResult = PeriodicityResult::Continue;
-
-    HpShark::LaunchParams launchParams{numBlocks, numThreads};
-    static_assert(IsReferenceOrbitOperator<sharkOperator>,
-                  "Only reference-orbit operators are supported");
-
-    mpf_set_default_prec(
-        HpSharkFloat<SharkParamsNP9>::DefaultMpirBits); // Set precision for MPIR floating point
-
-    // Fetch the shared preset (this sets the bbox precision) and derive the centre + radius.
-    const ViewPresetResult preset = GetViewPreset(view,
-                                                  /*defaultIterations=*/0,
-                                                  /*defaultCompressionExpLow=*/0,
-                                                  /*defaultCompressionExpIntermediate=*/0);
-
-    const HighPrecision two{2};
-    const HighPrecision centerX = (preset.minX + preset.maxX) / two;
-    const HighPrecision centerY = (preset.minY + preset.maxY) / two;
-    const HighPrecision radiusY = (preset.maxY - preset.minY) / two;
-
-    // Round-trip through the exact invertible hex form (same mechanism as the bespoke views) so
-    // the mpf values keep full precision regardless of the current default precision.
-    const std::string centerXHex = MpfToHex64StringInvertable(*centerX.backendRaw());
-    const std::string centerYHex = MpfToHex64StringInvertable(*centerY.backendRaw());
-    const std::string radiusYHex = MpfToHex64StringInvertable(*radiusY.backendRaw());
-
-    // mpfX/mpfY are initialized inside Hex64StringToMpf_Exact.
-    mpf_t mpfX;
-    mpf_t mpfY;
-    mpf_t mpfZ;
-    mpf_t mpfRadiusY;
-    mpf_init(mpfZ);
-    mpf_set_si(mpfZ, 0); // small-integer set cannot fail
-
-    Hex64StringToMpf_Exact(centerXHex, mpfX);
-    Hex64StringToMpf_Exact(centerYHex, mpfY);
-    Hex64StringToMpf_Exact(radiusYHex, mpfRadiusY);
-
-    const std::string num1 = centerXHex;
-    const std::string num2 = centerYHex;
-    const std::string num3 = "0";
-    const std::string radiusYStr = radiusYHex;
-
-    MpfNormalize(mpfX);
-    MpfNormalize(mpfY);
-    MpfNormalize(mpfZ);
-    MpfNormalize(mpfRadiusY);
-
-    typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
-    HdrReduce(hdrRadiusY);
-
-    std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
+    uint32_t effectivePrecisionLimbs;
     if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, ActualPrecisionLimbs, testBase);
+        effectivePrecisionLimbs =
+            GetRef2EffectivePrecisionLimbs(requestedPrecisionLimbs, storagePrecisionLimbs);
+    } else {
+        effectivePrecisionLimbs = static_cast<uint32_t>(
+            std::min(requestedPrecisionLimbs, static_cast<uint64_t>(storagePrecisionLimbs)));
     }
 
-    std::vector<PerfTimingResult> timings;
-    timings.reserve(numIters);
-    for (int i = 0; i < numIters; i++) {
-        int testNum = testBase + i;
-        PerfTimingResult timing;
-        TestPerf<SharkFloatParams, sharkOperator>(launchParams,
-                                                  Tests,
-                                                  testNum,
-                                                  num1.c_str(),
-                                                  num2.c_str(),
-                                                  num3.c_str(),
-                                                  radiusYStr.c_str(),
-                                                  mpfX,
-                                                  mpfY,
-                                                  mpfZ,
-                                                  hdrRadiusY,
-                                                  maxIters,
-                                                  expectedPeriod,
-                                                  expectedResult,
-                                                  ActualPrecisionLimbs,
-                                                  useMT,
-                                                  &timing,
-                                                  preparedTables.get());
-        timings.push_back(timing);
+    const auto viewOverride = GetFullReferencePerfViewOverride(view);
+    const std::string genericLabel = "View" + std::to_string(view);
+    std::string genericNum1;
+    std::string genericNum2;
+    std::string genericRadiusY;
+
+    if (!viewOverride) {
+        const HighPrecision two{2};
+        const HighPrecision centerX = (preset.minX + preset.maxX) / two;
+        const HighPrecision centerY = (preset.minY + preset.maxY) / two;
+        const HighPrecision radiusY = (preset.maxY - preset.minY) / two;
+
+        genericNum1 = MpfToHex64StringInvertable(*centerX.backendRaw());
+        genericNum2 = MpfToHex64StringInvertable(*centerY.backendRaw());
+        genericRadiusY = MpfToHex64StringInvertable(*radiusY.backendRaw());
     }
 
-    constexpr const char *cpuLabel = sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
-    std::cout << "\nGeneric view-perf for view " << view << std::endl;
-    PrintPerfSummaryTable("ViewAny", useMT, timings, "MPIR", cpuLabel);
+    std::cout << "View " << view << " precision: requiredBits=" << requiredPrecisionBits
+              << ", requestedLimbs=" << requestedPrecisionLimbs
+              << ", storageLimbs=" << storagePrecisionLimbs
+              << ", effectiveLimbs=" << effectivePrecisionLimbs << std::endl;
 
-    mpf_clear(mpfX);
-    mpf_clear(mpfY);
-    mpf_clear(mpfZ);
-    mpf_clear(mpfRadiusY);
+    bool result = true;
+    DispatchByLimbCount<SharkParamsBaseFamily>(
+        storagePrecisionLimbs, [&]<class SharkFloatParams>() {
+            HpShark::LaunchParams launchParams{numBlocks, numThreads};
+            mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
-    return true;
+            const auto setDecimal = [](mpf_ptr target, const char *value, const char *name) {
+                if (mpf_set_str(target, value, 10) == -1) {
+                    std::cout << "Error setting " << name << std::endl;
+                }
+            };
+
+            mpf_t mpfX;
+            mpf_t mpfY;
+            mpf_t mpfZ;
+            mpf_t mpfRadiusY;
+            mpf_init(mpfZ);
+            mpf_init(mpfRadiusY);
+
+            if (viewOverride &&
+                viewOverride->m_InputEncoding == FullReferencePerfInputEncoding::ExactHex) {
+                Hex64StringToMpf_Exact(viewOverride->m_Num1Hex, mpfX);
+                Hex64StringToMpf_Exact(viewOverride->m_Num2Hex, mpfY);
+            } else if (viewOverride) {
+                mpf_init(mpfX);
+                mpf_init(mpfY);
+                setDecimal(mpfX, viewOverride->m_Num1, "mpfX");
+                setDecimal(mpfY, viewOverride->m_Num2, "mpfY");
+            } else {
+                Hex64StringToMpf_Exact(genericNum1, mpfX);
+                Hex64StringToMpf_Exact(genericNum2, mpfY);
+            }
+
+            if (viewOverride) {
+                setDecimal(mpfZ, viewOverride->m_Num3, "mpfZ");
+                setDecimal(mpfRadiusY, viewOverride->m_RadiusY, "mpfRadiusY");
+            } else {
+                setDecimal(mpfZ, "0", "mpfZ");
+                Hex64StringToMpf_Exact(genericRadiusY, mpfRadiusY);
+            }
+
+            mpf_t mpfTwo;
+            bool hasMpfTwo = false;
+            if (viewOverride && viewOverride->m_DoubleRadiusY) {
+                mpf_init(mpfTwo);
+                hasMpfTwo = true;
+                setDecimal(mpfTwo, "2", "mpfTwo");
+                mpf_mul(mpfRadiusY, mpfTwo, mpfRadiusY);
+            }
+
+            if (viewOverride &&
+                viewOverride->m_InputEncoding == FullReferencePerfInputEncoding::ExactHex &&
+                SharkVerbose == VerboseMode::Debug) {
+                const auto mpfXConvertStr = MpfToHex64StringInvertable(mpfX);
+                const auto mpfYConvertStr = MpfToHex64StringInvertable(mpfY);
+                std::cout << "Correct MPIR hex X: " << std::endl << mpfXConvertStr;
+                std::cout << "Correct MPIR hex Y: " << std::endl << mpfYConvertStr;
+                assert(mpfXConvertStr == viewOverride->m_Num1Hex);
+                assert(mpfYConvertStr == viewOverride->m_Num2Hex);
+            }
+
+            MpfNormalize(mpfX);
+            MpfNormalize(mpfY);
+            MpfNormalize(mpfZ);
+            MpfNormalize(mpfRadiusY);
+
+            std::string num1;
+            std::string num2;
+            std::string num3;
+            std::string radiusYStr;
+
+            if (viewOverride && viewOverride->m_UseOriginalInputStrings) {
+                num1 = viewOverride->m_Num1;
+                num2 = viewOverride->m_Num2;
+                num3 = viewOverride->m_Num3;
+            } else {
+                num1 = MpfToString<SharkFloatParams>(
+                    mpfX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+                num2 = MpfToString<SharkFloatParams>(
+                    mpfY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+                num3 = MpfToString<SharkFloatParams>(
+                    mpfZ, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+            }
+            radiusYStr = viewOverride ? viewOverride->m_RadiusY : genericRadiusY;
+
+            typename SharkFloatParams::Float hdrRadiusY{mpfRadiusY};
+            if (!viewOverride || viewOverride->m_ReduceHdrRadiusY) {
+                HdrReduce(hdrRadiusY);
+            }
+
+            const uint64_t maxIters =
+                (internalTestLoopCount != 0)
+                    ? static_cast<uint64_t>(internalTestLoopCount)
+                    : (viewOverride ? viewOverride->m_DefaultMaxIters : 20'000);
+            const int64_t expectedPeriod = viewOverride ? viewOverride->m_ExpectedPeriod : -1;
+            const auto expectedResult =
+                viewOverride ? viewOverride->m_ExpectedResult : PeriodicityResult::Continue;
+
+            std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
+            if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
+                preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
+                    launchParams, mpfX, mpfY, effectivePrecisionLimbs, testBase);
+            }
+
+            std::vector<PerfTimingResult> timings;
+            timings.reserve(numIters);
+            for (int i = 0; i < numIters; ++i) {
+                const int testNum = testBase + i;
+                PerfTimingResult timing;
+                TestPerf<SharkFloatParams, sharkOperator>(launchParams,
+                                                          Tests,
+                                                          testNum,
+                                                          num1.c_str(),
+                                                          num2.c_str(),
+                                                          num3.c_str(),
+                                                          radiusYStr.c_str(),
+                                                          mpfX,
+                                                          mpfY,
+                                                          mpfZ,
+                                                          hdrRadiusY,
+                                                          maxIters,
+                                                          expectedPeriod,
+                                                          expectedResult,
+                                                          effectivePrecisionLimbs,
+                                                          useMT,
+                                                          &timing,
+                                                          preparedTables.get());
+                timings.push_back(timing);
+            }
+
+            constexpr const char *cpuLabel =
+                sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
+            if (!viewOverride) {
+                std::cout << "\nGeneric view-perf for view " << view << std::endl;
+            }
+            const char *summaryLabel = viewOverride ? viewOverride->m_Label : genericLabel.c_str();
+            PrintPerfSummaryTable(summaryLabel, useMT, timings, "MPIR", cpuLabel);
+
+            mpf_clear(mpfX);
+            mpf_clear(mpfY);
+            mpf_clear(mpfZ);
+            mpf_clear(mpfRadiusY);
+            if (hasMpfTwo) {
+                mpf_clear(mpfTwo);
+            }
+        });
+
+    return result;
 }
-
 template <class SharkFloatParams, Operator sharkOperator>
 bool
 TestAllBinaryOp(int testBase)
@@ -4610,53 +4386,11 @@ TestAllBinaryOp(int testBase)
                                                                    int numIters,                        \
                                                                    int internalTestLoopCount,           \
                                                                    BasicCorrectnessMode mode);          \
-    template bool TestFullReferencePerfView5<Operator::ReferenceOrbit>(TestTracker &,                   \
-                                                                       int numBlocks,                   \
-                                                                       int numThreads,                  \
-                                                                       int testBase,                    \
-                                                                       int numIters,                    \
-                                                                       int internalTestLoopCount,       \
-                                                                       bool useMT);                     \
-    template bool TestFullReferencePerfView30<Operator::ReferenceOrbit>(TestTracker &,                  \
-                                                                        int numBlocks,                  \
-                                                                        int numThreads,                 \
-                                                                        int testBase,                   \
-                                                                        int numIters,                   \
-                                                                        int internalTestLoopCount,      \
-                                                                        bool useMT);                    \
-    template bool TestFullReferencePerfView32<Operator::ReferenceOrbit>(TestTracker &,                  \
-                                                                        int numBlocks,                  \
-                                                                        int numThreads,                 \
-                                                                        int testBase,                   \
-                                                                        int numIters,                   \
-                                                                        int internalTestLoopCount,      \
-                                                                        bool useMT);                    \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit2>(const HpShark::LaunchParams &,      \
                                                                     int testBase,                       \
                                                                     int numIters,                       \
                                                                     int internalTestLoopCount,          \
-                                                                    BasicCorrectnessMode mode);         \
-    template bool TestFullReferencePerfView5<Operator::ReferenceOrbit2>(TestTracker &,                  \
-                                                                        int numBlocks,                  \
-                                                                        int numThreads,                 \
-                                                                        int testBase,                   \
-                                                                        int numIters,                   \
-                                                                        int internalTestLoopCount,      \
-                                                                        bool useMT);                    \
-    template bool TestFullReferencePerfView30<Operator::ReferenceOrbit2>(TestTracker &,                 \
-                                                                         int numBlocks,                 \
-                                                                         int numThreads,                \
-                                                                         int testBase,                  \
-                                                                         int numIters,                  \
-                                                                         int internalTestLoopCount,     \
-                                                                         bool useMT);                   \
-    template bool TestFullReferencePerfView32<Operator::ReferenceOrbit2>(TestTracker &,                 \
-                                                                         int numBlocks,                 \
-                                                                         int numThreads,                \
-                                                                         int testBase,                  \
-                                                                         int numIters,                  \
-                                                                         int internalTestLoopCount,     \
-                                                                         bool useMT);
+                                                                    BasicCorrectnessMode mode);
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
     ADD_KERNEL(SharkFloatParams)                                                                        \

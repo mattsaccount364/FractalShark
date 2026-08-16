@@ -27,7 +27,6 @@
 
     <ClInclude Include="RenderThreadPool.h" />
     <ClInclude Include="CrummyTest.h" />
-    <ClInclude Include="GpuPrecisionDispatch.h" />
     <ClInclude Include="GPU_BLAS.h" />
     <ClInclude Include="GPU_LAInfoDeep.h" />
     <ClInclude Include="GPU_LAReference.h" />
@@ -53,7 +52,6 @@
     <ClInclude Include="PerturbationResultsHelpers.h" />
     <ClInclude Include="FractalPalette.h" />
     <ClInclude Include="PngParallelSave.h" />
-    <ClInclude Include="PrecisionCalculator.h" />
     <ClInclude Include="QuadDouble\common.cuh" />
     <ClInclude Include="QuadDouble\cuda_header.cuh" />
     <ClInclude Include="QuadDouble\gqd_basic.cuh" />
@@ -101,7 +99,6 @@
     <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="FractalPalette.cpp" />
     <ClCompile Include="PngParallelSave.cpp" />
-    <ClCompile Include="PrecisionCalculator.cpp" />
     <ClCompile Include="RecommendedSettings.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
     <ClCompile Include="RenderAlgorithm.cpp" />

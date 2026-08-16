@@ -31,14 +31,17 @@
     <ClInclude Include="Vectors.h" />
     <ClInclude Include="KernelTestAdd_cu.h" />
     <ClInclude Include="FractalViewPresets.h" />
+    <ClInclude Include="GpuPrecisionDispatch.h" />
     <ClInclude Include="LargeCoords30.h" />
     <ClInclude Include="LargeCoords32.h" />
     <ClInclude Include="LargeCoords33.h" />
     <ClInclude Include="LargeCoords34.h" />
     <ClInclude Include="PointZoomBBConverter.h" />
+    <ClInclude Include="PrecisionCalculator.h" />
     <ClCompile Include="AbortMonitor.cpp" />
     <ClCompile Include="FractalViewPresets.cpp" />
     <ClCompile Include="PointZoomBBConverter.cpp" />
+    <ClCompile Include="PrecisionCalculator.cpp" />
     <ClCompile Include="BenchmarkTimer.cpp">
       <FileType>Document</FileType>
     </ClCompile>

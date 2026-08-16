@@ -37,6 +37,7 @@ target_sources(HpSharkFloatLib PRIVATE
     MpirOrbitEval.cpp
     MpirSerialization.cpp
     PointZoomBBConverter.cpp
+    PrecisionCalculator.cpp
     AbortMonitor.cpp
     BenchmarkTimer.cpp
     KernelInvokeReference2Cache.cpp

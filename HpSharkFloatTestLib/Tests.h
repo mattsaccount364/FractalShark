@@ -44,36 +44,8 @@ bool TestBinaryOperatorPerf(const HpShark::LaunchParams &launchParams,
                             int internalTestLoopCount,
                             BasicCorrectnessMode mode);
 
-template <Operator sharkOperator>
-bool TestFullReferencePerfView5(TestTracker &Tests,
-                                int numBlocks,
-                                int numThreads,
-                                int testBase,
-                                int numIters,
-                                int internalTestLoopCount,
-                                bool useMT = true);
-
-template <Operator sharkOperator>
-bool TestFullReferencePerfView30(TestTracker &Tests,
-                                 int numBlocks,
-                                 int numThreads,
-                                 int testBase,
-                                 int numIters,
-                                 int internalTestLoopCount,
-                                 bool useMT = true);
-
-template <Operator sharkOperator>
-bool TestFullReferencePerfView32(TestTracker &Tests,
-                                 int numBlocks,
-                                 int numThreads,
-                                 int testBase,
-                                 int numIters,
-                                 int internalTestLoopCount,
-                                 bool useMT = true);
-
-// Generic "run view perf test" driver: delegates views 5/30/32 to the verified bespoke
-// implementations and, for any other preset 1..34, derives the centre + radius from the
-// shared ViewPreset bounding box and runs a perf-only reference orbit (no period assert).
+// Generic "run view perf test" driver. Views 5/30/32 provide exact input and expected-period
+// overrides; all views derive their precision and supported storage size from the shared preset.
 template <Operator sharkOperator>
 bool TestFullReferencePerfView(TestTracker &Tests,
                                int numBlocks,

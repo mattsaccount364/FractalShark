@@ -169,6 +169,40 @@ through:
 .\copilot.ps1 --codex -p "<prompt>"
 ```
 
+The `--codex` profile is intentionally quiet and the local Ollama-backed model
+may take several minutes to produce a final response. A lack of immediate
+output is not evidence that the review failed. For a non-trivial investigation,
+request streamed output and diagnostic logs:
+
+```powershell
+$logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
+New-Item -ItemType Directory -Force $logDirectory | Out-Null
+.\copilot.ps1 --codex --stream on --log-level info --log-dir $logDirectory `
+    -p "<prompt>"
+```
+
+Use a generous outer timeout, 30 minutes by default for a substantial review,
+and poll rather than abandoning a live run. From a second PowerShell window,
+check process liveness, the loaded model, and log growth:
+
+```powershell
+$logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
+Get-Process -Name copilot,ollama -ErrorAction SilentlyContinue |
+    Select-Object ProcessName,Id,StartTime,CPU
+ollama ps
+Get-ChildItem -LiteralPath $logDirectory -File |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 5 Name,Length,LastWriteTime
+Get-Content -LiteralPath "<active-log-file>" -Wait
+```
+
+These checks show liveness and recent activity, not an exact token-level
+completion percentage. Do not ignore Copilot output solely because it is
+delayed; wait for completion and reconcile its claims with the independent
+investigation. Only use `.\copilot_stop.ps1` for an intentional cancellation
+or after repeated checks show that the run is genuinely stuck, not merely
+because a short default timeout expired.
+
 Codex remains responsible for investigation, architecture, edits, decisions, and validation. Treat
 Copilot output as advisory and verify important claims yourself. Unless explicitly requested, ask
 Copilot not to edit files or commit changes. A useful sequence is independent investigation, Copilot

@@ -119,7 +119,7 @@ static const Node menu[] = {
               Item(L"#29 - Fast HDRx32 broke, HDRx64 works", FractalCommand::View29),
               Item(L"#30 - 1e114514 - low period (70s rtx5090 reforbit)", FractalCommand::View30),
               Item(L"#31 - 1e715 - feature finder test", FractalCommand::View31),
-              Item(L"#32 - 1e244240 - period 27,209,300", FractalCommand::View32),
+              Item(L"#32 - 1e244240 - period 22,680,804", FractalCommand::View32),
               Item(L"#33 - 1e325221 - period 22,680,804", FractalCommand::View33),
               Item(L"#34 - 1e650452 - period 399,289,978", FractalCommand::View34)),
 

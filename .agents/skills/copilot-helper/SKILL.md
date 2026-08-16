@@ -55,9 +55,11 @@ unavailable, continue the investigation without it.
 
 ## Long-running jobs
 
-The normal `--codex` profile is intentionally quiet and should be used for
-short, machine-readable checks. For a large investigation, request incremental
-output and diagnostic logs explicitly:
+The normal `--codex` profile adds a silent mode and should be used directly only
+for short, machine-readable checks. The local Ollama-backed model may take
+several minutes to produce a final response, so no immediate output does not
+mean that the run is stuck or unusable. For a large investigation, request
+incremental output and diagnostic logs explicitly:
 
 ```powershell
 $logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
@@ -66,7 +68,26 @@ New-Item -ItemType Directory -Force $logDirectory | Out-Null
     -p "<PROMPT>"
 ```
 
-Use a generous outer execution timeout and wait or poll for completion. A
-period with no final response does not prove that the local model is stuck;
-streamed output, growing logs, or a live Copilot process are useful liveness
-signals. Do not kill a run solely because it exceeds a short default timeout.
+Use a generous outer execution timeout, 30 minutes by default for a substantial
+review, and wait or poll for completion. From a second PowerShell window, use
+the following checks while the command is running:
+
+```powershell
+$logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
+Get-Process -Name copilot,ollama -ErrorAction SilentlyContinue |
+    Select-Object ProcessName,Id,StartTime,CPU
+ollama ps
+Get-ChildItem -LiteralPath $logDirectory -File |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 5 Name,Length,LastWriteTime
+Get-Content -LiteralPath "<active-log-file>" -Wait
+```
+
+Streamed output, growing logs, recent process CPU activity, or a live Copilot
+or Ollama process are useful liveness signals. `ollama ps` confirms model
+availability but does not provide an exact token-level completion percentage.
+Do not discard a delayed response or kill a run solely because it exceeds a
+short default timeout. Only use the repository's `.\copilot_stop.ps1` helper
+for an intentional cancellation or after repeated liveness checks show that
+the run is genuinely stuck. If the process exits with an actual error, record
+the failure and continue the investigation without Copilot.

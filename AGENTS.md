@@ -12,7 +12,9 @@ FractalShark is a C++23/CUDA Mandelbrot renderer. Keep changes in the owning sub
 - `FractalSharkGuiLinux/`: Linux GUI.
 - `FractalSharkCli/`: CLI entry points.
 - `FractalSharkTest/`, `HpSharkFloatTest/`, `HpSharkFloatTestLib/`: tests.
-- `Notes/`: LaTeX docs. `Pics/` and `FromImagina/`: sample images and inputs.
+- `Notes/`: LaTeX docs and plain-Markdown analysis notes (Reference2 perf studies).
+- `tools/NcuAnalysis/`: NCU profile analysis toolkit; see `tools/NcuAnalysis/README.md`.
+- `Pics/` and `FromImagina/`: sample images and inputs.
 
 ## Build And Validation
 
@@ -110,9 +112,15 @@ parallel host validation. If a test times out, terminate it explicitly before re
 `CrummyTest` is a functional suite invoked from the GUI menu. It must call `Drain()` and use the direct
 rendering path: `CalcFractal(true)` followed by `SaveCurrentFractal`.
 
-Keep NCU profiling scripts under `tools/NcuAnalysis/` and see
-`tools/NcuAnalysis\README.md`; when updating the Reference2Gpu profile analysis,
-re-run those scripts and refresh the per-line stall table.
+NCU profile analysis scripts live under `tools/NcuAnalysis/`. Start from
+`tools/NcuAnalysis/README.md`, which lists the full script set (source-CSV
+export, stall composition, per-line attribution, pipe/issue/divergence,
+memory/occupancy, metric discovery, and the library-line bar-sync resolvers),
+the standard workflow, and the environment gotchas. Durable invariants: the
+per-line join must reconcile to `unattributed: 0` before any line ranking is
+trusted, and the scripts match NCU metric names by candidate regex — after an
+NCU or GPU/architecture change, confirm the metric families exist with
+`metric_probe.py` before trusting their output.
 
 ## Rendering And Lifetime Invariants
 
@@ -149,3 +157,19 @@ outputs unless they are intentional fixtures. Follow `SECURITY.md` for vulnerabi
 
 Do not run `git add` or `git commit`; leave changes unstaged for review. Do not modify source files in
 plan-only workflows.
+
+## Copilot Secondary Review
+
+For difficult debugging, performance, CUDA, or algorithm work, delegate a read-only subtask to the
+local GitHub Copilot CLI as an independent secondary reviewer when another opinion would materially
+improve the result. The reusable workflow is in `.agents/skills/copilot-helper/SKILL.md`; invoke it
+through:
+
+```powershell
+.\copilot.ps1 --codex -p "<prompt>"
+```
+
+Codex remains responsible for investigation, architecture, edits, decisions, and validation. Treat
+Copilot output as advisory and verify important claims yourself. Unless explicitly requested, ask
+Copilot not to edit files or commit changes. A useful sequence is independent investigation, Copilot
+review, reconciliation of disagreements, implementation, Copilot diff review, and final validation.

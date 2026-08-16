@@ -1,0 +1,4 @@
+interface:
+  display_name: "Copilot helper"
+  short_description: "Use local Copilot as a secondary code reviewer"
+  default_prompt: "Use Copilot as an independent read-only reviewer, then verify its advice yourself."

@@ -70,8 +70,8 @@ static constexpr auto RegisterLimit = 127;
 
 static constexpr auto ConstantSharedRequiredBytes = 0;
 
-// static constexpr bool DebugChecksums = Debug;
-static constexpr bool DebugChecksums = true;
+static constexpr bool DebugChecksums = Debug;
+// static constexpr bool DebugChecksums = true;
 static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
 static constexpr bool TestInitCudaMemory = true;
 

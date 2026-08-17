@@ -2267,8 +2267,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
         outputBits =
             std::max(outputBits,
                      derivativeProductBitOffset + derivativeRequiredCoefficients * bitsPerCoefficient);
-        outputBits =
-            std::max(outputBits, derivativeLinearBitOffset + (dzdcOneTerm.IsZero ? uint64_t{0} : linearBits));
+        outputBits = std::max(
+            outputBits, derivativeLinearBitOffset + (dzdcOneTerm.IsZero ? uint64_t{0} : linearBits));
     }
     const uint64_t limbCount64 = (outputBits + 31ull) / 32ull + 2ull;
     assert(limbCount64 <= workspace.ActiveMaxFusedLimbs);
@@ -2902,6 +2902,17 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                                             HpShark::Reference2PreparedTables<SharkFloatParams> *);
 
 ExplicitInstantiateAll();
+
+ExplicitlyInstantiate(SharkParams1);
+ExplicitlyInstantiate(SharkParams2);
+ExplicitlyInstantiate(SharkParams3);
+ExplicitlyInstantiate(SharkParams4);
+ExplicitlyInstantiate(SharkParams5);
+ExplicitlyInstantiate(SharkParams6);
+ExplicitlyInstantiate(SharkParams8);
+ExplicitlyInstantiate(SharkParams10);
+ExplicitlyInstantiate(SharkParams11);
+ExplicitlyInstantiate(SharkParams12);
 
 #define ExplicitlyInstantiateDerivative(SharkFloatParams)                                               \
     template void EvaluateOrbitAndDerivative2<SharkFloatParams>(                                        \

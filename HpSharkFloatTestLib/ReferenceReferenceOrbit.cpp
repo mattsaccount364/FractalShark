@@ -387,6 +387,17 @@ EvaluateOrbitAndDerivative(const HpSharkFloat<SharkFloatParams> *cReal,
 
 ExplicitInstantiateAll();
 
+ExplicitlyInstantiate(SharkParams1);
+ExplicitlyInstantiate(SharkParams2);
+ExplicitlyInstantiate(SharkParams3);
+ExplicitlyInstantiate(SharkParams4);
+ExplicitlyInstantiate(SharkParams5);
+ExplicitlyInstantiate(SharkParams6);
+ExplicitlyInstantiate(SharkParams8);
+ExplicitlyInstantiate(SharkParams10);
+ExplicitlyInstantiate(SharkParams11);
+ExplicitlyInstantiate(SharkParams12);
+
 // NR-specific function — only instantiated for NR-enabled param types
 template void EvaluateOrbitAndDerivative<SharkParamsNR7>(const HpSharkFloat<SharkParamsNR7> *,
                                                          const HpSharkFloat<SharkParamsNR7> *,

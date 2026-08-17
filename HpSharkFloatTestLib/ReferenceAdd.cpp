@@ -1865,3 +1865,14 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
                                               bool);
 
 ExplicitInstantiateAll();
+
+ExplicitlyInstantiate(SharkParams1);
+ExplicitlyInstantiate(SharkParams2);
+ExplicitlyInstantiate(SharkParams3);
+ExplicitlyInstantiate(SharkParams4);
+ExplicitlyInstantiate(SharkParams5);
+ExplicitlyInstantiate(SharkParams6);
+ExplicitlyInstantiate(SharkParams8);
+ExplicitlyInstantiate(SharkParams10);
+ExplicitlyInstantiate(SharkParams11);
+ExplicitlyInstantiate(SharkParams12);

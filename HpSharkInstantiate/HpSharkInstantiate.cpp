@@ -21,6 +21,12 @@ struct Batch {
     std::string Namespace;
 };
 
+struct ParameterGroup {
+    std::string Name;
+    std::string Tag;
+    std::vector<std::string> Params;
+};
+
 static std::string
 Trim(std::string value)
 {
@@ -88,6 +94,28 @@ MakeParams(const std::string &prefix)
     for (int index = 1; index <= 12; ++index)
         params.push_back(prefix + std::to_string(index));
     return params;
+}
+
+static std::vector<std::string>
+MakeSharedParams(const std::string &prefix)
+{
+    return {prefix + "256", prefix + "512", prefix + "1024"};
+}
+
+static std::vector<ParameterGroup>
+GetParameterGroups()
+{
+    return {
+        {"P", "P", MakeParams("SharkParams")},
+        {"PShared", "P SharedOnly", MakeSharedParams("SharkParamsSharedOnly")},
+        {"NP", "NP", MakeParams("SharkParamsNP")},
+        {"NR", "NR", MakeParams("SharkParamsNR")},
+        {"NRShared", "NR SharedOnly", MakeSharedParams("SharkParamsNRSharedOnly")},
+        {"Dbl", "Dbl", MakeParams("SharkParamsDbl")},
+        {"DblShared", "Dbl SharedOnly", MakeSharedParams("SharkParamsDblSharedOnly")},
+        {"Dbf", "Dbf", MakeParams("SharkParamsDbf")},
+        {"DbfShared", "Dbf SharedOnly", MakeSharedParams("SharkParamsDbfSharedOnly")},
+    };
 }
 
 static std::vector<Batch>
@@ -209,39 +237,13 @@ main()
         const std::string baseName =
             AskLine("Base name for generated instantiation .cu files", "SharkExplicitInstantiate");
 
-        auto productionParams = MakeParams("SharkParams");
-        const auto nonPeriodicityParams = MakeParams("SharkParamsNP");
-        productionParams.insert(
-            productionParams.end(), nonPeriodicityParams.begin(), nonPeriodicityParams.end());
-        const std::vector<std::string> sharedProductionParams = {
-            "SharkParamsSharedOnly256", "SharkParamsSharedOnly512", "SharkParamsSharedOnly1024"};
-        productionParams.insert(
-            productionParams.end(), sharedProductionParams.begin(), sharedProductionParams.end());
-        auto newtonParams = MakeParams("SharkParamsNR");
-        const std::vector<std::string> sharedNewtonParams = {
-            "SharkParamsNRSharedOnly256", "SharkParamsNRSharedOnly512", "SharkParamsNRSharedOnly1024"};
-        newtonParams.insert(newtonParams.end(), sharedNewtonParams.begin(), sharedNewtonParams.end());
-        auto doubleParams = MakeParams("SharkParamsDbl");
-        const auto doubleFloatParams = MakeParams("SharkParamsDbf");
-        doubleParams.insert(doubleParams.end(), doubleFloatParams.begin(), doubleFloatParams.end());
-        const std::vector<std::string> sharedDoubleParams = {"SharkParamsDblSharedOnly256",
-                                                             "SharkParamsDblSharedOnly512",
-                                                             "SharkParamsDblSharedOnly1024",
-                                                             "SharkParamsDbfSharedOnly256",
-                                                             "SharkParamsDbfSharedOnly512",
-                                                             "SharkParamsDbfSharedOnly1024"};
-        doubleParams.insert(doubleParams.end(), sharedDoubleParams.begin(), sharedDoubleParams.end());
-
+        const auto parameterGroups = GetParameterGroups();
         for (const Batch &batch : GetBatches()) {
-            WriteTextFile(outputDirectory / (baseName + '_' + batch.Name + "_P.cu"),
-                          MakeBatchFile(batch, "P + NP", productionParams),
-                          overwrite);
-            WriteTextFile(outputDirectory / (baseName + '_' + batch.Name + "_NR.cu"),
-                          MakeBatchFile(batch, "NR", newtonParams),
-                          overwrite);
-            WriteTextFile(outputDirectory / (baseName + '_' + batch.Name + "_Dbl.cu"),
-                          MakeBatchFile(batch, "Dbl + Dbf", doubleParams),
-                          overwrite);
+            for (const ParameterGroup &group : parameterGroups) {
+                WriteTextFile(outputDirectory / (baseName + '_' + batch.Name + '_' + group.Name + ".cu"),
+                              MakeBatchFile(batch, group.Tag, group.Params),
+                              overwrite);
+            }
         }
         return 0;
     } catch (const std::exception &error) {

@@ -191,11 +191,6 @@ struct SharkParamsFractalDbfFamily {
     using P12 = SharkParamsDbf12;
 };
 
-// The view-5 perf test uses the same low/shared, high/global split as the
-// production float family.  Views 30 and 32 continue to use SharkParamsBaseFamily.
-using SharkParamsView5Family = SharkParamsFractalBaseFamily;
-using SharkParamsNRView5Family = SharkParamsFractalNRFamily;
-
 // Dispatch a callback f.template operator()<ParamsType>() based on limb count.
 // limbCount must be a power-of-2 in [256, 524288] (use RoundToSupportedLimbCount first).
 template <class Family, class F>

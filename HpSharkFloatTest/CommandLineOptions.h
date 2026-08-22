@@ -26,6 +26,8 @@ struct CommandLineOptions {
     CommandLineOptionValue<int> m_View;
     CommandLineOptionValue<uint32_t> m_StorageLimbs;
     CommandLineOptionValue<uint32_t> m_EffectiveLimbs;
+    // 0 = force global storage, 1 = force SharedOnly; Auto keeps capability-based selection.
+    CommandLineOptionValue<int> m_SharedOnly;
 };
 
 struct CommandLineParseResult {

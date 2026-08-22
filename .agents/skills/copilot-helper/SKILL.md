@@ -91,3 +91,13 @@ short default timeout. Only use the repository's `.\copilot_stop.ps1` helper
 for an intentional cancellation or after repeated liveness checks show that
 the run is genuinely stuck. If the process exits with an actual error, record
 the failure and continue the investigation without Copilot.
+
+On Windows, invoke the wrapper from a normal PowerShell environment. The
+wrapper clears the named COPILOT variables without wildcarding `Env:` because
+some hosts expose both `Path` and `PATH`, which makes PowerShell's wildcard
+environment-provider binding fail. If Copilot reports access denied while
+persisting `~/.copilot/session-state`, use the normal approved elevated-process
+path; do not interpret that launch failure as a model review result. The
+`--codex` profile already enables the user-authorized all-path/all-tool mode
+needed for noninteractive repository review, while the prompt must still tell
+Copilot not to edit or commit.

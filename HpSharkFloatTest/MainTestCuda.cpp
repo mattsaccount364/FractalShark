@@ -352,6 +352,22 @@ ValidateCommandLineApplicability(const CommandLineOptions &options, BasicCorrect
         return false;
     }
 
+    if (IsCommandLineSupplied(options.m_SharedOnly)) {
+        if (mode == BasicCorrectnessMode::PerfSingleView30 ||
+            mode == BasicCorrectnessMode::PerfSingleView32) {
+            std::cerr << "--shared-only is not valid for view 30 or view 32.\n";
+            return false;
+        }
+        const bool isViewSelectionMode = mode == BasicCorrectnessMode::PerfSingleView5 ||
+                                         mode == BasicCorrectnessMode::PerfSingleNRView5 ||
+                                         mode == BasicCorrectnessMode::PerfSingleViewAny ||
+                                         mode == BasicCorrectnessMode::PerfSweep;
+        if (!isViewSelectionMode) {
+            std::cerr << "--shared-only is only valid for view 5 performance tests.\n";
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -571,6 +587,98 @@ ResolveSingleViewLimbSelection(const CommandLineOptions &options,
 }
 
 static bool
+IsSharedOnlyStorageLimbCount(uint32_t storageLimbs)
+{
+    return storageLimbs == 256u || storageLimbs == 512u || storageLimbs == 1024u;
+}
+
+static bool
+PromptSharedOnlySelection(int timeoutInSec, bool &interactiveMode, CommandLineOptionValue<int> &option)
+{
+    const PromptResult prompt = PromptIntWithTimeout(
+        "SharedOnly? Default auto (auto/on/off):", 0, timeoutInSec, interactiveMode);
+    if (!prompt.gotAnyInput) {
+        option.m_Kind = CommandLineValueKind::Auto;
+        option.m_Value = 0;
+        return true;
+    }
+
+    const std::string_view text = TrimPromptText(prompt.input);
+    if (text == "auto") {
+        option.m_Kind = CommandLineValueKind::Auto;
+        option.m_Value = 0;
+        return true;
+    }
+    if (text == "on") {
+        option.m_Kind = CommandLineValueKind::Explicit;
+        option.m_Value = 1;
+        return true;
+    }
+    if (text == "off") {
+        option.m_Kind = CommandLineValueKind::Explicit;
+        option.m_Value = 0;
+        return true;
+    }
+    if (prompt.parsed && (prompt.value == 0 || prompt.value == 1)) {
+        option.m_Kind = CommandLineValueKind::Explicit;
+        option.m_Value = prompt.value;
+        return true;
+    }
+
+    std::cout << "SharedOnly selection must be auto, on, off, 0, or 1; defaulting to auto.\n";
+    option.m_Kind = CommandLineValueKind::Auto;
+    option.m_Value = 0;
+    return true;
+}
+
+static bool
+ResolveSharedOnlySelection(const CommandLineOptions &options,
+                           size_t view,
+                           uint32_t storageLimbs,
+                           int numBlocks,
+                           int timeoutInSec,
+                           bool &interactiveMode,
+                           SharedOnlySelection &selection)
+{
+    selection = SharedOnlySelection::Global;
+    if (view != 5u) {
+        if (IsCommandLineSupplied(options.m_SharedOnly)) {
+            std::cerr << "--shared-only is only valid for view 5.\n";
+            return false;
+        }
+        return true;
+    }
+
+    CommandLineOptionValue<int> option = options.m_SharedOnly;
+    if (option.m_Kind == CommandLineValueKind::Omitted && IsSharedOnlyStorageLimbCount(storageLimbs)) {
+        PromptSharedOnlySelection(timeoutInSec, interactiveMode, option);
+    }
+
+    if (option.m_Kind == CommandLineValueKind::Auto) {
+        selection = SharedOnlySelection::Auto;
+        return true;
+    }
+
+    if (option.m_Value == 0)
+        return true;
+
+    if (!IsSharedOnlyStorageLimbCount(storageLimbs)) {
+        std::cerr << "SharedOnly is only available for 256, 512, and 1024 storage limbs; selected "
+                  << storageLimbs << ".\n";
+        return false;
+    }
+    if (numBlocks != 0 &&
+        !HpShark::SupportsReferenceSharedOnlyMemory(static_cast<uint32_t>(numBlocks))) {
+        std::cerr << "SharedOnly was requested, but the current device/launch configuration does not "
+                     "support its shared-memory budget.\n";
+        return false;
+    }
+
+    selection = SharedOnlySelection::Shared;
+    return true;
+}
+
+static bool
 ResolveSweepLimbOverride(const CommandLineOptions &options,
                          int timeoutInSec,
                          bool &interactiveMode,
@@ -650,7 +758,8 @@ template <Operator referenceOperator>
 static int
 RunPerfFullSweep(int numIters,
                  int internalTestLoopCount,
-                 const FullReferencePerfLimbOptions &limbOptions)
+                 const FullReferencePerfLimbOptions &limbOptions,
+                 SharedOnlySelection sharedOnlySelectionForView5)
 {
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
 
@@ -682,6 +791,17 @@ RunPerfFullSweep(int numIters,
         {340, 256},
     };
 
+    if (sharedOnlySelectionForView5 == SharedOnlySelection::Shared) {
+        for (const auto &[numBlocks, numThreads] : blockThreadPairs) {
+            (void)numThreads;
+            if (!HpShark::SupportsReferenceSharedOnlyMemory(static_cast<uint32_t>(numBlocks))) {
+                std::cerr << "SharedOnly was requested for the full sweep, but block count " << numBlocks
+                          << " is not supported by the current device.\n";
+                return 0;
+            }
+        }
+    }
+
     for (const auto &[numBlocks, numThreads] : blockThreadPairs) {
         const auto precision30 = GetFullReferencePerfPrecision(referenceOperator, 30);
         const FullReferencePerfLimbSelection selection30 =
@@ -700,7 +820,8 @@ RunPerfFullSweep(int numIters,
                                                            internalTestLoopCount,
                                                            true,
                                                            30,
-                                                           selection30);
+                                                           selection30,
+                                                           SharedOnlySelection::Global);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
@@ -722,7 +843,8 @@ RunPerfFullSweep(int numIters,
                                                            internalTestLoopCount,
                                                            true,
                                                            32,
-                                                           selection32);
+                                                           selection32,
+                                                           SharedOnlySelection::Global);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
@@ -743,7 +865,8 @@ RunPerfFullSweep(int numIters,
                                                            internalTestLoopCount,
                                                            true,
                                                            5,
-                                                           selection5);
+                                                           selection5,
+                                                           sharedOnlySelectionForView5);
         if (!ContinueAfterFailure(res))
             return 0;
         testBaseLocal += 100;
@@ -807,6 +930,7 @@ RunPerfModes(BasicCorrectnessMode mode,
 
     size_t selectedView = 0;
     FullReferencePerfLimbSelection selectedLimbSelection;
+    SharedOnlySelection sharedOnlySelectionForSelectedView = SharedOnlySelection::Global;
     if (IsFullReferenceViewMode(mode)) {
         if (mode == BasicCorrectnessMode::PerfSingleView30) {
             selectedView = 30;
@@ -831,18 +955,56 @@ RunPerfModes(BasicCorrectnessMode mode,
                 options, selectedView, timeoutInSec, interactiveMode, selectedLimbSelection)) {
             return 0;
         }
+        if (!ResolveSharedOnlySelection(options,
+                                        selectedView,
+                                        selectedLimbSelection.m_StorageLimbs,
+                                        launchParams.NumBlocks,
+                                        timeoutInSec,
+                                        interactiveMode,
+                                        sharedOnlySelectionForSelectedView)) {
+            return 0;
+        }
     } else if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
         selectedView = 5;
         if (!ResolveSingleViewLimbSelection<referenceOperator>(
                 options, selectedView, timeoutInSec, interactiveMode, selectedLimbSelection)) {
             return 0;
         }
+        if (!ResolveSharedOnlySelection(options,
+                                        selectedView,
+                                        selectedLimbSelection.m_StorageLimbs,
+                                        launchParams.NumBlocks,
+                                        timeoutInSec,
+                                        interactiveMode,
+                                        sharedOnlySelectionForSelectedView)) {
+            return 0;
+        }
     }
 
     FullReferencePerfLimbOptions sweepLimbOptions;
+    SharedOnlySelection sharedOnlySelectionForSweepView5 = SharedOnlySelection::Global;
     if (mode == BasicCorrectnessMode::PerfSweep &&
         !ResolveSweepLimbOverride(options, timeoutInSec, interactiveMode, sweepLimbOptions)) {
         return 0;
+    }
+    if (mode == BasicCorrectnessMode::PerfSweep) {
+        const auto precision5 = GetFullReferencePerfPrecision(referenceOperator, 5);
+        const FullReferencePerfLimbSelection selection5 =
+            ResolveAutomaticLimbSelection(referenceOperator, precision5, sweepLimbOptions);
+        if (!IsValidFullReferencePerfLimbSelection(referenceOperator, selection5)) {
+            std::cerr << "Invalid sweep limb selection for view 5: storage=" << selection5.m_StorageLimbs
+                      << ", effective=" << selection5.m_EffectiveLimbs << ".\n";
+            return 0;
+        }
+        if (!ResolveSharedOnlySelection(options,
+                                        5,
+                                        selection5.m_StorageLimbs,
+                                        0,
+                                        timeoutInSec,
+                                        interactiveMode,
+                                        sharedOnlySelectionForSweepView5)) {
+            return 0;
+        }
     }
 
     // PerfSub runs the reference-orbit performance suite.
@@ -869,7 +1031,8 @@ RunPerfModes(BasicCorrectnessMode mode,
             internalTestLoopCount,
             useMT,
             selectedView,
-            selectedLimbSelection);
+            selectedLimbSelection,
+            sharedOnlySelectionForSelectedView);
         if (!ContinueAfterFailure(res))
             return 0;
     }
@@ -881,9 +1044,14 @@ RunPerfModes(BasicCorrectnessMode mode,
             res = TestNewtonRaphsonView5<SharkFloatParams, referenceOperator>(
                 Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
         };
-        if (HpShark::SupportsReferenceSharedOnlyMemory(static_cast<uint32_t>(launchParams.NumBlocks))) {
-            DispatchByLimbCount<SharkParamsNRView5Family>(selectedLimbSelection.m_StorageLimbs,
-                                                          runNrView5);
+        const bool useSharedOnly =
+            sharedOnlySelectionForSelectedView == SharedOnlySelection::Shared ||
+            (sharedOnlySelectionForSelectedView == SharedOnlySelection::Auto &&
+             IsSharedOnlyStorageLimbCount(selectedLimbSelection.m_StorageLimbs) &&
+             HpShark::SupportsReferenceSharedOnlyMemory(static_cast<uint32_t>(launchParams.NumBlocks)));
+        if (useSharedOnly) {
+            DispatchByLimbCount<SharkParamsFractalNRFamily>(selectedLimbSelection.m_StorageLimbs,
+                                                            runNrView5);
         } else {
             DispatchByLimbCount<SharkParamsNRFamily>(selectedLimbSelection.m_StorageLimbs, runNrView5);
         }
@@ -908,7 +1076,8 @@ RunPerfModes(BasicCorrectnessMode mode,
     }
 
     if (mode == BasicCorrectnessMode::PerfSweep) {
-        if (!RunPerfFullSweep<referenceOperator>(numIters, internalTestLoopCount, sweepLimbOptions))
+        if (!RunPerfFullSweep<referenceOperator>(
+                numIters, internalTestLoopCount, sweepLimbOptions, sharedOnlySelectionForSweepView5))
             return 0;
     }
 

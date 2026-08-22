@@ -99,6 +99,12 @@ After modifying C++/CUDA files, run the formatting script from the repository ro
 .\format_cpp_sources.ps1
 ```
 
+The repository formatter is a required validation step. If it fails, report the
+exact command and error, correct the working-directory or process-environment
+problem, and rerun the script. Do not silently substitute a manual formatter or
+bypass Git, PowerShell, or other safety checks and then report formatting as
+successful; any such exception requires explicit user direction.
+
 ## Testing
 
 `FractalSharkTest` uses `FractalSharkTest/TestFramework.h`; add cases with `TEST(Name)` and `ASSERT_*`
@@ -188,7 +194,12 @@ New-Item -ItemType Directory -Force $logDirectory | Out-Null
 ```
 
 Use a generous outer timeout, 30 minutes by default for a substantial review,
-and poll rather than abandoning a live run. From a second PowerShell window,
+and poll rather than abandoning a live run. Thirty minutes is a default
+starting budget, not a hard cutoff: if the active Copilot session/event log,
+streamed log, or Copilot/Ollama model activity grows during checks every few
+minutes, continue waiting and report periodic status. Stop only after at least
+three consecutive checks show no event/log growth and no model/process activity,
+or after an explicit cancellation decision. From a second PowerShell window,
 check process liveness, the loaded model, and log growth:
 
 ```powershell
@@ -208,6 +219,12 @@ delayed; wait for completion and reconcile its claims with the independent
 investigation. Only use `.\copilot_stop.ps1` for an intentional cancellation
 or after repeated checks show that the run is genuinely stuck, not merely
 because a short default timeout expired.
+
+If Copilot's noninteractive permission manager repeatedly denies repository or
+process probes, distinguish that from model latency. The reusable `--codex`
+profile now supplies the user-authorized `--allow-all-paths` and
+`--allow-all-tools` flags so a requested review does not need a second Qwen
+invocation; retain the explicit no-edit/no-commit review prompt.
 
 Codex remains responsible for investigation, architecture, edits, decisions, and validation. Treat
 Copilot output as advisory and verify important claims independently. Unless explicitly requested,

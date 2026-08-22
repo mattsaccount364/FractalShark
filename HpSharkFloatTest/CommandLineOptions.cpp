@@ -135,6 +135,29 @@ SetMpirThreadingOption(CommandLineOptionValue<int> &option,
 }
 
 bool
+SetSharedOnlyOption(CommandLineOptionValue<int> &option,
+                    std::string_view optionName,
+                    std::string_view text,
+                    std::string &error)
+{
+    if (text == "on") {
+        return SetNumericOption(option, optionName, "1", error);
+    }
+    if (text == "off") {
+        return SetNumericOption(option, optionName, "0", error);
+    }
+    if (!SetNumericOption(option, optionName, text, error)) {
+        return false;
+    }
+    if (option.m_Kind == CommandLineValueKind::Explicit && option.m_Value != 0 && option.m_Value != 1) {
+        error = "Invalid value for --" + std::string(optionName) + ": " + std::string(text) +
+                " (expected auto, on, off, 0, or 1)";
+        return false;
+    }
+    return true;
+}
+
+bool
 SetOption(const std::string_view name,
           const std::string_view value,
           CommandLineOptions &options,
@@ -169,6 +192,9 @@ SetOption(const std::string_view name,
     }
     if (name == "effective-limbs") {
         return SetLimbOption(options.m_EffectiveLimbs, name, value, error);
+    }
+    if (name == "shared-only") {
+        return SetSharedOnlyOption(options.m_SharedOnly, name, value, error);
     }
 
     error = "Unknown command-line option --" + std::string(name);
@@ -234,6 +260,7 @@ CommandLineUsage()
   --view <1..34|auto>
   --storage-limbs <supported count|auto|production>
   --effective-limbs <integer|auto|production>
+  --shared-only <auto|on|off>       (view 5 low-limb performance tests)
   --help
 
 Both --name=value and --name value forms are accepted. Omitted options retain

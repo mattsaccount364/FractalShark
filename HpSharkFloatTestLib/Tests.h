@@ -40,6 +40,12 @@ struct FullReferencePerfLimbSelection {
     uint32_t m_EffectiveLimbs = 0;
 };
 
+enum class SharedOnlySelection {
+    Auto,
+    Global,
+    Shared,
+};
+
 struct FullReferencePerfPrecision {
     uint64_t m_RequiredPrecisionBits = 0;
     uint64_t m_RequestedPrecisionLimbs = 0;
@@ -67,6 +73,7 @@ bool TestFullReferencePerfView(TestTracker &Tests,
                                int internalTestLoopCount,
                                bool useMT, // no default: MainTestCuda always passes it explicitly
                                size_t view,
-                               const FullReferencePerfLimbSelection &limbSelection);
+                               const FullReferencePerfLimbSelection &limbSelection,
+                               SharedOnlySelection sharedOnlySelection);
 
 #include "TestNewtonRaphson.h"

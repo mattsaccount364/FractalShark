@@ -2,17 +2,41 @@ set(HPSHARK_GENERATED_INST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated_inst)
 
 set(HPSHARK_GENERATED_CU_FILES
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_P.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_PShared.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_NP.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_NR.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_NRShared.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_Dbl.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_DblShared.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_Dbf.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_DbfShared.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_P.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_PShared.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_NP.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_NR.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_NRShared.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_Dbl.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_DblShared.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_Dbf.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_DbfShared.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_P.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_PShared.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_NP.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_NR.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_NRShared.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_Dbl.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_DblShared.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_Dbf.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_DbfShared.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_P.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_PShared.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_NP.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_NR.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_NRShared.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_Dbl.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_DblShared.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_Dbf.cu
+    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_DbfShared.cu
 )
 
 add_library(HpSharkFloatLib STATIC)

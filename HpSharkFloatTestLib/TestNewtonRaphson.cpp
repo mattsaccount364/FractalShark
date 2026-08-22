@@ -146,6 +146,9 @@ RunNewtonRaphsonTest(TestTracker &Tests,
 {
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
 
+    std::cout << "LaunchParams: " << launchParams.ToString()
+              << ", SharedOnly: " << (SharkFloatParams::SharedOnly ? "true" : "false") << std::endl;
+
     // iterCountOverride > 0: perf-only mode (run exactly that many orbit iterations, no convergence).
     // iterCountOverride == 0: convergence mode (use actual period, run Newton iterations to converge).
     const bool perfOnly = (iterCountOverride > 0);

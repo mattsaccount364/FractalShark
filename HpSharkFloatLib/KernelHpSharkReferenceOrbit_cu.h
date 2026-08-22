@@ -2912,13 +2912,13 @@ ResolveAlignedValueExponent(int32_t *commonExponent,
     return false;
 }
 
-__device__ SharkForceInlineReleaseOnly FusedTerm
+static __device__ SharkForceInlineReleaseOnly FusedTerm
 MakeAlignedProductTerm(bool isZero, int32_t exponent)
 {
     return {isZero, isZero ? 0 : exponent};
 }
 
-__device__ SharkForceInlineReleaseOnly void
+static __device__ SharkForceInlineReleaseOnly void
 IncludeTermInCommonExponent(FusedTerm term, bool &any, int32_t &common)
 {
     if (term.IsZero)

@@ -402,7 +402,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
     std::cout << "\nTest " << testNum << ": " << OperatorToString<sharkOperator>() << " " << desc
               << std::endl;
 
-    std::cout << "LaunchParams: " << launchParams.ToString() << std::endl;
+    std::cout << "LaunchParams: " << launchParams.ToString()
+              << ", SharedOnly: " << (SharkFloatParams::SharedOnly ? "true" : "false") << std::endl;
 
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -2877,7 +2878,8 @@ TestFullReferencePerfView(TestTracker &Tests,
                           int internalTestLoopCount,
                           bool useMT,
                           size_t view,
-                          const FullReferencePerfLimbSelection &limbSelection)
+                          const FullReferencePerfLimbSelection &limbSelection,
+                          SharedOnlySelection sharedOnlySelection)
 {
     static_assert(IsReferenceOrbitOperator<sharkOperator>, "Reference-orbit operators only");
 
@@ -3061,8 +3063,15 @@ TestFullReferencePerfView(TestTracker &Tests,
         }
     };
 
-    if (view == 5u && HpShark::SupportsReferenceSharedOnlyMemory(static_cast<uint32_t>(numBlocks))) {
-        DispatchByLimbCount<SharkParamsView5Family>(storagePrecisionLimbs, runForParams);
+    const bool lowLimbSharedOnly =
+        storagePrecisionLimbs == 256u || storagePrecisionLimbs == 512u || storagePrecisionLimbs == 1024u;
+    const bool useSharedOnly =
+        view == 5u && lowLimbSharedOnly &&
+        (sharedOnlySelection == SharedOnlySelection::Shared ||
+         (sharedOnlySelection == SharedOnlySelection::Auto &&
+          HpShark::SupportsReferenceSharedOnlyMemory(static_cast<uint32_t>(numBlocks))));
+    if (useSharedOnly) {
+        DispatchByLimbCount<SharkParamsFractalBaseFamily>(storagePrecisionLimbs, runForParams);
     } else {
         DispatchByLimbCount<SharkParamsBaseFamily>(storagePrecisionLimbs, runForParams);
     }
@@ -3379,4 +3388,5 @@ template bool TestFullReferencePerfView<Operator::ReferenceOrbit2>(
     int internalTestLoopCount,
     bool useMT,
     size_t view,
-    const FullReferencePerfLimbSelection &limbSelection);
+    const FullReferencePerfLimbSelection &limbSelection,
+    SharedOnlySelection sharedOnlySelection);

@@ -2233,22 +2233,12 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
     };
 
     const uint32_t limbCount = RoundToSupportedLimbCount(requestedPrecisionLimbs);
-    const bool useSharedOnly = HpShark::SupportsReferenceSharedOnlyMemory(launchParams.NumBlocks);
     if constexpr (std::is_same_v<T, HDRFloat<double>>) {
-        if (useSharedOnly)
-            DispatchByLimbCount<SharkParamsFractalDblFamily>(limbCount, runReference);
-        else
-            DispatchByLimbCount<SharkParamsDblFamily>(limbCount, runReference);
+        DispatchByLimbCount<SharkParamsDblFamily>(limbCount, runReference);
     } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>) {
-        if (useSharedOnly)
-            DispatchByLimbCount<SharkParamsFractalDbfFamily>(limbCount, runReference);
-        else
-            DispatchByLimbCount<SharkParamsDbfFamily>(limbCount, runReference);
+        DispatchByLimbCount<SharkParamsDbfFamily>(limbCount, runReference);
     } else {
-        if (useSharedOnly)
-            DispatchByLimbCount<SharkParamsFractalBaseFamily>(limbCount, runReference);
-        else
-            DispatchByLimbCount<SharkParamsBaseFamily>(limbCount, runReference);
+        DispatchByLimbCount<SharkParamsBaseFamily>(limbCount, runReference);
     }
 
     results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);

@@ -2161,7 +2161,7 @@ NTTRadix2GridStride(uint64_t *sharedData,
         stageTwiddleTable = rootTables.stage_twiddles_inv;
     }
 
-    constexpr auto TileSizeLog2 = SharkFloatParams::SharedOnly ? 11u : 10u;
+    constexpr auto TileSizeLog2 = 10u;
     constexpr uint32_t warpSize = 32u;
 
     const size_t gridSize = grid.size();
@@ -2441,7 +2441,7 @@ ForwardDIFLargeStages(uint64_t *sharedData,
                       uint32_t highestStageIndex)
 {
     static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
-    constexpr uint32_t TileSizeLog2 = SharkFloatParams::SharedOnly ? 11u : 10u;
+    constexpr uint32_t TileSizeLog2 = 10u;
     constexpr uint32_t WarpSize = 32u;
     const uint32_t transformSize = rootTables.N;
     const uint32_t numStages = rootTables.stages;
@@ -2504,7 +2504,7 @@ InverseDITLargeStages(uint64_t *sharedData,
                       const SharkNTT::RootTables &rootTables)
 {
     static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
-    constexpr uint32_t TileSizeLog2 = SharkFloatParams::SharedOnly ? 11u : 10u;
+    constexpr uint32_t TileSizeLog2 = 10u;
     constexpr uint32_t WarpSize = 32u;
     const uint32_t transformSize = rootTables.N;
     const uint32_t numStages = rootTables.stages;
@@ -3547,7 +3547,7 @@ PackAlignedForwardDIFRadix2(cooperative_groups::grid_group &grid,
                             bool negative3)
 {
     MattsCudaAssert(plan.b == 16);
-    constexpr uint32_t expectedStages = SharkFloatParams::SharedOnly ? 12u : 11u;
+    constexpr uint32_t expectedStages = 11u;
     MattsCudaAssert(plan.stages == expectedStages);
     const uint32_t halfSpan = 1u << (static_cast<uint32_t>(plan.stages) - 1u);
     const uint64_t *stageTwiddles = roots.stage_twiddles_fwd + halfSpan - 1u;
@@ -4347,7 +4347,7 @@ FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
     static_assert(Mode == NTT::Multiway::TwoWay || Mode == NTT::Multiway::FourWay);
     namespace cg = cooperative_groups;
 
-    constexpr uint32_t TileSizeLog2 = SharkFloatParams::SharedOnly ? 11u : 10u;
+    constexpr uint32_t TileSizeLog2 = 10u;
     constexpr uint32_t TileSize = 1u << TileSizeLog2;
     constexpr uint32_t MaxCachedStages = 7u;
     constexpr size_t RequiredSharedBytes =
@@ -8109,7 +8109,7 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
     MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
     MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
     const uint32_t stageCount = static_cast<uint32_t>(plan.stages);
-    constexpr uint32_t tileStageCount = SharkFloatParams::SharedOnly ? 11u : 10u;
+    constexpr uint32_t tileStageCount = 10u;
     const uint32_t largeStageCount = stageCount > tileStageCount ? stageCount - tileStageCount : 0u;
 
     if constexpr (!HpShark::DebugChecksums) {

@@ -96,25 +96,15 @@ MakeParams(const std::string &prefix)
     return params;
 }
 
-static std::vector<std::string>
-MakeSharedParams(const std::string &prefix)
-{
-    return {prefix + "256", prefix + "512", prefix + "1024"};
-}
-
 static std::vector<ParameterGroup>
 GetParameterGroups()
 {
     return {
         {"P", "P", MakeParams("SharkParams")},
-        {"PShared", "P SharedOnly", MakeSharedParams("SharkParamsSharedOnly")},
         {"NP", "NP", MakeParams("SharkParamsNP")},
         {"NR", "NR", MakeParams("SharkParamsNR")},
-        {"NRShared", "NR SharedOnly", MakeSharedParams("SharkParamsNRSharedOnly")},
         {"Dbl", "Dbl", MakeParams("SharkParamsDbl")},
-        {"DblShared", "Dbl SharedOnly", MakeSharedParams("SharkParamsDblSharedOnly")},
         {"Dbf", "Dbf", MakeParams("SharkParamsDbf")},
-        {"DbfShared", "Dbf SharedOnly", MakeSharedParams("SharkParamsDbfSharedOnly")},
     };
 }
 

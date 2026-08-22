@@ -128,69 +128,6 @@ struct SharkParamsNRFamily {
     using P12 = SharkParamsNR12;
 };
 
-// FractalShark's production dispatch uses the shared-only kernel for the three
-// buckets whose low-limb working set fits the 96 KiB block budget.  The higher
-// buckets deliberately retain the existing global-backed aliases.
-struct SharkParamsFractalBaseFamily {
-    using P1 = SharkParamsSharedOnly256;
-    using P2 = SharkParamsSharedOnly512;
-    using P3 = SharkParamsSharedOnly1024;
-    using P4 = SharkParams4;
-    using P5 = SharkParams5;
-    using P6 = SharkParams6;
-    using P7 = SharkParams7;
-    using P8 = SharkParams8;
-    using P9 = SharkParams9;
-    using P10 = SharkParams10;
-    using P11 = SharkParams11;
-    using P12 = SharkParams12;
-};
-
-struct SharkParamsFractalNRFamily {
-    using P1 = SharkParamsNRSharedOnly256;
-    using P2 = SharkParamsNRSharedOnly512;
-    using P3 = SharkParamsNRSharedOnly1024;
-    using P4 = SharkParamsNR4;
-    using P5 = SharkParamsNR5;
-    using P6 = SharkParamsNR6;
-    using P7 = SharkParamsNR7;
-    using P8 = SharkParamsNR8;
-    using P9 = SharkParamsNR9;
-    using P10 = SharkParamsNR10;
-    using P11 = SharkParamsNR11;
-    using P12 = SharkParamsNR12;
-};
-
-struct SharkParamsFractalDblFamily {
-    using P1 = SharkParamsDblSharedOnly256;
-    using P2 = SharkParamsDblSharedOnly512;
-    using P3 = SharkParamsDblSharedOnly1024;
-    using P4 = SharkParamsDbl4;
-    using P5 = SharkParamsDbl5;
-    using P6 = SharkParamsDbl6;
-    using P7 = SharkParamsDbl7;
-    using P8 = SharkParamsDbl8;
-    using P9 = SharkParamsDbl9;
-    using P10 = SharkParamsDbl10;
-    using P11 = SharkParamsDbl11;
-    using P12 = SharkParamsDbl12;
-};
-
-struct SharkParamsFractalDbfFamily {
-    using P1 = SharkParamsDbfSharedOnly256;
-    using P2 = SharkParamsDbfSharedOnly512;
-    using P3 = SharkParamsDbfSharedOnly1024;
-    using P4 = SharkParamsDbf4;
-    using P5 = SharkParamsDbf5;
-    using P6 = SharkParamsDbf6;
-    using P7 = SharkParamsDbf7;
-    using P8 = SharkParamsDbf8;
-    using P9 = SharkParamsDbf9;
-    using P10 = SharkParamsDbf10;
-    using P11 = SharkParamsDbf11;
-    using P12 = SharkParamsDbf12;
-};
-
 // Dispatch a callback f.template operator()<ParamsType>() based on limb count.
 // limbCount must be a power-of-2 in [256, 524288] (use RoundToSupportedLimbCount first).
 template <class Family, class F>

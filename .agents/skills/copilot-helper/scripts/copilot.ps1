@@ -3,10 +3,20 @@
 
 $codexMode = $false
 $forwardedArgs = @()
+$promptFile = $null
 
-foreach ($argument in $args) {
+for ($argumentIndex = 0; $argumentIndex -lt $args.Count; ++$argumentIndex) {
+    $argument = $args[$argumentIndex]
     if ($argument -eq "--codex" -or $argument -eq "-Codex") {
         $codexMode = $true
+        continue
+    }
+
+    if ($argument -eq "--prompt-file") {
+        if ($argumentIndex + 1 -ge $args.Count) {
+            throw "--prompt-file requires a path"
+        }
+        $promptFile = $args[++$argumentIndex]
         continue
     }
 
@@ -59,6 +69,40 @@ if ($codexMode) {
 }
 
 $copilotArguments += $forwardedArgs
+if ($null -ne $promptFile) {
+    $promptText = Get-Content -LiteralPath $promptFile -Raw
+    $promptArgumentIndex = [Array]::IndexOf($copilotArguments, "--prompt")
+    if ($promptArgumentIndex -ge 0) {
+        $copilotArguments[$promptArgumentIndex + 1] = $promptText
+    } else {
+        $copilotArguments += "--prompt"
+        $copilotArguments += $promptText
+    }
+}
 
-& copilot @copilotArguments
-exit $LASTEXITCODE
+$copilotCommand = (Get-Command copilot.exe -CommandType Application -ErrorAction Stop).Source
+$startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = $copilotCommand
+$startInfo.UseShellExecute = $false
+$startInfo.RedirectStandardOutput = $true
+$startInfo.RedirectStandardError = $true
+foreach ($argument in $copilotArguments) {
+    [void]$startInfo.ArgumentList.Add([string]$argument)
+}
+
+$process = [System.Diagnostics.Process]::new()
+$process.StartInfo = $startInfo
+if (-not $process.Start()) {
+    throw "Failed to start $copilotCommand"
+}
+
+# Read both streams asynchronously so a verbose model/tool trace cannot deadlock the
+# review process while preserving the CLI's output for the caller.
+$stdoutTask = $process.StandardOutput.ReadToEndAsync()
+$stderrTask = $process.StandardError.ReadToEndAsync()
+$process.WaitForExit()
+[Console]::Write($stdoutTask.GetAwaiter().GetResult())
+[Console]::Error.Write($stderrTask.GetAwaiter().GetResult())
+$exitCode = $process.ExitCode
+$process.Dispose()
+exit $exitCode

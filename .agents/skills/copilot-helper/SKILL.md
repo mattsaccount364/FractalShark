@@ -21,6 +21,16 @@ Codex profile, and forwards the remaining Copilot arguments unchanged. Use
 `-p` for non-interactive prompts. The canonical implementation is in
 `.agents/skills/copilot-helper/scripts/copilot.ps1`.
 
+On Windows, a prompt containing spaces should be supplied through the wrapper's
+file form so command-line quoting cannot split it:
+
+```powershell
+.\copilot.ps1 --codex --prompt-file <prompt-file>
+```
+
+The wrapper reads that file and passes the prompt as one process argument. Do
+not invoke `copilot.exe` directly for a review.
+
 ## Workflow
 
 1. Investigate the task independently and record the evidence and current

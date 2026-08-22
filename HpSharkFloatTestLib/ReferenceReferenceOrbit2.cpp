@@ -2555,12 +2555,6 @@ ExplicitlyInstantiate(SharkParams8);
 ExplicitlyInstantiate(SharkParams10);
 ExplicitlyInstantiate(SharkParams11);
 ExplicitlyInstantiate(SharkParams12);
-ExplicitlyInstantiate(SharkParamsSharedOnly256);
-ExplicitlyInstantiate(SharkParamsSharedOnly512);
-ExplicitlyInstantiate(SharkParamsSharedOnly1024);
-ExplicitlyInstantiate(SharkParamsNRSharedOnly256);
-ExplicitlyInstantiate(SharkParamsNRSharedOnly512);
-ExplicitlyInstantiate(SharkParamsNRSharedOnly1024);
 
 #define ExplicitlyInstantiateDerivative(SharkFloatParams)                                               \
     template void EvaluateOrbitAndDerivative2<SharkFloatParams>(                                        \
@@ -2580,6 +2574,12 @@ ExplicitlyInstantiate(SharkParamsNRSharedOnly1024);
 #undef ExplicitlyInstantiate
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateDerivative(SharkFloatParams)
 ExplicitInstantiateAll();
-ExplicitlyInstantiateDerivative(SharkParamsNRSharedOnly256);
-ExplicitlyInstantiateDerivative(SharkParamsNRSharedOnly512);
-ExplicitlyInstantiateDerivative(SharkParamsNRSharedOnly1024);
+ExplicitlyInstantiateDerivative(SharkParamsNR2);
+ExplicitlyInstantiateDerivative(SharkParamsNR3);
+ExplicitlyInstantiateDerivative(SharkParamsNR4);
+ExplicitlyInstantiateDerivative(SharkParamsNR5);
+ExplicitlyInstantiateDerivative(SharkParamsNR6);
+ExplicitlyInstantiateDerivative(SharkParamsNR8);
+ExplicitlyInstantiateDerivative(SharkParamsNR10);
+ExplicitlyInstantiateDerivative(SharkParamsNR11);
+ExplicitlyInstantiateDerivative(SharkParamsNR12);

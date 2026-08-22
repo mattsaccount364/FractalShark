@@ -146,8 +146,7 @@ RunNewtonRaphsonTest(TestTracker &Tests,
 {
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
 
-    std::cout << "LaunchParams: " << launchParams.ToString()
-              << ", SharedOnly: " << (SharkFloatParams::SharedOnly ? "true" : "false") << std::endl;
+    std::cout << "LaunchParams: " << launchParams.ToString() << std::endl;
 
     // iterCountOverride > 0: perf-only mode (run exactly that many orbit iterations, no convergence).
     // iterCountOverride == 0: convergence mode (use actual period, run Newton iterations to converge).
@@ -693,12 +692,6 @@ template bool TestNewtonRaphsonView5<SharkParamsNR10, Operator::ReferenceOrbit2>
 template bool TestNewtonRaphsonView5<SharkParamsNR11, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR12, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
-template bool TestNewtonRaphsonView5<SharkParamsNRSharedOnly256, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
-template bool TestNewtonRaphsonView5<SharkParamsNRSharedOnly512, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
-template bool TestNewtonRaphsonView5<SharkParamsNRSharedOnly1024, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
 template bool TestNewtonRaphsonView30<SharkParamsNR7, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);

@@ -49,11 +49,7 @@ EvaluateCriticalOrbitAndDerivs(NRInnerLoopBackend backend,
                     progressCtx,
                     64);
             };
-            if (HpShark::SupportsReferenceSharedOnlyMemory(0))
-                DispatchByLimbCount<SharkParamsFractalNRFamily>(BitsToSupportedLimbCount(coord_prec),
-                                                                runGpu);
-            else
-                DispatchByLimbCount<SharkParamsNRFamily>(BitsToSupportedLimbCount(coord_prec), runGpu);
+            DispatchByLimbCount<SharkParamsNRFamily>(BitsToSupportedLimbCount(coord_prec), runGpu);
         } break;
 
         case NRInnerLoopBackend::CpuMT:

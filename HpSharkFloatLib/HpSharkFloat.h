@@ -92,11 +92,7 @@ is_pow2_u32(uint32_t v)
     return v && ((v & (v - 1u)) == 0u);
 }
 
-template <int32_t pNumDigits,
-          bool Periodicity,
-          bool NewtonRaphson = false,
-          typename SubTypeT = float,
-          bool pSharedOnly = false>
+template <int32_t pNumDigits, bool Periodicity, bool NewtonRaphson = false, typename SubTypeT = float>
 struct GenericSharkFloatParams {
     using Float = HDRFloat<SubTypeT>;
     using SubType = SubTypeT;
@@ -125,9 +121,6 @@ struct GenericSharkFloatParams {
     // to confirm source of performance issues.
     static constexpr auto EnablePeriodicity = Periodicity;
     static constexpr auto EnableNewtonRaphson = NewtonRaphson;
-    static constexpr bool SharedOnly = pSharedOnly;
-    static_assert(!SharedOnly || pNumDigits == 256 || pNumDigits == 512 || pNumDigits == 1024,
-                  "SharedOnly is supported only for the 256/512/1024-limb buckets");
     static constexpr bool DisableAllAdditions = false;
     static constexpr bool DisableSubtraction = false;
     static constexpr bool DisableCarryPropagation = false;
@@ -235,28 +228,6 @@ using SharkParamsDbf9 = HpShark::GenericSharkFloatParams<65536, true, false, Cud
 using SharkParamsDbf10 = HpShark::GenericSharkFloatParams<131072, true, false, CudaDblflt<dblflt>>;
 using SharkParamsDbf11 = HpShark::GenericSharkFloatParams<262144, true, false, CudaDblflt<dblflt>>;
 using SharkParamsDbf12 = HpShark::GenericSharkFloatParams<524288, true, false, CudaDblflt<dblflt>>;
-
-// Shared-memory reference-orbit variants for the low production buckets.  The
-// corresponding SharkParams* aliases above intentionally remain global-backed
-// so test and diagnostic callers can select either storage mode explicitly.
-using SharkParamsSharedOnly256 = HpShark::GenericSharkFloatParams<256, true, false, float, true>;
-using SharkParamsSharedOnly512 = HpShark::GenericSharkFloatParams<512, true, false, float, true>;
-using SharkParamsSharedOnly1024 = HpShark::GenericSharkFloatParams<1024, true, false, float, true>;
-
-using SharkParamsNRSharedOnly256 = HpShark::GenericSharkFloatParams<256, false, true, float, true>;
-using SharkParamsNRSharedOnly512 = HpShark::GenericSharkFloatParams<512, false, true, float, true>;
-using SharkParamsNRSharedOnly1024 = HpShark::GenericSharkFloatParams<1024, false, true, float, true>;
-
-using SharkParamsDblSharedOnly256 = HpShark::GenericSharkFloatParams<256, true, false, double, true>;
-using SharkParamsDblSharedOnly512 = HpShark::GenericSharkFloatParams<512, true, false, double, true>;
-using SharkParamsDblSharedOnly1024 = HpShark::GenericSharkFloatParams<1024, true, false, double, true>;
-
-using SharkParamsDbfSharedOnly256 =
-    HpShark::GenericSharkFloatParams<256, true, false, CudaDblflt<dblflt>, true>;
-using SharkParamsDbfSharedOnly512 =
-    HpShark::GenericSharkFloatParams<512, true, false, CudaDblflt<dblflt>, true>;
-using SharkParamsDbfSharedOnly1024 =
-    HpShark::GenericSharkFloatParams<1024, true, false, CudaDblflt<dblflt>, true>;
 
 enum class InjectNoiseInLowOrder { Disable, Enable };
 

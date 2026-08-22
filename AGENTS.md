@@ -172,8 +172,13 @@ task's difficulty, subject matter, or potential benefit from another opinion. Wh
 requested, use the reusable workflow in `.agents/skills/copilot-helper/SKILL.md` and invoke it through:
 
 ```powershell
-.\copilot.ps1 --codex -p "<prompt>"
+.\copilot.ps1 --codex --prompt-file <prompt-file>
 ```
+
+On Windows, use `--prompt-file` for any review prompt containing spaces. The
+wrapper passes the file contents as one process argument; do not invoke
+`copilot.exe` directly or rely on nested shell quoting. Use one review launch
+per request.
 
 Before invoking any Qwen-backed review, verify that no other Qwen/Ollama job is
 currently running, including one started outside this repository. This machine
@@ -190,7 +195,7 @@ request streamed output and diagnostic logs:
 $logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
 New-Item -ItemType Directory -Force $logDirectory | Out-Null
 .\copilot.ps1 --codex --stream on --log-level info --log-dir $logDirectory `
-    -p "<prompt>"
+    --prompt-file <prompt-file>
 ```
 
 Use a generous outer timeout, 30 minutes by default for a substantial review,

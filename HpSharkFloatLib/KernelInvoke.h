@@ -15,8 +15,6 @@ class DebugGpuCombo;
 
 namespace HpShark {
 
-bool SupportsReferenceSharedOnlyMemory(uint32_t requestedBlocks);
-
 template <class SharkFloatParams> class ReferencePreparedTables;
 
 template <class SharkFloatParams>

@@ -821,8 +821,8 @@ selection mechanism.
 \section{Per-Iteration Periodicity Checking under High-Precision Arithmetic on the GPU}
 \label{sec:hp-periodicity}
 
-The \FractalShark{} GPU reference-orbit implementations
-(\cref{subsec:ref-orbit-gpu}) evaluate the Mandelbrot recurrence
+The \FractalShark{} fused v2 GPU reference-orbit implementation
+(\cref{subsec:ref-orbit-gpu}) evaluates the Mandelbrot recurrence
 \(
 z_{n+1} = z_n^2 + c
 \)
@@ -842,7 +842,7 @@ CUDA application path.
 \paragraph{State extraction and logging.}
 
 At iteration \(n\), the high-precision state \((x_n, y_n)\) is available in the
-multiplication output registers/structures. The periodicity checker converts
+persistent kernel's reference state. The periodicity checker converts
 these values into a reduced high-dynamic-range scalar format,
 \(\mathrm{HDR}(\cdot)\), via a lossy but monotone extraction
 (\code{ToHDRFloat}) and stores the resulting pair in a per-iteration trace
@@ -945,8 +945,8 @@ high-precision control-flow costs on the device.
 
 \paragraph{Control-flow placement and synchronization.}
 Periodicity checking is invoked once per iteration at the top of the reference
-step, before the implementation-specific high-precision stages compute
-\(z_{n+1}\). In both kernels, a single distinguished thread
+step, before the fused high-precision stages compute
+\(z_{n+1}\). In the production kernel, a single distinguished thread
 (\code{block 0, thread 0}) executes the checker and updates the shared
 termination flag stored in the global \code{reference} structure. The kernel
 then executes a cooperative-grid barrier:
@@ -958,7 +958,7 @@ ensuring that (i) all blocks observe a consistent \code{PeriodicityStatus} and
 (ii) any updates to \code{dzdcX}, \code{dzdcY}, and the trace buffer are
 visible before subsequent work proceeds. If termination is requested, the
 iteration loop exits immediately; otherwise, the kernel proceeds into the
-multiply-add pipeline that produces the next high-precision state.
+fused NTT recurrence that produces the next high-precision state.
 
 This organization isolates termination logic from the fused recurrence pipeline
 while maintaining grid-wide early-exit behavior.  The checker publishes its

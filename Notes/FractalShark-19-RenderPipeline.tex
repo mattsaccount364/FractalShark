@@ -860,44 +860,35 @@ regression test.
 
 \code{HpSharkFloatTest} is a standalone CUDA executable (in
 \code{HpSharkFloatTest/}) that validates the GPU high-precision
-arithmetic kernels described in \cref{subsec:ref-orbit-gpu}.  It tests
-three core operations: high-precision addition
-(\cref{sec:hp-add}), NTT-based multiplication
-(\cref{sec:ntt-multiply}), and reference-orbit iteration.
+reference-orbit implementation described in \cref{subsec:ref-orbit-gpu}.
+Its sole operator is \code{ReferenceOrbit2}, which exercises the complete
+fused v2 recurrence.
 
-Each operation is validated through a three-level cross-comparison
-strategy:
+Each vector is validated through complementary comparisons:
 
 \begin{enumerate}
-  \item \textbf{GPU vs.\ MPIR.}  The GPU kernel result is converted to
-        an MPIR \code{mpf\_t} and compared against the same computation
-        performed entirely in MPIR arbitrary-precision arithmetic.  MPIR
-        serves as the ground-truth reference.
-  \item \textbf{GPU vs.\ CPU reference.}  A CPU-side reference
-        implementation uses the same \code{HpSharkFloat} limb format as
-        the GPU, providing a second independent check that isolates
-        GPU-specific bugs from data-format issues.
-  \item \textbf{CPU reference vs.\ MPIR.}  The CPU reference is itself
-        compared against MPIR, validating that the reference
-        implementation is trustworthy.
+  \item \textbf{GPU vs.\ MPIR.}  The fused GPU result is converted to
+        MPIR values and compared with the same recurrence evaluated in
+        arbitrary-precision arithmetic.  MPIR is the ground truth.
+  \item \textbf{CPU oracle vs.\ MPIR.}  The CPU
+        \code{ReferenceReferenceOrbit2} implementation uses the
+        \code{HpSharkFloat} representation and is independently checked
+        against MPIR.
+  \item \textbf{Pipeline checksums.}  Deterministic host and device
+        checksums compare corresponding fused-stage boundaries and identify
+        the first stage at which their intermediate representations diverge.
 \end{enumerate}
 
 \noindent
 When a test fails, the checksum-guided debugging infrastructure
-(\cref{sec:checksums}) narrows the fault to a specific pipeline stage.
-Because each stage records a deterministic checksum on both host and
-device, the first mismatching stage identifies where the GPU diverged
-from the reference---reducing a diffuse ``wrong answer'' to a targeted
-investigation.
-
-Multiply tests additionally validate Newton--Raphson derivative products
-(W0--W3) when the \code{EnableNewtonRaphson} parameter is active.  Test
-inputs include over~25 hardcoded vectors chosen to exercise sign
-combinations and boundary conditions, supplemented by randomly generated
-operands.  Performance benchmarks exercise the full reference-orbit
-pipeline at three zoom depths: View~5 (${\sim}16{,}000$ iterations),
-View~30 (${\sim}670{,}000$ iterations), and View~32
-(${\sim}30{,}000{,}000$ iterations).
+(\cref{sec:checksums}) reduces the mismatch to a targeted fused pipeline
+stage.  Hardcoded and generated vectors cover signs, zero values,
+carry/borrow behavior, alignment shifts, and fused-stage bounds.  The
+Newton--Raphson cases use the same Ref2 engine to exercise first-derivative
+and checkpoint-resume paths.  Performance benchmarks exercise the full
+reference-orbit pipeline at three zoom depths: View~5
+(${\sim}16{,}000$ iterations), View~30 (${\sim}670{,}000$ iterations), and
+View~32 (${\sim}30{,}000{,}000$ iterations).
 
 \subsection{FractalSharkTest (utility types)}
 \label{subsec:fractalsharktest}

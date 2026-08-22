@@ -2,7 +2,7 @@
 
 ## What is FractalShark?
 
-FractalShark is a high-performance Mandelbrot set renderer focused on extreme zoom depths and experimental GPU-accelerated numerical methods on NVIDIA hardware.
+FractalShark is a high-performance Mandelbrot set renderer focused on extreme zoom depths and GPU-accelerated numerical methods on NVIDIA hardware.
 
 ## Why FractalShark?
 
@@ -18,13 +18,13 @@ FractalShark includes several innovations relative to most other Mandelbrot rend
 
 ### 1. GPU-accelerated reference orbit computation
 
-As of December 2025 (version 0.5), FractalShark includes a **GPU-accelerated reference orbit implementation**. To my knowledge, this implementation is unique in the context of trying to accelerate Mandelbrot rendering.  FractalShark implements a full high-precision floating point pipeline on the GPU, including high-precision multiply, add, and subtract operations. The multiply implementation uses the Number Theoretic Transform for efficient at operation at very high preicsion.  These operations exploit GPU parallelism to accelerate arithmetic that is traditionally CPU-bound.
+FractalShark includes a working **GPU-accelerated reference orbit implementation**. To my knowledge, this implementation is unique in the context of accelerating Mandelbrot rendering. The active Ref2/v2 implementation evaluates the complete high-precision recurrence in one persistent fused CUDA kernel. It uses Number Theoretic Transforms, fused pointwise recurrence algebra, signed carry propagation, and normalization to accelerate work that is traditionally CPU-bound.
 
 At a precision of 16384 32-bit limbs (≈ 158,000 decimal digits), this GPU reference orbit implementation outperforms the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.  The only built-in View that shows a clear benefit to the GPU-accelerated approach is View #30, which uses 16384 32-bit limbs internally.  My new RTX 5090 is slightly slower than the 4090, at ~9x faster than the existing FractalShark multithreaded CPU-based reference orbit calculator.  
 
 The implementation works and remains under active development, as does the rest of the project.  To try it, you'll need an RTX 2xxx series or newer, e.g. RTX 3xxx/4xxx/5xxx should all work with recent drivers.  Then, start FractalShark, manually choose the HDRx32 LAv2 kernel, and under Perturbation choose GPU-Accelerated Reference Orbit.  Then try e.g. View #5 to see it render.  (See FractalShark.pdf §6–7 for details on reference orbit computation and GPU arithmetic.)
 
-The forthcoming v2 reference orbit implementation fuses the add/multiply steps to reduce synchronization requirements, and outperforms the existing v1 multiply/add approach substantially.
+Ref2/v2 supersedes the older v1 multiply/add implementation and substantially outperforms it.
 
 ### 2. Multiple CUDA Mandelbrot rendering strategies
 
@@ -68,7 +68,7 @@ For high-period locations (e.g. period 600,000,000), this can reduce memory usag
 
 FractalShark includes a **Feature Finder** that locates periodic points (minibrots, fixed points, etc.) in the Mandelbrot set. Right-click on a point of interest and the Feature Finder will attempt to identify its period and refine its coordinates using Newton-Raphson iteration at high precision. It supports multiple evaluation modes — Direct, Perturbation Theory, and Linear Approximation — each with an optional grid-scanning variant that searches a neighborhood around the clicked point for the best candidate. The design is loosely inspired by similar functionality in Imagina.
 
-The Newton-Raphson inner loop can run entirely on the GPU, reusing the same NTT-based high-precision multiply and add pipeline as the reference orbit computation with zero additional synchronization overhead. To my knowledge, no other Mandelbrot renderer performs Newton-Raphson periodic-point refinement using GPU-accelerated high-precision arithmetic.  (See FractalShark.pdf §8 for Feature Finder algorithms.)
+The Newton-Raphson inner loop can run entirely on the GPU inside the same fused NTT recurrence and shared synchronization schedule as reference-orbit computation. To my knowledge, no other Mandelbrot renderer performs Newton-Raphson periodic-point refinement using GPU-accelerated high-precision arithmetic.  (See FractalShark.pdf §8 for Feature Finder algorithms.)
 
 The Feature Finder has also located an ultra-deep minibrot in View #34 at the documented depth of `1e650452`, currently the deepest known to me. It was found using GPU-accelerated Newton-Raphson together with the CUDA-accelerated reference orbit implementation. This is an example of what is possible when high-precision reference-orbit computation is accelerated on the GPU. If you know of a deeper minibrot, please send me the coordinates.
 

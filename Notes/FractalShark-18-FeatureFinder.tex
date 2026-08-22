@@ -336,15 +336,15 @@ evaluated \emph{before} the orbit and $\mathit{dzdc}$ values are
 overwritten (or all old values must be saved).
 
 \paragraph{Operation count.}
-Not all operations are equally expensive.  The orbit and first-derivative
+Not all operations are equally expensive.  The CPU orbit and first-derivative
 recurrences use high-precision \code{mpf\_t} arithmetic, where each
-$N$-limb multiply costs $O(N \log N)$ (NTT-based) and each add/subtract
-costs $O(N)$.  The second derivative uses low-precision
+$N$-limb multiply costs $O(N \log N)$ and each add/subtract costs $O(N)$.
+The second derivative uses low-precision
 \code{HDRFloat} arithmetic (${\sim}53$-bit on the CPU path,
 ${\sim}24$-bit on the GPU path)---a handful of scalar floating-point
 operations per iteration, negligible by comparison.
 
-Counting real-valued scalar operations from
+Counting real-valued scalar operations in the expanded CPU schedule from
 \cref{eq:ff-orbit-ri,eq:ff-dzdc-ri,eq:ff-d2-ri}, each iteration requires:
 
 \begin{center}
@@ -368,42 +368,26 @@ $d2$ ($2(\mathit{dzdc}^2 {+} z {\cdot} d2)$) & low-prec HDR &
 \end{center}
 
 \noindent
-``Muls'' are full $N \times N$ multiplications (\code{mpf\_mul}, $O(N \log
-N)$ each)---the dominant cost.  ``$\times 2$'' denotes scaling by~two
-(\code{mpf\_mul\_ui} on CPU, an exponent adjustment during GPU unpack), which is
-$O(N)$ like an addition.  ``Add/subs'' includes all additions,
-subtractions, and constant additions ($+1$, $+c_x$, $+c_y$), each $O(N)$.
-The ``HP total'' row counts only the high-precision (coord and deriv)
-operations; the $d2$ row contributes only cheap low-precision work.
+``Muls'' in the table are full CPU $N \times N$ multiplications
+(\code{mpf\_mul}, $O(N \log N)$ each)---the dominant cost.
+``$\times 2$'' denotes an $O(N)$ scaling by~two, and ``Add/subs'' includes
+constant additions.  The ``HP total'' row counts only the high-precision
+coordinate and first-derivative work; the $d2$ row contributes only cheap
+low-precision operations.
 
-\noindent
-In the expanded equations each $\mathit{dzdc}$ and $d2$ term carries an
-explicit factor of~2 (e.g.\ $2\,x \cdot dx$).  In the implementation
-the~$\times 2$ is \emph{not} applied per-term: on the CPU the factor is
-pre-applied to the operands ($2x$, $2y$ via \code{mpf\_mul\_ui}), and all
-four derivative products share these two scaled operands.  On the GPU the
-factor is folded into the fused signed-unpack and carry stage.  Either way the total is
-4~full multiplies plus 2~$\times 2$ operations for $\mathit{dzdc}$.
+The multithreaded CPU evaluator dispatches the seven expanded products to
+seven spin-based worker threads (\cref{subsec:ff-threading}).  The fused v2 GPU
+engine uses different algebra.  It forms the orbit with
+$(x+y)(x-y)$ and $2xy$, then evaluates the complex first-derivative product
+with the three-product Gauss form.  It therefore performs five pointwise
+Montgomery products after transforming the shared input streams, rather than
+launching seven standalone high-precision multiplications.  Factors of two,
+$c_x$, $c_y$, and the derivative's $+1$ enter as aligned linear terms in the
+fused output construction (\cref{subsec:ff-inner-gpu}).
 
-\noindent
-Concretely, the orbit contributes 3~multiplies at coordinate precision
-($x^2$, $y^2$, $x \cdot y$) plus 3~add/subs ($x^2 - y^2$, $+c_x$,
-$+c_y$) and one~$\times 2$ ($2 \cdot xy$).  The derivative contributes
-4~multiplies at derivative precision ($x \cdot dx$, $y \cdot dy$,
-$x \cdot dy$, $y \cdot dx$) plus 3~add/subs (one subtraction, one
-addition, $+1$) and two~$\times 2$ (scaling $x$ and $y$ by~2 before
-multiplying, or equivalently scaling the products after).
-
-\noindent
-The 7~high-precision multiplies are \emph{independent} of one another
-within a single iteration and can all execute in parallel.  This independence is
-exactly why the multithreaded CPU evaluator dispatches them to
-7~spin-based worker threads (\cref{subsec:ff-threading}), and why the
-GPU backend can batch them in one fused NTT schedule
-(\cref{subsec:ff-inner-gpu}).  The $d2$ computation runs on the main
-thread (or a single GPU thread) concurrently with the high-precision
-work, using truncated ${\sim}53$-bit copies of~$z$ and $\mathit{dzdc}$,
-and completes long before the \code{mpf\_mul} workers finish.
+The $d2$ computation runs on the CPU main thread or one GPU thread using
+truncated copies of~$z$ and $\mathit{dzdc}$.  Its low-precision work completes
+alongside the expensive high-precision recurrence.
 
 \paragraph{The \code{zcoeff} product.}
 In addition to $\partial z_p/\partial c$, the code tracks a multiplicative
@@ -422,116 +406,80 @@ recurrence for the leading factor of the derivative.
 \subsubsection{GPU acceleration of the inner loop}
 \label{subsec:ff-inner-gpu}
 
-The inner loop's 7~high-precision multiplies per iteration are the
-dominant cost of the entire Newton--Raphson procedure.  At deep zooms,
-where the coordinate precision reaches thousands of 32-bit limbs, each
-multiply is an $O(N \log N)$ NTT-based operation.  (The 6~additional
-multiplies for the second derivative are low-precision \code{HDRFloat}
-operations---${\sim}24$-bit on the GPU, ${\sim}53$-bit on the
-CPU---and contribute negligible cost.)
-
-A naive GPU approach would evaluate the orbit and NR derivative products in
-separate cooperative launches.  \FractalShark{} instead interleaves them in
-the fused persistent reference kernel.  The operands share transform stages,
-pointwise work, signed unpack, carry resolution, and their grid-wide barriers.
+The fused v2 GPU backend evaluates the complete recurrence in one persistent
+cooperative kernel.  At deep zooms, the forward and inverse NTT stages dominate
+the Newton--Raphson inner loop, so the implementation transforms the orbit and
+first-derivative streams together instead of launching separate arithmetic
+operators.
 
 \paragraph{Per-iteration structure.}
-Each iteration of \code{ReferenceHelper}
-(in \code{Kernel\-Hp\-Shark\-Reference\-Orbit\_cu.h})
-proceeds in three phases:
+Each iteration of \code{HpSharkReferenceGpuLoop}
+(in \code{Kernel\-Hp\-Shark\-Reference\-Orbit\_cu.h}) proceeds through the
+following phases:
 
 \begin{enumerate}
 \item \textbf{$d2$ accumulation (HDRFloat).}
-  A single GPU thread (block~0, thread~0) computes the second derivative
-  update (\cref{eq:ff-d2-ri}) in ${\sim}24$-bit \code{HDRFloat<float>}
-  arithmetic (since \code{SharkParamsNR} uses \code{SubType=float}),
-  using truncated copies of the current $z$ and
-  $\mathit{dzdc}$.  This runs \emph{before} the multiply kernel and
-  requires no synchronization: the $d2$ values are private to one thread
-  and the fused high-precision work does not depend on them.
+  A single GPU thread computes the second-derivative update
+  (\cref{eq:ff-d2-ri}) in ${\sim}24$-bit \code{HDRFloat<float>}
+  arithmetic from truncated copies of the current $z$ and
+  $\mathit{dzdc}$.  This update precedes the fused high-precision phases and
+  does not add a cooperative-grid dependency.
 
-\item \textbf{Fused NTT product schedule.}
-  Computes all 7~products in the persistent cooperative kernel:
+\item \textbf{Aligned packing and forward transforms.}
+  Orbit-only execution uses \code{TwoWay} mode for $x$ and $y$.
+  Newton--Raphson execution uses \code{FourWay} mode for $x$, $y$, $dx$,
+  and $dy$.  All active streams follow the same transform plan and barrier
+  boundaries.
+
+\item \textbf{Fused pointwise recurrence.}
+  \code{FusedAlignedPointwiseTransform} forms five nonlinear products when
+  Newton--Raphson is enabled:
   \begin{center}
   \small
   \begin{tabular}{lll}
   \hline
-  \textbf{Product} & \textbf{Operands} & \textbf{Purpose} \\
+  \textbf{Term} & \textbf{Operands} & \textbf{Purpose} \\
   \hline
-  XX & $x \times x$ & orbit: $x^2$ \\
-  YY & $y \times y$ & orbit: $y^2$ \\
-  XY & $x \times y$ & orbit: $x \cdot y$ \\
-  W0 & $dx \times x$ & $\mathit{dzdc}$: $dx \cdot x$ \\
-  W1 & $dy \times y$ & $\mathit{dzdc}$: $dy \cdot y$ \\
-  W2 & $dx \times y$ & $\mathit{dzdc}$: $dx \cdot y$ \\
-  W3 & $dy \times x$ & $\mathit{dzdc}$: $dy \cdot x$ \\
+  $R$ & $(x+y)(x-y)$ & orbit real component \\
+  $I$ & $xy$ & orbit imaginary component \\
+  $P_1$ & $x\,dx$ & derivative real contribution \\
+  $P_2$ & $y\,dy$ & derivative real contribution \\
+  $P_3$ & $(x+y)(dx+dy)$ & derivative imaginary contribution \\
   \hline
   \end{tabular}
   \end{center}
+  Orbit-only execution evaluates only $R$ and $I$.  The pointwise stage forms
+  $2(P_1-P_2)$ and $2(P_3-P_1-P_2)$ directly in the transformed domain.
 
-\item \textbf{Signed unpack and carry resolution.}
-  Combines the 7~products into 4~results (2~orbit $+$ 2~derivative):
-  \begin{center}
-  \small
-  \begin{tabular}{ll}
-  \hline
-  \textbf{Output} & \textbf{Computation} \\
-  \hline
-  $x_{n+1}$ & $\text{XX} - \text{YY} + c_x$ \\
-  $y_{n+1}$ & $2 \cdot \text{XY} + c_y$ \\
-  $dx_{n+1}$ & $2 \cdot \text{W0} - 2 \cdot \text{W1} + 1$ \\
-  $dy_{n+1}$ & $2 \cdot \text{W2} + 2 \cdot \text{W3}$ \\
-  \hline
-  \end{tabular}
-  \end{center}
+\item \textbf{Inverse transforms, signed carry, and normalization.}
+  The inverse pass retains the same \code{TwoWay} or \code{FourWay} mode.
+  \code{PrefixAlignedB16CarryTransformsTwoWay} and
+  \code{PrefixAlignedB16CarryTransformsFourWay} incorporate $c_x$, $c_y$,
+  and the derivative's $+1$ at their aligned bit offsets, propagate signed
+  carries, normalize the results, and publish the next state.
 \end{enumerate}
 
-\paragraph{Barrier reuse in the fused NTT schedule.}
-The NTT product schedule
-(\cref{sec:ntt-multiply}) requires grid-wide barriers between each
-major phase: packing/twisting, forward NTT, pointwise multiply, inverse
-NTT, unpacking, and normalization.  When NR is enabled, the forward and
-inverse NTT passes use \code{FourWay} mode---processing
-$x$, $y$, $dx$, $dy$ through the \emph{same} butterfly stages
-with the \emph{same} internal barriers.  The pointwise multiply
-phase computes all 7~products in a \emph{single} grid-strided loop with
-one trailing barrier.  Unpacking and normalization are handled by
-\code{NWay<7>} variants that process all 7~results in one pass.
-
-The result: \textbf{the multiply kernel executes the same number of
-\code{grid.sync()} barriers whether NR is enabled or not.}  The NR
-products add only a small amount of pointwise Montgomery arithmetic
-per frequency index---negligible compared to the barrier and memory
-costs.
-
-\paragraph{Barrier reuse in signed unpack and carry resolution.}
-The output phase computes the orbit results ($x^2 - y^2 + c_x$ and
-$2xy + c_y$) through signed coefficient accumulation, carry propagation,
-and normalization.  When NR is enabled, the W0--W3 contributions are
-processed beside the orbit contributions between the same synchronization
-points.
-
-Again, \textbf{no additional barriers are introduced.}  The NR arrays
-are separate buffers processed in parallel with the orbit arrays
-between the same synchronization points.
+\paragraph{Shared synchronization schedule.}
+Packing, forward transforms, fused pointwise evaluation, inverse transforms,
+and carry resolution are stages of one cooperative kernel.  Enabling
+Newton--Raphson widens the multiway mode from two streams to four; it does not
+introduce a separate derivative kernel or an additional synchronization phase.
+The derivative arithmetic is therefore performed between the same grid-wide
+dependency boundaries as the orbit recurrence.
 
 \paragraph{Exact power-of-two scaling.}
 The factor of~2 in the expanded equations
-(\cref{eq:ff-orbit-ri,eq:ff-dzdc-ri})---$2xy$,
-$2\,x \cdot dx$, etc.---is \emph{not} applied as a separate
-multiply-by-two pass.  The fused recurrence records the required bit shifts
-when it aligns each contribution for signed unpack.  The orbit products XX
-and YY are not scaled; XY and all four W products receive the exact
-$\times 2$ shift.  This layout matches the distributed form of the equations.
+(\cref{eq:ff-orbit-ri,eq:ff-dzdc-ri}) is not applied by a separate pass.
+The fused recurrence doubles the relevant pointwise residues and records the
+corresponding aligned linear terms before signed carry resolution.  This
+preserves exact power-of-two scaling without materializing intermediate
+high-precision values.
 
 \paragraph{Summary: shared NR schedule.}
-The orbit-only reference orbit kernel computes 3~multiplies and
-2~output results per iteration.  Enabling NR adds 4~more multiplies and
-2~more output results, but these are folded into the existing fused schedule
-without any new kernel launches or synchronization barriers.  The GPU
-thread utilization improves (more arithmetic per barrier), and the
-total barrier count per iteration---the dominant performance
-factor---is \emph{unchanged}.
+The orbit-only path evaluates two nonlinear pointwise products and two output
+streams.  Newton--Raphson adds three Gauss-form derivative products and two
+output streams inside the same fused schedule.  Ref2/v2 is the only GPU
+reference-orbit implementation; no standalone multiply/add pipeline remains.
 
 \medskip
 \noindent
@@ -542,80 +490,45 @@ $z_p$, $\mathit{dzdc}_p$, and $d2_p$ after each $p$-iteration batch,
 computes the Newton/Halley step, updates~$c$, and relaunches the inner
 loop.  For large $p$ and $N$ the total arithmetic volume scales as
 $O(p \cdot N \log N)$ per Newton step, making the GPU's throughput
-advantage decisive.  The dispatch function
-\code{DispatchNRByPrecision} rounds the coordinate precision to
-the nearest supported \code{SharkParamsNR} limb count (256 through
-524\,288) and invokes the corresponding GPU kernel.
+advantage decisive.  \code{OrbitEndpointEvaluator} maps the coordinate
+precision to a supported limb count with \code{BitsToSupportedLimbCount},
+selects the corresponding \code{SharkParamsNRFamily} specialization through
+\code{DispatchByLimbCount}, and calls
+\code{EvaluateCriticalOrbitAndDerivs\_GPU} to run the fused kernel.
 
 \begin{figure}[!htbp]
 \centering
 \begin{tikzpicture}[
     >=Stealth,
-    phase/.style={draw, rounded corners, minimum width=2.2cm, minimum height=0.6cm,
-                  align=center, font=\scriptsize},
-    orbit/.style={phase, fill=blue!12},
-    nr/.style={phase, fill=orange!15},
+    phase/.style={draw, rounded corners, minimum width=2.25cm, minimum height=1.2cm,
+                  align=center, font=\scriptsize, fill=blue!10},
     barrier/.style={draw, red!70!black, line width=1.5pt, dashed},
     barrlbl/.style={font=\tiny\bfseries, red!70!black},
-    prod/.style={font=\tiny, align=center},
 ]
-  % Phase labels across top
-  \node[font=\small\bfseries] at (0, 2.7) {Pack/Twist};
-  \node[font=\small\bfseries] at (2.8, 2.7) {Forward NTT};
-  \node[font=\small\bfseries] at (5.6, 2.7) {Pointwise mul};
-  \node[font=\small\bfseries] at (8.4, 2.7) {Inverse NTT};
-  \node[font=\small\bfseries] at (11.2, 2.7) {Normalize};
+  \node[phase] (pack) at (0, 0)
+    {\textbf{Aligned pack}\\orbit: $x,y$\\NR: $x,y,dx,dy$};
+  \node[phase] (forward) at (2.8, 0)
+    {\textbf{Forward NTT}\\orbit: TwoWay\\NR: FourWay};
+  \node[phase] (pointwise) at (5.6, 0)
+    {\textbf{Fused pointwise}\\orbit: $R,I$\\NR: $R,I,P_1,P_2,P_3$};
+  \node[phase] (inverse) at (8.4, 0)
+    {\textbf{Inverse NTT}\\orbit: TwoWay\\NR: FourWay};
+  \node[phase] (carry) at (11.2, 0)
+    {\textbf{Signed carry}\\and normalize\\$z_{n+1},\mathit{dzdc}_{n+1}$};
 
-  % Orbit row
-  \node[orbit] (p1o) at (0, 1.5) {$x, y$};
-  \node[orbit] (p2o) at (2.8, 1.5) {FourWay};
-  \node[orbit] (p3o) at (5.6, 1.5) {XX, YY, XY};
-  \node[orbit] (p4o) at (8.4, 1.5) {ThreeWay};
-  \node[orbit] (p5o) at (11.2, 1.5) {7-way};
+  \foreach \i/\j in {pack/forward, forward/pointwise, pointwise/inverse, inverse/carry}
+    \draw[->] (\i) -- (\j);
 
-  % NR row
-  \node[nr] (p1n) at (0, 0.5) {$dx, dy$};
-  \node[nr] (p2n) at (2.8, 0.5) {(shared)};
-  \node[nr] (p3n) at (5.6, 0.5) {W0--W3};
-  \node[nr] (p4n) at (8.4, 0.5) {FourWay};
-  \node[nr] (p5n) at (11.2, 0.5) {(shared)};
-
-  % Arrows
-  \foreach \i/\j in {p1o/p2o, p2o/p3o, p3o/p4o, p4o/p5o} \draw[->] (\i) -- (\j);
-  \foreach \i/\j in {p1n/p2n, p2n/p3n, p3n/p4n, p4n/p5n} \draw[->] (\i) -- (\j);
-
-  % Barriers
   \foreach \x in {1.4, 4.2, 7.0, 9.8} {
-    \draw[barrier] (\x, 0.0) -- (\x, 2.2);
-    \node[barrlbl] at (\x, -0.2) {sync};
+    \draw[barrier] (\x, -0.85) -- (\x, 0.85);
+    \node[barrlbl] at (\x, -1.05) {sync};
   }
-
-  % Row labels
-  \node[font=\scriptsize, blue!70!black, rotate=90] at (-1.3, 1.5) {Orbit};
-  \node[font=\scriptsize, orange!70!black, rotate=90] at (-1.3, 0.5) {NR deriv};
-
-  % Fused output phase below
-  \draw[->] (p5o.south) -- ++(0, -0.5) coordinate (addstart);
-  \draw[->] (p5n.south) -- ++(0, -0.5);
-
-  \node[orbit, minimum width=4cm] (addo) at (9.0, -1.0)
-    {$x^2{-}y^2{+}c_x$,\; $2xy{+}c_y$};
-  \node[nr, minimum width=4cm] (addn) at (9.0, -1.8)
-    {W0${-}$W1${+}$1,\; W2${+}$W3};
-
-  \node[font=\small\bfseries] at (5.5, -1.4) {Signed unpack/carry};
-  \draw[barrier] (7.0, -2.3) -- (7.0, -0.5);
-  \node[barrlbl] at (7.0, -2.5) {sync (shared)};
-
-  \draw[->] (addo) -- ++(2, 0) node[right, font=\scriptsize] {$x_{n+1}, y_{n+1}$};
-  \draw[->] (addn) -- ++(2, 0) node[right, font=\scriptsize] {$dx_{n+1}, dy_{n+1}$};
 \end{tikzpicture}
 \caption[GPU fused NTT schedule with shared barriers]{GPU fused NTT schedule for one iteration.  The orbit
-  products (blue, top) and NR derivative products (orange, bottom) flow
-  through the \emph{same} NTT pipeline phases, sharing all grid-wide
-  barriers (red dashed lines).  The signed-unpack and carry phase similarly
-  interleaves orbit and NR combinations.  Enabling NR adds arithmetic between barriers
-  but introduces no new synchronization points.}
+  and Newton--Raphson modes use the same pipeline and grid-wide barrier
+  boundaries (red dashed lines).  Newton--Raphson widens the active streams
+  and pointwise products without adding a separate derivative kernel or
+  synchronization phase.}
 \label{fig:ntt-pipeline}
 \end{figure}
 
@@ -1044,8 +957,8 @@ preceding evaluation's output, so successive steps cannot overlap.
 
 GPU acceleration of the inner loop via the \code{HpSharkFloat} backend
 is described in \cref{subsec:ff-inner-gpu}; this path is fully
-implemented and dispatches through
-\code{Dispatch\-NR\-By\-Precision} in \code{Feature\-Finder.cpp}.
+implemented and dispatches through \code{OrbitEndpointEvaluator} into the
+fused Ref2/v2 kernel.
 
 With the core iteration algorithms and precision infrastructure now
 described, the next chapter turns to the post-iteration processing

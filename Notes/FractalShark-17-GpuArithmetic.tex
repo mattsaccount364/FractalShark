@@ -1,4 +1,4 @@
-\section{GPU Reference-Orbit Implementation}
+\section{GPU Reference-Orbit Implementation (Fused v2)}
 \label{subsec:ref-orbit-gpu}
 
 Deep Mandelbrot views require a high-precision reference orbit before the
@@ -12,6 +12,13 @@ inside one persistent cooperative CUDA kernel.  High-precision addition,
 transforms, pointwise products, carry propagation, normalization, derivative
 updates, periodicity checks, and bounded orbit publication are phases of that
 single engine rather than independently selectable arithmetic operators.
+
+This chapter documents the only supported GPU backend: the fused
+second-generation implementation, also called Ref2 or v2.  An earlier v1
+backend composed separate high-precision multiplication and
+addition/subtraction operations; it has been removed.  Unless a test symbol is
+quoted explicitly, \emph{GPU reference orbit} hereafter means the fused v2
+engine.
 
 \subsection{Architecture and Execution Context}
 \label{subsec:ref-orbit-architecture}
@@ -195,11 +202,12 @@ arithmetic test operators.
 
 \subsection{Application and Test Integration}
 
-The application exposes one production selector.  The portable menu labels it
-\emph{GPU-Accelerated Reference Orbit}, the Feature Finder labels its backend
-\emph{NR Inner Loop: GPU}, and the CLI accepts \code{GPU}.  Both application
-paths dispatch through \code{GpuOrbitSession} and
-\code{EvaluateCriticalOrbitAndDerivs\_GPU}.
+The application exposes one production selector for the fused v2 engine.  The
+portable menu labels it \emph{GPU-Accelerated Reference Orbit}, the Feature
+Finder labels its backend \emph{NR Inner Loop: GPU}, and the CLI accepts
+\code{GPU}.  Reference-orbit rendering uses \code{GpuOrbitSession}; the Feature
+Finder calls \code{EvaluateCriticalOrbitAndDerivs\_GPU} through
+\code{OrbitEndpointEvaluator}.
 
 The CUDA test harness retains \code{Operator::ReferenceOrbit2} as its sole
 operator entry to preserve the established correctness-test identity.  The

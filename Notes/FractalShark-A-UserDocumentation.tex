@@ -466,13 +466,13 @@ choice and triggers any necessary reconfiguration.
       (generation~5) with periodicity checking.  Only enabled when perturbation
       support is available.
 
-      \item \emph{GPU-Accelerated (see README)} (radio): Selects the
-      GPU-accelerated perturbation path, which offloads high-precision
-      reference-orbit computation to the GPU via the \code{HpSharkFloat}
-      pipeline.  This option is a mode selection (radio button), not a one-shot
-      action.  Intended for extremely deep zooms where CPU-based reference
-      computation is prohibitively slow; may be slower than CPU at modest
-      precision levels.  See \cref{subsec:ref-orbit-gpu} for details.
+      \item \emph{GPU-Accelerated (see README)} (radio): Selects the fused
+      Ref2/v2 implementation, which evaluates the complete high-precision
+      reference-orbit recurrence on the GPU.  This option is a mode selection
+      (radio button), not a one-shot action.  Intended for extremely deep zooms
+      where CPU-based reference computation is prohibitively slow; may be
+      slower than CPU at modest precision levels.  See
+      \cref{subsec:ref-orbit-gpu} for details.
 
       \item \emph{Clear and Reload Reference Orbits} (command): Clears reference-orbit state and reloads it from persistent storage.
       \item \emph{Save Reference Orbits} (command): Saves reference-orbit state to persistent storage.

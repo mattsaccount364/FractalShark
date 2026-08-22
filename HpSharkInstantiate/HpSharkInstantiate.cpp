@@ -213,10 +213,24 @@ main()
         const auto nonPeriodicityParams = MakeParams("SharkParamsNP");
         productionParams.insert(
             productionParams.end(), nonPeriodicityParams.begin(), nonPeriodicityParams.end());
-        const auto newtonParams = MakeParams("SharkParamsNR");
+        const std::vector<std::string> sharedProductionParams = {
+            "SharkParamsSharedOnly256", "SharkParamsSharedOnly512", "SharkParamsSharedOnly1024"};
+        productionParams.insert(
+            productionParams.end(), sharedProductionParams.begin(), sharedProductionParams.end());
+        auto newtonParams = MakeParams("SharkParamsNR");
+        const std::vector<std::string> sharedNewtonParams = {
+            "SharkParamsNRSharedOnly256", "SharkParamsNRSharedOnly512", "SharkParamsNRSharedOnly1024"};
+        newtonParams.insert(newtonParams.end(), sharedNewtonParams.begin(), sharedNewtonParams.end());
         auto doubleParams = MakeParams("SharkParamsDbl");
         const auto doubleFloatParams = MakeParams("SharkParamsDbf");
         doubleParams.insert(doubleParams.end(), doubleFloatParams.begin(), doubleFloatParams.end());
+        const std::vector<std::string> sharedDoubleParams = {"SharkParamsDblSharedOnly256",
+                                                             "SharkParamsDblSharedOnly512",
+                                                             "SharkParamsDblSharedOnly1024",
+                                                             "SharkParamsDbfSharedOnly256",
+                                                             "SharkParamsDbfSharedOnly512",
+                                                             "SharkParamsDbfSharedOnly1024"};
+        doubleParams.insert(doubleParams.end(), sharedDoubleParams.begin(), sharedDoubleParams.end());
 
         for (const Batch &batch : GetBatches()) {
             WriteTextFile(outputDirectory / (baseName + '_' + batch.Name + "_P.cu"),

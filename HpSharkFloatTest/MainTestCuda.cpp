@@ -4,6 +4,7 @@
 #include "GpuPrecisionDispatch.h"
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
+#include "KernelInvoke.h"
 #include "TestTracker.h"
 #include "TestVerbose.h"
 #include "Tests.h"
@@ -342,10 +343,12 @@ ValidateCommandLineApplicability(const CommandLineOptions &options, BasicCorrect
         return false;
     }
 
+    const bool isNrView5 = mode == BasicCorrectnessMode::PerfSingleNRView5;
     if ((IsCommandLineSupplied(options.m_StorageLimbs) ||
          IsCommandLineSupplied(options.m_EffectiveLimbs)) &&
-        !isViewMode) {
-        std::cerr << "Limb options require a full-reference view mode or the performance sweep.\n";
+        !isViewMode && !isNrView5) {
+        std::cerr
+            << "Limb options require a full-reference view mode, NR view 5, or the performance sweep.\n";
         return false;
     }
 
@@ -520,6 +523,8 @@ ResolveSingleViewLimbSelection(const CommandLineOptions &options,
             prompt << " (production-derived)";
         }
         prompt << " (supported powers of two 256..524288):";
+        if (view == 5)
+            prompt << " view 5 low/shared=256..1024, high/global=2048+";
         PromptSupportedLimbCount(prompt.str(),
                                  defaultSelection.m_StorageLimbs,
                                  timeoutInSec,
@@ -826,6 +831,12 @@ RunPerfModes(BasicCorrectnessMode mode,
                 options, selectedView, timeoutInSec, interactiveMode, selectedLimbSelection)) {
             return 0;
         }
+    } else if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
+        selectedView = 5;
+        if (!ResolveSingleViewLimbSelection<referenceOperator>(
+                options, selectedView, timeoutInSec, interactiveMode, selectedLimbSelection)) {
+            return 0;
+        }
     }
 
     FullReferencePerfLimbOptions sweepLimbOptions;
@@ -865,8 +876,17 @@ RunPerfModes(BasicCorrectnessMode mode,
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
         TestTracker Tests;
-        auto res = TestNewtonRaphsonView5<SharkParamsNR7, referenceOperator>(
-            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
+        bool res = true;
+        auto runNrView5 = [&]<class SharkFloatParams>() {
+            res = TestNewtonRaphsonView5<SharkFloatParams, referenceOperator>(
+                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
+        };
+        if (HpShark::SupportsReferenceSharedOnlyMemory(static_cast<uint32_t>(launchParams.NumBlocks))) {
+            DispatchByLimbCount<SharkParamsNRView5Family>(selectedLimbSelection.m_StorageLimbs,
+                                                          runNrView5);
+        } else {
+            DispatchByLimbCount<SharkParamsNRFamily>(selectedLimbSelection.m_StorageLimbs, runNrView5);
+        }
         if (!ContinueAfterFailure(res))
             return 0;
     }

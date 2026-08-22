@@ -44,5 +44,11 @@ ExplicitlyInstantiate(SharkParamsDbf9);
 ExplicitlyInstantiate(SharkParamsDbf10);
 ExplicitlyInstantiate(SharkParamsDbf11);
 ExplicitlyInstantiate(SharkParamsDbf12);
+ExplicitlyInstantiate(SharkParamsDblSharedOnly256);
+ExplicitlyInstantiate(SharkParamsDblSharedOnly512);
+ExplicitlyInstantiate(SharkParamsDblSharedOnly1024);
+ExplicitlyInstantiate(SharkParamsDbfSharedOnly256);
+ExplicitlyInstantiate(SharkParamsDbfSharedOnly512);
+ExplicitlyInstantiate(SharkParamsDbfSharedOnly1024);
 
 #undef ExplicitlyInstantiate

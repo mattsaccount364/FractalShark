@@ -25,33 +25,36 @@ EvaluateCriticalOrbitAndDerivs(NRInnerLoopBackend backend,
     uint64_t completed = 0;
 
     switch (backend) {
-        case NRInnerLoopBackend::GPU:
-            DispatchByLimbCount<SharkParamsNRFamily>(
-                BitsToSupportedLimbCount(coord_prec), [&]<class NRParams>() {
-                    const uint64_t requestedPrecisionLimbs =
-                        (static_cast<uint64_t>(coord_prec) + 31u) / 32u;
-                    const uint32_t effectivePrecisionLimbs = GetReferenceEffectivePrecisionLimbs(
-                        requestedPrecisionLimbs, NRParams::GlobalNumUint32);
-                    const HpShark::LaunchParams launchParams{0, 0};
-                    completed = HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
-                        c.re,
-                        c.im,
-                        period,
-                        z.re,
-                        z.im,
-                        dzdc.re,
-                        dzdc.im,
-                        d2r,
-                        d2i,
-                        launchParams,
-                        effectivePrecisionLimbs,
-                        startIter,
-                        AbortMonitor::GetStopCalculatingGlobal,
-                        onProgress,
-                        progressCtx,
-                        64);
-                });
-            break;
+        case NRInnerLoopBackend::GPU: {
+            auto runGpu = [&]<class NRParams>() {
+                const uint64_t requestedPrecisionLimbs = (static_cast<uint64_t>(coord_prec) + 31u) / 32u;
+                const uint32_t effectivePrecisionLimbs = GetReferenceEffectivePrecisionLimbs(
+                    requestedPrecisionLimbs, NRParams::GlobalNumUint32);
+                const HpShark::LaunchParams launchParams{0, 0};
+                completed = HpShark::EvaluateCriticalOrbitAndDerivs_GPU<NRParams>(
+                    c.re,
+                    c.im,
+                    period,
+                    z.re,
+                    z.im,
+                    dzdc.re,
+                    dzdc.im,
+                    d2r,
+                    d2i,
+                    launchParams,
+                    effectivePrecisionLimbs,
+                    startIter,
+                    AbortMonitor::GetStopCalculatingGlobal,
+                    onProgress,
+                    progressCtx,
+                    64);
+            };
+            if (HpShark::SupportsReferenceSharedOnlyMemory(0))
+                DispatchByLimbCount<SharkParamsFractalNRFamily>(BitsToSupportedLimbCount(coord_prec),
+                                                                runGpu);
+            else
+                DispatchByLimbCount<SharkParamsNRFamily>(BitsToSupportedLimbCount(coord_prec), runGpu);
+        } break;
 
         case NRInnerLoopBackend::CpuMT:
             completed = EvaluateCriticalOrbitAndDerivsMT(c,

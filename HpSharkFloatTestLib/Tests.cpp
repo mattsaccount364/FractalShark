@@ -2926,7 +2926,7 @@ TestFullReferencePerfView(TestTracker &Tests,
               << ", effectiveLimbs=" << effectivePrecisionLimbs << std::endl;
 
     bool result = true;
-    DispatchByLimbCount<SharkParamsBaseFamily>(storagePrecisionLimbs, [&]<class SharkFloatParams>() {
+    auto runForParams = [&]<class SharkFloatParams>() {
         HpShark::LaunchParams launchParams{numBlocks, numThreads};
         mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
@@ -3059,7 +3059,13 @@ TestFullReferencePerfView(TestTracker &Tests,
         if (hasMpfTwo) {
             mpf_clear(mpfTwo);
         }
-    });
+    };
+
+    if (view == 5u && HpShark::SupportsReferenceSharedOnlyMemory(static_cast<uint32_t>(numBlocks))) {
+        DispatchByLimbCount<SharkParamsView5Family>(storagePrecisionLimbs, runForParams);
+    } else {
+        DispatchByLimbCount<SharkParamsBaseFamily>(storagePrecisionLimbs, runForParams);
+    }
 
     return result;
 }

@@ -24,5 +24,8 @@ ExplicitlyInstantiate(SharkParamsNR9);
 ExplicitlyInstantiate(SharkParamsNR10);
 ExplicitlyInstantiate(SharkParamsNR11);
 ExplicitlyInstantiate(SharkParamsNR12);
+ExplicitlyInstantiate(SharkParamsNRSharedOnly256);
+ExplicitlyInstantiate(SharkParamsNRSharedOnly512);
+ExplicitlyInstantiate(SharkParamsNRSharedOnly1024);
 
 #undef ExplicitlyInstantiate

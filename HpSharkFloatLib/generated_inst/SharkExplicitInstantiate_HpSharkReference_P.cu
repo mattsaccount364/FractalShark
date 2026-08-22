@@ -94,6 +94,9 @@ ExplicitlyInstantiate(SharkParamsNP9);
 ExplicitlyInstantiate(SharkParamsNP10);
 ExplicitlyInstantiate(SharkParamsNP11);
 ExplicitlyInstantiate(SharkParamsNP12);
+ExplicitlyInstantiate(SharkParamsSharedOnly256);
+ExplicitlyInstantiate(SharkParamsSharedOnly512);
+ExplicitlyInstantiate(SharkParamsSharedOnly1024);
 } // namespace HpShark
 
 #undef ExplicitlyInstantiate

@@ -2161,8 +2161,7 @@ NTTRadix2GridStride(uint64_t *sharedData,
         stageTwiddleTable = rootTables.stage_twiddles_inv;
     }
 
-    // 11 crashes currently due to excessive shared memory usage
-    constexpr auto TileSizeLog2 = 10u;
+    constexpr auto TileSizeLog2 = SharkFloatParams::SharedOnly ? 11u : 10u;
     constexpr uint32_t warpSize = 32u;
 
     const size_t gridSize = grid.size();
@@ -2442,7 +2441,7 @@ ForwardDIFLargeStages(uint64_t *sharedData,
                       uint32_t highestStageIndex)
 {
     static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
-    constexpr uint32_t TileSizeLog2 = 10u;
+    constexpr uint32_t TileSizeLog2 = SharkFloatParams::SharedOnly ? 11u : 10u;
     constexpr uint32_t WarpSize = 32u;
     const uint32_t transformSize = rootTables.N;
     const uint32_t numStages = rootTables.stages;
@@ -2505,7 +2504,7 @@ InverseDITLargeStages(uint64_t *sharedData,
                       const SharkNTT::RootTables &rootTables)
 {
     static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
-    constexpr uint32_t TileSizeLog2 = 10u;
+    constexpr uint32_t TileSizeLog2 = SharkFloatParams::SharedOnly ? 11u : 10u;
     constexpr uint32_t WarpSize = 32u;
     const uint32_t transformSize = rootTables.N;
     const uint32_t numStages = rootTables.stages;
@@ -3548,7 +3547,8 @@ PackAlignedForwardDIFRadix2(cooperative_groups::grid_group &grid,
                             bool negative3)
 {
     MattsCudaAssert(plan.b == 16);
-    MattsCudaAssert(plan.stages == 11);
+    constexpr uint32_t expectedStages = SharkFloatParams::SharedOnly ? 12u : 11u;
+    MattsCudaAssert(plan.stages == expectedStages);
     const uint32_t halfSpan = 1u << (static_cast<uint32_t>(plan.stages) - 1u);
     const uint64_t *stageTwiddles = roots.stage_twiddles_fwd + halfSpan - 1u;
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
@@ -4347,7 +4347,7 @@ FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
     static_assert(Mode == NTT::Multiway::TwoWay || Mode == NTT::Multiway::FourWay);
     namespace cg = cooperative_groups;
 
-    constexpr uint32_t TileSizeLog2 = 10u;
+    constexpr uint32_t TileSizeLog2 = SharkFloatParams::SharedOnly ? 11u : 10u;
     constexpr uint32_t TileSize = 1u << TileSizeLog2;
     constexpr uint32_t MaxCachedStages = 7u;
     constexpr size_t RequiredSharedBytes =
@@ -8109,7 +8109,8 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
     MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
     MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
     const uint32_t stageCount = static_cast<uint32_t>(plan.stages);
-    const uint32_t largeStageCount = stageCount > 10u ? stageCount - 10u : 0u;
+    constexpr uint32_t tileStageCount = SharkFloatParams::SharedOnly ? 11u : 10u;
+    const uint32_t largeStageCount = stageCount > tileStageCount ? stageCount - tileStageCount : 0u;
 
     if constexpr (!HpShark::DebugChecksums) {
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
@@ -8217,7 +8218,7 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
                 workspace.DzdcImag,
                 roots,
                 largeStageCount >= 2u   ? stageCount - 2u
-                : largeStageCount == 1u ? 10u
+                : largeStageCount == 1u ? tileStageCount
                                         : stageCount);
             FusedAlignedPointwiseTransform<SharkFloatParams, NTT::Multiway::FourWay>(
                 grid,
@@ -8332,7 +8333,7 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
                 nullptr,
                 roots,
                 largeStageCount >= 2u   ? stageCount - 2u
-                : largeStageCount == 1u ? 10u
+                : largeStageCount == 1u ? tileStageCount
                                         : stageCount);
             FusedAlignedPointwiseTransform<SharkFloatParams, NTT::Multiway::TwoWay>(
                 grid,
@@ -9103,12 +9104,10 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
                                void *kernelArgs[])
 {
     constexpr auto SharedMemSize = HpShark::CalculateReferenceSharedMemorySize<SharkFloatParams>();
-    if constexpr (HpShark::CustomStream) {
-        const cudaError_t attribute = cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
-                                                           cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                           SharedMemSize);
-        ReferenceLaunchDetail::CheckCuda(attribute, "cudaFuncSetAttribute(HpSharkReferenceGpuLoop)");
-    }
+    const cudaError_t attribute = cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
+                                                       cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                       SharedMemSize);
+    ReferenceLaunchDetail::CheckCuda(attribute, "cudaFuncSetAttribute(HpSharkReferenceGpuLoop)");
 
     HpShark::LaunchParams resolved{launchParams};
     if (resolved.NumBlocks == 0) {
@@ -9134,7 +9133,8 @@ ComputeHpSharkReferenceGpuLoop(const HpShark::LaunchParams &launchParams,
             std::ostringstream message;
             message << "Invalid explicit HpSharkReferenceGpuLoop launch shape: blocks="
                     << resolved.NumBlocks << " threads=" << resolved.ThreadsPerBlock
-                    << " (threads must be a warp multiple from 32 through " << maxThreadsPerBlock << ")";
+                    << " (threads must be a warp multiple from 32 through the device maximum of "
+                    << maxThreadsPerBlock << ")";
             throw FractalSharkSeriousException(message.str());
         }
     }

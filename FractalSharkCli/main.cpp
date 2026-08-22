@@ -137,8 +137,6 @@ ParsePerturbationAlg(const std::string &name)
         return P::MTPeriodicity5;
     if (name == "GPU")
         return P::GPU;
-    if (name == "GPURef2" || name == "GPU Ref2")
-        return P::GPURef2;
     if (name == "Auto")
         return P::Auto;
     return std::nullopt;

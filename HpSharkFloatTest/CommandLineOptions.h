@@ -17,7 +17,6 @@ template <typename T> struct CommandLineOptionValue {
 
 struct CommandLineOptions {
     CommandLineOptionValue<int> m_Mode;
-    CommandLineOptionValue<int> m_Reference;
     CommandLineOptionValue<int> m_Verbose;
     CommandLineOptionValue<int> m_CudaIterations;
     CommandLineOptionValue<int> m_NumIters;

@@ -19,12 +19,11 @@ across multiple renders at different perturbation precisions are
 therefore critical to the overall performance of the system.
 
 This section describes how \code{RefOrbitCalc} orchestrates single-threaded and
-multithreaded MPIR backends and the two manually selected CUDA implementations,
-Ref1 and Ref2, together with storage and compression modes that trade memory
-footprint against recomputation.  Ref1 retains the original staged
-multiplication--addition schedule.  Ref2 is the faster fused implementation;
-it implements the same application contract and recurrence with a different
-arithmetic schedule.
+multithreaded MPIR backends and the manually selected CUDA implementation,
+together with storage and compression modes that trade memory footprint against
+recomputation.  The CUDA implementation uses a fused NTT recurrence while
+preserving the application contract and mathematical recurrence of the CPU
+backends.
 
 \subsection{High-level pipeline and dispatch}
 \label{subsec:ref-orbit-pipeline}
@@ -52,9 +51,8 @@ Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, 
         \code{STPeriodicity} below $10^{150}$,
         \code{MTPeriodicity3} below $10^{2000}$, and
         \code{MTPeriodicity3PerturbMTHighMTMed3} thereafter.  Automatic
-        selection does not choose a CUDA backend.  The manually selected
-        \code{GPU} and \code{GPURef2} values dispatch to Ref1 and Ref2,
-        respectively.
+        selection does not choose the CUDA backend.  The manually selected
+        \code{GPU} value dispatches to the CUDA implementation.
   \item Allocates a new \code{PerturbationResults} slot, initializes
         metadata and bounds, and runs the chosen orbit kernel until escape,
         periodicity detection, or the maximum iteration count is reached.
@@ -220,21 +218,18 @@ squaring have similar expense, but it introduces stronger coupling between
 terms and alters the way cancellation and rounding effects manifest in
 finite-precision arithmetic.
 
-The production CPU and Ref1 paths use the expanded-product schedule: Ref1
-materializes and normalizes $x_n^2$, $y_n^2$, and $2x_ny_n$ before a separate
-high-precision addition stage forms
-\cref{eq:ref-expanded-real,eq:ref-expanded-imag}.  Ref2 implements the same
-component equations through the factored nonlinear products
+The production CPU paths use the expanded-product schedule.  The CUDA engine
+implements the same component equations through the factored nonlinear products
 \begin{align}
 R_n &= (x_n+y_n)(x_n-y_n)=x_n^2-y_n^2, \\
 I_n &= 2x_ny_n,
 \end{align}
 which it constructs directly in the NTT domain.  It then incorporates $c_x$ and
 $c_y$ at their exact bit offsets during signed unpack, before positional carry
-propagation.  Ref2 therefore never materializes three normalized product values
-or invokes the standalone high-precision add/subtract pipeline.
+propagation.  The CUDA engine therefore never materializes three normalized
+product values or invokes a standalone high-precision add/subtract pipeline.
 
-Fusion does not eliminate the final base-$2^{32}$ dependency.  Ref2 forms every
+Fusion does not eliminate the final base-$2^{32}$ dependency.  The CUDA engine forms every
 nonlinear and linear contribution first, then resolves the completed real and
 imaginary components together in one packed decoupled-look-back carry phase.
 Each component remains an independent logical carry chain within that phase;
@@ -837,13 +832,12 @@ recurrence stages.  Early termination can avoid later arithmetic, but the
 check and its required cooperative-grid synchronization have a measurable cost
 that depends on precision and launch configuration.
 
-Application dispatch to Ref1 or Ref2 is manual.  Their stored-output type \code{T} may be
+Application dispatch to the CUDA engine is manual.  Its stored-output type \code{T} may be
 \code{HDRFloat<float>}, \code{HDRFloat<double>}, or
-\code{HDRFloat<CudaDblflt<dblflt>>}.  Both paths force
+\code{HDRFloat<CudaDblflt<dblflt>>}.  The CUDA path forces
 \code{PExtras::Disable} and \code{ReuseMode::DontSaveForReuse}; neither produces
-a compressed or intermediate-reuse orbit.  These are common policy
-constraints of the two CUDA application paths rather than missing Ref2
-integration.
+a compressed or intermediate-reuse orbit.  These are policy constraints of the
+CUDA application path.
 
 \paragraph{State extraction and logging.}
 
@@ -889,7 +883,7 @@ Writing \(z_n = x_n + i y_n\) and introducing the shorthand
   d_{y,n+1} &= 2\,(x_n\, d_{y,n} + y_n\, d_{x,n}). \label{eq:dzdc-imag}
 \end{align}
 
-In both Ref1 and Ref2, the orbit components are \code{HpSharkFloat}, but the
+In the CUDA engine, the orbit components are \code{HpSharkFloat}, but the
 application periodicity state \code{dzdcX}, \code{dzdcY}, and \code{RadiusY}
 uses \code{HDRFloat}.  The periodicity decision is performed on reduced HDR
 magnitudes:
@@ -966,10 +960,9 @@ visible before subsequent work proceeds. If termination is requested, the
 iteration loop exits immediately; otherwise, the kernel proceeds into the
 multiply-add pipeline that produces the next high-precision state.
 
-This organization isolates termination logic from either the Ref1 staged
-multiply/add pipeline or the Ref2 fused recurrence pipeline while maintaining
-grid-wide early-exit behavior.  The checker publishes its status through one
-explicit \code{grid.sync()} per iteration.  Ref2 uses the same publication
+This organization isolates termination logic from the fused recurrence pipeline
+while maintaining grid-wide early-exit behavior.  The checker publishes its
+status through one explicit \code{grid.sync()} per iteration.  The recurrence uses the same publication
 boundary to expose the iteration plan built by the leader.  The synchronization
 cost is amortized by the subsequent high-precision work but is not assumed to be
 negligible.

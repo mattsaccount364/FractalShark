@@ -6,7 +6,7 @@ library's sync.h/cooperative_groups.h lines instead of the user call site.
 For each contributing PC this tool prints a small window of preceding
 instructions (where the caller's code and the BAR.SYNC live) with source
 lines, so the bucket can be joined back to a specific grid.sync() call in
-KernelHpSharkReferenceOrbit2_cu.h / MultiplyNTT.cu.
+KernelHpSharkReferenceOrbit_cu.h / ReferenceNTT_cu.h.
 
 Usage:
     py -3 tools\NcuAnalysis\inspect_hot.py --report <rep> --csv <csv> \

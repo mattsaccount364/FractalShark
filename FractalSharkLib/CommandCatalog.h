@@ -93,7 +93,6 @@ enum class FractalCommand : uint32_t {
     NrInnerLoopGpu = 40116,                       // IDM_NR_INNERLOOP_GPU
     NrInnerLoopCpu = 40117,                       // IDM_NR_INNERLOOP_CPU
     NrInnerLoopCpuSt = 40118,                     // IDM_NR_INNERLOOP_CPUST
-    NrInnerLoopGpuRef2 = 40119,                   // IDM_NR_INNERLOOP_GPU_REF2
 
     // ---- Built-In Views ----
     StandardView = 40200, // IDM_STANDARDVIEW
@@ -170,7 +169,6 @@ enum class FractalCommand : uint32_t {
     PerturbationMultithread2PeriodicityPerturbMthighMtmed4 = 40519,
     PerturbationMultithread5Periodicity = 40520,
     PerturbationGpu = 40521,
-    PerturbationGpuRef2 = 40522,
 
     PerturbationLoad = 40530,
     PerturbationSave = 40531,

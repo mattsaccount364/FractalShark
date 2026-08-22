@@ -29,7 +29,3 @@ bool TestNewtonRaphsonView32(TestTracker &Tests,
                              uint64_t iterCountOverride = 0,
                              bool useMT = true,
                              int numRepeats = 1);
-
-template <class SharkFloatParams> bool TestSingleNRMultiply(TestTracker &Tests, int testBase);
-
-template <class SharkFloatParams> bool TestSingleNRAdd(TestTracker &Tests, int testBase);

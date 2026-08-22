@@ -349,7 +349,6 @@ RefOrbitCalc::AddPerturbationReferencePoint(const PointZoomBBConverter &ptz)
                                          ReuseMode::DontSaveForReuse>(
             ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::GPU) {
-
         if constexpr (std::is_same_v<T, HDRFloat<float>>) {
             AddPerturbationReferencePointGPU<IterType,
                                              HDRFloat<float>,
@@ -376,38 +375,7 @@ RefOrbitCalc::AddPerturbationReferencePoint(const PointZoomBBConverter &ptz)
                 ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
         } else {
             throw FractalSharkSeriousException(
-                "GPU perturbation algorithm supports HDRFloat<float> and HDRFloat<double>. "
-                "Pick a different combination for other types.");
-        }
-    } else if (GetPerturbationAlg() == PerturbationAlg::GPURef2) {
-
-        if constexpr (std::is_same_v<T, HDRFloat<float>>) {
-            AddPerturbationReferencePointGPURef2<IterType,
-                                                 HDRFloat<float>,
-                                                 true,
-                                                 BenchmarkState,
-                                                 PerturbExtras::Disable,
-                                                 ReuseMode::DontSaveForReuse>(
-                ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
-        } else if constexpr (std::is_same_v<T, HDRFloat<double>>) {
-            AddPerturbationReferencePointGPURef2<IterType,
-                                                 HDRFloat<double>,
-                                                 true,
-                                                 BenchmarkState,
-                                                 PerturbExtras::Disable,
-                                                 ReuseMode::DontSaveForReuse>(
-                ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
-        } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>) {
-            AddPerturbationReferencePointGPURef2<IterType,
-                                                 HDRFloat<CudaDblflt<dblflt>>,
-                                                 true,
-                                                 BenchmarkState,
-                                                 PerturbExtras::Disable,
-                                                 ReuseMode::DontSaveForReuse>(
-                ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
-        } else {
-            throw FractalSharkSeriousException(
-                "GPU Ref2 perturbation algorithm supports HDRFloat<float>, HDRFloat<double>, and "
+                "GPU perturbation algorithm supports HDRFloat<float>, HDRFloat<double>, and "
                 "HDRFloat<CudaDblflt<dblflt>>. Pick a different combination for other types.");
         }
     }
@@ -2215,121 +2183,19 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
     mpf_set(cy_mpf, cy.backend());
 
     const uint64_t numIters = m_Fractal.GetNumIterations<IterType>();
-    const auto PrecInBits = HighPrecision::defaultPrecisionInBits();
-    const auto PrecInLimbs = (PrecInBits + 31) / 32;
-
-    // Auto-decide
-    HpShark::LaunchParams launchParams{0, 0};
-
-    auto lamb = [&]<class SharkFloatParams>() {
-        // ---------------------------------------------------------------------
-        //   GpuOrbitSession handles Init/Shutdown lifecycle via RAII.
-        //   Loop invokes kernel in bounded chunks (<= MaxOutputIters) until done.
-        // ---------------------------------------------------------------------
-
-        uint64_t totalExecutedIters = 0;
-
-        HpShark::GpuOrbitSession<SharkFloatParams> session(
-            launchParams, results->GetMaxRadius(), cx_mpf, cy_mpf);
-        auto &combo = session.GetCombo();
-
-        for (;;) {
-            constexpr uint64_t MaxOutputIters =
-                HpSharkReferenceResults<SharkFloatParams>::MaxOutputIters;
-
-            const uint64_t remaining =
-                (numIters > totalExecutedIters) ? (numIters - totalExecutedIters) : 0;
-            if (remaining == 0) {
-                break;
-            }
-
-            const uint64_t itersToRun = (remaining > MaxOutputIters) ? MaxOutputIters : remaining;
-
-            // Repeated kernel launches, each producing up to MaxOutputIters in OutputIters.
-            session.InvokeChunk(itersToRun);
-
-            totalExecutedIters += combo.OutputIterCount;
-
-            // Copy out this batch.
-            for (uint64_t i = 0; i < combo.OutputIterCount; ++i) {
-                results->AddUncompressedIteration(combo.OutputIters[i]);
-            }
-
-            if (combo.PeriodicityStatus == PeriodicityResult::PeriodFound ||
-                combo.PeriodicityStatus == PeriodicityResult::Escaped ||
-                combo.PeriodicityStatus == PeriodicityResult::Unknown || // error
-                totalExecutedIters >= numIters) {
-                break;
-            }
-        }
-
-        // Period bookkeeping like before.
-        if (combo.PeriodicityStatus == PeriodicityResult::PeriodFound) {
-            results->SetPeriodMaybeZero(
-                static_cast<IterType>(results->GetCompressedOrUncompressedOrbitSize()));
-        } else {
-            results->SetPeriodMaybeZero(0);
-        }
-
-        m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
-    };
-
-    // Dispatch by precision and SubType.
-    const auto limbCount = RoundToSupportedLimbCount(PrecInLimbs);
-    if constexpr (std::is_same_v<T, HDRFloat<double>>) {
-        DispatchByLimbCount<SharkParamsDblFamily>(limbCount, lamb);
-    } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>) {
-        DispatchByLimbCount<SharkParamsDbfFamily>(limbCount, lamb);
-    } else {
-        DispatchByLimbCount<SharkParamsBaseFamily>(limbCount, lamb);
-    }
-
-    results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
-
-    mpf_clear(cx_mpf);
-    mpf_clear(cy_mpf);
-}
-
-template <typename IterType,
-          class T,
-          bool Periodicity,
-          RefOrbitCalc::BenchmarkMode BenchmarkState,
-          PerturbExtras PExtras,
-          RefOrbitCalc::ReuseMode Reuse>
-void
-RefOrbitCalc::AddPerturbationReferencePointGPURef2(const PointZoomBBConverter &ptz,
-                                                   HighPrecision cx,
-                                                   HighPrecision cy)
-{
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
-        m_RefOrbitOptions, GetNextGenerationNumber());
-    PushbackResults(std::move(newArray));
-    auto *results = GetLast<IterType, T, PExtras>();
-
-    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, ptz, cx, cy);
-
-    mpf_t cx_mpf;
-    mpf_init(cx_mpf);
-    mpf_set(cx_mpf, cx.backend());
-
-    mpf_t cy_mpf;
-    mpf_init(cy_mpf);
-    mpf_set(cy_mpf, cy.backend());
-
-    const uint64_t numIters = m_Fractal.GetNumIterations<IterType>();
     const uint64_t precisionInBits = HighPrecision::defaultPrecisionInBits();
     const uint64_t requestedPrecisionLimbs = (precisionInBits + 31u) / 32u;
 
     HpShark::LaunchParams launchParams{0, 0};
 
-    auto runRef2 = [&]<class SharkFloatParams>() {
+    auto runReference = [&]<class SharkFloatParams>() {
         uint64_t totalExecutedIters = 0;
-        const uint32_t effectivePrecisionLimbs =
-            GetRef2EffectivePrecisionLimbs(requestedPrecisionLimbs, SharkFloatParams::GlobalNumUint32);
+        const uint32_t effectivePrecisionLimbs = GetReferenceEffectivePrecisionLimbs(
+            requestedPrecisionLimbs, SharkFloatParams::GlobalNumUint32);
 
-        HpShark::GpuOrbitSession2<SharkFloatParams> session(
-            launchParams, results->GetMaxRadius(), cx_mpf, cy_mpf, effectivePrecisionLimbs);
-        auto &combo = session.GetCombo();
+        HpShark::GpuOrbitSession<SharkFloatParams> session(
+            launchParams, results->GetMaxRadius(), cx_mpf, cy_mpf, effectivePrecisionLimbs, nullptr);
+        auto &combo = session.GetResults();
 
         for (;;) {
             constexpr uint64_t maxOutputIters =
@@ -2368,11 +2234,11 @@ RefOrbitCalc::AddPerturbationReferencePointGPURef2(const PointZoomBBConverter &p
 
     const uint32_t limbCount = RoundToSupportedLimbCount(requestedPrecisionLimbs);
     if constexpr (std::is_same_v<T, HDRFloat<double>>) {
-        DispatchByLimbCount<SharkParamsDblFamily>(limbCount, runRef2);
+        DispatchByLimbCount<SharkParamsDblFamily>(limbCount, runReference);
     } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>) {
-        DispatchByLimbCount<SharkParamsDbfFamily>(limbCount, runRef2);
+        DispatchByLimbCount<SharkParamsDbfFamily>(limbCount, runReference);
     } else {
-        DispatchByLimbCount<SharkParamsBaseFamily>(limbCount, runRef2);
+        DispatchByLimbCount<SharkParamsBaseFamily>(limbCount, runReference);
     }
 
     results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
@@ -2925,22 +2791,6 @@ RefOrbitCalc::GetPerturbationAlg() const
 std::string
 RefOrbitCalc::GetPerturbationAlgStr() const
 {
-    // Return a string representation of the current perturbation algorithm:
-    /*
-        enum class PerturbationAlg {
-        ST,
-        MT,
-        STPeriodicity,
-        MTPeriodicity3,
-        MTPeriodicity3PerturbMTHighSTMed,
-        MTPeriodicity3PerturbMTHighMTMed1,
-        MTPeriodicity3PerturbMTHighMTMed2,
-        MTPeriodicity3PerturbMTHighMTMed3,
-        MTPeriodicity3PerturbMTHighMTMed4,
-        MTPeriodicity5
-    };
-    */
-
     switch (GetPerturbationAlg()) {
         case PerturbationAlg::ST:
             return "ST";
@@ -2964,8 +2814,6 @@ RefOrbitCalc::GetPerturbationAlgStr() const
             return "MTPeriodicity5";
         case PerturbationAlg::GPU:
             return "GPU";
-        case PerturbationAlg::GPURef2:
-            return "GPU Ref2";
         default:
             return "Unknown";
     }
@@ -2998,7 +2846,6 @@ RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const
         // Build perturbation algorithm string with SubType for GPU path
         std::string algStr = GetPerturbationAlgStr();
         if (GetPerturbationAlg() == PerturbationAlg::GPU ||
-            GetPerturbationAlg() == PerturbationAlg::GPURef2 ||
             GetPerturbationAlg() == PerturbationAlg::Auto) {
             using ResultT = std::remove_pointer_t<std::decay_t<decltype(arg)>>;
             using OrbitT = typename ResultT::Type;

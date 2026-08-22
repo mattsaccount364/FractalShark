@@ -41,7 +41,7 @@ representation.
 The parameter~\code{T} selects the numeric type used to store the emitted
 reference orbit $\{z_n^\star\}$ and the representation consumed by downstream
 perturbation code.  It does not select the recurrence arithmetic: CPU reference
-backends use MPIR internally, while CUDA Ref1 and Ref2 use a
+backends use MPIR internally, while the CUDA reference engine uses a
 precision-specialized \code{HpSharkFloat} internally and convert emitted samples
 to~\code{T}.
 The principal choices are:
@@ -164,8 +164,8 @@ files---one for production parameter sets
 one for non-periodicity variants
 (\code{SharkParamsNP1}\,--\,\code{NP12})---and groups
 instantiations into named \emph{batches} (e.g.\
-\code{HpSharkFloat\_Conversions}, \code{MultiplyNTT},
-\code{HpSharkReference}) so that each batch compiles as an
+\code{HpSharkFloat\_Conversions}, \code{HpSharkReference},
+\code{ReferenceGpuLoop}, and \code{SharkNTT\_Primitives}) so that each batch compiles as an
 independent translation unit.  This decomposition enables parallel
 compilation and limits the peak memory consumption of the CUDA
 compiler.
@@ -202,11 +202,10 @@ can fold into kernel code:
         derivative recurrence at each iteration.  This derivative is required by
         the Feature Finder's Newton's method solver
         (\cref{sec:feature-finder}).
-  \item \code{NTTPlan}---the Ref1 compile-time NTT plan.  It is computed from
-        \code{GlobalNumUint32} by \code{SharkNTT::BuildPlanPrime}.  Ref2 also
-        has a compile-time base \code{NTTPlan2}, but its setup allocates and
-        caches larger active plans so exponent-shifted polynomial support can
-        select a transform length at run time.
+  \item \code{SharkNTT::Plan}---the compile-time base plan constructed from
+        \code{GlobalNumUint32} by \code{SharkNTT::BuildPlan}.  Setup may allocate
+        and cache a larger active plan so exponent-shifted polynomial support
+        can select a transform length at run time.
 \end{itemize}
 
 \noindent

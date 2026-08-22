@@ -150,7 +150,6 @@ public:
         MTPeriodicity3PerturbMTHighMTMed4,
         MTPeriodicity5,
         GPU,
-        GPURef2,
         Auto
     };
 
@@ -334,16 +333,6 @@ private:
     void AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
                                           HighPrecision cx,
                                           HighPrecision cy);
-
-    template <typename IterType,
-              class T,
-              bool Periodicity,
-              RefOrbitCalc::BenchmarkMode BenchmarkState,
-              PerturbExtras PExtras,
-              RefOrbitCalc::ReuseMode Reuse>
-    void AddPerturbationReferencePointGPURef2(const PointZoomBBConverter &ptz,
-                                              HighPrecision cx,
-                                              HighPrecision cy);
 
     template <typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
     PerturbationResults<IterType, T, PExtras> *GetUsefulPerturbationResultsMutable();

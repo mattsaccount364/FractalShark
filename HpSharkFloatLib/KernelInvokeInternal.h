@@ -2,11 +2,8 @@
 
 #include "BenchmarkTimer.h"
 
-#include "Add.h"
 #include "HpSharkFloat.h"
 #include "KernelHpSharkReferenceOrbit.h"
-#include "KernelHpSharkReferenceOrbit2.h"
-#include "MultiplyNTT.h"
 
 #include <algorithm>
 #include <assert.h>

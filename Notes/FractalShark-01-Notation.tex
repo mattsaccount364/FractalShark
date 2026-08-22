@@ -34,9 +34,9 @@ $D$          & number of 32-bit \code{HpSharkFloat} limbs
 $L$          & number of packed base-$2^b$ coefficients
              & $L=\lceil 32D/b\rceil$ \\
 $M$          & active power-of-two NTT length in the fused schedule
-             & $M\ge 2L$; Ref2 may enlarge it for shifted support, up to $2^{25}$ \\
+             & $M\ge 2L$; the GPU planner may enlarge it for shifted support, up to $2^{25}$ \\
 $b$          & packed NTT coefficient width in bits
-             & $b=16$ for CUDA Ref2 and its host reference model \\
+             & $b=16$ for the CUDA reference engine and its host reference model \\
 \hline
 \end{tabularx}
 \end{table}

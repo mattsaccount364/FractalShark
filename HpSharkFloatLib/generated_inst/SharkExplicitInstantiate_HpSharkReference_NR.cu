@@ -10,16 +10,25 @@
     InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,             \
                                                  const typename SharkFloatParams::Float hdrRadiusY,     \
                                                  const mpf_t,                                           \
-                                                 const mpf_t);                                          \
-    template void InvokeHpSharkReferenceKernel<SharkFloatParams>(                                       \
-        const HpShark::LaunchParams &launchParams,                                                      \
-        HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
-        uint64_t numIters);                                                                             \
+                                                 const mpf_t,                                           \
+                                                 uint32_t);                                             \
     template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>                                 \
     InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,             \
                                                  const typename SharkFloatParams::Float hdrRadiusY,     \
                                                  const HpSharkFloat<SharkFloatParams> &xNum,            \
-                                                 const HpSharkFloat<SharkFloatParams> &yNum);           \
+                                                 const HpSharkFloat<SharkFloatParams> &yNum,            \
+                                                 uint32_t);                                             \
+    template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>                                 \
+    InitHpSharkReferenceKernel<SharkFloatParams>(                                                       \
+        const HpShark::LaunchParams &launchParams,                                                      \
+        const typename SharkFloatParams::Float hdrRadiusY,                                              \
+        const HpSharkFloat<SharkFloatParams> &xNum,                                                     \
+        const HpSharkFloat<SharkFloatParams> &yNum,                                                     \
+        ReferencePreparedTables<SharkFloatParams> &preparedTables);                                     \
+    template void InvokeHpSharkReferenceKernel<SharkFloatParams>(                                       \
+        const HpShark::LaunchParams &launchParams,                                                      \
+        HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
+        uint64_t numIters);                                                                             \
     template void ShutdownHpSharkReferenceKernel<SharkFloatParams>(                                     \
         const HpShark::LaunchParams &launchParams,                                                      \
         HpSharkReferenceResults<SharkFloatParams> &combo,                                               \
@@ -35,6 +44,24 @@
         HDRFloat<double> &,                                                                             \
         HDRFloat<double> &,                                                                             \
         const HpShark::LaunchParams &,                                                                  \
+        ReferencePreparedTables<SharkFloatParams> *,                                                    \
+        uint64_t,                                                                                       \
+        bool (*)(),                                                                                     \
+        void (*)(uint64_t, void *),                                                                     \
+        void *,                                                                                         \
+        uint64_t);                                                                                      \
+    template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(                             \
+        const mpf_t,                                                                                    \
+        const mpf_t,                                                                                    \
+        uint64_t,                                                                                       \
+        mpf_t,                                                                                          \
+        mpf_t,                                                                                          \
+        mpf_t,                                                                                          \
+        mpf_t,                                                                                          \
+        HDRFloat<double> &,                                                                             \
+        HDRFloat<double> &,                                                                             \
+        const HpShark::LaunchParams &,                                                                  \
+        uint32_t,                                                                                       \
         uint64_t,                                                                                       \
         bool (*)(),                                                                                     \
         void (*)(uint64_t, void *),                                                                     \

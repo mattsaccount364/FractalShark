@@ -4,9 +4,9 @@
 #include "DebugChecksumHost.h"
 #include "HDRFloat.h"
 #include "HpSharkFloat.h"
-#include "KernelInvokeReference2Setup.h"
-#include "MultiplyNTTCudaSetup.h"
+#include "KernelInvokeReferenceSetup.h"
 #include "NTTConstexprGenerator.h"
+#include "ReferenceNTT.h"
 #include "TestVerbose.h"
 
 #include <algorithm>
@@ -30,10 +30,10 @@ IsDebugTraceEnabled()
 
 template <class SharkFloatParams, class ArrayType>
 static void
-StoreReference2DebugState(DebugHostCombo<SharkFloatParams> &debugCombo,
-                          DebugStatePurpose purpose,
-                          const ArrayType *arrayToChecksum,
-                          size_t arraySize)
+StoreReferenceDebugState(DebugHostCombo<SharkFloatParams> &debugCombo,
+                         DebugStatePurpose purpose,
+                         const ArrayType *arrayToChecksum,
+                         size_t arraySize)
 {
     if constexpr (HpShark::DebugChecksums) {
         constexpr auto CallIndex = 0;
@@ -48,9 +48,9 @@ StoreReference2DebugState(DebugHostCombo<SharkFloatParams> &debugCombo,
 
 template <class SharkFloatParams>
 static void
-StoreReference2DebugValue(DebugHostCombo<SharkFloatParams> &debugCombo,
-                          DebugStatePurpose purpose,
-                          const HpSharkFloat<SharkFloatParams> &value)
+StoreReferenceDebugValue(DebugHostCombo<SharkFloatParams> &debugCombo,
+                         DebugStatePurpose purpose,
+                         const HpSharkFloat<SharkFloatParams> &value)
 {
     if constexpr (HpShark::DebugChecksums) {
         constexpr auto callIndex = 0;
@@ -145,7 +145,7 @@ constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
 
 template <class SharkFloatParams> struct FusedPlanCacheTraits {
     static constexpr uint32_t MinFusedN =
-        SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L));
+        SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::ReferenceNTTPlan.L));
     static constexpr uint32_t MinFusedStages = SharkNTT::CeilLog2U32(MinFusedN);
     static constexpr uint32_t EntryCount = MaxFusedStages - MinFusedStages + 1u;
 
@@ -169,7 +169,7 @@ struct FusedWorkspace {
     int64_t *DzdcImagLimbs;
     uint32_t *MagnitudeDigits;
     uint32_t *Magnitude;
-    SharkNTT::PlanPrime *Plans;
+    SharkNTT::Plan *Plans;
     SharkNTT::RootTables *PlanRoots;
     uint32_t ActiveMinFusedN;
     uint32_t ActiveMaxFusedN;
@@ -213,7 +213,7 @@ template <class SharkFloatParams> struct GlobalFusedWorkspaceStorage {
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OutputZImag;
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OutputDzdcReal;
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> OutputDzdcImag;
-    SharkNTT::PlanPrime Plans[Cache::EntryCount]{};
+    SharkNTT::Plan Plans[Cache::EntryCount]{};
     SharkNTT::RootTables PlanRoots[Cache::EntryCount]{};
     uint32_t ActiveMinFusedN = Cache::MinFusedN;
     uint32_t ActiveMaxFusedN = MaxFusedN;
@@ -258,18 +258,16 @@ EnsureGlobalFusedWorkspace()
         for (uint32_t slot = 0; slot < Cache::EntryCount; ++slot) {
             const uint32_t stages = Cache::MinFusedStages + slot;
             const uint32_t n = 1u << stages;
-            global.Plans[slot] = {SharkFloatParams::NTTPlan2.n32,
-                                  SharkFloatParams::NTTPlan2.b,
-                                  SharkFloatParams::NTTPlan2.L,
+            global.Plans[slot] = {SharkFloatParams::ReferenceNTTPlan.n32,
+                                  SharkFloatParams::ReferenceNTTPlan.b,
+                                  SharkFloatParams::ReferenceNTTPlan.L,
                                   static_cast<int>(n),
                                   static_cast<int>(stages),
-                                  SharkFloatParams::NTTPlan2.ok};
+                                  SharkFloatParams::ReferenceNTTPlan.ok};
             global.PlanRoots[slot] = {static_cast<int32_t>(stages),
                                       global.StageOmegas.get(),
                                       global.StageOmegasInverse.get(),
                                       static_cast<int32_t>(n),
-                                      nullptr,
-                                      nullptr,
                                       nullptr,
                                       0,
                                       0,
@@ -336,48 +334,48 @@ GetGlobalFusedWorkspace()
 
 template <class SharkFloatParams>
 static void
-LoadPreparedTables(const HpShark::Reference2PreparedTables<SharkFloatParams> &preparedTables)
+LoadPreparedTables(const HpShark::ReferencePreparedTables<SharkFloatParams> &preparedTables)
 {
     using Cache = FusedPlanCacheTraits<SharkFloatParams>;
-    using DeviceWorkspace = HpSharkReference2Workspace<SharkFloatParams>;
+    using DeviceWorkspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     auto &global = GetGlobalFusedWorkspaceStorage<SharkFloatParams>();
     if (global.LoadedPreparedTablesId == preparedTables.GetId())
         return;
 
     DeviceWorkspace deviceWorkspace{};
-    HpShark::Reference2SetupDetail::CheckCuda(cudaMemcpy(&deviceWorkspace,
-                                                         preparedTables.GetDeviceDescriptor(),
-                                                         sizeof(deviceWorkspace),
-                                                         cudaMemcpyDeviceToHost),
-                                              "cudaMemcpy(Reference2 prepared descriptor D2H)");
+    HpShark::ReferenceSetupDetail::CheckCuda(cudaMemcpy(&deviceWorkspace,
+                                                        preparedTables.GetDeviceDescriptor(),
+                                                        sizeof(deviceWorkspace),
+                                                        cudaMemcpyDeviceToHost),
+                                             "cudaMemcpy(Reference prepared descriptor D2H)");
     const uint32_t firstSlot = deviceWorkspace.ActiveMinFusedStages - Cache::MinFusedStages;
     const uint32_t activePlanMask = deviceWorkspace.ActivePlanCacheEntryCount == 32u
                                         ? ~0u
                                         : (1u << deviceWorkspace.ActivePlanCacheEntryCount) - 1u;
     const uint32_t fullPlanMask = activePlanMask << firstSlot;
     if (deviceWorkspace.ValidPlanMask != fullPlanMask)
-        throw FractalSharkSeriousException("Reference2 prepared tables are incomplete");
+        throw FractalSharkSeriousException("Reference prepared tables are incomplete");
 
     const auto copy = [](void *destination, const void *source, size_t bytes, const char *operation) {
-        HpShark::Reference2SetupDetail::CheckCuda(
+        HpShark::ReferenceSetupDetail::CheckCuda(
             cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost), operation);
     };
     copy(global.StageOmegas.get(),
          deviceWorkspace.StageOmegas,
          deviceWorkspace.ActiveMaxFusedStages * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 stage omegas D2H)");
+         "cudaMemcpy(Reference stage omegas D2H)");
     copy(global.StageOmegasInverse.get(),
          deviceWorkspace.StageOmegasInverse,
          deviceWorkspace.ActiveMaxFusedStages * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 inverse stage omegas D2H)");
+         "cudaMemcpy(Reference inverse stage omegas D2H)");
     copy(global.ForwardTwiddles.get(),
          deviceWorkspace.ForwardTwiddles,
          deviceWorkspace.ActiveMaxFusedN * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 forward twiddles D2H)");
+         "cudaMemcpy(Reference forward twiddles D2H)");
     copy(global.InverseTwiddles.get(),
          deviceWorkspace.InverseTwiddles,
          deviceWorkspace.ActiveMaxFusedN * sizeof(uint64_t),
-         "cudaMemcpy(Reference2 inverse twiddles D2H)");
+         "cudaMemcpy(Reference inverse twiddles D2H)");
     for (uint32_t index = 0; index < deviceWorkspace.ActivePlanCacheEntryCount; ++index) {
         const uint32_t slot = firstSlot + index;
         global.Plans[slot] = deviceWorkspace.Plans[slot];
@@ -412,12 +410,12 @@ PrintTerm(const char *label, const FusedTerm<SharkFloatParams> &term)
 }
 
 static void
-PrintPlan(const SharkNTT::PlanPrime &plan)
+PrintPlan(const SharkNTT::Plan &plan)
 {
     if (!IsDebugTraceEnabled())
         return;
 
-    std::cout << "ReferenceOrbit2 fused PlanPrime:";
+    std::cout << "Reference fused Plan:";
     PrintHexValue("n32", plan.n32);
     PrintHexValue("b", plan.b);
     PrintHexValue("L", plan.L);
@@ -830,7 +828,7 @@ template <class SharkFloatParams>
 static void
 PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
             const HpSharkFloat<SharkFloatParams> &x,
-            const SharkNTT::PlanPrime &plan,
+            const SharkNTT::Plan &plan,
             SharkNTT::RootTables &roots,
             uint64_t *out,
             uint32_t capacity,
@@ -865,17 +863,17 @@ PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 
     PrintArray("naturally packed spectrum", out, activeN);
-    StoreReference2DebugState(debugCombo, packedPurpose, out, activeN);
+    StoreReferenceDebugState(debugCombo, packedPurpose, out, activeN);
     NTTRadix2<SharkFloatParams, false, true>(
         debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
-    StoreReference2DebugState(debugCombo, forwardPurpose, out, activeN);
+    StoreReferenceDebugState(debugCombo, forwardPurpose, out, activeN);
 }
 
 template <class SharkFloatParams>
 static void
 PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                    const HpSharkFloat<SharkFloatParams> &value,
-                   const SharkNTT::PlanPrime &plan,
+                   const SharkNTT::Plan &plan,
                    SharkNTT::RootTables &roots,
                    uint64_t *out,
                    uint32_t capacity,
@@ -921,16 +919,16 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 
     PrintArray("aligned naturally packed spectrum", out, activeN);
-    StoreReference2DebugState(debugCombo, packedPurpose, out, activeN);
+    StoreReferenceDebugState(debugCombo, packedPurpose, out, activeN);
     NTTRadix2<SharkFloatParams, false, true>(
         debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
-    StoreReference2DebugState(debugCombo, forwardPurpose, out, activeN);
+    StoreReferenceDebugState(debugCombo, forwardPurpose, out, activeN);
 }
 
 template <class SharkFloatParams>
 static void
 WriteShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
-                     const SharkNTT::PlanPrime &plan,
+                     const SharkNTT::Plan &plan,
                      const SharkNTT::RootTables &roots,
                      const uint64_t *source,
                      uint64_t shiftBits,
@@ -959,7 +957,7 @@ WriteShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
 template <class SharkFloatParams>
 static void
 AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
-                   const SharkNTT::PlanPrime &plan,
+                   const SharkNTT::Plan &plan,
                    const SharkNTT::RootTables &roots,
                    const uint64_t *source,
                    uint64_t shiftBits,
@@ -1032,7 +1030,7 @@ GetSpectrum(FusedWorkspace &workspace, SpectrumId id)
 template <class SharkFloatParams, class... Terms>
 static void
 AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
-                         const SharkNTT::PlanPrime &plan,
+                         const SharkNTT::Plan &plan,
                          const SharkNTT::RootTables &roots,
                          FusedWorkspace &workspace,
                          int32_t commonExp,
@@ -1119,13 +1117,13 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
     accumulateTerm(first);
     (accumulateTerm(terms), ...);
     assert(hasDestinationValue);
-    StoreReference2DebugState(debugCombo, checksumPurpose, dest, activeN);
+    StoreReferenceDebugState(debugCombo, checksumPurpose, dest, activeN);
 }
 
 template <class SharkFloatParams>
 static void
 UnpackResiduesToSignedLimbs(const uint64_t *normalResidues,
-                            const SharkNTT::PlanPrime &plan,
+                            const SharkNTT::Plan &plan,
                             uint32_t coefficientCount,
                             int64_t *limbs,
                             uint32_t limbCount)
@@ -1216,7 +1214,7 @@ template <class SharkFloatParams>
 static void
 UnpackAlignedResiduesToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
                                    const uint64_t *normalResidues,
-                                   const SharkNTT::PlanPrime &plan,
+                                   const SharkNTT::Plan &plan,
                                    const SharkNTT::RootTables &roots,
                                    uint32_t coefficientCount,
                                    uint64_t productBitOffset,
@@ -1293,7 +1291,7 @@ GatherLinearToSignedLimbs(const HpSharkFloat<SharkFloatParams> *linearValue,
 template <class SharkFloatParams>
 static void
 InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
-                             const SharkNTT::PlanPrime &plan,
+                             const SharkNTT::Plan &plan,
                              SharkNTT::RootTables &roots,
                              uint64_t *spectrum,
                              uint32_t coefficientCount,
@@ -1318,17 +1316,17 @@ InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 
     PrintArray("inverse normal residues", spectrum, activeN);
-    StoreReference2DebugState(debugCombo, residuesPurpose, spectrum, activeN);
+    StoreReferenceDebugState(debugCombo, residuesPurpose, spectrum, activeN);
 
     UnpackResiduesToSignedLimbs<SharkFloatParams>(spectrum, plan, coefficientCount, limbs, limbCount);
-    StoreReference2DebugState(
+    StoreReferenceDebugState(
         debugCombo, limbsPurpose, reinterpret_cast<const uint64_t *>(limbs), limbCount);
 }
 
 template <class SharkFloatParams>
 static void
 InverseAlignedSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
-                                    const SharkNTT::PlanPrime &plan,
+                                    const SharkNTT::Plan &plan,
                                     SharkNTT::RootTables &roots,
                                     uint64_t *spectrum,
                                     uint32_t coefficientCount,
@@ -1347,7 +1345,7 @@ InverseAlignedSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo
         debugCombo, spectrum, activeN, static_cast<uint32_t>(plan.stages), roots);
 
     if (residuesPurpose != DebugStatePurpose::Invalid)
-        StoreReference2DebugState(debugCombo, residuesPurpose, spectrum, activeN);
+        StoreReferenceDebugState(debugCombo, residuesPurpose, spectrum, activeN);
     UnpackAlignedResiduesToSignedLimbs(debugCombo,
                                        spectrum,
                                        plan,
@@ -1359,7 +1357,7 @@ InverseAlignedSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo
                                        linearBitOffset,
                                        limbs,
                                        limbCount);
-    StoreReference2DebugState(
+    StoreReferenceDebugState(
         debugCombo, limbsPurpose, reinterpret_cast<const uint64_t *>(limbs), limbCount);
 }
 
@@ -1524,8 +1522,8 @@ FinalizeSignedStream(const FinalizationStream<SharkFloatParams> &stream,
                                                       digitLength,
                                                       magnitudeLength,
                                                       negative);
-    StoreReference2DebugState(debugCombo, digitsPurpose, digits, digitLength);
-    StoreReference2DebugState(debugCombo, magnitudePurpose, magnitude, magnitudeLength);
+    StoreReferenceDebugState(debugCombo, digitsPurpose, digits, digitLength);
+    StoreReferenceDebugState(debugCombo, magnitudePurpose, magnitude, magnitudeLength);
     NormalizeMagnitudeToHpFloat<SharkFloatParams>(
         magnitude, magnitudeLength, stream.CommonExp, negative, stream.Out);
 }
@@ -1533,7 +1531,7 @@ FinalizeSignedStream(const FinalizationStream<SharkFloatParams> &stream,
 template <class SharkFloatParams>
 static void
 PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                     const SharkNTT::PlanPrime &plan,
+                     const SharkNTT::Plan &plan,
                      SharkNTT::RootTables &roots,
                      const HpSharkFloat<SharkFloatParams> &zReal,
                      const HpSharkFloat<SharkFloatParams> &zImag,
@@ -1563,7 +1561,7 @@ PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
 template <class SharkFloatParams>
 static void
 PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                         const SharkNTT::PlanPrime &plan,
+                         const SharkNTT::Plan &plan,
                          SharkNTT::RootTables &roots,
                          const HpSharkFloat<SharkFloatParams> &dzdcReal,
                          const HpSharkFloat<SharkFloatParams> &dzdcImag,
@@ -1593,7 +1591,7 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
 template <class SharkFloatParams, class... Terms>
 static uint64_t
 RequiredCoefficientsForStream(int32_t commonExp,
-                              const SharkNTT::PlanPrime &plan,
+                              const SharkNTT::Plan &plan,
                               const FusedTerm<SharkFloatParams> &first,
                               const Terms &...terms)
 {
@@ -1618,7 +1616,6 @@ RequiredCoefficientsForStream(int32_t commonExp,
     return requiredCoefficients;
 }
 
-#if 0
 template <class SharkFloatParams>
 static void
 FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
@@ -1642,359 +1639,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     assert(actualPrecisionLimbs > storagePrecisionLimbs / 2u);
     assert(actualPrecisionLimbs <= storagePrecisionLimbs);
     const uint32_t ignoredPrecisionBits = (storagePrecisionLimbs - actualPrecisionLimbs) * 32u;
-    const SharkNTT::PlanPrime basePlan =
-        SharkNTT::BuildPlanPrime2(static_cast<int>(actualPrecisionLimbs));
-    assert(basePlan.ok);
-    assert(basePlan.b > 0);
-    if (IsDebugTraceEnabled())
-        std::cout << "ReferenceOrbit2 fused step begin\n";
-    PrintHpValue("zReal", zReal);
-    PrintHpValue("zImag", zImag);
-    PrintHpValue("cReal", cReal);
-    PrintHpValue("cImag", cImag);
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        PrintHpValue("dzdcReal", *dzdcReal);
-        PrintHpValue("dzdcImag", *dzdcImag);
-        PrintHpValue("one", *one);
-    }
-    const FusedTerm<SharkFloatParams> realZ2 = MakeProductTerm(
-        zReal, SpectrumId::ZReal, zReal, SpectrumId::ZReal, false, 0, ignoredPrecisionBits);
-    const FusedTerm<SharkFloatParams> realNegY2 = MakeProductTerm(
-        zImag, SpectrumId::ZImag, zImag, SpectrumId::ZImag, true, 0, ignoredPrecisionBits);
-    const FusedTerm<SharkFloatParams> realC =
-        MakeLinearTerm(cReal, SpectrumId::CReal, false, ignoredPrecisionBits);
-
-    const FusedTerm<SharkFloatParams> imagTwoZY = MakeProductTerm(
-        zReal, SpectrumId::ZReal, zImag, SpectrumId::ZImag, false, 1, ignoredPrecisionBits);
-    const FusedTerm<SharkFloatParams> imagC =
-        MakeLinearTerm(cImag, SpectrumId::CImag, false, ignoredPrecisionBits);
-
-    int32_t realCommonExp = 0;
-    int32_t imagCommonExp = 0;
-    const bool realIsZero = ResolveCommonExponent(realCommonExp, realZ2, realNegY2, realC);
-    const bool imagIsZero = ResolveCommonExponent(imagCommonExp, imagTwoZY, imagC);
-
-    uint64_t maxRequiredCoefficients =
-        std::max(RequiredCoefficientsForStream(realCommonExp, basePlan, realZ2, realNegY2, realC),
-                 RequiredCoefficientsForStream(imagCommonExp, basePlan, imagTwoZY, imagC));
-
-    int32_t dzdcRealCommonExp = 0;
-    int32_t dzdcImagCommonExp = 0;
-    bool dzdcRealIsZero = true;
-    bool dzdcImagIsZero = true;
-    FusedTerm<SharkFloatParams> dzdcRealW0{};
-    FusedTerm<SharkFloatParams> dzdcRealNegW1{};
-    FusedTerm<SharkFloatParams> dzdcRealOne{};
-    FusedTerm<SharkFloatParams> dzdcImagW2{};
-    FusedTerm<SharkFloatParams> dzdcImagW3{};
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        dzdcRealW0 = MakeProductTerm(
-            zReal, SpectrumId::ZReal, *dzdcReal, SpectrumId::DzdcReal, false, 1, ignoredPrecisionBits);
-        dzdcRealNegW1 = MakeProductTerm(
-            zImag, SpectrumId::ZImag, *dzdcImag, SpectrumId::DzdcImag, true, 1, ignoredPrecisionBits);
-        dzdcRealOne = MakeLinearTerm(*one, SpectrumId::One, false, ignoredPrecisionBits);
-        dzdcImagW2 = MakeProductTerm(
-            zImag, SpectrumId::ZImag, *dzdcReal, SpectrumId::DzdcReal, false, 1, ignoredPrecisionBits);
-        dzdcImagW3 = MakeProductTerm(
-            zReal, SpectrumId::ZReal, *dzdcImag, SpectrumId::DzdcImag, false, 1, ignoredPrecisionBits);
-        dzdcRealIsZero =
-            ResolveCommonExponent(dzdcRealCommonExp, dzdcRealW0, dzdcRealNegW1, dzdcRealOne);
-        dzdcImagIsZero = ResolveCommonExponent(dzdcImagCommonExp, dzdcImagW2, dzdcImagW3);
-        maxRequiredCoefficients =
-            std::max(maxRequiredCoefficients,
-                     RequiredCoefficientsForStream(
-                         dzdcRealCommonExp, basePlan, dzdcRealW0, dzdcRealNegW1, dzdcRealOne));
-        maxRequiredCoefficients =
-            std::max(maxRequiredCoefficients,
-                     RequiredCoefficientsForStream(dzdcImagCommonExp, basePlan, dzdcImagW2, dzdcImagW3));
-    }
-
-    if (IsDebugTraceEnabled()) {
-        std::cout << "maxRequiredCoefficients=" << maxRequiredCoefficients
-                  << " realCommonExp=" << realCommonExp << " imagCommonExp=" << imagCommonExp
-                  << std::endl;
-    }
-
-    if (maxRequiredCoefficients == 0) {
-        SetZero(outReal);
-        SetZero(outImag);
-        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
-        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            SetZero(outDzdcReal);
-            SetZero(outDzdcImag);
-            StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
-            StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
-        }
-        return;
-    }
-
-    const uint64_t requiredN = CeilPowerOfTwo(maxRequiredCoefficients);
-    if (requiredN > workspace.ActiveMaxFusedN) {
-        std::cerr << "ReferenceOrbit2 fused workspace exceeded: requestedCoefficients="
-                  << maxRequiredCoefficients << " requiredN=" << requiredN
-                  << " capacity=" << workspace.ActiveMaxFusedN << '\n';
-        assert(false);
-    }
-    using Cache = FusedPlanCacheTraits<SharkFloatParams>;
-    const uint32_t activeN = requiredN < workspace.ActiveMinFusedN ? workspace.ActiveMinFusedN
-                                                                   : static_cast<uint32_t>(requiredN);
-    assert(activeN >= workspace.ActiveMinFusedN);
-    assert(maxRequiredCoefficients <= activeN);
-    assert(activeN <= workspace.ActiveMaxFusedN);
-    assert(activeN >= 2u);
-    assert((SharkNTT::PHI % activeN) == 0ull);
-    const uint32_t planSlot = CountTrailingZeros(activeN) - Cache::MinFusedStages;
-    assert(planSlot < Cache::EntryCount);
-    if (activeN != previousActiveN) {
-        // if (IsDebugTraceEnabled()) {
-        std::cout << "ReferenceOrbit2 plan changed: iteration=" << iteration
-                  << " previousN=" << previousActiveN << " activeN=" << activeN
-                  << " planSlot=" << planSlot << '\n';
-        //}
-        previousActiveN = activeN; // Set a breakpoint here to observe every plan transition.
-    }
-    SharkNTT::PlanPrime plan = workspace.Plans[planSlot];
-    plan.n32 = basePlan.n32;
-    plan.L = basePlan.L;
-    SharkNTT::RootTables &roots = workspace.PlanRoots[planSlot];
-    const HpSharkReference2ConstantSpectra constantSpectra = workspace.ConstantSpectra[planSlot];
-    workspace.CReal = constantSpectra.CReal;
-    workspace.CImag = constantSpectra.CImag;
-    workspace.One = constantSpectra.One;
-    const uint32_t coefficientCount = activeN;
-    const uint32_t limbCount = (coefficientCount * static_cast<uint32_t>(plan.b) + 31u) / 32u + 2u;
-    assert(limbCount <= workspace.ActiveMaxFusedLimbs);
-
-    if constexpr (HpShark::DebugChecksums) {
-        // The GPU reuses the cached final constant spectra instead of repacking constants each
-        // iteration. Keep both legacy constant checksum slots aligned with that cached data.
-        StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z0XY, workspace.CReal, activeN);
-        StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z2XY, workspace.CReal, activeN);
-        StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z0W0, workspace.CImag, activeN);
-        StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z2W0, workspace.CImag, activeN);
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z0W3, workspace.One, activeN);
-            StoreReference2DebugState(debugHostCombo, DebugStatePurpose::Z2W3, workspace.One, activeN);
-        }
-    }
-
-    PrintTerm("real z^2", realZ2);
-    PrintTerm("real -y^2", realNegY2);
-    PrintTerm("real c", realC);
-    PrintTerm("imag 2zy", imagTwoZY);
-    PrintTerm("imag c", imagC);
-    if (IsDebugTraceEnabled()) {
-        std::cout << "  realIsZero=" << realIsZero << " realCommonExp=" << realCommonExp
-                  << " imagIsZero=" << imagIsZero << " imagCommonExp=" << imagCommonExp << '\n';
-    }
-
-    PrintPlan(plan);
-
-    if (IsDebugTraceEnabled()) {
-        PrintArray("roots.stage_omegas", roots.stage_omegas, roots.stages);
-        PrintArray("roots.stage_omegas_inv", roots.stage_omegas_inv, roots.stages);
-        PrintArray("roots.omega_pows", roots.omega_pows, roots.N);
-        PrintArray("roots.stage_twiddles_fwd", roots.stage_twiddles_fwd, roots.total_twiddles);
-        PrintArray("roots.stage_twiddles_inv", roots.stage_twiddles_inv, roots.total_twiddles);
-        PrintHexValue("roots.Ninvm_mont", roots.Ninvm_mont);
-        PrintHexValue("roots.Ninv", roots.Ninv);
-        std::cout << '\n';
-    }
-
-    PrepareNormalSpectra(debugHostCombo, plan, roots, zReal, zImag, ignoredPrecisionBits, workspace);
-
-    if (realIsZero) {
-        SetZero(outReal);
-    } else {
-        AccumulateOutputSpectrum(debugHostCombo,
-                                 plan,
-                                 roots,
-                                 workspace,
-                                 realCommonExp,
-                                 workspace.RealOutput,
-                                 DebugStatePurpose::Z2_Perm1,
-                                 realZ2,
-                                 realNegY2,
-                                 realC);
-        InverseSpectrumToSignedLimbs<SharkFloatParams>(debugHostCombo,
-                                                       plan,
-                                                       roots,
-                                                       workspace.RealOutput,
-                                                       coefficientCount,
-                                                       workspace.RealLimbs,
-                                                       limbCount,
-                                                       DebugStatePurpose::Z2_Perm4,
-                                                       DebugStatePurpose::UnpackXX);
-        const FinalizationStream<SharkFloatParams> realStream{
-            workspace.RealLimbs, limbCount, realCommonExp, outReal};
-        FinalizeSignedStream(realStream,
-                             workspace.MagnitudeDigits,
-                             workspace.Magnitude,
-                             workspace.ActiveMaxFusedLimbs,
-                             debugHostCombo,
-                             DebugStatePurpose::SignedCarry1,
-                             DebugStatePurpose::FinalAdd1);
-    }
-
-    if (imagIsZero) {
-        SetZero(outImag);
-    } else {
-        AccumulateOutputSpectrum(debugHostCombo,
-                                 plan,
-                                 roots,
-                                 workspace,
-                                 imagCommonExp,
-                                 workspace.ImagOutput,
-                                 DebugStatePurpose::Z2_Perm2,
-                                 imagTwoZY,
-                                 imagC);
-        InverseSpectrumToSignedLimbs<SharkFloatParams>(debugHostCombo,
-                                                       plan,
-                                                       roots,
-                                                       workspace.ImagOutput,
-                                                       coefficientCount,
-                                                       workspace.ImagLimbs,
-                                                       limbCount,
-                                                       DebugStatePurpose::Z2_Perm5,
-                                                       DebugStatePurpose::UnpackYY);
-        const FinalizationStream<SharkFloatParams> imagStream{
-            workspace.ImagLimbs, limbCount, imagCommonExp, outImag};
-        FinalizeSignedStream(imagStream,
-                             workspace.MagnitudeDigits,
-                             workspace.Magnitude,
-                             workspace.ActiveMaxFusedLimbs,
-                             debugHostCombo,
-                             DebugStatePurpose::SignedCarry2,
-                             DebugStatePurpose::FinalAdd2);
-    }
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
-    PrintHpValue("fused outReal", *outReal);
-    PrintHpValue("fused outImag", *outImag);
-
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        assert(dzdcReal != nullptr);
-        assert(dzdcImag != nullptr);
-        assert(one != nullptr);
-        assert(outDzdcReal != nullptr);
-        assert(outDzdcImag != nullptr);
-
-        PrepareDerivativeSpectra(
-            debugHostCombo, plan, roots, *dzdcReal, *dzdcImag, ignoredPrecisionBits, workspace);
-        PrintTerm("dzdc real w0", dzdcRealW0);
-        PrintTerm("dzdc real -w1", dzdcRealNegW1);
-        PrintTerm("dzdc real one", dzdcRealOne);
-        PrintTerm("dzdc imag w2", dzdcImagW2);
-        PrintTerm("dzdc imag w3", dzdcImagW3);
-        if (IsDebugTraceEnabled()) {
-            std::cout << "  dzdcRealIsZero=" << dzdcRealIsZero
-                      << " dzdcRealCommonExp=" << dzdcRealCommonExp
-                      << " dzdcImagIsZero=" << dzdcImagIsZero
-                      << " dzdcImagCommonExp=" << dzdcImagCommonExp << '\n';
-        }
-
-        if (dzdcRealIsZero) {
-            SetZero(outDzdcReal);
-        } else {
-            AccumulateOutputSpectrum(debugHostCombo,
-                                     plan,
-                                     roots,
-                                     workspace,
-                                     dzdcRealCommonExp,
-                                     workspace.DzdcRealOutput,
-                                     DebugStatePurpose::Z2_PermW0,
-                                     dzdcRealW0,
-                                     dzdcRealNegW1,
-                                     dzdcRealOne);
-            InverseSpectrumToSignedLimbs<SharkFloatParams>(debugHostCombo,
-                                                           plan,
-                                                           roots,
-                                                           workspace.DzdcRealOutput,
-                                                           coefficientCount,
-                                                           workspace.DzdcRealLimbs,
-                                                           limbCount,
-                                                           DebugStatePurpose::Z2_PermW0b,
-                                                           DebugStatePurpose::UnpackW0);
-            const FinalizationStream<SharkFloatParams> dzdcRealStream{
-                workspace.DzdcRealLimbs, limbCount, dzdcRealCommonExp, outDzdcReal};
-            FinalizeSignedStream(dzdcRealStream,
-                                 workspace.MagnitudeDigits,
-                                 workspace.Magnitude,
-                                 workspace.ActiveMaxFusedLimbs,
-                                 debugHostCombo,
-                                 DebugStatePurpose::SignedCarryDzdc1,
-                                 DebugStatePurpose::FinalAddDzdc1);
-        }
-
-        if (dzdcImagIsZero) {
-            SetZero(outDzdcImag);
-        } else {
-            AccumulateOutputSpectrum(debugHostCombo,
-                                     plan,
-                                     roots,
-                                     workspace,
-                                     dzdcImagCommonExp,
-                                     workspace.DzdcImagOutput,
-                                     DebugStatePurpose::Z2_PermW1,
-                                     dzdcImagW2,
-                                     dzdcImagW3);
-            InverseSpectrumToSignedLimbs<SharkFloatParams>(debugHostCombo,
-                                                           plan,
-                                                           roots,
-                                                           workspace.DzdcImagOutput,
-                                                           coefficientCount,
-                                                           workspace.DzdcImagLimbs,
-                                                           limbCount,
-                                                           DebugStatePurpose::Z2_PermW1b,
-                                                           DebugStatePurpose::UnpackW1);
-            const FinalizationStream<SharkFloatParams> dzdcImagStream{
-                workspace.DzdcImagLimbs, limbCount, dzdcImagCommonExp, outDzdcImag};
-            FinalizeSignedStream(dzdcImagStream,
-                                 workspace.MagnitudeDigits,
-                                 workspace.Magnitude,
-                                 workspace.ActiveMaxFusedLimbs,
-                                 debugHostCombo,
-                                 DebugStatePurpose::SignedCarryDzdc2,
-                                 DebugStatePurpose::FinalAddDzdc2);
-        }
-        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
-        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
-        PrintHpValue("fused outDzdcReal", *outDzdcReal);
-        PrintHpValue("fused outDzdcImag", *outDzdcImag);
-    }
-
-    if (IsDebugTraceEnabled())
-        std::cout << "ReferenceOrbit2 fused step end\n";
-}
-
-#endif
-
-template <class SharkFloatParams>
-static void
-FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
-                        const HpSharkFloat<SharkFloatParams> &zImag,
-                        const HpSharkFloat<SharkFloatParams> *dzdcReal,
-                        const HpSharkFloat<SharkFloatParams> *dzdcImag,
-                        const HpSharkFloat<SharkFloatParams> &cReal,
-                        const HpSharkFloat<SharkFloatParams> &cImag,
-                        const HpSharkFloat<SharkFloatParams> *one,
-                        HpSharkFloat<SharkFloatParams> *outReal,
-                        HpSharkFloat<SharkFloatParams> *outImag,
-                        HpSharkFloat<SharkFloatParams> *outDzdcReal,
-                        HpSharkFloat<SharkFloatParams> *outDzdcImag,
-                        uint64_t iteration,
-                        uint32_t &previousActiveN,
-                        uint32_t actualPrecisionLimbs,
-                        FusedWorkspace &workspace,
-                        DebugHostCombo<SharkFloatParams> &debugHostCombo)
-{
-    constexpr uint32_t storagePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
-    assert(actualPrecisionLimbs > storagePrecisionLimbs / 2u);
-    assert(actualPrecisionLimbs <= storagePrecisionLimbs);
-    const uint32_t ignoredPrecisionBits = (storagePrecisionLimbs - actualPrecisionLimbs) * 32u;
-    const SharkNTT::PlanPrime basePlan =
-        SharkNTT::BuildPlanPrime2(static_cast<int>(actualPrecisionLimbs));
+    const SharkNTT::Plan basePlan = SharkNTT::BuildPlan(static_cast<int>(actualPrecisionLimbs));
     assert(basePlan.ok);
     assert(basePlan.b > 0);
     const uint32_t bitsPerCoefficient = static_cast<uint32_t>(basePlan.b);
@@ -2198,20 +1843,19 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                      DebugStatePurpose::FinalAddDzdc2);
             }
         }
-        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
-        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
+        StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
+        StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
-            StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
+            StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
+            StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
         }
         return;
     }
 
     const uint64_t requiredN = CeilPowerOfTwo(requiredCoefficients);
     if (requiredN > workspace.ActiveMaxFusedN) {
-        std::cerr << "ReferenceOrbit2 fused workspace exceeded: requestedCoefficients="
-                  << requiredCoefficients << " requiredN=" << requiredN
-                  << " capacity=" << workspace.ActiveMaxFusedN << '\n';
+        std::cerr << "Reference fused workspace exceeded: requestedCoefficients=" << requiredCoefficients
+                  << " requiredN=" << requiredN << " capacity=" << workspace.ActiveMaxFusedN << '\n';
         assert(false);
     }
     using Cache = FusedPlanCacheTraits<SharkFloatParams>;
@@ -2226,13 +1870,13 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     assert(planSlot < Cache::EntryCount);
     if (activeN != previousActiveN) {
         if (IsDebugTraceEnabled())
-            std::cout << "ReferenceOrbit2 plan changed: iteration=" << iteration
+            std::cout << "Reference plan changed: iteration=" << iteration
                       << " previousN=" << previousActiveN << " activeN=" << activeN
                       << " planSlot=" << planSlot << '\n';
         previousActiveN = activeN;
     }
 
-    SharkNTT::PlanPrime plan = workspace.Plans[planSlot];
+    SharkNTT::Plan plan = workspace.Plans[planSlot];
     plan.n32 = basePlan.n32;
     plan.L = basePlan.L;
     SharkNTT::RootTables &roots = workspace.PlanRoots[planSlot];
@@ -2366,14 +2010,12 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
             workspace.DzdcImagOutput[i] = derivativeImag;
         }
     }
-    StoreReference2DebugState(
-        debugHostCombo, DebugStatePurpose::Z2_Perm1, workspace.RealOutput, activeN);
-    StoreReference2DebugState(
-        debugHostCombo, DebugStatePurpose::Z2_Perm2, workspace.ImagOutput, activeN);
+    StoreReferenceDebugState(debugHostCombo, DebugStatePurpose::Z2_Perm1, workspace.RealOutput, activeN);
+    StoreReferenceDebugState(debugHostCombo, DebugStatePurpose::Z2_Perm2, workspace.ImagOutput, activeN);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        StoreReference2DebugState(
+        StoreReferenceDebugState(
             debugHostCombo, DebugStatePurpose::Z2_PermW0, workspace.DzdcRealOutput, activeN);
-        StoreReference2DebugState(
+        StoreReferenceDebugState(
             debugHostCombo, DebugStatePurpose::Z2_PermW1, workspace.DzdcImagOutput, activeN);
     }
 
@@ -2450,8 +2092,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                          debugHostCombo,
                          DebugStatePurpose::SignedCarry2,
                          DebugStatePurpose::FinalAdd2);
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         FinalizeSignedStream({workspace.DzdcRealLimbs, limbCount, dzdcRealExponent, outDzdcReal},
                              workspace.MagnitudeDigits,
@@ -2467,8 +2109,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                              debugHostCombo,
                              DebugStatePurpose::SignedCarryDzdc2,
                              DebugStatePurpose::FinalAddDzdc2);
-        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
-        StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
+        StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
+        StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
     }
 }
 
@@ -2496,7 +2138,7 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                       uint64_t maxIters,
                       uint32_t actualPrecisionLimbs,
                       DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                      HpShark::Reference2PreparedTables<SharkFloatParams> *preparedTables)
+                      HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables)
 {
     if (IsDebugTraceEnabled()) {
         std::cout << "ReferenceOrbit2Helper begin maxIters=" << maxIters
@@ -2512,15 +2154,15 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
 
     EraseAllDebugStates(debugHostCombo);
 
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZReal, *cReal);
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZImag, *cImag);
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCReal, *cReal);
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCImag, *cImag);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZReal, *cReal);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryZImag, *cImag);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCReal, *cReal);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceEntryCImag, *cImag);
 
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
-    std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> localPreparedTables;
+    std::unique_ptr<HpShark::ReferencePreparedTables<SharkFloatParams>> localPreparedTables;
     if (preparedTables == nullptr) {
-        localPreparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
+        localPreparedTables = HpShark::PrepareHpSharkReferenceTables<SharkFloatParams>(
             HpShark::LaunchParams{0, 0}, *cReal, *cImag, actualPrecisionLimbs);
         preparedTables = localPreparedTables.get();
     }
@@ -2559,9 +2201,9 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
         PrintHpValue("ReferenceOrbit2 NR final dzdcImag", *outDzdcImag);
         PrintHdrValue("ReferenceOrbit2 NR final d2Real", outD2Real);
         PrintHdrValue("ReferenceOrbit2 NR final d2Imag", outD2Imag);
-        StoreReference2DebugValue(
+        StoreReferenceDebugValue(
             debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
-        StoreReference2DebugValue(
+        StoreReferenceDebugValue(
             debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
         return result;
     }
@@ -2632,9 +2274,9 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                 result->PeriodResult = PeriodicityResult::PeriodFound;
                 result->FinalZReal = *zReal;
                 result->FinalZImag = *zImag;
-                StoreReference2DebugValue(
+                StoreReferenceDebugValue(
                     debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
-                StoreReference2DebugValue(
+                StoreReferenceDebugValue(
                     debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
                 return result;
             } else {
@@ -2659,9 +2301,9 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                 result->PeriodResult = PeriodicityResult::Escaped;
                 result->FinalZReal = *zReal;
                 result->FinalZImag = *zImag;
-                StoreReference2DebugValue(
+                StoreReferenceDebugValue(
                     debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
-                StoreReference2DebugValue(
+                StoreReferenceDebugValue(
                     debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
                 return result;
             }
@@ -2703,8 +2345,8 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
     result->FinalZImag = *zImag;
     PrintHpValue("ReferenceOrbit2 final zReal", result->FinalZReal);
     PrintHpValue("ReferenceOrbit2 final zImag", result->FinalZImag);
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
-    StoreReference2DebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
+    StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
     return result;
 }
 
@@ -2866,12 +2508,12 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                             typename SharkFloatParams::Float *outD2Imag,
                             uint32_t actualPrecisionLimbs,
                             DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                            HpShark::Reference2PreparedTables<SharkFloatParams> *preparedTables)
+                            HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables)
 {
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
-    std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> localPreparedTables;
+    std::unique_ptr<HpShark::ReferencePreparedTables<SharkFloatParams>> localPreparedTables;
     if (preparedTables == nullptr) {
-        localPreparedTables = HpShark::PrepareHpSharkReference2Tables<SharkFloatParams>(
+        localPreparedTables = HpShark::PrepareHpSharkReferenceTables<SharkFloatParams>(
             HpShark::LaunchParams{0, 0}, *cReal, *cImag, actualPrecisionLimbs);
         preparedTables = localPreparedTables.get();
     }
@@ -2899,7 +2541,7 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                                             uint64_t,                                                   \
                                             uint32_t,                                                   \
                                             DebugHostCombo<SharkFloatParams> &,                         \
-                                            HpShark::Reference2PreparedTables<SharkFloatParams> *);
+                                            HpShark::ReferencePreparedTables<SharkFloatParams> *);
 
 ExplicitInstantiateAll();
 
@@ -2927,7 +2569,7 @@ ExplicitlyInstantiate(SharkParams12);
         typename SharkFloatParams::Float *,                                                             \
         uint32_t,                                                                                       \
         DebugHostCombo<SharkFloatParams> &,                                                             \
-        HpShark::Reference2PreparedTables<SharkFloatParams> *);
+        HpShark::ReferencePreparedTables<SharkFloatParams> *);
 
 #undef ExplicitlyInstantiate
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateDerivative(SharkFloatParams)

@@ -1,27 +1,15 @@
 set(HPSHARK_GENERATED_INST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated_inst)
 
 set(HPSHARK_GENERATED_CU_FILES
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_AddKernels_P.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_AddKernels_NR.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_AddKernels_Dbl.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_P.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_NR.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkFloat_Conversions_Dbl.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_P.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_NR.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference_Dbl.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference2_P.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference2_NR.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_HpSharkReference2_Dbl.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_MultiplyNTT_P.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_MultiplyNTT_NR.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_MultiplyNTT_Dbl.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_P.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_NR.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_ReferenceGpuLoop_Dbl.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_Reference2GpuLoop_P.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_Reference2GpuLoop_NR.cu
-    ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_Reference2GpuLoop_Dbl.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_P.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_NR.cu
     ${HPSHARK_GENERATED_INST_DIR}/SharkExplicitInstantiate_SharkNTT_Primitives_Dbl.cu
@@ -40,7 +28,7 @@ target_sources(HpSharkFloatLib PRIVATE
     PrecisionCalculator.cpp
     AbortMonitor.cpp
     BenchmarkTimer.cpp
-    KernelInvokeReference2Cache.cpp
+    KernelInvokeReferenceCache.cpp
     LaunchParamsCalculator.cpp
     TestVerbose.cpp
     ${HPSHARK_GENERATED_CU_FILES}

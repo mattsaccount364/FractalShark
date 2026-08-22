@@ -1,7 +1,7 @@
 # NcuAnalysis
 
 Python/PowerShell helpers for attributed NCU (Nsight Compute) profile
-analysis of FractalShark CUDA kernels. Used for the Reference2
+analysis of FractalShark CUDA kernels. Used for the GPU reference
 `grid.sync()` / barrier attribution work described in
 `Notes/Reference2GpuLargeStageRadixAnalysis.md`.
 
@@ -94,7 +94,7 @@ py -3 tools\NcuAnalysis\inspect_hot.py --report $rep `
   (32.0 uniform, 1.0 fully divergent) and `memory_analysis`'s launch
   limiters together say whether a result is stall-bound (issue << 100%,
   pipes all < ~5% of peak, occupancy pinned by shared memory/registers),
-  which is the diagnostic path taken in the Reference2 analysis note:
+  which is the diagnostic path taken in the GPU reference analysis note:
   issue 14.8% / top pipe (LSU) 3.8% / achieved 16.65% occupancy / shared-
   memory-limited => pure latency-bound, no pipe saturated.
 

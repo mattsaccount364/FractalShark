@@ -65,17 +65,11 @@ specializations, and internal kernels change more frequently than this appendix.
     \item \code{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
   \end{itemize}
 
-\item \textbf{High-precision Ref1 kernels} (\cref{subsec:ref-orbit-gpu})
+\item \textbf{High-precision GPU reference kernels}
+  (\cref{subsec:ref-orbit-gpu,subsec:fused-ntt-reference-step})
   \begin{itemize}
-    \item \code{HpSharkReferenceGpuKernel}
+    \item \code{HpSharkReferenceSetupKernel}
     \item \code{HpSharkReferenceGpuLoop}
-  \end{itemize}
-
-\item \textbf{Fused high-precision Ref2 kernels}
-  (\cref{subsec:fused-ntt-reference-step})
-  \begin{itemize}
-    \item \code{HpSharkReference2SetupKernel}
-    \item \code{HpSharkReference2GpuLoop}
   \end{itemize}
 
 \item \textbf{Utility kernels}
@@ -85,16 +79,9 @@ specializations, and internal kernels change more frequently than this appendix.
     \item \code{max\_kernel}
   \end{itemize}
 
-\item \textbf{Addition kernels} (\cref{sec:hp-add})
+\item \textbf{Reference NTT primitives} (\cref{sec:ntt-multiply})
   \begin{itemize}
-    \item \code{AddKernel}
-    \item \code{AddKernelTestLoop}
-  \end{itemize}
-
-\item \textbf{Multiplication (NTT) kernels} (\cref{sec:ntt-multiply})
-  \begin{itemize}
-    \item \code{MultiplyKernelNTT}
-    \item \code{MultiplyKernelNTTTestLoop}
+    \item \code{SharkNTT\_Primitives}
   \end{itemize}
 
 \item \textbf{Disabled kernels}

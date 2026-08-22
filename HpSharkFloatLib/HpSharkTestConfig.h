@@ -19,15 +19,9 @@ enum class BasicCorrectnessMode : int {
     PerfSingleNRView5 = 8,
     PerfSingleNRView30 = 9,
     PerfSingleNRView32 = 10,
-    // Operator perf
-    PerfSingleAdd = 11,
-    PerfSingleMultiply = 12,
-    PerfSingleRef = 13,
-    PerfSingleNRAdd = 14,
-    PerfSingleNRMultiply = 15,
-    Correctness_P1_to_P5 = 16,
-    PerfSingleRef2 = 17,
-    PerfSingleViewAny = 18 // run reference-orbit perf test for any view 1..34
+    Correctness_P1_to_P5 = 11,
+    PerfSingleRef = 12,
+    PerfSingleViewAny = 13 // run reference-orbit perf test for any view 1..34
 };
 
 namespace HpShark {

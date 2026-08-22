@@ -1,7 +1,9 @@
 #pragma once
 
+// Persistent cache support for prepared reference-NTT tables.
+
 #include "Environment.h"
-#include "KernelInvokeReference2Setup.h"
+#include "KernelInvokeReferenceSetup.h"
 
 #include <algorithm>
 #include <array>
@@ -18,16 +20,16 @@
 
 namespace HpShark {
 
-class Reference2MappedCacheFile {
+class ReferenceMappedCacheFile {
 public:
-    static std::unique_ptr<Reference2MappedCacheFile> CreateWrite(const wchar_t *path, size_t bytes);
+    static std::unique_ptr<ReferenceMappedCacheFile> CreateWrite(const wchar_t *path, size_t bytes);
 
-    static std::unique_ptr<Reference2MappedCacheFile> OpenRead(const wchar_t *path);
+    static std::unique_ptr<ReferenceMappedCacheFile> OpenRead(const wchar_t *path);
 
-    ~Reference2MappedCacheFile();
+    ~ReferenceMappedCacheFile();
 
-    Reference2MappedCacheFile(const Reference2MappedCacheFile &) = delete;
-    Reference2MappedCacheFile &operator=(const Reference2MappedCacheFile &) = delete;
+    ReferenceMappedCacheFile(const ReferenceMappedCacheFile &) = delete;
+    ReferenceMappedCacheFile &operator=(const ReferenceMappedCacheFile &) = delete;
 
     uint8_t *Data();
 
@@ -38,13 +40,13 @@ public:
     void Flush();
 
 private:
-    explicit Reference2MappedCacheFile(std::unique_ptr<Environment::MappedFile> mappedFile);
+    explicit ReferenceMappedCacheFile(std::unique_ptr<Environment::MappedFile> mappedFile);
 
     std::unique_ptr<Environment::MappedFile> m_MappedFile;
 };
 
 #pragma pack(push, 1)
-struct Reference2CacheHeader {
+struct ReferenceCacheHeader {
     char Magic[8];
     uint32_t Version;
     uint32_t HeaderBytes;
@@ -63,12 +65,12 @@ struct Reference2CacheHeader {
 };
 #pragma pack(pop)
 
-static constexpr uint32_t Reference2CacheVersion = 6;
+static constexpr uint32_t ReferenceCacheVersion = 6;
 
-namespace Reference2CacheDetail {
+namespace ReferenceCacheDetail {
 
 inline constexpr std::array<char, 8> CacheMagic{'F', 'S', 'R', '2', 'C', 'A', 'C', 'H'};
-inline constexpr wchar_t CacheDirectoryName[] = L"Ref2PreparedTemp";
+inline constexpr wchar_t CacheDirectoryName[] = L"ReferencePreparedTemp";
 
 inline constexpr size_t
 Align(size_t value, size_t alignment)
@@ -77,7 +79,7 @@ Align(size_t value, size_t alignment)
 }
 
 template <class SharkFloatParams> struct CacheLayout {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
 
     static constexpr size_t PayloadAlignment = 16u;
     size_t StageBytes;
@@ -105,7 +107,7 @@ template <class SharkFloatParams> struct CacheLayout {
           ForwardTwiddlesOffset(StageOmegasInverseOffset + StageBytes),
           InverseTwiddlesOffset(ForwardTwiddlesOffset + TwiddleBytes),
           NinvOffset(InverseTwiddlesOffset + TwiddleBytes), PayloadBytes(NinvOffset + NinvBytes),
-          PayloadOffset(Align(sizeof(Reference2CacheHeader), PayloadAlignment)),
+          PayloadOffset(Align(sizeof(ReferenceCacheHeader), PayloadAlignment)),
           FileBytes(PayloadOffset + PayloadBytes), MinFusedN(1u << minFusedStages),
           MaxFusedN(1u << maxFusedStages), MinFusedStages(minFusedStages),
           MaxFusedStages(maxFusedStages), PlanCacheEntryCount(maxFusedStages - minFusedStages + 1u)
@@ -117,7 +119,7 @@ template <class SharkFloatParams>
 uint32_t
 PlanMask(uint32_t minFusedStages, uint32_t maxFusedStages)
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     const uint32_t firstSlot = minFusedStages - Workspace::MinFusedStages;
     const uint32_t count = maxFusedStages - minFusedStages + 1u;
     const uint32_t rangeMask = count == 32u ? ~0u : (1u << count) - 1u;
@@ -133,7 +135,7 @@ CachePath(int64_t testNumber,
           uint32_t maxFusedStages)
 {
     std::wostringstream name;
-    name << L"Ref2Prepared-v" << Reference2CacheVersion << L"-p" << SharkFloatParams::GlobalNumUint32
+    name << L"ReferencePrepared-v" << ReferenceCacheVersion << L"-p" << SharkFloatParams::GlobalNumUint32
          << L"-nr" << (SharkFloatParams::EnableNewtonRaphson ? 1 : 0) << L"-a" << actualPrecisionLimbs
          << L"-test" << testNumber << L"-iter" << sequence << L"-stage" << minFusedStages << L"-"
          << maxFusedStages << L".r2cache";
@@ -141,15 +143,15 @@ CachePath(int64_t testNumber,
 }
 
 template <class SharkFloatParams>
-Reference2CacheHeader
+ReferenceCacheHeader
 MakeHeader(int64_t testNumber,
            uint32_t sequence,
            uint32_t actualPrecisionLimbs,
            const CacheLayout<SharkFloatParams> &layout)
 {
-    Reference2CacheHeader header{};
+    ReferenceCacheHeader header{};
     std::copy(CacheMagic.begin(), CacheMagic.end(), std::begin(header.Magic));
-    header.Version = Reference2CacheVersion;
+    header.Version = ReferenceCacheVersion;
     header.HeaderBytes = static_cast<uint32_t>(layout.PayloadOffset);
     header.StoragePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
     header.ActualPrecisionLimbs = actualPrecisionLimbs;
@@ -167,7 +169,7 @@ MakeHeader(int64_t testNumber,
 
 template <class SharkFloatParams>
 void
-ValidateHeader(const Reference2CacheHeader &header,
+ValidateHeader(const ReferenceCacheHeader &header,
                int64_t testNumber,
                uint32_t sequence,
                uint32_t actualPrecisionLimbs,
@@ -182,7 +184,7 @@ ValidateHeader(const Reference2CacheHeader &header,
                                            header.Magic[5],
                                            header.Magic[6],
                                            header.Magic[7]};
-    if (magic != CacheMagic || header.Version != Reference2CacheVersion ||
+    if (magic != CacheMagic || header.Version != ReferenceCacheVersion ||
         header.HeaderBytes != layout.PayloadOffset ||
         header.StoragePrecisionLimbs != SharkFloatParams::GlobalNumUint32 ||
         header.ActualPrecisionLimbs != actualPrecisionLimbs ||
@@ -193,7 +195,7 @@ ValidateHeader(const Reference2CacheHeader &header,
         header.PlanCacheEntryCount != layout.PlanCacheEntryCount ||
         header.PayloadBytes != layout.PayloadBytes || header.TestNumber != testNumber ||
         header.Sequence != sequence || mappedBytes != layout.FileBytes) {
-        throw FractalSharkSeriousException("Ref2 prepared-table cache header is incompatible");
+        throw FractalSharkSeriousException("Reference prepared-table cache header is incompatible");
     }
 }
 
@@ -201,7 +203,7 @@ template <class SharkFloatParams>
 void
 CopyDeviceToCache(uint8_t *destination, const void *source, size_t bytes, const char *operation)
 {
-    Reference2SetupDetail::CheckCuda(cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost),
+    ReferenceSetupDetail::CheckCuda(cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost),
                                      operation);
 }
 
@@ -209,34 +211,34 @@ template <class SharkFloatParams>
 void
 CopyCacheToDevice(void *destination, const uint8_t *source, size_t bytes, const char *operation)
 {
-    Reference2SetupDetail::CheckCuda(cudaMemcpy(destination, source, bytes, cudaMemcpyHostToDevice),
+    ReferenceSetupDetail::CheckCuda(cudaMemcpy(destination, source, bytes, cudaMemcpyHostToDevice),
                                      operation);
 }
 
 template <class SharkFloatParams>
 void
 CopyPreparedPayloadToCache(
-    const typename Reference2PreparedTables<SharkFloatParams>::Workspace &workspace,
+    const typename ReferencePreparedTables<SharkFloatParams>::Workspace &workspace,
     const CacheLayout<SharkFloatParams> &layout,
     uint8_t *payload)
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     CopyDeviceToCache<SharkFloatParams>(payload + layout.StageOmegasOffset,
                                         workspace.StageOmegas,
                                         layout.StageBytes,
-                                        "cudaMemcpy(Ref2 cache stage omegas D2H)");
+                                        "cudaMemcpy(Reference cache stage omegas D2H)");
     CopyDeviceToCache<SharkFloatParams>(payload + layout.StageOmegasInverseOffset,
                                         workspace.StageOmegasInverse,
                                         layout.StageBytes,
-                                        "cudaMemcpy(Ref2 cache inverse stage omegas D2H)");
+                                        "cudaMemcpy(Reference cache inverse stage omegas D2H)");
     CopyDeviceToCache<SharkFloatParams>(payload + layout.ForwardTwiddlesOffset,
                                         workspace.ForwardTwiddles,
                                         layout.TwiddleBytes,
-                                        "cudaMemcpy(Ref2 cache forward twiddles D2H)");
+                                        "cudaMemcpy(Reference cache forward twiddles D2H)");
     CopyDeviceToCache<SharkFloatParams>(payload + layout.InverseTwiddlesOffset,
                                         workspace.InverseTwiddles,
                                         layout.TwiddleBytes,
-                                        "cudaMemcpy(Ref2 cache inverse twiddles D2H)");
+                                        "cudaMemcpy(Reference cache inverse twiddles D2H)");
     std::vector<uint64_t> ninv(layout.PlanCacheEntryCount);
     const uint32_t firstSlot = layout.MinFusedStages - Workspace::MinFusedStages;
     for (uint32_t index = 0; index < ninv.size(); ++index)
@@ -247,32 +249,32 @@ CopyPreparedPayloadToCache(
 template <class SharkFloatParams>
 void
 CopyCachePayloadToPrepared(const uint8_t *payload,
-                           Reference2PreparedTables<SharkFloatParams> &prepared,
+                           ReferencePreparedTables<SharkFloatParams> &prepared,
                            uint32_t actualPrecisionLimbs,
                            const CacheLayout<SharkFloatParams> &layout)
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     Workspace workspace{};
-    Reference2SetupDetail::CheckCuda(
+    ReferenceSetupDetail::CheckCuda(
         cudaMemcpy(
             &workspace, prepared.GetDeviceDescriptor(), sizeof(workspace), cudaMemcpyDeviceToHost),
-        "cudaMemcpy(Ref2 cache descriptor D2H)");
+        "cudaMemcpy(Reference cache descriptor D2H)");
     CopyCacheToDevice<SharkFloatParams>(workspace.StageOmegas,
                                         payload + layout.StageOmegasOffset,
                                         layout.StageBytes,
-                                        "cudaMemcpy(Ref2 cache stage omegas H2D)");
+                                        "cudaMemcpy(Reference cache stage omegas H2D)");
     CopyCacheToDevice<SharkFloatParams>(workspace.StageOmegasInverse,
                                         payload + layout.StageOmegasInverseOffset,
                                         layout.StageBytes,
-                                        "cudaMemcpy(Ref2 cache inverse stage omegas H2D)");
+                                        "cudaMemcpy(Reference cache inverse stage omegas H2D)");
     CopyCacheToDevice<SharkFloatParams>(workspace.ForwardTwiddles,
                                         payload + layout.ForwardTwiddlesOffset,
                                         layout.TwiddleBytes,
-                                        "cudaMemcpy(Ref2 cache forward twiddles H2D)");
+                                        "cudaMemcpy(Reference cache forward twiddles H2D)");
     CopyCacheToDevice<SharkFloatParams>(workspace.InverseTwiddles,
                                         payload + layout.InverseTwiddlesOffset,
                                         layout.TwiddleBytes,
-                                        "cudaMemcpy(Ref2 cache inverse twiddles H2D)");
+                                        "cudaMemcpy(Reference cache inverse twiddles H2D)");
     std::vector<uint64_t> ninv(layout.PlanCacheEntryCount);
     std::memcpy(ninv.data(), payload + layout.NinvOffset, layout.NinvBytes);
     const uint32_t firstSlot = layout.MinFusedStages - Workspace::MinFusedStages;
@@ -282,69 +284,69 @@ CopyCachePayloadToPrepared(const uint8_t *payload,
     workspace.GeneratedStages = layout.MaxFusedStages;
     workspace.ActualPrecisionLimbs = actualPrecisionLimbs;
     workspace.IgnoredPrecisionBits = (SharkFloatParams::GlobalNumUint32 - actualPrecisionLimbs) * 32u;
-    Reference2SetupDetail::CheckCuda(
+    ReferenceSetupDetail::CheckCuda(
         cudaMemcpy(
             prepared.GetDeviceDescriptor(), &workspace, sizeof(workspace), cudaMemcpyHostToDevice),
-        "cudaMemcpy(Ref2 cache descriptor H2D)");
+        "cudaMemcpy(Reference cache descriptor H2D)");
     prepared.UpdateHostDescriptor(workspace);
 }
 
-} // namespace Reference2CacheDetail
+} // namespace ReferenceCacheDetail
 
 template <class SharkFloatParams>
 void
-SaveHpSharkReference2Tables(const Reference2PreparedTables<SharkFloatParams> &prepared,
+SaveHpSharkReferenceTables(const ReferencePreparedTables<SharkFloatParams> &prepared,
                             int64_t testNumber,
                             uint32_t sequence,
                             uint32_t actualPrecisionLimbs,
                             uint32_t minFusedStages,
                             uint32_t maxFusedStages)
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    const Reference2CacheDetail::CacheLayout<SharkFloatParams> layout(minFusedStages, maxFusedStages);
-    if (!Environment::DirectoryCreate(Reference2CacheDetail::CacheDirectoryName) ||
-        !Environment::DirectoryExists(Reference2CacheDetail::CacheDirectoryName))
-        throw FractalSharkSeriousException("Unable to create Ref2 prepared-table cache directory");
-    const auto target = Reference2CacheDetail::CachePath<SharkFloatParams>(
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
+    const ReferenceCacheDetail::CacheLayout<SharkFloatParams> layout(minFusedStages, maxFusedStages);
+    if (!Environment::DirectoryCreate(ReferenceCacheDetail::CacheDirectoryName) ||
+        !Environment::DirectoryExists(ReferenceCacheDetail::CacheDirectoryName))
+        throw FractalSharkSeriousException("Unable to create Reference prepared-table cache directory");
+    const auto target = ReferenceCacheDetail::CachePath<SharkFloatParams>(
         testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     const auto temporary = target + L".tmp";
     Environment::FileDelete(temporary.c_str());
 
-    auto mapped = Reference2MappedCacheFile::CreateWrite(temporary.c_str(), layout.FileBytes);
+    auto mapped = ReferenceMappedCacheFile::CreateWrite(temporary.c_str(), layout.FileBytes);
     if (mapped == nullptr)
-        throw FractalSharkSeriousException("Unable to create Ref2 prepared-table cache");
+        throw FractalSharkSeriousException("Unable to create Reference prepared-table cache");
     uint8_t *payload = mapped->Data() + layout.PayloadOffset;
     Workspace workspace{};
-    Reference2SetupDetail::CheckCuda(
+    ReferenceSetupDetail::CheckCuda(
         cudaMemcpy(
             &workspace, prepared.GetDeviceDescriptor(), sizeof(workspace), cudaMemcpyDeviceToHost),
-        "cudaMemcpy(Ref2 cache save descriptor D2H)");
+        "cudaMemcpy(Reference cache save descriptor D2H)");
     const uint32_t fullMask =
-        Reference2CacheDetail::PlanMask<SharkFloatParams>(minFusedStages, maxFusedStages);
+        ReferenceCacheDetail::PlanMask<SharkFloatParams>(minFusedStages, maxFusedStages);
     if (workspace.ValidPlanMask != fullMask)
-        throw FractalSharkSeriousException("Cannot cache incomplete Ref2 prepared tables");
+        throw FractalSharkSeriousException("Cannot cache incomplete Reference prepared tables");
     if (workspace.ActiveMinFusedStages != minFusedStages ||
         workspace.ActiveMaxFusedStages != maxFusedStages)
-        throw FractalSharkSeriousException("Ref2 prepared-table cache stage range is incompatible");
-    Reference2CacheDetail::CopyPreparedPayloadToCache<SharkFloatParams>(workspace, layout, payload);
-    auto header = Reference2CacheDetail::MakeHeader<SharkFloatParams>(
+        throw FractalSharkSeriousException("Reference prepared-table cache stage range is incompatible");
+    ReferenceCacheDetail::CopyPreparedPayloadToCache<SharkFloatParams>(workspace, layout, payload);
+    auto header = ReferenceCacheDetail::MakeHeader<SharkFloatParams>(
         testNumber, sequence, actualPrecisionLimbs, layout);
     std::memcpy(mapped->Data(), &header, sizeof(header));
     mapped->Flush();
     mapped.reset();
     if (!Environment::FileRename(temporary.c_str(), target.c_str(), true))
-        throw FractalSharkSeriousException("Unable to publish Ref2 prepared-table cache");
+        throw FractalSharkSeriousException("Unable to publish Reference prepared-table cache");
 }
 
 template <class SharkFloatParams>
 void
-SaveHpSharkReference2Tables(const Reference2PreparedTables<SharkFloatParams> &prepared,
+SaveHpSharkReferenceTables(const ReferencePreparedTables<SharkFloatParams> &prepared,
                             int64_t testNumber,
                             uint32_t sequence,
                             uint32_t actualPrecisionLimbs)
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    SaveHpSharkReference2Tables<SharkFloatParams>(prepared,
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
+    SaveHpSharkReferenceTables<SharkFloatParams>(prepared,
                                                   testNumber,
                                                   sequence,
                                                   actualPrecisionLimbs,
@@ -353,8 +355,8 @@ SaveHpSharkReference2Tables(const Reference2PreparedTables<SharkFloatParams> &pr
 }
 
 template <class SharkFloatParams>
-std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
-LoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
+std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
+LoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                             int64_t testNumber,
                             uint32_t sequence,
                             uint32_t actualPrecisionLimbs,
@@ -362,36 +364,36 @@ LoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
                             uint32_t maxFusedStages)
 {
     (void)launchParams;
-    const Reference2CacheDetail::CacheLayout<SharkFloatParams> layout(minFusedStages, maxFusedStages);
-    const auto path = Reference2CacheDetail::CachePath<SharkFloatParams>(
+    const ReferenceCacheDetail::CacheLayout<SharkFloatParams> layout(minFusedStages, maxFusedStages);
+    const auto path = ReferenceCacheDetail::CachePath<SharkFloatParams>(
         testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    auto mapped = Reference2MappedCacheFile::OpenRead(path.c_str());
+    auto mapped = ReferenceMappedCacheFile::OpenRead(path.c_str());
     if (mapped == nullptr)
-        throw FractalSharkSeriousException("Ref2 prepared-table cache is unavailable");
-    if (mapped->Size() < sizeof(Reference2CacheHeader))
-        throw FractalSharkSeriousException("Ref2 prepared-table cache is truncated");
-    Reference2CacheHeader header{};
+        throw FractalSharkSeriousException("Reference prepared-table cache is unavailable");
+    if (mapped->Size() < sizeof(ReferenceCacheHeader))
+        throw FractalSharkSeriousException("Reference prepared-table cache is truncated");
+    ReferenceCacheHeader header{};
     std::memcpy(&header, mapped->Data(), sizeof(header));
-    Reference2CacheDetail::ValidateHeader<SharkFloatParams>(
+    ReferenceCacheDetail::ValidateHeader<SharkFloatParams>(
         header, testNumber, sequence, actualPrecisionLimbs, layout, mapped->Size());
     const auto *payload = mapped->Data() + layout.PayloadOffset;
 
-    auto prepared = Reference2SetupDetail::AllocatePreparedTables<SharkFloatParams>(
+    auto prepared = ReferenceSetupDetail::AllocatePreparedTables<SharkFloatParams>(
         actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    Reference2CacheDetail::CopyCachePayloadToPrepared<SharkFloatParams>(
+    ReferenceCacheDetail::CopyCachePayloadToPrepared<SharkFloatParams>(
         payload, *prepared, actualPrecisionLimbs, layout);
     return prepared;
 }
 
 template <class SharkFloatParams>
-std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
-LoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
+std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
+LoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                             int64_t testNumber,
                             uint32_t sequence,
                             uint32_t actualPrecisionLimbs)
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    return LoadHpSharkReference2Tables<SharkFloatParams>(launchParams,
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
+    return LoadHpSharkReferenceTables<SharkFloatParams>(launchParams,
                                                          testNumber,
                                                          sequence,
                                                          actualPrecisionLimbs,
@@ -400,8 +402,8 @@ LoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
 }
 
 template <class SharkFloatParams>
-std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
-PrepareOrLoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
+std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
+PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                                      const HpSharkFloat<SharkFloatParams> &cReal,
                                      const HpSharkFloat<SharkFloatParams> &cImag,
                                      uint32_t actualPrecisionLimbs,
@@ -411,36 +413,36 @@ PrepareOrLoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
                                      uint32_t maxFusedStages)
 {
     try {
-        return LoadHpSharkReference2Tables<SharkFloatParams>(
+        return LoadHpSharkReferenceTables<SharkFloatParams>(
             launchParams, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Ref2 cache miss for test " << testNumber << " sequence " << sequence << ": "
+        std::cout << "Reference cache miss for test " << testNumber << " sequence " << sequence << ": "
                   << error.what() << std::endl;
     }
 
-    auto prepared = PrepareHpSharkReference2Tables<SharkFloatParams>(
+    auto prepared = PrepareHpSharkReferenceTables<SharkFloatParams>(
         launchParams, cReal, cImag, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     try {
-        SaveHpSharkReference2Tables<SharkFloatParams>(
+        SaveHpSharkReferenceTables<SharkFloatParams>(
             *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Ref2 cache save failed for test " << testNumber << " sequence " << sequence << ": "
+        std::cout << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
                   << error.what() << std::endl;
     }
     return prepared;
 }
 
 template <class SharkFloatParams>
-std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
-PrepareOrLoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
+std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
+PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                                      const HpSharkFloat<SharkFloatParams> &cReal,
                                      const HpSharkFloat<SharkFloatParams> &cImag,
                                      uint32_t actualPrecisionLimbs,
                                      int64_t testNumber,
                                      uint32_t sequence = 0)
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    return PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(launchParams,
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
+    return PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(launchParams,
                                                                   cReal,
                                                                   cImag,
                                                                   actualPrecisionLimbs,
@@ -451,8 +453,8 @@ PrepareOrLoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
 }
 
 template <class SharkFloatParams>
-std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
-PrepareOrLoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
+std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
+PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                                      const mpf_t cReal,
                                      const mpf_t cImag,
                                      uint32_t actualPrecisionLimbs,
@@ -462,36 +464,36 @@ PrepareOrLoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
                                      uint32_t maxFusedStages)
 {
     try {
-        return LoadHpSharkReference2Tables<SharkFloatParams>(
+        return LoadHpSharkReferenceTables<SharkFloatParams>(
             launchParams, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Ref2 cache miss for test " << testNumber << " sequence " << sequence << ": "
+        std::cout << "Reference cache miss for test " << testNumber << " sequence " << sequence << ": "
                   << error.what() << std::endl;
     }
 
-    auto prepared = PrepareHpSharkReference2Tables<SharkFloatParams>(
+    auto prepared = PrepareHpSharkReferenceTables<SharkFloatParams>(
         launchParams, cReal, cImag, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     try {
-        SaveHpSharkReference2Tables<SharkFloatParams>(
+        SaveHpSharkReferenceTables<SharkFloatParams>(
             *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Ref2 cache save failed for test " << testNumber << " sequence " << sequence << ": "
+        std::cout << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
                   << error.what() << std::endl;
     }
     return prepared;
 }
 
 template <class SharkFloatParams>
-std::unique_ptr<Reference2PreparedTables<SharkFloatParams>>
-PrepareOrLoadHpSharkReference2Tables(const HpShark::LaunchParams &launchParams,
+std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
+PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                                      const mpf_t cReal,
                                      const mpf_t cImag,
                                      uint32_t actualPrecisionLimbs,
                                      int64_t testNumber,
                                      uint32_t sequence = 0)
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
-    return PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(launchParams,
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
+    return PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(launchParams,
                                                                   cReal,
                                                                   cImag,
                                                                   actualPrecisionLimbs,

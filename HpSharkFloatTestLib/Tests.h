@@ -7,28 +7,16 @@
 
 class TestTracker;
 
-enum class Operator {
-    Add,
-    MultiplyNTT,
-    ReferenceOrbit,
-    ReferenceOrbit2,
-};
+enum class Operator { ReferenceOrbit2 };
 
 template <Operator sharkOperator>
-inline constexpr bool IsReferenceOrbitOperator =
-    sharkOperator == Operator::ReferenceOrbit || sharkOperator == Operator::ReferenceOrbit2;
+inline constexpr bool IsReferenceOrbitOperator = sharkOperator == Operator::ReferenceOrbit2;
 
 template <Operator sharkOperator>
 const char *
 OperatorToString()
 {
-    if constexpr (sharkOperator == Operator::Add) {
-        return "Operator::Add";
-    } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
-        return "Operator::MultiplyNTT";
-    } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-        return "Operator::ReferenceOrbit";
-    } else if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
+    if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
         return "Operator::ReferenceOrbit2";
     } else {
         return "Unknown";

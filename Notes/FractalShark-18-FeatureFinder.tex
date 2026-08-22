@@ -370,7 +370,7 @@ $d2$ ($2(\mathit{dzdc}^2 {+} z {\cdot} d2)$) & low-prec HDR &
 \noindent
 ``Muls'' are full $N \times N$ multiplications (\code{mpf\_mul}, $O(N \log
 N)$ each)---the dominant cost.  ``$\times 2$'' denotes scaling by~two
-(\code{mpf\_mul\_ui} on CPU, \code{addTwos} normalization on GPU), which is
+(\code{mpf\_mul\_ui} on CPU, an exponent adjustment during GPU unpack), which is
 $O(N)$ like an addition.  ``Add/subs'' includes all additions,
 subtractions, and constant additions ($+1$, $+c_x$, $+c_y$), each $O(N)$.
 The ``HP total'' row counts only the high-precision (coord and deriv)
@@ -382,8 +382,7 @@ explicit factor of~2 (e.g.\ $2\,x \cdot dx$).  In the implementation
 the~$\times 2$ is \emph{not} applied per-term: on the CPU the factor is
 pre-applied to the operands ($2x$, $2y$ via \code{mpf\_mul\_ui}), and all
 four derivative products share these two scaled operands.  On the GPU the
-multiply kernel produces the raw products and the $\times 2$ is folded
-into the normalization step (\code{addTwos}).  Either way the total is
+factor is folded into the fused signed-unpack and carry stage.  Either way the total is
 4~full multiplies plus 2~$\times 2$ operations for $\mathit{dzdc}$.
 
 \noindent
@@ -400,7 +399,7 @@ The 7~high-precision multiplies are \emph{independent} of one another
 within a single iteration and can all execute in parallel.  This independence is
 exactly why the multithreaded CPU evaluator dispatches them to
 7~spin-based worker threads (\cref{subsec:ff-threading}), and why the
-GPU backend can batch them as simultaneous NTT launches
+GPU backend can batch them in one fused NTT schedule
 (\cref{subsec:ff-inner-gpu}).  The $d2$ computation runs on the main
 thread (or a single GPU thread) concurrently with the high-precision
 work, using truncated ${\sim}53$-bit copies of~$z$ and $\mathit{dzdc}$,
@@ -431,18 +430,10 @@ multiplies for the second derivative are low-precision \code{HDRFloat}
 operations---${\sim}24$-bit on the GPU, ${\sim}53$-bit on the
 CPU---and contribute negligible cost.)
 
-A naive GPU approach would compute the 4~NR derivative products in a
-\emph{separate} kernel launch from the 3~orbit products, doubling the
-number of grid-wide synchronization barriers per iteration.  Because
-barrier latency on a cooperative grid is largely independent of the
-arithmetic performed between barriers, this would roughly halve the
-effective throughput.
-
-\FractalShark{}'s implementation avoids this penalty entirely: the
-NR derivative products are \emph{interleaved} into the same multiply and
-add kernel calls that already exist for the orbit-only reference orbit
-computation, reusing the same barriers with zero additional
-synchronization overhead.
+A naive GPU approach would evaluate the orbit and NR derivative products in
+separate cooperative launches.  \FractalShark{} instead interleaves them in
+the fused persistent reference kernel.  The operands share transform stages,
+pointwise work, signed unpack, carry resolution, and their grid-wide barriers.
 
 \paragraph{Per-iteration structure.}
 Each iteration of \code{ReferenceHelper}
@@ -457,10 +448,10 @@ proceeds in three phases:
   using truncated copies of the current $z$ and
   $\mathit{dzdc}$.  This runs \emph{before} the multiply kernel and
   requires no synchronization: the $d2$ values are private to one thread
-  and the multiply does not depend on them.
+  and the fused high-precision work does not depend on them.
 
-\item \textbf{Multiply kernel} (\code{MultiplyHelperNTTV2Separates}).
-  Computes all 7~products in a single cooperative-grid launch:
+\item \textbf{Fused NTT product schedule.}
+  Computes all 7~products in the persistent cooperative kernel:
   \begin{center}
   \small
   \begin{tabular}{lll}
@@ -478,7 +469,7 @@ proceeds in three phases:
   \end{tabular}
   \end{center}
 
-\item \textbf{Add kernel} (\code{AddHelperSeparates}).
+\item \textbf{Signed unpack and carry resolution.}
   Combines the 7~products into 4~results (2~orbit $+$ 2~derivative):
   \begin{center}
   \small
@@ -495,8 +486,8 @@ proceeds in three phases:
   \end{center}
 \end{enumerate}
 
-\paragraph{Barrier reuse in the multiply kernel.}
-The NTT-based multiply pipeline
+\paragraph{Barrier reuse in the fused NTT schedule.}
+The NTT product schedule
 (\cref{sec:ntt-multiply}) requires grid-wide barriers between each
 major phase: packing/twisting, forward NTT, pointwise multiply, inverse
 NTT, unpacking, and normalization.  When NR is enabled, the forward and
@@ -513,42 +504,30 @@ products add only a small amount of pointwise Montgomery arithmetic
 per frequency index---negligible compared to the barrier and memory
 costs.
 
-\paragraph{Barrier reuse in the add kernel.}
-The add kernel computes the orbit results ($x^2 - y^2 + c_x$ and
-$2xy + c_y$) via three-operand addition with magnitude comparison,
-sign selection, carry propagation (parallel prefix scan), and
-normalization.  When NR is enabled, the W0--W3 arrays are passed
-alongside the orbit arrays into the \emph{same} function calls:
-\code{Phase1\_ABC} handles both $\text{XX} - \text{YY} + c_x$ and
-$\text{W0} - \text{W1} + 1$ in one pass;
-\code{Phase1\_DE} handles both $2\text{XY} + c_y$ and
-$\text{W2} + \text{W3}$ in one pass;
-\code{CarryPropagation\_ABC\_PPv5} resolves carries for all
-6~streams (3~orbit $+$ 3~NR) simultaneously.
+\paragraph{Barrier reuse in signed unpack and carry resolution.}
+The output phase computes the orbit results ($x^2 - y^2 + c_x$ and
+$2xy + c_y$) through signed coefficient accumulation, carry propagation,
+and normalization.  When NR is enabled, the W0--W3 contributions are
+processed beside the orbit contributions between the same synchronization
+points.
 
 Again, \textbf{no additional barriers are introduced.}  The NR arrays
 are separate buffers processed in parallel with the orbit arrays
 between the same synchronization points.
 
-\paragraph{The \code{addTwos} mechanism.}
+\paragraph{Exact power-of-two scaling.}
 The factor of~2 in the expanded equations
 (\cref{eq:ff-orbit-ri,eq:ff-dzdc-ri})---$2xy$,
 $2\,x \cdot dx$, etc.---is \emph{not} applied as a separate
-multiply-by-two pass.  Instead, the normalize phase of the multiply
-kernel applies it via an \code{addTwos} exponent adjustment array:
-\[
-\code{addTwos[7]} = \{0,\; 0,\; 1,\; 1,\; 1,\; 1,\; 1\},
-\]
-where a value of~1 shifts the result exponent by one bit (equivalent to
-$\times 2$).  The orbit products XX and YY are not scaled; XY and all
-four W products receive the $\times 2$.  This layout matches the distributed
-form of the equations: each derivative product appears with a factor
-of~2 already absorbed.
+multiply-by-two pass.  The fused recurrence records the required bit shifts
+when it aligns each contribution for signed unpack.  The orbit products XX
+and YY are not scaled; XY and all four W products receive the exact
+$\times 2$ shift.  This layout matches the distributed form of the equations.
 
-\paragraph{Summary: zero-overhead NR derivatives.}
+\paragraph{Summary: shared NR schedule.}
 The orbit-only reference orbit kernel computes 3~multiplies and
-2~add-results per iteration.  Enabling NR adds 4~more multiplies and
-2~more add-results, but these are folded into the existing pipeline
+2~output results per iteration.  Enabling NR adds 4~more multiplies and
+2~more output results, but these are folded into the existing fused schedule
 without any new kernel launches or synchronization barriers.  The GPU
 thread utilization improves (more arithmetic per barrier), and the
 total barrier count per iteration---the dominant performance
@@ -615,7 +594,7 @@ the nearest supported \code{SharkParamsNR} limb count (256 through
   \node[font=\scriptsize, blue!70!black, rotate=90] at (-1.3, 1.5) {Orbit};
   \node[font=\scriptsize, orange!70!black, rotate=90] at (-1.3, 0.5) {NR deriv};
 
-  % Add kernel below
+  % Fused output phase below
   \draw[->] (p5o.south) -- ++(0, -0.5) coordinate (addstart);
   \draw[->] (p5n.south) -- ++(0, -0.5);
 
@@ -624,18 +603,18 @@ the nearest supported \code{SharkParamsNR} limb count (256 through
   \node[nr, minimum width=4cm] (addn) at (9.0, -1.8)
     {W0${-}$W1${+}$1,\; W2${+}$W3};
 
-  \node[font=\small\bfseries] at (5.5, -1.4) {Add kernel};
+  \node[font=\small\bfseries] at (5.5, -1.4) {Signed unpack/carry};
   \draw[barrier] (7.0, -2.3) -- (7.0, -0.5);
   \node[barrlbl] at (7.0, -2.5) {sync (shared)};
 
   \draw[->] (addo) -- ++(2, 0) node[right, font=\scriptsize] {$x_{n+1}, y_{n+1}$};
   \draw[->] (addn) -- ++(2, 0) node[right, font=\scriptsize] {$dx_{n+1}, dy_{n+1}$};
 \end{tikzpicture}
-\caption[GPU multiply+add pipeline with shared barriers]{GPU multiply+add pipeline for one iteration.  The orbit
+\caption[GPU fused NTT schedule with shared barriers]{GPU fused NTT schedule for one iteration.  The orbit
   products (blue, top) and NR derivative products (orange, bottom) flow
   through the \emph{same} NTT pipeline phases, sharing all grid-wide
-  barriers (red dashed lines).  The add kernel similarly interleaves
-  orbit and NR combines.  Enabling NR adds arithmetic between barriers
+  barriers (red dashed lines).  The signed-unpack and carry phase similarly
+  interleaves orbit and NR combinations.  Enabling NR adds arithmetic between barriers
   but introduces no new synchronization points.}
 \label{fig:ntt-pipeline}
 \end{figure}

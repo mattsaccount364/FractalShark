@@ -1,22 +1,4 @@
-//
-// Generates explicit-instantiation .cu files for a fixed parameter set.
-//
-// Fixed parameter set:
-//   SharkParams1..SharkParams12
-//   SharkParamsNP1..SharkParamsNP12
-//
-// This version hard-codes multiple "batches" of instantiations matching existing
-// ExplicitlyInstantiate(...) patterns from the project.
-//
-// Output strategy:
-//   For each batch, generate 2 .cu files:
-//     - *_P.cu  contains SharkParams1..12 instantiations
-//     - *_NP.cu contains SharkParamsNP1..12 instantiations
-//   This is a good balance of parallelism vs object/link overhead.
-//
-// FIX: Some instantiations (e.g. InitHpSharkReferenceKernel) live in namespace HpShark.
-// The generator now supports wrapping the generated instantiation calls in a namespace
-// per-batch, so the explicit instantiations refer to the correct templates.
+// Generates the checked-in CUDA explicit-instantiation units.
 
 #include <cctype>
 #include <filesystem>
@@ -30,484 +12,226 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+
+struct Batch {
+    std::string Name;
+    std::string Header;
+    std::string Instantiations;
+    std::string Namespace;
+};
+
 static std::string
-Trim(std::string s)
+Trim(std::string value)
 {
-    auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
-    while (!s.empty() && is_space(static_cast<unsigned char>(s.front())))
-        s.erase(s.begin());
-    while (!s.empty() && is_space(static_cast<unsigned char>(s.back())))
-        s.pop_back();
-    return s;
+    const auto isSpace = [](unsigned char character) { return std::isspace(character) != 0; };
+    while (!value.empty() && isSpace(static_cast<unsigned char>(value.front())))
+        value.erase(value.begin());
+    while (!value.empty() && isSpace(static_cast<unsigned char>(value.back())))
+        value.pop_back();
+    return value;
 }
 
 static std::string
-AskLine(const std::string &prompt, const std::optional<std::string> &def = std::nullopt)
+AskLine(const std::string &prompt, const std::optional<std::string> &defaultValue)
 {
     for (;;) {
         std::cout << prompt;
-        if (def)
-            std::cout << " [" << *def << "]";
+        if (defaultValue)
+            std::cout << " [" << *defaultValue << ']';
         std::cout << ": ";
 
         std::string line;
         if (!std::getline(std::cin, line))
-            return def.value_or("");
+            return defaultValue.value_or("");
         line = Trim(line);
-
-        if (line.empty() && def)
-            return *def;
+        if (line.empty() && defaultValue)
+            return *defaultValue;
         if (!line.empty())
             return line;
-
-        std::cout << "Please enter a value.\n";
     }
 }
 
 static bool
-AskYesNo(const std::string &prompt, bool def)
+AskYesNo(const std::string &prompt, bool defaultValue)
 {
     for (;;) {
-        const std::string defStr = def ? "Y" : "N";
-        std::string line = AskLine(prompt + " (y/n)", defStr);
-        if (line.empty())
-            return def;
-
-        char c = static_cast<char>(std::tolower(static_cast<unsigned char>(line[0])));
-        if (c == 'y')
+        const std::string answer = AskLine(prompt + " (y/n)", defaultValue ? "Y" : "N");
+        const char first = static_cast<char>(std::tolower(static_cast<unsigned char>(answer.front())));
+        if (first == 'y')
             return true;
-        if (c == 'n')
+        if (first == 'n')
             return false;
-
-        std::cout << "Please answer y or n.\n";
     }
 }
 
 static void
-WriteTextFile(const fs::path &p, const std::string &content, bool overwrite)
+WriteTextFile(const fs::path &path, const std::string &content, bool overwrite)
 {
-    if (fs::exists(p) && !overwrite) {
-        std::cout << "SKIP (exists): " << p.string() << "\n";
+    if (fs::exists(path) && !overwrite) {
+        std::cout << "SKIP (exists): " << path.string() << '\n';
         return;
     }
-    fs::create_directories(p.parent_path());
-    std::ofstream ofs(p, std::ios::binary);
-    if (!ofs)
-        throw std::runtime_error("Failed to open for write: " + p.string());
-    ofs << content;
-    ofs.close();
-    std::cout << "WROTE: " << p.string() << "\n";
+    fs::create_directories(path.parent_path());
+    std::ofstream output{path, std::ios::binary};
+    if (!output)
+        throw std::runtime_error("Failed to open for write: " + path.string());
+    output << content;
+    std::cout << "WROTE: " << path.string() << '\n';
 }
 
 static std::vector<std::string>
-MakeFixedParams_P()
+MakeParams(const std::string &prefix)
 {
-    std::vector<std::string> v;
-    v.reserve(12);
-    for (int i = 1; i <= 12; ++i)
-        v.push_back("SharkParams" + std::to_string(i));
-    return v;
+    std::vector<std::string> params;
+    params.reserve(12);
+    for (int index = 1; index <= 12; ++index)
+        params.push_back(prefix + std::to_string(index));
+    return params;
 }
-
-static std::vector<std::string>
-MakeFixedParams_NP()
-{
-    std::vector<std::string> v;
-    v.reserve(12);
-    for (int i = 1; i <= 12; ++i)
-        v.push_back("SharkParamsNP" + std::to_string(i));
-    return v;
-}
-
-static std::vector<std::string>
-MakeFixedParams_NR()
-{
-    std::vector<std::string> v;
-    v.reserve(12);
-    for (int i = 1; i <= 12; ++i)
-        v.push_back("SharkParamsNR" + std::to_string(i));
-    return v;
-}
-
-static std::vector<std::string>
-MakeFixedParams_Dbl()
-{
-    std::vector<std::string> v;
-    v.reserve(12);
-    for (int i = 1; i <= 12; ++i)
-        v.push_back("SharkParamsDbl" + std::to_string(i));
-    return v;
-}
-
-static std::vector<std::string>
-MakeFixedParams_Dbf()
-{
-    std::vector<std::string> v;
-    v.reserve(12);
-    for (int i = 1; i <= 12; ++i)
-        v.push_back("SharkParamsDbf" + std::to_string(i));
-    return v;
-}
-
-static std::vector<std::string>
-MakeFixedParams_All()
-{
-    auto v = MakeFixedParams_P();
-    auto np = MakeFixedParams_NP();
-    auto nr = MakeFixedParams_NR();
-    auto dbl = MakeFixedParams_Dbl();
-    auto dbf = MakeFixedParams_Dbf();
-    v.insert(v.end(), np.begin(), np.end());
-    v.insert(v.end(), nr.begin(), nr.end());
-    v.insert(v.end(), dbl.begin(), dbl.end());
-    v.insert(v.end(), dbf.begin(), dbf.end());
-    return v;
-}
-
-static std::string
-MakeInc(const std::vector<std::string> &params)
-{
-    std::ostringstream oss;
-    oss << "// Auto-generated X-macro list.\n"
-           "// No include guards on purpose.\n\n";
-    for (const auto &p : params)
-        oss << "X(" << p << ")\n";
-    return oss.str();
-}
-
-// -----------------------------------------------------------------------------
-// Hard-coded batches
-// -----------------------------------------------------------------------------
-
-struct Batch {
-    std::string batchName;     // used in filename suffix
-    std::string includeHeader; // header to include in generated instantiation TU
-    std::string macroBody;     // lines that instantiate for SharkFloatParams
-    std::string wrapNamespace; // "" = global, otherwise e.g. "HpShark"
-};
 
 static std::vector<Batch>
 GetBatches()
 {
-    std::vector<Batch> b;
-
-    // 1) HpSharkFloat + mpf conversions
-    // (Assumed global; adjust wrapNamespace if these actually live in a namespace.)
-    {
-        constexpr auto templates =
-            R"(template class HpSharkFloat<SharkFloatParams>;
+    return {
+        {"HpSharkFloat_Conversions",
+         "../HpSharkFloat_cu.h",
+         R"(template class HpSharkFloat<SharkFloatParams>;
 template std::string Uint32ToMpf<SharkFloatParams>(
-    const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
-template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);)";
-
-        b.push_back(Batch{"HpSharkFloat_Conversions", "../HpSharkFloat_cu.h", templates, ""});
-    }
-
-    // 2) ComputeHpSharkReferenceGpuLoop
-    {
-        constexpr auto templates =
-            R"(template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
-
-        b.push_back(Batch{"ReferenceGpuLoop", "../KernelHpSharkReferenceOrbit_cu.h", templates, ""});
-    }
-
-    // 3) HpSharkReference init/invoke/shutdown (definitely in namespace HpShark per your snippet)
-    {
-        constexpr auto templates =
-            R"(template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+    const uint32_t *array, int32_t pow64Exponent, mpf_t &mpfValue);
+template std::string MpfToString<SharkFloatParams>(const mpf_t mpfValue, size_t precInBits);)",
+         ""},
+        {"HpSharkReference",
+         "../KernelInvokeReferencePerf_cu.h",
+         R"(template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
 InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
                                              const typename SharkFloatParams::Float hdrRadiusY,
                                              const mpf_t,
-                                             const mpf_t);
-template void InvokeHpSharkReferenceKernel<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams,
-    HpSharkReferenceResults<SharkFloatParams> &combo,
-    uint64_t numIters);
+                                             const mpf_t,
+                                             uint32_t);
 template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
 InitHpSharkReferenceKernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
                                              const typename SharkFloatParams::Float hdrRadiusY,
                                              const HpSharkFloat<SharkFloatParams> &xNum,
-                                             const HpSharkFloat<SharkFloatParams> &yNum);
+                                             const HpSharkFloat<SharkFloatParams> &yNum,
+                                             uint32_t);
+template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
+InitHpSharkReferenceKernel<SharkFloatParams>(
+    const HpShark::LaunchParams &launchParams,
+    const typename SharkFloatParams::Float hdrRadiusY,
+    const HpSharkFloat<SharkFloatParams> &xNum,
+    const HpSharkFloat<SharkFloatParams> &yNum,
+    ReferencePreparedTables<SharkFloatParams> &preparedTables);
+template void InvokeHpSharkReferenceKernel<SharkFloatParams>(
+    const HpShark::LaunchParams &launchParams,
+    HpSharkReferenceResults<SharkFloatParams> &results,
+    uint64_t numIters);
 template void ShutdownHpSharkReferenceKernel<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams,
-    HpSharkReferenceResults<SharkFloatParams> &combo,
-    DebugGpuCombo *debugCombo);
+    HpSharkReferenceResults<SharkFloatParams> &results,
+    DebugGpuCombo *debugResults);
 template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
     const mpf_t, const mpf_t, uint64_t,
     mpf_t, mpf_t, mpf_t, mpf_t,
     HDRFloat<double> &, HDRFloat<double> &,
     const HpShark::LaunchParams &,
-    uint64_t,
-    bool (*)(),
-    void (*)(uint64_t, void *),
-    void *,
-    uint64_t);)";
-
-        b.push_back(
-            Batch{"HpSharkReference", "../KernelInvokeReferencePerf_cu.h", templates, "HpShark"});
-    }
-
-    // 4) Add kernels
-    {
-        constexpr auto templates =
-            R"(template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
-InitHpSharkReference2Kernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
-                                              const typename SharkFloatParams::Float hdrRadiusY,
-                                              const mpf_t,
-                                              const mpf_t,
-                                              uint32_t);
-template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
-InitHpSharkReference2Kernel<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
-                                              const typename SharkFloatParams::Float hdrRadiusY,
-                                              const HpSharkFloat<SharkFloatParams> &xNum,
-                                              const HpSharkFloat<SharkFloatParams> &yNum,
-                                              uint32_t);
-template std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>>
-InitHpSharkReference2Kernel<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams,
-    const typename SharkFloatParams::Float hdrRadiusY,
-    const HpSharkFloat<SharkFloatParams> &xNum,
-    const HpSharkFloat<SharkFloatParams> &yNum,
-    Reference2PreparedTables<SharkFloatParams> &preparedTables);
-template void InvokeHpSharkReference2Kernel<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams,
-    HpSharkReferenceResults<SharkFloatParams> &combo,
-    uint64_t numIters);
-template void ShutdownHpSharkReference2Kernel<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams,
-    HpSharkReferenceResults<SharkFloatParams> &combo,
-    DebugGpuCombo *debugCombo);
-template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
+    ReferencePreparedTables<SharkFloatParams> *,
+    uint64_t, bool (*)(), void (*)(uint64_t, void *), void *, uint64_t);
+template uint64_t EvaluateCriticalOrbitAndDerivs_GPU<SharkFloatParams>(
     const mpf_t, const mpf_t, uint64_t,
     mpf_t, mpf_t, mpf_t, mpf_t,
     HDRFloat<double> &, HDRFloat<double> &,
     const HpShark::LaunchParams &,
-    Reference2PreparedTables<SharkFloatParams> *,
-    uint64_t,
-    bool (*)(),
-    void (*)(uint64_t, void *),
-    void *,
-    uint64_t);
-template uint64_t EvaluateCriticalOrbitAndDerivs2_GPU<SharkFloatParams>(
-    const mpf_t, const mpf_t, uint64_t,
-    mpf_t, mpf_t, mpf_t, mpf_t,
-    HDRFloat<double> &, HDRFloat<double> &,
-    const HpShark::LaunchParams &,
-    uint32_t,
-    uint64_t,
-    bool (*)(),
-    void (*)(uint64_t, void *),
-    void *,
-    uint64_t);)";
-
-        b.push_back(
-            Batch{"HpSharkReference2", "../KernelInvokeReference2Perf_cu.h", templates, "HpShark"});
-    }
-
-    // 5) Ref2's cooperative loop is instantiated separately from the
-    // invocation wrapper, exactly as the Ref1 ReferenceGpuLoop batch is.
-    {
-        constexpr auto templates =
-            R"(template void ComputeHpSharkReference2GpuLoop<SharkFloatParams>(
+    uint32_t, uint64_t, bool (*)(), void (*)(uint64_t, void *), void *, uint64_t);)",
+         "HpShark"},
+        {"ReferenceGpuLoop",
+         "../KernelHpSharkReferenceOrbit_cu.h",
+         R"(template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(
     const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
-template void ComputeHpSharkReference2Setup<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
-
-        b.push_back(Batch{"Reference2GpuLoop", "../KernelHpSharkReferenceOrbit2_cu.h", templates, ""});
-    }
-
-    // 6) Add kernels
-    {
-        constexpr auto templates =
-            R"(template void ComputeAddGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
-                                                        void *kernelArgs[]);
-template void ComputeAddGpuTestLoop<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
-                                                      void *kernelArgs[]);)";
-
-        b.push_back(Batch{"AddKernels", "../KernelTestAdd_cu.h", templates, ""});
-    }
-
-    // 7) Multiply NTT kernels
-    {
-        constexpr auto templates =
-            R"(template void ComputeMultiplyNTTGpu<SharkFloatParams>(const HpShark::LaunchParams &launchParams,
-                                                                void *kernelArgs[]);
-template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(
-    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)";
-
-        b.push_back(Batch{"MultiplyNTT", "../KernelTestMultiplyNTT_cu.h", templates, ""});
-    }
-
-    // 8) SharkNTT primitives are already fully-qualified as SharkNTT::..., so no wrapper needed.
-    {
-        constexpr auto templates =
-            R"(template void SharkNTT::BuildRoots<SharkFloatParams>(uint32_t, uint32_t, SharkNTT::RootTables &);
-template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(uint64_t a, uint64_t b);
+template void ComputeHpSharkReferenceSetup<SharkFloatParams>(
+    const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);)",
+         ""},
+        {"SharkNTT_Primitives",
+         "../ReferenceNTT_cu.h",
+         R"(template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(uint64_t a, uint64_t b);
 template uint64_t SharkNTT::MontgomeryMul<SharkFloatParams>(
-    DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a, uint64_t b);
-template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(uint64_t x);
+    DebugHostCombo<SharkFloatParams> &debugCombo, uint64_t a, uint64_t b);
+template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(uint64_t value);
 template uint64_t SharkNTT::ToMontgomery<SharkFloatParams>(
-    DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x);
-template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(uint64_t x);
+    DebugHostCombo<SharkFloatParams> &debugCombo, uint64_t value);
+template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(uint64_t value);
 template uint64_t SharkNTT::FromMontgomery<SharkFloatParams>(
-    DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t x);
-template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(uint64_t a_mont, uint64_t e);
+    DebugHostCombo<SharkFloatParams> &debugCombo, uint64_t value);
+template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(uint64_t value, uint64_t exponent);
 template uint64_t SharkNTT::MontgomeryPow<SharkFloatParams>(
-    DebugHostCombo<SharkFloatParams> & debugCombo, uint64_t a_mont, uint64_t e);
-template void SharkNTT::CopyRootsToCuda<SharkFloatParams>(SharkNTT::RootTables & outT,
-                                                          const SharkNTT::RootTables &inT);
-template void SharkNTT::DestroyRoots<SharkFloatParams>(bool cuda, SharkNTT::RootTables &T);)";
-
-        b.push_back(Batch{"SharkNTT_Primitives", "../MultiplyNTTCudaSetup_cu.h", templates, ""});
-    }
-
-    return b;
+    DebugHostCombo<SharkFloatParams> &debugCombo, uint64_t value, uint64_t exponent);)",
+         ""},
+    };
 }
 
 static std::string
-MakeBatchCpp_ParamList(const Batch &batch,
-                       const std::string &tag,
-                       const std::vector<std::string> &params)
+MakeBatchFile(const Batch &batch, const std::string &tag, const std::vector<std::string> &params)
 {
-    std::ostringstream oss;
-    oss << "// Auto-generated explicit instantiation TU.\n"
-           "// Batch: "
-        << batch.batchName
-        << "\n"
-           "// Tag: "
-        << tag
-        << "\n"
-           "// This file is generated by gen_inst_files.cpp.\n\n";
+    std::ostringstream output;
+    output << "// Auto-generated explicit instantiation TU.\n"
+              "// Batch: "
+           << batch.Name << "\n// Tag: " << tag
+           << "\n// This file is generated by HpSharkInstantiate.\n\n"
+           << "#include \"" << batch.Header << "\"\n\n"
+           << "#define ExplicitlyInstantiate(SharkFloatParams) \\\n";
 
-    oss << "#include \"" << batch.includeHeader << "\"\n\n";
-
-    // Define the instantiation macro for this batch
-    oss << "#define ExplicitlyInstantiate(SharkFloatParams) \\\n";
-    {
-        std::istringstream in(batch.macroBody);
-        std::string line;
-        bool any = false;
-        while (std::getline(in, line)) {
-            line = Trim(line);
-            if (line.empty())
-                continue;
-            oss << "    " << line << " \\\n";
-            any = true;
-        }
-        if (!any) {
-            oss << "    /* empty */\n";
-        } else {
-            // terminate macro cleanly
-            oss << "    /* end */\n";
-        }
+    std::istringstream instantiations{batch.Instantiations};
+    std::string line;
+    while (std::getline(instantiations, line)) {
+        line = Trim(line);
+        if (!line.empty())
+            output << "    " << line << " \\\n";
     }
-    oss << "\n";
-
-    // Expand for the parameter list in the correct namespace, if needed
-    if (!batch.wrapNamespace.empty()) {
-        oss << "namespace " << batch.wrapNamespace << " {\n";
-    }
-
-    for (const auto &p : params) {
-        oss << "ExplicitlyInstantiate(" << p << ");\n";
-    }
-
-    if (!batch.wrapNamespace.empty()) {
-        oss << "} // namespace " << batch.wrapNamespace << "\n";
-    }
-
-    oss << "\n";
-    oss << "#undef ExplicitlyInstantiate\n";
-
-    return oss.str();
+    output << "    /* end */\n\n";
+    if (!batch.Namespace.empty())
+        output << "namespace " << batch.Namespace << " {\n";
+    for (const std::string &param : params)
+        output << "ExplicitlyInstantiate(" << param << ");\n";
+    if (!batch.Namespace.empty())
+        output << "} // namespace " << batch.Namespace << '\n';
+    output << "\n#undef ExplicitlyInstantiate\n";
+    return output.str();
 }
+
+} // namespace
 
 int
 main()
 {
     try {
-        std::cout << "=== Explicit Instantiation File Generator (C++17) ===\n\n";
-        std::cout << "Fixed parameter set:\n"
-                     "  SharkParams1..SharkParams12\n"
-                     "  SharkParamsNP1..SharkParamsNP12\n"
-                     "  SharkParamsNR* (Newton-Raphson)\n\n";
-        std::cout << "Default: for each hard-coded batch, generates 2 .cu files (P and NP).\n"
-                     "Optional: merge P+NP into *_P.cu and emit an empty *_NP.cu stub.\n\n";
-
-        const std::string outDirStr = AskLine("Output directory", "generated_inst");
-        const fs::path outDir = fs::path(outDirStr);
-
+        const fs::path outputDirectory = AskLine("Output directory", "generated_inst");
         const bool overwrite = AskYesNo("Overwrite existing files?", true);
-
-        // Optional: still emit a single all-params .inc list for convenience/debugging
-        const bool emitInc = AskYesNo("Also write a single *_All.inc param list file?", false);
-        std::string incBase = "SharkParams";
-        if (emitInc) {
-            incBase = AskLine("Base name for .inc list (without extension)", "SharkParams");
-        }
-
-        const std::string cppBase =
+        const std::string baseName =
             AskLine("Base name for generated instantiation .cu files", "SharkExplicitInstantiate");
 
-        // Emit .inc list (optional)
-        if (emitInc) {
-            std::cout << "\n--- Generating .inc param list ---\n";
-            const std::string allIncName = incBase + "_All.inc";
-            WriteTextFile(outDir / allIncName, MakeInc(MakeFixedParams_All()), overwrite);
+        auto productionParams = MakeParams("SharkParams");
+        const auto nonPeriodicityParams = MakeParams("SharkParamsNP");
+        productionParams.insert(
+            productionParams.end(), nonPeriodicityParams.begin(), nonPeriodicityParams.end());
+        const auto newtonParams = MakeParams("SharkParamsNR");
+        auto doubleParams = MakeParams("SharkParamsDbl");
+        const auto doubleFloatParams = MakeParams("SharkParamsDbf");
+        doubleParams.insert(doubleParams.end(), doubleFloatParams.begin(), doubleFloatParams.end());
+
+        for (const Batch &batch : GetBatches()) {
+            WriteTextFile(outputDirectory / (baseName + '_' + batch.Name + "_P.cu"),
+                          MakeBatchFile(batch, "P + NP", productionParams),
+                          overwrite);
+            WriteTextFile(outputDirectory / (baseName + '_' + batch.Name + "_NR.cu"),
+                          MakeBatchFile(batch, "NR", newtonParams),
+                          overwrite);
+            WriteTextFile(outputDirectory / (baseName + '_' + batch.Name + "_Dbl.cu"),
+                          MakeBatchFile(batch, "Dbl + Dbf", doubleParams),
+                          overwrite);
         }
-
-        const auto paramsP = MakeFixedParams_P();
-        const auto paramsNP = MakeFixedParams_NP();
-        const auto paramsNR = MakeFixedParams_NR();
-        const auto paramsDbl = MakeFixedParams_Dbl();
-        const auto paramsDbf = MakeFixedParams_Dbf();
-
-        // Emit per-batch .cu files split by param family for parallel compilation.
-        std::cout << "\n--- Generating batch instantiation .cu files ---\n";
-        const auto batches = GetBatches();
-
-        for (const auto &batch : batches) {
-            // Generate 3 files per batch:
-            //   *_P.cu   = P + NP (both float SubType, 24 instantiations)
-            //   *_NR.cu  = NR only (Newton-Raphson, 12 instantiations)
-            //   *_Dbl.cu = Dbl + Dbf (non-float SubType variants, 24 instantiations)
-
-            // P + NP combined
-            {
-                auto combined = paramsP;
-                combined.insert(combined.end(), paramsNP.begin(), paramsNP.end());
-                WriteTextFile(outDir / (cppBase + "_" + batch.batchName + "_P.cu"),
-                              MakeBatchCpp_ParamList(
-                                  batch,
-                                  "P + NP (SharkParams1..12 + SharkParamsNP1..12, float SubType)",
-                                  combined),
-                              overwrite);
-            }
-
-            // NR alone
-            WriteTextFile(
-                outDir / (cppBase + "_" + batch.batchName + "_NR.cu"),
-                MakeBatchCpp_ParamList(batch, "NR (SharkParamsNR1..12, float SubType)", paramsNR),
-                overwrite);
-
-            // Dbl + Dbf combined
-            {
-                auto combined = paramsDbl;
-                combined.insert(combined.end(), paramsDbf.begin(), paramsDbf.end());
-                WriteTextFile(
-                    outDir / (cppBase + "_" + batch.batchName + "_Dbl.cu"),
-                    MakeBatchCpp_ParamList(
-                        batch, "Dbl + Dbf (SharkParamsDbl1..12 + SharkParamsDbf1..12)", combined),
-                    overwrite);
-            }
-        }
-
-        std::cout << "\nDone.\n";
-        std::cout << "Add the generated .cu files to your build.\n";
         return 0;
-    } catch (const std::exception &e) {
-        std::cerr << "ERROR: " << e.what() << "\n";
+    } catch (const std::exception &error) {
+        std::cerr << "ERROR: " << error.what() << '\n';
         return 1;
     }
 }

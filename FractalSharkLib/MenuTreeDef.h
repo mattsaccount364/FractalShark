@@ -78,10 +78,6 @@ static const Node menu[] = {
                   FractalCommand::NrInnerLoopGpu,
                   RG::NRInnerLoopBackend,
                   R::EnableIfGpuActive),
-            Radio(L"NR Inner Loop: GPU Ref2",
-                  FractalCommand::NrInnerLoopGpuRef2,
-                  RG::NRInnerLoopBackend,
-                  R::EnableIfGpuActive),
             Radio(L"NR Inner Loop: CPU MT", FractalCommand::NrInnerLoopCpu, RG::NRInnerLoopBackend),
             Radio(L"NR Inner Loop: CPU ST", FractalCommand::NrInnerLoopCpuSt, RG::NRInnerLoopBackend))),
     FS_POPUP0(L"Built-In Views",
@@ -463,12 +459,8 @@ static const Node menu[] = {
              R::EnableIfPerturbationAvailable),
 
         // If this is also a mode selection you can convert it to Radio() in RG::PerturbationMode.
-        Radio(L"GPU-Accelerated (see README)",
+        Radio(L"GPU-Accelerated Reference Orbit",
               FractalCommand::PerturbationGpu,
-              RG::PerturbationMode,
-              R::EnableIfGpuActive),
-        Radio(L"GPU-Accelerated Ref2",
-              FractalCommand::PerturbationGpuRef2,
               RG::PerturbationMode,
               R::EnableIfGpuActive),
 

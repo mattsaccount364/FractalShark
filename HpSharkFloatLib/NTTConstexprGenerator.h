@@ -74,7 +74,7 @@ PowModP(uint64_t a, uint64_t e)
 }
 
 constexpr uint64_t
-Reference2InputScale(uint32_t stages)
+ReferenceInputScale(uint32_t stages)
 {
     // These constants are s = (N * R)^(-1/2), generated with arbitrary-precision modular
     // arithmetic.  Keeping the table constexpr avoids widening the existing generator's
@@ -136,7 +136,7 @@ Reference2InputScale(uint32_t stages)
 }
 
 constexpr uint64_t
-Reference2InputScaleR2(uint32_t stages)
+ReferenceInputScaleR2(uint32_t stages)
 {
     switch (stages) {
         case 1u:
@@ -195,49 +195,49 @@ Reference2InputScaleR2(uint32_t stages)
 }
 
 constexpr uint64_t
-Reference2InputScaleR(uint32_t stages)
+ReferenceInputScaleR(uint32_t stages)
 {
-    return MulModP(Reference2InputScale(stages), MontgomeryR);
+    return MulModP(ReferenceInputScale(stages), MontgomeryR);
 }
 
 constexpr bool
-ValidateReference2InputScales()
+ValidateReferenceInputScales()
 {
     for (uint32_t stages = 1u; stages <= 25u; ++stages) {
-        if (Reference2InputScale(stages) == 0ull || Reference2InputScaleR2(stages) == 0ull)
+        if (ReferenceInputScale(stages) == 0ull || ReferenceInputScaleR2(stages) == 0ull)
             return false;
     }
     return true;
 }
 
 constexpr bool
-ValidateReference2InputScaleMontgomeryValues()
+ValidateReferenceInputScaleMontgomeryValues()
 {
     for (uint32_t stages = 1u; stages <= 25u; ++stages) {
-        if (MulModP(Reference2InputScaleR(stages), MontgomeryR) != Reference2InputScaleR2(stages))
+        if (MulModP(ReferenceInputScaleR(stages), MontgomeryR) != ReferenceInputScaleR2(stages))
             return false;
     }
     return true;
 }
 
 constexpr bool
-ValidateReference2EvenScaleShifts()
+ValidateReferenceEvenScaleShifts()
 {
     for (uint32_t stages = 2u; stages <= 24u; stages += 2u) {
         const uint32_t shift = 32u - stages / 2u;
-        if (Reference2InputScaleR(stages) != (1ull << shift))
+        if (ReferenceInputScaleR(stages) != (1ull << shift))
             return false;
     }
     return true;
 }
 
 static_assert(MulModP(SqrtInverseTwo, SqrtInverseTwo) == (MagicPrime + 1ull) / 2ull);
-static_assert(ValidateReference2InputScales());
-static_assert(ValidateReference2InputScaleMontgomeryValues());
-static_assert(ValidateReference2EvenScaleShifts());
-static_assert(Reference2InputScale(16u) == 0xFEFF'FFFF'0000'0001ull);
-static_assert(Reference2InputScaleR2(16u) == 0x00FF'FFFF'FF00'0000ull);
-static_assert(Reference2InputScaleR(16u) == 0x0000'0000'0100'0000ull);
+static_assert(ValidateReferenceInputScales());
+static_assert(ValidateReferenceInputScaleMontgomeryValues());
+static_assert(ValidateReferenceEvenScaleShifts());
+static_assert(ReferenceInputScale(16u) == 0xFEFF'FFFF'0000'0001ull);
+static_assert(ReferenceInputScaleR2(16u) == 0x00FF'FFFF'FF00'0000ull);
+static_assert(ReferenceInputScaleR(16u) == 0x0000'0000'0100'0000ull);
 
 // Prime factorization of phi = p-1 = 2^32 * (2^32 - 1), and 2^32 - 1 = 3*5*17*257*65537
 constexpr std::array<uint64_t, 6> PHI_PRIME_FACTORS = {2ull, 3ull, 5ull, 17ull, 257ull, 65537ull};

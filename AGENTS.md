@@ -169,6 +169,12 @@ requested, use the reusable workflow in `.agents/skills/copilot-helper/SKILL.md`
 .\copilot.ps1 --codex -p "<prompt>"
 ```
 
+Before invoking any Qwen-backed review, verify that no other Qwen/Ollama job is
+currently running, including one started outside this repository. This machine
+has one GPU; concurrent Qwen jobs can conflict and fail. Check `ollama ps` and
+the relevant `copilot`/`ollama` process state first, and wait for any active
+Qwen job to finish before starting another.
+
 The `--codex` profile is intentionally quiet and the local Ollama-backed model
 may take several minutes to produce a final response. A lack of immediate
 output is not evidence that the review failed. For a non-trivial investigation,

@@ -1,8 +1,7 @@
-﻿#pragma once
+#pragma once
 
-// GPU kernel communication structs for reference orbit and Newton-Raphson kernels.
-// Included from HpSharkFloat.h after the HpSharkFloat class definition.
-// Do not include this header directly — include HpSharkFloat.h instead.
+// GPU kernel communication structures for reference-orbit and Newton-Raphson kernels.
+// Include HpSharkFloat.h rather than including this header directly.
 
 enum class PeriodicityResult { Unknown, Continue, PeriodFound, Escaped };
 
@@ -21,74 +20,36 @@ PeriodicityStrResult(PeriodicityResult periodicityStatus)
             return "Unknown";
     }
 }
-#endif // !__CUDA_ARCH__
+#endif
 
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4324)
 #endif
-template <class SharkFloatParams> struct alignas(16) HpSharkComboResults {
-    SharkNTT::RootTables Roots;
-    alignas(16) HpSharkFloat<SharkFloatParams> A;
-    alignas(16) HpSharkFloat<SharkFloatParams> B;
-    alignas(16) HpSharkFloat<SharkFloatParams> ResultX2;
-    alignas(16) HpSharkFloat<SharkFloatParams> Result2XY;
-    alignas(16) HpSharkFloat<SharkFloatParams> ResultY2;
 
-    // NR derivative: dz/dc inputs and multiply outputs (gated by EnableNewtonRaphson)
-    alignas(16) HpSharkFloat<SharkFloatParams> DzdcReal;
-    alignas(16) HpSharkFloat<SharkFloatParams> DzdcImag;
-    alignas(16) HpSharkFloat<SharkFloatParams> ResultW0; // dzdcR * 2zR
-    alignas(16) HpSharkFloat<SharkFloatParams> ResultW1; // dzdcI * 2zI
-    alignas(16) HpSharkFloat<SharkFloatParams> ResultW2; // dzdcR * 2zI
-    alignas(16) HpSharkFloat<SharkFloatParams> ResultW3; // dzdcI * 2zR
-};
-
-template <class SharkFloatParams> struct HpSharkAddComboResults {
-    alignas(16) HpSharkFloat<SharkFloatParams> A_X2;
-    alignas(16) HpSharkFloat<SharkFloatParams> B_Y2;
-    alignas(16) HpSharkFloat<SharkFloatParams> C_A;
-    alignas(16) HpSharkFloat<SharkFloatParams> D_2X;
-    alignas(16) HpSharkFloat<SharkFloatParams> E_B;
-    alignas(16) HpSharkFloat<SharkFloatParams> Result1_A_B_C;
-    alignas(16) HpSharkFloat<SharkFloatParams> Result2_D_E;
-
-    // NR derivative add inputs and outputs (gated by EnableNewtonRaphson)
-    alignas(16) HpSharkFloat<SharkFloatParams> W0;             // dzdcR * 2zR (input from multiply)
-    alignas(16) HpSharkFloat<SharkFloatParams> W1;             // dzdcI * 2zI
-    alignas(16) HpSharkFloat<SharkFloatParams> W2;             // dzdcR * 2zI
-    alignas(16) HpSharkFloat<SharkFloatParams> W3;             // dzdcI * 2zR
-    alignas(16) HpSharkFloat<SharkFloatParams> One;            // constant 1.0 for dzdc +1
-    alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcReal; // W0 - W1 + 1
-    alignas(16) HpSharkFloat<SharkFloatParams> ResultDzdcImag; // W2 + W3
-};
-
-// Ref2 evaluates its fused NTT pipeline cooperatively. The packed carry-prefix
-// descriptor lives on the device; every pointed-to buffer is allocated once by
-// the Ref2 invocation glue and reused for the lifetime of the orbit session.
-struct alignas(16) HpSharkReference2PackedCarryPrefixDescriptor {
+struct alignas(16) HpSharkReferencePackedCarryPrefixDescriptor {
     uint32_t AggregateTransform;
     uint32_t PrefixTransform;
     uint32_t State;
     uint32_t Padding;
 };
 
-enum class HpSharkReference2IterationKind : uint32_t {
+enum class HpSharkReferenceIterationKind : uint32_t {
     Zero = 0u,
     LinearOnly = 1u,
     Ntt = 2u,
 };
 
-constexpr uint32_t HpSharkReference2PlanRealProduct = 1u << 0;
-constexpr uint32_t HpSharkReference2PlanImagProduct = 1u << 1;
-constexpr uint32_t HpSharkReference2PlanDzdcP1 = 1u << 2;
-constexpr uint32_t HpSharkReference2PlanDzdcP2 = 1u << 3;
-constexpr uint32_t HpSharkReference2PlanDzdcP3 = 1u << 4;
-constexpr uint32_t HpSharkReference2PlanRealLinear = 1u << 5;
-constexpr uint32_t HpSharkReference2PlanImagLinear = 1u << 6;
-constexpr uint32_t HpSharkReference2PlanDzdcOne = 1u << 7;
+constexpr uint32_t HpSharkReferencePlanRealProduct = 1u << 0;
+constexpr uint32_t HpSharkReferencePlanImagProduct = 1u << 1;
+constexpr uint32_t HpSharkReferencePlanDzdcP1 = 1u << 2;
+constexpr uint32_t HpSharkReferencePlanDzdcP2 = 1u << 3;
+constexpr uint32_t HpSharkReferencePlanDzdcP3 = 1u << 4;
+constexpr uint32_t HpSharkReferencePlanRealLinear = 1u << 5;
+constexpr uint32_t HpSharkReferencePlanImagLinear = 1u << 6;
+constexpr uint32_t HpSharkReferencePlanDzdcOne = 1u << 7;
 
-struct alignas(16) HpSharkReference2IterationPlan {
+struct alignas(16) HpSharkReferenceIterationPlan {
     uint32_t Kind;
     uint32_t PlanSlot;
     uint32_t ActiveN;
@@ -123,11 +84,11 @@ struct alignas(16) HpSharkReference2IterationPlan {
     uint64_t DzdcRealLinearBitOffset;
 };
 
-template <class SharkFloatParams> struct HpSharkReference2Workspace {
+template <class SharkFloatParams> struct HpSharkReferenceWorkspace {
     static constexpr uint32_t MaxFusedN = 32u * 1024u * 1024u;
     static constexpr uint32_t MaxFusedStages = 25;
     static constexpr uint32_t MinFusedN =
-        SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L));
+        SharkNTT::NextPow2U32(static_cast<uint32_t>(SharkFloatParams::ReferenceNTTPlan.L));
     static constexpr uint32_t MinFusedStages = SharkNTT::CeilLog2U32(MinFusedN);
     static constexpr uint32_t PlanCacheEntryCount = MaxFusedStages - MinFusedStages + 1u;
     static constexpr uint32_t MaxFusedLimbs = (MaxFusedN * 16u) / 32u + 4u;
@@ -155,7 +116,7 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     uint64_t *StageOmegasInverse;
     uint64_t *ForwardTwiddles;
     uint64_t *InverseTwiddles;
-    SharkNTT::PlanPrime Plans[PlanCacheEntryCount];
+    SharkNTT::Plan Plans[PlanCacheEntryCount];
     SharkNTT::RootTables PlanRoots[PlanCacheEntryCount];
     uint32_t ValidPlanMask;
     uint32_t GeneratedStages;
@@ -168,50 +129,53 @@ template <class SharkFloatParams> struct HpSharkReference2Workspace {
     uint32_t ActiveMaxFusedLimbs;
     uint32_t ActiveMaxCarryPrefixParts;
     uint32_t ActivePlanCacheEntryCount;
-    HpSharkReference2IterationPlan IterationPlan;
+    HpSharkReferenceIterationPlan IterationPlan;
 };
 
 template <class SharkFloatParams>
 constexpr uint32_t
-HpSharkReference2OneShotRequiredStage()
+HpSharkReferenceOneShotRequiredStage()
 {
-    constexpr uint32_t productCoefficientCount =
-        2u * static_cast<uint32_t>(SharkFloatParams::NTTPlan2.L) - 1u;
-    constexpr uint32_t productRequiredStage =
-        SharkNTT::CeilLog2U32(SharkNTT::NextPow2U32(productCoefficientCount));
-    constexpr uint32_t alignmentRequiredStage =
-        HpSharkReference2Workspace<SharkFloatParams>::MinFusedStages + 2u;
-    return productRequiredStage > alignmentRequiredStage ? productRequiredStage : alignmentRequiredStage;
+    constexpr uint32_t ProductCoefficientCount =
+        2u * static_cast<uint32_t>(SharkFloatParams::ReferenceNTTPlan.L) - 1u;
+    constexpr uint32_t ProductRequiredStage =
+        SharkNTT::CeilLog2U32(SharkNTT::NextPow2U32(ProductCoefficientCount));
+    constexpr uint32_t AlignmentRequiredStage =
+        HpSharkReferenceWorkspace<SharkFloatParams>::MinFusedStages + 2u;
+    return ProductRequiredStage > AlignmentRequiredStage ? ProductRequiredStage : AlignmentRequiredStage;
 }
 
 template <class SharkFloatParams> struct HpSharkReferenceResults {
-
     alignas(16) typename SharkFloatParams::Float RadiusY;
-    alignas(16) HpSharkComboResults<SharkFloatParams> Multiply;
-    alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
+    alignas(16) HpSharkFloat<SharkFloatParams> ZReal;
+    alignas(16) HpSharkFloat<SharkFloatParams> ZImag;
+    alignas(16) HpSharkFloat<SharkFloatParams> CReal;
+    alignas(16) HpSharkFloat<SharkFloatParams> CImag;
+    alignas(16) HpSharkFloat<SharkFloatParams> DzdcReal;
+    alignas(16) HpSharkFloat<SharkFloatParams> DzdcImag;
+    alignas(16) HpSharkFloat<SharkFloatParams> One;
     alignas(16) PeriodicityResult PeriodicityStatus;
-    alignas(16) typename SharkFloatParams::Float dzdcX;
-    alignas(16) typename SharkFloatParams::Float dzdcY;
-    alignas(16) typename SharkFloatParams::Float d2Real;
-    alignas(16) typename SharkFloatParams::Float d2Imag;
+    alignas(16) typename SharkFloatParams::Float DzdcX;
+    alignas(16) typename SharkFloatParams::Float DzdcY;
+    alignas(16) typename SharkFloatParams::Float D2Real;
+    alignas(16) typename SharkFloatParams::Float D2Imag;
     alignas(16) uint64_t OutputIterCount;
     alignas(16) uint64_t MaxRuntimeIters;
 
-    static constexpr auto MaxOutputIters = 1024;
+    static constexpr size_t MaxOutputIters = 1024;
     alignas(16) typename SharkFloatParams::ReferenceIterT OutputIters[MaxOutputIters];
 
-    // Device-visible Ref2 storage descriptor.  It is null until the Ref2
-    // invocation path initializes its fixed-capacity workspace.
-    alignas(16) HpSharkReference2Workspace<SharkFloatParams> *Reference2Workspace;
+    alignas(16) HpSharkReferenceWorkspace<SharkFloatParams> *Workspace;
 
-    // Host only
-    alignas(16) HpSharkReferenceResults<SharkFloatParams> *comboGpu;
-    alignas(16) uint64_t *d_tempProducts;
-    alignas(16) uintptr_t stream; // cudaStream_t
-    alignas(16) void *kernelArgs[3];
-    alignas(16) void *d_reference2WorkspaceStorage;
-    alignas(16) size_t reference2WorkspaceStorageBytes;
+    // Host-side lifecycle state. Device code never dereferences these members.
+    alignas(16) HpSharkReferenceResults<SharkFloatParams> *DeviceResults;
+    alignas(16) uint64_t *DeviceDebugStorage;
+    alignas(16) uintptr_t Stream;
+    alignas(16) void *KernelArgs[2];
+    alignas(16) void *OwnedWorkspaceStorage;
+    alignas(16) size_t OwnedWorkspaceStorageBytes;
 };
+
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif

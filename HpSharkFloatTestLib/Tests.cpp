@@ -10,9 +10,6 @@
 
 #include "DebugChecksumHost.h"
 #include "PerfTimingResult.h"
-#include "ReferenceAdd.h"
-#include "ReferenceNTT2.h"
-#include "ReferenceReferenceOrbit.h"
 #include "ReferenceReferenceOrbit2.h"
 #include "Tests.h"
 
@@ -33,11 +30,8 @@
 #include <vector>
 
 #include "KernelInvoke.h"
-#include "KernelInvokeReference2Cache.h"
-#include "KernelInvokeReference2Setup.h"
-
-#include "Add.h"
-#include "MultiplyNTT.h"
+#include "KernelInvokeReferenceCache.h"
+#include "KernelInvokeReferenceSetup.h"
 
 #include "Environment.h"
 
@@ -54,6 +48,7 @@ static constexpr bool EnableTestSign5 = true;
 static constexpr bool EnableTestSign6 = true;
 static constexpr bool EnableTestSign7 = true;
 static constexpr bool EnableTestSign8 = true;
+static constexpr auto TestOutputPrecisionBits = 32;
 
 // x_(n + 1) = x_n * x_n - y_n * y_n + a
 // y_(n + 1) = 2 * x_n * y_n + b
@@ -69,88 +64,6 @@ struct IntSignCombo {
     bool Negative;
     int32_t Exponent;
     std::vector<uint32_t> Digits;
-};
-
-// Helpers for multithreaded MPIR squaring in the reference orbit loop.
-// Two helper threads each perform one high-precision squaring (x² and y²)
-// while the main thread computes xy concurrently.
-struct MpfSquaringHelper {
-    enum class State : int { Idle = 0, Working = 1, Done = 2, Shutdown = 3 };
-
-    // Separate cache lines to avoid false sharing between the two helpers.
-    struct alignas(64) HelperContext {
-        std::atomic<int> state{static_cast<int>(State::Idle)};
-        mpf_ptr result;
-        mpf_srcptr operandA;
-        mpf_srcptr operandB;
-    };
-
-    HelperContext helpers[2];
-    std::thread threads[2];
-
-    static void
-    HelperThreadFunc(HelperContext &ctx)
-    {
-        for (;;) {
-            int s;
-            while ((s = ctx.state.load(std::memory_order_acquire)) != static_cast<int>(State::Working)) {
-                if (s == static_cast<int>(State::Shutdown)) {
-                    return;
-                }
-                Environment::YieldProcessor();
-            }
-
-            mpf_mul(ctx.result, ctx.operandA, ctx.operandB);
-
-            ctx.state.store(static_cast<int>(State::Done), std::memory_order_release);
-        }
-    }
-
-    void
-    Start()
-    {
-        for (int i = 0; i < 2; ++i) {
-            threads[i] = std::thread{HelperThreadFunc, std::ref(helpers[i])};
-        }
-    }
-
-    void
-    Dispatch()
-    {
-        for (int i = 0; i < 2; ++i) {
-            int expected = static_cast<int>(State::Idle);
-            bool ok = helpers[i].state.compare_exchange_strong(
-                expected, static_cast<int>(State::Working), std::memory_order_release);
-            assert(ok);
-            (void)ok;
-        }
-    }
-
-    void
-    WaitForDone()
-    {
-        for (int i = 0; i < 2; ++i) {
-            while (helpers[i].state.load(std::memory_order_acquire) != static_cast<int>(State::Done)) {
-                Environment::YieldProcessor();
-            }
-            helpers[i].state.store(static_cast<int>(State::Idle), std::memory_order_release);
-        }
-    }
-
-    void
-    ShutdownHelpers()
-    {
-        for (int i = 0; i < 2; ++i) {
-            int expected = static_cast<int>(State::Idle);
-            bool ok = helpers[i].state.compare_exchange_strong(
-                expected, static_cast<int>(State::Shutdown), std::memory_order_release);
-            assert(ok);
-            (void)ok;
-        }
-        for (int i = 0; i < 2; ++i) {
-            threads[i].join();
-        }
-    }
 };
 
 template <class SharkFloatParams, Operator sharkOperator>
@@ -199,7 +112,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
 
         // Print the differences
         std::cout << "\nDifference between host and " << hostCustomOrGpu << " results:" << std::endl;
-        std::cout << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec) << std::endl;
+        std::cout << MpfToString<SharkFloatParams>(mpfDiffAbs, TestOutputPrecisionBits) << std::endl;
     }
 
     // Retrieve total precision bits:
@@ -245,27 +158,29 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
         if (mpf_cmp(mpfDiffAbs, epsilon) <= 0) {
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "\nPASS (|host| <= epsilon):\n"
-                          << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, HpShark::LowPrec)
-                          << "  epsilon = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
+                          << "  |host| = "
+                          << MpfToString<SharkFloatParams>(mpfAbsHost, TestOutputPrecisionBits)
+                          << "  epsilon = "
+                          << MpfToString<SharkFloatParams>(epsilon, TestOutputPrecisionBits)
                           << "\n  |host - gpu| = "
-                          << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec)
+                          << MpfToString<SharkFloatParams>(mpfDiffAbs, TestOutputPrecisionBits)
                           << "  Bits of error = " << bitsErrA << std::endl;
             }
             Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nFAIL (|host| <= epsilon but absolute error > epsilon):\n"
-                      << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, HpShark::LowPrec)
-                      << std::endl
-                      << "  epsilon      = " << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec)
-                      << std::endl
+                      << "  |host| = "
+                      << MpfToString<SharkFloatParams>(mpfAbsHost, TestOutputPrecisionBits) << std::endl
+                      << "  epsilon      = "
+                      << MpfToString<SharkFloatParams>(epsilon, TestOutputPrecisionBits) << std::endl
                       << "  |host - gpu| = "
-                      << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec) << std::endl
+                      << MpfToString<SharkFloatParams>(mpfDiffAbs, TestOutputPrecisionBits) << std::endl
                       << "  Bits of error = " << bitsErrA << std::endl;
             Tests.MarkFailed(&launchParams,
                              testNum,
                              hostCustomOrGpu,
-                             MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec),
-                             MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec));
+                             MpfToString<SharkFloatParams>(mpfDiffAbs, TestOutputPrecisionBits),
+                             MpfToString<SharkFloatParams>(epsilon, TestOutputPrecisionBits));
             testSucceeded = false;
         }
     }
@@ -289,24 +204,26 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "\nPASS (relative-error check):\n"
                           << "  relativeError = "
-                          << MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec) << std::endl
+                          << MpfToString<SharkFloatParams>(relativeError, TestOutputPrecisionBits)
+                          << std::endl
                           << "  epsilon            = "
-                          << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec) << std::endl
+                          << MpfToString<SharkFloatParams>(epsilon, TestOutputPrecisionBits) << std::endl
                           << "  Bits of error: " << bitsErrB << std::endl;
             }
             Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nFAIL (relative-error exceeds epsilon):\n"
                       << "  relativeError = "
-                      << MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec) << std::endl
+                      << MpfToString<SharkFloatParams>(relativeError, TestOutputPrecisionBits)
+                      << std::endl
                       << "  epsilon             = "
-                      << MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec) << std::endl
+                      << MpfToString<SharkFloatParams>(epsilon, TestOutputPrecisionBits) << std::endl
                       << "  Bits of error: " << bitsErrB << std::endl;
             Tests.MarkFailed(&launchParams,
                              testNum,
                              hostCustomOrGpu,
-                             MpfToString<SharkFloatParams>(relativeError, HpShark::LowPrec),
-                             MpfToString<SharkFloatParams>(epsilon, HpShark::LowPrec));
+                             MpfToString<SharkFloatParams>(relativeError, TestOutputPrecisionBits),
+                             MpfToString<SharkFloatParams>(epsilon, TestOutputPrecisionBits));
             testSucceeded = false;
         }
         mpf_clear(relativeError);
@@ -388,9 +305,9 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "\nBefore fallback absolute-error threshold : "
-                      << MpfToString<SharkFloatParams>(eps, HpShark::LowPrec) << std::endl;
+                      << MpfToString<SharkFloatParams>(eps, TestOutputPrecisionBits) << std::endl;
             std::cout << "Absolute difference: "
-                      << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec) << std::endl;
+                      << MpfToString<SharkFloatParams>(mpfDiffAbs, TestOutputPrecisionBits) << std::endl;
         }
 
         // 2) compute trueExponent = expGpu + (M*32 - 1)
@@ -409,9 +326,9 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "\nFallback absolute-error threshold : "
-                      << MpfToString<SharkFloatParams>(eps, HpShark::LowPrec) << std::endl;
+                      << MpfToString<SharkFloatParams>(eps, TestOutputPrecisionBits) << std::endl;
             std::cout << "Absolute difference: "
-                      << MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec) << std::endl;
+                      << MpfToString<SharkFloatParams>(mpfDiffAbs, TestOutputPrecisionBits) << std::endl;
         }
 
         bool ok = (mpf_cmp(mpfDiffAbs, eps) <= 0);
@@ -419,8 +336,8 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
         if (ok) {
             Tests.MarkSuccess(&launchParams, testNum, hostCustomOrGpu);
         } else {
-            std::string diffStr = MpfToString<SharkFloatParams>(mpfDiffAbs, HpShark::LowPrec);
-            std::string threshStr = MpfToString<SharkFloatParams>(eps, HpShark::LowPrec);
+            std::string diffStr = MpfToString<SharkFloatParams>(mpfDiffAbs, TestOutputPrecisionBits);
+            std::string threshStr = MpfToString<SharkFloatParams>(eps, TestOutputPrecisionBits);
             std::cerr << "\nError: absolute error \"" << diffStr << "\" > allowed \"" << threshStr
                       << "\"\n";
             Tests.MarkFailed(&launchParams, testNum, hostCustomOrGpu, diffStr, threshStr);
@@ -439,60 +356,6 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
 
     return DiffAgainstHostNonZero<SharkFloatParams, sharkOperator>(
         launchParams, Tests, testNum, numTerms, hostCustomOrGpu, mpfHostResult, gpuResult);
-}
-
-template <class SharkFloatParams>
-void
-HpSharkReferenceResultsToFile(const std::string &filename,
-                              const HpSharkReferenceResults<SharkFloatParams> &results)
-{
-    std::string radiusYStr = "radiusY: " + results.RadiusY.template ToString<false>();
-    std::string multiply_AStr = "Multiply.A: " + results.Multiply.A.ToHexString();
-    std::string multiply_BStr = "Multiply.B: " + results.Multiply.B.ToHexString();
-    std::string multiply_ResultX2Str = "Multiply.ResultX2: " + results.Multiply.ResultX2.ToHexString();
-    std::string multiply_Result2XYStr =
-        "Multiply.Result2XY: " + results.Multiply.Result2XY.ToHexString();
-    std::string multiply_ResultY2Str = "Multiply.ResultY2: " + results.Multiply.ResultY2.ToHexString();
-
-    std::string add_AX2Str = "Add.A_X2: " + results.Add.A_X2.ToHexString();
-    std::string add_BY2Str = "Add.B_Y2: " + results.Add.B_Y2.ToHexString();
-    std::string add_CAStr = "Add.C_A: " + results.Add.C_A.ToHexString();
-    std::string add_D2XStr = "Add.D_2X: " + results.Add.D_2X.ToHexString();
-    std::string add_EBStr = "Add.E_B: " + results.Add.E_B.ToHexString();
-    std::string add_Result1ABCStr = "Add.Result1_A_B_C: " + results.Add.Result1_A_B_C.ToHexString();
-    std::string add_Result2DEStr = "Add.Result2_D_E: " + results.Add.Result2_D_E.ToHexString();
-
-    std::string periodicityStatusStr = "PeriodicityStatus: " + results.PeriodicityStrResult();
-    std::string outputIterationStr = "OutputIterCount: " + std::to_string(results.OutputIterCount);
-
-    // Open file in text mode
-    std::ofstream outFile(filename, std::ios::out);
-
-    if (!outFile.is_open()) {
-        std::cerr << "Error: Unable to open file " << filename << " for writing." << std::endl;
-        return;
-    }
-
-    // Write data to file, excludes orbit itself
-    outFile << "Next: " << radiusYStr << std::endl;
-    outFile << "Next: " << multiply_AStr << std::endl;
-    outFile << "Next: " << multiply_BStr << std::endl;
-    outFile << "Next: " << multiply_ResultX2Str << std::endl;
-    outFile << "Next: " << multiply_Result2XYStr << std::endl;
-    outFile << "Next: " << multiply_ResultY2Str << std::endl;
-
-    outFile << "Next: " << add_AX2Str << std::endl;
-    outFile << "Next: " << add_BY2Str << std::endl;
-    outFile << "Next: " << add_CAStr << std::endl;
-    outFile << "Next: " << add_D2XStr << std::endl;
-    outFile << "Next: " << add_EBStr << std::endl;
-    outFile << "Next: " << add_Result1ABCStr << std::endl;
-    outFile << "Next: " << add_Result2DEStr << std::endl;
-
-    outFile << "Next: " << periodicityStatusStr << std::endl;
-    outFile << "Next: " << outputIterationStr << std::endl;
-
-    outFile.close();
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
@@ -514,7 +377,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
          uint32_t actualPrecisionLimbs,
          bool useMT = true,
          PerfTimingResult *timingOut = nullptr,
-         HpShark::Reference2PreparedTables<SharkFloatParams> *preparedTables = nullptr)
+         HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables = nullptr)
 {
 
     // Print the original input values
@@ -615,142 +478,88 @@ TestPerf(const HpShark::LaunchParams &launchParams,
         // hostReferenceOrbit.push_back({typename SharkFloatParams::Float{0}, typename
         // SharkFloatParams::Float{0}}); // Initial value
 
-        MpfSquaringHelper squaringHelper;
-        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-            squaringHelper.helpers[0].result = xSquared;
-            squaringHelper.helpers[0].operandA = recurrenceX;
-            squaringHelper.helpers[0].operandB = recurrenceX;
-            squaringHelper.helpers[1].result = ySquared;
-            squaringHelper.helpers[1].operandA = recurrenceY;
-            squaringHelper.helpers[1].operandB = recurrenceY;
-            if (useMT) {
-                squaringHelper.Start();
-            }
-        }
-
         for (uint64_t i = 0; i < numIters; ++i) {
-            if constexpr (sharkOperator == Operator::Add) {
-                mpf_sub(mpfHostResultXY1, mpfX, mpfY);
-                mpf_add(mpfHostResultXY1, mpfHostResultXY1, mpfZ);
-                mpf_add(mpfHostResultXY2, mpfX, mpfY);
-            } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
-                mpf_mul(mpfHostResultXX, mpfX, mpfX);
-                mpf_mul(mpfHostResultXY1, mpfX, mpfY);
-                mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2);
-                mpf_mul(mpfHostResultYY, mpfY, mpfY);
-            } else if constexpr (IsReferenceOrbitOperator<sharkOperator>) {
-                // x_(n + 1) = x_n * x_n - y_n * y_n + a
-                // y_(n + 1) = 2 * x_n * y_n + b
+            // x_(n + 1) = x_n * x_n - y_n * y_n + a
+            // y_(n + 1) = 2 * x_n * y_n + b
 
-                typename SharkFloatParams::Float double_zx;
-                typename SharkFloatParams::Float double_zy;
+            typename SharkFloatParams::Float double_zx;
+            typename SharkFloatParams::Float double_zy;
 
-                if constexpr (SharkFloatParams::EnablePeriodicity) {
-                    double_zx = typename SharkFloatParams::Float{recurrenceX};
-                    double_zy = typename SharkFloatParams::Float{recurrenceY};
-                }
-
-                hostReferenceOrbit.push_back({typename SharkFloatParams::Float{recurrenceX},
-                                              typename SharkFloatParams::Float{recurrenceY}});
-
-                // Increment before periodicity
-                keptIterationCounter++;
-
-                if constexpr (SharkFloatParams::EnablePeriodicity) {
-                    // x^2+2*I*x*y-y^2
-                    // dzdc = 2.0 * z * dzdc + real(1.0);
-                    // dzdc = 2.0 * (zx + zy * i) * (dzdcX + dzdcY * i) + HighPrecision(1.0);
-                    // dzdc = 2.0 * (zx * dzdcX + zx * dzdcY * i + zy * i * dzdcX + zy * i * dzdcY * i) +
-                    // HighPrecision(1.0); dzdc = 2.0 * zx * dzdcX + 2.0 * zx * dzdcY * i + 2.0 * zy * i
-                    // * dzdcX + 2.0 * zy * i * dzdcY * i + HighPrecision(1.0); dzdc = 2.0 * zx * dzdcX
-                    // + 2.0 * zx * dzdcY * i + 2.0 * zy * i * dzdcX - 2.0 * zy * dzdcY +
-                    // HighPrecision(1.0);
-                    //
-                    // dzdcX = 2.0 * zx * dzdcX - 2.0 * zy * dzdcY + HighPrecision(1.0)
-                    // dzdcY = 2.0 * zx * dzdcY + 2.0 * zy * dzdcX
-
-                    HdrReduce(dzdcX);
-                    auto dzdcX1 = HdrAbs(dzdcX);
-
-                    HdrReduce(dzdcY);
-                    auto dzdcY1 = HdrAbs(dzdcY);
-
-                    HdrReduce(double_zx);
-                    auto zxCopy1 = HdrAbs(double_zx);
-
-                    HdrReduce(double_zy);
-                    auto zyCopy1 = HdrAbs(double_zy);
-
-                    typename SharkFloatParams::Float n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
-
-                    typename SharkFloatParams::Float r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-                    auto n3 = hdrRadiusY * r0 * HighTwo;
-                    HdrReduce(n3);
-
-                    if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                        hostIterationsExecuted = keptIterationCounter;
-                        hostPeriodicityResult = PeriodicityResult::PeriodFound;
-                        break;
-                    } else {
-                        auto dzdcXOrig = dzdcX;
-                        dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
-                        dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
-                    }
-                }
-
-                if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-                    if (useMT) {
-                        squaringHelper.Dispatch();
-                        mpf_mul(twoXY,
-                                recurrenceX,
-                                recurrenceY); // xy (main thread, concurrent with helpers)
-                        squaringHelper.WaitForDone();
-                    } else {
-                        // ST: all multiplies sequential
-                        mpf_mul(xSquared, recurrenceX, recurrenceX);
-                        mpf_mul(ySquared, recurrenceY, recurrenceY);
-                        mpf_mul(twoXY, recurrenceX, recurrenceY);
-                    }
-
-                    mpf_mul_ui(twoXY, twoXY, 2);        // 2xy
-                    mpf_sub(tempX, xSquared, ySquared); // x^2 - y^2
-                    mpf_add(recurrenceX, tempX, mpfX);  // x^2 - y^2 + a
-                } else {
-                    // Ref2 expresses the real component as (x + y) * (x - y),
-                    // rather than independently squaring x and y.
-                    mpf_add(tempX, recurrenceX, recurrenceY);
-                    mpf_sub(tempY, recurrenceX, recurrenceY);
-                    mpf_mul(xSquared, tempX, tempY);
-                    mpf_mul(twoXY, recurrenceX, recurrenceY);
-                    mpf_mul_ui(twoXY, twoXY, 2);          // 2xy
-                    mpf_add(recurrenceX, xSquared, mpfX); // (x + y) * (x - y) + a
-                }
-
-                mpf_add(recurrenceY, twoXY, mpfY); // 2xy + b
-
-                typename SharkFloatParams::Float tempZX = double_zx + cx_cast;
-                typename SharkFloatParams::Float tempZY = double_zy + cy_cast;
-                typename SharkFloatParams::Float zn_size = tempZX * tempZX + tempZY * tempZY;
-
-                if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
-
-                    //
-                    // Escaped
-                    //
-
-                    hostIterationsExecuted = keptIterationCounter;
-                    hostPeriodicityResult = PeriodicityResult::Escaped;
-                    break;
-                }
-            } else {
-                std::cerr << "Unknown operator in TestPerf" << std::endl;
-                return;
+            if constexpr (SharkFloatParams::EnablePeriodicity) {
+                double_zx = typename SharkFloatParams::Float{recurrenceX};
+                double_zy = typename SharkFloatParams::Float{recurrenceY};
             }
-        }
 
-        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-            if (useMT) {
-                squaringHelper.ShutdownHelpers();
+            hostReferenceOrbit.push_back({typename SharkFloatParams::Float{recurrenceX},
+                                          typename SharkFloatParams::Float{recurrenceY}});
+
+            // Increment before periodicity
+            keptIterationCounter++;
+
+            if constexpr (SharkFloatParams::EnablePeriodicity) {
+                // x^2+2*I*x*y-y^2
+                // dzdc = 2.0 * z * dzdc + real(1.0);
+                // dzdc = 2.0 * (zx + zy * i) * (dzdcX + dzdcY * i) + HighPrecision(1.0);
+                // dzdc = 2.0 * (zx * dzdcX + zx * dzdcY * i + zy * i * dzdcX + zy * i * dzdcY * i) +
+                // HighPrecision(1.0); dzdc = 2.0 * zx * dzdcX + 2.0 * zx * dzdcY * i + 2.0 * zy * i
+                // * dzdcX + 2.0 * zy * i * dzdcY * i + HighPrecision(1.0); dzdc = 2.0 * zx * dzdcX
+                // + 2.0 * zx * dzdcY * i + 2.0 * zy * i * dzdcX - 2.0 * zy * dzdcY +
+                // HighPrecision(1.0);
+                //
+                // dzdcX = 2.0 * zx * dzdcX - 2.0 * zy * dzdcY + HighPrecision(1.0)
+                // dzdcY = 2.0 * zx * dzdcY + 2.0 * zy * dzdcX
+
+                HdrReduce(dzdcX);
+                auto dzdcX1 = HdrAbs(dzdcX);
+
+                HdrReduce(dzdcY);
+                auto dzdcY1 = HdrAbs(dzdcY);
+
+                HdrReduce(double_zx);
+                auto zxCopy1 = HdrAbs(double_zx);
+
+                HdrReduce(double_zy);
+                auto zyCopy1 = HdrAbs(double_zy);
+
+                typename SharkFloatParams::Float n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
+
+                typename SharkFloatParams::Float r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
+                auto n3 = hdrRadiusY * r0 * HighTwo;
+                HdrReduce(n3);
+
+                if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
+                    hostIterationsExecuted = keptIterationCounter;
+                    hostPeriodicityResult = PeriodicityResult::PeriodFound;
+                    break;
+                } else {
+                    auto dzdcXOrig = dzdcX;
+                    dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
+                    dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
+                }
+            }
+
+            mpf_add(tempX, recurrenceX, recurrenceY);
+            mpf_sub(tempY, recurrenceX, recurrenceY);
+            mpf_mul(xSquared, tempX, tempY);
+            mpf_mul(twoXY, recurrenceX, recurrenceY);
+            mpf_mul_ui(twoXY, twoXY, 2);          // 2xy
+            mpf_add(recurrenceX, xSquared, mpfX); // (x + y) * (x - y) + a
+
+            mpf_add(recurrenceY, twoXY, mpfY); // 2xy + b
+
+            typename SharkFloatParams::Float tempZX = double_zx + cx_cast;
+            typename SharkFloatParams::Float tempZY = double_zy + cy_cast;
+            typename SharkFloatParams::Float zn_size = tempZX * tempZX + tempZY * tempZY;
+
+            if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
+
+                //
+                // Escaped
+                //
+
+                hostIterationsExecuted = keptIterationCounter;
+                hostPeriodicityResult = PeriodicityResult::Escaped;
+                break;
             }
         }
 
@@ -793,113 +602,19 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             return testSucceeded;
         };
 
-        if constexpr (sharkOperator == Operator::Add) {
-            auto combo = std::make_unique<HpSharkAddComboResults<SharkFloatParams>>();
-
-            combo->A_X2 = *xNum;
-            combo->B_Y2 = *yNum;
-            combo->C_A = *zNum;
-            combo->D_2X = *xNum;
-            combo->E_B = *yNum;
-
-            const auto &gpuResultXY1 = combo->Result1_A_B_C;
-            const auto &gpuResultXY2 = combo->Result2_D_E;
-
-            {
-                BenchmarkTimer timer;
-                HpShark::InvokeAddKernelPerf<SharkFloatParams>(launchParams, timer, *combo, numIters);
-                Tests.AddTime(testNum, timer.GetDeltaInMs());
-                Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
-                std::cout << "GPU iter timeMs: " << timer.GetDeltaInMs() << std::endl;
-
-                if (timer.GetDeltaInMs() != 0) {
-                    std::cout << "Ratio: "
-                              << static_cast<double>(hostTimer.GetDeltaInMs()) /
-                                     static_cast<double>(timer.GetDeltaInMs())
-                              << std::endl;
-                }
-            }
-
-            if constexpr (HpShark::TestMPIRImpl) {
-                bool testSucceeded = true;
-                constexpr auto numTerms = 3;
-                testSucceeded &= CheckDiff(
-                    launchParams, Tests, testNum, numTerms, "GPU_A_B_C", mpfHostResultXY1, gpuResultXY1);
-                testSucceeded &= CheckDiff(
-                    launchParams, Tests, testNum, numTerms, "GPU_D_E", mpfHostResultXY2, gpuResultXY2);
-            }
-
-        } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
-
-            auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
-            combo->A = *xNum;
-            combo->B = *yNum;
-
-            const auto &gpuResult2XX = combo->ResultX2;
-            const auto &gpuResult2XY = combo->Result2XY;
-            const auto &gpuResult2YY = combo->ResultY2;
-
-            {
-                BenchmarkTimer timer;
-
-                if constexpr (sharkOperator == Operator::MultiplyNTT) {
-                    HpShark::InvokeMultiplyNTTKernelPerf<SharkFloatParams>(
-                        launchParams, timer, *combo, numIters);
-                } else {
-                    Environment::DebugBreakpoint();
-                }
-
-                Tests.AddTime(testNum, timer.GetDeltaInMs());
-                Tests.MarkSuccess(&launchParams, testNum, "GPU total time");
-                std::cout << "GPU iter timeMs: " << timer.GetDeltaInMs() << std::endl;
-
-                if (timer.GetDeltaInMs() != 0) {
-                    std::cout << "Ratio: "
-                              << static_cast<double>(hostTimer.GetDeltaInMs()) /
-                                     static_cast<double>(timer.GetDeltaInMs())
-                              << std::endl;
-                }
-            }
-
-            if constexpr (HpShark::TestMPIRImpl) {
-                bool testSucceeded = true;
-                constexpr auto numTerms = 2;
-                testSucceeded &= CheckDiff(
-                    launchParams, Tests, testNum, numTerms, "GPU_XX", mpfHostResultXX, gpuResult2XX);
-                testSucceeded &= CheckDiff(
-                    launchParams, Tests, testNum, numTerms, "GPU_XY", mpfHostResultXY1, gpuResult2XY);
-                testSucceeded &= CheckDiff(
-                    launchParams, Tests, testNum, numTerms, "GPU_YY", mpfHostResultYY, gpuResult2YY);
-            }
-        } else if constexpr (IsReferenceOrbitOperator<sharkOperator>) {
+        {
             std::vector<typename SharkFloatParams::ReferenceIterT> hpSharkReferenceOrbit;
             uint64_t totalExecutedIters = 0;
 
-            using GpuOrbitSessionType = std::conditional_t<sharkOperator == Operator::ReferenceOrbit,
-                                                           HpShark::GpuOrbitSession<SharkFloatParams>,
-                                                           HpShark::GpuOrbitSession2<SharkFloatParams>>;
-            GpuOrbitSessionType session = [&]() {
-                if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-                    return GpuOrbitSessionType(
-                        launchParams, hdrRadiusY, *xNum, *yNum, debugGpuCombo.get());
-                } else {
-                    if (preparedTables != nullptr) {
-                        return GpuOrbitSessionType(launchParams,
-                                                   hdrRadiusY,
-                                                   *xNum,
-                                                   *yNum,
-                                                   *preparedTables,
-                                                   debugGpuCombo.get());
-                    }
-                    return GpuOrbitSessionType(launchParams,
-                                               hdrRadiusY,
-                                               *xNum,
-                                               *yNum,
-                                               actualPrecisionLimbs,
-                                               debugGpuCombo.get());
+            HpShark::GpuOrbitSession<SharkFloatParams> session = [&]() {
+                if (preparedTables != nullptr) {
+                    return HpShark::GpuOrbitSession<SharkFloatParams>(
+                        launchParams, hdrRadiusY, *xNum, *yNum, *preparedTables, debugGpuCombo.get());
                 }
+                return HpShark::GpuOrbitSession<SharkFloatParams>(
+                    launchParams, hdrRadiusY, *xNum, *yNum, actualPrecisionLimbs, debugGpuCombo.get());
             }();
-            auto &combo = session.GetCombo();
+            auto &combo = session.GetResults();
 
             {
                 BenchmarkTimer timer;
@@ -974,12 +689,10 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 }
             }
 
-            const auto &gpuResultX = combo.Multiply.A;
-            const auto &gpuResultY = combo.Multiply.B;
+            const auto &gpuResultX = combo.ZReal;
+            const auto &gpuResultY = combo.ZImag;
 
-            // HpSharkReferenceResultsToFile<SharkFloatParams>("HpSharkPerfResults.txt", *combo);
-
-            // CPU HpSharkFloat-based reference orbit (calls MultiplyHelperFFT2 + AddHelper)
+            // CPU HpSharkFloat-based reference orbit.
             std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>> cpuRefOrbitResult;
             if constexpr (HpShark::TestReferenceImpl) {
                 DebugHostCombo<SharkFloatParams> debugHostCombo;
@@ -987,18 +700,13 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 BenchmarkTimer cpuRefTimer;
                 {
                     ScopedBenchmarkStopper cpuRefStopper{cpuRefTimer};
-                    if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-                        cpuRefOrbitResult = ReferenceOrbitHelper<SharkFloatParams>(
-                            xNum.get(), yNum.get(), hdrRadiusY, numIters, debugHostCombo);
-                    } else {
-                        cpuRefOrbitResult = ReferenceOrbit2Helper<SharkFloatParams>(xNum.get(),
-                                                                                    yNum.get(),
-                                                                                    hdrRadiusY,
-                                                                                    numIters,
-                                                                                    actualPrecisionLimbs,
-                                                                                    debugHostCombo,
-                                                                                    preparedTables);
-                    }
+                    cpuRefOrbitResult = ReferenceOrbit2Helper<SharkFloatParams>(xNum.get(),
+                                                                                yNum.get(),
+                                                                                hdrRadiusY,
+                                                                                numIters,
+                                                                                actualPrecisionLimbs,
+                                                                                debugHostCombo,
+                                                                                preparedTables);
                 }
 
                 std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs()
@@ -1274,11 +982,8 @@ TestPerfRandom(const HpShark::LaunchParams &launchParams,
 
     const auto unknownPeriod = -1;
     const auto expectedResult = PeriodicityResult::Continue;
-    std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
-    if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams, *xNum, *yNum, SharkFloatParams::GlobalNumUint32, testNum);
-    }
+    auto preparedTables = HpShark::PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(
+        launchParams, *xNum, *yNum, SharkFloatParams::GlobalNumUint32, testNum);
 
     TestPerf<SharkFloatParams, sharkOperator>(launchParams,
                                               Tests,
@@ -1532,710 +1237,6 @@ CheckGPUResult(const HpShark::LaunchParams &launchParams,
     return testSucceeded;
 }
 
-template <class SharkFloatParams>
-void
-TestCoreAdd(const HpShark::LaunchParams &launchParams,
-            TestTracker &Tests,
-            int testNum,
-            const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
-            const mpf_t *mpfInputX,
-            size_t mpfInputLen)
-{
-
-    assert(inputX.size() == 3 || inputX.size() == 5);
-
-    assert(inputX.size() == mpfInputLen);
-
-    const auto &aNum = inputX[0];
-    const auto &bNum = inputX[1];
-    const auto &cNum = inputX[2];
-
-    const auto &dNum = (inputX.size() == 5) ? inputX[3] : aNum;
-    const auto &eNum = (inputX.size() == 5) ? inputX[4] : bNum;
-
-    const auto &mpfA = mpfInputX[0];
-    const auto &mpfB = mpfInputX[1];
-    const auto &mpfC = mpfInputX[2];
-
-    const auto &mpfD = (mpfInputLen == 5) ? mpfInputX[3] : mpfA;
-    const auto &mpfE = (mpfInputLen == 5) ? mpfInputX[4] : mpfB;
-
-    constexpr auto sharkOperator = Operator::Add;
-
-    auto TestHostAdd = [](const HpShark::LaunchParams &launchParams,
-                          TestTracker &Tests,
-                          int testNum,
-                          const HpSharkFloat<SharkFloatParams> &aNum,
-                          const HpSharkFloat<SharkFloatParams> &bNum,
-                          const HpSharkFloat<SharkFloatParams> &cNum,
-                          const HpSharkFloat<SharkFloatParams> &dNum,
-                          const HpSharkFloat<SharkFloatParams> &eNum,
-                          const mpf_t &mpfHostResultXY1,
-                          const mpf_t &mpfHostResultXY2,
-                          const mpf_t &mpfA,
-                          const mpf_t &mpfB,
-                          const mpf_t &mpfC,
-                          const mpf_t &mpfD,
-                          DebugHostCombo<SharkFloatParams> &debugHostCombo) -> bool {
-        auto hostAddResult1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostAddResult2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostDzdcReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostDzdcImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-
-        // When NR enabled, pass NR params in the SAME call so checksums cover both
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            AddHelper<SharkFloatParams>(&aNum,
-                                        &bNum,
-                                        &cNum,
-                                        &dNum,
-                                        &eNum,
-                                        hostAddResult1.get(),
-                                        hostAddResult2.get(),
-                                        &aNum,
-                                        &bNum,
-                                        &cNum,
-                                        &dNum, // W0=A, W1=B, W2=C, W3=D
-                                        hostDzdcReal.get(),
-                                        hostDzdcImag.get(),
-                                        debugHostCombo);
-        } else {
-            AddHelper<SharkFloatParams>(&aNum,
-                                        &bNum,
-                                        &cNum,
-                                        &dNum,
-                                        &eNum,
-                                        hostAddResult1.get(),
-                                        hostAddResult2.get(),
-                                        nullptr,
-                                        nullptr,
-                                        nullptr,
-                                        nullptr,
-                                        nullptr,
-                                        nullptr,
-                                        debugHostCombo);
-        }
-
-        auto OutputAdd = [&](const char *desc,
-                             [[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << desc << out.ToString() << std::endl;
-                std::cout << desc << " hex: " << out.ToHexString() << std::endl;
-            }
-        };
-
-        OutputAdd("Add result 1: ", *hostAddResult1);
-        OutputAdd("Add result 2: ", *hostAddResult2);
-
-        bool res = true;
-        constexpr auto numTermsPartABC = 3;
-        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(launchParams,
-                                                                 Tests,
-                                                                 testNum,
-                                                                 numTermsPartABC,
-                                                                 "ReferenceHighPrecisionV2XY1",
-                                                                 mpfHostResultXY1,
-                                                                 *hostAddResult1);
-
-        constexpr auto numTermsPartDE = 2;
-        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(launchParams,
-                                                                 Tests,
-                                                                 testNum,
-                                                                 numTermsPartDE,
-                                                                 "ReferenceHighPrecisionV2XY2",
-                                                                 mpfHostResultXY2,
-                                                                 *hostAddResult2);
-
-        // NR: check CPU-ref NR outputs against MPIR (same pattern as orbit above)
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            mpf_t mpfExpDzdcReal, mpfExpDzdcImag;
-            mpf_init(mpfExpDzdcReal);
-            mpf_init(mpfExpDzdcImag);
-
-            // DzdcReal = W0 - W1 + 1 = A - B + 1
-            mpf_sub(mpfExpDzdcReal, mpfA, mpfB);
-            mpf_add_ui(mpfExpDzdcReal, mpfExpDzdcReal, 1);
-
-            // DzdcImag = W2 + W3 = C + D
-            mpf_add(mpfExpDzdcImag, mpfC, mpfD);
-
-            constexpr auto numTermsNRReal = 3;
-            constexpr auto numTermsNRImag = 2;
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(launchParams,
-                                                                     Tests,
-                                                                     testNum + 200,
-                                                                     numTermsNRReal,
-                                                                     "NR DzdcReal",
-                                                                     mpfExpDzdcReal,
-                                                                     *hostDzdcReal);
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(launchParams,
-                                                                     Tests,
-                                                                     testNum + 201,
-                                                                     numTermsNRImag,
-                                                                     "NR DzdcImag",
-                                                                     mpfExpDzdcImag,
-                                                                     *hostDzdcImag);
-
-            mpf_clear(mpfExpDzdcReal);
-            mpf_clear(mpfExpDzdcImag);
-        }
-
-        return res;
-    };
-
-    // Perform the calculation on the using MPIR
-    auto gpuResultXX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultXY1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultXY2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultYY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-
-    mpf_t mpfHostResultXX;
-    mpf_t mpfHostResultXY1;
-    mpf_t mpfHostResultXY2;
-    mpf_t mpfHostResultYY;
-
-    mpf_init(mpfHostResultXX);
-    mpf_init(mpfHostResultXY1);
-    mpf_init(mpfHostResultXY2);
-    mpf_init(mpfHostResultYY);
-
-    mpf_sub(mpfHostResultXY1, mpfA, mpfB);
-    mpf_add(mpfHostResultXY1, mpfHostResultXY1, mpfC);
-
-    mpf_add(mpfHostResultXY2, mpfD, mpfE);
-
-    // Print host result
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "\nCorrect MPIR result:" << std::endl;
-        std::cout << "Correct MPIR result XY1: "
-                  << MpfToString<SharkFloatParams>(mpfHostResultXY1,
-                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
-                  << std::endl;
-        std::cout << "Correct MPIR hex XY1: " << std::endl;
-        std::cout << "" << MpfToHex32String(mpfHostResultXY1) << std::endl;
-        std::cout << "Correct MPIR result XY2: "
-                  << MpfToString<SharkFloatParams>(mpfHostResultXY2,
-                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
-                  << std::endl;
-        std::cout << "Correct MPIR hex XY2: " << std::endl;
-        std::cout << "" << MpfToHex32String(mpfHostResultXY2) << std::endl;
-    }
-
-    DebugGpuCombo debugGpuCombo{};
-    auto gpuDzdcReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuDzdcImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    if constexpr (HpShark::TestGpu) {
-        BenchmarkTimer timer;
-
-        auto combo = std::make_unique<HpSharkAddComboResults<SharkFloatParams>>();
-        combo->A_X2 = aNum;
-        combo->B_Y2 = bNum;
-        combo->C_A = cNum;
-        combo->D_2X = dNum;
-        combo->E_B = eNum;
-
-        // Set NR inputs when enabled (reuse A as W0, B as W1, C as W2, D as W3)
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            combo->W0 = aNum;
-            combo->W1 = bNum;
-            combo->W2 = cNum;
-            combo->W3 = dNum;
-            combo->One.template FromHDRFloat<typename SharkFloatParams::SubType>(
-                HDRFloat<typename SharkFloatParams::SubType>{typename SharkFloatParams::SubType(1.0)});
-        }
-
-        HpShark::InvokeAddKernelCorrectness<SharkFloatParams>(
-            launchParams, timer, *combo, &debugGpuCombo);
-
-        *gpuResultXY1 = combo->Result1_A_B_C;
-        *gpuResultXY2 = combo->Result2_D_E;
-
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            *gpuDzdcReal = combo->ResultDzdcReal;
-            *gpuDzdcImag = combo->ResultDzdcImag;
-        }
-
-        Tests.AddTime(testNum, timer.GetDeltaInMs());
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "GPU single timeMs: " << timer.GetDeltaInMs() << std::endl;
-        }
-    }
-
-    if constexpr (HpShark::TestReferenceImpl) {
-        DebugHostCombo<SharkFloatParams> debugHostCombo{};
-
-        bool testSucceeded = TestHostAdd(launchParams,
-                                         Tests,
-                                         testNum,
-                                         aNum,
-                                         bNum,
-                                         cNum,
-                                         dNum,
-                                         eNum,
-                                         mpfHostResultXY1,
-                                         mpfHostResultXY2,
-                                         mpfA,
-                                         mpfB,
-                                         mpfC,
-                                         mpfD,
-                                         debugHostCombo);
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            if (!testSucceeded) {
-                std::cout << "Custom High Precision failed" << std::endl;
-            } else {
-                std::cout << "Custom High Precision succeeded" << std::endl;
-            }
-        }
-
-        if (!ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo)) {
-            Tests.MarkFailed(&launchParams, testNum, "Checksums", "checksum mismatch", "exact match");
-        }
-    }
-
-    if constexpr (HpShark::TestGpu) {
-        auto testSucceeded = true;
-
-        constexpr auto numTermsABC = 3;
-        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-            launchParams, Tests, testNum, numTermsABC, "GPU", mpfHostResultXY1, *gpuResultXY1);
-
-        constexpr auto numTermsDE = 2;
-        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-            launchParams, Tests, testNum, numTermsDE, "GPU", mpfHostResultXY2, *gpuResultXY2);
-
-        // GPU NR checks: DzdcReal/DzdcImag against MPIR
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            mpf_t mpfGpuDzdcReal, mpfGpuDzdcImag;
-            mpf_init(mpfGpuDzdcReal);
-            mpf_init(mpfGpuDzdcImag);
-
-            // Expected: DzdcReal = W0 - W1 + 1 = A - B + 1
-            // Expected: DzdcImag = W2 + W3 = C + D
-            mpf_sub(mpfGpuDzdcReal, mpfA, mpfB);
-            mpf_add_ui(mpfGpuDzdcReal, mpfGpuDzdcReal, 1);
-            mpf_add(mpfGpuDzdcImag, mpfC, mpfD);
-
-            testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(launchParams,
-                                                                             Tests,
-                                                                             testNum + 200,
-                                                                             numTermsABC,
-                                                                             "GPU NR DzdcReal",
-                                                                             mpfGpuDzdcReal,
-                                                                             *gpuDzdcReal);
-            testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(launchParams,
-                                                                             Tests,
-                                                                             testNum + 201,
-                                                                             numTermsDE,
-                                                                             "GPU NR DzdcImag",
-                                                                             mpfGpuDzdcImag,
-                                                                             *gpuDzdcImag);
-
-            mpf_clear(mpfGpuDzdcReal);
-            mpf_clear(mpfGpuDzdcImag);
-        }
-    }
-
-    // NR output verification is handled by:
-    // 1. Checksums: TestHostAdd calls AddHelper with NR params using same debugHostCombo,
-    //    ChecksumsCheck compares against GPU debug states (FinalAddDzdc1/2/3, Result_AddDzdc1/2)
-    // 2. GPU vs MPIR: CheckGPUResult for DzdcReal/DzdcImag (in TestGpu block above)
-
-    // Clean up MPIR variables
-    mpf_clear(mpfHostResultXX);
-    mpf_clear(mpfHostResultXY1);
-    mpf_clear(mpfHostResultXY2);
-    mpf_clear(mpfHostResultYY);
-}
-
-template <class SharkFloatParams, Operator sharkOperator>
-void
-TestCoreMultiply(const HpShark::LaunchParams &launchParams,
-                 TestTracker &Tests,
-                 int testNum,
-                 const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
-                 const mpf_t *mpfInputX,
-                 size_t mpfInputLen)
-{
-    (void)mpfInputLen; // Unused parameter, but kept for compatibility
-    assert(inputX.size() == 3 || inputX.size() == 5);
-    assert(mpfInputLen >= 2);
-
-    const auto &aNum = inputX[0];
-    const auto &bNum = inputX[1];
-
-    assert(inputX.size() == mpfInputLen);
-    const auto &mpfA = mpfInputX[0];
-    const auto &mpfB = mpfInputX[1];
-
-    // NR derivative inputs: use inputX[2] as dzdcR, negate it for dzdcI
-    // This ensures dzdcR != A, dzdcI != B, and all W products are distinct from orbit products
-    auto dzdcRNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto dzdcINum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    mpf_t mpfDzdcR, mpfDzdcI;
-    mpf_init(mpfDzdcR);
-    mpf_init(mpfDzdcI);
-
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        assert(mpfInputLen >= 3);
-        dzdcRNum->DeepCopySameDevice(inputX[2]);
-        dzdcINum->DeepCopySameDevice(inputX[2]);
-        dzdcINum->Negate();
-        mpf_set(mpfDzdcR, mpfInputX[2]);
-        mpf_neg(mpfDzdcI, mpfInputX[2]);
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "NR test inputs:" << std::endl;
-            std::cout << "  A = " << aNum.ToString() << std::endl;
-            std::cout << "  B = " << bNum.ToString() << std::endl;
-            std::cout << "  dzdcR = " << dzdcRNum->ToString() << std::endl;
-            std::cout << "  dzdcI = " << dzdcINum->ToString() << std::endl;
-            std::cout << "  inputX[2] = " << inputX[2].ToString() << std::endl;
-            std::cout << "  mpfDzdcR = " << MpfToString<SharkFloatParams>(mpfDzdcR, 64) << std::endl;
-        }
-    }
-
-    auto TestHostKaratsuba = [](const HpShark::LaunchParams &launchParams,
-                                TestTracker &Tests,
-                                int testNum,
-                                const HpSharkFloat<SharkFloatParams> &aNum,
-                                const HpSharkFloat<SharkFloatParams> &bNum,
-                                const HpSharkFloat<SharkFloatParams> *dzdcRNum,
-                                const HpSharkFloat<SharkFloatParams> *dzdcINum,
-                                const mpf_t &mpfHostResultXX,
-                                const mpf_t &mpfHostResultXY1,
-                                const mpf_t &mpfHostResultYY,
-                                const mpf_t &mpfA,
-                                const mpf_t &mpfB,
-                                const mpf_t &mpfDzdcR,
-                                const mpf_t &mpfDzdcI,
-                                DebugHostCombo<SharkFloatParams> &debugHostCombo) -> bool {
-        auto hostKaratsubaOutXXV2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostKaratsubaOutXYV2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostKaratsubaOutYYV2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostW0 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostW1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostW2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto hostW3 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-
-        auto OutputV2 = [&](std::string alg,
-                            [[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << alg << " result: " << out.ToString() << std::endl;
-                std::cout << alg << " hex: " << out.ToHexString() << std::endl;
-            }
-        };
-
-        if constexpr (sharkOperator == Operator::MultiplyNTT) {
-            if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-                MultiplyHelperFFT2<SharkFloatParams>(&aNum,
-                                                     &bNum,
-                                                     hostKaratsubaOutXXV2.get(),
-                                                     hostKaratsubaOutXYV2.get(),
-                                                     hostKaratsubaOutYYV2.get(),
-                                                     dzdcRNum,
-                                                     dzdcINum,
-                                                     hostW0.get(),
-                                                     hostW1.get(),
-                                                     hostW2.get(),
-                                                     hostW3.get(),
-                                                     debugHostCombo);
-            } else {
-                MultiplyHelperFFT2<SharkFloatParams>(&aNum,
-                                                     &bNum,
-                                                     hostKaratsubaOutXXV2.get(),
-                                                     hostKaratsubaOutXYV2.get(),
-                                                     hostKaratsubaOutYYV2.get(),
-                                                     nullptr,
-                                                     nullptr,
-                                                     nullptr,
-                                                     nullptr,
-                                                     nullptr,
-                                                     nullptr,
-                                                     debugHostCombo);
-            }
-
-            OutputV2("FFT XX", *hostKaratsubaOutXXV2);
-            OutputV2("FFT XY", *hostKaratsubaOutXYV2);
-            OutputV2("FFT YY", *hostKaratsubaOutYYV2);
-        } else {
-            MultiplyHelperKaratsubaV2<SharkFloatParams>(&aNum,
-                                                        &bNum,
-                                                        hostKaratsubaOutXXV2.get(),
-                                                        hostKaratsubaOutXYV2.get(),
-                                                        hostKaratsubaOutYYV2.get(),
-                                                        debugHostCombo);
-
-            OutputV2("KaratsubaV2 XX", *hostKaratsubaOutXXV2);
-            OutputV2("KaratsubaV2 XY", *hostKaratsubaOutXYV2);
-            OutputV2("KaratsubaV2 YY", *hostKaratsubaOutYYV2);
-        }
-
-        bool res = true;
-        constexpr auto numTerms = 2;
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(launchParams,
-                                                                         Tests,
-                                                                         testNum,
-                                                                         numTerms,
-                                                                         "ReferenceHighPrecisionV2XX",
-                                                                         mpfHostResultXX,
-                                                                         *hostKaratsubaOutXXV2);
-
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(launchParams,
-                                                                         Tests,
-                                                                         testNum,
-                                                                         numTerms,
-                                                                         "ReferenceHighPrecisionV2XY",
-                                                                         mpfHostResultXY1,
-                                                                         *hostKaratsubaOutXYV2);
-
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(launchParams,
-                                                                         Tests,
-                                                                         testNum,
-                                                                         numTerms,
-                                                                         "ReferenceHighPrecisionV2YY",
-                                                                         mpfHostResultYY,
-                                                                         *hostKaratsubaOutYYV2);
-
-        // NR: check CPU-ref W0-W3 against MPIR (same pattern as orbit above)
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            mpf_t mpfW0, mpfW1, mpfW2, mpfW3;
-            mpf_init(mpfW0);
-            mpf_init(mpfW1);
-            mpf_init(mpfW2);
-            mpf_init(mpfW3);
-
-            // W0 = 2*dzdcR*A, W1 = 2*dzdcI*B
-            // W2 = 2*dzdcR*B, W3 = 2*dzdcI*A
-            mpf_mul(mpfW0, mpfDzdcR, mpfA);
-            mpf_mul_ui(mpfW0, mpfW0, 2);
-            mpf_mul(mpfW1, mpfDzdcI, mpfB);
-            mpf_mul_ui(mpfW1, mpfW1, 2);
-            mpf_mul(mpfW2, mpfDzdcR, mpfB);
-            mpf_mul_ui(mpfW2, mpfW2, 2);
-            mpf_mul(mpfW3, mpfDzdcI, mpfA);
-            mpf_mul_ui(mpfW3, mpfW3, 2);
-
-            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 100, numTerms, "NR W0", mpfW0, *hostW0);
-            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 101, numTerms, "NR W1", mpfW1, *hostW1);
-            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 102, numTerms, "NR W2", mpfW2, *hostW2);
-            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 103, numTerms, "NR W3", mpfW3, *hostW3);
-
-            mpf_clear(mpfW0);
-            mpf_clear(mpfW1);
-            mpf_clear(mpfW2);
-            mpf_clear(mpfW3);
-        }
-
-        return res;
-    };
-
-    // Perform the calculation on the using MPIR
-    auto gpuResultXX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultXY1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultXY2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultYY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-
-    mpf_t mpfHostResultXX;
-    mpf_t mpfHostResultXY1;
-    mpf_t mpfHostResultXY2;
-    mpf_t mpfHostResultYY;
-
-    mpf_init(mpfHostResultXX);
-    mpf_init(mpfHostResultXY1);
-    mpf_init(mpfHostResultXY2);
-    mpf_init(mpfHostResultYY);
-
-    mpf_mul(mpfHostResultXX, mpfA, mpfA);
-    mpf_mul(mpfHostResultXY1, mpfA, mpfB);
-    mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2); // 2 * A * B
-    mpf_mul(mpfHostResultYY, mpfB, mpfB);
-
-    // Print host result
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "\nCorrect MPIR result:" << std::endl;
-        std::cout << "Correct MPIR result XX: "
-                  << MpfToString<SharkFloatParams>(mpfHostResultXX,
-                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
-                  << std::endl;
-        std::cout << "Correct MPIR result XY: "
-                  << MpfToString<SharkFloatParams>(mpfHostResultXY1,
-                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
-                  << std::endl;
-        std::cout << "Correct MPIR result YY: "
-                  << MpfToString<SharkFloatParams>(mpfHostResultYY,
-                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
-                  << std::endl;
-
-        std::cout << "Correct MPIR hex XX: " << std::endl;
-        std::cout << "" << MpfToHex32String(mpfHostResultXX) << std::endl;
-        std::cout << "Correct MPIR hex XY: " << std::endl;
-        std::cout << "" << MpfToHex32String(mpfHostResultXY1) << std::endl;
-        std::cout << "Correct MPIR hex YY: " << std::endl;
-        std::cout << "" << MpfToHex32String(mpfHostResultYY) << std::endl;
-    }
-
-    DebugGpuCombo debugGpuCombo{};
-    auto gpuResultW0 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultW1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultW2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResultW3 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    if constexpr (HpShark::TestGpu) {
-        BenchmarkTimer timer;
-
-        auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
-        combo->A = aNum;
-        combo->B = bNum;
-
-        // Set NR inputs when enabled
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            combo->DzdcReal = *dzdcRNum;
-            combo->DzdcImag = *dzdcINum;
-        }
-
-        HpShark::InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(
-            launchParams, timer, *combo, &debugGpuCombo);
-
-        *gpuResultXX = combo->ResultX2;
-        *gpuResultXY1 = combo->Result2XY;
-        *gpuResultYY = combo->ResultY2;
-
-        // Copy GPU NR results if enabled
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            *gpuResultW0 = combo->ResultW0;
-            *gpuResultW1 = combo->ResultW1;
-            *gpuResultW2 = combo->ResultW2;
-            *gpuResultW3 = combo->ResultW3;
-        }
-
-        Tests.AddTime(testNum, timer.GetDeltaInMs());
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "GPU single timeMs: " << timer.GetDeltaInMs() << std::endl;
-        }
-    }
-
-    if constexpr (HpShark::TestReferenceImpl) {
-        DebugHostCombo<SharkFloatParams> debugHostCombo{};
-
-        bool testSucceeded = false;
-        testSucceeded = TestHostKaratsuba(launchParams,
-                                          Tests,
-                                          testNum,
-                                          aNum,
-                                          bNum,
-                                          dzdcRNum.get(),
-                                          dzdcINum.get(),
-                                          mpfHostResultXX,
-                                          mpfHostResultXY1,
-                                          mpfHostResultYY,
-                                          mpfA,
-                                          mpfB,
-                                          mpfDzdcR,
-                                          mpfDzdcI,
-                                          debugHostCombo);
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            if (!testSucceeded) {
-                std::cout << "Custom High Precision failed" << std::endl;
-            } else {
-                std::cout << "Custom High Precision succeeded" << std::endl;
-            }
-        }
-
-        if (!ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo)) {
-            Tests.MarkFailed(&launchParams, testNum, "Checksums", "checksum mismatch", "exact match");
-        }
-    }
-
-    if constexpr (HpShark::TestGpu) {
-        auto testSucceeded = true;
-
-        constexpr auto numTerms = 2;
-
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-            launchParams, Tests, testNum, numTerms, "GPU XX", mpfHostResultXX, *gpuResultXX);
-
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-            launchParams, Tests, testNum, numTerms, "GPU XY", mpfHostResultXY1, *gpuResultXY1);
-
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-            launchParams, Tests, testNum, numTerms, "GPU YY", mpfHostResultYY, *gpuResultYY);
-
-        // GPU NR checks: W0-W3 against MPIR
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            mpf_t mpfGpuW0, mpfGpuW1, mpfGpuW2, mpfGpuW3;
-            mpf_init(mpfGpuW0);
-            mpf_init(mpfGpuW1);
-            mpf_init(mpfGpuW2);
-            mpf_init(mpfGpuW3);
-
-            mpf_mul(mpfGpuW0, mpfDzdcR, mpfA);
-            mpf_mul_ui(mpfGpuW0, mpfGpuW0, 2);
-            mpf_mul(mpfGpuW1, mpfDzdcI, mpfB);
-            mpf_mul_ui(mpfGpuW1, mpfGpuW1, 2);
-            mpf_mul(mpfGpuW2, mpfDzdcR, mpfB);
-            mpf_mul_ui(mpfGpuW2, mpfGpuW2, 2);
-            mpf_mul(mpfGpuW3, mpfDzdcI, mpfA);
-            mpf_mul_ui(mpfGpuW3, mpfGpuW3, 2);
-
-            testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 100, numTerms, "GPU NR W0", mpfGpuW0, *gpuResultW0);
-            testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 101, numTerms, "GPU NR W1", mpfGpuW1, *gpuResultW1);
-            testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 102, numTerms, "GPU NR W2", mpfGpuW2, *gpuResultW2);
-            testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-                launchParams, Tests, testNum + 103, numTerms, "GPU NR W3", mpfGpuW3, *gpuResultW3);
-
-            mpf_clear(mpfGpuW0);
-            mpf_clear(mpfGpuW1);
-            mpf_clear(mpfGpuW2);
-            mpf_clear(mpfGpuW3);
-        }
-    }
-
-    // NR CPU-ref output verification against MPIR
-    // (checksums are now handled by unified TestHostKaratsuba call above)
-    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-        if constexpr (HpShark::TestReferenceImpl) {
-            // W0-W3 are in hostW0..W3 inside the lambda — but they're out of scope.
-            // The GPU vs MPIR comparison (CheckGPUResult) is in the TestGpu block above.
-            // The CPU-ref vs GPU comparison is via checksums (ChecksumsCheck above).
-        }
-    }
-
-    // Clean up MPIR variables
-    mpf_clear(mpfHostResultXX);
-    mpf_clear(mpfHostResultXY1);
-    mpf_clear(mpfHostResultXY2);
-    mpf_clear(mpfHostResultYY);
-    mpf_clear(mpfDzdcR);
-    mpf_clear(mpfDzdcI);
-}
-
-template <class SharkFloatParams>
-static void
-ValidateReferenceAssignment(const char *implementation,
-                            const char *component,
-                            const HpSharkFloat<SharkFloatParams> &source,
-                            const HpSharkFloat<SharkFloatParams> &destination)
-{
-    const bool digitsMatch = std::memcmp(source.Digits,
-                                         destination.Digits,
-                                         SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t)) == 0;
-    if (!digitsMatch || source.Exponent != destination.Exponent ||
-        source.GetNegative() != destination.GetNegative()) {
-        std::ostringstream message;
-        message << implementation << ' ' << component << " changed during host assignment";
-        throw std::runtime_error(message.str());
-    }
-}
-
 template <class SharkFloatParams, Operator sharkOperator>
 void
 TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
@@ -2280,16 +1281,12 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     mpf_t mpfHostResultX;
     mpf_t mpfHostResultY;
 
-    mpf_t xSquared;
-    mpf_t ySquared;
     mpf_t twoXY;
     mpf_t tempX;
     mpf_t tempY;
 
     constexpr mp_bitcnt_t hostCalculationPrecBits =
         2 * HpSharkFloat<SharkFloatParams>::DefaultPrecBits + 4;
-    mpf_init2(xSquared, hostCalculationPrecBits);
-    mpf_init2(ySquared, hostCalculationPrecBits);
     mpf_init2(twoXY, hostCalculationPrecBits);
     mpf_init2(tempX, hostCalculationPrecBits);
     mpf_init2(tempY, hostCalculationPrecBits);
@@ -2300,17 +1297,10 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     // x_(n + 1) = x_n * x_n - y_n * y_n + a
     // y_(n + 1) = 2 * x_n * y_n + b
 
-    if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-        mpf_mul(xSquared, mpfX, mpfX);        // x^2
-        mpf_mul(ySquared, mpfY, mpfY);        // y^2
-        mpf_sub(tempX, xSquared, ySquared);   // x^2 - y^2
-        mpf_add(mpfHostResultX, tempX, mpfA); // x^2 - y^2 + a
-    } else {
-        mpf_add(tempX, mpfX, mpfY);
-        mpf_sub(tempY, mpfX, mpfY);
-        mpf_mul(mpfHostResultX, tempX, tempY); // (x + y) * (x - y)
-        mpf_add(mpfHostResultX, mpfHostResultX, mpfA);
-    }
+    mpf_add(tempX, mpfX, mpfY);
+    mpf_sub(tempY, mpfX, mpfY);
+    mpf_mul(mpfHostResultX, tempX, tempY); // (x + y) * (x - y)
+    mpf_add(mpfHostResultX, mpfHostResultX, mpfA);
 
     mpf_mul(twoXY, mpfX, mpfY);           // xy
     mpf_mul_ui(twoXY, twoXY, 2);          // 2xy
@@ -2337,35 +1327,25 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     DebugHostCombo<SharkFloatParams> debugHostCombo{};
     DebugGpuCombo debugGpuCombo{};
     typename SharkFloatParams::Float emptyRadius{};
-    std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
-    if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-        preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-            launchParams,
-            aNum,
-            bNum,
-            SharkFloatParams::GlobalNumUint32,
-            testNum,
-            0,
-            reference2MinFusedStages,
-            reference2MaxFusedStages);
-    }
+    auto preparedTables =
+        HpShark::PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(launchParams,
+                                                                       aNum,
+                                                                       bNum,
+                                                                       SharkFloatParams::GlobalNumUint32,
+                                                                       testNum,
+                                                                       0,
+                                                                       reference2MinFusedStages,
+                                                                       reference2MaxFusedStages);
 
-    // Test CPU reference implementation (HpSharkFloat-based, calls MultiplyHelperFFT2 + AddHelper)
-    // Pattern matches TestCoreAdd/TestCoreMultiply: call CPU ref, then CheckAgainstHost vs MPIR.
+    // Test the HpSharkFloat CPU reference implementation against MPIR.
     if constexpr (HpShark::TestReferenceImpl) {
-        std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>> cpuResult;
-        if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-            cpuResult =
-                ReferenceOrbitHelper<SharkFloatParams>(&aNum, &bNum, emptyRadius, 1, debugHostCombo);
-        } else {
-            cpuResult = ReferenceOrbit2Helper<SharkFloatParams>(&aNum,
-                                                                &bNum,
-                                                                emptyRadius,
-                                                                1,
-                                                                SharkFloatParams::GlobalNumUint32,
-                                                                debugHostCombo,
-                                                                preparedTables.get());
-        }
+        auto cpuResult = ReferenceOrbit2Helper<SharkFloatParams>(&aNum,
+                                                                 &bNum,
+                                                                 emptyRadius,
+                                                                 1,
+                                                                 SharkFloatParams::GlobalNumUint32,
+                                                                 debugHostCombo,
+                                                                 preparedTables.get());
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "CPU ref orbit result X: " << cpuResult->FinalZReal.ToString() << std::endl;
@@ -2403,55 +1383,25 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         }
     }
 
-    if constexpr (HpShark::TestGpu && sharkOperator == Operator::ReferenceOrbit) {
+    if constexpr (HpShark::TestGpu) {
         BenchmarkTimer timer;
 
         auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
-        combo->Add.C_A = aNum;
-        combo->Add.E_B = bNum;
-        combo->Multiply.A = aNum;
-        combo->Multiply.B = bNum;
+        combo->CReal = aNum;
+        combo->CImag = bNum;
+        combo->ZReal = aNum;
+        combo->ZImag = bNum;
         combo->RadiusY = {};
 
         HpShark::InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(
-            launchParams, timer, *combo, &debugGpuCombo);
-
-        // *gpuResultXX = combo.Add.Result1_A_B_C;
-        // *gpuResultYY = combo.Add.Result2_D_E;
-        *gpuResultXX = combo->Multiply.A;
-        *gpuResultYY = combo->Multiply.B;
-        ValidateReferenceAssignment("Ref1", "real result", combo->Multiply.A, *gpuResultXX);
-        ValidateReferenceAssignment("Ref1", "imaginary result", combo->Multiply.B, *gpuResultYY);
-
-        Tests.AddTime(testNum, timer.GetDeltaInMs());
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "GPU single timeMs: " << timer.GetDeltaInMs() << std::endl;
-        }
-    }
-
-    if constexpr (HpShark::TestGpu && sharkOperator == Operator::ReferenceOrbit2) {
-        BenchmarkTimer timer;
-
-        auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
-        combo->Add.C_A = aNum;
-        combo->Add.E_B = bNum;
-        combo->Multiply.A = aNum;
-        combo->Multiply.B = bNum;
-        combo->RadiusY = {};
-
-        HpShark::InvokeHpSharkReference2KernelCorrectness<SharkFloatParams>(
             launchParams, timer, *combo, &debugGpuCombo, *preparedTables);
 
-        *gpuResultXX = combo->Multiply.A;
-        *gpuResultYY = combo->Multiply.B;
-        ValidateReferenceAssignment("Ref2", "real result", combo->Multiply.A, *gpuResultXX);
-        ValidateReferenceAssignment("Ref2", "imaginary result", combo->Multiply.B, *gpuResultYY);
-
+        *gpuResultXX = combo->ZReal;
+        *gpuResultYY = combo->ZImag;
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "GPU Ref2 timeMs: " << timer.GetDeltaInMs() << std::endl;
+            std::cout << "GPU reference timeMs: " << timer.GetDeltaInMs() << std::endl;
         }
     }
 
@@ -2474,8 +1424,6 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     }
 
     // Clean up MPIR variables
-    mpf_clear(xSquared);
-    mpf_clear(ySquared);
     mpf_clear(twoXY);
     mpf_clear(tempX);
     mpf_clear(tempY);
@@ -2513,24 +1461,14 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(const HpShark::LaunchParams &launch
         }
     }
 
-    if constexpr (sharkOperator == Operator::Add) {
-        TestCoreAdd<SharkFloatParams>(launchParams, Tests, testNum, inputX, mpfInputX, mpfInputLen);
-    } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
-        TestCoreMultiply<SharkFloatParams, sharkOperator>(
-            launchParams, Tests, testNum, inputX, mpfInputX, mpfInputLen);
-    } else if constexpr (IsReferenceOrbitOperator<sharkOperator>) {
-        TestCoreReferenceOrbit<SharkFloatParams, sharkOperator>(launchParams,
-                                                                Tests,
-                                                                testNum,
-                                                                inputX,
-                                                                mpfInputX,
-                                                                mpfInputLen,
-                                                                reference2MinFusedStages,
-                                                                reference2MaxFusedStages);
-    } else {
-        throw FractalSharkSeriousException(
-            "Unsupported operator for TestTernaryOperatorTwoNumbersRawNoSignChange");
-    }
+    TestCoreReferenceOrbit<SharkFloatParams, sharkOperator>(launchParams,
+                                                            Tests,
+                                                            testNum,
+                                                            inputX,
+                                                            mpfInputX,
+                                                            mpfInputLen,
+                                                            reference2MinFusedStages,
+                                                            reference2MaxFusedStages);
 }
 
 template <class SharkFloatParams, Operator sharkOperator, bool IncludeSigns>
@@ -2772,7 +1710,7 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
 
     // Copy mpfX and mpfY
     auto mpfCopy = std::make_unique<mpf_t[]>(mpfInLen);
-    constexpr uint32_t requiredStage = HpSharkReference2OneShotRequiredStage<SharkFloatParams>();
+    constexpr uint32_t requiredStage = HpSharkReferenceOneShotRequiredStage<SharkFloatParams>();
     for (size_t i = 0; i < mpfInLen; ++i) {
         mpf_init(mpfCopy[i]);
     }
@@ -3063,7 +2001,7 @@ TestTernarySpecialHelper(const HpShark::LaunchParams &launchParams,
     auto yNum2{std::make_unique<HpSharkFloat<SharkFloatParams>>(
         testData5Copy.Digits.data(), testData5Copy.Exponent, testData5Copy.Negative)};
 
-    constexpr uint32_t requiredStage = HpSharkReference2OneShotRequiredStage<SharkFloatParams>();
+    constexpr uint32_t requiredStage = HpSharkReferenceOneShotRequiredStage<SharkFloatParams>();
     TestTernarySpecial<SharkFloatParams, sharkOperator>(
         launchParams, Tests, testNum, *xNum, *yNum, *zNum, *xNum2, *yNum2, requiredStage, requiredStage);
 }
@@ -3504,14 +2442,14 @@ TestTernarySpecial20(const HpShark::LaunchParams &launchParams, TestTracker &Tes
                               0xFFFFFFEF, 0xB06FA6C3, 0x0000000F, 0xFFFFFFF4, 0x00000007, 0xFFFFFFFF});
 }
 
-static constexpr int32_t HpSharkReference2Special21MinExponentOverride = -512;
-static constexpr int32_t HpSharkReference2Special21MaxExponentOverride = 512;
+static constexpr int32_t HpSharkReferenceSpecial21MinExponentOverride = -512;
+static constexpr int32_t HpSharkReferenceSpecial21MaxExponentOverride = 512;
 
 template <class SharkFloatParams>
 static constexpr uint32_t
-HpSharkReference2Special21RequiredStage()
+HpSharkReferenceSpecial21RequiredStage()
 {
-    using Workspace = HpSharkReference2Workspace<SharkFloatParams>;
+    using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
 
     // TestTernarySpecial21 constructs a one in the least-significant input limb and then
     // normalizes it.  The lowest exponent in its sweep therefore gives the largest gap between
@@ -3519,11 +2457,11 @@ HpSharkReference2Special21RequiredStage()
     constexpr int64_t normalizedOneShift =
         static_cast<int64_t>(SharkFloatParams::GlobalNumUint32) * 32ll - 1ll;
     constexpr uint64_t maxProductExponentGap =
-        2ull * static_cast<uint64_t>(normalizedOneShift - HpSharkReference2Special21MinExponentOverride);
+        2ull * static_cast<uint64_t>(normalizedOneShift - HpSharkReferenceSpecial21MinExponentOverride);
     constexpr uint64_t coefficientShift =
-        maxProductExponentGap / static_cast<uint64_t>(SharkFloatParams::NTTPlan2.b);
+        maxProductExponentGap / static_cast<uint64_t>(SharkFloatParams::ReferenceNTTPlan.b);
     constexpr uint64_t productCoefficientCount =
-        2ull * static_cast<uint64_t>(SharkFloatParams::NTTPlan2.L) - 1ull;
+        2ull * static_cast<uint64_t>(SharkFloatParams::ReferenceNTTPlan.L) - 1ull;
     constexpr uint32_t requiredN =
         SharkNTT::NextPow2U32(static_cast<uint32_t>(coefficientShift + productCoefficientCount));
     constexpr uint32_t requiredStage = SharkNTT::CeilLog2U32(requiredN);
@@ -3604,8 +2542,8 @@ TestTernarySpecial21(const HpShark::LaunchParams &launchParams,
         *xNum,
         *yNum,
         *zNum,
-        HpSharkReference2Workspace<SharkFloatParams>::MinFusedStages,
-        HpSharkReference2Special21RequiredStage<SharkFloatParams>());
+        HpSharkReferenceWorkspace<SharkFloatParams>::MinFusedStages,
+        HpSharkReferenceSpecial21RequiredStage<SharkFloatParams>());
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
@@ -3754,10 +2692,7 @@ TestBinaryOperatorPerf(const HpShark::LaunchParams &launchParams,
 
         case BasicCorrectnessMode::PerfSingleView30:
         case BasicCorrectnessMode::PerfSingleView32:
-        case BasicCorrectnessMode::PerfSingleAdd:
-        case BasicCorrectnessMode::PerfSingleMultiply:
         case BasicCorrectnessMode::PerfSingleRef:
-        case BasicCorrectnessMode::PerfSingleRef2:
             for (int i = 0; i < numIters; ++i) {
                 TestPerfRandom<SharkParamsNP7, sharkOperator>(
                     launchParams, Tests, testBase + 1, internalTestLoopCount);
@@ -3874,10 +2809,8 @@ GetFullReferencePerfViewOverride(size_t view)
 uint32_t
 GetMinimumFullReferencePerfEffectiveLimbs(Operator referenceOperator, uint32_t storageLimbs)
 {
-    if (referenceOperator == Operator::ReferenceOrbit2) {
-        return storageLimbs / 2u + 1u;
-    }
-    return 1;
+    (void)referenceOperator;
+    return storageLimbs / 2u + 1u;
 }
 
 uint32_t
@@ -3885,11 +2818,8 @@ GetFullReferencePerfEffectiveLimbs(Operator referenceOperator,
                                    uint64_t requestedLimbs,
                                    uint32_t storageLimbs)
 {
-    if (referenceOperator == Operator::ReferenceOrbit2) {
-        return GetRef2EffectivePrecisionLimbs(requestedLimbs, storageLimbs);
-    }
-
-    return static_cast<uint32_t>(std::min(requestedLimbs, static_cast<uint64_t>(storageLimbs)));
+    (void)referenceOperator;
+    return GetReferenceEffectivePrecisionLimbs(requestedLimbs, storageLimbs);
 }
 
 bool
@@ -4086,11 +3016,8 @@ TestFullReferencePerfView(TestTracker &Tests,
         const auto expectedResult =
             viewOverride ? viewOverride->m_ExpectedResult : PeriodicityResult::Continue;
 
-        std::unique_ptr<HpShark::Reference2PreparedTables<SharkFloatParams>> preparedTables;
-        if constexpr (sharkOperator == Operator::ReferenceOrbit2) {
-            preparedTables = HpShark::PrepareOrLoadHpSharkReference2Tables<SharkFloatParams>(
-                launchParams, mpfX, mpfY, effectivePrecisionLimbs, testBase);
-        }
+        auto preparedTables = HpShark::PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(
+            launchParams, mpfX, mpfY, effectivePrecisionLimbs, testBase);
 
         std::vector<PerfTimingResult> timings;
         timings.reserve(numIters);
@@ -4118,8 +3045,7 @@ TestFullReferencePerfView(TestTracker &Tests,
             timings.push_back(timing);
         }
 
-        constexpr const char *cpuLabel =
-            sharkOperator == Operator::ReferenceOrbit ? "CPU-Ref1" : "CPU-Ref2";
+        constexpr const char *cpuLabel = "CPU reference";
         if (!viewOverride) {
             std::cout << "\nGeneric view-perf for view " << view << std::endl;
         }
@@ -4153,10 +3079,6 @@ TestAllBinaryOp(int testBase)
     constexpr bool includeSet10 = true;
     constexpr bool includeSet11 = false;
 
-    // 2000s is multiply
-    // 4000s is add
-
-    // #if 0
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
@@ -4324,7 +3246,7 @@ TestAllBinaryOp(int testBase)
             "7236.34234e5234523");
     }
 
-    if constexpr (sharkOperator == Operator::Add || sharkOperator == Operator::ReferenceOrbit2) {
+    {
         static constexpr auto SpecificTest1 = -129;
         static constexpr auto SpecificTest2 = -128;
         static constexpr auto SpecificTest3 = -127;
@@ -4339,8 +3261,8 @@ TestAllBinaryOp(int testBase)
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest5);
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest6);
 
-        for (auto i = HpSharkReference2Special21MinExponentOverride;
-             i < HpSharkReference2Special21MaxExponentOverride;
+        for (auto i = HpSharkReferenceSpecial21MinExponentOverride;
+             i < HpSharkReferenceSpecial21MaxExponentOverride;
              i++) {
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "Exponent adjustment: " << i << std::endl;
@@ -4420,16 +3342,7 @@ TestAllBinaryOp(int testBase)
 }
 
 // Explicitly instantiate TestAllBinaryOp
-#define ADD_KERNEL(SharkFloatParams)                                                                    \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);
-
-#define MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                           \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);
-
 #define REFERENCE_KERNEL(SharkFloatParams)                                                              \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);
-
-#define REFERENCE2_KERNEL(SharkFloatParams)                                                             \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit2>(int testBase);
 
 // The Operator-only explicit instantiations below do not depend on
@@ -4438,48 +3351,19 @@ TestAllBinaryOp(int testBase)
 // hard errors — keeping these out of the per-SharkFloatParams macros
 // above makes the build portable.
 #define OPERATOR_ONLY_INSTANTIATIONS()                                                                  \
-    template bool TestBinaryOperatorPerf<Operator::Add>(const HpShark::LaunchParams &,                  \
-                                                        int testBase,                                   \
-                                                        int numIters,                                   \
-                                                        int internalTestLoopCount,                      \
-                                                        BasicCorrectnessMode mode);                     \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(const HpShark::LaunchParams &,          \
-                                                                int testBase,                           \
-                                                                int numIters,                           \
-                                                                int internalTestLoopCount,              \
-                                                                BasicCorrectnessMode mode);             \
-    template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(const HpShark::LaunchParams &,       \
-                                                                   int testBase,                        \
-                                                                   int numIters,                        \
-                                                                   int internalTestLoopCount,           \
-                                                                   BasicCorrectnessMode mode);          \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit2>(const HpShark::LaunchParams &,      \
                                                                     int testBase,                       \
                                                                     int numIters,                       \
                                                                     int internalTestLoopCount,          \
                                                                     BasicCorrectnessMode mode);
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    ADD_KERNEL(SharkFloatParams)                                                                        \
-    MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                               \
-    REFERENCE_KERNEL(SharkFloatParams)                                                                  \
-    REFERENCE2_KERNEL(SharkFloatParams)
+#define ExplicitlyInstantiate(SharkFloatParams) REFERENCE_KERNEL(SharkFloatParams)
 
 ExplicitInstantiateAll();
 
 OPERATOR_ONLY_INSTANTIATIONS();
 
 // Explicitly instantiate the generic view-perf driver (Operator-only, so once per reference orbit).
-template bool TestFullReferencePerfView<Operator::ReferenceOrbit>(
-    TestTracker &,
-    int numBlocks,
-    int numThreads,
-    int testBase,
-    int numIters,
-    int internalTestLoopCount,
-    bool useMT,
-    size_t view,
-    const FullReferencePerfLimbSelection &limbSelection);
 template bool TestFullReferencePerfView<Operator::ReferenceOrbit2>(
     TestTracker &,
     int numBlocks,

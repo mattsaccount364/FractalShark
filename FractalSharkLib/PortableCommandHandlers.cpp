@@ -203,9 +203,6 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
         case FractalCommand::NrInnerLoopGpu:
             OnNrInnerLoopGpu();
             return;
-        case FractalCommand::NrInnerLoopGpuRef2:
-            OnNrInnerLoopGpuRef2();
-            return;
         case FractalCommand::NrInnerLoopCpu:
             OnNrInnerLoopCpu();
             return;
@@ -314,9 +311,6 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
             return;
         case FractalCommand::PerturbationGpu:
             OnPerturbationGpu();
-            return;
-        case FractalCommand::PerturbationGpuRef2:
-            OnPerturbationGpuRef2();
             return;
         case FractalCommand::PerturbationLoad:
             OnPerturbationLoad();
@@ -744,13 +738,6 @@ PortableCommandHandlers::OnNrInnerLoopGpu()
 }
 
 void
-PortableCommandHandlers::OnNrInnerLoopGpuRef2()
-{
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::GPURef2); });
-}
-
-void
 PortableCommandHandlers::OnNrInnerLoopCpu()
 {
     GetFractal().EnqueueMutation([](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::CpuMT); });
@@ -993,13 +980,6 @@ PortableCommandHandlers::OnPerturbationGpu()
 {
     GetFractal().EnqueueMutation(
         [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU); });
-}
-
-void
-PortableCommandHandlers::OnPerturbationGpuRef2()
-{
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPURef2); });
 }
 
 void

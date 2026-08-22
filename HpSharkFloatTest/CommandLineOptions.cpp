@@ -105,21 +105,6 @@ SetLimbOption(CommandLineOptionValue<uint32_t> &option,
 }
 
 bool
-SetReferenceOption(CommandLineOptionValue<int> &option,
-                   std::string_view optionName,
-                   std::string_view text,
-                   std::string &error)
-{
-    if (text == "ref1") {
-        return SetNumericOption(option, optionName, "1", error);
-    }
-    if (text == "ref2") {
-        return SetNumericOption(option, optionName, "2", error);
-    }
-    return SetNumericOption(option, optionName, text, error);
-}
-
-bool
 SetVerboseOption(CommandLineOptionValue<int> &option,
                  std::string_view optionName,
                  std::string_view text,
@@ -157,9 +142,6 @@ SetOption(const std::string_view name,
 {
     if (name == "mode") {
         return SetNumericOption(options.m_Mode, name, value, error);
-    }
-    if (name == "reference") {
-        return SetReferenceOption(options.m_Reference, name, value, error);
     }
     if (name == "verbose") {
         return SetVerboseOption(options.m_Verbose, name, value, error);
@@ -242,8 +224,7 @@ const char *
 CommandLineUsage()
 {
     return R"(HpSharkFloatTest options:
-  --mode <1..18|auto>
-  --reference <1|2|ref1|ref2|auto>
+  --mode <1..13|auto>
   --verbose <0|1|on|off|auto>
   --cuda-iterations <integer|auto>
   --num-iters <integer|auto>

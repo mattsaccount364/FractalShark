@@ -69,7 +69,7 @@ def main():
     total_focus = sum(r[2].get(focus, 0) for r in ordered)
     # Each stall type appears twice in the CSV: the base column and a
     # "(Not Issued)" variant. The stall budget is the sum of the base
-    # columns only (matches the methodology used in the Reference2 note).
+    # columns only (matches the methodology used in the GPU reference note).
     base_cols = [c for c in stall_cols if "(Not Issued)" not in c]
     total_base = sum(sum(r[2].get(c, 0) for c in base_cols) for r in ordered)
     print("focus column %s total: %d" % (focus, total_focus))

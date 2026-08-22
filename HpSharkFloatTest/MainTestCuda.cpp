@@ -4,7 +4,6 @@
 #include "GpuPrecisionDispatch.h"
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
-#include "ShowMostEfficientSizes.h"
 #include "TestTracker.h"
 #include "TestVerbose.h"
 #include "Tests.h"
@@ -60,20 +59,10 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Performance Single NR View30";
         case BasicCorrectnessMode::PerfSingleNRView32:
             return "Performance Single NR View32";
-        case BasicCorrectnessMode::PerfSingleAdd:
-            return "Performance Single Add";
-        case BasicCorrectnessMode::PerfSingleMultiply:
-            return "Performance Single Multiply";
         case BasicCorrectnessMode::PerfSingleRef:
-            return "Performance Single ReferenceOrbit";
-        case BasicCorrectnessMode::PerfSingleNRAdd:
-            return "Performance Single NR Add";
-        case BasicCorrectnessMode::PerfSingleNRMultiply:
-            return "Performance Single NR Multiply";
+            return "Performance Single Reference Orbit";
         case BasicCorrectnessMode::Correctness_P1_to_P5:
             return "Correctness (Params1..5)";
-        case BasicCorrectnessMode::PerfSingleRef2:
-            return "Performance Single ReferenceOrbit2";
         case BasicCorrectnessMode::PerfSingleViewAny:
             return "Performance Single View (any)";
         default:
@@ -87,15 +76,9 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
 namespace TestIds {
 constexpr int kConversion = 0;
 
-constexpr int kAddCorrectness = 4000;
-constexpr int kMultiplyCorrectness = 6000;
 constexpr int kFullCorrectness = 2000;
-constexpr int kFull2Correctness = 8000;
 
-constexpr int kAddPerf = 10000;
-constexpr int kMultiplyPerf = 13000;
 constexpr int kFullPerf = 14000;
-constexpr int kFull2Perf = 15000;
 
 constexpr int kPerfView30 = 16020;
 constexpr int kPerfView32 = 16030;
@@ -121,34 +104,6 @@ ContinueAfterFailure(bool res)
     if (res)
         return true;
     return PressKey() != 'q';
-}
-
-enum class ReferenceImplementation : int { Ref1 = 1, Ref2 = 2 };
-
-static const char *
-ReferenceImplementationToString(ReferenceImplementation referenceImplementation)
-{
-    switch (referenceImplementation) {
-        case ReferenceImplementation::Ref1:
-            return "Ref1 (Operator::ReferenceOrbit)";
-        case ReferenceImplementation::Ref2:
-            return "Ref2 (Operator::ReferenceOrbit2)";
-        default:
-            return "Unknown";
-    }
-}
-
-static bool
-RequiresReferenceImplementation(BasicCorrectnessMode mode)
-{
-    return mode == BasicCorrectnessMode::PerfSub || mode == BasicCorrectnessMode::PerfSweep ||
-           mode == BasicCorrectnessMode::PerfSingleView30 ||
-           mode == BasicCorrectnessMode::PerfSingleView32 ||
-           mode == BasicCorrectnessMode::PerfSingleView5 ||
-           mode == BasicCorrectnessMode::PerfSingleNRView5 ||
-           mode == BasicCorrectnessMode::PerfSingleNRView30 ||
-           mode == BasicCorrectnessMode::PerfSingleNRView32 ||
-           mode == BasicCorrectnessMode::PerfSingleViewAny;
 }
 
 /// Robust console line input using Environment console input (no std::getline mixing).
@@ -350,9 +305,7 @@ IsRunPerfModesMode(BasicCorrectnessMode mode)
 static bool
 IsRunPerfBasicOpMode(BasicCorrectnessMode mode)
 {
-    return mode == BasicCorrectnessMode::PerfSingleAdd ||
-           mode == BasicCorrectnessMode::PerfSingleMultiply ||
-           mode == BasicCorrectnessMode::PerfSingleRef || mode == BasicCorrectnessMode::PerfSingleRef2;
+    return mode == BasicCorrectnessMode::PerfSingleRef;
 }
 
 static bool
@@ -385,7 +338,7 @@ ValidateCommandLineApplicability(const CommandLineOptions &options, BasicCorrect
     }
 
     if (IsCommandLineSupplied(options.m_View) && mode != BasicCorrectnessMode::PerfSingleViewAny) {
-        std::cerr << "--view is only valid with mode 18 (PerfSingle View Any).\n";
+        std::cerr << "--view is only valid with mode 13 (PerfSingle View Any).\n";
         return false;
     }
 
@@ -393,11 +346,6 @@ ValidateCommandLineApplicability(const CommandLineOptions &options, BasicCorrect
          IsCommandLineSupplied(options.m_EffectiveLimbs)) &&
         !isViewMode) {
         std::cerr << "Limb options require a full-reference view mode or the performance sweep.\n";
-        return false;
-    }
-
-    if (IsCommandLineSupplied(options.m_Reference) && !RequiresReferenceImplementation(mode)) {
-        std::cerr << "--reference is not used by the selected mode.\n";
         return false;
     }
 
@@ -652,23 +600,7 @@ CorrectnessTests()
 {
     bool res = true;
 
-    // res = TestConversion<TestSharkParams>(TestIds::kConversion);
-    // if (!ContinueAfterFailure(res))
-    //     return false;
-
-    // res = TestAllBinaryOp<TestSharkParams, Operator::Add>(TestIds::kAddCorrectness);
-    // if (!ContinueAfterFailure(res))
-    //     return false;
-
-    // res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(TestIds::kMultiplyCorrectness);
-    // if (!ContinueAfterFailure(res))
-    //     return false;
-
-    // res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(TestIds::kFullCorrectness);
-    // if (!ContinueAfterFailure(res))
-    //     return false;
-
-    res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit2>(TestIds::kFull2Correctness);
+    res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit2>(TestIds::kFullCorrectness);
     if (!ContinueAfterFailure(res))
         return false;
 
@@ -902,25 +834,10 @@ RunPerfModes(BasicCorrectnessMode mode,
         return 0;
     }
 
-    // If PerfSub is selected, run the operator perf suite first.
+    // PerfSub runs the reference-orbit performance suite.
     if (mode == BasicCorrectnessMode::PerfSub) {
-        bool res = true;
-
-        // Add / Multiply / Full perf (delegates per-mode behavior to TestBinaryOperatorPerf)
-        res = TestBinaryOperatorPerf<Operator::Add>(
-            launchParams, TestIds::kAddPerf, numIters, internalTestLoopCount, mode);
-        if (!ContinueAfterFailure(res))
-            return 0;
-
-        res = TestBinaryOperatorPerf<Operator::MultiplyNTT>(
-            launchParams, TestIds::kMultiplyPerf, numIters, internalTestLoopCount, mode);
-        if (!ContinueAfterFailure(res))
-            return 0;
-
-        constexpr int referenceTestBase =
-            referenceOperator == Operator::ReferenceOrbit ? TestIds::kFullPerf : TestIds::kFull2Perf;
-        res = TestBinaryOperatorPerf<referenceOperator>(
-            launchParams, referenceTestBase, numIters, internalTestLoopCount, mode);
+        const bool res = TestBinaryOperatorPerf<referenceOperator>(
+            launchParams, TestIds::kFullPerf, numIters, internalTestLoopCount, mode);
         if (!ContinueAfterFailure(res))
             return 0;
 
@@ -1025,13 +942,6 @@ main(int argc, char **argv)
     const CommandLineOptions &options = commandLine.m_Options;
     Environment::RegisterHeapCleanup();
 
-    {
-        auto plateaus =
-            SharkNTT::BuildPrecisionPlateaus(1048576, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
-        SharkNTT::PrintPlateauTable(plateaus);
-        SharkNTT::PrintPrecisionTiers(plateaus);
-    }
-
     constexpr int kTimeoutInSec = 3;
     bool interactiveMode = false; // becomes true after any user input, making later prompts wait forever
 
@@ -1052,15 +962,9 @@ main(int argc, char **argv)
                << "8=NR View5" << std::endl
                << "9=NR View30" << std::endl
                << "10=NR View32" << std::endl
-               << "--- Operators ---" << std::endl
-               << "11=PerfSingleAdd" << std::endl
-               << "12=PerfSingleMultiply" << std::endl
-               << "13=PerfSingleRef (original ReferenceOrbit)" << std::endl
-               << "14=PerfSingleNRAdd" << std::endl
-               << "15=PerfSingleNRMultiply" << std::endl
-               << "16=Correctness(P1..P5)" << std::endl
-               << "17=PerfSingleRef2" << std::endl
-               << "18=PerfSingle View (pick 1-34)" << std::endl
+               << "11=Correctness(P1..P5)" << std::endl
+               << "12=PerfSingle Reference Orbit" << std::endl
+               << "13=PerfSingle View (pick 1-34)" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
@@ -1100,38 +1004,23 @@ main(int argc, char **argv)
             mode = BasicCorrectnessMode::PerfSingleNRView32;
             break;
         case 11:
-            mode = BasicCorrectnessMode::PerfSingleAdd;
-            break;
-        case 12:
-            mode = BasicCorrectnessMode::PerfSingleMultiply;
-            break;
-        case 13:
-            mode = BasicCorrectnessMode::PerfSingleRef;
-            break;
-        case 14:
-            mode = BasicCorrectnessMode::PerfSingleNRAdd;
-            break;
-        case 15:
-            mode = BasicCorrectnessMode::PerfSingleNRMultiply;
-            break;
-        case 16:
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
-        case 17:
-            mode = BasicCorrectnessMode::PerfSingleRef2;
+        case 12:
+            mode = BasicCorrectnessMode::PerfSingleRef;
             break;
-        case 18:
+        case 13:
             mode = BasicCorrectnessMode::PerfSingleViewAny;
             break;
         default:
-            std::cout << "Invalid mode " << rawMode << " (valid range: 1..18). "
+            std::cout << "Invalid mode " << rawMode << " (valid range: 1..13). "
                       << "Exiting.\n";
             mode = BasicCorrectnessMode::Error;
             break;
     }
 
     if (mode == BasicCorrectnessMode::Error && IsCommandLineSupplied(options.m_Mode)) {
-        std::cerr << "Invalid command-line mode " << rawMode << " (valid range: 1..18).\n";
+        std::cerr << "Invalid command-line mode " << rawMode << " (valid range: 1..13).\n";
         return 1;
     }
     if (mode != BasicCorrectnessMode::Error && !ValidateCommandLineApplicability(options, mode)) {
@@ -1140,25 +1029,6 @@ main(int argc, char **argv)
 
     std::cout << "Selected mode: " << static_cast<int>(mode) << " ("
               << BasicCorrectnessModeToString(mode) << ")\n";
-
-    ReferenceImplementation referenceImplementation = ReferenceImplementation::Ref1;
-    if (RequiresReferenceImplementation(mode)) {
-        const int referenceValue =
-            ResolveIntOption(options.m_Reference,
-                             "Reference implementation? Default=1 (1=Ref1, 2=Ref2):",
-                             static_cast<int>(ReferenceImplementation::Ref1),
-                             kTimeoutInSec,
-                             interactiveMode);
-        if (IsCommandLineSupplied(options.m_Reference) && referenceValue != 1 && referenceValue != 2) {
-            std::cerr << "--reference must be 1, 2, ref1, ref2, or auto.\n";
-            return 1;
-        }
-        if (referenceValue == static_cast<int>(ReferenceImplementation::Ref2)) {
-            referenceImplementation = ReferenceImplementation::Ref2;
-        }
-        std::cout << "Selected reference: " << ReferenceImplementationToString(referenceImplementation)
-                  << '\n';
-    }
 
     // Verbose
     if (mode != BasicCorrectnessMode::Error) {
@@ -1193,45 +1063,12 @@ main(int argc, char **argv)
         case BasicCorrectnessMode::PerfSingleNRView30:
         case BasicCorrectnessMode::PerfSingleNRView32:
         case BasicCorrectnessMode::PerfSingleViewAny:
-            if (referenceImplementation == ReferenceImplementation::Ref1) {
-                RunPerfModes<Operator::ReferenceOrbit>(mode, kTimeoutInSec, interactiveMode, options);
-            } else {
-                RunPerfModes<Operator::ReferenceOrbit2>(mode, kTimeoutInSec, interactiveMode, options);
-            }
-            break;
-
-        case BasicCorrectnessMode::PerfSingleAdd:
-            RunPerfBasicOp<Operator::Add>(
-                TestIds::kAddPerf, mode, kTimeoutInSec, interactiveMode, options);
-            break;
-        case BasicCorrectnessMode::PerfSingleMultiply:
-            RunPerfBasicOp<Operator::MultiplyNTT>(
-                TestIds::kMultiplyPerf, mode, kTimeoutInSec, interactiveMode, options);
+            RunPerfModes<Operator::ReferenceOrbit2>(mode, kTimeoutInSec, interactiveMode, options);
             break;
         case BasicCorrectnessMode::PerfSingleRef:
-            RunPerfBasicOp<Operator::ReferenceOrbit>(
+            RunPerfBasicOp<Operator::ReferenceOrbit2>(
                 TestIds::kFullPerf, mode, kTimeoutInSec, interactiveMode, options);
             break;
-        case BasicCorrectnessMode::PerfSingleRef2:
-            RunPerfBasicOp<Operator::ReferenceOrbit2>(
-                TestIds::kFull2Perf, mode, kTimeoutInSec, interactiveMode, options);
-            break;
-
-        case BasicCorrectnessMode::PerfSingleNRAdd: {
-            TestTracker Tests;
-            auto res = TestSingleNRAdd<SharkParamsNR7>(Tests, 0);
-            if (!ContinueAfterFailure(res))
-                return 0;
-            break;
-        }
-
-        case BasicCorrectnessMode::PerfSingleNRMultiply: {
-            TestTracker Tests;
-            auto res = TestSingleNRMultiply<SharkParamsNR7>(Tests, 0);
-            if (!ContinueAfterFailure(res))
-                return 0;
-            break;
-        }
 
         default:
             break;

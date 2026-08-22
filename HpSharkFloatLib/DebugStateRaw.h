@@ -88,7 +88,7 @@ enum class DebugStatePurpose {
     Final128W1,
     Final128W2,
     Final128W3,
-    // Ref2 signed carry propagation
+    // Reference-kernel signed carry propagation
     SignedCarry1,
     SignedCarry2,
     SignedCarryDzdc1,

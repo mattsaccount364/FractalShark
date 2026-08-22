@@ -8,6 +8,8 @@
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
     template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
         const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);           \
+    template void ComputeHpSharkReferenceSetup<SharkFloatParams>(                                       \
+        const HpShark::LaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);           \
     /* end */
 
 ExplicitlyInstantiate(SharkParamsNR1);

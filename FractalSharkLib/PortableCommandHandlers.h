@@ -94,7 +94,6 @@ private:
     void OnFeatureFinderClear();
     void OnFeatureFinderResume();
     void OnNrInnerLoopGpu();
-    void OnNrInnerLoopGpuRef2();
     void OnNrInnerLoopCpu();
     void OnNrInnerLoopCpuSt();
 
@@ -134,7 +133,6 @@ private:
     void OnPerturbationMt2PerturbMthighMtmed4();
     void OnPerturbationMultithread5Periodicity();
     void OnPerturbationGpu();
-    void OnPerturbationGpuRef2();
     void OnPerturbationLoad();
     void OnPerturbationSave();
 

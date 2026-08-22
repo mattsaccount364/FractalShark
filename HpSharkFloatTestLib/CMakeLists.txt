@@ -3,16 +3,8 @@ add_library(HpSharkFloatTestLib STATIC)
 target_sources(HpSharkFloatTestLib PRIVATE
     Conversion.cpp
     HpSharkFloatTestLib.cpp
-    KernelInvokeAddCorrectness.cpp
-    KernelInvokeAddPerf.cpp
-    KernelInvokeNTTCorrectness.cpp
-    KernelInvokeNTTPerf.cpp
     KernelInvokeReferenceCorrectness.cpp
-    ReferenceAdd.cpp
-    ReferenceNTT2.cpp
-    ReferenceReferenceOrbit.cpp
     ReferenceReferenceOrbit2.cpp
-    ShowMostEfficientSizes.cpp
     TestNewtonRaphson.cpp
     Tests.cpp
     TestTracker.cpp

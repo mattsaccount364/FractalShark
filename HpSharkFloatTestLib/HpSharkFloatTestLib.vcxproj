@@ -47,11 +47,8 @@
   <ItemGroup>
     <ClInclude Include="Conversion.h" />
     <ClInclude Include="framework.h" />
-    <ClInclude Include="ReferenceAdd.h" />
-    <ClInclude Include="ReferenceNTT2.h" />
-    <ClInclude Include="ReferenceReferenceOrbit.h" />
+    <ClInclude Include="ReferenceOrbitResult.h" />
     <ClInclude Include="ReferenceReferenceOrbit2.h" />
-    <ClInclude Include="ShowMostEfficientSizes.h" />
     <ClInclude Include="TestNewtonRaphson.h" />
     <ClInclude Include="Tests.h" />
     <ClInclude Include="TestTracker.h" />
@@ -59,16 +56,8 @@
   <ItemGroup>
     <ClCompile Include="Conversion.cpp" />
     <ClCompile Include="HpSharkFloatTestLib.cpp" />
-    <ClCompile Include="KernelInvokeAddCorrectness.cpp" />
-    <ClCompile Include="KernelInvokeAddPerf.cpp" />
-    <ClCompile Include="KernelInvokeNTTCorrectness.cpp" />
-    <ClCompile Include="KernelInvokeNTTPerf.cpp" />
     <ClCompile Include="KernelInvokeReferenceCorrectness.cpp" />
-    <ClCompile Include="ReferenceAdd.cpp" />
-    <ClCompile Include="ReferenceNTT2.cpp" />
-    <ClCompile Include="ReferenceReferenceOrbit.cpp" />
     <ClCompile Include="ReferenceReferenceOrbit2.cpp" />
-    <ClCompile Include="ShowMostEfficientSizes.cpp" />
     <ClCompile Include="TestNewtonRaphson.cpp" />
     <ClCompile Include="Tests.cpp" />
     <ClCompile Include="TestTracker.cpp" />

@@ -5,8 +5,7 @@
 #include "GPU_ReferenceIter.h"
 #include "HDRFloat.h"
 #include "LaunchParams.h"
-#include "MultiplyNTTCudaSetup.h"
-#include "MultiplyNTTPlanBuilder.h"
+#include "ReferenceNTT.h"
 
 #include <bit>
 #include <gmp.h>
@@ -37,9 +36,6 @@ static constexpr bool Debug = false;
 #else
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
-
-static constexpr auto NTTBHint = 32;        // 26?
-static constexpr auto NTTNumBitsMargin = 0; // 2?
 
 // Uncomment to test small warp on multiply normalize path for easier debugging
 // Assumes number of threads is a power of 2 and <= 32, with one block.
@@ -143,16 +139,12 @@ struct GenericSharkFloatParams {
         return std::string("Number of digits: ") + std::to_string(GlobalNumUint32);
     }
 
-    static constexpr SharkNTT::PlanPrime NTTPlan =
-        SharkNTT::BuildPlanPrime(GlobalNumUint32, HpShark::NTTBHint, HpShark::NTTNumBitsMargin);
-    static constexpr SharkNTT::PlanPrime NTTPlan2 = SharkNTT::BuildPlanPrime2(GlobalNumUint32);
+    static constexpr SharkNTT::Plan ReferenceNTTPlan = SharkNTT::BuildPlan(GlobalNumUint32);
 
     using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
 };
 
 } // namespace HpShark
-
-#include "HpSharkScratchMemory.h"
 
 #include "ExplicitInstantiate.h"
 
@@ -336,6 +328,7 @@ HpSharkFloat<SharkFloatParams>::GetNegative() const
 
 #include "HpSharkFloatConversions.h"
 #include "HpSharkKernelResults.h"
+#include "ReferenceScratch.h"
 
 template <class SharkFloatParams> std::string MpfToString(const mpf_t mpf_val, size_t precInBits);
 

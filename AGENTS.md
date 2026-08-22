@@ -160,10 +160,10 @@ plan-only workflows.
 
 ## Copilot Secondary Review
 
-For difficult debugging, performance, CUDA, or algorithm work, delegate a read-only subtask to the
-local GitHub Copilot CLI as an independent secondary reviewer when another opinion would materially
-improve the result. The reusable workflow is in `.agents/skills/copilot-helper/SKILL.md`; invoke it
-through:
+Only invoke the local Qwen-backed GitHub Copilot CLI as a secondary reviewer when the user explicitly
+requests Copilot or Qwen secondary review for the current task. Do not infer permission from the
+task's difficulty, subject matter, or potential benefit from another opinion. When explicitly
+requested, use the reusable workflow in `.agents/skills/copilot-helper/SKILL.md` and invoke it through:
 
 ```powershell
 .\copilot.ps1 --codex -p "<prompt>"
@@ -204,6 +204,7 @@ or after repeated checks show that the run is genuinely stuck, not merely
 because a short default timeout expired.
 
 Codex remains responsible for investigation, architecture, edits, decisions, and validation. Treat
-Copilot output as advisory and verify important claims yourself. Unless explicitly requested, ask
-Copilot not to edit files or commit changes. A useful sequence is independent investigation, Copilot
-review, reconciliation of disagreements, implementation, Copilot diff review, and final validation.
+Copilot output as advisory and verify important claims independently. Unless explicitly requested,
+ask Copilot not to edit files or commit changes. When the user requests a full secondary-review
+workflow, a useful sequence is independent investigation, Copilot review, reconciliation of
+disagreements, implementation, Copilot diff review, and final validation.

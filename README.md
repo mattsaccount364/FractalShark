@@ -24,6 +24,8 @@ At a precision of 16384 32-bit limbs (≈ 158,000 decimal digits), this GPU refe
 
 This feature is still experimental and under active development.  To try it, you'll need an RTX 2xxx series or newer, e.g. RTX 3xxx/4xxx/5xxx should all work with recent drivers.  Then, start FractalShark, manually choose the HDRx32 LAv2 kernel, and under Perturbation choose GPU (experimental).  Then try e.g. View #5 to see if it renders.  If it does, then it's working.  (See FractalShark.pdf §6–7 for details on reference orbit computation and GPU arithmetic.)
 
+The forthcoming v2 reference orbit implementation fuses the add/multiply steps to reduce synchronization requirements, and outperforms the existing v1 multiply/add approach substantially.
+
 ### 2. Multiple CUDA Mandelbrot rendering strategies
 
 FractalShark includes numerous **distinct CUDA implementations** of Mandelbrot rendering. These demonstrate different architectural and algorithmic strategies for mapping the problem to GPUs.

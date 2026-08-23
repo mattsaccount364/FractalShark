@@ -167,72 +167,15 @@ plan-only workflows.
 ## Copilot Secondary Review
 
 Only invoke the local Qwen-backed GitHub Copilot CLI as a secondary reviewer when the user explicitly
-requests Copilot or Qwen secondary review for the current task. Do not infer permission from the
-task's difficulty, subject matter, or potential benefit from another opinion. When explicitly
-requested, use the reusable workflow in `.agents/skills/copilot-helper/SKILL.md` and invoke it through:
+requests Copilot or Qwen secondary review for the current task. Run it from the repository root with:
 
 ```powershell
-.\copilot.ps1 --codex --prompt-file <prompt-file>
+.\copilot.ps1 -p "<PROMPT>"
 ```
 
-On Windows, use `--prompt-file` for any review prompt containing spaces. The
-wrapper passes the file contents as one process argument; do not invoke
-`copilot.exe` directly or rely on nested shell quoting. Use one review launch
-per request.
-
-Before invoking any Qwen-backed review, verify that no other Qwen/Ollama job is
-currently running, including one started outside this repository. This machine
-has one GPU; concurrent Qwen jobs can conflict and fail. Check `ollama ps` and
-the relevant `copilot`/`ollama` process state first, and wait for any active
-Qwen job to finish before starting another.
-
-The `--codex` profile is intentionally quiet and the local Ollama-backed model
-may take several minutes to produce a final response. A lack of immediate
-output is not evidence that the review failed. For a non-trivial investigation,
-request streamed output and diagnostic logs:
-
-```powershell
-$logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
-New-Item -ItemType Directory -Force $logDirectory | Out-Null
-.\copilot.ps1 --codex --stream on --log-level info --log-dir $logDirectory `
-    --prompt-file <prompt-file>
-```
-
-Use a generous outer timeout, 30 minutes by default for a substantial review,
-and poll rather than abandoning a live run. Thirty minutes is a default
-starting budget, not a hard cutoff: if the active Copilot session/event log,
-streamed log, or Copilot/Ollama model activity grows during checks every few
-minutes, continue waiting and report periodic status. Stop only after at least
-three consecutive checks show no event/log growth and no model/process activity,
-or after an explicit cancellation decision. From a second PowerShell window,
-check process liveness, the loaded model, and log growth:
-
-```powershell
-$logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
-Get-Process -Name copilot,ollama -ErrorAction SilentlyContinue |
-    Select-Object ProcessName,Id,StartTime,CPU
-ollama ps
-Get-ChildItem -LiteralPath $logDirectory -File |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 5 Name,Length,LastWriteTime
-Get-Content -LiteralPath "<active-log-file>" -Wait
-```
-
-These checks show liveness and recent activity, not an exact token-level
-completion percentage. Do not ignore Copilot output solely because it is
-delayed; wait for completion and reconcile its claims with the independent
-investigation. Only use `.\copilot_stop.ps1` for an intentional cancellation
-or after repeated checks show that the run is genuinely stuck, not merely
-because a short default timeout expired.
-
-If Copilot's noninteractive permission manager repeatedly denies repository or
-process probes, distinguish that from model latency. The reusable `--codex`
-profile now supplies the user-authorized `--allow-all-paths` and
-`--allow-all-tools` flags so a requested review does not need a second Qwen
-invocation; retain the explicit no-edit/no-commit review prompt.
+The wrapper configures Ollama, checks `ollama ps`, scopes file access to this repository, disables
+write and shell tools, and forwards the response. If it reports an existing model, stop that model
+and retry. Use `--prompt-file <prompt-file>` when a prompt is easier to provide as a file.
 
 Codex remains responsible for investigation, architecture, edits, decisions, and validation. Treat
-Copilot output as advisory and verify important claims independently. Unless explicitly requested,
-ask Copilot not to edit files or commit changes. When the user requests a full secondary-review
-workflow, a useful sequence is independent investigation, Copilot review, reconciliation of
-disagreements, implementation, Copilot diff review, and final validation.
+Copilot output as advisory and verify important claims independently.

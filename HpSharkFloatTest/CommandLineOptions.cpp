@@ -223,7 +223,7 @@ const char *
 CommandLineUsage()
 {
     return R"(HpSharkFloatTest options:
-  --mode <1..13|auto>
+  --mode <1..12|auto>
   --verbose <0|1|on|off|auto>
   --cuda-iterations <integer|auto>
   --num-iters <integer|auto>

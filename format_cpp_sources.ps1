@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $sourcePatterns = @('*.cpp', '*.h', '*.cu', '*.cuh', '*.cc', '*.hh', '*.hpp')
 $lineEndingOnlyPatterns = @(
     '*.txt', '*.vcxproj', '*.props', '*.targets', '*.sln', '*.filters',
-    '*.rc', '*.rc2', '*.manifest', '*.nvsettings'
+    '*.rc', '*.rc2', '*.manifest', '*.nvsettings', '*.tex'
 )
 $excludedSourcePatterns = @(
     'FractalSharkLib/LargeCoords*.h',

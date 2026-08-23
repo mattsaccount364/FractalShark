@@ -1,14 +1,15 @@
-# Configure the local Ollama-backed Copilot CLI and provide a Codex-oriented
-# profile without changing the default manual invocation.
+# Configure the local Ollama-backed Copilot CLI for unattended, read-only
+# secondary reviews. The legacy --codex switch is accepted for compatibility,
+# but it is no longer required by callers.
 
-$codexMode = $false
 $forwardedArgs = @()
 $promptFile = $null
+$promptText = $null
+$promptWasProvided = $false
 
 for ($argumentIndex = 0; $argumentIndex -lt $args.Count; ++$argumentIndex) {
-    $argument = $args[$argumentIndex]
+    $argument = [string]$args[$argumentIndex]
     if ($argument -eq "--codex" -or $argument -eq "-Codex") {
-        $codexMode = $true
         continue
     }
 
@@ -20,8 +21,41 @@ for ($argumentIndex = 0; $argumentIndex -lt $args.Count; ++$argumentIndex) {
         continue
     }
 
+    if ($argument -eq "--prompt" -or $argument -eq "-p") {
+        if ($argumentIndex + 1 -ge $args.Count) {
+            throw "$argument requires a prompt"
+        }
+
+        $promptParts = [System.Collections.Generic.List[string]]::new()
+        $promptParts.Add([string]$args[++$argumentIndex])
+        while ($argumentIndex + 1 -lt $args.Count) {
+            $promptParts.Add([string]$args[++$argumentIndex])
+        }
+
+        $promptText = $promptParts -join ' '
+        $promptWasProvided = $true
+        break
+    }
+
+    if ($argument.StartsWith("--prompt=", [System.StringComparison]::Ordinal)) {
+        $promptParts = [System.Collections.Generic.List[string]]::new()
+        $promptParts.Add($argument.Substring("--prompt=".Length))
+        while ($argumentIndex + 1 -lt $args.Count) {
+            $promptParts.Add([string]$args[++$argumentIndex])
+        }
+
+        $promptText = $promptParts -join ' '
+        $promptWasProvided = $true
+        break
+    }
+
     $forwardedArgs += $argument
 }
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
 
 # Do not use the Env: provider with a wildcard here.  Some Windows hosts
 # expose both `Path` and `PATH`; PowerShell then fails while constructing the
@@ -39,6 +73,50 @@ foreach ($variableName in @(
     [Environment]::SetEnvironmentVariable($variableName, $null, "Process")
 }
 
+function Get-ApplicationPath {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$CommandNames
+    )
+
+    foreach ($commandName in $CommandNames) {
+        $command = Get-Command $commandName -CommandType Application -ErrorAction SilentlyContinue
+        if ($command -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
+            return $command.Source
+        }
+    }
+
+    throw "Unable to find any of these applications on PATH: $($CommandNames -join ', ')"
+}
+
+function Test-OllamaReady {
+    param(
+        [Parameter(Mandatory)]
+        [string]$OllamaPath
+    )
+
+    $ollamaOutput = @(& $OllamaPath ps 2>&1 | ForEach-Object { [string]$_ })
+    $ollamaExitCode = $LASTEXITCODE
+    if ($ollamaExitCode -ne 0) {
+        $details = $ollamaOutput -join [Environment]::NewLine
+        throw "Unable to query Ollama with 'ollama ps' (exit code $ollamaExitCode). Is Ollama running? $details"
+    }
+
+    $nonEmptyLines = @($ollamaOutput | Where-Object { $_.Trim().Length -gt 0 })
+    $modelLines = @()
+    if ($nonEmptyLines.Count -gt 0) {
+        if ($nonEmptyLines[0] -match '^\s*NAME\s+ID\s+') {
+            $modelLines = @($nonEmptyLines | Select-Object -Skip 1)
+        } else {
+            $modelLines = $nonEmptyLines
+        }
+    }
+
+    if ($modelLines.Count -gt 0) {
+        throw "Ollama already reports a running model. Stop it before starting another Qwen review, then retry:`n$($modelLines -join [Environment]::NewLine)"
+    }
+}
+
 $env:COPILOT_PROVIDER_TYPE = "openai"
 $env:COPILOT_PROVIDER_BASE_URL = "http://127.0.0.1:11434/v1"
 $env:COPILOT_PROVIDER_API_KEY = "ollama"
@@ -53,36 +131,45 @@ $env:COPILOT_PROVIDER_MAX_OUTPUT_TOKENS = "8192"
 $env:COPILOT_LARGE_OUTPUT_THRESHOLD_BYTES = "8192"
 
 $copilotArguments = @(
+    "-C", $repositoryRoot,
+    "--add-dir", $repositoryRoot,
+    "--disable-builtin-mcps",
+    "--deny-tool=write",
+    "--deny-tool=shell",
     "--no-ask-user",
-    "--reasoning-effort",
-    "max"
+    "--reasoning-effort", "max",
+    "--stream", "on",
+    "-s"
 )
 
-if ($codexMode) {
-    $copilotArguments += "-s"
-    # Codex invokes this profile for an explicitly requested secondary review.
-    # Noninteractive mode cannot answer Copilot's path/tool permission prompts,
-    # so grant the review process access up front; the review prompt must still
-    # explicitly prohibit edits and commits.
-    $copilotArguments += "--allow-all-paths"
-    $copilotArguments += "--allow-all-tools"
-}
-
 $copilotArguments += $forwardedArgs
+
 if ($null -ne $promptFile) {
     $promptText = Get-Content -LiteralPath $promptFile -Raw
-    $promptArgumentIndex = [Array]::IndexOf($copilotArguments, "--prompt")
-    if ($promptArgumentIndex -ge 0) {
-        $copilotArguments[$promptArgumentIndex + 1] = $promptText
-    } else {
-        $copilotArguments += "--prompt"
-        $copilotArguments += $promptText
-    }
+    $promptWasProvided = $true
 }
 
-$copilotCommand = (Get-Command copilot.exe -CommandType Application -ErrorAction Stop).Source
+if ($promptWasProvided) {
+    $reviewPrompt = @"
+Act as an advisory, read-only secondary reviewer. Inspect files and run
+non-destructive checks when useful, but do not edit files, commit, push, or run
+destructive commands. Report evidence and recommendations to the caller.
+
+User request:
+$promptText
+"@
+    $copilotArguments += "--prompt"
+    $copilotArguments += $reviewPrompt
+}
+
+$ollamaCommand = Get-ApplicationPath -CommandNames @('ollama.exe', 'ollama')
+Test-OllamaReady -OllamaPath $ollamaCommand
+
+$copilotCommand = Get-ApplicationPath -CommandNames @('copilot.exe', 'copilot')
+
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $copilotCommand
+$startInfo.WorkingDirectory = $repositoryRoot
 $startInfo.UseShellExecute = $false
 $startInfo.RedirectStandardOutput = $true
 $startInfo.RedirectStandardError = $true
@@ -92,17 +179,27 @@ foreach ($argument in $copilotArguments) {
 
 $process = [System.Diagnostics.Process]::new()
 $process.StartInfo = $startInfo
-if (-not $process.Start()) {
-    throw "Failed to start $copilotCommand"
+try {
+    if (-not $process.Start()) {
+        throw "Process.Start returned false"
+    }
+
+    # Read both streams asynchronously so a verbose model/tool trace cannot
+    # deadlock the wrapper while preserving the CLI output for the caller.
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $process.WaitForExit()
+    [Console]::Write($stdoutTask.GetAwaiter().GetResult())
+    [Console]::Error.Write($stderrTask.GetAwaiter().GetResult())
+    $exitCode = $process.ExitCode
+} catch {
+    throw "Failed to start $($copilotCommand): $($_.Exception.Message)"
+} finally {
+    $process.Dispose()
 }
 
-# Read both streams asynchronously so a verbose model/tool trace cannot deadlock the
-# review process while preserving the CLI's output for the caller.
-$stdoutTask = $process.StandardOutput.ReadToEndAsync()
-$stderrTask = $process.StandardError.ReadToEndAsync()
-$process.WaitForExit()
-[Console]::Write($stdoutTask.GetAwaiter().GetResult())
-[Console]::Error.Write($stderrTask.GetAwaiter().GetResult())
-$exitCode = $process.ExitCode
-$process.Dispose()
+if ($null -eq $exitCode) {
+    $exitCode = 0
+}
+
 exit $exitCode

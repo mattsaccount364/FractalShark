@@ -2670,26 +2670,6 @@ TestBinaryOperatorPerf(const HpShark::LaunchParams &launchParams,
             // Not a perf mode; historically this function wouldn't run in those modes.
             break;
 
-        case BasicCorrectnessMode::PerfSub:
-            for (int i = 0; i < numIters; ++i) {
-                TestPerfRandom<SharkParamsNP6, sharkOperator>(
-                    launchParams, Tests, testBase + 1, internalTestLoopCount);
-                TestPerfRandom<SharkParamsNP7, sharkOperator>(
-                    launchParams, Tests, testBase + 2, internalTestLoopCount);
-                TestPerfRandom<SharkParamsNP8, sharkOperator>(
-                    launchParams, Tests, testBase + 3, internalTestLoopCount);
-                TestPerfRandom<SharkParamsNP9, sharkOperator>(
-                    launchParams, Tests, testBase + 4, internalTestLoopCount);
-
-                TestPerfRandom<SharkParamsNP10, sharkOperator>(
-                    launchParams, Tests, testBase + 5, internalTestLoopCount);
-                TestPerfRandom<SharkParamsNP11, sharkOperator>(
-                    launchParams, Tests, testBase + 6, internalTestLoopCount);
-                TestPerfRandom<SharkParamsNP12, sharkOperator>(
-                    launchParams, Tests, testBase + 7, internalTestLoopCount);
-            }
-            break;
-
         case BasicCorrectnessMode::PerfSingleView30:
         case BasicCorrectnessMode::PerfSingleView32:
         case BasicCorrectnessMode::PerfSingleRef:

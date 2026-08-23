@@ -44,8 +44,6 @@ BasicCorrectnessModeToString(BasicCorrectnessMode mode)
             return "Correctness (Params1)";
         case BasicCorrectnessMode::Correctness_NR:
             return "Correctness NR";
-        case BasicCorrectnessMode::PerfSub:
-            return "Performance Sub-kernels";
         case BasicCorrectnessMode::PerfSweep:
             return "Performance Sweep";
         case BasicCorrectnessMode::PerfSingleView30:
@@ -293,8 +291,7 @@ ResolveIntOption(const CommandLineOptionValue<int> &option,
 static bool
 IsRunPerfModesMode(BasicCorrectnessMode mode)
 {
-    return mode == BasicCorrectnessMode::PerfSub || mode == BasicCorrectnessMode::PerfSweep ||
-           mode == BasicCorrectnessMode::PerfSingleView30 ||
+    return mode == BasicCorrectnessMode::PerfSweep || mode == BasicCorrectnessMode::PerfSingleView30 ||
            mode == BasicCorrectnessMode::PerfSingleView32 ||
            mode == BasicCorrectnessMode::PerfSingleView5 ||
            mode == BasicCorrectnessMode::PerfSingleNRView5 ||
@@ -339,7 +336,7 @@ ValidateCommandLineApplicability(const CommandLineOptions &options, BasicCorrect
     }
 
     if (IsCommandLineSupplied(options.m_View) && mode != BasicCorrectnessMode::PerfSingleViewAny) {
-        std::cerr << "--view is only valid with mode 13 (PerfSingle View Any).\n";
+        std::cerr << "--view is only valid with mode 12 (PerfSingle View Any).\n";
         return false;
     }
 
@@ -762,8 +759,7 @@ RunPerfModes(BasicCorrectnessMode mode,
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
 
     // Only run for perf modes.
-    if (mode != BasicCorrectnessMode::PerfSub && mode != BasicCorrectnessMode::PerfSweep &&
-        mode != BasicCorrectnessMode::PerfSingleView30 &&
+    if (mode != BasicCorrectnessMode::PerfSweep && mode != BasicCorrectnessMode::PerfSingleView30 &&
         mode != BasicCorrectnessMode::PerfSingleView32 &&
         mode != BasicCorrectnessMode::PerfSingleView5 &&
         mode != BasicCorrectnessMode::PerfSingleNRView5 &&
@@ -853,16 +849,6 @@ RunPerfModes(BasicCorrectnessMode mode,
                       << ", effective=" << selection5.m_EffectiveLimbs << ".\n";
             return 0;
         }
-    }
-
-    // PerfSub runs the reference-orbit performance suite.
-    if (mode == BasicCorrectnessMode::PerfSub) {
-        const bool res = TestBinaryOperatorPerf<referenceOperator>(
-            launchParams, TestIds::kFullPerf, numIters, internalTestLoopCount, mode);
-        if (!ContinueAfterFailure(res))
-            return 0;
-
-        return 1;
     }
 
     if (IsFullReferenceViewMode(mode)) {
@@ -977,19 +963,18 @@ main(int argc, char **argv)
     modePrompt << "Mode? Default=" << defaultModeInt << " "
                << "1=Correctness(P1)" << std::endl
                << "2=Correctness NR" << std::endl
-               << "3=PerfSub" << std::endl
-               << "4=PerfSweep" << std::endl
+               << "3=PerfSweep" << std::endl
                << "--- Non-NR Perf Views ---" << std::endl
-               << "5=PerfSingle View5" << std::endl
-               << "6=PerfSingle View30" << std::endl
-               << "7=PerfSingle View32" << std::endl
+               << "4=PerfSingle View5" << std::endl
+               << "5=PerfSingle View30" << std::endl
+               << "6=PerfSingle View32" << std::endl
                << "--- NR Perf Views ---" << std::endl
-               << "8=NR View5" << std::endl
-               << "9=NR View30" << std::endl
-               << "10=NR View32" << std::endl
-               << "11=Correctness(P1..P5)" << std::endl
-               << "12=PerfSingle Reference Orbit" << std::endl
-               << "13=PerfSingle View (pick 1-34)" << std::endl
+               << "7=NR View5" << std::endl
+               << "8=NR View30" << std::endl
+               << "9=NR View32" << std::endl
+               << "10=Correctness(P1..P5)" << std::endl
+               << "11=PerfSingle Reference Orbit" << std::endl
+               << "12=PerfSingle View (pick 1-34)" << std::endl
                << "anything else=Exit" << std::endl
                << "Enter choice:";
 
@@ -1005,47 +990,44 @@ main(int argc, char **argv)
             mode = BasicCorrectnessMode::Correctness_NR;
             break;
         case 3:
-            mode = BasicCorrectnessMode::PerfSub;
-            break;
-        case 4:
             mode = BasicCorrectnessMode::PerfSweep;
             break;
-        case 5:
+        case 4:
             mode = BasicCorrectnessMode::PerfSingleView5;
             break;
-        case 6:
+        case 5:
             mode = BasicCorrectnessMode::PerfSingleView30;
             break;
-        case 7:
+        case 6:
             mode = BasicCorrectnessMode::PerfSingleView32;
             break;
-        case 8:
+        case 7:
             mode = BasicCorrectnessMode::PerfSingleNRView5;
             break;
-        case 9:
+        case 8:
             mode = BasicCorrectnessMode::PerfSingleNRView30;
             break;
-        case 10:
+        case 9:
             mode = BasicCorrectnessMode::PerfSingleNRView32;
             break;
-        case 11:
+        case 10:
             mode = BasicCorrectnessMode::Correctness_P1_to_P5;
             break;
-        case 12:
+        case 11:
             mode = BasicCorrectnessMode::PerfSingleRef;
             break;
-        case 13:
+        case 12:
             mode = BasicCorrectnessMode::PerfSingleViewAny;
             break;
         default:
-            std::cout << "Invalid mode " << rawMode << " (valid range: 1..13). "
+            std::cout << "Invalid mode " << rawMode << " (valid range: 1..12). "
                       << "Exiting.\n";
             mode = BasicCorrectnessMode::Error;
             break;
     }
 
     if (mode == BasicCorrectnessMode::Error && IsCommandLineSupplied(options.m_Mode)) {
-        std::cerr << "Invalid command-line mode " << rawMode << " (valid range: 1..13).\n";
+        std::cerr << "Invalid command-line mode " << rawMode << " (valid range: 1..12).\n";
         return 1;
     }
     if (mode != BasicCorrectnessMode::Error && !ValidateCommandLineApplicability(options, mode)) {
@@ -1079,7 +1061,6 @@ main(int argc, char **argv)
             break;
         }
 
-        case BasicCorrectnessMode::PerfSub:
         case BasicCorrectnessMode::PerfSweep:
         case BasicCorrectnessMode::PerfSingleView30:
         case BasicCorrectnessMode::PerfSingleView32:

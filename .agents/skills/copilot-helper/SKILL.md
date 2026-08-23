@@ -13,30 +13,32 @@ the investigation, architecture, edits, decisions, and validation.
 Run from the repository root through the compatibility wrapper:
 
 ```powershell
-.\copilot.ps1 --codex -p "<PROMPT>"
+.\copilot.ps1 -p "<PROMPT>"
 ```
 
-The wrapper configures the local Ollama endpoint and model, adds the silent
-Codex profile, and forwards the remaining Copilot arguments unchanged. Use
-`-p` for non-interactive prompts. The canonical implementation is in
+The wrapper configures the local Ollama endpoint and model, checks `ollama ps`,
+scopes file access to the repository, disables write and shell tools, and
+forwards the response. Use `-p` for non-interactive prompts. The canonical
+implementation is in
 `.agents/skills/copilot-helper/scripts/copilot.ps1`.
 
 On Windows, a prompt containing spaces should be supplied through the wrapper's
 file form so command-line quoting cannot split it:
 
 ```powershell
-.\copilot.ps1 --codex --prompt-file <prompt-file>
+.\copilot.ps1 --prompt-file <prompt-file>
 ```
 
 The wrapper reads that file and passes the prompt as one process argument. Do
-not invoke `copilot.exe` directly for a review.
+not invoke `copilot.exe` directly for a review. If the wrapper reports an
+existing Ollama model, stop that model and retry.
 
 ## Workflow
 
 1. Investigate the task independently and record the evidence and current
    hypothesis.
 2. Ask Copilot to inspect the relevant files or problem independently. Give it
-   raw context and ask it not to edit files.
+   raw context; the wrapper supplies the read-only reviewer instruction.
 3. Compare its claims with the evidence. Reproduce or investigate every
    material disagreement rather than accepting either answer automatically.
 4. Implement the chosen change yourself and keep Copilot out of the write path.
@@ -50,10 +52,9 @@ not invoke `copilot.exe` directly for a review.
 Prefer prompts that request evidence and alternatives, for example:
 
 ```text
-Inspect the Reference2Gpu radix-stage implementation and its callers. Do not
-edit files. Trace the relevant call chain, identify likely performance or
-correctness risks, cite the files and symbols involved, and propose focused
-tests or measurements.
+Inspect the Reference2Gpu radix-stage implementation and its callers. Trace the
+relevant call chain, identify likely performance or correctness risks, cite the
+files and symbols involved, and propose focused tests or measurements.
 ```
 
 For a diff review, provide the specific files or diff and ask for independent
@@ -63,51 +64,9 @@ Do not include credentials, private tokens, or unrelated large output. Treat
 Copilot output as advice, not authority. If the local CLI or Ollama service is
 unavailable, continue the investigation without it.
 
-## Long-running jobs
+## Runtime behavior
 
-The normal `--codex` profile adds a silent mode and should be used directly only
-for short, machine-readable checks. The local Ollama-backed model may take
-several minutes to produce a final response, so no immediate output does not
-mean that the run is stuck or unusable. For a large investigation, request
-incremental output and diagnostic logs explicitly:
-
-```powershell
-$logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
-New-Item -ItemType Directory -Force $logDirectory | Out-Null
-.\copilot.ps1 --codex --stream on --log-level info --log-dir $logDirectory `
-    -p "<PROMPT>"
-```
-
-Use a generous outer execution timeout, 30 minutes by default for a substantial
-review, and wait or poll for completion. From a second PowerShell window, use
-the following checks while the command is running:
-
-```powershell
-$logDirectory = Join-Path $env:TEMP "copilot-helper-logs"
-Get-Process -Name copilot,ollama -ErrorAction SilentlyContinue |
-    Select-Object ProcessName,Id,StartTime,CPU
-ollama ps
-Get-ChildItem -LiteralPath $logDirectory -File |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 5 Name,Length,LastWriteTime
-Get-Content -LiteralPath "<active-log-file>" -Wait
-```
-
-Streamed output, growing logs, recent process CPU activity, or a live Copilot
-or Ollama process are useful liveness signals. `ollama ps` confirms model
-availability but does not provide an exact token-level completion percentage.
-Do not discard a delayed response or kill a run solely because it exceeds a
-short default timeout. Only use the repository's `.\copilot_stop.ps1` helper
-for an intentional cancellation or after repeated liveness checks show that
-the run is genuinely stuck. If the process exits with an actual error, record
-the failure and continue the investigation without Copilot.
-
-On Windows, invoke the wrapper from a normal PowerShell environment. The
-wrapper clears the named COPILOT variables without wildcarding `Env:` because
-some hosts expose both `Path` and `PATH`, which makes PowerShell's wildcard
-environment-provider binding fail. If Copilot reports access denied while
-persisting `~/.copilot/session-state`, use the normal approved elevated-process
-path; do not interpret that launch failure as a model review result. The
-`--codex` profile already enables the user-authorized all-path/all-tool mode
-needed for noninteractive repository review, while the prompt must still tell
-Copilot not to edit or commit.
+The wrapper streams the response, forwards the Copilot exit code, and rejects a
+busy Ollama instance before starting another review. Copilot output remains
+advisory; verify its claims independently and continue without it if the local
+service is unavailable.

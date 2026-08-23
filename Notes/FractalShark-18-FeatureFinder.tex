@@ -406,80 +406,26 @@ recurrence for the leading factor of the derivative.
 \subsubsection{GPU acceleration of the inner loop}
 \label{subsec:ff-inner-gpu}
 
-The fused v2 GPU backend evaluates the complete recurrence in one persistent
-cooperative kernel.  At deep zooms, the forward and inverse NTT stages dominate
-the Newton--Raphson inner loop, so the implementation transforms the orbit and
-first-derivative streams together instead of launching separate arithmetic
-operators.
+The fused v2 backend executes the orbit and first-derivative recurrences in the
+same persistent cooperative kernel.  Orbit-only work uses TwoWay mode for
+$x$ and~$y$; Newton--Raphson work uses FourWay mode for $x$, $y$, $dx$, and
+$dy$.  The mathematical product reduction, NTT ordering, CUDA memory hierarchy,
+shared barrier schedule, signed carry, and normalization are developed in
+\cref{subsec:fused-ntt-reference-step,fig:ntt-pipeline}.
 
-\paragraph{Per-iteration structure.}
-Each iteration of \code{HpSharkReferenceGpuLoop}
-(in \code{Kernel\-Hp\-Shark\-Reference\-Orbit\_cu.h}) proceeds through the
-following phases:
+For Feature Finder evaluation, FourWay mode adds the three Gauss-form products
+in~\eqref{eq:fused-derivative-products} to the two orbit products.  It reconstructs
+the first derivative with~\eqref{eq:fused-derivative-reconstruction}; the aligned
+$+1$ enters during signed gathering rather than through a separate transform or
+addition kernel.  Enabling the derivative streams widens the work performed
+between the existing cooperative-grid boundaries but does not add an independent
+high-precision pipeline.
 
-\begin{enumerate}
-\item \textbf{$d2$ accumulation (HDRFloat).}
-  A single GPU thread computes the second-derivative update
-  (\cref{eq:ff-d2-ri}) in ${\sim}24$-bit \code{HDRFloat<float>}
-  arithmetic from truncated copies of the current $z$ and
-  $\mathit{dzdc}$.  This update precedes the fused high-precision phases and
-  does not add a cooperative-grid dependency.
-
-\item \textbf{Aligned packing and forward transforms.}
-  Orbit-only execution uses \code{TwoWay} mode for $x$ and $y$.
-  Newton--Raphson execution uses \code{FourWay} mode for $x$, $y$, $dx$,
-  and $dy$.  All active streams follow the same transform plan and barrier
-  boundaries.
-
-\item \textbf{Fused pointwise recurrence.}
-  \code{FusedAlignedPointwiseTransform} forms five nonlinear products when
-  Newton--Raphson is enabled:
-  \begin{center}
-  \small
-  \begin{tabular}{lll}
-  \hline
-  \textbf{Term} & \textbf{Operands} & \textbf{Purpose} \\
-  \hline
-  $R$ & $(x+y)(x-y)$ & orbit real component \\
-  $I$ & $xy$ & orbit imaginary component \\
-  $P_1$ & $x\,dx$ & derivative real contribution \\
-  $P_2$ & $y\,dy$ & derivative real contribution \\
-  $P_3$ & $(x+y)(dx+dy)$ & derivative imaginary contribution \\
-  \hline
-  \end{tabular}
-  \end{center}
-  Orbit-only execution evaluates only $R$ and $I$.  The pointwise stage forms
-  $2(P_1-P_2)$ and $2(P_3-P_1-P_2)$ directly in the transformed domain.
-
-\item \textbf{Inverse transforms, signed carry, and normalization.}
-  The inverse pass retains the same \code{TwoWay} or \code{FourWay} mode.
-  \code{PrefixAlignedB16CarryTransformsTwoWay} and
-  \code{PrefixAlignedB16CarryTransformsFourWay} incorporate $c_x$, $c_y$,
-  and the derivative's $+1$ at their aligned bit offsets, propagate signed
-  carries, normalize the results, and publish the next state.
-\end{enumerate}
-
-\paragraph{Shared synchronization schedule.}
-Packing, forward transforms, fused pointwise evaluation, inverse transforms,
-and carry resolution are stages of one cooperative kernel.  Enabling
-Newton--Raphson widens the multiway mode from two streams to four; it does not
-introduce a separate derivative kernel or an additional synchronization phase.
-The derivative arithmetic is therefore performed between the same grid-wide
-dependency boundaries as the orbit recurrence.
-
-\paragraph{Exact power-of-two scaling.}
-The factor of~2 in the expanded equations
-(\cref{eq:ff-orbit-ri,eq:ff-dzdc-ri}) is not applied by a separate pass.
-The fused recurrence doubles the relevant pointwise residues and records the
-corresponding aligned linear terms before signed carry resolution.  This
-preserves exact power-of-two scaling without materializing intermediate
-high-precision values.
-
-\paragraph{Summary: shared NR schedule.}
-The orbit-only path evaluates two nonlinear pointwise products and two output
-streams.  Newton--Raphson adds three Gauss-form derivative products and two
-output streams inside the same fused schedule.  Ref2/v2 is the only GPU
-reference-orbit implementation; no standalone multiply/add pipeline remains.
+A leader thread separately computes the second-derivative update
+(\cref{eq:ff-d2-ri}) in approximately 24-bit \code{HDRFloat<float>} arithmetic from
+truncated copies of the current $z$ and $\mathit{dzdc}$.  This inexpensive
+update precedes the fused high-precision phases and does not introduce another
+cooperative-grid dependency.
 
 \medskip
 \noindent
@@ -495,42 +441,6 @@ precision to a supported limb count with \code{BitsToSupportedLimbCount},
 selects the corresponding \code{SharkParamsNRFamily} specialization through
 \code{DispatchByLimbCount}, and calls
 \code{EvaluateCriticalOrbitAndDerivs\_GPU} to run the fused kernel.
-
-\begin{figure}[!htbp]
-\centering
-\begin{tikzpicture}[
-    >=Stealth,
-    phase/.style={draw, rounded corners, minimum width=2.25cm, minimum height=1.2cm,
-                  align=center, font=\scriptsize, fill=blue!10},
-    barrier/.style={draw, red!70!black, line width=1.5pt, dashed},
-    barrlbl/.style={font=\tiny\bfseries, red!70!black},
-]
-  \node[phase] (pack) at (0, 0)
-    {\textbf{Aligned pack}\\orbit: $x,y$\\NR: $x,y,dx,dy$};
-  \node[phase] (forward) at (2.8, 0)
-    {\textbf{Forward NTT}\\orbit: TwoWay\\NR: FourWay};
-  \node[phase] (pointwise) at (5.6, 0)
-    {\textbf{Fused pointwise}\\orbit: $R,I$\\NR: $R,I,P_1,P_2,P_3$};
-  \node[phase] (inverse) at (8.4, 0)
-    {\textbf{Inverse NTT}\\orbit: TwoWay\\NR: FourWay};
-  \node[phase] (carry) at (11.2, 0)
-    {\textbf{Signed carry}\\and normalize\\$z_{n+1},\mathit{dzdc}_{n+1}$};
-
-  \foreach \i/\j in {pack/forward, forward/pointwise, pointwise/inverse, inverse/carry}
-    \draw[->] (\i) -- (\j);
-
-  \foreach \x in {1.4, 4.2, 7.0, 9.8} {
-    \draw[barrier] (\x, -0.85) -- (\x, 0.85);
-    \node[barrlbl] at (\x, -1.05) {sync};
-  }
-\end{tikzpicture}
-\caption[GPU fused NTT schedule with shared barriers]{GPU fused NTT schedule for one iteration.  The orbit
-  and Newton--Raphson modes use the same pipeline and grid-wide barrier
-  boundaries (red dashed lines).  Newton--Raphson widens the active streams
-  and pointwise products without adding a separate derivative kernel or
-  synchronization phase.}
-\label{fig:ntt-pipeline}
-\end{figure}
 
 \subsection{Halley's method}
 \label{subsec:ff-halley}

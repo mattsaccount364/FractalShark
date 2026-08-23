@@ -9,7 +9,9 @@ and notes the section-local variant.
 \centering
 \caption[General notation]{General notation used throughout these notes.}
 \label{tab:notation-general}
-\begin{tabularx}{\textwidth}{llX}
+\small
+\begin{tabularx}{\textwidth}
+    {l>{\raggedright\arraybackslash}p{0.34\textwidth}>{\raggedright\arraybackslash}X}
 \hline
 \textbf{Symbol} & \textbf{Meaning} & \textbf{Notes} \\
 \hline
@@ -29,12 +31,14 @@ $n_{\text{smooth}}$ & smooth (fractional) iteration count
              & $n_{\text{smooth}} = n - \log_2\!\log_2|z_n| + \mathrm{const}$;\;
                continuous coloring \\
 $N$          & generic multi-precision limb count  & section-local unless a type fixes the limb width \\
-$D$          & number of 32-bit \code{HpSharkFloat} limbs
-             & compile-time \code{GlobalNum\allowbreak Uint32} in the fused NTT schedule \\
+$D$          & effective number of 32-bit \code{HpSharkFloat} limbs
+             & selected at runtime within a compile-time
+               \code{GlobalNum\allowbreak Uint32} storage bucket \\
 $L$          & number of packed base-$2^b$ coefficients
              & $L=\lceil 32D/b\rceil$ \\
 $M$          & active power-of-two NTT length in the fused schedule
-             & $M\ge 2L$; the GPU planner may enlarge it for shifted support, up to $2^{25}$ \\
+             & contains the complete shifted convolution support; an unshifted product needs
+               $M\ge 2L-1$, rounded to a power of two, up to $2^{25}$ \\
 $b$          & packed NTT coefficient width in bits
              & $b=16$ for the CUDA reference engine and its host reference model \\
 \hline

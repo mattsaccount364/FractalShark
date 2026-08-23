@@ -1,0 +1,720 @@
+\section{GPU Reference-Orbit Implementation (Fused v2)}
+\label{subsec:ref-orbit-gpu}
+
+Deep Mandelbrot views require a high-precision reference orbit before the
+perturbation renderer can evaluate nearby pixels.  The recurrence
+\begin{align}
+  x_{n+1} &= x_n^2-y_n^2+c_x, \\
+  y_{n+1} &= 2x_ny_n+c_y
+  \label{eq:gpu-reference-components}
+\end{align}
+is simple algebraically, but its cost changes character when each component has
+thousands or millions of bits.  Ordinary machine arithmetic is then replaced
+by multiplication of long coefficient sequences, followed by carry
+propagation and normalization.  At the deepest supported precisions, this work
+dominates reference construction.
+
+The production GPU backend implements the complete recurrence inside one
+persistent cooperative CUDA kernel.  Packing, number-theoretic transforms
+(NTTs), pointwise products, signed carry propagation, normalization, derivative
+updates, periodicity checks, and bounded orbit publication are phases of that
+engine rather than independently launched arithmetic operators.  This chapter
+develops the mathematical motivation for the NTT and then relates it to the
+specific fused schedule.
+
+The implementation described here is the only supported GPU backend.  It is
+called the second-generation implementation, Ref2, or fused v2.  The removed v1
+backend composed separate high-precision multiply and add/subtract operators.
+Unless a test symbol is quoted explicitly, \emph{GPU reference orbit} hereafter
+means the fused v2 engine.
+
+\subsection{The Parallelism Available in a Sequential Orbit}
+\label{subsec:gpu-reference-parallelism}
+
+The orbit itself cannot be divided among iterations: iteration~$n+1$ needs the
+normalized value produced by iteration~$n$.  Assigning one CUDA thread to each
+iteration would therefore violate the data dependency rather than expose useful
+parallelism.  The opportunity lies \emph{within} one iteration.  A long
+significand contains many limbs, a multiplication contains many coefficient
+products, and an NTT contains many independent butterflies at every stage.
+The kernel advances one orbit in time while the cooperative grid evaluates each
+high-precision step in space.
+
+This decomposition creates five design requirements:
+
+\begin{enumerate}
+  \item Products must be exact at the selected finite precision.  An unnoticed
+        error can be amplified over a long orbit or corrupt a Newton step.
+  \item The arithmetic should present many uniform operations to the GPU rather
+        than a small number of recursive, irregular tasks.
+  \item Intermediate products should remain in a reusable workspace instead of
+        becoming separately normalized high-precision values.
+  \item The unavoidable transform and carry synchronization should be shared
+        across the real, imaginary, and optional derivative streams.
+  \item The completed value must return to positional form after every
+        iteration because the next plan depends on its exponent, sign, and
+        normalized significand.
+\end{enumerate}
+
+\subsubsection{Why transform multiplication is used}
+
+Several multiplication families can satisfy some of these requirements, but
+their GPU behavior differs.  \Cref{tab:gpu-multiply-choices} summarizes the
+design tradeoff.  The asymptotic costs describe multiplication of coefficient
+sequences of length~$L$; they do not imply that the NTT is fastest for every
+small precision.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption[Multiplication choices for a GPU reference orbit]{Multiplication choices for a GPU
+  reference orbit.  The production path favors exactness and regular parallel work over the
+  smallest setup cost.}
+\label{tab:gpu-multiply-choices}
+\begin{tabularx}{\textwidth}{lXXX}
+\hline
+\textbf{Method} & \textbf{Work structure} & \textbf{Advantage} & \textbf{Limitation here} \\
+\hline
+Schoolbook
+  & $O(L^2)$ independent digit products followed by carries
+  & Simple and effective for short operands
+  & Quadratic work becomes prohibitive as precision grows \\
+Karatsuba/Toom
+  & Recursive subproblems and recombination
+  & Fewer scalar products than schoolbook multiplication
+  & Uneven subproblem sizes, extra temporaries, and recursive synchronization complicate a
+    persistent SIMT schedule \\
+Floating-point FFT
+  & Regular $O(L\log L)$ butterflies and pointwise products
+  & Mature high-throughput transform techniques
+  & Rounded coefficients require a separate error bound and recovery strategy over long orbits \\
+Number-theoretic transform
+  & Regular $O(L\log L)$ modular butterflies and pointwise products
+  & Exact convolution with integer residues and deterministic recovery
+  & Modular multiplication, root tables, padding, and stage barriers have nontrivial cost \\
+\hline
+\end{tabularx}
+\end{table}
+
+Karatsuba and related factorizations remain important CPU multiplication
+techniques, and floating-point FFTs can map extremely well to GPUs.  The fused
+engine nevertheless gives priority to exact coefficient recovery.  An NTT has
+the same convolution structure as an FFT, but it operates in a finite field:
+there is no transform roundoff to accumulate or to bound.  Its radix-2 stages
+also consist of the same additions, subtractions, twiddle multiplications, and
+address pattern for a large collection of coefficients.  Those properties make
+the algorithm a natural match for SIMT execution.  GPU multi-precision design
+tradeoffs are discussed more generally by Emmart~\cite{Emmart_GPU_MultiPrecision}.
+
+\subsection{From Positional Multiplication to Convolution}
+\label{subsec:ntt-convolution-introduction}
+
+Let $B=2^b$ and write two nonnegative significands as
+\begin{align}
+  A &= \sum_{j=0}^{L-1} a_j B^j, &
+  C &= \sum_{j=0}^{L-1} c_j B^j,
+  \qquad 0\le a_j,c_j < B.
+  \label{eq:ntt-positional-inputs}
+\end{align}
+Their product before carrying is
+\begin{equation}
+  AC = \sum_{k=0}^{2L-2} h_k B^k,
+  \qquad
+  h_k = \sum_{\substack{i+j=k\\0\le i,j<L}} a_i c_j.
+  \label{eq:ntt-linear-convolution}
+\end{equation}
+The sequence $h$ is the \emph{linear convolution} of the coefficient sequences
+$a$ and~$c$.  Positional multiplication and polynomial multiplication are thus
+the same calculation until the coefficients are carried back into the range
+$[0,B)$.
+
+A small decimal example illustrates the separation.  With $B=10$,
+\begin{equation}
+  (3+5B+2B^2)(4+B)=12+23B+13B^2+2B^3.
+\end{equation}
+The convolution coefficients $(12,23,13,2)$ are not decimal digits.  Carrying
+them from low to high positions produces $(2,4,5,3)$, and hence
+$253\mathbin{\times}14=3542$.  The GPU engine follows the same two-part
+strategy at much larger scale: the NTT computes all pre-carry coefficients in
+parallel, and a prefix algorithm subsequently resolves the positional carry.
+
+Direct evaluation of~\eqref{eq:ntt-linear-convolution} performs $O(L^2)$
+coefficient products.  Transform multiplication instead evaluates the two
+polynomials at a carefully selected set of field points, multiplies the values
+pointwise, and interpolates.  The forward and inverse transforms require
+$O(M\log M)$ butterflies for a padded transform length~$M$, while the pointwise
+stage requires $O(M)$ products.  Pollard's finite-field formulation gives the
+classical basis for this construction~\cite{Pollard1971FiniteFieldFFT}.
+
+\subsection{Number-Theoretic Transform Fundamentals}
+\label{sec:ntt-multiply}
+
+Let $p$ be prime, let $M$ be a power of two dividing $p-1$, and let
+$\omega\in\mathbb{F}_p$ have order exactly~$M$.  Thus
+\begin{equation}
+  \omega^M=1\pmod p,
+  \qquad
+  \omega^j\ne 1\pmod p\quad(0<j<M).
+  \label{eq:ntt-primitive-root}
+\end{equation}
+After zero-padding $a$ to length~$M$, its forward NTT is
+\begin{equation}
+  \widehat a_k = \sum_{j=0}^{M-1} a_j\omega^{jk}\pmod p,
+  \qquad 0\le k<M.
+  \label{eq:ntt-forward-definition}
+\end{equation}
+The inverse transform uses $\omega^{-1}$ and the modular inverse of~$M$:
+\begin{equation}
+  a_j = M^{-1}\sum_{k=0}^{M-1}\widehat a_k\omega^{-jk}\pmod p.
+  \label{eq:ntt-inverse-definition}
+\end{equation}
+These equations are the discrete Fourier transform equations with complex roots
+of unity replaced by roots in a finite field.  Every operation is integer
+arithmetic modulo~$p$.
+
+The convolution theorem converts~\eqref{eq:ntt-linear-convolution} into
+independent pointwise products:
+\begin{equation}
+  h = \operatorname{NTT}^{-1}
+      \bigl(\operatorname{NTT}(a)\odot\operatorname{NTT}(c)\bigr),
+  \label{eq:ntt-convolution-theorem}
+\end{equation}
+where $\odot$ denotes componentwise multiplication.  Equation
+~\eqref{eq:ntt-convolution-theorem} naturally computes convolution modulo
+$x^M-1$, so a coefficient beyond position $M-1$ would wrap to the beginning.
+For unshifted length-$L$ inputs, $M\ge 2L-1$ prevents that aliasing.  The fused
+planner uses the stronger condition that $M$ contain every coefficient after
+the operands' exponent-alignment shifts have been included.
+
+\subsubsection{Radix-2 butterflies}
+
+A direct evaluation of~\eqref{eq:ntt-forward-definition} is still quadratic.
+The radix-2 fast transform factors it into $\log_2 M$ stages.  A decimation-in-
+frequency (DIF) butterfly combines two values $u$ and~$v$ as
+\begin{equation}
+  u' = u+v\pmod p,
+  \qquad
+  v' = (u-v)\tau\pmod p,
+  \label{eq:ntt-dif-butterfly}
+\end{equation}
+where the stage and butterfly position select the twiddle~$\tau$.  Each stage
+contains $M/2$ independent butterflies.  The inverse decimation-in-time (DIT)
+butterfly reverses this factorization with inverse twiddles and the scale in
+~\eqref{eq:ntt-inverse-definition}.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    val/.style={circle, draw, minimum size=0.62cm, inner sep=1pt, font=\small},
+    op/.style={rounded corners, draw, fill=blue!8, minimum width=2.4cm,
+              minimum height=0.72cm, align=center, font=\small},
+]
+  \node[val] (u) at (0, 0.75) {$u$};
+  \node[val] (v) at (0, -0.75) {$v$};
+  \node[op] (add) at (3.0, 0.75) {$u+v\pmod p$};
+  \node[op] (sub) at (3.0, -0.75) {$(u-v)\tau\pmod p$};
+  \node[val] (uo) at (5.5, 0.75) {$u'$};
+  \node[val] (vo) at (5.5, -0.75) {$v'$};
+
+  \draw[->] (u) -- (add);
+  \draw[->] (v) -- (add);
+  \draw[->] (u) -- (sub);
+  \draw[->] (v) -- (sub);
+  \draw[->] (add) -- (uo);
+  \draw[->] (sub) -- (vo);
+\end{tikzpicture}
+\caption[Radix-2 NTT butterfly]{One forward DIF NTT butterfly.  A stage applies this fixed
+  operation to $M/2$ independent input pairs, with position-dependent twiddles~$\tau$.}
+\label{fig:ntt-butterfly}
+\end{figure}
+
+The regularity is as important as the asymptotic reduction.  Within a stage,
+threads execute the same modular operations and differ principally in their
+coefficient indices and twiddle values.  There is no data-dependent recursion,
+and the power-of-two index relationships can be generated with shifts and
+masks.
+
+\subsubsection{Exact recovery from residues}
+
+The inverse transform returns each convolution coefficient modulo~$p$.  A
+residue $r$ has a unique centered interpretation
+\begin{equation}
+  \operatorname{center}(r)=
+  \begin{cases}
+    r, & 0\le r < p/2, \\
+    r-p, & p/2 < r < p,
+  \end{cases}
+  \label{eq:ntt-centered-residue}
+\end{equation}
+provided that the true signed coefficient has absolute value below~$p/2$.
+The base, transform ceiling, and fused product formulas are selected so that
+the worst supported coefficient sum retains this headroom.  Consequently,
+centered conversion recovers an integer coefficient, not an approximation to
+one.  This exactness is the central reason for choosing an NTT over a
+floating-point FFT in the reference engine.
+
+\subsection{Why the NTT Maps Well to CUDA}
+\label{subsec:ntt-gpu-mapping}
+
+CUDA executes groups of threads in a SIMT hierarchy: lanes form warps, warps
+form thread blocks, and a cooperative launch can synchronize the complete grid.
+The official CUDA programming model describes both these group levels and the
+residency requirement for grid-wide synchronization~\cite{NvidiaCudaProgrammingGuide}.
+The NTT supplies useful work at each level.
+
+\paragraph{Grid-level parallelism.}
+Large butterfly stages address pairs that may be far apart.  The spectra reside
+in global memory, and grid threads distribute the $M/2$ butterflies.  A
+grid-wide barrier separates stages whose outputs become the next stage's
+inputs.  The memory pattern is regular and, for most stages, adjacent lanes
+issue predictable accesses even when their butterfly partners are distant.
+
+\paragraph{Block-level locality.}
+Once the remaining butterfly spans fit inside a 1,024-coefficient tile, one
+thread block stages the active streams in shared memory.  Several stages can
+then reuse those coefficients and cached twiddles without a global-memory
+round trip.  Block barriers replace grid barriers inside the tile.  The same
+shared arena is reused by forward, pointwise, inverse, and carry phases, so its
+allocation cost is paid once per resident block rather than once per operator.
+
+\paragraph{Warp-level exchange.}
+When a complete 64-coefficient batch is available, the innermost five forward
+stages, the pointwise products, and the first five inverse stages remain in
+warp registers.  Shuffle operations exchange butterfly partners without a
+block barrier.  Tiles that do not satisfy the eligibility conditions retain
+the shared-memory path, preserving correctness for short or partial tails.
+
+\paragraph{Concurrent streams.}
+The orbit-only path transforms $x$ and $y$ in TwoWay mode.  Newton--Raphson
+evaluation transforms $x$, $y$, $dx$, and $dy$ in FourWay mode.  All enabled
+streams have the same $M$, roots, stage order, and dependency boundaries.
+One thread can therefore apply a loaded twiddle to several streams before
+moving to the next coefficient, and the additional derivative work does not
+require a separate kernel schedule.
+
+The match is not perfect.  One reference orbit supplies only one transform at
+a time, so available grid parallelism is bounded by~$M$.  Shared memory and
+registers constrain occupancy, modular multiplication has a dependency chain,
+and large stages still require device-wide barriers.  The fused design is
+therefore not based on an assumption that synchronization is free.  It reduces
+the number of separately synchronized operators and places data at the
+narrowest synchronization level that can legally contain each stage.
+
+\subsection{High-Precision Representation and Alignment}
+\label{subsec:hpfloat-model}
+
+An \code{HpSharkFloat} value consists of a sign, a base-$2^{32}$ significand,
+and an exponent.  If the significand limbs encode the nonnegative integer~$A$
+and the sign bit encodes $s\in\{-1,1\}$, the represented value is
+\begin{equation}
+  v=sA2^e.
+  \label{eq:hp-shark-value}
+\end{equation}
+The generated type fixes a compile-time storage bucket
+\code{GlobalNumUint32}.  A runtime request selects an effective precision of
+$D$ limbs in the upper half of that bucket.  Lower unused limbs are ignored,
+allowing one generated specialization to serve a range of nearby precisions.
+
+The NTT plan splits each active 32-bit limb into two base-$2^{16}$
+coefficients.  Thus
+\begin{equation}
+  b=16,
+  \qquad
+  B=2^{16},
+  \qquad
+  L=2D.
+  \label{eq:reference-b16-plan}
+\end{equation}
+The smaller coefficient base increases the number of transform elements but
+leaves ample field headroom for the sum of many products and for the signs and
+small integer factors in the fused recurrence.
+
+Products and constants generally have different binary exponents.  The grid
+leader therefore constructs a new \code{HpSharkReferenceIterationPlan} from the
+current state before every nonzero iteration.  For each group of operands, it
+chooses the least exponent among the nonzero values as the alignment origin.
+An exponent difference is decomposed into a whole coefficient shift and a
+residual shift:
+\begin{equation}
+  \Delta e = qb+r,
+  \qquad
+  q=\left\lfloor\frac{\Delta e}{b}\right\rfloor,
+  \qquad
+  0\le r<b.
+  \label{eq:reference-alignment-split}
+\end{equation}
+The whole shift moves the coefficient support by~$q$ positions.  The residual
+shift combines neighboring 16-bit halves while packing.  Alignment is thus
+performed once in the input representation; the pointwise loop does not need
+a frequency-dependent spectral shift.
+
+The planner computes the last potentially nonzero coefficient for every
+required product, including the derivative products, and rounds the largest
+linear-convolution support up to a power of two.  The resulting active length
+$M$ selects a cached plan.  A zero state with no linear contribution takes the
+\code{Zero} path, a state with only $c$ or the derivative's $+1$ takes the
+\code{LinearOnly} path, and all nonlinear cases take the \code{Ntt} path.  A
+required length beyond $2^{25}$ cannot be represented by the workspace; the
+kernel reports an unknown status instead of allowing cyclic wraparound or an
+out-of-bounds workspace access.
+
+\subsection{Finite-Field and Transform Setup}
+\label{subsec:reference-ntt-field}
+
+The reference engine uses the Goldilocks prime
+\begin{equation}
+  p=2^{64}-2^{32}+1.
+  \label{eq:reference-goldilocks-prime}
+\end{equation}
+Because
+\begin{equation}
+  p-1=2^{32}(2^{32}-1),
+\end{equation}
+the field contains power-of-two roots through order~$2^{32}$, comfortably
+beyond the engine's $2^{25}$ workspace ceiling.  The setup kernel derives the
+forward and inverse stage roots, fills the twiddle tables, computes the inverse
+length, and marks each generated plan valid.  \code{ReferencePreparedTables}
+owns these tables and the spectra, limb, magnitude, and carry workspaces.  The
+tables are reused across all iterations and chunk invocations of a session.
+
+Field products use Montgomery multiplication~\cite{Montgomery1985Modular}.
+With $R=2^{64}$, a field element $a$ is represented as
+$\widetilde a=aR\bmod p$, and a Montgomery product computes
+\begin{equation}
+  \operatorname{Mont}(\widetilde a,\widetilde c)
+  =acR\pmod p
+\end{equation}
+without integer division.  Additions and subtractions remain ordinary modular
+operations.
+
+The release path also absorbs transform normalization into packing.  For a
+length-$M$ product, each input is pre-scaled by a field value~$s$ satisfying
+\begin{equation}
+  s^2=(MR)^{-1}\pmod p.
+  \label{eq:reference-input-scale}
+\end{equation}
+After two scaled forward transforms, a Montgomery pointwise product, and the
+unnormalized inverse stages, the factors $M$, $R$, and $s^2$ cancel.  The
+inverse output is already a standard residue ready for centered conversion.
+For even stage counts, the selected scale is a power of two and packing uses a
+shift; odd stage counts use a specialized multiply of a 16-bit coefficient by
+the prepared constant.  This arrangement removes a separate inverse-scale and
+Montgomery-exit pass from the hot path.
+
+\subsection{The Fused Reference Recurrence}
+\label{subsec:fused-ntt-reference-step}
+
+Let $X$ and $Y$ denote the aligned coefficient polynomials for $x_n$ and
+$y_n$.  Although~\eqref{eq:gpu-reference-components} is commonly written as
+two squares and one product, the production pointwise stage uses the factored
+real component
+\begin{align}
+  R &= (X+Y)\star(X-Y),
+       \label{eq:fused-reference-real} \\
+  I &= 2(X\star Y),
+       \label{eq:fused-reference-imag}
+\end{align}
+where $\star$ denotes linear convolution.  These expressions equal
+$X\star X-Y\star Y$ and $2X\star Y$ exactly but require only two nonlinear
+products.  In the transform domain they become
+\begin{align}
+  \widehat R_k &= (\widehat X_k+\widehat Y_k)
+                  (\widehat X_k-\widehat Y_k), \\
+  \widehat I_k &= 2\widehat X_k\widehat Y_k.
+  \label{eq:fused-reference-pointwise}
+\end{align}
+The signs of $x_n$ and $y_n$ have already been incorporated during packing.
+
+The constants $c_x$ and $c_y$ are not transformed.  After the inverse NTT,
+the signed gather inserts their significand bits at the offsets determined by
+the iteration plan.  Carry propagation therefore acts on the complete sums
+\begin{align}
+  x_{n+1} &= R+c_x, \\
+  y_{n+1} &= I+c_y
+\end{align}
+without materializing normalized values for $R$ and~$I$ or launching a
+standalone high-precision addition.
+
+\subsubsection{Derivative products}
+\label{subsec:fused-ntt-derivatives}
+
+Newton--Raphson support also advances
+\begin{equation}
+  d_{n+1}=2z_nd_n+1,
+  \qquad d_n=d_{x,n}+i d_{y,n}.
+  \label{eq:fused-dzdc-complex}
+\end{equation}
+FourWay mode transforms $D_x$ and $D_y$ with $X$ and~$Y$.  The pointwise
+center forms three products
+\begin{align}
+  P_1 &= X\star D_x, &
+  P_2 &= Y\star D_y, &
+  P_3 &= (X+Y)\star(D_x+D_y),
+  \label{eq:fused-derivative-products}
+\end{align}
+and reconstructs
+\begin{align}
+  D'_x &= 2(P_1-P_2)+1, \\
+  D'_y &= 2(P_3-P_1-P_2).
+  \label{eq:fused-derivative-reconstruction}
+\end{align}
+The derivative's $+1$ enters during signed gathering just as $c_x$ and~$c_y$
+do.  The Gauss-style product identity reduces four real products to three and
+shares every transform boundary with the orbit streams.
+
+The second derivative
+\begin{equation}
+  q_{n+1}=2(d_n^2+z_nq_n)
+\end{equation}
+is used by the Feature Finder but does not join the high-precision FourWay NTT.
+A leader thread updates its configured HDR representation from truncated orbit
+and first-derivative values before the fused high-precision step.  The complete
+Newton/Halley use of these values is described in
+\cref{subsec:ff-inner-gpu}.
+
+\subsubsection{Operation schedule}
+\label{subsec:fused-ntt-operation-schedule}
+
+\Cref{fig:ntt-pipeline} shows the release-mode schedule.  Large stages operate
+over global spectra across the cooperative grid.  The center moves
+1,024-coefficient tiles through shared memory and, when eligible, keeps its
+innermost stages in warp registers.  Red dashed boundaries are grid-wide
+dependencies; synchronization inside the center is limited to the owning block
+or warp.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    >=Stealth,
+    phase/.style={draw, rounded corners, minimum width=2.25cm, minimum height=1.35cm,
+                  align=center, font=\scriptsize},
+    global/.style={phase, fill=blue!10},
+    local/.style={phase, fill=green!12},
+    carry/.style={phase, fill=orange!14},
+    barrier/.style={draw, red!70!black, line width=1.4pt, dashed},
+    barrlbl/.style={font=\tiny\bfseries, red!70!black},
+]
+  \node[global] (pack) at (0, 0)
+    {\textbf{Align and pack}\\TwoWay: $x,y$\\FourWay: $x,y,dx,dy$};
+  \node[global] (forward) at (2.75, 0)
+    {\textbf{Large DIF}\\global spectra\\cooperative grid};
+  \node[local] (center) at (5.5, 0)
+    {\textbf{Fused center}\\shared-memory tiles\\warp-register core};
+  \node[global] (inverse) at (8.25, 0)
+    {\textbf{Large DIT}\\global spectra\\cooperative grid};
+  \node[carry] (finish) at (11.0, 0)
+    {\textbf{Signed gather}\\prefix carry\\normalize/publish};
+
+  \foreach \i/\j in {pack/forward, forward/center, center/inverse, inverse/finish}
+    \draw[->] (\i) -- (\j);
+
+  \foreach \x in {1.375, 4.125, 6.875, 9.625} {
+    \draw[barrier] (\x, -0.93) -- (\x, 0.93);
+    \node[barrlbl] at (\x, -1.13) {grid sync};
+  }
+
+  \node[font=\tiny, green!40!black, align=center] at (5.5, 1.12)
+    {block barriers; warp shuffles where eligible};
+\end{tikzpicture}
+\caption[GPU fused NTT schedule and synchronization hierarchy]{GPU fused NTT schedule for one
+  iteration.  Orbit and Newton--Raphson modes share the same phase and grid-barrier boundaries;
+  FourWay mode widens the active streams and pointwise products.}
+\label{fig:ntt-pipeline}
+\end{figure}
+
+One nonlinear iteration proceeds as follows:
+
+\begin{enumerate}
+  \item The grid leader inspects the normalized state, builds the alignment and
+        support plan, and publishes its kind, active~$M$, offsets, and flags.
+  \item Threads pack signed base-$2^{16}$ coefficients at their aligned
+        positions and apply the input scale from
+        ~\eqref{eq:reference-input-scale}.  When large stages exist, packing is
+        fused with the first one or two DIF stages.
+  \item Remaining large forward DIF stages transform the global spectra.
+  \item Each block loads a center tile, completes the small forward stages,
+        evaluates~\eqref{eq:fused-reference-pointwise} and, when enabled,
+        ~\eqref{eq:fused-derivative-products}, and begins the inverse DIT.
+  \item Large inverse DIT stages return standard, bit-positioned product
+        residues to global memory.
+  \item The signed gather centers residues, incorporates $c_x$, $c_y$, and the
+        derivative's $+1$, and constructs carry transfer functions.
+  \item A packed prefix operation resolves the carry chains.  Magnitude
+        extraction and normalization publish the next orbit and derivative
+        states.
+  \item Periodicity and escape state determine whether another iteration may
+        begin; completed low-precision orbit entries are made visible to the
+        host in a bounded batch.
+\end{enumerate}
+
+\subsubsection{DIF/DIT ordering and implicit permutation}
+
+The forward DIF transform consumes natural-order coefficients and leaves its
+spectrum in bit-reversed order.  Pointwise products do not care about that
+permutation as long as every stream uses the same order.  The inverse DIT
+transform consumes the bit-reversed spectra and emits natural-order
+coefficients.  Pairing the two variants therefore avoids a separate bit-reversal
+kernel and its global reads, writes, and synchronization.
+
+The fused center exploits the same pairing more aggressively.  It completes
+the small forward stages, evaluates the pointwise recurrence, and starts the
+small inverse stages while a tile is resident.  The data need not be written to
+a standalone \emph{forward result} buffer and then loaded by an unrelated
+multiply operator.  This is the central meaning of \emph{fused} in v2.
+
+\subsection{Signed Carry, Normalization, and Exactness}
+\label{subsec:fused-ntt-carry}
+\label{sec:hp-add}
+
+Three independent conditions make the modular result an exact positional
+result:
+
+\begin{enumerate}
+  \item The active~$M$ contains the complete shifted linear-convolution support,
+        so no nonzero coefficient wraps around $x^M-1$.
+  \item The absolute coefficient bound for every enabled orbit and derivative
+        combination is below $p/2$, so
+        ~\eqref{eq:ntt-centered-residue} recovers the unique signed integer.
+  \item Carry propagation includes every nonlinear and aligned linear
+        contribution before the value is truncated to the requested precision.
+\end{enumerate}
+
+After centering, adjacent base-$2^{16}$ coefficients contribute to signed
+base-$2^{32}$ limbs.  The fused B16 gather performs that conversion in the same
+warp that constructs the carry metadata; release builds do not need to
+materialize and reread four complete signed-limb arrays.  Debug builds may
+materialize them so that the host and device checkpoints remain directly
+comparable.
+
+A carry chain is sequential if represented only as individual carry values.
+It becomes parallel once a limb interval is represented as a transfer function
+from its bounded incoming carry to its outgoing carry.  Function composition is
+associative, so warp scans combine thread summaries, a block scan combines warp
+summaries, and decoupled look-back resolves preceding block partitions.  The
+method follows the parallel-prefix framework of Blelloch~\cite{Blelloch1990PrefixSums}
+and the single-pass decoupled-look-back construction of Merrill and
+Garland~\cite{merrill2016single}.
+
+The implementation packs the transfer functions for real, imaginary,
+derivative-real, and derivative-imaginary streams into one 32-bit word in
+FourWay mode.  A single composition instruction sequence therefore advances
+four logically independent carry chains through the same scan topology.  After
+the incoming carries are known, threads emit the final 32-bit digits in
+parallel.
+
+Normalization determines the sign, extracts the magnitude, finds the highest
+nonzero digit, retains the requested most-significant $D$ limbs, and adjusts the
+exponent so that discarded low limbs do not change the value's scale.  The next
+iteration cannot begin from the inverse spectra alone: its alignment plan needs
+this normalized sign, exponent, and significand.  Returning to
+\code{HpSharkFloat} form is therefore a semantic dependency, not merely a
+storage-format preference.
+
+\subsection{Persistent Kernel and Host Lifecycle}
+\label{subsec:ref-orbit-architecture}
+
+Setup and execution have separate lifetimes.  The host selects a generated
+storage family, chooses the active limb count, and constructs
+\code{ReferencePreparedTables}.  Setup allocates one contiguous workspace,
+assigns its spectrum and scratch regions, prepares plan descriptors from the
+minimum supported transform through stage~25, and launches the setup kernel to
+generate their roots and twiddles.
+
+\code{GpuOrbitSession} then owns the result descriptor and the CUDA stream for
+one reference calculation.  Repeated \code{InvokeChunk} calls launch the
+persistent recurrence for a requested number of iterations.  Each invocation
+publishes at most \code{MaxOutputIters}=1024 entries.  This bound limits host
+transfer size and creates regular opportunities for cancellation and progress
+handling without introducing a kernel launch for every recurrence.
+
+Inside a launch, \code{HpSharkReferenceGpuLoop} obtains a cooperative
+\code{grid\_group}.  Grid synchronization is required because a large NTT stage
+can exchange data produced by different blocks.  A cooperative launch also
+constrains the grid to blocks that can be resident together; launch selection
+must therefore respect registers, dynamic shared memory, and the device's
+cooperative occupancy.  The persistent organization amortizes launch overhead
+and preserves the workspace across many sequential iterations, but it does not
+remove the cost of the necessary barriers.
+
+The generated CUDA translation units instantiate four families:
+\code{HpSharkFloat\_\allowbreak Conversions}, \code{HpShark\allowbreak Reference},
+\code{ReferenceGpu\allowbreak Loop}, and \code{SharkNTT\_\allowbreak Primitives}.  They provide
+host/device conversion, lifecycle operations, the persistent recurrence, and
+the Montgomery primitives shared with the host correctness model.  Explicit
+instantiation keeps the supported precision families finite and makes their
+workspace limits compile-time properties.
+
+\subsection{Periodicity, Escape, and Resume Semantics}
+\label{subsec:fused-ntt-periodicity}
+
+Before each recurrence, the grid leader evaluates the high-precision
+periodicity state described in \cref{sec:hp-periodicity}.  A continuing state
+allows the iteration plan to be built.  Escape, a positive periodicity result,
+or an unrepresentable plan prevents the grid from entering another collective
+phase.  This ordering is important: all threads must agree on whether they will
+reach a cooperative barrier.
+
+After a completed recurrence, the leader increments the output count and the
+next loop pass tests the newly published value.  The ordinary reference path
+stores a low-precision iteration sample for downstream perturbation.  The
+Feature Finder instead returns the high-precision endpoint and derivative
+state after its requested period.  Both clients use the same fused arithmetic
+engine and differ in how they consume the results.
+
+Checkpoint resume preserves a deliberate distinction.  \code{startIter}=0
+means fresh initialization, including the conventional initial derivative
+state.  A positive \code{startIter} consumes the supplied orbit and derivative
+values and continues from that checkpoint.  Abort and progress callbacks are
+polled at bounded host-visible intervals without changing this contract.
+
+\subsection{Checksum-Guided Host--Device Validation}
+\label{sec:checksums}
+
+Exact arithmetic makes bitwise stage comparison possible.  Debug builds can
+record checksums after aligned packing, forward transforms, pointwise products,
+inverse transforms, signed gathering, carry, and normalization.  The retained
+\code{ReferenceReferenceOrbit2} CPU oracle executes the same plan and records
+the corresponding host states.  \code{ChecksumsCheck} compares states by
+purpose and call index, localizing a disagreement to a pipeline boundary
+without retaining the obsolete v1 arithmetic operators.
+
+The tests cover more than a forward/inverse round trip.  They compare orbit
+outputs against MPIR, exercise exponent gaps and transform-length changes,
+cover TwoWay and FourWay modes, verify checkpoint continuation, and run long
+Newton sequences.  This breadth is required because an error in a late NTT
+stage, a tail tile, or carry look-back can survive a short smoke test and become
+visible only after many recurrence steps.
+
+\subsection{Design Tradeoffs and Scope}
+\label{subsec:fused-ntt-tradeoffs}
+
+The fused v2 design is optimized for the regime in which high-precision
+multiplication dominates reference construction.  Its main strengths are exact
+field arithmetic, regular coefficient-level parallelism, transform reuse across
+multiple streams, elimination of explicit bit reversal, and the absence of
+normalized product temporaries.  Its costs are root and workspace preparation,
+global barriers for large stages, modular-multiply latency, and occupancy
+pressure from registers and shared memory.  A shorter operand may therefore be
+better served by simpler arithmetic in another backend even though the NTT has
+better asymptotic scaling.
+
+Fusion also has a boundary.  Algebraic additions and derivative products can be
+placed inside the shared transform and carry schedule, but independent orbit
+iterations cannot be overlapped without changing the recurrence.  The inverse
+transform, carry, and normalization cannot be moved to the end of the entire
+orbit because the next iteration needs their result.  The implementation
+concentrates on removing avoidable boundaries while retaining the mathematical
+ones.
+
+The application exposes one production selector for this engine.  The portable
+menu labels it \emph{GPU-Accelerated Reference Orbit}, the Feature Finder labels
+its backend \emph{NR Inner Loop: GPU}, and the CLI accepts \code{GPU}.
+Reference-orbit rendering uses \code{GpuOrbitSession}; the Feature Finder calls
+\code{EvaluateCriticalOrbitAnd\allowbreak Derivs\_\allowbreak GPU} through
+\code{OrbitEndpoint\allowbreak Evaluator}.  The CUDA test harness retains
+\code{Operator::\allowbreak ReferenceOrbit2} only as the established correctness-test
+identity.  Production setup, execution, and shutdown use the unnumbered
+\code{PrepareHpShark\allowbreak ReferenceTables},
+\code{InvokeHpShark\allowbreak ReferenceKernel}, and
+\code{ShutdownHpShark\allowbreak ReferenceKernel} interfaces.

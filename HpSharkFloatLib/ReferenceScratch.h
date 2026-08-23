@@ -22,7 +22,13 @@ static constexpr auto AdditionalChecksumsOffset =
 static constexpr auto AdditionalUInt64Global =
     AdditionalGlobalSyncSpace + AdditionalGlobalDebugCountSpace + AdditionalGlobalChecksumSpace;
 
-static constexpr size_t ReferenceDefaultSharedMemory = 48u * 1024u;
+// Release reference iterations use one 4096-word plane for non-NR or two 2048-word planes for NR
+// (32 KiB total), plus one 128-word twiddle cache reused phase-wise by forward/pointwise/inverse.
+// One 4096-word plane or two 2048-word planes, plus the first eleven stages of twiddles.
+static constexpr size_t ReferenceReleaseSharedMemory = 48u * 1024u;
+static_assert(ReferenceReleaseSharedMemory == 49152u);
+
+static constexpr size_t ReferenceDefaultSharedMemory = ReferenceReleaseSharedMemory;
 
 template <class SharkFloatParams>
 constexpr int32_t

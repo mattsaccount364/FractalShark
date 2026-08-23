@@ -438,7 +438,7 @@ loop.  For large $p$ and $N$ the total arithmetic volume scales as
 $O(p \cdot N \log N)$ per Newton step, making the GPU's throughput
 advantage decisive.  \code{OrbitEndpointEvaluator} maps the coordinate
 precision to a supported limb count with \code{BitsToSupportedLimbCount},
-selects the corresponding \code{SharkParamsNRFamily} specialization through
+selects the corresponding Newton--Raphson precision specialization through
 \code{DispatchByLimbCount}, and calls
 \code{EvaluateCriticalOrbitAndDerivs\_GPU} to run the fused kernel.
 

@@ -1,205 +1,187 @@
-# Configure the local Ollama-backed Copilot CLI for unattended, read-only
-# secondary reviews. The legacy --codex switch is accepted for compatibility,
-# but it is no longer required by callers.
+# Configure the local Ollama-backed CLI and provide a Codex-oriented profile
+# without changing the default manual invocation.
+#
+# Launches one of two CLIs, both pinned to the same local Qwen model
+# (qwen3.8-copilot-160k served by Ollama at 127.0.0.1:11434/v1):
+#   copilot   (default)  GitHub Copilot CLI, configured via COPILOT_* variables
+#   opencode            OpenCode CLI, configured via a machine-scoped config
+#                       generated once by this helper
+#
+# Selection flags (consumed here, never forwarded to the CLI):
+#   --copilot, -c, --cli      run the Copilot CLI (default)
+#   --opencode, -o, --oc      run the OpenCode CLI
+#
+# --codex remains: the Codex secondary-review profile.  It implies the
+# Copilot CLI runner plus its permission grants, or --auto on the OpenCode
+# runner (the closest equivalent; the review prompt must still prohibit
+# edits and commits).
 
+$runner = $null
+$codexMode = $false
 $forwardedArgs = @()
-$promptFile = $null
-$promptText = $null
-$promptWasProvided = $false
 
-for ($argumentIndex = 0; $argumentIndex -lt $args.Count; ++$argumentIndex) {
-    $argument = [string]$args[$argumentIndex]
+foreach ($argument in $args) {
     if ($argument -eq "--codex" -or $argument -eq "-Codex") {
+        $codexMode = $true
+        $runner = "copilot"
         continue
     }
 
-    if ($argument -eq "--prompt-file") {
-        if ($argumentIndex + 1 -ge $args.Count) {
-            throw "--prompt-file requires a path"
-        }
-        $promptFile = $args[++$argumentIndex]
+    if ($argument -eq "--copilot" -or $argument -eq "-c" -or $argument -eq "--cli") {
+        $runner = "copilot"
         continue
     }
 
-    if ($argument -eq "--prompt" -or $argument -eq "-p") {
-        if ($argumentIndex + 1 -ge $args.Count) {
-            throw "$argument requires a prompt"
-        }
-
-        $promptParts = [System.Collections.Generic.List[string]]::new()
-        $promptParts.Add([string]$args[++$argumentIndex])
-        while ($argumentIndex + 1 -lt $args.Count) {
-            $promptParts.Add([string]$args[++$argumentIndex])
-        }
-
-        $promptText = $promptParts -join ' '
-        $promptWasProvided = $true
-        break
-    }
-
-    if ($argument.StartsWith("--prompt=", [System.StringComparison]::Ordinal)) {
-        $promptParts = [System.Collections.Generic.List[string]]::new()
-        $promptParts.Add($argument.Substring("--prompt=".Length))
-        while ($argumentIndex + 1 -lt $args.Count) {
-            $promptParts.Add([string]$args[++$argumentIndex])
-        }
-
-        $promptText = $promptParts -join ' '
-        $promptWasProvided = $true
-        break
+    if ($argument -eq "--opencode" -or $argument -eq "-o" -or $argument -eq "--oc") {
+        $runner = "opencode"
+        continue
     }
 
     $forwardedArgs += $argument
 }
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
-
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-
-# Do not use the Env: provider with a wildcard here.  Some Windows hosts
-# expose both `Path` and `PATH`; PowerShell then fails while constructing the
-# provider's dynamic parameter set before it ever reaches the COPILOT_* names.
-foreach ($variableName in @(
-        "COPILOT_PROVIDER_TYPE",
-        "COPILOT_PROVIDER_BASE_URL",
-        "COPILOT_PROVIDER_API_KEY",
-        "COPILOT_PROVIDER_WIRE_API",
-        "COPILOT_MODEL",
-        "COPILOT_PROVIDER_MAX_PROMPT_TOKENS",
-        "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS",
-        "COPILOT_LARGE_OUTPUT_THRESHOLD_BYTES"
-    )) {
-    [Environment]::SetEnvironmentVariable($variableName, $null, "Process")
+# Default keeps the existing non-interactive Copilot CLI contract; OpenCode
+# is opt-in via --opencode and starts interactively when no prompt is given.
+if ($null -eq $runner) {
+    $runner = "copilot"
 }
 
-function Get-ApplicationPath {
-    param(
-        [Parameter(Mandatory)]
-        [string[]]$CommandNames
+# Shared local Qwen model settings, the single source of truth for both
+# runner branches.
+$modelBase = "http://127.0.0.1:11434/v1"
+$modelApiKey = "ollama"
+$modelId = "qwen3.8-copilot-160k"
+$modelDisplay = "Qwen 3.8 Copilot 160k (local)"
+$maxPromptTokens = "150000"
+$maxOutputTokens = "8192"
+
+if ($runner -eq "copilot") {
+    # Do not use the Env: provider with a wildcard here.  Some Windows hosts
+    # expose both `Path` and `PATH`; PowerShell then fails while constructing
+    # the provider's dynamic parameter set before it ever reaches the
+    # COPILOT_* names.
+    foreach ($variableName in @(
+            "COPILOT_PROVIDER_TYPE",
+            "COPILOT_PROVIDER_BASE_URL",
+            "COPILOT_PROVIDER_API_KEY",
+            "COPILOT_PROVIDER_WIRE_API",
+            "COPILOT_MODEL",
+            "COPILOT_PROVIDER_MAX_PROMPT_TOKENS",
+            "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS",
+            "COPILOT_LARGE_OUTPUT_THRESHOLD_BYTES"
+        )) {
+        [Environment]::SetEnvironmentVariable($variableName, $null, "Process")
+    }
+
+    $env:COPILOT_PROVIDER_TYPE = "openai"
+    $env:COPILOT_PROVIDER_BASE_URL = $modelBase
+    $env:COPILOT_PROVIDER_API_KEY = $modelApiKey
+    $env:COPILOT_PROVIDER_WIRE_API = "completions"
+
+    $env:COPILOT_MODEL = $modelId
+    $env:COPILOT_PROVIDER_MAX_PROMPT_TOKENS = $maxPromptTokens
+    $env:COPILOT_PROVIDER_MAX_OUTPUT_TOKENS = $maxOutputTokens
+
+    # Spill large tool output to files sooner instead of stuffing
+    # all of it into model context.
+    $env:COPILOT_LARGE_OUTPUT_THRESHOLD_BYTES = $maxOutputTokens
+
+    $copilotArguments = @(
+        "--no-ask-user",
+        "--reasoning-effort",
+        "max"
     )
 
-    foreach ($commandName in $CommandNames) {
-        $command = Get-Command $commandName -CommandType Application -ErrorAction SilentlyContinue
-        if ($command -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
-            return $command.Source
+    if ($codexMode) {
+        $copilotArguments += "-s"
+        # Codex invokes this profile for an explicitly requested secondary
+        # review.  Noninteractive mode cannot answer Copilot's path/tool
+        # permission prompts, so grant the review process access up front;
+        # the review prompt must still explicitly prohibit edits and commits.
+        $copilotArguments += "--allow-all-paths"
+        $copilotArguments += "--allow-all-tools"
+    }
+
+    $copilotArguments += $forwardedArgs
+
+    if ($null -eq (Get-Command copilot -ErrorAction SilentlyContinue)) {
+        throw "'copilot' was not found on PATH.  Install the GitHub Copilot CLI first."
+    }
+
+    & copilot @copilotArguments
+    exit $LASTEXITCODE
+}
+
+if ($runner -eq "opencode") {
+    if ($null -eq (Get-Command opencode -ErrorAction SilentlyContinue)) {
+        throw "'opencode' was not found on PATH.  Install it with 'npm i -g opencode-ai'."
+    }
+
+    # Register the local Qwen model with OpenCode via a machine-scoped config
+    # generated once by this helper.  It is kept when present so hand edits
+    # are preserved.  Both the interactive TUI and `opencode run` resolve the
+    # same model through OPENCODE_CONFIG.
+    $configRoot = Join-Path $env:USERPROFILE ".config\opencode"
+    if (-not (Test-Path -LiteralPath $configRoot -PathType Container)) {
+        New-Item -ItemType Directory -Path $configRoot -Force | Out-Null
+    }
+    $configPath = Join-Path $configRoot "copilot-local-qwen.jsonc"
+
+    if (-not (Test-Path -LiteralPath $configPath)) {
+        $providerId = "local-qwen"
+        # Single-quoted template: no PowerShell expansion, then substitute
+        # the shared settings with plain placeholders.
+        $configTemplate = @'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "__PROVIDER__/__MODEL__",
+  "provider": {
+    "__PROVIDER__": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "__DISPLAY__",
+      "options": {
+        "baseURL": "__BASE__",
+        "apiKey": "__APIKEY__"
+      },
+      "models": {
+        "__MODEL__": { "name": "__DISPLAY__" }
+      }
+    }
+  }
+}
+'@
+        $configContent = $configTemplate.Replace("__PROVIDER__", $providerId)
+        $configContent = $configContent.Replace("__MODEL__", $modelId)
+        $configContent = $configContent.Replace("__DISPLAY__", $modelDisplay)
+        $configContent = $configContent.Replace("__BASE__", $modelBase)
+        $configContent = $configContent.Replace("__APIKEY__", $modelApiKey)
+        Set-Content -LiteralPath $configPath -Value $configContent -Encoding utf8NoBOM
+    }
+
+    $env:OPENCODE_CONFIG = $configPath
+
+    # Note: the Copilot branch injects "--reasoning-effort max"; the OpenCode
+    # equivalent is a provider-specific "--variant" whose valid values depend
+    # on the provider and are not verified for this endpoint.  Pass "--variant
+    # <value>" explicitly if a particular reasoning budget is required.
+    # OpenCode's top-level command starts the interactive TUI.  Use `run`
+    # only when the caller supplied a prompt/command or requested codex mode.
+    $opencodeArguments = @()
+    if ($codexMode -or $forwardedArgs.Count -gt 0) {
+        $opencodeArguments += "run"
+
+        if ($codexMode) {
+            # --codex under the OpenCode runner maps to --auto, the closest
+            # equivalent of Copilot's non-interactive permission grants.
+            $opencodeArguments += "--auto"
+            Write-Warning "--codex under the OpenCode runner maps to --auto only."
         }
+
+        $opencodeArguments += $forwardedArgs
     }
 
-    throw "Unable to find any of these applications on PATH: $($CommandNames -join ', ')"
+    & opencode @opencodeArguments
+    exit $LASTEXITCODE
 }
 
-function Test-OllamaReady {
-    param(
-        [Parameter(Mandatory)]
-        [string]$OllamaPath
-    )
-
-    $ollamaOutput = @(& $OllamaPath ps 2>&1 | ForEach-Object { [string]$_ })
-    $ollamaExitCode = $LASTEXITCODE
-    if ($ollamaExitCode -ne 0) {
-        $details = $ollamaOutput -join [Environment]::NewLine
-        throw "Unable to query Ollama with 'ollama ps' (exit code $ollamaExitCode). Is Ollama running? $details"
-    }
-
-    $nonEmptyLines = @($ollamaOutput | Where-Object { $_.Trim().Length -gt 0 })
-    $modelLines = @()
-    if ($nonEmptyLines.Count -gt 0) {
-        if ($nonEmptyLines[0] -match '^\s*NAME\s+ID\s+') {
-            $modelLines = @($nonEmptyLines | Select-Object -Skip 1)
-        } else {
-            $modelLines = $nonEmptyLines
-        }
-    }
-
-    if ($modelLines.Count -gt 0) {
-        throw "Ollama already reports a running model. Stop it before starting another Qwen review, then retry:`n$($modelLines -join [Environment]::NewLine)"
-    }
-}
-
-$env:COPILOT_PROVIDER_TYPE = "openai"
-$env:COPILOT_PROVIDER_BASE_URL = "http://127.0.0.1:11434/v1"
-$env:COPILOT_PROVIDER_API_KEY = "ollama"
-$env:COPILOT_PROVIDER_WIRE_API = "completions"
-
-$env:COPILOT_MODEL = "qwen3.8-copilot-160k"
-$env:COPILOT_PROVIDER_MAX_PROMPT_TOKENS = "150000"
-$env:COPILOT_PROVIDER_MAX_OUTPUT_TOKENS = "8192"
-
-# Spill large tool output to files sooner instead of stuffing
-# all of it into model context.
-$env:COPILOT_LARGE_OUTPUT_THRESHOLD_BYTES = "8192"
-
-$copilotArguments = @(
-    "-C", $repositoryRoot,
-    "--add-dir", $repositoryRoot,
-    "--disable-builtin-mcps",
-    "--deny-tool=write",
-    "--deny-tool=shell",
-    "--no-ask-user",
-    "--reasoning-effort", "max",
-    "--stream", "on",
-    "-s"
-)
-
-$copilotArguments += $forwardedArgs
-
-if ($null -ne $promptFile) {
-    $promptText = Get-Content -LiteralPath $promptFile -Raw
-    $promptWasProvided = $true
-}
-
-if ($promptWasProvided) {
-    $reviewPrompt = @"
-Act as an advisory, read-only secondary reviewer. Inspect files and run
-non-destructive checks when useful, but do not edit files, commit, push, or run
-destructive commands. Report evidence and recommendations to the caller.
-
-User request:
-$promptText
-"@
-    $copilotArguments += "--prompt"
-    $copilotArguments += $reviewPrompt
-}
-
-$ollamaCommand = Get-ApplicationPath -CommandNames @('ollama.exe', 'ollama')
-Test-OllamaReady -OllamaPath $ollamaCommand
-
-$copilotCommand = Get-ApplicationPath -CommandNames @('copilot.exe', 'copilot')
-
-$startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-$startInfo.FileName = $copilotCommand
-$startInfo.WorkingDirectory = $repositoryRoot
-$startInfo.UseShellExecute = $false
-$startInfo.RedirectStandardOutput = $true
-$startInfo.RedirectStandardError = $true
-foreach ($argument in $copilotArguments) {
-    [void]$startInfo.ArgumentList.Add([string]$argument)
-}
-
-$process = [System.Diagnostics.Process]::new()
-$process.StartInfo = $startInfo
-try {
-    if (-not $process.Start()) {
-        throw "Process.Start returned false"
-    }
-
-    # Read both streams asynchronously so a verbose model/tool trace cannot
-    # deadlock the wrapper while preserving the CLI output for the caller.
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
-    $process.WaitForExit()
-    [Console]::Write($stdoutTask.GetAwaiter().GetResult())
-    [Console]::Error.Write($stderrTask.GetAwaiter().GetResult())
-    $exitCode = $process.ExitCode
-} catch {
-    throw "Failed to start $($copilotCommand): $($_.Exception.Message)"
-} finally {
-    $process.Dispose()
-}
-
-if ($null -eq $exitCode) {
-    $exitCode = 0
-}
-
-exit $exitCode
+throw "Unsupported runner selection: $runner.  Use --copilot or --opencode."

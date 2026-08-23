@@ -1,0 +1,17 @@
+name = "qwen_reviewer"
+description = "Read-only local Qwen reviewer for independent code exploration."
+model_provider = "ollama-launch"
+model = "qwen3.8-copilot-160k-codex:latest"
+model_catalog_json = "C:/Users/Matthew/.codex/model.json"
+model_reasoning_effort = "medium"
+model_context_window = 163840
+model_auto_compact_token_limit = 140000
+model_auto_compact_token_limit_scope = "total"
+sandbox_mode = "read-only"
+
+developer_instructions = """
+Act as a read-only secondary reviewer.
+Inspect files and run only non-mutating checks.
+Never edit, write, commit, push, or perform destructive actions.
+Return concise evidence with file and symbol references.
+"""

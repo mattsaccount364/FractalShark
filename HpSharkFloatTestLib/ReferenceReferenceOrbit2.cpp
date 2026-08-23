@@ -273,7 +273,8 @@ EnsureGlobalFusedWorkspace()
                                       0,
                                       global.ForwardTwiddles.get(),
                                       global.InverseTwiddles.get(),
-                                      n - 1u};
+                                      n - 1u,
+                                      SharkNTT::ReferenceInputScaleR(stages)};
         }
     }
 
@@ -380,6 +381,7 @@ LoadPreparedTables(const HpShark::ReferencePreparedTables<SharkFloatParams> &pre
         const uint32_t slot = firstSlot + index;
         global.Plans[slot] = deviceWorkspace.Plans[slot];
         global.PlanRoots[slot].Ninv = deviceWorkspace.PlanRoots[slot].Ninv;
+        global.PlanRoots[slot].InputScaleR = deviceWorkspace.PlanRoots[slot].InputScaleR;
     }
     global.ActiveMinFusedN = deviceWorkspace.ActiveMinFusedN;
     global.ActiveMaxFusedN = deviceWorkspace.ActiveMaxFusedN;
@@ -760,19 +762,19 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
                     const uint64_t product = SharkNTT::MontgomeryMul(debugCombo, difference, w);
                     a[i0] = sum;
                     a[i1] = product;
-                    if (IsDebugTraceEnabled()) {
-                        std::cout << "  forward DIF butterfly"
-                                  << " stage=" << s << " k=" << k << " j=" << j << " i0=" << i0
-                                  << " i1=" << i1;
-                        PrintHexValue("omega", wM);
-                        PrintHexValue("u", u);
-                        PrintHexValue("v", v);
-                        PrintHexValue("twiddle", w);
-                        PrintHexValue("sum", sum);
-                        PrintHexValue("difference", difference);
-                        PrintHexValue("product", product);
-                        std::cout << '\n';
-                    }
+                    // if (IsDebugTraceEnabled()) {
+                    //     std::cout << "  forward DIF butterfly"
+                    //               << " stage=" << s << " k=" << k << " j=" << j << " i0=" << i0
+                    //               << " i1=" << i1;
+                    //     PrintHexValue("omega", wM);
+                    //     PrintHexValue("u", u);
+                    //     PrintHexValue("v", v);
+                    //     PrintHexValue("twiddle", w);
+                    //     PrintHexValue("sum", sum);
+                    //     PrintHexValue("difference", difference);
+                    //     PrintHexValue("product", product);
+                    //     std::cout << '\n';
+                    // }
                 }
             }
             if (IsDebugTraceEnabled()) {
@@ -884,7 +886,8 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                    DebugStatePurpose packedPurpose,
                    DebugStatePurpose forwardPurpose)
 {
-    const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
+    const bool useFusedB16Normalization = plan.b == 16;
+    const uint64_t zeroMont = useFusedB16Normalization ? 0ull : SharkNTT::ToMontgomery(debugCombo, 0);
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= capacity);
     assert(zeroMont == 0);
@@ -902,15 +905,17 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                                       static_cast<int64_t>(residualBitShift);
             const uint64_t coefficient =
                 ReadAlignedBits(value, inputBitOffset, sourceBit, static_cast<int>(plan.b));
-            const uint64_t coefficientMont =
-                SharkNTT::ToMontgomery(debugCombo, coefficient % SharkNTT::MagicPrime);
-            packed = coefficientMont;
+            const uint64_t scaledCoefficient =
+                useFusedB16Normalization
+                    ? SharkNTT::MulModP(coefficient, roots.InputScaleR)
+                    : SharkNTT::ToMontgomery(debugCombo, coefficient % SharkNTT::MagicPrime);
+            packed = scaledCoefficient;
             if (negative && coefficient != 0)
                 packed = SubP(zeroMont, packed);
             if (IsDebugTraceEnabled()) {
                 std::cout << "  aligned pack coefficient index=" << i;
                 PrintHexValue("coefficient", coefficient);
-                PrintHexValue("coefficientMont", coefficientMont);
+                PrintHexValue("scaledCoefficient", scaledCoefficient);
                 PrintHexValue("packed", packed);
                 std::cout << '\n';
             }
@@ -1238,7 +1243,8 @@ UnpackAlignedResiduesToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
         if (firstBit >= productBitOffset || productBitOffset <= lastBit) {
             for (uint64_t i = firstCoefficient; i <= lastCoefficient && i < coefficientCount; ++i) {
                 const uint64_t residue =
-                    SharkNTT::MontgomeryMul(debugCombo, normalResidues[i], roots.Ninv);
+                    plan.b == 16 ? normalResidues[i]
+                                 : SharkNTT::MontgomeryMul(debugCombo, normalResidues[i], roots.Ninv);
                 if (residue == 0)
                     continue;
 
@@ -2032,7 +2038,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                         realLinearBitOffset,
                                         workspace.RealLimbs,
                                         limbCount,
-                                        DebugStatePurpose::Invalid,
+                                        DebugStatePurpose::Z2_Perm4,
                                         DebugStatePurpose::UnpackXX);
     InverseAlignedSpectrumToSignedLimbs(debugHostCombo,
                                         plan,
@@ -2045,7 +2051,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                         imagLinearBitOffset,
                                         workspace.ImagLimbs,
                                         limbCount,
-                                        DebugStatePurpose::Invalid,
+                                        DebugStatePurpose::Z2_Perm5,
                                         DebugStatePurpose::UnpackYY);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         const uint32_t derivativeCoefficientCount =
@@ -2061,7 +2067,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                             derivativeLinearBitOffset,
                                             workspace.DzdcRealLimbs,
                                             limbCount,
-                                            DebugStatePurpose::Invalid,
+                                            DebugStatePurpose::Z2_PermW0b,
                                             DebugStatePurpose::UnpackW0);
         InverseAlignedSpectrumToSignedLimbs<SharkFloatParams>(debugHostCombo,
                                                               plan,
@@ -2074,7 +2080,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                                               0,
                                                               workspace.DzdcImagLimbs,
                                                               limbCount,
-                                                              DebugStatePurpose::Invalid,
+                                                              DebugStatePurpose::Z2_PermW1b,
                                                               DebugStatePurpose::UnpackW1);
     }
 
@@ -2574,6 +2580,7 @@ ExplicitlyInstantiate(SharkParams12);
 #undef ExplicitlyInstantiate
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateDerivative(SharkFloatParams)
 ExplicitInstantiateAll();
+ExplicitlyInstantiateDerivative(SharkParamsNR1);
 ExplicitlyInstantiateDerivative(SharkParamsNR2);
 ExplicitlyInstantiateDerivative(SharkParamsNR3);
 ExplicitlyInstantiateDerivative(SharkParamsNR4);

@@ -1,0 +1,8 @@
+model = "qwen3.8-copilot-160k-codex:latest"
+model_provider = "ollama-launch"
+model_catalog_json = "C:/Users/Matthew/.codex/model.json"
+
+[model_providers.ollama-launch]
+name = "Ollama"
+base_url = "http://127.0.0.1:11435/v1/"
+wire_api = "responses"

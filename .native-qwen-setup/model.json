@@ -1,0 +1,38 @@
+{
+ "models": [
+  {
+   "slug": "qwen3.8-copilot-160k-codex:latest",
+   "display_name": "Qwen 3.8 Copilot 160k (Codex)",
+   "context_window": 163840,
+   "max_context_window": 163840,
+   "auto_compact_token_limit": 140000,
+   "effective_context_window_percent": 95,
+   "default_reasoning_level": "medium",
+   "supported_reasoning_levels": [
+    {
+     "effort": "medium",
+     "description": "Balanced reasoning for the local Qwen reviewer."
+    }
+   ],
+   "shell_type": "default",
+   "visibility": "list",
+   "supported_in_api": true,
+   "priority": 0,
+   "truncation_policy": {
+    "mode": "bytes",
+    "limit": 8192
+   },
+   "input_modalities": [
+    "text",
+    "image"
+   ],
+   "base_instructions": "",
+   "support_verbosity": true,
+   "default_verbosity": "low",
+   "supports_parallel_tool_calls": false,
+   "supports_reasoning_summaries": false,
+   "experimental_supported_tools": [],
+   "multi_agent_version": "v1"
+  }
+ ]
+}

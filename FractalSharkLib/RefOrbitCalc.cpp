@@ -2234,11 +2234,44 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(const PointZoomBBConverter &ptz,
 
     const uint32_t limbCount = RoundToSupportedLimbCount(requestedPrecisionLimbs);
     if constexpr (std::is_same_v<T, HDRFloat<double>>) {
-        DispatchByLimbCount<SharkParamsDblFamily>(limbCount, runReference);
+        DispatchByLimbCount<SharkParamsDbl1,
+                            SharkParamsDbl2,
+                            SharkParamsDbl3,
+                            SharkParamsDbl4,
+                            SharkParamsDbl5,
+                            SharkParamsDbl6,
+                            SharkParamsDbl7,
+                            SharkParamsDbl8,
+                            SharkParamsDbl9,
+                            SharkParamsDbl10,
+                            SharkParamsDbl11,
+                            SharkParamsDbl12>(limbCount, runReference);
     } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>>) {
-        DispatchByLimbCount<SharkParamsDbfFamily>(limbCount, runReference);
+        DispatchByLimbCount<SharkParamsDbf1,
+                            SharkParamsDbf2,
+                            SharkParamsDbf3,
+                            SharkParamsDbf4,
+                            SharkParamsDbf5,
+                            SharkParamsDbf6,
+                            SharkParamsDbf7,
+                            SharkParamsDbf8,
+                            SharkParamsDbf9,
+                            SharkParamsDbf10,
+                            SharkParamsDbf11,
+                            SharkParamsDbf12>(limbCount, runReference);
     } else {
-        DispatchByLimbCount<SharkParamsBaseFamily>(limbCount, runReference);
+        DispatchByLimbCount<SharkParams1,
+                            SharkParams2,
+                            SharkParams3,
+                            SharkParams4,
+                            SharkParams5,
+                            SharkParams6,
+                            SharkParams7,
+                            SharkParams8,
+                            SharkParams9,
+                            SharkParams10,
+                            SharkParams11,
+                            SharkParams12>(limbCount, runReference);
     }
 
     results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);

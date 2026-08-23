@@ -20,7 +20,7 @@ FractalShark is a C++23/CUDA Mandelbrot renderer. Keep changes in the owning sub
 
 Common commands:
 
-- `msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Debug /p:Platform=x64`: Windows Debug build.
+- Windows build: `C:\Progra~1\PowerShell\7\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1 -Configuration Debug`.
 - `Debug\FractalSharkTest.exe`: main Windows CPU tests.
 - `./build_linux.sh`: preferred Linux build; configures and builds Debug and Release with `--parallel`.
 - `cmake --build build-debug --parallel`: incremental Linux Debug build. Use `build-release` for Release.
@@ -28,7 +28,12 @@ Common commands:
 
 Windows development targets Visual Studio 2026, CUDA Toolkit, MPIR, and bundled YASM tooling. Use
 `.github/workflows/build.yml` as the CI setup reference. Do not pass `/nologo` to MSBuild because this
-solution can interpret it as a directory path.
+solution can interpret it as a directory path. Agent-run builds must use the wrapper above through
+`C:\Windows\System32\cmd.exe` with login disabled and the installed PowerShell 7 executable. Pass
+`-Configuration Release` for a Release build and `-FullRebuild` when CUDA or shared headers change;
+for example, use `-Configuration Debug -FullRebuild` or `-Configuration Release -FullRebuild`. The
+the wrapper always uses fully parallel MSBuild and disables node reuse; it builds the solution only and
+does not run tests.
 
 Linux build output belongs in persistent `build-debug/` and `build-release/` directories. Do not remove
 those artifacts after validation; leave binaries available for manual testing and incremental rebuilds.
@@ -93,17 +98,22 @@ registers.
 Do not introduce `#if 0` blocks. Remove obsolete code or preserve it through version control instead
 of leaving disabled implementations in the source tree.
 
-After modifying C++/CUDA files, run the formatting script from the repository root:
+After modifying C++/CUDA files, run the formatting script from the repository root. Agent command
+runners must use `C:\Windows\System32\cmd.exe` as the shell with login disabled, then invoke the
+installed PowerShell 7 executable through its space-free path:
 
-```powershell
-.\format_cpp_sources.ps1
+```batch
+C:\Progra~1\PowerShell\7\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File .\format_cpp_sources.ps1
 ```
 
 The repository formatter is a required validation step. If it fails, report the
 exact command and error, correct the working-directory or process-environment
 problem, and rerun the script. Do not silently substitute a manual formatter or
 bypass Git, PowerShell, or other safety checks and then report formatting as
-successful; any such exception requires explicit user direction.
+successful; any such exception requires explicit user direction. Do not invoke the script through the
+command runner's default `pwsh` resolution or the WindowsApps `pwsh.exe` shim: it can fail before the
+script starts with `CreateProcessAsUserW failed: 5 (Access is denied.)`. Do not use Windows PowerShell
+5.1 either; it can reject inherited `Path`/`PATH` environment entries.
 
 ## Testing
 
@@ -163,19 +173,3 @@ outputs unless they are intentional fixtures. Follow `SECURITY.md` for vulnerabi
 
 Do not run `git add` or `git commit`; leave changes unstaged for review. Do not modify source files in
 plan-only workflows.
-
-## Copilot Secondary Review
-
-Only invoke the local Qwen-backed GitHub Copilot CLI as a secondary reviewer when the user explicitly
-requests Copilot or Qwen secondary review for the current task. Run it from the repository root with:
-
-```powershell
-.\copilot.ps1 -p "<PROMPT>"
-```
-
-The wrapper configures Ollama, checks `ollama ps`, scopes file access to this repository, disables
-write and shell tools, and forwards the response. If it reports an existing model, stop that model
-and retry. Use `--prompt-file <prompt-file>` when a prompt is easier to provide as a file.
-
-Codex remains responsible for investigation, architecture, edits, decisions, and validation. Treat
-Copilot output as advisory and verify important claims independently.

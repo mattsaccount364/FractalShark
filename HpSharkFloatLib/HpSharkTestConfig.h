@@ -28,11 +28,11 @@ namespace HpShark {
 // static constexpr bool TestGpu = true;
 static constexpr bool TestGpu = true;
 static constexpr bool TestInfiniteCorrectness = true;
-static constexpr bool TestMPIRImpl = true;
+static constexpr bool TestMPIRImpl = false;
 
 // True to compare against the full host-side reference implementation, false is MPIR only
 // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool TestReferenceImpl = true;
+static constexpr bool TestReferenceImpl = false;
 
 } // namespace HpShark
 

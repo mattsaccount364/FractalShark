@@ -214,38 +214,6 @@ FromMontgomery(cooperative_groups::grid_group &grid,
 
 enum class Multiway { OneWay, TwoWay, ThreeWay, FourWay, SevenWay };
 
-static __device__ SharkForceInlineReleaseOnly uint32_t
-SpatialCohort()
-{
-    return gridDim.x >= 2u ? blockIdx.x & 1u : 0u;
-}
-
-static __device__ SharkForceInlineReleaseOnly uint32_t
-SpatialBlockIndex()
-{
-    return gridDim.x >= 2u ? blockIdx.x >> 1u : blockIdx.x;
-}
-
-static __device__ SharkForceInlineReleaseOnly uint32_t
-SpatialBlockCount()
-{
-    if (gridDim.x < 2u)
-        return gridDim.x;
-    return (gridDim.x + 1u - SpatialCohort()) >> 1u;
-}
-
-static __device__ SharkForceInlineReleaseOnly size_t
-SpatialThreadIndex()
-{
-    return static_cast<size_t>(SpatialBlockIndex()) * blockDim.x + threadIdx.x;
-}
-
-static __device__ SharkForceInlineReleaseOnly size_t
-SpatialGridSize()
-{
-    return static_cast<size_t>(SpatialBlockCount()) * blockDim.x;
-}
-
 template <class SharkFloatParams, Multiway Mode>
 static __device__ inline void
 LoadOneTilePhase1SM(cooperative_groups::thread_block &block,
@@ -563,7 +531,7 @@ ProcessLoadedTilePhase1DIFSM(cooperative_groups::thread_block &block,
     }
 }
 
-template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TileSizeLog2, bool SpatiallyPartitioned>
+template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TileSizeLog2>
 static __device__ inline uint32_t
 SmallRadixPhase1SM(uint64_t *sharedData,
                    cooperative_groups::grid_group &grid,
@@ -644,11 +612,9 @@ SmallRadixPhase1SM(uint64_t *sharedData,
             block, sharedTwiddles, stageTwiddles, cuda::aligned_size_t<alignment>(alignedSize));
     }
 
-    const uint32_t firstTile = SpatiallyPartitioned ? SpatialBlockIndex() : blockIdx.x;
-    const uint32_t tileStride = SpatiallyPartitioned ? SpatialBlockCount() : gridDim.x;
-    for (uint32_t tile = firstTile; tile < tiles; tile += tileStride) {
+    for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
         const bool isLast = (tile == tiles - 1);
-        const bool hasNextTile = (tile + tileStride < tiles);
+        const bool hasNextTile = (tile + gridDim.x < tiles);
         const uint32_t len = isLast ? tailLength : TS; // divisible by 2^S1
 
         if constexpr (OneTwoThree == Multiway::SevenWay) {
@@ -759,7 +725,7 @@ SmallRadixPhase1SM(uint64_t *sharedData,
     return S1;
 }
 
-template <class SharkFloatParams, Multiway Mode, uint32_t TileSizeLog2, bool SpatiallyPartitioned>
+template <class SharkFloatParams, Multiway Mode, uint32_t TileSizeLog2>
 static __device__ inline uint32_t
 SmallRadixPhase1DIFSM(uint64_t *sharedData,
                       cooperative_groups::grid_group &grid,
@@ -817,11 +783,9 @@ SmallRadixPhase1DIFSM(uint64_t *sharedData,
             block, sharedTwiddles, stageTwiddles, cuda::aligned_size_t<alignment>(alignedSize));
     }
 
-    const uint32_t firstTile = SpatiallyPartitioned ? SpatialBlockIndex() : blockIdx.x;
-    const uint32_t tileStride = SpatiallyPartitioned ? SpatialBlockCount() : gridDim.x;
-    for (uint32_t tile = firstTile; tile < tiles; tile += tileStride) {
+    for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
         const bool isLast = tile == tiles - 1u;
-        const bool hasNextTile = tile + tileStride < tiles;
+        const bool hasNextTile = tile + gridDim.x < tiles;
         const uint32_t len = isLast ? tailLength : TS;
 
         LoadOneTilePhase1SM<SharkFloatParams, Mode>(
@@ -934,7 +898,7 @@ ProcessLoadedTileDITInPlace(cooperative_groups::thread_block &block,
                             uint32_t lastStage,
                             uint32_t cachedStages)
 {
-    static_assert(Mode == Multiway::OneWay || Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
+    static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
 
     const uint32_t tid = block.thread_index().x;
     const uint32_t step = block.size();
@@ -956,17 +920,14 @@ ProcessLoadedTileDITInPlace(cooperative_groups::thread_block &block,
 
             const uint64_t upperA = sharedDataA[index0];
             const uint64_t lowerA = sharedDataA[index1];
+            const uint64_t upperB = sharedDataB[index0];
+            const uint64_t lowerB = sharedDataB[index1];
             const uint64_t productA = MontgomeryMul(grid, block, debugCombo, lowerA, twiddle);
+            const uint64_t productB = MontgomeryMul(grid, block, debugCombo, lowerB, twiddle);
             sharedDataA[index0] = AddP(upperA, productA);
             sharedDataA[index1] = SubP(upperA, productA);
-
-            if constexpr (Mode == Multiway::TwoWay || Mode == Multiway::FourWay) {
-                const uint64_t upperB = sharedDataB[index0];
-                const uint64_t lowerB = sharedDataB[index1];
-                const uint64_t productB = MontgomeryMul(grid, block, debugCombo, lowerB, twiddle);
-                sharedDataB[index0] = AddP(upperB, productB);
-                sharedDataB[index1] = SubP(upperB, productB);
-            }
+            sharedDataB[index0] = AddP(upperB, productB);
+            sharedDataB[index1] = SubP(upperB, productB);
 
             if constexpr (Mode == Multiway::FourWay) {
                 const uint64_t upperC = sharedDataC[index0];
@@ -1005,7 +966,7 @@ ProcessLoadedTileDITFinalStageToGlobal(cooperative_groups::thread_block &block,
                                        uint32_t stage,
                                        uint32_t cachedStages)
 {
-    static_assert(Mode == Multiway::OneWay || Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
+    static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
 
     const uint32_t butterflySpan = 1u << stage;
     const uint32_t halfSpan = butterflySpan >> 1u;
@@ -1030,13 +991,11 @@ ProcessLoadedTileDITFinalStageToGlobal(cooperative_groups::thread_block &block,
         outputA[outputBase + index0] = AddP(upperA, productA);
         outputA[outputBase + index1] = SubP(upperA, productA);
 
-        if constexpr (Mode == Multiway::TwoWay || Mode == Multiway::FourWay) {
-            const uint64_t upperB = sharedDataB[index0];
-            const uint64_t lowerB = sharedDataB[index1];
-            const uint64_t productB = MontgomeryMul(grid, block, debugCombo, lowerB, twiddle);
-            outputB[outputBase + index0] = AddP(upperB, productB);
-            outputB[outputBase + index1] = SubP(upperB, productB);
-        }
+        const uint64_t upperB = sharedDataB[index0];
+        const uint64_t lowerB = sharedDataB[index1];
+        const uint64_t productB = MontgomeryMul(grid, block, debugCombo, lowerB, twiddle);
+        outputB[outputBase + index0] = AddP(upperB, productB);
+        outputB[outputBase + index1] = SubP(upperB, productB);
 
         if constexpr (Mode == Multiway::FourWay) {
             const uint64_t upperC = sharedDataC[index0];
@@ -1898,7 +1857,7 @@ ProcessRadix4StagePairPipelined(uint64_t *sharedData,
                                 uint32_t warpIndex,
                                 uint32_t numWarpsGrid)
 {
-    static_assert(Mode == Multiway::OneWay || Mode == Multiway::TwoWay || Mode == Multiway::ThreeWay);
+    static_assert(Mode == Multiway::TwoWay || Mode == Multiway::ThreeWay);
 
     namespace cg = cooperative_groups;
     constexpr uint32_t WarpSize = 32u;
@@ -1997,10 +1956,8 @@ ProcessRadix4StagePairPipelined(uint64_t *sharedData,
         const uint64_t secondTwiddle0 = secondStageTwiddles[jIndex];
         const uint64_t secondTwiddle1 = secondStageTwiddles[jIndex + firstHalfSpan];
 
-        if constexpr (Mode != Multiway::OneWay) {
-            processDirectArray(
-                B, index0, index1, index2, index3, firstTwiddle, secondTwiddle0, secondTwiddle1);
-        }
+        processDirectArray(
+            B, index0, index1, index2, index3, firstTwiddle, secondTwiddle0, secondTwiddle1);
         if constexpr (Mode == Multiway::ThreeWay) {
             processDirectArray(
                 C, index0, index1, index2, index3, firstTwiddle, secondTwiddle0, secondTwiddle1);
@@ -2177,11 +2134,7 @@ ProcessRadix2StagePipelinedSevenWay(uint64_t *sharedData,
 // Multiway::FourWay  : operates on A, B, C, D in lockstep
 // Multiway::SevenWay : operates on A, B, C, D, E, F, G in lockstep
 // -----------------------------------------------------------------------------
-template <class SharkFloatParams,
-          Multiway OneTwoThree,
-          bool SpatiallyPartitioned,
-          bool Inverse,
-          bool DecimationInFrequency = false>
+template <class SharkFloatParams, Multiway OneTwoThree, bool Inverse, bool DecimationInFrequency = false>
 static __device__ SharkForceInlineReleaseOnly void
 NTTRadix2GridStride(uint64_t *sharedData,
                     cooperative_groups::grid_group &grid,
@@ -2197,28 +2150,6 @@ NTTRadix2GridStride(uint64_t *sharedData,
                     uint64_t *SharkRestrict F = nullptr,
                     uint64_t *SharkRestrict G = nullptr)
 {
-    static_assert(!SpatiallyPartitioned || OneTwoThree == Multiway::TwoWay ||
-                  OneTwoThree == Multiway::FourWay);
-    constexpr Multiway WorkMode =
-        SpatiallyPartitioned ? (OneTwoThree == Multiway::FourWay ? Multiway::TwoWay : Multiway::OneWay)
-                             : OneTwoThree;
-    uint64_t *workA = A;
-    uint64_t *workB = B;
-    uint64_t *workC = C;
-    uint64_t *workD = D;
-    if constexpr (SpatiallyPartitioned) {
-        if (SpatialCohort() != 0u) {
-            if constexpr (OneTwoThree == Multiway::TwoWay) {
-                workA = B;
-            } else {
-                workA = C;
-                workB = D;
-            }
-        }
-        workC = nullptr;
-        workD = nullptr;
-    }
-
     uint32_t transformSize = rootTables.N;
     uint32_t numStages = rootTables.stages;
 
@@ -2233,11 +2164,8 @@ NTTRadix2GridStride(uint64_t *sharedData,
     constexpr auto TileSizeLog2 = 10u;
     constexpr uint32_t warpSize = 32u;
 
-    const size_t gridSize = SpatiallyPartitioned ? SpatialGridSize() : grid.size();
-    const auto globalThreadIndex = SpatiallyPartitioned
-                                       ? SpatialThreadIndex()
-                                       : static_cast<size_t>(block.thread_index().x) +
-                                             static_cast<size_t>(block.group_index().x) * blockDim.x;
+    const size_t gridSize = grid.size();
+    const auto globalThreadIndex = block.thread_index().x + block.group_index().x * blockDim.x;
     const uint32_t laneIndex = static_cast<uint32_t>(globalThreadIndex & (warpSize - 1u));
     const uint32_t warpIndex = static_cast<uint32_t>(globalThreadIndex / warpSize);
     const uint32_t numWarpsGrid = static_cast<uint32_t>(gridSize / warpSize);
@@ -2246,75 +2174,75 @@ NTTRadix2GridStride(uint64_t *sharedData,
         static_assert(!Inverse);
         constexpr bool useScalarForwardDIF = false;
         if constexpr (OneTwoThree == Multiway::SevenWay || useScalarForwardDIF) {
-            ForwardDIFScalar<SharkFloatParams, WorkMode>(grid,
-                                                         block,
-                                                         debugCombo,
-                                                         workA,
-                                                         workB,
-                                                         workC,
-                                                         workD,
-                                                         E,
-                                                         F,
-                                                         G,
-                                                         stageTwiddleTable,
-                                                         transformSize,
-                                                         numStages,
-                                                         static_cast<size_t>(globalThreadIndex),
-                                                         gridSize);
+            ForwardDIFScalar<SharkFloatParams, OneTwoThree>(grid,
+                                                            block,
+                                                            debugCombo,
+                                                            A,
+                                                            B,
+                                                            C,
+                                                            D,
+                                                            E,
+                                                            F,
+                                                            G,
+                                                            stageTwiddleTable,
+                                                            transformSize,
+                                                            numStages,
+                                                            static_cast<size_t>(globalThreadIndex),
+                                                            gridSize);
             return;
         } else {
             const uint32_t smallStageCount = numStages < TileSizeLog2 ? numStages : TileSizeLog2;
             uint32_t stageIndex = numStages;
             while (stageIndex > smallStageCount + 1u) {
-                ProcessRadix4DIFStagePairPipelined<SharkFloatParams, WorkMode>(sharedData,
-                                                                               grid,
-                                                                               block,
-                                                                               debugCombo,
-                                                                               workA,
-                                                                               workB,
-                                                                               workC,
-                                                                               workD,
-                                                                               stageTwiddleTable,
-                                                                               transformSize,
-                                                                               stageIndex,
-                                                                               warpIndex,
-                                                                               numWarpsGrid);
+                ProcessRadix4DIFStagePairPipelined<SharkFloatParams, OneTwoThree>(sharedData,
+                                                                                  grid,
+                                                                                  block,
+                                                                                  debugCombo,
+                                                                                  A,
+                                                                                  B,
+                                                                                  C,
+                                                                                  D,
+                                                                                  stageTwiddleTable,
+                                                                                  transformSize,
+                                                                                  stageIndex,
+                                                                                  warpIndex,
+                                                                                  numWarpsGrid);
                 grid.sync();
                 stageIndex -= 2u;
             }
 
             if (stageIndex > smallStageCount) {
-                ProcessRadix2DIFStage<SharkFloatParams, WorkMode>(grid,
-                                                                  block,
-                                                                  debugCombo,
-                                                                  workA,
-                                                                  workB,
-                                                                  workC,
-                                                                  workD,
-                                                                  E,
-                                                                  F,
-                                                                  G,
-                                                                  stageTwiddleTable,
-                                                                  transformSize,
-                                                                  stageIndex,
-                                                                  static_cast<size_t>(globalThreadIndex),
-                                                                  gridSize);
+                ProcessRadix2DIFStage<SharkFloatParams, OneTwoThree>(
+                    grid,
+                    block,
+                    debugCombo,
+                    A,
+                    B,
+                    C,
+                    D,
+                    E,
+                    F,
+                    G,
+                    stageTwiddleTable,
+                    transformSize,
+                    stageIndex,
+                    static_cast<size_t>(globalThreadIndex),
+                    gridSize);
                 grid.sync();
             }
 
             if (smallStageCount > 0u) {
-                SmallRadixPhase1DIFSM<SharkFloatParams, WorkMode, TileSizeLog2, SpatiallyPartitioned>(
-                    sharedData,
-                    grid,
-                    block,
-                    debugCombo,
-                    workA,
-                    workB,
-                    workC,
-                    workD,
-                    transformSize,
-                    numStages,
-                    stageTwiddleTable);
+                SmallRadixPhase1DIFSM<SharkFloatParams, OneTwoThree, TileSizeLog2>(sharedData,
+                                                                                   grid,
+                                                                                   block,
+                                                                                   debugCombo,
+                                                                                   A,
+                                                                                   B,
+                                                                                   C,
+                                                                                   D,
+                                                                                   transformSize,
+                                                                                   numStages,
+                                                                                   stageTwiddleTable);
             }
         }
         return;
@@ -2323,80 +2251,75 @@ NTTRadix2GridStride(uint64_t *sharedData,
     uint32_t firstLargeStage = 0;
 
     // Phase 1: small-radix microkernel
-    if constexpr (WorkMode == Multiway::OneWay) {
+    if constexpr (OneTwoThree == Multiway::OneWay) {
         firstLargeStage =
-            SmallRadixPhase1SM<SharkFloatParams, Multiway::OneWay, TileSizeLog2, SpatiallyPartitioned>(
-                sharedData,
-                grid,
-                block,
-                debugCombo,
-                workA,
-                nullptr,
-                nullptr,
-                nullptr,
-                transformSize,
-                numStages,
-                stageTwiddleTable);
-    } else if constexpr (WorkMode == Multiway::TwoWay) {
+            SmallRadixPhase1SM<SharkFloatParams, Multiway::OneWay, TileSizeLog2>(sharedData,
+                                                                                 grid,
+                                                                                 block,
+                                                                                 debugCombo,
+                                                                                 A,
+                                                                                 nullptr,
+                                                                                 nullptr,
+                                                                                 nullptr,
+                                                                                 transformSize,
+                                                                                 numStages,
+                                                                                 stageTwiddleTable);
+    } else if constexpr (OneTwoThree == Multiway::TwoWay) {
         firstLargeStage =
-            SmallRadixPhase1SM<SharkFloatParams, Multiway::TwoWay, TileSizeLog2, SpatiallyPartitioned>(
-                sharedData,
-                grid,
-                block,
-                debugCombo,
-                workA,
-                workB,
-                nullptr,
-                nullptr,
-                transformSize,
-                numStages,
-                stageTwiddleTable);
-    } else if constexpr (WorkMode == Multiway::ThreeWay) {
+            SmallRadixPhase1SM<SharkFloatParams, Multiway::TwoWay, TileSizeLog2>(sharedData,
+                                                                                 grid,
+                                                                                 block,
+                                                                                 debugCombo,
+                                                                                 A,
+                                                                                 B,
+                                                                                 nullptr,
+                                                                                 nullptr,
+                                                                                 transformSize,
+                                                                                 numStages,
+                                                                                 stageTwiddleTable);
+    } else if constexpr (OneTwoThree == Multiway::ThreeWay) {
         firstLargeStage =
-            SmallRadixPhase1SM<SharkFloatParams, Multiway::ThreeWay, TileSizeLog2, SpatiallyPartitioned>(
-                sharedData,
-                grid,
-                block,
-                debugCombo,
-                workA,
-                workB,
-                workC,
-                nullptr,
-                transformSize,
-                numStages,
-                stageTwiddleTable);
-    } else if constexpr (WorkMode == Multiway::FourWay) {
+            SmallRadixPhase1SM<SharkFloatParams, Multiway::ThreeWay, TileSizeLog2>(sharedData,
+                                                                                   grid,
+                                                                                   block,
+                                                                                   debugCombo,
+                                                                                   A,
+                                                                                   B,
+                                                                                   C,
+                                                                                   nullptr,
+                                                                                   transformSize,
+                                                                                   numStages,
+                                                                                   stageTwiddleTable);
+    } else if constexpr (OneTwoThree == Multiway::FourWay) {
         firstLargeStage =
-            SmallRadixPhase1SM<SharkFloatParams, Multiway::FourWay, TileSizeLog2, SpatiallyPartitioned>(
-                sharedData,
-                grid,
-                block,
-                debugCombo,
-                workA,
-                workB,
-                workC,
-                workD,
-                transformSize,
-                numStages,
-                stageTwiddleTable);
-    } else if constexpr (WorkMode == Multiway::SevenWay) {
+            SmallRadixPhase1SM<SharkFloatParams, Multiway::FourWay, TileSizeLog2>(sharedData,
+                                                                                  grid,
+                                                                                  block,
+                                                                                  debugCombo,
+                                                                                  A,
+                                                                                  B,
+                                                                                  C,
+                                                                                  D,
+                                                                                  transformSize,
+                                                                                  numStages,
+                                                                                  stageTwiddleTable);
+    } else if constexpr (OneTwoThree == Multiway::SevenWay) {
         // SevenWay: interleaved ThreeWay + FourWay per tile in a single call
         firstLargeStage =
-            SmallRadixPhase1SM<SharkFloatParams, Multiway::SevenWay, TileSizeLog2, SpatiallyPartitioned>(
-                sharedData,
-                grid,
-                block,
-                debugCombo,
-                workA,
-                workB,
-                workC,
-                workD,
-                transformSize,
-                numStages,
-                stageTwiddleTable,
-                E,
-                F,
-                G);
+            SmallRadixPhase1SM<SharkFloatParams, Multiway::SevenWay, TileSizeLog2>(sharedData,
+                                                                                   grid,
+                                                                                   block,
+                                                                                   debugCombo,
+                                                                                   A,
+                                                                                   B,
+                                                                                   C,
+                                                                                   D,
+                                                                                   transformSize,
+                                                                                   numStages,
+                                                                                   stageTwiddleTable,
+                                                                                   E,
+                                                                                   F,
+                                                                                   G);
     }
 
     // =========================
@@ -2416,18 +2339,18 @@ NTTRadix2GridStride(uint64_t *sharedData,
 
         if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
             if (stageIndex < numStages) {
-                ProcessRadix4StagePairPipelined<SharkFloatParams, WorkMode>(sharedData,
-                                                                            grid,
-                                                                            block,
-                                                                            debugCombo,
-                                                                            workA,
-                                                                            workB,
-                                                                            workC,
-                                                                            stageTwiddleTable,
-                                                                            transformSize,
-                                                                            stageIndex,
-                                                                            warpIndex,
-                                                                            numWarpsGrid);
+                ProcessRadix4StagePairPipelined<SharkFloatParams, OneTwoThree>(sharedData,
+                                                                               grid,
+                                                                               block,
+                                                                               debugCombo,
+                                                                               A,
+                                                                               B,
+                                                                               C,
+                                                                               stageTwiddleTable,
+                                                                               transformSize,
+                                                                               stageIndex,
+                                                                               warpIndex,
+                                                                               numWarpsGrid);
                 grid.sync();
                 ++stageIndex;
                 continue;
@@ -2478,113 +2401,28 @@ NTTRadix2GridStride(uint64_t *sharedData,
             if constexpr (OneTwoThree != Multiway::SevenWay) {
                 constexpr int microTileWidth = (OneTwoThree == Multiway::OneWay ? 4 : 2);
                 while (tasksRemaining) {
-                    ProcessTile<SharkFloatParams, WorkMode, microTileWidth>(grid,
-                                                                            block,
-                                                                            debugCombo,
-                                                                            workA,
-                                                                            workB,
-                                                                            workC,
-                                                                            workD,
-                                                                            stageTwiddlesForStage,
-                                                                            halfSpan,
-                                                                            warpSize,
-                                                                            numJChunks,
-                                                                            laneIndex,
-                                                                            butterflySpan,
-                                                                            blockIndex,
-                                                                            jChunkIndex,
-                                                                            tasksRemaining,
-                                                                            blockDataBaseIndex);
+                    ProcessTile<SharkFloatParams, OneTwoThree, microTileWidth>(grid,
+                                                                               block,
+                                                                               debugCombo,
+                                                                               A,
+                                                                               B,
+                                                                               C,
+                                                                               D,
+                                                                               stageTwiddlesForStage,
+                                                                               halfSpan,
+                                                                               warpSize,
+                                                                               numJChunks,
+                                                                               laneIndex,
+                                                                               butterflySpan,
+                                                                               blockIndex,
+                                                                               jChunkIndex,
+                                                                               tasksRemaining,
+                                                                               blockDataBaseIndex);
                 }
             }
         }
 
         // One grid-wide barrier per stage (still required for correctness)
-        grid.sync();
-    }
-}
-
-template <class SharkFloatParams, Multiway Mode, bool SpatiallyPartitioned>
-static __device__ SharkForceInlineReleaseOnly void
-ForwardDIFLargeStagesImpl(uint64_t *sharedData,
-                          cooperative_groups::grid_group &grid,
-                          cooperative_groups::thread_block &block,
-                          DebugGlobalCount<SharkFloatParams> *debugCombo,
-                          uint64_t *SharkRestrict A,
-                          uint64_t *SharkRestrict B,
-                          uint64_t *SharkRestrict C,
-                          uint64_t *SharkRestrict D,
-                          const SharkNTT::RootTables &rootTables,
-                          uint32_t highestStageIndex)
-{
-    static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
-    constexpr Multiway WorkMode =
-        SpatiallyPartitioned ? (Mode == Multiway::FourWay ? Multiway::TwoWay : Multiway::OneWay) : Mode;
-    uint64_t *workA = A;
-    uint64_t *workB = B;
-    uint64_t *workC = C;
-    uint64_t *workD = D;
-    if constexpr (SpatiallyPartitioned) {
-        if (SpatialCohort() != 0u) {
-            if constexpr (Mode == Multiway::TwoWay) {
-                workA = B;
-            } else {
-                workA = C;
-                workB = D;
-            }
-        }
-        workC = nullptr;
-        workD = nullptr;
-    }
-    constexpr uint32_t TileSizeLog2 = 10u;
-    constexpr uint32_t WarpSize = 32u;
-    const uint32_t transformSize = rootTables.N;
-    const uint32_t numStages = rootTables.stages;
-    const uint64_t *SharkRestrict stageTwiddleTable = rootTables.stage_twiddles_fwd;
-    const size_t gridSize = SpatiallyPartitioned ? SpatialGridSize() : grid.size();
-    const size_t globalThreadIndex = SpatiallyPartitioned
-                                         ? SpatialThreadIndex()
-                                         : static_cast<size_t>(block.thread_index().x) +
-                                               static_cast<size_t>(block.group_index().x) * blockDim.x;
-    const uint32_t warpIndex = static_cast<uint32_t>(globalThreadIndex / WarpSize);
-    const uint32_t numWarpsGrid = static_cast<uint32_t>(gridSize / WarpSize);
-    const uint32_t smallStageCount = numStages < TileSizeLog2 ? numStages : TileSizeLog2;
-
-    uint32_t stageIndex = highestStageIndex;
-    while (stageIndex > smallStageCount + 1u) {
-        ProcessRadix4DIFStagePairPipelined<SharkFloatParams, WorkMode>(sharedData,
-                                                                       grid,
-                                                                       block,
-                                                                       debugCombo,
-                                                                       workA,
-                                                                       workB,
-                                                                       workC,
-                                                                       workD,
-                                                                       stageTwiddleTable,
-                                                                       transformSize,
-                                                                       stageIndex,
-                                                                       warpIndex,
-                                                                       numWarpsGrid);
-        grid.sync();
-        stageIndex -= 2u;
-    }
-
-    if (stageIndex > smallStageCount) {
-        ProcessRadix2DIFStage<SharkFloatParams, WorkMode>(grid,
-                                                          block,
-                                                          debugCombo,
-                                                          workA,
-                                                          workB,
-                                                          workC,
-                                                          workD,
-                                                          nullptr,
-                                                          nullptr,
-                                                          nullptr,
-                                                          stageTwiddleTable,
-                                                          transformSize,
-                                                          stageIndex,
-                                                          globalThreadIndex,
-                                                          gridSize);
         grid.sync();
     }
 }
@@ -2602,56 +2440,77 @@ ForwardDIFLargeStages(uint64_t *sharedData,
                       const SharkNTT::RootTables &rootTables,
                       uint32_t highestStageIndex)
 {
-    if (gridDim.x == 1u) {
-        ForwardDIFLargeStagesImpl<SharkFloatParams, Mode, false>(
-            sharedData, grid, block, debugCombo, A, B, C, D, rootTables, highestStageIndex);
-    } else {
-        ForwardDIFLargeStagesImpl<SharkFloatParams, Mode, true>(
-            sharedData, grid, block, debugCombo, A, B, C, D, rootTables, highestStageIndex);
+    static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
+    constexpr uint32_t TileSizeLog2 = 10u;
+    constexpr uint32_t WarpSize = 32u;
+    const uint32_t transformSize = rootTables.N;
+    const uint32_t numStages = rootTables.stages;
+    const uint64_t *SharkRestrict stageTwiddleTable = rootTables.stage_twiddles_fwd;
+    const size_t gridSize = grid.size();
+    const size_t globalThreadIndex = block.thread_index().x + block.group_index().x * blockDim.x;
+    const uint32_t warpIndex = static_cast<uint32_t>(globalThreadIndex / WarpSize);
+    const uint32_t numWarpsGrid = static_cast<uint32_t>(gridSize / WarpSize);
+    const uint32_t smallStageCount = numStages < TileSizeLog2 ? numStages : TileSizeLog2;
+
+    uint32_t stageIndex = highestStageIndex;
+    while (stageIndex > smallStageCount + 1u) {
+        ProcessRadix4DIFStagePairPipelined<SharkFloatParams, Mode>(sharedData,
+                                                                   grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   A,
+                                                                   B,
+                                                                   C,
+                                                                   D,
+                                                                   stageTwiddleTable,
+                                                                   transformSize,
+                                                                   stageIndex,
+                                                                   warpIndex,
+                                                                   numWarpsGrid);
+        grid.sync();
+        stageIndex -= 2u;
+    }
+
+    if (stageIndex > smallStageCount) {
+        ProcessRadix2DIFStage<SharkFloatParams, Mode>(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      A,
+                                                      B,
+                                                      C,
+                                                      D,
+                                                      nullptr,
+                                                      nullptr,
+                                                      nullptr,
+                                                      stageTwiddleTable,
+                                                      transformSize,
+                                                      stageIndex,
+                                                      globalThreadIndex,
+                                                      gridSize);
+        grid.sync();
     }
 }
 
-template <class SharkFloatParams, Multiway Mode, bool SpatiallyPartitioned>
+template <class SharkFloatParams, Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
-InverseDITLargeStagesImpl(uint64_t *sharedData,
-                          cooperative_groups::grid_group &grid,
-                          cooperative_groups::thread_block &block,
-                          DebugGlobalCount<SharkFloatParams> *debugCombo,
-                          uint64_t *SharkRestrict A,
-                          uint64_t *SharkRestrict B,
-                          uint64_t *SharkRestrict C,
-                          uint64_t *SharkRestrict D,
-                          const SharkNTT::RootTables &rootTables)
+InverseDITLargeStages(uint64_t *sharedData,
+                      cooperative_groups::grid_group &grid,
+                      cooperative_groups::thread_block &block,
+                      DebugGlobalCount<SharkFloatParams> *debugCombo,
+                      uint64_t *SharkRestrict A,
+                      uint64_t *SharkRestrict B,
+                      uint64_t *SharkRestrict C,
+                      uint64_t *SharkRestrict D,
+                      const SharkNTT::RootTables &rootTables)
 {
     static_assert(Mode == Multiway::TwoWay || Mode == Multiway::FourWay);
-    constexpr Multiway WorkMode =
-        SpatiallyPartitioned ? (Mode == Multiway::FourWay ? Multiway::TwoWay : Multiway::OneWay) : Mode;
-    uint64_t *workA = A;
-    uint64_t *workB = B;
-    uint64_t *workC = C;
-    uint64_t *workD = D;
-    if constexpr (SpatiallyPartitioned) {
-        if (SpatialCohort() != 0u) {
-            if constexpr (Mode == Multiway::TwoWay) {
-                workA = B;
-            } else {
-                workA = C;
-                workB = D;
-            }
-        }
-        workC = nullptr;
-        workD = nullptr;
-    }
     constexpr uint32_t TileSizeLog2 = 10u;
     constexpr uint32_t WarpSize = 32u;
     const uint32_t transformSize = rootTables.N;
     const uint32_t numStages = rootTables.stages;
     const uint64_t *SharkRestrict stageTwiddleTable = rootTables.stage_twiddles_inv;
-    const size_t gridSize = SpatiallyPartitioned ? SpatialGridSize() : grid.size();
-    const size_t globalThreadIndex = SpatiallyPartitioned
-                                         ? SpatialThreadIndex()
-                                         : static_cast<size_t>(block.thread_index().x) +
-                                               static_cast<size_t>(block.group_index().x) * blockDim.x;
+    const size_t gridSize = grid.size();
+    const size_t globalThreadIndex = block.thread_index().x + block.group_index().x * blockDim.x;
     const uint32_t laneIndex = static_cast<uint32_t>(globalThreadIndex & (WarpSize - 1u));
     const uint32_t warpIndex = static_cast<uint32_t>(globalThreadIndex / WarpSize);
     const uint32_t numWarpsGrid = static_cast<uint32_t>(gridSize / WarpSize);
@@ -2665,18 +2524,18 @@ InverseDITLargeStagesImpl(uint64_t *sharedData,
 
         if constexpr (Mode == Multiway::TwoWay) {
             if (stageIndex < numStages) {
-                ProcessRadix4StagePairPipelined<SharkFloatParams, WorkMode>(sharedData,
-                                                                            grid,
-                                                                            block,
-                                                                            debugCombo,
-                                                                            workA,
-                                                                            workB,
-                                                                            workC,
-                                                                            stageTwiddleTable,
-                                                                            transformSize,
-                                                                            stageIndex,
-                                                                            warpIndex,
-                                                                            numWarpsGrid);
+                ProcessRadix4StagePairPipelined<SharkFloatParams, Mode>(sharedData,
+                                                                        grid,
+                                                                        block,
+                                                                        debugCombo,
+                                                                        A,
+                                                                        B,
+                                                                        C,
+                                                                        stageTwiddleTable,
+                                                                        transformSize,
+                                                                        stageIndex,
+                                                                        warpIndex,
+                                                                        numWarpsGrid);
                 grid.sync();
                 ++stageIndex;
                 continue;
@@ -2697,23 +2556,23 @@ InverseDITLargeStagesImpl(uint64_t *sharedData,
             uint32_t blockDataBaseIndex = blockIndex * butterflySpan;
             size_t tasksRemaining = warpTaskEnd - warpTaskBegin;
             while (tasksRemaining) {
-                ProcessTile<SharkFloatParams, WorkMode, 2>(grid,
-                                                           block,
-                                                           debugCombo,
-                                                           workA,
-                                                           workB,
-                                                           workC,
-                                                           workD,
-                                                           stageTwiddlesForStage,
-                                                           halfSpan,
-                                                           WarpSize,
-                                                           numJChunks,
-                                                           laneIndex,
-                                                           butterflySpan,
-                                                           blockIndex,
-                                                           jChunkIndex,
-                                                           tasksRemaining,
-                                                           blockDataBaseIndex);
+                ProcessTile<SharkFloatParams, Mode, 2>(grid,
+                                                       block,
+                                                       debugCombo,
+                                                       A,
+                                                       B,
+                                                       C,
+                                                       D,
+                                                       stageTwiddlesForStage,
+                                                       halfSpan,
+                                                       WarpSize,
+                                                       numJChunks,
+                                                       laneIndex,
+                                                       butterflySpan,
+                                                       blockIndex,
+                                                       jChunkIndex,
+                                                       tasksRemaining,
+                                                       blockDataBaseIndex);
             }
         }
         grid.sync();
@@ -2724,27 +2583,6 @@ InverseDITLargeStagesImpl(uint64_t *sharedData,
     // transform's completion barrier in every supported transform-size tier.
     if (firstLargeStage == numStages)
         grid.sync();
-}
-
-template <class SharkFloatParams, Multiway Mode>
-static __device__ SharkForceInlineReleaseOnly void
-InverseDITLargeStages(uint64_t *sharedData,
-                      cooperative_groups::grid_group &grid,
-                      cooperative_groups::thread_block &block,
-                      DebugGlobalCount<SharkFloatParams> *debugCombo,
-                      uint64_t *SharkRestrict A,
-                      uint64_t *SharkRestrict B,
-                      uint64_t *SharkRestrict C,
-                      uint64_t *SharkRestrict D,
-                      const SharkNTT::RootTables &rootTables)
-{
-    if (gridDim.x == 1u) {
-        InverseDITLargeStagesImpl<SharkFloatParams, Mode, false>(
-            sharedData, grid, block, debugCombo, A, B, C, D, rootTables);
-    } else {
-        InverseDITLargeStagesImpl<SharkFloatParams, Mode, true>(
-            sharedData, grid, block, debugCombo, A, B, C, D, rootTables);
-    }
 }
 
 //==================================================================================================
@@ -3166,13 +3004,8 @@ NTTRadix2Batch(uint64_t *sharedData,
 {
     MattsCudaAssert(static_cast<uint32_t>(roots.N) == n);
     MattsCudaAssert(static_cast<uint32_t>(roots.stages) == stages);
-    if (gridDim.x == 1u) {
-        NTT::NTTRadix2GridStride<SharkFloatParams, NTT::Multiway::TwoWay, false, Inverse, ForwardDIF>(
-            sharedData, grid, block, debugCombo, nullptr, value0, value1, nullptr, nullptr, roots);
-    } else {
-        NTT::NTTRadix2GridStride<SharkFloatParams, NTT::Multiway::TwoWay, true, Inverse, ForwardDIF>(
-            sharedData, grid, block, debugCombo, nullptr, value0, value1, nullptr, nullptr, roots);
-    }
+    NTT::NTTRadix2GridStride<SharkFloatParams, NTT::Multiway::TwoWay, Inverse, ForwardDIF>(
+        sharedData, grid, block, debugCombo, nullptr, value0, value1, nullptr, nullptr, roots);
 }
 
 template <class SharkFloatParams, bool Inverse, bool ForwardDIF = false>
@@ -3191,13 +3024,8 @@ NTTRadix2Batch(uint64_t *sharedData,
 {
     MattsCudaAssert(static_cast<uint32_t>(roots.N) == n);
     MattsCudaAssert(static_cast<uint32_t>(roots.stages) == stages);
-    if (gridDim.x == 1u) {
-        NTT::NTTRadix2GridStride<SharkFloatParams, NTT::Multiway::FourWay, false, Inverse, ForwardDIF>(
-            sharedData, grid, block, debugCombo, nullptr, value0, value1, value2, value3, roots);
-    } else {
-        NTT::NTTRadix2GridStride<SharkFloatParams, NTT::Multiway::FourWay, true, Inverse, ForwardDIF>(
-            sharedData, grid, block, debugCombo, nullptr, value0, value1, value2, value3, roots);
-    }
+    NTT::NTTRadix2GridStride<SharkFloatParams, NTT::Multiway::FourWay, Inverse, ForwardDIF>(
+        sharedData, grid, block, debugCombo, nullptr, value0, value1, value2, value3, roots);
 }
 
 template <class SharkFloatParams>
@@ -3613,14 +3441,46 @@ PackAlignedForwardDIFLargeStages(cooperative_groups::grid_group &grid,
     const uint32_t secondHalfSpan = firstHalfSpan >> 1u;
     const uint64_t *firstStageTwiddles = roots.stage_twiddles_fwd + firstHalfSpan - 1u;
     const uint64_t *secondStageTwiddles = roots.stage_twiddles_fwd + secondHalfSpan - 1u;
-    if (gridDim.x == 1u) {
-        const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-        for (uint32_t j = GridThreadRank(block); j < secondHalfSpan; j += gridSize) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t j = GridThreadRank(block); j < secondHalfSpan; j += gridSize) {
+        PackAlignedForwardDIFPairOne(grid,
+                                     block,
+                                     debugCombo,
+                                     value0,
+                                     output0,
+                                     plan,
+                                     inputScaleR,
+                                     j,
+                                     firstHalfSpan,
+                                     secondHalfSpan,
+                                     firstStageTwiddles,
+                                     secondStageTwiddles,
+                                     inputBitOffset0,
+                                     coefficientShift0,
+                                     residualBitShift0,
+                                     negative0);
+        PackAlignedForwardDIFPairOne(grid,
+                                     block,
+                                     debugCombo,
+                                     value1,
+                                     output1,
+                                     plan,
+                                     inputScaleR,
+                                     j,
+                                     firstHalfSpan,
+                                     secondHalfSpan,
+                                     firstStageTwiddles,
+                                     secondStageTwiddles,
+                                     inputBitOffset1,
+                                     coefficientShift1,
+                                     residualBitShift1,
+                                     negative1);
+        if (value2 != nullptr)
             PackAlignedForwardDIFPairOne(grid,
                                          block,
                                          debugCombo,
-                                         value0,
-                                         output0,
+                                         value2,
+                                         output2,
                                          plan,
                                          inputScaleR,
                                          j,
@@ -3628,15 +3488,16 @@ PackAlignedForwardDIFLargeStages(cooperative_groups::grid_group &grid,
                                          secondHalfSpan,
                                          firstStageTwiddles,
                                          secondStageTwiddles,
-                                         inputBitOffset0,
-                                         coefficientShift0,
-                                         residualBitShift0,
-                                         negative0);
+                                         inputBitOffset2,
+                                         coefficientShift2,
+                                         residualBitShift2,
+                                         negative2);
+        if (value3 != nullptr)
             PackAlignedForwardDIFPairOne(grid,
                                          block,
                                          debugCombo,
-                                         value1,
-                                         output1,
+                                         value3,
+                                         output3,
                                          plan,
                                          inputScaleR,
                                          j,
@@ -3644,108 +3505,10 @@ PackAlignedForwardDIFLargeStages(cooperative_groups::grid_group &grid,
                                          secondHalfSpan,
                                          firstStageTwiddles,
                                          secondStageTwiddles,
-                                         inputBitOffset1,
-                                         coefficientShift1,
-                                         residualBitShift1,
-                                         negative1);
-            if (value2 != nullptr)
-                PackAlignedForwardDIFPairOne(grid,
-                                             block,
-                                             debugCombo,
-                                             value2,
-                                             output2,
-                                             plan,
-                                             inputScaleR,
-                                             j,
-                                             firstHalfSpan,
-                                             secondHalfSpan,
-                                             firstStageTwiddles,
-                                             secondStageTwiddles,
-                                             inputBitOffset2,
-                                             coefficientShift2,
-                                             residualBitShift2,
-                                             negative2);
-            if (value3 != nullptr)
-                PackAlignedForwardDIFPairOne(grid,
-                                             block,
-                                             debugCombo,
-                                             value3,
-                                             output3,
-                                             plan,
-                                             inputScaleR,
-                                             j,
-                                             firstHalfSpan,
-                                             secondHalfSpan,
-                                             firstStageTwiddles,
-                                             secondStageTwiddles,
-                                             inputBitOffset3,
-                                             coefficientShift3,
-                                             residualBitShift3,
-                                             negative3);
-        }
-    } else {
-        const bool secondCohort = NTT::SpatialCohort() != 0u;
-        const bool fourWay = value2 != nullptr;
-        const HpSharkFloat<SharkFloatParams> *primaryValue =
-            fourWay ? (secondCohort ? value2 : value0) : (secondCohort ? value1 : value0);
-        uint64_t *primaryOutput =
-            fourWay ? (secondCohort ? output2 : output0) : (secondCohort ? output1 : output0);
-        const uint32_t primaryInputBitOffset = fourWay
-                                                   ? (secondCohort ? inputBitOffset2 : inputBitOffset0)
-                                                   : (secondCohort ? inputBitOffset1 : inputBitOffset0);
-        const uint32_t primaryCoefficientShift =
-            fourWay ? (secondCohort ? coefficientShift2 : coefficientShift0)
-                    : (secondCohort ? coefficientShift1 : coefficientShift0);
-        const uint32_t primaryResidualBitShift =
-            fourWay ? (secondCohort ? residualBitShift2 : residualBitShift0)
-                    : (secondCohort ? residualBitShift1 : residualBitShift0);
-        const bool primaryNegative =
-            fourWay ? (secondCohort ? negative2 : negative0) : (secondCohort ? negative1 : negative0);
-        const HpSharkFloat<SharkFloatParams> *secondaryValue =
-            fourWay ? (secondCohort ? value3 : value1) : nullptr;
-        uint64_t *secondaryOutput = fourWay ? (secondCohort ? output3 : output1) : nullptr;
-        const uint32_t secondaryInputBitOffset = secondCohort ? inputBitOffset3 : inputBitOffset1;
-        const uint32_t secondaryCoefficientShift = secondCohort ? coefficientShift3 : coefficientShift1;
-        const uint32_t secondaryResidualBitShift = secondCohort ? residualBitShift3 : residualBitShift1;
-        const bool secondaryNegative = secondCohort ? negative3 : negative1;
-        const uint32_t gridSize = static_cast<uint32_t>(NTT::SpatialGridSize());
-        for (uint32_t j = static_cast<uint32_t>(NTT::SpatialThreadIndex()); j < secondHalfSpan;
-             j += gridSize) {
-            PackAlignedForwardDIFPairOne(grid,
-                                         block,
-                                         debugCombo,
-                                         primaryValue,
-                                         primaryOutput,
-                                         plan,
-                                         inputScaleR,
-                                         j,
-                                         firstHalfSpan,
-                                         secondHalfSpan,
-                                         firstStageTwiddles,
-                                         secondStageTwiddles,
-                                         primaryInputBitOffset,
-                                         primaryCoefficientShift,
-                                         primaryResidualBitShift,
-                                         primaryNegative);
-            if (secondaryValue != nullptr) {
-                PackAlignedForwardDIFPairOne(grid,
-                                             block,
-                                             debugCombo,
-                                             secondaryValue,
-                                             secondaryOutput,
-                                             plan,
-                                             inputScaleR,
-                                             j,
-                                             firstHalfSpan,
-                                             secondHalfSpan,
-                                             firstStageTwiddles,
-                                             secondStageTwiddles,
-                                             secondaryInputBitOffset,
-                                             secondaryCoefficientShift,
-                                             secondaryResidualBitShift,
-                                             secondaryNegative);
-            }
-        }
+                                         inputBitOffset3,
+                                         coefficientShift3,
+                                         residualBitShift3,
+                                         negative3);
     }
     grid.sync();
 }
@@ -3788,127 +3551,66 @@ PackAlignedForwardDIFRadix2(cooperative_groups::grid_group &grid,
     MattsCudaAssert(plan.stages == expectedStages);
     const uint32_t halfSpan = 1u << (static_cast<uint32_t>(plan.stages) - 1u);
     const uint64_t *stageTwiddles = roots.stage_twiddles_fwd + halfSpan - 1u;
-    if (gridDim.x == 1u) {
-        const uint32_t gridSize = static_cast<uint32_t>(grid.size());
-        for (uint32_t j = GridThreadRank(block); j < halfSpan; j += gridSize) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t j = GridThreadRank(block); j < halfSpan; j += gridSize) {
+        PackAlignedForwardDIFRadix2One(grid,
+                                       block,
+                                       debugCombo,
+                                       value0,
+                                       output0,
+                                       plan,
+                                       inputScaleR,
+                                       j,
+                                       halfSpan,
+                                       stageTwiddles,
+                                       inputBitOffset0,
+                                       coefficientShift0,
+                                       residualBitShift0,
+                                       negative0);
+        PackAlignedForwardDIFRadix2One(grid,
+                                       block,
+                                       debugCombo,
+                                       value1,
+                                       output1,
+                                       plan,
+                                       inputScaleR,
+                                       j,
+                                       halfSpan,
+                                       stageTwiddles,
+                                       inputBitOffset1,
+                                       coefficientShift1,
+                                       residualBitShift1,
+                                       negative1);
+        if (value2 != nullptr)
             PackAlignedForwardDIFRadix2One(grid,
                                            block,
                                            debugCombo,
-                                           value0,
-                                           output0,
+                                           value2,
+                                           output2,
                                            plan,
                                            inputScaleR,
                                            j,
                                            halfSpan,
                                            stageTwiddles,
-                                           inputBitOffset0,
-                                           coefficientShift0,
-                                           residualBitShift0,
-                                           negative0);
+                                           inputBitOffset2,
+                                           coefficientShift2,
+                                           residualBitShift2,
+                                           negative2);
+        if (value3 != nullptr)
             PackAlignedForwardDIFRadix2One(grid,
                                            block,
                                            debugCombo,
-                                           value1,
-                                           output1,
+                                           value3,
+                                           output3,
                                            plan,
                                            inputScaleR,
                                            j,
                                            halfSpan,
                                            stageTwiddles,
-                                           inputBitOffset1,
-                                           coefficientShift1,
-                                           residualBitShift1,
-                                           negative1);
-            if (value2 != nullptr)
-                PackAlignedForwardDIFRadix2One(grid,
-                                               block,
-                                               debugCombo,
-                                               value2,
-                                               output2,
-                                               plan,
-                                               inputScaleR,
-                                               j,
-                                               halfSpan,
-                                               stageTwiddles,
-                                               inputBitOffset2,
-                                               coefficientShift2,
-                                               residualBitShift2,
-                                               negative2);
-            if (value3 != nullptr)
-                PackAlignedForwardDIFRadix2One(grid,
-                                               block,
-                                               debugCombo,
-                                               value3,
-                                               output3,
-                                               plan,
-                                               inputScaleR,
-                                               j,
-                                               halfSpan,
-                                               stageTwiddles,
-                                               inputBitOffset3,
-                                               coefficientShift3,
-                                               residualBitShift3,
-                                               negative3);
-        }
-    } else {
-        const bool secondCohort = NTT::SpatialCohort() != 0u;
-        const bool fourWay = value2 != nullptr;
-        const HpSharkFloat<SharkFloatParams> *primaryValue =
-            fourWay ? (secondCohort ? value2 : value0) : (secondCohort ? value1 : value0);
-        uint64_t *primaryOutput =
-            fourWay ? (secondCohort ? output2 : output0) : (secondCohort ? output1 : output0);
-        const uint32_t primaryInputBitOffset = fourWay
-                                                   ? (secondCohort ? inputBitOffset2 : inputBitOffset0)
-                                                   : (secondCohort ? inputBitOffset1 : inputBitOffset0);
-        const uint32_t primaryCoefficientShift =
-            fourWay ? (secondCohort ? coefficientShift2 : coefficientShift0)
-                    : (secondCohort ? coefficientShift1 : coefficientShift0);
-        const uint32_t primaryResidualBitShift =
-            fourWay ? (secondCohort ? residualBitShift2 : residualBitShift0)
-                    : (secondCohort ? residualBitShift1 : residualBitShift0);
-        const bool primaryNegative =
-            fourWay ? (secondCohort ? negative2 : negative0) : (secondCohort ? negative1 : negative0);
-        const HpSharkFloat<SharkFloatParams> *secondaryValue =
-            fourWay ? (secondCohort ? value3 : value1) : nullptr;
-        uint64_t *secondaryOutput = fourWay ? (secondCohort ? output3 : output1) : nullptr;
-        const uint32_t secondaryInputBitOffset = secondCohort ? inputBitOffset3 : inputBitOffset1;
-        const uint32_t secondaryCoefficientShift = secondCohort ? coefficientShift3 : coefficientShift1;
-        const uint32_t secondaryResidualBitShift = secondCohort ? residualBitShift3 : residualBitShift1;
-        const bool secondaryNegative = secondCohort ? negative3 : negative1;
-        const uint32_t gridSize = static_cast<uint32_t>(NTT::SpatialGridSize());
-        for (uint32_t j = static_cast<uint32_t>(NTT::SpatialThreadIndex()); j < halfSpan;
-             j += gridSize) {
-            PackAlignedForwardDIFRadix2One(grid,
-                                           block,
-                                           debugCombo,
-                                           primaryValue,
-                                           primaryOutput,
-                                           plan,
-                                           inputScaleR,
-                                           j,
-                                           halfSpan,
-                                           stageTwiddles,
-                                           primaryInputBitOffset,
-                                           primaryCoefficientShift,
-                                           primaryResidualBitShift,
-                                           primaryNegative);
-            if (secondaryValue != nullptr) {
-                PackAlignedForwardDIFRadix2One(grid,
-                                               block,
-                                               debugCombo,
-                                               secondaryValue,
-                                               secondaryOutput,
-                                               plan,
-                                               inputScaleR,
-                                               j,
-                                               halfSpan,
-                                               stageTwiddles,
-                                               secondaryInputBitOffset,
-                                               secondaryCoefficientShift,
-                                               secondaryResidualBitShift,
-                                               secondaryNegative);
-            }
-        }
+                                           inputBitOffset3,
+                                           coefficientShift3,
+                                           residualBitShift3,
+                                           negative3);
     }
     grid.sync();
 }
@@ -3934,39 +3636,31 @@ PackAlignedInputsBatch(cooperative_groups::grid_group &grid,
                        bool negative1)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    const bool partitioned = gridDim.x >= 2u;
-    const bool secondCohort = partitioned && NTT::SpatialCohort() != 0u;
-    const uint32_t rank =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialThreadIndex()) : GridThreadRank(block);
-    const uint32_t gridSize =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialGridSize()) : static_cast<uint32_t>(grid.size());
+    const uint32_t rank = GridThreadRank(block);
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t outputIndex = rank; outputIndex < activeN; outputIndex += gridSize) {
-        if (!partitioned || !secondCohort) {
-            output0[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
-                                                                       block,
-                                                                       debugCombo,
-                                                                       value0,
-                                                                       plan,
-                                                                       inputScaleR,
-                                                                       outputIndex,
-                                                                       inputBitOffset0,
-                                                                       coefficientShift0,
-                                                                       residualBitShift0,
-                                                                       negative0);
-        }
-        if (!partitioned || secondCohort) {
-            output1[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
-                                                                       block,
-                                                                       debugCombo,
-                                                                       value1,
-                                                                       plan,
-                                                                       inputScaleR,
-                                                                       outputIndex,
-                                                                       inputBitOffset1,
-                                                                       coefficientShift1,
-                                                                       residualBitShift1,
-                                                                       negative1);
-        }
+        output0[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value0,
+                                                                   plan,
+                                                                   inputScaleR,
+                                                                   outputIndex,
+                                                                   inputBitOffset0,
+                                                                   coefficientShift0,
+                                                                   residualBitShift0,
+                                                                   negative0);
+        output1[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value1,
+                                                                   plan,
+                                                                   inputScaleR,
+                                                                   outputIndex,
+                                                                   inputBitOffset1,
+                                                                   coefficientShift1,
+                                                                   residualBitShift1,
+                                                                   negative1);
     }
     grid.sync();
 }
@@ -4004,61 +3698,53 @@ PackAlignedInputsBatch(cooperative_groups::grid_group &grid,
                        bool negative3)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    const bool partitioned = gridDim.x >= 2u;
-    const bool secondCohort = partitioned && NTT::SpatialCohort() != 0u;
-    const uint32_t rank =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialThreadIndex()) : GridThreadRank(block);
-    const uint32_t gridSize =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialGridSize()) : static_cast<uint32_t>(grid.size());
+    const uint32_t rank = GridThreadRank(block);
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t outputIndex = rank; outputIndex < activeN; outputIndex += gridSize) {
-        if (!partitioned || !secondCohort) {
-            output0[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
-                                                                       block,
-                                                                       debugCombo,
-                                                                       value0,
-                                                                       plan,
-                                                                       inputScaleR,
-                                                                       outputIndex,
-                                                                       inputBitOffset0,
-                                                                       coefficientShift0,
-                                                                       residualBitShift0,
-                                                                       negative0);
-            output1[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
-                                                                       block,
-                                                                       debugCombo,
-                                                                       value1,
-                                                                       plan,
-                                                                       inputScaleR,
-                                                                       outputIndex,
-                                                                       inputBitOffset1,
-                                                                       coefficientShift1,
-                                                                       residualBitShift1,
-                                                                       negative1);
-        }
-        if (!partitioned || secondCohort) {
-            output2[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
-                                                                       block,
-                                                                       debugCombo,
-                                                                       value2,
-                                                                       plan,
-                                                                       inputScaleR,
-                                                                       outputIndex,
-                                                                       inputBitOffset2,
-                                                                       coefficientShift2,
-                                                                       residualBitShift2,
-                                                                       negative2);
-            output3[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
-                                                                       block,
-                                                                       debugCombo,
-                                                                       value3,
-                                                                       plan,
-                                                                       inputScaleR,
-                                                                       outputIndex,
-                                                                       inputBitOffset3,
-                                                                       coefficientShift3,
-                                                                       residualBitShift3,
-                                                                       negative3);
-        }
+        output0[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value0,
+                                                                   plan,
+                                                                   inputScaleR,
+                                                                   outputIndex,
+                                                                   inputBitOffset0,
+                                                                   coefficientShift0,
+                                                                   residualBitShift0,
+                                                                   negative0);
+        output1[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value1,
+                                                                   plan,
+                                                                   inputScaleR,
+                                                                   outputIndex,
+                                                                   inputBitOffset1,
+                                                                   coefficientShift1,
+                                                                   residualBitShift1,
+                                                                   negative1);
+        output2[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value2,
+                                                                   plan,
+                                                                   inputScaleR,
+                                                                   outputIndex,
+                                                                   inputBitOffset2,
+                                                                   coefficientShift2,
+                                                                   residualBitShift2,
+                                                                   negative2);
+        output3[outputIndex] = PackAlignedForwardCoefficientScaled(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   value3,
+                                                                   plan,
+                                                                   inputScaleR,
+                                                                   outputIndex,
+                                                                   inputBitOffset3,
+                                                                   coefficientShift3,
+                                                                   residualBitShift3,
+                                                                   negative3);
     }
     grid.sync();
 }
@@ -4090,39 +3776,32 @@ PackAlignedForwardBatch(cooperative_groups::grid_group &grid,
                         DebugStatePurpose forwardPurpose1)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    const bool partitioned = gridDim.x >= 2u;
-    const bool secondCohort = partitioned && NTT::SpatialCohort() != 0u;
-    const uint32_t rank =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialThreadIndex()) : GridThreadRank(block);
-    const uint32_t gridSize =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialGridSize()) : static_cast<uint32_t>(grid.size());
+    const uint32_t rank = GridThreadRank(block);
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t outputIndex = rank; outputIndex < activeN; outputIndex += gridSize) {
-        if (!partitioned || !secondCohort) {
-            output0[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 value0,
-                                                                 plan,
-                                                                 outputIndex,
-                                                                 inputBitOffset0,
-                                                                 coefficientShift0,
-                                                                 residualBitShift0,
-                                                                 negative0);
-        }
-        if (!partitioned || secondCohort) {
-            output1[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 value1,
-                                                                 plan,
-                                                                 outputIndex,
-                                                                 inputBitOffset1,
-                                                                 coefficientShift1,
-                                                                 residualBitShift1,
-                                                                 negative1);
-        }
+        output0[outputIndex] = PackAlignedForwardCoefficient(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             value0,
+                                                             plan,
+                                                             outputIndex,
+                                                             inputBitOffset0,
+                                                             coefficientShift0,
+                                                             residualBitShift0,
+                                                             negative0);
+        output1[outputIndex] = PackAlignedForwardCoefficient(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             value1,
+                                                             plan,
+                                                             outputIndex,
+                                                             inputBitOffset1,
+                                                             coefficientShift1,
+                                                             residualBitShift1,
+                                                             negative1);
     }
-    grid.sync();
+    if constexpr (!HpShark::DebugChecksums)
+        grid.sync();
     StoreReferenceDebugStateBatch<SharkFloatParams>(
         debugStates, grid, block, packedPurpose0, output0, packedPurpose1, output1, activeN);
     NTTRadix2Batch<SharkFloatParams, false, true>(
@@ -4174,59 +3853,52 @@ PackAlignedForwardBatch(cooperative_groups::grid_group &grid,
                         DebugStatePurpose forwardPurpose3)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    const bool partitioned = gridDim.x >= 2u;
-    const bool secondCohort = partitioned && NTT::SpatialCohort() != 0u;
-    const uint32_t rank =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialThreadIndex()) : GridThreadRank(block);
-    const uint32_t gridSize =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialGridSize()) : static_cast<uint32_t>(grid.size());
+    const uint32_t rank = GridThreadRank(block);
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
     for (uint32_t outputIndex = rank; outputIndex < activeN; outputIndex += gridSize) {
-        if (!partitioned || !secondCohort) {
-            output0[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 value0,
-                                                                 plan,
-                                                                 outputIndex,
-                                                                 inputBitOffset0,
-                                                                 coefficientShift0,
-                                                                 residualBitShift0,
-                                                                 negative0);
-            output1[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 value1,
-                                                                 plan,
-                                                                 outputIndex,
-                                                                 inputBitOffset1,
-                                                                 coefficientShift1,
-                                                                 residualBitShift1,
-                                                                 negative1);
-        }
-        if (!partitioned || secondCohort) {
-            output2[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 value2,
-                                                                 plan,
-                                                                 outputIndex,
-                                                                 inputBitOffset2,
-                                                                 coefficientShift2,
-                                                                 residualBitShift2,
-                                                                 negative2);
-            output3[outputIndex] = PackAlignedForwardCoefficient(grid,
-                                                                 block,
-                                                                 debugCombo,
-                                                                 value3,
-                                                                 plan,
-                                                                 outputIndex,
-                                                                 inputBitOffset3,
-                                                                 coefficientShift3,
-                                                                 residualBitShift3,
-                                                                 negative3);
-        }
+        output0[outputIndex] = PackAlignedForwardCoefficient(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             value0,
+                                                             plan,
+                                                             outputIndex,
+                                                             inputBitOffset0,
+                                                             coefficientShift0,
+                                                             residualBitShift0,
+                                                             negative0);
+        output1[outputIndex] = PackAlignedForwardCoefficient(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             value1,
+                                                             plan,
+                                                             outputIndex,
+                                                             inputBitOffset1,
+                                                             coefficientShift1,
+                                                             residualBitShift1,
+                                                             negative1);
+        output2[outputIndex] = PackAlignedForwardCoefficient(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             value2,
+                                                             plan,
+                                                             outputIndex,
+                                                             inputBitOffset2,
+                                                             coefficientShift2,
+                                                             residualBitShift2,
+                                                             negative2);
+        output3[outputIndex] = PackAlignedForwardCoefficient(grid,
+                                                             block,
+                                                             debugCombo,
+                                                             value3,
+                                                             plan,
+                                                             outputIndex,
+                                                             inputBitOffset3,
+                                                             coefficientShift3,
+                                                             residualBitShift3,
+                                                             negative3);
     }
-    grid.sync();
+    if constexpr (!HpShark::DebugChecksums)
+        grid.sync();
     StoreReferenceDebugStateBatch<SharkFloatParams>(debugStates,
                                                     grid,
                                                     block,
@@ -4279,60 +3951,47 @@ AccumulateAlignedOutputSpectra(cooperative_groups::grid_group &grid,
                                bool dzdcP3Enabled)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    const bool partitioned = gridDim.x >= 2u;
-    const bool secondCohort = partitioned && NTT::SpatialCohort() != 0u;
-    const uint32_t rank =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialThreadIndex()) : GridThreadRank(block);
-    const uint32_t gridSize =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialGridSize()) : static_cast<uint32_t>(grid.size());
-    for (uint32_t i = rank; i < activeN; i += gridSize) {
-        if (!partitioned || !secondCohort) {
-            uint64_t real = 0ull;
-            if (realProductEnabled) {
-                const uint64_t sum = AddPSerial(workspace.ZReal[i], workspace.ZImag[i]);
-                const uint64_t difference = SubPSerial(workspace.ZReal[i], workspace.ZImag[i]);
-                real = NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, sum, difference);
-            }
-            workspace.RealOutput[i] = real;
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t i = GridThreadRank(block); i < activeN; i += gridSize) {
+        uint64_t real = 0ull;
+        if (realProductEnabled) {
+            const uint64_t sum = AddPSerial(workspace.ZReal[i], workspace.ZImag[i]);
+            const uint64_t difference = SubPSerial(workspace.ZReal[i], workspace.ZImag[i]);
+            real = NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, sum, difference);
         }
+        workspace.RealOutput[i] = real;
 
-        const bool computeImag =
-            !partitioned || (SharkFloatParams::EnableNewtonRaphson ? !secondCohort : secondCohort);
-        if (computeImag) {
-            uint64_t imag = 0ull;
-            if (imagProductEnabled) {
-                const uint64_t product = NTT::MontgomeryMul<SharkFloatParams>(
-                    grid, block, debugCombo, workspace.ZReal[i], workspace.ZImag[i]);
-                imag = AddPSerial(product, product);
-            }
-            workspace.ImagOutput[i] = imag;
+        uint64_t imag = 0ull;
+        if (imagProductEnabled) {
+            const uint64_t product = NTT::MontgomeryMul<SharkFloatParams>(
+                grid, block, debugCombo, workspace.ZReal[i], workspace.ZImag[i]);
+            imag = AddPSerial(product, product);
         }
+        workspace.ImagOutput[i] = imag;
 
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            if (!partitioned || secondCohort) {
-                uint64_t dzdcReal = 0ull;
-                uint64_t dzdcImag = 0ull;
-                if (dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled) {
-                    const uint64_t p1 = NTT::MontgomeryMul<SharkFloatParams>(
-                        grid, block, debugCombo, workspace.ZReal[i], workspace.DzdcReal[i]);
-                    const uint64_t p2 = NTT::MontgomeryMul<SharkFloatParams>(
-                        grid, block, debugCombo, workspace.ZImag[i], workspace.DzdcImag[i]);
-                    const uint64_t stateSum = AddPSerial(workspace.ZReal[i], workspace.ZImag[i]);
-                    const uint64_t derivativeSum =
-                        AddPSerial(workspace.DzdcReal[i], workspace.DzdcImag[i]);
-                    const uint64_t p3 = NTT::MontgomeryMul<SharkFloatParams>(
-                        grid, block, debugCombo, stateSum, derivativeSum);
-                    const uint64_t realDifference = SubPSerial(p1, p2);
-                    const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
-                    dzdcReal = AddPSerial(realDifference, realDifference);
-                    dzdcImag = AddPSerial(imagDifference, imagDifference);
-                }
-                workspace.DzdcRealOutput[i] = dzdcReal;
-                workspace.DzdcImagOutput[i] = dzdcImag;
+            uint64_t dzdcReal = 0ull;
+            uint64_t dzdcImag = 0ull;
+            if (dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled) {
+                const uint64_t p1 = NTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, workspace.ZReal[i], workspace.DzdcReal[i]);
+                const uint64_t p2 = NTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, workspace.ZImag[i], workspace.DzdcImag[i]);
+                const uint64_t stateSum = AddPSerial(workspace.ZReal[i], workspace.ZImag[i]);
+                const uint64_t derivativeSum = AddPSerial(workspace.DzdcReal[i], workspace.DzdcImag[i]);
+                const uint64_t p3 = NTT::MontgomeryMul<SharkFloatParams>(
+                    grid, block, debugCombo, stateSum, derivativeSum);
+                const uint64_t realDifference = SubPSerial(p1, p2);
+                const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
+                dzdcReal = AddPSerial(realDifference, realDifference);
+                dzdcImag = AddPSerial(imagDifference, imagDifference);
             }
+            workspace.DzdcRealOutput[i] = dzdcReal;
+            workspace.DzdcImagOutput[i] = dzdcImag;
         }
     }
-    grid.sync();
+    if constexpr (!HpShark::DebugChecksums)
+        grid.sync();
 
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         StoreReferenceDebugStateBatch<SharkFloatParams>(debugStates,
@@ -4663,267 +4322,27 @@ ProcessReferenceWarpLocalCenter(cooperative_groups::grid_group &grid,
     }
 }
 
-enum class SpatialPointwiseOperation { Real, Imag, OrbitPair, DerivativePair };
-
-template <class SharkFloatParams, SpatialPointwiseOperation Operation>
-static __device__ SharkForceInlineReleaseOnly void
-ApplySpatialPointwise(cooperative_groups::grid_group &grid,
-                      cooperative_groups::thread_block &block,
-                      DebugGlobalCount<SharkFloatParams> *debugCombo,
-                      bool realProductEnabled,
-                      bool imagProductEnabled,
-                      bool derivativeEnabled,
-                      uint64_t &zReal,
-                      uint64_t &zImag,
-                      uint64_t &dzdcReal,
-                      uint64_t &dzdcImag)
-{
-    const uint64_t zRealInput = zReal;
-    const uint64_t zImagInput = zImag;
-    if constexpr (Operation == SpatialPointwiseOperation::Real ||
-                  Operation == SpatialPointwiseOperation::OrbitPair) {
-        uint64_t real = 0ull;
-        if (realProductEnabled) {
-            const uint64_t sum = AddPSerial(zRealInput, zImagInput);
-            const uint64_t difference = SubPSerial(zRealInput, zImagInput);
-            real = NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, sum, difference);
-        }
-        zReal = real;
-    }
-    if constexpr (Operation == SpatialPointwiseOperation::Imag ||
-                  Operation == SpatialPointwiseOperation::OrbitPair) {
-        uint64_t imag = 0ull;
-        if (imagProductEnabled) {
-            const uint64_t product =
-                NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, zRealInput, zImagInput);
-            imag = AddPSerial(product, product);
-        }
-        zImag = imag;
-    }
-    if constexpr (Operation == SpatialPointwiseOperation::DerivativePair) {
-        const uint64_t dzdcRealInput = dzdcReal;
-        const uint64_t dzdcImagInput = dzdcImag;
-        uint64_t nextDzdcReal = 0ull;
-        uint64_t nextDzdcImag = 0ull;
-        if (derivativeEnabled) {
-            const uint64_t p1 =
-                NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, zRealInput, dzdcRealInput);
-            const uint64_t p2 =
-                NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, zImagInput, dzdcImagInput);
-            const uint64_t stateSum = AddPSerial(zRealInput, zImagInput);
-            const uint64_t derivativeSum = AddPSerial(dzdcRealInput, dzdcImagInput);
-            const uint64_t p3 =
-                NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, stateSum, derivativeSum);
-            const uint64_t realDifference = SubPSerial(p1, p2);
-            const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
-            nextDzdcReal = AddPSerial(realDifference, realDifference);
-            nextDzdcImag = AddPSerial(imagDifference, imagDifference);
-        }
-        dzdcReal = nextDzdcReal;
-        dzdcImag = nextDzdcImag;
-    }
-}
-
-template <class SharkFloatParams, SpatialPointwiseOperation Operation>
-static __device__ SharkForceInlineReleaseOnly void
-ProcessReferenceWarpLocalCenterSpatial(cooperative_groups::grid_group &grid,
-                                       cooperative_groups::thread_block &block,
-                                       DebugGlobalCount<SharkFloatParams> *debugCombo,
-                                       uint64_t *sharedDataA,
-                                       uint64_t *sharedDataB,
-                                       uint64_t *sharedDataC,
-                                       uint64_t *sharedDataD,
-                                       const uint64_t *forwardTwiddles,
-                                       const uint64_t *inverseTwiddles,
-                                       uint32_t len,
-                                       bool realProductEnabled,
-                                       bool imagProductEnabled,
-                                       bool derivativeEnabled)
-{
-    constexpr uint32_t WarpSize = 32u;
-    constexpr uint32_t SubgroupSize = 16u;
-    constexpr uint32_t CoefficientsPerSubgroup = 32u;
-    constexpr uint32_t CoefficientsPerWarp = 64u;
-    constexpr uint32_t WarpLocalStages = 5u;
-    constexpr bool Derivative = Operation == SpatialPointwiseOperation::DerivativePair;
-    constexpr bool Real = Operation == SpatialPointwiseOperation::Real;
-    constexpr bool Imag = Operation == SpatialPointwiseOperation::Imag;
-
-    const uint32_t threadIndex = block.thread_index().x;
-    const uint32_t laneIndex = threadIndex & (WarpSize - 1u);
-    const uint32_t subgroupLane = laneIndex & (SubgroupSize - 1u);
-    const uint32_t subgroupIndex = laneIndex / SubgroupSize;
-    const uint32_t warpIndex = threadIndex / WarpSize;
-    const uint32_t warpsPerBlock = block.size() / WarpSize;
-
-    for (uint32_t warpBase = warpIndex * CoefficientsPerWarp; warpBase < len;
-         warpBase += warpsPerBlock * CoefficientsPerWarp) {
-        const uint32_t groupBase = warpBase + subgroupIndex * CoefficientsPerSubgroup;
-        const uint32_t upperIndex = groupBase + subgroupLane;
-        const uint32_t lowerIndex = upperIndex + SubgroupSize;
-
-        uint64_t aUpper = sharedDataA[upperIndex];
-        uint64_t aLower = sharedDataA[lowerIndex];
-        uint64_t bUpper = sharedDataB[upperIndex];
-        uint64_t bLower = sharedDataB[lowerIndex];
-        uint64_t cUpper = 0ull;
-        uint64_t cLower = 0ull;
-        uint64_t dUpper = 0ull;
-        uint64_t dLower = 0ull;
-        if constexpr (Derivative) {
-            cUpper = sharedDataC[upperIndex];
-            cLower = sharedDataC[lowerIndex];
-            dUpper = sharedDataD[upperIndex];
-            dLower = sharedDataD[lowerIndex];
-        }
-
-        uint64_t twiddle = LoadWarpStageTwiddle(forwardTwiddles, WarpLocalStages, subgroupLane);
-        ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
-        ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
-        if constexpr (Derivative) {
-            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, cUpper, cLower);
-            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, dUpper, dLower);
-        }
-
-        for (uint32_t stage = WarpLocalStages - 1u; stage > 0u; --stage) {
-            const uint32_t shuffleDistance = 1u << (stage - 1u);
-            const bool ownsLowerInput = (subgroupLane & shuffleDistance) != 0u;
-            uint64_t upper = 0ull;
-            uint64_t lower = 0ull;
-            RegroupWarpButterfly(aUpper, aLower, shuffleDistance, ownsLowerInput, upper, lower);
-            aUpper = upper;
-            aLower = lower;
-            RegroupWarpButterfly(bUpper, bLower, shuffleDistance, ownsLowerInput, upper, lower);
-            bUpper = upper;
-            bLower = lower;
-            if constexpr (Derivative) {
-                RegroupWarpButterfly(cUpper, cLower, shuffleDistance, ownsLowerInput, upper, lower);
-                cUpper = upper;
-                cLower = lower;
-                RegroupWarpButterfly(dUpper, dLower, shuffleDistance, ownsLowerInput, upper, lower);
-                dUpper = upper;
-                dLower = lower;
-            }
-
-            twiddle = LoadWarpStageTwiddle(forwardTwiddles, stage, subgroupLane);
-            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
-            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
-            if constexpr (Derivative) {
-                ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, cUpper, cLower);
-                ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, dUpper, dLower);
-            }
-        }
-
-        ApplySpatialPointwise<SharkFloatParams, Operation>(grid,
-                                                           block,
-                                                           debugCombo,
-                                                           realProductEnabled,
-                                                           imagProductEnabled,
-                                                           derivativeEnabled,
-                                                           aUpper,
-                                                           bUpper,
-                                                           cUpper,
-                                                           dUpper);
-        ApplySpatialPointwise<SharkFloatParams, Operation>(grid,
-                                                           block,
-                                                           debugCombo,
-                                                           realProductEnabled,
-                                                           imagProductEnabled,
-                                                           derivativeEnabled,
-                                                           aLower,
-                                                           bLower,
-                                                           cLower,
-                                                           dLower);
-
-        twiddle = LoadWarpStageTwiddle(inverseTwiddles, 1u, subgroupLane);
-        if constexpr (Real) {
-            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
-        } else if constexpr (Imag) {
-            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
-        } else if constexpr (Derivative) {
-            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, cUpper, cLower);
-            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, dUpper, dLower);
-        } else {
-            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
-            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
-        }
-
-        for (uint32_t stage = 2u; stage <= WarpLocalStages; ++stage) {
-            const uint32_t shuffleDistance = 1u << (stage - 2u);
-            const bool ownsLowerInput = (subgroupLane & shuffleDistance) != 0u;
-            uint64_t upper = 0ull;
-            uint64_t lower = 0ull;
-            if constexpr (Real || Operation == SpatialPointwiseOperation::OrbitPair) {
-                RegroupWarpButterfly(aUpper, aLower, shuffleDistance, ownsLowerInput, upper, lower);
-                aUpper = upper;
-                aLower = lower;
-            }
-            if constexpr (Imag || Operation == SpatialPointwiseOperation::OrbitPair) {
-                RegroupWarpButterfly(bUpper, bLower, shuffleDistance, ownsLowerInput, upper, lower);
-                bUpper = upper;
-                bLower = lower;
-            }
-            if constexpr (Derivative) {
-                RegroupWarpButterfly(cUpper, cLower, shuffleDistance, ownsLowerInput, upper, lower);
-                cUpper = upper;
-                cLower = lower;
-                RegroupWarpButterfly(dUpper, dLower, shuffleDistance, ownsLowerInput, upper, lower);
-                dUpper = upper;
-                dLower = lower;
-            }
-
-            twiddle = LoadWarpStageTwiddle(inverseTwiddles, stage, subgroupLane);
-            if constexpr (Real) {
-                ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
-            } else if constexpr (Imag) {
-                ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
-            } else if constexpr (Derivative) {
-                ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, cUpper, cLower);
-                ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, dUpper, dLower);
-            } else {
-                ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, aUpper, aLower);
-                ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, bUpper, bLower);
-            }
-        }
-
-        if constexpr (Real || Operation == SpatialPointwiseOperation::OrbitPair) {
-            sharedDataA[upperIndex] = aUpper;
-            sharedDataA[lowerIndex] = aLower;
-        }
-        if constexpr (Imag || Operation == SpatialPointwiseOperation::OrbitPair) {
-            sharedDataB[upperIndex] = bUpper;
-            sharedDataB[lowerIndex] = bLower;
-        }
-        if constexpr (Derivative) {
-            sharedDataC[upperIndex] = cUpper;
-            sharedDataC[lowerIndex] = cLower;
-            sharedDataD[upperIndex] = dUpper;
-            sharedDataD[lowerIndex] = dLower;
-        }
-    }
-}
-
 template <class SharkFloatParams, NTT::Multiway Mode>
 __device__ SharkForceInlineReleaseOnly void
-FusedAlignedPointwiseTransformFullGrid(cooperative_groups::grid_group &grid,
-                                       cooperative_groups::thread_block &block,
-                                       uint64_t *sharedData,
-                                       DebugGlobalCount<SharkFloatParams> *debugCombo,
-                                       const SharkNTT::Plan &plan,
-                                       const SharkNTT::RootTables &roots,
-                                       uint64_t *input0,
-                                       uint64_t *input1,
-                                       uint64_t *input2,
-                                       uint64_t *input3,
-                                       uint64_t *output0,
-                                       uint64_t *output1,
-                                       uint64_t *output2,
-                                       uint64_t *output3,
-                                       bool realProductEnabled,
-                                       bool imagProductEnabled,
-                                       bool dzdcP1Enabled,
-                                       bool dzdcP2Enabled,
-                                       bool dzdcP3Enabled)
+FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
+                               cooperative_groups::thread_block &block,
+                               uint64_t *sharedData,
+                               DebugGlobalCount<SharkFloatParams> *debugCombo,
+                               const SharkNTT::Plan &plan,
+                               const SharkNTT::RootTables &roots,
+                               uint64_t *input0,
+                               uint64_t *input1,
+                               uint64_t *input2,
+                               uint64_t *input3,
+                               uint64_t *output0,
+                               uint64_t *output1,
+                               uint64_t *output2,
+                               uint64_t *output3,
+                               bool realProductEnabled,
+                               bool imagProductEnabled,
+                               bool dzdcP1Enabled,
+                               bool dzdcP2Enabled,
+                               bool dzdcP3Enabled)
 {
     static_assert(Mode == NTT::Multiway::TwoWay || Mode == NTT::Multiway::FourWay);
     namespace cg = cooperative_groups;
@@ -5128,447 +4547,6 @@ FusedAlignedPointwiseTransformFullGrid(cooperative_groups::grid_group &grid,
             block.sync();
     }
     grid.sync();
-}
-
-template <class SharkFloatParams, NTT::Multiway Mode>
-__device__ SharkForceInlineReleaseOnly void
-FusedAlignedPointwiseTransformSpatial(cooperative_groups::grid_group &grid,
-                                      cooperative_groups::thread_block &block,
-                                      uint64_t *sharedData,
-                                      DebugGlobalCount<SharkFloatParams> *debugCombo,
-                                      const SharkNTT::Plan &plan,
-                                      const SharkNTT::RootTables &roots,
-                                      uint64_t *input0,
-                                      uint64_t *input1,
-                                      uint64_t *input2,
-                                      uint64_t *input3,
-                                      uint64_t *output0,
-                                      uint64_t *output1,
-                                      uint64_t *output2,
-                                      uint64_t *output3,
-                                      bool realProductEnabled,
-                                      bool imagProductEnabled,
-                                      bool dzdcP1Enabled,
-                                      bool dzdcP2Enabled,
-                                      bool dzdcP3Enabled)
-{
-    static_assert(Mode == NTT::Multiway::TwoWay || Mode == NTT::Multiway::FourWay);
-    namespace cg = cooperative_groups;
-
-    constexpr uint32_t TileSizeLog2 = 10u;
-    constexpr uint32_t TileSize = 1u << TileSizeLog2;
-    constexpr uint32_t MaxCachedStages = 7u;
-    constexpr NTT::Multiway ActiveMode =
-        Mode == NTT::Multiway::FourWay ? NTT::Multiway::TwoWay : NTT::Multiway::OneWay;
-    constexpr size_t RequiredSharedBytes =
-        (4u * TileSize + 2u * (1u << MaxCachedStages)) * sizeof(uint64_t);
-    static_assert(RequiredSharedBytes <=
-                  HpShark::CalculateReferenceSharedMemorySize<SharkFloatParams>());
-
-    const bool secondCohort = NTT::SpatialCohort() != 0u;
-    const bool derivativeEnabled = dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled;
-    const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    const uint32_t stages = static_cast<uint32_t>(plan.stages);
-    const uint32_t smallStageCount = stages < TileSizeLog2 ? stages : TileSizeLog2;
-    const uint32_t remainder = activeN & (TileSize - 1u);
-    const uint32_t tailLength = remainder == 0u ? TileSize : remainder;
-    const uint32_t tailStageCapacity = remainder == 0u ? TileSizeLog2 : CountTrailingZeros(tailLength);
-    const uint32_t S1 = smallStageCount < tailStageCapacity ? smallStageCount : tailStageCapacity;
-    const uint32_t cachedStages = S1 < MaxCachedStages ? S1 : MaxCachedStages;
-    const uint32_t cachedTwiddleCount = cachedStages > 0u ? (1u << cachedStages) - 1u : 0u;
-
-    auto *const sharedDataA = sharedData;
-    auto *const sharedDataB = sharedDataA + TileSize;
-    auto *const sharedDataC = sharedDataB + TileSize;
-    auto *const sharedDataD = sharedDataC + TileSize;
-    auto *const forwardTwiddles = sharedDataD + TileSize;
-    auto *const inverseTwiddles = forwardTwiddles + (1u << MaxCachedStages);
-    uint64_t *activeSharedA = sharedDataA;
-    uint64_t *activeSharedB = sharedDataB;
-    uint64_t *activeOutputA = output0;
-    uint64_t *activeOutputB = output1;
-    if constexpr (Mode == NTT::Multiway::TwoWay) {
-        if (secondCohort) {
-            activeSharedA = sharedDataB;
-            activeOutputA = output1;
-        }
-        activeSharedB = nullptr;
-        activeOutputB = nullptr;
-    } else if (secondCohort) {
-        activeSharedA = sharedDataC;
-        activeSharedB = sharedDataD;
-        activeOutputA = output2;
-        activeOutputB = output3;
-    }
-
-    const size_t cachedBytes = static_cast<size_t>(cachedTwiddleCount) * sizeof(uint64_t);
-    const size_t alignedCachedBytes = (cachedBytes + 15u) & ~static_cast<size_t>(15u);
-    if (cachedBytes != 0u) {
-        cg::memcpy_async(block,
-                         forwardTwiddles,
-                         roots.stage_twiddles_fwd,
-                         cuda::aligned_size_t<16>(alignedCachedBytes));
-        cg::memcpy_async(block,
-                         inverseTwiddles,
-                         roots.stage_twiddles_inv,
-                         cuda::aligned_size_t<16>(alignedCachedBytes));
-    }
-    cg::wait(block);
-
-    const uint32_t tileCount = (activeN + TileSize - 1u) / TileSize;
-    const uint32_t tileStride = NTT::SpatialBlockCount();
-    for (uint32_t tile = NTT::SpatialBlockIndex(); tile < tileCount; tile += tileStride) {
-        const bool isLastTile = tile == tileCount - 1u;
-        const bool hasNextTile = tile + tileStride < tileCount;
-        const uint32_t len = isLastTile ? tailLength : TileSize;
-        constexpr uint32_t WarpLocalStages = 5u;
-        constexpr uint32_t CoefficientsPerWarp = 64u;
-        const bool useWarpLocalCenter = S1 > WarpLocalStages &&
-                                        (len & (CoefficientsPerWarp - 1u)) == 0u &&
-                                        (block.size() & 31u) == 0u;
-
-        if constexpr (Mode == NTT::Multiway::TwoWay) {
-            NTT::LoadOneTilePhase1SM<SharkFloatParams, NTT::Multiway::TwoWay>(block,
-                                                                              sharedDataA,
-                                                                              sharedDataB,
-                                                                              nullptr,
-                                                                              nullptr,
-                                                                              input0,
-                                                                              input1,
-                                                                              nullptr,
-                                                                              nullptr,
-                                                                              tile,
-                                                                              TileSize,
-                                                                              len);
-        } else if (!secondCohort) {
-            NTT::LoadOneTilePhase1SM<SharkFloatParams, NTT::Multiway::TwoWay>(block,
-                                                                              sharedDataA,
-                                                                              sharedDataB,
-                                                                              nullptr,
-                                                                              nullptr,
-                                                                              input0,
-                                                                              input1,
-                                                                              nullptr,
-                                                                              nullptr,
-                                                                              tile,
-                                                                              TileSize,
-                                                                              len);
-        } else {
-            NTT::LoadOneTilePhase1SM<SharkFloatParams, NTT::Multiway::FourWay>(block,
-                                                                               sharedDataA,
-                                                                               sharedDataB,
-                                                                               sharedDataC,
-                                                                               sharedDataD,
-                                                                               input0,
-                                                                               input1,
-                                                                               input2,
-                                                                               input3,
-                                                                               tile,
-                                                                               TileSize,
-                                                                               len);
-        }
-        cg::wait(block);
-
-        if constexpr (Mode == NTT::Multiway::TwoWay) {
-            NTT::ProcessLoadedTileDIFInPlace<SharkFloatParams, NTT::Multiway::TwoWay>(
-                block,
-                grid,
-                debugCombo,
-                sharedDataA,
-                sharedDataB,
-                nullptr,
-                nullptr,
-                forwardTwiddles,
-                roots.stage_twiddles_fwd,
-                len,
-                S1,
-                cachedStages,
-                useWarpLocalCenter ? WarpLocalStages : 0u);
-        } else if (!secondCohort) {
-            NTT::ProcessLoadedTileDIFInPlace<SharkFloatParams, NTT::Multiway::TwoWay>(
-                block,
-                grid,
-                debugCombo,
-                sharedDataA,
-                sharedDataB,
-                nullptr,
-                nullptr,
-                forwardTwiddles,
-                roots.stage_twiddles_fwd,
-                len,
-                S1,
-                cachedStages,
-                useWarpLocalCenter ? WarpLocalStages : 0u);
-        } else {
-            NTT::ProcessLoadedTileDIFInPlace<SharkFloatParams, NTT::Multiway::FourWay>(
-                block,
-                grid,
-                debugCombo,
-                sharedDataA,
-                sharedDataB,
-                sharedDataC,
-                sharedDataD,
-                forwardTwiddles,
-                roots.stage_twiddles_fwd,
-                len,
-                S1,
-                cachedStages,
-                useWarpLocalCenter ? WarpLocalStages : 0u);
-        }
-
-        if (useWarpLocalCenter) {
-            if constexpr (Mode == NTT::Multiway::TwoWay) {
-                if (secondCohort) {
-                    ProcessReferenceWarpLocalCenterSpatial<SharkFloatParams,
-                                                           SpatialPointwiseOperation::Imag>(
-                        grid,
-                        block,
-                        debugCombo,
-                        sharedDataA,
-                        sharedDataB,
-                        sharedDataC,
-                        sharedDataD,
-                        forwardTwiddles,
-                        inverseTwiddles,
-                        len,
-                        realProductEnabled,
-                        imagProductEnabled,
-                        false);
-                } else {
-                    ProcessReferenceWarpLocalCenterSpatial<SharkFloatParams,
-                                                           SpatialPointwiseOperation::Real>(
-                        grid,
-                        block,
-                        debugCombo,
-                        sharedDataA,
-                        sharedDataB,
-                        sharedDataC,
-                        sharedDataD,
-                        forwardTwiddles,
-                        inverseTwiddles,
-                        len,
-                        realProductEnabled,
-                        imagProductEnabled,
-                        false);
-                }
-            } else if (secondCohort) {
-                ProcessReferenceWarpLocalCenterSpatial<SharkFloatParams,
-                                                       SpatialPointwiseOperation::DerivativePair>(
-                    grid,
-                    block,
-                    debugCombo,
-                    sharedDataA,
-                    sharedDataB,
-                    sharedDataC,
-                    sharedDataD,
-                    forwardTwiddles,
-                    inverseTwiddles,
-                    len,
-                    realProductEnabled,
-                    imagProductEnabled,
-                    derivativeEnabled);
-            } else {
-                ProcessReferenceWarpLocalCenterSpatial<SharkFloatParams,
-                                                       SpatialPointwiseOperation::OrbitPair>(
-                    grid,
-                    block,
-                    debugCombo,
-                    sharedDataA,
-                    sharedDataB,
-                    sharedDataC,
-                    sharedDataD,
-                    forwardTwiddles,
-                    inverseTwiddles,
-                    len,
-                    realProductEnabled,
-                    imagProductEnabled,
-                    false);
-            }
-            block.sync();
-
-            if (S1 > WarpLocalStages + 1u) {
-                NTT::ProcessLoadedTileDITInPlace<SharkFloatParams, ActiveMode>(block,
-                                                                               grid,
-                                                                               debugCombo,
-                                                                               activeSharedA,
-                                                                               activeSharedB,
-                                                                               nullptr,
-                                                                               nullptr,
-                                                                               inverseTwiddles,
-                                                                               roots.stage_twiddles_inv,
-                                                                               len,
-                                                                               WarpLocalStages + 1u,
-                                                                               S1 - 1u,
-                                                                               cachedStages);
-            }
-            NTT::ProcessLoadedTileDITFinalStageToGlobal<SharkFloatParams, ActiveMode>(
-                block,
-                grid,
-                debugCombo,
-                activeSharedA,
-                activeSharedB,
-                nullptr,
-                nullptr,
-                activeOutputA,
-                activeOutputB,
-                nullptr,
-                nullptr,
-                inverseTwiddles,
-                roots.stage_twiddles_inv,
-                tile * TileSize,
-                len,
-                S1,
-                cachedStages);
-        } else {
-            const uint32_t rank = block.thread_index().x;
-            const uint32_t blockSize = block.size();
-            for (uint32_t i = rank; i < len; i += blockSize) {
-                uint64_t &zRealValue = sharedDataA[i];
-                uint64_t &zImagValue = sharedDataB[i];
-                uint64_t &dzdcRealValue = sharedDataC[i];
-                uint64_t &dzdcImagValue = sharedDataD[i];
-                if constexpr (Mode == NTT::Multiway::TwoWay) {
-                    if (secondCohort) {
-                        ApplySpatialPointwise<SharkFloatParams, SpatialPointwiseOperation::Imag>(
-                            grid,
-                            block,
-                            debugCombo,
-                            realProductEnabled,
-                            imagProductEnabled,
-                            false,
-                            zRealValue,
-                            zImagValue,
-                            dzdcRealValue,
-                            dzdcImagValue);
-                    } else {
-                        ApplySpatialPointwise<SharkFloatParams, SpatialPointwiseOperation::Real>(
-                            grid,
-                            block,
-                            debugCombo,
-                            realProductEnabled,
-                            imagProductEnabled,
-                            false,
-                            zRealValue,
-                            zImagValue,
-                            dzdcRealValue,
-                            dzdcImagValue);
-                    }
-                } else if (secondCohort) {
-                    ApplySpatialPointwise<SharkFloatParams, SpatialPointwiseOperation::DerivativePair>(
-                        grid,
-                        block,
-                        debugCombo,
-                        realProductEnabled,
-                        imagProductEnabled,
-                        derivativeEnabled,
-                        zRealValue,
-                        zImagValue,
-                        dzdcRealValue,
-                        dzdcImagValue);
-                } else {
-                    ApplySpatialPointwise<SharkFloatParams, SpatialPointwiseOperation::OrbitPair>(
-                        grid,
-                        block,
-                        debugCombo,
-                        realProductEnabled,
-                        imagProductEnabled,
-                        false,
-                        zRealValue,
-                        zImagValue,
-                        dzdcRealValue,
-                        dzdcImagValue);
-                }
-            }
-            block.sync();
-
-            NTT::ProcessLoadedTileDITInPlace<SharkFloatParams, ActiveMode>(block,
-                                                                           grid,
-                                                                           debugCombo,
-                                                                           activeSharedA,
-                                                                           activeSharedB,
-                                                                           nullptr,
-                                                                           nullptr,
-                                                                           inverseTwiddles,
-                                                                           roots.stage_twiddles_inv,
-                                                                           len,
-                                                                           1u,
-                                                                           S1,
-                                                                           cachedStages);
-            for (uint32_t i = rank; i < len; i += blockSize) {
-                activeOutputA[tile * TileSize + i] = activeSharedA[i];
-                if constexpr (ActiveMode == NTT::Multiway::TwoWay)
-                    activeOutputB[tile * TileSize + i] = activeSharedB[i];
-            }
-        }
-        if (hasNextTile)
-            block.sync();
-    }
-    grid.sync();
-}
-
-template <class SharkFloatParams, NTT::Multiway Mode>
-__device__ SharkForceInlineReleaseOnly void
-FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
-                               cooperative_groups::thread_block &block,
-                               uint64_t *sharedData,
-                               DebugGlobalCount<SharkFloatParams> *debugCombo,
-                               const SharkNTT::Plan &plan,
-                               const SharkNTT::RootTables &roots,
-                               uint64_t *input0,
-                               uint64_t *input1,
-                               uint64_t *input2,
-                               uint64_t *input3,
-                               uint64_t *output0,
-                               uint64_t *output1,
-                               uint64_t *output2,
-                               uint64_t *output3,
-                               bool realProductEnabled,
-                               bool imagProductEnabled,
-                               bool dzdcP1Enabled,
-                               bool dzdcP2Enabled,
-                               bool dzdcP3Enabled)
-{
-    if (gridDim.x == 1u) {
-        FusedAlignedPointwiseTransformFullGrid<SharkFloatParams, Mode>(grid,
-                                                                       block,
-                                                                       sharedData,
-                                                                       debugCombo,
-                                                                       plan,
-                                                                       roots,
-                                                                       input0,
-                                                                       input1,
-                                                                       input2,
-                                                                       input3,
-                                                                       output0,
-                                                                       output1,
-                                                                       output2,
-                                                                       output3,
-                                                                       realProductEnabled,
-                                                                       imagProductEnabled,
-                                                                       dzdcP1Enabled,
-                                                                       dzdcP2Enabled,
-                                                                       dzdcP3Enabled);
-    } else {
-        FusedAlignedPointwiseTransformSpatial<SharkFloatParams, Mode>(grid,
-                                                                      block,
-                                                                      sharedData,
-                                                                      debugCombo,
-                                                                      plan,
-                                                                      roots,
-                                                                      input0,
-                                                                      input1,
-                                                                      input2,
-                                                                      input3,
-                                                                      output0,
-                                                                      output1,
-                                                                      output2,
-                                                                      output3,
-                                                                      realProductEnabled,
-                                                                      imagProductEnabled,
-                                                                      dzdcP1Enabled,
-                                                                      dzdcP2Enabled,
-                                                                      dzdcP3Enabled);
-    }
 }
 
 template <class IntT>
@@ -5814,12 +4792,8 @@ UnpackAlignedResiduesToSignedLimbsOne(cooperative_groups::grid_group &grid,
     }
 
     const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
-    const bool partitioned = gridDim.x >= 2u;
-    const uint32_t gridSize =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialGridSize()) : static_cast<uint32_t>(grid.size());
-    const uint32_t rank =
-        partitioned ? static_cast<uint32_t>(NTT::SpatialThreadIndex()) : GridThreadRank(block);
-    for (uint32_t limbIndex = rank; limbIndex < limbCount; limbIndex += gridSize) {
+    const uint32_t gridSize = static_cast<uint32_t>(grid.size());
+    for (uint32_t limbIndex = GridThreadRank(block); limbIndex < limbCount; limbIndex += gridSize) {
         limbs[limbIndex] =
             UnpackAlignedResidueLimbContribution<SharkFloatParams,
                                                  Mode == AlignedUnpackMode::NormalizedMontgomery>(
@@ -5861,36 +4835,32 @@ UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         int64_t *limbs1,
                                         uint32_t limbCount)
 {
-    if (gridDim.x == 1u || NTT::SpatialCohort() == 0u) {
-        UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
-                                                                      block,
-                                                                      debugCombo,
-                                                                      spectrum0,
-                                                                      plan,
-                                                                      roots,
-                                                                      coefficientCount0,
-                                                                      productBitOffset0,
-                                                                      linearValue0,
-                                                                      linearInputBitOffset0,
-                                                                      linearBitOffset0,
-                                                                      limbs0,
-                                                                      limbCount);
-    }
-    if (gridDim.x == 1u || NTT::SpatialCohort() != 0u) {
-        UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
-                                                                      block,
-                                                                      debugCombo,
-                                                                      spectrum1,
-                                                                      plan,
-                                                                      roots,
-                                                                      coefficientCount1,
-                                                                      productBitOffset1,
-                                                                      linearValue1,
-                                                                      linearInputBitOffset1,
-                                                                      linearBitOffset1,
-                                                                      limbs1,
-                                                                      limbCount);
-    }
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum0,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount0,
+                                                                  productBitOffset0,
+                                                                  linearValue0,
+                                                                  linearInputBitOffset0,
+                                                                  linearBitOffset0,
+                                                                  limbs0,
+                                                                  limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum1,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount1,
+                                                                  productBitOffset1,
+                                                                  linearValue1,
+                                                                  linearInputBitOffset1,
+                                                                  linearBitOffset1,
+                                                                  limbs1,
+                                                                  limbCount);
 }
 
 template <class SharkFloatParams, AlignedUnpackMode Mode>
@@ -5930,62 +4900,58 @@ UnpackAlignedResiduesToSignedLimbsBatch(cooperative_groups::grid_group &grid,
                                         int64_t *limbs3,
                                         uint32_t limbCount)
 {
-    if (gridDim.x == 1u || NTT::SpatialCohort() == 0u) {
-        UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
-                                                                      block,
-                                                                      debugCombo,
-                                                                      spectrum0,
-                                                                      plan,
-                                                                      roots,
-                                                                      coefficientCount0,
-                                                                      productBitOffset0,
-                                                                      linearValue0,
-                                                                      linearInputBitOffset0,
-                                                                      linearBitOffset0,
-                                                                      limbs0,
-                                                                      limbCount);
-        UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
-                                                                      block,
-                                                                      debugCombo,
-                                                                      spectrum1,
-                                                                      plan,
-                                                                      roots,
-                                                                      coefficientCount1,
-                                                                      productBitOffset1,
-                                                                      linearValue1,
-                                                                      linearInputBitOffset1,
-                                                                      linearBitOffset1,
-                                                                      limbs1,
-                                                                      limbCount);
-    }
-    if (gridDim.x == 1u || NTT::SpatialCohort() != 0u) {
-        UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
-                                                                      block,
-                                                                      debugCombo,
-                                                                      spectrum2,
-                                                                      plan,
-                                                                      roots,
-                                                                      coefficientCount2,
-                                                                      productBitOffset2,
-                                                                      linearValue2,
-                                                                      linearInputBitOffset2,
-                                                                      linearBitOffset2,
-                                                                      limbs2,
-                                                                      limbCount);
-        UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
-                                                                      block,
-                                                                      debugCombo,
-                                                                      spectrum3,
-                                                                      plan,
-                                                                      roots,
-                                                                      coefficientCount3,
-                                                                      productBitOffset3,
-                                                                      linearValue3,
-                                                                      linearInputBitOffset3,
-                                                                      linearBitOffset3,
-                                                                      limbs3,
-                                                                      limbCount);
-    }
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum0,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount0,
+                                                                  productBitOffset0,
+                                                                  linearValue0,
+                                                                  linearInputBitOffset0,
+                                                                  linearBitOffset0,
+                                                                  limbs0,
+                                                                  limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum1,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount1,
+                                                                  productBitOffset1,
+                                                                  linearValue1,
+                                                                  linearInputBitOffset1,
+                                                                  linearBitOffset1,
+                                                                  limbs1,
+                                                                  limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum2,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount2,
+                                                                  productBitOffset2,
+                                                                  linearValue2,
+                                                                  linearInputBitOffset2,
+                                                                  linearBitOffset2,
+                                                                  limbs2,
+                                                                  limbCount);
+    UnpackAlignedResiduesToSignedLimbsOne<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  spectrum3,
+                                                                  plan,
+                                                                  roots,
+                                                                  coefficientCount3,
+                                                                  productBitOffset3,
+                                                                  linearValue3,
+                                                                  linearInputBitOffset3,
+                                                                  linearBitOffset3,
+                                                                  limbs3,
+                                                                  limbCount);
 }
 
 static __device__ SharkForceInlineReleaseOnly uint64_t
@@ -6622,7 +5588,8 @@ InverseAlignedSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
         linearBitOffset1,
         limbs1,
         limbCount);
-    grid.sync();
+    if constexpr (!HpShark::DebugChecksums)
+        grid.sync();
     StoreReferenceDebugStateBatch<SharkFloatParams>(debugStates,
                                                     grid,
                                                     block,
@@ -6723,7 +5690,8 @@ InverseAlignedSpectraToSignedLimbsBatch(cooperative_groups::grid_group &grid,
         linearBitOffset3,
         limbs3,
         limbCount);
-    grid.sync();
+    if constexpr (!HpShark::DebugChecksums)
+        grid.sync();
     StoreReferenceDebugStateBatch<SharkFloatParams>(debugStates,
                                                     grid,
                                                     block,

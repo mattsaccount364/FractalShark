@@ -1491,6 +1491,121 @@ GridThreadRank()
     return threadIdx.x + blockIdx.x * blockDim.x;
 }
 
+struct CohortBarrierContext {
+    uint32_t *m_ArrivalCount;
+    uint64_t *m_PublishedGeneration;
+    uint64_t m_NextGeneration;
+};
+
+static __device__ CohortBarrierContext
+InitializeCohortBarriers(cooperative_groups::grid_group &grid,
+                         cooperative_groups::thread_block &block,
+                         uint64_t *tempData)
+{
+    uint32_t *const syncData =
+        reinterpret_cast<uint32_t *>(&tempData[HpShark::AdditionalGlobalSyncSpaceOffset]);
+    if (GridThreadRank(block) == 0u) {
+        syncData[HpShark::CohortBarrierArrivalOffsetUInt32] = 0u;
+        *reinterpret_cast<uint64_t *>(syncData + HpShark::CohortBarrierGenerationOffsetUInt32) = 0ull;
+        syncData[HpShark::CohortBarrierStrideUInt32 + HpShark::CohortBarrierArrivalOffsetUInt32] = 0u;
+        *reinterpret_cast<uint64_t *>(syncData + HpShark::CohortBarrierStrideUInt32 +
+                                      HpShark::CohortBarrierGenerationOffsetUInt32) = 0ull;
+    }
+    grid.sync();
+
+    const uint32_t cohort = gridDim.x >= 2u ? blockIdx.x & 1u : 0u;
+    uint32_t *const cohortData = syncData + cohort * HpShark::CohortBarrierStrideUInt32;
+    return {cohortData + HpShark::CohortBarrierArrivalOffsetUInt32,
+            reinterpret_cast<uint64_t *>(cohortData + HpShark::CohortBarrierGenerationOffsetUInt32),
+            0ull};
+}
+
+static __device__ SharkForceInlineReleaseOnly void
+CohortSync(cooperative_groups::thread_block &block, CohortBarrierContext &context)
+{
+    __threadfence();
+    block.sync();
+    ++context.m_NextGeneration;
+    if (gridDim.x == 1u)
+        return;
+
+    if (block.thread_index().x == 0u) {
+        cuda::atomic_ref<uint32_t, cuda::thread_scope_device> arrivalCount(*context.m_ArrivalCount);
+        cuda::atomic_ref<uint64_t, cuda::thread_scope_device> publishedGeneration(
+            *context.m_PublishedGeneration);
+        const uint32_t arrival = arrivalCount.fetch_add(1u, cuda::memory_order_acq_rel) + 1u;
+        if (arrival == NTT::CohortBlockCount()) {
+            arrivalCount.store(0u, cuda::memory_order_relaxed);
+            publishedGeneration.store(context.m_NextGeneration, cuda::memory_order_release);
+        } else {
+            while (publishedGeneration.load(cuda::memory_order_acquire) != context.m_NextGeneration) {
+            }
+        }
+    }
+    block.sync();
+}
+
+template <class SharkFloatParams, class ArrayType>
+static __device__ SharkForceInlineReleaseOnly void
+StoreCurrentCohortDebugState(DebugState<SharkFloatParams> *debugStates,
+                             cooperative_groups::thread_block &block,
+                             DebugStatePurpose purpose,
+                             const ArrayType *arrayToChecksum,
+                             size_t arraySize)
+{
+    static_assert(sizeof(ArrayType) % sizeof(uint32_t) == 0u);
+    if (NTT::CohortBlockIndex() != 0u || block.thread_index().x != 0u)
+        return;
+
+    using State = DebugState<SharkFloatParams>;
+    const uint64_t wordCount = arraySize * sizeof(ArrayType) / sizeof(uint32_t);
+    const typename State::F64Pair checksum = State::fletcher64_chunk_words(
+        reinterpret_cast<const uint32_t *>(arrayToChecksum), 0u, wordCount, {0u, 0u});
+    DebugStateRaw &data = debugStates[static_cast<int32_t>(purpose)].Data;
+    data.Initialized = 1;
+    data.Checksum = State::pack_crc(checksum);
+    data.Block = block.group_index().x;
+    data.Thread = block.thread_index().x;
+    data.ArraySize = arraySize;
+    data.ChecksumPurpose = purpose;
+    data.RecursionDepth = 0;
+    data.CallIndex = 0;
+    data.Convolution = UseConvolution::No;
+}
+
+template <class SharkFloatParams, class ArrayType>
+static __device__ SharkForceInlineReleaseOnly void
+StoreReferenceCohortDebugState(DebugState<SharkFloatParams> *debugStates,
+                               cooperative_groups::thread_block &block,
+                               CohortBarrierContext &cohortBarrier,
+                               DebugStatePurpose purpose,
+                               const ArrayType *array,
+                               size_t arraySize)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        StoreCurrentCohortDebugState(debugStates, block, purpose, array, arraySize);
+        CohortSync(block, cohortBarrier);
+    }
+}
+
+template <class SharkFloatParams, class ArrayType>
+static __device__ SharkForceInlineReleaseOnly void
+StoreReferenceCohortDebugStatePair(DebugState<SharkFloatParams> *debugStates,
+                                   cooperative_groups::thread_block &block,
+                                   CohortBarrierContext &cohortBarrier,
+                                   DebugStatePurpose purpose0,
+                                   const ArrayType *array0,
+                                   DebugStatePurpose purpose1,
+                                   const ArrayType *array1,
+                                   size_t arraySize)
+{
+    if constexpr (HpShark::DebugChecksums) {
+        StoreCurrentCohortDebugState(debugStates, block, purpose0, array0, arraySize);
+        StoreCurrentCohortDebugState(debugStates, block, purpose1, array1, arraySize);
+        CohortSync(block, cohortBarrier);
+    }
+}
+
 // The producer phase must publish all input arrays with grid.sync() before this checkpoint.
 template <class SharkFloatParams, class ArrayType>
 __device__ void
@@ -2085,39 +2200,131 @@ PackAlignedForwardCoefficientScaled(const HpSharkFloat<SharkFloatParams> *value,
 }
 
 template <class SharkFloatParams>
-static __device__ __noinline__ void
-PackForwardOne(const SharkNTT::Plan &plan,
-               DebugGlobalCount<SharkFloatParams> *debugCombo,
-               uint64_t inputScaleR,
-               const HpSharkFloat<SharkFloatParams> *value,
-               uint64_t *output,
-               uint32_t inputBitOffset,
-               uint32_t coefficientShift,
-               uint32_t residualBitShift)
+static __device__ SharkForceInlineReleaseOnly uint64_t
+PackForwardCoefficient(const SharkNTT::Plan &plan,
+                       DebugGlobalCount<SharkFloatParams> *debugCombo,
+                       uint64_t inputScaleR,
+                       const HpSharkFloat<SharkFloatParams> *value,
+                       uint32_t outputIndex,
+                       uint32_t inputBitOffset,
+                       uint32_t coefficientShift,
+                       uint32_t residualBitShift)
 {
-    const uint32_t cohortBlockIndex = gridDim.x >= 2u ? blockIdx.x >> 1u : 0u;
-    const size_t threadIndex = static_cast<size_t>(cohortBlockIndex) * blockDim.x + threadIdx.x;
-    const size_t gridSize = NTT::CohortGridSize();
-    const uint32_t transformSize = static_cast<uint32_t>(plan.N);
-    for (size_t index = threadIndex; index < transformSize; index += gridSize) {
-        if (plan.b == 16u) {
-            output[index] = PackAlignedForwardCoefficientScaled(value,
-                                                                plan,
-                                                                inputScaleR,
-                                                                static_cast<uint32_t>(index),
-                                                                inputBitOffset,
-                                                                coefficientShift,
-                                                                residualBitShift);
-        } else {
-            output[index] = PackAlignedForwardCoefficient<SharkFloatParams>(debugCombo,
-                                                                            value,
-                                                                            plan,
-                                                                            static_cast<uint32_t>(index),
-                                                                            inputBitOffset,
-                                                                            coefficientShift,
-                                                                            residualBitShift);
-        }
+    if (plan.b == 16u) {
+        return PackAlignedForwardCoefficientScaled(
+            value, plan, inputScaleR, outputIndex, inputBitOffset, coefficientShift, residualBitShift);
     }
+    return PackAlignedForwardCoefficient<SharkFloatParams>(
+        debugCombo, value, plan, outputIndex, inputBitOffset, coefficientShift, residualBitShift);
+}
+
+template <class SharkFloatParams>
+static __device__ __noinline__ void
+PackForwardRadix4One(const SharkNTT::Plan &plan,
+                     DebugGlobalCount<SharkFloatParams> *debugCombo,
+                     uint64_t inputScaleR,
+                     const HpSharkFloat<SharkFloatParams> *value,
+                     uint64_t *output,
+                     const uint64_t *stageTwiddles,
+                     uint32_t inputBitOffset,
+                     uint32_t coefficientShift,
+                     uint32_t residualBitShift)
+{
+    const uint32_t firstStageIndex = static_cast<uint32_t>(plan.stages);
+    const uint32_t firstHalfSpan = 1u << (firstStageIndex - 1u);
+    const uint32_t secondHalfSpan = firstHalfSpan >> 1u;
+    const uint64_t *firstStageTwiddles = stageTwiddles + firstHalfSpan - 1u;
+    const uint64_t *secondStageTwiddles = stageTwiddles + secondHalfSpan - 1u;
+    const size_t threadIndex = NTT::CohortThreadIndex();
+    const size_t gridSize = NTT::CohortGridSize();
+    for (size_t task = threadIndex; task < secondHalfSpan; task += gridSize) {
+        const uint32_t j = static_cast<uint32_t>(task);
+        const uint32_t index0 = j;
+        const uint32_t index1 = j + secondHalfSpan;
+        const uint32_t index2 = j + firstHalfSpan;
+        const uint32_t index3 = index2 + secondHalfSpan;
+        const uint64_t value0 = PackForwardCoefficient(plan,
+                                                       debugCombo,
+                                                       inputScaleR,
+                                                       value,
+                                                       index0,
+                                                       inputBitOffset,
+                                                       coefficientShift,
+                                                       residualBitShift);
+        const uint64_t value1 = PackForwardCoefficient(plan,
+                                                       debugCombo,
+                                                       inputScaleR,
+                                                       value,
+                                                       index1,
+                                                       inputBitOffset,
+                                                       coefficientShift,
+                                                       residualBitShift);
+        const uint64_t value2 = PackForwardCoefficient(plan,
+                                                       debugCombo,
+                                                       inputScaleR,
+                                                       value,
+                                                       index2,
+                                                       inputBitOffset,
+                                                       coefficientShift,
+                                                       residualBitShift);
+        const uint64_t value3 = PackForwardCoefficient(plan,
+                                                       debugCombo,
+                                                       inputScaleR,
+                                                       value,
+                                                       index3,
+                                                       inputBitOffset,
+                                                       coefficientShift,
+                                                       residualBitShift);
+        const uint64_t firstValue0 = NTT::AddP(value0, value2);
+        const uint64_t firstValue1 = NTT::AddP(value1, value3);
+        const uint64_t firstProduct0 =
+            NTT::MontgomeryMul(debugCombo, NTT::SubP(value0, value2), firstStageTwiddles[j]);
+        const uint64_t firstProduct1 = NTT::MontgomeryMul(
+            debugCombo, NTT::SubP(value1, value3), firstStageTwiddles[j + secondHalfSpan]);
+        output[index0] = NTT::AddP(firstValue0, firstValue1);
+        output[index1] =
+            NTT::MontgomeryMul(debugCombo, NTT::SubP(firstValue0, firstValue1), secondStageTwiddles[j]);
+        output[index2] = NTT::AddP(firstProduct0, firstProduct1);
+        output[index3] = NTT::MontgomeryMul(
+            debugCombo, NTT::SubP(firstProduct0, firstProduct1), secondStageTwiddles[j]);
+    }
+}
+
+template <class SharkFloatParams>
+static __device__ __noinline__ void
+PackForwardRadix4Two(const SharkNTT::Plan &plan,
+                     DebugGlobalCount<SharkFloatParams> *debugCombo,
+                     uint64_t inputScaleR,
+                     const HpSharkFloat<SharkFloatParams> *valueA,
+                     uint64_t *outputA,
+                     uint32_t inputBitOffsetA,
+                     uint32_t coefficientShiftA,
+                     uint32_t residualBitShiftA,
+                     const HpSharkFloat<SharkFloatParams> *valueB,
+                     uint64_t *outputB,
+                     uint32_t inputBitOffsetB,
+                     uint32_t coefficientShiftB,
+                     uint32_t residualBitShiftB,
+                     const uint64_t *stageTwiddles)
+{
+    PackForwardRadix4One(plan,
+                         debugCombo,
+                         inputScaleR,
+                         valueA,
+                         outputA,
+                         stageTwiddles,
+                         inputBitOffsetA,
+                         coefficientShiftA,
+                         residualBitShiftA);
+    PackForwardRadix4One(plan,
+                         debugCombo,
+                         inputScaleR,
+                         valueB,
+                         outputB,
+                         stageTwiddles,
+                         inputBitOffsetB,
+                         coefficientShiftB,
+                         residualBitShiftB);
 }
 
 static __device__ __noinline__ void
@@ -4864,6 +5071,7 @@ template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
                                   cooperative_groups::thread_block &block,
+                                  CohortBarrierContext &cohortBarrier,
                                   uint64_t *sharedData,
                                   DebugGlobalCount<SharkFloatParams> *debugCombo,
                                   DebugState<SharkFloatParams> *debugStates,
@@ -4911,56 +5119,77 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
     const uint32_t tileSizeLog2 = NTT::SelectTileSizeLog2(transformSize, 12u);
     const bool useFusedInversePointwise = !HpShark::DebugChecksums;
 
+    MattsCudaAssert(stageCount >= 2u);
     if (gridDim.x == 1u) {
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &zReal,
-                       workspace.ZReal,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.ZRealCoefficientShift,
-                       iterationPlan.ZRealResidualBitShift);
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &zImag,
-                       workspace.ZImag,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.ZImagCoefficientShift,
-                       iterationPlan.ZImagResidualBitShift);
+        PackForwardRadix4One(plan,
+                             debugCombo,
+                             roots.InputScaleR,
+                             &zReal,
+                             workspace.ZReal,
+                             roots.stage_twiddles_fwd,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.ZRealCoefficientShift,
+                             iterationPlan.ZRealResidualBitShift);
+        PackForwardRadix4One(plan,
+                             debugCombo,
+                             roots.InputScaleR,
+                             &zImag,
+                             workspace.ZImag,
+                             roots.stage_twiddles_fwd,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.ZImagCoefficientShift,
+                             iterationPlan.ZImagResidualBitShift);
     } else if ((blockIdx.x & 1u) == 0u) {
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &zReal,
-                       workspace.ZReal,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.ZRealCoefficientShift,
-                       iterationPlan.ZRealResidualBitShift);
+        PackForwardRadix4One(plan,
+                             debugCombo,
+                             roots.InputScaleR,
+                             &zReal,
+                             workspace.ZReal,
+                             roots.stage_twiddles_fwd,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.ZRealCoefficientShift,
+                             iterationPlan.ZRealResidualBitShift);
     } else {
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &zImag,
-                       workspace.ZImag,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.ZImagCoefficientShift,
-                       iterationPlan.ZImagResidualBitShift);
+        PackForwardRadix4One(plan,
+                             debugCombo,
+                             roots.InputScaleR,
+                             &zImag,
+                             workspace.ZImag,
+                             roots.stage_twiddles_fwd,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.ZImagCoefficientShift,
+                             iterationPlan.ZImagResidualBitShift);
     }
-    grid.sync();
+    CohortSync(block, cohortBarrier);
 
     if constexpr (HpShark::DebugChecksums) {
-        StoreReferenceDebugStateBatchAfterSync<SharkFloatParams>(debugStates,
-                                                                 grid,
+        if (gridDim.x == 1u) {
+            StoreReferenceCohortDebugStatePair<SharkFloatParams>(debugStates,
                                                                  block,
+                                                                 cohortBarrier,
                                                                  DebugStatePurpose::Z0XX,
                                                                  workspace.ZReal,
                                                                  DebugStatePurpose::Z0YY,
                                                                  workspace.ZImag,
                                                                  transformSize);
+        } else if ((blockIdx.x & 1u) == 0u) {
+            StoreReferenceCohortDebugState<SharkFloatParams>(debugStates,
+                                                             block,
+                                                             cohortBarrier,
+                                                             DebugStatePurpose::Z0XX,
+                                                             workspace.ZReal,
+                                                             transformSize);
+        } else {
+            StoreReferenceCohortDebugState<SharkFloatParams>(debugStates,
+                                                             block,
+                                                             cohortBarrier,
+                                                             DebugStatePurpose::Z0YY,
+                                                             workspace.ZImag,
+                                                             transformSize);
+        }
     }
 
-    uint32_t forwardStage = stageCount;
+    uint32_t forwardStage = stageCount - 2u;
     while (forwardStage > tileSizeLog2 + 1u) {
         if (gridDim.x == 1u) {
             NTT::ForwardRadix4One(
@@ -4974,7 +5203,7 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
             NTT::ForwardRadix4One(
                 debugCombo, workspace.ZImag, roots.stage_twiddles_fwd, transformSize, forwardStage);
         }
-        grid.sync();
+        CohortSync(block, cohortBarrier);
         forwardStage -= 2u;
     }
     if (forwardStage > tileSizeLog2) {
@@ -4990,7 +5219,8 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
             NTT::ForwardRadix2One(
                 debugCombo, workspace.ZImag, roots.stage_twiddles_fwd, transformSize, forwardStage);
         }
-        grid.sync();
+        CohortSync(block, cohortBarrier);
+        --forwardStage;
     }
     if (gridDim.x == 1u) {
         NTT::ForwardTileOneSelected(debugCombo,
@@ -4998,7 +5228,7 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
                                     workspace.ZReal,
                                     roots.stage_twiddles_fwd,
                                     transformSize,
-                                    stageCount,
+                                    forwardStage,
                                     tileSizeLog2);
         block.sync();
         NTT::ForwardTileOneSelected(debugCombo,
@@ -5006,7 +5236,7 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
                                     workspace.ZImag,
                                     roots.stage_twiddles_fwd,
                                     transformSize,
-                                    stageCount,
+                                    forwardStage,
                                     tileSizeLog2);
     } else if ((blockIdx.x & 1u) == 0u) {
         NTT::ForwardTileOneSelected(debugCombo,
@@ -5014,7 +5244,7 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
                                     workspace.ZReal,
                                     roots.stage_twiddles_fwd,
                                     transformSize,
-                                    stageCount,
+                                    forwardStage,
                                     tileSizeLog2);
     } else {
         NTT::ForwardTileOneSelected(debugCombo,
@@ -5022,7 +5252,7 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
                                     workspace.ZImag,
                                     roots.stage_twiddles_fwd,
                                     transformSize,
-                                    stageCount,
+                                    forwardStage,
                                     tileSizeLog2);
     }
     grid.sync();
@@ -5216,7 +5446,7 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
                                   transformSize,
                                   inverseStage + 1u);
         }
-        grid.sync();
+        CohortSync(block, cohortBarrier);
         inverseStage += 2u;
     }
     if (inverseStage <= stageCount) {
@@ -5232,7 +5462,7 @@ ExecuteReferenceIterationNonNrNtt(cooperative_groups::grid_group &grid,
             NTT::InverseRadix2One(
                 debugCombo, workspace.ImagOutput, roots.stage_twiddles_inv, transformSize, inverseStage);
         }
-        grid.sync();
+        CohortSync(block, cohortBarrier);
     }
 
     if constexpr (HpShark::DebugChecksums) {
@@ -5315,6 +5545,7 @@ template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                cooperative_groups::thread_block &block,
+                               CohortBarrierContext &cohortBarrier,
                                uint64_t *sharedData,
                                DebugGlobalCount<SharkFloatParams> *debugCombo,
                                DebugState<SharkFloatParams> *debugStates,
@@ -5375,92 +5606,102 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
     const uint32_t tileSizeLog2 = NTT::SelectTileSizeLog2(transformSize, 11u);
     const bool useFusedInversePointwise = !HpShark::DebugChecksums;
 
+    MattsCudaAssert(stageCount >= 2u);
     if (gridDim.x == 1u) {
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &zReal,
-                       workspace.ZReal,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.ZRealCoefficientShift,
-                       iterationPlan.ZRealResidualBitShift);
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &zImag,
-                       workspace.ZImag,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.ZImagCoefficientShift,
-                       iterationPlan.ZImagResidualBitShift);
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &combo->DzdcReal,
-                       workspace.DzdcReal,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.DzdcRealCoefficientShift,
-                       iterationPlan.DzdcRealResidualBitShift);
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &combo->DzdcImag,
-                       workspace.DzdcImag,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.DzdcImagCoefficientShift,
-                       iterationPlan.DzdcImagResidualBitShift);
+        PackForwardRadix4Two(plan,
+                             debugCombo,
+                             roots.InputScaleR,
+                             &zReal,
+                             workspace.ZReal,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.ZRealCoefficientShift,
+                             iterationPlan.ZRealResidualBitShift,
+                             &zImag,
+                             workspace.ZImag,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.ZImagCoefficientShift,
+                             iterationPlan.ZImagResidualBitShift,
+                             roots.stage_twiddles_fwd);
+        PackForwardRadix4Two(plan,
+                             debugCombo,
+                             roots.InputScaleR,
+                             &combo->DzdcReal,
+                             workspace.DzdcReal,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.DzdcRealCoefficientShift,
+                             iterationPlan.DzdcRealResidualBitShift,
+                             &combo->DzdcImag,
+                             workspace.DzdcImag,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.DzdcImagCoefficientShift,
+                             iterationPlan.DzdcImagResidualBitShift,
+                             roots.stage_twiddles_fwd);
     } else if ((blockIdx.x & 1u) == 0u) {
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &zReal,
-                       workspace.ZReal,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.ZRealCoefficientShift,
-                       iterationPlan.ZRealResidualBitShift);
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &zImag,
-                       workspace.ZImag,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.ZImagCoefficientShift,
-                       iterationPlan.ZImagResidualBitShift);
+        PackForwardRadix4Two(plan,
+                             debugCombo,
+                             roots.InputScaleR,
+                             &zReal,
+                             workspace.ZReal,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.ZRealCoefficientShift,
+                             iterationPlan.ZRealResidualBitShift,
+                             &zImag,
+                             workspace.ZImag,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.ZImagCoefficientShift,
+                             iterationPlan.ZImagResidualBitShift,
+                             roots.stage_twiddles_fwd);
     } else {
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &combo->DzdcReal,
-                       workspace.DzdcReal,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.DzdcRealCoefficientShift,
-                       iterationPlan.DzdcRealResidualBitShift);
-        PackForwardOne(plan,
-                       debugCombo,
-                       roots.InputScaleR,
-                       &combo->DzdcImag,
-                       workspace.DzdcImag,
-                       workspace.IgnoredPrecisionBits,
-                       iterationPlan.DzdcImagCoefficientShift,
-                       iterationPlan.DzdcImagResidualBitShift);
+        PackForwardRadix4Two(plan,
+                             debugCombo,
+                             roots.InputScaleR,
+                             &combo->DzdcReal,
+                             workspace.DzdcReal,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.DzdcRealCoefficientShift,
+                             iterationPlan.DzdcRealResidualBitShift,
+                             &combo->DzdcImag,
+                             workspace.DzdcImag,
+                             workspace.IgnoredPrecisionBits,
+                             iterationPlan.DzdcImagCoefficientShift,
+                             iterationPlan.DzdcImagResidualBitShift,
+                             roots.stage_twiddles_fwd);
     }
-    grid.sync();
+    CohortSync(block, cohortBarrier);
 
     if constexpr (HpShark::DebugChecksums) {
-        StoreReferenceDebugStateBatchAfterSync<SharkFloatParams>(debugStates,
-                                                                 grid,
+        if (gridDim.x == 1u || (blockIdx.x & 1u) == 0u) {
+            StoreReferenceCohortDebugStatePair<SharkFloatParams>(debugStates,
                                                                  block,
+                                                                 cohortBarrier,
                                                                  DebugStatePurpose::Z0XX,
                                                                  workspace.ZReal,
                                                                  DebugStatePurpose::Z0YY,
                                                                  workspace.ZImag,
+                                                                 transformSize);
+        } else {
+            StoreReferenceCohortDebugStatePair<SharkFloatParams>(debugStates,
+                                                                 block,
+                                                                 cohortBarrier,
                                                                  DebugStatePurpose::Z0W1,
                                                                  workspace.DzdcReal,
                                                                  DebugStatePurpose::Z0W2,
                                                                  workspace.DzdcImag,
                                                                  transformSize);
+        }
+        if (gridDim.x == 1u) {
+            StoreReferenceCohortDebugStatePair<SharkFloatParams>(debugStates,
+                                                                 block,
+                                                                 cohortBarrier,
+                                                                 DebugStatePurpose::Z0W1,
+                                                                 workspace.DzdcReal,
+                                                                 DebugStatePurpose::Z0W2,
+                                                                 workspace.DzdcImag,
+                                                                 transformSize);
+        }
     }
 
-    uint32_t forwardStage = stageCount;
+    uint32_t forwardStage = stageCount - 2u;
     while (forwardStage > tileSizeLog2 + 1u) {
         if (gridDim.x == 1u) {
             NTT::ForwardRadix4Two(debugCombo,
@@ -5490,7 +5731,7 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                   transformSize,
                                   forwardStage);
         }
-        grid.sync();
+        CohortSync(block, cohortBarrier);
         forwardStage -= 2u;
     }
     if (forwardStage > tileSizeLog2) {
@@ -5522,7 +5763,8 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                   transformSize,
                                   forwardStage);
         }
-        grid.sync();
+        CohortSync(block, cohortBarrier);
+        --forwardStage;
     }
     if (gridDim.x == 1u) {
         NTT::ForwardTileTwoSelected(debugCombo,
@@ -5531,7 +5773,7 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                     workspace.ZImag,
                                     roots.stage_twiddles_fwd,
                                     transformSize,
-                                    stageCount,
+                                    forwardStage,
                                     tileSizeLog2);
         block.sync();
         NTT::ForwardTileTwoSelected(debugCombo,
@@ -5540,7 +5782,7 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                     workspace.DzdcImag,
                                     roots.stage_twiddles_fwd,
                                     transformSize,
-                                    stageCount,
+                                    forwardStage,
                                     tileSizeLog2);
     } else if ((blockIdx.x & 1u) == 0u) {
         NTT::ForwardTileTwoSelected(debugCombo,
@@ -5549,7 +5791,7 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                     workspace.ZImag,
                                     roots.stage_twiddles_fwd,
                                     transformSize,
-                                    stageCount,
+                                    forwardStage,
                                     tileSizeLog2);
     } else {
         NTT::ForwardTileTwoSelected(debugCombo,
@@ -5558,7 +5800,7 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                     workspace.DzdcImag,
                                     roots.stage_twiddles_fwd,
                                     transformSize,
-                                    stageCount,
+                                    forwardStage,
                                     tileSizeLog2);
     }
     grid.sync();
@@ -5811,7 +6053,7 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                   transformSize,
                                   inverseStage + 1u);
         }
-        grid.sync();
+        CohortSync(block, cohortBarrier);
         inverseStage += 2u;
     }
     if (inverseStage <= stageCount) {
@@ -5843,7 +6085,7 @@ ExecuteReferenceIterationNrNtt(cooperative_groups::grid_group &grid,
                                   transformSize,
                                   inverseStage);
         }
-        grid.sync();
+        CohortSync(block, cohortBarrier);
     }
 
     if constexpr (HpShark::DebugChecksums) {
@@ -5965,6 +6207,7 @@ template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
                           cooperative_groups::thread_block &block,
+                          CohortBarrierContext &cohortBarrier,
                           uint64_t *sharedData,
                           DebugGlobalCount<SharkFloatParams> *debugCombo,
                           DebugState<SharkFloatParams> *debugStates,
@@ -6086,10 +6329,10 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
     MattsCudaAssert(kind == HpSharkReferenceIterationKind::Ntt);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         ExecuteReferenceIterationNrNtt(
-            grid, block, sharedData, debugCombo, debugStates, carryPrefixShared, combo);
+            grid, block, cohortBarrier, sharedData, debugCombo, debugStates, carryPrefixShared, combo);
     } else {
         ExecuteReferenceIterationNonNrNtt(
-            grid, block, sharedData, debugCombo, debugStates, carryPrefixShared, combo);
+            grid, block, cohortBarrier, sharedData, debugCombo, debugStates, carryPrefixShared, combo);
     }
     return;
 }
@@ -6194,7 +6437,6 @@ __maxnreg__(HpShark::RegisterLimit)
             &tempData[HpShark::AdditionalChecksumsOffset]);
         EraseAllDebugStates(debugStates, grid, block);
     }
-
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     for (uint32_t stage = workspace->ActiveMinFusedStages; stage <= workspace->ActiveMaxFusedStages;
          ++stage) {
@@ -6235,6 +6477,8 @@ __maxnreg__(HpShark::RegisterLimit)
             &tempData[HpShark::AdditionalChecksumsOffset]);
         EraseAllDebugStates(debugStates, grid, block);
     }
+    ReferenceDetail::CohortBarrierContext cohortBarrier =
+        ReferenceDetail::InitializeCohortBarriers(grid, block, tempData);
 
     if (leader) {
         combo->OutputIterCount = 0;
@@ -6267,7 +6511,7 @@ __maxnreg__(HpShark::RegisterLimit)
             ReferenceDetail::UpdateD2<SharkFloatParams>(combo);
 
         ReferenceDetail::ExecuteReferenceIteration<SharkFloatParams>(
-            grid, block, sharedData, debugCombo, debugStates, carryPrefixShared, combo);
+            grid, block, cohortBarrier, sharedData, debugCombo, debugStates, carryPrefixShared, combo);
         // Publish every output and PeriodicityStatus before any thread consumes them.
         grid.sync();
         if (combo->PeriodicityStatus == PeriodicityResult::Unknown)

@@ -9,6 +9,12 @@ namespace HpShark {
 
 static constexpr auto MaxReferenceBlocks = 256;
 static constexpr auto AdditionalGlobalSyncSpace = 128 * (MaxReferenceBlocks + 1);
+static constexpr uint32_t CohortBarrierCount = 2u;
+static constexpr uint32_t CohortBarrierStrideUInt32 = 32u;
+static constexpr uint32_t CohortBarrierArrivalOffsetUInt32 = 0u;
+static constexpr uint32_t CohortBarrierGenerationOffsetUInt32 = 2u;
+static_assert(CohortBarrierCount * CohortBarrierStrideUInt32 * sizeof(uint32_t) <=
+              AdditionalGlobalSyncSpace * sizeof(uint64_t));
 static constexpr auto AdditionalGlobalDebugCountSpace =
     DebugGlobalState ? 1024u * MaxReferenceBlocks * sizeof(DebugGlobalCountRaw) : 0u;
 static constexpr auto AdditionalGlobalChecksumSpace = DebugChecksums ? 1024 * 1024 : 0;

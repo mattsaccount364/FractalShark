@@ -717,6 +717,46 @@ ReadAlignedBits(const HpSharkFloat<SharkFloatParams> &value,
     return valueBits << leadingZeroBits;
 }
 
+template <class SharkFloatParams>
+static void
+NTTForwardDIFStages(DebugHostCombo<SharkFloatParams> &debugCombo,
+                    uint64_t *data,
+                    uint32_t transformSize,
+                    uint32_t upperStage,
+                    uint32_t lowerStage,
+                    SharkNTT::RootTables &rootTables)
+{
+    if (upperStage < lowerStage)
+        return;
+
+    for (uint32_t stage = upperStage;; --stage) {
+        const uint32_t butterflySpan = 1u << stage;
+        const uint32_t halfSpan = butterflySpan >> 1u;
+        const uint32_t twiddleBase = halfSpan - 1u;
+
+        for (uint32_t blockBase = 0; blockBase < transformSize; blockBase += butterflySpan) {
+            for (uint32_t j = 0; j < halfSpan; ++j) {
+                const uint32_t upperIndex = blockBase + j;
+                const uint32_t lowerIndex = upperIndex + halfSpan;
+                const uint64_t upper = data[upperIndex];
+                const uint64_t lower = data[lowerIndex];
+                const uint64_t twiddle = rootTables.stage_twiddles_fwd[twiddleBase + j];
+                const uint64_t sum = AddP(upper, lower);
+                const uint64_t difference = SubP(upper, lower);
+                const uint64_t product = SharkNTT::MontgomeryMul(debugCombo, difference, twiddle);
+                data[upperIndex] = sum;
+                data[lowerIndex] = product;
+            }
+        }
+        if (IsDebugTraceEnabled()) {
+            std::cout << "  forward DIF stage " << stage << " output\n";
+            PrintArray("spectrum", data, transformSize);
+        }
+        if (stage == lowerStage)
+            break;
+    }
+}
+
 template <class SharkFloatParams, bool inverse, bool forwardDIF = false>
 static void
 NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
@@ -743,47 +783,7 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
 
     if constexpr (forwardDIF) {
         static_assert(!inverse);
-        for (uint32_t s = stages; s >= 1; --s) {
-            const uint32_t m = 1u << s;
-            const uint32_t half = m >> 1;
-            const uint64_t wM = stageOmegas[s - 1];
-            const uint32_t numTwid = 1u << (s - 1);
-            const uint32_t twBase = numTwid - 1u;
-
-            for (uint32_t k = 0; k < N; k += m) {
-                for (uint32_t j = 0; j < half; ++j) {
-                    const uint32_t i0 = k + j;
-                    const uint32_t i1 = i0 + half;
-                    const uint64_t u = a[i0];
-                    const uint64_t v = a[i1];
-                    const uint64_t w = stageTwiddles[twBase + j];
-                    const uint64_t sum = AddP(u, v);
-                    const uint64_t difference = SubP(u, v);
-                    const uint64_t product = SharkNTT::MontgomeryMul(debugCombo, difference, w);
-                    a[i0] = sum;
-                    a[i1] = product;
-                    // if (IsDebugTraceEnabled()) {
-                    //     std::cout << "  forward DIF butterfly"
-                    //               << " stage=" << s << " k=" << k << " j=" << j << " i0=" << i0
-                    //               << " i1=" << i1;
-                    //     PrintHexValue("omega", wM);
-                    //     PrintHexValue("u", u);
-                    //     PrintHexValue("v", v);
-                    //     PrintHexValue("twiddle", w);
-                    //     PrintHexValue("sum", sum);
-                    //     PrintHexValue("difference", difference);
-                    //     PrintHexValue("product", product);
-                    //     std::cout << '\n';
-                    // }
-                }
-            }
-            if (IsDebugTraceEnabled()) {
-                std::cout << "  forward DIF stage " << s << " output\n";
-                PrintArray("spectrum", a, N);
-            }
-            if (s == 1)
-                break;
-        }
+        NTTForwardDIFStages(debugCombo, a, N, stages, 1u, rootTables);
         return;
     }
 
@@ -865,9 +865,16 @@ PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 
     PrintArray("naturally packed spectrum", out, activeN);
+    const uint32_t stageCount = static_cast<uint32_t>(plan.stages);
+    const uint32_t fusedStageCount = std::min(2u, stageCount);
+    if (fusedStageCount != 0u) {
+        NTTForwardDIFStages(
+            debugCombo, out, activeN, stageCount, stageCount - fusedStageCount + 1u, roots);
+    }
     StoreReferenceDebugState(debugCombo, packedPurpose, out, activeN);
-    NTTRadix2<SharkFloatParams, false, true>(
-        debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
+    if (stageCount > fusedStageCount) {
+        NTTForwardDIFStages(debugCombo, out, activeN, stageCount - fusedStageCount, 1u, roots);
+    }
     StoreReferenceDebugState(debugCombo, forwardPurpose, out, activeN);
 }
 
@@ -924,9 +931,16 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 
     PrintArray("aligned naturally packed spectrum", out, activeN);
+    const uint32_t stageCount = static_cast<uint32_t>(plan.stages);
+    const uint32_t fusedStageCount = std::min(2u, stageCount);
+    if (fusedStageCount != 0u) {
+        NTTForwardDIFStages(
+            debugCombo, out, activeN, stageCount, stageCount - fusedStageCount + 1u, roots);
+    }
     StoreReferenceDebugState(debugCombo, packedPurpose, out, activeN);
-    NTTRadix2<SharkFloatParams, false, true>(
-        debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
+    if (stageCount > fusedStageCount) {
+        NTTForwardDIFStages(debugCombo, out, activeN, stageCount - fusedStageCount, 1u, roots);
+    }
     StoreReferenceDebugState(debugCombo, forwardPurpose, out, activeN);
 }
 

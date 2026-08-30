@@ -19,7 +19,7 @@ enum class DebugStatePurpose {
     BHalfLow,
     XDiff,
     YDiff,
-    // Forward NTT: after input packing
+    // Forward NTT: after input packing and the fused leading DIF stage pair
     Z0XX,
     Z0XY,
     Z0YY,

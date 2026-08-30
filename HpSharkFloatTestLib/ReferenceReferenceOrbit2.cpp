@@ -273,8 +273,7 @@ EnsureGlobalFusedWorkspace()
                                       0,
                                       global.ForwardTwiddles.get(),
                                       global.InverseTwiddles.get(),
-                                      n - 1u,
-                                      SharkNTT::ReferenceInputScaleR(stages)};
+                                      n - 1u};
         }
     }
 
@@ -381,7 +380,6 @@ LoadPreparedTables(const HpShark::ReferencePreparedTables<SharkFloatParams> &pre
         const uint32_t slot = firstSlot + index;
         global.Plans[slot] = deviceWorkspace.Plans[slot];
         global.PlanRoots[slot].Ninv = deviceWorkspace.PlanRoots[slot].Ninv;
-        global.PlanRoots[slot].InputScaleR = deviceWorkspace.PlanRoots[slot].InputScaleR;
     }
     global.ActiveMinFusedN = deviceWorkspace.ActiveMinFusedN;
     global.ActiveMaxFusedN = deviceWorkspace.ActiveMaxFusedN;
@@ -717,46 +715,6 @@ ReadAlignedBits(const HpSharkFloat<SharkFloatParams> &value,
     return valueBits << leadingZeroBits;
 }
 
-template <class SharkFloatParams>
-static void
-NTTForwardDIFStages(DebugHostCombo<SharkFloatParams> &debugCombo,
-                    uint64_t *data,
-                    uint32_t transformSize,
-                    uint32_t upperStage,
-                    uint32_t lowerStage,
-                    SharkNTT::RootTables &rootTables)
-{
-    if (upperStage < lowerStage)
-        return;
-
-    for (uint32_t stage = upperStage;; --stage) {
-        const uint32_t butterflySpan = 1u << stage;
-        const uint32_t halfSpan = butterflySpan >> 1u;
-        const uint32_t twiddleBase = halfSpan - 1u;
-
-        for (uint32_t blockBase = 0; blockBase < transformSize; blockBase += butterflySpan) {
-            for (uint32_t j = 0; j < halfSpan; ++j) {
-                const uint32_t upperIndex = blockBase + j;
-                const uint32_t lowerIndex = upperIndex + halfSpan;
-                const uint64_t upper = data[upperIndex];
-                const uint64_t lower = data[lowerIndex];
-                const uint64_t twiddle = rootTables.stage_twiddles_fwd[twiddleBase + j];
-                const uint64_t sum = AddP(upper, lower);
-                const uint64_t difference = SubP(upper, lower);
-                const uint64_t product = SharkNTT::MontgomeryMul(debugCombo, difference, twiddle);
-                data[upperIndex] = sum;
-                data[lowerIndex] = product;
-            }
-        }
-        if (IsDebugTraceEnabled()) {
-            std::cout << "  forward DIF stage " << stage << " output\n";
-            PrintArray("spectrum", data, transformSize);
-        }
-        if (stage == lowerStage)
-            break;
-    }
-}
-
 template <class SharkFloatParams, bool inverse, bool forwardDIF = false>
 static void
 NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
@@ -783,7 +741,47 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
 
     if constexpr (forwardDIF) {
         static_assert(!inverse);
-        NTTForwardDIFStages(debugCombo, a, N, stages, 1u, rootTables);
+        for (uint32_t s = stages; s >= 1; --s) {
+            const uint32_t m = 1u << s;
+            const uint32_t half = m >> 1;
+            const uint64_t wM = stageOmegas[s - 1];
+            const uint32_t numTwid = 1u << (s - 1);
+            const uint32_t twBase = numTwid - 1u;
+
+            for (uint32_t k = 0; k < N; k += m) {
+                for (uint32_t j = 0; j < half; ++j) {
+                    const uint32_t i0 = k + j;
+                    const uint32_t i1 = i0 + half;
+                    const uint64_t u = a[i0];
+                    const uint64_t v = a[i1];
+                    const uint64_t w = stageTwiddles[twBase + j];
+                    const uint64_t sum = AddP(u, v);
+                    const uint64_t difference = SubP(u, v);
+                    const uint64_t product = SharkNTT::MontgomeryMul(debugCombo, difference, w);
+                    a[i0] = sum;
+                    a[i1] = product;
+                    if (IsDebugTraceEnabled()) {
+                        std::cout << "  forward DIF butterfly"
+                                  << " stage=" << s << " k=" << k << " j=" << j << " i0=" << i0
+                                  << " i1=" << i1;
+                        PrintHexValue("omega", wM);
+                        PrintHexValue("u", u);
+                        PrintHexValue("v", v);
+                        PrintHexValue("twiddle", w);
+                        PrintHexValue("sum", sum);
+                        PrintHexValue("difference", difference);
+                        PrintHexValue("product", product);
+                        std::cout << '\n';
+                    }
+                }
+            }
+            if (IsDebugTraceEnabled()) {
+                std::cout << "  forward DIF stage " << s << " output\n";
+                PrintArray("spectrum", a, N);
+            }
+            if (s == 1)
+                break;
+        }
         return;
     }
 
@@ -865,16 +863,9 @@ PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 
     PrintArray("naturally packed spectrum", out, activeN);
-    const uint32_t stageCount = static_cast<uint32_t>(plan.stages);
-    const uint32_t fusedStageCount = std::min(2u, stageCount);
-    if (fusedStageCount != 0u) {
-        NTTForwardDIFStages(
-            debugCombo, out, activeN, stageCount, stageCount - fusedStageCount + 1u, roots);
-    }
     StoreReferenceDebugState(debugCombo, packedPurpose, out, activeN);
-    if (stageCount > fusedStageCount) {
-        NTTForwardDIFStages(debugCombo, out, activeN, stageCount - fusedStageCount, 1u, roots);
-    }
+    NTTRadix2<SharkFloatParams, false, true>(
+        debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
     StoreReferenceDebugState(debugCombo, forwardPurpose, out, activeN);
 }
 
@@ -893,8 +884,7 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                    DebugStatePurpose packedPurpose,
                    DebugStatePurpose forwardPurpose)
 {
-    const bool useFusedB16Normalization = plan.b == 16;
-    const uint64_t zeroMont = useFusedB16Normalization ? 0ull : SharkNTT::ToMontgomery(debugCombo, 0);
+    const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= capacity);
     assert(zeroMont == 0);
@@ -912,17 +902,15 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                                       static_cast<int64_t>(residualBitShift);
             const uint64_t coefficient =
                 ReadAlignedBits(value, inputBitOffset, sourceBit, static_cast<int>(plan.b));
-            const uint64_t scaledCoefficient =
-                useFusedB16Normalization
-                    ? SharkNTT::MulModP(coefficient, roots.InputScaleR)
-                    : SharkNTT::ToMontgomery(debugCombo, coefficient % SharkNTT::MagicPrime);
-            packed = scaledCoefficient;
+            const uint64_t coefficientMont =
+                SharkNTT::ToMontgomery(debugCombo, coefficient % SharkNTT::MagicPrime);
+            packed = coefficientMont;
             if (negative && coefficient != 0)
                 packed = SubP(zeroMont, packed);
             if (IsDebugTraceEnabled()) {
                 std::cout << "  aligned pack coefficient index=" << i;
                 PrintHexValue("coefficient", coefficient);
-                PrintHexValue("scaledCoefficient", scaledCoefficient);
+                PrintHexValue("coefficientMont", coefficientMont);
                 PrintHexValue("packed", packed);
                 std::cout << '\n';
             }
@@ -931,16 +919,9 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
     }
 
     PrintArray("aligned naturally packed spectrum", out, activeN);
-    const uint32_t stageCount = static_cast<uint32_t>(plan.stages);
-    const uint32_t fusedStageCount = std::min(2u, stageCount);
-    if (fusedStageCount != 0u) {
-        NTTForwardDIFStages(
-            debugCombo, out, activeN, stageCount, stageCount - fusedStageCount + 1u, roots);
-    }
     StoreReferenceDebugState(debugCombo, packedPurpose, out, activeN);
-    if (stageCount > fusedStageCount) {
-        NTTForwardDIFStages(debugCombo, out, activeN, stageCount - fusedStageCount, 1u, roots);
-    }
+    NTTRadix2<SharkFloatParams, false, true>(
+        debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
     StoreReferenceDebugState(debugCombo, forwardPurpose, out, activeN);
 }
 
@@ -1257,8 +1238,7 @@ UnpackAlignedResiduesToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
         if (firstBit >= productBitOffset || productBitOffset <= lastBit) {
             for (uint64_t i = firstCoefficient; i <= lastCoefficient && i < coefficientCount; ++i) {
                 const uint64_t residue =
-                    plan.b == 16 ? normalResidues[i]
-                                 : SharkNTT::MontgomeryMul(debugCombo, normalResidues[i], roots.Ninv);
+                    SharkNTT::MontgomeryMul(debugCombo, normalResidues[i], roots.Ninv);
                 if (residue == 0)
                     continue;
 
@@ -2052,7 +2032,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                         realLinearBitOffset,
                                         workspace.RealLimbs,
                                         limbCount,
-                                        DebugStatePurpose::Z2_Perm4,
+                                        DebugStatePurpose::Invalid,
                                         DebugStatePurpose::UnpackXX);
     InverseAlignedSpectrumToSignedLimbs(debugHostCombo,
                                         plan,
@@ -2065,7 +2045,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                         imagLinearBitOffset,
                                         workspace.ImagLimbs,
                                         limbCount,
-                                        DebugStatePurpose::Z2_Perm5,
+                                        DebugStatePurpose::Invalid,
                                         DebugStatePurpose::UnpackYY);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         const uint32_t derivativeCoefficientCount =
@@ -2081,7 +2061,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                             derivativeLinearBitOffset,
                                             workspace.DzdcRealLimbs,
                                             limbCount,
-                                            DebugStatePurpose::Z2_PermW0b,
+                                            DebugStatePurpose::Invalid,
                                             DebugStatePurpose::UnpackW0);
         InverseAlignedSpectrumToSignedLimbs<SharkFloatParams>(debugHostCombo,
                                                               plan,
@@ -2094,7 +2074,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                                               0,
                                                               workspace.DzdcImagLimbs,
                                                               limbCount,
-                                                              DebugStatePurpose::Z2_PermW1b,
+                                                              DebugStatePurpose::Invalid,
                                                               DebugStatePurpose::UnpackW1);
     }
 
@@ -2594,7 +2574,6 @@ ExplicitlyInstantiate(SharkParams12);
 #undef ExplicitlyInstantiate
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateDerivative(SharkFloatParams)
 ExplicitInstantiateAll();
-ExplicitlyInstantiateDerivative(SharkParamsNR1);
 ExplicitlyInstantiateDerivative(SharkParamsNR2);
 ExplicitlyInstantiateDerivative(SharkParamsNR3);
 ExplicitlyInstantiateDerivative(SharkParamsNR4);

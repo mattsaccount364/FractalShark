@@ -263,23 +263,6 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
                                DebugGpuCombo *debugCombo)
 {
     if (debugCombo != nullptr) {
-        if constexpr (HpShark::DebugChecksums) {
-            constexpr size_t debugStateCount = static_cast<size_t>(DebugStatePurpose::NumPurposes);
-            debugCombo->States.resize(debugStateCount);
-            const cudaError_t copyResult =
-                cudaMemcpy(debugCombo->States.data(),
-                           &combo.DeviceDebugStorage[HpShark::AdditionalChecksumsOffset],
-                           debugStateCount * sizeof(DebugStateRaw),
-                           cudaMemcpyDeviceToHost);
-            if (copyResult != cudaSuccess) {
-                std::ostringstream message;
-                message << "cudaMemcpy(reference checksum states D2H) failed: "
-                        << cudaGetErrorString(copyResult) << " (code " << static_cast<int>(copyResult)
-                        << ')';
-                throw FractalSharkSeriousException(message.str());
-            }
-        }
-
         if constexpr (HpShark::DebugGlobalState) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(debugCombo->MultiplyCounts.data(),

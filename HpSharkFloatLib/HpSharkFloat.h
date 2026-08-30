@@ -155,7 +155,7 @@ using SharkParamsNP1 = HpShark::GenericSharkFloatParams<64, false>;
 using SharkParamsNP2 = HpShark::GenericSharkFloatParams<128, false>;
 using SharkParamsNP3 = HpShark::GenericSharkFloatParams<256, false>;
 using SharkParamsNP4 = HpShark::GenericSharkFloatParams<512, false>;
-using SharkParamsNP5 = HpShark::GenericSharkFloatParams<2048, false>;
+using SharkParamsNP5 = HpShark::GenericSharkFloatParams<1024, false>;
 
 using SharkParamsNP6 = HpShark::GenericSharkFloatParams<8192, false>;
 using SharkParamsNP7 = HpShark::GenericSharkFloatParams<16384, false>;

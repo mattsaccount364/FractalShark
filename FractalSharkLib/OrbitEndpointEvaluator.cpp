@@ -49,18 +49,7 @@ EvaluateCriticalOrbitAndDerivs(NRInnerLoopBackend backend,
                     progressCtx,
                     64);
             };
-            DispatchByLimbCount<SharkParamsNR1,
-                                SharkParamsNR2,
-                                SharkParamsNR3,
-                                SharkParamsNR4,
-                                SharkParamsNR5,
-                                SharkParamsNR6,
-                                SharkParamsNR7,
-                                SharkParamsNR8,
-                                SharkParamsNR9,
-                                SharkParamsNR10,
-                                SharkParamsNR11,
-                                SharkParamsNR12>(BitsToSupportedLimbCount(coord_prec), runGpu);
+            DispatchByLimbCount<SharkParamsNRFamily>(BitsToSupportedLimbCount(coord_prec), runGpu);
         } break;
 
         case NRInnerLoopBackend::CpuMT:

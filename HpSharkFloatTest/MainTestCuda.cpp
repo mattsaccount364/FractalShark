@@ -620,7 +620,7 @@ RunCorrectnessTest(BasicCorrectnessMode mode)
     }
 
     do {
-        if (!CorrectnessTests<TestCorrectnessSharkParams5>())
+        if (!CorrectnessTests<TestCorrectnessSharkParams1>())
             return 0;
 
         if (mode == BasicCorrectnessMode::Correctness_P1_to_P5) {
@@ -877,18 +877,7 @@ RunPerfModes(BasicCorrectnessMode mode,
             res = TestNewtonRaphsonView5<SharkFloatParams, referenceOperator>(
                 Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
         };
-        DispatchByLimbCount<SharkParamsNR1,
-                            SharkParamsNR2,
-                            SharkParamsNR3,
-                            SharkParamsNR4,
-                            SharkParamsNR5,
-                            SharkParamsNR6,
-                            SharkParamsNR7,
-                            SharkParamsNR8,
-                            SharkParamsNR9,
-                            SharkParamsNR10,
-                            SharkParamsNR11,
-                            SharkParamsNR12>(selectedLimbSelection.m_StorageLimbs, runNrView5);
+        DispatchByLimbCount<SharkParamsNRFamily>(selectedLimbSelection.m_StorageLimbs, runNrView5);
         if (!ContinueAfterFailure(res))
             return 0;
     }

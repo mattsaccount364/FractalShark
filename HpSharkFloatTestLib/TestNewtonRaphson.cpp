@@ -669,6 +669,8 @@ TestNewtonRaphsonView32(TestTracker &Tests,
     return result;
 }
 
+template bool TestNewtonRaphsonView5<SharkParamsNR7, Operator::ReferenceOrbit2>(
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR1, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR2, Operator::ReferenceOrbit2>(
@@ -681,8 +683,6 @@ template bool TestNewtonRaphsonView5<SharkParamsNR5, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR6, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
-template bool TestNewtonRaphsonView5<SharkParamsNR7, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR8, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR9, Operator::ReferenceOrbit2>(
@@ -693,9 +693,7 @@ template bool TestNewtonRaphsonView5<SharkParamsNR11, Operator::ReferenceOrbit2>
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR12, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
-
 template bool TestNewtonRaphsonView30<SharkParamsNR7, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
-
 template bool TestNewtonRaphsonView32<SharkParamsNR9, Operator::ReferenceOrbit2>(
     TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);

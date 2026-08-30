@@ -3041,18 +3041,7 @@ TestFullReferencePerfView(TestTracker &Tests,
         }
     };
 
-    DispatchByLimbCount<SharkParams1,
-                        SharkParams2,
-                        SharkParams3,
-                        SharkParams4,
-                        SharkParams5,
-                        SharkParams6,
-                        SharkParams7,
-                        SharkParams8,
-                        SharkParams9,
-                        SharkParams10,
-                        SharkParams11,
-                        SharkParams12>(storagePrecisionLimbs, runForParams);
+    DispatchByLimbCount<SharkParamsBaseFamily>(storagePrecisionLimbs, runForParams);
 
     return result;
 }

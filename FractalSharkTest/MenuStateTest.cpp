@@ -50,6 +50,7 @@ TEST(MenuState_EnablementRulesUseSharedRuntimeState)
     FractalShark::MenuState state(fractal);
 
     ASSERT_TRUE(state.IsEnabled(FractalShark::Rule::Always));
+    ASSERT_FALSE(state.IsEnabled(FractalShark::Rule::Never));
     ASSERT_TRUE(state.IsEnabled(FractalShark::Rule::EnableIfCpuActive));
     ASSERT_FALSE(state.IsEnabled(FractalShark::Rule::EnableIfPerturbationAvailable));
     ASSERT_EQ(state.IsEnabled(FractalShark::Rule::EnableIfGpuActive), !fractal.GpuBypassed());
@@ -171,6 +172,8 @@ TEST(MenuTree_ExposesViews33And34)
     ASSERT_TRUE(view34 != nullptr);
     ASSERT_TRUE(view33->text == L"#33 - 1e325221 - period 22,680,804");
     ASSERT_TRUE(view34->text == L"#34 - 1e650452 - period 399,289,978");
+    ASSERT_TRUE(view33->enableRule == Rule::Never);
+    ASSERT_TRUE(view34->enableRule == Rule::Always);
 }
 
 TEST(ViewPresets_LoadViews33And34)

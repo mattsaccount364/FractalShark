@@ -65,6 +65,7 @@ enum class RadioGroup : uint16_t {
 
 enum class Rule : uint16_t {
     Always = 0,
+    Never,
 
     EnableIfGpuActive,
     EnableIfCpuActive,

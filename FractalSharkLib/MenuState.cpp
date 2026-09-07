@@ -36,6 +36,9 @@ MenuState::IsEnabled(Rule rule) const noexcept
         case Rule::Always:
             return true;
 
+        case Rule::Never:
+            return false;
+
         case Rule::EnableIfGpuActive:
             return !m_Fractal.GpuBypassed();
 

@@ -20,33 +20,35 @@ FractalShark includes several innovations relative to most other Mandelbrot rend
 
 FractalShark includes a working **GPU-accelerated reference orbit implementation**. To my knowledge, this implementation is unique in the context of accelerating Mandelbrot rendering. The active Ref2/v2 implementation evaluates the complete high-precision recurrence in one persistent fused CUDA kernel. It uses Number Theoretic Transforms, fused pointwise recurrence algebra, signed carry propagation, and normalization to accelerate work that is traditionally CPU-bound.
 
-At a precision of 16384 32-bit limbs (≈ 158,000 decimal digits), this GPU reference orbit implementation outperforms the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.  The only built-in View that shows a clear benefit to the GPU-accelerated approach is View #30, which uses 16384 32-bit limbs internally.  My new RTX 5090 is slightly slower than the 4090, at ~9x faster than the existing FractalShark multithreaded CPU-based reference orbit calculator.  
+As of v0.532, at a precision of 16384 32-bit limbs (≈ 158,000 decimal digits), my benchmark runs found that this GPU reference orbit implementation outperformed the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.  The built-in View where I observed a clear benefit to the GPU-accelerated approach is View #30, which uses 16384 32-bit limbs internally.  My RTX 5090 measured slightly slower than the 4090, at ~9× faster than the existing FractalShark multithreaded CPU-based reference orbit calculator.
 
-The implementation works and remains under active development, as does the rest of the project.  To try it, you'll need an RTX 2xxx series or newer, e.g. RTX 3xxx/4xxx/5xxx should all work with recent drivers.  Then, start FractalShark, manually choose the HDRx32 LAv2 kernel, and under Perturbation choose GPU-Accelerated Reference Orbit.  Then try e.g. View #5 to see it render.  (See FractalShark.pdf §6–7 for details on reference orbit computation and GPU arithmetic.)
+The new v0.54 version rearchitects the reference orbit/newton-raphson implementation to improve performance further.  On the rtx 5090, I'm seeing 70x better perf at 16384 32-bit limbs vs. a single-threaded reference orbit implementation using the AVX-2 MPIR implementation.  I just realized my multithreaded CPU test is broken and I don't have the 4090 any more, so I don't have a comparable result vs. before, but the results do look promising.  Even assuming we speed up the single-threaded implementation by 3x the naive implementation here, the new GPU-accelerated design appears to easily best it.
 
-Ref2/v2 supersedes the older v1 multiply/add implementation and substantially outperforms it.  FractalShark now includes an example "minibrot" at ~1e650452 depth, found using this GPU-accelerated implementation.  The Internet is full of nonsense about "deepest ever" Mandelbrot rendering.  If you can identify a mini-mandelbrot at a depth deeper than this one, please post the coordinates somewhere, and I'd be happy to (a) include it in FractalShark as an example after confirming it's real, and (b) update this paragraph.
+The implementation works and remains under active development, as does the rest of the project.  To try it, you'll need an RTX 2xxx series or newer, e.g. RTX 3xxx/4xxx/5xxx should all work with recent drivers.  Then, start FractalShark, manually choose the `HDRx32 GPU - LAv2` kernel, and under Perturbation choose GPU-Accelerated Reference Orbit.  Then try e.g. View #5 to see it render.  (See FractalShark.pdf §§13 and 17 for details on reference orbit computation and GPU arithmetic.)
+
+In my measurements, Ref2/v2 supersedes the older v1 multiply/add implementation and is substantially faster.  FractalShark now includes an example "minibrot" at ~1e650452 depth, found using this GPU-accelerated implementation.  The Internet is full of nonsense about "deepest ever" Mandelbrot rendering.  If you can identify a mini-mandelbrot at a depth deeper than this one, please post the coordinates somewhere, and I'd be happy to (a) include it in FractalShark as an example after confirming it's real, and (b) update this paragraph.
 
 ### 2. Multiple CUDA Mandelbrot rendering strategies
 
 FractalShark includes numerous **distinct CUDA implementations** of Mandelbrot rendering. These demonstrate different architectural and algorithmic strategies for mapping the problem to GPUs.
 
-Several of these approaches appear to be undocumented or unpublished elsewhere, based on attempts to find prior examples. They are included both for performance experimentation and as reference implementations for different CUDA design patterns.  (See FractalShark.pdf §2 and §4 for pixel-to-parameter mapping and perturbation rendering.)
+Several of these approaches appear to be undocumented or unpublished elsewhere, based on attempts to find prior examples. They are included both for performance experimentation and as reference implementations for different CUDA design patterns.  (See FractalShark.pdf §§4 and 10–11 for pixel-to-parameter mapping and perturbation rendering.)
 
 ### 3. CUDA-based linear approximation implementations
 
 FractalShark includes **two CUDA implementations of linear approximation**, a relatively recent technique for achieving high-performance deep-zoom rendering that builds on perturbation.
 
-No existing CUDA implementations of this technique appear to be publicly available. The CUDA implementation here is ported from **FractalZoomer**, and ultimately originated from work by **Claude** and **Zhuoran**. FractalShark adapts and extends these ideas within a CUDA-centric architecture.  (See FractalShark.pdf §5 for approximation algorithms.)
+I have not found another public CUDA implementation of this technique. The CUDA implementation here is ported from **FractalZoomer**, and ultimately originated from work by **Claude** and **Zhuoran**. FractalShark adapts and extends these ideas within a CUDA-centric architecture.  (See FractalShark.pdf §12 for approximation algorithms.)
 
 ### 4. Multithreaded high-performance CPU reference orbit calculation
 
 FractalShark includes a **multithreaded CPU reference orbit implementation** designed to maximize performance on modern CPUs.
 
-Using three threads total—two dedicated to squaring and one coordinating—has empirically provided the best performance on an AMD 5950X. Reference orbit computation is the dominant bottleneck at extreme magnifications, making this optimization particularly important.  That said, once your zoom depth exceeds e.g. 1e10000 or thereabouts, you may be better off using the GPU-accelerated approach above.  Shallower than that, and the CPU more likely wins.
+The standard MT3 path uses three computation threads total—two dedicated to squaring and one coordinating—and has empirically provided the best performance on an AMD 5950X. Reference orbit computation is the dominant bottleneck at extreme magnifications, making this optimization particularly important. Reuse modes can use four computation threads, and the current MT5 entry falls back to MT3. In my measurements, once the zoom depth exceeds approximately 1e10000, the GPU-accelerated approach above may be faster; at shallower depths, the CPU is more likely to win.
 
-This implementation outperforms all other known CPU-based reference orbit implementations when run on modern multi-core CPUs with AVX-2 support. Additional optimizations are possible but remain unexplored.  If you're aware of faster implementations please let me know, I imagine a bespoke AVX-512 implementation should beat FractalShark in its current form.  The GPU-accelerated approach above will beat all CPU approaches at higher zoom depths absent fundamentally different algorithmic approaches.
+In my tests, this implementation has outperformed the CPU-based reference-orbit implementations I compared against on modern multi-core CPUs with AVX-2 support. This is not an exhaustive survey of all implementations. Additional optimizations are possible but remain unexplored; a bespoke AVX-512 implementation may beat FractalShark in its current form. The GPU-accelerated approach above may win at higher zoom depths, depending on the workload and hardware.
 
-This subsystem also includes a **custom memory allocator** supporting an optional *perturbed perturbation* mode, in which intermediate-resolution reference orbit values are cached and reused across successive zooms.  (See FractalShark.pdf §6 for reference orbit computation details.)
+This subsystem also includes a **custom memory allocator** supporting an optional *perturbed perturbation* mode, in which intermediate-resolution reference orbit values are cached and reused across successive zooms.  (See FractalShark.pdf §13 for reference orbit computation details.)
 
 ### 5. Custom “2×32 + exponent” numeric type
 
@@ -54,39 +56,39 @@ FractalShark implements a custom **“2×32” floating-point type**, optionally
 
 This type uses a pair of 32-bit floating-point values plus a shared exponent, providing an effective ~48-bit mantissa without using native 64-bit floating-point arithmetic. The result is substantially higher performance on consumer GPUs with only a modest loss of precision.
 
-This implementation is **CUDA-only**; on CPUs, native 64-bit floating-point arithmetic is preferable.  (See FractalShark.pdf §3 for HDR floating-point type details.)
+This implementation is **CUDA-only**; on CPUs, native 64-bit floating-point arithmetic is preferable.  (See FractalShark.pdf §§8–9 for HDR floating-point type details.)
 
 ### 6. Reference orbit compression and on-the-fly decompression
 
 FractalShark supports **reference orbit compression**.
 
-This idea was first implemented in Imagina for saving and loading reference orbits. FractalShark extends Zhuoran’s approach to **runtime per-pixel rendering**, decompressing reference orbit segments on demand during rendering.  For high-period locations (e.g. period 600,000,000), this can reduce memory usage by multiple gigabytes, often making the difference between a render being feasible or impossible.  (See FractalShark.pdf §6 for compression details.)  FractalShark's reference orbit compression allows it to save/load Imagina-compatible save files, which include the compressed reference orbit and allow for a compact representation of a point of interest.
+This idea was first implemented in Imagina for saving and loading reference orbits. FractalShark extends Zhuoran’s approach to **runtime per-pixel rendering**, decompressing reference orbit segments on demand during rendering.  In one high-period test case (period 600,000,000), this reduced memory usage by multiple gigabytes; the exact savings depend on the orbit and compression settings.  (See FractalShark.pdf §14 for compression details.)  FractalShark's reference orbit compression allows it to save/load Imagina-compatible save files, which include the compressed reference orbit and allow for a compact representation of a point of interest. The file format is described in Appendix B.6.
 
 ### 7. Feature Finder / periodic point detection
 
 FractalShark includes a **Feature Finder** that locates periodic points (minibrots, fixed points, etc.) in the Mandelbrot set. Right-click on a point of interest and the Feature Finder will attempt to identify its period and refine its coordinates using Newton-Raphson iteration at high precision. It supports multiple evaluation modes — Direct, Perturbation Theory, and Linear Approximation — each with an optional grid-scanning variant that searches a neighborhood around the clicked point for the best candidate. The design is loosely inspired by similar functionality in Imagina.
 
-The Newton-Raphson inner loop can run entirely on the GPU inside the same fused NTT recurrence and shared synchronization schedule as reference-orbit computation. To my knowledge, no other Mandelbrot renderer performs Newton-Raphson periodic-point refinement using GPU-accelerated high-precision arithmetic.  (See FractalShark.pdf §8 for Feature Finder algorithms.)
+The Newton-Raphson inner loop can run entirely on the GPU inside the same fused NTT recurrence and shared synchronization schedule as reference-orbit computation. To my knowledge, no other Mandelbrot renderer performs Newton-Raphson periodic-point refinement using GPU-accelerated high-precision arithmetic.  (See FractalShark.pdf §18 for Feature Finder algorithms.)
 
-The Feature Finder has also located an ultra-deep minibrot in View #34 at the documented depth of `1e650452`, currently the deepest known to me. It was found using GPU-accelerated Newton-Raphson together with the CUDA-accelerated reference orbit implementation. This is an example of what is possible when high-precision reference-orbit computation is accelerated on the GPU. If you know of a deeper minibrot, please send me the coordinates.
+The Feature Finder has also located an ultra-deep minibrot in View #34 at the documented depth of `1e650452`, currently the deepest built-in example in this repository. It was found using GPU-accelerated Newton-Raphson together with the CUDA-accelerated reference orbit implementation. This is an example of what is possible when high-precision reference-orbit computation is accelerated on the GPU. If you know of a deeper minibrot, please send me the coordinates.
 
 ### 8. GPU antialiasing and post-processing
 
-FractalShark performs **supersampled antialiasing on the GPU**: each pixel is rendered at higher resolution and downsampled to suppress the spatial aliasing that arises when intricate fractal detail falls below pixel scale. Iteration counts are mapped to colors via a **palette-based coloring system**, and per-frame iteration-count statistics are gathered via parallel GPU reduction. These post-iteration stages run entirely on the GPU alongside the rendering kernels.  (See FractalShark.pdf §9 for post-iteration processing details.)
+GPU render algorithms perform **supersampled antialiasing on the GPU**: each pixel is rendered at higher resolution and downsampled to suppress the spatial aliasing that arises when intricate fractal detail falls below pixel scale. Iteration counts are mapped to colors via a **palette-based coloring system**, and per-frame iteration-count statistics are gathered via parallel GPU reduction. CPU render algorithms perform the corresponding color conversion and supersampled averaging on the host.  (See FractalShark.pdf §19 for post-iteration processing details.)
 
 ## CUDA? What are the system requirements?
 
-- **AVX-2 CPU**: used for reference orbit/MPIR library.
-- **CUDA-capable NVIDIA 900-series or newer** (~2016)
-- **CUDA-capable NVIDIA RTX 2xxx series or newer** for GPU-accelerated reference orbit.
+- **AVX-2 CPU**: used by the Windows MPIR/AVX-2 reference-orbit build; Linux CMake builds use the system GMP library.
+- **CUDA-capable NVIDIA 900-series or newer** (~2016) for ordinary CUDA rendering, including direct, perturbation, and linear-approximation algorithms.
+- **CUDA-capable NVIDIA RTX 2xxx series or newer** for the GPU-accelerated reference-orbit implementation. Older supported NVIDIA cards can still use the other CUDA rendering paths.
 - **Try updating your NVIDIA driver** if you get a "cuda error 35" when you run it.
 - **Windows** with the Win32 GUI as the official release platform, or **Linux** through the experimental native CMake + Clang port introduced in version 0.53.
 
-**Version 0.53 is the first release with experimental Linux support. Linux is not currently an official release platform.** The native Linux port is undergoing heavy revision and should be treated as an unsupported development preview. It includes the CPU-side numeric core, CUDA GPU rendering components, the command-line renderer, tests, and the `FractalSharkGuiLinux` Xlib/Dear ImGui graphical application. Full Linux/Win32 parity remains the goal, but behavior, dependencies, and interfaces may change substantially while the port catches up with the older Win32 application.
+**Version 0.53 is the first release with Linux support.** The native Linux port is undergoing heavy revision and should be treated as a preview. It includes the CPU-side numeric core, CUDA GPU rendering components, the command-line renderer, tests, and the `FractalSharkGuiLinux` Xlib/Dear ImGui graphical application. Full Linux/Win32 parity remains the goal, but behavior, dependencies, and interfaces may change substantially while the port catches up with the primary Windows target.
 
 ## Where do I download it?
 
-- Download official Windows binaries from here: [https://github.com/mattsaccount364/FractalShark/releases](https://github.com/mattsaccount364/FractalShark/releases). Beginning with version 0.53, tagged releases also include an experimental `FractalShark-Linux-<tag>.tar.gz` archive containing the Linux command-line and GUI binaries. This Linux archive is an unsupported development preview, not an official release, and may change or break while the port is under heavy revision. Linux users may alternatively build it from source using the instructions below.
+- Download official Windows binaries from here: [https://github.com/mattsaccount364/FractalShark/releases](https://github.com/mattsaccount364/FractalShark/releases). Beginning with version 0.53, tagged releases also include `FractalShark-Linux-<tag>.tar.gz` archive containing `FractalSharkCli`, `FractalSharkGuiLinux`, `HpSharkFloatTest`, and `FractalSharkTest`. This Linux archive is an unsupported development preview, not an official release, and may change or break while the port is under heavy revision. Linux users may alternatively build it from source using the instructions below.
 
 ## More docs?
 
@@ -104,19 +106,19 @@ The document is a work in progress — some sections are still being revised and
 
 - FractalShark is an experimental research project, not a polished end-user application. Other implementations, like FractalZoomer, have much more polish, and Imagina will probably beat it on performance in the long term because Zhuoran is definitely better at coming up with optimized algorithms than I am.
 - FractalShark only supports the Mandelbrot set, not other variants/derivatives.
-- The source code is available under the GPLv3 license, so you can look at it if you want.
+- FractalShark's own source code is available under the GPLv3 license. Bundled third-party components may use their own licenses; for example, WPngImage is MIT-licensed.
 
 ## How do I use it?
 
-- Download the release ZIP from the [GitHub Releases page](https://github.com/mattsaccount364/FractalShark/releases). It contains `FractalShark.exe`, debug symbols, and documentation.
+- Download the release ZIP from the [GitHub Releases page](https://github.com/mattsaccount364/FractalShark/releases). It contains the main application, CLI and test executables, their PDB debug-symbol files, and `FractalShark.pdf`.
 - Run it. If you get a blank screen or error message and believe you meet the system requirements then let me know and I'll speculate about the problem.
 - Right-click to get a pop-up menu. Some of the options are buggy and will just crash/misbehave but most of the basic things should be fine.
-- Left-click/drag to zoom in on a box. Alternatively, use hot keys: `z` to zoom in at mouse cursor, `shift+Z` to zoom out a bit, `b` to go back, `-` or `=` to increase/decrease iterations.
-- Look at the FractalShark.pdf distributed with newer releases.  It has a user guide near the front.  Look in the table of contents.  The rest of it you can ignore unless you're motivated.
+- Left-click/drag to zoom in on a box. Alternatively, use hot keys: `z` to zoom in at mouse cursor, `shift+Z` to zoom out a bit, `b` to go back, `-` to decrease iterations, or `=` to increase iterations by 24×.
+- Look at the FractalShark.pdf distributed with newer releases. The user guide is Appendix A; look in the table of contents. The rest of it you can ignore unless you're motivated.
 
 ## Can I use CPU-only rendering and try it without an NVIDIA card?
 
-CUDA should no longer be required to use FractalShark, but I'm not sure I'd bother.  The CPU path is largely a debugging aid and not optimized.  If you're looking for the fastest CPU-only Mandelbrot renderer, FractalShark isn't it.  It does nevertheless include CPU-only perturbation, linear-approximation, reference orbit compression etc and as such may be a useful reference if you're interested.
+The prebuilt application can fall back to CPU rendering when CUDA initialization fails, so an NVIDIA card is not required to run the CPU algorithms. Building FractalShark from source still requires the CUDA toolkit because the build includes CUDA targets. The CPU path is largely a debugging aid and not optimized.  If you're looking for the fastest CPU-only Mandelbrot renderer, FractalShark isn't it.  It does nevertheless include CPU-only perturbation, linear-approximation, reference orbit compression etc and as such may be a useful reference if you're interested.
 
 ## What features will FractalShark never have?
 
@@ -128,13 +130,13 @@ CUDA should no longer be required to use FractalShark, but I'm not sure I'd both
 
 FractalShark is buggy and kludgy — expect crashes, dead code, and rough edges.
 
-- The "autozoom" feature is busted and should be replaced. Don't use it.
+- The "autozoom" feature is experimental and may still fail on some locations.
 - Load location/save location have weird nuances - future work. The "current position" will copy your location to the clipboard.
 - Some CUDA kernels are busted.
-- If it's slow and taking a long time, there's no way to abort it. Use task manager and terminate it that way if you don't want to wait. Try holding the CTRL key and maybe it'll work depending on what's being slow, but it probably won't.
+- Long-running work supports cooperative cancellation: hold `Ctrl+Alt` for approximately three seconds to request an abort. Press `Escape` to clear the request. CUDA work may not stop immediately; use Task Manager only as a last resort.
 - Too many to list - don't expect much.
 
-If FractalShark suddenly exits, there should be a "core.dmp" file in the same directory as the executable. Feel free to create a new [issue](https://github.com/mattsaccount364/FractalShark/issues) on GitHub and upload it as an attachment, and I'll try to sort out what went wrong. Same goes for any other bug or wrong behavior.
+On Windows, an unhandled crash attempts to write `core.dmp` in the process's current working directory; the file may not be created if dump writing fails. On Linux, the handler re-raises the fatal signal and the file name and location depend on the system's core-dump configuration. Feel free to create a new [issue](https://github.com/mattsaccount364/FractalShark/issues) on GitHub and upload any dump as an attachment, and I'll try to sort out what went wrong. The same goes for any other bug or wrong behavior.
 
 ## What other projects are used for inspiration?
 
@@ -148,7 +150,7 @@ Many.
 
 - The Float/Exp and linear/bilinear approximation implementations are from FractalZoomer. FractalZoomer is written in Java, but it was easy enough to port to C++ and "templatize." [FractalZoomer](https://sourceforge.net/projects/fractalzoomer/)
 
-- FractalShark uses several third-party libraries: MPIR, and WPngImage ([WPngImage](https://github.com/WarpRules/WPngImage)). I also found a CUDA QuadDouble and DblDbl implementations somewhere and have example kernels demonstrating their use.
+- FractalShark uses MPIR on Windows, system GMP on Linux, and WPngImage ([WPngImage](https://github.com/WarpRules/WPngImage)). I also found CUDA QuadDouble and DblDbl implementations somewhere and have example kernels demonstrating their use.
 
 - FractalShark's reference orbit compression is novel code, but based on the approach Zhuoran described here: [Reference Compression](https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142). Claude posted a simple easy-to-understand sample here, which FractalShark's implementation is loosely based on: [Fractal Bits](https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression)
 
@@ -156,7 +158,7 @@ Many.
 
 ## Closing
 
-If you're bored and want to try yet another Mandelbrot set renderer, give it a go. You can download releases from the GitHub page. Your mileage may vary. If you don't meet the system requirements, it will likely fail noisily rather than degrade gracefully. In terms of time investment, I'll probably only spend a couple of hours on weekends fussing with it so don't expect dramatic rewrites.
+If you're bored and want to try yet another Mandelbrot set renderer, give it a go. You can download releases from the GitHub page. Your mileage may vary. If CUDA initialization fails at runtime, GPU rendering may be disabled and CPU algorithms used instead; source builds still require the CUDA toolkit. In terms of time investment, I'll probably only spend a couple of hours on weekends fussing with it so don't expect dramatic rewrites.
 
 ## History
 
@@ -179,18 +181,24 @@ Source builds require Git LFS.  Some checked-in assets are LFS-backed, including
 3. `cd FractalShark`
 4. `git lfs pull`
 5. `git clone https://github.com/BrianGladman/mpir.git`
-6. Open `mpir\msvc\vs22\mpir.sln`
-7. Rebuild everything. Note, you probably want YASM (vsyasm) installed at: `C:\Program Files\vsyasm\*`. This may take a little while.
-8. The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
-9. Install the NVIDIA CUDA Toolkit. The CI build currently uses CUDA 13.3.0
-10. At this point, you should be able to build all the FractalShark projects. The one called FractalShark is the most interesting. FractalTray basically works. HpSharkFloatTest is a GPU arithmetic test harness. FractalSaver is legacy/dead code.
+6. Check out the MPIR revision used by CI: `git -C mpir checkout dc82b0475dea84d5338356e49176c40be03a5bdf`
+7. Install the VC++ 2010 runtime required by the bundled `vsyasm`, then extract `tools\yasm.zip` under `C:\Program Files\vsyasm\*`.
+8. From `mpir\msvc\vs22`, build the static Skylake AVX libraries:
+   `msbuild.bat skylake_avx LIB x64 Debug`
+   `msbuild.bat skylake_avx LIB x64 Release`
+9. The distributed version of FractalShark uses the static `lib_mpir_skylake_avx` incarnation of MPIR. Install the NVIDIA CUDA Toolkit; the CI build currently uses CUDA 13.3.0.
+10. From the repository root, build the Visual Studio solution, for example:
+    `msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64`
+    Use `Configuration=Debug` for a Debug build.
+11. The `FractalShark` project is the main application. `FractalTray` is a tray utility, `HpSharkFloatTest` is a GPU arithmetic test harness, and `FractalSaver` is a legacy Windows project retained in the solution but not included in the release package or Linux CMake build.
 
 For Linux:
 
 Version 0.53 is the first release with experimental Linux support. The Linux port remains an unsupported development preview under heavy revision, not an official release platform. These instructions are intended for developers and testers who are comfortable diagnosing build and runtime problems.
 
-1. Use Ubuntu or an Ubuntu-compatible environment.
-2. Install Git LFS, CMake, Clang, the NVIDIA CUDA Toolkit, `libgmp-dev`, and the X11/OpenGL development packages needed by the GUI.
+1. Use an x86_64 Ubuntu or Ubuntu-compatible environment.
+2. Install Git LFS, CMake 3.20 or newer, Clang, a GCC/G++ CUDA host compiler, `make`, `binutils` (for `objcopy`), the NVIDIA CUDA Toolkit, `libgmp-dev`, `libgl-dev`, `libglx-dev`, `libglu1-mesa-dev`, and `libx11-dev`. The CI build uses Clang 18, G++ 13, and CUDA 13.3.
+   The GUI configure step fetches Dear ImGui v1.91.5 from GitHub, so network access is required unless the dependency is already available to CMake.
 3. Run `git lfs pull` after cloning if Git LFS did not materialize the assets automatically.
 4. Run `./build_linux.sh`.
 5. Build outputs go to `build-debug/` and `build-release/`.

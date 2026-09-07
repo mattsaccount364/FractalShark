@@ -123,3 +123,15 @@ Thumbs.db
 View34Checkpoints/Bugged/*.txt
 View34Checkpoints/nr_checkpoint*.txt
 View34Checkpoints/view34_coords.txt
+
+
+*.FullOrbit
+*.LAStages
+*.LAs
+*.met
+HeapFile.bin
+ItersMemoryContainer*.iters
+ReferencePreparedTemp
+__pycache__
+zm49 from cfjh/
+FractalShark/locations.txt

@@ -170,11 +170,9 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
     //   p_ge    = (r >= p)
     //   p_do    = p_carry || p_ge
     //
-    // We perform:
-    //   r = r - p
-    //   if (!p_do) r = r + p   // undo subtraction when not needed
-    //
-    // This avoids warp divergence and yields a constant-latency path.
+    // Subtract only when the Montgomery correction is required.  The predicated
+    // instruction avoids warp divergence without doing a speculative subtract
+    // followed by an undo add.
     // ---------------------------------------------------------------------
     {
         uint64_t p = SharkNTT::MagicPrime;
@@ -184,8 +182,7 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
                      "  setp.ne.u64 p_carry, %1, 0;     // p_carry = (carry1 != 0)\n\t"
                      "  setp.ge.u64 p_ge, %0, %2;       // p_ge = (r >= p)\n\t"
                      "  or.pred p_do, p_carry, p_ge;    // p_do = p_carry || p_ge\n\t"
-                     "  sub.u64 %0, %0, %2;             // r = r - p   (tentative)\n\t"
-                     "  @!p_do add.u64 %0, %0, %2;      // if not doing reduction, restore r += p\n\t"
+                     "  @p_do sub.u64 %0, %0, %2;        // if p_do, r = r - p\n\t"
                      "}\n\t"
                      : "+l"(r)
                      : "l"(carry1), "l"(p));
@@ -8665,13 +8662,13 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
             const uint32_t activeRows = min(rowsPerTile, rowCount - rowBase);
             const uint32_t rank = block.thread_index().x;
             const uint32_t blockSize = block.size();
-            for (uint32_t localRow = 0u; localRow < activeRows; ++localRow) {
-                const uint32_t row = rowBase + localRow;
-                uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
-                uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
-                for (uint32_t i = rank; i < F; i += blockSize) {
-                    const uint32_t inputIndex = row * F + i;
-                    if (canonicalInput) {
+            if (canonicalInput) {
+                for (uint32_t localRow = 0u; localRow < activeRows; ++localRow) {
+                    const uint32_t row = rowBase + localRow;
+                    uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
+                    uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+                    for (uint32_t i = rank; i < F; i += blockSize) {
+                        const uint32_t inputIndex = row * F + i;
                         rowReal[i] = PackMatrixCoefficient(grid,
                                                            block,
                                                            debugCombo,
@@ -8694,13 +8691,26 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                                                            iterationPlan.ZImagCoefficientShift,
                                                            iterationPlan.ZImagResidualBitShift,
                                                            zImag.GetNegative());
-                    } else {
-                        rowReal[i] = inputReal[inputIndex];
-                        rowImag[i] = inputImag[inputIndex];
                     }
                 }
+                block.sync();
+            } else {
+                for (uint32_t localRow = 0u; localRow < activeRows; ++localRow) {
+                    const uint32_t row = rowBase + localRow;
+                    uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
+                    uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+                    const uint32_t inputBase = row * F;
+                    cg::memcpy_async(block,
+                                     rowReal,
+                                     inputReal + inputBase,
+                                     cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                    cg::memcpy_async(block,
+                                     rowImag,
+                                     inputImag + inputBase,
+                                     cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                }
+                cg::wait(block);
             }
-            block.sync();
             MatrixForwardSharedStages(grid,
                                       block,
                                       debugCombo,
@@ -8945,12 +8955,16 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                 uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
                 uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
                 const uint32_t inputBase = row * F;
-                for (uint32_t i = rank; i < F; i += blockSize) {
-                    rowReal[i] = inputReal[inputBase + i];
-                    rowImag[i] = inputImag[inputBase + i];
-                }
+                cg::memcpy_async(block,
+                                 rowReal,
+                                 inputReal + inputBase,
+                                 cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                cg::memcpy_async(block,
+                                 rowImag,
+                                 inputImag + inputBase,
+                                 cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
             }
-            block.sync();
+            cg::wait(block);
             MatrixInverseLocal(grid,
                                block,
                                debugCombo,

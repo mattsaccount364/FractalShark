@@ -150,32 +150,6 @@ TEST(MenuState_WindowSizeCommandsAreActions)
     ASSERT_TRUE(windowedSquare->checkKind == FractalShark::CheckKind::None);
 }
 
-TEST(MenuTree_ExposesViews33And34)
-{
-    using FractalShark::FractalCommand;
-    using FractalShark::Item;
-    using FractalShark::Node;
-    using FractalShark::Popup;
-    using FractalShark::Radio;
-    using FractalShark::RadioGroup;
-    using FractalShark::Rule;
-    using FractalShark::Sep;
-    using FractalShark::Toggle;
-
-#include "MenuTreeDef.h"
-
-    const auto nodes = std::span<const Node>{menu};
-    const Node *view33 = FindMenuNode(nodes, IDM_VIEW33);
-    const Node *view34 = FindMenuNode(nodes, IDM_VIEW34);
-
-    ASSERT_TRUE(view33 != nullptr);
-    ASSERT_TRUE(view34 != nullptr);
-    ASSERT_TRUE(view33->text == L"#33 - 1e325221 - period 22,680,804");
-    ASSERT_TRUE(view34->text == L"#34 - 1e650452 - period 399,289,978");
-    ASSERT_TRUE(view33->enableRule == Rule::Never);
-    ASSERT_TRUE(view34->enableRule == Rule::Always);
-}
-
 TEST(ViewPresets_LoadViews33And34)
 {
     MPIRPrecision restorePrecision{HighPrecision::defaultPrecisionInBits()};

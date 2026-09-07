@@ -424,16 +424,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
     }
 
     // Perform the calculation on the host using MPIR
-    mpf_t mpfHostResultXX;
-    mpf_t mpfHostResultXY1;
-    mpf_t mpfHostResultXY2;
-    mpf_t mpfHostResultYY;
-
-    mpf_init(mpfHostResultXX);
-    mpf_init(mpfHostResultXY1);
-    mpf_init(mpfHostResultXY2);
-    mpf_init(mpfHostResultYY);
-
     mpf_t recurrenceX, recurrenceY;
     mpf_init(recurrenceX);
     mpf_init(recurrenceY);
@@ -466,8 +456,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
         typename SharkFloatParams::Float dzdcX{1};
         typename SharkFloatParams::Float dzdcY{0};
 
-        const typename SharkFloatParams::Float cx_cast{mpfX};
-        const typename SharkFloatParams::Float cy_cast{mpfY};
+        const typename SharkFloatParams::Float cxCast{mpfX};
+        const typename SharkFloatParams::Float cyCast{mpfY};
 
         const typename SharkFloatParams::Float HighTwo{2.0f};
         const typename SharkFloatParams::Float HighOne{1.0f};
@@ -482,14 +472,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             // x_(n + 1) = x_n * x_n - y_n * y_n + a
             // y_(n + 1) = 2 * x_n * y_n + b
 
-            typename SharkFloatParams::Float double_zx;
-            typename SharkFloatParams::Float double_zy;
-
-            if constexpr (SharkFloatParams::EnablePeriodicity) {
-                double_zx = typename SharkFloatParams::Float{recurrenceX};
-                double_zy = typename SharkFloatParams::Float{recurrenceY};
-            }
-
             hostReferenceOrbit.push_back({typename SharkFloatParams::Float{recurrenceX},
                                           typename SharkFloatParams::Float{recurrenceY}});
 
@@ -497,6 +479,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             keptIterationCounter++;
 
             if constexpr (SharkFloatParams::EnablePeriodicity) {
+                typename SharkFloatParams::Float doubleZx{recurrenceX};
+                typename SharkFloatParams::Float doubleZy{recurrenceY};
+
                 // x^2+2*I*x*y-y^2
                 // dzdc = 2.0 * z * dzdc + real(1.0);
                 // dzdc = 2.0 * (zx + zy * i) * (dzdcX + dzdcY * i) + HighPrecision(1.0);
@@ -515,11 +500,11 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                 HdrReduce(dzdcY);
                 auto dzdcY1 = HdrAbs(dzdcY);
 
-                HdrReduce(double_zx);
-                auto zxCopy1 = HdrAbs(double_zx);
+                HdrReduce(doubleZx);
+                auto zxCopy1 = HdrAbs(doubleZx);
 
-                HdrReduce(double_zy);
-                auto zyCopy1 = HdrAbs(double_zy);
+                HdrReduce(doubleZy);
+                auto zyCopy1 = HdrAbs(doubleZy);
 
                 typename SharkFloatParams::Float n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
@@ -533,8 +518,19 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     break;
                 } else {
                     auto dzdcXOrig = dzdcX;
-                    dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
-                    dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
+                    dzdcX = HighTwo * (doubleZx * dzdcX - doubleZy * dzdcY) + HighOne;
+                    dzdcY = HighTwo * (doubleZx * dzdcY + doubleZy * dzdcXOrig);
+                }
+
+                typename SharkFloatParams::Float tempZX = doubleZx + cxCast;
+                typename SharkFloatParams::Float tempZY = doubleZy + cyCast;
+                typename SharkFloatParams::Float znSize = tempZX * tempZX + tempZY * tempZY;
+
+                // Match the GPU's stopping checks before advancing the recurrence.
+                if (HdrCompareToBothPositiveReducedGT(znSize, TwoFiftySix)) {
+                    hostIterationsExecuted = keptIterationCounter;
+                    hostPeriodicityResult = PeriodicityResult::Escaped;
+                    break;
                 }
             }
 
@@ -546,21 +542,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             mpf_add(recurrenceX, xSquared, mpfX); // (x + y) * (x - y) + a
 
             mpf_add(recurrenceY, twoXY, mpfY); // 2xy + b
-
-            typename SharkFloatParams::Float tempZX = double_zx + cx_cast;
-            typename SharkFloatParams::Float tempZY = double_zy + cy_cast;
-            typename SharkFloatParams::Float zn_size = tempZX * tempZX + tempZY * tempZY;
-
-            if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
-
-                //
-                // Escaped
-                //
-
-                hostIterationsExecuted = keptIterationCounter;
-                hostPeriodicityResult = PeriodicityResult::Escaped;
-                break;
-            }
         }
 
         if (hostPeriodicityResult == PeriodicityResult::Unknown) {
@@ -831,9 +812,9 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     bool testSucceeded = true;
                     constexpr auto numTerms = 2;
                     testSucceeded &= CheckDiff(
-                        launchParams, Tests, testNum, numTerms, "GPU_A", mpfHostResultXX, gpuResultX);
+                        launchParams, Tests, testNum, numTerms, "GPU_A", recurrenceX, gpuResultX);
                     testSucceeded &= CheckDiff(
-                        launchParams, Tests, testNum, numTerms, "GPU_B", mpfHostResultYY, gpuResultY);
+                        launchParams, Tests, testNum, numTerms, "GPU_B", recurrenceY, gpuResultY);
 
                     if ((combo.PeriodicityStatus != hostPeriodicityResult) ||
                         (totalExecutedIters != hostIterationsExecuted)) {
@@ -925,12 +906,6 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             }
         }
     }
-
-    // Clean up MPIR variables
-    mpf_clear(mpfHostResultXX);
-    mpf_clear(mpfHostResultXY1);
-    mpf_clear(mpfHostResultXY2);
-    mpf_clear(mpfHostResultYY);
 
     // Clean up reference orbit variables
     mpf_clear(recurrenceX);
@@ -1417,10 +1392,10 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         constexpr auto numTerms = 2;
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-            launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultX, *gpuResultXX);
+            launchParams, Tests, testNum, numTerms, "GPU_X", mpfHostResultX, *gpuResultXX);
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-            launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultY, *gpuResultYY);
+            launchParams, Tests, testNum, numTerms, "GPU_Y", mpfHostResultY, *gpuResultYY);
     }
 
     // Clean up MPIR variables

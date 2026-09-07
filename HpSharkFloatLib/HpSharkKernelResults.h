@@ -116,6 +116,7 @@ template <class SharkFloatParams> struct HpSharkReferenceWorkspace {
     uint64_t *StageOmegasInverse;
     uint64_t *ForwardTwiddles;
     uint64_t *InverseTwiddles;
+    HpSharkReferencePackedCarryPrefixDescriptor *CarryPrefixDescriptors;
     SharkNTT::Plan Plans[PlanCacheEntryCount];
     SharkNTT::RootTables PlanRoots[PlanCacheEntryCount];
     uint32_t ValidPlanMask;

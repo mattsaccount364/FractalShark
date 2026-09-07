@@ -163,9 +163,11 @@ TestTracker::MarkSuccess(const HpShark::LaunchParams *launchParams,
     t.RanAnyVariant = true;
 
     auto &vr = t.Variants[description];
-    vr.status = VariantStatus::Passed;
-    vr.relativeError.clear();
-    vr.acceptableError.clear();
+    if (vr.status != VariantStatus::Failed) {
+        vr.status = VariantStatus::Passed;
+        vr.relativeError.clear();
+        vr.acceptableError.clear();
+    }
 
     if (launchParams) {
         t.NumBlocks = launchParams->NumBlocks;
@@ -189,9 +191,11 @@ TestTracker::MarkFailed(const HpShark::LaunchParams *launchParams,
     t.RanAnyVariant = true;
 
     auto &vr = t.Variants[description];
-    vr.status = VariantStatus::Failed;
-    vr.relativeError = relativeError;
-    vr.acceptableError = acceptableError;
+    if (vr.status != VariantStatus::Failed) {
+        vr.status = VariantStatus::Failed;
+        vr.relativeError = relativeError;
+        vr.acceptableError = acceptableError;
+    }
 
     if (launchParams) {
         t.NumBlocks = launchParams->NumBlocks;

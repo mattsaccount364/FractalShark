@@ -27,9 +27,9 @@ private:
 
 public:
     ReferencePreparedTables(Workspace *descriptor,
-                             void *storage,
-                             size_t storageBytes,
-                             const Workspace &hostDescriptor)
+                            void *storage,
+                            size_t storageBytes,
+                            const Workspace &hostDescriptor)
         : m_Descriptor{descriptor}, m_Storage{storage}, m_StorageBytes{storageBytes},
           m_HostDescriptor{hostDescriptor}, m_Id{s_NextId.fetch_add(1, std::memory_order_relaxed)}
     {
@@ -146,8 +146,7 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
             "Reference actual precision is outside the storage precision bucket");
     }
 
-    const SharkNTT::Plan precisionPlan =
-        SharkNTT::BuildPlan(static_cast<int>(actualPrecisionLimbs));
+    const SharkNTT::Plan precisionPlan = SharkNTT::BuildPlan(static_cast<int>(actualPrecisionLimbs));
     if (!precisionPlan.ok)
         throw FractalSharkSeriousException("Unable to build the reference precision plan");
 
@@ -162,6 +161,9 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
     // Keep this allocation sequence in exact lockstep with the Workspace pointer assignments below.
     // Any added, removed, or reordered workspace field must be changed in both places.
     addAllocation(WorkingSpectrumCount, activeMaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
+    addAllocation(activeMaxCarryPrefixParts,
+                  sizeof(HpSharkReferencePackedCarryPrefixDescriptor),
+                  WorkspaceAlignment);
     addAllocation(LimbCount, activeMaxFusedLimbs * sizeof(int64_t), WorkspaceAlignment);
     addAllocation(2u, activeMaxFusedLimbs * sizeof(uint32_t), WorkspaceAlignment);
     addAllocation(1u, maxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
@@ -207,6 +209,10 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
             workspace.DzdcRealOutput = allocateSpectrum();
             workspace.DzdcImagOutput = allocateSpectrum();
         }
+        workspace.CarryPrefixDescriptors = static_cast<HpSharkReferencePackedCarryPrefixDescriptor *>(
+            allocateWorkspace(activeMaxCarryPrefixParts,
+                              sizeof(HpSharkReferencePackedCarryPrefixDescriptor),
+                              WorkspaceAlignment));
         workspace.RealLimbs = allocateLimbs();
         workspace.ImagLimbs = allocateLimbs();
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
@@ -295,11 +301,11 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs)
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                               const HpSharkFloat<SharkFloatParams> &cReal,
-                               const HpSharkFloat<SharkFloatParams> &cImag,
-                               uint32_t actualPrecisionLimbs,
-                               uint32_t minFusedStages,
-                               uint32_t maxFusedStages)
+                              const HpSharkFloat<SharkFloatParams> &cReal,
+                              const HpSharkFloat<SharkFloatParams> &cImag,
+                              uint32_t actualPrecisionLimbs,
+                              uint32_t minFusedStages,
+                              uint32_t maxFusedStages)
 {
     (void)cReal;
     (void)cImag;
@@ -309,9 +315,9 @@ PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
     try {
         constexpr size_t TempBytes = HpShark::AdditionalUInt64Global * sizeof(uint64_t);
         ReferenceSetupDetail::CheckCuda(cudaMalloc(&tempData, TempBytes),
-                                         "cudaMalloc(Reference setup debug scratch)");
+                                        "cudaMalloc(Reference setup debug scratch)");
         ReferenceSetupDetail::CheckCuda(cudaMemset(tempData, 0, TempBytes),
-                                         "cudaMemset(Reference setup debug scratch)");
+                                        "cudaMemset(Reference setup debug scratch)");
 
         auto *workspace = prepared->GetDeviceDescriptor();
         void *kernelArgs[] = {&workspace, &tempData};
@@ -331,27 +337,27 @@ PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                               const HpSharkFloat<SharkFloatParams> &cReal,
-                               const HpSharkFloat<SharkFloatParams> &cImag,
-                               uint32_t actualPrecisionLimbs)
+                              const HpSharkFloat<SharkFloatParams> &cReal,
+                              const HpSharkFloat<SharkFloatParams> &cImag,
+                              uint32_t actualPrecisionLimbs)
 {
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     return PrepareHpSharkReferenceTables<SharkFloatParams>(launchParams,
-                                                            cReal,
-                                                            cImag,
-                                                            actualPrecisionLimbs,
-                                                            Workspace::MinFusedStages,
-                                                            Workspace::MaxFusedStages);
+                                                           cReal,
+                                                           cImag,
+                                                           actualPrecisionLimbs,
+                                                           Workspace::MinFusedStages,
+                                                           Workspace::MaxFusedStages);
 }
 
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                               const mpf_t cReal,
-                               const mpf_t cImag,
-                               uint32_t actualPrecisionLimbs,
-                               uint32_t minFusedStages,
-                               uint32_t maxFusedStages)
+                              const mpf_t cReal,
+                              const mpf_t cImag,
+                              uint32_t actualPrecisionLimbs,
+                              uint32_t minFusedStages,
+                              uint32_t maxFusedStages)
 {
     auto inputReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto inputImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -366,17 +372,17 @@ PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                               const mpf_t cReal,
-                               const mpf_t cImag,
-                               uint32_t actualPrecisionLimbs)
+                              const mpf_t cReal,
+                              const mpf_t cImag,
+                              uint32_t actualPrecisionLimbs)
 {
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     return PrepareHpSharkReferenceTables<SharkFloatParams>(launchParams,
-                                                            cReal,
-                                                            cImag,
-                                                            actualPrecisionLimbs,
-                                                            Workspace::MinFusedStages,
-                                                            Workspace::MaxFusedStages);
+                                                           cReal,
+                                                           cImag,
+                                                           actualPrecisionLimbs,
+                                                           Workspace::MinFusedStages,
+                                                           Workspace::MaxFusedStages);
 }
 
 } // namespace HpShark

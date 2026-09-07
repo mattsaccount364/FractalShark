@@ -24,7 +24,7 @@ At a precision of 16384 32-bit limbs (≈ 158,000 decimal digits), this GPU refe
 
 The implementation works and remains under active development, as does the rest of the project.  To try it, you'll need an RTX 2xxx series or newer, e.g. RTX 3xxx/4xxx/5xxx should all work with recent drivers.  Then, start FractalShark, manually choose the HDRx32 LAv2 kernel, and under Perturbation choose GPU-Accelerated Reference Orbit.  Then try e.g. View #5 to see it render.  (See FractalShark.pdf §6–7 for details on reference orbit computation and GPU arithmetic.)
 
-Ref2/v2 supersedes the older v1 multiply/add implementation and substantially outperforms it.
+Ref2/v2 supersedes the older v1 multiply/add implementation and substantially outperforms it.  FractalShark now includes an example "minibrot" at ~1e650452 depth, found using this GPU-accelerated implementation.  The Internet is full of nonsense about "deepest ever" Mandelbrot rendering.  If you can identify a mini-mandelbrot at a depth deeper than this one, please post the coordinates somewhere, and I'd be happy to (a) include it in FractalShark as an example after confirming it's real, and (b) update this paragraph.
 
 ### 2. Multiple CUDA Mandelbrot rendering strategies
 
@@ -34,17 +34,17 @@ Several of these approaches appear to be undocumented or unpublished elsewhere, 
 
 ### 3. CUDA-based linear approximation implementations
 
-FractalShark includes **two CUDA implementations of linear approximation**, a relatively recent technique for achieving high-performance deep-zoom rendering.
+FractalShark includes **two CUDA implementations of linear approximation**, a relatively recent technique for achieving high-performance deep-zoom rendering that builds on perturbation.
 
-No existing CUDA implementations of this technique appear to be publicly available. These implementations were ported from **FractalZoomer**, and ultimately originated from work by **Claude** and **Zhuoran**. FractalShark adapts and extends these ideas within a CUDA-centric architecture.  (See FractalShark.pdf §5 for approximation algorithms.)
+No existing CUDA implementations of this technique appear to be publicly available. The CUDA implementation here is ported from **FractalZoomer**, and ultimately originated from work by **Claude** and **Zhuoran**. FractalShark adapts and extends these ideas within a CUDA-centric architecture.  (See FractalShark.pdf §5 for approximation algorithms.)
 
 ### 4. Multithreaded high-performance CPU reference orbit calculation
 
 FractalShark includes a **multithreaded CPU reference orbit implementation** designed to maximize performance on modern CPUs.
 
-Using three threads total—two dedicated to squaring and one coordinating—has empirically provided the best performance on an AMD 5950X. Reference orbit computation is the dominant bottleneck at extreme magnifications, making this optimization particularly important.
+Using three threads total—two dedicated to squaring and one coordinating—has empirically provided the best performance on an AMD 5950X. Reference orbit computation is the dominant bottleneck at extreme magnifications, making this optimization particularly important.  That said, once your zoom depth exceeds e.g. 1e10000 or thereabouts, you may be better off using the GPU-accelerated approach above.  Shallower than that, and the CPU more likely wins.
 
-This implementation outperforms all other known CPU-based reference orbit implementations when run on modern multi-core CPUs with AVX-2 support. Additional optimizations are possible but remain unexplored.
+This implementation outperforms all other known CPU-based reference orbit implementations when run on modern multi-core CPUs with AVX-2 support. Additional optimizations are possible but remain unexplored.  If you're aware of faster implementations please let me know, I imagine a bespoke AVX-512 implementation should beat FractalShark in its current form.  The GPU-accelerated approach above will beat all CPU approaches at higher zoom depths absent fundamentally different algorithmic approaches.
 
 This subsystem also includes a **custom memory allocator** supporting an optional *perturbed perturbation* mode, in which intermediate-resolution reference orbit values are cached and reused across successive zooms.  (See FractalShark.pdf §6 for reference orbit computation details.)
 
@@ -54,15 +54,13 @@ FractalShark implements a custom **“2×32” floating-point type**, optionally
 
 This type uses a pair of 32-bit floating-point values plus a shared exponent, providing an effective ~48-bit mantissa without using native 64-bit floating-point arithmetic. The result is substantially higher performance on consumer GPUs with only a modest loss of precision.
 
-This implementation is **CUDA-only**; on CPUs, native 64-bit floating-point arithmetic is generally preferable.  (See FractalShark.pdf §3 for HDR floating-point type details.)
+This implementation is **CUDA-only**; on CPUs, native 64-bit floating-point arithmetic is preferable.  (See FractalShark.pdf §3 for HDR floating-point type details.)
 
 ### 6. Reference orbit compression and on-the-fly decompression
 
-FractalShark supports **reference orbit compression**, currently a work in progress.
+FractalShark supports **reference orbit compression**.
 
-This idea was first implemented in Imagina for saving and loading reference orbits. FractalShark extends Zhuoran’s approach to **runtime per-pixel rendering**, decompressing reference orbit segments on demand during rendering.
-
-For high-period locations (e.g. period 600,000,000), this can reduce memory usage by multiple gigabytes, often making the difference between a render being feasible or impossible.  (See FractalShark.pdf §6 for compression details.)
+This idea was first implemented in Imagina for saving and loading reference orbits. FractalShark extends Zhuoran’s approach to **runtime per-pixel rendering**, decompressing reference orbit segments on demand during rendering.  For high-period locations (e.g. period 600,000,000), this can reduce memory usage by multiple gigabytes, often making the difference between a render being feasible or impossible.  (See FractalShark.pdf §6 for compression details.)  FractalShark's reference orbit compression allows it to save/load Imagina-compatible save files, which include the compressed reference orbit and allow for a compact representation of a point of interest.
 
 ### 7. Feature Finder / periodic point detection
 
@@ -118,15 +116,13 @@ The document is a work in progress — some sections are still being revised and
 
 ## Can I use CPU-only rendering and try it without an NVIDIA card?
 
-If you get a CUDA error when you launch, you may be able to work around it: dismiss the error, right-click on the black screen, select "Choose Render Algorithm" and pick one of the ones near the top that includes the word "CPU." Then right-click again and select "Recalculate, Reuse Reference." If you use this workaround, you may as well use Imagina — it offers superior CPU performance.
-
-Note that the GPU-accelerated reference orbit really doesn't pay off until you're at truly ridiculous depths, e.g. 4096 limbs or greater, which is 10K+ digits.  At shallower depths it'll be slower than CPU, so don't get too hung up if your card is a little older.
+CUDA should no longer be required to use FractalShark, but I'm not sure I'd bother.  The CPU path is largely a debugging aid and not optimized.  If you're looking for the fastest CPU-only Mandelbrot renderer, FractalShark isn't it.  It does nevertheless include CPU-only perturbation, linear-approximation, reference orbit compression etc and as such may be a useful reference if you're interested.
 
 ## What features will FractalShark never have?
 
 - Support for non-Mandelbrot fractals. Not worth the engineering complexity relative to the payoff.
 - Support for AMD cards unless I buy one
-- High-quality CPU support. Zhuoran's Imagina easily has that covered - he did a great job. FractalShark does have two CPU-based linear approximation implementations, but it's not very well optimized, and is intended primarily for testing/debugging. Runtime reference compression also is supported in CPU-only mode.
+- High-quality CPU support. Zhuoran's Imagina easily has that covered - he did a great job.
 
 ## What bugs does FractalShark have?
 

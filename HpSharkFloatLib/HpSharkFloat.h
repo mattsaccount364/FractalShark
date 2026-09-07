@@ -25,13 +25,13 @@
 
 namespace HpShark {
 
-#ifdef _DEBUG
+#if defined(_DEBUG) || defined(__CUDACC_DEBUG__)
 static constexpr bool Debug = true;
 #else
 static constexpr bool Debug = false;
 #endif
 
-#ifdef _DEBUG
+#if defined(_DEBUG) || defined(__CUDACC_DEBUG__)
 #define SharkForceInlineReleaseOnly
 #else
 #define SharkForceInlineReleaseOnly __forceinline__

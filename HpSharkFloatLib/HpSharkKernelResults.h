@@ -45,6 +45,8 @@ constexpr uint32_t HpSharkReferencePlanImagProduct = 1u << 1;
 constexpr uint32_t HpSharkReferencePlanDzdcP1 = 1u << 2;
 constexpr uint32_t HpSharkReferencePlanDzdcP2 = 1u << 3;
 constexpr uint32_t HpSharkReferencePlanDzdcP3 = 1u << 4;
+constexpr uint32_t HpSharkReferencePlanDzdcProductMask =
+    HpSharkReferencePlanDzdcP1 | HpSharkReferencePlanDzdcP2 | HpSharkReferencePlanDzdcP3;
 constexpr uint32_t HpSharkReferencePlanRealLinear = 1u << 5;
 constexpr uint32_t HpSharkReferencePlanImagLinear = 1u << 6;
 constexpr uint32_t HpSharkReferencePlanDzdcOne = 1u << 7;

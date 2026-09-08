@@ -3948,9 +3948,7 @@ AccumulateAlignedOutputSpectra(cooperative_groups::grid_group &grid,
                                HpSharkReferenceWorkspace<SharkFloatParams> &workspace,
                                bool realProductEnabled,
                                bool imagProductEnabled,
-                               bool dzdcP1Enabled,
-                               bool dzdcP2Enabled,
-                               bool dzdcP3Enabled)
+                               uint32_t dzdcProductMask)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     const uint32_t gridSize = static_cast<uint32_t>(grid.size());
@@ -3974,15 +3972,25 @@ AccumulateAlignedOutputSpectra(cooperative_groups::grid_group &grid,
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             uint64_t dzdcReal = 0ull;
             uint64_t dzdcImag = 0ull;
-            if (dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled) {
-                const uint64_t p1 = NTT::MontgomeryMul<SharkFloatParams>(
-                    grid, block, debugCombo, workspace.ZReal[i], workspace.DzdcReal[i]);
-                const uint64_t p2 = NTT::MontgomeryMul<SharkFloatParams>(
-                    grid, block, debugCombo, workspace.ZImag[i], workspace.DzdcImag[i]);
-                const uint64_t stateSum = AddPSerial(workspace.ZReal[i], workspace.ZImag[i]);
-                const uint64_t derivativeSum = AddPSerial(workspace.DzdcReal[i], workspace.DzdcImag[i]);
-                const uint64_t p3 = NTT::MontgomeryMul<SharkFloatParams>(
-                    grid, block, debugCombo, stateSum, derivativeSum);
+            if (dzdcProductMask != 0u) {
+                const uint64_t p1 =
+                    (dzdcProductMask & HpSharkReferencePlanDzdcP1) != 0u
+                        ? NTT::MontgomeryMul<SharkFloatParams>(
+                              grid, block, debugCombo, workspace.ZReal[i], workspace.DzdcReal[i])
+                        : 0ull;
+                const uint64_t p2 =
+                    (dzdcProductMask & HpSharkReferencePlanDzdcP2) != 0u
+                        ? NTT::MontgomeryMul<SharkFloatParams>(
+                              grid, block, debugCombo, workspace.ZImag[i], workspace.DzdcImag[i])
+                        : 0ull;
+                const uint64_t p3 = (dzdcProductMask & HpSharkReferencePlanDzdcP3) != 0u
+                                        ? NTT::MontgomeryMul<SharkFloatParams>(
+                                              grid,
+                                              block,
+                                              debugCombo,
+                                              AddPSerial(workspace.ZReal[i], workspace.ZImag[i]),
+                                              AddPSerial(workspace.DzdcReal[i], workspace.DzdcImag[i]))
+                                        : 0ull;
                 const uint64_t realDifference = SubPSerial(p1, p2);
                 const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
                 dzdcReal = AddPSerial(realDifference, realDifference);
@@ -4113,9 +4121,7 @@ ApplyReferenceWarpPointwise(cooperative_groups::grid_group &grid,
                             DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
                             bool realProductEnabled,
                             bool imagProductEnabled,
-                            bool dzdcP1Enabled,
-                            bool dzdcP2Enabled,
-                            bool dzdcP3Enabled,
+                            uint32_t dzdcProductMask,
                             uint64_t &zReal,
                             uint64_t &zImag,
                             uint64_t &dzdcReal,
@@ -4142,15 +4148,23 @@ ApplyReferenceWarpPointwise(cooperative_groups::grid_group &grid,
         const uint64_t dzdcImagInput = dzdcImag;
         uint64_t nextDzdcReal = 0ull;
         uint64_t nextDzdcImag = 0ull;
-        if (dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled) {
-            const uint64_t p1 =
-                NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, zRealInput, dzdcRealInput);
-            const uint64_t p2 =
-                NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, zImagInput, dzdcImagInput);
-            const uint64_t stateSum = AddPSerial(zRealInput, zImagInput);
-            const uint64_t derivativeSum = AddPSerial(dzdcRealInput, dzdcImagInput);
+        if (dzdcProductMask != 0u) {
+            const uint64_t p1 = (dzdcProductMask & HpSharkReferencePlanDzdcP1) != 0u
+                                    ? NTT::MontgomeryMul<SharkFloatParams>(
+                                          grid, block, debugCombo, zRealInput, dzdcRealInput)
+                                    : 0ull;
+            const uint64_t p2 = (dzdcProductMask & HpSharkReferencePlanDzdcP2) != 0u
+                                    ? NTT::MontgomeryMul<SharkFloatParams>(
+                                          grid, block, debugCombo, zImagInput, dzdcImagInput)
+                                    : 0ull;
             const uint64_t p3 =
-                NTT::MontgomeryMul<SharkFloatParams>(grid, block, debugCombo, stateSum, derivativeSum);
+                (dzdcProductMask & HpSharkReferencePlanDzdcP3) != 0u
+                    ? NTT::MontgomeryMul<SharkFloatParams>(grid,
+                                                           block,
+                                                           debugCombo,
+                                                           AddPSerial(zRealInput, zImagInput),
+                                                           AddPSerial(dzdcRealInput, dzdcImagInput))
+                    : 0ull;
             const uint64_t realDifference = SubPSerial(p1, p2);
             const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
             nextDzdcReal = AddPSerial(realDifference, realDifference);
@@ -4180,9 +4194,7 @@ ProcessReferenceWarpLocalCenter(cooperative_groups::grid_group &grid,
                                 uint32_t rowPitch,
                                 bool realProductEnabled,
                                 bool imagProductEnabled,
-                                bool dzdcP1Enabled,
-                                bool dzdcP2Enabled,
-                                bool dzdcP3Enabled)
+                                uint32_t dzdcProductMask)
 {
     static_assert(Mode == NTT::Multiway::TwoWay || Mode == NTT::Multiway::FourWay);
     constexpr uint32_t WarpSize = 32u;
@@ -4266,9 +4278,7 @@ ProcessReferenceWarpLocalCenter(cooperative_groups::grid_group &grid,
                                                             debugCombo,
                                                             realProductEnabled,
                                                             imagProductEnabled,
-                                                            dzdcP1Enabled,
-                                                            dzdcP2Enabled,
-                                                            dzdcP3Enabled,
+                                                            dzdcProductMask,
                                                             aUpper,
                                                             bUpper,
                                                             cUpper,
@@ -4278,9 +4288,7 @@ ProcessReferenceWarpLocalCenter(cooperative_groups::grid_group &grid,
                                                             debugCombo,
                                                             realProductEnabled,
                                                             imagProductEnabled,
-                                                            dzdcP1Enabled,
-                                                            dzdcP2Enabled,
-                                                            dzdcP3Enabled,
+                                                            dzdcProductMask,
                                                             aLower,
                                                             bLower,
                                                             cLower,
@@ -4355,9 +4363,7 @@ FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
                                uint64_t *SharkRestrict output3,
                                bool realProductEnabled,
                                bool imagProductEnabled,
-                               bool dzdcP1Enabled,
-                               bool dzdcP2Enabled,
-                               bool dzdcP3Enabled)
+                               uint32_t dzdcProductMask)
 {
     static_assert(Mode == NTT::Multiway::TwoWay || Mode == NTT::Multiway::FourWay);
     namespace cg = cooperative_groups;
@@ -4452,9 +4458,7 @@ FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
                                                                     len,
                                                                     realProductEnabled,
                                                                     imagProductEnabled,
-                                                                    dzdcP1Enabled,
-                                                                    dzdcP2Enabled,
-                                                                    dzdcP3Enabled);
+                                                                    dzdcProductMask);
             block.sync();
 
             if (S1 > WarpLocalStages + 1u) {
@@ -4518,15 +4522,23 @@ FusedAlignedPointwiseTransform(cooperative_groups::grid_group &grid,
                     const uint64_t dzdcImagInput = sharedDataD[i];
                     uint64_t dzdcReal = 0ull;
                     uint64_t dzdcImag = 0ull;
-                    if (dzdcP1Enabled || dzdcP2Enabled || dzdcP3Enabled) {
-                        const uint64_t p1 = NTT::MontgomeryMul<SharkFloatParams>(
-                            grid, block, debugCombo, zReal, dzdcRealInput);
-                        const uint64_t p2 = NTT::MontgomeryMul<SharkFloatParams>(
-                            grid, block, debugCombo, zImag, dzdcImagInput);
-                        const uint64_t stateSum = AddPSerial(zReal, zImag);
-                        const uint64_t derivativeSum = AddPSerial(dzdcRealInput, dzdcImagInput);
-                        const uint64_t p3 = NTT::MontgomeryMul<SharkFloatParams>(
-                            grid, block, debugCombo, stateSum, derivativeSum);
+                    if (dzdcProductMask != 0u) {
+                        const uint64_t p1 = (dzdcProductMask & HpSharkReferencePlanDzdcP1) != 0u
+                                                ? NTT::MontgomeryMul<SharkFloatParams>(
+                                                      grid, block, debugCombo, zReal, dzdcRealInput)
+                                                : 0ull;
+                        const uint64_t p2 = (dzdcProductMask & HpSharkReferencePlanDzdcP2) != 0u
+                                                ? NTT::MontgomeryMul<SharkFloatParams>(
+                                                      grid, block, debugCombo, zImag, dzdcImagInput)
+                                                : 0ull;
+                        const uint64_t p3 = (dzdcProductMask & HpSharkReferencePlanDzdcP3) != 0u
+                                                ? NTT::MontgomeryMul<SharkFloatParams>(
+                                                      grid,
+                                                      block,
+                                                      debugCombo,
+                                                      AddPSerial(zReal, zImag),
+                                                      AddPSerial(dzdcRealInput, dzdcImagInput))
+                                                : 0ull;
                         const uint64_t realDifference = SubPSerial(p1, p2);
                         const uint64_t imagDifference = SubPSerial(SubPSerial(p3, p1), p2);
                         dzdcReal = AddPSerial(realDifference, realDifference);
@@ -7819,11 +7831,57 @@ LoadWarpAdjacentPair(const uint64_t *SharkRestrict base, uint32_t lane, uint64_t
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
+MatrixForwardSharedButterfly(cooperative_groups::grid_group &grid,
+                             cooperative_groups::thread_block &block,
+                             DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
+                             uint64_t *SharkRestrict real,
+                             uint64_t *SharkRestrict imag,
+                             uint32_t offset0,
+                             uint32_t offset1,
+                             uint64_t twiddle)
+{
+    const uint64_t upperReal = real[offset0];
+    const uint64_t lowerReal = real[offset1];
+    const uint64_t upperImag = imag[offset0];
+    const uint64_t lowerImag = imag[offset1];
+    real[offset0] = NTT::AddP(upperReal, lowerReal);
+    real[offset1] =
+        NTT::MontgomeryMul(grid, block, debugCombo, NTT::SubP(upperReal, lowerReal), twiddle);
+    imag[offset0] = NTT::AddP(upperImag, lowerImag);
+    imag[offset1] =
+        NTT::MontgomeryMul(grid, block, debugCombo, NTT::SubP(upperImag, lowerImag), twiddle);
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+MatrixInverseSharedButterfly(cooperative_groups::grid_group &grid,
+                             cooperative_groups::thread_block &block,
+                             DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
+                             uint64_t *SharkRestrict real,
+                             uint64_t *SharkRestrict imag,
+                             uint32_t offset0,
+                             uint32_t offset1,
+                             uint64_t twiddle)
+{
+    const uint64_t upperReal = real[offset0];
+    const uint64_t realProduct = NTT::MontgomeryMul(grid, block, debugCombo, real[offset1], twiddle);
+    const uint64_t upperImag = imag[offset0];
+    const uint64_t imagProduct = NTT::MontgomeryMul(grid, block, debugCombo, imag[offset1], twiddle);
+    real[offset0] = NTT::AddP(upperReal, realProduct);
+    real[offset1] = NTT::SubP(upperReal, realProduct);
+    imag[offset0] = NTT::AddP(upperImag, imagProduct);
+    imag[offset1] = NTT::SubP(upperImag, imagProduct);
+}
+
+template <class SharkFloatParams, NTT::Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly void
 MatrixForwardSharedStages(cooperative_groups::grid_group &grid,
                           cooperative_groups::thread_block &block,
                           DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
                           uint64_t *SharkRestrict real,
                           uint64_t *SharkRestrict imag,
+                          uint64_t *SharkRestrict derivativeReal,
+                          uint64_t *SharkRestrict derivativeImag,
                           uint32_t rowCount,
                           uint32_t rowPitch,
                           uint32_t length,
@@ -7848,33 +7906,34 @@ MatrixForwardSharedStages(cooperative_groups::grid_group &grid,
             const uint32_t index1 = index0 + halfSpan;
             const uint64_t twiddle = roots.stage_twiddles_fwd[twiddleOffset + j];
             const uint32_t rowBase = row * rowPitch;
-            const uint64_t upperReal = real[rowBase + index0];
-            const uint64_t lowerReal = real[rowBase + index1];
-            const uint64_t upperImag = imag[rowBase + index0];
-            const uint64_t lowerImag = imag[rowBase + index1];
-            real[rowBase + index0] = NTT::AddP(upperReal, lowerReal);
-            real[rowBase + index1] =
-                NTT::MontgomeryMul(grid, block, debugCombo, NTT::SubP(upperReal, lowerReal), twiddle);
-            imag[rowBase + index0] = NTT::AddP(upperImag, lowerImag);
-            imag[rowBase + index1] =
-                NTT::MontgomeryMul(grid, block, debugCombo, NTT::SubP(upperImag, lowerImag), twiddle);
+            MatrixForwardSharedButterfly<SharkFloatParams>(
+                grid, block, debugCombo, real, imag, rowBase + index0, rowBase + index1, twiddle);
+            if constexpr (Mode == NTT::Multiway::FourWay) {
+                MatrixForwardSharedButterfly<SharkFloatParams>(grid,
+                                                               block,
+                                                               debugCombo,
+                                                               derivativeReal,
+                                                               derivativeImag,
+                                                               rowBase + index0,
+                                                               rowBase + index1,
+                                                               twiddle);
+            }
         }
         block.sync();
     }
 }
 
 template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void
-MatrixForwardWarpLocal(cooperative_groups::grid_group &grid,
-                       cooperative_groups::thread_block &block,
-                       DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
-                       uint64_t *SharkRestrict real,
-                       uint64_t *SharkRestrict imag,
-                       uint32_t rowCount,
-                       uint32_t rowLength,
-                       uint32_t rowPitch,
-                       const uint64_t *SharkRestrict rootCache,
-                       const SharkNTT::RootTables &roots)
+static __device__ __noinline__ void
+MatrixForwardWarpLocalPair(cooperative_groups::grid_group &grid,
+                           cooperative_groups::thread_block &block,
+                           DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
+                           uint64_t *SharkRestrict dataA,
+                           uint64_t *SharkRestrict dataB,
+                           uint32_t rowCount,
+                           uint32_t rowLength,
+                           uint32_t rowPitch,
+                           const uint64_t *SharkRestrict warpTwiddles)
 {
     constexpr uint32_t WarpSize = 32u;
     constexpr uint32_t SubgroupSize = 16u;
@@ -7888,8 +7947,6 @@ MatrixForwardWarpLocal(cooperative_groups::grid_group &grid,
     const uint32_t warpsPerBlock = block.size() / WarpSize;
     const uint32_t warpsPerRow = (rowLength + CoefficientsPerWarp - 1u) / CoefficientsPerWarp;
     const uint32_t totalChunks = rowCount * warpsPerRow;
-    (void)roots;
-
     for (uint32_t chunk = warp; chunk < totalChunks; chunk += warpsPerBlock) {
         const uint32_t row = chunk / warpsPerRow;
         const uint32_t rowWarp = chunk - row * warpsPerRow;
@@ -7897,49 +7954,46 @@ MatrixForwardWarpLocal(cooperative_groups::grid_group &grid,
             row * rowPitch + rowWarp * CoefficientsPerWarp + subgroupIndex * CoefficientsPerSubgroup;
         const uint32_t upperIndex = groupBase + subgroupLane;
         const uint32_t lowerIndex = upperIndex + SubgroupSize;
-        uint64_t realUpper = real[upperIndex];
-        uint64_t realLower = real[lowerIndex];
-        uint64_t imagUpper = imag[upperIndex];
-        uint64_t imagLower = imag[lowerIndex];
-        uint64_t twiddle = LoadMatrixWarpStageTwiddle(
-            rootCache + MatrixRootCacheForwardLocalOffset, WarpLocalStages, subgroupLane);
-        ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, realUpper, realLower);
-        ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, imagUpper, imagLower);
+        uint64_t upperA = dataA[upperIndex];
+        uint64_t lowerA = dataA[lowerIndex];
+        uint64_t upperB = dataB[upperIndex];
+        uint64_t lowerB = dataB[lowerIndex];
+        uint64_t twiddle = LoadMatrixWarpStageTwiddle(warpTwiddles, WarpLocalStages, subgroupLane);
+        ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, upperA, lowerA);
+        ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, upperB, lowerB);
         for (uint32_t stage = WarpLocalStages - 1u; stage > 0u; --stage) {
             const uint32_t shuffleDistance = 1u << (stage - 1u);
             const bool ownsLowerInput = (subgroupLane & shuffleDistance) != 0u;
             uint64_t upper = 0u;
             uint64_t lower = 0u;
-            RegroupWarpButterfly(realUpper, realLower, shuffleDistance, ownsLowerInput, upper, lower);
-            realUpper = upper;
-            realLower = lower;
-            RegroupWarpButterfly(imagUpper, imagLower, shuffleDistance, ownsLowerInput, upper, lower);
-            imagUpper = upper;
-            imagLower = lower;
-            twiddle = LoadMatrixWarpStageTwiddle(
-                rootCache + MatrixRootCacheForwardLocalOffset, stage, subgroupLane);
-            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, realUpper, realLower);
-            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, imagUpper, imagLower);
+            RegroupWarpButterfly(upperA, lowerA, shuffleDistance, ownsLowerInput, upper, lower);
+            upperA = upper;
+            lowerA = lower;
+            RegroupWarpButterfly(upperB, lowerB, shuffleDistance, ownsLowerInput, upper, lower);
+            upperB = upper;
+            lowerB = lower;
+            twiddle = LoadMatrixWarpStageTwiddle(warpTwiddles, stage, subgroupLane);
+            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, upperA, lowerA);
+            ApplyWarpDIFButterfly(grid, block, debugCombo, twiddle, upperB, lowerB);
         }
         // The DIF regrouping changes each lane's ownership from the input
         // half-group pair to two adjacent output coefficients.
-        StoreWarpAdjacentPair(real + groupBase, subgroupLane, realUpper, realLower);
-        StoreWarpAdjacentPair(imag + groupBase, subgroupLane, imagUpper, imagLower);
+        StoreWarpAdjacentPair(dataA + groupBase, subgroupLane, upperA, lowerA);
+        StoreWarpAdjacentPair(dataB + groupBase, subgroupLane, upperB, lowerB);
     }
 }
 
 template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void
-MatrixInverseWarpLocal(cooperative_groups::grid_group &grid,
-                       cooperative_groups::thread_block &block,
-                       DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
-                       uint64_t *SharkRestrict real,
-                       uint64_t *SharkRestrict imag,
-                       uint32_t rowCount,
-                       uint32_t rowLength,
-                       uint32_t rowPitch,
-                       const uint64_t *SharkRestrict rootCache,
-                       const SharkNTT::RootTables &roots)
+static __device__ __noinline__ void
+MatrixInverseWarpLocalPair(cooperative_groups::grid_group &grid,
+                           cooperative_groups::thread_block &block,
+                           DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
+                           uint64_t *SharkRestrict dataA,
+                           uint64_t *SharkRestrict dataB,
+                           uint32_t rowCount,
+                           uint32_t rowLength,
+                           uint32_t rowPitch,
+                           const uint64_t *SharkRestrict warpTwiddles)
 {
     constexpr uint32_t WarpSize = 32u;
     constexpr uint32_t SubgroupSize = 16u;
@@ -7953,8 +8007,6 @@ MatrixInverseWarpLocal(cooperative_groups::grid_group &grid,
     const uint32_t warpsPerBlock = block.size() / WarpSize;
     const uint32_t warpsPerRow = (rowLength + CoefficientsPerWarp - 1u) / CoefficientsPerWarp;
     const uint32_t totalChunks = rowCount * warpsPerRow;
-    (void)roots;
-
     for (uint32_t chunk = warp; chunk < totalChunks; chunk += warpsPerBlock) {
         const uint32_t row = chunk / warpsPerRow;
         const uint32_t rowWarp = chunk - row * warpsPerRow;
@@ -7964,46 +8016,161 @@ MatrixInverseWarpLocal(cooperative_groups::grid_group &grid,
         const uint32_t lowerIndex = upperIndex + SubgroupSize;
         // The DIT sequence starts with adjacent coefficients produced by the
         // forward DIF regrouping, then restores the half-group ownership.
-        uint64_t realUpper;
-        uint64_t realLower;
-        uint64_t imagUpper;
-        uint64_t imagLower;
-        LoadWarpAdjacentPair(real + groupBase, subgroupLane, realUpper, realLower);
-        LoadWarpAdjacentPair(imag + groupBase, subgroupLane, imagUpper, imagLower);
-        uint64_t twiddle =
-            LoadMatrixWarpStageTwiddle(rootCache + MatrixRootCacheInverseLocalOffset, 1u, subgroupLane);
-        ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, realUpper, realLower);
-        ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, imagUpper, imagLower);
+        uint64_t upper;
+        uint64_t lower;
+        uint64_t upperB;
+        uint64_t lowerB;
+        LoadWarpAdjacentPair(dataA + groupBase, subgroupLane, upper, lower);
+        LoadWarpAdjacentPair(dataB + groupBase, subgroupLane, upperB, lowerB);
+        uint64_t twiddle = LoadMatrixWarpStageTwiddle(warpTwiddles, 1u, subgroupLane);
+        ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, upper, lower);
+        ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, upperB, lowerB);
         for (uint32_t stage = 2u; stage <= WarpLocalStages; ++stage) {
             const uint32_t shuffleDistance = 1u << (stage - 2u);
             const bool ownsLowerInput = (subgroupLane & shuffleDistance) != 0u;
-            uint64_t upper = 0u;
-            uint64_t lower = 0u;
-            RegroupWarpButterfly(realUpper, realLower, shuffleDistance, ownsLowerInput, upper, lower);
-            realUpper = upper;
-            realLower = lower;
-            RegroupWarpButterfly(imagUpper, imagLower, shuffleDistance, ownsLowerInput, upper, lower);
-            imagUpper = upper;
-            imagLower = lower;
-            twiddle = LoadMatrixWarpStageTwiddle(
-                rootCache + MatrixRootCacheInverseLocalOffset, stage, subgroupLane);
-            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, realUpper, realLower);
-            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, imagUpper, imagLower);
+            uint64_t regroupedUpper = 0u;
+            uint64_t regroupedLower = 0u;
+            RegroupWarpButterfly(
+                upper, lower, shuffleDistance, ownsLowerInput, regroupedUpper, regroupedLower);
+            upper = regroupedUpper;
+            lower = regroupedLower;
+            RegroupWarpButterfly(
+                upperB, lowerB, shuffleDistance, ownsLowerInput, regroupedUpper, regroupedLower);
+            upperB = regroupedUpper;
+            lowerB = regroupedLower;
+            twiddle = LoadMatrixWarpStageTwiddle(warpTwiddles, stage, subgroupLane);
+            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, upper, lower);
+            ApplyWarpDITButterfly(grid, block, debugCombo, twiddle, upperB, lowerB);
         }
-        real[upperIndex] = realUpper;
-        real[lowerIndex] = realLower;
-        imag[upperIndex] = imagUpper;
-        imag[lowerIndex] = imagLower;
+        dataA[upperIndex] = upper;
+        dataA[lowerIndex] = lower;
+        dataB[upperIndex] = upperB;
+        dataB[lowerIndex] = lowerB;
     }
 }
 
 template <class SharkFloatParams>
+static __device__ __noinline__ void
+MatrixProcessWarpLocalCenter(cooperative_groups::grid_group &grid,
+                             cooperative_groups::thread_block &block,
+                             DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
+                             uint64_t *SharkRestrict sharedDataA,
+                             uint64_t *SharkRestrict sharedDataB,
+                             uint64_t *SharkRestrict sharedDataC,
+                             uint64_t *SharkRestrict sharedDataD,
+                             const uint64_t *SharkRestrict rootCache,
+                             uint32_t rowCount,
+                             uint32_t rowLength,
+                             uint32_t rowPitch,
+                             bool realProductEnabled,
+                             bool imagProductEnabled,
+                             uint32_t dzdcProductMask)
+{
+    constexpr uint32_t WarpSize = 32u;
+    constexpr uint32_t SubgroupSize = 16u;
+    constexpr uint32_t CoefficientsPerSubgroup = 32u;
+    constexpr uint32_t CoefficientsPerWarp = 64u;
+    const uint32_t lane = block.thread_index().x & (WarpSize - 1u);
+    const uint32_t subgroupLane = lane & (SubgroupSize - 1u);
+    const uint32_t subgroupIndex = lane / SubgroupSize;
+    const uint32_t warp = block.thread_index().x / WarpSize;
+    const uint32_t warpsPerBlock = block.size() / WarpSize;
+    const uint32_t warpsPerRow = (rowLength + CoefficientsPerWarp - 1u) / CoefficientsPerWarp;
+    const uint32_t totalChunks = rowCount * warpsPerRow;
+
+    MatrixForwardWarpLocalPair<SharkFloatParams>(grid,
+                                                 block,
+                                                 debugCombo,
+                                                 sharedDataA,
+                                                 sharedDataB,
+                                                 rowCount,
+                                                 rowLength,
+                                                 rowPitch,
+                                                 rootCache + MatrixRootCacheForwardLocalOffset);
+    MatrixForwardWarpLocalPair<SharkFloatParams>(grid,
+                                                 block,
+                                                 debugCombo,
+                                                 sharedDataC,
+                                                 sharedDataD,
+                                                 rowCount,
+                                                 rowLength,
+                                                 rowPitch,
+                                                 rootCache + MatrixRootCacheForwardLocalOffset);
+
+    for (uint32_t chunk = warp; chunk < totalChunks; chunk += warpsPerBlock) {
+        const uint32_t row = chunk / warpsPerRow;
+        const uint32_t rowWarp = chunk - row * warpsPerRow;
+        const uint32_t groupBase =
+            row * rowPitch + rowWarp * CoefficientsPerWarp + subgroupIndex * CoefficientsPerSubgroup;
+        const uint32_t upperIndex = groupBase + 2u * subgroupLane;
+        const uint32_t lowerIndex = upperIndex + 1u;
+        uint64_t a = sharedDataA[upperIndex];
+        uint64_t b = sharedDataB[upperIndex];
+        uint64_t c = sharedDataC[upperIndex];
+        uint64_t d = sharedDataD[upperIndex];
+        ApplyReferenceWarpPointwise<SharkFloatParams, NTT::Multiway::FourWay>(grid,
+                                                                              block,
+                                                                              debugCombo,
+                                                                              realProductEnabled,
+                                                                              imagProductEnabled,
+                                                                              dzdcProductMask,
+                                                                              a,
+                                                                              b,
+                                                                              c,
+                                                                              d);
+        sharedDataA[upperIndex] = a;
+        sharedDataB[upperIndex] = b;
+        sharedDataC[upperIndex] = c;
+        sharedDataD[upperIndex] = d;
+        a = sharedDataA[lowerIndex];
+        b = sharedDataB[lowerIndex];
+        c = sharedDataC[lowerIndex];
+        d = sharedDataD[lowerIndex];
+        ApplyReferenceWarpPointwise<SharkFloatParams, NTT::Multiway::FourWay>(grid,
+                                                                              block,
+                                                                              debugCombo,
+                                                                              realProductEnabled,
+                                                                              imagProductEnabled,
+                                                                              dzdcProductMask,
+                                                                              a,
+                                                                              b,
+                                                                              c,
+                                                                              d);
+        sharedDataA[lowerIndex] = a;
+        sharedDataB[lowerIndex] = b;
+        sharedDataC[lowerIndex] = c;
+        sharedDataD[lowerIndex] = d;
+    }
+
+    MatrixInverseWarpLocalPair<SharkFloatParams>(grid,
+                                                 block,
+                                                 debugCombo,
+                                                 sharedDataA,
+                                                 sharedDataB,
+                                                 rowCount,
+                                                 rowLength,
+                                                 rowPitch,
+                                                 rootCache + MatrixRootCacheInverseLocalOffset);
+    MatrixInverseWarpLocalPair<SharkFloatParams>(grid,
+                                                 block,
+                                                 debugCombo,
+                                                 sharedDataC,
+                                                 sharedDataD,
+                                                 rowCount,
+                                                 rowLength,
+                                                 rowPitch,
+                                                 rootCache + MatrixRootCacheInverseLocalOffset);
+}
+
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixForwardLocal(cooperative_groups::grid_group &grid,
                    cooperative_groups::thread_block &block,
                    DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
                    uint64_t *SharkRestrict real,
                    uint64_t *SharkRestrict imag,
+                   uint64_t *SharkRestrict derivativeReal,
+                   uint64_t *SharkRestrict derivativeImag,
                    uint32_t rowCount,
                    uint32_t rowPitch,
                    uint32_t length,
@@ -8013,31 +8180,53 @@ MatrixForwardLocal(cooperative_groups::grid_group &grid,
 {
     const bool useWarpLocal = length >= 64u && stages > 5u;
     const uint32_t lowestStageExclusive = useWarpLocal ? 5u : 0u;
-    MatrixForwardSharedStages(grid,
-                              block,
-                              debugCombo,
-                              real,
-                              imag,
-                              rowCount,
-                              rowPitch,
-                              length,
-                              stages,
-                              lowestStageExclusive,
-                              roots);
+    MatrixForwardSharedStages<SharkFloatParams, Mode>(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      real,
+                                                      imag,
+                                                      derivativeReal,
+                                                      derivativeImag,
+                                                      rowCount,
+                                                      rowPitch,
+                                                      length,
+                                                      stages,
+                                                      lowestStageExclusive,
+                                                      roots);
     if (useWarpLocal) {
-        MatrixForwardWarpLocal(
-            grid, block, debugCombo, real, imag, rowCount, length, rowPitch, rootCache, roots);
+        MatrixForwardWarpLocalPair<SharkFloatParams>(grid,
+                                                     block,
+                                                     debugCombo,
+                                                     real,
+                                                     imag,
+                                                     rowCount,
+                                                     length,
+                                                     rowPitch,
+                                                     rootCache + MatrixRootCacheForwardLocalOffset);
+        if constexpr (Mode == NTT::Multiway::FourWay) {
+            MatrixForwardWarpLocalPair<SharkFloatParams>(grid,
+                                                         block,
+                                                         debugCombo,
+                                                         derivativeReal,
+                                                         derivativeImag,
+                                                         rowCount,
+                                                         length,
+                                                         rowPitch,
+                                                         rootCache + MatrixRootCacheForwardLocalOffset);
+        }
         block.sync();
     }
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixInverseSharedStages(cooperative_groups::grid_group &grid,
                           cooperative_groups::thread_block &block,
                           DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
                           uint64_t *SharkRestrict real,
                           uint64_t *SharkRestrict imag,
+                          uint64_t *SharkRestrict derivativeReal,
+                          uint64_t *SharkRestrict derivativeImag,
                           uint32_t rowCount,
                           uint32_t rowPitch,
                           uint32_t length,
@@ -8062,28 +8251,32 @@ MatrixInverseSharedStages(cooperative_groups::grid_group &grid,
             const uint32_t index1 = index0 + halfSpan;
             const uint32_t rowBase = row * rowPitch;
             const uint64_t twiddle = roots.stage_twiddles_inv[twiddleOffset + j];
-            const uint64_t realUpper = real[rowBase + index0];
-            const uint64_t realProduct =
-                NTT::MontgomeryMul(grid, block, debugCombo, real[rowBase + index1], twiddle);
-            const uint64_t imagUpper = imag[rowBase + index0];
-            const uint64_t imagProduct =
-                NTT::MontgomeryMul(grid, block, debugCombo, imag[rowBase + index1], twiddle);
-            real[rowBase + index0] = NTT::AddP(realUpper, realProduct);
-            real[rowBase + index1] = NTT::SubP(realUpper, realProduct);
-            imag[rowBase + index0] = NTT::AddP(imagUpper, imagProduct);
-            imag[rowBase + index1] = NTT::SubP(imagUpper, imagProduct);
+            MatrixInverseSharedButterfly<SharkFloatParams>(
+                grid, block, debugCombo, real, imag, rowBase + index0, rowBase + index1, twiddle);
+            if constexpr (Mode == NTT::Multiway::FourWay) {
+                MatrixInverseSharedButterfly<SharkFloatParams>(grid,
+                                                               block,
+                                                               debugCombo,
+                                                               derivativeReal,
+                                                               derivativeImag,
+                                                               rowBase + index0,
+                                                               rowBase + index1,
+                                                               twiddle);
+            }
         }
         block.sync();
     }
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixInverseLocal(cooperative_groups::grid_group &grid,
                    cooperative_groups::thread_block &block,
                    DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
                    uint64_t *SharkRestrict real,
                    uint64_t *SharkRestrict imag,
+                   uint64_t *SharkRestrict derivativeReal,
+                   uint64_t *SharkRestrict derivativeImag,
                    uint32_t rowCount,
                    uint32_t rowPitch,
                    uint32_t length,
@@ -8093,14 +8286,54 @@ MatrixInverseLocal(cooperative_groups::grid_group &grid,
 {
     const bool useWarpLocal = length >= 64u && stages > 5u;
     if (useWarpLocal) {
-        MatrixInverseWarpLocal(
-            grid, block, debugCombo, real, imag, rowCount, length, rowPitch, rootCache, roots);
+        MatrixInverseWarpLocalPair<SharkFloatParams>(grid,
+                                                     block,
+                                                     debugCombo,
+                                                     real,
+                                                     imag,
+                                                     rowCount,
+                                                     length,
+                                                     rowPitch,
+                                                     rootCache + MatrixRootCacheInverseLocalOffset);
+        if constexpr (Mode == NTT::Multiway::FourWay) {
+            MatrixInverseWarpLocalPair<SharkFloatParams>(grid,
+                                                         block,
+                                                         debugCombo,
+                                                         derivativeReal,
+                                                         derivativeImag,
+                                                         rowCount,
+                                                         length,
+                                                         rowPitch,
+                                                         rootCache + MatrixRootCacheInverseLocalOffset);
+        }
         block.sync();
-        MatrixInverseSharedStages(
-            grid, block, debugCombo, real, imag, rowCount, rowPitch, length, stages, 6u, roots);
+        MatrixInverseSharedStages<SharkFloatParams, Mode>(grid,
+                                                          block,
+                                                          debugCombo,
+                                                          real,
+                                                          imag,
+                                                          derivativeReal,
+                                                          derivativeImag,
+                                                          rowCount,
+                                                          rowPitch,
+                                                          length,
+                                                          stages,
+                                                          6u,
+                                                          roots);
     } else {
-        MatrixInverseSharedStages(
-            grid, block, debugCombo, real, imag, rowCount, rowPitch, length, stages, 1u, roots);
+        MatrixInverseSharedStages<SharkFloatParams, Mode>(grid,
+                                                          block,
+                                                          debugCombo,
+                                                          real,
+                                                          imag,
+                                                          derivativeReal,
+                                                          derivativeImag,
+                                                          rowCount,
+                                                          rowPitch,
+                                                          length,
+                                                          stages,
+                                                          1u,
+                                                          roots);
     }
 }
 
@@ -8145,7 +8378,7 @@ MatrixDiagonalTwiddle(cooperative_groups::grid_group &grid,
     return twiddle;
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixApplyDiagonal(cooperative_groups::grid_group &grid,
                     cooperative_groups::thread_block &block,
@@ -8154,6 +8387,8 @@ MatrixApplyDiagonal(cooperative_groups::grid_group &grid,
                     uint32_t activeN,
                     uint64_t *SharkRestrict real,
                     uint64_t *SharkRestrict imag,
+                    uint64_t *SharkRestrict derivativeReal,
+                    uint64_t *SharkRestrict derivativeImag,
                     uint32_t length,
                     uint32_t span,
                     uint32_t fixedIndex,
@@ -8184,6 +8419,12 @@ MatrixApplyDiagonal(cooperative_groups::grid_group &grid,
             grid, block, debugCombo, rootCache, activeStage, spanStage, exponent, inverse);
         real[index] = NTT::MontgomeryMul(grid, block, debugCombo, real[index], twiddle);
         imag[index] = NTT::MontgomeryMul(grid, block, debugCombo, imag[index], twiddle);
+        if constexpr (Mode == NTT::Multiway::FourWay) {
+            derivativeReal[index] =
+                NTT::MontgomeryMul(grid, block, debugCombo, derivativeReal[index], twiddle);
+            derivativeImag[index] =
+                NTT::MontgomeryMul(grid, block, debugCombo, derivativeImag[index], twiddle);
+        }
     }
     block.sync();
 }
@@ -8194,182 +8435,21 @@ MatrixReverseBits(uint32_t value, uint32_t bits)
     return bits == 0u ? 0u : __brev(value) >> (32u - bits);
 }
 
-template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void
-MatrixForwardDiagonalBatch(cooperative_groups::grid_group &grid,
-                           cooperative_groups::thread_block &block,
-                           DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
-                           const uint64_t *SharkRestrict rootCache,
-                           uint32_t activeN,
-                           uint64_t *SharkRestrict real,
-                           uint64_t *SharkRestrict imag,
-                           uint32_t rowStart,
-                           uint32_t rowCount,
-                           uint32_t rowPitch,
-                           uint32_t length,
-                           uint32_t coordinateBits,
-                           uint32_t stride,
-                           const SharkNTT::RootTables &roots)
+template <NTT::Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly uint32_t
+MatrixRowsPerTile(uint32_t length)
 {
-    const uint32_t rank = block.thread_index().x;
-    const uint32_t blockSize = block.size();
-    const uint32_t total = rowCount * length;
-    const uint32_t pairsSpan = stride * length;
-    const uint32_t activeStage = CountTrailingZeros(activeN);
-    const uint32_t spanStage = CountTrailingZeros(pairsSpan);
-    for (uint32_t linear = rank; linear < total; linear += blockSize) {
-        const uint32_t row = linear / length;
-        const uint32_t index = linear - row * length;
-        const uint32_t globalRow = rowStart + row;
-        const uint32_t q = globalRow / stride;
-        const uint32_t j = globalRow - q * stride;
-        const uint32_t coordinate = MatrixReverseBits(index, coordinateBits);
-        const uint64_t twiddle = MatrixDiagonalTwiddle(grid,
-                                                       block,
-                                                       debugCombo,
-                                                       rootCache,
-                                                       activeStage,
-                                                       spanStage,
-                                                       static_cast<uint64_t>(j) * coordinate,
-                                                       false);
-        const uint32_t offset = row * rowPitch + index;
-        real[offset] = NTT::MontgomeryMul(grid, block, debugCombo, real[offset], twiddle);
-        imag[offset] = NTT::MontgomeryMul(grid, block, debugCombo, imag[offset], twiddle);
-    }
-    block.sync();
+    if constexpr (Mode == NTT::Multiway::FourWay)
+        return length <= 256u ? 2u : 1u;
+    return length <= 1024u ? 2u : 1u;
 }
 
-template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void
-MatrixCenterDiagonalBatch(cooperative_groups::grid_group &grid,
-                          cooperative_groups::thread_block &block,
-                          DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
-                          const uint64_t *SharkRestrict rootCache,
-                          uint32_t activeN,
-                          uint64_t *SharkRestrict real,
-                          uint64_t *SharkRestrict imag,
-                          uint32_t rowStart,
-                          uint32_t rowCount,
-                          uint32_t rowPitch,
-                          uint32_t length,
-                          uint32_t previousF,
-                          uint32_t previousBits,
-                          const SharkNTT::RootTables &roots)
-{
-    const uint32_t rank = block.thread_index().x;
-    const uint32_t blockSize = block.size();
-    const uint32_t total = rowCount * length;
-    const uint32_t span = previousF * length;
-    const uint32_t activeStage = CountTrailingZeros(activeN);
-    const uint32_t spanStage = CountTrailingZeros(span);
-    for (uint32_t linear = rank; linear < total; linear += blockSize) {
-        const uint32_t row = linear / length;
-        const uint32_t index = linear - row * length;
-        const uint32_t previousQ = (rowStart + row) % previousF;
-        const uint32_t previousK = MatrixReverseBits(previousQ, previousBits);
-        const uint64_t twiddle = MatrixDiagonalTwiddle(grid,
-                                                       block,
-                                                       debugCombo,
-                                                       rootCache,
-                                                       activeStage,
-                                                       spanStage,
-                                                       static_cast<uint64_t>(previousK) * index,
-                                                       true);
-        const uint32_t offset = row * rowPitch + index;
-        real[offset] = NTT::MontgomeryMul(grid, block, debugCombo, real[offset], twiddle);
-        imag[offset] = NTT::MontgomeryMul(grid, block, debugCombo, imag[offset], twiddle);
-    }
-    block.sync();
-}
-
-template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void
-MatrixInverseDiagonalBatch(cooperative_groups::grid_group &grid,
-                           cooperative_groups::thread_block &block,
-                           DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
-                           const uint64_t *SharkRestrict rootCache,
-                           uint32_t activeN,
-                           uint64_t *SharkRestrict real,
-                           uint64_t *SharkRestrict imag,
-                           uint32_t rowStart,
-                           uint32_t rowCount,
-                           uint32_t rowPitch,
-                           uint32_t length,
-                           uint32_t P,
-                           uint32_t S,
-                           uint32_t previousF,
-                           uint32_t previousBits,
-                           const SharkNTT::RootTables &roots)
-{
-    const uint32_t rank = block.thread_index().x;
-    const uint32_t blockSize = block.size();
-    const uint32_t total = rowCount * length;
-    const uint32_t span = previousF * length * S;
-    const uint32_t activeStage = CountTrailingZeros(activeN);
-    const uint32_t spanStage = CountTrailingZeros(span);
-    for (uint32_t linear = rank; linear < total; linear += blockSize) {
-        const uint32_t row = linear / length;
-        const uint32_t index = linear - row * length;
-        const uint32_t globalRow = rowStart + row;
-        const uint32_t J = globalRow / P;
-        const uint32_t Q = globalRow - J * P;
-        const uint32_t previousK = MatrixReverseBits(Q % previousF, previousBits);
-        const uint64_t coordinate = static_cast<uint64_t>(index) * S + J;
-        const uint64_t twiddle = MatrixDiagonalTwiddle(grid,
-                                                       block,
-                                                       debugCombo,
-                                                       rootCache,
-                                                       activeStage,
-                                                       spanStage,
-                                                       static_cast<uint64_t>(previousK) * coordinate,
-                                                       true);
-        const uint32_t offset = row * rowPitch + index;
-        real[offset] = NTT::MontgomeryMul(grid, block, debugCombo, real[offset], twiddle);
-        imag[offset] = NTT::MontgomeryMul(grid, block, debugCombo, imag[offset], twiddle);
-    }
-    block.sync();
-}
-
-template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void
-MatrixPointwiseBatch(cooperative_groups::grid_group &grid,
-                     cooperative_groups::thread_block &block,
-                     DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
-                     uint64_t *SharkRestrict real,
-                     uint64_t *SharkRestrict imag,
-                     uint32_t rowCount,
-                     uint32_t rowPitch,
-                     uint32_t length,
-                     bool realProductEnabled,
-                     bool imagProductEnabled)
-{
-    const uint32_t rank = block.thread_index().x;
-    const uint32_t blockSize = block.size();
-    const uint32_t total = rowCount * length;
-    for (uint32_t linear = rank; linear < total; linear += blockSize) {
-        const uint32_t row = linear / length;
-        const uint32_t index = linear - row * length;
-        const uint32_t offset = row * rowPitch + index;
-        const uint64_t x = real[offset];
-        const uint64_t y = imag[offset];
-        real[offset] =
-            realProductEnabled
-                ? NTT::MontgomeryMul(grid, block, debugCombo, NTT::AddP(x, y), NTT::SubP(x, y))
-                : 0ull;
-        if (imagProductEnabled) {
-            const uint64_t product = NTT::MontgomeryMul(grid, block, debugCombo, x, y);
-            imag[offset] = NTT::AddP(product, product);
-        } else {
-            imag[offset] = 0ull;
-        }
-    }
-    block.sync();
-}
-
+template <NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly uint32_t
 MatrixDimensionCount(uint32_t stages)
 {
-    return stages == 0u ? 1u : (stages + 10u) / 11u;
+    constexpr uint32_t bitsPerDimension = Mode == NTT::Multiway::FourWay ? 10u : 11u;
+    return stages == 0u ? 1u : (stages + bitsPerDimension - 1u) / bitsPerDimension;
 }
 
 static __device__ SharkForceInlineReleaseOnly uint32_t
@@ -8390,7 +8470,7 @@ MatrixDimensionPrefixBits(uint32_t stages, uint32_t dimensionCount, uint32_t dim
     return dimension * baseBits + (dimension > smallDimensions ? dimension - smallDimensions : 0u);
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixForwardPhase(cooperative_groups::grid_group &grid,
                    cooperative_groups::thread_block &block,
@@ -8400,11 +8480,17 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
                    const SharkNTT::RootTables &roots,
                    const HpSharkFloat<SharkFloatParams> &zReal,
                    const HpSharkFloat<SharkFloatParams> &zImag,
+                   const HpSharkFloat<SharkFloatParams> &dzdcReal,
+                   const HpSharkFloat<SharkFloatParams> &dzdcImag,
                    const HpSharkReferenceIterationPlan &iterationPlan,
                    uint64_t *SharkRestrict inputReal,
                    uint64_t *SharkRestrict inputImag,
+                   uint64_t *SharkRestrict inputDzdcReal,
+                   uint64_t *SharkRestrict inputDzdcImag,
                    uint64_t *SharkRestrict outputReal,
                    uint64_t *SharkRestrict outputImag,
+                   uint64_t *SharkRestrict outputDzdcReal,
+                   uint64_t *SharkRestrict outputDzdcImag,
                    uint32_t activeN,
                    uint32_t F,
                    uint32_t P,
@@ -8414,10 +8500,12 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
                    const uint64_t *SharkRestrict rootCache)
 {
     const uint32_t rowCount = P * S;
-    const uint32_t rowsPerTile = F <= 1024u ? 2u : 1u;
+    const uint32_t rowsPerTile = MatrixRowsPerTile<Mode>(F);
     const uint32_t rowPitch = F + 8u;
     uint64_t *SharkRestrict sharedReal = sharedData;
     uint64_t *SharkRestrict sharedImag = sharedReal + rowsPerTile * rowPitch;
+    uint64_t *SharkRestrict sharedDzdcReal = sharedImag + rowsPerTile * rowPitch;
+    uint64_t *SharkRestrict sharedDzdcImag = sharedDzdcReal + rowsPerTile * rowPitch;
     const uint32_t blockRows = rowsPerTile;
     const uint32_t gridRows = static_cast<uint32_t>(gridDim.x) * blockRows;
     const uint32_t firstRow = blockIdx.x * blockRows;
@@ -8437,6 +8525,8 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
                 const uint32_t row = rowBase + localRow;
                 uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
                 uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+                uint64_t *SharkRestrict rowDzdcReal = sharedDzdcReal + localRow * rowPitch;
+                uint64_t *SharkRestrict rowDzdcImag = sharedDzdcImag + localRow * rowPitch;
                 const uint32_t Q = row / S;
                 const uint32_t j = row - Q * S;
                 const uint32_t M = F * S;
@@ -8464,23 +8554,53 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
                                                        iterationPlan.ZImagCoefficientShift,
                                                        iterationPlan.ZImagResidualBitShift,
                                                        zImag.GetNegative());
+                    if constexpr (Mode == NTT::Multiway::FourWay) {
+                        rowDzdcReal[i] = PackMatrixCoefficient(grid,
+                                                               block,
+                                                               debugCombo,
+                                                               &dzdcReal,
+                                                               plan,
+                                                               roots.InputScaleR,
+                                                               inputIndex,
+                                                               ignoredPrecisionBits,
+                                                               iterationPlan.DzdcRealCoefficientShift,
+                                                               iterationPlan.DzdcRealResidualBitShift,
+                                                               dzdcReal.GetNegative());
+                        rowDzdcImag[i] = PackMatrixCoefficient(grid,
+                                                               block,
+                                                               debugCombo,
+                                                               &dzdcImag,
+                                                               plan,
+                                                               roots.InputScaleR,
+                                                               inputIndex,
+                                                               ignoredPrecisionBits,
+                                                               iterationPlan.DzdcImagCoefficientShift,
+                                                               iterationPlan.DzdcImagResidualBitShift,
+                                                               dzdcImag.GetNegative());
+                    }
                 } else {
                     rowReal[i] = inputReal[inputIndex];
                     rowImag[i] = inputImag[inputIndex];
+                    if constexpr (Mode == NTT::Multiway::FourWay) {
+                        rowDzdcReal[i] = inputDzdcReal[inputIndex];
+                        rowDzdcImag[i] = inputDzdcImag[inputIndex];
+                    }
                 }
             }
             block.sync();
-            MatrixForwardLocal(grid,
-                               block,
-                               debugCombo,
-                               sharedReal,
-                               sharedImag,
-                               activeRows,
-                               rowPitch,
-                               F,
-                               stageCount,
-                               rootCache,
-                               roots);
+            MatrixForwardLocal<SharkFloatParams, Mode>(grid,
+                                                       block,
+                                                       debugCombo,
+                                                       sharedReal,
+                                                       sharedImag,
+                                                       sharedDzdcReal,
+                                                       sharedDzdcImag,
+                                                       activeRows,
+                                                       rowPitch,
+                                                       F,
+                                                       stageCount,
+                                                       rootCache,
+                                                       roots);
             for (uint32_t linear = rank; linear < activeRows * F; linear += blockSize) {
                 const bool interleaveRows = activeRows == 2u;
                 const uint32_t localRow = interleaveRows ? (linear & 1u) : 0u;
@@ -8502,6 +8622,12 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
                     grid, block, debugCombo, sharedReal[localRow * rowPitch + q], twiddle);
                 outputImag[outputIndex] = NTT::MontgomeryMul(
                     grid, block, debugCombo, sharedImag[localRow * rowPitch + q], twiddle);
+                if constexpr (Mode == NTT::Multiway::FourWay) {
+                    outputDzdcReal[outputIndex] = NTT::MontgomeryMul(
+                        grid, block, debugCombo, sharedDzdcReal[localRow * rowPitch + q], twiddle);
+                    outputDzdcImag[outputIndex] = NTT::MontgomeryMul(
+                        grid, block, debugCombo, sharedDzdcImag[localRow * rowPitch + q], twiddle);
+                }
             }
             block.sync();
         }
@@ -8514,6 +8640,8 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
             const uint32_t row = rowBase + localRow;
             uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
             uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+            uint64_t *SharkRestrict rowDzdcReal = sharedDzdcReal + localRow * rowPitch;
+            uint64_t *SharkRestrict rowDzdcImag = sharedDzdcImag + localRow * rowPitch;
             const bool active = row < rowCount;
             if (active) {
                 const uint32_t Q = row / S;
@@ -8546,50 +8674,88 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
                                                            iterationPlan.ZImagCoefficientShift,
                                                            iterationPlan.ZImagResidualBitShift,
                                                            zImag.GetNegative());
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            rowDzdcReal[i] =
+                                PackMatrixCoefficient(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      &dzdcReal,
+                                                      plan,
+                                                      roots.InputScaleR,
+                                                      inputIndex,
+                                                      ignoredPrecisionBits,
+                                                      iterationPlan.DzdcRealCoefficientShift,
+                                                      iterationPlan.DzdcRealResidualBitShift,
+                                                      dzdcReal.GetNegative());
+                            rowDzdcImag[i] =
+                                PackMatrixCoefficient(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      &dzdcImag,
+                                                      plan,
+                                                      roots.InputScaleR,
+                                                      inputIndex,
+                                                      ignoredPrecisionBits,
+                                                      iterationPlan.DzdcImagCoefficientShift,
+                                                      iterationPlan.DzdcImagResidualBitShift,
+                                                      dzdcImag.GetNegative());
+                        }
                     } else {
                         rowReal[i] = inputReal[inputIndex];
                         rowImag[i] = inputImag[inputIndex];
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            rowDzdcReal[i] = inputDzdcReal[inputIndex];
+                            rowDzdcImag[i] = inputDzdcImag[inputIndex];
+                        }
                     }
                 }
             }
             block.sync();
             if (active) {
-                MatrixForwardLocal(grid,
-                                   block,
-                                   debugCombo,
-                                   rowReal,
-                                   rowImag,
-                                   1u,
-                                   rowPitch,
-                                   F,
-                                   stageCount,
-                                   rootCache,
-                                   roots);
+                MatrixForwardLocal<SharkFloatParams, Mode>(grid,
+                                                           block,
+                                                           debugCombo,
+                                                           rowReal,
+                                                           rowImag,
+                                                           rowDzdcReal,
+                                                           rowDzdcImag,
+                                                           1u,
+                                                           rowPitch,
+                                                           F,
+                                                           stageCount,
+                                                           rootCache,
+                                                           roots);
                 const uint32_t Q = row / S;
                 const uint32_t j = row - Q * S;
                 const uint32_t M = F * S;
-                MatrixApplyDiagonal(grid,
-                                    block,
-                                    debugCombo,
-                                    rootCache,
-                                    activeN,
-                                    rowReal,
-                                    rowImag,
-                                    F,
-                                    M,
-                                    j,
-                                    CountTrailingZeros(F),
-                                    1u,
-                                    0u,
-                                    true,
-                                    false,
-                                    roots);
+                MatrixApplyDiagonal<SharkFloatParams, Mode>(grid,
+                                                            block,
+                                                            debugCombo,
+                                                            rootCache,
+                                                            activeN,
+                                                            rowReal,
+                                                            rowImag,
+                                                            rowDzdcReal,
+                                                            rowDzdcImag,
+                                                            F,
+                                                            M,
+                                                            j,
+                                                            CountTrailingZeros(F),
+                                                            1u,
+                                                            0u,
+                                                            true,
+                                                            false,
+                                                            roots);
                 const uint32_t rank = block.thread_index().x;
                 const uint32_t blockSize = block.size();
                 for (uint32_t q = rank; q < F; q += blockSize) {
                     const uint32_t outputIndex = Q * M + q * S + j;
                     outputReal[outputIndex] = rowReal[q];
                     outputImag[outputIndex] = rowImag[q];
+                    if constexpr (Mode == NTT::Multiway::FourWay) {
+                        outputDzdcReal[outputIndex] = rowDzdcReal[q];
+                        outputDzdcImag[outputIndex] = rowDzdcImag[q];
+                    }
                 }
             }
             block.sync();
@@ -8598,18 +8764,21 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
     grid.sync();
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void MatrixPointwise(
     cooperative_groups::thread_block &block,
     cooperative_groups::grid_group &grid,
     DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
     uint64_t *SharkRestrict real,
     uint64_t *SharkRestrict imag,
+    uint64_t *SharkRestrict derivativeReal,
+    uint64_t *SharkRestrict derivativeImag,
     uint32_t length,
     bool realProductEnabled,
-    bool imagProductEnabled);
+    bool imagProductEnabled,
+    uint32_t dzdcProductMask);
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixCenterPhase(cooperative_groups::grid_group &grid,
                   cooperative_groups::thread_block &block,
@@ -8619,11 +8788,17 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                   const SharkNTT::RootTables &roots,
                   const HpSharkFloat<SharkFloatParams> &zReal,
                   const HpSharkFloat<SharkFloatParams> &zImag,
+                  const HpSharkFloat<SharkFloatParams> &dzdcReal,
+                  const HpSharkFloat<SharkFloatParams> &dzdcImag,
                   const HpSharkReferenceIterationPlan &iterationPlan,
                   uint64_t *SharkRestrict inputReal,
                   uint64_t *SharkRestrict inputImag,
+                  uint64_t *SharkRestrict inputDzdcReal,
+                  uint64_t *SharkRestrict inputDzdcImag,
                   uint64_t *SharkRestrict outputReal,
                   uint64_t *SharkRestrict outputImag,
+                  uint64_t *SharkRestrict outputDzdcReal,
+                  uint64_t *SharkRestrict outputDzdcImag,
                   uint32_t F,
                   uint32_t P,
                   uint32_t previousF,
@@ -8632,6 +8807,7 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                   bool canonicalInput,
                   bool realProductEnabled,
                   bool imagProductEnabled,
+                  uint32_t dzdcProductMask,
                   bool initializeCarry,
                   HpSharkReferencePackedCarryPrefixDescriptor *SharkRestrict carryDescriptors,
                   uint32_t carryCount,
@@ -8646,10 +8822,12 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
 
     const uint32_t rowCount = P;
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
-    const uint32_t rowsPerTile = F <= 1024u ? 2u : 1u;
+    const uint32_t rowsPerTile = MatrixRowsPerTile<Mode>(F);
     const uint32_t rowPitch = F + 8u;
     uint64_t *SharkRestrict sharedReal = sharedData;
     uint64_t *SharkRestrict sharedImag = sharedReal + rowsPerTile * rowPitch;
+    uint64_t *SharkRestrict sharedDzdcReal = sharedImag + rowsPerTile * rowPitch;
+    uint64_t *SharkRestrict sharedDzdcImag = sharedDzdcReal + rowsPerTile * rowPitch;
     const uint32_t blockRows = rowsPerTile;
     const uint32_t gridRows = static_cast<uint32_t>(gridDim.x) * blockRows;
     const uint32_t firstRow = blockIdx.x * blockRows;
@@ -8667,6 +8845,8 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                     const uint32_t row = rowBase + localRow;
                     uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
                     uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+                    uint64_t *SharkRestrict rowDzdcReal = sharedDzdcReal + localRow * rowPitch;
+                    uint64_t *SharkRestrict rowDzdcImag = sharedDzdcImag + localRow * rowPitch;
                     for (uint32_t i = rank; i < F; i += blockSize) {
                         const uint32_t inputIndex = row * F + i;
                         rowReal[i] = PackMatrixCoefficient(grid,
@@ -8691,6 +8871,32 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                                                            iterationPlan.ZImagCoefficientShift,
                                                            iterationPlan.ZImagResidualBitShift,
                                                            zImag.GetNegative());
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            rowDzdcReal[i] =
+                                PackMatrixCoefficient(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      &dzdcReal,
+                                                      plan,
+                                                      roots.InputScaleR,
+                                                      inputIndex,
+                                                      ignoredPrecisionBits,
+                                                      iterationPlan.DzdcRealCoefficientShift,
+                                                      iterationPlan.DzdcRealResidualBitShift,
+                                                      dzdcReal.GetNegative());
+                            rowDzdcImag[i] =
+                                PackMatrixCoefficient(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      &dzdcImag,
+                                                      plan,
+                                                      roots.InputScaleR,
+                                                      inputIndex,
+                                                      ignoredPrecisionBits,
+                                                      iterationPlan.DzdcImagCoefficientShift,
+                                                      iterationPlan.DzdcImagResidualBitShift,
+                                                      dzdcImag.GetNegative());
+                        }
                     }
                 }
                 block.sync();
@@ -8699,6 +8905,8 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                     const uint32_t row = rowBase + localRow;
                     uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
                     uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+                    uint64_t *SharkRestrict rowDzdcReal = sharedDzdcReal + localRow * rowPitch;
+                    uint64_t *SharkRestrict rowDzdcImag = sharedDzdcImag + localRow * rowPitch;
                     const uint32_t inputBase = row * F;
                     cg::memcpy_async(block,
                                      rowReal,
@@ -8708,51 +8916,80 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                                      rowImag,
                                      inputImag + inputBase,
                                      cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                    if constexpr (Mode == NTT::Multiway::FourWay) {
+                        cg::memcpy_async(block,
+                                         rowDzdcReal,
+                                         inputDzdcReal + inputBase,
+                                         cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                        cg::memcpy_async(block,
+                                         rowDzdcImag,
+                                         inputDzdcImag + inputBase,
+                                         cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                    }
                 }
                 cg::wait(block);
             }
-            MatrixForwardSharedStages(grid,
-                                      block,
-                                      debugCombo,
-                                      sharedReal,
-                                      sharedImag,
-                                      activeRows,
-                                      rowPitch,
-                                      F,
-                                      stageCount,
-                                      5u,
-                                      roots);
+            MatrixForwardSharedStages<SharkFloatParams, Mode>(grid,
+                                                              block,
+                                                              debugCombo,
+                                                              sharedReal,
+                                                              sharedImag,
+                                                              sharedDzdcReal,
+                                                              sharedDzdcImag,
+                                                              activeRows,
+                                                              rowPitch,
+                                                              F,
+                                                              stageCount,
+                                                              5u,
+                                                              roots);
             {
-                ProcessReferenceWarpLocalCenter<SharkFloatParams, NTT::Multiway::TwoWay>(
-                    grid,
-                    block,
-                    debugCombo,
-                    sharedReal,
-                    sharedImag,
-                    nullptr,
-                    nullptr,
-                    rootCache + MatrixRootCacheForwardLocalOffset,
-                    rootCache + MatrixRootCacheInverseLocalOffset,
-                    activeRows,
-                    F,
-                    rowPitch,
-                    realProductEnabled,
-                    imagProductEnabled,
-                    false,
-                    false,
-                    false);
+                if constexpr (Mode == NTT::Multiway::FourWay) {
+                    MatrixProcessWarpLocalCenter<SharkFloatParams>(grid,
+                                                                   block,
+                                                                   debugCombo,
+                                                                   sharedReal,
+                                                                   sharedImag,
+                                                                   sharedDzdcReal,
+                                                                   sharedDzdcImag,
+                                                                   rootCache,
+                                                                   activeRows,
+                                                                   F,
+                                                                   rowPitch,
+                                                                   realProductEnabled,
+                                                                   imagProductEnabled,
+                                                                   dzdcProductMask);
+                } else {
+                    ProcessReferenceWarpLocalCenter<SharkFloatParams, Mode>(
+                        grid,
+                        block,
+                        debugCombo,
+                        sharedReal,
+                        sharedImag,
+                        sharedDzdcReal,
+                        sharedDzdcImag,
+                        rootCache + MatrixRootCacheForwardLocalOffset,
+                        rootCache + MatrixRootCacheInverseLocalOffset,
+                        activeRows,
+                        F,
+                        rowPitch,
+                        realProductEnabled,
+                        imagProductEnabled,
+                        dzdcProductMask);
+                }
                 block.sync();
-                MatrixInverseSharedStages(grid,
-                                          block,
-                                          debugCombo,
-                                          sharedReal,
-                                          sharedImag,
-                                          activeRows,
-                                          rowPitch,
-                                          F,
-                                          stageCount,
-                                          6u,
-                                          roots);
+                MatrixInverseSharedStages<SharkFloatParams, Mode>(grid,
+                                                                  block,
+                                                                  debugCombo,
+                                                                  sharedReal,
+                                                                  sharedImag,
+                                                                  sharedDzdcReal,
+                                                                  sharedDzdcImag,
+                                                                  activeRows,
+                                                                  rowPitch,
+                                                                  F,
+                                                                  stageCount,
+                                                                  6u,
+                                                                  roots);
             }
             for (uint32_t linear = rank; linear < activeRows * F; linear += blockSize) {
                 const bool interleaveRows = activeRows == 2u;
@@ -8778,6 +9015,29 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                 }
                 outputReal[outputIndex] = realValue;
                 outputImag[outputIndex] = imagValue;
+                if constexpr (Mode == NTT::Multiway::FourWay) {
+                    uint64_t derivativeRealValue = sharedDzdcReal[localRow * rowPitch + i];
+                    uint64_t derivativeImagValue = sharedDzdcImag[localRow * rowPitch + i];
+                    if (P > 1u) {
+                        const uint32_t previousQ = row % previousF;
+                        const uint32_t previousK = MatrixReverseBits(previousQ, previousBits);
+                        const uint64_t twiddle =
+                            MatrixDiagonalTwiddle(grid,
+                                                  block,
+                                                  debugCombo,
+                                                  rootCache,
+                                                  activeStage,
+                                                  diagonalSpanStage,
+                                                  static_cast<uint64_t>(previousK) * i,
+                                                  true);
+                        derivativeRealValue =
+                            NTT::MontgomeryMul(grid, block, debugCombo, derivativeRealValue, twiddle);
+                        derivativeImagValue =
+                            NTT::MontgomeryMul(grid, block, debugCombo, derivativeImagValue, twiddle);
+                    }
+                    outputDzdcReal[outputIndex] = derivativeRealValue;
+                    outputDzdcImag[outputIndex] = derivativeImagValue;
+                }
             }
             block.sync();
         }
@@ -8790,6 +9050,8 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
             const uint32_t row = rowBase + localRow;
             uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
             uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+            uint64_t *SharkRestrict rowDzdcReal = sharedDzdcReal + localRow * rowPitch;
+            uint64_t *SharkRestrict rowDzdcImag = sharedDzdcImag + localRow * rowPitch;
             const bool active = row < rowCount;
             if (active) {
                 const uint32_t rank = block.thread_index().x;
@@ -8819,44 +9081,81 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                                                            iterationPlan.ZImagCoefficientShift,
                                                            iterationPlan.ZImagResidualBitShift,
                                                            zImag.GetNegative());
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            rowDzdcReal[i] =
+                                PackMatrixCoefficient(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      &dzdcReal,
+                                                      plan,
+                                                      roots.InputScaleR,
+                                                      inputIndex,
+                                                      ignoredPrecisionBits,
+                                                      iterationPlan.DzdcRealCoefficientShift,
+                                                      iterationPlan.DzdcRealResidualBitShift,
+                                                      dzdcReal.GetNegative());
+                            rowDzdcImag[i] =
+                                PackMatrixCoefficient(grid,
+                                                      block,
+                                                      debugCombo,
+                                                      &dzdcImag,
+                                                      plan,
+                                                      roots.InputScaleR,
+                                                      inputIndex,
+                                                      ignoredPrecisionBits,
+                                                      iterationPlan.DzdcImagCoefficientShift,
+                                                      iterationPlan.DzdcImagResidualBitShift,
+                                                      dzdcImag.GetNegative());
+                        }
                     } else {
                         rowReal[i] = inputReal[inputIndex];
                         rowImag[i] = inputImag[inputIndex];
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            rowDzdcReal[i] = inputDzdcReal[inputIndex];
+                            rowDzdcImag[i] = inputDzdcImag[inputIndex];
+                        }
                     }
                 }
             }
             block.sync();
             if (active) {
-                MatrixForwardLocal(grid,
-                                   block,
-                                   debugCombo,
-                                   rowReal,
-                                   rowImag,
-                                   1u,
-                                   rowPitch,
-                                   F,
-                                   stageCount,
-                                   rootCache,
-                                   roots);
-                MatrixPointwise(block,
-                                grid,
-                                debugCombo,
-                                rowReal,
-                                rowImag,
-                                F,
-                                realProductEnabled,
-                                imagProductEnabled);
-                MatrixInverseLocal(grid,
-                                   block,
-                                   debugCombo,
-                                   rowReal,
-                                   rowImag,
-                                   1u,
-                                   rowPitch,
-                                   F,
-                                   stageCount,
-                                   rootCache,
-                                   roots);
+                MatrixForwardLocal<SharkFloatParams, Mode>(grid,
+                                                           block,
+                                                           debugCombo,
+                                                           rowReal,
+                                                           rowImag,
+                                                           rowDzdcReal,
+                                                           rowDzdcImag,
+                                                           1u,
+                                                           rowPitch,
+                                                           F,
+                                                           stageCount,
+                                                           rootCache,
+                                                           roots);
+                MatrixPointwise<SharkFloatParams, Mode>(block,
+                                                        grid,
+                                                        debugCombo,
+                                                        rowReal,
+                                                        rowImag,
+                                                        rowDzdcReal,
+                                                        rowDzdcImag,
+                                                        F,
+                                                        realProductEnabled,
+                                                        imagProductEnabled,
+                                                        dzdcProductMask);
+                MatrixInverseLocal<SharkFloatParams, Mode>(grid,
+                                                           block,
+                                                           debugCombo,
+                                                           rowReal,
+                                                           rowImag,
+                                                           rowDzdcReal,
+                                                           rowDzdcImag,
+                                                           1u,
+                                                           rowPitch,
+                                                           F,
+                                                           stageCount,
+                                                           rootCache,
+                                                           roots);
                 const uint32_t Q = row;
                 if (P == 1u) {
                     const uint32_t rank = block.thread_index().x;
@@ -8864,6 +9163,10 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                     for (uint32_t i = rank; i < F; i += blockSize) {
                         outputReal[i] = rowReal[i];
                         outputImag[i] = rowImag[i];
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            outputDzdcReal[i] = rowDzdcReal[i];
+                            outputDzdcImag[i] = rowDzdcImag[i];
+                        }
                     }
                 } else {
                     const uint32_t previousQ = Q % previousF;
@@ -8873,28 +9176,34 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                         previousK = (previousK << 1u) | (remaining & 1u);
                         remaining >>= 1u;
                     }
-                    MatrixApplyDiagonal(grid,
-                                        block,
-                                        debugCombo,
-                                        rootCache,
-                                        activeN,
-                                        rowReal,
-                                        rowImag,
-                                        F,
-                                        previousF * F,
-                                        previousK,
-                                        CountTrailingZeros(F),
-                                        1u,
-                                        0u,
-                                        false,
-                                        true,
-                                        roots);
+                    MatrixApplyDiagonal<SharkFloatParams, Mode>(grid,
+                                                                block,
+                                                                debugCombo,
+                                                                rootCache,
+                                                                activeN,
+                                                                rowReal,
+                                                                rowImag,
+                                                                rowDzdcReal,
+                                                                rowDzdcImag,
+                                                                F,
+                                                                previousF * F,
+                                                                previousK,
+                                                                CountTrailingZeros(F),
+                                                                1u,
+                                                                0u,
+                                                                false,
+                                                                true,
+                                                                roots);
                     const uint32_t rank = block.thread_index().x;
                     const uint32_t blockSize = block.size();
                     for (uint32_t i = rank; i < F; i += blockSize) {
                         const uint32_t outputIndex = i * P + Q;
                         outputReal[outputIndex] = rowReal[i];
                         outputImag[outputIndex] = rowImag[i];
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            outputDzdcReal[outputIndex] = rowDzdcReal[i];
+                            outputDzdcImag[outputIndex] = rowDzdcImag[i];
+                        }
                     }
                 }
             }
@@ -8904,7 +9213,7 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
     grid.sync();
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixInversePhase(cooperative_groups::grid_group &grid,
                    cooperative_groups::thread_block &block,
@@ -8913,8 +9222,12 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                    const SharkNTT::RootTables &roots,
                    uint64_t *SharkRestrict inputReal,
                    uint64_t *SharkRestrict inputImag,
+                   uint64_t *SharkRestrict inputDzdcReal,
+                   uint64_t *SharkRestrict inputDzdcImag,
                    uint64_t *SharkRestrict outputReal,
                    uint64_t *SharkRestrict outputImag,
+                   uint64_t *SharkRestrict outputDzdcReal,
+                   uint64_t *SharkRestrict outputDzdcImag,
                    uint32_t F,
                    uint32_t P,
                    uint32_t S,
@@ -8934,10 +9247,12 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
     }
 
     const uint32_t rowCount = P * S;
-    const uint32_t rowsPerTile = F <= 1024u ? 2u : 1u;
+    const uint32_t rowsPerTile = MatrixRowsPerTile<Mode>(F);
     const uint32_t rowPitch = F + 8u;
     uint64_t *SharkRestrict sharedReal = sharedData;
     uint64_t *SharkRestrict sharedImag = sharedReal + rowsPerTile * rowPitch;
+    uint64_t *SharkRestrict sharedDzdcReal = sharedImag + rowsPerTile * rowPitch;
+    uint64_t *SharkRestrict sharedDzdcImag = sharedDzdcReal + rowsPerTile * rowPitch;
     const uint32_t blockRows = rowsPerTile;
     const uint32_t gridRows = static_cast<uint32_t>(gridDim.x) * blockRows;
     const uint32_t firstRow = blockIdx.x * blockRows;
@@ -8954,6 +9269,8 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                 const uint32_t row = rowBase + localRow;
                 uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
                 uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+                uint64_t *SharkRestrict rowDzdcReal = sharedDzdcReal + localRow * rowPitch;
+                uint64_t *SharkRestrict rowDzdcImag = sharedDzdcImag + localRow * rowPitch;
                 const uint32_t inputBase = row * F;
                 cg::memcpy_async(block,
                                  rowReal,
@@ -8963,19 +9280,31 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                                  rowImag,
                                  inputImag + inputBase,
                                  cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                if constexpr (Mode == NTT::Multiway::FourWay) {
+                    cg::memcpy_async(block,
+                                     rowDzdcReal,
+                                     inputDzdcReal + inputBase,
+                                     cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                    cg::memcpy_async(block,
+                                     rowDzdcImag,
+                                     inputDzdcImag + inputBase,
+                                     cuda::aligned_size_t<8>(F * sizeof(uint64_t)));
+                }
             }
             cg::wait(block);
-            MatrixInverseLocal(grid,
-                               block,
-                               debugCombo,
-                               sharedReal,
-                               sharedImag,
-                               activeRows,
-                               rowPitch,
-                               F,
-                               stageCount,
-                               rootCache,
-                               roots);
+            MatrixInverseLocal<SharkFloatParams, Mode>(grid,
+                                                       block,
+                                                       debugCombo,
+                                                       sharedReal,
+                                                       sharedImag,
+                                                       sharedDzdcReal,
+                                                       sharedDzdcImag,
+                                                       activeRows,
+                                                       rowPitch,
+                                                       F,
+                                                       stageCount,
+                                                       rootCache,
+                                                       roots);
             for (uint32_t linear = rank; linear < activeRows * F; linear += blockSize) {
                 const bool interleaveRows = activeRows == 2u;
                 const uint32_t localRow = interleaveRows ? (linear & 1u) : 0u;
@@ -8985,6 +9314,12 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                 const uint32_t Q = row - J * P;
                 uint64_t realValue = sharedReal[localRow * rowPitch + i];
                 uint64_t imagValue = sharedImag[localRow * rowPitch + i];
+                uint64_t derivativeRealValue = 0ull;
+                uint64_t derivativeImagValue = 0ull;
+                if constexpr (Mode == NTT::Multiway::FourWay) {
+                    derivativeRealValue = sharedDzdcReal[localRow * rowPitch + i];
+                    derivativeImagValue = sharedDzdcImag[localRow * rowPitch + i];
+                }
                 if (!finalPhase) {
                     const uint32_t previousK = MatrixReverseBits(Q % previousF, previousBits);
                     const uint64_t coordinate = static_cast<uint64_t>(i) * S + J;
@@ -8999,14 +9334,28 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                                               true);
                     realValue = NTT::MontgomeryMul(grid, block, debugCombo, realValue, twiddle);
                     imagValue = NTT::MontgomeryMul(grid, block, debugCombo, imagValue, twiddle);
+                    if constexpr (Mode == NTT::Multiway::FourWay) {
+                        derivativeRealValue =
+                            NTT::MontgomeryMul(grid, block, debugCombo, derivativeRealValue, twiddle);
+                        derivativeImagValue =
+                            NTT::MontgomeryMul(grid, block, debugCombo, derivativeImagValue, twiddle);
+                    }
                 }
                 if (finalPhase) {
                     outputReal[i * S + J] = realValue;
                     outputImag[i * S + J] = imagValue;
+                    if constexpr (Mode == NTT::Multiway::FourWay) {
+                        outputDzdcReal[i * S + J] = derivativeRealValue;
+                        outputDzdcImag[i * S + J] = derivativeImagValue;
+                    }
                 } else {
                     const uint32_t newJ = i * S + J;
                     outputReal[newJ * P + Q] = realValue;
                     outputImag[newJ * P + Q] = imagValue;
+                    if constexpr (Mode == NTT::Multiway::FourWay) {
+                        outputDzdcReal[newJ * P + Q] = derivativeRealValue;
+                        outputDzdcImag[newJ * P + Q] = derivativeImagValue;
+                    }
                 }
             }
             block.sync();
@@ -9020,6 +9369,8 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
             const uint32_t row = rowBase + localRow;
             uint64_t *SharkRestrict rowReal = sharedReal + localRow * rowPitch;
             uint64_t *SharkRestrict rowImag = sharedImag + localRow * rowPitch;
+            uint64_t *SharkRestrict rowDzdcReal = sharedDzdcReal + localRow * rowPitch;
+            uint64_t *SharkRestrict rowDzdcImag = sharedDzdcImag + localRow * rowPitch;
             const bool active = row < rowCount;
             if (active) {
                 const uint32_t J = row / P;
@@ -9030,21 +9381,27 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                 for (uint32_t q = rank; q < F; q += blockSize) {
                     rowReal[q] = inputReal[inputBase + q];
                     rowImag[q] = inputImag[inputBase + q];
+                    if constexpr (Mode == NTT::Multiway::FourWay) {
+                        rowDzdcReal[q] = inputDzdcReal[inputBase + q];
+                        rowDzdcImag[q] = inputDzdcImag[inputBase + q];
+                    }
                 }
             }
             block.sync();
             if (active) {
-                MatrixInverseLocal(grid,
-                                   block,
-                                   debugCombo,
-                                   rowReal,
-                                   rowImag,
-                                   1u,
-                                   rowPitch,
-                                   F,
-                                   stageCount,
-                                   rootCache,
-                                   roots);
+                MatrixInverseLocal<SharkFloatParams, Mode>(grid,
+                                                           block,
+                                                           debugCombo,
+                                                           rowReal,
+                                                           rowImag,
+                                                           rowDzdcReal,
+                                                           rowDzdcImag,
+                                                           1u,
+                                                           rowPitch,
+                                                           F,
+                                                           stageCount,
+                                                           rootCache,
+                                                           roots);
                 const uint32_t J = row / P;
                 const uint32_t Q = row - J * P;
                 if (finalPhase) {
@@ -9053,6 +9410,10 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                     for (uint32_t i = rank; i < F; i += blockSize) {
                         outputReal[i * S + J] = rowReal[i];
                         outputImag[i * S + J] = rowImag[i];
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            outputDzdcReal[i * S + J] = rowDzdcReal[i];
+                            outputDzdcImag[i * S + J] = rowDzdcImag[i];
+                        }
                     }
                 } else {
                     const uint32_t previousQ = Q % previousF;
@@ -9062,28 +9423,34 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
                         previousK = (previousK << 1u) | (remaining & 1u);
                         remaining >>= 1u;
                     }
-                    MatrixApplyDiagonal(grid,
-                                        block,
-                                        debugCombo,
-                                        rootCache,
-                                        activeN,
-                                        rowReal,
-                                        rowImag,
-                                        F,
-                                        previousF * F * S,
-                                        previousK,
-                                        0u,
-                                        S,
-                                        J,
-                                        false,
-                                        true,
-                                        roots);
+                    MatrixApplyDiagonal<SharkFloatParams, Mode>(grid,
+                                                                block,
+                                                                debugCombo,
+                                                                rootCache,
+                                                                activeN,
+                                                                rowReal,
+                                                                rowImag,
+                                                                rowDzdcReal,
+                                                                rowDzdcImag,
+                                                                F,
+                                                                previousF * F * S,
+                                                                previousK,
+                                                                0u,
+                                                                S,
+                                                                J,
+                                                                false,
+                                                                true,
+                                                                roots);
                     const uint32_t rank = block.thread_index().x;
                     const uint32_t blockSize = block.size();
                     for (uint32_t i = rank; i < F; i += blockSize) {
                         const uint32_t newJ = i * S + J;
                         outputReal[newJ * P + Q] = rowReal[i];
                         outputImag[newJ * P + Q] = rowImag[i];
+                        if constexpr (Mode == NTT::Multiway::FourWay) {
+                            outputDzdcReal[newJ * P + Q] = rowDzdcReal[i];
+                            outputDzdcImag[newJ * P + Q] = rowDzdcImag[i];
+                        }
                     }
                 }
             }
@@ -9093,7 +9460,7 @@ MatrixInversePhase(cooperative_groups::grid_group &grid,
     grid.sync();
 }
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixReferenceNtt(cooperative_groups::grid_group &grid,
                    cooperative_groups::thread_block &block,
@@ -9104,6 +9471,8 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
                    const SharkNTT::RootTables &roots,
                    const HpSharkFloat<SharkFloatParams> &zReal,
                    const HpSharkFloat<SharkFloatParams> &zImag,
+                   const HpSharkFloat<SharkFloatParams> &dzdcReal,
+                   const HpSharkFloat<SharkFloatParams> &dzdcImag,
                    const HpSharkReferenceIterationPlan &iterationPlan,
                    HpSharkReferenceWorkspace<SharkFloatParams> &workspace,
                    uint64_t *SharkRestrict carryDescriptors)
@@ -9113,9 +9482,10 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
     // Final inverse stores must not apply Ninv again.
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     const uint32_t stages = static_cast<uint32_t>(plan.stages);
-    const uint32_t dimensionCount = MatrixDimensionCount(stages);
+    const uint32_t dimensionCount = MatrixDimensionCount<Mode>(stages);
     const bool realProductEnabled = (iterationPlan.Flags & HpSharkReferencePlanRealProduct) != 0u;
     const bool imagProductEnabled = (iterationPlan.Flags & HpSharkReferencePlanImagProduct) != 0u;
+    const uint32_t dzdcProductMask = iterationPlan.Flags & HpSharkReferencePlanDzdcProductMask;
     PrepareMatrixRootCache(block, sharedData, roots, iterationPlan.PlanSlot);
     const uint64_t *SharkRestrict const rootCache = sharedData + MatrixRootCacheOffsetWords;
 
@@ -9126,26 +9496,33 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
         const uint32_t P = 1u << prefixBits;
         const uint32_t S = activeN / (P * F);
         const bool oddPhase = (dimension & 1u) != 0u;
-        MatrixForwardPhase(grid,
-                           block,
-                           debugCombo,
-                           sharedData,
-                           plan,
-                           roots,
-                           zReal,
-                           zImag,
-                           iterationPlan,
-                           oddPhase ? workspace.RealOutput : workspace.ZReal,
-                           oddPhase ? workspace.ImagOutput : workspace.ZImag,
-                           oddPhase ? workspace.ZReal : workspace.RealOutput,
-                           oddPhase ? workspace.ZImag : workspace.ImagOutput,
-                           activeN,
-                           F,
-                           P,
-                           S,
-                           workspace.IgnoredPrecisionBits,
-                           dimension == 0u,
-                           rootCache);
+        MatrixForwardPhase<SharkFloatParams, Mode>(
+            grid,
+            block,
+            debugCombo,
+            sharedData,
+            plan,
+            roots,
+            zReal,
+            zImag,
+            dzdcReal,
+            dzdcImag,
+            iterationPlan,
+            oddPhase ? workspace.RealOutput : workspace.ZReal,
+            oddPhase ? workspace.ImagOutput : workspace.ZImag,
+            oddPhase ? workspace.DzdcRealOutput : workspace.DzdcReal,
+            oddPhase ? workspace.DzdcImagOutput : workspace.DzdcImag,
+            oddPhase ? workspace.ZReal : workspace.RealOutput,
+            oddPhase ? workspace.ZImag : workspace.ImagOutput,
+            oddPhase ? workspace.DzdcReal : workspace.DzdcRealOutput,
+            oddPhase ? workspace.DzdcImag : workspace.DzdcImagOutput,
+            activeN,
+            F,
+            P,
+            S,
+            workspace.IgnoredPrecisionBits,
+            dimension == 0u,
+            rootCache);
     }
 
     const uint32_t centerDimension = dimensionCount - 1u;
@@ -9160,7 +9537,7 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
     const bool centerInputOdd = (centerPhase & 1u) != 0u;
     const bool centerCanonical = dimensionCount == 1u;
     const bool initializeCarry = dimensionCount == 1u;
-    MatrixCenterPhase(
+    MatrixCenterPhase<SharkFloatParams, Mode>(
         grid,
         block,
         debugCombo,
@@ -9169,11 +9546,17 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
         roots,
         zReal,
         zImag,
+        dzdcReal,
+        dzdcImag,
         iterationPlan,
         centerCanonical ? nullptr : (centerInputOdd ? workspace.RealOutput : workspace.ZReal),
         centerCanonical ? nullptr : (centerInputOdd ? workspace.ImagOutput : workspace.ZImag),
+        centerCanonical ? nullptr : (centerInputOdd ? workspace.DzdcRealOutput : workspace.DzdcReal),
+        centerCanonical ? nullptr : (centerInputOdd ? workspace.DzdcImagOutput : workspace.DzdcImag),
         centerInputOdd ? workspace.ZReal : workspace.RealOutput,
         centerInputOdd ? workspace.ZImag : workspace.ImagOutput,
+        centerInputOdd ? workspace.DzdcReal : workspace.DzdcRealOutput,
+        centerInputOdd ? workspace.DzdcImag : workspace.DzdcImagOutput,
         centerF,
         centerP,
         centerPreviousF,
@@ -9182,6 +9565,7 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
         centerCanonical,
         realProductEnabled,
         imagProductEnabled,
+        dzdcProductMask,
         initializeCarry,
         reinterpret_cast<HpSharkReferencePackedCarryPrefixDescriptor *>(carryDescriptors),
         iterationPlan.LimbCount,
@@ -9201,7 +9585,7 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
         const uint32_t previousF =
             dimension > 0u ? 1u << MatrixDimensionBits(stages, dimensionCount, dimension - 1u) : 1u;
         const uint32_t previousBits = dimension > 0u ? CountTrailingZeros(previousF) : 0u;
-        MatrixInversePhase(
+        MatrixInversePhase<SharkFloatParams, Mode>(
             grid,
             block,
             debugCombo,
@@ -9209,8 +9593,12 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
             roots,
             inputOdd ? workspace.RealOutput : workspace.ZReal,
             inputOdd ? workspace.ImagOutput : workspace.ZImag,
+            inputOdd ? workspace.DzdcRealOutput : workspace.DzdcReal,
+            inputOdd ? workspace.DzdcImagOutput : workspace.DzdcImag,
             inputOdd ? workspace.ZReal : workspace.RealOutput,
             inputOdd ? workspace.ZImag : workspace.ImagOutput,
+            inputOdd ? workspace.DzdcReal : workspace.DzdcRealOutput,
+            inputOdd ? workspace.DzdcImag : workspace.DzdcImagOutput,
             F,
             P,
             S,
@@ -9230,16 +9618,19 @@ template <class SharkFloatParams>
 __device__ void BuildReferenceIterationPlan(
     HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo);
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixPointwise(cooperative_groups::thread_block &block,
                 cooperative_groups::grid_group &grid,
                 DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
                 uint64_t *SharkRestrict real,
                 uint64_t *SharkRestrict imag,
+                uint64_t *SharkRestrict derivativeReal,
+                uint64_t *SharkRestrict derivativeImag,
                 uint32_t length,
                 bool realProductEnabled,
-                bool imagProductEnabled)
+                bool imagProductEnabled,
+                uint32_t dzdcProductMask)
 {
     const uint32_t rank = block.thread_index().x;
     const uint32_t blockSize = block.size();
@@ -9255,8 +9646,232 @@ MatrixPointwise(cooperative_groups::thread_block &block,
         } else {
             imag[index] = 0ull;
         }
+        if constexpr (Mode == NTT::Multiway::FourWay) {
+            uint64_t dzdcReal = 0ull;
+            uint64_t dzdcImag = 0ull;
+            if (dzdcProductMask != 0u) {
+                const uint64_t p1 =
+                    (dzdcProductMask & HpSharkReferencePlanDzdcP1) != 0u
+                        ? NTT::MontgomeryMul(grid, block, debugCombo, x, derivativeReal[index])
+                        : 0ull;
+                const uint64_t p2 =
+                    (dzdcProductMask & HpSharkReferencePlanDzdcP2) != 0u
+                        ? NTT::MontgomeryMul(grid, block, debugCombo, y, derivativeImag[index])
+                        : 0ull;
+                const uint64_t p3 =
+                    (dzdcProductMask & HpSharkReferencePlanDzdcP3) != 0u
+                        ? NTT::MontgomeryMul(grid,
+                                             block,
+                                             debugCombo,
+                                             NTT::AddP(x, y),
+                                             NTT::AddP(derivativeReal[index], derivativeImag[index]))
+                        : 0ull;
+                const uint64_t realDifference = NTT::SubP(p1, p2);
+                const uint64_t imagDifference = NTT::SubP(NTT::SubP(p3, p1), p2);
+                dzdcReal = NTT::AddP(realDifference, realDifference);
+                dzdcImag = NTT::AddP(imagDifference, imagDifference);
+            }
+            derivativeReal[index] = dzdcReal;
+            derivativeImag[index] = dzdcImag;
+        }
     }
     block.sync();
+}
+
+template <class SharkFloatParams>
+static __device__ __noinline__ void
+ExecuteReferenceMatrixIteration(cooperative_groups::grid_group &grid,
+                                cooperative_groups::thread_block &block,
+                                uint64_t *SharkRestrict sharedData,
+                                DebugGlobalCount<SharkFloatParams> *SharkRestrict debugCombo,
+                                DebugState<SharkFloatParams> *SharkRestrict debugStates,
+                                uint64_t *SharkRestrict carryPrefixShared,
+                                HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
+                                const SharkNTT::Plan &plan,
+                                SharkNTT::RootTables &roots)
+{
+    auto &workspace = *combo->Workspace;
+    const auto &iterationPlan = workspace.IterationPlan;
+    const auto &zReal = combo->ZReal;
+    const auto &zImag = combo->ZImag;
+    const auto &cReal = combo->CReal;
+    const auto &cImag = combo->CImag;
+    const uint32_t flags = iterationPlan.Flags;
+    const uint32_t limbCount = iterationPlan.LimbCount;
+    const uint32_t carryPrefixCapacity = workspace.ActiveMaxFusedLimbs;
+    const uint32_t carryPrefixDescriptorWords =
+        (workspace.ActiveMaxCarryPrefixParts * sizeof(HpSharkReferencePackedCarryPrefixDescriptor) +
+         sizeof(uint64_t) - 1u) /
+        sizeof(uint64_t);
+    uint32_t *SharkRestrict tempRealDigits =
+        reinterpret_cast<uint32_t *>(workspace.ZReal + carryPrefixDescriptorWords);
+    uint32_t *SharkRestrict tempRealControl =
+        reinterpret_cast<uint32_t *>(workspace.ZReal + carryPrefixDescriptorWords + carryPrefixCapacity);
+    uint32_t *SharkRestrict tempImagDigits =
+        reinterpret_cast<uint32_t *>(workspace.ZImag + carryPrefixDescriptorWords);
+    uint32_t *SharkRestrict tempImagControl =
+        reinterpret_cast<uint32_t *>(workspace.ZImag + carryPrefixDescriptorWords + carryPrefixCapacity);
+    uint32_t *SharkRestrict tempDzdcRealDigits = nullptr;
+    uint32_t *SharkRestrict tempDzdcRealControl = nullptr;
+    uint32_t *SharkRestrict tempDzdcImagDigits = nullptr;
+    uint32_t *SharkRestrict tempDzdcImagControl = nullptr;
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        tempDzdcRealDigits =
+            reinterpret_cast<uint32_t *>(workspace.DzdcReal + carryPrefixDescriptorWords);
+        tempDzdcRealControl = reinterpret_cast<uint32_t *>(
+            workspace.DzdcReal + carryPrefixDescriptorWords + carryPrefixCapacity);
+        tempDzdcImagDigits =
+            reinterpret_cast<uint32_t *>(workspace.DzdcImag + carryPrefixDescriptorWords);
+        tempDzdcImagControl = reinterpret_cast<uint32_t *>(
+            workspace.DzdcImag + carryPrefixDescriptorWords + carryPrefixCapacity);
+    }
+
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        MatrixReferenceNtt<SharkFloatParams, NTT::Multiway::FourWay>(
+            grid,
+            block,
+            sharedData,
+            debugCombo,
+            carryPrefixShared,
+            plan,
+            roots,
+            zReal,
+            zImag,
+            combo->DzdcReal,
+            combo->DzdcImag,
+            iterationPlan,
+            workspace,
+            reinterpret_cast<uint64_t *>(workspace.CarryPrefixDescriptors));
+        PrefixAlignedB16CarryTransformsFourWay<SharkFloatParams,
+                                               AlignedUnpackMode::StandardResidue,
+                                               false>(
+            grid,
+            block,
+            debugCombo,
+            limbCount,
+            carryPrefixCapacity,
+            plan,
+            roots,
+            workspace.RealOutput,
+            iterationPlan.RealCoefficientCount,
+            iterationPlan.RealProductBitOffset,
+            (flags & HpSharkReferencePlanRealLinear) != 0u ? &cReal : nullptr,
+            workspace.IgnoredPrecisionBits,
+            iterationPlan.RealLinearBitOffset,
+            nullptr,
+            tempRealDigits,
+            tempRealControl,
+            workspace.ImagOutput,
+            iterationPlan.ImagCoefficientCount,
+            iterationPlan.ImagProductBitOffset,
+            (flags & HpSharkReferencePlanImagLinear) != 0u ? &cImag : nullptr,
+            workspace.IgnoredPrecisionBits,
+            iterationPlan.ImagLinearBitOffset,
+            nullptr,
+            tempImagDigits,
+            tempImagControl,
+            workspace.DzdcRealOutput,
+            iterationPlan.DzdcRealCoefficientCount,
+            iterationPlan.DzdcRealProductBitOffset,
+            (flags & HpSharkReferencePlanDzdcOne) != 0u ? &combo->One : nullptr,
+            workspace.IgnoredPrecisionBits,
+            iterationPlan.DzdcRealLinearBitOffset,
+            nullptr,
+            tempDzdcRealDigits,
+            tempDzdcRealControl,
+            workspace.DzdcImagOutput,
+            iterationPlan.DzdcImagCoefficientCount,
+            iterationPlan.DzdcImagProductBitOffset,
+            nullptr,
+            workspace.IgnoredPrecisionBits,
+            0u,
+            nullptr,
+            tempDzdcImagDigits,
+            tempDzdcImagControl,
+            workspace.CarryPrefixDescriptors,
+            carryPrefixShared);
+    } else {
+        MatrixReferenceNtt<SharkFloatParams, NTT::Multiway::TwoWay>(
+            grid,
+            block,
+            sharedData,
+            debugCombo,
+            carryPrefixShared,
+            plan,
+            roots,
+            zReal,
+            zImag,
+            zReal,
+            zImag,
+            iterationPlan,
+            workspace,
+            reinterpret_cast<uint64_t *>(workspace.CarryPrefixDescriptors));
+        PrefixAlignedB16CarryTransformsTwoWay<SharkFloatParams,
+                                              AlignedUnpackMode::StandardResidue,
+                                              false>(
+            grid,
+            block,
+            debugCombo,
+            limbCount,
+            carryPrefixCapacity,
+            plan,
+            roots,
+            workspace.RealOutput,
+            iterationPlan.RealCoefficientCount,
+            iterationPlan.RealProductBitOffset,
+            (flags & HpSharkReferencePlanRealLinear) != 0u ? &cReal : nullptr,
+            workspace.IgnoredPrecisionBits,
+            iterationPlan.RealLinearBitOffset,
+            nullptr,
+            tempRealDigits,
+            tempRealControl,
+            workspace.ImagOutput,
+            iterationPlan.ImagCoefficientCount,
+            iterationPlan.ImagProductBitOffset,
+            (flags & HpSharkReferencePlanImagLinear) != 0u ? &cImag : nullptr,
+            workspace.IgnoredPrecisionBits,
+            iterationPlan.ImagLinearBitOffset,
+            nullptr,
+            tempImagDigits,
+            tempImagControl,
+            workspace.CarryPrefixDescriptors,
+            carryPrefixShared);
+    }
+
+    FinalizeSignedStream<SharkFloatParams>(grid,
+                                           block,
+                                           debugStates,
+                                           carryPrefixShared,
+                                           workspace.CarryPrefixDescriptors,
+                                           workspace,
+                                           limbCount,
+                                           iterationPlan.RealExponent,
+                                           iterationPlan.ImagExponent,
+                                           iterationPlan.DzdcRealExponent,
+                                           iterationPlan.DzdcImagExponent,
+                                           true,
+                                           combo);
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        StoreReferenceDebugValueBatch<SharkFloatParams>(debugStates,
+                                                        grid,
+                                                        block,
+                                                        DebugStatePurpose::Result_Add1,
+                                                        combo->ZReal,
+                                                        DebugStatePurpose::Result_Add2,
+                                                        combo->ZImag,
+                                                        DebugStatePurpose::Result_AddDzdc1,
+                                                        combo->DzdcReal,
+                                                        DebugStatePurpose::Result_AddDzdc2,
+                                                        combo->DzdcImag);
+    } else {
+        StoreReferenceDebugValueBatch<SharkFloatParams>(debugStates,
+                                                        grid,
+                                                        block,
+                                                        DebugStatePurpose::Result_Add1,
+                                                        combo->ZReal,
+                                                        DebugStatePurpose::Result_Add2,
+                                                        combo->ZImag);
+    }
 }
 
 template <class SharkFloatParams>
@@ -9567,6 +10182,7 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
     const auto &cReal = combo->CReal;
     const auto &cImag = combo->CImag;
     const uint32_t flags = iterationPlan.Flags;
+    const uint32_t dzdcProductMask = flags & HpSharkReferencePlanDzdcProductMask;
     const auto hasFlag = [flags](uint32_t flag) { return (flags & flag) != 0u; };
     const auto kind = static_cast<HpSharkReferenceIterationKind>(iterationPlan.Kind);
 
@@ -9676,6 +10292,23 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
         return;
     }
 
+    MattsCudaAssert(kind == HpSharkReferenceIterationKind::Ntt);
+    const uint32_t activeN = iterationPlan.ActiveN;
+    MattsCudaAssert(iterationPlan.PlanSlot <
+                    HpSharkReferenceWorkspace<SharkFloatParams>::PlanCacheEntryCount);
+    const SharkNTT::Plan &plan = workspace.Plans[iterationPlan.PlanSlot];
+    SharkNTT::RootTables &roots = workspace.PlanRoots[iterationPlan.PlanSlot];
+    MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
+    MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
+
+    if constexpr (!HpShark::DebugChecksums) {
+        if (activeN > 1024u && plan.b == 16) {
+            ExecuteReferenceMatrixIteration<SharkFloatParams>(
+                grid, block, sharedData, debugCombo, debugStates, carryPrefixShared, combo, plan, roots);
+            return;
+        }
+    }
+
     const uint32_t carryPrefixDescriptorWords =
         (workspace.ActiveMaxCarryPrefixParts * sizeof(HpSharkReferencePackedCarryPrefixDescriptor) +
          sizeof(uint64_t) - 1u) /
@@ -9701,83 +10334,6 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
             reinterpret_cast<uint32_t *>(workspace.DzdcImag + carryPrefixDescriptorWords);
         tempDzdcImagControl = reinterpret_cast<uint32_t *>(
             workspace.DzdcImag + carryPrefixDescriptorWords + carryPrefixCapacity);
-    }
-
-    MattsCudaAssert(kind == HpSharkReferenceIterationKind::Ntt);
-    const uint32_t activeN = iterationPlan.ActiveN;
-    MattsCudaAssert(iterationPlan.PlanSlot <
-                    HpSharkReferenceWorkspace<SharkFloatParams>::PlanCacheEntryCount);
-    const SharkNTT::Plan &plan = workspace.Plans[iterationPlan.PlanSlot];
-    SharkNTT::RootTables &roots = workspace.PlanRoots[iterationPlan.PlanSlot];
-    MattsCudaAssert(static_cast<uint32_t>(plan.N) == activeN);
-    MattsCudaAssert(static_cast<uint32_t>(roots.N) == activeN);
-
-    if constexpr (!SharkFloatParams::EnableNewtonRaphson && !HpShark::DebugChecksums) {
-        if (activeN > 1024u && plan.b == 16) {
-            MatrixReferenceNtt(grid,
-                               block,
-                               sharedData,
-                               debugCombo,
-                               carryPrefixShared,
-                               plan,
-                               roots,
-                               zReal,
-                               zImag,
-                               iterationPlan,
-                               workspace,
-                               reinterpret_cast<uint64_t *>(carryPrefixDescriptors));
-            PrefixAlignedB16CarryTransformsTwoWay<SharkFloatParams,
-                                                  AlignedUnpackMode::StandardResidue,
-                                                  false>(
-                grid,
-                block,
-                debugCombo,
-                limbCount,
-                carryPrefixCapacity,
-                plan,
-                roots,
-                workspace.RealOutput,
-                iterationPlan.RealCoefficientCount,
-                iterationPlan.RealProductBitOffset,
-                hasFlag(HpSharkReferencePlanRealLinear) ? &cReal : nullptr,
-                workspace.IgnoredPrecisionBits,
-                iterationPlan.RealLinearBitOffset,
-                nullptr,
-                tempRealDigits,
-                tempRealControl,
-                workspace.ImagOutput,
-                iterationPlan.ImagCoefficientCount,
-                iterationPlan.ImagProductBitOffset,
-                hasFlag(HpSharkReferencePlanImagLinear) ? &cImag : nullptr,
-                workspace.IgnoredPrecisionBits,
-                iterationPlan.ImagLinearBitOffset,
-                nullptr,
-                tempImagDigits,
-                tempImagControl,
-                carryPrefixDescriptors,
-                carryPrefixShared);
-            FinalizeSignedStream<SharkFloatParams>(grid,
-                                                   block,
-                                                   debugStates,
-                                                   carryPrefixShared,
-                                                   carryPrefixDescriptors,
-                                                   workspace,
-                                                   limbCount,
-                                                   iterationPlan.RealExponent,
-                                                   iterationPlan.ImagExponent,
-                                                   iterationPlan.DzdcRealExponent,
-                                                   iterationPlan.DzdcImagExponent,
-                                                   true,
-                                                   combo);
-            StoreReferenceDebugValueBatch<SharkFloatParams>(debugStates,
-                                                            grid,
-                                                            block,
-                                                            DebugStatePurpose::Result_Add1,
-                                                            combo->ZReal,
-                                                            DebugStatePurpose::Result_Add2,
-                                                            combo->ZImag);
-            return;
-        }
     }
 
     const uint32_t stageCount = static_cast<uint32_t>(plan.stages);
@@ -9909,9 +10465,7 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
                 workspace.DzdcImagOutput,
                 hasFlag(HpSharkReferencePlanRealProduct),
                 hasFlag(HpSharkReferencePlanImagProduct),
-                hasFlag(HpSharkReferencePlanDzdcP1),
-                hasFlag(HpSharkReferencePlanDzdcP2),
-                hasFlag(HpSharkReferencePlanDzdcP3));
+                dzdcProductMask);
         } else {
             if (largeStageCount == 0u) {
                 PackAlignedInputsBatch(grid,
@@ -10024,9 +10578,7 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
                 nullptr,
                 hasFlag(HpSharkReferencePlanRealProduct),
                 hasFlag(HpSharkReferencePlanImagProduct),
-                false,
-                false,
-                false);
+                0u);
         }
 
         InitializeCarryPrefixTransformsDLB<SharkFloatParams>(
@@ -10272,9 +10824,7 @@ ExecuteReferenceIteration(cooperative_groups::grid_group &grid,
                                        workspace,
                                        hasFlag(HpSharkReferencePlanRealProduct),
                                        hasFlag(HpSharkReferencePlanImagProduct),
-                                       hasFlag(HpSharkReferencePlanDzdcP1),
-                                       hasFlag(HpSharkReferencePlanDzdcP2),
-                                       hasFlag(HpSharkReferencePlanDzdcP3));
+                                       dzdcProductMask);
         InitializeCarryPrefixTransformsDLB<SharkFloatParams>(
             grid, block, limbCount, carryPrefixCapacity, carryPrefixDescriptors, carryPrefixShared);
 

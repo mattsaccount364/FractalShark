@@ -68,8 +68,8 @@
 
       <TargetMachinePlatform>64</TargetMachinePlatform>
 
-      <!-- SM89 native code plus embedded PTX for forward compatibility -->
-      <CodeGeneration>compute_89,sm_89;compute_120,sm_120;</CodeGeneration>
+      <!-- SM75 PTX fallback plus native SM89 and SM120 code -->
+      <CodeGeneration>compute_75,sm_75;compute_89,sm_89;compute_120,sm_120;</CodeGeneration>
 
       <Optimization>O3</Optimization>
       <FastMath>true</FastMath>

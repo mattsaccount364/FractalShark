@@ -22,13 +22,15 @@ static constexpr auto AdditionalChecksumsOffset =
 static constexpr auto AdditionalUInt64Global =
     AdditionalGlobalSyncSpace + AdditionalGlobalDebugCountSpace + AdditionalGlobalChecksumSpace;
 
-static constexpr size_t ReferenceDefaultSharedMemory = 48u * 1024u;
+// The 48 KiB footprint is the minimum layout guaranteed by the supported devices.  The host
+// launch path opts into 96 KiB automatically when the active device can accommodate it.
+static constexpr size_t ReferenceMinimumSharedMemory = 48u * 1024u;
 
 template <class SharkFloatParams>
 constexpr int32_t
 CalculateReferenceSharedMemorySize()
 {
-    return static_cast<int32_t>(ReferenceDefaultSharedMemory);
+    return static_cast<int32_t>(ReferenceMinimumSharedMemory);
 }
 
 } // namespace HpShark

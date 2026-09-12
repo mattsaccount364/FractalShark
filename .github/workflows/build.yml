@@ -132,6 +132,7 @@ jobs:
         run: |
           cmake -B build-debug \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;100;120" \
             -DCMAKE_CXX_COMPILER=clang++-18 \
             -DCMAKE_CUDA_HOST_COMPILER=g++-13 \
             -DCMAKE_CXX_FLAGS_DEBUG="-g3" \
@@ -141,6 +142,7 @@ jobs:
         run: |
           cmake -B build-release \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;100;120" \
             -DCMAKE_CXX_COMPILER=clang++-18 \
             -DCMAKE_CUDA_HOST_COMPILER=g++-13 \
             -DCMAKE_CXX_FLAGS_RELEASE="-O3 -g3 -DNDEBUG" \
@@ -445,7 +447,7 @@ jobs:
 
       # ---- Build FractalShark ----
       - name: Build ${{ matrix.configuration }}
-        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64
+        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64 "/p:FractalSharkCudaCodeGeneration=compute_75,sm_75;compute_80,sm_80;compute_86,sm_86;compute_89,sm_89;compute_90,sm_90;compute_100,sm_100;compute_120,sm_120"
 
       - name: Run unit tests
         run: ${{ matrix.configuration }}\FractalSharkTest.exe

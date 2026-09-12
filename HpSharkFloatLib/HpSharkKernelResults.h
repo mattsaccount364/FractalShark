@@ -174,7 +174,7 @@ template <class SharkFloatParams> struct HpSharkReferenceResults {
     alignas(16) HpSharkReferenceResults<SharkFloatParams> *DeviceResults;
     alignas(16) uint64_t *DeviceDebugStorage;
     alignas(16) uintptr_t Stream;
-    alignas(16) void *KernelArgs[2];
+    alignas(16) void *KernelArgs[3];
     alignas(16) void *OwnedWorkspaceStorage;
     alignas(16) size_t OwnedWorkspaceStorageBytes;
 };

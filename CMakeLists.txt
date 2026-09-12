@@ -8,7 +8,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # CUDA configuration
 set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_ARCHITECTURES 75 89 120)
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 120 CACHE STRING "CUDA architectures for local builds")
+endif()
 set(CMAKE_CUDA_RUNTIME_LIBRARY Static)
 
 # Warnings (CXX only — nvcc doesn't support these flags)

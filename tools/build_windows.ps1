@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
-    [switch]$FullRebuild
+    [switch]$FullRebuild,
+    [string]$CudaCodeGeneration
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,6 +31,9 @@ $startInfo.ArgumentList.Add('/nr:false')
 $startInfo.ArgumentList.Add('/v:m')
 $startInfo.ArgumentList.Add("/p:Configuration=$Configuration")
 $startInfo.ArgumentList.Add('/p:Platform=x64')
+if ($CudaCodeGeneration) {
+    $startInfo.ArgumentList.Add("/p:FractalSharkCudaCodeGeneration=$CudaCodeGeneration")
+}
 
 # The agent launcher can provide both PATH and Path. Keep that malformed environment
 # out of the .NET Framework VC tool tasks while preserving all other variables.

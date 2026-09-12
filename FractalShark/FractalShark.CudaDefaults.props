@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
+  <PropertyGroup>
+    <!-- Native local target; CI can override this with a multi-architecture list. -->
+    <FractalSharkCudaCodeGeneration Condition="'$(FractalSharkCudaCodeGeneration)'==''">compute_120,sm_120</FractalSharkCudaCodeGeneration>
+  </PropertyGroup>
+
   <!-- ===================================================================== -->
   <!-- CUDA BUILD SETTINGS FOR FRACTALSHARK                                  -->
   <!--                                                                       -->
@@ -30,8 +35,7 @@
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
 
-      <!-- Debug builds for two architectures for convenience -->
-      <CodeGeneration>compute_75,sm_75;compute_120,sm_120;</CodeGeneration>
+      <CodeGeneration>$(FractalSharkCudaCodeGeneration)</CodeGeneration>
 
       <Optimization>Od</Optimization>
       <!-- No fast-math in Debug -->
@@ -68,8 +72,7 @@
 
       <TargetMachinePlatform>64</TargetMachinePlatform>
 
-      <!-- SM75 PTX fallback plus native SM89 and SM120 code -->
-      <CodeGeneration>compute_75,sm_75;compute_89,sm_89;compute_120,sm_120;</CodeGeneration>
+      <CodeGeneration>$(FractalSharkCudaCodeGeneration)</CodeGeneration>
 
       <Optimization>O3</Optimization>
       <FastMath>true</FastMath>

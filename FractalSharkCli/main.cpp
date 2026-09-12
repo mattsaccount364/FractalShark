@@ -1,7 +1,7 @@
 // FractalSharkCli: headless PNG renderer.
 //
 // Process-level init mirrors FractalSharkGuiWin32/FractalShark.cpp (WinMain +
-// MainWindow ctor): Environment::RegisterHeapCleanup + Environment::CrashHandler::Install.
+// MainWindow ctor): heap cleanup, high-precision MPIR defaults, and crash handling.
 
 #include "stdafx.h"
 
@@ -352,6 +352,7 @@ int
 main(int argc, char *argv[])
 {
     Environment::RegisterHeapCleanup();
+    HighPrecision::defaultPrecisionInBits(FractalLimits::MaxPrecisionLame);
     Environment::CrashHandler::Install();
 
     CliArgs args;

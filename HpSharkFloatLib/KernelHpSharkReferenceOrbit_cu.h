@@ -7727,6 +7727,7 @@ constexpr uint32_t MatrixRootFactorWords = 3u * MatrixRootFactorEntries;
 constexpr uint32_t MatrixCachedTwiddleStages = 7u;
 constexpr uint32_t MatrixLocalTwiddleWords = (1u << MatrixCachedTwiddleStages) - 1u;
 constexpr uint32_t MatrixRootCacheTagOffset = 0u;
+constexpr uint64_t MatrixRootCacheDiagonalEligibleBit = 1ull << 63u;
 constexpr uint32_t MatrixRootCacheForwardFactorsOffset = 1u;
 constexpr uint32_t MatrixRootCacheInverseFactorsOffset =
     MatrixRootCacheForwardFactorsOffset + MatrixRootFactorWords;
@@ -7738,10 +7739,56 @@ constexpr uint32_t MatrixRootCacheWords = MatrixRootCacheInverseLocalOffset + Ma
 constexpr uint32_t MatrixRootCacheOffsetWords = MatrixScratchWords;
 constexpr uint32_t MatrixRootCacheOffsetWords96 = MatrixScratchWords96;
 
+constexpr uint32_t MatrixDiagonalCacheEntriesTwoWay = 2048u;
+constexpr uint32_t MatrixDiagonalCacheEntriesFourWay = 1024u;
+constexpr uint32_t MatrixDiagonalCacheForwardOffsetWordsTwoWay = 8192u;
+constexpr uint32_t MatrixDiagonalCacheInverseOffsetWordsTwoWay =
+    MatrixDiagonalCacheForwardOffsetWordsTwoWay + MatrixDiagonalCacheEntriesTwoWay;
+constexpr uint32_t MatrixDiagonalCacheForwardOffsetWordsFourWay = 10240u;
+constexpr uint32_t MatrixDiagonalCacheInverseOffsetWordsFourWay =
+    MatrixDiagonalCacheForwardOffsetWordsFourWay + MatrixDiagonalCacheEntriesFourWay;
+
+template <NTT::Multiway Mode>
+constexpr uint32_t
+MatrixDiagonalCacheEntries()
+{
+    if constexpr (Mode == NTT::Multiway::FourWay)
+        return MatrixDiagonalCacheEntriesFourWay;
+    return MatrixDiagonalCacheEntriesTwoWay;
+}
+
+template <NTT::Multiway Mode>
+constexpr uint32_t
+MatrixDiagonalCacheForwardOffsetWords()
+{
+    if constexpr (Mode == NTT::Multiway::FourWay)
+        return MatrixDiagonalCacheForwardOffsetWordsFourWay;
+    return MatrixDiagonalCacheForwardOffsetWordsTwoWay;
+}
+
+template <NTT::Multiway Mode>
+constexpr uint32_t
+MatrixDiagonalCacheInverseOffsetWords()
+{
+    if constexpr (Mode == NTT::Multiway::FourWay)
+        return MatrixDiagonalCacheInverseOffsetWordsFourWay;
+    return MatrixDiagonalCacheInverseOffsetWordsTwoWay;
+}
+
 static_assert((MatrixRootCacheOffsetWords + MatrixRootCacheWords) * sizeof(uint64_t) <=
               HpShark::ReferenceMinimumSharedMemory);
 static_assert((MatrixRootCacheOffsetWords96 + MatrixRootCacheWords) * sizeof(uint64_t) <= 96u * 1024u);
 static_assert(2u * (2048u + 8u) <= MatrixScratchWords);
+static_assert((MatrixRootCacheOffsetWords + MatrixRootCacheWords) <=
+              MatrixDiagonalCacheForwardOffsetWordsTwoWay);
+static_assert((MatrixDiagonalCacheInverseOffsetWordsTwoWay + MatrixDiagonalCacheEntriesTwoWay) *
+                  sizeof(uint64_t) <=
+              96u * 1024u);
+static_assert((MatrixRootCacheOffsetWords96 + MatrixRootCacheWords) <=
+              MatrixDiagonalCacheForwardOffsetWordsFourWay);
+static_assert((MatrixDiagonalCacheInverseOffsetWordsFourWay + MatrixDiagonalCacheEntriesFourWay) *
+                  sizeof(uint64_t) <=
+              96u * 1024u);
 
 template <NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly uint32_t
@@ -7785,7 +7832,7 @@ LoadMatrixRootFactor(const uint64_t *SharkRestrict twiddles, int32_t stage, uint
     return result;
 }
 
-static __device__ SharkForceInlineReleaseOnly void
+static __device__ SharkForceInlineReleaseOnly uint64_t
 PrepareMatrixRootCache(cooperative_groups::thread_block &block,
                        uint64_t *SharkRestrict sharedData,
                        uint32_t rootCacheOffsetWords,
@@ -7793,9 +7840,10 @@ PrepareMatrixRootCache(cooperative_groups::thread_block &block,
                        uint32_t planSlot)
 {
     uint64_t *SharkRestrict const cache = sharedData + rootCacheOffsetWords;
-    const uint64_t cacheTag = static_cast<uint64_t>(planSlot) + 1ull;
-    if (cache[MatrixRootCacheTagOffset] == cacheTag)
-        return;
+    const uint64_t expectedTag = static_cast<uint64_t>(planSlot) + 1ull;
+    const uint64_t observedTag = cache[MatrixRootCacheTagOffset];
+    if ((observedTag & ~MatrixRootCacheDiagonalEligibleBit) == expectedTag)
+        return observedTag;
 
     const uint32_t rank = block.thread_index().x;
     const uint32_t blockSize = block.size();
@@ -7816,10 +7864,7 @@ PrepareMatrixRootCache(cooperative_groups::thread_block &block,
         cache[MatrixRootCacheForwardLocalOffset + linear] = roots.stage_twiddles_fwd[linear];
         cache[MatrixRootCacheInverseLocalOffset + linear] = roots.stage_twiddles_inv[linear];
     }
-    block.sync();
-    if (rank == 0u)
-        cache[MatrixRootCacheTagOffset] = cacheTag;
-    block.sync();
+    return 0ull;
 }
 
 static __device__ SharkForceInlineReleaseOnly void
@@ -8420,6 +8465,98 @@ MatrixDimensionPrefixBits(uint32_t stages, uint32_t dimensionCount, uint32_t dim
     return dimension * baseBits + (dimension > smallDimensions ? dimension - smallDimensions : 0u);
 }
 
+template <NTT::Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly bool
+MatrixDiagonalCacheEligible(uint32_t sharedMemoryBytes,
+                            uint32_t activeN,
+                            uint32_t stages,
+                            uint32_t dimensionCount)
+{
+    if (sharedMemoryBytes < 96u * 1024u || dimensionCount != 2u)
+        return false;
+
+    const uint32_t forwardBits = MatrixDimensionBits(stages, dimensionCount, 0u);
+    const uint32_t centerBits = MatrixDimensionBits(stages, dimensionCount, 1u);
+    if (forwardBits < 6u || centerBits < 6u)
+        return false;
+
+    const uint32_t forwardF = 1u << forwardBits;
+    const uint32_t forwardRowsPerTile = MatrixRowsPerTile<Mode>(forwardF);
+    const uint32_t forwardRowCount = activeN / forwardF;
+
+    const uint32_t centerF = 1u << centerBits;
+    const uint32_t centerRowsPerTile = MatrixRowsPerTile<Mode>(centerF);
+    const uint32_t centerRowCount = activeN / centerF;
+
+    const uint64_t capacity = MatrixDiagonalCacheEntries<Mode>();
+    const uint64_t gridRows = static_cast<uint64_t>(gridDim.x);
+    return static_cast<uint64_t>(forwardRowCount) <= gridRows * forwardRowsPerTile &&
+           static_cast<uint64_t>(forwardRowsPerTile) * forwardF <= capacity &&
+           static_cast<uint64_t>(centerRowCount) <= gridRows * centerRowsPerTile &&
+           static_cast<uint64_t>(centerRowsPerTile) * centerF <= capacity;
+}
+
+template <NTT::Multiway Mode>
+static __device__ SharkForceInlineReleaseOnly void
+PrepareMatrixDiagonalCache(cooperative_groups::thread_block &block,
+                           uint64_t *SharkRestrict sharedData,
+                           uint32_t activeN,
+                           uint32_t stages,
+                           uint32_t dimensionCount,
+                           const SharkNTT::RootTables &roots)
+{
+    const uint32_t rank = block.thread_index().x;
+    const uint32_t blockSize = block.size();
+    const uint64_t oneForward = roots.stage_twiddles_fwd[0];
+    const uint64_t oneInverse = roots.stage_twiddles_inv[0];
+
+    const uint32_t forwardBits = MatrixDimensionBits(stages, dimensionCount, 0u);
+    const uint32_t forwardF = 1u << forwardBits;
+    const uint32_t forwardS = activeN / forwardF;
+    const uint32_t forwardRowsPerTile = MatrixRowsPerTile<Mode>(forwardF);
+    const uint32_t forwardRowCount = forwardS;
+    const uint32_t forwardFirstRow = blockIdx.x * forwardRowsPerTile;
+    const uint32_t forwardActiveRows = forwardFirstRow < forwardRowCount
+                                           ? min(forwardRowsPerTile, forwardRowCount - forwardFirstRow)
+                                           : 0u;
+    uint64_t *SharkRestrict const forwardCache =
+        sharedData + MatrixDiagonalCacheForwardOffsetWords<Mode>();
+    for (uint32_t linear = rank; linear < forwardActiveRows * forwardF; linear += blockSize) {
+        const bool interleaveRows = forwardActiveRows == 2u;
+        const uint32_t localRow = interleaveRows ? (linear & 1u) : 0u;
+        const uint32_t q = interleaveRows ? (linear >> 1u) : linear;
+        const uint32_t row = forwardFirstRow + localRow;
+        const uint32_t Q = row / forwardS;
+        const uint32_t j = row - Q * forwardS;
+        const uint32_t coordinate = MatrixReverseBits(q, forwardBits);
+        const uint32_t exponent = static_cast<uint32_t>(static_cast<uint64_t>(j) * coordinate);
+        forwardCache[linear] = LoadMatrixRootFactor(
+            roots.stage_twiddles_fwd, static_cast<int32_t>(stages), exponent, oneForward);
+    }
+
+    const uint32_t centerBits = MatrixDimensionBits(stages, dimensionCount, 1u);
+    const uint32_t centerF = 1u << centerBits;
+    const uint32_t centerRowCount = activeN / centerF;
+    const uint32_t centerRowsPerTile = MatrixRowsPerTile<Mode>(centerF);
+    const uint32_t centerFirstRow = blockIdx.x * centerRowsPerTile;
+    const uint32_t centerActiveRows =
+        centerFirstRow < centerRowCount ? min(centerRowsPerTile, centerRowCount - centerFirstRow) : 0u;
+    const uint32_t previousF = forwardF;
+    uint64_t *SharkRestrict const inverseCache =
+        sharedData + MatrixDiagonalCacheInverseOffsetWords<Mode>();
+    for (uint32_t linear = rank; linear < centerActiveRows * centerF; linear += blockSize) {
+        const bool interleaveRows = centerActiveRows == 2u;
+        const uint32_t localRow = interleaveRows ? (linear & 1u) : 0u;
+        const uint32_t i = interleaveRows ? (linear >> 1u) : linear;
+        const uint32_t row = centerFirstRow + localRow;
+        const uint32_t previousQ = row % previousF;
+        const uint32_t previousK = MatrixReverseBits(previousQ, forwardBits);
+        const uint32_t exponent = static_cast<uint32_t>(static_cast<uint64_t>(previousK) * i);
+        inverseCache[linear] = LoadMatrixRootFactor(
+            roots.stage_twiddles_inv, static_cast<int32_t>(stages), exponent, oneInverse);
+    }
+}
+
 template <class SharkFloatParams, NTT::Multiway Mode>
 static __device__ SharkForceInlineReleaseOnly void
 MatrixForwardPhase(cooperative_groups::grid_group &grid,
@@ -8447,7 +8584,8 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
                    uint32_t S,
                    uint32_t ignoredPrecisionBits,
                    bool canonicalInput,
-                   const uint64_t *SharkRestrict rootCache)
+                   const uint64_t *SharkRestrict rootCache,
+                   bool diagonalCacheEnabled)
 {
     const uint32_t rowCount = P * S;
     const uint32_t rowsPerTile = MatrixRowsPerTile<Mode>(F);
@@ -8559,15 +8697,18 @@ MatrixForwardPhase(cooperative_groups::grid_group &grid,
                 const uint32_t Q = row / S;
                 const uint32_t j = row - Q * S;
                 const uint32_t outputIndex = Q * F * S + q * S + j;
-                const uint32_t coordinate = MatrixReverseBits(q, stageCount);
-                const uint64_t twiddle = MatrixDiagonalTwiddle(grid,
-                                                               block,
-                                                               debugCombo,
-                                                               rootCache,
-                                                               activeStage,
-                                                               diagonalSpanStage,
-                                                               static_cast<uint64_t>(j) * coordinate,
-                                                               false);
+                const uint64_t twiddle =
+                    diagonalCacheEnabled
+                        ? sharedData[MatrixDiagonalCacheForwardOffsetWords<Mode>() + linear]
+                        : MatrixDiagonalTwiddle(
+                              grid,
+                              block,
+                              debugCombo,
+                              rootCache,
+                              activeStage,
+                              diagonalSpanStage,
+                              static_cast<uint64_t>(j) * MatrixReverseBits(q, stageCount),
+                              false);
                 outputReal[outputIndex] = NTT::MontgomeryMul(
                     grid, block, debugCombo, sharedReal[localRow * rowPitch + q], twiddle);
                 outputImag[outputIndex] = NTT::MontgomeryMul(
@@ -8763,7 +8904,8 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                   uint32_t carryCount,
                   uint32_t carryCapacity,
                   uint64_t *SharkRestrict carryPrefixShared,
-                  const uint64_t *SharkRestrict rootCache)
+                  const uint64_t *SharkRestrict rootCache,
+                  bool diagonalCacheEnabled)
 {
     if (initializeCarry) {
         InitializeCarryPrefixTransformsDLB<SharkFloatParams>(
@@ -8938,16 +9080,20 @@ MatrixCenterPhase(cooperative_groups::grid_group &grid,
                 uint64_t imagValue = sharedImag[localRow * rowPitch + i];
                 uint64_t twiddle = 0ull;
                 if (P > 1u) {
-                    const uint32_t previousQ = row % previousF;
-                    const uint32_t previousK = MatrixReverseBits(previousQ, previousBits);
-                    twiddle = MatrixDiagonalTwiddle(grid,
-                                                    block,
-                                                    debugCombo,
-                                                    rootCache,
-                                                    activeStage,
-                                                    diagonalSpanStage,
-                                                    static_cast<uint64_t>(previousK) * i,
-                                                    true);
+                    if (diagonalCacheEnabled) {
+                        twiddle = sharedData[MatrixDiagonalCacheInverseOffsetWords<Mode>() + linear];
+                    } else {
+                        const uint32_t previousQ = row % previousF;
+                        const uint32_t previousK = MatrixReverseBits(previousQ, previousBits);
+                        twiddle = MatrixDiagonalTwiddle(grid,
+                                                        block,
+                                                        debugCombo,
+                                                        rootCache,
+                                                        activeStage,
+                                                        diagonalSpanStage,
+                                                        static_cast<uint64_t>(previousK) * i,
+                                                        true);
+                    }
                     realValue = NTT::MontgomeryMul(grid, block, debugCombo, realValue, twiddle);
                     imagValue = NTT::MontgomeryMul(grid, block, debugCombo, imagValue, twiddle);
                 }
@@ -9416,7 +9562,25 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
     const bool imagProductEnabled = (iterationPlan.Flags & HpSharkReferencePlanImagProduct) != 0u;
     const uint32_t dzdcProductMask = iterationPlan.Flags & HpSharkReferencePlanDzdcProductMask;
     const uint32_t rootCacheOffsetWords = MatrixRootCacheOffsetForSharedMemory<Mode>(sharedMemoryBytes);
-    PrepareMatrixRootCache(block, sharedData, rootCacheOffsetWords, roots, iterationPlan.PlanSlot);
+    const uint64_t rootCacheTag =
+        PrepareMatrixRootCache(block, sharedData, rootCacheOffsetWords, roots, iterationPlan.PlanSlot);
+    bool diagonalCacheEnabled;
+    if (rootCacheTag == 0ull) {
+        diagonalCacheEnabled =
+            MatrixDiagonalCacheEligible<Mode>(sharedMemoryBytes, activeN, stages, dimensionCount);
+        if (diagonalCacheEnabled) {
+            PrepareMatrixDiagonalCache<Mode>(block, sharedData, activeN, stages, dimensionCount, roots);
+        }
+        block.sync();
+        if (block.thread_index().x == 0u) {
+            const uint64_t expectedTag = static_cast<uint64_t>(iterationPlan.PlanSlot) + 1ull;
+            sharedData[rootCacheOffsetWords + MatrixRootCacheTagOffset] =
+                expectedTag | (diagonalCacheEnabled ? MatrixRootCacheDiagonalEligibleBit : 0ull);
+        }
+        block.sync();
+    } else {
+        diagonalCacheEnabled = (rootCacheTag & MatrixRootCacheDiagonalEligibleBit) != 0ull;
+    }
     const uint64_t *SharkRestrict const rootCache = sharedData + rootCacheOffsetWords;
 
     for (uint32_t dimension = 0u; dimension + 1u < dimensionCount; ++dimension) {
@@ -9452,7 +9616,8 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
             S,
             workspace.IgnoredPrecisionBits,
             dimension == 0u,
-            rootCache);
+            rootCache,
+            dimension == 0u && diagonalCacheEnabled);
     }
 
     const uint32_t centerDimension = dimensionCount - 1u;
@@ -9501,7 +9666,8 @@ MatrixReferenceNtt(cooperative_groups::grid_group &grid,
         iterationPlan.LimbCount,
         workspace.ActiveMaxFusedLimbs,
         carryPrefixShared,
-        rootCache);
+        rootCache,
+        diagonalCacheEnabled);
 
     for (uint32_t dimension = dimensionCount - 1u; dimension-- > 0u;) {
         const uint32_t bits = MatrixDimensionBits(stages, dimensionCount, dimension);

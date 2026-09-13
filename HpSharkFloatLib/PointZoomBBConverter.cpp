@@ -11,6 +11,9 @@ PointZoomBBConverter::PointZoomBBConverter(HighPrecision ptX,
                                            TestMode testMode)
     : m_PtX(ptX), m_PtY(ptY), m_ZoomFactor(zoomFactor), m_Test{testMode}
 {
+    if (mpf_sgn(m_ZoomFactor.backend()) == 0) {
+        throw FractalSharkSeriousException("PointZoomBBConverter: zoom factor must be nonzero");
+    }
 
     m_MinX = ptX - (HighPrecision{Factor} / m_ZoomFactor);
     m_MinY = ptY - (HighPrecision{Factor} / m_ZoomFactor);

@@ -203,3 +203,23 @@ TEST(HPStr_StrRoundtrip)
     double restD = static_cast<double>(restored);
     ASSERT_NEAR(origD, restD, 1e-10);
 }
+
+TEST(HPStr_MpirRejectsInvalidDecimal)
+{
+    mpf_t value;
+    mpf_init(value);
+    ASSERT_NE(mpf_set_str(value, "not-a-number", 10), 0);
+    mpf_clear(value);
+}
+
+TEST(HPStr_ScientificNotationAccepted)
+{
+    const std::string text{"5.539483e275"};
+    const HighPrecision value(text);
+    HighPrecision direct;
+    ASSERT_EQ(mpf_set_str(direct.backend(), text.c_str(), 10), 0);
+    MpfNormalize(direct.backend());
+
+    ASSERT_TRUE(mpf_sgn(value.backend()) > 0);
+    ASSERT_EQ(mpf_cmp(value.backend(), direct.backend()), 0);
+}

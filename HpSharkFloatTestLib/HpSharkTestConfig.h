@@ -1,7 +1,4 @@
-﻿#pragma once
-
-// Test-only configuration for HpSharkFloatTest / HpSharkFloatTestLib.
-// Not used by production code (FractalShark, FractalSharkLib, FractalSharkGpuLib).
+#pragma once
 
 #include "HpSharkFloat.h"
 
@@ -25,14 +22,7 @@ enum class BasicCorrectnessMode : int {
 
 namespace HpShark {
 
-// static constexpr bool TestGpu = true;
 static constexpr bool TestGpu = true;
-static constexpr bool TestInfiniteCorrectness = true;
-static constexpr bool TestMPIRImpl = false;
-
-// True to compare against the full host-side reference implementation, false is MPIR only
-// False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool TestReferenceImpl = false;
 
 } // namespace HpShark
 

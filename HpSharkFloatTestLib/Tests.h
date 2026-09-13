@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HpSharkTestConfig.h"
+#include "TestParams.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -26,14 +27,16 @@ OperatorToString()
 template <class SharkFloatParams, Operator sharkOperator>
 void TestBinOperatorTwoNumbers(int testNum, const char *num1, const char *num2);
 
-template <class SharkFloatParams, Operator sharkOperator> bool TestAllBinaryOp(int testBase);
+template <class SharkFloatParams, Operator sharkOperator>
+bool TestAllBinaryOp(int testBase, const HpShark::TestParams &testParams);
 
 template <Operator sharkOperator>
 bool TestBinaryOperatorPerf(const HpShark::LaunchParams &launchParams,
                             int testBase,
                             int numIters,
                             int internalTestLoopCount,
-                            BasicCorrectnessMode mode);
+                            BasicCorrectnessMode mode,
+                            const HpShark::TestParams &testParams);
 
 struct FullReferencePerfLimbSelection {
     uint32_t m_StorageLimbs = 0;
@@ -65,7 +68,6 @@ bool TestFullReferencePerfView(TestTracker &Tests,
                                int testBase,
                                int numIters,
                                int internalTestLoopCount,
-                               bool useMT, // no default: MainTestCuda always passes it explicitly
                                size_t view,
                                const FullReferencePerfLimbSelection &limbSelection);
 

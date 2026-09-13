@@ -1,3 +1,6 @@
 #pragma once
 
-template <class SharkFloatParams> bool TestConversion(int testBase);
+#include "TestParams.h"
+
+template <class SharkFloatParams>
+bool TestConversion(int testBase, const HpShark::TestParams &testParams);

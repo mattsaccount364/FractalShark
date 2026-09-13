@@ -204,7 +204,7 @@ void
 CopyDeviceToCache(uint8_t *destination, const void *source, size_t bytes, const char *operation)
 {
     ReferenceSetupDetail::CheckCuda(cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost),
-                                     operation);
+                                    operation);
 }
 
 template <class SharkFloatParams>
@@ -212,7 +212,7 @@ void
 CopyCacheToDevice(void *destination, const uint8_t *source, size_t bytes, const char *operation)
 {
     ReferenceSetupDetail::CheckCuda(cudaMemcpy(destination, source, bytes, cudaMemcpyHostToDevice),
-                                     operation);
+                                    operation);
 }
 
 template <class SharkFloatParams>
@@ -296,11 +296,11 @@ CopyCachePayloadToPrepared(const uint8_t *payload,
 template <class SharkFloatParams>
 void
 SaveHpSharkReferenceTables(const ReferencePreparedTables<SharkFloatParams> &prepared,
-                            int64_t testNumber,
-                            uint32_t sequence,
-                            uint32_t actualPrecisionLimbs,
-                            uint32_t minFusedStages,
-                            uint32_t maxFusedStages)
+                           int64_t testNumber,
+                           uint32_t sequence,
+                           uint32_t actualPrecisionLimbs,
+                           uint32_t minFusedStages,
+                           uint32_t maxFusedStages)
 {
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     const ReferenceCacheDetail::CacheLayout<SharkFloatParams> layout(minFusedStages, maxFusedStages);
@@ -341,27 +341,27 @@ SaveHpSharkReferenceTables(const ReferencePreparedTables<SharkFloatParams> &prep
 template <class SharkFloatParams>
 void
 SaveHpSharkReferenceTables(const ReferencePreparedTables<SharkFloatParams> &prepared,
-                            int64_t testNumber,
-                            uint32_t sequence,
-                            uint32_t actualPrecisionLimbs)
+                           int64_t testNumber,
+                           uint32_t sequence,
+                           uint32_t actualPrecisionLimbs)
 {
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     SaveHpSharkReferenceTables<SharkFloatParams>(prepared,
-                                                  testNumber,
-                                                  sequence,
-                                                  actualPrecisionLimbs,
-                                                  Workspace::MinFusedStages,
-                                                  Workspace::MaxFusedStages);
+                                                 testNumber,
+                                                 sequence,
+                                                 actualPrecisionLimbs,
+                                                 Workspace::MinFusedStages,
+                                                 Workspace::MaxFusedStages);
 }
 
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 LoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                            int64_t testNumber,
-                            uint32_t sequence,
-                            uint32_t actualPrecisionLimbs,
-                            uint32_t minFusedStages,
-                            uint32_t maxFusedStages)
+                           int64_t testNumber,
+                           uint32_t sequence,
+                           uint32_t actualPrecisionLimbs,
+                           uint32_t minFusedStages,
+                           uint32_t maxFusedStages)
 {
     (void)launchParams;
     const ReferenceCacheDetail::CacheLayout<SharkFloatParams> layout(minFusedStages, maxFusedStages);
@@ -388,29 +388,29 @@ LoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 LoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                            int64_t testNumber,
-                            uint32_t sequence,
-                            uint32_t actualPrecisionLimbs)
+                           int64_t testNumber,
+                           uint32_t sequence,
+                           uint32_t actualPrecisionLimbs)
 {
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     return LoadHpSharkReferenceTables<SharkFloatParams>(launchParams,
-                                                         testNumber,
-                                                         sequence,
-                                                         actualPrecisionLimbs,
-                                                         Workspace::MinFusedStages,
-                                                         Workspace::MaxFusedStages);
+                                                        testNumber,
+                                                        sequence,
+                                                        actualPrecisionLimbs,
+                                                        Workspace::MinFusedStages,
+                                                        Workspace::MaxFusedStages);
 }
 
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                                     const HpSharkFloat<SharkFloatParams> &cReal,
-                                     const HpSharkFloat<SharkFloatParams> &cImag,
-                                     uint32_t actualPrecisionLimbs,
-                                     int64_t testNumber,
-                                     uint32_t sequence,
-                                     uint32_t minFusedStages,
-                                     uint32_t maxFusedStages)
+                                    const HpSharkFloat<SharkFloatParams> &cReal,
+                                    const HpSharkFloat<SharkFloatParams> &cImag,
+                                    uint32_t actualPrecisionLimbs,
+                                    int64_t testNumber,
+                                    uint32_t sequence,
+                                    uint32_t minFusedStages,
+                                    uint32_t maxFusedStages)
 {
     try {
         return LoadHpSharkReferenceTables<SharkFloatParams>(
@@ -426,8 +426,8 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
         SaveHpSharkReferenceTables<SharkFloatParams>(
             *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
-                  << error.what() << std::endl;
+        std::cout << "Reference cache save failed for test " << testNumber << " sequence " << sequence
+                  << ": " << error.what() << std::endl;
     }
     return prepared;
 }
@@ -435,33 +435,33 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                                     const HpSharkFloat<SharkFloatParams> &cReal,
-                                     const HpSharkFloat<SharkFloatParams> &cImag,
-                                     uint32_t actualPrecisionLimbs,
-                                     int64_t testNumber,
-                                     uint32_t sequence = 0)
+                                    const HpSharkFloat<SharkFloatParams> &cReal,
+                                    const HpSharkFloat<SharkFloatParams> &cImag,
+                                    uint32_t actualPrecisionLimbs,
+                                    int64_t testNumber,
+                                    uint32_t sequence)
 {
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     return PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(launchParams,
-                                                                  cReal,
-                                                                  cImag,
-                                                                  actualPrecisionLimbs,
-                                                                  testNumber,
-                                                                  sequence,
-                                                                  Workspace::MinFusedStages,
-                                                                  Workspace::MaxFusedStages);
+                                                                 cReal,
+                                                                 cImag,
+                                                                 actualPrecisionLimbs,
+                                                                 testNumber,
+                                                                 sequence,
+                                                                 Workspace::MinFusedStages,
+                                                                 Workspace::MaxFusedStages);
 }
 
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                                     const mpf_t cReal,
-                                     const mpf_t cImag,
-                                     uint32_t actualPrecisionLimbs,
-                                     int64_t testNumber,
-                                     uint32_t sequence,
-                                     uint32_t minFusedStages,
-                                     uint32_t maxFusedStages)
+                                    const mpf_t cReal,
+                                    const mpf_t cImag,
+                                    uint32_t actualPrecisionLimbs,
+                                    int64_t testNumber,
+                                    uint32_t sequence,
+                                    uint32_t minFusedStages,
+                                    uint32_t maxFusedStages)
 {
     try {
         return LoadHpSharkReferenceTables<SharkFloatParams>(
@@ -477,8 +477,8 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
         SaveHpSharkReferenceTables<SharkFloatParams>(
             *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
-                  << error.what() << std::endl;
+        std::cout << "Reference cache save failed for test " << testNumber << " sequence " << sequence
+                  << ": " << error.what() << std::endl;
     }
     return prepared;
 }
@@ -486,21 +486,21 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
-                                     const mpf_t cReal,
-                                     const mpf_t cImag,
-                                     uint32_t actualPrecisionLimbs,
-                                     int64_t testNumber,
-                                     uint32_t sequence = 0)
+                                    const mpf_t cReal,
+                                    const mpf_t cImag,
+                                    uint32_t actualPrecisionLimbs,
+                                    int64_t testNumber,
+                                    uint32_t sequence)
 {
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
     return PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(launchParams,
-                                                                  cReal,
-                                                                  cImag,
-                                                                  actualPrecisionLimbs,
-                                                                  testNumber,
-                                                                  sequence,
-                                                                  Workspace::MinFusedStages,
-                                                                  Workspace::MaxFusedStages);
+                                                                 cReal,
+                                                                 cImag,
+                                                                 actualPrecisionLimbs,
+                                                                 testNumber,
+                                                                 sequence,
+                                                                 Workspace::MinFusedStages,
+                                                                 Workspace::MaxFusedStages);
 }
 
 } // namespace HpShark

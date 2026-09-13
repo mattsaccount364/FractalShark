@@ -47,9 +47,11 @@
   <ItemGroup>
     <ClInclude Include="Conversion.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="HpSharkTestConfig.h" />
     <ClInclude Include="ReferenceOrbitResult.h" />
     <ClInclude Include="ReferenceReferenceOrbit2.h" />
     <ClInclude Include="TestNewtonRaphson.h" />
+    <ClInclude Include="TestParams.h" />
     <ClInclude Include="Tests.h" />
     <ClInclude Include="TestTracker.h" />
   </ItemGroup>

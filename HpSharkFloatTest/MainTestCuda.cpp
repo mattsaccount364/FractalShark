@@ -5,8 +5,8 @@
 #include "HpSharkFloat.h"
 #include "HpSharkTestConfig.h"
 #include "KernelInvoke.h"
+#include "TestParams.h"
 #include "TestTracker.h"
-#include "TestVerbose.h"
 #include "Tests.h"
 
 #include "HDRFloat.h"
@@ -32,8 +32,6 @@
 // -----------------------------------------------------------------------------
 // Assumed defined elsewhere
 // -----------------------------------------------------------------------------
-enum class BasicCorrectnessMode : int;
-
 const char *
 BasicCorrectnessModeToString(BasicCorrectnessMode mode)
 {
@@ -289,6 +287,43 @@ ResolveIntOption(const CommandLineOptionValue<int> &option,
 }
 
 static bool
+ResolveBooleanOption(const CommandLineOptionValue<int> &option,
+                     const std::string &promptText,
+                     bool defaultValue,
+                     int timeoutInSec,
+                     bool &interactiveMode,
+                     bool &value)
+{
+    const int defaultInt = defaultValue ? 1 : 0;
+    const int resolved = ResolveIntOption(option, promptText, defaultInt, timeoutInSec, interactiveMode);
+    if (resolved != 0 && resolved != 1) {
+        std::cerr << "Boolean test option must be 0 or 1.\n";
+        return false;
+    }
+    value = resolved != 0;
+    return true;
+}
+
+static bool
+ApplyMpirThreadingOption(int value, HpShark::TestParams::MpirThreadingMode &threadingMode)
+{
+    switch (value) {
+        case -1:
+            threadingMode = HpShark::TestParams::MpirThreadingMode::Disabled;
+            return true;
+        case 0:
+            threadingMode = HpShark::TestParams::MpirThreadingMode::MultiThreaded;
+            return true;
+        case 1:
+            threadingMode = HpShark::TestParams::MpirThreadingMode::SingleThreaded;
+            return true;
+        default:
+            std::cerr << "MPIR threading must be off (-1), MT (0), or ST (1).\n";
+            return false;
+    }
+}
+
+static bool
 IsRunPerfModesMode(BasicCorrectnessMode mode)
 {
     return mode == BasicCorrectnessMode::PerfSweep || mode == BasicCorrectnessMode::PerfSingleView30 ||
@@ -304,6 +339,14 @@ static bool
 IsRunPerfBasicOpMode(BasicCorrectnessMode mode)
 {
     return mode == BasicCorrectnessMode::PerfSingleRef;
+}
+
+static bool
+IsCorrectnessMode(BasicCorrectnessMode mode)
+{
+    return mode == BasicCorrectnessMode::Correctness_P1 ||
+           mode == BasicCorrectnessMode::Correctness_P1_to_P5 ||
+           mode == BasicCorrectnessMode::Correctness_NR;
 }
 
 static bool
@@ -330,8 +373,13 @@ ValidateCommandLineApplicability(const CommandLineOptions &options, BasicCorrect
         return false;
     }
 
-    if (IsCommandLineSupplied(options.m_MpirThreading) && !isPerfModesMode) {
+    if (IsCommandLineSupplied(options.m_MpirThreading) && !isPerfModesMode && !isBasicOpMode) {
         std::cerr << "--mpir-threading is only valid for the view/operator performance modes.\n";
+        return false;
+    }
+
+    if (IsCommandLineSupplied(options.m_Infinite) && !IsCorrectnessMode(mode)) {
+        std::cerr << "--infinite is only valid for a correctness mode.\n";
         return false;
     }
 
@@ -598,45 +646,46 @@ ResolveSweepLimbOverride(const CommandLineOptions &options,
 // -----------------------------------------------------------------------------
 template <typename TestSharkParams>
 static bool
-CorrectnessTests()
+CorrectnessTests(const HpShark::TestParams &testParams, bool &allPassed)
 {
-    bool res = true;
-
-    res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit2>(TestIds::kFullCorrectness);
+    const bool res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit2>(
+        TestIds::kFullCorrectness, testParams);
+    allPassed &= res;
     if (!ContinueAfterFailure(res))
         return false;
 
     return true;
 }
 
-static int
-RunCorrectnessTest(BasicCorrectnessMode mode)
+bool
+RunCorrectnessTest(BasicCorrectnessMode mode, const HpShark::TestParams &testParams)
 {
     // Only run for correctness modes.
     // (Assumes these enum values exist elsewhere)
-    if (mode != BasicCorrectnessMode::Correctness_P1 &&
-        mode != BasicCorrectnessMode::Correctness_P1_to_P5) {
-        return 1;
+    if (!IsCorrectnessMode(mode) || mode == BasicCorrectnessMode::Correctness_NR) {
+        return false;
     }
 
+    bool allPassed = true;
     do {
-        if (!CorrectnessTests<TestCorrectnessSharkParams1>())
-            return 0;
+        if (!CorrectnessTests<TestCorrectnessSharkParams1>(testParams, allPassed))
+            return false;
 
         if (mode == BasicCorrectnessMode::Correctness_P1_to_P5) {
-            if (!CorrectnessTests<TestCorrectnessSharkParams2>())
-                return 0;
-            if (!CorrectnessTests<TestCorrectnessSharkParams3>())
-                return 0;
-            if (!CorrectnessTests<TestCorrectnessSharkParams4>())
-                return 0;
-            if (!CorrectnessTests<TestCorrectnessSharkParams5>())
-                return 0;
+            if (!CorrectnessTests<TestCorrectnessSharkParams2>(testParams, allPassed))
+                return false;
+            if (!CorrectnessTests<TestCorrectnessSharkParams3>(testParams, allPassed))
+                return false;
+            if (!CorrectnessTests<TestCorrectnessSharkParams4>(testParams, allPassed))
+                return false;
+            if (!CorrectnessTests<TestCorrectnessSharkParams5>(testParams, allPassed))
+                return false;
         }
 
-    } while (HpShark::TestInfiniteCorrectness);
+    } while (testParams.m_TestInfiniteCorrectness);
 
-    return PressKey() != 'q';
+    PressKey();
+    return allPassed;
 }
 
 // -----------------------------------------------------------------------------
@@ -644,15 +693,16 @@ RunCorrectnessTest(BasicCorrectnessMode mode)
 // -----------------------------------------------------------------------------
 
 template <Operator referenceOperator>
-static int
+static bool
 RunPerfFullSweep(int numIters,
                  int internalTestLoopCount,
-                 const FullReferencePerfLimbOptions &limbOptions)
+                 const FullReferencePerfLimbOptions &limbOptions,
+                 const HpShark::TestParams &testParams)
 {
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
 
     bool res = true;
-    TestTracker Tests;
+    TestTracker Tests(testParams);
 
     int testBaseLocal = TestIds::kPerfSweepStart;
     constexpr std::pair<int, int> blockThreadPairs[] = {
@@ -687,7 +737,7 @@ RunPerfFullSweep(int numIters,
             std::cerr << "Invalid sweep limb selection for view 30: storage="
                       << selection30.m_StorageLimbs << ", effective=" << selection30.m_EffectiveLimbs
                       << ".\n";
-            return 0;
+            return false;
         }
         res = TestFullReferencePerfView<referenceOperator>(Tests,
                                                            numBlocks,
@@ -695,11 +745,10 @@ RunPerfFullSweep(int numIters,
                                                            testBaseLocal,
                                                            numIters,
                                                            internalTestLoopCount,
-                                                           true,
                                                            30,
                                                            selection30);
         if (!ContinueAfterFailure(res))
-            return 0;
+            return false;
         testBaseLocal += 100;
 
         const auto precision32 = GetFullReferencePerfPrecision(referenceOperator, 32);
@@ -709,7 +758,7 @@ RunPerfFullSweep(int numIters,
             std::cerr << "Invalid sweep limb selection for view 32: storage="
                       << selection32.m_StorageLimbs << ", effective=" << selection32.m_EffectiveLimbs
                       << ".\n";
-            return 0;
+            return false;
         }
         res = TestFullReferencePerfView<referenceOperator>(Tests,
                                                            numBlocks,
@@ -717,11 +766,10 @@ RunPerfFullSweep(int numIters,
                                                            testBaseLocal,
                                                            numIters,
                                                            internalTestLoopCount,
-                                                           true,
                                                            32,
                                                            selection32);
         if (!ContinueAfterFailure(res))
-            return 0;
+            return false;
         testBaseLocal += 100;
 
         const auto precision5 = GetFullReferencePerfPrecision(referenceOperator, 5);
@@ -730,19 +778,12 @@ RunPerfFullSweep(int numIters,
         if (!IsValidFullReferencePerfLimbSelection(referenceOperator, selection5)) {
             std::cerr << "Invalid sweep limb selection for view 5: storage=" << selection5.m_StorageLimbs
                       << ", effective=" << selection5.m_EffectiveLimbs << ".\n";
-            return 0;
+            return false;
         }
-        res = TestFullReferencePerfView<referenceOperator>(Tests,
-                                                           numBlocks,
-                                                           numThreads,
-                                                           testBaseLocal,
-                                                           numIters,
-                                                           internalTestLoopCount,
-                                                           true,
-                                                           5,
-                                                           selection5);
+        res = TestFullReferencePerfView<referenceOperator>(
+            Tests, numBlocks, numThreads, testBaseLocal, numIters, internalTestLoopCount, 5, selection5);
         if (!ContinueAfterFailure(res))
-            return 0;
+            return false;
         testBaseLocal += 100;
     }
 
@@ -750,25 +791,21 @@ RunPerfFullSweep(int numIters,
 }
 
 template <Operator referenceOperator>
-static int
+static bool
 RunPerfModes(BasicCorrectnessMode mode,
              int timeoutInSec,
              bool &interactiveMode,
-             const CommandLineOptions &options)
+             const CommandLineOptions &options,
+             const HpShark::TestParams &baseTestParams)
 {
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
 
     // Only run for perf modes.
-    if (mode != BasicCorrectnessMode::PerfSweep && mode != BasicCorrectnessMode::PerfSingleView30 &&
-        mode != BasicCorrectnessMode::PerfSingleView32 &&
-        mode != BasicCorrectnessMode::PerfSingleView5 &&
-        mode != BasicCorrectnessMode::PerfSingleNRView5 &&
-        mode != BasicCorrectnessMode::PerfSingleNRView30 &&
-        mode != BasicCorrectnessMode::PerfSingleNRView32 &&
-        mode != BasicCorrectnessMode::PerfSingleViewAny) {
-        return 1;
+    if (!IsRunPerfModesMode(mode)) {
+        return false;
     }
 
+    bool allPassed = true;
     const bool isNRMode = (mode == BasicCorrectnessMode::PerfSingleNRView5 ||
                            mode == BasicCorrectnessMode::PerfSingleNRView30 ||
                            mode == BasicCorrectnessMode::PerfSingleNRView32);
@@ -795,11 +832,13 @@ RunPerfModes(BasicCorrectnessMode mode,
 
     // MPIR threading option for view modes
     const int mpirThreading = ResolveIntOption(options.m_MpirThreading,
-                                               "MPIR threading? 0=MT(default), 1=ST:",
-                                               0,
+                                               "MPIR threading? -1=off(default), 0=MT, 1=ST:",
+                                               -1,
                                                timeoutInSec,
                                                interactiveMode);
-    const bool useMT = (mpirThreading == 0);
+    HpShark::TestParams testParams = baseTestParams;
+    if (!ApplyMpirThreadingOption(mpirThreading, testParams.m_MpirThreading))
+        return false;
 
     size_t selectedView = 0;
     FullReferencePerfLimbSelection selectedLimbSelection;
@@ -818,27 +857,27 @@ RunPerfModes(BasicCorrectnessMode mode,
                                               interactiveMode);
             if (view < 1 || view > 34) {
                 std::cerr << "View number must be in the range 1..34.\n";
-                return 0;
+                return false;
             }
             selectedView = static_cast<size_t>(view);
         }
 
         if (!ResolveSingleViewLimbSelection<referenceOperator>(
                 options, selectedView, timeoutInSec, interactiveMode, selectedLimbSelection)) {
-            return 0;
+            return false;
         }
     } else if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
         selectedView = 5;
         if (!ResolveSingleViewLimbSelection<referenceOperator>(
                 options, selectedView, timeoutInSec, interactiveMode, selectedLimbSelection)) {
-            return 0;
+            return false;
         }
     }
 
     FullReferencePerfLimbOptions sweepLimbOptions;
     if (mode == BasicCorrectnessMode::PerfSweep &&
         !ResolveSweepLimbOverride(options, timeoutInSec, interactiveMode, sweepLimbOptions)) {
-        return 0;
+        return false;
     }
     if (mode == BasicCorrectnessMode::PerfSweep) {
         const auto precision5 = GetFullReferencePerfPrecision(referenceOperator, 5);
@@ -847,12 +886,12 @@ RunPerfModes(BasicCorrectnessMode mode,
         if (!IsValidFullReferencePerfLimbSelection(referenceOperator, selection5)) {
             std::cerr << "Invalid sweep limb selection for view 5: storage=" << selection5.m_StorageLimbs
                       << ", effective=" << selection5.m_EffectiveLimbs << ".\n";
-            return 0;
+            return false;
         }
     }
 
     if (IsFullReferenceViewMode(mode)) {
-        TestTracker Tests;
+        TestTracker Tests(testParams);
         auto res = TestFullReferencePerfView<referenceOperator>(
             Tests,
             launchParams.NumBlocks,
@@ -863,57 +902,68 @@ RunPerfModes(BasicCorrectnessMode mode,
                                                                               : TestIds::kPerfViewAny),
             numIters,
             internalTestLoopCount,
-            useMT,
             selectedView,
             selectedLimbSelection);
+        allPassed &= res;
         if (!ContinueAfterFailure(res))
-            return 0;
+            return false;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView5) {
-        TestTracker Tests;
+        TestTracker Tests(testParams);
         bool res = true;
         auto runNrView5 = [&]<class SharkFloatParams>() {
             res = TestNewtonRaphsonView5<SharkFloatParams, referenceOperator>(
-                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
+                Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), numIters);
         };
         DispatchByLimbCount<SharkParamsNRFamily>(selectedLimbSelection.m_StorageLimbs, runNrView5);
+        allPassed &= res;
         if (!ContinueAfterFailure(res))
-            return 0;
+            return false;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView30) {
-        TestTracker Tests;
+        TestTracker Tests(testParams);
         auto res = TestNewtonRaphsonView30<SharkParamsNR7, referenceOperator>(
-            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
+            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), numIters);
+        allPassed &= res;
         if (!ContinueAfterFailure(res))
-            return 0;
+            return false;
     }
 
     if (mode == BasicCorrectnessMode::PerfSingleNRView32) {
-        TestTracker Tests;
+        TestTracker Tests(testParams);
         auto res = TestNewtonRaphsonView32<SharkParamsNR9, referenceOperator>(
-            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), useMT, numIters);
+            Tests, 0, launchParams, static_cast<uint64_t>(internalTestLoopCount), numIters);
+        allPassed &= res;
         if (!ContinueAfterFailure(res))
-            return 0;
+            return false;
     }
 
     if (mode == BasicCorrectnessMode::PerfSweep) {
-        if (!RunPerfFullSweep<referenceOperator>(numIters, internalTestLoopCount, sweepLimbOptions))
-            return 0;
+        const bool sweepPassed = RunPerfFullSweep<referenceOperator>(
+            numIters, internalTestLoopCount, sweepLimbOptions, testParams);
+        allPassed &= sweepPassed;
+        if (!sweepPassed)
+            return false;
     }
 
-    return 1;
+    return allPassed;
 }
 
 template <Operator op>
-static int
+static bool
 RunPerfBasicOp(int testBase,
                BasicCorrectnessMode mode,
                int timeoutInSec,
                bool &interactiveMode,
-               const CommandLineOptions &options)
+               const CommandLineOptions &options,
+               const HpShark::TestParams &baseTestParams)
 {
+    if (!IsRunPerfBasicOpMode(mode)) {
+        return false;
+    }
+
     const int numIters =
         ResolveIntOption(options.m_NumIters, "NumIters? Default 5", 5, timeoutInSec, interactiveMode);
     const int internalTestLoopCount = ResolveIntOption(options.m_CudaIterations,
@@ -927,11 +977,21 @@ RunPerfBasicOp(int testBase,
         options.m_NumThreads, "NumThreads? Default 256, 0 for auto", 256, timeoutInSec, interactiveMode);
     const HpShark::LaunchParams launchParams{numBlocks, numThreads};
 
-    auto res = TestBinaryOperatorPerf<op>(launchParams, testBase, numIters, internalTestLoopCount, mode);
-    if (!ContinueAfterFailure(res))
-        return 0;
+    const int mpirThreading = ResolveIntOption(options.m_MpirThreading,
+                                               "MPIR threading? -1=off(default), 0=MT, 1=ST:",
+                                               -1,
+                                               timeoutInSec,
+                                               interactiveMode);
+    HpShark::TestParams testParams = baseTestParams;
+    if (!ApplyMpirThreadingOption(mpirThreading, testParams.m_MpirThreading))
+        return false;
 
-    return 1;
+    auto res = TestBinaryOperatorPerf<op>(
+        launchParams, testBase, numIters, internalTestLoopCount, mode, testParams);
+    if (!ContinueAfterFailure(res))
+        return false;
+
+    return res;
 }
 
 // -----------------------------------------------------------------------------
@@ -1037,27 +1097,58 @@ main(int argc, char **argv)
     std::cout << "Selected mode: " << static_cast<int>(mode) << " ("
               << BasicCorrectnessModeToString(mode) << ")\n";
 
-    // Verbose
+    HpShark::TestParams testParams;
     if (mode != BasicCorrectnessMode::Error) {
-        const int verbose = ResolveIntOption(
-            options.m_Verbose, "Verbose? Default=0 (0=No, 1=Yes):", 0, kTimeoutInSec, interactiveMode);
-        SetVerboseMode(verbose ? VerboseMode::Debug : VerboseMode::None);
+        bool verbose = false;
+        if (!ResolveBooleanOption(options.m_Verbose,
+                                  "Verbose? Default=0 (0=No, 1=Yes):",
+                                  false,
+                                  kTimeoutInSec,
+                                  interactiveMode,
+                                  verbose)) {
+            return 1;
+        }
+        testParams.m_VerboseMode =
+            verbose ? HpShark::TestParams::VerboseMode::Debug : HpShark::TestParams::VerboseMode::None;
+
+        if (!ResolveBooleanOption(options.m_TestReference,
+                                  "Full host reference implementation? Default=0 (0=No, 1=Yes):",
+                                  false,
+                                  kTimeoutInSec,
+                                  interactiveMode,
+                                  testParams.m_TestReferenceImpl)) {
+            return 1;
+        }
+
+        if (IsCorrectnessMode(mode) &&
+            !ResolveBooleanOption(options.m_Infinite,
+                                  "Repeat correctness tests? Default=1 (0=No, 1=Yes):",
+                                  true,
+                                  kTimeoutInSec,
+                                  interactiveMode,
+                                  testParams.m_TestInfiniteCorrectness)) {
+            return 1;
+        }
     }
+
+    bool runSucceeded = true;
 
     // Explicit dispatch (don’t “call both and early-out”)
     switch (mode) {
         case BasicCorrectnessMode::Correctness_P1:
         case BasicCorrectnessMode::Correctness_P1_to_P5:
-            RunCorrectnessTest(mode);
+            runSucceeded = RunCorrectnessTest(mode, testParams);
             break;
 
         case BasicCorrectnessMode::Correctness_NR: {
+            bool allPassed = true;
             do {
-                if (!CorrectnessTests<SharkParamsNR1>()) {
-                    if (!ContinueAfterFailure(false))
-                        return 0;
+                if (!CorrectnessTests<SharkParamsNR1>(testParams, allPassed)) {
+                    runSucceeded = false;
+                    break;
                 }
-            } while (HpShark::TestInfiniteCorrectness);
+            } while (testParams.m_TestInfiniteCorrectness);
+            runSucceeded &= allPassed;
             break;
         }
 
@@ -1069,16 +1160,17 @@ main(int argc, char **argv)
         case BasicCorrectnessMode::PerfSingleNRView30:
         case BasicCorrectnessMode::PerfSingleNRView32:
         case BasicCorrectnessMode::PerfSingleViewAny:
-            RunPerfModes<Operator::ReferenceOrbit2>(mode, kTimeoutInSec, interactiveMode, options);
+            runSucceeded = RunPerfModes<Operator::ReferenceOrbit2>(
+                mode, kTimeoutInSec, interactiveMode, options, testParams);
             break;
         case BasicCorrectnessMode::PerfSingleRef:
-            RunPerfBasicOp<Operator::ReferenceOrbit2>(
-                TestIds::kFullPerf, mode, kTimeoutInSec, interactiveMode, options);
+            runSucceeded = RunPerfBasicOp<Operator::ReferenceOrbit2>(
+                TestIds::kFullPerf, mode, kTimeoutInSec, interactiveMode, options, testParams);
             break;
 
         default:
             break;
     }
 
-    return 0;
+    return runSucceeded ? 0 : 1;
 }

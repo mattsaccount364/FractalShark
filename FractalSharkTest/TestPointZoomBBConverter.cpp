@@ -48,6 +48,13 @@ TEST(PointZoomConstruction_NonOrigin)
     ASSERT_TRUE(pz.GetZoomFactor() == HighPrecision{4});
 }
 
+TEST(PointZoomConstruction_ZeroZoomThrows)
+{
+    ASSERT_THROWS(
+        PointZoomBBConverter(HighPrecision{0}, HighPrecision{0}, HighPrecision{0}, TestMode::Enabled),
+        FractalSharkSeriousException);
+}
+
 TEST(FeatureZoomFactorForRadius)
 {
     const HighPrecision zoom = FeatureSummary::ComputeZoomFactorForRadius(HighPrecision{0.5});

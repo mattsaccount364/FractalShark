@@ -1,6 +1,6 @@
 #include "TestTracker.h"
 #include "HpSharkFloat.h"
-#include "TestVerbose.h"
+#include "TestParams.h"
 
 #include <algorithm>
 #include <iostream>
@@ -29,7 +29,16 @@ TestTracker::PerTest::PerTest()
 {
 }
 
-TestTracker::TestTracker() : m_Tests(NumTests) {}
+TestTracker::TestTracker(const HpShark::TestParams &testParams)
+    : m_Tests(NumTests), m_TestParams(testParams)
+{
+}
+
+const HpShark::TestParams &
+TestTracker::GetTestParams() const
+{
+    return m_TestParams;
+}
 
 bool
 TestTracker::CheckAllTestsPassed() const
@@ -78,7 +87,7 @@ TestTracker::CheckAllTestsPassed() const
                 failedVariants += desc;
             }
 
-            if (SharkVerbose == VerboseMode::Debug) {
+            if (m_TestParams.IsVerbose()) {
                 std::cout << "Test " << i << " [blocks=" << t.NumBlocks
                           << ", threadsPerBlock=" << t.ThreadsPerBlock << "] "
                           << "Variant: " << desc << " -> " << StatusToString(vr.status) << "\n";
@@ -94,7 +103,7 @@ TestTracker::CheckAllTestsPassed() const
             std::cout << "Test " << i << " FAILED"
                       << " [blocks=" << t.NumBlocks << ", threadsPerBlock=" << t.ThreadsPerBlock << "] "
                       << failedVariants << "\n";
-        } else if (SharkVerbose == VerboseMode::Debug) {
+        } else if (m_TestParams.IsVerbose()) {
             std::cout << "Test " << i << " PASSED"
                       << " [blocks=" << t.NumBlocks << ", threadsPerBlock=" << t.ThreadsPerBlock << "] "
                       << "TimeMs: " << t.TestMs << "\n";

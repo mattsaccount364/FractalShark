@@ -38,7 +38,6 @@ target_sources(HpSharkFloatLib PRIVATE
     BenchmarkTimer.cpp
     KernelInvokeReferenceCache.cpp
     LaunchParamsCalculator.cpp
-    TestVerbose.cpp
     ${HPSHARK_GENERATED_CU_FILES}
 )
 

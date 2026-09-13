@@ -1,5 +1,5 @@
 #include "DbgHeap.h"
-#include "TestVerbose.h"
+#include "TestParams.h"
 
 // #include <cuda_runtime.h>
 
@@ -71,7 +71,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
 
         const bool ok = (mpf_cmp(adiff, eps) <= 0);
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "\n[" << label << "] |delta| = "
                       << MpfToString<SharkFloatParams>(adiff,
                                                        HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
@@ -88,10 +88,9 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
 
     // ---------------- Build HpSharkFloat from mpf ----------------
     auto x_num = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    x_num->MpfToHpGpu(
-        mpf_x, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
+    x_num->MpfToHpGpu(mpf_x, InjectNoiseInLowOrder::Disable);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "\nHighPrecisionNumber representations:\n";
         std::cout << "  X: " << x_num->ToString() << "\n";
         std::cout << "  X hex(base16 digits, exponent): " << x_num->ToHexString() << "\n";
@@ -129,7 +128,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
     from_hdr_f.HpGpuToMpf(mpf_x_hdrf);
     from_hdr_d.HpGpuToMpf(mpf_x_hdrd);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "\nHDRFloat representations:\n";
         std::cout << "  HDRFloat<float>  : " << hdrFloat.template ToString<false>() << "\n";
         std::cout << "  HDRFloat<double> : " << hdrDouble.template ToString<false>() << "\n";
@@ -163,7 +162,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
     set_two_pow(eps_hdrf, e2 - P_f);
     set_two_pow(eps_hdrd, e2 - P_d);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "\nEpsilons (ULP-scaled at |x|):\n";
         std::cout << "  e2(|x|)   : " << e2 << "\n";
         std::cout << "  eps_full  : "
@@ -226,7 +225,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
     {
         std::string hexStr = MpfToHex64StringInvertable(mpf_x);
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "\nHex string conversion:\n";
             std::cout << "  Hex string(base16 limbs, counts/exponent): " << hexStr << "\n";
         }
@@ -234,7 +233,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
         mpf_t outX;
         Hex64StringToMpf_Exact(hexStr, outX);
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "  RoundTripX hex(base16 limbs, counts/exponent): "
                       << MpfToHex64StringInvertable(outX) << "\n";
         }
@@ -263,7 +262,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
         const bool ok_normalize =
             compare_within_eps(mpf_x, mpf_x_normalized, eps_full, "conversion/normalize");
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "Original X hex(base16 limbs, counts/exponent): "
                       << MpfToHex64StringInvertable(mpf_x) << "\n";
             std::cout << "Normalized X hex(base16 limbs, counts/exponent): "
@@ -304,7 +303,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, const char *numberStr)
 {
     mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "\n\n=== Test " << testNum
                   << ": Convert number string to HpSharkFloat and back ===\n";
     }
@@ -316,7 +315,7 @@ TestConvertNumber(TestTracker &Tests, int testNum, const char *numberStr)
         std::cout << "Error setting mpf_x from input string\n";
     }
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "Original input values:\n";
         std::cout << "  numberStr: " << numberStr << "\n";
         std::cout << "  X (mpf): "
@@ -339,7 +338,7 @@ TestConvertNumber(
 {
     mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "\n\n=== Test " << testNum
                   << ": Convert number string to HpSharkFloat and back ===\n";
     }
@@ -349,7 +348,7 @@ TestConvertNumber(
     mpf_init2(mpf_x, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
     Uint64ToMpf(limbs.data(), limbs.size(), exponent, mpf_x, isNegative);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "Original input values:\n";
         std::cout << "  numberStr: " << UintArrayToHexString(limbs.data(), limbs.size())
                   << " * 2^exponent " << exponent << (isNegative ? " (negative)" : " (positive)")
@@ -369,9 +368,9 @@ TestConvertNumber(
 
 template <class SharkFloatParams>
 bool
-TestConversion(int testBase)
+TestConversion(int testBase, const HpShark::TestParams &testParams)
 {
-    TestTracker Tests;
+    TestTracker Tests(testParams);
 
     const auto set1 = testBase + 10;
     TestConvertNumber<SharkFloatParams>(Tests, set1 + 1, "0.0");
@@ -465,6 +464,6 @@ TestConversion(int testBase)
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template bool TestConversion<SharkFloatParams>(int testBase);
+    template bool TestConversion<SharkFloatParams>(int testBase, const HpShark::TestParams &testParams);
 
 ExplicitInstantiateAll();

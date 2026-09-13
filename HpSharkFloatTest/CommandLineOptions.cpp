@@ -105,18 +105,25 @@ SetLimbOption(CommandLineOptionValue<uint32_t> &option,
 }
 
 bool
-SetVerboseOption(CommandLineOptionValue<int> &option,
+SetBooleanOption(CommandLineOptionValue<int> &option,
                  std::string_view optionName,
                  std::string_view text,
                  std::string &error)
 {
     if (text == "on") {
-        return SetNumericOption(option, optionName, "1", error);
+        text = "1";
+    } else if (text == "off") {
+        text = "0";
     }
-    if (text == "off") {
-        return SetNumericOption(option, optionName, "0", error);
+
+    if (!SetNumericOption(option, optionName, text, error)) {
+        return false;
     }
-    return SetNumericOption(option, optionName, text, error);
+    if (option.m_Kind == CommandLineValueKind::Explicit && option.m_Value != 0 && option.m_Value != 1) {
+        error = "Invalid value for --" + std::string(optionName) + ": " + std::string(text);
+        return false;
+    }
+    return true;
 }
 
 bool
@@ -131,6 +138,9 @@ SetMpirThreadingOption(CommandLineOptionValue<int> &option,
     if (text == "st") {
         return SetNumericOption(option, optionName, "1", error);
     }
+    if (text == "off") {
+        return SetNumericOption(option, optionName, "-1", error);
+    }
     return SetNumericOption(option, optionName, text, error);
 }
 
@@ -144,7 +154,7 @@ SetOption(const std::string_view name,
         return SetNumericOption(options.m_Mode, name, value, error);
     }
     if (name == "verbose") {
-        return SetVerboseOption(options.m_Verbose, name, value, error);
+        return SetBooleanOption(options.m_Verbose, name, value, error);
     }
     if (name == "cuda-iterations") {
         return SetNumericOption(options.m_CudaIterations, name, value, error);
@@ -160,6 +170,12 @@ SetOption(const std::string_view name,
     }
     if (name == "mpir-threading") {
         return SetMpirThreadingOption(options.m_MpirThreading, name, value, error);
+    }
+    if (name == "test-reference") {
+        return SetBooleanOption(options.m_TestReference, name, value, error);
+    }
+    if (name == "infinite") {
+        return SetBooleanOption(options.m_Infinite, name, value, error);
     }
     if (name == "view") {
         return SetNumericOption(options.m_View, name, value, error);
@@ -229,7 +245,9 @@ CommandLineUsage()
   --num-iters <integer|auto>
   --num-blocks <integer|auto>       (0 retains launch auto-selection)
   --num-threads <integer|auto>      (0 retains launch auto-selection)
-  --mpir-threading <0|1|mt|st|auto>
+  --mpir-threading <off|0|1|mt|st|auto>
+  --test-reference <0|1|on|off|auto>
+  --infinite <0|1|on|off|auto>
   --view <1..34|auto>
   --storage-limbs <supported count|auto|production>
   --effective-limbs <integer|auto|production>

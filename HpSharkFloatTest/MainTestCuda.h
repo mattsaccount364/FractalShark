@@ -1,3 +1,7 @@
 #pragma once
 
-int RunCorrectnessTest();
+#include "TestParams.h"
+
+enum class BasicCorrectnessMode : int;
+
+bool RunCorrectnessTest(BasicCorrectnessMode mode, const HpShark::TestParams &testParams);

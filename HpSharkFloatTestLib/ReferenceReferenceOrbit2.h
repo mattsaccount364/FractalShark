@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ReferenceOrbitResult.h"
+#include "TestParams.h"
 
 namespace HpShark {
 template <class SharkFloatParams> class ReferencePreparedTables;
@@ -15,7 +16,8 @@ std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>> ReferenceOrbit2Helper(
     uint64_t maxIters,
     uint32_t actualPrecisionLimbs,
     DebugHostCombo<SharkFloatParams> &debugHostCombo,
-    HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables);
+    HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables,
+    HpShark::TestParams::VerboseMode verboseMode);
 
 template <class SharkFloatParams>
 void EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
@@ -29,4 +31,5 @@ void EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                                  typename SharkFloatParams::Float *outD2Imag,
                                  uint32_t actualPrecisionLimbs,
                                  DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                                 HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables);
+                                 HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables,
+                                 HpShark::TestParams::VerboseMode verboseMode);

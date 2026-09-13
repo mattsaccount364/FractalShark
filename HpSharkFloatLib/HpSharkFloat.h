@@ -287,7 +287,7 @@ template <class SharkFloatParams> struct HpSharkFloat {
     constexpr static auto DefaultMpirBits = DefaultPrecBits;
 
     void HpGpuToMpf(mpf_t &mpf_val) const;
-    void MpfToHpGpu(const mpf_t mpf_val, int prec_bits, InjectNoiseInLowOrder injectNoise);
+    void MpfToHpGpu(const mpf_t mpfValue, InjectNoiseInLowOrder injectNoise);
 
     // Convert an HpSharkFloat<Params> to HDRFloat<SubType> (SubType = double or float).
     // - Single pass: scans from high→low once to detect zero and find MS non-zero limb.

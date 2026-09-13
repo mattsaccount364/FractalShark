@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TestParams.h"
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -7,7 +8,7 @@
 
 namespace HpShark {
 struct LaunchParams;
-}
+} // namespace HpShark
 
 class TestTracker {
 public:
@@ -37,9 +38,11 @@ public:
         bool RanAnyVariant = false;
     };
 
-    TestTracker();
+    explicit TestTracker(const HpShark::TestParams &testParams);
 
     bool CheckAllTestsPassed() const;
+
+    const HpShark::TestParams &GetTestParams() const;
 
     void AddTime(size_t testIndex, uint64_t ms);
 
@@ -55,4 +58,5 @@ public:
 
 private:
     std::vector<PerTest> m_Tests;
+    HpShark::TestParams m_TestParams;
 };

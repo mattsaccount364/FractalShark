@@ -70,7 +70,6 @@
     <ClInclude Include="HpSharkFloat.h" />
     <ClInclude Include="HpSharkFloatConversions.h" />
     <ClInclude Include="HpSharkKernelResults.h" />
-    <ClInclude Include="HpSharkTestConfig.h" />
     <ClInclude Include="KernelHpSharkReferenceOrbit.h" />
     <ClInclude Include="MontgomeryCoreConstexpr.h" />
     <ClInclude Include="MpirComplex.h" />
@@ -80,7 +79,6 @@
     <ClInclude Include="ReferenceNTT.h" />
     <ClInclude Include="ReferenceScratch.h" />
     <ClInclude Include="PeriodicityChecker.h" />
-    <ClInclude Include="TestVerbose.h" />
     <ClInclude Include="ThreeWayMagnitude.h" />
   </ItemGroup>
   <ItemGroup>
@@ -95,7 +93,6 @@
     <ClCompile Include="MpirComplex.cpp" />
     <ClCompile Include="MpirOrbitEval.cpp" />
     <ClCompile Include="MpirSerialization.cpp" />
-    <ClCompile Include="TestVerbose.cpp" />
     <ClCompile Include="Vectors.cpp" />
     <ClCompile Include="VectorsLinux.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>

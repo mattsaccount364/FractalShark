@@ -1,5 +1,6 @@
 add_executable(FractalSharkCli
     main.cpp
+    LocalIpc.cpp
 )
 
 # BLA<T> template definitions live in FractalSharkGpuLib/BLA.cuh; mirror

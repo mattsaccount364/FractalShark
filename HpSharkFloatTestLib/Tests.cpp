@@ -6,7 +6,6 @@
 #include "HpSharkTestConfig.h"
 #include "PrecisionCalculator.h"
 #include "TestTracker.h"
-#include "TestVerbose.h"
 
 #include "DebugChecksumHost.h"
 #include "PerfTimingResult.h"
@@ -79,7 +78,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
     bool testSucceeded = true;
     const mp_bitcnt_t comparisonPrecBits = mpf_get_prec(mpfHostResult);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << std::endl << hostCustomOrGpu << " result: " << std::endl;
         std::cout << gpuResult.ToString() << std::endl;
         std::cout << gpuResult.ToHexString() << std::endl;
@@ -98,7 +97,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
     mpf_abs(mpfDiffAbs, mpfDiff);
 
     // Converted GPU result
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         // mpfHostResult:
         std::cout << "\nConverted host result (mpfHostResult):" << std::endl;
         std::cout << MpfToString<SharkFloatParams>(mpfHostResult,
@@ -156,7 +155,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
         const auto bitsErrA = BitsOfError(mpfDiffAbs);
 
         if (mpf_cmp(mpfDiffAbs, epsilon) <= 0) {
-            if (SharkVerbose == VerboseMode::Debug) {
+            if (Tests.GetTestParams().IsVerbose()) {
                 std::cout << "\nPASS (|host| <= epsilon):\n"
                           << "  |host| = "
                           << MpfToString<SharkFloatParams>(mpfAbsHost, TestOutputPrecisionBits)
@@ -201,7 +200,7 @@ DiffAgainstHostNonZero(const HpShark::LaunchParams &launchParams,
 
         // Compare: if relativeError <= epsilon --> PASS; else FAIL
         if (mpf_cmp(relativeError, epsilon) <= 0) {
-            if (SharkVerbose == VerboseMode::Debug) {
+            if (Tests.GetTestParams().IsVerbose()) {
                 std::cout << "\nPASS (relative-error check):\n"
                           << "  relativeError = "
                           << MpfToString<SharkFloatParams>(relativeError, TestOutputPrecisionBits)
@@ -252,7 +251,7 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
     const mp_bitcnt_t comparisonPrecBits = mpf_get_prec(mpfHostResult);
 
     // 1) Optional verbose print of GPU result
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << std::endl
                   << hostCustomOrGpu << " (GPU) result:\n"
                   << gpuResult.ToString() << std::endl
@@ -260,15 +259,14 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
     }
 
     // 2) Convert host mpf_t --> HpSharkFloat via MpfToHpGpu
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "Correct answer follows after converting to HpSharkFloat: " << std::endl;
     }
 
     auto hostShark = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    hostShark->MpfToHpGpu(
-        mpfHostResult, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
+    hostShark->MpfToHpGpu(mpfHostResult, InjectNoiseInLowOrder::Disable);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << std::endl;
     }
 
@@ -303,7 +301,7 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
         mpf_init2(eps, P);
         mpf_set_ui(eps, 1);
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "\nBefore fallback absolute-error threshold : "
                       << MpfToString<SharkFloatParams>(eps, TestOutputPrecisionBits) << std::endl;
             std::cout << "Absolute difference: "
@@ -324,7 +322,7 @@ DiffAgainstHost(const HpShark::LaunchParams &launchParams,
         // 4) scale by (numTerms-1)
         mpf_mul_ui(eps, eps, static_cast<unsigned long>(numTerms - 1));
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "\nFallback absolute-error threshold : "
                       << MpfToString<SharkFloatParams>(eps, TestOutputPrecisionBits) << std::endl;
             std::cout << "Absolute difference: "
@@ -375,13 +373,12 @@ TestPerf(const HpShark::LaunchParams &launchParams,
          int64_t expectedPeriod,
          PeriodicityResult expectedResult,
          uint32_t actualPrecisionLimbs,
-         bool useMT = true,
-         PerfTimingResult *timingOut = nullptr,
-         HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables = nullptr)
+         PerfTimingResult *timingOut,
+         HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables)
 {
 
     // Print the original input values
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "Original input values:" << std::endl;
         std::cout << "num1: " << num1 << std::endl;
         std::cout << "X: "
@@ -409,14 +406,11 @@ TestPerf(const HpShark::LaunchParams &launchParams,
     auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     auto resultNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    xNum->MpfToHpGpu(
-        mpfX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Enable);
-    yNum->MpfToHpGpu(
-        mpfY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Enable);
-    zNum->MpfToHpGpu(
-        mpfZ, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Enable);
+    xNum->MpfToHpGpu(mpfX, InjectNoiseInLowOrder::Enable);
+    yNum->MpfToHpGpu(mpfY, InjectNoiseInLowOrder::Enable);
+    zNum->MpfToHpGpu(mpfZ, InjectNoiseInLowOrder::Enable);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "\nConverted HpSharkFloat<SharkFloatParams> representations:" << std::endl;
         std::cout << "X: " << xNum->ToString() << std::endl;
         std::cout << "Y: " << yNum->ToString() << std::endl;
@@ -450,7 +444,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
     std::vector<typename SharkFloatParams::ReferenceIterT> hostReferenceOrbit;
 
-    if constexpr (HpShark::TestMPIRImpl) {
+    if (Tests.GetTestParams().IsMpirEnabled()) {
         ScopedBenchmarkStopper hostStopper{hostTimer};
 
         typename SharkFloatParams::Float dzdcX{1};
@@ -675,19 +669,21 @@ TestPerf(const HpShark::LaunchParams &launchParams,
 
             // CPU HpSharkFloat-based reference orbit.
             std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>> cpuRefOrbitResult;
-            if constexpr (HpShark::TestReferenceImpl) {
+            if (Tests.GetTestParams().m_TestReferenceImpl) {
                 DebugHostCombo<SharkFloatParams> debugHostCombo;
 
                 BenchmarkTimer cpuRefTimer;
                 {
                     ScopedBenchmarkStopper cpuRefStopper{cpuRefTimer};
-                    cpuRefOrbitResult = ReferenceOrbit2Helper<SharkFloatParams>(xNum.get(),
-                                                                                yNum.get(),
-                                                                                hdrRadiusY,
-                                                                                numIters,
-                                                                                actualPrecisionLimbs,
-                                                                                debugHostCombo,
-                                                                                preparedTables);
+                    cpuRefOrbitResult =
+                        ReferenceOrbit2Helper<SharkFloatParams>(xNum.get(),
+                                                                yNum.get(),
+                                                                hdrRadiusY,
+                                                                numIters,
+                                                                actualPrecisionLimbs,
+                                                                debugHostCombo,
+                                                                preparedTables,
+                                                                Tests.GetTestParams().m_VerboseMode);
                 }
 
                 std::cout << "CPU ref orbit time: " << cpuRefTimer.GetDeltaInMs()
@@ -700,7 +696,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
             }
 
             if constexpr (IsReferenceOrbitOperator<sharkOperator>) {
-                if constexpr (HpShark::TestMPIRImpl) {
+                if (Tests.GetTestParams().IsMpirEnabled()) {
                     if (hpSharkReferenceOrbit.size() != hostReferenceOrbit.size()) {
                         std::cout << "Error: Host and GPU reference orbit size mismatch: host="
                                   << hostReferenceOrbit.size() << " gpu=" << hpSharkReferenceOrbit.size()
@@ -752,7 +748,7 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     }
 
                     // Compare CPU HpSharkFloat-based reference orbit against MPIR host orbit
-                    if constexpr (HpShark::TestReferenceImpl) {
+                    if (Tests.GetTestParams().m_TestReferenceImpl) {
                         if (cpuRefOrbitResult->Orbit.size() != hostReferenceOrbit.size()) {
                             std::cout << "Error: MPIR host and CPU ref orbit size mismatch: mpir="
                                       << hostReferenceOrbit.size()
@@ -835,8 +831,8 @@ TestPerf(const HpShark::LaunchParams &launchParams,
                     std::cout << "Output iteration: " << totalExecutedIters << std::endl;
                 }
 
-                // Direct CPU ref orbit vs GPU orbit comparison (independent of TestMPIRImpl)
-                if constexpr (HpShark::TestReferenceImpl) {
+                // Direct CPU ref orbit vs GPU orbit comparison (independent of MPIR execution)
+                if (Tests.GetTestParams().m_TestReferenceImpl) {
                     if (cpuRefOrbitResult->Orbit.size() != hpSharkReferenceOrbit.size()) {
                         std::cout << "Error: CPU ref and GPU orbit size mismatch: cpuRef="
                                   << cpuRefOrbitResult->Orbit.size()
@@ -932,9 +928,9 @@ TestPerfRandom(const HpShark::LaunchParams &launchParams,
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
-    xNum->GenerateRandomNumber2();
-    yNum->GenerateRandomNumber2();
-    zNum->GenerateRandomNumber2();
+    xNum->GenerateRandomNumber2(false);
+    yNum->GenerateRandomNumber2(false);
+    zNum->GenerateRandomNumber2(false);
 
     mpf_set_default_prec(
         HpSharkFloat<SharkFloatParams>::DefaultMpirBits); // Set precision for MPIR floating point
@@ -958,7 +954,7 @@ TestPerfRandom(const HpShark::LaunchParams &launchParams,
     const auto unknownPeriod = -1;
     const auto expectedResult = PeriodicityResult::Continue;
     auto preparedTables = HpShark::PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(
-        launchParams, *xNum, *yNum, SharkFloatParams::GlobalNumUint32, testNum);
+        launchParams, *xNum, *yNum, SharkFloatParams::GlobalNumUint32, testNum, 0);
 
     TestPerf<SharkFloatParams, sharkOperator>(launchParams,
                                               Tests,
@@ -975,7 +971,6 @@ TestPerfRandom(const HpShark::LaunchParams &launchParams,
                                               unknownPeriod,
                                               expectedResult,
                                               SharkFloatParams::GlobalNumUint32,
-                                              true,
                                               nullptr,
                                               preparedTables.get());
 
@@ -1196,7 +1191,7 @@ CheckGPUResult(const HpShark::LaunchParams &launchParams,
     auto testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
         launchParams, Tests, testNum, numTerms, name, mpfHostResult, gpuResult);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         if (!testSucceeded) {
             std::cout << "GPU High Precision failed" << std::endl;
         } else {
@@ -1282,7 +1277,7 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
     mpf_add(mpfHostResultY, twoXY, mpfB); // 2xy + b
 
     // Print host result
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "\nCorrect MPIR result:" << std::endl;
         std::cout << "Correct MPIR result X: "
                   << MpfToString<SharkFloatParams>(mpfHostResultX,
@@ -1313,16 +1308,17 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
                                                                        reference2MaxFusedStages);
 
     // Test the HpSharkFloat CPU reference implementation against MPIR.
-    if constexpr (HpShark::TestReferenceImpl) {
+    if (Tests.GetTestParams().m_TestReferenceImpl) {
         auto cpuResult = ReferenceOrbit2Helper<SharkFloatParams>(&aNum,
                                                                  &bNum,
                                                                  emptyRadius,
                                                                  1,
                                                                  SharkFloatParams::GlobalNumUint32,
                                                                  debugHostCombo,
-                                                                 preparedTables.get());
+                                                                 preparedTables.get(),
+                                                                 Tests.GetTestParams().m_VerboseMode);
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "CPU ref orbit result X: " << cpuResult->FinalZReal.ToString() << std::endl;
             std::cout << "CPU ref orbit result X hex: " << cpuResult->FinalZReal.ToHexString()
                       << std::endl;
@@ -1349,7 +1345,7 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
                                                                            mpfHostResultY,
                                                                            cpuResult->FinalZImag);
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             if (!testSucceeded) {
                 std::cout << "Custom High Precision failed" << std::endl;
             } else {
@@ -1375,12 +1371,12 @@ TestCoreReferenceOrbit(const HpShark::LaunchParams &launchParams,
         *gpuResultYY = combo->ZImag;
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "GPU reference timeMs: " << timer.GetDeltaInMs() << std::endl;
         }
     }
 
-    if constexpr (HpShark::TestReferenceImpl) {
+    if (Tests.GetTestParams().m_TestReferenceImpl) {
         if (!ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo)) {
             Tests.MarkFailed(&launchParams, testNum, "Checksums", "checksum mismatch", "exact match");
         }
@@ -1419,7 +1415,7 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(const HpShark::LaunchParams &launch
                                              uint32_t reference2MaxFusedStages)
 {
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << "\nConverted HpSharkFloat<SharkFloatParams> representations:" << std::endl;
 
         for (size_t i = 0; i < inputX.size(); ++i) {
@@ -1487,7 +1483,7 @@ TestTernaryOperatorTwoNumbersRaw(const HpShark::LaunchParams &launchParams,
         };
 
         auto printTest = [&](int curTest) {
-            if (SharkVerbose == VerboseMode::Debug) {
+            if (Tests.GetTestParams().IsVerbose()) {
                 std::cout << std::endl;
                 std::cout << std::endl;
             }
@@ -1694,7 +1690,7 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
 
     auto curTest = [&]() {
         // Print the original input values
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << "Original input strings:" << std::endl;
 
             for (size_t i = 0; i < num.size(); ++i) {
@@ -1717,9 +1713,7 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
         assert(xNumCopy.size() == num.size());
 
         for (size_t i = 0; i < num.size(); ++i) {
-            xNumCopy[i].MpfToHpGpu(mpfCopy[i],
-                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits,
-                                   InjectNoiseInLowOrder::Disable);
+            xNumCopy[i].MpfToHpGpu(mpfCopy[i], InjectNoiseInLowOrder::Disable);
         }
 
         TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, false>(launchParams,
@@ -1743,7 +1737,7 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
     };
 
     auto printTest = [&](int curTest) {
-        if (SharkVerbose == VerboseMode::Debug) {
+        if (Tests.GetTestParams().IsVerbose()) {
             std::cout << std::endl;
             std::cout << std::endl;
         }
@@ -1829,7 +1823,7 @@ TestTernaryOperatorTwoNumbers(const HpShark::LaunchParams &launchParams,
                               const char *num3)
 {
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << std::endl;
         std::cout << std::endl;
     }
@@ -1943,7 +1937,7 @@ TestTernarySpecialHelper(const HpShark::LaunchParams &launchParams,
                          const IntSignCombo &testData4,
                          const IntSignCombo &testData5)
 {
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << std::endl;
         std::cout << std::endl;
     }
@@ -2497,7 +2491,7 @@ TestTernarySpecial21(const HpShark::LaunchParams &launchParams,
     justOne.push_back(1);
     justOne.resize(SharkFloatParams::GlobalNumUint32);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (Tests.GetTestParams().IsVerbose()) {
         std::cout << std::endl;
         std::cout << std::endl;
     }
@@ -2635,9 +2629,10 @@ TestBinaryOperatorPerf(const HpShark::LaunchParams &launchParams,
                        [[maybe_unused]] int testBase,
                        [[maybe_unused]] int numIters,
                        [[maybe_unused]] int internalTestLoopCount,
-                       [[maybe_unused]] BasicCorrectnessMode mode)
+                       [[maybe_unused]] BasicCorrectnessMode mode,
+                       const HpShark::TestParams &testParams)
 {
-    TestTracker Tests;
+    TestTracker Tests(testParams);
 
     switch (mode) {
         case BasicCorrectnessMode::Correctness_P1:
@@ -2830,7 +2825,6 @@ TestFullReferencePerfView(TestTracker &Tests,
                           int testBase,
                           int numIters,
                           int internalTestLoopCount,
-                          bool useMT,
                           size_t view,
                           const FullReferencePerfLimbSelection &limbSelection)
 {
@@ -2880,7 +2874,6 @@ TestFullReferencePerfView(TestTracker &Tests,
               << ", storageLimbs=" << storagePrecisionLimbs
               << ", effectiveLimbs=" << effectivePrecisionLimbs << std::endl;
 
-    bool result = true;
     auto runForParams = [&]<class SharkFloatParams>() {
         HpShark::LaunchParams launchParams{numBlocks, numThreads};
         mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
@@ -2929,7 +2922,7 @@ TestFullReferencePerfView(TestTracker &Tests,
         }
 
         if (viewOverride && viewOverride->m_InputEncoding == FullReferencePerfInputEncoding::ExactHex &&
-            SharkVerbose == VerboseMode::Debug) {
+            Tests.GetTestParams().IsVerbose()) {
             const auto mpfXConvertStr = MpfToHex64StringInvertable(mpfX);
             const auto mpfYConvertStr = MpfToHex64StringInvertable(mpfY);
             std::cout << "Correct MPIR hex X: " << std::endl << mpfXConvertStr;
@@ -2972,7 +2965,7 @@ TestFullReferencePerfView(TestTracker &Tests,
             viewOverride ? viewOverride->m_ExpectedResult : PeriodicityResult::Continue;
 
         auto preparedTables = HpShark::PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(
-            launchParams, mpfX, mpfY, effectivePrecisionLimbs, testBase);
+            launchParams, mpfX, mpfY, effectivePrecisionLimbs, testBase, 0);
 
         std::vector<PerfTimingResult> timings;
         timings.reserve(numIters);
@@ -2994,7 +2987,6 @@ TestFullReferencePerfView(TestTracker &Tests,
                                                       expectedPeriod,
                                                       expectedResult,
                                                       effectivePrecisionLimbs,
-                                                      useMT,
                                                       &timing,
                                                       preparedTables.get());
             timings.push_back(timing);
@@ -3005,7 +2997,8 @@ TestFullReferencePerfView(TestTracker &Tests,
             std::cout << "\nGeneric view-perf for view " << view << std::endl;
         }
         const char *summaryLabel = viewOverride ? viewOverride->m_Label : genericLabel.c_str();
-        PrintPerfSummaryTable(summaryLabel, useMT, timings, "MPIR", cpuLabel);
+        PrintPerfSummaryTable(
+            summaryLabel, Tests.GetTestParams().UseMpirMultithreading(), timings, "MPIR", cpuLabel);
 
         mpf_clear(mpfX);
         mpf_clear(mpfY);
@@ -3018,14 +3011,14 @@ TestFullReferencePerfView(TestTracker &Tests,
 
     DispatchByLimbCount<SharkParamsBaseFamily>(storagePrecisionLimbs, runForParams);
 
-    return result;
+    return Tests.CheckAllTestsPassed();
 }
 template <class SharkFloatParams, Operator sharkOperator>
 bool
-TestAllBinaryOp(int testBase)
+TestAllBinaryOp(int testBase, const HpShark::TestParams &testParams)
 {
     HpShark::LaunchParams launchParams{2, 32};
-    TestTracker Tests;
+    TestTracker Tests(testParams);
 
     constexpr bool includeSet1 = true;
     constexpr bool includeSet2 = true;
@@ -3221,7 +3214,7 @@ TestAllBinaryOp(int testBase)
         for (auto i = HpSharkReferenceSpecial21MinExponentOverride;
              i < HpSharkReferenceSpecial21MaxExponentOverride;
              i++) {
-            if (SharkVerbose == VerboseMode::Debug) {
+            if (Tests.GetTestParams().IsVerbose()) {
                 std::cout << "Exponent adjustment: " << i << std::endl;
             }
 
@@ -3244,12 +3237,12 @@ TestAllBinaryOp(int testBase)
                 y->GenerateRandomNumber();
                 z->GenerateRandomNumber();
             } else {
-                x->GenerateRandomNumber2();
-                y->GenerateRandomNumber2();
-                z->GenerateRandomNumber2();
+                x->GenerateRandomNumber2(false);
+                y->GenerateRandomNumber2(false);
+                z->GenerateRandomNumber2(false);
             }
 
-            if (SharkVerbose == VerboseMode::Debug) {
+            if (Tests.GetTestParams().IsVerbose()) {
                 std::cout << "x.Exponent: " << x->Exponent << ", neg: " << x->GetNegative() << std::endl;
                 std::cout << "y.Exponent: " << y->Exponent << ", neg: " << y->GetNegative() << std::endl;
                 std::cout << "z.Exponent: " << z->Exponent << ", neg: " << z->GetNegative() << std::endl;
@@ -3275,12 +3268,12 @@ TestAllBinaryOp(int testBase)
                 y->GenerateRandomNumber();
                 z->GenerateRandomNumber();
             } else {
-                x->GenerateRandomNumber2();
-                y->GenerateRandomNumber2();
-                z->GenerateRandomNumber2();
+                x->GenerateRandomNumber2(false);
+                y->GenerateRandomNumber2(false);
+                z->GenerateRandomNumber2(false);
             }
 
-            if (SharkVerbose == VerboseMode::Debug) {
+            if (Tests.GetTestParams().IsVerbose()) {
                 std::cout << "x.Exponent: " << x->Exponent << ", neg: " << x->GetNegative() << std::endl;
                 std::cout << "y.Exponent: " << y->Exponent << ", neg: " << y->GetNegative() << std::endl;
                 std::cout << "z.Exponent: " << z->Exponent << ", neg: " << z->GetNegative() << std::endl;
@@ -3300,7 +3293,8 @@ TestAllBinaryOp(int testBase)
 
 // Explicitly instantiate TestAllBinaryOp
 #define REFERENCE_KERNEL(SharkFloatParams)                                                              \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit2>(int testBase);
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit2>(                         \
+        int testBase, const HpShark::TestParams &testParams);
 
 // The Operator-only explicit instantiations below do not depend on
 // SharkFloatParams, so instantiate each exactly once. MSVC tolerates
@@ -3308,11 +3302,13 @@ TestAllBinaryOp(int testBase)
 // hard errors — keeping these out of the per-SharkFloatParams macros
 // above makes the build portable.
 #define OPERATOR_ONLY_INSTANTIATIONS()                                                                  \
-    template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit2>(const HpShark::LaunchParams &,      \
-                                                                    int testBase,                       \
-                                                                    int numIters,                       \
-                                                                    int internalTestLoopCount,          \
-                                                                    BasicCorrectnessMode mode);
+    template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit2>(                                    \
+        const HpShark::LaunchParams &,                                                                  \
+        int testBase,                                                                                   \
+        int numIters,                                                                                   \
+        int internalTestLoopCount,                                                                      \
+        BasicCorrectnessMode mode,                                                                      \
+        const HpShark::TestParams &testParams);
 
 #define ExplicitlyInstantiate(SharkFloatParams) REFERENCE_KERNEL(SharkFloatParams)
 
@@ -3328,6 +3324,5 @@ template bool TestFullReferencePerfView<Operator::ReferenceOrbit2>(
     int testBase,
     int numIters,
     int internalTestLoopCount,
-    bool useMT,
     size_t view,
     const FullReferencePerfLimbSelection &limbSelection);

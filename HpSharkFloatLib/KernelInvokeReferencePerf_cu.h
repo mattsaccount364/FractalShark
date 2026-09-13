@@ -26,10 +26,8 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
     auto inputY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     // Convert srcX and srcY to HpSharkFloat
-    inputX->MpfToHpGpu(
-        srcX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
-    inputY->MpfToHpGpu(
-        srcY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
+    inputX->MpfToHpGpu(srcX, InjectNoiseInLowOrder::Enable);
+    inputY->MpfToHpGpu(srcY, InjectNoiseInLowOrder::Enable);
 
     return InitHpSharkReferenceKernel<SharkFloatParams>(
         launchParams, hdrRadiusY, *inputX, *inputY, actualPrecisionLimbs);
@@ -366,14 +364,11 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
     if (startIter > period)
         return startIter;
 
-    constexpr int PrecBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
     typename SharkFloatParams::Float radiusY{1.0f};
     auto hpCR = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto hpCI = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    hpCR->MpfToHpGpu(
-        *reinterpret_cast<const mpf_t *>(&cReal[0]), PrecBits, InjectNoiseInLowOrder::Disable);
-    hpCI->MpfToHpGpu(
-        *reinterpret_cast<const mpf_t *>(&cImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
+    hpCR->MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&cReal[0]), InjectNoiseInLowOrder::Disable);
+    hpCI->MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&cImag[0]), InjectNoiseInLowOrder::Disable);
 
     std::unique_ptr<ReferencePreparedTables<SharkFloatParams>> ownedPreparedTables;
     if (preparedTables == nullptr) {
@@ -392,14 +387,14 @@ EvaluateCriticalOrbitAndDerivs_GPU(const mpf_t cReal,
         combo.D2Real = typename SharkFloatParams::Float{};
         combo.D2Imag = typename SharkFloatParams::Float{};
     } else {
-        combo.ZReal.MpfToHpGpu(
-            *reinterpret_cast<const mpf_t *>(&outZReal[0]), PrecBits, InjectNoiseInLowOrder::Disable);
-        combo.ZImag.MpfToHpGpu(
-            *reinterpret_cast<const mpf_t *>(&outZImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
-        combo.DzdcReal.MpfToHpGpu(
-            *reinterpret_cast<const mpf_t *>(&outDzdcReal[0]), PrecBits, InjectNoiseInLowOrder::Disable);
-        combo.DzdcImag.MpfToHpGpu(
-            *reinterpret_cast<const mpf_t *>(&outDzdcImag[0]), PrecBits, InjectNoiseInLowOrder::Disable);
+        combo.ZReal.MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&outZReal[0]),
+                               InjectNoiseInLowOrder::Disable);
+        combo.ZImag.MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&outZImag[0]),
+                               InjectNoiseInLowOrder::Disable);
+        combo.DzdcReal.MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&outDzdcReal[0]),
+                                  InjectNoiseInLowOrder::Disable);
+        combo.DzdcImag.MpfToHpGpu(*reinterpret_cast<const mpf_t *>(&outDzdcImag[0]),
+                                  InjectNoiseInLowOrder::Disable);
         combo.D2Real = typename SharkFloatParams::Float{outD2Real};
         combo.D2Imag = typename SharkFloatParams::Float{outD2Imag};
     }

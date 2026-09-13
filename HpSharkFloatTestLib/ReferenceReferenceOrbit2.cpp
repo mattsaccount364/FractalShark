@@ -7,7 +7,6 @@
 #include "KernelInvokeReferenceSetup.h"
 #include "NTTConstexprGenerator.h"
 #include "ReferenceNTT.h"
-#include "TestVerbose.h"
 
 #include <algorithm>
 #include <assert.h>
@@ -21,11 +20,12 @@ namespace {
 enum class ShiftDir { Left, Right };
 enum class SpectrumId { ZReal, ZImag, DzdcReal, DzdcImag, CReal, CImag, One };
 enum class TermKind { Product, Linear };
+using VerboseMode = HpShark::TestParams::VerboseMode;
 
 static bool
-IsDebugTraceEnabled()
+IsDebugTraceEnabled(VerboseMode verboseMode)
 {
-    return SharkVerbose == VerboseMode::Debug;
+    return verboseMode == VerboseMode::Debug;
 }
 
 template <class SharkFloatParams, class ArrayType>
@@ -65,9 +65,9 @@ StoreReferenceDebugValue(DebugHostCombo<SharkFloatParams> &debugCombo,
 
 template <class UInt>
 static void
-PrintHexValue(const char *label, UInt value)
+PrintHexValue(const char *label, UInt value, VerboseMode verboseMode)
 {
-    if (!IsDebugTraceEnabled())
+    if (!IsDebugTraceEnabled(verboseMode))
         return;
 
     std::cout << "  " << label << "=0x" << std::hex << static_cast<uint64_t>(value) << std::dec;
@@ -97,9 +97,9 @@ SpectrumIdName(SpectrumId id)
 
 template <class SharkFloatParams>
 static void
-PrintHpValue(const char *label, const HpSharkFloat<SharkFloatParams> &value)
+PrintHpValue(const char *label, const HpSharkFloat<SharkFloatParams> &value, VerboseMode verboseMode)
 {
-    if (!IsDebugTraceEnabled())
+    if (!IsDebugTraceEnabled(verboseMode))
         return;
 
     std::cout << "  " << label << ": " << value.ToHexString() << '\n';
@@ -107,9 +107,9 @@ PrintHpValue(const char *label, const HpSharkFloat<SharkFloatParams> &value)
 
 template <class Hdr>
 static void
-PrintHdrValue(const char *label, const Hdr &value)
+PrintHdrValue(const char *label, const Hdr &value, VerboseMode verboseMode)
 {
-    if (!IsDebugTraceEnabled())
+    if (!IsDebugTraceEnabled(verboseMode))
         return;
 
     std::cout << "  " << label << ": " << value.template ToString<false>() << " ["
@@ -118,9 +118,9 @@ PrintHdrValue(const char *label, const Hdr &value)
 
 template <class T>
 static void
-PrintArray(const char *label, const T *values, size_t count)
+PrintArray(const char *label, const T *values, size_t count, VerboseMode verboseMode)
 {
-    if (!IsDebugTraceEnabled())
+    if (!IsDebugTraceEnabled(verboseMode))
         return;
 
     std::cout << "  " << label << " (count=" << count << ")\n";
@@ -398,9 +398,9 @@ template <class SharkFloatParams> struct FinalizationStream {
 
 template <class SharkFloatParams>
 static void
-PrintTerm(const char *label, const FusedTerm<SharkFloatParams> &term)
+PrintTerm(const char *label, const FusedTerm<SharkFloatParams> &term, VerboseMode verboseMode)
 {
-    if (!IsDebugTraceEnabled())
+    if (!IsDebugTraceEnabled(verboseMode))
         return;
 
     std::cout << "  " << label << ": zero=" << term.IsZero << " negative=" << term.IsNegative
@@ -410,18 +410,18 @@ PrintTerm(const char *label, const FusedTerm<SharkFloatParams> &term)
 }
 
 static void
-PrintPlan(const SharkNTT::Plan &plan)
+PrintPlan(const SharkNTT::Plan &plan, VerboseMode verboseMode)
 {
-    if (!IsDebugTraceEnabled())
+    if (!IsDebugTraceEnabled(verboseMode))
         return;
 
     std::cout << "Reference fused Plan:";
-    PrintHexValue("n32", plan.n32);
-    PrintHexValue("b", plan.b);
-    PrintHexValue("L", plan.L);
-    PrintHexValue("N", plan.N);
-    PrintHexValue("stages", plan.stages);
-    PrintHexValue("ok", plan.ok);
+    PrintHexValue("n32", plan.n32, verboseMode);
+    PrintHexValue("b", plan.b, verboseMode);
+    PrintHexValue("L", plan.L, verboseMode);
+    PrintHexValue("N", plan.N, verboseMode);
+    PrintHexValue("stages", plan.stages, verboseMode);
+    PrintHexValue("ok", plan.ok, verboseMode);
     std::cout << '\n';
 }
 
@@ -721,11 +721,12 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
           uint64_t *a,
           uint32_t N,
           uint32_t stages,
-          SharkNTT::RootTables &rootTables)
+          SharkNTT::RootTables &rootTables,
+          VerboseMode verboseMode)
 {
-    if (IsDebugTraceEnabled()) {
+    if (IsDebugTraceEnabled(verboseMode)) {
         std::cout << "  " << (inverse ? "inverse" : "forward") << " NTT input\n";
-        PrintArray("spectrum", a, N);
+        PrintArray("spectrum", a, N, verboseMode);
     }
 
     uint64_t *stageOmegas;
@@ -760,24 +761,24 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
                     const uint64_t product = SharkNTT::MontgomeryMul(debugCombo, difference, w);
                     a[i0] = sum;
                     a[i1] = product;
-                    if (IsDebugTraceEnabled()) {
+                    if (IsDebugTraceEnabled(verboseMode)) {
                         std::cout << "  forward DIF butterfly"
                                   << " stage=" << s << " k=" << k << " j=" << j << " i0=" << i0
                                   << " i1=" << i1;
-                        PrintHexValue("omega", wM);
-                        PrintHexValue("u", u);
-                        PrintHexValue("v", v);
-                        PrintHexValue("twiddle", w);
-                        PrintHexValue("sum", sum);
-                        PrintHexValue("difference", difference);
-                        PrintHexValue("product", product);
+                        PrintHexValue("omega", wM, verboseMode);
+                        PrintHexValue("u", u, verboseMode);
+                        PrintHexValue("v", v, verboseMode);
+                        PrintHexValue("twiddle", w, verboseMode);
+                        PrintHexValue("sum", sum, verboseMode);
+                        PrintHexValue("difference", difference, verboseMode);
+                        PrintHexValue("product", product, verboseMode);
                         std::cout << '\n';
                     }
                 }
             }
-            if (IsDebugTraceEnabled()) {
+            if (IsDebugTraceEnabled(verboseMode)) {
                 std::cout << "  forward DIF stage " << s << " output\n";
-                PrintArray("spectrum", a, N);
+                PrintArray("spectrum", a, N, verboseMode);
             }
             if (s == 1)
                 break;
@@ -802,24 +803,24 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
                 const uint64_t t = SharkNTT::MontgomeryMul(debugCombo, v, w);
                 a[i0] = AddP(u, t);
                 a[i1] = SubP(u, t);
-                if (IsDebugTraceEnabled()) {
+                if (IsDebugTraceEnabled(verboseMode)) {
                     std::cout << "  " << (inverse ? "inverse" : "forward") << " butterfly"
                               << " stage=" << s << " k=" << k << " j=" << j << " i0=" << i0
                               << " i1=" << i1;
-                    PrintHexValue("omega", wM);
-                    PrintHexValue("u", u);
-                    PrintHexValue("v", v);
-                    PrintHexValue("twiddle", w);
-                    PrintHexValue("product", t);
-                    PrintHexValue("out0", a[i0]);
-                    PrintHexValue("out1", a[i1]);
+                    PrintHexValue("omega", wM, verboseMode);
+                    PrintHexValue("u", u, verboseMode);
+                    PrintHexValue("v", v, verboseMode);
+                    PrintHexValue("twiddle", w, verboseMode);
+                    PrintHexValue("product", t, verboseMode);
+                    PrintHexValue("out0", a[i0], verboseMode);
+                    PrintHexValue("out1", a[i1], verboseMode);
                     std::cout << '\n';
                 }
             }
         }
-        if (IsDebugTraceEnabled()) {
+        if (IsDebugTraceEnabled(verboseMode)) {
             std::cout << "  " << (inverse ? "inverse" : "forward") << " NTT stage " << s << " output\n";
-            PrintArray("spectrum", a, N);
+            PrintArray("spectrum", a, N, verboseMode);
         }
     }
 }
@@ -834,15 +835,16 @@ PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
             uint32_t capacity,
             uint32_t inputBitOffset,
             DebugStatePurpose packedPurpose,
-            DebugStatePurpose forwardPurpose)
+            DebugStatePurpose forwardPurpose,
+            VerboseMode verboseMode)
 {
     const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= capacity);
     assert(zeroMont == 0);
-    PrintHpValue("pack input", x);
-    PrintHexValue("pack zeroMont", zeroMont);
-    if (IsDebugTraceEnabled())
+    PrintHpValue("pack input", x, verboseMode);
+    PrintHexValue("pack zeroMont", zeroMont, verboseMode);
+    if (IsDebugTraceEnabled(verboseMode))
         std::cout << '\n';
 
     for (uint32_t i = 0; i < activeN; ++i) {
@@ -853,19 +855,23 @@ PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                 : 0;
         const uint64_t coeffMont = SharkNTT::ToMontgomery(debugCombo, coeff % SharkNTT::MagicPrime);
         out[i] = coeffMont;
-        if (i < static_cast<uint32_t>(plan.L) && IsDebugTraceEnabled()) {
+        if (i < static_cast<uint32_t>(plan.L) && IsDebugTraceEnabled(verboseMode)) {
             std::cout << "  pack coefficient index=" << i;
-            PrintHexValue("coefficient", coeff);
-            PrintHexValue("coefficientMont", coeffMont);
-            PrintHexValue("packed", out[i]);
+            PrintHexValue("coefficient", coeff, verboseMode);
+            PrintHexValue("coefficientMont", coeffMont, verboseMode);
+            PrintHexValue("packed", out[i], verboseMode);
             std::cout << '\n';
         }
     }
 
-    PrintArray("naturally packed spectrum", out, activeN);
+    PrintArray("naturally packed spectrum", out, activeN, verboseMode);
     StoreReferenceDebugState(debugCombo, packedPurpose, out, activeN);
-    NTTRadix2<SharkFloatParams, false, true>(
-        debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
+    NTTRadix2<SharkFloatParams, false, true>(debugCombo,
+                                             out,
+                                             static_cast<uint32_t>(plan.N),
+                                             static_cast<uint32_t>(plan.stages),
+                                             roots,
+                                             verboseMode);
     StoreReferenceDebugState(debugCombo, forwardPurpose, out, activeN);
 }
 
@@ -882,7 +888,8 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                    uint32_t residualBitShift,
                    bool negative,
                    DebugStatePurpose packedPurpose,
-                   DebugStatePurpose forwardPurpose)
+                   DebugStatePurpose forwardPurpose,
+                   VerboseMode verboseMode)
 {
     const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
@@ -907,21 +914,25 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
             packed = coefficientMont;
             if (negative && coefficient != 0)
                 packed = SubP(zeroMont, packed);
-            if (IsDebugTraceEnabled()) {
+            if (IsDebugTraceEnabled(verboseMode)) {
                 std::cout << "  aligned pack coefficient index=" << i;
-                PrintHexValue("coefficient", coefficient);
-                PrintHexValue("coefficientMont", coefficientMont);
-                PrintHexValue("packed", packed);
+                PrintHexValue("coefficient", coefficient, verboseMode);
+                PrintHexValue("coefficientMont", coefficientMont, verboseMode);
+                PrintHexValue("packed", packed, verboseMode);
                 std::cout << '\n';
             }
         }
         out[i] = packed;
     }
 
-    PrintArray("aligned naturally packed spectrum", out, activeN);
+    PrintArray("aligned naturally packed spectrum", out, activeN, verboseMode);
     StoreReferenceDebugState(debugCombo, packedPurpose, out, activeN);
-    NTTRadix2<SharkFloatParams, false, true>(
-        debugCombo, out, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
+    NTTRadix2<SharkFloatParams, false, true>(debugCombo,
+                                             out,
+                                             static_cast<uint32_t>(plan.N),
+                                             static_cast<uint32_t>(plan.stages),
+                                             roots,
+                                             verboseMode);
     StoreReferenceDebugState(debugCombo, forwardPurpose, out, activeN);
 }
 
@@ -963,7 +974,8 @@ AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
                    uint64_t shiftBits,
                    bool negative,
                    uint64_t *dest,
-                   uint32_t capacity)
+                   uint32_t capacity,
+                   VerboseMode verboseMode)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= capacity);
@@ -971,11 +983,11 @@ AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
     const uint64_t chunkShift = shiftBits / static_cast<uint64_t>(plan.b);
     const uint32_t bitShift = static_cast<uint32_t>(shiftBits % static_cast<uint64_t>(plan.b));
     const uint64_t bitScale = SharkNTT::ToMontgomery(debugCombo, 1ull << bitShift);
-    if (IsDebugTraceEnabled()) {
+    if (IsDebugTraceEnabled(verboseMode)) {
         std::cout << "  AddShiftedSpectrum shiftBits=" << shiftBits << " negative=" << negative;
-        PrintHexValue("chunkShift", chunkShift);
-        PrintHexValue("bitShift", bitShift);
-        PrintHexValue("bitScale", bitScale);
+        PrintHexValue("chunkShift", chunkShift, verboseMode);
+        PrintHexValue("bitShift", bitShift, verboseMode);
+        PrintHexValue("bitScale", bitScale, verboseMode);
         std::cout << '\n';
     }
 
@@ -991,14 +1003,14 @@ AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
             dest[reverseIndex] = SubP(dest[reverseIndex], shifted);
         else
             dest[reverseIndex] = AddP(dest[reverseIndex], shifted);
-        if (IsDebugTraceEnabled()) {
+        if (IsDebugTraceEnabled(verboseMode)) {
             std::cout << "  shifted spectrum index=" << i;
-            PrintHexValue("source", source[i]);
-            PrintHexValue("phaseIndex", phaseIndex);
-            PrintHexValue("chunkScale", chunkScale);
-            PrintHexValue("scale", scale);
-            PrintHexValue("shifted", shifted);
-            PrintHexValue("dest", dest[reverseIndex]);
+            PrintHexValue("source", source[i], verboseMode);
+            PrintHexValue("phaseIndex", phaseIndex, verboseMode);
+            PrintHexValue("chunkScale", chunkScale, verboseMode);
+            PrintHexValue("scale", scale, verboseMode);
+            PrintHexValue("shifted", shifted, verboseMode);
+            PrintHexValue("dest", dest[reverseIndex], verboseMode);
             std::cout << '\n';
         }
     }
@@ -1036,6 +1048,7 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
                          int32_t commonExp,
                          uint64_t *dest,
                          DebugStatePurpose checksumPurpose,
+                         VerboseMode verboseMode,
                          const FusedTerm<SharkFloatParams> &first,
                          const Terms &...terms)
 {
@@ -1043,17 +1056,17 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= MaxFusedN);
     assert(zeroMont == 0);
-    if (IsDebugTraceEnabled()) {
+    if (IsDebugTraceEnabled(verboseMode)) {
         std::cout << "  AccumulateOutputSpectrum commonExp=" << commonExp << '\n';
-        PrintHexValue("zeroMont", zeroMont);
+        PrintHexValue("zeroMont", zeroMont, verboseMode);
         std::cout << '\n';
     }
 
     bool hasDestinationValue = false;
     const auto accumulateTerm = [&](const FusedTerm<SharkFloatParams> &term) {
-        PrintTerm("accumulate term", term);
+        PrintTerm("accumulate term", term, verboseMode);
         if (term.IsZero) {
-            if (IsDebugTraceEnabled())
+            if (IsDebugTraceEnabled(verboseMode))
                 std::cout << "  term skipped because it is zero\n";
             return;
         }
@@ -1061,9 +1074,9 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
         assert(term.Exponent >= commonExp);
         const auto shiftBits =
             static_cast<uint64_t>(static_cast<int64_t>(term.Exponent) - static_cast<int64_t>(commonExp));
-        if (IsDebugTraceEnabled()) {
+        if (IsDebugTraceEnabled(verboseMode)) {
             std::cout << "  term alignment";
-            PrintHexValue("shiftBits", shiftBits);
+            PrintHexValue("shiftBits", shiftBits, verboseMode);
             std::cout << '\n';
         }
 
@@ -1072,15 +1085,15 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
             const uint64_t *b = GetSpectrum(workspace, term.B);
             for (uint32_t i = 0; i < activeN; ++i) {
                 workspace.Product[i] = SharkNTT::MontgomeryMul(debugCombo, a[i], b[i]);
-                if (IsDebugTraceEnabled()) {
+                if (IsDebugTraceEnabled(verboseMode)) {
                     std::cout << "  product spectrum index=" << i;
-                    PrintHexValue("a", a[i]);
-                    PrintHexValue("b", b[i]);
-                    PrintHexValue("product", workspace.Product[i]);
+                    PrintHexValue("a", a[i], verboseMode);
+                    PrintHexValue("b", b[i], verboseMode);
+                    PrintHexValue("product", workspace.Product[i], verboseMode);
                     std::cout << '\n';
                 }
             }
-            PrintArray("product spectrum", workspace.Product, activeN);
+            PrintArray("product spectrum", workspace.Product, activeN, verboseMode);
             if (hasDestinationValue) {
                 AddShiftedSpectrum<SharkFloatParams>(debugCombo,
                                                      plan,
@@ -1089,7 +1102,8 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
                                                      shiftBits,
                                                      term.IsNegative,
                                                      dest,
-                                                     MaxFusedN);
+                                                     MaxFusedN,
+                                                     verboseMode);
             } else {
                 WriteShiftedSpectrum<SharkFloatParams>(debugCombo,
                                                        plan,
@@ -1103,15 +1117,22 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
         } else {
             const uint64_t *source = GetSpectrum(workspace, term.A);
             if (hasDestinationValue) {
-                AddShiftedSpectrum<SharkFloatParams>(
-                    debugCombo, plan, roots, source, shiftBits, term.IsNegative, dest, MaxFusedN);
+                AddShiftedSpectrum<SharkFloatParams>(debugCombo,
+                                                     plan,
+                                                     roots,
+                                                     source,
+                                                     shiftBits,
+                                                     term.IsNegative,
+                                                     dest,
+                                                     MaxFusedN,
+                                                     verboseMode);
             } else {
                 WriteShiftedSpectrum<SharkFloatParams>(
                     debugCombo, plan, roots, source, shiftBits, term.IsNegative, dest, MaxFusedN);
             }
         }
         hasDestinationValue = true;
-        PrintArray("accumulated spectrum", dest, activeN);
+        PrintArray("accumulated spectrum", dest, activeN, verboseMode);
     };
 
     accumulateTerm(first);
@@ -1126,10 +1147,11 @@ UnpackResiduesToSignedLimbs(const uint64_t *normalResidues,
                             const SharkNTT::Plan &plan,
                             uint32_t coefficientCount,
                             int64_t *limbs,
-                            uint32_t limbCount)
+                            uint32_t limbCount,
+                            VerboseMode verboseMode)
 {
     assert(coefficientCount <= static_cast<uint32_t>(plan.N));
-    PrintArray("normal residues", normalResidues, coefficientCount);
+    PrintArray("normal residues", normalResidues, coefficientCount, verboseMode);
 
     const uint64_t half = (SharkNTT::MagicPrime - 1ull) >> 1;
     for (uint32_t j = 0; j < limbCount; ++j) {
@@ -1173,7 +1195,7 @@ UnpackResiduesToSignedLimbs(const uint64_t *normalResidues,
         }
         limbs[j] = total;
     }
-    PrintArray("signed limbs", limbs, limbCount);
+    PrintArray("signed limbs", limbs, limbCount, verboseMode);
 }
 
 template <class SharkFloatParams>
@@ -1222,7 +1244,8 @@ UnpackAlignedResiduesToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
                                    uint32_t linearInputBitOffset,
                                    uint64_t linearBitOffset,
                                    int64_t *limbs,
-                                   uint32_t limbCount)
+                                   uint32_t limbCount,
+                                   VerboseMode verboseMode)
 {
     assert(coefficientCount <= static_cast<uint32_t>(plan.N));
     const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
@@ -1274,7 +1297,7 @@ UnpackAlignedResiduesToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
         total += SignedLinearLimbContribution(linearValue, linearInputBitOffset, linearBitOffset, j);
         limbs[j] = total;
     }
-    PrintArray("aligned signed limbs", limbs, limbCount);
+    PrintArray("aligned signed limbs", limbs, limbCount, verboseMode);
 }
 
 template <class SharkFloatParams>
@@ -1298,27 +1321,33 @@ InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
                              int64_t *limbs,
                              uint32_t limbCount,
                              DebugStatePurpose residuesPurpose,
-                             DebugStatePurpose limbsPurpose)
+                             DebugStatePurpose limbsPurpose,
+                             VerboseMode verboseMode)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= MaxFusedN);
-    PrintArray("inverse input bit-reversed spectrum", spectrum, activeN);
-    NTTRadix2<SharkFloatParams, true>(
-        debugCombo, spectrum, static_cast<uint32_t>(plan.N), static_cast<uint32_t>(plan.stages), roots);
+    PrintArray("inverse input bit-reversed spectrum", spectrum, activeN, verboseMode);
+    NTTRadix2<SharkFloatParams, true>(debugCombo,
+                                      spectrum,
+                                      static_cast<uint32_t>(plan.N),
+                                      static_cast<uint32_t>(plan.stages),
+                                      roots,
+                                      verboseMode);
 
     for (uint32_t i = 0; i < activeN; ++i) {
         spectrum[i] = SharkNTT::MontgomeryMul(debugCombo, spectrum[i], roots.Ninv);
-        if (IsDebugTraceEnabled()) {
+        if (IsDebugTraceEnabled(verboseMode)) {
             std::cout << "  inverse normalize index=" << i;
-            PrintHexValue("normalResidue", spectrum[i]);
+            PrintHexValue("normalResidue", spectrum[i], verboseMode);
             std::cout << '\n';
         }
     }
 
-    PrintArray("inverse normal residues", spectrum, activeN);
+    PrintArray("inverse normal residues", spectrum, activeN, verboseMode);
     StoreReferenceDebugState(debugCombo, residuesPurpose, spectrum, activeN);
 
-    UnpackResiduesToSignedLimbs<SharkFloatParams>(spectrum, plan, coefficientCount, limbs, limbCount);
+    UnpackResiduesToSignedLimbs<SharkFloatParams>(
+        spectrum, plan, coefficientCount, limbs, limbCount, verboseMode);
     StoreReferenceDebugState(
         debugCombo, limbsPurpose, reinterpret_cast<const uint64_t *>(limbs), limbCount);
 }
@@ -1337,12 +1366,13 @@ InverseAlignedSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo
                                     int64_t *limbs,
                                     uint32_t limbCount,
                                     DebugStatePurpose residuesPurpose,
-                                    DebugStatePurpose limbsPurpose)
+                                    DebugStatePurpose limbsPurpose,
+                                    VerboseMode verboseMode)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= MaxFusedN);
     NTTRadix2<SharkFloatParams, true>(
-        debugCombo, spectrum, activeN, static_cast<uint32_t>(plan.stages), roots);
+        debugCombo, spectrum, activeN, static_cast<uint32_t>(plan.stages), roots, verboseMode);
 
     if (residuesPurpose != DebugStatePurpose::Invalid)
         StoreReferenceDebugState(debugCombo, residuesPurpose, spectrum, activeN);
@@ -1356,7 +1386,8 @@ InverseAlignedSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo
                                        linearInputBitOffset,
                                        linearBitOffset,
                                        limbs,
-                                       limbCount);
+                                       limbCount,
+                                       verboseMode);
     StoreReferenceDebugState(
         debugCombo, limbsPurpose, reinterpret_cast<const uint64_t *>(limbs), limbCount);
 }
@@ -1370,7 +1401,8 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
                                 uint32_t magnitudeCapacity,
                                 uint32_t &digitLength,
                                 uint32_t &magnitudeLength,
-                                bool &negative)
+                                bool &negative,
+                                VerboseMode verboseMode)
 {
     constexpr int64_t Base = 1ll << 32;
     assert(magnitudeCapacity >= limbCount + 2);
@@ -1387,7 +1419,7 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
     };
 
     magnitudeLength = 0;
-    PrintArray("propagate input limbs", limbs, limbCount);
+    PrintArray("propagate input limbs", limbs, limbCount, verboseMode);
 
     int64_t carry = 0;
     for (uint32_t i = 0; i < limbCount; ++i) {
@@ -1396,12 +1428,12 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
         const auto low = static_cast<uint32_t>(static_cast<uint64_t>(sum) & 0xffffffffull);
         appendDigit(low);
         carry = (sum - static_cast<int64_t>(low)) / Base;
-        if (IsDebugTraceEnabled()) {
+        if (IsDebugTraceEnabled(verboseMode)) {
             std::cout << "  carry propagation index=" << i;
-            PrintHexValue("limb", limb);
-            PrintHexValue("sum", sum);
-            PrintHexValue("low", low);
-            PrintHexValue("carry", carry);
+            PrintHexValue("limb", limb, verboseMode);
+            PrintHexValue("sum", sum, verboseMode);
+            PrintHexValue("low", low, verboseMode);
+            PrintHexValue("carry", carry, verboseMode);
             std::cout << '\n';
         }
     }
@@ -1411,11 +1443,11 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
         const auto low = static_cast<uint32_t>(static_cast<uint64_t>(sum) & 0xffffffffull);
         appendDigit(low);
         carry = (sum - static_cast<int64_t>(low)) / Base;
-        if (IsDebugTraceEnabled()) {
+        if (IsDebugTraceEnabled(verboseMode)) {
             std::cout << "  carry extension";
-            PrintHexValue("sum", sum);
-            PrintHexValue("low", low);
-            PrintHexValue("carry", carry);
+            PrintHexValue("sum", sum, verboseMode);
+            PrintHexValue("low", low, verboseMode);
+            PrintHexValue("carry", carry, verboseMode);
             std::cout << '\n';
         }
     }
@@ -1428,7 +1460,7 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
         for (uint32_t i = 0; i < nonzeroDigitLength; ++i) {
             appendMagnitude(digits[i]);
         }
-        PrintArray("propagated magnitude", magnitude, magnitudeLength);
+        PrintArray("propagated magnitude", magnitude, magnitudeLength, verboseMode);
         return;
     }
 
@@ -1446,7 +1478,7 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
 
     if (magnitudeLength == 0)
         negative = false;
-    PrintArray("propagated magnitude", magnitude, magnitudeLength);
+    PrintArray("propagated magnitude", magnitude, magnitudeLength, verboseMode);
 }
 
 template <class SharkFloatParams>
@@ -1455,16 +1487,17 @@ NormalizeMagnitudeToHpFloat(const uint32_t *magnitude,
                             uint32_t magnitudeLength,
                             int32_t commonExp,
                             bool negative,
-                            HpSharkFloat<SharkFloatParams> *out)
+                            HpSharkFloat<SharkFloatParams> *out,
+                            VerboseMode verboseMode)
 {
     constexpr int actualDigits = SharkFloatParams::GlobalNumUint32;
 
-    PrintArray("normalize magnitude", magnitude, magnitudeLength);
+    PrintArray("normalize magnitude", magnitude, magnitudeLength, verboseMode);
     if (magnitudeLength == 0) {
-        if (IsDebugTraceEnabled())
+        if (IsDebugTraceEnabled(verboseMode))
             std::cout << "  normalize zero magnitude\n";
         SetZero(out);
-        PrintHpValue("normalized output", *out);
+        PrintHpValue("normalized output", *out, verboseMode);
         return;
     }
 
@@ -1473,7 +1506,7 @@ NormalizeMagnitudeToHpFloat(const uint32_t *magnitude,
     const int currentBit = msd * 32 + (31 - clz);
     const int desiredBit = (actualDigits - 1) * 32 + 31;
     const int shiftNeeded = currentBit - desiredBit;
-    if (IsDebugTraceEnabled()) {
+    if (IsDebugTraceEnabled(verboseMode)) {
         std::cout << "  normalization msd=" << msd << " clz=" << clz << " currentBit=" << currentBit
                   << " desiredBit=" << desiredBit << " shiftNeeded=" << shiftNeeded
                   << " commonExp=" << commonExp << " negative=" << negative << '\n';
@@ -1495,7 +1528,7 @@ NormalizeMagnitudeToHpFloat(const uint32_t *magnitude,
     }
 
     out->SetNegative(negative);
-    PrintHpValue("normalized output", *out);
+    PrintHpValue("normalized output", *out, verboseMode);
 }
 
 template <class SharkFloatParams>
@@ -1506,11 +1539,12 @@ FinalizeSignedStream(const FinalizationStream<SharkFloatParams> &stream,
                      uint32_t magnitudeCapacity,
                      DebugHostCombo<SharkFloatParams> &debugCombo,
                      DebugStatePurpose digitsPurpose,
-                     DebugStatePurpose magnitudePurpose)
+                     DebugStatePurpose magnitudePurpose,
+                     VerboseMode verboseMode)
 {
-    if (IsDebugTraceEnabled())
+    if (IsDebugTraceEnabled(verboseMode))
         std::cout << "  FinalizeSignedStream commonExp=" << stream.CommonExp << '\n';
-    PrintArray("finalization limbs", stream.Limbs, stream.LimbCount);
+    PrintArray("finalization limbs", stream.Limbs, stream.LimbCount, verboseMode);
     uint32_t digitLength = 0;
     uint32_t magnitudeLength = 0;
     bool negative = false;
@@ -1521,11 +1555,12 @@ FinalizeSignedStream(const FinalizationStream<SharkFloatParams> &stream,
                                                       magnitudeCapacity,
                                                       digitLength,
                                                       magnitudeLength,
-                                                      negative);
+                                                      negative,
+                                                      verboseMode);
     StoreReferenceDebugState(debugCombo, digitsPurpose, digits, digitLength);
     StoreReferenceDebugState(debugCombo, magnitudePurpose, magnitude, magnitudeLength);
     NormalizeMagnitudeToHpFloat<SharkFloatParams>(
-        magnitude, magnitudeLength, stream.CommonExp, negative, stream.Out);
+        magnitude, magnitudeLength, stream.CommonExp, negative, stream.Out, verboseMode);
 }
 
 template <class SharkFloatParams>
@@ -1536,7 +1571,8 @@ PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                      const HpSharkFloat<SharkFloatParams> &zReal,
                      const HpSharkFloat<SharkFloatParams> &zImag,
                      uint32_t inputBitOffset,
-                     FusedWorkspace &workspace)
+                     FusedWorkspace &workspace,
+                     VerboseMode verboseMode)
 {
     PackForward(debugHostCombo,
                 zReal,
@@ -1546,7 +1582,8 @@ PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                 MaxFusedN,
                 inputBitOffset,
                 DebugStatePurpose::Z0XX,
-                DebugStatePurpose::Z2XX);
+                DebugStatePurpose::Z2XX,
+                verboseMode);
     PackForward(debugHostCombo,
                 zImag,
                 plan,
@@ -1555,7 +1592,8 @@ PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                 MaxFusedN,
                 inputBitOffset,
                 DebugStatePurpose::Z0YY,
-                DebugStatePurpose::Z2YY);
+                DebugStatePurpose::Z2YY,
+                verboseMode);
 }
 
 template <class SharkFloatParams>
@@ -1566,7 +1604,8 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                          const HpSharkFloat<SharkFloatParams> &dzdcReal,
                          const HpSharkFloat<SharkFloatParams> &dzdcImag,
                          uint32_t inputBitOffset,
-                         FusedWorkspace &workspace)
+                         FusedWorkspace &workspace,
+                         VerboseMode verboseMode)
 {
     PackForward(debugHostCombo,
                 dzdcReal,
@@ -1576,7 +1615,8 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                 MaxFusedN,
                 inputBitOffset,
                 DebugStatePurpose::Z0W1,
-                DebugStatePurpose::Z2W1);
+                DebugStatePurpose::Z2W1,
+                verboseMode);
     PackForward(debugHostCombo,
                 dzdcImag,
                 plan,
@@ -1585,7 +1625,8 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                 MaxFusedN,
                 inputBitOffset,
                 DebugStatePurpose::Z0W2,
-                DebugStatePurpose::Z2W2);
+                DebugStatePurpose::Z2W2,
+                verboseMode);
 }
 
 template <class SharkFloatParams, class... Terms>
@@ -1633,7 +1674,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                         uint32_t &previousActiveN,
                         uint32_t actualPrecisionLimbs,
                         FusedWorkspace &workspace,
-                        DebugHostCombo<SharkFloatParams> &debugHostCombo)
+                        DebugHostCombo<SharkFloatParams> &debugHostCombo,
+                        VerboseMode verboseMode)
 {
     constexpr uint32_t storagePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
     assert(actualPrecisionLimbs > storagePrecisionLimbs / 2u);
@@ -1818,14 +1860,16 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                  workspace.ActiveMaxFusedLimbs,
                                  debugHostCombo,
                                  DebugStatePurpose::SignedCarry1,
-                                 DebugStatePurpose::FinalAdd1);
+                                 DebugStatePurpose::FinalAdd1,
+                                 verboseMode);
             FinalizeSignedStream({workspace.ImagLimbs, limbCount, imagExponent, outImag},
                                  workspace.MagnitudeDigits,
                                  workspace.Magnitude,
                                  workspace.ActiveMaxFusedLimbs,
                                  debugHostCombo,
                                  DebugStatePurpose::SignedCarry2,
-                                 DebugStatePurpose::FinalAdd2);
+                                 DebugStatePurpose::FinalAdd2,
+                                 verboseMode);
             if constexpr (SharkFloatParams::EnableNewtonRaphson) {
                 FinalizeSignedStream({workspace.DzdcRealLimbs, limbCount, dzdcRealExponent, outDzdcReal},
                                      workspace.MagnitudeDigits,
@@ -1833,14 +1877,16 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                      workspace.ActiveMaxFusedLimbs,
                                      debugHostCombo,
                                      DebugStatePurpose::SignedCarryDzdc1,
-                                     DebugStatePurpose::FinalAddDzdc1);
+                                     DebugStatePurpose::FinalAddDzdc1,
+                                     verboseMode);
                 FinalizeSignedStream({workspace.DzdcImagLimbs, limbCount, dzdcImagExponent, outDzdcImag},
                                      workspace.MagnitudeDigits,
                                      workspace.Magnitude,
                                      workspace.ActiveMaxFusedLimbs,
                                      debugHostCombo,
                                      DebugStatePurpose::SignedCarryDzdc2,
-                                     DebugStatePurpose::FinalAddDzdc2);
+                                     DebugStatePurpose::FinalAddDzdc2,
+                                     verboseMode);
             }
         }
         StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
@@ -1869,7 +1915,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
     const uint32_t planSlot = CountTrailingZeros(activeN) - Cache::MinFusedStages;
     assert(planSlot < Cache::EntryCount);
     if (activeN != previousActiveN) {
-        if (IsDebugTraceEnabled())
+        if (IsDebugTraceEnabled(verboseMode))
             std::cout << "Reference plan changed: iteration=" << iteration
                       << " previousN=" << previousActiveN << " activeN=" << activeN
                       << " planSlot=" << planSlot << '\n';
@@ -1931,7 +1977,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                        zRealResidualBitShift,
                        zReal.GetNegative(),
                        DebugStatePurpose::Z0XX,
-                       DebugStatePurpose::Z2XX);
+                       DebugStatePurpose::Z2XX,
+                       verboseMode);
     PackAlignedForward(debugHostCombo,
                        zImag,
                        plan,
@@ -1943,7 +1990,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                        zImagResidualBitShift,
                        zImag.GetNegative(),
                        DebugStatePurpose::Z0YY,
-                       DebugStatePurpose::Z2YY);
+                       DebugStatePurpose::Z2YY,
+                       verboseMode);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         const uint32_t dzdcRealResidualBitShift = static_cast<uint32_t>(derivativeRealResidualBitShift);
         const uint32_t dzdcImagResidualBitShift = static_cast<uint32_t>(derivativeImagResidualBitShift);
@@ -1958,7 +2006,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                            dzdcRealResidualBitShift,
                            dzdcReal->GetNegative(),
                            DebugStatePurpose::Z0W1,
-                           DebugStatePurpose::Z2W1);
+                           DebugStatePurpose::Z2W1,
+                           verboseMode);
         PackAlignedForward(debugHostCombo,
                            *dzdcImag,
                            plan,
@@ -1970,7 +2019,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                            dzdcImagResidualBitShift,
                            dzdcImag->GetNegative(),
                            DebugStatePurpose::Z0W2,
-                           DebugStatePurpose::Z2W2);
+                           DebugStatePurpose::Z2W2,
+                           verboseMode);
     }
 
     const uint64_t zeroMont = SharkNTT::ToMontgomery(debugHostCombo, 0);
@@ -2033,7 +2083,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                         workspace.RealLimbs,
                                         limbCount,
                                         DebugStatePurpose::Invalid,
-                                        DebugStatePurpose::UnpackXX);
+                                        DebugStatePurpose::UnpackXX,
+                                        verboseMode);
     InverseAlignedSpectrumToSignedLimbs(debugHostCombo,
                                         plan,
                                         roots,
@@ -2046,7 +2097,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                         workspace.ImagLimbs,
                                         limbCount,
                                         DebugStatePurpose::Invalid,
-                                        DebugStatePurpose::UnpackYY);
+                                        DebugStatePurpose::UnpackYY,
+                                        verboseMode);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
         const uint32_t derivativeCoefficientCount =
             dzdcP1Term.IsZero && dzdcP2Term.IsZero && dzdcP3Term.IsZero ? 0u : activeN;
@@ -2062,7 +2114,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                             workspace.DzdcRealLimbs,
                                             limbCount,
                                             DebugStatePurpose::Invalid,
-                                            DebugStatePurpose::UnpackW0);
+                                            DebugStatePurpose::UnpackW0,
+                                            verboseMode);
         InverseAlignedSpectrumToSignedLimbs<SharkFloatParams>(debugHostCombo,
                                                               plan,
                                                               roots,
@@ -2075,7 +2128,8 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                                                               workspace.DzdcImagLimbs,
                                                               limbCount,
                                                               DebugStatePurpose::Invalid,
-                                                              DebugStatePurpose::UnpackW1);
+                                                              DebugStatePurpose::UnpackW1,
+                                                              verboseMode);
     }
 
     FinalizeSignedStream({workspace.RealLimbs, limbCount, realExponent, outReal},
@@ -2084,14 +2138,16 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                          workspace.ActiveMaxFusedLimbs,
                          debugHostCombo,
                          DebugStatePurpose::SignedCarry1,
-                         DebugStatePurpose::FinalAdd1);
+                         DebugStatePurpose::FinalAdd1,
+                         verboseMode);
     FinalizeSignedStream({workspace.ImagLimbs, limbCount, imagExponent, outImag},
                          workspace.MagnitudeDigits,
                          workspace.Magnitude,
                          workspace.ActiveMaxFusedLimbs,
                          debugHostCombo,
                          DebugStatePurpose::SignedCarry2,
-                         DebugStatePurpose::FinalAdd2);
+                         DebugStatePurpose::FinalAdd2,
+                         verboseMode);
     StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_Add1, *outReal);
     StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_Add2, *outImag);
     if constexpr (SharkFloatParams::EnableNewtonRaphson) {
@@ -2101,14 +2157,16 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                              workspace.ActiveMaxFusedLimbs,
                              debugHostCombo,
                              DebugStatePurpose::SignedCarryDzdc1,
-                             DebugStatePurpose::FinalAddDzdc1);
+                             DebugStatePurpose::FinalAddDzdc1,
+                             verboseMode);
         FinalizeSignedStream({workspace.DzdcImagLimbs, limbCount, dzdcImagExponent, outDzdcImag},
                              workspace.MagnitudeDigits,
                              workspace.Magnitude,
                              workspace.ActiveMaxFusedLimbs,
                              debugHostCombo,
                              DebugStatePurpose::SignedCarryDzdc2,
-                             DebugStatePurpose::FinalAddDzdc2);
+                             DebugStatePurpose::FinalAddDzdc2,
+                             verboseMode);
         StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc1, *outDzdcReal);
         StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::Result_AddDzdc2, *outDzdcImag);
     }
@@ -2128,7 +2186,8 @@ static void EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams>
                                             typename SharkFloatParams::Float *outD2Imag,
                                             uint32_t actualPrecisionLimbs,
                                             FusedWorkspace &workspace,
-                                            DebugHostCombo<SharkFloatParams> &debugHostCombo);
+                                            DebugHostCombo<SharkFloatParams> &debugHostCombo,
+                                            VerboseMode verboseMode);
 
 template <class SharkFloatParams>
 std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>>
@@ -2138,16 +2197,17 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                       uint64_t maxIters,
                       uint32_t actualPrecisionLimbs,
                       DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                      HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables)
+                      HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables,
+                      VerboseMode verboseMode)
 {
-    if (IsDebugTraceEnabled()) {
+    if (IsDebugTraceEnabled(verboseMode)) {
         std::cout << "ReferenceOrbit2Helper begin maxIters=" << maxIters
                   << " EnableNewtonRaphson=" << SharkFloatParams::EnableNewtonRaphson
                   << " EnablePeriodicity=" << SharkFloatParams::EnablePeriodicity << '\n';
     }
-    PrintHpValue("input cReal", *cReal);
-    PrintHpValue("input cImag", *cImag);
-    PrintHdrValue("radiusY", radiusY);
+    PrintHpValue("input cReal", *cReal, verboseMode);
+    PrintHpValue("input cImag", *cImag, verboseMode);
+    PrintHdrValue("radiusY", radiusY, verboseMode);
     auto result = std::make_unique<ReferenceOrbitResult<SharkFloatParams>>();
     result->IterationsExecuted = 0;
     result->PeriodResult = PeriodicityResult::Unknown;
@@ -2189,18 +2249,19 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                                                           &outD2Imag,
                                                           actualPrecisionLimbs,
                                                           workspace,
-                                                          debugHostCombo);
+                                                          debugHostCombo,
+                                                          verboseMode);
 
         result->FinalZReal = *outZReal;
         result->FinalZImag = *outZImag;
         result->IterationsExecuted = maxIters;
         result->PeriodResult = PeriodicityResult::Continue;
-        PrintHpValue("ReferenceOrbit2 NR final zReal", result->FinalZReal);
-        PrintHpValue("ReferenceOrbit2 NR final zImag", result->FinalZImag);
-        PrintHpValue("ReferenceOrbit2 NR final dzdcReal", *outDzdcReal);
-        PrintHpValue("ReferenceOrbit2 NR final dzdcImag", *outDzdcImag);
-        PrintHdrValue("ReferenceOrbit2 NR final d2Real", outD2Real);
-        PrintHdrValue("ReferenceOrbit2 NR final d2Imag", outD2Imag);
+        PrintHpValue("ReferenceOrbit2 NR final zReal", result->FinalZReal, verboseMode);
+        PrintHpValue("ReferenceOrbit2 NR final zImag", result->FinalZImag, verboseMode);
+        PrintHpValue("ReferenceOrbit2 NR final dzdcReal", *outDzdcReal, verboseMode);
+        PrintHpValue("ReferenceOrbit2 NR final dzdcImag", *outDzdcImag, verboseMode);
+        PrintHdrValue("ReferenceOrbit2 NR final d2Real", outD2Real, verboseMode);
+        PrintHdrValue("ReferenceOrbit2 NR final d2Imag", outD2Imag, verboseMode);
         StoreReferenceDebugValue(
             debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
         StoreReferenceDebugValue(
@@ -2229,10 +2290,10 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
 
     uint32_t previousActiveN = 0;
     for (uint64_t i = 0; i < maxIters; ++i) {
-        if (IsDebugTraceEnabled())
+        if (IsDebugTraceEnabled(verboseMode))
             std::cout << "ReferenceOrbit2 iteration " << i << " begin\n";
-        PrintHpValue("iteration zReal", *zReal);
-        PrintHpValue("iteration zImag", *zImag);
+        PrintHpValue("iteration zReal", *zReal, verboseMode);
+        PrintHpValue("iteration zImag", *zImag, verboseMode);
         if constexpr (SharkFloatParams::EnablePeriodicity) {
             typename SharkFloatParams::Float doubleZx =
                 zReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
@@ -2259,16 +2320,16 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
             auto n3 = radiusY * r0 * highTwo;
             HdrReduce(n3);
 
-            PrintHdrValue("periodicity doubleZx", doubleZx);
-            PrintHdrValue("periodicity doubleZy", doubleZy);
-            PrintHdrValue("periodicity dzdcX", dzdcX);
-            PrintHdrValue("periodicity dzdcY", dzdcY);
-            PrintHdrValue("periodicity n2", n2);
-            PrintHdrValue("periodicity r0", r0);
-            PrintHdrValue("periodicity n3", n3);
+            PrintHdrValue("periodicity doubleZx", doubleZx, verboseMode);
+            PrintHdrValue("periodicity doubleZy", doubleZy, verboseMode);
+            PrintHdrValue("periodicity dzdcX", dzdcX, verboseMode);
+            PrintHdrValue("periodicity dzdcY", dzdcY, verboseMode);
+            PrintHdrValue("periodicity n2", n2, verboseMode);
+            PrintHdrValue("periodicity r0", r0, verboseMode);
+            PrintHdrValue("periodicity n3", n3, verboseMode);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                if (IsDebugTraceEnabled())
+                if (IsDebugTraceEnabled(verboseMode))
                     std::cout << "ReferenceOrbit2 periodicity: period found\n";
                 result->IterationsExecuted = i + 1;
                 result->PeriodResult = PeriodicityResult::PeriodFound;
@@ -2283,19 +2344,19 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                 auto dzdcXOrig = dzdcX;
                 dzdcX = highTwo * (doubleZx * dzdcX - doubleZy * dzdcY) + highOne;
                 dzdcY = highTwo * (doubleZx * dzdcY + doubleZy * dzdcXOrig);
-                PrintHdrValue("periodicity updated dzdcX", dzdcX);
-                PrintHdrValue("periodicity updated dzdcY", dzdcY);
+                PrintHdrValue("periodicity updated dzdcX", dzdcX, verboseMode);
+                PrintHdrValue("periodicity updated dzdcY", dzdcY, verboseMode);
             }
 
             typename SharkFloatParams::Float tempZX = doubleZx + cxCast;
             typename SharkFloatParams::Float tempZY = doubleZy + cyCast;
             typename SharkFloatParams::Float znSize = tempZX * tempZX + tempZY * tempZY;
-            PrintHdrValue("escape tempZX", tempZX);
-            PrintHdrValue("escape tempZY", tempZY);
-            PrintHdrValue("escape znSize", znSize);
+            PrintHdrValue("escape tempZX", tempZX, verboseMode);
+            PrintHdrValue("escape tempZY", tempZY, verboseMode);
+            PrintHdrValue("escape znSize", znSize, verboseMode);
 
             if (HdrCompareToBothPositiveReducedGT(znSize, twoFiftySix)) {
-                if (IsDebugTraceEnabled())
+                if (IsDebugTraceEnabled(verboseMode))
                     std::cout << "ReferenceOrbit2 periodicity: escaped\n";
                 result->IterationsExecuted = i + 1;
                 result->PeriodResult = PeriodicityResult::Escaped;
@@ -2330,12 +2391,13 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                                                   previousActiveN,
                                                   actualPrecisionLimbs,
                                                   workspace,
-                                                  debugHostCombo);
+                                                  debugHostCombo,
+                                                  verboseMode);
 
         *zReal = *newZReal;
         *zImag = *newZImag;
-        PrintHpValue("iteration next zReal", *zReal);
-        PrintHpValue("iteration next zImag", *zImag);
+        PrintHpValue("iteration next zReal", *zReal, verboseMode);
+        PrintHpValue("iteration next zImag", *zImag, verboseMode);
 
         result->IterationsExecuted = i + 1;
         result->PeriodResult = PeriodicityResult::Continue;
@@ -2343,8 +2405,8 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
 
     result->FinalZReal = *zReal;
     result->FinalZImag = *zImag;
-    PrintHpValue("ReferenceOrbit2 final zReal", result->FinalZReal);
-    PrintHpValue("ReferenceOrbit2 final zImag", result->FinalZImag);
+    PrintHpValue("ReferenceOrbit2 final zReal", result->FinalZReal, verboseMode);
+    PrintHpValue("ReferenceOrbit2 final zImag", result->FinalZImag, verboseMode);
     StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZReal, result->FinalZReal);
     StoreReferenceDebugValue(debugHostCombo, DebugStatePurpose::ReferenceExitZImag, result->FinalZImag);
     return result;
@@ -2363,12 +2425,13 @@ EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams> *cReal,
                                 typename SharkFloatParams::Float *outD2Imag,
                                 uint32_t actualPrecisionLimbs,
                                 FusedWorkspace &workspace,
-                                DebugHostCombo<SharkFloatParams> &debugHostCombo)
+                                DebugHostCombo<SharkFloatParams> &debugHostCombo,
+                                VerboseMode verboseMode)
 {
-    if (IsDebugTraceEnabled())
+    if (IsDebugTraceEnabled(verboseMode))
         std::cout << "EvaluateOrbitAndDerivative2 begin period=" << period << '\n';
-    PrintHpValue("derivative input cReal", *cReal);
-    PrintHpValue("derivative input cImag", *cImag);
+    PrintHpValue("derivative input cReal", *cReal, verboseMode);
+    PrintHpValue("derivative input cImag", *cImag, verboseMode);
     if constexpr (HpShark::DebugChecksums) {
         debugHostCombo.States.resize(static_cast<int>(DebugStatePurpose::NumPurposes));
     }
@@ -2393,15 +2456,15 @@ EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams> *cReal,
         SetZero(dzdcImag);
         one->template FromHDRFloat<typename SharkFloatParams::SubType>(
             HDRFloat<typename SharkFloatParams::SubType>{typename SharkFloatParams::SubType(1.0)});
-        PrintHpValue("derivative one", *one);
+        PrintHpValue("derivative one", *one, verboseMode);
     }
 
     uint32_t previousActiveN = 0;
     for (uint64_t i = 0; i < period; ++i) {
-        if (IsDebugTraceEnabled())
+        if (IsDebugTraceEnabled(verboseMode))
             std::cout << "EvaluateOrbitAndDerivative2 iteration " << i << " begin\n";
-        PrintHpValue("derivative zReal", *zReal);
-        PrintHpValue("derivative zImag", *zImag);
+        PrintHpValue("derivative zReal", *zReal, verboseMode);
+        PrintHpValue("derivative zImag", *zImag, verboseMode);
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             typename SharkFloatParams::Float zr =
                 zReal->template ToHDRFloat<typename SharkFloatParams::SubType>(0);
@@ -2429,20 +2492,20 @@ EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams> *cReal,
             localD2Real = typename SharkFloatParams::Float{2.0f} * sumr;
             localD2Imag = typename SharkFloatParams::Float{2.0f} * sumi;
 
-            PrintHpValue("derivative dzdcReal", *dzdcReal);
-            PrintHpValue("derivative dzdcImag", *dzdcImag);
-            PrintHdrValue("d2 zr", zr);
-            PrintHdrValue("d2 zi", zi);
-            PrintHdrValue("d2 dzr", dzr);
-            PrintHdrValue("d2 dzi", dzi);
-            PrintHdrValue("d2 dz2r", dz2r);
-            PrintHdrValue("d2 dz2i", dz2i);
-            PrintHdrValue("d2 zd2r", zd2r);
-            PrintHdrValue("d2 zd2i", zd2i);
-            PrintHdrValue("d2 sumr", sumr);
-            PrintHdrValue("d2 sumi", sumi);
-            PrintHdrValue("d2 localD2Real", localD2Real);
-            PrintHdrValue("d2 localD2Imag", localD2Imag);
+            PrintHpValue("derivative dzdcReal", *dzdcReal, verboseMode);
+            PrintHpValue("derivative dzdcImag", *dzdcImag, verboseMode);
+            PrintHdrValue("d2 zr", zr, verboseMode);
+            PrintHdrValue("d2 zi", zi, verboseMode);
+            PrintHdrValue("d2 dzr", dzr, verboseMode);
+            PrintHdrValue("d2 dzi", dzi, verboseMode);
+            PrintHdrValue("d2 dz2r", dz2r, verboseMode);
+            PrintHdrValue("d2 dz2i", dz2i, verboseMode);
+            PrintHdrValue("d2 zd2r", zd2r, verboseMode);
+            PrintHdrValue("d2 zd2i", zd2i, verboseMode);
+            PrintHdrValue("d2 sumr", sumr, verboseMode);
+            PrintHdrValue("d2 sumi", sumi, verboseMode);
+            PrintHdrValue("d2 localD2Real", localD2Real, verboseMode);
+            PrintHdrValue("d2 localD2Imag", localD2Imag, verboseMode);
         }
 
         FusedReferenceOrbitStep<SharkFloatParams>(*zReal,
@@ -2460,18 +2523,19 @@ EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams> *cReal,
                                                   previousActiveN,
                                                   actualPrecisionLimbs,
                                                   workspace,
-                                                  debugHostCombo);
+                                                  debugHostCombo,
+                                                  verboseMode);
 
         *zReal = *newZReal;
         *zImag = *newZImag;
         if constexpr (SharkFloatParams::EnableNewtonRaphson) {
             *dzdcReal = *newDzdcReal;
             *dzdcImag = *newDzdcImag;
-            PrintHpValue("derivative next dzdcReal", *dzdcReal);
-            PrintHpValue("derivative next dzdcImag", *dzdcImag);
+            PrintHpValue("derivative next dzdcReal", *dzdcReal, verboseMode);
+            PrintHpValue("derivative next dzdcImag", *dzdcImag, verboseMode);
         }
-        PrintHpValue("derivative next zReal", *zReal);
-        PrintHpValue("derivative next zImag", *zImag);
+        PrintHpValue("derivative next zReal", *zReal, verboseMode);
+        PrintHpValue("derivative next zImag", *zImag, verboseMode);
     }
 
     *outZReal = *zReal;
@@ -2481,12 +2545,12 @@ EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams> *cReal,
         *outDzdcImag = *dzdcImag;
         *outD2Real = localD2Real;
         *outD2Imag = localD2Imag;
-        PrintHpValue("derivative final zReal", *outZReal);
-        PrintHpValue("derivative final zImag", *outZImag);
-        PrintHpValue("derivative final dzdcReal", *outDzdcReal);
-        PrintHpValue("derivative final dzdcImag", *outDzdcImag);
-        PrintHdrValue("derivative final d2Real", *outD2Real);
-        PrintHdrValue("derivative final d2Imag", *outD2Imag);
+        PrintHpValue("derivative final zReal", *outZReal, verboseMode);
+        PrintHpValue("derivative final zImag", *outZImag, verboseMode);
+        PrintHpValue("derivative final dzdcReal", *outDzdcReal, verboseMode);
+        PrintHpValue("derivative final dzdcImag", *outDzdcImag, verboseMode);
+        PrintHdrValue("derivative final d2Real", *outD2Real, verboseMode);
+        PrintHdrValue("derivative final d2Imag", *outD2Imag, verboseMode);
     } else {
         SetZero(outDzdcReal);
         SetZero(outDzdcImag);
@@ -2508,7 +2572,8 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                             typename SharkFloatParams::Float *outD2Imag,
                             uint32_t actualPrecisionLimbs,
                             DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                            HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables)
+                            HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables,
+                            VerboseMode verboseMode)
 {
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
     std::unique_ptr<HpShark::ReferencePreparedTables<SharkFloatParams>> localPreparedTables;
@@ -2530,7 +2595,8 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                                                       outD2Imag,
                                                       actualPrecisionLimbs,
                                                       workspace,
-                                                      debugHostCombo);
+                                                      debugHostCombo,
+                                                      verboseMode);
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
@@ -2541,7 +2607,8 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                                             uint64_t,                                                   \
                                             uint32_t,                                                   \
                                             DebugHostCombo<SharkFloatParams> &,                         \
-                                            HpShark::ReferencePreparedTables<SharkFloatParams> *);
+                                            HpShark::ReferencePreparedTables<SharkFloatParams> *,       \
+                                            HpShark::TestParams::VerboseMode);
 
 ExplicitInstantiateAll();
 
@@ -2569,7 +2636,8 @@ ExplicitlyInstantiate(SharkParams12);
         typename SharkFloatParams::Float *,                                                             \
         uint32_t,                                                                                       \
         DebugHostCombo<SharkFloatParams> &,                                                             \
-        HpShark::ReferencePreparedTables<SharkFloatParams> *);
+        HpShark::ReferencePreparedTables<SharkFloatParams> *,                                           \
+        HpShark::TestParams::VerboseMode);
 
 #undef ExplicitlyInstantiate
 #define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateDerivative(SharkFloatParams)

@@ -361,10 +361,8 @@ PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
 {
     auto inputReal = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto inputImag = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    inputReal->MpfToHpGpu(
-        cReal, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
-    inputImag->MpfToHpGpu(
-        cImag, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
+    inputReal->MpfToHpGpu(cReal, InjectNoiseInLowOrder::Enable);
+    inputImag->MpfToHpGpu(cImag, InjectNoiseInLowOrder::Enable);
     return PrepareHpSharkReferenceTables<SharkFloatParams>(
         launchParams, *inputReal, *inputImag, actualPrecisionLimbs, minFusedStages, maxFusedStages);
 }

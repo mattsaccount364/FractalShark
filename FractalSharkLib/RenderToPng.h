@@ -12,6 +12,7 @@
 #include "RenderAlgorithm.h"
 
 #include <cstdint>
+#include <iosfwd>
 #include <optional>
 #include <string>
 
@@ -53,3 +54,11 @@ struct RenderRequest {
 // Exceptions from the underlying render path propagate to the caller.
 // The Fractal is fully computed on return and may be used for additional output.
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err);
+int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out);
+
+// Variant for a Fractal shared with the GUI-style render pool.  Request setup
+// is serialized through EnqueueMutation, then the direct render/save path is
+// used after the pool is drained so no display frames accumulate in a
+// headless server.
+int RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err);
+int RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out);

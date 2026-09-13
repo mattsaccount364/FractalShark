@@ -1,5 +1,3 @@
-#include "TestVerbose.h"
-
 #include "HpSharkFloat.h"
 
 #include <gmp.h>
@@ -156,43 +154,33 @@ HpSharkFloat<SharkFloatParams>::operator=(const HpSharkFloat<SharkFloatParams> &
 // Function to convert mpf_t to HpSharkFloat<SharkFloatParams>
 template <class SharkFloatParams>
 void
-HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
-                                           int prec_bits,
-                                           InjectNoiseInLowOrder injectNoise)
+HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpfValue, InjectNoiseInLowOrder injectNoise)
 {
 
-    // Get the absolute value of mpf_value
-    mpf_t abs_val;
-    mpf_init2(abs_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-    mpf_abs(abs_val, mpf_value);
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits) << std::endl;
-    }
+    // Get the absolute value of mpfValue
+    mpf_t absValue;
+    mpf_init2(absValue, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+    mpf_abs(absValue, mpfValue);
 
     // Determine the sign
-    IsNegative = (mpf_sgn(mpf_value) < 0);
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "prec_bits: " << std::dec << prec_bits << std::endl;
-    }
+    IsNegative = (mpf_sgn(mpfValue) < 0);
 
     std::vector<uint32_t> data;
-    // abs_val is the target-precision rounding of mpf_value.  Use it as the
-    // canonical mantissa source below.  Reading the original mpf_value here
+    // absValue is the target-precision rounding of mpfValue.  Use it as the
+    // canonical mantissa source below.  Reading the original mpfValue here
     // is incorrect when its precision differs from DefaultMpirBits: the
-    // limb count and exponent then describe abs_val while the copied limbs
+    // limb count and exponent then describe absValue while the copied limbs
     // belong to a different precision window.
-    const auto absMpirSize = std::abs(abs_val[0]._mp_size);
-    const auto precInUint64 = std::min(abs_val[0]._mp_prec + 1, absMpirSize);
+    const auto absMpirSize = std::abs(absValue[0]._mp_size);
+    const auto precInUint64 = std::min(absValue[0]._mp_prec + 1, absMpirSize);
 
-    // Iterate over abs_val._mp_d and copy the data.
+    // Iterate over absValue._mp_d and copy the data.
     // Put the low order uint32_t first, then the high order uint32_t
     // Keep the endian the same
     for (auto i = 0; i < precInUint64; ++i) {
-        const uint32_t lowOrder = abs_val[0]._mp_d[i] & 0xFFFFFFFF;
+        const uint32_t lowOrder = absValue[0]._mp_d[i] & 0xFFFFFFFF;
         data.push_back(lowOrder);
-        const uint32_t highOrder = abs_val[0]._mp_d[i] >> 32;
+        const uint32_t highOrder = absValue[0]._mp_d[i] >> 32;
         data.push_back(highOrder);
     }
 
@@ -263,18 +251,9 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
     };
 
     // run normalization on the raw data[]
-    auto dataCopy = data; // keep a copy for debugging
     int32_t shiftBits = normalizeData();
 
     static_assert(sizeof(mp_limb_t) == sizeof(uint64_t), "mp_limb_t is not 64 bits");
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        auto originalDataStr = VectorUintToHexString(dataCopy);
-        auto shiftedDataStr = VectorUintToHexString(data);
-        std::cout << "Original data: " << originalDataStr << std::endl;
-        std::cout << "Shifted data: " << shiftedDataStr << ", shiftBits: " << shiftBits << std::endl;
-        std::cout << "Shift bits: " << shiftBits << std::endl;
-    }
 
     auto countInBytes = N * sizeof(uint32_t);
 
@@ -318,7 +297,7 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
             // how many bits per MPIR limb
             ExpT limbBits = static_cast<ExpT>(sizeof(mp_limb_t) * 8);
             // MPIR's exponent in bits
-            ExpT mpirExpBits = static_cast<ExpT>(abs_val[0]._mp_exp) * limbBits;
+            ExpT mpirExpBits = static_cast<ExpT>(absValue[0]._mp_exp) * limbBits;
             // total raw mantissa bits (absMpirSize limbs)
             ExpT rawBits = static_cast<ExpT>(absMpirSize) * limbBits;
 
@@ -347,12 +326,8 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
         assert((Digits[SharkFloatParams::GlobalNumUint32 - 1] & 0x8000'0000u) != 0);
     }
 
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << ToHexString() << std::endl;
-    }
-
     // mpf_clear(scaled_val);
-    mpf_clear(abs_val);
+    mpf_clear(absValue);
 }
 
 template <class SharkFloatParams>
@@ -477,7 +452,7 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2(bool clearLowOrder)
     // mpf_sqrt(mpf_value, mpf_value);
 
     // Convert MPF to HpSharkFloat<SharkFloatParams>
-    MpfToHpGpu(mpf_value, DefaultPrecBits, InjectNoiseInLowOrder::Disable);
+    MpfToHpGpu(mpf_value, InjectNoiseInLowOrder::Disable);
 
     if (clearLowOrder) {
         // Clear the low-order 1/4 of digits to 0

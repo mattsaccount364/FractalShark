@@ -31,9 +31,9 @@ RunMpirOrbitWithD2(mpf_t cR,
                    mpf_t outZI,
                    mpf_t outDzdcR,
                    mpf_t outDzdcI,
-                   HDRFloat<double> &d2r_out,
-                   HDRFloat<double> &d2i_out,
-                   bool useMT)
+                   HDRFloat<double> &d2rOut,
+                   HDRFloat<double> &d2iOut,
+                   bool useMpirMultithreading)
 {
     const mp_bitcnt_t prec = mpf_get_prec(cR);
 
@@ -46,12 +46,12 @@ RunMpirOrbitWithD2(mpf_t cR,
     mpf_complex_init(z_coord, prec);
     mpf_complex_init(dzdc_deriv, prec);
 
-    if (useMT) {
+    if (useMpirMultithreading) {
         EvaluateCriticalOrbitAndDerivsMT(
-            c_coord, period, z_coord, dzdc_deriv, d2r_out, d2i_out, prec, prec);
+            c_coord, period, z_coord, dzdc_deriv, d2rOut, d2iOut, prec, prec);
     } else {
         EvaluateCriticalOrbitAndDerivsST(
-            c_coord, period, z_coord, dzdc_deriv, d2r_out, d2i_out, prec, prec);
+            c_coord, period, z_coord, dzdc_deriv, d2rOut, d2iOut, prec, prec);
     }
 
     mpf_set(outZR, z_coord.re);
@@ -140,11 +140,12 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                      mpf_t mpfCImag,
                      uint64_t period,
                      const HpShark::LaunchParams &launchParams,
-                     uint64_t iterCountOverride = 0,
-                     bool useMT = true,
-                     int numRepeats = 1)
+                     uint64_t iterCountOverride,
+                     int numRepeats)
 {
     static_assert(IsReferenceOrbitOperator<referenceOperator>);
+
+    const auto &testParams = Tests.GetTestParams();
 
     std::cout << "LaunchParams: " << launchParams.ToString() << std::endl;
 
@@ -269,20 +270,28 @@ RunNewtonRaphsonTest(TestTracker &Tests,
 
         PerfTimingResult iterTiming;
         std::unique_ptr<HpShark::ReferencePreparedTables<SharkFloatParams>> preparedTables;
-        if constexpr (HpShark::TestReferenceImpl || HpShark::TestGpu) {
-            hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
-            hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
+        if (testParams.m_TestReferenceImpl || HpShark::TestGpu) {
+            hpCR->MpfToHpGpu(cR, InjectNoiseInLowOrder::Disable);
+            hpCI->MpfToHpGpu(cI, InjectNoiseInLowOrder::Disable);
             preparedTables = HpShark::PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(
                 launchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32, testBase, it);
         }
 
-        // ---- MPIR inner loop (ground truth, gated on TestMPIRImpl) ----
+        // ---- MPIR inner loop (ground truth, gated on runtime MPIR selection) ----
         HDRFloat<double> mpirD2r{}, mpirD2i{};
-        if constexpr (HpShark::TestMPIRImpl) {
+        if (testParams.IsMpirEnabled()) {
             BenchmarkTimer mpirTimer;
             mpirTimer.StartTimer();
-            RunMpirOrbitWithD2(
-                cR, cI, period, mpirZR, mpirZI, mpirDzdcR, mpirDzdcI, mpirD2r, mpirD2i, useMT);
+            RunMpirOrbitWithD2(cR,
+                               cI,
+                               period,
+                               mpirZR,
+                               mpirZI,
+                               mpirDzdcR,
+                               mpirDzdcI,
+                               mpirD2r,
+                               mpirD2i,
+                               testParams.UseMpirMultithreading());
             mpirTimer.StopTimer();
             const double mpirMs = static_cast<double>(mpirTimer.GetDeltaInMs());
             iterTiming.hostMs = mpirMs;
@@ -291,7 +300,7 @@ RunNewtonRaphsonTest(TestTracker &Tests,
 
         // ---- Selected CPU reference inner loop (if TestReferenceImpl) ----
         typename SharkFloatParams::Float hpD2r{}, hpD2i{};
-        if constexpr (HpShark::TestReferenceImpl) {
+        if (testParams.m_TestReferenceImpl) {
             BenchmarkTimer cpuTimer;
             cpuTimer.StartTimer();
             EvaluateOrbitAndDerivative2<SharkFloatParams>(hpCR.get(),
@@ -305,7 +314,8 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                                                           &hpD2i,
                                                           SharkFloatParams::GlobalNumUint32,
                                                           debugHostCombo,
-                                                          preparedTables.get());
+                                                          preparedTables.get(),
+                                                          testParams.m_VerboseMode);
             cpuTimer.StopTimer();
             const double cpuMs = static_cast<double>(cpuTimer.GetDeltaInMs());
             iterTiming.cpuMs = cpuMs;
@@ -328,7 +338,7 @@ RunNewtonRaphsonTest(TestTracker &Tests,
             gmp_snprintf(buf, sizeof(buf), "    CPU iter %u dzdc_real diff: %+.6Fe", it, iterDiffDzdcR);
             std::cout << buf << std::endl;
 
-            if constexpr (HpShark::TestMPIRImpl) {
+            if (testParams.IsMpirEnabled()) {
                 allWithinTolerance &= isWithinTolerance(iterDiffZR, mpirZR);
                 allWithinTolerance &= isWithinTolerance(iterDiffZI, mpirZI);
                 allWithinTolerance &= isWithinTolerance(iterDiffDzdcR, mpirDzdcR);
@@ -370,7 +380,7 @@ RunNewtonRaphsonTest(TestTracker &Tests,
             }
 
             // GPU vs MPIR comparison (only if MPIR ran)
-            if constexpr (HpShark::TestMPIRImpl) {
+            if (testParams.IsMpirEnabled()) {
                 mpf_sub(gpuDiffZR, gpuZR, mpirZR);
                 mpf_sub(gpuDiffZI, gpuZI, mpirZI);
                 mpf_sub(gpuDiffDzdcR, gpuDzdcR, mpirDzdcR);
@@ -392,14 +402,14 @@ RunNewtonRaphsonTest(TestTracker &Tests,
 
         // Newton step + convergence: use best available results (MPIR > GPU)
         // Select source of z/dzdc/d2 for Newton step
-        constexpr bool hasSource = HpShark::TestMPIRImpl || HpShark::TestGpu;
-        if constexpr (hasSource) {
-            mpf_t &useZR = HpShark::TestMPIRImpl ? mpirZR : gpuZR;
-            mpf_t &useZI = HpShark::TestMPIRImpl ? mpirZI : gpuZI;
-            mpf_t &useDzdcR = HpShark::TestMPIRImpl ? mpirDzdcR : gpuDzdcR;
-            mpf_t &useDzdcI = HpShark::TestMPIRImpl ? mpirDzdcI : gpuDzdcI;
-            const HDRFloat<double> &useD2r = HpShark::TestMPIRImpl ? mpirD2r : gpuD2r;
-            const HDRFloat<double> &useD2i = HpShark::TestMPIRImpl ? mpirD2i : gpuD2i;
+        const bool hasSource = testParams.IsMpirEnabled() || HpShark::TestGpu;
+        if (hasSource) {
+            mpf_t &useZR = testParams.IsMpirEnabled() ? mpirZR : gpuZR;
+            mpf_t &useZI = testParams.IsMpirEnabled() ? mpirZI : gpuZI;
+            mpf_t &useDzdcR = testParams.IsMpirEnabled() ? mpirDzdcR : gpuDzdcR;
+            mpf_t &useDzdcI = testParams.IsMpirEnabled() ? mpirDzdcI : gpuDzdcI;
+            const HDRFloat<double> &useD2r = testParams.IsMpirEnabled() ? mpirD2r : gpuD2r;
+            const HDRFloat<double> &useD2i = testParams.IsMpirEnabled() ? mpirD2i : gpuD2i;
 
             HDRFloat<double> dzr_h(useDzdcR), dzi_h(useDzdcI);
             HdrReduce(dzr_h);
@@ -433,9 +443,9 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     }
 
     // Final correction pass using the selected CPU reference.
-    if constexpr (HpShark::TestReferenceImpl) {
-        hpCR->MpfToHpGpu(cR, precBits, InjectNoiseInLowOrder::Disable);
-        hpCI->MpfToHpGpu(cI, precBits, InjectNoiseInLowOrder::Disable);
+    if (testParams.m_TestReferenceImpl) {
+        hpCR->MpfToHpGpu(cR, InjectNoiseInLowOrder::Disable);
+        hpCI->MpfToHpGpu(cI, InjectNoiseInLowOrder::Disable);
         auto preparedTables = HpShark::PrepareOrLoadHpSharkReferenceTables<SharkFloatParams>(
             launchParams, *hpCR, *hpCI, SharkFloatParams::GlobalNumUint32, testBase, maxNewtonIters);
 
@@ -451,7 +461,8 @@ RunNewtonRaphsonTest(TestTracker &Tests,
                                                       &finalD2i,
                                                       SharkFloatParams::GlobalNumUint32,
                                                       debugHostCombo,
-                                                      preparedTables.get());
+                                                      preparedTables.get(),
+                                                      testParams.m_VerboseMode);
 
         hpZR->HpGpuToMpf(zR);
         hpZI->HpGpuToMpf(zI);
@@ -476,7 +487,8 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     }
 
     // Always print the summary table (internal — no caller table needed)
-    PrintPerfSummaryTable(testName, useMT, perIterTimings, "MPIR", cpuReferenceLabel);
+    PrintPerfSummaryTable(
+        testName, testParams.UseMpirMultithreading(), perIterTimings, "MPIR", cpuReferenceLabel);
 
     // In perf-only mode, skip convergence test (it's expected not to converge)
     if (!perfOnly) {
@@ -489,7 +501,7 @@ RunNewtonRaphsonTest(TestTracker &Tests,
     }
 
     // Check per-iteration z/dzdc tolerance
-    {
+    if (testParams.m_TestReferenceImpl) {
         std::string tolName = std::string(testName) + "_CpuPerIterTolerance";
         char tolStr[256];
         gmp_snprintf(tolStr, sizeof(tolStr), "2^-(exponent:%d)", toleranceBits);
@@ -559,7 +571,6 @@ TestNewtonRaphsonView5(TestTracker &Tests,
                        int testBase,
                        const HpShark::LaunchParams &launchParams,
                        uint64_t iterCountOverride,
-                       bool useMT,
                        int numRepeats)
 {
     const char *cRealStr =
@@ -589,7 +600,6 @@ TestNewtonRaphsonView5(TestTracker &Tests,
                                                                             expectedPeriod,
                                                                             launchParams,
                                                                             iterCountOverride,
-                                                                            useMT,
                                                                             numRepeats);
 
     mpf_clear(mpfCReal);
@@ -603,7 +613,6 @@ TestNewtonRaphsonView30(TestTracker &Tests,
                         int testBase,
                         const HpShark::LaunchParams &launchParams,
                         uint64_t iterCountOverride,
-                        bool useMT,
                         int numRepeats)
 {
 #include "LargeCoords30.h"
@@ -624,7 +633,6 @@ TestNewtonRaphsonView30(TestTracker &Tests,
                                                                             expectedPeriod,
                                                                             launchParams,
                                                                             iterCountOverride,
-                                                                            useMT,
                                                                             numRepeats);
 
     mpf_clear(mpfCReal);
@@ -638,7 +646,6 @@ TestNewtonRaphsonView32(TestTracker &Tests,
                         int testBase,
                         const HpShark::LaunchParams &launchParams,
                         uint64_t iterCountOverride,
-                        bool useMT,
                         int numRepeats)
 {
 #include "LargeCoords32.h"
@@ -661,7 +668,6 @@ TestNewtonRaphsonView32(TestTracker &Tests,
                                                                             expectedPeriod,
                                                                             launchParams,
                                                                             iterCountOverride,
-                                                                            useMT,
                                                                             numRepeats);
 
     mpf_clear(mpfCReal);
@@ -670,30 +676,30 @@ TestNewtonRaphsonView32(TestTracker &Tests,
 }
 
 template bool TestNewtonRaphsonView5<SharkParamsNR7, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR1, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR2, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR3, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR4, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR5, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR6, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR8, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR9, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR10, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR11, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView5<SharkParamsNR12, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView30<SharkParamsNR7, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);
 template bool TestNewtonRaphsonView32<SharkParamsNR9, Operator::ReferenceOrbit2>(
-    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, bool, int);
+    TestTracker &, int, const HpShark::LaunchParams &, uint64_t, int);

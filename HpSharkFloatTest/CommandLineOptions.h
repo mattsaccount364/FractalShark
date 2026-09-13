@@ -23,6 +23,8 @@ struct CommandLineOptions {
     CommandLineOptionValue<int> m_NumBlocks;
     CommandLineOptionValue<int> m_NumThreads;
     CommandLineOptionValue<int> m_MpirThreading;
+    CommandLineOptionValue<int> m_TestReference;
+    CommandLineOptionValue<int> m_Infinite;
     CommandLineOptionValue<int> m_View;
     CommandLineOptionValue<uint32_t> m_StorageLimbs;
     CommandLineOptionValue<uint32_t> m_EffectiveLimbs;

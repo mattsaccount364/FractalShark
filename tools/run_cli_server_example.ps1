@@ -180,7 +180,6 @@ try {
             '--height', '720',
             '--antialiasing', '1',
             '--out', $outputPath,
-            '--console',
             '--quiet'
         )
 
@@ -189,24 +188,15 @@ try {
         if ($result.ExitCode -ne 0) {
             throw "Client failed for $($scene.Name) with exit code $($result.ExitCode). See $stdoutPath and $stderrPath"
         }
-        if (-not (Test-Path -LiteralPath $outputPath)) {
-            throw "Client reported success but did not create $outputPath"
+        if ($result.Stdout -notmatch 'Frame time: [0-9]+(?:\.[0-9]+)? ms') {
+            throw "Client did not report a frame time. See $stdoutPath"
         }
-
-        $distinctSampleCount = Get-DistinctPngSampleCount -Path $outputPath
-        Write-Host "$($scene.Name) contains $distinctSampleCount distinct sampled pixel colors"
-        if ($distinctSampleCount -le 1) {
-            throw "$($scene.Name) produced a genuinely flat PNG: $outputPath"
-        }
-
-        if ($result.Stdout -match 'all exterior pixels have the same iteration count') {
-            Write-Warning "$($scene.Name) produced the exterior-iteration warning; this is not by itself a flat-image result"
-        } else {
-            Write-Host "$($scene.Name) completed without the flat-iteration warning"
+        if (-not [string]::IsNullOrWhiteSpace($result.Stdout)) {
+            Write-Host ($result.Stdout.TrimEnd())
         }
     }
 
-    Write-Host "Four distinct PNGs and per-request logs are in $resolvedOutputRoot"
+    Write-Host 'Queued all four renders; waiting for shutdown to finish PNG output.'
 }
 finally {
     if ($null -ne $server -and -not $server.HasExited) {
@@ -224,7 +214,7 @@ finally {
         }
 
         try {
-            [void]$server.WaitForExit(5000)
+            [void]$server.WaitForExit(60000)
         }
         catch {
         }
@@ -238,3 +228,18 @@ finally {
 if ($null -eq $shutdownResult -or $shutdownResult.ExitCode -ne 0) {
     throw "Server shutdown failed. See $resolvedOutputRoot\shutdown.stderr.txt"
 }
+
+foreach ($scene in $scenes) {
+    $outputPath = Join-Path $resolvedOutputRoot "$($scene.Name).png"
+    if (-not (Test-Path -LiteralPath $outputPath)) {
+        throw "FractalSharkCli did not finish $outputPath before shutdown returned."
+    }
+
+    $distinctSampleCount = Get-DistinctPngSampleCount -Path $outputPath
+    Write-Host "$($scene.Name) contains $distinctSampleCount distinct sampled pixel colors"
+    if ($distinctSampleCount -le 1) {
+        throw "$($scene.Name) produced a genuinely flat PNG: $outputPath"
+    }
+}
+
+Write-Host "Four distinct PNGs and per-request logs are in $resolvedOutputRoot"

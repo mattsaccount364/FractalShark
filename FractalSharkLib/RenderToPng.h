@@ -48,13 +48,21 @@ struct RenderRequest {
     std::wstring OutPngBasename;
 
     bool Quiet = true;
+    bool PreserveIterationBuffer = true;
 };
+
+enum class PngCompletionMode { Wait, Background };
 
 // Returns 0 on success, non-zero on failure (message appended to *err if non-null).
 // Exceptions from the underlying render path propagate to the caller.
 // The Fractal is fully computed on return and may be used for additional output.
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err);
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out);
+int RenderToPng(const RenderRequest &req,
+                Fractal &fractal,
+                std::string *err,
+                std::ostream &out,
+                PngCompletionMode completionMode);
 
 // Variant for a Fractal shared with the GUI-style render pool.  Request setup
 // is serialized through EnqueueMutation, then the direct render/save path is
@@ -62,3 +70,8 @@ int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, st
 // headless server.
 int RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err);
 int RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out);
+int RenderToPngQueued(const RenderRequest &req,
+                      Fractal &fractal,
+                      std::string *err,
+                      std::ostream &out,
+                      PngCompletionMode completionMode);

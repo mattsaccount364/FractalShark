@@ -111,7 +111,11 @@ ApplyRenderSetup(RenderSetup &setup, Fractal &fractal, std::string &error)
 }
 
 int
-RunConfiguredRender(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out)
+RunConfiguredRender(const RenderRequest &req,
+                    Fractal &fractal,
+                    std::string *err,
+                    std::ostream &out,
+                    PngCompletionMode completionMode)
 {
     auto fail = [&](const std::string &msg, int code) -> int {
         if (err) {
@@ -135,18 +139,19 @@ RunConfiguredRender(const RenderRequest &req, Fractal &fractal, std::string *err
 
     // PNG output (skipped if no basename was given).
     if (!req.OutPngBasename.empty()) {
-        // Keep the computed buffer available for the caller's console output.
-        // Moving it into the PNG writer replaces it with an unused pool buffer.
-        int rc = fractal.SaveCurrentFractal(req.OutPngBasename, /*copy_the_iters=*/true);
+        // Move the completed buffer to the PNG worker unless the caller still
+        // needs it for console output. Fractal replaces a moved buffer before
+        // the next render starts.
+        int rc = fractal.SaveCurrentFractal(req.OutPngBasename, req.PreserveIterationBuffer);
         if (rc != 0) {
             std::ostringstream ss;
             ss << "RenderToPng: SaveCurrentFractal returned code " << rc;
             return fail(ss.str(), rc);
         }
 
-        // SaveCurrentFractal spawns a background thread; wait for it so
-        // the PNG file exists when this function returns.
-        fractal.CleanupThreads(/*all=*/true);
+        if (completionMode == PngCompletionMode::Wait) {
+            fractal.CleanupThreads(/*all=*/true);
+        }
     }
 
     return 0;
@@ -162,6 +167,16 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err)
 
 int
 RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out)
+{
+    return RenderToPng(req, fractal, err, out, PngCompletionMode::Wait);
+}
+
+int
+RenderToPng(const RenderRequest &req,
+            Fractal &fractal,
+            std::string *err,
+            std::ostream &out,
+            PngCompletionMode completionMode)
 {
     std::string setupError;
     auto setup = BuildRenderSetup(req, setupError);
@@ -183,7 +198,7 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::o
         return 1;
     }
 
-    return RunConfiguredRender(req, fractal, err, out);
+    return RunConfiguredRender(req, fractal, err, out, completionMode);
 }
 
 int
@@ -194,6 +209,16 @@ RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err)
 
 int
 RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out)
+{
+    return RenderToPngQueued(req, fractal, err, out, PngCompletionMode::Wait);
+}
+
+int
+RenderToPngQueued(const RenderRequest &req,
+                  Fractal &fractal,
+                  std::string *err,
+                  std::ostream &out,
+                  PngCompletionMode completionMode)
 {
     auto fail = [&](const std::string &msg, int code) -> int {
         if (err) {
@@ -227,5 +252,5 @@ RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err, 
         return fail(setupError, 1);
     }
 
-    return RunConfiguredRender(req, fractal, err, out);
+    return RunConfiguredRender(req, fractal, err, out, completionMode);
 }

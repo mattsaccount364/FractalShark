@@ -19,11 +19,13 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -567,6 +569,7 @@ BuildRenderRequest(const CliArgs &args,
     req.Iterations = args.Iterations;
     req.Antialiasing = args.Antialiasing;
     req.Quiet = args.Quiet;
+    req.PreserveIterationBuffer = args.Console;
 
     std::vector<ParsedSavedLocation> locations;
     const ParsedSavedLocation *loc = nullptr;
@@ -671,47 +674,19 @@ ExecuteRenderRequest(const CliArgs &args,
                      Fractal &fractal,
                      std::ostream &out,
                      std::ostream &errorOut,
-                     bool useQueuedSetup)
+                     bool useQueuedSetup,
+                     PngCompletionMode completionMode)
 {
     // Single-shot construction of Fractal initializes its default view after
     // parsing the request, which also lowers the MPIR default precision.
     HighPrecision::defaultPrecisionInBits(FractalLimits::MaxPrecisionLame);
 
-    if (args.Console && req.ViewSource == RenderRequest::ViewSourceKind::Direct) {
-        const std::string parsedCenterX = req.CenterX.str();
-        const std::string parsedCenterY = req.CenterY.str();
-        const std::string parsedZoom = req.Zoom.str();
-        out << "CLI render input:\n"
-            << "  center-x raw (" << args.CenterX.size() << " chars): \"" << args.CenterX << "\"\n"
-            << "  center-y raw (" << args.CenterY.size() << " chars): \"" << args.CenterY << "\"\n"
-            << "  zoom raw (" << args.Zoom.size() << " chars): \"" << args.Zoom << "\"\n"
-            << "  iterations: " << req.Iterations << "\n"
-            << "CLI parsed MPIR values:\n"
-            << "  center-x (" << req.CenterX.precisionInBits() << " bits, " << parsedCenterX.size()
-            << " chars): \"" << parsedCenterX << "\"\n"
-            << "  center-y (" << req.CenterY.precisionInBits() << " bits, " << parsedCenterY.size()
-            << " chars): \"" << parsedCenterY << "\"\n"
-            << "  zoom (" << req.Zoom.precisionInBits() << " bits, " << parsedZoom.size()
-            << " chars): \"" << parsedZoom << "\"\n";
-        out.flush();
-    }
-
     std::string error;
-    int rc = useQueuedSetup ? RenderToPngQueued(req, fractal, &error, out)
-                            : RenderToPng(req, fractal, &error, out);
+    int rc = useQueuedSetup ? RenderToPngQueued(req, fractal, &error, out, completionMode)
+                            : RenderToPng(req, fractal, &error, out, completionMode);
     if (rc != 0) {
         errorOut << "error: " << error << "\n";
         return rc;
-    }
-
-    if (args.Console && req.ViewSource == RenderRequest::ViewSourceKind::Direct) {
-        const auto &configuredView = fractal.GetPtz();
-        out << "Fractal configured view:\n"
-            << "  center-x: \"" << configuredView.GetPtX().str() << "\"\n"
-            << "  center-y: \"" << configuredView.GetPtY().str() << "\"\n"
-            << "  zoom: \"" << configuredView.GetZoomFactor().str() << "\"\n"
-            << "  iterations: " << fractal.GetNumIterations<IterTypeFull>() << "\n";
-        out.flush();
     }
 
     if (args.Console) {
@@ -736,7 +711,8 @@ ExecuteRender(const CliArgs &args,
               int defaultWidth,
               int defaultHeight,
               uint64_t commitCapBytes,
-              bool useQueuedSetup)
+              bool useQueuedSetup,
+              PngCompletionMode completionMode)
 {
     RenderRequest req;
     std::string error;
@@ -746,7 +722,7 @@ ExecuteRender(const CliArgs &args,
         return rc;
     }
 
-    return ExecuteRenderRequest(args, req, fractal, out, errorOut, useQueuedSetup);
+    return ExecuteRenderRequest(args, req, fractal, out, errorOut, useQueuedSetup, completionMode);
 }
 
 std::vector<std::string>
@@ -780,6 +756,8 @@ InitializeCliProcess()
 int
 RunClient(const CliArgs &args, std::vector<std::string> forwardedArguments)
 {
+    const auto startTime = std::chrono::steady_clock::now();
+
     FractalSharkCli::IpcRequest request;
     request.Operation =
         args.Shutdown ? FractalSharkCli::IpcOperation::Shutdown : FractalSharkCli::IpcOperation::Render;
@@ -792,6 +770,8 @@ RunClient(const CliArgs &args, std::vector<std::string> forwardedArguments)
         return 3;
     }
 
+    const auto endTime = std::chrono::steady_clock::now();
+
     if (!response.Stdout.empty()) {
         std::cout << response.Stdout;
         std::cout.flush();
@@ -799,6 +779,11 @@ RunClient(const CliArgs &args, std::vector<std::string> forwardedArguments)
     if (!response.Stderr.empty()) {
         std::cerr << response.Stderr;
         std::cerr.flush();
+    }
+    if (!args.Shutdown) {
+        const std::chrono::duration<double, std::milli> elapsed = endTime - startTime;
+        std::cout << std::fixed << std::setprecision(1) << "Frame time: " << elapsed.count() << " ms\n";
+        std::cout.flush();
     }
 
     if (response.Status < 0 || response.Status > 255) {
@@ -843,6 +828,7 @@ RunServer(const CliArgs &serverArgs)
 
         FractalSharkCli::IpcResponse response;
         if (request.Operation == FractalSharkCli::IpcOperation::Shutdown) {
+            fractal.CleanupThreads(/*all=*/true);
             response.Status = 0;
             response.Stdout = "FractalSharkCli server stopped.\n";
         } else {
@@ -869,7 +855,8 @@ RunServer(const CliArgs &serverArgs)
                                                         serverArgs.Width,
                                                         serverArgs.Height,
                                                         serverArgs.CommitCapBytes,
-                                                        /*useQueuedSetup=*/false);
+                                                        /*useQueuedSetup=*/false,
+                                                        PngCompletionMode::Background);
                     }
                 }
             } catch (const std::exception &exception) {
@@ -976,8 +963,13 @@ main(int argc, char *argv[])
                         /*nativeWindow=*/nullptr,
                         /*UseSensoCursor=*/false,
                         request.CommitCapBytes);
-        return ExecuteRenderRequest(
-            args, request, fractal, std::cout, std::cerr, /*useQueuedSetup=*/false);
+        return ExecuteRenderRequest(args,
+                                    request,
+                                    fractal,
+                                    std::cout,
+                                    std::cerr,
+                                    /*useQueuedSetup=*/false,
+                                    PngCompletionMode::Wait);
     } catch (const std::exception &exception) {
         std::cerr << "error: " << exception.what() << "\n";
         return 1;

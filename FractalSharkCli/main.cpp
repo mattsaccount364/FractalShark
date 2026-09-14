@@ -673,17 +673,14 @@ ExecuteRenderRequest(const CliArgs &args,
                      const RenderRequest &req,
                      Fractal &fractal,
                      std::ostream &out,
-                     std::ostream &errorOut,
-                     bool useQueuedSetup,
-                     PngCompletionMode completionMode)
+                     std::ostream &errorOut)
 {
     // Single-shot construction of Fractal initializes its default view after
     // parsing the request, which also lowers the MPIR default precision.
     HighPrecision::defaultPrecisionInBits(FractalLimits::MaxPrecisionLame);
 
     std::string error;
-    int rc = useQueuedSetup ? RenderToPngQueued(req, fractal, &error, out, completionMode)
-                            : RenderToPng(req, fractal, &error, out, completionMode);
+    int rc = RenderToPng(req, fractal, &error, out);
     if (rc != 0) {
         errorOut << "error: " << error << "\n";
         return rc;
@@ -704,15 +701,13 @@ ExecuteRenderRequest(const CliArgs &args,
 }
 
 int
-ExecuteRender(const CliArgs &args,
-              Fractal &fractal,
-              std::ostream &out,
-              std::ostream &errorOut,
-              int defaultWidth,
-              int defaultHeight,
-              uint64_t commitCapBytes,
-              bool useQueuedSetup,
-              PngCompletionMode completionMode)
+ExecuteServerRender(const CliArgs &args,
+                    Fractal &fractal,
+                    std::ostream &out,
+                    std::ostream &errorOut,
+                    int defaultWidth,
+                    int defaultHeight,
+                    uint64_t commitCapBytes)
 {
     RenderRequest req;
     std::string error;
@@ -721,8 +716,9 @@ ExecuteRender(const CliArgs &args,
         errorOut << "error: " << error << "\n";
         return rc;
     }
+    req.PngCompletion = PngCompletionMode::Background;
 
-    return ExecuteRenderRequest(args, req, fractal, out, errorOut, useQueuedSetup, completionMode);
+    return ExecuteRenderRequest(args, req, fractal, out, errorOut);
 }
 
 std::vector<std::string>
@@ -801,9 +797,9 @@ RunServer(const CliArgs &serverArgs)
                     /*UseSensoCursor=*/false,
                     serverArgs.CommitCapBytes);
 
-    FractalSharkCli::LocalListener listener;
+    Environment::LocalIpcListener listener;
     std::string error;
-    if (!listener.Open(serverArgs.Endpoint, error)) {
+    if (!listener.Open(FractalSharkCli::ServiceName, serverArgs.Endpoint, error)) {
         std::cerr << "error: " << error << "\n";
         return 1;
     }
@@ -813,7 +809,7 @@ RunServer(const CliArgs &serverArgs)
 
     for (;;) {
         std::string acceptError;
-        FractalSharkCli::LocalConnection connection = listener.Accept(acceptError);
+        Environment::LocalIpcConnection connection = listener.Accept(acceptError);
         if (!connection.IsOpen()) {
             std::cerr << "error: " << acceptError << "\n";
             listener.Close();
@@ -848,15 +844,13 @@ RunServer(const CliArgs &serverArgs)
                         requestError << "error: request commit cap does not match server startup cap\n";
                         response.Status = 2;
                     } else {
-                        response.Status = ExecuteRender(requestArgs,
-                                                        fractal,
-                                                        requestOut,
-                                                        requestError,
-                                                        serverArgs.Width,
-                                                        serverArgs.Height,
-                                                        serverArgs.CommitCapBytes,
-                                                        /*useQueuedSetup=*/false,
-                                                        PngCompletionMode::Background);
+                        response.Status = ExecuteServerRender(requestArgs,
+                                                              fractal,
+                                                              requestOut,
+                                                              requestError,
+                                                              serverArgs.Width,
+                                                              serverArgs.Height,
+                                                              serverArgs.CommitCapBytes);
                     }
                 }
             } catch (const std::exception &exception) {
@@ -963,13 +957,7 @@ main(int argc, char *argv[])
                         /*nativeWindow=*/nullptr,
                         /*UseSensoCursor=*/false,
                         request.CommitCapBytes);
-        return ExecuteRenderRequest(args,
-                                    request,
-                                    fractal,
-                                    std::cout,
-                                    std::cerr,
-                                    /*useQueuedSetup=*/false,
-                                    PngCompletionMode::Wait);
+        return ExecuteRenderRequest(args, request, fractal, std::cout, std::cerr);
     } catch (const std::exception &exception) {
         std::cerr << "error: " << exception.what() << "\n";
         return 1;

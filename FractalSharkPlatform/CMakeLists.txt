@@ -6,6 +6,7 @@ if(WIN32)
         Win32/EnvironmentWin32.cpp
         Win32/CrashHandlerWin32.cpp
         Win32/JobObjectWin32.cpp
+        Win32/LocalIpcTransportWin32.cpp
         Win32/NativeOpenGLContextWin32.cpp
     )
     find_package(OpenGL REQUIRED COMPONENTS OpenGL)
@@ -122,6 +123,7 @@ else()
         Linux/EnvironmentLinux.cpp
         Linux/CrashHandlerLinux.cpp
         Linux/JobObjectLinux.cpp
+        Linux/LocalIpcTransportLinux.cpp
         Linux/NativeOpenGLContextLinux.cpp
         "${FRACTALSHARK_EMBEDDED_IMAGINA_SOURCE}"
     )

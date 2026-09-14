@@ -42,7 +42,12 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="Win32\EnvironmentWin32.cpp" />
+    <ClCompile Include="Win32\LocalIpcTransportWin32.cpp" />
     <ClCompile Include="Linux\EnvironmentLinux.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="Linux\LocalIpcTransportLinux.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
@@ -64,6 +69,7 @@
     <ClInclude Include="Common\WaitCursor.h" />
     <ClInclude Include="Common\CrashHandler.h" />
     <ClInclude Include="Common\JobObject.h" />
+    <ClInclude Include="Common\LocalIpcTransport.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

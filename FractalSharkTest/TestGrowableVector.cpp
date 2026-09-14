@@ -251,7 +251,7 @@ TEST(CustomHeap_MallocAndNewUseGlobalHeap)
 
 // ---------------------------------------------------------------------------
 // The heap backing store should be a temporary file-backed GrowableVector.
-// Win32 keeps HeapFile.bin in the namespace until its delete-on-close handle closes.
+// Win32 keeps the unique backing filename in the namespace until its delete-on-close handle closes.
 // Linux unlinks it immediately while retaining the live file descriptor.
 // ---------------------------------------------------------------------------
 TEST(CustomHeap_UsesTemporaryFileBackedGrowableVector)
@@ -263,7 +263,8 @@ TEST(CustomHeap_UsesTemporaryFileBackedGrowableVector)
     ASSERT_EQ(static_cast<int>(diag.AddPointOption),
               static_cast<int>(AddPointOptions::EnableWithoutSave));
     ASSERT_TRUE(diag.Filename != nullptr);
-    ASSERT_EQ(std::wcscmp(diag.Filename, L"HeapFile.bin"), 0);
+    ASSERT_TRUE(diag.Filename[0] != L'\0');
+    ASSERT_TRUE(std::wcscmp(diag.Filename, L"HeapFile.bin") != 0);
     ASSERT_TRUE(diag.Data != nullptr);
     ASSERT_TRUE(diag.CapacityBytes >= HEAP_INIT_SIZE);
     ASSERT_TRUE(diag.HeapBytes >= HEAP_INIT_SIZE);

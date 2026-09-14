@@ -16,6 +16,8 @@
 #include <optional>
 #include <string>
 
+enum class PngCompletionMode { Wait, Background };
+
 struct RenderRequest {
     enum class ViewSourceKind { None, Builtin, BoundingBox, Direct };
 
@@ -49,29 +51,12 @@ struct RenderRequest {
 
     bool Quiet = true;
     bool PreserveIterationBuffer = true;
+    PngCompletionMode PngCompletion = PngCompletionMode::Wait;
 };
-
-enum class PngCompletionMode { Wait, Background };
 
 // Returns 0 on success, non-zero on failure (message appended to *err if non-null).
 // Exceptions from the underlying render path propagate to the caller.
-// The Fractal is fully computed on return and may be used for additional output.
+// PreserveIterationBuffer keeps the computed frame available for additional output.
+// Background PNG completion is drained later by the owning Fractal.
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err);
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out);
-int RenderToPng(const RenderRequest &req,
-                Fractal &fractal,
-                std::string *err,
-                std::ostream &out,
-                PngCompletionMode completionMode);
-
-// Variant for a Fractal shared with the GUI-style render pool.  Request setup
-// is serialized through EnqueueMutation, then the direct render/save path is
-// used after the pool is drained so no display frames accumulate in a
-// headless server.
-int RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err);
-int RenderToPngQueued(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out);
-int RenderToPngQueued(const RenderRequest &req,
-                      Fractal &fractal,
-                      std::string *err,
-                      std::ostream &out,
-                      PngCompletionMode completionMode);

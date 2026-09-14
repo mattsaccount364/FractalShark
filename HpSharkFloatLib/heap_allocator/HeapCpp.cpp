@@ -316,7 +316,7 @@ HeapCpp::InitGlobalHeap()
     globalHeap.Growable =
         std::construct_at(reinterpret_cast<GrowableVector<uint8_t> *>(globalHeap.GrowableVectorMemory),
                           AddPointOptions::EnableWithoutSave,
-                          L"HeapFile.bin");
+                          L"");
 
     globalHeap.Growable->MutableResize(GrowByAmtBytes);
     globalHeap.Init();

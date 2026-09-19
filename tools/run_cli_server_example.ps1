@@ -1,7 +1,10 @@
+# Start one persistent CLI server, submit four render requests, and stop the server after
+# its background PNG encoders finish. Each run keeps its images and server logs together.
 $ErrorActionPreference = 'Stop'
 $totalTime = [System.Diagnostics.Stopwatch]::StartNew()
 
 $cli = (Resolve-Path (Join-Path $PSScriptRoot '..\Release\FractalSharkCli.exe')).Path
+# A unique endpoint allows multiple copies of this example to run without colliding.
 $runName = 'cli-server-example-{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $PID
 $outputRoot = Join-Path (Split-Path $PSScriptRoot -Parent) $runName
 $endpoint = "FractalSharkCli-example-$PID"
@@ -39,6 +42,8 @@ $scenes = @(
     }
 )
 
+# The server retains the expensive renderer state between requests. Its output is captured
+# beside the PNGs so the example remains easy to inspect after it finishes.
 $server = Start-Process -FilePath $cli `
     -ArgumentList @('--server', '--endpoint', $endpoint, '--width', '1280', '--height', '720') `
     -WindowStyle Hidden `
@@ -47,6 +52,8 @@ $server = Start-Process -FilePath $cli `
     -PassThru
 
 try {
+    # Requests are handled in order, but each client returns after the server starts its
+    # background PNG encode, allowing encoding to overlap the following render.
     foreach ($scene in $scenes) {
         $output = Join-Path $outputRoot "$($scene.Name).png"
         Write-Host "Rendering $($scene.Name) -> $output"
@@ -61,6 +68,8 @@ try {
     }
 }
 finally {
+    # Shutdown drains all outstanding PNG encoders before replying, so every output file is
+    # complete when the server exits.
     if (-not $server.HasExited) {
         & $cli --connect --endpoint $endpoint --shutdown
         $shutdownExitCode = $LASTEXITCODE
@@ -74,6 +83,7 @@ finally {
     }
 }
 
+# This includes script setup, server startup, every request, PNG completion, and shutdown.
 $totalTime.Stop()
 Write-Host ('Total end-to-end time: {0:N1} ms' -f $totalTime.Elapsed.TotalMilliseconds)
 Write-Host "Finished PNGs are in $outputRoot"

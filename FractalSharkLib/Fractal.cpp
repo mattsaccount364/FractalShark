@@ -12,6 +12,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <thread>
 
 #include "ATInfo.h"
@@ -33,6 +34,24 @@
 #include "RecommendedSettings.h"
 
 #include <chrono>
+
+namespace {
+template <class T>
+bool
+IsRenderCoordinateZero(const T &value)
+{
+    if constexpr (requires { value == T{}; }) {
+        return value == T{};
+    } else if constexpr (requires {
+                             value.head;
+                             value.tail;
+                         }) {
+        return value.head == 0 && value.tail == 0;
+    } else {
+        return value.x == 0 && value.y == 0 && value.z == 0 && value.w == 0;
+    }
+}
+} // namespace
 
 Fractal::Fractal(int width,
                  int height,
@@ -1849,13 +1868,21 @@ template <class T>
 void
 Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2, const PointZoomBBConverter &ptz)
 {
-    HighPrecision src_dy = ptz.GetDeltaY(m_ScrnHeight, GetGpuAntialiasing());
-    HighPrecision src_dx = ptz.GetDeltaX(m_ScrnWidth, GetGpuAntialiasing());
+    HighPrecision srcDy = ptz.GetDeltaY(m_ScrnHeight, GetGpuAntialiasing());
+    HighPrecision srcDx = ptz.GetDeltaX(m_ScrnWidth, GetGpuAntialiasing());
 
     FillCoord(ptz.GetMinX(), cx2);
     FillCoord(ptz.GetMinY(), cy2);
-    FillCoord(src_dx, dx2);
-    FillCoord(src_dy, dy2);
+    FillCoord(srcDx, dx2);
+    FillCoord(srcDy, dy2);
+
+    const HighPrecision zero{0};
+    if ((srcDx != zero && IsRenderCoordinateZero(dx2)) ||
+        (srcDy != zero && IsRenderCoordinateZero(dy2))) {
+        throw std::range_error(std::string{GetRenderAlgorithmName()} +
+                               " cannot represent this viewport's pixel spacing. Select the "
+                               "corresponding HDR renderer or Auto.");
+    }
 }
 
 void
@@ -2785,6 +2812,10 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx,
     using SubType = RenderAlg::SubType;
     constexpr LAv2Mode Mode = RenderAlg::LAv2;
 
+    T cx2{}, cy2{}, dx2{}, dy2{};
+    T centerX2{}, centerY2{};
+    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
+
     using ConditionalT = typename DoubleTo2x32Converter<T, SubType>::ConditionalT;
     using ConditionalSubType = typename DoubleTo2x32Converter<T, SubType>::ConditionalSubType;
 
@@ -2844,11 +2875,6 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx,
     }
 
     renderer.ClearMemory<IterType>();
-
-    T cx2{}, cy2{}, dx2{}, dy2{};
-    T centerX2{}, centerY2{};
-
-    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
 
     HighPrecision centerX = results->GetHiX() - ctx.Ptz.GetMinX();
     HighPrecision centerY = results->GetHiY() - ctx.Ptz.GetMaxY();

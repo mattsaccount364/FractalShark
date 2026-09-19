@@ -79,16 +79,17 @@ GPU render algorithms perform **supersampled antialiasing on the GPU**: each pix
 ## CUDA? What are the system requirements?
 
 - **AVX-2 CPU**: used by the Windows MPIR/AVX-2 reference-orbit build; Linux CMake builds use the system GMP library.
-- **CUDA-capable NVIDIA 900-series or newer** (~2016) for ordinary CUDA rendering, including direct, perturbation, and linear-approximation algorithms.
-- **CUDA-capable NVIDIA RTX 2xxx series or newer** for the GPU-accelerated reference-orbit implementation. Older supported NVIDIA cards can still use the other CUDA rendering paths.
+- **CUDA-capable NVIDIA GPU with compute capability 7.5 or newer** (GTX 16-series, RTX 2xxx-series, and newer) for official release builds and ordinary CUDA rendering, including direct, perturbation, and linear-approximation algorithms.
+- **CUDA-capable NVIDIA RTX 2xxx series or newer** for the GPU-accelerated reference-orbit implementation.
+- Many ordinary CUDA rendering kernels likely work on earlier NVIDIA GPUs when rebuilt with CUDA 12.x and a suitable architecture target, but these configurations are no longer officially supported or tested because CUDA 13 removed support for pre-7.5 targets.
 - **Try updating your NVIDIA driver** if you get a "cuda error 35" when you run it.
-- **Windows** with the Win32 GUI as the official release platform, or **Linux** through the experimental native CMake + Clang port introduced in version 0.53.
+- **Windows or Linux**. The Win32 and native Linux applications are fully supported and maintained at feature parity.
 
-**Version 0.53 is the first release with Linux support.** The native Linux port is undergoing heavy revision and should be treated as a preview. It includes the CPU-side numeric core, CUDA GPU rendering components, the command-line renderer, tests, and the `FractalSharkGuiLinux` Xlib/Dear ImGui graphical application. Full Linux/Win32 parity remains the goal, but behavior, dependencies, and interfaces may change substantially while the port catches up with the primary Windows target.
+**Version 0.53 introduced native Linux support.** The Linux build includes the CPU-side numeric core, CUDA GPU rendering components, the command-line renderer, tests, and the `FractalSharkGuiLinux` Xlib/Dear ImGui graphical application. The Win32 and Linux front ends share the renderer, command catalog, and menu-state implementation.
 
 ## Where do I download it?
 
-- Download official Windows binaries from here: [https://github.com/mattsaccount364/FractalShark/releases](https://github.com/mattsaccount364/FractalShark/releases). Beginning with version 0.53, tagged releases also include `FractalShark-Linux-<tag>.tar.gz` archive containing `FractalSharkCli`, `FractalSharkGuiLinux`, `HpSharkFloatTest`, and `FractalSharkTest`. This Linux archive is an unsupported development preview, not an official release, and may change or break while the port is under heavy revision. Linux users may alternatively build it from source using the instructions below.
+- Download official Windows and Linux binaries from the [GitHub Releases page](https://github.com/mattsaccount364/FractalShark/releases). The Windows ZIP contains the main application, CLI, tests, debug symbols, and documentation. Beginning with version 0.53, tagged releases also include a `FractalShark-Linux-<tag>.tar.gz` archive containing `FractalSharkCli`, `FractalSharkGuiLinux`, `HpSharkFloatTest`, and `FractalSharkTest`.
 
 ## More docs?
 
@@ -166,7 +167,7 @@ If you're bored and want to try yet another Mandelbrot set renderer, give it a g
 - **2008**: I did a distributed version that ran on the University of Wisconsin's "Condor" platform. That was pretty cool, and allowed for fast creation of zoom movies.
 - **2017**: I resurrected it, and added high precision, but no perturbation or anything else. At that point, it was theoretically capable of rendering very deep images, but it was so slow as to be largely useless.
 - **2023-Q2 2024-Q2**: I bought this new video card, and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up. So here we are.
-- **2026-6**: Version 0.53 is the first release with experimental Linux support. FractalShark now has a novel GPU-accelerated reference orbit using NTT-based high-precision arithmetic, GPU-accelerated Newton-Raphson for the Feature Finder, and a native Linux development build. Linux is not yet an official release platform, and the port remains under heavy revision while work toward Linux/Win32 parity continues.
+- **2026-6**: Version 0.53 introduced native Linux support. FractalShark now has a novel GPU-accelerated reference orbit using NTT-based high-precision arithmetic, GPU-accelerated Newton-Raphson for the Feature Finder, and fully supported Windows and Linux applications maintained at feature parity.
 
 ## Build instructions
 
@@ -192,9 +193,11 @@ Source builds require Git LFS.  Some checked-in assets are LFS-backed, including
     Use `Configuration=Debug` for a Debug build.
 11. The `FractalShark` project is the main application. `FractalTray` is a tray utility, `HpSharkFloatTest` is a GPU arithmetic test harness, and `FractalSaver` is a legacy Windows project retained in the solution but not included in the release package or Linux CMake build.
 
+Local source builds default to `sm_120`. To target another GPU, pass `-DCMAKE_CUDA_ARCHITECTURES=86` while configuring CMake, or use `tools\build_windows.ps1 -CudaCodeGeneration 'compute_86,sm_86'` for a Windows build. GitHub release builds override the local default and include all officially supported architectures.
+
 For Linux:
 
-Version 0.53 is the first release with experimental Linux support. The Linux port remains an unsupported development preview under heavy revision, not an official release platform. These instructions are intended for developers and testers who are comfortable diagnosing build and runtime problems.
+Linux is a fully supported platform and uses the same renderer and portable command implementation as Windows.
 
 1. Use an x86_64 Ubuntu or Ubuntu-compatible environment.
 2. Install Git LFS, CMake 3.20 or newer, Clang, a GCC/G++ CUDA host compiler, `make`, `binutils` (for `objcopy`), the NVIDIA CUDA Toolkit, `libgmp-dev`, `libgl-dev`, `libglx-dev`, `libglu1-mesa-dev`, and `libx11-dev`. The CI build uses Clang 18, G++ 13, and CUDA 13.3.

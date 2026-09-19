@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
+
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 120 CACHE STRING "CUDA architectures for local builds")
+endif()
+
 project(FractalShark LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -8,9 +13,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # CUDA configuration
 set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES 120 CACHE STRING "CUDA architectures for local builds")
-endif()
 set(CMAKE_CUDA_RUNTIME_LIBRARY Static)
 
 # Warnings (CXX only — nvcc doesn't support these flags)

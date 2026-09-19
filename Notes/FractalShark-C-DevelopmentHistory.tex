@@ -5,9 +5,113 @@ This appendix records development notes that were posted over time.
 
 \subsection{Release Notes}
 
+\subsubsection{2026-9 News --- Version 0.543 (Upcoming)}
+
+Version \code{0.543} improves repeated headless rendering and continues work on
+the fused GPU reference-orbit implementation.
+
+\begin{itemize}
+\item \textbf{Persistent CLI server.} \code{FractalSharkCli} can now run as a
+  server and accept repeated render requests from additional invocations of the
+  same executable. The server retains initialized renderer state and processes
+  requests in FIFO order. Local IPC uses named pipes on Windows and Unix-domain
+  sockets on Linux.
+
+\item \textbf{Asynchronous PNG output and timing.} Server renders begin PNG
+  encoding in the background so encoding can overlap the next frame. Client
+  output reports per-frame request time, while orderly server shutdown drains
+  all outstanding encoders. A PowerShell example renders four deep-zoom scenes
+  and reports total end-to-end time.
+
+\item \textbf{GPU reference-orbit work.} The fused Ref2/v2 implementation
+  receives further NTT, carry-propagation, memory-layout, and test-harness
+  refinements.
+
+\item \textbf{Build targets and platform support.} Release builds explicitly
+  target compute capabilities 7.5, 8.0, 8.6, 8.9, 9.0, 10.0, and 12.0. Local
+  builds default to compute capability 12.0 unless overridden. Windows and
+  Linux remain fully supported at feature parity.
+\end{itemize}
+
+\subsubsection{2026-9-12 News --- Version 0.542}
+
+\begin{itemize}
+\item \textbf{CLI high-precision initialization.} The command-line renderer now
+  initializes MPIR's default precision before parsing and converting locations,
+  matching graphical-application initialization. This fixes flat direct-coordinate
+  renders and precision failures at valid deep-zoom locations.
+\end{itemize}
+
+\subsubsection{2026-9-11 News --- Version 0.541}
+
+\begin{itemize}
+\item \textbf{CUDA architecture compatibility.} CUDA code generation now
+  includes a compute-capability 7.5 target, restoring the fallback path used by
+  RTX 3xxx cards and other supported GPUs without a matching native image.
+\end{itemize}
+
+\subsubsection{2026-9-7 News --- Version 0.54}
+
+Version \code{0.54} replaces the original multi-kernel GPU high-precision
+arithmetic path with the fused Ref2/v2 reference-orbit implementation.
+
+\begin{itemize}
+\item \textbf{Fused GPU reference orbit.} High-precision recurrence, NTT
+  multiplication, signed carry propagation, normalization, and output run in a
+  persistent cooperative CUDA kernel. The superseded standalone GPU add and
+  multiply implementation is removed.
+
+\item \textbf{GPU Newton--Raphson.} Feature-finder refinement uses the same
+  fused high-precision machinery, including derivative accumulation and
+  checkpoint validation against the CPU reference implementation.
+
+\item \textbf{Extreme built-in views.} Views~\#33 and~\#34 exercise the new
+  implementation at extreme depth. View~\#33's coordinates are corrected, and
+  View~\#34 documents a feature at approximately $10^{650452}$ magnification.
+
+\item \textbf{Validation and tooling.} GPU arithmetic tests, profiling tools,
+  checksum diagnostics, and the technical notes are expanded around Ref2/v2.
+\end{itemize}
+
+\subsubsection{2026-7-4 News --- Version 0.532}
+
+\begin{itemize}
+\item \textbf{Rendering pipeline.} The render-thread pool and frame-publication
+  path are refined, and parallel PNG saving is improved so output encoding can
+  proceed without unnecessarily blocking subsequent rendering.
+
+\item \textbf{Numeric performance.} HDR scaling operations receive a bitwise
+  implementation that substantially reduces per-pixel overhead.
+
+\item \textbf{Interaction fixes.} Feature autozoom is simplified around the
+  stateless zoom-to-feature workflow. Palette rotation, context rendering,
+  checkpoint metadata, OpenGL presentation, and startup behavior receive
+  correctness fixes.
+
+\item \textbf{Documentation.} The technical notes are reorganized into their
+  current numbered sections and appendices.
+\end{itemize}
+
+\subsubsection{2026-6-27 News --- Version 0.531}
+
+\begin{itemize}
+\item \textbf{Shared graphical behavior.} Portable command handling, file
+  operations, help content, saved locations, and menu-state logic are shared by
+  the Win32 and Linux front ends. The Linux application is substantially
+  simplified around the same contracts and reaches feature parity with Win32.
+
+\item \textbf{Correctness fixes.} This release fixes a GPU normalization
+  regression introduced between versions~0.51 and~0.52, a heap allocator false
+  overrun report, repaint-state handling, and several GUI and numeric edge cases.
+
+\item \textbf{Release packaging.} Continuous-integration artifacts and release
+  packages are expanded, and project naming is made consistent across the two
+  platforms.
+\end{itemize}
+
 \subsubsection{2026-6 News --- Version 0.53}
 
-Version \code{0.53} is the first release with experimental Linux support.
+Version \code{0.53} introduced native Linux support.
 
 \begin{itemize}
 \item \textbf{Native Linux build.} The CMake + Clang build now covers the core
@@ -21,11 +125,10 @@ Version \code{0.53} is the first release with experimental Linux support.
   menu, and Dear~ImGui overlays for help and application dialogs. Navigation,
   drag and wheel zoom, automatic zoom, feature finding, fullscreen transitions,
   clipboard output, and the principal save/load workflows are connected to the
-  shared renderer and command catalog. Feature parity with the Win32 GUI is the
-  intended target for Linux; any missing command behavior should be documented
-  as a Linux implementation gap rather than a deliberate divergence. Menu
-  enablement, check marks, and radio selections are evaluated by the same
-  portable implementation on both platforms.
+  shared renderer and command catalog. The Linux and Win32 applications are
+  fully supported and maintained at feature parity. Menu enablement, check
+  marks, and radio selections are evaluated by the same portable implementation
+  on both platforms.
 
 \item \textbf{Portable platform services.} Operating-system dependencies are
   consolidated in \code{FractalSharkPlatform}, including allocation, files,

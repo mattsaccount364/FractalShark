@@ -1,17 +1,14 @@
 \subsection{Cross-Platform Considerations}
 \label{sec:cross-platform}
 
-\FractalShark{} is developed primarily as a Windows application built with
-Visual~Studio~2026, MSBuild, and the NVIDIA CUDA toolkit. Version~0.53 is the
-first release with experimental Linux support through a native target built
-with CMake and Clang, with release binaries targeted at Ubuntu. The Linux build
-includes the CPU numeric core, CUDA rendering kernels, GPU high-precision
-arithmetic, the command-line renderer, the portable unit tests, and the
-\code{FractalSharkGuiLinux} graphical application. Windows remains the
-historical primary development environment, but the native Linux GUI is expected
-to reach feature parity with the Win32 GUI where platform capabilities allow.
-Current gaps should be treated as Linux implementation status rather than as
-intentional permanent divergence.
+\FractalShark{} supports Windows and Linux as peer platforms. Windows builds use
+Visual~Studio~2026 and MSBuild; Linux builds use CMake and Clang, with release
+binaries targeted at Ubuntu. Version~0.53 introduced the native Linux target.
+The Linux build includes the CPU numeric core, CUDA rendering kernels, GPU
+high-precision arithmetic, the command-line renderer, the portable unit tests,
+and the \code{FractalSharkGuiLinux} graphical application. The native Linux and
+Win32 graphical applications are maintained at feature parity over the same
+renderer and portable command contracts.
 
 \subsubsection{Dual build system}
 \label{subsec:dual-build}

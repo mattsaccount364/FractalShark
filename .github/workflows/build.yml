@@ -447,7 +447,10 @@ jobs:
 
       # ---- Build FractalShark ----
       - name: Build ${{ matrix.configuration }}
-        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64 "/p:FractalSharkCudaCodeGeneration=compute_75%2Csm_75%3Bcompute_80%2Csm_80%3Bcompute_86%2Csm_86%3Bcompute_89%2Csm_89%3Bcompute_90%2Csm_90%3Bcompute_100%2Csm_100%3Bcompute_120%2Csm_120"
+        # /p: splits this list; escaped separators survive into CUDA's CodeGeneration parser.
+        env:
+          FractalSharkCudaCodeGeneration: compute_75,sm_75;compute_80,sm_80;compute_86,sm_86;compute_89,sm_89;compute_90,sm_90;compute_100,sm_100;compute_120,sm_120
+        run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64
 
       - name: Run unit tests
         run: ${{ matrix.configuration }}\FractalSharkTest.exe

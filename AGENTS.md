@@ -157,9 +157,10 @@ NCU or GPU/architecture change, confirm the metric families exist with
 
 ## Notes And Generated Files
 
-The LaTeX master is `Notes/FractalShark.tex`. To build `Notes/FractalShark.pdf`, run
-`build.ps1` from the `Notes` directory; the script performs the required LaTeX and bibliography
-passes and opens the resulting PDF. Use another `-jobname` only if the normal PDF is locked. Main and engineering
+The LaTeX master is `Notes/FractalShark.tex`. Always use `build.ps1` from the `Notes`
+directory for Notes builds; do not run the LaTeX and bibliography passes manually. The script
+performs the required passes and opens `Notes/FractalShark.pdf`. It also closes running Acrobat
+processes before building, so save unrelated open documents first. Main and engineering
 prose uses formal third-person American English; user documentation and development history may be
 informal. Avoid sensationalized language and bare `This` followed by a verb. Use pure TikZ figures,
 `\caption[short]{long}`, `\cref{}` for cross-references, `\eqref{}` where appropriate, `\code{}` for

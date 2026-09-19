@@ -8,7 +8,9 @@ perturbation renderer can evaluate nearby pixels.  The recurrence
   y_{n+1} &= 2x_ny_n+c_y
   \label{eq:gpu-reference-components}
 \end{align}
-is simple algebraically, but its cost changes character when each component has
+uses $x_n$ and $y_n$ for the components of the reference orbit at
+$c_\star=c_x+i c_y$.
+It is simple algebraically, but its cost changes character when each component has
 thousands or millions of bits.  Ordinary machine arithmetic is then replaced
 by multiplication of long coefficient sequences, followed by carry
 propagation and normalization.  At the deepest supported precisions, this work
@@ -133,7 +135,9 @@ A small decimal example illustrates the separation.  With $B=10$,
   (3+5B+2B^2)(4+B)=12+23B+13B^2+2B^3.
 \end{equation}
 The convolution coefficients $(12,23,13,2)$ are not decimal digits.  Carrying
-them from low to high positions produces $(2,4,5,3)$, and hence
+from low to high gives $12=2+1B$, then $23+1=4+2B$, then
+$13+2=5+1B$, and finally $2+1=3$.  The resulting digits are
+$(2,4,5,3)$, and hence
 $253\mathbin{\times}14=3542$.  The GPU engine follows the same two-part
 strategy at much larger scale: the NTT computes all pre-carry coefficients in
 parallel, and a prefix algorithm subsequently resolves the positional carry.
@@ -184,7 +188,12 @@ where $\odot$ denotes componentwise multiplication.  Equation
 $x^M-1$, so a coefficient beyond position $M-1$ would wrap to the beginning.
 For unshifted length-$L$ inputs, $M\ge 2L-1$ prevents that aliasing.  The fused
 planner uses the stronger condition that $M$ contain every coefficient after
-the operands' exponent-alignment shifts have been included.
+the operands' exponent-alignment shifts have been included.  If the last
+nonzero input coefficients have indices $k_a$ and~$k_c$, the last possible
+product index is $k_a+k_c$, so the planner requires $M\ge k_a+k_c+1$.
+For example, two unshifted length-three inputs can have a degree-four product:
+an $M=4$ transform would fold its last coefficient into index zero, whereas
+the next power-of-two length, $M=8$, preserves the linear convolution.
 
 \subsubsection{Radix-2 butterflies}
 
@@ -265,16 +274,21 @@ The NTT supplies useful work at each level.
 
 \paragraph{Grid-level parallelism.}
 Large butterfly stages address pairs that may be far apart.  The spectra reside
-in global memory, and grid threads distribute the $M/2$ butterflies.  A
-grid-wide barrier separates stages whose outputs become the next stage's
-inputs.  The memory pattern is regular and, for most stages, adjacent lanes
-issue predictable accesses even when their butterfly partners are distant.
+in global memory, and the cooperative grid distributes the transform work.
+The release matrix schedule groups several butterfly stages into each phase;
+grid-wide barriers separate phases that exchange data between blocks.  Local
+stages reuse shared memory and warp registers.  The memory pattern remains
+regular even when butterfly partners are distant.
 
 \paragraph{Block-level locality.}
-Once the remaining butterfly spans fit inside a 1,024-coefficient tile, one
-thread block stages the active streams in shared memory.  Several stages can
-then reuse those coefficients and cached twiddles without a global-memory
-round trip.  Block barriers replace grid barriers inside the tile.  The same
+The release matrix schedule limits each shared-memory dimension to 2,048
+coefficients in TwoWay mode.  FourWay mode permits up to 1,024 with 48~KiB of
+dynamic shared memory, or 2,048 with at least 96~KiB.  The transform stages are
+divided approximately evenly among dimensions, so actual dimensions can be
+smaller: a $2^{16}$ transform uses two 256-coefficient dimensions.
+One thread block stages the active streams for a local dimension.  Several
+stages can then reuse those coefficients and cached twiddles without a
+global-memory round trip.  Block barriers replace grid barriers inside the tile.  The same
 shared arena is reused by forward, pointwise, inverse, and carry phases, so its
 allocation cost is paid once per resident block rather than once per operator.
 
@@ -312,9 +326,10 @@ and the sign bit encodes $s\in\{-1,1\}$, the represented value is
   \label{eq:hp-shark-value}
 \end{equation}
 The generated type fixes a compile-time storage bucket
-\code{GlobalNumUint32}.  A runtime request selects an effective precision of
-$D$ limbs in the upper half of that bucket.  Lower unused limbs are ignored,
-allowing one generated specialization to serve a range of nearby precisions.
+\code{GlobalNumUint32}.  A runtime request selects an active limb count~$D$
+greater than half the bucket size and at most its full size.  Arithmetic reads
+the most significant $D$ limbs and ignores lower limbs, allowing one generated
+specialization to serve a range of nearby precisions.
 
 The NTT plan splits each active 32-bit limb into two base-$2^{16}$
 coefficients.  Thus
@@ -332,7 +347,7 @@ small integer factors in the fused recurrence.
 
 Products and constants generally have different binary exponents.  The grid
 leader therefore constructs a new \code{HpSharkReferenceIterationPlan} from the
-current state before every nonzero iteration.  For each group of operands, it
+current state before every attempted recurrence.  For each group of operands, it
 chooses the least exponent among the nonzero values as the alignment origin.
 An exponent difference is decomposed into a whole coefficient shift and a
 residual shift:
@@ -349,10 +364,28 @@ shift combines neighboring 16-bit halves while packing.  Alignment is thus
 performed once in the input representation; the pointwise loop does not need
 a frequency-dependent spectral shift.
 
+For a nonzero component, the shift in~\eqref{eq:reference-alignment-split}
+gives a last possible coefficient index
+\begin{equation}
+  k_{\max}=
+  \begin{cases}
+    q+L-1, & r=0, \\
+    q+L, & r>0.
+  \end{cases}
+  \label{eq:reference-packed-support}
+\end{equation}
+The extra position in the second case holds bits carried out of the highest
+16-bit coefficient by the residual shift.  Thus a real product involving both
+$X$ and~$Y$ needs up to $2\max(k_X,k_Y)+1$ coefficients, while $X\star Y$
+needs up to $k_X+k_Y+1$.  The same support calculation is applied to the
+enabled derivative products.
+
 The planner computes the last potentially nonzero coefficient for every
 required product, including the derivative products, and rounds the largest
-linear-convolution support up to a power of two.  The resulting active length
-$M$ selects a cached plan.  A zero state with no linear contribution takes the
+linear-convolution support up to a power of two.  The active length~$M$ is the
+larger of that rounded length and the prepared minimum transform length, and
+selects a cached plan.  The initial zero state still receives a plan.  A
+zero state with no linear contribution takes the
 \code{Zero} path, a state with only $c$ or the derivative's $+1$ takes the
 \code{LinearOnly} path, and all nonlinear cases take the \code{Ntt} path.  A
 required length beyond $2^{25}$ cannot be represented by the workspace; the
@@ -379,28 +412,41 @@ owns these tables and the spectra, limb, magnitude, and carry workspaces.  The
 tables are reused across all iterations and chunk invocations of a session.
 
 Field products use Montgomery multiplication~\cite{Montgomery1985Modular}.
-With $R=2^{64}$, a field element $a$ is represented as
-$\widetilde a=aR\bmod p$, and a Montgomery product computes
+Write $R_{\mathrm M}=2^{64}$ for the Montgomery radix, distinct from the real
+product $R$ below.  A field element $a$ in Montgomery form is
+$\widetilde a=aR_{\mathrm M}\bmod p$, and a Montgomery product computes
 \begin{equation}
   \operatorname{Mont}(\widetilde a,\widetilde c)
-  =acR\pmod p
+  =\widetilde a\widetilde c R_{\mathrm M}^{-1}
+  =acR_{\mathrm M}\pmod p
 \end{equation}
 without integer division.  Additions and subtractions remain ordinary modular
 operations.
 
 The release path also absorbs transform normalization into packing.  For a
-length-$M$ product, each input is pre-scaled by a field value~$s$ satisfying
+length-$M$ product, the prepared field value~$s$ satisfies
 \begin{equation}
-  s^2=(MR)^{-1}\pmod p.
+  s^2=(MR_{\mathrm M})^{-1}\pmod p.
   \label{eq:reference-input-scale}
 \end{equation}
-After two scaled forward transforms, a Montgomery pointwise product, and the
-unnormalized inverse stages, the factors $M$, $R$, and $s^2$ cancel.  The
-inverse output is already a standard residue ready for centered conversion.
-For even stage counts, the selected scale is a power of two and packing uses a
-shift; odd stage counts use a specialized multiply of a 16-bit coefficient by
-the prepared constant.  This arrangement removes a separate inverse-scale and
-Montgomery-exit pass from the hot path.
+Packing actually multiplies each input coefficient by $sR_{\mathrm M}$,
+represented in the code as \code{InputScaleR}.  If $\widehat a_k$ and
+$\widehat c_k$ are the transforms of the unscaled inputs, linearity and one
+pointwise Montgomery product give
+\begin{align}
+  \operatorname{NTT}(sR_{\mathrm M}a)_k
+    &=sR_{\mathrm M}\widehat a_k, \\
+  \operatorname{Mont}(sR_{\mathrm M}\widehat a_k,
+                      sR_{\mathrm M}\widehat c_k)
+    &=s^2R_{\mathrm M}\widehat a_k\widehat c_k.
+\end{align}
+The inverse stages omit their usual factor~$M^{-1}$, so the final coefficient
+is $Ms^2R_{\mathrm M}h_j=h_j\pmod p$ by
+\eqref{eq:reference-input-scale}.  It is already a standard residue ready for
+centered conversion.  For an even number $t=\log_2M$ of stages,
+$sR_{\mathrm M}=2^{32-t/2}\pmod p$, and packing uses a shift.  Odd stage
+counts use a specialized multiply of a 16-bit coefficient by the prepared
+constant.  No separate inverse-scale or Montgomery-exit pass is needed.
 
 \subsection{The Fused Reference Recurrence}
 \label{subsec:fused-ntt-reference-step}
@@ -428,10 +474,12 @@ The signs of $x_n$ and $y_n$ have already been incorporated during packing.
 
 The constants $c_x$ and $c_y$ are not transformed.  After the inverse NTT,
 the signed gather inserts their significand bits at the offsets determined by
-the iteration plan.  Carry propagation therefore acts on the complete sums
+the iteration plan.  Interpreting $R$ and~$I$ at their planned product
+exponents, carry propagation therefore implements the complete recurrence
 \begin{align}
-  x_{n+1} &= R+c_x, \\
-  y_{n+1} &= I+c_y
+  x_{n+1} &= (x_n+y_n)(x_n-y_n)+c_x
+           =x_n^2-y_n^2+c_x, \\
+  y_{n+1} &= 2x_ny_n+c_y
 \end{align}
 without materializing normalized values for $R$ and~$I$ or launching a
 standalone high-precision addition.
@@ -445,22 +493,34 @@ Newton--Raphson support also advances
   \qquad d_n=d_{x,n}+i d_{y,n}.
   \label{eq:fused-dzdc-complex}
 \end{equation}
-FourWay mode transforms $D_x$ and $D_y$ with $X$ and~$Y$.  The pointwise
-center forms three products
+FourWay mode transforms the aligned derivative coefficient polynomials $D_x$
+and $D_y$ with $X$ and~$Y$.  The pointwise center forms three products
 \begin{align}
   P_1 &= X\star D_x, &
   P_2 &= Y\star D_y, &
   P_3 &= (X+Y)\star(D_x+D_y),
   \label{eq:fused-derivative-products}
 \end{align}
-and reconstructs
+The third product expands to
+\begin{equation}
+  P_3=P_1+X\star D_y+Y\star D_x+P_2,
+\end{equation}
+so subtracting $P_1$ and~$P_2$ isolates the two cross terms.  The nonlinear
+coefficient polynomials are
 \begin{align}
-  D'_x &= 2(P_1-P_2)+1, \\
-  D'_y &= 2(P_3-P_1-P_2).
+  2(P_1-P_2) &= 2(X\star D_x-Y\star D_y), \\
+  2(P_3-P_1-P_2) &= 2(X\star D_y+Y\star D_x).
+\end{align}
+Interpreting these polynomials at their planned product exponent and inserting
+the aligned constant gives the scalar recurrence
+\begin{align}
+  d_{x,n+1} &= 2(x_n d_{x,n}-y_n d_{y,n})+1, \\
+  d_{y,n+1} &= 2(x_n d_{y,n}+y_n d_{x,n}).
   \label{eq:fused-derivative-reconstruction}
 \end{align}
 The derivative's $+1$ enters during signed gathering just as $c_x$ and~$c_y$
-do.  The Gauss-style product identity reduces four real products to three and
+do; it is not an unshifted constant coefficient in the product polynomial.
+The Gauss-style product identity reduces four real products to three and
 shares every transform boundary with the orbit streams.
 
 The second derivative
@@ -476,19 +536,21 @@ Newton/Halley use of these values is described in
 \subsubsection{Operation schedule}
 \label{subsec:fused-ntt-operation-schedule}
 
-\Cref{fig:ntt-pipeline} shows the release-mode schedule.  Large stages operate
-over global spectra across the cooperative grid.  The center moves
-1,024-coefficient tiles through shared memory and, when eligible, keeps its
-innermost stages in warp registers.  Red dashed boundaries are grid-wide
-dependencies; synchronization inside the center is limited to the owning block
-or warp.
+\Cref{fig:ntt-pipeline} summarizes the release matrix schedule, selected for
+$M>1024$ when checksum debugging is disabled.  Smaller transforms and checksum
+debugging use the direct DIF/DIT schedule with tiles of at most 1,024
+coefficients.  Matrix phases transform local dimensions and transpose data
+between global buffers.  The center fuses its forward stages, pointwise
+products, and inverse stages, keeping eligible innermost stages in warp
+registers.  Red dashed boundaries indicate dependencies between grid-wide
+phases; local stages synchronize only within the owning block or warp.
 
 \begin{figure}[!htbp]
 \centering
 \begin{tikzpicture}[
     >=Stealth,
-    phase/.style={draw, rounded corners, minimum width=2.25cm, minimum height=1.35cm,
-                  align=center, font=\scriptsize},
+    phase/.style={draw, rounded corners, text width=2.25cm, inner xsep=0.07cm,
+                  minimum height=1.55cm, align=center, font=\scriptsize},
     global/.style={phase, fill=blue!10},
     local/.style={phase, fill=green!12},
     carry/.style={phase, fill=orange!14},
@@ -496,20 +558,20 @@ or warp.
     barrlbl/.style={font=\tiny\bfseries, red!70!black},
 ]
   \node[global] (pack) at (0, 0)
-    {\textbf{Align and pack}\\TwoWay: $x,y$\\FourWay: $x,y,dx,dy$};
+    {\textbf{Align and pack}\\TwoWay: $x,y$\\FourWay: $x,y,d_x,d_y$};
   \node[global] (forward) at (2.75, 0)
-    {\textbf{Large DIF}\\global spectra\\cooperative grid};
+    {\textbf{Forward phases}\\local DIF\\transpose / store};
   \node[local] (center) at (5.5, 0)
-    {\textbf{Fused center}\\shared-memory tiles\\warp-register core};
+    {\textbf{Fused center}\\shared tiles\\warp-register core};
   \node[global] (inverse) at (8.25, 0)
-    {\textbf{Large DIT}\\global spectra\\cooperative grid};
+    {\textbf{Inverse phases}\\local DIT\\transpose / store};
   \node[carry] (finish) at (11.0, 0)
-    {\textbf{Signed gather}\\prefix carry\\normalize/publish};
+    {\textbf{Signed gather}\\prefix carry\\normalize\\publish};
 
   \foreach \i/\j in {pack/forward, forward/center, center/inverse, inverse/finish}
     \draw[->] (\i) -- (\j);
 
-  \foreach \x in {1.375, 4.125, 6.875, 9.625} {
+  \foreach \x in {4.125, 6.875, 9.625} {
     \draw[barrier] (\x, -0.93) -- (\x, 0.93);
     \node[barrlbl] at (\x, -1.13) {grid sync};
   }
@@ -518,44 +580,52 @@ or warp.
     {block barriers; warp shuffles where eligible};
 \end{tikzpicture}
 \caption[GPU fused NTT schedule and synchronization hierarchy]{GPU fused NTT schedule for one
-  iteration.  Orbit and Newton--Raphson modes share the same phase and grid-barrier boundaries;
-  FourWay mode widens the active streams and pointwise products.}
+  iteration, shown as conceptual phases rather than a fixed barrier count.
+  Packing is fused into the first active transform phase.  Forward and inverse
+  phases outside the center may repeat or be absent, depending on the dimension
+  count.  FourWay mode widens the streams and products and can change that count.}
 \label{fig:ntt-pipeline}
 \end{figure}
 
-One nonlinear iteration proceeds as follows:
+In the matrix path, one nonlinear iteration proceeds as follows:
 
 \begin{enumerate}
   \item The grid leader inspects the normalized state, builds the alignment and
         support plan, and publishes its kind, active~$M$, offsets, and flags.
   \item Threads pack signed base-$2^{16}$ coefficients at their aligned
         positions and apply the input scale from
-        ~\eqref{eq:reference-input-scale}.  When large stages exist, packing is
-        fused with the first one or two DIF stages.
-  \item Remaining large forward DIF stages transform the global spectra.
-  \item Each block loads a center tile, completes the small forward stages,
-        evaluates~\eqref{eq:fused-reference-pointwise} and, when enabled,
+        ~\eqref{eq:reference-input-scale}.  Packing is fused into the first
+        forward matrix phase, or into the center for a single-dimension plan.
+  \item Forward matrix phases, when needed, transform local dimensions and
+        transpose their outputs for the next phase, with grid synchronization
+        between phases.
+  \item Each block loads a shared-memory center dimension, completes the small
+        forward stages, evaluates~\eqref{eq:fused-reference-pointwise} and, when enabled,
         ~\eqref{eq:fused-derivative-products}, and begins the inverse DIT.
-  \item Large inverse DIT stages return standard, bit-positioned product
-        residues to global memory.
+  \item Inverse matrix phases, when needed, reverse the dimension traversal.
+        The completed inverse returns natural-order coefficients as standard
+        residues in global memory.
   \item The signed gather centers residues, incorporates $c_x$, $c_y$, and the
         derivative's $+1$, and constructs carry transfer functions.
   \item A packed prefix operation resolves the carry chains.  Magnitude
         extraction and normalization publish the next orbit and derivative
         states.
-  \item Periodicity and escape state determine whether another iteration may
-        begin; completed low-precision orbit entries are made visible to the
-        host in a bounded batch.
+  \item If another iteration is requested, the next loop entry records the
+        current low-precision orbit value and checks periodicity and escape
+        when enabled.  A bounded batch is returned to the host after the launch.
 \end{enumerate}
 
 \subsubsection{DIF/DIT ordering and implicit permutation}
 
-The forward DIF transform consumes natural-order coefficients and leaves its
-spectrum in bit-reversed order.  Pointwise products do not care about that
+In the direct radix-2 schedule, the forward DIF transform consumes natural-order
+coefficients and leaves its spectrum in bit-reversed order.  Pointwise products do not care about that
 permutation as long as every stream uses the same order.  The inverse DIT
 transform consumes the bit-reversed spectra and emits natural-order
 coefficients.  Pairing the two variants therefore avoids a separate bit-reversal
-kernel and its global reads, writes, and synchronization.
+kernel and its global reads, writes, and synchronization.  The matrix schedule
+also transposes between dimensions, but applies matching permutations to every
+stream and pairs its forward and inverse layouts.  Avoiding a standalone
+bit-reversal pass does not eliminate those transposes.
 
 The fused center exploits the same pairing more aggressively.  It completes
 the small forward stages, evaluates the pointwise recurrence, and starts the
@@ -577,8 +647,29 @@ result:
         combination is below $p/2$, so
         ~\eqref{eq:ntt-centered-residue} recovers the unique signed integer.
   \item Carry propagation includes every nonlinear and aligned linear
-        contribution before the value is truncated to the requested precision.
+        contribution before normalization truncates the result to its storage
+        bucket; subsequent arithmetic reads the selected $D$ most significant limbs.
 \end{enumerate}
+
+The coefficient bound can be made explicit for the nonlinear terms.  Each
+unscaled aligned input coefficient has absolute value at most $B-1$, and each
+linear convolution coefficient has at most $M$ contributing pairs.  The factored real
+product has bound $4M(B-1)^2$, while $2X\star Y$ has bound $2M(B-1)^2$.
+Writing $[P]_j$ for coefficient~$j$ of a polynomial~$P$, the derivative products
+satisfy $|[P_1]_j|,|[P_2]_j|\le M(B-1)^2$ and
+$|[P_3]_j|\le 4M(B-1)^2$.  Consequently, the largest
+conservative bound among the reconstructed nonlinear coefficients is
+\begin{equation}
+  |[2(P_3-P_1-P_2)]_j|
+  \le 12M(B-1)^2
+  \le 12\cdot 2^{25}(2^{16}-1)^2
+  < \frac{p-1}{2}.
+  \label{eq:reference-centered-headroom}
+\end{equation}
+The aligned constants are added after centered recovery, so they do not
+consume this modular headroom.  Exactness here means exact coefficients for
+the finite-precision inputs before the final significand truncation; it does
+not make the entire iterated orbit exact over real numbers.
 
 After centering, adjacent base-$2^{16}$ coefficients contribute to signed
 base-$2^{32}$ limbs.  The fused B16 gather performs that conversion in the same
@@ -596,6 +687,20 @@ method follows the parallel-prefix framework of Blelloch~\cite{Blelloch1990Prefi
 and the single-pass decoupled-look-back construction of Merrill and
 Garland~\cite{merrill2016single}.
 
+Concretely, for signed limb contribution $\ell_j$, incoming carry $\kappa_j$,
+and base $Q=2^{32}$, the emitted digit and outgoing carry satisfy
+\begin{equation}
+  d_j=(\ell_j+\kappa_j)\bmod Q,
+  \qquad
+  \kappa_{j+1}=\frac{\ell_j+\kappa_j-d_j}{Q},
+  \qquad 0\le d_j<Q.
+  \label{eq:reference-signed-carry}
+\end{equation}
+Each limb therefore defines a small function
+$\kappa_j\mapsto\kappa_{j+1}$.  Prefix composition finds every incoming
+carry, after which the digits can be emitted independently, including when a
+convolution coefficient or a linear contribution is negative.
+
 The implementation packs the transfer functions for real, imaginary,
 derivative-real, and derivative-imaginary streams into one 32-bit word in
 FourWay mode.  A single composition instruction sequence therefore advances
@@ -604,8 +709,10 @@ the incoming carries are known, threads emit the final 32-bit digits in
 parallel.
 
 Normalization determines the sign, extracts the magnitude, finds the highest
-nonzero digit, retains the requested most-significant $D$ limbs, and adjusts the
-exponent so that discarded low limbs do not change the value's scale.  The next
+nonzero digit, writes the fixed \code{GlobalNumUint32}-limb storage bucket, and
+adjusts the exponent to preserve the retained bits' positional weights.
+Subsequent arithmetic consumes only the most significant $D$ limbs of that
+normalized bucket.  The next
 iteration cannot begin from the inverse spectra alone: its alignment plan needs
 this normalized sign, exponent, and significand.  Returning to
 \code{HpSharkFloat} form is therefore a semantic dependency, not merely a
@@ -618,14 +725,16 @@ Setup and execution have separate lifetimes.  The host selects a generated
 storage family, chooses the active limb count, and constructs
 \code{ReferencePreparedTables}.  Setup allocates one contiguous workspace,
 assigns its spectrum and scratch regions, prepares plan descriptors from the
-minimum supported transform through stage~25, and launches the setup kernel to
+selected minimum through the selected maximum stage (stage~25 by default),
+and launches the setup kernel to
 generate their roots and twiddles.
 
 \code{GpuOrbitSession} then owns the result descriptor and the CUDA stream for
 one reference calculation.  Repeated \code{InvokeChunk} calls launch the
-persistent recurrence for a requested number of iterations.  Each invocation
-publishes at most \code{MaxOutputIters}=1024 entries.  This bound limits host
-transfer size and creates regular opportunities for cancellation and progress
+persistent recurrence for a requested number of iterations.  The production
+callers limit each request to \code{MaxOutputIters}=1024 iterations, matching
+the orbit-output capacity; \code{InvokeChunk} forwards the requested count.
+The chunk limit bounds host transfer size and creates regular opportunities for cancellation and progress
 handling without introducing a kernel launch for every recurrence.
 
 Inside a launch, \code{HpSharkReferenceGpuLoop} obtains a cooperative
@@ -648,24 +757,29 @@ workspace limits compile-time properties.
 \subsection{Periodicity, Escape, and Resume Semantics}
 \label{subsec:fused-ntt-periodicity}
 
-Before each recurrence, the grid leader evaluates the high-precision
-periodicity state described in \cref{sec:hp-periodicity}.  A continuing state
-allows the iteration plan to be built.  Escape, a positive periodicity result,
+When periodicity checking is enabled, the grid leader converts the current
+high-precision orbit state to HDR values and evaluates the reduced-precision
+criterion described in \cref{sec:hp-periodicity}.  Its derivative tracker is
+also HDR, distinct from the FourWay high-precision derivative streams.
+A continuing state allows the iteration plan to be built.  Escape, a positive periodicity result,
 or an unrepresentable plan prevents the grid from entering another collective
 phase.  This ordering is important: all threads must agree on whether they will
 reach a cooperative barrier.
 
-After a completed recurrence, the leader increments the output count and the
-next loop pass tests the newly published value.  The ordinary reference path
-stores a low-precision iteration sample for downstream perturbation.  The
+At loop entry, the ordinary reference path stores a low-precision sample of
+the current $z_n$ and tests it before attempting the next recurrence.  The
+leader increments the output count after a completed step, or when the
+periodicity or escape check terminates on that sampled value.  The
+next pass, if any, tests the newly published $z_{n+1}$.  The
 Feature Finder instead returns the high-precision endpoint and derivative
 state after its requested period.  Both clients use the same fused arithmetic
 engine and differ in how they consume the results.
 
-Checkpoint resume preserves a deliberate distinction.  \code{startIter}=0
-means fresh initialization, including the conventional initial derivative
-state.  A positive \code{startIter} consumes the supplied orbit and derivative
-values and continues from that checkpoint.  Abort and progress callbacks are
+Ordinary reference construction starts the GPU state at $z=c$, with its HDR
+derivative tracker initialized to one; the host supplies the preceding zero
+orbit entry.  Feature Finder evaluation instead treats \code{startIter}=0 as
+fresh initialization with $z_0=d_0=q_0=0$.  A positive \code{startIter} consumes
+the supplied orbit and derivative values and continues from that checkpoint.  Abort and progress callbacks are
 polled at bounded host-visible intervals without changing this contract.
 
 \subsection{Checksum-Guided Host--Device Validation}

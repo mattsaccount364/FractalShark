@@ -263,7 +263,7 @@ DrawingThread(void *)
         }
 
         // Render the fractal and draw it after rendering is complete.
-        gFractal->EnqueueRender().Wait();
+        gFractal->EnqueueRender("FractalSaver render").Wait();
 
         // Find a new target
         gFractal->FindInterestingLocation(&nextView);

@@ -160,11 +160,12 @@ public:
 
     // Async render pool: enqueue current state for rendering.
     // Returns a handle that can optionally be waited on.
-    RenderJobHandle EnqueueRender();
+    RenderJobHandle EnqueueRender(std::string_view operationName);
 
     // Enqueue a command that mutates Fractal state on a worker thread,
     // then renders.  Keeps the UI thread responsive and race-free.
     RenderJobHandle EnqueueCommand(
+        std::string_view operationName,
         std::function<void(Fractal &)> cmd,
         bool supersedable = true,
         RenderPresentationMode presentationMode = RenderPresentationMode::Immediate,
@@ -173,6 +174,7 @@ public:
 
     // Enqueue a palette-only recolor of the current CPU iteration buffer.
     RenderJobHandle EnqueuePaletteRecolor(
+        std::string_view operationName,
         std::function<void(Fractal &)> cmd,
         bool supersedable = true,
         RenderPresentationMode presentationMode = RenderPresentationMode::Immediate,
@@ -183,7 +185,7 @@ public:
 
     // Enqueue a mutation-only command: executes under the lock but does
     // NOT trigger CalcFractal or frame production.
-    RenderJobHandle EnqueueMutation(std::function<void(Fractal &)> cmd);
+    RenderJobHandle EnqueueMutation(std::string_view operationName, std::function<void(Fractal &)> cmd);
 
     RenderThreadPool *
     GetRenderPool()

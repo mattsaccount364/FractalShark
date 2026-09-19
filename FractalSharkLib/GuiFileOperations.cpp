@@ -151,15 +151,17 @@ SaveFractalOutput(Fractal &fractal, FractalOutputFile type, std::wstring filenam
 void
 SaveReferenceOrbit(Fractal &fractal, CompressToDisk compression, std::wstring filename)
 {
-    fractal.EnqueueCommand([compression, filename = std::move(filename)](Fractal &f) {
-        f.SaveRefOrbit(compression, filename);
-    });
+    fractal.EnqueueCommand("save reference orbit",
+                           [compression, filename = std::move(filename)](Fractal &f) {
+                               f.SaveRefOrbit(compression, filename);
+                           });
 }
 
 void
 DiffReferenceOrbits(Fractal &fractal, std::wstring output, std::wstring first, std::wstring second)
 {
     fractal.EnqueueCommand(
+        "diff reference orbits",
         [output = std::move(output), first = std::move(first), second = std::move(second)](Fractal &f) {
             f.DiffRefOrbits(CompressToDisk::MaxCompressionImagina, output, first, second);
         });
@@ -171,14 +173,16 @@ LoadReferenceOrbit(Fractal &fractal,
                    ImaginaSettings settings,
                    std::wstring filename)
 {
-    fractal.EnqueueCommand([compression, settings, filename = std::move(filename)](Fractal &f) {
-        RecommendedSettings recommended{};
-        f.LoadRefOrbit(&recommended, compression, settings, filename);
-        if (recommended.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO &&
-            !f.SetRenderAlgorithm(recommended.GetRenderAlgorithm())) {
-            throw FractalSharkSeriousException("Failed to restore the reference-orbit render algorithm");
-        }
-    });
+    fractal.EnqueueCommand("load reference orbit",
+                           [compression, settings, filename = std::move(filename)](Fractal &f) {
+                               RecommendedSettings recommended{};
+                               f.LoadRefOrbit(&recommended, compression, settings, filename);
+                               if (recommended.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO &&
+                                   !f.SetRenderAlgorithm(recommended.GetRenderAlgorithm())) {
+                                   throw FractalSharkSeriousException(
+                                       "Failed to restore the reference-orbit render algorithm");
+                               }
+                           });
 }
 
 } // namespace FractalShark

@@ -129,11 +129,12 @@ EnqueueSavedLocation(Fractal &fractal, const SavedLocation &location)
                               PointZoomBBConverter::TestMode::Enabled};
     const IterTypeFull numIterations = location.NumIterations;
     const uint32_t antialiasing = location.Antialiasing;
-    fractal.EnqueueCommand([view = std::move(view), numIterations, antialiasing](Fractal &f) {
-        f.RecenterViewCalc(view);
-        f.SetNumIterations<IterTypeFull>(numIterations);
-        f.ResetDimensions(SIZE_MAX, SIZE_MAX, antialiasing);
-    });
+    fractal.EnqueueCommand("load saved location",
+                           [view = std::move(view), numIterations, antialiasing](Fractal &f) {
+                               f.RecenterViewCalc(view);
+                               f.SetNumIterations<IterTypeFull>(numIterations);
+                               f.ResetDimensions(SIZE_MAX, SIZE_MAX, antialiasing);
+                           });
 }
 
 EnteredLocation
@@ -159,7 +160,7 @@ EnqueueEnteredLocation(Fractal &fractal, const EnteredLocation &location)
                               HighPrecision(location.Zoom),
                               PointZoomBBConverter::TestMode::Enabled};
     const IterTypeFull numIterations = location.NumIterations;
-    fractal.EnqueueCommand([view = std::move(view), numIterations](Fractal &f) {
+    fractal.EnqueueCommand("load entered location", [view = std::move(view), numIterations](Fractal &f) {
         f.RecenterViewCalc(view);
         f.SetNumIterations<IterTypeFull>(numIterations);
     });

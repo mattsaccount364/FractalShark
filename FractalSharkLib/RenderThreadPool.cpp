@@ -14,6 +14,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>
+#include <limits>
 #include <string>
 
 namespace {
@@ -475,8 +477,8 @@ FrameCompletionQueue::ConsumeOverlayDirty()
 // ============================================================================
 
 RenderThreadPool::RenderThreadPool(Fractal *fractal, void *nativeWindow, bool hostOwnedGlPresentation)
-    : m_Fractal(fractal), m_NativeWindow(nativeWindow), m_NextSequenceNumber(0), m_ShutdownFlag(false),
-      m_HostOwnedGlPresentation(hostOwnedGlPresentation)
+    : m_Fractal(fractal), m_NativeWindow(nativeWindow), m_NextSequenceNumber(0), m_NextOperationId(0),
+      m_ShutdownFlag(false), m_HostOwnedGlPresentation(hostOwnedGlPresentation)
 {
 
     m_RendererPool.Initialize(&fractal->GetRenderer(RendererIndex::Renderer0), NumRenderers);
@@ -491,6 +493,21 @@ RenderThreadPool::RenderThreadPool(Fractal *fractal, void *nativeWindow, bool ho
 }
 
 RenderThreadPool::~RenderThreadPool() { Shutdown(); }
+
+void
+RenderThreadPool::LogOperationEvent(const RenderWorkItem &item,
+                                    std::string_view event,
+                                    size_t pendingCount)
+{
+    std::lock_guard lk(m_OperationLogMutex);
+    std::cout << "[RenderQueue] " << event << " #" << item.OperationId << " "
+              << (item.OperationName.empty() ? "unnamed operation" : item.OperationName);
+    if (pendingCount != std::numeric_limits<size_t>::max()) {
+        std::cout << " (pending " << pendingCount << ')';
+    }
+    std::cout << '\n';
+    std::cout.flush();
+}
 
 std::unique_ptr<Color16[]>
 RenderThreadPool::AcquireFrameBuffer(size_t totalPixels)
@@ -602,17 +619,25 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
 
     RenderWorkItem workItem = item;
     workItem.CompletionPromise = std::move(promise);
+    workItem.OperationId = m_NextOperationId++;
 
     std::vector<uint64_t> tombstoneSeqs;
+    std::vector<std::pair<uint64_t, std::string>> supersededOperations;
+    uint64_t queuedOperationId = 0;
+    std::string queuedOperationName;
+    size_t pendingCount = 0;
 
     {
         std::lock_guard lk(m_WorkQueueMutex);
         if (m_ShutdownFlag.load()) {
             workItem.CompletionPromise->set_value();
+            LogOperationEvent(workItem, "discarded (shutdown)", 0);
             return RenderJobHandle(std::move(future));
         }
 
-        workItem.SequenceNumber = m_NextSequenceNumber++;
+        if (workItem.WorkMode != RenderWorkMode::MutationOnly) {
+            workItem.SequenceNumber = m_NextSequenceNumber++;
+        }
 
         // Supersede: when a new render arrives, discard earlier queued
         // renders that it replaces (e.g., rapid zoom — only last matters).
@@ -621,6 +646,7 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
             for (auto it = m_WorkQueue.begin(); it != m_WorkQueue.end();) {
                 if (it->Supersedable && it->WorkMode != RenderWorkMode::MutationOnly) {
                     tombstoneSeqs.push_back(it->SequenceNumber);
+                    supersededOperations.emplace_back(it->OperationId, it->OperationName);
                     if (it->CompletionPromise) {
                         it->CompletionPromise->set_value();
                     }
@@ -637,8 +663,23 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
             workItem.EnqueueGeneration = ++m_EnqueueGeneration;
         }
 
+        queuedOperationId = workItem.OperationId;
+        queuedOperationName = workItem.OperationName;
         m_WorkQueue.push_back(std::move(workItem));
+        pendingCount = m_WorkQueue.size();
     }
+
+    for (const auto &[operationId, operationName] : supersededOperations) {
+        RenderWorkItem supersededItem{};
+        supersededItem.OperationId = operationId;
+        supersededItem.OperationName = operationName;
+        LogOperationEvent(supersededItem, "superseded", pendingCount);
+    }
+
+    RenderWorkItem queuedItem{};
+    queuedItem.OperationId = queuedOperationId;
+    queuedItem.OperationName = std::move(queuedOperationName);
+    LogOperationEvent(queuedItem, "queued", pendingCount);
 
     // Push tombstones for superseded sequences outside the work queue
     // lock to avoid nested locking with the FrameQueue mutex.
@@ -652,9 +693,11 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
 }
 
 RenderJobHandle
-RenderThreadPool::EnqueueRender()
+RenderThreadPool::EnqueueRender(std::string_view operationName)
 {
-    return Enqueue(SnapshotCurrentState());
+    auto item = SnapshotCurrentState();
+    item.OperationName = operationName;
+    return Enqueue(item);
 }
 
 RenderWorkItem
@@ -681,13 +724,15 @@ RenderThreadPool::SnapshotCurrentState() const
 }
 
 RenderJobHandle
-RenderThreadPool::EnqueueCommand(std::function<void(Fractal &)> cmd,
+RenderThreadPool::EnqueueCommand(std::string_view operationName,
+                                 std::function<void(Fractal &)> cmd,
                                  bool supersedable,
                                  RenderPresentationMode presentationMode,
                                  uint64_t presentationGroup,
                                  bool resetStopCalculatingBeforeRender)
 {
     RenderWorkItem item{};
+    item.OperationName = operationName;
     item.Command = std::move(cmd);
     item.Supersedable = supersedable;
     item.PresentationMode = presentationMode;
@@ -701,12 +746,14 @@ RenderThreadPool::EnqueueCommand(std::function<void(Fractal &)> cmd,
 }
 
 RenderJobHandle
-RenderThreadPool::EnqueueRecolorCurrentFrame(std::function<void(Fractal &)> cmd,
+RenderThreadPool::EnqueueRecolorCurrentFrame(std::string_view operationName,
+                                             std::function<void(Fractal &)> cmd,
                                              bool supersedable,
                                              RenderPresentationMode presentationMode,
                                              uint64_t presentationGroup)
 {
     RenderWorkItem item{};
+    item.OperationName = operationName;
     item.WorkMode = RenderWorkMode::RecolorCurrentFrame;
     item.Command = std::move(cmd);
     item.Supersedable = supersedable;
@@ -731,12 +778,15 @@ RenderThreadPool::CancelPacedAnimation(uint64_t presentationGroup)
     }
 
     std::vector<uint64_t> tombstoneSeqs;
+    std::vector<std::pair<uint64_t, std::string>> cancelledOperations;
+    size_t pendingCount = 0;
     {
         std::lock_guard lk(m_WorkQueueMutex);
         for (auto it = m_WorkQueue.begin(); it != m_WorkQueue.end();) {
             if (it->PresentationMode == RenderPresentationMode::PacedAnimation &&
                 it->PresentationGroup == presentationGroup) {
                 tombstoneSeqs.push_back(it->SequenceNumber);
+                cancelledOperations.emplace_back(it->OperationId, it->OperationName);
                 if (it->CompletionPromise) {
                     it->CompletionPromise->set_value();
                 }
@@ -745,6 +795,14 @@ RenderThreadPool::CancelPacedAnimation(uint64_t presentationGroup)
                 ++it;
             }
         }
+        pendingCount = m_WorkQueue.size();
+    }
+
+    for (const auto &[operationId, operationName] : cancelledOperations) {
+        RenderWorkItem cancelledItem{};
+        cancelledItem.OperationId = operationId;
+        cancelledItem.OperationName = operationName;
+        LogOperationEvent(cancelledItem, "cancelled", pendingCount);
     }
 
     {
@@ -779,32 +837,17 @@ RenderThreadPool::IsPacedAnimationCancelled(const RenderWorkItem &item) const
 }
 
 RenderJobHandle
-RenderThreadPool::EnqueueMutation(std::function<void(Fractal &)> cmd)
+RenderThreadPool::EnqueueMutation(std::string_view operationName, std::function<void(Fractal &)> cmd)
 {
-    auto promise = std::make_shared<std::promise<void>>();
-    auto future = promise->get_future().share();
-
     RenderWorkItem workItem{};
+    workItem.OperationName = operationName;
     workItem.Command = std::move(cmd);
     workItem.WorkMode = RenderWorkMode::MutationOnly;
     workItem.FractalPtr = m_Fractal;
-    workItem.CompletionPromise = std::move(promise);
-    // No sequence number — mutations don't produce frames.
-    // Assigning one would create a gap that hangs the GL consumer
-    // on WaitForFrameExact for a frame that never arrives.
-
-    {
-        std::lock_guard lk(m_WorkQueueMutex);
-        if (m_ShutdownFlag.load()) {
-            workItem.CompletionPromise->set_value();
-            return RenderJobHandle(std::move(future));
-        }
-
-        m_WorkQueue.push_back(std::move(workItem));
-    }
-    m_WorkQueueCV.notify_one();
-
-    return RenderJobHandle(std::move(future));
+    // Enqueue assigns the completion promise and operation identifier.  Mutations
+    // intentionally keep their frame sequence number at zero because they do not
+    // produce frames for the GL consumer.
+    return Enqueue(workItem);
 }
 
 void
@@ -833,14 +876,23 @@ RenderThreadPool::Shutdown()
     }
 
     // Discard all queued work — exit takes priority.
+    std::vector<std::pair<uint64_t, std::string>> cancelledOperations;
     {
         std::lock_guard lk(m_WorkQueueMutex);
         for (auto &item : m_WorkQueue) {
+            cancelledOperations.emplace_back(item.OperationId, item.OperationName);
             if (item.CompletionPromise) {
                 item.CompletionPromise->set_value();
             }
         }
         m_WorkQueue.clear();
+    }
+
+    for (const auto &[operationId, operationName] : cancelledOperations) {
+        RenderWorkItem cancelledItem{};
+        cancelledItem.OperationId = operationId;
+        cancelledItem.OperationName = operationName;
+        LogOperationEvent(cancelledItem, "cancelled (shutdown)", 0);
     }
 
     // Wake up all workers
@@ -1722,6 +1774,7 @@ RenderThreadPool::AbortAfterWorkerException(const std::exception &e)
     {
         std::lock_guard lk(m_WorkQueueMutex);
         for (auto &item : m_WorkQueue) {
+            LogOperationEvent(item, "cancelled (worker failure)", 0);
             if (item.CompletionPromise) {
                 item.CompletionPromise->set_value();
             }
@@ -1748,11 +1801,13 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
             break;
         }
 
+        LogOperationEvent(item, "started", std::numeric_limits<size_t>::max());
         WorkerJobScope jobScope(*this, item);
         try {
             if (item.WorkMode == RenderWorkMode::MutationOnly) {
                 ExecuteMutationOnly(item);
                 jobScope.Complete();
+                LogOperationEvent(item, "completed", std::numeric_limits<size_t>::max());
                 continue;
             }
 
@@ -1761,6 +1816,9 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
             // Check before acquiring renderer/memory (expensive).
             if (ShouldSkipRender(item)) {
                 jobScope.Complete();
+                LogOperationEvent(item,
+                                  IsPacedAnimationCancelled(item) ? "cancelled" : "superseded",
+                                  std::numeric_limits<size_t>::max());
                 continue;
             }
 
@@ -1770,6 +1828,8 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                     jobScope.MarkFinalFramePushed();
                 }
                 jobScope.Complete();
+                LogOperationEvent(
+                    item, framePushed ? "completed" : "failed", std::numeric_limits<size_t>::max());
                 continue;
             }
 
@@ -1793,7 +1853,13 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
 
             fractal->ReturnIterMemory(std::move(workerIters));
             jobScope.Complete();
+            LogOperationEvent(item,
+                              (fractal->GetStopCalculating() || IsPacedAnimationCancelled(item))
+                                  ? "cancelled"
+                                  : "completed",
+                              std::numeric_limits<size_t>::max());
         } catch (const std::exception &e) {
+            LogOperationEvent(item, "failed", std::numeric_limits<size_t>::max());
             AbortAfterWorkerException(e);
             break;
         }

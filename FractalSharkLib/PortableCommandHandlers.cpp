@@ -455,8 +455,9 @@ void
 PortableCommandHandlers::OnSetAlgorithm(::RenderAlgorithmEnum alg)
 {
     auto entry = GetRenderAlgorithmTupleEntry(alg);
-    GetFractal().EnqueueMutation(
-        [entry](Fractal &f) { [[maybe_unused]] const bool ok = f.SetRenderAlgorithm(entry); });
+    GetFractal().EnqueueMutation("change render algorithm", [entry](Fractal &f) {
+        [[maybe_unused]] const bool ok = f.SetRenderAlgorithm(entry);
+    });
 }
 
 // ---- Synthetic shortcut command hooks -------------------------------------
@@ -471,7 +472,7 @@ void
 PortableCommandHandlers::OnCenterViewClearPerturbation()
 {
     const MenuPoint pt = GetMenuMousePos();
-    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) {
+    GetFractal().EnqueueCommand("center and clear perturbation", [x = pt.X, y = pt.Y](Fractal &f) {
         f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         f.CenterAtPoint(x, y);
     });
@@ -480,7 +481,7 @@ PortableCommandHandlers::OnCenterViewClearPerturbation()
 void
 PortableCommandHandlers::OnResetCompressionDefaults()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("reset compression defaults", [](Fractal &f) {
         f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         f.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
         f.DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
@@ -490,7 +491,7 @@ PortableCommandHandlers::OnResetCompressionDefaults()
 void
 PortableCommandHandlers::OnLaThresholdScaleIncrease()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("increase LA threshold scale", [](Fractal &f) {
         auto &laParameters = f.GetLAParameters();
         laParameters.AdjustLAThresholdScaleExponent(1);
         laParameters.AdjustLAThresholdCScaleExponent(1);
@@ -502,7 +503,7 @@ PortableCommandHandlers::OnLaThresholdScaleIncrease()
 void
 PortableCommandHandlers::OnLaThresholdScaleDecrease()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("decrease LA threshold scale", [](Fractal &f) {
         auto &laParameters = f.GetLAParameters();
         laParameters.AdjustLAThresholdScaleExponent(-1);
         laParameters.AdjustLAThresholdCScaleExponent(-1);
@@ -514,7 +515,7 @@ PortableCommandHandlers::OnLaThresholdScaleDecrease()
 void
 PortableCommandHandlers::OnLaPeriodDetectionIncrease()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("increase LA period detection", [](Fractal &f) {
         auto &laParameters = f.GetLAParameters();
         laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
         laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
@@ -526,7 +527,7 @@ PortableCommandHandlers::OnLaPeriodDetectionIncrease()
 void
 PortableCommandHandlers::OnLaPeriodDetectionDecrease()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("decrease LA period detection", [](Fractal &f) {
         auto &laParameters = f.GetLAParameters();
         laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
         laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
@@ -538,7 +539,9 @@ PortableCommandHandlers::OnLaPeriodDetectionDecrease()
 void
 PortableCommandHandlers::OnRecalcCurrentCopyDetails()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.ForceRecalc(); }).Wait();
+    GetFractal()
+        .EnqueueCommand("recalculate render details", [](Fractal &f) { f.ForceRecalc(); })
+        .Wait();
     OnCurPos();
 }
 
@@ -546,10 +549,11 @@ void
 PortableCommandHandlers::OnRecalcClearMediumCopyDetails()
 {
     GetFractal()
-        .EnqueueCommand([](Fractal &f) {
-            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-            f.ForceRecalc();
-        })
+        .EnqueueCommand("recalculate after clearing medium perturbation",
+                        [](Fractal &f) {
+                            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+                            f.ForceRecalc();
+                        })
         .Wait();
     OnCurPos();
 }
@@ -558,10 +562,11 @@ void
 PortableCommandHandlers::OnRecalcClearAllCopyDetails()
 {
     GetFractal()
-        .EnqueueCommand([](Fractal &f) {
-            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-            f.ForceRecalc();
-        })
+        .EnqueueCommand("recalculate after clearing perturbation",
+                        [](Fractal &f) {
+                            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                            f.ForceRecalc();
+                        })
         .Wait();
     OnCurPos();
 }
@@ -570,10 +575,11 @@ void
 PortableCommandHandlers::OnRecalcClearLaCopyDetails()
 {
     GetFractal()
-        .EnqueueCommand([](Fractal &f) {
-            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
-            f.ForceRecalc();
-        })
+        .EnqueueCommand("recalculate after clearing LA perturbation",
+                        [](Fractal &f) {
+                            f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
+                            f.ForceRecalc();
+                        })
         .Wait();
     OnCurPos();
 }
@@ -581,7 +587,7 @@ PortableCommandHandlers::OnRecalcClearLaCopyDetails()
 void
 PortableCommandHandlers::OnIntermediateCompressionIncrease()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("increase intermediate compression", [](Fractal &f) {
         f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         f.IncCompressionError(Fractal::CompressionError::Intermediate, 10);
     });
@@ -590,7 +596,7 @@ PortableCommandHandlers::OnIntermediateCompressionIncrease()
 void
 PortableCommandHandlers::OnIntermediateCompressionDecrease()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("decrease intermediate compression", [](Fractal &f) {
         f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         f.DecCompressionError(Fractal::CompressionError::Intermediate, 10);
     });
@@ -599,7 +605,7 @@ PortableCommandHandlers::OnIntermediateCompressionDecrease()
 void
 PortableCommandHandlers::OnLowCompressionIncrease()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("increase low compression", [](Fractal &f) {
         f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         f.IncCompressionError(Fractal::CompressionError::Low, 1);
     });
@@ -608,7 +614,7 @@ PortableCommandHandlers::OnLowCompressionIncrease()
 void
 PortableCommandHandlers::OnLowCompressionDecrease()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("decrease low compression", [](Fractal &f) {
         f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         f.DecCompressionError(Fractal::CompressionError::Low, 1);
     });
@@ -617,25 +623,27 @@ PortableCommandHandlers::OnLowCompressionDecrease()
 void
 PortableCommandHandlers::OnPaletteAuxDepthNext()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UseNextPaletteAuxDepth(1); });
+    GetFractal().EnqueueCommand("next auxiliary palette depth",
+                                [](Fractal &f) { f.UseNextPaletteAuxDepth(1); });
 }
 
 void
 PortableCommandHandlers::OnPaletteAuxDepthPrevious()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UseNextPaletteAuxDepth(-1); });
+    GetFractal().EnqueueCommand("previous auxiliary palette depth",
+                                [](Fractal &f) { f.UseNextPaletteAuxDepth(-1); });
 }
 
 void
 PortableCommandHandlers::OnPaletteDepthNext()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UseNextPaletteDepth(); });
+    GetFractal().EnqueueCommand("next palette depth", [](Fractal &f) { f.UseNextPaletteDepth(); });
 }
 
 void
 PortableCommandHandlers::OnRecalcClearAllSquareView()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("clear perturbation and square view", [](Fractal &f) {
         f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         f.SquareCurrentView();
     });
@@ -645,41 +653,44 @@ PortableCommandHandlers::OnRecalcClearAllSquareView()
 void
 PortableCommandHandlers::OnSquareView()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.SquareCurrentView(); });
+    GetFractal().EnqueueCommand("square view", [](Fractal &f) { f.SquareCurrentView(); });
 }
 
 void
 PortableCommandHandlers::OnRepainting()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.ToggleRepainting(); }, false);
+    GetFractal().EnqueueCommand("toggle repainting", [](Fractal &f) { f.ToggleRepainting(); }, false);
 }
 
 // ---- Navigate -------------------------------------------------------------
 void
 PortableCommandHandlers::OnBack()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.Back(); });
+    GetFractal().EnqueueCommand("go back", [](Fractal &f) { f.Back(); });
 }
 
 void
 PortableCommandHandlers::OnCenterView()
 {
     const MenuPoint pt = GetMenuMousePos();
-    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.CenterAtPoint(x, y); });
+    GetFractal().EnqueueCommand("center view",
+                                [x = pt.X, y = pt.Y](Fractal &f) { f.CenterAtPoint(x, y); });
 }
 
 void
 PortableCommandHandlers::OnZoomIn()
 {
     const MenuPoint pt = GetMenuMousePos();
-    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.ZoomRecentered(x, y, -.45); });
+    GetFractal().EnqueueCommand("zoom in",
+                                [x = pt.X, y = pt.Y](Fractal &f) { f.ZoomRecentered(x, y, -.45); });
 }
 
 void
 PortableCommandHandlers::OnZoomOut()
 {
     const MenuPoint pt = GetMenuMousePos();
-    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.ZoomRecentered(x, y, 1); });
+    GetFractal().EnqueueCommand("zoom out",
+                                [x = pt.X, y = pt.Y](Fractal &f) { f.ZoomRecentered(x, y, 1); });
 }
 
 void
@@ -700,7 +711,8 @@ PortableCommandHandlers::OnAutoZoomFilament()
         const MenuPoint pt = GetMenuMousePos();                                                         \
         const int x = pt.X;                                                                             \
         const int y = pt.Y;                                                                             \
-        GetFractal().EnqueueCommand([x, y](Fractal &f) { f.TryFindPeriodicPoint(x, y, Mode); });        \
+        GetFractal().EnqueueCommand("find periodic point",                                              \
+                                    [x, y](Fractal &f) { f.TryFindPeriodicPoint(x, y, Mode); });        \
     }
 
 LINUXSHARK_DEFINE_FEATURE_FINDER(Direct, FeatureFinderMode::Direct)
@@ -716,75 +728,85 @@ void
 PortableCommandHandlers::OnFeatureFinderZoom()
 {
     const MenuPoint pt = GetMenuMousePos();
-    GetFractal().EnqueueCommand([x = pt.X, y = pt.Y](Fractal &f) { f.ZoomToFoundFeature(x, y); });
+    GetFractal().EnqueueCommand("zoom to found feature",
+                                [x = pt.X, y = pt.Y](Fractal &f) { f.ZoomToFoundFeature(x, y); });
 }
 
 void
 PortableCommandHandlers::OnFeatureFinderClear()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.ClearAllFoundFeatures(); });
+    GetFractal().EnqueueCommand("clear found features", [](Fractal &f) { f.ClearAllFoundFeatures(); });
 }
 
 void
 PortableCommandHandlers::OnFeatureFinderResume()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.ResumeNRFromCheckpoint(); });
+    GetFractal().EnqueueCommand("resume Newton refinement",
+                                [](Fractal &f) { f.ResumeNRFromCheckpoint(); });
 }
 
 void
 PortableCommandHandlers::OnNrInnerLoopGpu()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::GPU); });
+    GetFractal().EnqueueMutation("use GPU Newton refinement",
+                                 [](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::GPU); });
 }
 
 void
 PortableCommandHandlers::OnNrInnerLoopCpu()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::CpuMT); });
+    GetFractal().EnqueueMutation("use multithreaded CPU Newton refinement",
+                                 [](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::CpuMT); });
 }
 
 void
 PortableCommandHandlers::OnNrInnerLoopCpuSt()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::CpuST); });
+    GetFractal().EnqueueMutation("use single-threaded CPU Newton refinement",
+                                 [](Fractal &f) { f.SetNRInnerLoopBackend(NRInnerLoopBackend::CpuST); });
 }
 
 // ---- Built-In Views -------------------------------------------------------
 void
 PortableCommandHandlers::OnStandardView()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.View(0); });
+    GetFractal().EnqueueCommand("standard view", [](Fractal &f) { f.View(0); });
 }
 
 void
 PortableCommandHandlers::OnSelectBuiltInView(size_t oneBasedIndex)
 {
-    GetFractal().EnqueueCommand([oneBasedIndex](Fractal &f) { f.View(oneBasedIndex); });
+    GetFractal().EnqueueCommand("select built-in view",
+                                [oneBasedIndex](Fractal &f) { f.View(oneBasedIndex); });
 }
 
 // ---- Antialiasing ---------------------------------------------------------
 void
 PortableCommandHandlers::OnGpuAntialiasing1x()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 1); });
+    GetFractal().EnqueueMutation("set 1x antialiasing",
+                                 [](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 1); });
 }
 
 void
 PortableCommandHandlers::OnGpuAntialiasing4x()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 2); });
+    GetFractal().EnqueueMutation("set 4x antialiasing",
+                                 [](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 2); });
 }
 
 void
 PortableCommandHandlers::OnGpuAntialiasing9x()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 3); });
+    GetFractal().EnqueueMutation("set 9x antialiasing",
+                                 [](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 3); });
 }
 
 void
 PortableCommandHandlers::OnGpuAntialiasing16x()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 4); });
+    GetFractal().EnqueueMutation("set 16x antialiasing",
+                                 [](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 4); });
 }
 
 // ---- Iterations -----------------------------------------------------------
@@ -807,131 +829,149 @@ multiplyIterations(Fractal &f, double factor)
 void
 PortableCommandHandlers::OnResetIterations()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.ResetNumIterations(); });
+    GetFractal().EnqueueCommand("reset iterations", [](Fractal &f) { f.ResetNumIterations(); });
 }
 
 void
 PortableCommandHandlers::OnIncreaseIterations1p5x()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { multiplyIterations(f, 1.5); });
+    GetFractal().EnqueueCommand("increase iterations 1.5x",
+                                [](Fractal &f) { multiplyIterations(f, 1.5); });
 }
 
 void
 PortableCommandHandlers::OnIncreaseIterations6x()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { multiplyIterations(f, 6.0); });
+    GetFractal().EnqueueCommand("increase iterations 6x",
+                                [](Fractal &f) { multiplyIterations(f, 6.0); });
 }
 
 void
 PortableCommandHandlers::OnIncreaseIterations24x()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { multiplyIterations(f, 24.0); });
+    GetFractal().EnqueueCommand("increase iterations 24x",
+                                [](Fractal &f) { multiplyIterations(f, 24.0); });
 }
 
 void
 PortableCommandHandlers::OnDecreaseIterations()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { multiplyIterations(f, 2.0 / 3.0); });
+    GetFractal().EnqueueCommand("decrease iterations",
+                                [](Fractal &f) { multiplyIterations(f, 2.0 / 3.0); });
 }
 
 void
 PortableCommandHandlers::OnIterations32Bit()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetIterType(IterTypeEnum::Bits32); });
+    GetFractal().EnqueueMutation("use 32-bit iterations",
+                                 [](Fractal &f) { f.SetIterType(IterTypeEnum::Bits32); });
 }
 
 void
 PortableCommandHandlers::OnIterations64Bit()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetIterType(IterTypeEnum::Bits64); });
+    GetFractal().EnqueueMutation("use 64-bit iterations",
+                                 [](Fractal &f) { f.SetIterType(IterTypeEnum::Bits64); });
 }
 
 // ---- Iteration precision --------------------------------------------------
 void
 PortableCommandHandlers::OnIterationPrecision1x()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(1); });
+    GetFractal().EnqueueMutation("set iteration precision 1x",
+                                 [](Fractal &f) { f.SetIterationPrecision(1); });
 }
 
 void
 PortableCommandHandlers::OnIterationPrecision2x()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(4); });
+    GetFractal().EnqueueMutation("set iteration precision 2x",
+                                 [](Fractal &f) { f.SetIterationPrecision(4); });
 }
 
 void
 PortableCommandHandlers::OnIterationPrecision3x()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(8); });
+    GetFractal().EnqueueMutation("set iteration precision 3x",
+                                 [](Fractal &f) { f.SetIterationPrecision(8); });
 }
 
 void
 PortableCommandHandlers::OnIterationPrecision4x()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetIterationPrecision(16); });
+    GetFractal().EnqueueMutation("set iteration precision 4x",
+                                 [](Fractal &f) { f.SetIterationPrecision(16); });
 }
 
 // ---- Perturbation ---------------------------------------------------------
 void
 PortableCommandHandlers::OnPerturbClearAll()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All); });
+    GetFractal().EnqueueMutation("clear all perturbation results", [](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbClearMed()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes); });
+    GetFractal().EnqueueMutation("clear medium perturbation results", [](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbClearHigh()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes); });
+    GetFractal().EnqueueMutation("clear high perturbation results", [](Fractal &f) {
+        f.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbationAuto()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto); });
+    GetFractal().EnqueueMutation("set perturbation algorithm auto", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbationSinglethread()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST); });
+    GetFractal().EnqueueMutation("set perturbation algorithm single-threaded", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbationMultithread()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT); });
+    GetFractal().EnqueueMutation("set perturbation algorithm multithreaded", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbationSinglethreadPeriodicity()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity); });
+    GetFractal().EnqueueMutation("set perturbation algorithm ST periodicity", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbationMultithread2Periodicity()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3); });
+    GetFractal().EnqueueMutation("set perturbation algorithm MT periodicity", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbationMt2PerturbMthighStmed()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) {
+    GetFractal().EnqueueMutation("set perturbation algorithm MT high ST medium", [](Fractal &f) {
         f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
     });
 }
@@ -939,7 +979,7 @@ PortableCommandHandlers::OnPerturbationMt2PerturbMthighStmed()
 void
 PortableCommandHandlers::OnPerturbationMt2PerturbMthighMtmed1()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) {
+    GetFractal().EnqueueMutation("set perturbation algorithm MT high MT medium 1", [](Fractal &f) {
         f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
     });
 }
@@ -947,7 +987,7 @@ PortableCommandHandlers::OnPerturbationMt2PerturbMthighMtmed1()
 void
 PortableCommandHandlers::OnPerturbationMt2PerturbMthighMtmed2()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) {
+    GetFractal().EnqueueMutation("set perturbation algorithm MT high MT medium 2", [](Fractal &f) {
         f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
     });
 }
@@ -955,7 +995,7 @@ PortableCommandHandlers::OnPerturbationMt2PerturbMthighMtmed2()
 void
 PortableCommandHandlers::OnPerturbationMt2PerturbMthighMtmed3()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) {
+    GetFractal().EnqueueMutation("set perturbation algorithm MT high MT medium 3", [](Fractal &f) {
         f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
     });
 }
@@ -963,7 +1003,7 @@ PortableCommandHandlers::OnPerturbationMt2PerturbMthighMtmed3()
 void
 PortableCommandHandlers::OnPerturbationMt2PerturbMthighMtmed4()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) {
+    GetFractal().EnqueueMutation("set perturbation algorithm MT high MT medium 4", [](Fractal &f) {
         f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
     });
 }
@@ -971,48 +1011,55 @@ PortableCommandHandlers::OnPerturbationMt2PerturbMthighMtmed4()
 void
 PortableCommandHandlers::OnPerturbationMultithread5Periodicity()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5); });
+    GetFractal().EnqueueMutation("set perturbation algorithm MT periodicity 5", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbationGpu()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU); });
+    GetFractal().EnqueueMutation("set perturbation algorithm GPU", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbationLoad()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.LoadPerturbationOrbits(); });
+    GetFractal().EnqueueMutation("load perturbation orbits",
+                                 [](Fractal &f) { f.LoadPerturbationOrbits(); });
 }
 
 void
 PortableCommandHandlers::OnPerturbationSave()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SavePerturbationOrbits(); });
+    GetFractal().EnqueueMutation("save perturbation orbits",
+                                 [](Fractal &f) { f.SavePerturbationOrbits(); });
 }
 
 // ---- Autosave -------------------------------------------------------------
 void
 PortableCommandHandlers::OnPerturbAutosaveOnDelete()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetResultsAutosave(AddPointOptions::EnableWithoutSave); });
+    GetFractal().EnqueueMutation("enable autosave without saving", [](Fractal &f) {
+        f.SetResultsAutosave(AddPointOptions::EnableWithoutSave);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbAutosaveOn()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.SetResultsAutosave(AddPointOptions::EnableWithSave); });
+    GetFractal().EnqueueMutation("enable autosave with saving", [](Fractal &f) {
+        f.SetResultsAutosave(AddPointOptions::EnableWithSave);
+    });
 }
 
 void
 PortableCommandHandlers::OnPerturbAutosaveOff()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) { f.SetResultsAutosave(AddPointOptions::DontSave); });
+    GetFractal().EnqueueMutation("disable autosave",
+                                 [](Fractal &f) { f.SetResultsAutosave(AddPointOptions::DontSave); });
 }
 
 // ---- Palette --------------------------------------------------------------
@@ -1031,37 +1078,42 @@ applyPaletteType(Fractal &f, FractalPaletteType type)
 void
 PortableCommandHandlers::OnPaletteType0()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { applyPaletteType(f, FractalPaletteType::Basic); });
+    GetFractal().EnqueueCommand("use basic palette",
+                                [](Fractal &f) { applyPaletteType(f, FractalPaletteType::Basic); });
 }
 
 void
 PortableCommandHandlers::OnPaletteType1()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { applyPaletteType(f, FractalPaletteType::Default); });
+    GetFractal().EnqueueCommand("use default palette",
+                                [](Fractal &f) { applyPaletteType(f, FractalPaletteType::Default); });
 }
 
 void
 PortableCommandHandlers::OnPaletteType2()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { applyPaletteType(f, FractalPaletteType::Patriotic); });
+    GetFractal().EnqueueCommand("use patriotic palette",
+                                [](Fractal &f) { applyPaletteType(f, FractalPaletteType::Patriotic); });
 }
 
 void
 PortableCommandHandlers::OnPaletteType3()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { applyPaletteType(f, FractalPaletteType::Summer); });
+    GetFractal().EnqueueCommand("use summer palette",
+                                [](Fractal &f) { applyPaletteType(f, FractalPaletteType::Summer); });
 }
 
 void
 PortableCommandHandlers::OnPaletteType4()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { applyPaletteType(f, FractalPaletteType::Random); });
+    GetFractal().EnqueueCommand("use random palette",
+                                [](Fractal &f) { applyPaletteType(f, FractalPaletteType::Random); });
 }
 
 void
 PortableCommandHandlers::OnCreateNewPalette()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) {
+    GetFractal().EnqueueCommand("create random palette", [](Fractal &f) {
         f.CreateNewFractalPalette();
         f.UsePaletteType(FractalPaletteType::Random);
     });
@@ -1070,37 +1122,37 @@ PortableCommandHandlers::OnCreateNewPalette()
 void
 PortableCommandHandlers::OnPalette5()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UsePalette(5); });
+    GetFractal().EnqueueCommand("use palette depth 5", [](Fractal &f) { f.UsePalette(5); });
 }
 
 void
 PortableCommandHandlers::OnPalette6()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UsePalette(6); });
+    GetFractal().EnqueueCommand("use palette depth 6", [](Fractal &f) { f.UsePalette(6); });
 }
 
 void
 PortableCommandHandlers::OnPalette8()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UsePalette(8); });
+    GetFractal().EnqueueCommand("use palette depth 8", [](Fractal &f) { f.UsePalette(8); });
 }
 
 void
 PortableCommandHandlers::OnPalette12()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UsePalette(12); });
+    GetFractal().EnqueueCommand("use palette depth 12", [](Fractal &f) { f.UsePalette(12); });
 }
 
 void
 PortableCommandHandlers::OnPalette16()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UsePalette(16); });
+    GetFractal().EnqueueCommand("use palette depth 16", [](Fractal &f) { f.UsePalette(16); });
 }
 
 void
 PortableCommandHandlers::OnPalette20()
 {
-    GetFractal().EnqueueCommand([](Fractal &f) { f.UsePalette(20); });
+    GetFractal().EnqueueCommand("use palette depth 20", [](Fractal &f) { f.UsePalette(20); });
 }
 
 void
@@ -1114,16 +1166,20 @@ PortableCommandHandlers::OnPaletteRotate()
 
     const uint64_t presentationGroup = fractal.BeginPacedAnimation();
     while (!fractal.GetStopCalculating()) {
-        auto handle = fractal.EnqueuePaletteRecolor([](Fractal &f) { f.RotateFractalPalette(10); },
-                                                    false,
-                                                    RenderPresentationMode::PacedAnimation,
-                                                    presentationGroup);
+        auto handle = fractal.EnqueuePaletteRecolor(
+            "rotate palette",
+            [](Fractal &f) { f.RotateFractalPalette(10); },
+            false,
+            RenderPresentationMode::PacedAnimation,
+            presentationGroup);
         handle.Wait();
         Environment::PumpUIEvents();
     }
 
     fractal.CancelPacedAnimation(presentationGroup);
-    fractal.EnqueuePaletteRecolor([](Fractal &f) { f.ResetFractalPalette(); }, false).Wait();
+    fractal.EnqueuePaletteRecolor(
+               "reset palette", [](Fractal &f) { f.ResetFractalPalette(); }, false)
+        .Wait();
     fractal.ResetStopCalculating();
 }
 
@@ -1164,7 +1220,7 @@ PortableCommandHandlers::OnBenchmarkInt()
 void
 PortableCommandHandlers::OnLaMultithreaded()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) {
+    GetFractal().EnqueueMutation("set LA multithreading", [](Fractal &f) {
         f.GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
     });
 }
@@ -1172,7 +1228,7 @@ PortableCommandHandlers::OnLaMultithreaded()
 void
 PortableCommandHandlers::OnLaSinglethreaded()
 {
-    GetFractal().EnqueueMutation([](Fractal &f) {
+    GetFractal().EnqueueMutation("set LA single-threading", [](Fractal &f) {
         f.GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
     });
 }
@@ -1180,22 +1236,25 @@ PortableCommandHandlers::OnLaSinglethreaded()
 void
 PortableCommandHandlers::OnLaSettings1()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxAccuracy); });
+    GetFractal().EnqueueMutation("set LA maximum accuracy defaults", [](Fractal &f) {
+        f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxAccuracy);
+    });
 }
 
 void
 PortableCommandHandlers::OnLaSettings2()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxPerf); });
+    GetFractal().EnqueueMutation("set LA maximum performance defaults", [](Fractal &f) {
+        f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxPerf);
+    });
 }
 
 void
 PortableCommandHandlers::OnLaSettings3()
 {
-    GetFractal().EnqueueMutation(
-        [](Fractal &f) { f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MinMemory); });
+    GetFractal().EnqueueMutation("set LA minimum memory defaults", [](Fractal &f) {
+        f.GetLAParameters().SetDefaults(LAParameters::LADefaults::MinMemory);
+    });
 }
 
 } // namespace FractalShark

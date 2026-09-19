@@ -16,6 +16,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -38,6 +40,12 @@ enum class RenderWorkMode {
 // Workers read exclusively from this, never from live Fractal members.
 struct RenderWorkItem {
     RenderWorkMode WorkMode = RenderWorkMode::Render;
+
+    // Human-readable description shown in the console queue log.
+    std::string OperationName;
+
+    // Monotonic operation identifier shared by renders and mutations.
+    uint64_t OperationId = 0;
 
     // Monotonic sequence number assigned at enqueue time
     uint64_t SequenceNumber;
@@ -275,12 +283,13 @@ public:
     RenderJobHandle Enqueue(const RenderWorkItem &item);
 
     // Enqueue a render-only job for the Fractal's current state.
-    RenderJobHandle EnqueueRender();
+    RenderJobHandle EnqueueRender(std::string_view operationName);
 
     // Enqueue a command that mutates Fractal state, then renders.
     // The command lambda runs on a worker thread under m_CalcFractalMutex.
     // After the command, the worker snapshots state and renders.
     RenderJobHandle EnqueueCommand(
+        std::string_view operationName,
         std::function<void(Fractal &)> cmd,
         bool supersedable = true,
         RenderPresentationMode presentationMode = RenderPresentationMode::Immediate,
@@ -290,6 +299,7 @@ public:
     // Enqueue a palette mutation and rebuild the current frame from
     // m_CurIters without recalculating fractal geometry.
     RenderJobHandle EnqueueRecolorCurrentFrame(
+        std::string_view operationName,
         std::function<void(Fractal &)> cmd,
         bool supersedable = true,
         RenderPresentationMode presentationMode = RenderPresentationMode::Immediate,
@@ -307,7 +317,7 @@ public:
     // Enqueue a mutation-only command: executes the lambda under the lock
     // but does NOT trigger CalcFractal or frame production.
     // Use for settings changes that take effect on the next render.
-    RenderJobHandle EnqueueMutation(std::function<void(Fractal &)> cmd);
+    RenderJobHandle EnqueueMutation(std::string_view operationName, std::function<void(Fractal &)> cmd);
 
     // Shutdown the pool and join all threads.
     void Shutdown();
@@ -443,6 +453,8 @@ private:
     // Snapshot current Fractal state into a RenderWorkItem.
     RenderWorkItem SnapshotCurrentState() const;
 
+    void LogOperationEvent(const RenderWorkItem &item, std::string_view event, size_t pendingCount);
+
     bool IsPresentationReady(uint64_t expectedSeqNum,
                              const RenderFrameInfo &frameInfo,
                              std::chrono::steady_clock::time_point now);
@@ -459,6 +471,8 @@ private:
     std::condition_variable m_WorkQueueCV;
     std::deque<RenderWorkItem> m_WorkQueue;
     std::atomic<uint64_t> m_NextSequenceNumber;
+    std::atomic<uint64_t> m_NextOperationId;
+    std::mutex m_OperationLogMutex;
 
     // Renderer pool
     RendererPool m_RendererPool;

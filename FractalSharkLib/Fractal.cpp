@@ -1143,23 +1143,25 @@ Fractal::CalcFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx)
 }
 
 RenderJobHandle
-Fractal::EnqueueRender()
+Fractal::EnqueueRender(std::string_view operationName)
 {
     if (m_RenderPool) {
-        return m_RenderPool->EnqueueRender();
+        return m_RenderPool->EnqueueRender(operationName);
     }
     return RenderJobHandle{};
 }
 
 RenderJobHandle
-Fractal::EnqueueCommand(std::function<void(Fractal &)> cmd,
+Fractal::EnqueueCommand(std::string_view operationName,
+                        std::function<void(Fractal &)> cmd,
                         bool supersedable,
                         RenderPresentationMode presentationMode,
                         uint64_t presentationGroup,
                         bool resetStopCalculatingBeforeRender)
 {
     if (m_RenderPool) {
-        return m_RenderPool->EnqueueCommand(std::move(cmd),
+        return m_RenderPool->EnqueueCommand(operationName,
+                                            std::move(cmd),
                                             supersedable,
                                             presentationMode,
                                             presentationGroup,
@@ -1169,14 +1171,15 @@ Fractal::EnqueueCommand(std::function<void(Fractal &)> cmd,
 }
 
 RenderJobHandle
-Fractal::EnqueuePaletteRecolor(std::function<void(Fractal &)> cmd,
+Fractal::EnqueuePaletteRecolor(std::string_view operationName,
+                               std::function<void(Fractal &)> cmd,
                                bool supersedable,
                                RenderPresentationMode presentationMode,
                                uint64_t presentationGroup)
 {
     if (m_RenderPool) {
         return m_RenderPool->EnqueueRecolorCurrentFrame(
-            std::move(cmd), supersedable, presentationMode, presentationGroup);
+            operationName, std::move(cmd), supersedable, presentationMode, presentationGroup);
     }
     return RenderJobHandle{};
 }
@@ -1199,10 +1202,10 @@ Fractal::CancelPacedAnimation(uint64_t presentationGroup)
 }
 
 RenderJobHandle
-Fractal::EnqueueMutation(std::function<void(Fractal &)> cmd)
+Fractal::EnqueueMutation(std::string_view operationName, std::function<void(Fractal &)> cmd)
 {
     if (m_RenderPool) {
-        return m_RenderPool->EnqueueMutation(std::move(cmd));
+        return m_RenderPool->EnqueueMutation(operationName, std::move(cmd));
     }
     return RenderJobHandle{};
 }

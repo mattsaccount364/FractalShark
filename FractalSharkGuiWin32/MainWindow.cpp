@@ -455,22 +455,22 @@ MainWindow::HandleArrowAndZoomKeys(WPARAM vk)
 
     switch (vk) {
         case VK_LEFT:
-            gFractal->EnqueueCommand([frac](Fractal &f) { f.PanByFraction(-frac, 0.0); });
+            gFractal->EnqueueCommand("pan left", [frac](Fractal &f) { f.PanByFraction(-frac, 0.0); });
             break;
         case VK_RIGHT:
-            gFractal->EnqueueCommand([frac](Fractal &f) { f.PanByFraction(frac, 0.0); });
+            gFractal->EnqueueCommand("pan right", [frac](Fractal &f) { f.PanByFraction(frac, 0.0); });
             break;
         case VK_UP:
-            gFractal->EnqueueCommand([frac](Fractal &f) { f.PanByFraction(0.0, frac); });
+            gFractal->EnqueueCommand("pan up", [frac](Fractal &f) { f.PanByFraction(0.0, frac); });
             break;
         case VK_DOWN:
-            gFractal->EnqueueCommand([frac](Fractal &f) { f.PanByFraction(0.0, -frac); });
+            gFractal->EnqueueCommand("pan down", [frac](Fractal &f) { f.PanByFraction(0.0, -frac); });
             break;
         case VK_ADD:
-            gFractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(-0.3); });
+            gFractal->EnqueueCommand("keypad zoom in", [](Fractal &f) { f.ZoomAtCenter(-0.3); });
             break;
         case VK_SUBTRACT:
-            gFractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); });
+            gFractal->EnqueueCommand("keypad zoom out", [](Fractal &f) { f.ZoomAtCenter(0.3); });
             break;
         default:
             break;
@@ -709,7 +709,8 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             if (gFractal) {
                 auto w = LOWORD(lParam);
                 auto h = HIWORD(lParam);
-                gFractal->EnqueueCommand([w, h](Fractal &f) { f.ResetDimensions(w, h); });
+                gFractal->EnqueueCommand("resize window",
+                                         [w, h](Fractal &f) { f.ResetDimensions(w, h); });
             }
             return 0;
         }
@@ -815,7 +816,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 newViewWin.left, newViewWin.top, newViewWin.right, newViewWin.bottom};
 
             if (gFractal) {
-                gFractal->EnqueueCommand([newView, maintainAspect](Fractal &f) {
+                gFractal->EnqueueCommand("drag zoom", [newView, maintainAspect](Fractal &f) {
                     if (f.RecenterViewScreen(newView)) {
                         if (maintainAspect)
                             f.SquareCurrentView();
@@ -897,9 +898,12 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
                 gFractal->EnqueueCommand(
-                    [x = pt.x, y = pt.y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); }, false);
+                    "wheel zoom in",
+                    [x = pt.x, y = pt.y](Fractal &f) { f.ZoomTowardPoint(x, y, -0.3); },
+                    false);
             } else {
-                gFractal->EnqueueCommand([](Fractal &f) { f.ZoomAtCenter(0.3); }, false);
+                gFractal->EnqueueCommand(
+                    "wheel zoom out", [](Fractal &f) { f.ZoomAtCenter(0.3); }, false);
             }
 
             return 0;
@@ -939,7 +943,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
 void
 MainWindow::MenuStandardView(size_t i)
 {
-    gFractal->EnqueueCommand([i](Fractal &f) { f.View(i); });
+    gFractal->EnqueueCommand("select built-in view", [i](Fractal &f) { f.View(i); });
 }
 
 void
@@ -988,7 +992,7 @@ MainWindow::MenuWindowed(bool square)
             GetClientRect(hWnd, &rt);
             auto w = rt.right;
             auto h = rt.bottom;
-            gFractal->EnqueueCommand([w, h](Fractal &f) { f.ResetDimensions(w, h); });
+            gFractal->EnqueueCommand("resize window", [w, h](Fractal &f) { f.ResetDimensions(w, h); });
         }
     } else {
         int width = GetSystemMetrics(SM_CXSCREEN);
@@ -1014,7 +1018,7 @@ MainWindow::MenuWindowed(bool square)
             GetClientRect(hWnd, &rt);
             auto w = rt.right;
             auto h = rt.bottom;
-            gFractal->EnqueueCommand([w, h](Fractal &f) { f.ResetDimensions(w, h); });
+            gFractal->EnqueueCommand("resize window", [w, h](Fractal &f) { f.ResetDimensions(w, h); });
         }
     }
 }

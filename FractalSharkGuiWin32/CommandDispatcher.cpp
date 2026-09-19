@@ -92,8 +92,9 @@ CommandDispatcher::HandleAlgCommand(int wmId)
         return false;
 
     auto alg = GetRenderAlgorithmTupleEntry(e->alg);
-    w_.gFractal->EnqueueMutation(
-        [alg](Fractal &f) { [[maybe_unused]] const bool success = f.SetRenderAlgorithm(alg); });
+    w_.gFractal->EnqueueMutation("change render algorithm", [alg](Fractal &f) {
+        [[maybe_unused]] const bool success = f.SetRenderAlgorithm(alg);
+    });
 
     return true;
 }

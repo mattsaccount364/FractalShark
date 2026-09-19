@@ -307,11 +307,13 @@ AutoZoomer::Run()
                 newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
 
             m_Fractal
-                .EnqueueCommand([newPtz = std::move(newPtz)](Fractal &f) { f.RecenterViewCalc(newPtz); },
-                                false,
-                                RenderPresentationMode::Immediate,
-                                0,
-                                false)
+                .EnqueueCommand(
+                    "autozoom step",
+                    [newPtz = std::move(newPtz)](Fractal &f) { f.RecenterViewCalc(newPtz); },
+                    false,
+                    RenderPresentationMode::Immediate,
+                    0,
+                    false)
                 .Wait();
 
             if constexpr (h != Fractal::AutoZoomHeuristic::FilamentTip) {
@@ -346,9 +348,10 @@ AutoZoomer::RunFeatureAtPoint(int clientX, int clientY, NRCheckpointSavePolicy c
 
     FeatureZoomSetup setup;
     m_Fractal
-        .EnqueueMutation([&, clientX, clientY, checkpointSavePolicy](Fractal &f) {
-            SetupFeatureZoom(f, setup, clientX, clientY, checkpointSavePolicy);
-        })
+        .EnqueueMutation("prepare feature autozoom",
+                         [&, clientX, clientY, checkpointSavePolicy](Fractal &f) {
+                             SetupFeatureZoom(f, setup, clientX, clientY, checkpointSavePolicy);
+                         })
         .Wait();
 
     if (setup.Failed) {
@@ -555,6 +558,7 @@ AutoZoomer::RunFeatureZoomPipeline(const std::vector<FeatureZoomStep> &steps)
 
         auto step = steps[i];
         handle = m_Fractal.EnqueueCommand(
+            "feature autozoom step",
             [step = std::move(step)](Fractal &f) { ApplyFeatureZoomStep(f, step); },
             false,
             RenderPresentationMode::PacedAnimation,
@@ -580,7 +584,8 @@ AutoZoomer::RunFeatureZoomPipeline(const std::vector<FeatureZoomStep> &steps)
     // back to the original zoom after the loop completes.
     auto finalStep = steps.back();
     m_Fractal
-        .EnqueueMutation([step = std::move(finalStep)](Fractal &f) { ApplyFeatureZoomStep(f, step); })
+        .EnqueueMutation("finalize feature autozoom",
+                         [step = std::move(finalStep)](Fractal &f) { ApplyFeatureZoomStep(f, step); })
         .Wait();
     return true;
 }
@@ -599,9 +604,10 @@ AutoZoomer::RestoreLastPresentedView()
     }
 
     m_Fractal
-        .EnqueueMutation([step = FeatureZoomStep{std::move(lastPresentedView->Ptz),
+        .EnqueueMutation("restore presented view",
+                         [step = FeatureZoomStep{std::move(lastPresentedView->Ptz),
                                                  lastPresentedView->NumIterations}](Fractal &f) {
-            ApplyFeatureZoomStep(f, step);
-        })
+                             ApplyFeatureZoomStep(f, step);
+                         })
         .Wait();
 }
